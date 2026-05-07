@@ -50,6 +50,10 @@ func (s *TopicSession) GetWorkspaceDir() string {
 	return s.workspaceDir
 }
 
+func (s *TopicSession) GetBranchName() string {
+	return s.branchName
+}
+
 func (s *TopicSession) GetAgentName() string {
 	return s.agentName
 }

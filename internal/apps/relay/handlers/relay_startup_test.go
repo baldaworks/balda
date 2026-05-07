@@ -5,16 +5,23 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	relayagent "github.com/normahq/relay/internal/apps/relay/agent"
 	"github.com/normahq/relay/internal/apps/relay/auth"
+	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
+	"github.com/normahq/relay/internal/apps/relay/messenger"
+	relaysession "github.com/normahq/relay/internal/apps/relay/session"
+	relaystate "github.com/normahq/relay/internal/apps/relay/state"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
+	adksession "google.golang.org/adk/session"
 )
 
 type fakeRelayStartupTGClient struct {
-	client.ClientWithResponsesInterface
+	*fakeTelegramClient
 
 	getMeResp  *client.GetMeResponse
 	getMeErr   error
@@ -201,6 +208,126 @@ func TestRelayHandlerOnStart_DoesNotLogOwnerAuthWhenOwnerRegistered(t *testing.T
 	}
 }
 
+func TestRelayHandlerOnStart_FailsWhenOwnerBootstrapFails(t *testing.T) {
+	handler, _ := newRegisteredOwnerStartupHandler(t)
+	sessionManager := &relaysession.Manager{}
+	setUnexportedField(t, sessionManager, "agentBuilder", &fakeRelayStartupFailBuilder{
+		metadata: relayagent.AgentMetadata{
+			Type:       "codex_acp",
+			Model:      "gpt-5.3-codex",
+			MCPServers: []string{"relay"},
+		},
+		err: errors.New("runtime session creation failed"),
+	})
+	setUnexportedField(t, sessionManager, "runtimeManager", &fakeRelayRestoreRuntimeManager{providerID: "relay-provider"})
+	setUnexportedField(t, sessionManager, "relayProviderName", "relay-provider")
+	setUnexportedField(t, sessionManager, "sessionStore", &fakeRelayRestoreSessionStore{})
+	setUnexportedField(t, sessionManager, "logger", zerolog.Nop())
+	setUnexportedField(t, sessionManager, "sessions", map[string]*relaysession.TopicSession{})
+	handler.sessionManager = sessionManager
+
+	err := handler.onStart(context.Background())
+	if err == nil {
+		t.Fatal("onStart() error = nil, want bootstrap failure")
+	}
+	if !strings.Contains(err.Error(), "bootstrap owner session during startup") {
+		t.Fatalf("onStart() error = %q, want bootstrap failure context", err.Error())
+	}
+}
+
+func TestRelayHandlerOnStart_DoesNotFailWhenReadyMessageFails(t *testing.T) {
+	handler, tgClient := newRegisteredOwnerStartupHandler(t)
+	tgClient.sendErr = errors.New("telegram send failed")
+
+	if err := handler.onStart(context.Background()); err != nil {
+		t.Fatalf("onStart() error = %v", err)
+	}
+}
+
+func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testing.T) {
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	initRelayRestoreGitRepo(t, ctx, workingDir)
+
+	writeRelayRestoreFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
+	runRelayRestoreGit(t, ctx, workingDir, "add", "seed.txt")
+	runRelayRestoreGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+
+	stateDir := t.TempDir()
+	locator := relaysession.NewTelegramSessionLocator(9001, 0)
+	branchName := "persisted/owner-branch"
+	workspaceDir := filepath.Join(stateDir, "persisted-owner-workspace")
+	runRelayRestoreGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
+	t.Cleanup(func() {
+		_ = runRelayRestoreGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
+	})
+
+	store := &fakeRelayRestoreSessionStore{
+		record: relaystate.SessionRecord{
+			SessionID:    locator.SessionID,
+			UserID:       relaysession.TelegramUserID(101),
+			ChannelType:  locator.ChannelType,
+			AddressKey:   locator.AddressKey,
+			AddressJSON:  locator.AddressJSON,
+			AgentName:    ownerSessionLabel,
+			WorkspaceDir: workspaceDir,
+			BranchName:   branchName,
+			Status:       relaystate.SessionStatusActive,
+		},
+		foundByAddress: true,
+	}
+
+	builder := &fakeRelayRestoreAgentBuilder{
+		metadata: relayagent.AgentMetadata{
+			Type:       "codex_acp",
+			Model:      "gpt-5.3-codex",
+			MCPServers: []string{"relay"},
+		},
+	}
+	runtimeManager := &fakeRelayRestoreRuntimeManager{providerID: "relay-provider"}
+	sessionManager := &relaysession.Manager{}
+	setUnexportedField(t, sessionManager, "agentBuilder", builder)
+	setUnexportedField(t, sessionManager, "runtimeManager", runtimeManager)
+	setUnexportedField(t, sessionManager, "relayProviderName", "relay-provider")
+	setUnexportedField(t, sessionManager, "workingDir", workingDir)
+	setUnexportedField(t, sessionManager, "workspaces", relayagent.NewWorkspaceManager(workingDir, stateDir, relayRestoreCurrentBranch(t, ctx, workingDir)))
+	setUnexportedField(t, sessionManager, "workspaceEnabled", true)
+	setUnexportedField(t, sessionManager, "sessionStore", store)
+	setUnexportedField(t, sessionManager, "logger", zerolog.Nop())
+	setUnexportedField(t, sessionManager, "sessions", map[string]*relaysession.TopicSession{})
+
+	tgClient := &fakeRelayStartupTGClient{
+		fakeTelegramClient: &fakeTelegramClient{},
+	}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	handler := &RelayHandler{
+		channel: relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+			Messenger: msg,
+			TGClient:  tgClient,
+			Logger:    zerolog.Nop(),
+		}),
+		sessionManager:    sessionManager,
+		messenger:         msg,
+		relayProviderName: "relay-provider",
+		logger:            zerolog.Nop(),
+	}
+
+	if err := handler.bootstrapOwnerSession(ctx, 101, 9001); err != nil {
+		t.Fatalf("bootstrapOwnerSession() error = %v", err)
+	}
+
+	ts, err := sessionManager.GetSession(locator)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if got := ts.GetBranchName(); got != branchName {
+		t.Fatalf("branch name = %q, want %q", got, branchName)
+	}
+	if got := ts.GetWorkspaceDir(); got != workspaceDir {
+		t.Fatalf("workspace dir = %q, want %q", got, workspaceDir)
+	}
+}
+
 func newRelayStartupHandlerForTest(t *testing.T, tgClient client.ClientWithResponsesInterface, authToken string, logger zerolog.Logger) *RelayHandler {
 	t.Helper()
 
@@ -215,4 +342,84 @@ func newRelayStartupHandlerForTest(t *testing.T, tgClient client.ClientWithRespo
 		authToken:  authToken,
 		logger:     logger,
 	}
+}
+
+func newRegisteredOwnerStartupHandler(t *testing.T) (*RelayHandler, *fakeRelayStartupTGClient) {
+	t.Helper()
+
+	username := testRelayStartupBotUsername
+	tgClient := &fakeRelayStartupTGClient{
+		fakeTelegramClient: &fakeTelegramClient{},
+		getMeResp: &client.GetMeResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
+			JSON200: &struct {
+				Ok     client.GetMe200Ok `json:"ok"`
+				Result client.User       `json:"result"`
+			}{
+				Ok: true,
+				Result: client.User{
+					Id:       7791683989,
+					Username: &username,
+				},
+			},
+		},
+	}
+
+	handler := newRelayStartupHandlerForTest(t, tgClient, "owner-token", zerolog.Nop())
+	if _, err := handler.ownerStore.RegisterOwner(42, 9001, "owner", "Relay", "Owner", false); err != nil {
+		t.Fatalf("RegisterOwner() error = %v", err)
+	}
+
+	builder := &fakeRelayRestoreAgentBuilder{
+		metadata: relayagent.AgentMetadata{
+			Type:       "codex_acp",
+			Model:      "gpt-5.3-codex",
+			MCPServers: []string{"relay"},
+		},
+	}
+	runtimeManager := &fakeRelayRestoreRuntimeManager{providerID: "relay-provider"}
+	sessionManager := newRelayRestoreSessionManager(t, builder, runtimeManager, &fakeRelayRestoreSessionStore{})
+
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	handler.channel = relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+		Messenger: msg,
+		TGClient:  tgClient,
+		Logger:    zerolog.Nop(),
+	})
+	handler.sessionManager = sessionManager
+	handler.messenger = msg
+	handler.relayProviderName = "relay-provider"
+	return handler, tgClient
+}
+
+type fakeRelayStartupFailBuilder struct {
+	metadata relayagent.AgentMetadata
+	err      error
+}
+
+func (f *fakeRelayStartupFailBuilder) CreateRuntimeSession(
+	context.Context,
+	*relayagent.BuiltRuntime,
+	string,
+	string,
+	string,
+	string,
+) (adksession.Session, error) {
+	return nil, f.err
+}
+
+func (*fakeRelayStartupFailBuilder) ValidateAgent(string) error {
+	return nil
+}
+
+func (*fakeRelayStartupFailBuilder) GetAgentInfo(string) (string, []string) {
+	return "", nil
+}
+
+func (f *fakeRelayStartupFailBuilder) GetAgentMetadata(string) relayagent.AgentMetadata {
+	return f.metadata
+}
+
+func (*fakeRelayStartupFailBuilder) ProviderIDs() []string {
+	return []string{"relay-provider"}
 }

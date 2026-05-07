@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -54,12 +55,24 @@ func (h *RelayHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatI
 	locator := relaysession.NewTelegramSessionLocator(chatID, 0)
 	transportUserID := relaysession.TelegramUserID(ownerID)
 
-	ts, err := h.sessionManager.EnsureSession(ctx, relaysession.SessionContext{
-		Locator: locator,
-		UserID:  transportUserID,
-	}, ownerSessionLabel)
+	ts, err := h.sessionManager.GetSession(locator)
 	if err != nil {
-		return fmt.Errorf("create owner session: %w", err)
+		ts, err = h.sessionManager.RestoreSession(ctx, relaysession.SessionContext{
+			Locator: locator,
+			UserID:  transportUserID,
+		})
+		if err != nil {
+			if !errors.Is(err, relaysession.ErrNoPersistedSession) {
+				return fmt.Errorf("restore owner session: %w", err)
+			}
+			ts, err = h.sessionManager.EnsureSession(ctx, relaysession.SessionContext{
+				Locator: locator,
+				UserID:  transportUserID,
+			}, ownerSessionLabel)
+			if err != nil {
+				return fmt.Errorf("create owner session: %w", err)
+			}
+		}
 	}
 
 	metadata := h.sessionManager.GetAgentMetadata(relayProviderName)
@@ -132,7 +145,7 @@ func (h *RelayHandler) onStart(ctx context.Context) error {
 		if sendErr := h.messenger.SendPlain(ctx, owner.UserID, fmt.Sprintf("Failed to start owner session: %v.\nPlease check relay configuration.", err), 0); sendErr != nil {
 			h.logger.Warn().Err(sendErr).Msg("failed to send owner session failure message")
 		}
-		return nil
+		return fmt.Errorf("bootstrap owner session during startup: %w", err)
 	}
 
 	if err := h.messenger.SendPlain(ctx, owner.UserID, "Boss, I'm online and ready to work.", 0); err != nil {

@@ -16,9 +16,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: "go.mod"
-
-      - name: Test
-        run: go test -race ./...
+      - uses: ./.github/actions/release-gate
 
       - name: Build release artifacts
         shell: bash

@@ -228,6 +228,7 @@ The relay MCP server (`relay`) is automatically included in all sessions when wo
   - if token is missing in existing state, `relay start` backfills one-time and persists it
   - if no owner is registered yet, `relay start` logs the owner bootstrap command and deeplink again to help finish first-time onboarding
   - after the first successful owner auth, normal startup logs go back to bot identity only and no longer expose owner auth tokens or auth URLs
+  - if an owner is already registered, `relay start` fails fast when the owner session cannot be restored or created
 - bundled relay MCP listener always binds to local ephemeral address (`127.0.0.1:0`)
   - bundled routes on this listener:
     - `/mcp` and `/mcp/relay` for the built-in relay MCP server
@@ -256,7 +257,7 @@ Session key:
 - Owner session: owner DM `(chat_id, topic_id=0)`
 - Regular session: any other channel address `(chat_id, topic_id)`, including public `topic_id=0`
 - Canonical relay session IDs are channel-scoped. Telegram uses `tg-<chat_id>-<topic_id>`.
-- The owner session is created lazily on the first owner DM in that chat (`topic_id=0`).
+- The owner session is bootstrapped for the bound owner DM chat (`topic_id=0`) during activation/startup when an owner is already registered.
 
 Session runtimes are still in-memory, but metadata is persisted in `relay.db`.
 Relay lazy-restores regular sessions on first message after restart when metadata exists.
@@ -290,6 +291,7 @@ Relay runs with a single provider per process (`relay.provider`).
 
 - The provider is initialized before message handling.
 - The owner session (`topic_id=0` in the owner DM) is bootstrapped for the owner chat during activation.
+- On restart, the owner session follows the same restore path as regular sessions: restore persisted metadata first, then fall back to fresh create only when no persisted record exists.
 - Every regular channel address maps to its own ADK session, including public main-chat `topic_id=0`, but all sessions in that relay instance use the same provider runtime.
 
 ### Manual session control

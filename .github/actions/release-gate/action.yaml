@@ -1,0 +1,15 @@
+name: relay-release-gate
+description: Run the production release verification gate for Relay.
+
+runs:
+  using: composite
+  steps:
+    - name: Test
+      shell: bash
+      run: go test -race ./...
+    - name: Lint
+      shell: bash
+      run: go tool golangci-lint run
+    - name: Vulnerability check
+      shell: bash
+      run: go tool govulncheck ./...

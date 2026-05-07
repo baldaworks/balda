@@ -19,6 +19,7 @@ jobs:
         with:
           go-version-file: "go.mod"
       - uses: actions/setup-node@v4
+      - uses: ./.github/actions/release-gate
       - name: Validate tag checkout for git-tag versioning
         shell: bash
         run: |
