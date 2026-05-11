@@ -43,6 +43,66 @@ relay start
 /topic <name>
 ```
 
+## Run with Docker Compose
+
+Relay does not currently ship an official Docker image, `Dockerfile`, or Compose
+file. If you want to run it under Docker Compose, keep the container image as a
+local deployment wrapper and mount the current project directory as the runtime
+workspace.
+
+Example `Dockerfile`:
+
+```dockerfile
+FROM node:lts-bookworm-slim
+
+RUN npm install -g @normahq/relay
+
+# Install the provider CLI used by relay.provider here, for example Codex,
+# Gemini, Claude Code, opencode, or another ACP-compatible command.
+
+WORKDIR /workspace
+ENTRYPOINT ["relay"]
+```
+
+Example `compose.yaml`:
+
+```yaml
+services:
+  relay:
+    build: .
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: start
+```
+
+Run setup and start Relay from the repository root:
+
+```bash
+docker compose run --rm relay init
+docker compose up -d relay
+```
+
+The `.:/workspace` bind mount is intentional. It lets Relay use the same
+project checkout, `.git`, `.env`, `.config/relay/config.yaml`, and
+`.config/relay/relay.db` as a host install. Do not bake `.env` or
+`.config/relay/relay.db` into the image.
+
+Relay auto-loads `/workspace/.env`; adding `env_file: .env` is optional after
+the file exists.
+
+The default Telegram mode is polling and does not need a published port. For
+webhook mode, configure `relay.telegram.webhook.*` or the matching `RELAY_*`
+environment variables, then publish the webhook listener:
+
+```yaml
+services:
+  relay:
+    # same settings as above
+    ports:
+      - "8080:8080"
+```
+
 ## Bot Commands
 
 - `/start owner=<owner_token>`: direct-message owner auth/bootstrap.

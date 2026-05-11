@@ -118,6 +118,48 @@ profiles:
       provider: <provider_id>
 ```
 
+### Docker Compose Runtime
+
+Relay has no official Docker image, `Dockerfile`, or Compose file in this repo.
+Compose deployments should treat Docker as a local wrapper around the same
+project directory used by a host install.
+
+Use a bind mount for the current directory:
+
+```yaml
+services:
+  relay:
+    build: .
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: start
+```
+
+With `.:/workspace`, Relay resolves the default runtime paths inside the mounted
+project:
+
+- `.env` is loaded from `/workspace/.env`.
+- `.config/relay/config.yaml` remains the selected app config.
+- `.config/relay/relay.db` persists owner auth, session metadata, MCP KV, and
+  Telegram polling offsets on the host.
+- `.git` stays visible to `relay.workspace.mode=auto|on`, so workspace mode sees
+  the same repository as host execution.
+
+Relay auto-loads `/workspace/.env`. `env_file: .env` is optional after the file
+exists, but should not be required for the first `docker compose run --rm relay init`.
+
+The container image must include Relay and the provider command referenced by
+`relay.provider`. For example, if the selected provider launches Codex, Gemini,
+Claude Code, opencode, Copilot, or a generic ACP command, install that CLI in the
+image as part of the deployment wrapper.
+
+Polling mode is the default and does not require a published port. Webhook mode
+requires `relay.telegram.webhook.enabled=true`,
+`relay.telegram.webhook.url=https://.../telegram/webhook`, and a published local
+listener such as `8080:8080`; TLS and public routing should be handled outside
+the Relay process.
+
 ### MCP Server Configuration
 
 MCP servers are configured in `runtime.mcp_servers` and referenced by providers via `runtime.providers.<id>.mcp_servers`.
