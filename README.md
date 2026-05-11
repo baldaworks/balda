@@ -45,12 +45,11 @@ relay start
 
 ## Run with Docker Compose
 
-Relay does not currently ship an official Docker image, `Dockerfile`, or Compose
-file. If you want to run it under Docker Compose, keep the container image as a
-local deployment wrapper and mount the current project directory as the runtime
-workspace.
+Relay ships a root [`Dockerfile`](Dockerfile) and [`compose.yaml`](compose.yaml)
+for local Docker Compose runtime. The Compose service builds a local image and
+mounts the current project directory as the runtime workspace.
 
-Example `Dockerfile`:
+The maintained `Dockerfile` uses this base shape:
 
 ```dockerfile
 FROM node:lts-bookworm
@@ -80,7 +79,8 @@ Relay is distributed through npm, MCP examples commonly use `npx`, and Git
 workspace mode shells out to `git`. If you need fully repeatable builds, pin a
 concrete supported Bookworm tag such as `node:24-bookworm`.
 
-Example `compose.yaml`:
+The maintained `compose.yaml` uses the current directory as a bind-mounted
+workspace:
 
 ```yaml
 services:

@@ -120,13 +120,11 @@ profiles:
 
 ### Docker Compose Runtime
 
-Relay has no official Docker image, `Dockerfile`, or Compose file in this repo.
-Compose deployments should treat Docker as a local wrapper around the same
-project directory used by a host install.
+Relay ships a maintained root `Dockerfile` and `compose.yaml` for local Docker
+Compose runtime. The Compose service builds a local image and mounts the current
+project directory as the runtime workspace.
 
-Use a bind mount for the current directory:
-
-Example image wrapper:
+The `Dockerfile` uses a Node Bookworm runtime with the common tools Relay needs:
 
 ```dockerfile
 FROM node:lts-bookworm
@@ -150,7 +148,7 @@ WORKDIR /workspace
 ENTRYPOINT ["relay"]
 ```
 
-Use the image with a current-directory bind mount:
+The `compose.yaml` uses a current-directory bind mount:
 
 ```yaml
 services:
