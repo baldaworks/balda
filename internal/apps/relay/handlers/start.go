@@ -8,10 +8,10 @@ import (
 
 	"github.com/normahq/relay/internal/apps/relay/auth"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
+	"github.com/normahq/relay/internal/apps/relay/tgbotkit"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
-	"github.com/tgbotkit/runtime/handlers"
 	"go.uber.org/fx"
 )
 
@@ -67,7 +67,7 @@ func (h *StartHandler) SetRelayHandler(rh relayOwnerActivator) {
 }
 
 // Register registers the handler with the registry.
-func (h *StartHandler) Register(registry handlers.RegistryInterface) {
+func (h *StartHandler) Register(registry tgbotkit.Registry) {
 	registry.OnCommand(h.onCommand)
 }
 

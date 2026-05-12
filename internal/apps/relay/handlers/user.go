@@ -9,8 +9,8 @@ import (
 	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
 	relaysession "github.com/normahq/relay/internal/apps/relay/session"
+	"github.com/normahq/relay/internal/apps/relay/tgbotkit"
 	"github.com/tgbotkit/client"
-	"github.com/tgbotkit/runtime/handlers"
 	"go.uber.org/fx"
 )
 
@@ -46,7 +46,7 @@ func NewUserHandler(params userHandlerParams) *userHandler {
 	}
 }
 
-func (h *userHandler) Register(registry handlers.RegistryInterface) {
+func (h *userHandler) Register(registry tgbotkit.Registry) {
 	// UserHandler is routed through CommandHandler, not directly registered
 }
 

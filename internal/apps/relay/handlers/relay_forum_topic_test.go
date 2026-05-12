@@ -10,6 +10,7 @@ import (
 	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
 	relaysession "github.com/normahq/relay/internal/apps/relay/session"
+	"github.com/normahq/relay/internal/apps/relay/tgbotkit"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/eventemitter"
@@ -18,7 +19,7 @@ import (
 	"github.com/tgbotkit/runtime/messagetype"
 )
 
-var _ rtHandlers.RegistryInterface = (*fakeRelayRegistry)(nil)
+var _ tgbotkit.Registry = (*fakeRelayRegistry)(nil)
 
 type fakeRelayRegistry struct {
 	onMessageCalls   int

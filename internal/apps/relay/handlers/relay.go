@@ -13,12 +13,12 @@ import (
 	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
 	relaysession "github.com/normahq/relay/internal/apps/relay/session"
+	"github.com/normahq/relay/internal/apps/relay/tgbotkit"
 	"github.com/normahq/relay/internal/throttle"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
-	"github.com/tgbotkit/runtime/handlers"
 	"github.com/tgbotkit/runtime/messagetype"
 	"go.uber.org/fx"
 	"google.golang.org/adk/agent"
@@ -117,7 +117,7 @@ func NewRelayHandler(deps relayHandlerDeps) (*RelayHandler, error) {
 }
 
 // Register registers the handler with the registry.
-func (h *RelayHandler) Register(registry handlers.RegistryInterface) {
+func (h *RelayHandler) Register(registry tgbotkit.Registry) {
 	registry.OnMessage(h.onMessage)
 	registry.OnMessageType(messagetype.ForumTopicCreated, h.onForumTopicLifecycle)
 	registry.OnMessageType(messagetype.ForumTopicEdited, h.onForumTopicLifecycle)

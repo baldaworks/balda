@@ -45,7 +45,7 @@ func (m *Messenger) SendDraftPlain(ctx context.Context, chatID int64, draftID in
 	req := client.SendMessageDraftJSONRequestBody{
 		ChatId:  chatID,
 		DraftId: draftID,
-		Text:    text,
+		Text:    &text,
 	}
 	if topicID != 0 {
 		req.MessageThreadId = &topicID

@@ -88,6 +88,14 @@ func (c *relayRunTurnTelegramClient) SendChatActionWithResponse(
 	}, nil
 }
 
+func relayRunTurnDraftText(t *testing.T, draft client.SendMessageDraftJSONRequestBody) string {
+	t.Helper()
+	if draft.Text == nil {
+		t.Fatal("draft text is nil")
+	}
+	return *draft.Text
+}
+
 func newRelayPlanSnapshot(entries ...map[string]any) map[string]any {
 	return map[string]any{
 		"entries": entries,
@@ -126,7 +134,7 @@ func TestRunTurn_SendsPlanUpdateDraftFromCustomMetadataInDM(t *testing.T) {
 	if len(tgClient.drafts) != 1 {
 		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
 	}
-	if got := tgClient.drafts[0].Text; got != "Plan update\n- [in progress] Run tests\n- [pending] Ship fix" {
+	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != "Plan update\n- [in progress] Run tests\n- [pending] Ship fix" {
 		t.Fatalf("draft[0].text = %q, want plan update text", got)
 	}
 	if len(tgClient.messages) != 1 {
@@ -162,7 +170,7 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 	if len(tgClient.drafts) != 1 {
 		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
 	}
-	if got := tgClient.drafts[0].Text; got != relayRunTurnThinkingOne {
+	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
 		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
 	}
 	for i, draft := range tgClient.drafts {
@@ -462,10 +470,10 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 	if len(tgClient.drafts) != 2 {
 		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
 	}
-	if got := tgClient.drafts[0].Text; got != relayRunTurnThinkingOne {
+	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
 		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
 	}
-	if got := tgClient.drafts[1].Text; got != relayRunTurnThinkingTwo {
+	if got := relayRunTurnDraftText(t, tgClient.drafts[1]); got != relayRunTurnThinkingTwo {
 		t.Fatalf("draft[1].text = %q, want %s", got, relayRunTurnThinkingTwo)
 	}
 	if timeIdx != len(times) {
@@ -541,10 +549,10 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 	if len(tgClient.drafts) != 2 {
 		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
 	}
-	if got := tgClient.drafts[0].Text; got != relayRunTurnThinkingOne {
+	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
 		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
 	}
-	if got := tgClient.drafts[1].Text; got != "Plan update\n- [in progress] Run tests" {
+	if got := relayRunTurnDraftText(t, tgClient.drafts[1]); got != "Plan update\n- [in progress] Run tests" {
 		t.Fatalf("draft[1].text = %q, want plan update text", got)
 	}
 }
@@ -983,7 +991,7 @@ func TestRunTurn_PlanUpdatesDisabledKeepsLegacyThinkingBehavior(t *testing.T) {
 	if len(tgClient.drafts) != 1 {
 		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
 	}
-	if got := tgClient.drafts[0].Text; got != relayRunTurnThinkingOne {
+	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
 		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
 	}
 	if len(tgClient.messages) != 1 {

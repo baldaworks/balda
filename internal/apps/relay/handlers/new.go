@@ -9,10 +9,10 @@ import (
 	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
 	"github.com/normahq/relay/internal/apps/relay/session"
+	"github.com/normahq/relay/internal/apps/relay/tgbotkit"
 	relaywelcome "github.com/normahq/relay/internal/apps/relay/welcome"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
-	"github.com/tgbotkit/runtime/handlers"
 	"go.uber.org/fx"
 )
 
@@ -64,7 +64,7 @@ func NewCommandHandler(params commandHandlerParams) *CommandHandler {
 }
 
 // Register registers the handler with the registry.
-func (h *CommandHandler) Register(registry handlers.RegistryInterface) {
+func (h *CommandHandler) Register(registry tgbotkit.Registry) {
 	registry.OnCommand(h.onCommand)
 }
 

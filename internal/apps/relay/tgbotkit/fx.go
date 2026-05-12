@@ -14,8 +14,10 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime"
+	"github.com/tgbotkit/runtime/eventemitter"
 	"github.com/tgbotkit/runtime/handlers"
 	"github.com/tgbotkit/runtime/logger"
+	"github.com/tgbotkit/runtime/messagetype"
 	"github.com/tgbotkit/runtime/updatepoller"
 	"github.com/tgbotkit/runtime/updatepoller/offsetstore"
 	"github.com/tgbotkit/runtime/webhook"
@@ -239,9 +241,16 @@ func (s *webhookUpdateSource) Stop(ctx context.Context) error {
 	return s.webhookSource.Stop(ctx)
 }
 
+// Registry is the subset of the tgbotkit handler registry Relay uses.
+type Registry interface {
+	OnCommand(handler handlers.CommandHandler) eventemitter.UnsubscribeFunc
+	OnMessage(handler handlers.MessageHandler) eventemitter.UnsubscribeFunc
+	OnMessageType(t messagetype.MessageType, handler handlers.MessageHandler) eventemitter.UnsubscribeFunc
+}
+
 // Handler is a local interface for bot handlers.
 type Handler interface {
-	Register(registry handlers.RegistryInterface)
+	Register(registry Registry)
 }
 
 type handlerParams struct {
