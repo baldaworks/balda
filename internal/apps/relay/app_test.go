@@ -147,6 +147,42 @@ func TestValidateTelegramFormattingMode(t *testing.T) {
 	}
 }
 
+func TestValidateSessionPersistence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{name: "default empty", in: "", want: sessionPersistenceMemory},
+		{name: "trimmed memory", in: "  MEMORY ", want: sessionPersistenceMemory},
+		{name: "sqlite", in: "sqlite", want: sessionPersistenceSQLite},
+		{name: "invalid", in: "gorm", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := validateSessionPersistence(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateSessionPersistence(%q) error = nil, want non-nil", tt.in)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateSessionPersistence(%q) error = %v", tt.in, err)
+			}
+			if got != tt.want {
+				t.Fatalf("validateSessionPersistence(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveWorkspaceBaseBranch_ConfigPreferredWhenValid(t *testing.T) {
 	ctx := context.Background()
 	repoDir := t.TempDir()

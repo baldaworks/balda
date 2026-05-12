@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/normahq/relay/internal/apps/relay/auth"
 	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
+	"github.com/normahq/relay/internal/apps/relay/memory"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
 	"github.com/normahq/relay/internal/apps/relay/session"
 	"github.com/rs/zerolog"
@@ -28,8 +30,8 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	if len(tgClient.closedTopicIDs) != 1 {
 		t.Fatalf("CloseTopic calls = %d, want 1", len(tgClient.closedTopicIDs))
 	}
-	if len(sm.stopCalls) != 1 {
-		t.Fatalf("StopSession calls = %d, want 1", len(sm.stopCalls))
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
 	}
 	if len(turns.cancelCalls) != 1 {
 		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
@@ -37,13 +39,16 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	if tgClient.closedTopicIDs[0] != topicID {
 		t.Fatalf("CloseTopic call = %d, want topic=%d", tgClient.closedTopicIDs[0], topicID)
 	}
-	if sm.stopCalls[0].SessionID != "tg-9001-123" {
-		t.Fatalf("StopSession call = %+v, want session=tg-9001-123", sm.stopCalls[0])
+	if sm.resetCalls[0].SessionID != "tg-9001-123" {
+		t.Fatalf("ResetSession call = %+v, want session=tg-9001-123", sm.resetCalls[0])
 	}
-	assertLastSentContains(t, tgClient, "Closing this topic and stopping agent session.")
+	if len(sm.stopCalls) != 0 {
+		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
+	}
+	assertLastSentContains(t, tgClient, "Closing this topic and resetting session history.")
 }
 
-func TestCommandHandlerOnCommand_CloseRootStopsOnlySession(t *testing.T) {
+func TestCommandHandlerOnCommand_CloseRootResetsSessionHistory(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
 
 	err := handler.onCommand(context.Background(), newCommandEvent("close", "", 101, 9001, nil))
@@ -54,16 +59,19 @@ func TestCommandHandlerOnCommand_CloseRootStopsOnlySession(t *testing.T) {
 	if len(tgClient.closedTopicIDs) != 0 {
 		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
 	}
-	if len(sm.stopCalls) != 1 {
-		t.Fatalf("StopSession calls = %d, want 1", len(sm.stopCalls))
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
 	}
 	if len(turns.cancelCalls) != 1 {
 		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
 	}
-	if sm.stopCalls[0].SessionID != "tg-9001-0" {
-		t.Fatalf("StopSession call = %+v, want session=tg-9001-0", sm.stopCalls[0])
+	if sm.resetCalls[0].SessionID != "tg-9001-0" {
+		t.Fatalf("ResetSession call = %+v, want session=tg-9001-0", sm.resetCalls[0])
 	}
-	assertLastSentContains(t, tgClient, "Stopping relay provider session.")
+	if len(sm.stopCalls) != 0 {
+		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
+	}
+	assertLastSentContains(t, tgClient, "Session history reset.")
 }
 
 func TestCommandHandlerOnCommand_CloseWithArgsShowsUsage(t *testing.T) {
@@ -80,6 +88,9 @@ func TestCommandHandlerOnCommand_CloseWithArgsShowsUsage(t *testing.T) {
 	}
 	if len(sm.stopCalls) != 0 {
 		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
+	}
+	if len(sm.resetCalls) != 0 {
+		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
 	}
 	if len(turns.cancelCalls) != 0 {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
@@ -102,6 +113,9 @@ func TestCommandHandlerOnCommand_CloseUnauthorized(t *testing.T) {
 	if len(sm.stopCalls) != 0 {
 		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
 	}
+	if len(sm.resetCalls) != 0 {
+		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
+	}
 	if len(turns.cancelCalls) != 0 {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
 	}
@@ -120,12 +134,37 @@ func TestCommandHandlerOnCommand_CloseCollaboratorAllowed(t *testing.T) {
 	if len(tgClient.closedTopicIDs) != 1 {
 		t.Fatalf("CloseTopic calls = %d, want 1", len(tgClient.closedTopicIDs))
 	}
-	if len(sm.stopCalls) != 1 {
-		t.Fatalf("StopSession calls = %d, want 1", len(sm.stopCalls))
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
 	}
 	if len(turns.cancelCalls) != 1 {
 		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
 	}
+	if len(sm.stopCalls) != 0 {
+		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
+	}
+}
+
+func TestCommandHandlerOnCommand_CloseResetFailureDoesNotCloseTopic(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	sm.resetErr = errors.New("reset failed")
+
+	topicID := 44
+	err := handler.onCommand(context.Background(), newCommandEvent("close", "", 101, 9001, &topicID))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
+	}
+	if len(turns.cancelCalls) != 1 {
+		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
+	}
+	if len(tgClient.closedTopicIDs) != 0 {
+		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
+	}
+	assertLastSentContains(t, tgClient, "Failed to reset this session before close: reset failed")
 }
 
 func TestCommandHandlerOnCommand_TopicInGroupChat_Rejects(t *testing.T) {
@@ -346,11 +385,82 @@ func TestCommandHandlerOnCommand_CancelCollaboratorAllowed(t *testing.T) {
 	assertLastSentContains(t, tgClient, "No running or queued turns for this session.")
 }
 
+func TestCommandHandlerOnCommand_ResetClearsSessionHistory(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
+	topicID := 88
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, &topicID))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
+	}
+	if sm.resetCalls[0].SessionID != "tg-9001-88" {
+		t.Fatalf("ResetSession call = %+v, want session=tg-9001-88", sm.resetCalls[0])
+	}
+	if len(turns.cancelCalls) != 1 {
+		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
+	}
+	if len(sm.stopCalls) != 0 {
+		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
+	}
+	assertLastSentContains(t, tgClient, "Session history reset.")
+}
+
+func TestCommandHandlerOnCommand_ResetWithArgsShowsUsage(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "now", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 0 {
+		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
+	}
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
+	}
+	assertLastSentContains(t, tgClient, "Usage: /reset")
+}
+
+func TestCommandHandlerOnCommand_MemoryReadsCurrentMemory(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	handler.memoryStore = memory.NewStore(t.TempDir(), true, true)
+	if err := handler.memoryStore.Remember(context.Background(), "project uses Relay memory"); err != nil {
+		t.Fatalf("Remember() error = %v", err)
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("memory", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "project uses Relay memory")
+}
+
+func TestCommandHandlerOnCommand_MemoryRequiresDM(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	handler.memoryStore = memory.NewStore(t.TempDir(), true, true)
+	topicID := 10
+
+	err := handler.onCommand(context.Background(), newCommandEventWithChatType("memory", "", 101, 9001, &topicID, "supergroup"))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "This command is only available in direct messages.")
+}
+
 type fakeCommandSessionManager struct {
 	stopCalls     []stopSessionCall
+	resetCalls    []resetSessionCall
 	createCalls   []createSessionCall
 	relayProvider string
 	metadata      session.AgentMetadata
+	resetErr      error
 }
 
 type createSessionCall struct {
@@ -360,6 +470,10 @@ type createSessionCall struct {
 }
 
 type stopSessionCall struct {
+	SessionID string
+}
+
+type resetSessionCall struct {
 	SessionID string
 }
 
@@ -387,6 +501,11 @@ func (f *fakeCommandSessionManager) RelayProviderID() string {
 
 func (f *fakeCommandSessionManager) StopSession(locator session.SessionLocator) {
 	f.stopCalls = append(f.stopCalls, stopSessionCall{SessionID: locator.SessionID})
+}
+
+func (f *fakeCommandSessionManager) ResetSession(_ context.Context, locator session.SessionLocator) error {
+	f.resetCalls = append(f.resetCalls, resetSessionCall{SessionID: locator.SessionID})
+	return f.resetErr
 }
 
 type fakeTurnDispatcher struct {
@@ -452,6 +571,7 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 		sessionManager: sessionManager,
 		turnDispatcher: turnDispatcher,
 		messenger:      msg,
+		memoryStore:    memory.NewStore(t.TempDir(), true, true),
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
 }

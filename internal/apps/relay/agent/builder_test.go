@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/normahq/relay/internal/apps/relay/memory"
 	"github.com/normahq/runtime/agentconfig"
 	"github.com/normahq/runtime/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/appconfig"
@@ -116,6 +119,31 @@ func TestBuildRelayInstruction_OmitsInstructionSectionsWhenEmpty(t *testing.T) {
 
 	if strings.Contains(got, "Global instruction:") || strings.Contains(got, "Instruction:") {
 		t.Fatalf("buildRelayInstruction() unexpectedly contained instruction block:\n%s", got)
+	}
+}
+
+func TestBuildRelayInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	builder := &Builder{
+		memoryStore: memory.NewStore(t.TempDir(), true, true),
+	}
+	got := builder.buildRelayInstruction(
+		"tg-1-2",
+		"telegram",
+		"alpha",
+		"norma/relay/tg-1-2",
+		"/tmp/work",
+		"main",
+	)
+
+	for _, snippet := range []string{
+		"SOUL.md session-start instructions:\n{relay_soul?}",
+		"MEMORY.md session-start facts:\n{relay_memory?}",
+	} {
+		if !strings.Contains(got, snippet) {
+			t.Fatalf("buildRelayInstruction() missing snippet %q in output:\n%s", snippet, got)
+		}
 	}
 }
 
@@ -273,6 +301,49 @@ func TestCreateRuntimeSession_IncludesCanonicalCWDState(t *testing.T) {
 	}
 	if gotCWD != workspaceDir {
 		t.Fatalf("session state %q = %v, want %q", sessionstate.CWDKey, gotCWD, workspaceDir)
+	}
+}
+
+func TestCreateRuntimeSession_IncludesMemorySnapshotState(t *testing.T) {
+	t.Parallel()
+
+	stateDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stateDir, memory.MemoryFileName), []byte("remember this\n"), 0o600); err != nil {
+		t.Fatalf("write memory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, memory.SoulFileName), []byte("be precise\n"), 0o600); err != nil {
+		t.Fatalf("write soul: %v", err)
+	}
+	providers := map[string]agentconfig.Config{
+		"alpha": {Type: "llm"},
+	}
+	builder := &Builder{
+		factory:     agentfactory.New(providers, mcpregistry.New(nil)),
+		normaCfg:    runtimeconfig.RuntimeConfig{Providers: providers},
+		memoryStore: memory.NewStore(stateDir, true, true),
+	}
+	runtime := &BuiltRuntime{
+		SessionSvc: adksession.InMemoryService(),
+		AppName:    "norma-relay",
+	}
+
+	sess, err := builder.CreateRuntimeSession(context.Background(), runtime, "alpha", "user-1", "s-1", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateRuntimeSession() error = %v", err)
+	}
+	gotMemory, err := sess.State().Get(memory.MemoryStateKey)
+	if err != nil {
+		t.Fatalf("session state get %q error = %v", memory.MemoryStateKey, err)
+	}
+	if gotMemory != "remember this" {
+		t.Fatalf("session state %q = %v, want remember this", memory.MemoryStateKey, gotMemory)
+	}
+	gotSoul, err := sess.State().Get(memory.SoulStateKey)
+	if err != nil {
+		t.Fatalf("session state get %q error = %v", memory.SoulStateKey, err)
+	}
+	if gotSoul != "be precise" {
+		t.Fatalf("session state %q = %v, want be precise", memory.SoulStateKey, gotSoul)
 	}
 }
 

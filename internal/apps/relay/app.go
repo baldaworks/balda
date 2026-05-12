@@ -12,6 +12,7 @@ import (
 	relayagent "github.com/normahq/relay/internal/apps/relay/agent"
 	"github.com/normahq/relay/internal/apps/relay/auth"
 	"github.com/normahq/relay/internal/apps/relay/handlers"
+	"github.com/normahq/relay/internal/apps/relay/memory"
 	"github.com/normahq/relay/internal/apps/relay/paths"
 	"github.com/normahq/relay/internal/apps/relay/shutdown"
 	relaystate "github.com/normahq/relay/internal/apps/relay/state"
@@ -28,6 +29,7 @@ import (
 	"github.com/tgbotkit/runtime"
 	"github.com/tgbotkit/runtime/updatepoller"
 	"go.uber.org/fx"
+	adksession "google.golang.org/adk/session"
 )
 
 type workspaceBaseBranchParams struct {
@@ -37,6 +39,11 @@ type workspaceBaseBranchParams struct {
 }
 
 const bundledRelayMCPServerID = "relay"
+
+const (
+	sessionPersistenceMemory = "memory"
+	sessionPersistenceSQLite = "sqlite"
+)
 
 // App creates a new fx.App for the relay bot with the provided configuration.
 func App(
@@ -93,6 +100,10 @@ func Module(
 	if err != nil {
 		return fx.Module("relay", fx.Error(err))
 	}
+	sessionPersistence, err := validateSessionPersistence(cfg.Relay.Sessions.Persistence)
+	if err != nil {
+		return fx.Module("relay", fx.Error(err))
+	}
 
 	// Start with global MCP servers.
 	mcpServers := make(map[string]agentconfig.MCPServerConfig, len(normaCfg.MCPServers))
@@ -114,6 +125,9 @@ func Module(
 				func() string { return stateDir },
 				fx.ResultTags(`name:"relay_state_dir"`),
 			),
+			func() *memory.Store {
+				return memory.NewStore(stateDir, cfg.Relay.Memory.Enabled, cfg.Relay.Memory.SoulEnabled)
+			},
 		),
 		fx.Provide(
 			func(lc fx.Lifecycle) (relaystate.Provider, error) {
@@ -138,6 +152,25 @@ func Module(
 			func(provider relaystate.Provider) sessionmcp.Store {
 				return provider.SessionMCPKV()
 			},
+		),
+		fx.Provide(
+			fx.Annotate(
+				func(provider relaystate.Provider) adksession.Service {
+					if sessionPersistence == sessionPersistenceSQLite {
+						return provider.ADKSessions()
+					}
+					return adksession.InMemoryService()
+				},
+				fx.ResultTags(`name:"relay_adk_session_service"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() bool {
+					return sessionPersistence == sessionPersistenceSQLite
+				},
+				fx.ResultTags(`name:"relay_sessions_persistent"`),
+			),
 		),
 		fx.Provide(
 			fx.Annotate(
@@ -448,4 +481,17 @@ func validateTelegramFormattingMode(raw string) (string, error) {
 		return "", err
 	}
 	return mode, nil
+}
+
+func validateSessionPersistence(raw string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	if mode == "" {
+		mode = sessionPersistenceMemory
+	}
+	switch mode {
+	case sessionPersistenceMemory, sessionPersistenceSQLite:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid relay.sessions.persistence %q: supported values are %q and %q", raw, sessionPersistenceMemory, sessionPersistenceSQLite)
+	}
 }

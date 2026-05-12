@@ -69,6 +69,76 @@ func TestStopSession_UsesNonCanceledCleanupContext(t *testing.T) {
 	}
 }
 
+func TestStopSession_PersistentModeSuspendsWithoutDeletingMetadata(t *testing.T) {
+	store := &fakeSessionStore{}
+	m := &Manager{
+		logger:             zerolog.Nop(),
+		sessionStore:       store,
+		sessionsPersistent: true,
+		sessions: map[string]*TopicSession{
+			"tg-10-42": {
+				sessionID: "tg-10-42",
+				locator:   NewTelegramSessionLocator(10, 42),
+			},
+		},
+	}
+
+	m.StopTelegramSession(10, 42)
+
+	if store.deletedSessionID != "" {
+		t.Fatalf("DeleteBySessionID called with %q, want no delete", store.deletedSessionID)
+	}
+	if _, ok := m.sessions["tg-10-42"]; ok {
+		t.Fatal("session still active after StopTelegramSession")
+	}
+}
+
+func TestResetSession_DeletesADKHistoryAndPreservesMetadata(t *testing.T) {
+	ctx := context.Background()
+	store := &fakeSessionStore{}
+	svc := adksession.InMemoryService()
+	created, err := svc.Create(ctx, &adksession.CreateRequest{
+		AppName:   "norma-relay",
+		UserID:    "tg-101",
+		SessionID: "tg-10-42",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	m := &Manager{
+		logger:       zerolog.Nop(),
+		sessionStore: store,
+		sessions: map[string]*TopicSession{
+			"tg-10-42": {
+				sessionID:      "tg-10-42",
+				agentSessionID: "tg-10-42",
+				userID:         "tg-101",
+				locator:        NewTelegramSessionLocator(10, 42),
+				sessionSvc:     svc,
+				sess:           created.Session,
+			},
+		},
+	}
+
+	if err := m.ResetSession(ctx, NewTelegramSessionLocator(10, 42)); err != nil {
+		t.Fatalf("ResetSession() error = %v", err)
+	}
+	if store.deletedSessionID != "" {
+		t.Fatalf("DeleteBySessionID called with %q, want metadata preserved", store.deletedSessionID)
+	}
+	if _, ok := m.sessions["tg-10-42"]; ok {
+		t.Fatal("session still active after ResetSession")
+	}
+	if _, err := svc.Get(ctx, &adksession.GetRequest{
+		AppName:   "norma-relay",
+		UserID:    "tg-101",
+		SessionID: "tg-10-42",
+	}); err == nil {
+		t.Fatal("ADK session still exists after ResetSession")
+	}
+}
+
 func TestHasSession(t *testing.T) {
 	t.Run("active session in memory", func(t *testing.T) {
 		locator := NewTelegramSessionLocator(10, 42)
@@ -435,6 +505,33 @@ func TestCreateSession_ReusesSingleRuntimeAndMapsAgentSessions(t *testing.T) {
 	}
 	if !strings.HasPrefix(secondSessionID, second.Locator.SessionID+"-a") {
 		t.Fatalf("second agent session id = %q, want prefix %q", secondSessionID, second.Locator.SessionID+"-a")
+	}
+}
+
+func TestCreateSession_PersistentModeUsesStableAgentSessionID(t *testing.T) {
+	builder := &fakeAgentBuilder{}
+	runtimeManager := &fakeRelayRuntimeManager{providerID: "relay-provider"}
+	locator := NewTelegramSessionLocator(10, 41)
+	m := &Manager{
+		relayProviderName:  "relay-provider",
+		runtimeManager:     runtimeManager,
+		agentBuilder:       builder,
+		workingDir:         t.TempDir(),
+		logger:             zerolog.Nop(),
+		sessions:           make(map[string]*TopicSession),
+		sessionStore:       &fakeSessionStore{},
+		sessionsPersistent: true,
+	}
+
+	if err := m.CreateSession(context.Background(), SessionContext{
+		Locator: locator,
+		UserID:  "tg-201",
+	}, "topic-a"); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+
+	if got := builder.createRuntimeSessionSessionIDs[0]; got != locator.SessionID {
+		t.Fatalf("CreateRuntimeSession sessionID = %q, want stable relay session ID %q", got, locator.SessionID)
 	}
 }
 

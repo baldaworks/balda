@@ -14,6 +14,49 @@
   - Final assistant response: Telegram Bot API `sendMessage` with `relay.telegram.formatting_mode` (`markdownv2|html|none`; default `markdownv2`).
 - Auth model: one-time owner authorization with startup-generated token.
 
+## User Onboarding Reference
+
+The primary onboarding path is npm-first:
+
+```bash
+npm install -g -y @normahq/relay
+relay init
+relay start
+```
+
+`relay init` requires a Telegram bot token, detects supported provider CLIs
+(`codex`, `opencode`, `copilot`, `gemini`, `claude`), writes
+`.config/relay/config.yaml`, initializes `.config/relay/relay.db`, and prints
+both an owner auth command and Telegram auth URL. The default token storage is
+CWD `.env` as `RELAY_TELEGRAM_TOKEN`.
+
+Owner onboarding is completed in a direct message with the bot by opening the
+printed auth URL or sending:
+
+```text
+/start owner=<owner_token>
+```
+
+After owner auth, users can send normal direct messages to the owner session or
+create a named topic session:
+
+```text
+/topic <name>
+```
+
+The supported Docker Compose onboarding path uses the shipped root
+`Dockerfile` and `compose.yaml`:
+
+```bash
+docker compose build relay
+docker compose run --rm relay init
+docker compose up -d relay
+```
+
+The Compose service bind-mounts the current directory as `/workspace`, so the
+container uses the same `.env`, `.config/relay/config.yaml`,
+`.config/relay/relay.db`, and `.git` as host execution.
+
 ## Package Dependencies
 
 ```mermaid
@@ -97,6 +140,8 @@ RELAY_TELEGRAM_TOKEN=123456:ABCDEF
 RELAY_TELEGRAM_FORMATTING_MODE=markdownv2
 RELAY_TELEGRAM_WEBHOOK_ENABLED=true
 RELAY_TELEGRAM_WEBHOOK_URL=https://example.com/telegram/webhook
+RELAY_MEMORY_ENABLED=true
+RELAY_MEMORY_SOUL_ENABLED=true
 ```
 
 Config shape:
@@ -112,6 +157,9 @@ relay:
   telegram:
     token: ""
     formatting_mode: "markdownv2"
+  memory:
+    enabled: true
+    soul_enabled: true
 profiles:
   <profile>:
     relay:
@@ -183,6 +231,8 @@ project:
 - `.config/relay/config.yaml` remains the selected app config.
 - `.config/relay/relay.db` persists owner auth, session metadata, MCP KV, and
   Telegram polling offsets on the host.
+- `.config/relay/MEMORY.md` and optional `.config/relay/SOUL.md` stay on the
+  host and are included in future session-start snapshots when enabled.
 - `.git` stays visible to `relay.workspace.mode=auto|on`, so workspace mode sees
   the same repository as host execution.
 - `relay-home` persists provider CLI auth/config written under `/home/node`.
@@ -273,11 +323,17 @@ relay:
 
 #### Bundled Relay MCP Server
 
-The relay MCP server (`relay`) is automatically included in all sessions when workspace mode is enabled. It provides:
+The relay MCP server (`relay`) is automatically included in all sessions. It provides:
 
 - `relay.state` - persistent key-value storage
+- `relay.memory.read` - read `${relay.state_dir}/MEMORY.md`
+- `relay.memory.remember` - append a durable fact to `${relay.state_dir}/MEMORY.md`
 - `relay.workspace.import` - import workspace from base branch
 - `relay.workspace.export` - export workspace to base branch
+
+`relay.memory.remember` is for explicit user requests such as "remember this".
+It updates the file immediately, but running agent sessions keep their existing
+session-start snapshot. New or restored sessions read the latest file.
 
 ### Telegram settings
 
@@ -308,10 +364,23 @@ The relay MCP server (`relay`) is automatically included in all sessions when wo
 
 - `relay.working_dir`: optional relay working directory (defaults to process CWD)
 - `relay.state_dir`: relay state directory for persistent relay SQLite state (`relay.db`).
-  - Stores owner/app KV, `relay.state` MCP KV, session metadata, and Telegram polling offset.
+  - Stores owner/app KV, `relay.state` MCP KV, session metadata, optional ADK session history, and Telegram polling offset.
   - Schema is migration-versioned and auto-applied on startup.
   - Relative paths are resolved from `relay.working_dir`.
   - Default: `.config/relay`
+- `relay.sessions.persistence`: `memory|sqlite` (default `memory`)
+  - `memory`: ADK conversation/runtime state is process-local; only Relay metadata is persisted.
+  - `sqlite`: ADK session events and state are persisted in `relay.db` and reused after restart until `/reset` or explicit `/close`.
+- `relay.memory.enabled`: enable internal durable memory (default `true`)
+  - memory file: `${relay.state_dir}/MEMORY.md`
+  - `/memory` reads the current file in owner/collaborator direct messages
+  - `relay.memory.read` reads the file from MCP
+  - `relay.memory.remember` appends facts to the file from MCP
+  - memory is snapshotted into ADK session state when a session starts or restores; active sessions are not refreshed after writes
+- `relay.memory.soul_enabled`: enable optional session-start operator instructions (default `true`)
+  - SOUL file: `${relay.state_dir}/SOUL.md`
+  - Relay reads the file on session start/restore and injects it with the memory snapshot
+  - Relay does not expose MCP mutation for `SOUL.md`; edit the file directly
 - owner auth token is generated during `relay init`, persisted in `relay.db`, and reused by `relay start`
   - if token is missing in existing state, `relay start` backfills one-time and persists it
   - if no owner is registered yet, `relay start` logs the owner bootstrap command and deeplink again to help finish first-time onboarding
@@ -347,8 +416,8 @@ Session key:
 - Canonical relay session IDs are channel-scoped. Telegram uses `tg-<chat_id>-<topic_id>`.
 - The owner session is bootstrapped for the bound owner DM chat (`topic_id=0`) during activation/startup when an owner is already registered.
 
-Session runtimes are still in-memory, but metadata is persisted in `relay.db`.
-Relay lazy-restores regular sessions on first message after restart when metadata exists.
+Relay always persists session metadata in `relay.db` for lazy restore.
+By default, ADK conversation/runtime state is in-memory. When `relay.sessions.persistence=sqlite`, Relay also persists ADK session events and state in `relay.db` until `/reset` or explicit `/close`.
 
 ## Message Flow
 
@@ -387,12 +456,15 @@ Relay runs with a single provider per process (`relay.provider`).
 - `/topic <name>` (DM only, owner/collaborator): creates a new Telegram topic and a topic-bound session.
   - `<name>` is required.
   - `<name>` is a session label, not a provider selector.
-- `/close` (DM only, owner/collaborator): in the owner DM `topic_id=0`, stops the owner session; in topic contexts, closes that topic and stops that session.
+- `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
+- `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Relay metadata or the workspace branch.
 - `/cancel` (owner/collaborator): cancels active turn and drops queued turns for current session.
+- `/memory` (DM only, owner/collaborator): prints current `${relay.state_dir}/MEMORY.md` contents.
 
 ### Session restore/create behavior
 
 - Relay restores persisted session metadata on first message after restart.
+- When `relay.sessions.persistence=sqlite`, restore reuses the stable ADK session ID and prior ADK event/state history.
 - Persisted session label is reused as-is for restore; if missing, relay falls back to label `auto`.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
 - If that sync conflicts, relay recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that `relay.workspace.import` can retry the sync later.
@@ -420,8 +492,9 @@ Relay runs with a single provider per process (`relay.provider`).
 4. `/start owner=<token>` registers owner once; `/start invite=<token>` onboards collaborators; non-owner traffic is otherwise rejected.
 5. `/topic <name>` creates topic + relay session and persists session metadata.
 6. `/topic` without name returns usage error.
-7. Restart clears in-memory sessions but topic sessions are lazy-restored from persisted metadata.
+7. Restart clears active process sessions, but topic sessions are lazy-restored from persisted metadata.
 8. Polling mode resumes from persisted Telegram offset in relay state DB.
 9. Non-terminal ADK event progress sends throttled `typing` chat actions in DM and public chats; throttled `sendMessageDraft` thinking placeholders are DM-only.
 10. Final assistant response is sent with `sendMessage` using configured `relay.telegram.formatting_mode` with fallback retry without `parse_mode` on transport or parse/escaping API errors.
-11. `/close` in a topic closes that topic and stops the session; `/close` in the owner DM main chat stops only the owner session.
+11. `/close` in a topic resets history and closes that topic; `/close` in the owner DM main chat resets only the owner session.
+12. With `relay.sessions.persistence=sqlite`, restart restores ADK conversation history and `/reset` or explicit `/close` clears it for the current session.

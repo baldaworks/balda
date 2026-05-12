@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	adksession "google.golang.org/adk/session"
 	_ "modernc.org/sqlite"
 )
 
@@ -134,8 +135,69 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("query schema_migrations version: %v", err)
 	}
-	if version != 6 {
-		t.Fatalf("schema_migrations version = %d, want 6", version)
+	if version != 7 {
+		t.Fatalf("schema_migrations version = %d, want 7", version)
+	}
+}
+
+func TestSQLiteProvider_ADKSessionPersistsAcrossReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "relay.db")
+	ctx := context.Background()
+
+	providerA, err := NewSQLiteProvider(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider(A) error = %v", err)
+	}
+	svcA := providerA.ADKSessions()
+	created, err := svcA.Create(ctx, &adksession.CreateRequest{
+		AppName:   "norma-relay",
+		UserID:    "tg-101",
+		SessionID: "tg-1-2",
+		State: map[string]any{
+			"cwd":        "/workspace",
+			"app:shared": "app-value",
+			"user:name":  "owner",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	event := adksession.NewEvent("invocation-1")
+	event.Author = "user"
+	event.Actions.StateDelta = map[string]any{
+		"cwd":       "/workspace/session",
+		"temp:skip": "drop",
+	}
+	if err := svcA.AppendEvent(ctx, created.Session, event); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	closeProvider(t, providerA)
+
+	providerB, err := NewSQLiteProvider(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider(B) error = %v", err)
+	}
+	defer closeProvider(t, providerB)
+
+	got, err := providerB.ADKSessions().Get(ctx, &adksession.GetRequest{
+		AppName:   "norma-relay",
+		UserID:    "tg-101",
+		SessionID: "tg-1-2",
+	})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.Session.Events().Len() != 1 {
+		t.Fatalf("events len = %d, want 1", got.Session.Events().Len())
+	}
+	if value, err := got.Session.State().Get("cwd"); err != nil || value != "/workspace/session" {
+		t.Fatalf("state cwd = %v, err = %v, want /workspace/session", value, err)
+	}
+	if value, err := got.Session.State().Get("app:shared"); err != nil || value != "app-value" {
+		t.Fatalf("state app:shared = %v, err = %v, want app-value", value, err)
+	}
+	if _, err := got.Session.State().Get("temp:skip"); err == nil {
+		t.Fatal("temp state key persisted, want missing key")
 	}
 }
 
@@ -190,8 +252,8 @@ func TestSQLiteProvider_AdoptsExistingLegacySchema(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("query schema_migrations version: %v", err)
 	}
-	if version != 6 {
-		t.Fatalf("schema_migrations version = %d, want 6", version)
+	if version != 7 {
+		t.Fatalf("schema_migrations version = %d, want 7", version)
 	}
 }
 

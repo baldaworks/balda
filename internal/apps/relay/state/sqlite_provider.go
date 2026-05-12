@@ -9,16 +9,18 @@ import (
 
 	"github.com/normahq/relay/internal/apps/relay/auth"
 	"github.com/tgbotkit/runtime/updatepoller"
+	adksession "google.golang.org/adk/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
 
 type sqliteProvider struct {
-	db      *sql.DB
-	appKV   *sqliteKVStore
-	mcpKV   *sqliteKVStore
-	session *sqliteSessionStore
-	offset  *sqliteOffsetStore
-	collab  *auth.CollaboratorStore
+	db         *sql.DB
+	appKV      *sqliteKVStore
+	mcpKV      *sqliteKVStore
+	adkSession *sqliteADKSessionService
+	session    *sqliteSessionStore
+	offset     *sqliteOffsetStore
+	collab     *auth.CollaboratorStore
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -139,11 +141,12 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 	}
 
 	var provider = &sqliteProvider{
-		db:      db,
-		appKV:   &sqliteKVStore{db: db, namespace: NamespaceApp},
-		mcpKV:   &sqliteKVStore{db: db, namespace: NamespaceSessionMCP},
-		session: &sqliteSessionStore{db: db},
-		offset:  &sqliteOffsetStore{db: db},
+		db:         db,
+		appKV:      &sqliteKVStore{db: db, namespace: NamespaceApp},
+		mcpKV:      &sqliteKVStore{db: db, namespace: NamespaceSessionMCP},
+		adkSession: &sqliteADKSessionService{db: db},
+		session:    &sqliteSessionStore{db: db},
+		offset:     &sqliteOffsetStore{db: db},
 	}
 	provider.collab = auth.NewCollaboratorStore(provider)
 	return provider, nil
@@ -151,6 +154,10 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 
 func (p *sqliteProvider) AppKV() KVStore {
 	return p.appKV
+}
+
+func (p *sqliteProvider) ADKSessions() adksession.Service {
+	return p.adkSession
 }
 
 func (p *sqliteProvider) SessionMCPKV() KVStore {

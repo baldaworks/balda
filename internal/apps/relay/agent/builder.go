@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/normahq/relay/internal/apps/relay/memory"
 	"github.com/normahq/relay/internal/apps/relay/paths"
 	"github.com/normahq/relay/internal/apps/relay/telegramfmt"
 	"github.com/normahq/relay/internal/git"
@@ -22,7 +23,7 @@ import (
 	"go.uber.org/fx"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
+	adksession "google.golang.org/adk/session"
 )
 
 //go:embed system_instruction.gotmpl
@@ -41,6 +42,8 @@ type Builder struct {
 	workspaceBaseBranch    string
 	relayGlobalInstruction string
 	telegramFormattingMode string
+	sessionSvc             adksession.Service
+	memoryStore            *memory.Store
 }
 
 type sessionStateFactory interface {
@@ -62,6 +65,8 @@ type relayPromptData struct {
 	FormattingExample string
 	GlobalInstruction string
 	Instruction       string
+	MemoryEnabled     bool
+	SoulEnabled       bool
 }
 
 func (b *Builder) buildRelayInstruction(
@@ -120,6 +125,8 @@ func (b *Builder) buildRelayInstruction(
 	}
 	data.GlobalInstruction = strings.TrimSpace(b.relayGlobalInstruction)
 	data.Instruction = strings.TrimSpace(agentInstruction)
+	data.MemoryEnabled = b.memoryStore != nil && b.memoryStore.Enabled()
+	data.SoulEnabled = b.memoryStore != nil && b.memoryStore.SoulEnabled()
 
 	var buf bytes.Buffer
 	tmpl := template.Must(template.New("relay").Parse(relayInstructionTmpl))
@@ -135,10 +142,12 @@ type BuilderParams struct {
 	Factory                *agentfactory.Factory
 	NormaCfg               runtimeconfig.RuntimeConfig
 	WorkingDir             string
-	WorkspaceEnabled       bool   `name:"relay_workspace_enabled"`
-	WorkspaceBaseBranch    string `name:"relay_workspace_base_branch"`
-	RelayGlobalInstruction string `name:"relay_global_instruction"`
-	TelegramFormattingMode string `name:"relay_telegram_formatting_mode"`
+	WorkspaceEnabled       bool               `name:"relay_workspace_enabled"`
+	WorkspaceBaseBranch    string             `name:"relay_workspace_base_branch"`
+	RelayGlobalInstruction string             `name:"relay_global_instruction"`
+	TelegramFormattingMode string             `name:"relay_telegram_formatting_mode"`
+	SessionService         adksession.Service `name:"relay_adk_session_service"`
+	MemoryStore            *memory.Store
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -151,6 +160,8 @@ func NewBuilder(params BuilderParams) *Builder {
 		workspaceBaseBranch:    strings.TrimSpace(params.WorkspaceBaseBranch),
 		relayGlobalInstruction: strings.TrimSpace(params.RelayGlobalInstruction),
 		telegramFormattingMode: telegramfmt.NormalizeMode(params.TelegramFormattingMode),
+		sessionSvc:             params.SessionService,
+		memoryStore:            params.MemoryStore,
 	}
 }
 
@@ -163,14 +174,14 @@ func (b *Builder) ValidateAgent(agentName string) error {
 type BuiltAgent struct {
 	Agent      agent.Agent
 	Runner     *runner.Runner
-	SessionSvc session.Service
-	Session    session.Session
+	SessionSvc adksession.Service
+	Session    adksession.Session
 }
 
 type BuiltRuntime struct {
 	Agent      agent.Agent
 	Runner     *runner.Runner
-	SessionSvc session.Service
+	SessionSvc adksession.Service
 	AppName    string
 }
 
@@ -210,7 +221,10 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 		return nil, fmt.Errorf("creating agent %q: %w", agentName, err)
 	}
 
-	sessionSvc := session.InMemoryService()
+	sessionSvc := b.sessionSvc
+	if sessionSvc == nil {
+		sessionSvc = adksession.InMemoryService()
+	}
 	r, err := runner.New(runner.Config{
 		AppName:        appName,
 		Agent:          ag,
@@ -238,7 +252,7 @@ func (b *Builder) CreateRuntimeSession(
 	userID string,
 	sessionID string,
 	workspaceDir string,
-) (session.Session, error) {
+) (adksession.Session, error) {
 	if runtime == nil {
 		return nil, fmt.Errorf("runtime is required")
 	}
@@ -257,7 +271,7 @@ func (b *Builder) CreateRuntimeSession(
 	if strings.TrimSpace(workspaceDir) == "" {
 		return nil, fmt.Errorf("workspace dir is required")
 	}
-	state, err := b.buildSessionState(agentName, workspaceDir)
+	state, err := b.buildSessionState(ctx, agentName, workspaceDir)
 	if err != nil {
 		return nil, err
 	}
@@ -266,13 +280,26 @@ func (b *Builder) CreateRuntimeSession(
 	if appName == "" {
 		appName = "norma-relay"
 	}
-	req := &session.CreateRequest{
+	req := &adksession.CreateRequest{
 		AppName:   appName,
 		UserID:    strings.TrimSpace(userID),
 		SessionID: strings.TrimSpace(sessionID),
 	}
 	if len(state) > 0 {
 		req.State = state
+	}
+	getResp, getErr := runtime.SessionSvc.Get(ctx, &adksession.GetRequest{
+		AppName:   req.AppName,
+		UserID:    req.UserID,
+		SessionID: req.SessionID,
+	})
+	if getErr == nil {
+		if updater, ok := runtime.SessionSvc.(interface {
+			UpdateSessionState(ctx context.Context, appName string, userID string, sessionID string, state map[string]any) (adksession.Session, error)
+		}); ok {
+			return updater.UpdateSessionState(ctx, req.AppName, req.UserID, req.SessionID, state)
+		}
+		return getResp.Session, nil
 	}
 	sess, err := runtime.SessionSvc.Create(ctx, req)
 	if err != nil {
@@ -297,7 +324,7 @@ func (b *Builder) BuildWithMCPServerIDs(
 	}
 	sessionBranch := fmt.Sprintf("norma/relay/%s", sessionID)
 	repoBranchAtStart := b.currentRepoBranch(ctx)
-	state, err := b.buildSessionState(agentName, workspaceDir)
+	state, err := b.buildSessionState(ctx, agentName, workspaceDir)
 	if err != nil {
 		return nil, err
 	}
@@ -316,8 +343,8 @@ func (b *Builder) BuildWithMCPServerIDs(
 		return nil, fmt.Errorf("creating agent %q: %w", agentName, err)
 	}
 
-	sessionSvc := session.InMemoryService()
-	sess, err := sessionSvc.Create(ctx, &session.CreateRequest{
+	sessionSvc := adksession.InMemoryService()
+	sess, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
 		AppName:   fmt.Sprintf("norma-relay-topic-%d", topicID),
 		UserID:    strings.TrimSpace(userID),
 		SessionID: sessionID,
@@ -469,7 +496,7 @@ func mergeMCPServerIDsWithBase(base, explicit, extra []string) []string {
 	return out
 }
 
-func (b *Builder) buildSessionState(agentName, workspaceDir string) (map[string]any, error) {
+func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir string) (map[string]any, error) {
 	if strings.TrimSpace(agentName) == "" {
 		return nil, fmt.Errorf("agent name is required")
 	}
@@ -477,9 +504,35 @@ func (b *Builder) buildSessionState(agentName, workspaceDir string) (map[string]
 		return nil, fmt.Errorf("workspace dir is required")
 	}
 	if stateFactory, ok := any(b.factory).(sessionStateFactory); ok {
-		return stateFactory.BuildSessionState(agentName, workspaceDir)
+		state, err := stateFactory.BuildSessionState(agentName, workspaceDir)
+		if err != nil {
+			return nil, err
+		}
+		return b.addMemorySnapshot(ctx, state)
 	}
-	return buildSessionStateFallback(workspaceDir)
+	state, err := buildSessionStateFallback(workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	return b.addMemorySnapshot(ctx, state)
+}
+
+func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (map[string]any, error) {
+	if state == nil {
+		state = make(map[string]any)
+	}
+	state[memory.MemoryStateKey] = ""
+	state[memory.SoulStateKey] = ""
+	if b.memoryStore == nil || !b.memoryStore.Enabled() {
+		return state, nil
+	}
+	snapshot, err := b.memoryStore.Snapshot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read relay memory snapshot: %w", err)
+	}
+	state[memory.MemoryStateKey] = snapshot.Memory
+	state[memory.SoulStateKey] = snapshot.Soul
+	return state, nil
 }
 
 func buildSessionStateFallback(workspaceDir string) (map[string]any, error) {

@@ -21,6 +21,8 @@ const cleanupTimeout = 10 * time.Second
 
 const sessionStatusPersisted = "persisted"
 
+const relayADKAppName = "norma-relay"
+
 const workspaceSyncSkippedNotice = "Workspace was restored without syncing the latest base changes because auto-sync conflicted. Use relay.workspace.import to retry later."
 
 var ErrNoPersistedSession = errors.New("no persisted session")
@@ -49,16 +51,17 @@ type AgentMetadata = relayagent.AgentMetadata
 
 // Manager manages relay ADK sessions and persists session metadata.
 type Manager struct {
-	agentBuilder      agentBuilder
-	runtimeManager    relayRuntimeManager
-	relayMCPServerIDs []string
-	relayProviderName string
-	workingDir        string
-	workspaces        *relayagent.WorkspaceManager
-	workspaceEnabled  bool
-	workspaceBaseRef  string
-	sessionStore      relaystate.SessionStore
-	logger            zerolog.Logger
+	agentBuilder       agentBuilder
+	runtimeManager     relayRuntimeManager
+	relayMCPServerIDs  []string
+	relayProviderName  string
+	workingDir         string
+	workspaces         *relayagent.WorkspaceManager
+	workspaceEnabled   bool
+	workspaceBaseRef   string
+	sessionsPersistent bool
+	sessionStore       relaystate.SessionStore
+	logger             zerolog.Logger
 
 	mu              sync.RWMutex
 	sessions        map[string]*TopicSession
@@ -69,17 +72,18 @@ type Manager struct {
 type ManagerParams struct {
 	fx.In
 
-	LC                fx.Lifecycle
-	AgentBuilder      *relayagent.Builder
-	RuntimeManager    *relayagent.RuntimeManager
-	RelayMCPServerIDs []string `name:"relay_mcp_servers"`
-	RelayProviderID   string   `name:"relay_provider"`
-	WorkingDir        string
-	StateDir          string `name:"relay_state_dir"`
-	WorkspaceEnabled  bool   `name:"relay_workspace_enabled"`
-	WorkspaceBaseRef  string `name:"relay_workspace_base_branch"`
-	StateProvider     relaystate.Provider
-	Logger            zerolog.Logger
+	LC                 fx.Lifecycle
+	AgentBuilder       *relayagent.Builder
+	RuntimeManager     *relayagent.RuntimeManager
+	RelayMCPServerIDs  []string `name:"relay_mcp_servers"`
+	RelayProviderID    string   `name:"relay_provider"`
+	WorkingDir         string
+	StateDir           string `name:"relay_state_dir"`
+	WorkspaceEnabled   bool   `name:"relay_workspace_enabled"`
+	WorkspaceBaseRef   string `name:"relay_workspace_base_branch"`
+	SessionsPersistent bool   `name:"relay_sessions_persistent"`
+	StateProvider      relaystate.Provider
+	Logger             zerolog.Logger
 }
 
 // NewManager creates a session Manager.
@@ -89,17 +93,18 @@ func NewManager(p ManagerParams) (*Manager, error) {
 	}
 
 	m := &Manager{
-		agentBuilder:      p.AgentBuilder,
-		runtimeManager:    p.RuntimeManager,
-		relayMCPServerIDs: append([]string(nil), p.RelayMCPServerIDs...),
-		relayProviderName: strings.TrimSpace(p.RelayProviderID),
-		workingDir:        p.WorkingDir,
-		workspaces:        relayagent.NewWorkspaceManager(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef),
-		workspaceEnabled:  p.WorkspaceEnabled,
-		workspaceBaseRef:  p.WorkspaceBaseRef,
-		sessionStore:      p.StateProvider.Sessions(),
-		logger:            p.Logger.With().Str("component", "relay.session_manager").Logger(),
-		sessions:          make(map[string]*TopicSession),
+		agentBuilder:       p.AgentBuilder,
+		runtimeManager:     p.RuntimeManager,
+		relayMCPServerIDs:  append([]string(nil), p.RelayMCPServerIDs...),
+		relayProviderName:  strings.TrimSpace(p.RelayProviderID),
+		workingDir:         p.WorkingDir,
+		workspaces:         relayagent.NewWorkspaceManager(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef),
+		workspaceEnabled:   p.WorkspaceEnabled,
+		workspaceBaseRef:   p.WorkspaceBaseRef,
+		sessionsPersistent: p.SessionsPersistent,
+		sessionStore:       p.StateProvider.Sessions(),
+		logger:             p.Logger.With().Str("component", "relay.session_manager").Logger(),
+		sessions:           make(map[string]*TopicSession),
 	}
 
 	p.LC.Append(fx.Hook{
@@ -267,6 +272,9 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	}
 
 	agentSessionID := m.newAgentSessionID(sessionID)
+	if m.sessionsPersistent {
+		agentSessionID = sessionID
+	}
 	sess, err := builder.CreateRuntimeSession(
 		ctx,
 		rootRuntime,
@@ -307,7 +315,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	}
 
 	if err := m.persistSessionRecord(ctx, ts, relaystate.SessionStatusActive); err != nil {
-		if closeErr := m.closeTopicSession(ctx, ts); closeErr != nil {
+		if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteADK: true, cleanupWorkspace: true}); closeErr != nil {
 			m.logger.Warn().Err(closeErr).Str("session_id", sessionID).Msg("failed to rollback session after persist error")
 		}
 		return fmt.Errorf("persist session metadata: %w", err)
@@ -352,6 +360,78 @@ func (m *Manager) TakeStartupNotice(sessionID string) string {
 // StopSession removes a session from memory and cleans up.
 func (m *Manager) StopSession(locator SessionLocator) {
 	sessionID := strings.TrimSpace(locator.SessionID)
+	if m.sessionsPersistent {
+		m.logger.Info().
+			Str("session_id", sessionID).
+			Str("channel_type", locator.ChannelType).
+			Str("address_key", locator.AddressKey).
+			Msg("suspending persistent session")
+		m.removeActiveSession(locator, sessionCleanupOptions{cleanupWorkspace: true})
+		return
+	}
+	m.hardDeleteSession(locator)
+}
+
+// ResetSession deletes the ADK conversation history for the current session
+// while preserving relay metadata so the same chat can start fresh.
+func (m *Manager) ResetSession(ctx context.Context, locator SessionLocator) error {
+	sessionID := strings.TrimSpace(locator.SessionID)
+	if sessionID == "" {
+		return fmt.Errorf("session_id is required")
+	}
+
+	m.logger.Info().
+		Str("session_id", sessionID).
+		Str("channel_type", locator.ChannelType).
+		Str("address_key", locator.AddressKey).
+		Msg("resetting session")
+
+	if m.removeActiveSession(locator, sessionCleanupOptions{deleteADK: true}) {
+		return nil
+	}
+
+	record, ok, err := m.sessionStore.GetBySessionID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("read session metadata: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	if !m.sessionsPersistent {
+		return nil
+	}
+
+	runtimeManager := m.runtimeManager
+	if runtimeManager == nil {
+		return fmt.Errorf("relay runtime manager is required")
+	}
+	rootRuntime, err := runtimeManager.Runtime(ctx)
+	if err != nil {
+		return err
+	}
+	if rootRuntime == nil || rootRuntime.SessionSvc == nil {
+		return fmt.Errorf("session service is required")
+	}
+	userID := strings.TrimSpace(record.UserID)
+	if userID == "" {
+		return fmt.Errorf("persisted session %q has no user_id", sessionID)
+	}
+	appName := strings.TrimSpace(rootRuntime.AppName)
+	if appName == "" {
+		appName = relayADKAppName
+	}
+	if err := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
+		AppName:   appName,
+		UserID:    userID,
+		SessionID: sessionID,
+	}); err != nil {
+		return fmt.Errorf("delete adk session: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) hardDeleteSession(locator SessionLocator) {
+	sessionID := strings.TrimSpace(locator.SessionID)
 
 	m.logger.Info().
 		Str("session_id", sessionID).
@@ -359,22 +439,11 @@ func (m *Manager) StopSession(locator SessionLocator) {
 		Str("address_key", locator.AddressKey).
 		Msg("stopping session")
 
-	m.mu.Lock()
-	ts, exists := m.sessions[sessionID]
-	if exists {
-		delete(m.sessions, sessionID)
-	}
-	m.mu.Unlock()
-
-	if !exists {
+	if !m.removeActiveSession(locator, sessionCleanupOptions{deleteADK: true, cleanupWorkspace: true}) {
 		m.logger.Warn().Str("session_id", sessionID).Msg("session not found for stop")
-		return
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
-	if err := m.closeTopicSession(cleanupCtx, ts); err != nil {
-		m.logger.Warn().Err(err).Str("session_id", sessionID).Msg("failed to close topic session")
-	}
 	if err := m.sessionStore.DeleteBySessionID(cleanupCtx, sessionID); err != nil {
 		m.logger.Warn().Err(err).Str("session_id", sessionID).Msg("failed to delete persisted session metadata")
 	}
@@ -403,8 +472,9 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 
 	m.logger.Info().Int("count", len(sessions)).Msg("stopping all sessions")
 
+	opts := sessionCleanupOptions{deleteADK: !m.sessionsPersistent, cleanupWorkspace: true}
 	for _, ts := range sessions {
-		if err := m.closeTopicSession(ctx, ts); err != nil {
+		if err := m.cleanupTopicSession(ctx, ts, opts); err != nil {
 			m.logger.Warn().Err(err).Str("session_id", ts.sessionID).Msg("failed to close topic session")
 		}
 	}
@@ -412,12 +482,36 @@ func (m *Manager) stopAllWithContext(ctx context.Context) {
 	m.logger.Info().Msg("all sessions stopped")
 }
 
-func (m *Manager) closeTopicSession(ctx context.Context, ts *TopicSession) error {
+type sessionCleanupOptions struct {
+	deleteADK        bool
+	cleanupWorkspace bool
+}
+
+func (m *Manager) removeActiveSession(locator SessionLocator, opts sessionCleanupOptions) bool {
+	sessionID := strings.TrimSpace(locator.SessionID)
+	m.mu.Lock()
+	ts, exists := m.sessions[sessionID]
+	if exists {
+		delete(m.sessions, sessionID)
+	}
+	m.mu.Unlock()
+	if !exists {
+		return false
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	if err := m.cleanupTopicSession(cleanupCtx, ts, opts); err != nil {
+		m.logger.Warn().Err(err).Str("session_id", sessionID).Msg("failed to cleanup topic session")
+	}
+	return true
+}
+
+func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opts sessionCleanupOptions) error {
 	var firstErr error
-	if ts != nil && ts.sessionSvc != nil {
+	if opts.deleteADK && ts != nil && ts.sessionSvc != nil {
 		sessionID := strings.TrimSpace(ts.GetAgentSessionID())
 		userID := strings.TrimSpace(ts.userID)
-		appName := "norma-relay"
+		appName := relayADKAppName
 		if ts.sess != nil {
 			if sessionAppName := strings.TrimSpace(ts.sess.AppName()); sessionAppName != "" {
 				appName = sessionAppName
@@ -436,7 +530,7 @@ func (m *Manager) closeTopicSession(ctx context.Context, ts *TopicSession) error
 			}
 		}
 	}
-	if ts != nil && m.workspaceEnabled && ts.workspaceDir != "" {
+	if opts.cleanupWorkspace && ts != nil && m.workspaceEnabled && ts.workspaceDir != "" {
 		if err := m.workspaces.CleanupWorkspace(ctx, ts.workspaceDir); err != nil && firstErr == nil {
 			firstErr = err
 		}

@@ -4,114 +4,59 @@
 [![lint](https://github.com/normahq/relay/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/normahq/relay/actions/workflows/lint.yml)
 
 Relay is a Telegram-first control plane for long-running Norma agent sessions.
-It gives you one authenticated owner channel, an owner session in direct chat, and topic-scoped sessions started with `/topic <name>`.
+It gives you one authenticated owner chat, a direct-message owner session, and
+topic-scoped sessions started with `/topic <name>`.
 
-## Install
+## Quickstart
+
+Before you start, have:
+
+- a Telegram bot token from BotFather
+- for host installs, at least one supported provider CLI available: `codex`,
+  `opencode`, `copilot`, `gemini`, or `claude`
+- Node.js/npm, unless you use the Docker Compose flow below
+
+Install Relay:
 
 ```bash
 npm install -g -y @normahq/relay
 ```
 
-## Quickstart
-
-1. Initialize relay in your project:
+Initialize Relay in your project:
 
 ```bash
 relay init
 ```
 
-`relay init` will:
-- require and validate your Telegram bot token
-- let you store the token in `.env` (default) or `config.yaml`
-- create `.config/relay/config.yaml`
-- create `.config/relay/relay.db`
-- generate an owner token and print auth/start commands
+`relay init` detects available provider CLIs, validates your Telegram bot token,
+creates `.config/relay/config.yaml`, creates `.config/relay/relay.db`, and
+prints the next commands. By default, the Telegram token is stored in `.env`.
 
-2. Start relay:
+Start Relay:
 
 ```bash
 relay start
 ```
 
-3. Authenticate in Telegram:
-- open the auth URL printed by `relay init` or, while no owner is registered yet, by `relay start`, or
-- send `/start owner=<owner_token>` in a direct message to your bot
+Authenticate in Telegram using the auth URL printed by `relay init` or
+`relay start`. You can also send the printed command directly to your bot:
 
-4. Start a topic session:
+```text
+/start owner=<owner_token>
+```
+
+After owner auth, send a normal direct message to use the owner session, or
+create a named topic session:
 
 ```text
 /topic <name>
 ```
 
-## Run with Docker Compose
+## Docker Compose
 
 Relay ships a root [`Dockerfile`](Dockerfile) and [`compose.yaml`](compose.yaml)
-for local Docker Compose runtime. The Compose service builds a local image and
-mounts the current project directory as the runtime workspace.
-
-The maintained `Dockerfile` uses this base shape:
-
-```dockerfile
-FROM node:lts-bookworm
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      ca-certificates \
-      curl \
-      git \
-      openssh-client \
-      ripgrep \
- && rm -rf /var/lib/apt/lists/*
-
-RUN npm install -g \
-      @normahq/relay \
-      @openai/codex \
-      opencode-ai \
-      @google/gemini-cli \
-      @anthropic-ai/claude-code \
-      @github/copilot \
- && npm cache clean --force
-
-RUN command -v relay \
- && command -v codex \
- && command -v opencode \
- && command -v gemini \
- && command -v claude \
- && command -v copilot
-
-USER node
-
-WORKDIR /workspace
-ENTRYPOINT ["relay"]
-```
-
-`node:lts-bookworm` is intentionally used instead of `node:lts-bookworm-slim`.
-Relay is distributed through npm, MCP examples commonly use `npx`, and Git
-workspace mode shells out to `git`. The image also bundles the provider CLIs
-detected by `relay init`: Codex, opencode, Gemini CLI, Claude Code (`claude`),
-and GitHub Copilot. If you need fully repeatable builds, pin a concrete
-supported Bookworm tag such as `node:24-bookworm` and/or the Dockerfile package
-build args: `RELAY_NPM_PACKAGE`, `CODEX_NPM_PACKAGE`, `OPENCODE_NPM_PACKAGE`,
-`GEMINI_NPM_PACKAGE`, `CLAUDE_CODE_NPM_PACKAGE`, and `COPILOT_NPM_PACKAGE`.
-
-The maintained `compose.yaml` uses the current directory as a bind-mounted
-workspace:
-
-```yaml
-services:
-  relay:
-    build: .
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-      - relay-home:/home/node
-    command: start
-
-volumes:
-  relay-home:
-```
-
-Run setup and start Relay from the repository root:
+for local Docker Compose runtime. The service builds a local image, runs
+`relay`, and bind-mounts the current directory as `/workspace`.
 
 ```bash
 docker compose build relay
@@ -119,224 +64,121 @@ docker compose run --rm relay init
 docker compose up -d relay
 ```
 
-The `.:/workspace` bind mount is intentional. It lets Relay use the same
-project checkout, `.git`, `.env`, `.config/relay/config.yaml`, and
-`.config/relay/relay.db` as a host install. Do not bake `.env` or
-`.config/relay/relay.db` into the image.
+The `.:/workspace` mount is intentional. Relay uses the host checkout, `.git`,
+`.env`, `.config/relay/config.yaml`, and `.config/relay/relay.db` instead of
+baking local state into the image.
 
-Relay auto-loads `/workspace/.env`; adding `env_file: .env` is optional after
-the file exists.
+Provider credentials are not baked into the image. Authenticate with provider
+environment variables or provider login commands run through Compose;
+`relay-home` persists provider CLI home config across container recreates.
 
-Provider credentials are not baked into the image. Authenticate through
-provider environment variables or by running provider login commands through
-Compose; `relay-home` persists provider CLI home config across container
-recreates.
-
-The default Telegram mode is polling and does not need a published port. For
-webhook mode, configure `relay.telegram.webhook.*` or the matching `RELAY_*`
-environment variables, then publish the webhook listener:
-
-```yaml
-services:
-  relay:
-    # same settings as above
-    ports:
-      - "8080:8080"
-```
+Polling mode is the default and does not require publishing a port. Webhook
+setup and image details are documented in [`docs/relay.md`](docs/relay.md).
 
 ## Bot Commands
 
-- `/start owner=<owner_token>`: direct-message owner auth/bootstrap.
-- `/start invite=<invite_token>`: direct-message collaborator onboarding via invite link.
-- `/topic <name>`: owner/collaborator, direct message only; starts a topic session with a required free-form name.
-- `/close`: owner/collaborator, direct message only; closes current topic session or stops the owner session.
-- `/cancel`: owner/collaborator; cancels in-flight turn and drops queued turns for current session.
-- `/user add`: owner only; generates collaborator invite link.
-- `/user list`: owner only; lists collaborators and active invites.
-- `/user remove <user_id>`: owner only; removes a collaborator.
+- `/topic <name>`: owner/collaborator direct-message command that creates a named topic session.
+- `/reset`: owner/collaborator command that clears conversation history for the current session.
+- `/close`: owner/collaborator direct-message command that resets history, then closes the current topic or restarts the owner session on the next message.
+- `/cancel`: owner/collaborator command that cancels in-flight work and drops queued turns for the current session.
+- `/memory`: owner/collaborator direct-message command that prints current `${relay.state_dir}/MEMORY.md` contents.
+- `/start owner=<owner_token>`: owner authentication/bootstrap in direct messages.
+- `/start invite=<invite_token>`: collaborator onboarding in direct messages.
+- `/user add|list|remove`: owner-only collaborator management.
 
 ## Configuration
 
-Relay loads `.config/relay/config.yaml` and then applies `RELAY_*` environment overrides.
-If present, `.env` from the current working directory is auto-loaded before config resolution.
+Relay loads `.config/relay/config.yaml` and then applies `RELAY_*` environment
+overrides. If `.env` exists in the working directory, Relay loads it before
+config resolution.
 
-Config resolution order:
-
-1. bundled defaults
-2. `.config/relay/config.yaml`
-3. selected profile overrides from `profiles.<name>`
-4. `RELAY_*` environment variables
-
-The generated config uses this shape:
+Minimal shape:
 
 ```yaml
 runtime:
   providers:
     <provider_id>:
-      # Required. Supported values:
       # generic_acp | gemini_acp | codex_acp | opencode_acp | copilot_acp | claude_code_acp | pool
-      type: codex_acp
-
-      # Optional MCP server IDs from runtime.mcp_servers for this provider.
-      mcp_servers: []
-
-      # Optional provider instruction appended after relay.global_instruction.
-      system_instructions: ""
-
-      # Type-specific block. Use the block matching `type`.
-      codex_acp:
-        # Optional model/mode/command settings for ACP agent types.
-        model: gpt-5.3-codex
-        mode: ""
-        cmd: []
-        extra_args: []
-
-      # Other ACP type-specific blocks have the same fields:
-      # generic_acp: {}
-      # gemini_acp: {}
-      # opencode_acp: {}
-      # copilot_acp: {}
-      # claude_code_acp: {}
-
-      # Pool providers use this instead of an ACP block:
-      # pool:
-      #   members: [codex, opencode]
-
-  mcp_servers:
-    <server_id>:
-      # Required. Supported values: stdio | http | sse
-      type: stdio
-
-      # stdio transport:
-      cmd: []
-      args: []
-      env: {}
-      working_dir: ""
-
-      # http/sse transport:
-      url: ""
-      headers: {}
+      type: <provider_type>
+  mcp_servers: {}
 
 relay:
-  # Provider ID from runtime.providers used for owner and topic sessions.
-  provider: ""
-
+  provider: <provider_id>
   telegram:
-    # Required unless RELAY_TELEGRAM_TOKEN is set.
     token: ""
-
-    # Final assistant response mode: markdownv2 | html | none.
-    formatting_mode: "markdownv2" # markdownv2 | html | none
-
-    # Surface ACP plan updates in Telegram progress.
+    formatting_mode: "markdownv2"
     plan_updates: true
-
     webhook:
       enabled: false
-      url: ""
-      auth_token: ""
       listen_addr: "0.0.0.0:8080"
       path: "/telegram/webhook"
-
+      url: ""
   logger:
     level: "info"
     pretty: true
-
-  # Defaults to the relay process working directory when empty.
   working_dir: ""
-
-  # Relative paths are resolved from relay.working_dir.
   state_dir: ".config/relay"
-
+  sessions:
+    persistence: "memory"
+  memory:
+    enabled: true
+    soul_enabled: true
   workspace:
-    mode: "auto" # auto | on | off
+    mode: "auto"
     base_branch: ""
-
-  # Extra runtime.mcp_servers IDs injected into every relay-started session.
-  # The built-in `relay` MCP server is reserved and added automatically.
   mcp_servers: []
-
-  # Optional relay-wide instruction applied to all sessions.
   global_instruction: ""
-
-profiles:
-  <profile_name>:
-    relay:
-      provider: <provider_id>
-      mcp_servers: []
-      global_instruction: ""
 ```
 
+Common settings:
+
+- `relay.provider`: provider ID selected during `relay init`.
+- `relay.telegram.token`: Telegram bot token, usually supplied by `.env` as `RELAY_TELEGRAM_TOKEN`.
+- `relay.sessions.persistence`: `memory` by default; set to `sqlite` to keep ADK conversation history across restarts until `/reset` or explicit `/close`.
+- `relay.memory.enabled`: enables `${relay.state_dir}/MEMORY.md`, `/memory`, and `relay.memory.*` MCP tools.
+- `relay.memory.soul_enabled`: reads optional `${relay.state_dir}/SOUL.md` at session start/restore.
+- `relay.workspace.mode`: `auto` by default; uses Git worktrees when Relay runs in a Git repository.
+- `relay.mcp_servers`: extra MCP server IDs added to every Relay-started session.
+
 ### MCP Servers Example
-
-Define reusable MCP servers in `runtime.mcp_servers`, then attach them either to one provider with `runtime.providers.<provider_id>.mcp_servers` or to every relay session with `relay.mcp_servers`.
-
-The selected config file is env-expanded before YAML parsing, so both `$VAR` and `${VAR}` work anywhere in the file. For `stdio` MCP servers, the child process inherits Relay's full process environment by default, and `runtime.mcp_servers.<id>.env` overrides individual variables.
 
 ```yaml
 runtime:
   mcp_servers:
-    filesystem:
+    local-tools:
       type: stdio
-      cmd: ["npx"]
-      args:
-        - "-y"
-        - "@modelcontextprotocol/server-filesystem"
-        - "/home/me/project"
-
-    github:
-      type: stdio
-      cmd: ["npx"]
-      args:
-        - "-y"
-        - "@modelcontextprotocol/server-github"
-      env:
-        GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
-
+      cmd: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
     remote-tools:
       type: http
-      url: "https://mcp.example.com/mcp"
-      headers:
-        Authorization: "Bearer ${REMOTE_MCP_TOKEN}"
+      url: https://mcp.example.com/mcp
 
   providers:
     codex:
       type: codex_acp
       mcp_servers:
-        - filesystem
-      codex_acp:
-        model: gpt-5.3-codex
+        - local-tools
 
 relay:
   provider: codex
   mcp_servers:
-    - github
     - remote-tools
 ```
 
-Effective MCP IDs for a session are:
+Effective MCP IDs are built-in relay + provider mcp_servers + relay.mcp_servers.
+Do not define `runtime.mcp_servers.relay`; Relay owns that bundled server.
 
-```text
-built-in relay + provider mcp_servers + relay.mcp_servers
-```
-
-The built-in `relay` MCP server is always reserved for Relay’s own tools. Do not define `runtime.mcp_servers.relay`; Relay starts that server internally.
+See [`docs/relay.md`](docs/relay.md) for the full config, MCP, Docker, session,
+and workspace reference.
 
 ## Troubleshooting
 
-- `telegram token is required`:
-  - set `RELAY_TELEGRAM_TOKEN` in `.env` (default init flow), or
-  - set `relay.telegram.token` in `.config/relay/config.yaml`
-- `relay.provider is required`:
-  - run `relay init` and choose a provider, or
-  - set `relay.provider` to a value from `runtime.providers`
-- `relay.provider is not configured` on `/topic <name>`:
-  - set `relay.provider` to a value from `runtime.providers`
-- workspace import/export issues:
-  - verify `relay.workspace.mode` and `relay.workspace.base_branch`
-- plan updates are too noisy:
-  - set `relay.telegram.plan_updates` to `false` to keep only typing / `Thinking...` progress
-  - when `mode: on`, run relay in a Git repository
+- `telegram token is required`: run `relay init`, set `RELAY_TELEGRAM_TOKEN` in `.env`, or set `relay.telegram.token` in config.
+- `no supported agent CLI detected`: install or expose one of `codex`, `opencode`, `copilot`, `gemini`, or `claude`.
+- `relay.provider is required`: rerun `relay init` or set `relay.provider` to a configured provider ID.
+- Session history should survive restarts: set `relay.sessions.persistence=sqlite` or `RELAY_SESSIONS_PERSISTENCE=sqlite`.
+- Memory facts are not visible in an active session: memory is snapshotted when a session starts or restores; use `/reset` or `/close` to recreate the provider session.
+- Workspace import/export issues: check `relay.workspace.mode`, `relay.workspace.base_branch`, and that Relay is running in the expected Git checkout.
+- Progress updates are too noisy: set `relay.telegram.plan_updates=false`.
 
 ## Documentation
 

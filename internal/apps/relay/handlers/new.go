@@ -7,6 +7,7 @@ import (
 
 	"github.com/normahq/relay/internal/apps/relay/auth"
 	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
+	"github.com/normahq/relay/internal/apps/relay/memory"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
 	"github.com/normahq/relay/internal/apps/relay/session"
 	"github.com/normahq/relay/internal/apps/relay/tgbotkit"
@@ -20,6 +21,7 @@ type commandSessionManager interface {
 	CreateSession(ctx context.Context, sessionCtx session.SessionContext, agentName string) error
 	GetAgentMetadata(agentName string) session.AgentMetadata
 	RelayProviderID() string
+	ResetSession(ctx context.Context, locator session.SessionLocator) error
 	StopSession(locator session.SessionLocator)
 }
 
@@ -32,6 +34,7 @@ type CommandHandler struct {
 	turnDispatcher    turnQueue
 	messenger         *messenger.Messenger
 	userHandler       *userHandler
+	memoryStore       *memory.Store
 }
 
 func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServers []string) string {
@@ -48,6 +51,7 @@ type commandHandlerParams struct {
 	TurnDispatcher    *TurnDispatcher
 	Messenger         *messenger.Messenger
 	UserHandler       *userHandler
+	MemoryStore       *memory.Store
 }
 
 // NewCommandHandler creates a new relay command handler.
@@ -60,6 +64,7 @@ func NewCommandHandler(params commandHandlerParams) *CommandHandler {
 		turnDispatcher:    params.TurnDispatcher,
 		messenger:         params.Messenger,
 		userHandler:       params.UserHandler,
+		memoryStore:       params.MemoryStore,
 	}
 }
 
@@ -79,8 +84,12 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		return h.onTopicCommand(ctx, commandCtx)
 	case "close":
 		return h.onCloseCommand(ctx, commandCtx)
+	case "reset":
+		return h.onResetCommand(ctx, commandCtx)
 	case "cancel":
 		return h.onCancelCommand(ctx, commandCtx)
+	case "memory":
+		return h.onMemoryCommand(ctx, commandCtx)
 	case "user":
 		// Route to UserHandler
 		return h.userHandler.HandleUserCommand(ctx, commandCtx)
@@ -156,6 +165,68 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx relaytel
 	return nil
 }
 
+func (h *CommandHandler) onMemoryCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
+			return err
+		}
+		return nil
+	}
+	if !commandCtx.IsDM {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "This command is only available in direct messages."); err != nil {
+			return err
+		}
+		return nil
+	}
+	if strings.TrimSpace(commandCtx.Args) != "" {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /memory"); err != nil {
+			return err
+		}
+		return nil
+	}
+	if h.memoryStore == nil || !h.memoryStore.Enabled() {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Memory is disabled."); err != nil {
+			return err
+		}
+		return nil
+	}
+	content, err := h.memoryStore.ReadMemory(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to read relay memory")
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to read memory: %v", err)); sendErr != nil {
+			return sendErr
+		}
+		return nil
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Memory is empty."); err != nil {
+			return err
+		}
+		return nil
+	}
+	return h.sendPlainChunks(ctx, commandCtx.Locator, content)
+}
+
+func (h *CommandHandler) sendPlainChunks(ctx context.Context, locator session.SessionLocator, text string) error {
+	const maxPlainChunkRunes = 3500
+	runes := []rune(text)
+	for len(runes) > 0 {
+		n := len(runes)
+		if n > maxPlainChunkRunes {
+			n = maxPlainChunkRunes
+		}
+		chunk := strings.TrimSpace(string(runes[:n]))
+		if chunk != "" {
+			if err := h.channel.SendPlain(ctx, locator, chunk); err != nil {
+				return err
+			}
+		}
+		runes = runes[n:]
+	}
+	return nil
+}
+
 func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
@@ -182,23 +253,66 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx relaytel
 		if h.turnDispatcher != nil {
 			_, _, _ = h.turnDispatcher.CancelSession(commandCtx.Locator, true)
 		}
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Closing this topic and stopping agent session."); err != nil {
+		if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
+			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset session during /close")
+			if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to reset this session before close: %v", err)); sendErr != nil {
+				return sendErr
+			}
+			return nil
+		}
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Closing this topic and resetting session history."); err != nil {
 			log.Warn().Err(err).Int64("chat_id", commandCtx.ChatID).Int("topic_id", commandCtx.TopicID).Msg("failed to send /close confirmation")
 		}
 		if err := h.channel.Close(ctx, commandCtx.Locator); err != nil {
 			log.Warn().Err(err).Int64("chat_id", commandCtx.ChatID).Int("topic_id", commandCtx.TopicID).Msg("failed to close topic")
 		}
-		h.sessionManager.StopSession(commandCtx.Locator)
 		return nil
 	}
 
 	if h.turnDispatcher != nil {
 		_, _, _ = h.turnDispatcher.CancelSession(commandCtx.Locator, true)
 	}
-	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Stopping relay provider session. It will be recreated on your next message."); err != nil {
+	if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset owner session during /close")
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to reset this session: %v", err)); sendErr != nil {
+			return sendErr
+		}
+		return nil
+	}
+	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Session history reset. The relay provider session will be recreated on your next message."); err != nil {
 		log.Warn().Err(err).Int64("chat_id", commandCtx.ChatID).Msg("failed to send /close owner session confirmation")
 	}
-	h.sessionManager.StopSession(commandCtx.Locator)
+	return nil
+}
+
+func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if strings.TrimSpace(commandCtx.Args) != "" {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /reset"); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if h.turnDispatcher != nil {
+		_, _, _ = h.turnDispatcher.CancelSession(commandCtx.Locator, true)
+	}
+	if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset session")
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to reset this session: %v", err)); sendErr != nil {
+			return sendErr
+		}
+		return nil
+	}
+	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Session history reset. Send a new message to start fresh in this chat."); err != nil {
+		return err
+	}
 	return nil
 }
 

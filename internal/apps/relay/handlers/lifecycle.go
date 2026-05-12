@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/relay/internal/apps/relay/auth"
 	relaytelegram "github.com/normahq/relay/internal/apps/relay/channel/telegram"
+	"github.com/normahq/relay/internal/apps/relay/memory"
 	"github.com/normahq/relay/internal/apps/relay/messenger"
 	"github.com/normahq/relay/internal/apps/relay/session"
 	"github.com/normahq/relay/internal/apps/sessionmcp"
@@ -37,6 +38,7 @@ type InternalMCPManager struct {
 	messenger        *messenger.Messenger
 	ownerStore       *auth.OwnerStore
 	stateStore       sessionmcp.Store
+	memoryStore      *memory.Store
 	cleanups         []func() error
 }
 
@@ -47,11 +49,14 @@ const (
 	internalMCPIdleTimeout       = 60 * time.Second
 )
 
-func bundledRelayServerInstructions(workspaceEnabled bool) string {
+func bundledRelayServerInstructions(workspaceEnabled bool, memoryEnabled bool) string {
 	instructions := `Use this bundled relay server for session-local relay tools.
 
 - relay.state stores persistent relay session and app state in relay.db.
 - relay config editing is not exposed through MCP; edit the relay config file directly.`
+	if memoryEnabled {
+		instructions += "\n- relay.memory stores durable facts in MEMORY.md; only call relay.memory.remember when the user explicitly asks you to remember or save a fact."
+	}
 	if workspaceEnabled {
 		instructions += "\n- relay.workspace is available and should be used for workspace import/export instead of manual branch landing."
 	} else {
@@ -73,6 +78,7 @@ type internalMCPParams struct {
 	Messenger        *messenger.Messenger
 	OwnerStore       *auth.OwnerStore
 	StateStore       sessionmcp.Store
+	MemoryStore      *memory.Store
 }
 
 // NewInternalMCPManager creates an internal MCP lifecycle manager.
@@ -87,6 +93,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		messenger:        params.Messenger,
 		ownerStore:       params.OwnerStore,
 		stateStore:       params.StateStore,
+		memoryStore:      params.MemoryStore,
 	}
 
 	params.LC.Append(fx.Hook{
@@ -145,10 +152,11 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 			Name:    "relay",
 			Version: "1.0.0",
 		},
-		&mcp.ServerOptions{Instructions: bundledRelayServerInstructions(m.workspaceEnabled)},
+		&mcp.ServerOptions{Instructions: bundledRelayServerInstructions(m.workspaceEnabled, m.memoryStore != nil && m.memoryStore.Enabled())},
 	)
 
 	sessionmcp.RegisterTools(server, m.stateStore)
+	memory.RegisterTools(server, m.memoryStore)
 
 	if m.workspaceEnabled {
 		workspaceSvc := session.NewWorkspaceMCPServer(m.sessionManager)

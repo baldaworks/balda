@@ -6,6 +6,7 @@ import (
 
 	"github.com/normahq/relay/internal/apps/relay/auth"
 	"github.com/tgbotkit/runtime/updatepoller"
+	adksession "google.golang.org/adk/session"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 // This allows swapping SQLite with another provider later.
 type Provider interface {
 	AppKV() KVStore
+	ADKSessions() adksession.Service
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
 	PollingOffsetStore() updatepoller.OffsetStore

@@ -48,6 +48,20 @@ relay:
   # Relative paths are resolved from relay.working_dir.
   state_dir: ".config/relay"
 
+  sessions:
+    # ADK conversation/session persistence:
+    # - memory: keep runtime conversation state in memory only (default)
+    # - sqlite: persist runtime conversation state in relay.db until /reset or explicit /close
+    persistence: "memory"
+
+  memory:
+    # Internal durable memory backed by ${relay.state_dir}/MEMORY.md.
+    # Agents can append facts through relay.memory.remember; /memory reads the file.
+    enabled: true
+    # Optional operator instructions backed by ${relay.state_dir}/SOUL.md.
+    # SOUL.md is read on session start/restore and appended to the system instruction.
+    soul_enabled: true
+
   workspace:
     # Workspace mode:
     # - on: always use git worktrees per session

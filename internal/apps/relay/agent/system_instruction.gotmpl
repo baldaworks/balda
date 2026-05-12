@@ -36,6 +36,14 @@ Git workspace guidance:
 - If export reports a base-branch mismatch, ask the user to switch the main repository back to the configured base branch.
 {{else}}
 - Git workspace tooling: disabled (`relay.workspace` MCP namespace is unavailable in this session).
+{{end}}{{if .SoulEnabled}}
+
+SOUL.md session-start instructions:
+{relay_soul?}
+{{end}}{{if .MemoryEnabled}}
+
+MEMORY.md session-start facts:
+{relay_memory?}
 {{end}}{{if .GlobalInstruction}}
 
 Global instruction:

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	relaystate "github.com/normahq/relay/internal/apps/relay/state"
+	adksession "google.golang.org/adk/session"
 )
 
 // GetSession returns the in-memory session for the given locator.
@@ -247,7 +248,7 @@ func (m *Manager) StopSessionByID(ctx context.Context, sessionID string) error {
 		return err
 	}
 	if info.Status == relaystate.SessionStatusActive {
-		m.StopSession(info.Locator)
+		m.hardDeleteSession(info.Locator)
 		return nil
 	}
 
@@ -256,8 +257,42 @@ func (m *Manager) StopSessionByID(ctx context.Context, sessionID string) error {
 			return fmt.Errorf("cleanup workspace: %w", err)
 		}
 	}
+	if m.sessionsPersistent {
+		if err := m.deletePersistedADKSession(ctx, info); err != nil {
+			return err
+		}
+	}
 	if err := m.sessionStore.DeleteBySessionID(ctx, info.SessionID); err != nil {
 		return fmt.Errorf("delete session metadata: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) deletePersistedADKSession(ctx context.Context, info TopicSessionInfo) error {
+	if strings.TrimSpace(info.UserID) == "" {
+		return nil
+	}
+	runtimeManager := m.runtimeManager
+	if runtimeManager == nil {
+		return fmt.Errorf("relay runtime manager is required")
+	}
+	rootRuntime, err := runtimeManager.Runtime(ctx)
+	if err != nil {
+		return err
+	}
+	if rootRuntime == nil || rootRuntime.SessionSvc == nil {
+		return fmt.Errorf("session service is required")
+	}
+	appName := strings.TrimSpace(rootRuntime.AppName)
+	if appName == "" {
+		appName = relayADKAppName
+	}
+	if err := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
+		AppName:   appName,
+		UserID:    strings.TrimSpace(info.UserID),
+		SessionID: strings.TrimSpace(info.SessionID),
+	}); err != nil {
+		return fmt.Errorf("delete adk session: %w", err)
 	}
 	return nil
 }

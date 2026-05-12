@@ -12,6 +12,8 @@ type RelayConfig struct {
 	Logger            LoggerConfig    `mapstructure:"logger"`
 	WorkingDir        string          `mapstructure:"working_dir"`
 	StateDir          string          `mapstructure:"state_dir"`
+	Sessions          SessionsConfig  `mapstructure:"sessions"`
+	Memory            MemoryConfig    `mapstructure:"memory"`
 	Workspace         WorkspaceConfig `mapstructure:"workspace"`
 	MCPServers        []string        `mapstructure:"mcp_servers"`
 	GlobalInstruction string          `mapstructure:"global_instruction"`
@@ -44,4 +46,13 @@ type LoggerConfig struct {
 type WorkspaceConfig struct {
 	Mode       string `mapstructure:"mode"`
 	BaseBranch string `mapstructure:"base_branch"`
+}
+
+type SessionsConfig struct {
+	Persistence string `mapstructure:"persistence"`
+}
+
+type MemoryConfig struct {
+	Enabled     bool `mapstructure:"enabled"`
+	SoulEnabled bool `mapstructure:"soul_enabled"`
 }
