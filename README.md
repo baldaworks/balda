@@ -3,10 +3,10 @@
 [![test](https://github.com/normahq/relay/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/normahq/relay/actions/workflows/test.yml)
 [![lint](https://github.com/normahq/relay/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/normahq/relay/actions/workflows/lint.yml)
 
-## One app. No backing services. No webhook required.
+## Telegram control plane for coding agents
 
-Relay is a lightweight Telegram control plane for coding agents. Point it at a
-project, connect your bot, and run long-lived agent sessions from DMs, groups,
+Relay is one app with no backing services and no webhook required. Point it at
+a project, connect your bot, and run long-lived agent sessions from DMs, groups,
 or topic chats.
 
 Relay does not require Redis, Postgres, object storage, queues, or a public
