@@ -16,7 +16,12 @@
 
 ## User Onboarding Reference
 
-The primary onboarding path is npm-first:
+The primary onboarding path runs Relay as a single app with no required backing
+services. Relay persists local state in SQLite and uses Telegram polling by
+default, so first-time setup does not require Redis, Postgres, object storage,
+queues, a public URL, or a webhook endpoint.
+
+npm remains the shortest install path:
 
 ```bash
 npm install -g -y @normahq/relay

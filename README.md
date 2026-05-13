@@ -3,19 +3,19 @@
 [![test](https://github.com/normahq/relay/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/normahq/relay/actions/workflows/test.yml)
 [![lint](https://github.com/normahq/relay/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/normahq/relay/actions/workflows/lint.yml)
 
-## Use ANY ACP-compatible agent as a Telegram Bot.
+## One app. No backing services. No webhook required.
 
-Relay turns Telegram into a secure control plane for your local or hosted agent.
-Connect Codex, OpenCode, Copilot, Gemini, Claude Code, or any custom command
-that speaks ACP, then chat with it from Telegram.
+Relay turns Telegram into the control plane for ACP agent sessions in your
+projects. Run it next to your checkout, connect your Telegram bot, and control
+agents from DMs, groups, or topic chats.
 
-Your agent gets the project checkout, durable session history, optional memory,
-MCP tools, and isolated git workspaces. You get a bot that can answer, plan,
-edit, remember, and hand work back through Telegram.
+Relay does not require Redis, Postgres, object storage, queues, or a public
+webhook endpoint. It persists local state in SQLite, uses Telegram polling by
+default, and works with the ACP agent command you choose.
 
-The core loop is simple: git workspaces for safe edits, a memory system for
-durable facts, MCP support for tools, and durable sessions for long-running
-work.
+Use Codex, OpenCode, Copilot, Gemini, Claude Code, or any command that speaks
+ACP. Relay wraps it with durable history, memory, MCP tools, and optional git
+workspace isolation.
 
 ```bash
 npm install -g -y @normahq/relay
@@ -27,6 +27,8 @@ relay start
 
 | Feature | What it means |
 |---------|---------------|
+| No backing services | Relay stores local state in SQLite and does not require Redis, Postgres, queues, or object storage. |
+| No webhook required | Polling mode is the default, so local quickstarts do not need a public URL or published port. |
 | Any ACP agent | Use built-in providers for `codex`, `opencode`, `copilot`, `gemini`, and `claude`, or wire any ACP-compatible command with `generic_acp`. |
 | Telegram control plane | One owner, optional collaborators, direct-message sessions, topic sessions with `/topic <name>`, and public-chat mention/reply routing. |
 | Git workspaces | Each session can get its own git worktree, with `relay.workspace.import` and `relay.workspace.export` MCP tools for safe branch flow. |
