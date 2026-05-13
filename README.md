@@ -5,17 +5,14 @@
 
 ## Telegram control plane for coding agents
 
-Relay is one app with no backing services and no webhook required. Point it at
-a project, connect your bot, and run long-lived agent sessions from DMs, groups,
-or topic chats.
+Relay is a lightweight Telegram app for running long-lived ACP coding agents
+from DMs, groups, and topic chats. Point it at a project, connect your bot,
+and keep agent work moving without leaving Telegram.
 
-Relay does not require Redis, Postgres, object storage, queues, or a public
-webhook endpoint. It persists local state in SQLite, uses Telegram polling by
-default, and works with the ACP agent command you choose.
-
-Use Codex, OpenCode, Copilot, Gemini, Claude Code, or any command that speaks
-ACP. Relay wraps it with durable history, memory, MCP tools, and optional git
-workspace isolation.
+It runs as one app with local SQLite state: no Redis, Postgres, object storage,
+queues, public webhook, or published port required. Use Codex, OpenCode,
+Copilot, Gemini, Claude Code, or any ACP-compatible command, with durable
+history, memory, MCP tools, and optional git workspace isolation.
 
 ```bash
 npm install -g -y @normahq/relay
@@ -36,9 +33,6 @@ relay start
 | Memory system | `MEMORY.md` stores facts, `/memory` shows them, and `relay.memory.*` MCP tools let agents remember user-approved facts. |
 | MCP support | Add stdio, HTTP, or SSE MCP servers globally, per provider, or for every Relay session. |
 | Docker Compose runtime | Run Relay in a container while using the current directory, `.env`, `.git`, and `.config/relay` from the host. |
-
-Relay is useful when you want an agent to live where you already coordinate:
-Telegram DMs, group chats, and project topics.
 
 ## How It Works
 
