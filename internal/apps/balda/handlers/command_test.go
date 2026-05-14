@@ -5,12 +5,14 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
+	relaystate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -358,6 +360,298 @@ func TestCommandHandlerOnCommand_GoalWithoutArgsShowsUsage(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Usage: /goal <objective>")
 }
 
+func TestCommandHandlerOnCommand_CronAddCreatesJob(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	fixedNow := time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC)
+	handler.now = func() time.Time { return fixedNow }
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "add 5m review open PRs", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	locator := relaytelegram.NewLocator(9001, 0)
+	jobs, listErr := handler.jobStore.ListByAddress(context.Background(), locator.ChannelType, locator.AddressKey)
+	if listErr != nil {
+		t.Fatalf("ListByAddress() error = %v", listErr)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(jobs))
+	}
+	if got, want := jobs[0].ScheduleSpec, "5m"; got != want {
+		t.Fatalf("ScheduleSpec = %q, want %q", got, want)
+	}
+	if got, want := jobs[0].Prompt, "review open PRs"; got != want {
+		t.Fatalf("Prompt = %q, want %q", got, want)
+	}
+	if got, want := jobs[0].NextRunAt, fixedNow.Add(5*time.Minute); !got.Equal(want) {
+		t.Fatalf("NextRunAt = %s, want %s", got, want)
+	}
+	assertLastSentContains(t, tgClient, "Scheduled job created.")
+}
+
+func TestCommandHandlerOnCommand_CronAddSupportsAtEverySchedule(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	_ = sm
+	_ = turns
+	_ = tgClient
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "add @every 10m do check-ins", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	locator := relaytelegram.NewLocator(9001, 0)
+	jobs, listErr := handler.jobStore.ListByAddress(context.Background(), locator.ChannelType, locator.AddressKey)
+	if listErr != nil {
+		t.Fatalf("ListByAddress() error = %v", listErr)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(jobs))
+	}
+	if got, want := jobs[0].ScheduleSpec, "@every 10m"; got != want {
+		t.Fatalf("ScheduleSpec = %q, want %q", got, want)
+	}
+}
+
+func TestCommandHandlerOnCommand_CronAddInvalidSchedule(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "add never invalid schedule", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	locator := relaytelegram.NewLocator(9001, 0)
+	jobs, listErr := handler.jobStore.ListByAddress(context.Background(), locator.ChannelType, locator.AddressKey)
+	if listErr != nil {
+		t.Fatalf("ListByAddress() error = %v", listErr)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("jobs = %d, want 0", len(jobs))
+	}
+	assertLastSentContains(t, tgClient, "Invalid schedule:")
+}
+
+func TestCommandHandlerOnCommand_CronAddWithoutPromptShowsUsage(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "add 5m", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Usage: /cron add <schedule> <prompt>")
+}
+
+func TestCommandHandlerOnCommand_CronAddUnauthorized(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "add 5m deny", 999, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	locator := relaytelegram.NewLocator(9001, 0)
+	jobs, listErr := handler.jobStore.ListByAddress(context.Background(), locator.ChannelType, locator.AddressKey)
+	if listErr != nil {
+		t.Fatalf("ListByAddress() error = %v", listErr)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("jobs = %d, want 0", len(jobs))
+	}
+	assertLastSentContains(t, tgClient, "Only the bot owner or collaborators can use this command.")
+}
+
+func TestCommandHandlerOnCommand_CronListShowsJobs(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	locator := relaytelegram.NewLocator(9001, 0)
+	now := time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC)
+	if err := handler.jobStore.Upsert(context.Background(), relaystate.ScheduledJobRecord{
+		JobID:        "cron-tg-9001-0-1",
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Prompt:       "check open prs",
+		ScheduleSpec: "5m",
+		Timezone:     "UTC",
+		Status:       relaystate.ScheduledJobStatusActive,
+		NextRunAt:    now,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "list", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Cron jobs for this session:")
+	assertLastSentContains(t, tgClient, "cron-tg-9001-0-1")
+	assertLastSentContains(t, tgClient, "5m")
+}
+
+func TestCommandHandlerOnCommand_CronListNoJobs(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "list", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "No cron jobs for this session.")
+}
+
+func TestCommandHandlerOnCommand_CronRemoveDeletesScopedJob(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	locator := relaytelegram.NewLocator(9001, 0)
+	jobID := "cron-tg-9001-0-remove"
+	if err := handler.jobStore.Upsert(context.Background(), relaystate.ScheduledJobRecord{
+		JobID:        jobID,
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Prompt:       "cleanup",
+		ScheduleSpec: "15m",
+		Timezone:     "UTC",
+		Status:       relaystate.ScheduledJobStatusActive,
+		NextRunAt:    time.Now().UTC().Add(15 * time.Minute),
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "remove "+jobID, 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	_, ok, getErr := handler.jobStore.GetByID(context.Background(), jobID)
+	if getErr != nil {
+		t.Fatalf("GetByID() error = %v", getErr)
+	}
+	if ok {
+		t.Fatal("GetByID() found job after remove, want deleted")
+	}
+	assertLastSentContains(t, tgClient, "Cron job removed:")
+}
+
+func TestCommandHandlerOnCommand_CronRemoveRejectsForeignJob(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	foreign := relaytelegram.NewLocator(9002, 0)
+	jobID := "cron-tg-9002-0-foreign"
+	if err := handler.jobStore.Upsert(context.Background(), relaystate.ScheduledJobRecord{
+		JobID:        jobID,
+		SessionID:    foreign.SessionID,
+		ChannelType:  foreign.ChannelType,
+		AddressKey:   foreign.AddressKey,
+		AddressJSON:  foreign.AddressJSON,
+		Prompt:       "other session",
+		ScheduleSpec: "30m",
+		Timezone:     "UTC",
+		Status:       relaystate.ScheduledJobStatusActive,
+		NextRunAt:    time.Now().UTC().Add(30 * time.Minute),
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "remove "+jobID, 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	_, ok, getErr := handler.jobStore.GetByID(context.Background(), jobID)
+	if getErr != nil {
+		t.Fatalf("GetByID() error = %v", getErr)
+	}
+	if !ok {
+		t.Fatal("GetByID() missing foreign job, want preserved")
+	}
+	assertLastSentContains(t, tgClient, "Cron job not found for this session.")
+}
+
+func TestCommandHandlerOnCommand_CronRemoveWithoutIDShowsUsage(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("cron", "remove", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Usage: /cron remove <job_id>")
+}
+
+func TestCommandHandlerOnCommand_CronPauseAndResume(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	locator := relaytelegram.NewLocator(9001, 0)
+	jobID := "cron-tg-9001-0-pause"
+	if err := handler.jobStore.Upsert(context.Background(), relaystate.ScheduledJobRecord{
+		JobID:        jobID,
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Prompt:       "pauseable",
+		ScheduleSpec: "5m",
+		Timezone:     "UTC",
+		Status:       relaystate.ScheduledJobStatusActive,
+		NextRunAt:    time.Now().UTC().Add(5 * time.Minute),
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	if err := handler.onCommand(context.Background(), newCommandEvent("cron", "pause "+jobID, 101, 9001, nil)); err != nil {
+		t.Fatalf("onCommand(pause) error = %v", err)
+	}
+	paused, ok, getErr := handler.jobStore.GetByID(context.Background(), jobID)
+	if getErr != nil {
+		t.Fatalf("GetByID() error = %v", getErr)
+	}
+	if !ok {
+		t.Fatal("GetByID() missing job after pause")
+	}
+	if got := paused.Status; got != relaystate.ScheduledJobStatusPaused {
+		t.Fatalf("Status after pause = %q, want %q", got, relaystate.ScheduledJobStatusPaused)
+	}
+	assertLastSentContains(t, tgClient, "Cron job paused:")
+
+	if err := handler.onCommand(context.Background(), newCommandEvent("cron", "resume "+jobID, 101, 9001, nil)); err != nil {
+		t.Fatalf("onCommand(resume) error = %v", err)
+	}
+	resumed, ok, getErr := handler.jobStore.GetByID(context.Background(), jobID)
+	if getErr != nil {
+		t.Fatalf("GetByID() error = %v", getErr)
+	}
+	if !ok {
+		t.Fatal("GetByID() missing job after resume")
+	}
+	if got := resumed.Status; got != relaystate.ScheduledJobStatusActive {
+		t.Fatalf("Status after resume = %q, want %q", got, relaystate.ScheduledJobStatusActive)
+	}
+	assertLastSentContains(t, tgClient, "Cron job resumed:")
+}
+
+func TestCommandHandlerOnCommand_CronPauseWithoutIDShowsUsage(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	if err := handler.onCommand(context.Background(), newCommandEvent("cron", "pause", 101, 9001, nil)); err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Usage: /cron pause <job_id>")
+}
+
+func TestCommandHandlerOnCommand_CronResumeUnknownJob(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	if err := handler.onCommand(context.Background(), newCommandEvent("cron", "resume missing-job", 101, 9001, nil)); err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Cron job not found for this session.")
+}
+
 func TestCommandHandlerOnCommand_CancelClearsQueueAndInFlight(t *testing.T) {
 	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
 	turns.cancelHadInFlight = true
@@ -688,6 +982,8 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 		goalRunner:     goalRunner,
 		messenger:      msg,
 		memoryStore:    memory.NewStore(t.TempDir(), true),
+		jobStore:       newSchedulerJobStore(t),
+		now:            time.Now,
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
 }

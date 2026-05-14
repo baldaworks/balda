@@ -143,6 +143,11 @@ Built-in provider types:
 
 - `/topic <name>`: create a named topic session.
 - `/goal <objective>`: start a Goalkeeper loop in the current session context/workspace.
+- `/cron add <schedule> <prompt>`: create an active recurring job in the current session (examples: `5m`, `@every 10m`).
+- `/cron list`: list recurring jobs for the current session.
+- `/cron remove <job_id>`: remove a recurring job from the current session.
+- `/cron pause <job_id>`: pause a recurring job in the current session.
+- `/cron resume <job_id>`: resume a paused recurring job in the current session.
 - `/reset`: clear conversation history for the current session.
 - `/close`: reset history, then close the current topic or restart the owner session on the next message.
 - `/cancel`: cancel in-flight work, drop queued turns, and abort active `/goal` run for the current session.

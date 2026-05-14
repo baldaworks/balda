@@ -468,6 +468,12 @@ Balda runs with a single provider per process (`balda.provider`).
   - `<name>` is a session label, not a provider selector.
 - `/goal <objective>` (owner/collaborator): starts a Goalkeeper loop in the current session context/workspace and posts started/iteration/final updates.
   - concurrent `/goal` runs in the same session are rejected.
+- `/cron add <schedule> <prompt>` (owner/collaborator): creates an active recurring scheduled job bound to the current session locator.
+  - schedule accepts Go duration format with optional `@every` prefix (for example `5m`, `@every 10m`).
+- `/cron list` (owner/collaborator): lists recurring jobs scoped to the current session locator.
+- `/cron remove <job_id>` (owner/collaborator): removes a recurring job only when it belongs to the current session scope.
+- `/cron pause <job_id>` (owner/collaborator): marks a recurring job as paused in current session scope.
+- `/cron resume <job_id>` (owner/collaborator): re-activates a paused recurring job in current session scope.
 - `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
 - `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Balda metadata or the workspace branch.
 - `/cancel` (owner/collaborator): cancels active turn, drops queued turns, and aborts active `/goal` run for current session.

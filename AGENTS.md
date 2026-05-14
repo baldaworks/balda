@@ -37,6 +37,11 @@ go tool golangci-lint run
 - `/start invite=<invite_token>`: direct message only; collaborator invite onboarding entrypoint.
 - `/topic <name>`: owner/collaborator, direct message only; creates a topic session labeled `<name>` using the configured relay provider.
 - `/goal <objective>`: owner/collaborator; starts a Goalkeeper loop in the current session context/workspace with started/iteration/final updates.
+- `/cron add <schedule> <prompt>`: owner/collaborator; creates an active recurring job bound to the current session locator.
+- `/cron list`: owner/collaborator; lists recurring jobs scoped to the current session locator.
+- `/cron remove <job_id>`: owner/collaborator; removes a recurring job in the current session scope.
+- `/cron pause <job_id>`: owner/collaborator; pauses an active recurring job in current session scope.
+- `/cron resume <job_id>`: owner/collaborator; resumes a paused recurring job in current session scope.
 - `/close`: owner/collaborator, direct message only; closes a topic session or stops the owner session.
 - `/cancel`: owner/collaborator; cancels in-flight turn processing, drops queued turns, and aborts active `/goal` run for the current session.
 - `/user add|list|remove <user_id>`: owner only; collaborator invite and management commands.
