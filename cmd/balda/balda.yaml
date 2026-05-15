@@ -36,14 +36,26 @@ balda:
       path: "/telegram/webhook"
 
   inbound_webhooks:
-    # Enable generic authenticated inbound webhook ingestion.
+    # Enable generic inbound webhook ingestion.
     enabled: false
     # Local bind address for inbound webhook endpoint.
     listen_addr: "127.0.0.1:8090"
-    # Local HTTP path for inbound webhook events.
-    path: "/inbound/webhook"
-    # Required bearer token for inbound webhook auth when enabled.
-    auth_token: ""
+    # Route table for inbound webhook events.
+    # Each route binds:
+    # - path: incoming webhook path
+    # - report_to: locator alias from balda.locators
+    # - prompt_template: Go text/template rendered with request data
+    # Available template fields: RequestID, Path, Method, RawBody, Headers
+    # Example:
+    # routes:
+    #   release_notes:
+    #     path: "/webhook/release-notes"
+    #     report_to: "owner_dm"
+    #     prompt_template: |
+    #       Request {{.RequestID}} on {{.Path}}
+    #       Body:
+    #       {{.RawBody}}
+    routes: {}
 
   logger:
     level: "info"
@@ -74,6 +86,28 @@ balda:
     # /goal loop iteration cap.
     # Balda clamps invalid values to 25.
     max_iterations: 25
+
+  # Canonical session locator aliases for scheduler jobs and inbound webhook routes.
+  # Example:
+  # locators:
+  #   owner_dm:
+  #     channel_type: "telegram"
+  #     address_key: "123456789:0"
+  #     address_json: "{\"chat_id\":123456789,\"topic_id\":0}"
+  #     session_id: "tg-123456789-0"
+  locators: {}
+
+  scheduler:
+    # Startup-reconciled recurring jobs.
+    # Jobs are upserted by id on boot; missing ids are removed from balda.db.
+    # Each job references a locator alias and uses cron syntax (5 fields) or cron descriptors like @every 10m.
+    # Example:
+    # jobs:
+    #   - id: "owner-daily-summary"
+    #     alias: "owner_dm"
+    #     cron: "0 9 * * *"
+    #     prompt: "Summarize repository status."
+    jobs: []
 
   workspace:
     # Workspace mode:

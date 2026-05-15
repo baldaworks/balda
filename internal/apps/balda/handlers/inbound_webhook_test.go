@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"text/template"
 
 	relaychannel "github.com/normahq/balda/internal/apps/balda/channel"
 	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -16,52 +18,120 @@ import (
 	"google.golang.org/adk/runner"
 )
 
-func TestNewInboundWebhookReceiver_RequiresAuthTokenWhenEnabled(t *testing.T) {
+func TestNormalizeInboundWebhookConfig_RequiresRoutesWhenEnabled(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewInboundWebhookReceiver(inboundWebhookParams{
-		Enabled:    true,
-		Sessions:   &relaysession.Manager{},
-		Dispatcher: &TurnDispatcher{},
-		Relay:      &RelayHandler{},
-		Logger:     zerolog.Nop(),
-	})
+	_, err := normalizeInboundWebhookConfig(InboundWebhookConfig{Enabled: true})
 	if err == nil {
-		t.Fatal("NewInboundWebhookReceiver() error = nil, want auth token validation error")
+		t.Fatal("normalizeInboundWebhookConfig() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "balda.inbound_webhooks.routes is required") {
+		t.Fatalf("normalizeInboundWebhookConfig() error = %v", err)
 	}
 }
 
-func TestInboundWebhookReceiver_Unauthorized(t *testing.T) {
+func TestNormalizeInboundWebhookConfig_RejectsUndefinedAlias(t *testing.T) {
+	t.Parallel()
+
+	_, err := normalizeInboundWebhookConfig(InboundWebhookConfig{
+		Enabled: true,
+		LocatorAliases: map[string]WebhookLocatorAlias{
+			"owner": {
+				ChannelType: "telegram",
+				AddressKey:  "9001:0",
+				AddressJSON: `{"chat_id":9001,"topic_id":0}`,
+				SessionID:   "tg-9001-0",
+			},
+		},
+		Routes: map[string]InboundWebhookRouteConfig{
+			"webhook1": {
+				Path:           "/webhook1",
+				ReportTo:       "missing",
+				PromptTemplate: "{{.RawBody}}",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("normalizeInboundWebhookConfig() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "references undefined balda.locators key") {
+		t.Fatalf("normalizeInboundWebhookConfig() error = %v", err)
+	}
+}
+
+func TestNormalizeInboundWebhookConfig_RejectsDuplicatePaths(t *testing.T) {
+	t.Parallel()
+
+	_, err := normalizeInboundWebhookConfig(InboundWebhookConfig{
+		Enabled: true,
+		LocatorAliases: map[string]WebhookLocatorAlias{
+			"owner": {
+				ChannelType: "telegram",
+				AddressKey:  "9001:0",
+				AddressJSON: `{"chat_id":9001,"topic_id":0}`,
+				SessionID:   "tg-9001-0",
+			},
+		},
+		Routes: map[string]InboundWebhookRouteConfig{
+			"webhook1": {
+				Path:           "/shared",
+				ReportTo:       "owner",
+				PromptTemplate: "first",
+			},
+			"webhook2": {
+				Path:           "shared",
+				ReportTo:       "owner",
+				PromptTemplate: "second",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("normalizeInboundWebhookConfig() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "duplicates route") {
+		t.Fatalf("normalizeInboundWebhookConfig() error = %v", err)
+	}
+}
+
+func TestInboundWebhookReceiver_InvalidMethod(t *testing.T) {
 	t.Parallel()
 
 	receiver := newInboundWebhookReceiverForTest()
-	req := httptest.NewRequest(http.MethodPost, "/inbound/webhook", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodGet, "/webhook1", nil)
 	rec := httptest.NewRecorder()
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusUnauthorized, inboundWebhookCodeUnauthorized)
+	assertInboundWebhookError(t, rec, http.StatusMethodNotAllowed, inboundWebhookCodeInvalidMethod)
 }
 
-func TestInboundWebhookReceiver_InvalidJSON(t *testing.T) {
+func TestInboundWebhookReceiver_RouteNotFound(t *testing.T) {
 	t.Parallel()
 
 	receiver := newInboundWebhookReceiverForTest()
-	req := httptest.NewRequest(http.MethodPost, "/inbound/webhook", bytes.NewBufferString(`{"prompt":`))
-	req.Header.Set("Authorization", "Bearer test-token")
+	req := httptest.NewRequest(http.MethodPost, "/missing", bytes.NewBufferString("payload"))
 	rec := httptest.NewRecorder()
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusBadRequest, inboundWebhookCodeInvalidJSON)
+	assertInboundWebhookError(t, rec, http.StatusNotFound, inboundWebhookCodeRouteNotFound)
 }
 
-func TestInboundWebhookReceiver_InvalidPayload(t *testing.T) {
+func TestInboundWebhookReceiver_TemplateRenderError(t *testing.T) {
 	t.Parallel()
 
 	receiver := newInboundWebhookReceiverForTest()
-	req := httptest.NewRequest(http.MethodPost, "/inbound/webhook", bytes.NewBufferString(`{"prompt":"","target":{}}`))
-	req.Header.Set("Authorization", "Bearer test-token")
+	locator := relaytelegram.NewLocator(9001, 77)
+	receiver.routes = map[string]inboundWebhookRoute{
+		"/webhook1": {
+			Name:           "webhook1",
+			Path:           "/webhook1",
+			Locator:        locator,
+			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.Missing}}")),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("payload"))
 	rec := httptest.NewRecorder()
 
 	receiver.handleInboundWebhook(rec, req)
@@ -78,9 +148,7 @@ func TestInboundWebhookReceiver_SessionNotFound(t *testing.T) {
 	receiver := newInboundWebhookReceiverForTest()
 	receiver.sessions = sessionMgr
 
-	body := `{"prompt":"hello","target":{"session_id":"tg-9001-77"}}`
-	req := httptest.NewRequest(http.MethodPost, "/inbound/webhook", bytes.NewBufferString(body))
-	req.Header.Set("Authorization", "Bearer test-token")
+	req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("payload"))
 	rec := httptest.NewRecorder()
 
 	receiver.handleInboundWebhook(rec, req)
@@ -103,24 +171,16 @@ func TestInboundWebhookReceiver_QueueFull(t *testing.T) {
 	receiver := newInboundWebhookReceiverForTest()
 	receiver.sessions = sessionMgr
 	receiver.dispatch = queue
-
-	payload, err := json.Marshal(inboundWebhookRequest{
-		Prompt: "hello",
-		Target: inboundWebhookTarget{
-			Locator: &inboundWebhookLocator{
-				ChannelType: locator.ChannelType,
-				AddressKey:  locator.AddressKey,
-				AddressJSON: locator.AddressJSON,
-				SessionID:   locator.SessionID,
-			},
+	receiver.routes = map[string]inboundWebhookRoute{
+		"/webhook1": {
+			Name:           "webhook1",
+			Path:           "/webhook1",
+			Locator:        locator,
+			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
 		},
-	})
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/inbound/webhook", bytes.NewReader(payload))
-	req.Header.Set("Authorization", "Bearer test-token")
+	req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("hello"))
 	rec := httptest.NewRecorder()
 
 	receiver.handleInboundWebhook(rec, req)
@@ -146,10 +206,18 @@ func TestInboundWebhookReceiver_AcceptsAndDispatches(t *testing.T) {
 	receiver.sessions = sessionMgr
 	receiver.dispatch = queue
 	receiver.relay = executor
+	receiver.routes = map[string]inboundWebhookRoute{
+		"/webhook1": {
+			Name:           "webhook1",
+			Path:           "/webhook1",
+			Locator:        locator,
+			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("route={{.Path}} body={{.RawBody}}")),
+		},
+	}
 
-	body := `{"request_id":"req-1","prompt":"hello from webhook","target":{"session_id":"` + locator.SessionID + `"}}`
-	req := httptest.NewRequest(http.MethodPost, "/inbound/webhook", bytes.NewBufferString(body))
-	req.Header.Set("Authorization", "Bearer test-token")
+	body := `{"event":"release"}`
+	req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString(body))
+	req.Header.Set("X-Request-Id", "req-1")
 	rec := httptest.NewRecorder()
 
 	receiver.handleInboundWebhook(rec, req)
@@ -164,6 +232,9 @@ func TestInboundWebhookReceiver_AcceptsAndDispatches(t *testing.T) {
 	if got, want := response.Status, inboundWebhookStatusAccepted; got != want {
 		t.Fatalf("status body = %q, want %q", got, want)
 	}
+	if got, want := response.RequestID, "req-1"; got != want {
+		t.Fatalf("request_id = %q, want %q", got, want)
+	}
 	if got, want := response.SessionID, locator.SessionID; got != want {
 		t.Fatalf("session_id = %q, want %q", got, want)
 	}
@@ -173,7 +244,7 @@ func TestInboundWebhookReceiver_AcceptsAndDispatches(t *testing.T) {
 	if got := executor.calls; got != 1 {
 		t.Fatalf("executor calls = %d, want 1", got)
 	}
-	if got, want := executor.prompt, "hello from webhook"; got != want {
+	if got, want := executor.prompt, "route=/webhook1 body={\"event\":\"release\"}"; got != want {
 		t.Fatalf("executor prompt = %q, want %q", got, want)
 	}
 	if got := sessionMgr.restoreCalls; got != 1 {
@@ -272,13 +343,21 @@ func (f *fakeInboundTurnExecutor) runTurnTask(
 }
 
 func newInboundWebhookReceiverForTest() *InboundWebhookReceiver {
+	locator := relaytelegram.NewLocator(9001, 77)
 	return &InboundWebhookReceiver{
-		enabled:   true,
-		authToken: "test-token",
-		sessions:  &fakeInboundSessionManager{},
-		dispatch:  &fakeInboundTurnQueue{},
-		relay:     &fakeInboundTurnExecutor{},
-		logger:    zerolog.Nop(),
+		enabled: true,
+		routes: map[string]inboundWebhookRoute{
+			"/webhook1": {
+				Name:           "webhook1",
+				Path:           "/webhook1",
+				Locator:        locator,
+				PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
+			},
+		},
+		sessions: &fakeInboundSessionManager{},
+		dispatch: &fakeInboundTurnQueue{},
+		relay:    &fakeInboundTurnExecutor{},
+		logger:   zerolog.Nop(),
 	}
 }
 

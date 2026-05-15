@@ -104,6 +104,8 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	jobSchedulerConfig := buildJobSchedulerConfig(cfg.Relay)
+	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Relay)
 
 	// Start with global MCP servers.
 	mcpServers := make(map[string]agentconfig.MCPServerConfig, len(normaCfg.MCPServers))
@@ -119,6 +121,8 @@ func Module(
 			normaCfg,
 			workingDir,
 			mcpReg,
+			jobSchedulerConfig,
+			inboundWebhookConfig,
 		),
 		fx.Provide(
 			fx.Annotate(
@@ -253,38 +257,6 @@ func Module(
 					return cfg.Relay.Telegram.PlanUpdates
 				},
 				fx.ResultTags(`name:"relay_telegram_plan_updates"`),
-			),
-		),
-		fx.Provide(
-			fx.Annotate(
-				func() bool {
-					return cfg.Relay.InboundWebhooks.Enabled
-				},
-				fx.ResultTags(`name:"relay_inbound_webhooks_enabled"`),
-			),
-		),
-		fx.Provide(
-			fx.Annotate(
-				func() string {
-					return strings.TrimSpace(cfg.Relay.InboundWebhooks.ListenAddr)
-				},
-				fx.ResultTags(`name:"relay_inbound_webhooks_listen_addr"`),
-			),
-		),
-		fx.Provide(
-			fx.Annotate(
-				func() string {
-					return strings.TrimSpace(cfg.Relay.InboundWebhooks.Path)
-				},
-				fx.ResultTags(`name:"relay_inbound_webhooks_path"`),
-			),
-		),
-		fx.Provide(
-			fx.Annotate(
-				func() string {
-					return strings.TrimSpace(cfg.Relay.InboundWebhooks.AuthToken)
-				},
-				fx.ResultTags(`name:"relay_inbound_webhooks_auth_token"`),
 			),
 		),
 		fx.Provide(
@@ -533,5 +505,62 @@ func validateSessionPersistence(raw string) (string, error) {
 		return mode, nil
 	default:
 		return "", fmt.Errorf("invalid balda.sessions.persistence %q: supported values are %q and %q", raw, sessionPersistenceMemory, sessionPersistenceSQLite)
+	}
+}
+
+func buildJobSchedulerConfig(cfg RelayConfig) handlers.JobSchedulerConfig {
+	locatorAliases := make(map[string]handlers.JobLocatorAlias, len(cfg.Locators))
+	for alias, locator := range cfg.Locators {
+		trimmedAlias := strings.TrimSpace(alias)
+		locatorAliases[trimmedAlias] = handlers.JobLocatorAlias{
+			ChannelType: strings.TrimSpace(locator.ChannelType),
+			AddressKey:  strings.TrimSpace(locator.AddressKey),
+			AddressJSON: strings.TrimSpace(locator.AddressJSON),
+			SessionID:   strings.TrimSpace(locator.SessionID),
+		}
+	}
+
+	jobs := make([]handlers.ConfiguredScheduledJob, 0, len(cfg.Scheduler.Jobs))
+	for _, job := range cfg.Scheduler.Jobs {
+		jobs = append(jobs, handlers.ConfiguredScheduledJob{
+			ID:     strings.TrimSpace(job.ID),
+			Alias:  strings.TrimSpace(job.Alias),
+			Cron:   strings.TrimSpace(job.Cron),
+			Prompt: strings.TrimSpace(job.Prompt),
+		})
+	}
+
+	return handlers.JobSchedulerConfig{
+		LocatorAliases: locatorAliases,
+		Jobs:           jobs,
+	}
+}
+
+func buildInboundWebhookConfig(cfg RelayConfig) handlers.InboundWebhookConfig {
+	locatorAliases := make(map[string]handlers.WebhookLocatorAlias, len(cfg.Locators))
+	for alias, locator := range cfg.Locators {
+		trimmedAlias := strings.TrimSpace(alias)
+		locatorAliases[trimmedAlias] = handlers.WebhookLocatorAlias{
+			ChannelType: strings.TrimSpace(locator.ChannelType),
+			AddressKey:  strings.TrimSpace(locator.AddressKey),
+			AddressJSON: strings.TrimSpace(locator.AddressJSON),
+			SessionID:   strings.TrimSpace(locator.SessionID),
+		}
+	}
+
+	routes := make(map[string]handlers.InboundWebhookRouteConfig, len(cfg.InboundWebhooks.Routes))
+	for routeName, route := range cfg.InboundWebhooks.Routes {
+		routes[strings.TrimSpace(routeName)] = handlers.InboundWebhookRouteConfig{
+			Path:           strings.TrimSpace(route.Path),
+			ReportTo:       strings.TrimSpace(route.ReportTo),
+			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
+		}
+	}
+
+	return handlers.InboundWebhookConfig{
+		Enabled:        cfg.InboundWebhooks.Enabled,
+		ListenAddr:     strings.TrimSpace(cfg.InboundWebhooks.ListenAddr),
+		LocatorAliases: locatorAliases,
+		Routes:         routes,
 	}
 }

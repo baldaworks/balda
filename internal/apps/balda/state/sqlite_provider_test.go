@@ -160,6 +160,13 @@ func TestSQLiteProvider_ScheduledJobStoreRoundTrip(t *testing.T) {
 	if got.ScheduleSpec != record.ScheduleSpec {
 		t.Fatalf("schedule_spec = %q, want %q", got.ScheduleSpec, record.ScheduleSpec)
 	}
+	allJobs, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(allJobs) != 1 || allJobs[0].JobID != "job-1" {
+		t.Fatalf("List() = %#v, want single job-1", allJobs)
+	}
 
 	dueJobs, err := store.ListDue(ctx, nextRunAt.Add(time.Second), 10)
 	if err != nil {

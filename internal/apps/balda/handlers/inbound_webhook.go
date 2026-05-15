@@ -1,17 +1,19 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"text/template"
 	"time"
 
 	relaychannel "github.com/normahq/balda/internal/apps/balda/channel"
@@ -24,7 +26,6 @@ import (
 
 const (
 	defaultInboundWebhookListenAddr = "127.0.0.1:8090"
-	defaultInboundWebhookPath       = "/inbound/webhook"
 
 	inboundWebhookReadHeaderTimeout = 5 * time.Second
 	inboundWebhookReadTimeout       = 10 * time.Second
@@ -37,15 +38,43 @@ const (
 	inboundWebhookStatusAccepted = "accepted"
 	inboundWebhookStatusError    = "error"
 
-	inboundWebhookCodeUnauthorized      = "unauthorized"
-	inboundWebhookCodeInvalidMethod     = "invalid_method"
-	inboundWebhookCodeInvalidJSON       = "invalid_json"
-	inboundWebhookCodeInvalidPayload    = "invalid_payload"
-	inboundWebhookCodeUnsupportedTarget = "unsupported_target"
-	inboundWebhookCodeSessionNotFound   = "session_not_found"
-	inboundWebhookCodeQueueFull         = "queue_full"
-	inboundWebhookCodeDispatchFailed    = "dispatch_failed"
+	inboundWebhookCodeInvalidMethod   = "invalid_method"
+	inboundWebhookCodeRouteNotFound   = "route_not_found"
+	inboundWebhookCodeInvalidPayload  = "invalid_payload"
+	inboundWebhookCodeSessionNotFound = "session_not_found"
+	inboundWebhookCodeQueueFull       = "queue_full"
+	inboundWebhookCodeDispatchFailed  = "dispatch_failed"
 )
+
+// WebhookLocatorAlias binds a locator alias name to canonical session locator fields.
+type WebhookLocatorAlias struct {
+	ChannelType string
+	AddressKey  string
+	AddressJSON string
+	SessionID   string
+}
+
+// InboundWebhookRouteConfig configures one inbound webhook route.
+type InboundWebhookRouteConfig struct {
+	Path           string
+	ReportTo       string
+	PromptTemplate string
+}
+
+// InboundWebhookConfig controls inbound webhook routing and dispatch behavior.
+type InboundWebhookConfig struct {
+	Enabled        bool
+	ListenAddr     string
+	LocatorAliases map[string]WebhookLocatorAlias
+	Routes         map[string]InboundWebhookRouteConfig
+}
+
+type inboundWebhookRoute struct {
+	Name           string
+	Path           string
+	Locator        relaysession.SessionLocator
+	PromptTemplate *template.Template
+}
 
 type inboundWebhookSessionManager interface {
 	GetSession(locator relaysession.SessionLocator) (*relaysession.TopicSession, error)
@@ -72,22 +101,18 @@ type inboundWebhookParams struct {
 	fx.In
 
 	LC         fx.Lifecycle
-	Enabled    bool   `name:"relay_inbound_webhooks_enabled"`
-	ListenAddr string `name:"relay_inbound_webhooks_listen_addr"`
-	Path       string `name:"relay_inbound_webhooks_path"`
-	AuthToken  string `name:"relay_inbound_webhooks_auth_token"`
+	Config     InboundWebhookConfig
 	Sessions   *relaysession.Manager
 	Dispatcher *TurnDispatcher
 	Relay      *RelayHandler
 	Logger     zerolog.Logger
 }
 
-// InboundWebhookReceiver receives authenticated inbound webhook prompts and dispatches them into session turns.
+// InboundWebhookReceiver receives inbound webhook events and dispatches them into bound session turns.
 type InboundWebhookReceiver struct {
 	enabled    bool
 	listenAddr string
-	path       string
-	authToken  string
+	routes     map[string]inboundWebhookRoute
 	sessions   inboundWebhookSessionManager
 	dispatch   turnQueue
 	relay      inboundTurnExecutor
@@ -102,30 +127,19 @@ type InboundWebhookReceiver struct {
 }
 
 type inboundWebhookMetrics struct {
-	accepted     atomic.Uint64
-	unauthorized atomic.Uint64
-	invalid      atomic.Uint64
-	notFound     atomic.Uint64
-	queueFull    atomic.Uint64
-	dispatchErr  atomic.Uint64
+	accepted    atomic.Uint64
+	invalid     atomic.Uint64
+	notFound    atomic.Uint64
+	queueFull   atomic.Uint64
+	dispatchErr atomic.Uint64
 }
 
-type inboundWebhookRequest struct {
-	RequestID string               `json:"request_id,omitempty"`
-	Prompt    string               `json:"prompt"`
-	Target    inboundWebhookTarget `json:"target"`
-}
-
-type inboundWebhookTarget struct {
-	SessionID string                 `json:"session_id,omitempty"`
-	Locator   *inboundWebhookLocator `json:"locator,omitempty"`
-}
-
-type inboundWebhookLocator struct {
-	ChannelType string `json:"channel_type"`
-	AddressKey  string `json:"address_key"`
-	AddressJSON string `json:"address_json"`
-	SessionID   string `json:"session_id"`
+type inboundWebhookTemplateData struct {
+	RequestID string
+	Path      string
+	Method    string
+	RawBody   string
+	Headers   map[string]string
 }
 
 type inboundWebhookAcceptedResponse struct {
@@ -173,11 +187,15 @@ func newInboundWebhookHTTPError(status int, code, message string, cause error) *
 }
 
 func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
+	normalized, err := normalizeInboundWebhookConfig(params.Config)
+	if err != nil {
+		return nil, err
+	}
+
 	receiver := &InboundWebhookReceiver{
-		enabled:    params.Enabled,
-		listenAddr: normalizeInboundWebhookListenAddr(params.ListenAddr),
-		path:       normalizeInboundWebhookPath(params.Path),
-		authToken:  strings.TrimSpace(params.AuthToken),
+		enabled:    normalized.Enabled,
+		listenAddr: normalized.ListenAddr,
+		routes:     normalized.Routes,
 		sessions:   params.Sessions,
 		dispatch:   params.Dispatcher,
 		relay:      params.Relay,
@@ -196,9 +214,6 @@ func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookRece
 	if receiver.relay == nil {
 		return nil, fmt.Errorf("balda relay handler is required for inbound webhooks")
 	}
-	if receiver.authToken == "" {
-		return nil, fmt.Errorf("balda.inbound_webhooks.auth_token is required when inbound webhooks are enabled")
-	}
 
 	params.LC.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
@@ -212,6 +227,103 @@ func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookRece
 	return receiver, nil
 }
 
+type normalizedInboundWebhookConfig struct {
+	Enabled    bool
+	ListenAddr string
+	Routes     map[string]inboundWebhookRoute
+}
+
+func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundWebhookConfig, error) {
+	normalized := normalizedInboundWebhookConfig{
+		Enabled:    cfg.Enabled,
+		ListenAddr: normalizeInboundWebhookListenAddr(cfg.ListenAddr),
+		Routes:     make(map[string]inboundWebhookRoute),
+	}
+	if !cfg.Enabled {
+		return normalized, nil
+	}
+
+	if len(cfg.Routes) == 0 {
+		return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes is required when inbound webhooks are enabled")
+	}
+
+	expectedChannelType := relaytelegram.NewLocator(0, 0).ChannelType
+	aliases := make(map[string]relaysession.SessionLocator, len(cfg.LocatorAliases))
+	for rawAlias, rawLocator := range cfg.LocatorAliases {
+		alias := strings.TrimSpace(rawAlias)
+		if alias == "" {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.locators alias is required")
+		}
+		if _, exists := aliases[alias]; exists {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("duplicate balda.locators alias %q", alias)
+		}
+
+		locator, err := relaysession.NewSessionLocator(
+			strings.TrimSpace(rawLocator.ChannelType),
+			strings.TrimSpace(rawLocator.AddressKey),
+			strings.TrimSpace(rawLocator.AddressJSON),
+			strings.TrimSpace(rawLocator.SessionID),
+		)
+		if err != nil {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("invalid balda.locators.%s: %w", alias, err)
+		}
+		if locator.ChannelType != expectedChannelType {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.locators.%s has unsupported channel_type %q", alias, locator.ChannelType)
+		}
+		if _, ok, err := relaytelegram.DecodeLocator(locator); err != nil || !ok {
+			if err != nil {
+				return normalizedInboundWebhookConfig{}, fmt.Errorf("invalid balda.locators.%s: %w", alias, err)
+			}
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("invalid balda.locators.%s: unsupported channel_type %q", alias, locator.ChannelType)
+		}
+		aliases[alias] = locator
+	}
+
+	seenPaths := make(map[string]string, len(cfg.Routes))
+	for rawName, rawRoute := range cfg.Routes {
+		routeName := strings.TrimSpace(rawName)
+		if routeName == "" {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes key is required")
+		}
+
+		path, err := normalizeInboundWebhookPath(rawRoute.Path)
+		if err != nil {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes.%s.path: %w", routeName, err)
+		}
+		if existingName, exists := seenPaths[path]; exists {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes.%s.path duplicates route %q", routeName, existingName)
+		}
+		seenPaths[path] = routeName
+
+		reportTo := strings.TrimSpace(rawRoute.ReportTo)
+		if reportTo == "" {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes.%s.report_to is required", routeName)
+		}
+		locator, ok := aliases[reportTo]
+		if !ok {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes.%s.report_to %q references undefined balda.locators key", routeName, reportTo)
+		}
+
+		templateText := strings.TrimSpace(rawRoute.PromptTemplate)
+		if templateText == "" {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes.%s.prompt_template is required", routeName)
+		}
+		tmpl, err := template.New("inbound_webhook." + routeName).Option("missingkey=error").Parse(templateText)
+		if err != nil {
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("invalid balda.inbound_webhooks.routes.%s.prompt_template: %w", routeName, err)
+		}
+
+		normalized.Routes[path] = inboundWebhookRoute{
+			Name:           routeName,
+			Path:           path,
+			Locator:        locator,
+			PromptTemplate: tmpl,
+		}
+	}
+
+	return normalized, nil
+}
+
 func normalizeInboundWebhookListenAddr(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -220,15 +332,15 @@ func normalizeInboundWebhookListenAddr(raw string) string {
 	return trimmed
 }
 
-func normalizeInboundWebhookPath(raw string) string {
+func normalizeInboundWebhookPath(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return defaultInboundWebhookPath
+		return "", fmt.Errorf("path is required")
 	}
 	if !strings.HasPrefix(trimmed, "/") {
-		return "/" + trimmed
+		trimmed = "/" + trimmed
 	}
-	return trimmed
+	return trimmed, nil
 }
 
 func (r *InboundWebhookReceiver) start(_ context.Context) error {
@@ -248,10 +360,8 @@ func (r *InboundWebhookReceiver) start(_ context.Context) error {
 		return fmt.Errorf("listen inbound webhook on %q: %w", r.listenAddr, err)
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle(r.path, http.HandlerFunc(r.handleInboundWebhook))
 	server := &http.Server{
-		Handler:           mux,
+		Handler:           http.HandlerFunc(r.handleInboundWebhook),
 		ReadHeaderTimeout: inboundWebhookReadHeaderTimeout,
 		ReadTimeout:       inboundWebhookReadTimeout,
 		WriteTimeout:      inboundWebhookWriteTimeout,
@@ -270,7 +380,8 @@ func (r *InboundWebhookReceiver) start(_ context.Context) error {
 
 	r.logger.Info().
 		Str("listen_addr", listener.Addr().String()).
-		Str("path", r.path).
+		Str("paths", strings.Join(r.routePaths(), ", ")).
+		Int("routes", len(r.routes)).
 		Msg("inbound webhook server started")
 	return nil
 }
@@ -292,8 +403,17 @@ func (r *InboundWebhookReceiver) stop(ctx context.Context) error {
 	return nil
 }
 
+func (r *InboundWebhookReceiver) routePaths() []string {
+	paths := make([]string, 0, len(r.routes))
+	for path := range r.routes {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req *http.Request) {
-	requestID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
+	requestID := requestIDFromInboundWebhookRequest(req)
 	if req.Method != http.MethodPost {
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusMethodNotAllowed,
@@ -304,54 +424,51 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		return
 	}
 
-	if !validBearerToken(req.Header.Get("Authorization"), r.authToken) {
-		r.metrics.unauthorized.Add(1)
+	route, ok := r.routes[req.URL.Path]
+	if !ok {
+		r.metrics.notFound.Add(1)
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusUnauthorized,
-			inboundWebhookCodeUnauthorized,
-			"unauthorized",
+			http.StatusNotFound,
+			inboundWebhookCodeRouteNotFound,
+			fmt.Sprintf("no inbound webhook route for path %q", req.URL.Path),
 			nil,
 		))
 		return
 	}
 
-	payload, err := decodeInboundWebhookRequest(req.Body)
-	if err != nil {
-		r.metrics.invalid.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidJSON,
-			"invalid JSON payload",
-			err,
-		))
-		return
-	}
-	if requestID == "" {
-		requestID = strings.TrimSpace(payload.RequestID)
-	}
-	if requestID == "" {
-		requestID = fmt.Sprintf("inbound-%d", time.Now().UnixNano())
-	}
-
-	prompt := strings.TrimSpace(payload.Prompt)
-	if prompt == "" {
+	rawBody, readErr := readInboundWebhookBody(req.Body)
+	if readErr != nil {
 		r.metrics.invalid.Add(1)
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusBadRequest,
 			inboundWebhookCodeInvalidPayload,
-			"prompt is required",
-			nil,
+			"invalid request body",
+			readErr,
 		))
 		return
 	}
 
-	locator, topicID, ts, resolveErr := r.resolveInboundWebhookTarget(req.Context(), payload.Target)
+	prompt, renderErr := renderInboundWebhookPrompt(route, inboundWebhookTemplateData{
+		RequestID: requestID,
+		Path:      req.URL.Path,
+		Method:    req.Method,
+		RawBody:   rawBody,
+		Headers:   inboundWebhookHeaders(req.Header),
+	})
+	if renderErr != nil {
+		r.metrics.invalid.Add(1)
+		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
+			http.StatusBadRequest,
+			inboundWebhookCodeInvalidPayload,
+			"failed to render prompt template",
+			renderErr,
+		))
+		return
+	}
+
+	topicID, ts, resolveErr := r.resolveInboundWebhookSession(req.Context(), route.Locator)
 	if resolveErr != nil {
-		if resolveErr.status == http.StatusNotFound {
-			r.metrics.notFound.Add(1)
-		} else {
-			r.metrics.invalid.Add(1)
-		}
+		r.metrics.notFound.Add(1)
 		r.writeInboundWebhookError(w, requestID, resolveErr)
 		return
 	}
@@ -359,10 +476,10 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	position, enqueueErr := r.dispatch.Enqueue(TurnTask{
 		SessionID: ts.GetSessionID(),
 		Run: func(runCtx context.Context) error {
-			if _, getErr := r.sessions.GetSession(locator); getErr != nil {
+			if _, getErr := r.sessions.GetSession(route.Locator); getErr != nil {
 				r.logger.Debug().
 					Str("request_id", requestID).
-					Str("session_id", locator.SessionID).
+					Str("session_id", route.Locator.SessionID).
 					Msg("dropping inbound webhook turn for inactive session")
 				return nil
 			}
@@ -374,7 +491,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 				ts.GetUserID(),
 				ts.GetSessionID(),
 				ts.GetAgentSessionID(),
-				locator,
+				route.Locator,
 				0,
 				topicID,
 				inboundWebhookProgressPolicy(),
@@ -406,123 +523,87 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	r.metrics.accepted.Add(1)
 	r.logger.Info().
 		Str("request_id", requestID).
-		Str("session_id", locator.SessionID).
-		Str("channel_type", locator.ChannelType).
-		Str("address_key", locator.AddressKey).
+		Str("route", route.Name).
+		Str("path", route.Path).
+		Str("session_id", route.Locator.SessionID).
+		Str("channel_type", route.Locator.ChannelType).
+		Str("address_key", route.Locator.AddressKey).
 		Int("queue_position", position).
 		Msg("inbound webhook accepted")
 
 	writeInboundWebhookJSON(w, http.StatusAccepted, inboundWebhookAcceptedResponse{
 		Status:        inboundWebhookStatusAccepted,
 		RequestID:     requestID,
-		SessionID:     locator.SessionID,
+		SessionID:     route.Locator.SessionID,
 		QueuePosition: position,
 	})
 }
 
-func decodeInboundWebhookRequest(body io.ReadCloser) (inboundWebhookRequest, error) {
-	defer func() { _ = body.Close() }()
-
-	reader := io.LimitReader(body, inboundWebhookMaxBodyBytes)
-	decoder := json.NewDecoder(reader)
-	decoder.DisallowUnknownFields()
-
-	var payload inboundWebhookRequest
-	if err := decoder.Decode(&payload); err != nil {
-		return inboundWebhookRequest{}, err
+func requestIDFromInboundWebhookRequest(req *http.Request) string {
+	requestID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
+	if requestID != "" {
+		return requestID
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return inboundWebhookRequest{}, fmt.Errorf("extra trailing JSON values")
-		}
-		return inboundWebhookRequest{}, err
-	}
-	return payload, nil
+	return fmt.Sprintf("inbound-%d", time.Now().UnixNano())
 }
 
-func (r *InboundWebhookReceiver) resolveInboundWebhookTarget(
-	ctx context.Context,
-	target inboundWebhookTarget,
-) (relaysession.SessionLocator, int, *relaysession.TopicSession, *inboundWebhookHTTPError) {
-	sessionID := strings.TrimSpace(target.SessionID)
-	locator, err := locatorFromInboundTarget(target.Locator)
+func readInboundWebhookBody(body io.ReadCloser) (string, error) {
+	defer func() { _ = body.Close() }()
+
+	payload, err := io.ReadAll(io.LimitReader(body, inboundWebhookMaxBodyBytes+1))
 	if err != nil {
-		return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			err.Error(),
-			err,
-		)
+		return "", err
 	}
-	if sessionID == "" && locator.SessionID == "" {
-		return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			"target.session_id or target.locator is required",
-			nil,
-		)
+	if len(payload) > inboundWebhookMaxBodyBytes {
+		return "", fmt.Errorf("request body exceeds %d bytes", inboundWebhookMaxBodyBytes)
 	}
+	return string(payload), nil
+}
 
-	var info relaysession.TopicSessionInfo
-	if sessionID != "" {
-		info, err = r.sessions.GetSessionInfo(ctx, sessionID)
-		if err != nil {
-			return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-				http.StatusNotFound,
-				inboundWebhookCodeSessionNotFound,
-				fmt.Sprintf("session %q not found", sessionID),
-				err,
-			)
+func inboundWebhookHeaders(header http.Header) map[string]string {
+	out := make(map[string]string, len(header))
+	for name, values := range header {
+		if len(values) == 0 {
+			out[name] = ""
+			continue
 		}
-		if locator.SessionID == "" {
-			locator = info.Locator
-		}
+		out[name] = values[0]
 	}
+	return out
+}
 
-	if locator.SessionID == "" {
-		return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			"target locator session_id is required",
-			nil,
-		)
+func renderInboundWebhookPrompt(route inboundWebhookRoute, data inboundWebhookTemplateData) (string, error) {
+	var buf bytes.Buffer
+	if err := route.PromptTemplate.Execute(&buf, data); err != nil {
+		return "", err
 	}
-	if sessionID != "" && locator.SessionID != sessionID {
-		return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			"target.session_id does not match target.locator.session_id",
-			nil,
-		)
+	prompt := strings.TrimSpace(buf.String())
+	if prompt == "" {
+		return "", fmt.Errorf("rendered prompt is empty")
 	}
-	if strings.TrimSpace(locator.ChannelType) != relaytelegram.NewLocator(0, 0).ChannelType {
-		return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeUnsupportedTarget,
-			fmt.Sprintf("unsupported channel type %q", locator.ChannelType),
-			nil,
-		)
-	}
+	return prompt, nil
+}
 
+func (r *InboundWebhookReceiver) resolveInboundWebhookSession(
+	ctx context.Context,
+	locator relaysession.SessionLocator,
+) (int, *relaysession.TopicSession, *inboundWebhookHTTPError) {
 	ts, err := r.sessions.GetSession(locator)
 	if err != nil {
-		if strings.TrimSpace(info.SessionID) == "" {
-			info, err = r.sessions.GetSessionInfo(ctx, locator.SessionID)
-			if err != nil {
-				return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-					http.StatusNotFound,
-					inboundWebhookCodeSessionNotFound,
-					fmt.Sprintf("session %q not found", locator.SessionID),
-					err,
-				)
-			}
+		info, infoErr := r.sessions.GetSessionInfo(ctx, locator.SessionID)
+		if infoErr != nil {
+			return 0, nil, newInboundWebhookHTTPError(
+				http.StatusNotFound,
+				inboundWebhookCodeSessionNotFound,
+				fmt.Sprintf("session %q not found", locator.SessionID),
+				infoErr,
+			)
 		}
 		userID := strings.TrimSpace(info.UserID)
 		if userID == "" {
-			return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-				http.StatusBadRequest,
-				inboundWebhookCodeInvalidPayload,
+			return 0, nil, newInboundWebhookHTTPError(
+				http.StatusNotFound,
+				inboundWebhookCodeSessionNotFound,
 				fmt.Sprintf("session %q has no user id for restore", locator.SessionID),
 				nil,
 			)
@@ -532,7 +613,7 @@ func (r *InboundWebhookReceiver) resolveInboundWebhookTarget(
 			UserID:  userID,
 		})
 		if err != nil {
-			return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
+			return 0, nil, newInboundWebhookHTTPError(
 				http.StatusNotFound,
 				inboundWebhookCodeSessionNotFound,
 				fmt.Sprintf("session %q restore failed", locator.SessionID),
@@ -541,32 +622,20 @@ func (r *InboundWebhookReceiver) resolveInboundWebhookTarget(
 		}
 	}
 
-	address, ok, err := relaytelegram.DecodeLocator(locator)
-	if err != nil {
-		return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
+	address, ok, decodeErr := relaytelegram.DecodeLocator(locator)
+	if decodeErr != nil || !ok {
+		if decodeErr == nil {
+			decodeErr = fmt.Errorf("unsupported channel type %q", locator.ChannelType)
+		}
+		return 0, nil, newInboundWebhookHTTPError(
 			http.StatusBadRequest,
 			inboundWebhookCodeInvalidPayload,
 			"invalid locator address payload",
-			err,
-		)
-	}
-	if !ok {
-		return relaysession.SessionLocator{}, 0, nil, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeUnsupportedTarget,
-			fmt.Sprintf("unsupported channel type %q", locator.ChannelType),
-			nil,
+			decodeErr,
 		)
 	}
 
-	return locator, address.TopicID, ts, nil
-}
-
-func locatorFromInboundTarget(raw *inboundWebhookLocator) (relaysession.SessionLocator, error) {
-	if raw == nil {
-		return relaysession.SessionLocator{}, nil
-	}
-	return relaysession.NewSessionLocator(raw.ChannelType, raw.AddressKey, raw.AddressJSON, raw.SessionID)
+	return address.TopicID, ts, nil
 }
 
 func (r *InboundWebhookReceiver) writeInboundWebhookError(
@@ -608,23 +677,6 @@ func writeInboundWebhookJSON(w http.ResponseWriter, status int, payload any) {
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		return
 	}
-}
-
-func validBearerToken(headerValue string, expectedToken string) bool {
-	expected := strings.TrimSpace(expectedToken)
-	if expected == "" {
-		return false
-	}
-
-	parts := strings.Fields(strings.TrimSpace(headerValue))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return false
-	}
-	actual := strings.TrimSpace(parts[1])
-	if len(actual) != len(expected) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
 }
 
 func inboundWebhookProgressPolicy() relaychannel.ProgressPolicy {

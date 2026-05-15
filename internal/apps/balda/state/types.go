@@ -108,6 +108,7 @@ type ScheduledJobRecord struct {
 type ScheduledJobStore interface {
 	Upsert(ctx context.Context, record ScheduledJobRecord) error
 	GetByID(ctx context.Context, jobID string) (ScheduledJobRecord, bool, error)
+	List(ctx context.Context) ([]ScheduledJobRecord, error)
 	ListByAddress(ctx context.Context, channelType, addressKey string) ([]ScheduledJobRecord, error)
 	ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledJobRecord, error)
 	Delete(ctx context.Context, jobID string) error

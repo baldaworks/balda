@@ -131,7 +131,7 @@ func TestJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T) {
 		AddressKey:   locator.AddressKey,
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "same slot should dispatch once",
-		ScheduleSpec: "5s",
+		ScheduleSpec: "@every 5s",
 		Status:       relaystate.ScheduledJobStatusActive,
 		NextRunAt:    dueAt,
 	}
@@ -239,6 +239,125 @@ func TestJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 	}
 	if got := afterSecond.Status; got != relaystate.ScheduledJobStatusPaused {
 		t.Fatalf("Status after second failure = %q, want paused", got)
+	}
+}
+
+func TestJobSchedulerReconcileConfiguredJobs_UpsertsAndDeletes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
+	locator := relaytelegram.NewLocator(9001, 222)
+
+	stale := relaystate.ScheduledJobRecord{
+		JobID:        "stale-job",
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Prompt:       "remove me",
+		ScheduleSpec: "@every 10s",
+		Status:       relaystate.ScheduledJobStatusActive,
+		MaxRetries:   3,
+		NextRunAt:    now.Add(10 * time.Second),
+	}
+	if err := store.Upsert(ctx, stale); err != nil {
+		t.Fatalf("Upsert(stale) error = %v", err)
+	}
+
+	scheduler := &JobScheduler{
+		jobStore: store,
+		logger:   zerolog.Nop(),
+		now:      func() time.Time { return now },
+		config: JobSchedulerConfig{
+			LocatorAliases: map[string]JobLocatorAlias{
+				"owner": {
+					ChannelType: locator.ChannelType,
+					AddressKey:  locator.AddressKey,
+					AddressJSON: locator.AddressJSON,
+					SessionID:   locator.SessionID,
+				},
+			},
+			Jobs: []ConfiguredScheduledJob{
+				{
+					ID:     "managed-job",
+					Alias:  "owner",
+					Cron:   "@every 2s",
+					Prompt: "review queue",
+				},
+			},
+		},
+	}
+
+	if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+		t.Fatalf("reconcileConfiguredJobs() error = %v", err)
+	}
+
+	managed, ok, err := store.GetByID(ctx, "managed-job")
+	if err != nil {
+		t.Fatalf("GetByID(managed) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetByID(managed) = not found, want found")
+	}
+	if got, want := managed.ScheduleSpec, "@every 2s"; got != want {
+		t.Fatalf("ScheduleSpec = %q, want %q", got, want)
+	}
+	if got, want := managed.Prompt, "review queue"; got != want {
+		t.Fatalf("Prompt = %q, want %q", got, want)
+	}
+	if got, want := managed.Status, relaystate.ScheduledJobStatusActive; got != want {
+		t.Fatalf("Status = %q, want %q", got, want)
+	}
+	if got, want := managed.MaxRetries, defaultSchedulerMaxRetries; got != want {
+		t.Fatalf("MaxRetries = %d, want %d", got, want)
+	}
+	if got, want := managed.NextRunAt, now.Add(2*time.Second); !got.Equal(want) {
+		t.Fatalf("NextRunAt = %s, want %s", got, want)
+	}
+
+	_, staleExists, err := store.GetByID(ctx, stale.JobID)
+	if err != nil {
+		t.Fatalf("GetByID(stale) error = %v", err)
+	}
+	if staleExists {
+		t.Fatal("stale job still exists after reconcile")
+	}
+}
+
+func TestNextRunAtFromSpec_ParsesCronExpression(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.May, 14, 16, 3, 10, 0, time.UTC)
+	nextRunAt, err := nextRunAtFromSpec("*/5 * * * *", now)
+	if err != nil {
+		t.Fatalf("nextRunAtFromSpec() error = %v", err)
+	}
+	want := time.Date(2026, time.May, 14, 16, 5, 0, 0, time.UTC)
+	if !nextRunAt.Equal(want) {
+		t.Fatalf("nextRunAt = %s, want %s", nextRunAt, want)
+	}
+}
+
+func TestNormalizeJobSchedulerConfig_RejectsMissingAlias(t *testing.T) {
+	t.Parallel()
+
+	_, err := normalizeJobSchedulerConfig(JobSchedulerConfig{
+		Jobs: []ConfiguredScheduledJob{
+			{
+				ID:     "job-1",
+				Alias:  "missing",
+				Cron:   "@every 1m",
+				Prompt: "check",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("normalizeJobSchedulerConfig() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "references undefined balda.locators key") {
+		t.Fatalf("normalizeJobSchedulerConfig() error = %v", err)
 	}
 }
 

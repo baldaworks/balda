@@ -143,11 +143,6 @@ Built-in provider types:
 
 - `/topic <name>`: create a named topic session.
 - `/goal <objective>`: start a Goalkeeper loop in the current session context/workspace.
-- `/cron add <schedule> <prompt>`: create an active recurring job in the current session (examples: `5m`, `@every 10m`).
-- `/cron list`: list recurring jobs for the current session.
-- `/cron remove <job_id>`: remove a recurring job from the current session.
-- `/cron pause <job_id>`: pause a recurring job in the current session.
-- `/cron resume <job_id>`: resume a paused recurring job in the current session.
 - `/reset`: clear conversation history for the current session.
 - `/close`: reset history, then close the current topic or restart the owner session on the next message.
 - `/cancel`: cancel in-flight work, drop queued turns, and abort active `/goal` run for the current session.
@@ -186,8 +181,7 @@ balda:
   inbound_webhooks:
     enabled: false
     listen_addr: "127.0.0.1:8090"
-    path: "/inbound/webhook"
-    auth_token: ""
+    routes: {}
   logger:
     level: "info"
     pretty: true
@@ -199,6 +193,9 @@ balda:
     enabled: true
   goal:
     max_iterations: 25
+  locators: {}
+  scheduler:
+    jobs: []
   workspace:
     mode: "auto"
     base_branch: ""
@@ -210,10 +207,12 @@ Common settings:
 
 - `balda.provider`: provider ID selected during `balda init`.
 - `balda.telegram.token`: Telegram bot token, usually supplied by `.env` as `BALDA_TELEGRAM_TOKEN`.
-- `balda.inbound_webhooks.*`: optional authenticated local inbound webhook receiver for external event-to-session prompt injection.
+- `balda.inbound_webhooks.*`: optional local inbound webhook receiver for external event-to-session prompt injection via configured route aliases and templates.
 - `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until `/reset` or explicit `/close`.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum `/goal` loop iterations; defaults to `25`.
+- `balda.locators`: canonical session locator aliases for config-managed scheduler jobs and inbound webhook routes.
+- `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `alias`, `cron`, `prompt`).
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
 - `balda.mcp_servers`: extra MCP server IDs added to every Balda-started session.

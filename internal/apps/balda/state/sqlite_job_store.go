@@ -128,6 +128,20 @@ func (s *sqliteScheduledJobStore) GetByID(ctx context.Context, jobID string) (Sc
 	return record, ok, nil
 }
 
+func (s *sqliteScheduledJobStore) List(ctx context.Context) ([]ScheduledJobRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT job_id, session_id, channel_type, address_key, address_json, prompt, schedule_spec, timezone, status,
+		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
+		FROM relay_scheduled_jobs
+		ORDER BY job_id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list scheduled jobs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return readScheduledJobs(rows)
+}
+
 func (s *sqliteScheduledJobStore) ListByAddress(
 	ctx context.Context,
 	channelType string,
@@ -208,11 +222,11 @@ func readScheduledJobs(rows *sql.Rows) ([]ScheduledJobRecord, error) {
 
 func scanScheduledJob(scan func(dest ...any) error) (ScheduledJobRecord, bool, error) {
 	var (
-		record         ScheduledJobRecord
-		nextRunAtRaw   string
-		lastRunAtRaw   string
-		createdAtRaw   string
-		updatedAtRaw   string
+		record       ScheduledJobRecord
+		nextRunAtRaw string
+		lastRunAtRaw string
+		createdAtRaw string
+		updatedAtRaw string
 	)
 
 	err := scan(
@@ -296,4 +310,3 @@ func formatOptionalRFC3339(ts time.Time) string {
 	}
 	return ts.UTC().Format(time.RFC3339)
 }
-

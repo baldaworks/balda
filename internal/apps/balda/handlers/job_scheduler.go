@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	relaysession "github.com/normahq/balda/internal/apps/balda/session"
 	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -17,7 +19,30 @@ import (
 const (
 	defaultSchedulerPollInterval = 2 * time.Second
 	defaultSchedulerDueBatchSize = 100
+	defaultSchedulerMaxRetries   = 3
 )
+
+// JobLocatorAlias defines a config alias to a canonical session locator.
+type JobLocatorAlias struct {
+	ChannelType string
+	AddressKey  string
+	AddressJSON string
+	SessionID   string
+}
+
+// ConfiguredScheduledJob defines a startup-managed recurring job.
+type ConfiguredScheduledJob struct {
+	ID     string
+	Alias  string
+	Cron   string
+	Prompt string
+}
+
+// JobSchedulerConfig controls startup job reconciliation.
+type JobSchedulerConfig struct {
+	LocatorAliases map[string]JobLocatorAlias
+	Jobs           []ConfiguredScheduledJob
+}
 
 type schedulerSessionManager interface {
 	GetSession(locator relaysession.SessionLocator) (*relaysession.TopicSession, error)
@@ -39,6 +64,7 @@ type jobSchedulerParams struct {
 	TurnDispatcher *TurnDispatcher
 	Channel        *relaytelegram.Adapter
 	Logger         zerolog.Logger
+	Config         JobSchedulerConfig
 }
 
 // JobScheduler dispatches due locator-bound recurring jobs into the turn queue.
@@ -48,6 +74,7 @@ type JobScheduler struct {
 	dispatch turnQueue
 	channel  schedulerChannel
 	logger   zerolog.Logger
+	config   JobSchedulerConfig
 
 	pollInterval time.Duration
 	dueBatchSize int
@@ -70,6 +97,10 @@ func NewJobScheduler(params jobSchedulerParams) (*JobScheduler, error) {
 	if params.Channel == nil {
 		return nil, fmt.Errorf("balda channel adapter is required")
 	}
+	config, err := normalizeJobSchedulerConfig(params.Config)
+	if err != nil {
+		return nil, err
+	}
 
 	scheduler := &JobScheduler{
 		jobStore:     params.StateProvider.ScheduledJobs(),
@@ -77,6 +108,7 @@ func NewJobScheduler(params jobSchedulerParams) (*JobScheduler, error) {
 		dispatch:     params.TurnDispatcher,
 		channel:      params.Channel,
 		logger:       params.Logger.With().Str("component", "balda.job_scheduler").Logger(),
+		config:       config,
 		pollInterval: defaultSchedulerPollInterval,
 		dueBatchSize: defaultSchedulerDueBatchSize,
 		now:          time.Now,
@@ -84,6 +116,9 @@ func NewJobScheduler(params jobSchedulerParams) (*JobScheduler, error) {
 
 	params.LC.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+				return err
+			}
 			scheduler.start()
 			return nil
 		},
@@ -139,6 +174,53 @@ func (s *JobScheduler) stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (s *JobScheduler) reconcileConfiguredJobs(ctx context.Context) error {
+	desired := make(map[string]struct{}, len(s.config.Jobs))
+	now := s.now().UTC()
+
+	for _, job := range s.config.Jobs {
+		alias := s.config.LocatorAliases[job.Alias]
+		nextRunAt, err := nextRunAtFromSpec(job.Cron, now)
+		if err != nil {
+			return fmt.Errorf("compute next run for scheduler job %q: %w", job.ID, err)
+		}
+		record := relaystate.ScheduledJobRecord{
+			JobID:        job.ID,
+			SessionID:    alias.SessionID,
+			ChannelType:  alias.ChannelType,
+			AddressKey:   alias.AddressKey,
+			AddressJSON:  alias.AddressJSON,
+			Prompt:       job.Prompt,
+			ScheduleSpec: job.Cron,
+			Timezone:     "UTC",
+			Status:       relaystate.ScheduledJobStatusActive,
+			MaxRetries:   defaultSchedulerMaxRetries,
+			RetryCount:   0,
+			NextRunAt:    nextRunAt,
+		}
+		if err := s.jobStore.Upsert(ctx, record); err != nil {
+			return fmt.Errorf("upsert scheduler job %q: %w", job.ID, err)
+		}
+		desired[job.ID] = struct{}{}
+	}
+
+	currentJobs, err := s.jobStore.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list persisted scheduler jobs: %w", err)
+	}
+	for _, existing := range currentJobs {
+		jobID := strings.TrimSpace(existing.JobID)
+		if _, ok := desired[jobID]; ok {
+			continue
+		}
+		if err := s.jobStore.Delete(ctx, jobID); err != nil {
+			return fmt.Errorf("delete unmanaged scheduler job %q: %w", jobID, err)
+		}
+	}
+
+	return nil
 }
 
 func (s *JobScheduler) dispatchDue(ctx context.Context, now time.Time) error {
@@ -315,31 +397,107 @@ func (s *JobScheduler) markFailure(ctx context.Context, jobID string, cause erro
 	return cause
 }
 
+func normalizeJobSchedulerConfig(raw JobSchedulerConfig) (JobSchedulerConfig, error) {
+	cfg := JobSchedulerConfig{
+		LocatorAliases: make(map[string]JobLocatorAlias, len(raw.LocatorAliases)),
+		Jobs:           make([]ConfiguredScheduledJob, 0, len(raw.Jobs)),
+	}
+
+	for rawAlias, rawLocator := range raw.LocatorAliases {
+		alias := strings.TrimSpace(rawAlias)
+		if alias == "" {
+			return JobSchedulerConfig{}, fmt.Errorf("balda.locators alias is required")
+		}
+		if _, exists := cfg.LocatorAliases[alias]; exists {
+			return JobSchedulerConfig{}, fmt.Errorf("duplicate balda.locators alias %q", alias)
+		}
+
+		locator, err := relaysession.NewSessionLocator(
+			strings.TrimSpace(rawLocator.ChannelType),
+			strings.TrimSpace(rawLocator.AddressKey),
+			strings.TrimSpace(rawLocator.AddressJSON),
+			strings.TrimSpace(rawLocator.SessionID),
+		)
+		if err != nil {
+			return JobSchedulerConfig{}, fmt.Errorf("invalid balda.locators.%s: %w", alias, err)
+		}
+		cfg.LocatorAliases[alias] = JobLocatorAlias{
+			ChannelType: locator.ChannelType,
+			AddressKey:  locator.AddressKey,
+			AddressJSON: locator.AddressJSON,
+			SessionID:   locator.SessionID,
+		}
+	}
+
+	seenJobIDs := make(map[string]struct{}, len(raw.Jobs))
+	for idx, rawJob := range raw.Jobs {
+		jobID := strings.TrimSpace(rawJob.ID)
+		if jobID == "" {
+			return JobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].id is required", idx)
+		}
+		if _, exists := seenJobIDs[jobID]; exists {
+			return JobSchedulerConfig{}, fmt.Errorf("duplicate balda.scheduler.jobs id %q", jobID)
+		}
+		seenJobIDs[jobID] = struct{}{}
+
+		alias := strings.TrimSpace(rawJob.Alias)
+		if alias == "" {
+			return JobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].alias is required", idx)
+		}
+		if _, ok := cfg.LocatorAliases[alias]; !ok {
+			return JobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].alias %q references undefined balda.locators key", idx, alias)
+		}
+
+		cronSpec := strings.TrimSpace(rawJob.Cron)
+		if cronSpec == "" {
+			return JobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].cron is required", idx)
+		}
+		if _, err := parseScheduleSpec(cronSpec); err != nil {
+			return JobSchedulerConfig{}, fmt.Errorf("invalid balda.scheduler.jobs[%d].cron: %w", idx, err)
+		}
+
+		prompt := strings.TrimSpace(rawJob.Prompt)
+		if prompt == "" {
+			return JobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].prompt is required", idx)
+		}
+
+		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledJob{
+			ID:     jobID,
+			Alias:  alias,
+			Cron:   cronSpec,
+			Prompt: prompt,
+		})
+	}
+
+	sort.Slice(cfg.Jobs, func(i, j int) bool {
+		return cfg.Jobs[i].ID < cfg.Jobs[j].ID
+	})
+	return cfg, nil
+}
+
 func nextRunAtFromSpec(spec string, now time.Time) (time.Time, error) {
-	interval, err := scheduleInterval(spec)
+	schedule, err := parseScheduleSpec(spec)
 	if err != nil {
 		return time.Time{}, err
 	}
-	return now.UTC().Add(interval), nil
+	nextRunAt := schedule.Next(now.UTC())
+	if nextRunAt.IsZero() {
+		return time.Time{}, fmt.Errorf("schedule has no next run")
+	}
+	return nextRunAt.UTC(), nil
 }
 
-func scheduleInterval(spec string) (time.Duration, error) {
+func parseScheduleSpec(spec string) (cron.Schedule, error) {
 	trimmed := strings.TrimSpace(spec)
 	if trimmed == "" {
-		return 0, fmt.Errorf("schedule spec is required")
-	}
-	if strings.HasPrefix(trimmed, "@every ") {
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "@every "))
+		return nil, fmt.Errorf("schedule spec is required")
 	}
 
-	interval, err := time.ParseDuration(trimmed)
+	schedule, err := cron.ParseStandard(trimmed)
 	if err != nil {
-		return 0, fmt.Errorf("unsupported schedule spec %q", spec)
+		return nil, fmt.Errorf("unsupported schedule spec %q", spec)
 	}
-	if interval <= 0 {
-		return 0, fmt.Errorf("schedule interval must be > 0")
-	}
-	return interval, nil
+	return schedule, nil
 }
 
 func retryDelay(retryCount int) time.Duration {

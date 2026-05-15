@@ -365,8 +365,12 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.telegram.webhook.path`: local webhook path (default: `/telegram/webhook`)
 - `balda.inbound_webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
 - `balda.inbound_webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
-- `balda.inbound_webhooks.path`: local inbound webhook path (default: `/inbound/webhook`)
-- `balda.inbound_webhooks.auth_token`: required bearer token when inbound webhooks are enabled
+- `balda.inbound_webhooks.routes`: route table keyed by route name
+  - required when `balda.inbound_webhooks.enabled=true`
+  - each route requires:
+    - `path`: local inbound webhook path (for example `/webhook/release`)
+    - `report_to`: locator alias key from `balda.locators`
+    - `prompt_template`: Go `text/template` rendered with `RequestID`, `Path`, `Method`, `RawBody`, and `Headers`
 
 ### Balda settings
 
@@ -468,12 +472,6 @@ Balda runs with a single provider per process (`balda.provider`).
   - `<name>` is a session label, not a provider selector.
 - `/goal <objective>` (owner/collaborator): starts a Goalkeeper loop in the current session context/workspace and posts started/iteration/final updates.
   - concurrent `/goal` runs in the same session are rejected.
-- `/cron add <schedule> <prompt>` (owner/collaborator): creates an active recurring scheduled job bound to the current session locator.
-  - schedule accepts Go duration format with optional `@every` prefix (for example `5m`, `@every 10m`).
-- `/cron list` (owner/collaborator): lists recurring jobs scoped to the current session locator.
-- `/cron remove <job_id>` (owner/collaborator): removes a recurring job only when it belongs to the current session scope.
-- `/cron pause <job_id>` (owner/collaborator): marks a recurring job as paused in current session scope.
-- `/cron resume <job_id>` (owner/collaborator): re-activates a paused recurring job in current session scope.
 - `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
 - `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Balda metadata or the workspace branch.
 - `/cancel` (owner/collaborator): cancels active turn, drops queued turns, and aborts active `/goal` run for current session.
@@ -482,11 +480,13 @@ Balda runs with a single provider per process (`balda.provider`).
 ### Scheduled job runtime semantics (internal)
 
 Balda includes an internal locator-targeted scheduler backed by `relay_scheduled_jobs`.
+Jobs are managed from config on startup using `balda.locators` and `balda.scheduler.jobs`.
 
 - Eligibility: only `status=active` jobs with `next_run_at <= now` are polled.
 - Dispatch path: due jobs resolve a session by canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`) and enqueue a turn through the same per-session `TurnDispatcher` path as normal messages.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
-- Claim-before-run: scheduler writes `last_dispatch_key` and advances `next_run_at` to the next schedule interval before enqueueing work, so stale duplicate due reads do not enqueue the same due slot twice.
+- Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are removed.
+- Claim-before-run: scheduler writes `last_dispatch_key` and advances `next_run_at` to the next cron occurrence before enqueueing work, so stale duplicate due reads do not enqueue the same due slot twice.
 - Success: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and job remains `active`.
 - Failure: `retry_count` increments and `last_error` is recorded.
   - if `retry_count <= max_retries`: job stays `active`, `next_run_at = now + retryDelay(retry_count)`.
@@ -495,31 +495,33 @@ Balda includes an internal locator-targeted scheduler backed by `relay_scheduled
 
 ### Inbound webhook contract (internal)
 
-Balda can optionally expose an authenticated local webhook endpoint that injects prompts into existing session turn processing.
+Balda can optionally expose local webhook routes that map path -> locator alias -> prompt template.
 
-- Endpoint config: `balda.inbound_webhooks.enabled`, `listen_addr`, `path`, `auth_token`.
-- Auth: `Authorization: Bearer <balda.inbound_webhooks.auth_token>`.
+- Endpoint config: `balda.inbound_webhooks.enabled`, `listen_addr`, `routes`.
 - Method: `POST` only.
-- Payload:
-  - `prompt` (required string)
-  - `target.session_id` and/or `target.locator` (`channel_type`, `address_key`, `address_json`, `session_id`)
-  - optional `request_id`
-- Target resolution:
-  - resolves canonical locator from payload/session metadata
-  - restores session lazily when not active in memory
+- Route resolution:
+  - request path must match a configured route `path`
+  - each route defines `report_to` (locator alias in `balda.locators`)
+  - session target is resolved from alias, not from request payload
+- Prompt generation:
+  - request body is treated as opaque raw text
+  - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
+  - rendered prompt must be non-empty
+- Session resolution:
+  - looks up active session by configured locator
+  - lazily restores persisted session when inactive in memory
   - enqueues through the same per-session `TurnDispatcher` + `runTurnTask` path as Telegram messages
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", request_id, session_id, queue_position}`
-  - auth failure: `401` + `error.code="unauthorized"`
+  - route not found: `404` + `error.code="route_not_found"`
   - invalid method: `405` + `error.code="invalid_method"`
-  - invalid JSON: `400` + `error.code="invalid_json"`
-  - invalid payload/unsupported target: `400` + `error.code="invalid_payload"| "unsupported_target"`
+  - invalid body/template render: `400` + `error.code="invalid_payload"`
   - unresolved/restore-failed session: `404` + `error.code="session_not_found"`
   - queue pressure: `429` + `error.code="queue_full"`
   - dispatch/internal failures: `500` + `error.code="dispatch_failed"`
 - Observability:
   - logs include stable fields: `request_id`, `session_id`, `channel_type`, `address_key`, `queue_position`, `status_code`, `error_code`
-  - internal outcome counters track accepted, unauthorized, invalid, not-found, queue-full, and dispatch-failure events
+  - internal outcome counters track accepted, invalid, not-found, queue-full, and dispatch-failure events
 
 ### Session restore/create behavior
 

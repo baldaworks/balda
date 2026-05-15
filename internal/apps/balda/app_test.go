@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/runtime/agentconfig"
@@ -180,6 +181,130 @@ func TestValidateSessionPersistence(t *testing.T) {
 				t.Fatalf("validateSessionPersistence(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildJobSchedulerConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := RelayConfig{
+		Locators: map[string]LocatorConfig{
+			" owner ": {
+				ChannelType: " telegram ",
+				AddressKey:  " 9001:0 ",
+				AddressJSON: ` {"chat_id":9001,"topic_id":0} `,
+				SessionID:   " tg-9001-0 ",
+			},
+		},
+		Scheduler: SchedulerConfig{
+			Jobs: []ScheduledJobConfig{
+				{
+					ID:     " nightly ",
+					Alias:  " owner ",
+					Cron:   " */15 * * * * ",
+					Prompt: " summarize ",
+				},
+			},
+		},
+	}
+
+	got := buildJobSchedulerConfig(cfg)
+	want := handlers.JobSchedulerConfig{
+		LocatorAliases: map[string]handlers.JobLocatorAlias{
+			"owner": {
+				ChannelType: "telegram",
+				AddressKey:  "9001:0",
+				AddressJSON: `{"chat_id":9001,"topic_id":0}`,
+				SessionID:   "tg-9001-0",
+			},
+		},
+		Jobs: []handlers.ConfiguredScheduledJob{
+			{
+				ID:     "nightly",
+				Alias:  "owner",
+				Cron:   "*/15 * * * *",
+				Prompt: "summarize",
+			},
+		},
+	}
+
+	if len(got.LocatorAliases) != len(want.LocatorAliases) {
+		t.Fatalf("len(locator aliases) = %d, want %d", len(got.LocatorAliases), len(want.LocatorAliases))
+	}
+	if got.LocatorAliases["owner"] != want.LocatorAliases["owner"] {
+		t.Fatalf("locator alias mismatch: got %+v want %+v", got.LocatorAliases["owner"], want.LocatorAliases["owner"])
+	}
+	if len(got.Jobs) != len(want.Jobs) {
+		t.Fatalf("len(jobs) = %d, want %d", len(got.Jobs), len(want.Jobs))
+	}
+	if got.Jobs[0] != want.Jobs[0] {
+		t.Fatalf("job mismatch: got %+v want %+v", got.Jobs[0], want.Jobs[0])
+	}
+}
+
+func TestBuildInboundWebhookConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := RelayConfig{
+		Locators: map[string]LocatorConfig{
+			" owner ": {
+				ChannelType: " telegram ",
+				AddressKey:  " 9001:0 ",
+				AddressJSON: ` {"chat_id":9001,"topic_id":0} `,
+				SessionID:   " tg-9001-0 ",
+			},
+		},
+		InboundWebhooks: InboundWebhooksConfig{
+			Enabled:    true,
+			ListenAddr: " 127.0.0.1:8091 ",
+			Routes: map[string]InboundWebhookRouteConfig{
+				" webhook1 ": {
+					Path:           " webhook1 ",
+					ReportTo:       " owner ",
+					PromptTemplate: " {{.RawBody}} ",
+				},
+			},
+		},
+	}
+
+	got := buildInboundWebhookConfig(cfg)
+	want := handlers.InboundWebhookConfig{
+		Enabled:    true,
+		ListenAddr: "127.0.0.1:8091",
+		LocatorAliases: map[string]handlers.WebhookLocatorAlias{
+			"owner": {
+				ChannelType: "telegram",
+				AddressKey:  "9001:0",
+				AddressJSON: `{"chat_id":9001,"topic_id":0}`,
+				SessionID:   "tg-9001-0",
+			},
+		},
+		Routes: map[string]handlers.InboundWebhookRouteConfig{
+			"webhook1": {
+				Path:           "webhook1",
+				ReportTo:       "owner",
+				PromptTemplate: "{{.RawBody}}",
+			},
+		},
+	}
+
+	if got.Enabled != want.Enabled {
+		t.Fatalf("Enabled = %t, want %t", got.Enabled, want.Enabled)
+	}
+	if got.ListenAddr != want.ListenAddr {
+		t.Fatalf("ListenAddr = %q, want %q", got.ListenAddr, want.ListenAddr)
+	}
+	if len(got.LocatorAliases) != len(want.LocatorAliases) {
+		t.Fatalf("len(locator aliases) = %d, want %d", len(got.LocatorAliases), len(want.LocatorAliases))
+	}
+	if got.LocatorAliases["owner"] != want.LocatorAliases["owner"] {
+		t.Fatalf("locator alias mismatch: got %+v want %+v", got.LocatorAliases["owner"], want.LocatorAliases["owner"])
+	}
+	if len(got.Routes) != len(want.Routes) {
+		t.Fatalf("len(routes) = %d, want %d", len(got.Routes), len(want.Routes))
+	}
+	if got.Routes["webhook1"] != want.Routes["webhook1"] {
+		t.Fatalf("route mismatch: got %+v want %+v", got.Routes["webhook1"], want.Routes["webhook1"])
 	}
 }
 

@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	relaywelcome "github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog/log"
@@ -27,14 +25,6 @@ type commandSessionManager interface {
 	StopSession(locator session.SessionLocator)
 }
 
-const (
-	cronActionAdd    = "add"
-	cronActionList   = "list"
-	cronActionPause  = "pause"
-	cronActionRemove = "remove"
-	cronActionResume = "resume"
-)
-
 // CommandHandler handles balda commands like /topic and /close.
 type CommandHandler struct {
 	ownerStore        *auth.OwnerStore
@@ -46,8 +36,6 @@ type CommandHandler struct {
 	messenger         *messenger.Messenger
 	userHandler       *userHandler
 	memoryStore       *memory.Store
-	jobStore          relaystate.ScheduledJobStore
-	now               func() time.Time
 }
 
 func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServers []string) string {
@@ -66,16 +54,10 @@ type commandHandlerParams struct {
 	Messenger         *messenger.Messenger
 	UserHandler       *userHandler
 	MemoryStore       *memory.Store
-	StateProvider     relaystate.Provider
 }
 
 // NewCommandHandler creates a new balda command handler.
 func NewCommandHandler(params commandHandlerParams) *CommandHandler {
-	var jobStore relaystate.ScheduledJobStore
-	if params.StateProvider != nil {
-		jobStore = params.StateProvider.ScheduledJobs()
-	}
-
 	return &CommandHandler{
 		ownerStore:        params.OwnerStore,
 		collaboratorStore: params.CollaboratorStore,
@@ -86,8 +68,6 @@ func NewCommandHandler(params commandHandlerParams) *CommandHandler {
 		messenger:         params.Messenger,
 		userHandler:       params.UserHandler,
 		memoryStore:       params.MemoryStore,
-		jobStore:          jobStore,
-		now:               time.Now,
 	}
 }
 
@@ -115,253 +95,12 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		return h.onGoalCommand(ctx, commandCtx)
 	case "memory":
 		return h.onMemoryCommand(ctx, commandCtx)
-	case "cron":
-		return h.onCronCommand(ctx, commandCtx)
 	case "user":
 		// Route to UserHandler
 		return h.userHandler.HandleUserCommand(ctx, commandCtx)
 	default:
 		return nil
 	}
-}
-
-func (h *CommandHandler) onCronCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
-	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if h.jobStore == nil {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Cron jobs are unavailable right now. Please try again."); err != nil {
-			return err
-		}
-		return nil
-	}
-	action, fields := parseCronAction(commandCtx.Args)
-	switch action {
-	case cronActionAdd:
-		return h.onCronAddCommand(ctx, commandCtx, fields)
-	case cronActionList:
-		return h.onCronListCommand(ctx, commandCtx, fields)
-	case cronActionPause:
-		return h.onCronSetStatusCommand(ctx, commandCtx, fields, relaystate.ScheduledJobStatusPaused, cronActionPause, "paused")
-	case cronActionRemove:
-		return h.onCronRemoveCommand(ctx, commandCtx, fields)
-	case cronActionResume:
-		return h.onCronSetStatusCommand(ctx, commandCtx, fields, relaystate.ScheduledJobStatusActive, cronActionResume, "resumed")
-	default:
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /cron add <schedule> <prompt>\nUsage: /cron list\nUsage: /cron remove <job_id>\nUsage: /cron pause <job_id>\nUsage: /cron resume <job_id>"); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-func (h *CommandHandler) onCronAddCommand(
-	ctx context.Context,
-	commandCtx relaytelegram.CommandContext,
-	fields []string,
-) error {
-	scheduleSpec, prompt, err := parseCronAddArgs(fields)
-	if err != nil {
-		if usageErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /cron add <schedule> <prompt>"); usageErr != nil {
-			return usageErr
-		}
-		return nil
-	}
-
-	interval, err := scheduleInterval(scheduleSpec)
-	if err != nil {
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Invalid schedule: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-
-	now := h.now().UTC()
-	jobID := fmt.Sprintf("cron-%s-%d", strings.ReplaceAll(commandCtx.Locator.SessionID, ":", "-"), now.UnixNano())
-	nextRunAt := now.Add(interval)
-	record := relaystate.ScheduledJobRecord{
-		JobID:        jobID,
-		SessionID:    commandCtx.Locator.SessionID,
-		ChannelType:  commandCtx.Locator.ChannelType,
-		AddressKey:   commandCtx.Locator.AddressKey,
-		AddressJSON:  commandCtx.Locator.AddressJSON,
-		Prompt:       prompt,
-		ScheduleSpec: scheduleSpec,
-		Timezone:     "UTC",
-		Status:       relaystate.ScheduledJobStatusActive,
-		MaxRetries:   3,
-		NextRunAt:    nextRunAt,
-	}
-	if err := h.jobStore.Upsert(ctx, record); err != nil {
-		log.Warn().Err(err).Str("job_id", jobID).Msg("failed to create scheduled job")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to create cron job: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-
-	return h.channel.SendPlain(
-		ctx,
-		commandCtx.Locator,
-		fmt.Sprintf("Scheduled job created.\nID: %s\nSchedule: %s\nNext run: %s", jobID, scheduleSpec, nextRunAt.Format(time.RFC3339)),
-	)
-}
-
-func (h *CommandHandler) onCronListCommand(
-	ctx context.Context,
-	commandCtx relaytelegram.CommandContext,
-	fields []string,
-) error {
-	if len(fields) != 0 {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /cron list"); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	jobs, err := h.jobStore.ListByAddress(ctx, commandCtx.Locator.ChannelType, commandCtx.Locator.AddressKey)
-	if err != nil {
-		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to list cron jobs")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to list cron jobs: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	if len(jobs) == 0 {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "No cron jobs for this session."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	lines := make([]string, 0, len(jobs)+1)
-	lines = append(lines, "Cron jobs for this session:")
-	for _, job := range jobs {
-		lines = append(lines, fmt.Sprintf(
-			"- %s | %s | %s | next: %s",
-			job.JobID,
-			strings.TrimSpace(job.Status),
-			strings.TrimSpace(job.ScheduleSpec),
-			job.NextRunAt.UTC().Format(time.RFC3339),
-		))
-	}
-
-	return h.channel.SendPlain(ctx, commandCtx.Locator, strings.Join(lines, "\n"))
-}
-
-func (h *CommandHandler) onCronRemoveCommand(
-	ctx context.Context,
-	commandCtx relaytelegram.CommandContext,
-	fields []string,
-) error {
-	if len(fields) != 1 {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /cron remove <job_id>"); err != nil {
-			return err
-		}
-		return nil
-	}
-	jobID := strings.TrimSpace(fields[0])
-	job, ok, err := h.jobStore.GetByID(ctx, jobID)
-	if err != nil {
-		log.Warn().Err(err).Str("job_id", jobID).Msg("failed to lookup cron job")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to remove cron job: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	if !ok || job.ChannelType != commandCtx.Locator.ChannelType || job.AddressKey != commandCtx.Locator.AddressKey {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Cron job not found for this session."); err != nil {
-			return err
-		}
-		return nil
-	}
-	if err := h.jobStore.Delete(ctx, jobID); err != nil {
-		log.Warn().Err(err).Str("job_id", jobID).Msg("failed to delete cron job")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to remove cron job: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Cron job removed: %s", jobID))
-}
-
-func (h *CommandHandler) onCronSetStatusCommand(
-	ctx context.Context,
-	commandCtx relaytelegram.CommandContext,
-	fields []string,
-	status string,
-	commandName string,
-	statusLabel string,
-) error {
-	if len(fields) != 1 {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Usage: /cron %s <job_id>", commandName)); err != nil {
-			return err
-		}
-		return nil
-	}
-	jobID := strings.TrimSpace(fields[0])
-	job, ok, err := h.jobStore.GetByID(ctx, jobID)
-	if err != nil {
-		log.Warn().Err(err).Str("job_id", jobID).Str("status", status).Msg("failed to lookup cron job")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to update cron job: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	if !ok || job.ChannelType != commandCtx.Locator.ChannelType || job.AddressKey != commandCtx.Locator.AddressKey {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Cron job not found for this session."); err != nil {
-			return err
-		}
-		return nil
-	}
-	if strings.TrimSpace(job.Status) == status {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Cron job already %s: %s", statusLabel, jobID)); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	job.Status = status
-	if err := h.jobStore.Upsert(ctx, job); err != nil {
-		log.Warn().Err(err).Str("job_id", jobID).Str("status", status).Msg("failed to update cron job status")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to update cron job: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Cron job %s: %s", statusLabel, jobID))
-}
-
-func parseCronAction(raw string) (action string, fields []string) {
-	fields = strings.Fields(strings.TrimSpace(raw))
-	if len(fields) == 0 {
-		return "", nil
-	}
-	return strings.ToLower(fields[0]), fields[1:]
-}
-
-func parseCronAddArgs(fields []string) (scheduleSpec string, prompt string, err error) {
-	if len(fields) < 2 {
-		return "", "", fmt.Errorf("insufficient arguments")
-	}
-	if fields[0] == "@every" {
-		if len(fields) < 3 {
-			return "", "", fmt.Errorf("missing prompt")
-		}
-		scheduleSpec = "@every " + fields[1]
-		prompt = strings.TrimSpace(strings.Join(fields[2:], " "))
-	} else {
-		scheduleSpec = fields[0]
-		prompt = strings.TrimSpace(strings.Join(fields[1:], " "))
-	}
-	if prompt == "" {
-		return "", "", fmt.Errorf("prompt is required")
-	}
-	return strings.TrimSpace(scheduleSpec), prompt, nil
 }
 
 func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
