@@ -14,14 +14,13 @@ import (
 	"github.com/tgbotkit/runtime/updatepoller"
 )
 
-func TestNewUpdateSource_WebhookDisabledFallsBackToPolling(t *testing.T) {
+func TestNewUpdateSource_WebhookDisabledSkipsWebhookValidation(t *testing.T) {
 	t.Parallel()
 
 	src, err := NewUpdateSource(
 		Config{
 			Webhook: WebhookConfig{
 				Enabled: false,
-				URL:     "https://example.com/webhook",
 			},
 		},
 		newTestTelegramClient(t),
