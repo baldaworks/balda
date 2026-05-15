@@ -83,6 +83,28 @@ func TestNewUpdateSource_WebhookModeRequiresURL(t *testing.T) {
 	}
 }
 
+func TestNewUpdateSource_WebhookModeRequiresAuthToken(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewUpdateSource(
+		Config{
+			Webhook: WebhookConfig{
+				Enabled: true,
+				URL:     "https://example.com/webhook",
+			},
+		},
+		newTestTelegramClient(t),
+		nil,
+		zerolog.Nop(),
+	)
+	if err == nil {
+		t.Fatal("NewUpdateSource() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "balda.telegram.webhook.auth_token") {
+		t.Fatalf("NewUpdateSource() error = %q, want contains balda.telegram.webhook.auth_token", err)
+	}
+}
+
 func TestNewUpdateSource_WebhookModeReturnsWebhookSource(t *testing.T) {
 	t.Parallel()
 

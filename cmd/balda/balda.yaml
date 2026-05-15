@@ -25,7 +25,8 @@ balda:
       # Register outgoing Telegram webhook URL.
       # Required when webhook.enabled=true.
       url: ""
-      # Optional Telegram webhook auth token protection.
+      # Telegram webhook auth token protection.
+      # Required when webhook.enabled=true.
       auth_token: ""
       # Enable local HTTP endpoint for incoming Telegram webhook updates.
       # If false, balda uses polling mode.

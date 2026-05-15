@@ -360,7 +360,7 @@ session-start snapshot. New or restored sessions read the latest file.
   - `false`: balda keeps legacy progress behavior (`typing` plus DM `Thinking...` drafts)
 - `balda.telegram.webhook.enabled`: enable local HTTP webhook endpoint (`true` => webhook mode, `false` => polling mode; default: `false`)
 - `balda.telegram.webhook.url`: outgoing Telegram webhook URL (required when `balda.telegram.webhook.enabled=true`)
-- `balda.telegram.webhook.auth_token`: optional webhook auth token
+- `balda.telegram.webhook.auth_token`: webhook auth token required when `balda.telegram.webhook.enabled=true`; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`
 - `balda.telegram.webhook.listen_addr`: local webhook listen address (default: `0.0.0.0:8080`)
 - `balda.telegram.webhook.path`: local webhook path (default: `/telegram/webhook`)
 - `balda.inbound_webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
@@ -550,7 +550,7 @@ Balda can optionally expose local webhook routes that map path -> locator alias 
 
 1. Startup order enforces internal MCP -> Balda provider -> bot runtime.
 2. Polling mode starts by default when `balda.telegram.webhook.enabled=false`.
-3. Webhook mode (`balda.telegram.webhook.enabled=true`) fails fast without `balda.telegram.webhook.url`.
+3. Webhook mode (`balda.telegram.webhook.enabled=true`) fails fast without `balda.telegram.webhook.url` or `balda.telegram.webhook.auth_token`.
 4. `/start owner=<token>` registers owner once; `/start invite=<token>` onboards collaborators; non-owner traffic is otherwise rejected.
 5. `/topic <name>` creates topic + Balda session and persists session metadata.
 6. `/topic` without name returns usage error.

@@ -91,9 +91,6 @@ func NewUpdateSource(
 	l zerolog.Logger,
 ) (runtime.UpdateSource, error) {
 	if cfg.Webhook.Enabled {
-		if strings.TrimSpace(cfg.Webhook.URL) == "" {
-			return nil, fmt.Errorf("balda.telegram.webhook.enabled=true requires balda.telegram.webhook.url")
-		}
 		return newWebhookUpdateSource(cfg, client, l)
 	}
 	return newPollingUpdateSource(client, persistedOffsetStore, l)
@@ -121,6 +118,13 @@ func newWebhookUpdateSource(
 	client client.ClientWithResponsesInterface,
 	l zerolog.Logger,
 ) (runtime.UpdateSource, error) {
+	if strings.TrimSpace(cfg.Webhook.URL) == "" {
+		return nil, fmt.Errorf("balda.telegram.webhook.enabled=true requires balda.telegram.webhook.url")
+	}
+	if strings.TrimSpace(cfg.Webhook.AuthToken) == "" {
+		return nil, fmt.Errorf("balda.telegram.webhook.enabled=true requires balda.telegram.webhook.auth_token")
+	}
+
 	wh, err := webhook.New(
 		webhook.NewOptions(
 			webhook.WithToken(strings.TrimSpace(cfg.Webhook.AuthToken)),

@@ -44,6 +44,10 @@ Thumbs.db
 .env
 .codex
 
+# Balda local app config and state
+.config/balda/*
+!.config/balda/.gitignore
+
 # Dolt database files (added by bd init)
 .dolt/
 *.db

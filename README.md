@@ -178,6 +178,7 @@ balda:
       listen_addr: "0.0.0.0:8080"
       path: "/telegram/webhook"
       url: ""
+      auth_token: ""
   inbound_webhooks:
     enabled: false
     listen_addr: "127.0.0.1:8090"
@@ -207,6 +208,7 @@ Common settings:
 
 - `balda.provider`: provider ID selected during `balda init`.
 - `balda.telegram.token`: Telegram bot token, usually supplied by `.env` as `BALDA_TELEGRAM_TOKEN`.
+- `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
 - `balda.inbound_webhooks.*`: optional local inbound webhook receiver for external event-to-session prompt injection via configured route aliases and templates.
 - `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until `/reset` or explicit `/close`.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
