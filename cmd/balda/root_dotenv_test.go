@@ -21,11 +21,11 @@ func TestInitDotEnv_LoadsFromCurrentWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestInitDotEnv_DoesNotLoadFromDotConfigRelay(t *testing.T) {
+func TestInitDotEnv_DoesNotLoadFromDotConfigBalda(t *testing.T) {
 	workingDir := setWorkingDir(t)
 	unsetEnvForTest(t, "BALDA_TELEGRAM_TOKEN")
 
-	if err := writeFile(filepath.Join(workingDir, ".config", "balda", ".env"), "BALDA_TELEGRAM_TOKEN=from-config-relay-dotenv\n"); err != nil {
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", ".env"), "BALDA_TELEGRAM_TOKEN=from-config-balda-dotenv\n"); err != nil {
 		t.Fatalf("write .config/balda/.env: %v", err)
 	}
 

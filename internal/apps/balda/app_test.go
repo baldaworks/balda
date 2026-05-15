@@ -64,9 +64,9 @@ func TestIsExpectedBotRunShutdown(t *testing.T) {
 	}
 }
 
-func TestValidateRelayMCPConfiguration_RejectsRemovedBuiltInServerReferences(t *testing.T) {
+func TestValidateBaldaMCPConfiguration_RejectsRemovedBuiltInServerReferences(t *testing.T) {
 	cfg := Config{
-		Relay: RelayConfig{
+		Balda: BaldaConfig{
 			MCPServers: []string{"balda.config"},
 		},
 	}
@@ -76,9 +76,9 @@ func TestValidateRelayMCPConfiguration_RejectsRemovedBuiltInServerReferences(t *
 		},
 	}
 
-	err := validateRelayMCPConfiguration(cfg, normaCfg, "/tmp/work/.config/balda/config.yaml")
+	err := validateBaldaMCPConfiguration(cfg, normaCfg, "/tmp/work/.config/balda/config.yaml")
 	if err == nil {
-		t.Fatal("validateRelayMCPConfiguration() error = nil, want non-nil")
+		t.Fatal("validateBaldaMCPConfiguration() error = nil, want non-nil")
 	}
 	if !strings.Contains(err.Error(), `balda.mcp_servers[0] references removed built-in config MCP server "balda.config"; edit the balda config file directly at "/tmp/work/.config/balda/config.yaml"`) {
 		t.Fatalf("unexpected balda.mcp_servers validation error: %v", err)
@@ -88,7 +88,7 @@ func TestValidateRelayMCPConfiguration_RejectsRemovedBuiltInServerReferences(t *
 	}
 }
 
-func TestValidateRelayMCPConfiguration_RejectsReservedCustomServerIDs(t *testing.T) {
+func TestValidateBaldaMCPConfiguration_RejectsReservedCustomServerIDs(t *testing.T) {
 	normaCfg := runtimeconfig.RuntimeConfig{
 		Providers: map[string]agentconfig.Config{
 			"root": {},
@@ -99,12 +99,12 @@ func TestValidateRelayMCPConfiguration_RejectsReservedCustomServerIDs(t *testing
 		},
 	}
 
-	err := validateRelayMCPConfiguration(Config{}, normaCfg, "/tmp/work/.config/balda/config.yaml")
+	err := validateBaldaMCPConfiguration(Config{}, normaCfg, "/tmp/work/.config/balda/config.yaml")
 	if err == nil {
-		t.Fatal("validateRelayMCPConfiguration() error = nil, want non-nil")
+		t.Fatal("validateBaldaMCPConfiguration() error = nil, want non-nil")
 	}
 	if !strings.Contains(err.Error(), "runtime.mcp_servers.balda is reserved for the built-in balda MCP server") {
-		t.Fatalf("missing reserved relay error: %v", err)
+		t.Fatalf("missing reserved balda error: %v", err)
 	}
 	if !strings.Contains(err.Error(), `runtime.mcp_servers.runtime.config conflicts with removed built-in config MCP server ID "runtime.config"; edit the balda config file directly at "/tmp/work/.config/balda/config.yaml"`) {
 		t.Fatalf("missing removed built-in server conflict error: %v", err)
@@ -187,7 +187,7 @@ func TestValidateSessionPersistence(t *testing.T) {
 func TestBuildJobSchedulerConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg := RelayConfig{
+	cfg := BaldaConfig{
 		Locators: map[string]LocatorConfig{
 			" owner ": {
 				ChannelType: " telegram ",
@@ -245,7 +245,7 @@ func TestBuildJobSchedulerConfig(t *testing.T) {
 func TestBuildInboundWebhookConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg := RelayConfig{
+	cfg := BaldaConfig{
 		Locators: map[string]LocatorConfig{
 			" owner ": {
 				ChannelType: " telegram ",
@@ -311,9 +311,9 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 func TestResolveWorkspaceBaseBranch_ConfigPreferredWhenValid(t *testing.T) {
 	ctx := context.Background()
 	repoDir := t.TempDir()
-	initGitRepoForRelay(t, ctx, repoDir)
+	initGitRepoForBalda(t, ctx, repoDir)
 
-	runGitForRelay(t, ctx, repoDir, "branch", "main")
+	runGitForBalda(t, ctx, repoDir, "branch", "main")
 
 	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "main", true)
 	if err != nil {
@@ -330,8 +330,8 @@ func TestResolveWorkspaceBaseBranch_ConfigPreferredWhenValid(t *testing.T) {
 func TestResolveWorkspaceBaseBranch_FallbackToHeadWhenConfiguredMissing(t *testing.T) {
 	ctx := context.Background()
 	repoDir := t.TempDir()
-	initGitRepoForRelay(t, ctx, repoDir)
-	runGitForRelay(t, ctx, repoDir, "checkout", "-b", "trunk")
+	initGitRepoForBalda(t, ctx, repoDir)
+	runGitForBalda(t, ctx, repoDir, "checkout", "-b", "trunk")
 
 	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "missing-branch", true)
 	if err != nil {
@@ -357,7 +357,7 @@ func TestResolveWorkspaceBaseBranch_EnabledRequiresResolvableBranch(t *testing.T
 func TestResolveWorkspaceEnabledForApp_AutoDisablesWhenBaseBranchUnresolvable(t *testing.T) {
 	ctx := context.Background()
 	repoDir := t.TempDir()
-	runGitForRelay(t, ctx, repoDir, "init")
+	runGitForBalda(t, ctx, repoDir, "init")
 
 	mode, enabled, err := resolveWorkspaceEnabledForApp(ctx, string(WorkspaceModeAuto), repoDir, "", git.Available)
 	if err != nil {
@@ -374,7 +374,7 @@ func TestResolveWorkspaceEnabledForApp_AutoDisablesWhenBaseBranchUnresolvable(t 
 func TestResolveWorkspaceEnabledForApp_OnRemainsEnabledForGitRepo(t *testing.T) {
 	ctx := context.Background()
 	repoDir := t.TempDir()
-	runGitForRelay(t, ctx, repoDir, "init")
+	runGitForBalda(t, ctx, repoDir, "init")
 
 	mode, enabled, err := resolveWorkspaceEnabledForApp(ctx, string(WorkspaceModeOn), repoDir, "", git.Available)
 	if err != nil {
@@ -388,19 +388,19 @@ func TestResolveWorkspaceEnabledForApp_OnRemainsEnabledForGitRepo(t *testing.T) 
 	}
 }
 
-func initGitRepoForRelay(t *testing.T, ctx context.Context, dir string) {
+func initGitRepoForBalda(t *testing.T, ctx context.Context, dir string) {
 	t.Helper()
-	runGitForRelay(t, ctx, dir, "init")
-	runGitForRelay(t, ctx, dir, "config", "user.name", "Norma Test")
-	runGitForRelay(t, ctx, dir, "config", "user.email", "norma-test@example.com")
+	runGitForBalda(t, ctx, dir, "init")
+	runGitForBalda(t, ctx, dir, "config", "user.name", "Norma Test")
+	runGitForBalda(t, ctx, dir, "config", "user.email", "norma-test@example.com")
 	if err := os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("seed\n"), 0o600); err != nil {
 		t.Fatalf("write seed file: %v", err)
 	}
-	runGitForRelay(t, ctx, dir, "add", "seed.txt")
-	runGitForRelay(t, ctx, dir, "commit", "-m", "chore: seed")
+	runGitForBalda(t, ctx, dir, "add", "seed.txt")
+	runGitForBalda(t, ctx, dir, "commit", "-m", "chore: seed")
 }
 
-func runGitForRelay(t *testing.T, ctx context.Context, dir string, args ...string) string {
+func runGitForBalda(t *testing.T, ctx context.Context, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir

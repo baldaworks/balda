@@ -13,8 +13,8 @@ const (
 	MemoryFileName = "MEMORY.md"
 	SoulFileName   = "SOUL.md"
 
-	MemoryStateKey = "relay_memory"
-	SoulStateKey   = "relay_soul"
+	MemoryStateKey = "balda_memory"
+	SoulStateKey   = "balda_soul"
 )
 
 type Store struct {

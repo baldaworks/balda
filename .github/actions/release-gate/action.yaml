@@ -1,5 +1,5 @@
-name: relay-release-gate
-description: Run the production release verification gate for Relay.
+name: balda-release-gate
+description: Run the production release verification gate for Balda.
 
 runs:
   using: composite

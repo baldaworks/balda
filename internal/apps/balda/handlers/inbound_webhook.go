@@ -16,9 +16,9 @@ import (
 	"text/template"
 	"time"
 
-	relaychannel "github.com/normahq/balda/internal/apps/balda/channel"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"google.golang.org/adk/runner"
@@ -72,14 +72,14 @@ type InboundWebhookConfig struct {
 type inboundWebhookRoute struct {
 	Name           string
 	Path           string
-	Locator        relaysession.SessionLocator
+	Locator        baldasession.SessionLocator
 	PromptTemplate *template.Template
 }
 
 type inboundWebhookSessionManager interface {
-	GetSession(locator relaysession.SessionLocator) (*relaysession.TopicSession, error)
-	GetSessionInfo(ctx context.Context, sessionID string) (relaysession.TopicSessionInfo, error)
-	RestoreSession(ctx context.Context, sessionCtx relaysession.SessionContext) (*relaysession.TopicSession, error)
+	GetSession(locator baldasession.SessionLocator) (*baldasession.TopicSession, error)
+	GetSessionInfo(ctx context.Context, sessionID string) (baldasession.TopicSessionInfo, error)
+	RestoreSession(ctx context.Context, sessionCtx baldasession.SessionContext) (*baldasession.TopicSession, error)
 }
 
 type inboundTurnExecutor interface {
@@ -90,10 +90,10 @@ type inboundTurnExecutor interface {
 		userID string,
 		sessionID string,
 		agentSessionID string,
-		locator relaysession.SessionLocator,
+		locator baldasession.SessionLocator,
 		messageID int,
 		topicID int,
-		progressPolicy relaychannel.ProgressPolicy,
+		progressPolicy baldachannel.ProgressPolicy,
 	) error
 }
 
@@ -102,9 +102,9 @@ type inboundWebhookParams struct {
 
 	LC         fx.Lifecycle
 	Config     InboundWebhookConfig
-	Sessions   *relaysession.Manager
+	Sessions   *baldasession.Manager
 	Dispatcher *TurnDispatcher
-	Relay      *RelayHandler
+	Balda      *BaldaHandler
 	Logger     zerolog.Logger
 }
 
@@ -115,7 +115,7 @@ type InboundWebhookReceiver struct {
 	routes     map[string]inboundWebhookRoute
 	sessions   inboundWebhookSessionManager
 	dispatch   turnQueue
-	relay      inboundTurnExecutor
+	balda      inboundTurnExecutor
 	logger     zerolog.Logger
 
 	metrics inboundWebhookMetrics
@@ -198,7 +198,7 @@ func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookRece
 		routes:     normalized.Routes,
 		sessions:   params.Sessions,
 		dispatch:   params.Dispatcher,
-		relay:      params.Relay,
+		balda:      params.Balda,
 		logger:     params.Logger.With().Str("component", "balda.inbound_webhook").Logger(),
 	}
 
@@ -211,8 +211,8 @@ func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookRece
 	if receiver.dispatch == nil {
 		return nil, fmt.Errorf("balda turn dispatcher is required for inbound webhooks")
 	}
-	if receiver.relay == nil {
-		return nil, fmt.Errorf("balda relay handler is required for inbound webhooks")
+	if receiver.balda == nil {
+		return nil, fmt.Errorf("balda handler is required for inbound webhooks")
 	}
 
 	params.LC.Append(fx.Hook{
@@ -247,8 +247,8 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 		return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.inbound_webhooks.routes is required when inbound webhooks are enabled")
 	}
 
-	expectedChannelType := relaytelegram.NewLocator(0, 0).ChannelType
-	aliases := make(map[string]relaysession.SessionLocator, len(cfg.LocatorAliases))
+	expectedChannelType := baldatelegram.NewLocator(0, 0).ChannelType
+	aliases := make(map[string]baldasession.SessionLocator, len(cfg.LocatorAliases))
 	for rawAlias, rawLocator := range cfg.LocatorAliases {
 		alias := strings.TrimSpace(rawAlias)
 		if alias == "" {
@@ -258,7 +258,7 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("duplicate balda.locators alias %q", alias)
 		}
 
-		locator, err := relaysession.NewSessionLocator(
+		locator, err := baldasession.NewSessionLocator(
 			strings.TrimSpace(rawLocator.ChannelType),
 			strings.TrimSpace(rawLocator.AddressKey),
 			strings.TrimSpace(rawLocator.AddressJSON),
@@ -270,7 +270,7 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 		if locator.ChannelType != expectedChannelType {
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.locators.%s has unsupported channel_type %q", alias, locator.ChannelType)
 		}
-		if _, ok, err := relaytelegram.DecodeLocator(locator); err != nil || !ok {
+		if _, ok, err := baldatelegram.DecodeLocator(locator); err != nil || !ok {
 			if err != nil {
 				return normalizedInboundWebhookConfig{}, fmt.Errorf("invalid balda.locators.%s: %w", alias, err)
 			}
@@ -484,7 +484,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 				return nil
 			}
 
-			return r.relay.runTurnTask(
+			return r.balda.runTurnTask(
 				runCtx,
 				prompt,
 				ts.GetRunner(),
@@ -586,8 +586,8 @@ func renderInboundWebhookPrompt(route inboundWebhookRoute, data inboundWebhookTe
 
 func (r *InboundWebhookReceiver) resolveInboundWebhookSession(
 	ctx context.Context,
-	locator relaysession.SessionLocator,
-) (int, *relaysession.TopicSession, *inboundWebhookHTTPError) {
+	locator baldasession.SessionLocator,
+) (int, *baldasession.TopicSession, *inboundWebhookHTTPError) {
 	ts, err := r.sessions.GetSession(locator)
 	if err != nil {
 		info, infoErr := r.sessions.GetSessionInfo(ctx, locator.SessionID)
@@ -608,7 +608,7 @@ func (r *InboundWebhookReceiver) resolveInboundWebhookSession(
 				nil,
 			)
 		}
-		ts, err = r.sessions.RestoreSession(ctx, relaysession.SessionContext{
+		ts, err = r.sessions.RestoreSession(ctx, baldasession.SessionContext{
 			Locator: locator,
 			UserID:  userID,
 		})
@@ -622,7 +622,7 @@ func (r *InboundWebhookReceiver) resolveInboundWebhookSession(
 		}
 	}
 
-	address, ok, decodeErr := relaytelegram.DecodeLocator(locator)
+	address, ok, decodeErr := baldatelegram.DecodeLocator(locator)
 	if decodeErr != nil || !ok {
 		if decodeErr == nil {
 			decodeErr = fmt.Errorf("unsupported channel type %q", locator.ChannelType)
@@ -679,8 +679,8 @@ func writeInboundWebhookJSON(w http.ResponseWriter, status int, payload any) {
 	}
 }
 
-func inboundWebhookProgressPolicy() relaychannel.ProgressPolicy {
-	return relaychannel.ProgressPolicy{
+func inboundWebhookProgressPolicy() baldachannel.ProgressPolicy {
+	return baldachannel.ProgressPolicy{
 		Typing:   false,
 		Thinking: false,
 	}

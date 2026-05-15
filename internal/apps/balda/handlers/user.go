@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -19,7 +19,7 @@ type userHandler struct {
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
 	messenger         *messenger.Messenger
-	channel           *relaytelegram.Adapter
+	channel           *baldatelegram.Adapter
 	tgClient          client.ClientWithResponsesInterface
 	botUsername       string
 }
@@ -31,7 +31,7 @@ type userHandlerParams struct {
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
 	Messenger         *messenger.Messenger
-	Channel           *relaytelegram.Adapter
+	Channel           *baldatelegram.Adapter
 	TGClient          client.ClientWithResponsesInterface `optional:"true"`
 }
 
@@ -68,7 +68,7 @@ func (h *userHandler) getBotUsername(ctx context.Context) string {
 	return h.botUsername
 }
 
-func (h *userHandler) HandleUserCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *userHandler) HandleUserCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	if !h.ownerStore.IsOwner(commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "This command is only for the owner."); err != nil {
 			return err
@@ -93,7 +93,7 @@ func (h *userHandler) HandleUserCommand(ctx context.Context, commandCtx relaytel
 	}
 }
 
-func (h *userHandler) sendUsage(ctx context.Context, locator relaysession.SessionLocator) error {
+func (h *userHandler) sendUsage(ctx context.Context, locator baldasession.SessionLocator) error {
 	usage := "Usage:\n" +
 		"• /user add - Generate invite link\n" +
 		"• /user list - Show collaborators and active invites\n" +
@@ -101,7 +101,7 @@ func (h *userHandler) sendUsage(ctx context.Context, locator relaysession.Sessio
 	return h.channel.SendPlain(ctx, locator, usage)
 }
 
-func (h *userHandler) onAdd(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *userHandler) onAdd(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	ownerID := fmt.Sprintf("%d", commandCtx.UserID)
 
 	token, _, err := h.inviteStore.CreateInvite(ctx, ownerID)
@@ -121,7 +121,7 @@ func (h *userHandler) onAdd(ctx context.Context, commandCtx relaytelegram.Comman
 	return nil
 }
 
-func (h *userHandler) onList(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *userHandler) onList(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	var lines []string
 
 	collaborators, err := h.collaboratorStore.ListCollaborators(ctx)
@@ -164,7 +164,7 @@ func (h *userHandler) onList(ctx context.Context, commandCtx relaytelegram.Comma
 	return nil
 }
 
-func (h *userHandler) onRemove(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *userHandler) onRemove(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	args := strings.Fields(commandCtx.Args)
 	if len(args) < 2 {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /user remove <user_id>"); err != nil {

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -46,31 +46,31 @@ type JobSchedulerConfig struct {
 }
 
 type schedulerSessionManager interface {
-	GetSession(locator relaysession.SessionLocator) (*relaysession.TopicSession, error)
-	GetSessionInfo(ctx context.Context, sessionID string) (relaysession.TopicSessionInfo, error)
-	RestoreSession(ctx context.Context, sessionCtx relaysession.SessionContext) (*relaysession.TopicSession, error)
+	GetSession(locator baldasession.SessionLocator) (*baldasession.TopicSession, error)
+	GetSessionInfo(ctx context.Context, sessionID string) (baldasession.TopicSessionInfo, error)
+	RestoreSession(ctx context.Context, sessionCtx baldasession.SessionContext) (*baldasession.TopicSession, error)
 }
 
 type schedulerChannel interface {
-	SendPlain(ctx context.Context, locator relaysession.SessionLocator, text string) error
-	SendAgentReply(ctx context.Context, locator relaysession.SessionLocator, text string) error
+	SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error
+	SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error
 }
 
 type jobSchedulerParams struct {
 	fx.In
 
 	LC             fx.Lifecycle
-	StateProvider  relaystate.Provider
-	SessionManager *relaysession.Manager
+	StateProvider  baldastate.Provider
+	SessionManager *baldasession.Manager
 	TurnDispatcher *TurnDispatcher
-	Channel        *relaytelegram.Adapter
+	Channel        *baldatelegram.Adapter
 	Logger         zerolog.Logger
 	Config         JobSchedulerConfig
 }
 
 // JobScheduler dispatches due locator-bound recurring jobs into the turn queue.
 type JobScheduler struct {
-	jobStore relaystate.ScheduledJobStore
+	jobStore baldastate.ScheduledJobStore
 	sessions schedulerSessionManager
 	dispatch turnQueue
 	channel  schedulerChannel
@@ -187,7 +187,7 @@ func (s *JobScheduler) reconcileConfiguredJobs(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("compute next run for scheduler job %q: %w", job.ID, err)
 		}
-		record := relaystate.ScheduledJobRecord{
+		record := baldastate.ScheduledJobRecord{
 			JobID:        job.ID,
 			SessionID:    alias.SessionID,
 			ChannelType:  alias.ChannelType,
@@ -196,7 +196,7 @@ func (s *JobScheduler) reconcileConfiguredJobs(ctx context.Context) error {
 			Prompt:       job.Prompt,
 			ScheduleSpec: job.Cron,
 			Timezone:     "UTC",
-			Status:       relaystate.ScheduledJobStatusActive,
+			Status:       baldastate.ScheduledJobStatusActive,
 			MaxRetries:   defaultSchedulerMaxRetries,
 			RetryCount:   0,
 			NextRunAt:    nextRunAt,
@@ -238,7 +238,7 @@ func (s *JobScheduler) dispatchDue(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-func (s *JobScheduler) dispatchJob(ctx context.Context, job relaystate.ScheduledJobRecord, now time.Time) error {
+func (s *JobScheduler) dispatchJob(ctx context.Context, job baldastate.ScheduledJobRecord, now time.Time) error {
 	jobID := strings.TrimSpace(job.JobID)
 	if jobID == "" {
 		return fmt.Errorf("job id is required")
@@ -251,7 +251,7 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job relaystate.Scheduled
 	if !ok {
 		return fmt.Errorf("scheduled job %q not found", jobID)
 	}
-	if strings.TrimSpace(current.Status) != relaystate.ScheduledJobStatusActive {
+	if strings.TrimSpace(current.Status) != baldastate.ScheduledJobStatusActive {
 		return nil
 	}
 	if current.NextRunAt.After(now.UTC()) {
@@ -263,7 +263,7 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job relaystate.Scheduled
 		return nil
 	}
 
-	locator, err := relaysession.NewSessionLocator(current.ChannelType, current.AddressKey, current.AddressJSON, current.SessionID)
+	locator, err := baldasession.NewSessionLocator(current.ChannelType, current.AddressKey, current.AddressJSON, current.SessionID)
 	if err != nil {
 		return s.markFailure(ctx, jobID, fmt.Errorf("invalid job locator: %w", err))
 	}
@@ -281,7 +281,7 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job relaystate.Scheduled
 	// Claim this due-slot before enqueue so duplicate stale due entries do not dispatch twice.
 	current.LastDispatchKey = dispatchKey
 	current.LastError = ""
-	current.Status = relaystate.ScheduledJobStatusActive
+	current.Status = baldastate.ScheduledJobStatusActive
 	current.NextRunAt = nextRunAt
 	if err := s.jobStore.Upsert(ctx, current); err != nil {
 		return fmt.Errorf("update job %q before enqueue: %w", jobID, err)
@@ -302,9 +302,9 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job relaystate.Scheduled
 
 func (s *JobScheduler) resolveTopicSession(
 	ctx context.Context,
-	locator relaysession.SessionLocator,
+	locator baldasession.SessionLocator,
 	sessionID string,
-) (*relaysession.TopicSession, error) {
+) (*baldasession.TopicSession, error) {
 	ts, err := s.sessions.GetSession(locator)
 	if err == nil {
 		return ts, nil
@@ -322,7 +322,7 @@ func (s *JobScheduler) resolveTopicSession(
 		return nil, fmt.Errorf("session %q has no user id for restore", sessionID)
 	}
 
-	return s.sessions.RestoreSession(ctx, relaysession.SessionContext{
+	return s.sessions.RestoreSession(ctx, baldasession.SessionContext{
 		Locator: locator,
 		UserID:  userID,
 	})
@@ -330,10 +330,10 @@ func (s *JobScheduler) resolveTopicSession(
 
 func (s *JobScheduler) executeJobTurn(
 	ctx context.Context,
-	locator relaysession.SessionLocator,
+	locator baldasession.SessionLocator,
 	jobID string,
 	prompt string,
-	ts *relaysession.TopicSession,
+	ts *baldasession.TopicSession,
 ) error {
 	reply, err := runGoalIteration(ctx, ts.GetRunner(), ts.GetUserID(), ts.GetAgentSessionID(), prompt)
 	if err != nil {
@@ -376,7 +376,7 @@ func (s *JobScheduler) markSuccess(ctx context.Context, jobID string) error {
 	job.LastRunAt = s.now().UTC()
 	job.LastError = ""
 	job.RetryCount = 0
-	job.Status = relaystate.ScheduledJobStatusActive
+	job.Status = baldastate.ScheduledJobStatusActive
 	if err := s.jobStore.Upsert(ctx, job); err != nil {
 		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
 	}
@@ -401,9 +401,9 @@ func (s *JobScheduler) markFailure(ctx context.Context, jobID string, cause erro
 		maxRetries = 0
 	}
 	if job.RetryCount > maxRetries {
-		job.Status = relaystate.ScheduledJobStatusPaused
+		job.Status = baldastate.ScheduledJobStatusPaused
 	} else {
-		job.Status = relaystate.ScheduledJobStatusActive
+		job.Status = baldastate.ScheduledJobStatusActive
 		job.NextRunAt = now.Add(retryDelay(job.RetryCount))
 	}
 	if err := s.jobStore.Upsert(ctx, job); err != nil {
@@ -427,7 +427,7 @@ func normalizeJobSchedulerConfig(raw JobSchedulerConfig) (JobSchedulerConfig, er
 			return JobSchedulerConfig{}, fmt.Errorf("duplicate balda.locators alias %q", alias)
 		}
 
-		locator, err := relaysession.NewSessionLocator(
+		locator, err := baldasession.NewSessionLocator(
 			strings.TrimSpace(rawLocator.ChannelType),
 			strings.TrimSpace(rawLocator.AddressKey),
 			strings.TrimSpace(rawLocator.AddressJSON),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 		t.Fatalf("merged[count] = %v, want 2", merged["count"])
 	}
 	if merged["name"] != "balda" {
-		t.Fatalf("merged[name] = %v, want relay", merged["name"])
+		t.Fatalf("merged[name] = %v, want balda", merged["name"])
 	}
 }
 
@@ -251,7 +252,7 @@ func TestSQLiteProvider_ADKSessionPersistsAcrossReopen(t *testing.T) {
 	}
 	svcA := providerA.ADKSessions()
 	created, err := svcA.Create(ctx, &adksession.CreateRequest{
-		AppName:   "norma-relay",
+		AppName:   "norma-balda",
 		UserID:    "tg-101",
 		SessionID: "tg-1-2",
 		State: map[string]any{
@@ -281,7 +282,7 @@ func TestSQLiteProvider_ADKSessionPersistsAcrossReopen(t *testing.T) {
 	defer closeProvider(t, providerB)
 
 	got, err := providerB.ADKSessions().Get(ctx, &adksession.GetRequest{
-		AppName:   "norma-relay",
+		AppName:   "norma-balda",
 		UserID:    "tg-101",
 		SessionID: "tg-1-2",
 	})
@@ -306,7 +307,7 @@ func TestSQLiteProvider_AdoptsExistingLegacySchema(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "balda.db")
 	ctx := context.Background()
 
-	seedLegacyRelayDB(t, dbPath)
+	seedLegacyBaldaDB(t, dbPath)
 
 	provider, err := NewSQLiteProvider(ctx, dbPath)
 	if err != nil {
@@ -358,6 +359,36 @@ func TestSQLiteProvider_AdoptsExistingLegacySchema(t *testing.T) {
 	}
 }
 
+func TestSQLiteProvider_RejectsObsoletePreBaldaSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	ctx := context.Background()
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE schema_migrations (
+			version INTEGER PRIMARY KEY,
+			applied_at TEXT NOT NULL
+		);
+		INSERT INTO schema_migrations(version, applied_at)
+		VALUES(8, datetime('now'));`); err != nil {
+		t.Fatalf("seed obsolete schema: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close() error = %v", err)
+	}
+
+	_, err = NewSQLiteProvider(ctx, dbPath)
+	if err == nil {
+		t.Fatal("NewSQLiteProvider() error = nil, want obsolete schema error")
+	}
+	if !strings.Contains(err.Error(), "obsolete pre-Balda state schema") {
+		t.Fatalf("NewSQLiteProvider() error = %q, want obsolete pre-Balda state schema", err)
+	}
+}
+
 func newTestProvider(t *testing.T) Provider {
 	t.Helper()
 
@@ -376,7 +407,7 @@ func closeProvider(t *testing.T, provider Provider) {
 	}
 }
 
-func seedLegacyRelayDB(t *testing.T, dbPath string) {
+func seedLegacyBaldaDB(t *testing.T, dbPath string) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -386,14 +417,14 @@ func seedLegacyRelayDB(t *testing.T, dbPath string) {
 	defer func() { _ = db.Close() }()
 
 	legacySchema := []string{
-		`CREATE TABLE relay_app_kv (
+		`CREATE TABLE balda_app_kv (
 			namespace TEXT NOT NULL,
 			key TEXT NOT NULL,
 			value_json TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
 			PRIMARY KEY (namespace, key)
 		);`,
-		`CREATE TABLE relay_session_metadata (
+		`CREATE TABLE balda_session_metadata (
 			session_id TEXT PRIMARY KEY,
 			chat_id INTEGER NOT NULL,
 			topic_id INTEGER NOT NULL,
@@ -404,23 +435,23 @@ func seedLegacyRelayDB(t *testing.T, dbPath string) {
 			updated_at TEXT NOT NULL,
 			UNIQUE (chat_id, topic_id)
 		);`,
-		`CREATE INDEX idx_relay_session_metadata_status ON relay_session_metadata(status);`,
-		`INSERT INTO relay_session_metadata (
+		`CREATE INDEX idx_balda_session_metadata_status ON balda_session_metadata(status);`,
+		`INSERT INTO balda_session_metadata (
 			session_id, chat_id, topic_id, agent_name, workspace_dir, branch_name, status, updated_at
 		)
-		 VALUES ('relay-1-2', 1, 2, 'agent', '/tmp/ws', 'norma/balda/relay-1-2', 'active', '2026-01-01T00:00:00Z');`,
-		`CREATE TABLE relay_telegram_offsets (
+		 VALUES ('balda-1-2', 1, 2, 'agent', '/tmp/ws', 'norma/balda/balda-1-2', 'active', '2026-01-01T00:00:00Z');`,
+		`CREATE TABLE balda_telegram_offsets (
 			bot_key TEXT PRIMARY KEY,
 			offset INTEGER NOT NULL,
 			updated_at TEXT NOT NULL
 		);`,
-		`INSERT INTO relay_telegram_offsets (bot_key, offset, updated_at)
-		 VALUES ('relay-default', 321, '2026-01-01T00:00:00Z');`,
+		`INSERT INTO balda_telegram_offsets (bot_key, offset, updated_at)
+		 VALUES ('balda-default', 321, '2026-01-01T00:00:00Z');`,
 	}
 
 	for _, stmt := range legacySchema {
 		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("seed legacy relay db stmt failed: %v\nstmt: %s", err, stmt)
+			t.Fatalf("seed legacy balda db stmt failed: %v\nstmt: %s", err, stmt)
 		}
 	}
 }

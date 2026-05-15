@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	"google.golang.org/adk/runner"
 )
@@ -20,11 +20,11 @@ func TestJobSchedulerDispatchJob_EnqueuesAndReschedules(t *testing.T) {
 
 	ctx := context.Background()
 	store := newSchedulerJobStore(t)
-	locator := relaytelegram.NewLocator(9001, 77)
+	locator := baldatelegram.NewLocator(9001, 77)
 	now := time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC)
 	dueAt := now.Add(-time.Second)
 
-	record := relaystate.ScheduledJobRecord{
+	record := baldastate.ScheduledJobRecord{
 		JobID:        "job-1",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
@@ -32,7 +32,7 @@ func TestJobSchedulerDispatchJob_EnqueuesAndReschedules(t *testing.T) {
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "summarize repo health",
 		ScheduleSpec: "@every 2s",
-		Status:       relaystate.ScheduledJobStatusActive,
+		Status:       baldastate.ScheduledJobStatusActive,
 		MaxRetries:   3,
 		NextRunAt:    dueAt,
 	}
@@ -77,10 +77,10 @@ func TestJobSchedulerDispatchJob_RestoresSessionWhenNotInMemory(t *testing.T) {
 
 	ctx := context.Background()
 	store := newSchedulerJobStore(t)
-	locator := relaytelegram.NewLocator(9001, 88)
+	locator := baldatelegram.NewLocator(9001, 88)
 	now := time.Date(2026, time.May, 14, 12, 30, 0, 0, time.UTC)
 
-	record := relaystate.ScheduledJobRecord{
+	record := baldastate.ScheduledJobRecord{
 		JobID:        "job-restore",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
@@ -88,7 +88,7 @@ func TestJobSchedulerDispatchJob_RestoresSessionWhenNotInMemory(t *testing.T) {
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "restore and run",
 		ScheduleSpec: "@every 10s",
-		Status:       relaystate.ScheduledJobStatusActive,
+		Status:       baldastate.ScheduledJobStatusActive,
 		NextRunAt:    now.Add(-2 * time.Second),
 	}
 	if err := store.Upsert(ctx, record); err != nil {
@@ -98,7 +98,7 @@ func TestJobSchedulerDispatchJob_RestoresSessionWhenNotInMemory(t *testing.T) {
 	restoreTS := newSchedulerTopicSession(t, locator, "tg-202", "adk-2", nil)
 	sessions := &fakeSchedulerSessionManager{
 		getErr:  errors.New("not found"),
-		info:    relaysession.TopicSessionInfo{UserID: "tg-202"},
+		info:    baldasession.TopicSessionInfo{UserID: "tg-202"},
 		restore: restoreTS,
 	}
 	queue := &fakeSchedulerTurnQueue{}
@@ -120,11 +120,11 @@ func TestJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T) {
 
 	ctx := context.Background()
 	store := newSchedulerJobStore(t)
-	locator := relaytelegram.NewLocator(9001, 99)
+	locator := baldatelegram.NewLocator(9001, 99)
 	now := time.Date(2026, time.May, 14, 13, 0, 0, 0, time.UTC)
 	dueAt := now.Add(-time.Second)
 
-	record := relaystate.ScheduledJobRecord{
+	record := baldastate.ScheduledJobRecord{
 		JobID:        "job-idempotent",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
@@ -132,7 +132,7 @@ func TestJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T) {
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "same slot should dispatch once",
 		ScheduleSpec: "@every 5s",
-		Status:       relaystate.ScheduledJobStatusActive,
+		Status:       baldastate.ScheduledJobStatusActive,
 		NextRunAt:    dueAt,
 	}
 	if err := store.Upsert(ctx, record); err != nil {
@@ -172,10 +172,10 @@ func TestJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 
 	ctx := context.Background()
 	store := newSchedulerJobStore(t)
-	locator := relaytelegram.NewLocator(9001, 101)
+	locator := baldatelegram.NewLocator(9001, 101)
 	start := time.Date(2026, time.May, 14, 14, 0, 0, 0, time.UTC)
 
-	record := relaystate.ScheduledJobRecord{
+	record := baldastate.ScheduledJobRecord{
 		JobID:        "job-fail",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
@@ -183,7 +183,7 @@ func TestJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "will fail",
 		ScheduleSpec: "@every 1m",
-		Status:       relaystate.ScheduledJobStatusActive,
+		Status:       baldastate.ScheduledJobStatusActive,
 		MaxRetries:   1,
 		NextRunAt:    start,
 	}
@@ -212,7 +212,7 @@ func TestJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 	if got := afterFirst.RetryCount; got != 1 {
 		t.Fatalf("RetryCount after first failure = %d, want 1", got)
 	}
-	if got := afterFirst.Status; got != relaystate.ScheduledJobStatusActive {
+	if got := afterFirst.Status; got != baldastate.ScheduledJobStatusActive {
 		t.Fatalf("Status after first failure = %q, want active", got)
 	}
 	if got, want := afterFirst.NextRunAt, start.Add(time.Second); !got.Equal(want) {
@@ -237,7 +237,7 @@ func TestJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 	if got := afterSecond.RetryCount; got != 2 {
 		t.Fatalf("RetryCount after second failure = %d, want 2", got)
 	}
-	if got := afterSecond.Status; got != relaystate.ScheduledJobStatusPaused {
+	if got := afterSecond.Status; got != baldastate.ScheduledJobStatusPaused {
 		t.Fatalf("Status after second failure = %q, want paused", got)
 	}
 }
@@ -248,9 +248,9 @@ func TestJobSchedulerReconcileConfiguredJobs_UpsertsAndDeletes(t *testing.T) {
 	ctx := context.Background()
 	store := newSchedulerJobStore(t)
 	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
-	locator := relaytelegram.NewLocator(9001, 222)
+	locator := baldatelegram.NewLocator(9001, 222)
 
-	stale := relaystate.ScheduledJobRecord{
+	stale := baldastate.ScheduledJobRecord{
 		JobID:        "stale-job",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
@@ -258,7 +258,7 @@ func TestJobSchedulerReconcileConfiguredJobs_UpsertsAndDeletes(t *testing.T) {
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "remove me",
 		ScheduleSpec: "@every 10s",
-		Status:       relaystate.ScheduledJobStatusActive,
+		Status:       baldastate.ScheduledJobStatusActive,
 		MaxRetries:   3,
 		NextRunAt:    now.Add(10 * time.Second),
 	}
@@ -307,7 +307,7 @@ func TestJobSchedulerReconcileConfiguredJobs_UpsertsAndDeletes(t *testing.T) {
 	if got, want := managed.Prompt, "review queue"; got != want {
 		t.Fatalf("Prompt = %q, want %q", got, want)
 	}
-	if got, want := managed.Status, relaystate.ScheduledJobStatusActive; got != want {
+	if got, want := managed.Status, baldastate.ScheduledJobStatusActive; got != want {
 		t.Fatalf("Status = %q, want %q", got, want)
 	}
 	if got, want := managed.MaxRetries, defaultSchedulerMaxRetries; got != want {
@@ -366,10 +366,10 @@ func TestJobSchedulerExecuteJobTurn_SuccessResetsRetryAndSendsReply(t *testing.T
 
 	ctx := context.Background()
 	store := newSchedulerJobStore(t)
-	locator := relaytelegram.NewLocator(9001, 111)
+	locator := baldatelegram.NewLocator(9001, 111)
 	now := time.Date(2026, time.May, 14, 15, 0, 0, 0, time.UTC)
 
-	record := relaystate.ScheduledJobRecord{
+	record := baldastate.ScheduledJobRecord{
 		JobID:        "job-success",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
@@ -377,7 +377,7 @@ func TestJobSchedulerExecuteJobTurn_SuccessResetsRetryAndSendsReply(t *testing.T
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "run once",
 		ScheduleSpec: "@every 30s",
-		Status:       relaystate.ScheduledJobStatusActive,
+		Status:       baldastate.ScheduledJobStatusActive,
 		RetryCount:   2,
 		NextRunAt:    now.Add(30 * time.Second),
 	}
@@ -385,7 +385,7 @@ func TestJobSchedulerExecuteJobTurn_SuccessResetsRetryAndSendsReply(t *testing.T
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	adkRunner, adkSessionID := newRelayRunTurnTestRunner(t)
+	adkRunner, adkSessionID := newBaldaRunTurnTestRunner(t)
 	ts := newSchedulerTopicSession(t, locator, "tg-101", adkSessionID, adkRunner)
 	channel := &fakeSchedulerChannel{}
 	scheduler := &JobScheduler{
@@ -414,7 +414,7 @@ func TestJobSchedulerExecuteJobTurn_SuccessResetsRetryAndSendsReply(t *testing.T
 	if got := updated.RetryCount; got != 0 {
 		t.Fatalf("RetryCount after success = %d, want 0", got)
 	}
-	if got := updated.Status; got != relaystate.ScheduledJobStatusActive {
+	if got := updated.Status; got != baldastate.ScheduledJobStatusActive {
 		t.Fatalf("Status after success = %q, want active", got)
 	}
 	if got := updated.LastRunAt; !got.Equal(now) {
@@ -429,10 +429,10 @@ func TestJobSchedulerExecuteJobTurn_CanceledContextDoesNotMarkFailure(t *testing
 	cancel()
 
 	store := newSchedulerJobStore(t)
-	locator := relaytelegram.NewLocator(9001, 112)
+	locator := baldatelegram.NewLocator(9001, 112)
 	now := time.Date(2026, time.May, 14, 15, 30, 0, 0, time.UTC)
 
-	record := relaystate.ScheduledJobRecord{
+	record := baldastate.ScheduledJobRecord{
 		JobID:        "job-canceled",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
@@ -440,7 +440,7 @@ func TestJobSchedulerExecuteJobTurn_CanceledContextDoesNotMarkFailure(t *testing
 		AddressJSON:  locator.AddressJSON,
 		Prompt:       "run once",
 		ScheduleSpec: "@every 30s",
-		Status:       relaystate.ScheduledJobStatusActive,
+		Status:       baldastate.ScheduledJobStatusActive,
 		MaxRetries:   3,
 		NextRunAt:    now.Add(30 * time.Second),
 	}
@@ -485,22 +485,22 @@ func TestJobSchedulerExecuteJobTurn_CanceledContextDoesNotMarkFailure(t *testing
 	if !updated.LastRunAt.IsZero() {
 		t.Fatalf("LastRunAt after cancellation = %s, want zero", updated.LastRunAt)
 	}
-	if got := updated.Status; got != relaystate.ScheduledJobStatusActive {
+	if got := updated.Status; got != baldastate.ScheduledJobStatusActive {
 		t.Fatalf("Status after cancellation = %q, want active", got)
 	}
 }
 
 type fakeSchedulerSessionManager struct {
-	session      *relaysession.TopicSession
+	session      *baldasession.TopicSession
 	getErr       error
-	info         relaysession.TopicSessionInfo
+	info         baldasession.TopicSessionInfo
 	infoErr      error
-	restore      *relaysession.TopicSession
+	restore      *baldasession.TopicSession
 	restoreErr   error
 	restoreCalls int
 }
 
-func (f *fakeSchedulerSessionManager) GetSession(_ relaysession.SessionLocator) (*relaysession.TopicSession, error) {
+func (f *fakeSchedulerSessionManager) GetSession(_ baldasession.SessionLocator) (*baldasession.TopicSession, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
@@ -510,14 +510,14 @@ func (f *fakeSchedulerSessionManager) GetSession(_ relaysession.SessionLocator) 
 	return f.session, nil
 }
 
-func (f *fakeSchedulerSessionManager) GetSessionInfo(_ context.Context, _ string) (relaysession.TopicSessionInfo, error) {
+func (f *fakeSchedulerSessionManager) GetSessionInfo(_ context.Context, _ string) (baldasession.TopicSessionInfo, error) {
 	if f.infoErr != nil {
-		return relaysession.TopicSessionInfo{}, f.infoErr
+		return baldasession.TopicSessionInfo{}, f.infoErr
 	}
 	return f.info, nil
 }
 
-func (f *fakeSchedulerSessionManager) RestoreSession(_ context.Context, _ relaysession.SessionContext) (*relaysession.TopicSession, error) {
+func (f *fakeSchedulerSessionManager) RestoreSession(_ context.Context, _ baldasession.SessionContext) (*baldasession.TopicSession, error) {
 	f.restoreCalls++
 	if f.restoreErr != nil {
 		return nil, f.restoreErr
@@ -537,7 +537,7 @@ func (f *fakeSchedulerTurnQueue) Enqueue(task TurnTask) (int, error) {
 	return len(f.tasks) - 1, nil
 }
 
-func (*fakeSchedulerTurnQueue) CancelSession(relaysession.SessionLocator, bool) (bool, int, error) {
+func (*fakeSchedulerTurnQueue) CancelSession(baldasession.SessionLocator, bool) (bool, int, error) {
 	return false, 0, nil
 }
 
@@ -546,12 +546,12 @@ type fakeSchedulerChannel struct {
 	agentReplies []string
 }
 
-func (f *fakeSchedulerChannel) SendPlain(_ context.Context, _ relaysession.SessionLocator, text string) error {
+func (f *fakeSchedulerChannel) SendPlain(_ context.Context, _ baldasession.SessionLocator, text string) error {
 	f.plainTexts = append(f.plainTexts, text)
 	return nil
 }
 
-func (f *fakeSchedulerChannel) SendAgentReply(_ context.Context, _ relaysession.SessionLocator, text string) error {
+func (f *fakeSchedulerChannel) SendAgentReply(_ context.Context, _ baldasession.SessionLocator, text string) error {
 	f.agentReplies = append(f.agentReplies, text)
 	return nil
 }
@@ -565,7 +565,7 @@ func (c *schedulerClock) Now() time.Time {
 }
 
 func newSchedulerForTest(
-	store relaystate.ScheduledJobStore,
+	store baldastate.ScheduledJobStore,
 	sessions schedulerSessionManager,
 	queue turnQueue,
 	channel schedulerChannel,
@@ -583,11 +583,11 @@ func newSchedulerForTest(
 	}
 }
 
-func newSchedulerJobStore(t *testing.T) relaystate.ScheduledJobStore {
+func newSchedulerJobStore(t *testing.T) baldastate.ScheduledJobStore {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "balda.db")
-	provider, err := relaystate.NewSQLiteProvider(context.Background(), dbPath)
+	provider, err := baldastate.NewSQLiteProvider(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)
 	}
@@ -599,14 +599,14 @@ func newSchedulerJobStore(t *testing.T) relaystate.ScheduledJobStore {
 
 func newSchedulerTopicSession(
 	t *testing.T,
-	locator relaysession.SessionLocator,
+	locator baldasession.SessionLocator,
 	userID string,
 	agentSessionID string,
 	adkRunner *runner.Runner,
-) *relaysession.TopicSession {
+) *baldasession.TopicSession {
 	t.Helper()
 
-	ts := &relaysession.TopicSession{}
+	ts := &baldasession.TopicSession{}
 	setUnexportedField(t, ts, "sessionID", locator.SessionID)
 	setUnexportedField(t, ts, "locator", locator)
 	setUnexportedField(t, ts, "userID", userID)

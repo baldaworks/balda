@@ -4,7 +4,7 @@
 
 - Keeps `/start owner=<owner_token>` for owner bootstrap and `/start invite=<invite_token>` for collaborator onboarding.
 - Keeps Telegram-safe deep-link payloads as `owner_<token>` and `invite_<token>`.
-- Reprints the owner bootstrap command and deeplink on `balda start` while the relay is still unclaimed, then stops exposing them again after the first successful owner auth.
+- Reprints the owner bootstrap command and deeplink on `balda start` while the bot is still unclaimed, then stops exposing them again after the first successful owner auth.
 - Fails startup when a registered owner session cannot be restored or created.
 - Restores owner sessions through persisted session metadata, including workspace branch/path state, before falling back to fresh create.
 - Defaults `balda.sessions.persistence` to `sqlite`, keeping ADK conversation history across restarts until `/reset` or explicit `/close`.

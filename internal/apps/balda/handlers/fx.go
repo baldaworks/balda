@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"github.com/normahq/balda/internal/apps/balda/agent"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
@@ -11,8 +11,8 @@ import (
 	"go.uber.org/fx"
 )
 
-// Module provides handlers for the relay bot.
-var Module = fx.Module("relay_handlers",
+// Module provides handlers for the balda bot.
+var Module = fx.Module("balda_handlers",
 	fx.Provide(
 		agent.NewBuilder,
 		agent.NewRuntimeManager,
@@ -27,15 +27,15 @@ var Module = fx.Module("relay_handlers",
 				m.SetAgentReplyFormattingMode(formattingMode)
 				return m
 			},
-			fx.ParamTags(``, ``, `name:"relay_telegram_formatting_mode"`),
+			fx.ParamTags(``, ``, `name:"balda_telegram_formatting_mode"`),
 		),
-		relaytelegram.NewAdapter,
+		baldatelegram.NewAdapter,
 		NewTurnDispatcher,
 		NewGoalRunner,
 		NewJobScheduler,
 		NewInboundWebhookReceiver,
 		NewStartHandler,
-		NewRelayHandler,
+		NewBaldaHandler,
 		NewCommandHandler,
 		NewUserHandler,
 		fx.Annotate(
@@ -44,7 +44,7 @@ var Module = fx.Module("relay_handlers",
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		fx.Annotate(
-			registerRelayHandler,
+			registerBaldaHandler,
 			fx.As(new(tgbotkit.Handler)),
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
@@ -66,16 +66,16 @@ var Module = fx.Module("relay_handlers",
 	),
 )
 
-// WireHandlers connects the start handler to the relay handler.
-func WireHandlers(start *StartHandler, relay *RelayHandler) {
-	start.SetRelayHandler(relay)
+// WireHandlers connects the start handler to the balda handler.
+func WireHandlers(start *StartHandler, balda *BaldaHandler) {
+	start.SetBaldaHandler(balda)
 }
 
 func registerStartHandler(h *StartHandler) tgbotkit.Handler {
 	return h
 }
 
-func registerRelayHandler(h *RelayHandler) tgbotkit.Handler {
+func registerBaldaHandler(h *BaldaHandler) tgbotkit.Handler {
 	return h
 }
 

@@ -22,10 +22,10 @@ type StartHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	messenger         *messenger.Messenger
 	authToken         string
-	relayHandler      relayOwnerActivator
+	baldaHandler      baldaOwnerActivator
 }
 
-type relayOwnerActivator interface {
+type baldaOwnerActivator interface {
 	ActivateOwner(ctx context.Context, ownerID, chatID int64) error
 }
 
@@ -37,7 +37,7 @@ type StartHandlerParams struct {
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
 	Messenger         *messenger.Messenger
-	AuthToken         string `name:"relay_auth_token"`
+	AuthToken         string `name:"balda_auth_token"`
 }
 
 const (
@@ -61,9 +61,9 @@ func NewStartHandler(params StartHandlerParams) *StartHandler {
 	}
 }
 
-// SetRelayHandler sets the balda handler (needed for circular dependency).
-func (h *StartHandler) SetRelayHandler(rh relayOwnerActivator) {
-	h.relayHandler = rh
+// SetBaldaHandler sets the balda handler (needed for circular dependency).
+func (h *StartHandler) SetBaldaHandler(rh baldaOwnerActivator) {
+	h.baldaHandler = rh
 }
 
 // Register registers the handler with the registry.
@@ -111,7 +111,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			if err := h.ownerStore.UpdateChatID(chatID); err != nil {
 				log.Warn().Err(err).Msg("failed to update owner chatID")
 			}
-			startErr := h.activateRelay(ctx, userID, chatID)
+			startErr := h.activateBalda(ctx, userID, chatID)
 			if startErr == nil {
 				log.Info().Int64("user_id", userID).Msg("balda re-activated for existing owner")
 			}
@@ -176,7 +176,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		Str("username", info.username).
 		Msg("Owner registered successfully")
 
-	startErr := h.activateRelay(ctx, userID, chatID)
+	startErr := h.activateBalda(ctx, userID, chatID)
 	if err := h.sendOwnerRegisteredMessage(ctx, chatID, info.firstName, startErr); err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func (h *StartHandler) sendOwnerRegisteredMessage(ctx context.Context, chatID in
 
 	text := fmt.Sprintf("Congratulations, %s! You are now registered as the bot owner.", name)
 	if startErr != nil {
-		text += "\n\n" + relayStartFailureMessage(startErr)
+		text += "\n\n" + baldaStartFailureMessage(startErr)
 		return h.messenger.SendPlain(ctx, chatID, text, 0)
 	}
 	text += "\n\nBalda mode is active."
@@ -278,19 +278,19 @@ func (h *StartHandler) sendOwnerRegisteredMessage(ctx context.Context, chatID in
 func (h *StartHandler) ownerAlreadyRegisteredMessage(startErr error) string {
 	msg := "You are already registered as the bot owner."
 	if startErr != nil {
-		msg += "\n\n" + relayStartFailureMessage(startErr)
+		msg += "\n\n" + baldaStartFailureMessage(startErr)
 		return msg
 	}
 	msg += " Balda mode is active."
 	return msg
 }
 
-func (h *StartHandler) activateRelay(ctx context.Context, ownerID, chatID int64) error {
-	if h.relayHandler == nil {
+func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64) error {
+	if h.baldaHandler == nil {
 		log.Warn().Msg("balda handler is nil; skipping owner session activation")
 		return nil
 	}
-	if err := h.relayHandler.ActivateOwner(ctx, ownerID, chatID); err != nil {
+	if err := h.baldaHandler.ActivateOwner(ctx, ownerID, chatID); err != nil {
 		log.Warn().
 			Err(err).
 			Int64("owner_id", ownerID).
@@ -301,7 +301,7 @@ func (h *StartHandler) activateRelay(ctx context.Context, ownerID, chatID int64)
 	return nil
 }
 
-func relayStartFailureMessage(err error) string {
+func baldaStartFailureMessage(err error) string {
 	return fmt.Sprintf(
 		"Failed to start balda provider session: %v.\nPlease verify balda provider configuration, then send /start again or restart balda.",
 		err,

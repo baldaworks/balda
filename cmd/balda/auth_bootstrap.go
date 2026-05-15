@@ -7,28 +7,28 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/paths"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
 const (
-	relayStateDBFileName  = "balda.db"
-	relayOwnerAuthTokenKV = "owner_auth_token"
+	baldaStateDBFileName  = "balda.db"
+	baldaOwnerAuthTokenKV = "owner_auth_token"
 )
 
-var relayGenerateOwnerToken = auth.GenerateOwnerToken
+var baldaGenerateOwnerToken = auth.GenerateOwnerToken
 
-func resolveRelayStateDir(workingDir, rawStateDir string) (string, error) {
+func resolveBaldaStateDir(workingDir, rawStateDir string) (string, error) {
 	return paths.ResolveStateDir(workingDir, rawStateDir)
 }
 
-func loadOrCreateRelayOwnerToken(ctx context.Context, dbPath string) (string, error) {
-	provider, err := relaystate.NewSQLiteProvider(ctx, dbPath)
+func loadOrCreateBaldaOwnerToken(ctx context.Context, dbPath string) (string, error) {
+	provider, err := baldastate.NewSQLiteProvider(ctx, dbPath)
 	if err != nil {
 		return "", fmt.Errorf("open balda state provider: %w", err)
 	}
 	defer func() { _ = provider.Close() }()
 
-	stored, ok, err := provider.AppKV().Get(ctx, relayOwnerAuthTokenKV)
+	stored, ok, err := provider.AppKV().Get(ctx, baldaOwnerAuthTokenKV)
 	if err != nil {
 		return "", fmt.Errorf("read owner auth token: %w", err)
 	}
@@ -39,11 +39,11 @@ func loadOrCreateRelayOwnerToken(ctx context.Context, dbPath string) (string, er
 		}
 	}
 
-	token, err := relayGenerateOwnerToken()
+	token, err := baldaGenerateOwnerToken()
 	if err != nil {
 		return "", fmt.Errorf("generate owner auth token: %w", err)
 	}
-	if err := provider.AppKV().Set(ctx, relayOwnerAuthTokenKV, token); err != nil {
+	if err := provider.AppKV().Set(ctx, baldaOwnerAuthTokenKV, token); err != nil {
 		return "", fmt.Errorf("store owner auth token: %w", err)
 	}
 

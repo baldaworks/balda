@@ -11,17 +11,17 @@ import (
 	"strings"
 )
 
-func chooseRelayProvider(agentIDs []string, in io.Reader, out io.Writer, interactive bool) (string, error) {
+func chooseBaldaProvider(agentIDs []string, in io.Reader, out io.Writer, interactive bool) (string, error) {
 	if len(agentIDs) == 0 {
 		return "", fmt.Errorf("no provider ids are available for balda.provider selection")
 	}
 	if !interactive {
 		return agentIDs[0], nil
 	}
-	return promptRelayProvider(agentIDs, in, out)
+	return promptBaldaProvider(agentIDs, in, out)
 }
 
-func promptRelayProvider(agentIDs []string, in io.Reader, out io.Writer) (string, error) {
+func promptBaldaProvider(agentIDs []string, in io.Reader, out io.Writer) (string, error) {
 	if len(agentIDs) == 0 {
 		return "", fmt.Errorf("no provider ids are available for balda.provider selection")
 	}
@@ -67,7 +67,7 @@ func promptRelayProvider(agentIDs []string, in io.Reader, out io.Writer) (string
 	}
 }
 
-func promptRelayTelegramToken(in io.Reader, out io.Writer, interactive bool) (string, botIdentity, error) {
+func promptBaldaTelegramToken(in io.Reader, out io.Writer, interactive bool) (string, botIdentity, error) {
 	reader := asBufferedReader(in)
 	for {
 		_, _ = fmt.Fprint(out, "Enter Telegram bot token (required): ")
@@ -85,7 +85,7 @@ func promptRelayTelegramToken(in io.Reader, out io.Writer, interactive bool) (st
 			continue
 		}
 
-		identity, validateErr := relayInitLoadBotIdentity(context.Background(), token)
+		identity, validateErr := baldaInitLoadBotIdentity(context.Background(), token)
 		if validateErr == nil {
 			return token, identity, nil
 		}
@@ -98,9 +98,9 @@ func promptRelayTelegramToken(in io.Reader, out io.Writer, interactive bool) (st
 	}
 }
 
-func chooseRelayTelegramTokenStorage(in io.Reader, out io.Writer, interactive bool) (relayTokenStorageMode, error) {
+func chooseBaldaTelegramTokenStorage(in io.Reader, out io.Writer, interactive bool) (baldaTokenStorageMode, error) {
 	if !interactive {
-		return relayTokenStorageEnv, nil
+		return baldaTokenStorageEnv, nil
 	}
 
 	reader := asBufferedReader(in)
@@ -118,9 +118,9 @@ func chooseRelayTelegramTokenStorage(in io.Reader, out io.Writer, interactive bo
 		value := strings.ToLower(strings.TrimSpace(line))
 		switch value {
 		case "", "1", ".env", "env":
-			return relayTokenStorageEnv, nil
+			return baldaTokenStorageEnv, nil
 		case "2", "config", "config file":
-			return relayTokenStorageConfig, nil
+			return baldaTokenStorageConfig, nil
 		}
 
 		if err == io.EOF {
@@ -131,33 +131,33 @@ func chooseRelayTelegramTokenStorage(in io.Reader, out io.Writer, interactive bo
 	}
 }
 
-func storeRelayTelegramToken(
+func storeBaldaTelegramToken(
 	doc map[string]any,
 	workingDir string,
 	token string,
-	mode relayTokenStorageMode,
+	mode baldaTokenStorageMode,
 ) (string, error) {
 	switch mode {
-	case relayTokenStorageEnv:
-		if err := setRelayTelegramToken(doc, ""); err != nil {
+	case baldaTokenStorageEnv:
+		if err := setBaldaTelegramToken(doc, ""); err != nil {
 			return "", err
 		}
-		dotEnvPath := filepath.Join(workingDir, relayDotEnvFileName)
-		if err := upsertRelayTelegramTokenEnv(dotEnvPath, token); err != nil {
+		dotEnvPath := filepath.Join(workingDir, baldaDotEnvFileName)
+		if err := upsertBaldaTelegramTokenEnv(dotEnvPath, token); err != nil {
 			return "", err
 		}
 		return dotEnvPath, nil
-	case relayTokenStorageConfig:
-		if err := setRelayTelegramToken(doc, token); err != nil {
+	case baldaTokenStorageConfig:
+		if err := setBaldaTelegramToken(doc, token); err != nil {
 			return "", err
 		}
-		return filepath.Join(workingDir, relayConfigRelDir, relayConfigFileName), nil
+		return filepath.Join(workingDir, baldaConfigRelDir, baldaConfigFileName), nil
 	default:
 		return "", fmt.Errorf("unsupported telegram token storage mode %q", mode)
 	}
 }
 
-func upsertRelayTelegramTokenEnv(dotEnvPath string, token string) error {
+func upsertBaldaTelegramTokenEnv(dotEnvPath string, token string) error {
 	line := "BALDA_TELEGRAM_TOKEN=" + strings.TrimSpace(token)
 
 	content, err := os.ReadFile(dotEnvPath)
@@ -176,7 +176,7 @@ func upsertRelayTelegramTokenEnv(dotEnvPath string, token string) error {
 	out := make([]string, 0, len(lines))
 	replaced := false
 	for _, rawLine := range lines {
-		if isRelayTelegramTokenEnvLine(rawLine) {
+		if isBaldaTelegramTokenEnvLine(rawLine) {
 			if !replaced {
 				out = append(out, line)
 				replaced = true
@@ -204,7 +204,7 @@ func upsertRelayTelegramTokenEnv(dotEnvPath string, token string) error {
 	return nil
 }
 
-func isRelayTelegramTokenEnvLine(rawLine string) bool {
+func isBaldaTelegramTokenEnvLine(rawLine string) bool {
 	trimmed := strings.TrimSpace(rawLine)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 		return false
@@ -236,7 +236,7 @@ func contains(items []string, target string) bool {
 	return false
 }
 
-func defaultRelayInitIsInteractive() bool {
+func defaultBaldaInitIsInteractive() bool {
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		return false

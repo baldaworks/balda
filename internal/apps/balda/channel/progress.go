@@ -1,4 +1,4 @@
-// Package channel contains transport-neutral relay channel contracts.
+// Package channel contains transport-neutral balda channel contracts.
 package channel
 
 // ProgressPolicy describes which progress indicators a transport supports for

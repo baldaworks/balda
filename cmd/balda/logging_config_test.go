@@ -3,14 +3,14 @@ package main
 import (
 	"testing"
 
-	relayapp "github.com/normahq/balda/internal/apps/balda"
+	baldaapp "github.com/normahq/balda/internal/apps/balda"
 	"github.com/normahq/balda/internal/logging"
 )
 
-func TestResolveRelayLoggingSettings(t *testing.T) {
+func TestResolveBaldaLoggingSettings(t *testing.T) {
 	tests := []struct {
 		name      string
-		cfg       relayapp.LoggerConfig
+		cfg       baldaapp.LoggerConfig
 		debugFlag bool
 		traceFlag bool
 		wantLevel string
@@ -18,26 +18,26 @@ func TestResolveRelayLoggingSettings(t *testing.T) {
 	}{
 		{
 			name:      "defaults to info when config level empty",
-			cfg:       relayapp.LoggerConfig{Pretty: true},
+			cfg:       baldaapp.LoggerConfig{Pretty: true},
 			wantLevel: logging.LevelInfo,
 			wantJSON:  false,
 		},
 		{
 			name:      "uses config level when flags disabled",
-			cfg:       relayapp.LoggerConfig{Level: " debug ", Pretty: true},
+			cfg:       baldaapp.LoggerConfig{Level: " debug ", Pretty: true},
 			wantLevel: logging.LevelDebug,
 			wantJSON:  false,
 		},
 		{
 			name:      "debug flag overrides config level",
-			cfg:       relayapp.LoggerConfig{Level: logging.LevelWarn, Pretty: false},
+			cfg:       baldaapp.LoggerConfig{Level: logging.LevelWarn, Pretty: false},
 			debugFlag: true,
 			wantLevel: logging.LevelDebug,
 			wantJSON:  true,
 		},
 		{
 			name:      "trace flag overrides debug and config",
-			cfg:       relayapp.LoggerConfig{Level: logging.LevelWarn, Pretty: true},
+			cfg:       baldaapp.LoggerConfig{Level: logging.LevelWarn, Pretty: true},
 			debugFlag: true,
 			traceFlag: true,
 			wantLevel: logging.LevelTrace,
@@ -47,7 +47,7 @@ func TestResolveRelayLoggingSettings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resolveRelayLoggingSettings(tc.cfg, tc.debugFlag, tc.traceFlag)
+			got := resolveBaldaLoggingSettings(tc.cfg, tc.debugFlag, tc.traceFlag)
 			if got.level != tc.wantLevel {
 				t.Fatalf("level = %q, want %q", got.level, tc.wantLevel)
 			}
@@ -58,12 +58,12 @@ func TestResolveRelayLoggingSettings(t *testing.T) {
 	}
 }
 
-func TestApplyRelayLogging_DebugFlagOverridesConfig(t *testing.T) {
-	restore := setRelayLogFlagsForTest(t, true, false)
+func TestApplyBaldaLogging_DebugFlagOverridesConfig(t *testing.T) {
+	restore := setBaldaLogFlagsForTest(t, true, false)
 	defer restore()
 
-	if err := applyRelayLogging(relayapp.LoggerConfig{Level: logging.LevelError, Pretty: true}); err != nil {
-		t.Fatalf("applyRelayLogging(): %v", err)
+	if err := applyBaldaLogging(baldaapp.LoggerConfig{Level: logging.LevelError, Pretty: true}); err != nil {
+		t.Fatalf("applyBaldaLogging(): %v", err)
 	}
 	if !logging.DebugEnabled() {
 		t.Fatal("DebugEnabled() = false, want true")
@@ -73,19 +73,19 @@ func TestApplyRelayLogging_DebugFlagOverridesConfig(t *testing.T) {
 	}
 }
 
-func TestApplyRelayLogging_TraceFlagOverridesDebug(t *testing.T) {
-	restore := setRelayLogFlagsForTest(t, true, true)
+func TestApplyBaldaLogging_TraceFlagOverridesDebug(t *testing.T) {
+	restore := setBaldaLogFlagsForTest(t, true, true)
 	defer restore()
 
-	if err := applyRelayLogging(relayapp.LoggerConfig{Level: logging.LevelError, Pretty: true}); err != nil {
-		t.Fatalf("applyRelayLogging(): %v", err)
+	if err := applyBaldaLogging(baldaapp.LoggerConfig{Level: logging.LevelError, Pretty: true}); err != nil {
+		t.Fatalf("applyBaldaLogging(): %v", err)
 	}
 	if !logging.TraceEnabled() {
 		t.Fatal("TraceEnabled() = false, want true")
 	}
 }
 
-func setRelayLogFlagsForTest(t *testing.T, debugFlag, traceFlag bool) func() {
+func setBaldaLogFlagsForTest(t *testing.T, debugFlag, traceFlag bool) func() {
 	t.Helper()
 	prevDebug, prevTrace := debug, trace
 	debug, trace = debugFlag, traceFlag

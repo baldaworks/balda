@@ -27,7 +27,7 @@ import (
 )
 
 //go:embed system_instruction.gotmpl
-var relayInstructionTmpl string
+var baldaInstructionTmpl string
 
 const (
 	workspaceBranchUnknown = "unknown"
@@ -40,7 +40,7 @@ type Builder struct {
 	workingDir             string
 	workspaceEnabled       bool
 	workspaceBaseBranch    string
-	relayGlobalInstruction string
+	baldaGlobalInstruction string
 	telegramFormattingMode string
 	sessionSvc             adksession.Service
 	memoryStore            *memory.Store
@@ -50,7 +50,7 @@ type sessionStateFactory interface {
 	BuildSessionState(agentID, workspaceDir string) (map[string]any, error)
 }
 
-type relayPromptData struct {
+type baldaPromptData struct {
 	SessionID         string
 	ChannelType       string
 	ConfigPath        string
@@ -68,7 +68,7 @@ type relayPromptData struct {
 	Instruction       string
 }
 
-func (b *Builder) buildRelayInstruction(
+func (b *Builder) buildBaldaInstruction(
 	sessionID,
 	channelType,
 	agentName,
@@ -101,7 +101,7 @@ func (b *Builder) buildRelayInstruction(
 		workspaceMode = "git-worktree"
 	}
 
-	data := relayPromptData{
+	data := baldaPromptData{
 		SessionID:         sessionID,
 		ChannelType:       strings.TrimSpace(channelType),
 		ConfigPath:        paths.ConfigPath(b.workingDir),
@@ -123,13 +123,13 @@ func (b *Builder) buildRelayInstruction(
 	if agentCfg, ok := b.normaCfg.Providers[normalizedAgentName]; ok {
 		agentInstruction = agentCfg.SystemInstructions
 	}
-	data.GlobalInstruction = strings.TrimSpace(b.relayGlobalInstruction)
+	data.GlobalInstruction = strings.TrimSpace(b.baldaGlobalInstruction)
 	data.Instruction = strings.TrimSpace(agentInstruction)
 
 	var buf bytes.Buffer
-	tmpl := template.Must(template.New("balda").Parse(relayInstructionTmpl))
+	tmpl := template.Must(template.New("balda").Parse(baldaInstructionTmpl))
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return relayInstructionTmpl
+		return baldaInstructionTmpl
 	}
 	return buf.String()
 }
@@ -140,11 +140,11 @@ type BuilderParams struct {
 	Factory                *agentfactory.Factory
 	NormaCfg               runtimeconfig.RuntimeConfig
 	WorkingDir             string
-	WorkspaceEnabled       bool               `name:"relay_workspace_enabled"`
-	WorkspaceBaseBranch    string             `name:"relay_workspace_base_branch"`
-	RelayGlobalInstruction string             `name:"relay_global_instruction"`
-	TelegramFormattingMode string             `name:"relay_telegram_formatting_mode"`
-	SessionService         adksession.Service `name:"relay_adk_session_service"`
+	WorkspaceEnabled       bool               `name:"balda_workspace_enabled"`
+	WorkspaceBaseBranch    string             `name:"balda_workspace_base_branch"`
+	BaldaGlobalInstruction string             `name:"balda_global_instruction"`
+	TelegramFormattingMode string             `name:"balda_telegram_formatting_mode"`
+	SessionService         adksession.Service `name:"balda_adk_session_service"`
 	MemoryStore            *memory.Store
 }
 
@@ -156,7 +156,7 @@ func NewBuilder(params BuilderParams) *Builder {
 		workingDir:             strings.TrimSpace(params.WorkingDir),
 		workspaceEnabled:       params.WorkspaceEnabled,
 		workspaceBaseBranch:    strings.TrimSpace(params.WorkspaceBaseBranch),
-		relayGlobalInstruction: strings.TrimSpace(params.RelayGlobalInstruction),
+		baldaGlobalInstruction: strings.TrimSpace(params.BaldaGlobalInstruction),
 		telegramFormattingMode: telegramfmt.NormalizeMode(params.TelegramFormattingMode),
 		sessionSvc:             params.SessionService,
 		memoryStore:            params.MemoryStore,
@@ -210,7 +210,7 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 		Name:             agentName,
 		Description:      b.buildAgentDescription(agentName),
 		WorkingDirectory: workspaceDir,
-		Instruction:      b.buildRelayInstruction("balda-runtime", "telegram", agentName, "norma/balda/balda-runtime", workspaceDir, b.currentRepoBranch(ctx)),
+		Instruction:      b.buildBaldaInstruction("balda-runtime", "telegram", agentName, "norma/balda/balda-runtime", workspaceDir, b.currentRepoBranch(ctx)),
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
@@ -331,7 +331,7 @@ func (b *Builder) BuildWithMCPServerIDs(
 		Name:             agentName,
 		Description:      b.buildAgentDescription(agentName),
 		WorkingDirectory: workspaceDir,
-		Instruction:      b.buildRelayInstruction(sessionID, "telegram", agentName, sessionBranch, workspaceDir, repoBranchAtStart),
+		Instruction:      b.buildBaldaInstruction(sessionID, "telegram", agentName, sessionBranch, workspaceDir, repoBranchAtStart),
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 		SessionID:        sessionID,
 	}

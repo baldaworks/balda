@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	adksession "google.golang.org/adk/session"
 )
 
@@ -58,7 +58,7 @@ func (m *Manager) HasSession(ctx context.Context, locator SessionLocator) (bool,
 		return false, nil
 	}
 
-	if status := strings.TrimSpace(record.Status); status != "" && status != relaystate.SessionStatusActive {
+	if status := strings.TrimSpace(record.Status); status != "" && status != baldastate.SessionStatusActive {
 		return false, nil
 	}
 	return true, nil
@@ -102,7 +102,7 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	if !ok {
 		return nil, fmt.Errorf("%w for %s", ErrNoPersistedSession, locator.AddressKey)
 	}
-	if strings.TrimSpace(record.Status) != "" && record.Status != relaystate.SessionStatusActive {
+	if strings.TrimSpace(record.Status) != "" && record.Status != baldastate.SessionStatusActive {
 		return nil, fmt.Errorf("persisted session for %s is not active", locator.AddressKey)
 	}
 
@@ -132,7 +132,7 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	return m.GetSession(recordLocator)
 }
 
-func restoredSessionUserID(record relaystate.SessionRecord, fallback string) string {
+func restoredSessionUserID(record baldastate.SessionRecord, fallback string) string {
 	if userID := strings.TrimSpace(record.UserID); userID != "" {
 		return userID
 	}
@@ -146,7 +146,7 @@ func (m *Manager) ListSessions() []TopicSessionInfo {
 
 	out := make([]TopicSessionInfo, 0, len(m.sessions))
 	for _, ts := range m.sessions {
-		out = append(out, topicSessionInfo(ts, relaystate.SessionStatusActive))
+		out = append(out, topicSessionInfo(ts, baldastate.SessionStatusActive))
 	}
 	return out
 }
@@ -172,7 +172,7 @@ func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSe
 	ts := m.sessions[trimmedID]
 	m.mu.RUnlock()
 	if ts != nil {
-		return topicSessionInfo(ts, relaystate.SessionStatusActive), nil
+		return topicSessionInfo(ts, baldastate.SessionStatusActive), nil
 	}
 
 	record, ok, err := m.sessionStore.GetBySessionID(ctx, trimmedID)
@@ -208,7 +208,7 @@ func (m *Manager) ListSessionInfos(ctx context.Context) ([]TopicSessionInfo, err
 	}
 
 	for _, info := range m.ListSessions() {
-		info.Status = relaystate.SessionStatusActive
+		info.Status = baldastate.SessionStatusActive
 		infos[info.SessionID] = info
 	}
 
@@ -224,7 +224,7 @@ func (m *Manager) StopSessionByID(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	if info.Status == relaystate.SessionStatusActive {
+	if info.Status == baldastate.SessionStatusActive {
 		m.hardDeleteSession(info.Locator)
 		return nil
 	}
@@ -262,7 +262,7 @@ func (m *Manager) deletePersistedADKSession(ctx context.Context, info TopicSessi
 	}
 	appName := strings.TrimSpace(rootRuntime.AppName)
 	if appName == "" {
-		appName = relayADKAppName
+		appName = baldaADKAppName
 	}
 	if err := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
 		AppName:   appName,
@@ -290,7 +290,7 @@ func topicSessionInfo(ts *TopicSession, status string) TopicSessionInfo {
 	}
 }
 
-func topicSessionInfoFromRecord(record relaystate.SessionRecord) (TopicSessionInfo, error) {
+func topicSessionInfoFromRecord(record baldastate.SessionRecord) (TopicSessionInfo, error) {
 	locator, err := LocatorFromRecord(record)
 	if err != nil {
 		return TopicSessionInfo{}, fmt.Errorf("decode persisted session locator for %q: %w", record.SessionID, err)
@@ -309,7 +309,7 @@ func topicSessionInfoFromRecord(record relaystate.SessionRecord) (TopicSessionIn
 }
 
 func sessionStatusForInactiveRecord(recordStatus string) string {
-	if strings.TrimSpace(recordStatus) == "" || recordStatus == relaystate.SessionStatusActive {
+	if strings.TrimSpace(recordStatus) == "" || recordStatus == baldastate.SessionStatusActive {
 		return sessionStatusPersisted
 	}
 	return recordStatus
@@ -323,5 +323,5 @@ func (m *Manager) getProviderName() string {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.relayProviderName
+	return m.baldaProviderName
 }

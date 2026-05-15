@@ -24,7 +24,7 @@ type sqliteADKSessionService struct {
 var _ adksession.Service = (*sqliteADKSessionService)(nil)
 
 // UpdateSessionState updates stored session-scoped state without appending an
-// event. Relay uses this to refresh runtime CWD when restoring a persisted chat.
+// event. Balda uses this to refresh runtime CWD when restoring a persisted chat.
 func (s *sqliteADKSessionService) UpdateSessionState(
 	ctx context.Context,
 	appName string,
@@ -144,7 +144,7 @@ func (s *sqliteADKSessionService) List(ctx context.Context, req *adksession.List
 
 	query := `
 		SELECT user_id, session_id, state_json, updated_at
-		FROM relay_adk_sessions
+		FROM balda_adk_sessions
 		WHERE app_name = ?`
 	args := []any{appName}
 	if userID := strings.TrimSpace(req.UserID); userID != "" {
@@ -216,7 +216,7 @@ func (s *sqliteADKSessionService) Delete(ctx context.Context, req *adksession.De
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `
-		DELETE FROM relay_adk_sessions
+		DELETE FROM balda_adk_sessions
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	); err != nil {
@@ -292,7 +292,7 @@ func (s *sqliteADKSessionService) AppendEvent(ctx context.Context, curSession ad
 		return fmt.Errorf("marshal adk event %q: %w", event.ID, err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO relay_adk_events (
+		INSERT INTO balda_adk_events (
 			app_name, user_id, session_id, event_id, ordinal, timestamp, event_json
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -485,7 +485,7 @@ func fetchADKSessionState(ctx context.Context, q dbQueryer, key adkSessionKey) (
 	var stateJSON, updatedRaw string
 	err := q.QueryRowContext(ctx, `
 		SELECT state_json, updated_at
-		FROM relay_adk_sessions
+		FROM balda_adk_sessions
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	).Scan(&stateJSON, &updatedRaw)
@@ -512,7 +512,7 @@ func saveADKSessionState(ctx context.Context, tx *sql.Tx, key adkSessionKey, sta
 		return fmt.Errorf("encode adk session %q state: %w", key.sessionID, err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO relay_adk_sessions (app_name, user_id, session_id, state_json, updated_at)
+		INSERT INTO balda_adk_sessions (app_name, user_id, session_id, state_json, updated_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(app_name, user_id, session_id) DO UPDATE SET
 			state_json = excluded.state_json,
@@ -528,7 +528,7 @@ func fetchADKAppState(ctx context.Context, q dbQueryer, appName string) (map[str
 	var raw string
 	err := q.QueryRowContext(ctx, `
 		SELECT state_json
-		FROM relay_adk_app_state
+		FROM balda_adk_app_state
 		WHERE app_name = ?`,
 		strings.TrimSpace(appName),
 	).Scan(&raw)
@@ -547,7 +547,7 @@ func saveADKAppState(ctx context.Context, tx *sql.Tx, appName string, state map[
 		return fmt.Errorf("encode adk app state: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO relay_adk_app_state (app_name, state_json, updated_at)
+		INSERT INTO balda_adk_app_state (app_name, state_json, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(app_name) DO UPDATE SET
 			state_json = excluded.state_json,
@@ -563,7 +563,7 @@ func fetchADKUserState(ctx context.Context, q dbQueryer, appName, userID string)
 	var raw string
 	err := q.QueryRowContext(ctx, `
 		SELECT state_json
-		FROM relay_adk_user_state
+		FROM balda_adk_user_state
 		WHERE app_name = ? AND user_id = ?`,
 		strings.TrimSpace(appName), strings.TrimSpace(userID),
 	).Scan(&raw)
@@ -582,7 +582,7 @@ func saveADKUserState(ctx context.Context, tx *sql.Tx, appName, userID string, s
 		return fmt.Errorf("encode adk user state: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO relay_adk_user_state (app_name, user_id, state_json, updated_at)
+		INSERT INTO balda_adk_user_state (app_name, user_id, state_json, updated_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(app_name, user_id) DO UPDATE SET
 			state_json = excluded.state_json,
@@ -598,7 +598,7 @@ func adkSessionExists(ctx context.Context, q dbQueryer, key adkSessionKey) (bool
 	var one int
 	err := q.QueryRowContext(ctx, `
 		SELECT 1
-		FROM relay_adk_sessions
+		FROM balda_adk_sessions
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	).Scan(&one)
@@ -614,7 +614,7 @@ func adkSessionExists(ctx context.Context, q dbQueryer, key adkSessionKey) (bool
 func fetchADKEvents(ctx context.Context, q dbQueryer, key adkSessionKey, limit int, after time.Time) ([]*adksession.Event, error) {
 	query := `
 		SELECT event_json
-		FROM relay_adk_events
+		FROM balda_adk_events
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`
 	args := []any{key.appName, key.userID, key.sessionID}
 	if !after.IsZero() {
@@ -626,7 +626,7 @@ func fetchADKEvents(ctx context.Context, q dbQueryer, key adkSessionKey, limit i
 			SELECT event_json
 			FROM (
 				SELECT event_json, timestamp, ordinal
-				FROM relay_adk_events
+				FROM balda_adk_events
 				WHERE app_name = ? AND user_id = ? AND session_id = ?` + adkEventAfterClause(after) + `
 				ORDER BY timestamp DESC, ordinal DESC
 				LIMIT ?
@@ -676,7 +676,7 @@ func nextADKEventOrdinal(ctx context.Context, q dbQueryer, key adkSessionKey) (i
 	var next sql.NullInt64
 	err := q.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(ordinal), 0) + 1
-		FROM relay_adk_events
+		FROM balda_adk_events
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	).Scan(&next)

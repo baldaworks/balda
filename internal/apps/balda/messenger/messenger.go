@@ -15,7 +15,7 @@ import (
 
 const telegramSendTimeout = 30 * time.Second
 
-// Messenger handles all Telegram message sending for the balda.
+// Messenger handles all Telegram message sending for Balda.
 type Messenger struct {
 	client                   client.ClientWithResponsesInterface
 	responder                *respond.Responder

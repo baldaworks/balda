@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	relaychannel "github.com/normahq/balda/internal/apps/balda/channel"
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -16,16 +16,16 @@ import (
 
 const chatTypePrivate = "private"
 
-// Adapter maps Telegram runtime events and operations to relay session locators.
+// Adapter maps Telegram runtime events and operations to balda session locators.
 type Adapter struct {
 	messenger *messenger.Messenger
 	tgClient  client.ClientWithResponsesInterface
 	logger    zerolog.Logger
 }
 
-// MessageContext is the relay-facing Telegram message shape.
+// MessageContext is the balda-facing Telegram message shape.
 type MessageContext struct {
-	Locator        relaysession.SessionLocator
+	Locator        baldasession.SessionLocator
 	ChatID         int64
 	TopicID        int
 	MessageID      int
@@ -37,13 +37,13 @@ type MessageContext struct {
 	ReplyContent   string
 	Text           string
 	HasCommand     bool
-	ProgressPolicy relaychannel.ProgressPolicy
+	ProgressPolicy baldachannel.ProgressPolicy
 	IsDM           bool
 }
 
-// CommandContext is the relay-facing Telegram command shape.
+// CommandContext is the balda-facing Telegram command shape.
 type CommandContext struct {
-	Locator relaysession.SessionLocator
+	Locator baldasession.SessionLocator
 	ChatID  int64
 	TopicID int
 	UserID  int64
@@ -52,9 +52,9 @@ type CommandContext struct {
 	IsDM    bool
 }
 
-// TopicLifecycleContext is the relay-facing Telegram topic lifecycle shape.
+// TopicLifecycleContext is the balda-facing Telegram topic lifecycle shape.
 type TopicLifecycleContext struct {
-	Locator   relaysession.SessionLocator
+	Locator   baldasession.SessionLocator
 	ChatID    int64
 	TopicID   int
 	MessageID int
@@ -70,7 +70,7 @@ type AdapterParams struct {
 	Logger    zerolog.Logger
 }
 
-// NewAdapter creates the Telegram relay adapter.
+// NewAdapter creates the Telegram balda adapter.
 func NewAdapter(params AdapterParams) *Adapter {
 	return &Adapter{
 		messenger: params.Messenger,
@@ -80,11 +80,11 @@ func NewAdapter(params AdapterParams) *Adapter {
 }
 
 // OwnerLocator returns the Telegram owner-session locator for a chat.
-func (a *Adapter) OwnerLocator(chatID int64) relaysession.SessionLocator {
+func (a *Adapter) OwnerLocator(chatID int64) baldasession.SessionLocator {
 	return NewLocator(chatID, 0)
 }
 
-// MessageContextFromEvent converts a Telegram message event into relay channel context.
+// MessageContextFromEvent converts a Telegram message event into balda channel context.
 func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageContext, bool) {
 	if event == nil || event.Message == nil || event.Message.From == nil {
 		return MessageContext{}, false
@@ -129,7 +129,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		ReplyContent:  replyContent,
 		Text:          text,
 		HasCommand:    hasCommandEntity(event.Message),
-		ProgressPolicy: relaychannel.ProgressPolicy{
+		ProgressPolicy: baldachannel.ProgressPolicy{
 			Typing:   true,
 			Thinking: event.Message.Chat.Type == chatTypePrivate,
 		},
@@ -137,7 +137,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	}, true
 }
 
-// CommandContextFromEvent converts a Telegram command event into relay channel context.
+// CommandContextFromEvent converts a Telegram command event into balda channel context.
 func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandContext, bool) {
 	if event == nil || event.Message == nil || event.Message.From == nil {
 		return CommandContext{}, false
@@ -156,7 +156,7 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	}, true
 }
 
-// TopicLifecycleFromEvent converts a Telegram topic lifecycle event into relay channel context.
+// TopicLifecycleFromEvent converts a Telegram topic lifecycle event into balda channel context.
 func (a *Adapter) TopicLifecycleFromEvent(event *events.MessageEvent) (TopicLifecycleContext, bool) {
 	if event == nil || event.Message == nil || event.Message.MessageThreadId == nil {
 		return TopicLifecycleContext{}, false
@@ -186,7 +186,7 @@ func (a *Adapter) TopicLifecycleFromEvent(event *events.MessageEvent) (TopicLife
 }
 
 // SendPlain sends a plain text reply to the locator.
-func (a *Adapter) SendPlain(ctx context.Context, locator relaysession.SessionLocator, text string) error {
+func (a *Adapter) SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -195,7 +195,7 @@ func (a *Adapter) SendPlain(ctx context.Context, locator relaysession.SessionLoc
 }
 
 // SendMarkdown sends a Markdown reply to the locator.
-func (a *Adapter) SendMarkdown(ctx context.Context, locator relaysession.SessionLocator, text string) error {
+func (a *Adapter) SendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func (a *Adapter) SendMarkdown(ctx context.Context, locator relaysession.Session
 }
 
 // SendAgentReply sends final agent output for the locator using configured formatting mode.
-func (a *Adapter) SendAgentReply(ctx context.Context, locator relaysession.SessionLocator, text string) error {
+func (a *Adapter) SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -213,7 +213,7 @@ func (a *Adapter) SendAgentReply(ctx context.Context, locator relaysession.Sessi
 }
 
 // SendDraftPlain updates a draft message for the locator.
-func (a *Adapter) SendDraftPlain(ctx context.Context, locator relaysession.SessionLocator, draftID int, text string) error {
+func (a *Adapter) SendDraftPlain(ctx context.Context, locator baldasession.SessionLocator, draftID int, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -222,7 +222,7 @@ func (a *Adapter) SendDraftPlain(ctx context.Context, locator relaysession.Sessi
 }
 
 // SendTyping sends a typing chat action to the locator chat/topic.
-func (a *Adapter) SendTyping(ctx context.Context, locator relaysession.SessionLocator) error {
+func (a *Adapter) SendTyping(ctx context.Context, locator baldasession.SessionLocator) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -230,24 +230,24 @@ func (a *Adapter) SendTyping(ctx context.Context, locator relaysession.SessionLo
 	return a.messenger.SendChatAction(ctx, chatID, topicID, "typing")
 }
 
-// CreateTopicLocator creates a Telegram forum topic and returns the relay locator for it.
-func (a *Adapter) CreateTopicLocator(ctx context.Context, chatID int64, topicName string) (relaysession.SessionLocator, error) {
+// CreateTopicLocator creates a Telegram forum topic and returns the balda locator for it.
+func (a *Adapter) CreateTopicLocator(ctx context.Context, chatID int64, topicName string) (baldasession.SessionLocator, error) {
 	createTopicResp, err := a.tgClient.CreateForumTopicWithResponse(ctx, client.CreateForumTopicJSONRequestBody{
 		ChatId: chatID,
 		Name:   topicName,
 	})
 	if err != nil {
-		return relaysession.SessionLocator{}, fmt.Errorf("creating forum topic: %w", err)
+		return baldasession.SessionLocator{}, fmt.Errorf("creating forum topic: %w", err)
 	}
 	if createTopicResp.JSON200 == nil {
-		return relaysession.SessionLocator{}, fmt.Errorf("failed to create forum topic: %s", createTopicResp.Status())
+		return baldasession.SessionLocator{}, fmt.Errorf("failed to create forum topic: %s", createTopicResp.Status())
 	}
 
 	return NewLocator(chatID, createTopicResp.JSON200.Result.MessageThreadId), nil
 }
 
 // Close closes a Telegram forum topic for the locator. Root locators are ignored.
-func (a *Adapter) Close(ctx context.Context, locator relaysession.SessionLocator) error {
+func (a *Adapter) Close(ctx context.Context, locator baldasession.SessionLocator) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -269,7 +269,7 @@ func (a *Adapter) Close(ctx context.Context, locator relaysession.SessionLocator
 	return nil
 }
 
-func telegramTuple(locator relaysession.SessionLocator) (int64, int, error) {
+func telegramTuple(locator baldasession.SessionLocator) (int64, int, error) {
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {
 		return 0, 0, fmt.Errorf("decode telegram locator %q: %w", locator.SessionID, err)
@@ -297,7 +297,7 @@ func (a *Adapter) topicIDFromMessage(msg *client.Message) int {
 		return 0
 	}
 	if msg.Chat.Type != chatTypePrivate {
-		// In public chats, message_thread_id is the routing key for relay task
+		// In public chats, message_thread_id is the routing key for balda task
 		// threads even when is_topic_message is omitted or false.
 		return *msg.MessageThreadId
 	}

@@ -12,41 +12,41 @@ import (
 )
 
 const (
-	relayConfigFileName   = "config.yaml"
-	relayConfigRelDir     = ".config/balda"
-	relayRuntimeStatePath = ".config/balda"
-	relayDotEnvFileName   = ".env"
+	baldaConfigFileName   = "config.yaml"
+	baldaConfigRelDir     = ".config/balda"
+	baldaRuntimeStatePath = ".config/balda"
+	baldaDotEnvFileName   = ".env"
 )
 
-const relayConfigGitignoreContent = "*\n!.gitignore\n"
+const baldaConfigGitignoreContent = "*\n!.gitignore\n"
 
 const (
-	relayInitCodexModel      = "gpt-5.3-codex"
-	relayInitClaudeCodeModel = "claude-sonnet-4-6"
+	baldaInitCodexModel      = "gpt-5.3-codex"
+	baldaInitClaudeCodeModel = "claude-sonnet-4-6"
 )
 
-const relayInitGlobalInstructionExample = "You are my balda agent.\nPrefer concise, actionable answers.\nUse balda.providers.start without a locator when you want a subagent in the current chat context.\nUse balda.workspace import/export instead of manual branch landing when workspace mode is enabled."
+const baldaInitGlobalInstructionExample = "You are my balda agent.\nPrefer concise, actionable answers.\nUse balda.providers.start without a locator when you want a subagent in the current chat context.\nUse balda.workspace import/export instead of manual branch landing when workspace mode is enabled."
 
-type relayTokenStorageMode string
+type baldaTokenStorageMode string
 
 const (
-	relayTokenStorageEnv    relayTokenStorageMode = "env"
-	relayTokenStorageConfig relayTokenStorageMode = "config"
+	baldaTokenStorageEnv    baldaTokenStorageMode = "env"
+	baldaTokenStorageConfig baldaTokenStorageMode = "config"
 )
 
-type relayInitAgentTemplate struct {
+type baldaInitAgentTemplate struct {
 	ID           string
 	Type         string
 	Model        string
 	DetectBinary []string
 }
 
-var relayInitAgentTemplates = []relayInitAgentTemplate{
-	{ID: "codex", Type: "codex_acp", Model: relayInitCodexModel, DetectBinary: []string{"codex"}},
+var baldaInitAgentTemplates = []baldaInitAgentTemplate{
+	{ID: "codex", Type: "codex_acp", Model: baldaInitCodexModel, DetectBinary: []string{"codex"}},
 	{ID: "opencode", Type: "opencode_acp", Model: "opencode/big-pickle", DetectBinary: []string{"opencode"}},
 	{ID: "copilot", Type: "copilot_acp", Model: "gpt-5-codex", DetectBinary: []string{"copilot"}},
 	{ID: "gemini", Type: "gemini_acp", Model: "gemini-3-flash-preview", DetectBinary: []string{"gemini"}},
-	{ID: "claude_code", Type: "claude_code_acp", Model: relayInitClaudeCodeModel, DetectBinary: []string{"claude"}},
+	{ID: "claude_code", Type: "claude_code_acp", Model: baldaInitClaudeCodeModel, DetectBinary: []string{"claude"}},
 }
 
 func initCommand() *cobra.Command {
@@ -60,66 +60,66 @@ func initCommand() *cobra.Command {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			relayConfigDir := filepath.Join(workingDir, relayConfigRelDir)
-			if err := os.MkdirAll(relayConfigDir, 0o700); err != nil {
+			baldaConfigDir := filepath.Join(workingDir, baldaConfigRelDir)
+			if err := os.MkdirAll(baldaConfigDir, 0o700); err != nil {
 				return fmt.Errorf("create balda config directory: %w", err)
 			}
-			if err := ensureRelayConfigGitignore(relayConfigDir); err != nil {
+			if err := ensureBaldaConfigGitignore(baldaConfigDir); err != nil {
 				return err
 			}
 
-			configPath := filepath.Join(relayConfigDir, relayConfigFileName)
+			configPath := filepath.Join(baldaConfigDir, baldaConfigFileName)
 			if _, err := os.Stat(configPath); err == nil {
 				return fmt.Errorf("%s already exists", configPath)
 			} else if !os.IsNotExist(err) {
 				return fmt.Errorf("stat %s: %w", configPath, err)
 			}
 
-			doc, agentIDs, err := buildRelayInitDocument(workingDir)
+			doc, agentIDs, err := buildBaldaInitDocument(workingDir)
 			if err != nil {
 				return err
 			}
 
-			interactive := relayInitIsInteractive()
-			inputReader := bufio.NewReader(relayInitInput)
-			selectedRelayProvider, err := chooseRelayProvider(agentIDs, inputReader, relayInitOutput, interactive)
+			interactive := baldaInitIsInteractive()
+			inputReader := bufio.NewReader(baldaInitInput)
+			selectedBaldaProvider, err := chooseBaldaProvider(agentIDs, inputReader, baldaInitOutput, interactive)
 			if err != nil {
 				return err
 			}
 
-			if err := setRelayProvider(doc, selectedRelayProvider); err != nil {
+			if err := setBaldaProvider(doc, selectedBaldaProvider); err != nil {
 				return err
 			}
-			if err := setRelayGlobalInstructionExample(doc); err != nil {
+			if err := setBaldaGlobalInstructionExample(doc); err != nil {
 				return err
 			}
-			telegramToken, bot, promptErr := promptRelayTelegramToken(inputReader, relayInitOutput, interactive)
+			telegramToken, bot, promptErr := promptBaldaTelegramToken(inputReader, baldaInitOutput, interactive)
 			if promptErr != nil {
 				return promptErr
 			}
-			tokenStorageMode, err := chooseRelayTelegramTokenStorage(inputReader, relayInitOutput, interactive)
+			tokenStorageMode, err := chooseBaldaTelegramTokenStorage(inputReader, baldaInitOutput, interactive)
 			if err != nil {
 				return err
 			}
-			storageTarget, err := storeRelayTelegramToken(doc, workingDir, telegramToken, tokenStorageMode)
+			storageTarget, err := storeBaldaTelegramToken(doc, workingDir, telegramToken, tokenStorageMode)
 			if err != nil {
 				return err
 			}
 
-			stateDirRaw, err := relayStateDirFromInitDocument(doc)
+			stateDirRaw, err := baldaStateDirFromInitDocument(doc)
 			if err != nil {
 				return err
 			}
-			stateDir, err := resolveRelayStateDir(workingDir, stateDirRaw)
+			stateDir, err := resolveBaldaStateDir(workingDir, stateDirRaw)
 			if err != nil {
 				return fmt.Errorf("resolve balda state_dir: %w", err)
 			}
 			if err := os.MkdirAll(stateDir, 0o700); err != nil {
 				return fmt.Errorf("create Balda runtime state directory: %w", err)
 			}
-			dbPath := filepath.Join(stateDir, relayStateDBFileName)
+			dbPath := filepath.Join(stateDir, baldaStateDBFileName)
 
-			ownerToken, err := loadOrCreateRelayOwnerToken(context.Background(), dbPath)
+			ownerToken, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
 			if err != nil {
 				return fmt.Errorf("bootstrap balda owner token: %w", err)
 			}
@@ -133,14 +133,14 @@ func initCommand() *cobra.Command {
 				return fmt.Errorf("write %s: %w", configPath, err)
 			}
 
-			_, _ = fmt.Fprintf(relayInitOutput, "balda initialized successfully\n")
-			_, _ = fmt.Fprintf(relayInitOutput, "config: %s\n", configPath)
-			_, _ = fmt.Fprintf(relayInitOutput, "state db: %s\n", dbPath)
-			_, _ = fmt.Fprintf(relayInitOutput, "Balda provider: %s\n", selectedRelayProvider)
-			_, _ = fmt.Fprintf(relayInitOutput, "telegram token stored in: %s\n", storageTarget)
-			_, _ = fmt.Fprintf(relayInitOutput, "start command: balda start\n")
-			_, _ = fmt.Fprintf(relayInitOutput, "auth command: %s\n", auth.BuildOwnerAuthCommand(ownerToken))
-			_, _ = fmt.Fprintf(relayInitOutput, "auth url: %s\n", auth.BuildOwnerAuthURL(bot.username, ownerToken))
+			_, _ = fmt.Fprintf(baldaInitOutput, "balda initialized successfully\n")
+			_, _ = fmt.Fprintf(baldaInitOutput, "config: %s\n", configPath)
+			_, _ = fmt.Fprintf(baldaInitOutput, "state db: %s\n", dbPath)
+			_, _ = fmt.Fprintf(baldaInitOutput, "Balda provider: %s\n", selectedBaldaProvider)
+			_, _ = fmt.Fprintf(baldaInitOutput, "telegram token stored in: %s\n", storageTarget)
+			_, _ = fmt.Fprintf(baldaInitOutput, "start command: balda start\n")
+			_, _ = fmt.Fprintf(baldaInitOutput, "auth command: %s\n", auth.BuildOwnerAuthCommand(ownerToken))
+			_, _ = fmt.Fprintf(baldaInitOutput, "auth url: %s\n", auth.BuildOwnerAuthURL(bot.username, ownerToken))
 
 			return nil
 		},

@@ -8,21 +8,21 @@ import (
 
 const testOwnerTokenPersisted = "owner-token-persisted"
 
-func TestLoadOrCreateRelayOwnerToken_GeneratesAndReuses(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), relayStateDBFileName)
+func TestLoadOrCreateBaldaOwnerToken_GeneratesAndReuses(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), baldaStateDBFileName)
 
-	previousGenerator := relayGenerateOwnerToken
-	defer func() { relayGenerateOwnerToken = previousGenerator }()
+	previousGenerator := baldaGenerateOwnerToken
+	defer func() { baldaGenerateOwnerToken = previousGenerator }()
 
 	generateCalls := 0
-	relayGenerateOwnerToken = func() (string, error) {
+	baldaGenerateOwnerToken = func() (string, error) {
 		generateCalls++
 		return testOwnerTokenPersisted, nil
 	}
 
-	first, err := loadOrCreateRelayOwnerToken(context.Background(), dbPath)
+	first, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
 	if err != nil {
-		t.Fatalf("loadOrCreateRelayOwnerToken(first): %v", err)
+		t.Fatalf("loadOrCreateBaldaOwnerToken(first): %v", err)
 	}
 	if first != testOwnerTokenPersisted {
 		t.Fatalf("first token = %q, want %q", first, testOwnerTokenPersisted)
@@ -31,9 +31,9 @@ func TestLoadOrCreateRelayOwnerToken_GeneratesAndReuses(t *testing.T) {
 		t.Fatalf("generate calls after first = %d, want 1", generateCalls)
 	}
 
-	second, err := loadOrCreateRelayOwnerToken(context.Background(), dbPath)
+	second, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
 	if err != nil {
-		t.Fatalf("loadOrCreateRelayOwnerToken(second): %v", err)
+		t.Fatalf("loadOrCreateBaldaOwnerToken(second): %v", err)
 	}
 	if second != testOwnerTokenPersisted {
 		t.Fatalf("second token = %q, want %q", second, testOwnerTokenPersisted)
@@ -43,12 +43,12 @@ func TestLoadOrCreateRelayOwnerToken_GeneratesAndReuses(t *testing.T) {
 	}
 }
 
-func TestResolveRelayStateDir(t *testing.T) {
+func TestResolveBaldaStateDir(t *testing.T) {
 	workingDir := t.TempDir()
 
-	resolved, err := resolveRelayStateDir(workingDir, ".config/balda")
+	resolved, err := resolveBaldaStateDir(workingDir, ".config/balda")
 	if err != nil {
-		t.Fatalf("resolveRelayStateDir: %v", err)
+		t.Fatalf("resolveBaldaStateDir: %v", err)
 	}
 
 	want := filepath.Join(workingDir, ".config", "balda")

@@ -7,12 +7,12 @@ import (
 	"github.com/normahq/balda/internal/logging"
 )
 
-type relayLoggingSettings struct {
+type baldaLoggingSettings struct {
 	level string
 	json  bool
 }
 
-func resolveRelayLoggingSettings(cfg balda.LoggerConfig, debugFlag, traceFlag bool) relayLoggingSettings {
+func resolveBaldaLoggingSettings(cfg balda.LoggerConfig, debugFlag, traceFlag bool) baldaLoggingSettings {
 	level := strings.TrimSpace(cfg.Level)
 	if level == "" {
 		level = logging.LevelInfo
@@ -24,14 +24,14 @@ func resolveRelayLoggingSettings(cfg balda.LoggerConfig, debugFlag, traceFlag bo
 		level = logging.LevelTrace
 	}
 
-	return relayLoggingSettings{
+	return baldaLoggingSettings{
 		level: level,
 		json:  !cfg.Pretty,
 	}
 }
 
-func applyRelayLogging(cfg balda.LoggerConfig) error {
-	settings := resolveRelayLoggingSettings(cfg, debug, trace)
+func applyBaldaLogging(cfg balda.LoggerConfig) error {
+	settings := resolveBaldaLoggingSettings(cfg, debug, trace)
 	return logging.Init(
 		logging.WithLevel(settings.level),
 		logging.WithJson(settings.json),

@@ -37,7 +37,7 @@ func (s *sqliteSessionStore) Upsert(ctx context.Context, record SessionRecord) e
 	// Keep legacy chat_id/topic_id columns populated with zero values.
 	// Canonical routing now uses channel_type/address_key/address_json only.
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO relay_session_metadata (
+		INSERT INTO balda_session_metadata (
 			session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status, updated_at
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -75,7 +75,7 @@ func (s *sqliteSessionStore) Upsert(ctx context.Context, record SessionRecord) e
 func (s *sqliteSessionStore) GetByAddress(ctx context.Context, channelType, addressKey string) (SessionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status
-		FROM relay_session_metadata
+		FROM balda_session_metadata
 		WHERE channel_type = ? AND address_key = ?`,
 		strings.TrimSpace(channelType), strings.TrimSpace(addressKey),
 	)
@@ -104,7 +104,7 @@ func (s *sqliteSessionStore) GetByAddress(ctx context.Context, channelType, addr
 func (s *sqliteSessionStore) GetBySessionID(ctx context.Context, sessionID string) (SessionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status
-		FROM relay_session_metadata
+		FROM balda_session_metadata
 		WHERE session_id = ?`,
 		strings.TrimSpace(sessionID),
 	)
@@ -137,7 +137,7 @@ func (s *sqliteSessionStore) DeleteBySessionID(ctx context.Context, sessionID st
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
-		DELETE FROM relay_session_metadata
+		DELETE FROM balda_session_metadata
 		WHERE session_id = ?`,
 		trimmed,
 	); err != nil {
@@ -149,7 +149,7 @@ func (s *sqliteSessionStore) DeleteBySessionID(ctx context.Context, sessionID st
 func (s *sqliteSessionStore) List(ctx context.Context) ([]SessionRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status
-		FROM relay_session_metadata
+		FROM balda_session_metadata
 		ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list balda sessions: %w", err)

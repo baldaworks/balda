@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaychannel "github.com/normahq/balda/internal/apps/balda/channel"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/throttle"
 	"github.com/rs/zerolog"
@@ -26,8 +26,8 @@ import (
 	"google.golang.org/genai"
 )
 
-// relayAuthorizer wraps OwnerStore and CollaboratorStore for auth.CanAccess.
-type relayAuthorizer struct {
+// baldaAuthorizer wraps OwnerStore and CollaboratorStore for auth.CanAccess.
+type baldaAuthorizer struct {
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore
 }
@@ -38,11 +38,11 @@ const (
 	telegramProgressThrottleInterval = 4 * time.Second
 )
 
-func (a *relayAuthorizer) IsOwner(userID int64) bool {
+func (a *baldaAuthorizer) IsOwner(userID int64) bool {
 	return a.ownerStore.IsOwner(userID)
 }
 
-func (a *relayAuthorizer) IsCollaborator(userID int64) bool {
+func (a *baldaAuthorizer) IsCollaborator(userID int64) bool {
 	collab, found, err := a.collaboratorStore.GetCollaborator(context.Background(), fmt.Sprintf("%d", userID))
 	if err != nil || !found {
 		return false
@@ -50,17 +50,17 @@ func (a *relayAuthorizer) IsCollaborator(userID int64) bool {
 	return collab != nil
 }
 
-// RelayHandler handles bidirectional message balda between owner and agent.
-type RelayHandler struct {
+// BaldaHandler handles bidirectional messages between the owner and agent.
+type BaldaHandler struct {
 	ownerStore         *auth.OwnerStore
 	collaboratorStore  *auth.CollaboratorStore
-	channel            *relaytelegram.Adapter
-	sessionManager     *relaysession.Manager
+	channel            *baldatelegram.Adapter
+	sessionManager     *baldasession.Manager
 	turnDispatcher     turnQueue
 	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
 	authToken          string
-	relayProviderName  string
+	baldaProviderName  string
 	planUpdatesEnabled bool
 	logger             zerolog.Logger
 	authorizer         auth.Authorizer
@@ -73,26 +73,26 @@ type RelayHandler struct {
 	now         func() time.Time
 }
 
-type relayHandlerDeps struct {
+type baldaHandlerDeps struct {
 	fx.In
 
 	LC                 fx.Lifecycle
 	OwnerStore         *auth.OwnerStore
 	CollaboratorStore  *auth.CollaboratorStore
-	Channel            *relaytelegram.Adapter
-	SessionManager     *relaysession.Manager
+	Channel            *baldatelegram.Adapter
+	SessionManager     *baldasession.Manager
 	TurnDispatcher     *TurnDispatcher
 	Messenger          *messenger.Messenger
 	TGClient           client.ClientWithResponsesInterface
-	AuthToken          string `name:"relay_auth_token"`
-	RelayProviderID    string `name:"relay_provider"`
-	PlanUpdatesEnabled bool   `name:"relay_telegram_plan_updates"`
+	AuthToken          string `name:"balda_auth_token"`
+	BaldaProviderID    string `name:"balda_provider"`
+	PlanUpdatesEnabled bool   `name:"balda_telegram_plan_updates"`
 	Logger             zerolog.Logger
 	InternalMCPManager *InternalMCPManager `optional:"true"`
 }
 
-func NewRelayHandler(deps relayHandlerDeps) (*RelayHandler, error) {
-	h := &RelayHandler{
+func NewBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
+	h := &BaldaHandler{
 		ownerStore:         deps.OwnerStore,
 		collaboratorStore:  deps.CollaboratorStore,
 		channel:            deps.Channel,
@@ -101,11 +101,11 @@ func NewRelayHandler(deps relayHandlerDeps) (*RelayHandler, error) {
 		messenger:          deps.Messenger,
 		tgClient:           deps.TGClient,
 		authToken:          strings.TrimSpace(deps.AuthToken),
-		relayProviderName:  strings.TrimSpace(deps.RelayProviderID),
+		baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
 		planUpdatesEnabled: deps.PlanUpdatesEnabled,
 		logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
 	}
-	h.authorizer = &relayAuthorizer{ownerStore: deps.OwnerStore, collaboratorStore: deps.CollaboratorStore}
+	h.authorizer = &baldaAuthorizer{ownerStore: deps.OwnerStore, collaboratorStore: deps.CollaboratorStore}
 
 	deps.LC.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
@@ -117,7 +117,7 @@ func NewRelayHandler(deps relayHandlerDeps) (*RelayHandler, error) {
 }
 
 // Register registers the handler with the registry.
-func (h *RelayHandler) Register(registry tgbotkit.Registry) {
+func (h *BaldaHandler) Register(registry tgbotkit.Registry) {
 	registry.OnMessage(h.onMessage)
 	registry.OnMessageType(messagetype.ForumTopicCreated, h.onForumTopicLifecycle)
 	registry.OnMessageType(messagetype.ForumTopicEdited, h.onForumTopicLifecycle)
@@ -125,7 +125,7 @@ func (h *RelayHandler) Register(registry tgbotkit.Registry) {
 	registry.OnMessageType(messagetype.ForumTopicReopened, h.onForumTopicLifecycle)
 }
 
-func (h *RelayHandler) onMessage(ctx context.Context, event *events.MessageEvent) error {
+func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent) error {
 	messageCtx, ok := h.channel.MessageContextFromEvent(event)
 	if !ok {
 		return nil
@@ -171,32 +171,32 @@ func (h *RelayHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	}
 
 	locator := messageCtx.Locator
-	transportUserID := relaytelegram.UserID(messageCtx.UserID)
+	transportUserID := baldatelegram.UserID(messageCtx.UserID)
 
 	log.Info().Int64("user_id", ownerID).Int("topic_id", topicID).Msg("Forwarding message to balda agent")
 
-	var ts *relaysession.TopicSession
+	var ts *baldasession.TopicSession
 	var err error
 
 	if messageCtx.IsDM && topicID == 0 {
 		existingSession, _ := h.sessionManager.GetSession(locator)
 		sendOwnerWelcome := existingSession == nil
-		relayProviderName := h.getProviderName()
-		if relayProviderName == "" {
+		baldaProviderName := h.getProviderName()
+		if baldaProviderName == "" {
 			_ = h.channel.SendPlain(ctx, locator, "Balda provider is not configured (`balda.provider`). Please close this chat and restart balda.")
 			return nil
 		}
-		ts, err = h.sessionManager.EnsureSession(ctx, relaysession.SessionContext{
+		ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
 			Locator: locator,
 			UserID:  transportUserID,
 		}, ownerSessionLabel)
 		if err != nil {
-			log.Error().Err(err).Str("agent", relayProviderName).Msg("failed to ensure owner session")
+			log.Error().Err(err).Str("agent", baldaProviderName).Msg("failed to ensure owner session")
 			_ = h.channel.SendPlain(ctx, locator, fmt.Sprintf("Failed to start owner session: %v.\n\nPlease close this chat and start again.", err))
 			return nil
 		}
 		if sendOwnerWelcome {
-			metadata := h.sessionManager.GetAgentMetadata(relayProviderName)
+			metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
 			welcomeMsg := BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
 			_ = h.channel.SendMarkdown(ctx, locator, welcomeMsg)
 			h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
@@ -205,24 +205,24 @@ func (h *RelayHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		ts, err = h.sessionManager.GetSession(locator)
 		if err != nil {
 			_ = h.channel.SendPlain(ctx, locator, "Restoring agent session...")
-			ts, err = h.sessionManager.RestoreSession(ctx, relaysession.SessionContext{
+			ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
 				Locator:                    locator,
 				UserID:                     transportUserID,
-				AllowRelayProviderFallback: false,
+				AllowBaldaProviderFallback: false,
 			})
 			if err != nil {
-				if errors.Is(err, relaysession.ErrNoPersistedSession) {
-					relayProviderName := h.getProviderName()
-					if relayProviderName == "" {
+				if errors.Is(err, baldasession.ErrNoPersistedSession) {
+					baldaProviderName := h.getProviderName()
+					if baldaProviderName == "" {
 						_ = h.channel.SendPlain(ctx, locator, "Balda provider is not configured (`balda.provider`). Please close this chat and restart balda.")
 						return nil
 					}
-					ts, err = h.sessionManager.EnsureSession(ctx, relaysession.SessionContext{
+					ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
 						Locator: locator,
 						UserID:  transportUserID,
 					}, autoSessionLabel)
 					if err != nil {
-						log.Error().Err(err).Str("agent", relayProviderName).Int("topic_id", topicID).Msg("failed to create session")
+						log.Error().Err(err).Str("agent", baldaProviderName).Int("topic_id", topicID).Msg("failed to create session")
 						_ = h.channel.SendPlain(ctx, locator, fmt.Sprintf("Failed to start session: %v.\n\nPlease close this chat topic and create a new session with /topic <name>.", err))
 						return nil
 					}
@@ -233,8 +233,8 @@ func (h *RelayHandler) onMessage(ctx context.Context, event *events.MessageEvent
 				}
 			}
 			if ts != nil {
-				relayProviderID := h.getProviderName()
-				metadata := h.sessionManager.GetAgentMetadata(relayProviderID)
+				baldaProviderID := h.getProviderName()
+				metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
 				welcomeName := h.welcomeDisplayName(messageCtx, ts)
 				welcomeMsg := BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
 				_ = h.channel.SendMarkdown(ctx, locator, welcomeMsg)
@@ -282,14 +282,14 @@ func (h *RelayHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	return nil
 }
 
-func (h *RelayHandler) enqueueTurn(
+func (h *BaldaHandler) enqueueTurn(
 	ctx context.Context,
 	text string,
-	ts *relaysession.TopicSession,
-	locator relaysession.SessionLocator,
+	ts *baldasession.TopicSession,
+	locator baldasession.SessionLocator,
 	messageID int,
 	topicID int,
-	progressPolicy relaychannel.ProgressPolicy,
+	progressPolicy baldachannel.ProgressPolicy,
 ) error {
 	if ts == nil {
 		return fmt.Errorf("topic session is required")
@@ -337,17 +337,17 @@ func (h *RelayHandler) enqueueTurn(
 	return nil
 }
 
-func (h *RelayHandler) runTurnTask(
+func (h *BaldaHandler) runTurnTask(
 	ctx context.Context,
 	text string,
 	r *runner.Runner,
 	userID string,
 	sessionID string,
 	agentSessionID string,
-	locator relaysession.SessionLocator,
+	locator baldasession.SessionLocator,
 	messageID int,
 	topicID int,
-	progressPolicy relaychannel.ProgressPolicy,
+	progressPolicy baldachannel.ProgressPolicy,
 ) error {
 	err := h.runTurn(ctx, text, r, userID, sessionID, agentSessionID, locator, messageID, progressPolicy)
 	if err == nil {
@@ -379,7 +379,7 @@ func (h *RelayHandler) runTurnTask(
 	return err
 }
 
-func (h *RelayHandler) onForumTopicLifecycle(_ context.Context, event *events.MessageEvent) error {
+func (h *BaldaHandler) onForumTopicLifecycle(_ context.Context, event *events.MessageEvent) error {
 	lifecycle, ok := h.channel.TopicLifecycleFromEvent(event)
 	if !ok {
 		return nil
@@ -433,22 +433,22 @@ func (h *RelayHandler) onForumTopicLifecycle(_ context.Context, event *events.Me
 	return nil
 }
 
-func (h *RelayHandler) runTurn(
+func (h *BaldaHandler) runTurn(
 	ctx context.Context,
 	text string,
 	r *runner.Runner,
 	userID string,
 	sessionID string,
 	agentSessionID string,
-	locator relaysession.SessionLocator,
+	locator baldasession.SessionLocator,
 	messageID int,
-	progressPolicy relaychannel.ProgressPolicy,
+	progressPolicy baldachannel.ProgressPolicy,
 ) error {
 	if strings.TrimSpace(agentSessionID) == "" {
 		agentSessionID = sessionID
 	}
 
-	address, ok, err := relaytelegram.DecodeLocator(locator)
+	address, ok, err := baldatelegram.DecodeLocator(locator)
 	if err != nil {
 		return fmt.Errorf("decode telegram locator: %w", err)
 	}
@@ -501,7 +501,7 @@ func (h *RelayHandler) runTurn(
 		planProgressText := ""
 		hasPlanUpdate := false
 		if h.planUpdatesEnabled {
-			planProgressText, hasPlanUpdate = relayPlanProgressText(ev)
+			planProgressText, hasPlanUpdate = baldaPlanProgressText(ev)
 		}
 		if !ev.TurnComplete {
 			if progressPolicy.Typing {

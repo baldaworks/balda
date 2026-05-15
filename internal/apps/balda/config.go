@@ -2,11 +2,11 @@ package balda
 
 // Config holds the configuration for the Balda bot.
 type Config struct {
-	Relay RelayConfig `mapstructure:"balda"`
+	Balda BaldaConfig `mapstructure:"balda"`
 }
 
-// RelayConfig holds the balda-specific configuration.
-type RelayConfig struct {
+// BaldaConfig holds the balda-specific configuration.
+type BaldaConfig struct {
 	Provider          string                   `mapstructure:"provider"`
 	Telegram          TelegramConfig           `mapstructure:"telegram"`
 	InboundWebhooks   InboundWebhooksConfig    `mapstructure:"inbound_webhooks"`

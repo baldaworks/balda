@@ -19,7 +19,7 @@ type botIdentity struct {
 	username string
 }
 
-func logRelayStartup(ctx context.Context, botToken string) {
+func logBaldaStartup(ctx context.Context, botToken string) {
 	identity, err := loadBotIdentityFromToken(ctx, botToken)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to load bot identity for startup log")

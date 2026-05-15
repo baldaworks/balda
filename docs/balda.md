@@ -479,7 +479,7 @@ Balda runs with a single provider per process (`balda.provider`).
 
 ### Scheduled job runtime semantics (internal)
 
-Balda includes an internal locator-targeted scheduler backed by `relay_scheduled_jobs`.
+Balda includes an internal locator-targeted scheduler backed by `balda_scheduled_jobs`.
 Jobs are managed from config on startup using `balda.locators` and `balda.scheduler.jobs`.
 
 - Eligibility: only `status=active` jobs with `next_run_at <= now` are polled.

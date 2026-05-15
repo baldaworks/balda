@@ -35,31 +35,31 @@ func TestIsBundled(t *testing.T) {
 func TestBundledRegistryURL(t *testing.T) {
 	addr := "127.0.0.1:9010"
 	if got := bundledRegistryURL(addr, "balda"); got != "http://127.0.0.1:9010/mcp" {
-		t.Fatalf("bundledRegistryURL(relay) = %q, want http://127.0.0.1:9010/mcp", got)
+		t.Fatalf("bundledRegistryURL(balda) = %q, want http://127.0.0.1:9010/mcp", got)
 	}
 	if got := bundledRoutePath("balda"); got != "/mcp/balda" {
-		t.Fatalf("bundledRoutePath(relay) = %q, want /mcp/balda", got)
+		t.Fatalf("bundledRoutePath(balda) = %q, want /mcp/balda", got)
 	}
 }
 
-func TestBundledRelayServerInstructionsReflectWorkspaceMode(t *testing.T) {
-	enabled := bundledRelayServerInstructions(true, true)
+func TestBundledBaldaServerInstructionsReflectWorkspaceMode(t *testing.T) {
+	enabled := bundledBaldaServerInstructions(true, true)
 	if !strings.Contains(enabled, "balda.workspace is available") {
-		t.Fatalf("bundledRelayServerInstructions(true, true) = %q, want workspace-enabled guidance", enabled)
+		t.Fatalf("bundledBaldaServerInstructions(true, true) = %q, want workspace-enabled guidance", enabled)
 	}
 	if !strings.Contains(enabled, "balda.memory") {
-		t.Fatalf("bundledRelayServerInstructions(true, true) = %q, want memory guidance", enabled)
+		t.Fatalf("bundledBaldaServerInstructions(true, true) = %q, want memory guidance", enabled)
 	}
 	if strings.Contains(enabled, "balda.agents.") {
-		t.Fatalf("bundledRelayServerInstructions(true, true) = %q, want balda.agents removed", enabled)
+		t.Fatalf("bundledBaldaServerInstructions(true, true) = %q, want balda.agents removed", enabled)
 	}
 
-	disabled := bundledRelayServerInstructions(false, false)
+	disabled := bundledBaldaServerInstructions(false, false)
 	if !strings.Contains(disabled, "balda.workspace is unavailable") {
-		t.Fatalf("bundledRelayServerInstructions(false, false) = %q, want workspace-disabled guidance", disabled)
+		t.Fatalf("bundledBaldaServerInstructions(false, false) = %q, want workspace-disabled guidance", disabled)
 	}
 	if strings.Contains(disabled, "balda.memory") {
-		t.Fatalf("bundledRelayServerInstructions(false, false) = %q, want no memory guidance", disabled)
+		t.Fatalf("bundledBaldaServerInstructions(false, false) = %q, want no memory guidance", disabled)
 	}
 }
 
@@ -141,17 +141,17 @@ func TestEnsureBundledServers_RegistersSharedListenerURLs(t *testing.T) {
 
 	cfg, ok := manager.registry.Get("balda")
 	if !ok {
-		t.Fatal("registry missing relay")
+		t.Fatal("registry missing balda")
 	}
 	u, err := url.Parse(cfg.URL)
 	if err != nil {
-		t.Fatalf("parse URL for relay: %v", err)
+		t.Fatalf("parse URL for balda: %v", err)
 	}
 	if u.Scheme != "http" {
-		t.Fatalf("relay scheme = %q, want http", u.Scheme)
+		t.Fatalf("balda scheme = %q, want http", u.Scheme)
 	}
 	if u.Path != "/mcp" {
-		t.Fatalf("relay path = %q, want /mcp", u.Path)
+		t.Fatalf("balda path = %q, want /mcp", u.Path)
 	}
 	if strings.TrimSpace(u.Host) == "" {
 		t.Fatal("shared host is empty")

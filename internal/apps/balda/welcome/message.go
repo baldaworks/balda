@@ -74,7 +74,7 @@ func normalizeMCPServers(mcpServers []string) []string {
 
 func canonicalMCPServerID(serverID string) string {
 	switch serverID {
-	case "relay", "runtime.relay", "runtime.state", "runtime.workspace", "balda.state", "balda.workspace":
+	case "balda", "runtime.balda", "runtime.state", "runtime.workspace", "balda.state", "balda.workspace":
 		return "balda"
 	default:
 		return serverID

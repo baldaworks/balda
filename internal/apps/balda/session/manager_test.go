@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	relayagent "github.com/normahq/balda/internal/apps/balda/agent"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/session"
 )
@@ -25,11 +25,11 @@ func TestStopAll_CleansWorkspaceWhenRootContextCanceled(t *testing.T) {
 	runGit(t, ctx, workingDir, "add", "seed.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", "norma/balda/tg-1-1", workspaceDir, "HEAD")
 
 	m := &Manager{
-		workspaces:       relayagent.NewWorkspaceManager(workingDir, t.TempDir(), "master"),
+		workspaces:       baldaagent.NewWorkspaceManager(workingDir, t.TempDir(), "master"),
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessions: map[string]*TopicSession{
@@ -100,7 +100,7 @@ func TestResetSession_DeletesADKHistoryAndPreservesMetadata(t *testing.T) {
 	store := &fakeSessionStore{}
 	svc := adksession.InMemoryService()
 	created, err := svc.Create(ctx, &adksession.CreateRequest{
-		AppName:   "norma-relay",
+		AppName:   "norma-balda",
 		UserID:    "tg-101",
 		SessionID: "tg-10-42",
 	})
@@ -133,7 +133,7 @@ func TestResetSession_DeletesADKHistoryAndPreservesMetadata(t *testing.T) {
 		t.Fatal("session still active after ResetSession")
 	}
 	if _, err := svc.Get(ctx, &adksession.GetRequest{
-		AppName:   "norma-relay",
+		AppName:   "norma-balda",
 		UserID:    "tg-101",
 		SessionID: "tg-10-42",
 	}); err == nil {
@@ -166,13 +166,13 @@ func TestHasSession(t *testing.T) {
 	t.Run("active persisted session", func(t *testing.T) {
 		locator := testTelegramLocator(11, 77)
 		store := &fakeSessionStore{
-			recordsByAddress: map[string]relaystate.SessionRecord{
-				sessionAddressKey(relaystate.ChannelTypeTelegram, "11:77"): {
+			recordsByAddress: map[string]baldastate.SessionRecord{
+				sessionAddressKey(baldastate.ChannelTypeTelegram, "11:77"): {
 					SessionID:   locator.SessionID,
-					ChannelType: relaystate.ChannelTypeTelegram,
+					ChannelType: baldastate.ChannelTypeTelegram,
 					AddressKey:  "11:77",
 					AddressJSON: `{"chat_id":11,"topic_id":77}`,
-					Status:      relaystate.SessionStatusActive,
+					Status:      baldastate.SessionStatusActive,
 				},
 			},
 		}
@@ -194,10 +194,10 @@ func TestHasSession(t *testing.T) {
 	t.Run("inactive persisted session", func(t *testing.T) {
 		locator := testTelegramLocator(12, 88)
 		store := &fakeSessionStore{
-			recordsByAddress: map[string]relaystate.SessionRecord{
-				sessionAddressKey(relaystate.ChannelTypeTelegram, "12:88"): {
+			recordsByAddress: map[string]baldastate.SessionRecord{
+				sessionAddressKey(baldastate.ChannelTypeTelegram, "12:88"): {
 					SessionID:   locator.SessionID,
-					ChannelType: relaystate.ChannelTypeTelegram,
+					ChannelType: baldastate.ChannelTypeTelegram,
 					AddressKey:  "12:88",
 					AddressJSON: `{"chat_id":12,"topic_id":88}`,
 					Status:      "closed",
@@ -233,17 +233,17 @@ func TestMergeUniqueStringIDs(t *testing.T) {
 
 func TestGetSessionInfo_ReturnsPersistedSession(t *testing.T) {
 	store := &fakeSessionStore{
-		recordsByID: map[string]relaystate.SessionRecord{
+		recordsByID: map[string]baldastate.SessionRecord{
 			"tg-10-42": {
 				SessionID:    "tg-10-42",
 				UserID:       "tg-201",
-				ChannelType:  relaystate.ChannelTypeTelegram,
+				ChannelType:  baldastate.ChannelTypeTelegram,
 				AddressKey:   "10:42",
 				AddressJSON:  `{"chat_id":10,"topic_id":42}`,
 				AgentName:    "opencode",
 				WorkspaceDir: "/tmp/workspace",
 				BranchName:   "norma/balda/tg-10-42",
-				Status:       relaystate.SessionStatusActive,
+				Status:       baldastate.SessionStatusActive,
 			},
 		},
 	}
@@ -293,26 +293,26 @@ func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 
 func TestListSessionInfos_MergesActiveAndPersisted(t *testing.T) {
 	store := &fakeSessionStore{
-		listRecords: []relaystate.SessionRecord{
+		listRecords: []baldastate.SessionRecord{
 			{
 				SessionID:    "tg-1-1",
-				ChannelType:  relaystate.ChannelTypeTelegram,
+				ChannelType:  baldastate.ChannelTypeTelegram,
 				AddressKey:   "1:1",
 				AddressJSON:  `{"chat_id":1,"topic_id":1}`,
 				AgentName:    "persisted",
 				WorkspaceDir: "/tmp/persisted",
 				BranchName:   "norma/balda/tg-1-1",
-				Status:       relaystate.SessionStatusActive,
+				Status:       baldastate.SessionStatusActive,
 			},
 			{
 				SessionID:    "tg-2-2",
-				ChannelType:  relaystate.ChannelTypeTelegram,
+				ChannelType:  baldastate.ChannelTypeTelegram,
 				AddressKey:   "2:2",
 				AddressJSON:  `{"chat_id":2,"topic_id":2}`,
 				AgentName:    "inactive",
 				WorkspaceDir: "/tmp/inactive",
 				BranchName:   "norma/balda/tg-2-2",
-				Status:       relaystate.SessionStatusActive,
+				Status:       baldastate.SessionStatusActive,
 			},
 		},
 	}
@@ -341,7 +341,7 @@ func TestListSessionInfos_MergesActiveAndPersisted(t *testing.T) {
 	for _, info := range infos {
 		byID[info.SessionID] = info
 	}
-	if byID["tg-1-1"].AgentName != "active" || byID["tg-1-1"].Status != relaystate.SessionStatusActive {
+	if byID["tg-1-1"].AgentName != "active" || byID["tg-1-1"].Status != baldastate.SessionStatusActive {
 		t.Fatalf("active session merge = %+v, want active override", byID["tg-1-1"])
 	}
 	if byID["tg-2-2"].Status != sessionStatusPersisted {
@@ -358,26 +358,26 @@ func TestStopSessionByID_PersistedSessionCleansWorkspace(t *testing.T) {
 	runGit(t, ctx, workingDir, "add", "seed.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", "norma/balda/tg-9-9", workspaceDir, "HEAD")
 
 	store := &fakeSessionStore{
-		recordsByID: map[string]relaystate.SessionRecord{
+		recordsByID: map[string]baldastate.SessionRecord{
 			"tg-9-9": {
 				SessionID:    "tg-9-9",
-				ChannelType:  relaystate.ChannelTypeTelegram,
+				ChannelType:  baldastate.ChannelTypeTelegram,
 				AddressKey:   "9:9",
 				AddressJSON:  `{"chat_id":9,"topic_id":9}`,
 				AgentName:    "opencode",
 				WorkspaceDir: workspaceDir,
 				BranchName:   "norma/balda/tg-9-9",
-				Status:       relaystate.SessionStatusActive,
+				Status:       baldastate.SessionStatusActive,
 			},
 		},
 	}
 
 	m := &Manager{
-		workspaces:       relayagent.NewWorkspaceManager(workingDir, t.TempDir(), "master"),
+		workspaces:       baldaagent.NewWorkspaceManager(workingDir, t.TempDir(), "master"),
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessionStore:     store,
@@ -405,7 +405,7 @@ type fakeAgentBuilder struct {
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
 	_ context.Context,
-	_ *relayagent.BuiltRuntime,
+	_ *baldaagent.BuiltRuntime,
 	agentName string,
 	userID, sessionID, workspaceDir string,
 ) (adksession.Session, error) {
@@ -431,18 +431,18 @@ func (f *fakeAgentBuilder) GetAgentInfo(agentName string) (string, []string) {
 	return "", nil
 }
 
-func (f *fakeAgentBuilder) GetAgentMetadata(string) relayagent.AgentMetadata {
-	return relayagent.AgentMetadata{}
+func (f *fakeAgentBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
+	return baldaagent.AgentMetadata{}
 }
 
-type fakeRelayRuntimeManager struct {
+type fakeBaldaRuntimeManager struct {
 	providerID   string
-	runtime      *relayagent.BuiltRuntime
+	runtime      *baldaagent.BuiltRuntime
 	runtimeErr   error
 	runtimeCalls int
 }
 
-func (f *fakeRelayRuntimeManager) Runtime(context.Context) (*relayagent.BuiltRuntime, error) {
+func (f *fakeBaldaRuntimeManager) Runtime(context.Context) (*baldaagent.BuiltRuntime, error) {
 	f.runtimeCalls++
 	if f.runtimeErr != nil {
 		return nil, f.runtimeErr
@@ -450,18 +450,18 @@ func (f *fakeRelayRuntimeManager) Runtime(context.Context) (*relayagent.BuiltRun
 	if f.runtime != nil {
 		return f.runtime, nil
 	}
-	return &relayagent.BuiltRuntime{}, nil
+	return &baldaagent.BuiltRuntime{}, nil
 }
 
-func (f *fakeRelayRuntimeManager) ProviderID() string {
+func (f *fakeBaldaRuntimeManager) ProviderID() string {
 	return f.providerID
 }
 
 func TestCreateSession_ReusesSingleRuntimeAndMapsAgentSessions(t *testing.T) {
 	builder := &fakeAgentBuilder{}
-	runtimeManager := &fakeRelayRuntimeManager{providerID: "relay-provider"}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "balda-provider"}
 	m := &Manager{
-		relayProviderName: "relay-provider",
+		baldaProviderName: "balda-provider",
 		runtimeManager:    runtimeManager,
 		agentBuilder:      builder,
 		workingDir:        t.TempDir(),
@@ -496,7 +496,7 @@ func TestCreateSession_ReusesSingleRuntimeAndMapsAgentSessions(t *testing.T) {
 	firstSessionID := builder.createRuntimeSessionSessionIDs[0]
 	secondSessionID := builder.createRuntimeSessionSessionIDs[1]
 	if firstSessionID == secondSessionID {
-		t.Fatalf("agent session ids are equal (%q), want unique per relay session", firstSessionID)
+		t.Fatalf("agent session ids are equal (%q), want unique per balda session", firstSessionID)
 	}
 	if !strings.HasPrefix(firstSessionID, first.Locator.SessionID+"-a") {
 		t.Fatalf("first agent session id = %q, want prefix %q", firstSessionID, first.Locator.SessionID+"-a")
@@ -508,10 +508,10 @@ func TestCreateSession_ReusesSingleRuntimeAndMapsAgentSessions(t *testing.T) {
 
 func TestCreateSession_PersistentModeUsesStableAgentSessionID(t *testing.T) {
 	builder := &fakeAgentBuilder{}
-	runtimeManager := &fakeRelayRuntimeManager{providerID: "relay-provider"}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "balda-provider"}
 	locator := testTelegramLocator(10, 41)
 	m := &Manager{
-		relayProviderName:  "relay-provider",
+		baldaProviderName:  "balda-provider",
 		runtimeManager:     runtimeManager,
 		agentBuilder:       builder,
 		workingDir:         t.TempDir(),
@@ -529,15 +529,15 @@ func TestCreateSession_PersistentModeUsesStableAgentSessionID(t *testing.T) {
 	}
 
 	if got := builder.createRuntimeSessionSessionIDs[0]; got != locator.SessionID {
-		t.Fatalf("CreateRuntimeSession sessionID = %q, want stable relay session ID %q", got, locator.SessionID)
+		t.Fatalf("CreateRuntimeSession sessionID = %q, want stable balda session ID %q", got, locator.SessionID)
 	}
 }
 
-func TestCreateSession_UsesRelayProviderBackend(t *testing.T) {
+func TestCreateSession_UsesBaldaProviderBackend(t *testing.T) {
 	builder := &fakeAgentBuilder{}
-	runtimeManager := &fakeRelayRuntimeManager{providerID: "relay-provider"}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "balda-provider"}
 	m := &Manager{
-		relayProviderName: "relay-provider",
+		baldaProviderName: "balda-provider",
 		runtimeManager:    runtimeManager,
 		agentBuilder:      builder,
 		logger:            zerolog.Nop(),
@@ -554,7 +554,7 @@ func TestCreateSession_UsesRelayProviderBackend(t *testing.T) {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
 
-	if got, want := builder.createRuntimeSessionAgentNames[0], "relay-provider"; got != want {
+	if got, want := builder.createRuntimeSessionAgentNames[0], "balda-provider"; got != want {
 		t.Fatalf("CreateRuntimeSession provider = %q, want %q", got, want)
 	}
 
@@ -564,25 +564,25 @@ func TestCreateSession_UsesRelayProviderBackend(t *testing.T) {
 	}
 }
 
-func TestRestoreSession_AlwaysUsesCurrentRelayProviderBackend(t *testing.T) {
+func TestRestoreSession_AlwaysUsesCurrentBaldaProviderBackend(t *testing.T) {
 	builder := &fakeAgentBuilder{}
-	runtimeManager := &fakeRelayRuntimeManager{providerID: "new-relay-provider"}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "new-balda-provider"}
 	locator := testTelegramLocator(10, 42)
 	store := &fakeSessionStore{
-		recordsByAddress: map[string]relaystate.SessionRecord{
-			sessionAddressKey(relaystate.ChannelTypeTelegram, "10:42"): {
+		recordsByAddress: map[string]baldastate.SessionRecord{
+			sessionAddressKey(baldastate.ChannelTypeTelegram, "10:42"): {
 				SessionID:   locator.SessionID,
-				ChannelType: relaystate.ChannelTypeTelegram,
+				ChannelType: baldastate.ChannelTypeTelegram,
 				AddressKey:  "10:42",
 				AddressJSON: `{"chat_id":10,"topic_id":42}`,
 				AgentName:   "old-persisted-label",
-				Status:      relaystate.SessionStatusActive,
+				Status:      baldastate.SessionStatusActive,
 			},
 		},
 	}
 
 	m := &Manager{
-		relayProviderName: "new-relay-provider",
+		baldaProviderName: "new-balda-provider",
 		runtimeManager:    runtimeManager,
 		agentBuilder:      builder,
 		logger:            zerolog.Nop(),
@@ -593,14 +593,14 @@ func TestRestoreSession_AlwaysUsesCurrentRelayProviderBackend(t *testing.T) {
 	_, err := m.RestoreSession(context.Background(), SessionContext{
 		Locator:                    locator,
 		UserID:                     "tg-201",
-		AllowRelayProviderFallback: true,
+		AllowBaldaProviderFallback: true,
 	})
 
 	if err != nil {
 		t.Fatalf("RestoreSession() error = %v", err)
 	}
 
-	if got, want := builder.createRuntimeSessionAgentNames[0], "new-relay-provider"; got != want {
+	if got, want := builder.createRuntimeSessionAgentNames[0], "new-balda-provider"; got != want {
 		t.Fatalf("CreateRuntimeSession provider = %q, want %q", got, want)
 	}
 
@@ -631,24 +631,24 @@ func TestRestoreSession_UserIDSelection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder := &fakeAgentBuilder{}
-			runtimeManager := &fakeRelayRuntimeManager{providerID: "relay-provider"}
+			runtimeManager := &fakeBaldaRuntimeManager{providerID: "balda-provider"}
 			locator := testTelegramLocator(10, 42)
 			store := &fakeSessionStore{
-				recordsByAddress: map[string]relaystate.SessionRecord{
-					sessionAddressKey(relaystate.ChannelTypeTelegram, "10:42"): {
+				recordsByAddress: map[string]baldastate.SessionRecord{
+					sessionAddressKey(baldastate.ChannelTypeTelegram, "10:42"): {
 						SessionID:   locator.SessionID,
 						UserID:      tt.persistedUserID,
-						ChannelType: relaystate.ChannelTypeTelegram,
+						ChannelType: baldastate.ChannelTypeTelegram,
 						AddressKey:  "10:42",
 						AddressJSON: `{"chat_id":10,"topic_id":42}`,
 						AgentName:   "persisted-label",
-						Status:      relaystate.SessionStatusActive,
+						Status:      baldastate.SessionStatusActive,
 					},
 				},
 			}
 
 			m := &Manager{
-				relayProviderName: "relay-provider",
+				baldaProviderName: "balda-provider",
 				runtimeManager:    runtimeManager,
 				agentBuilder:      builder,
 				logger:            zerolog.Nop(),
@@ -673,23 +673,23 @@ func TestRestoreSession_UserIDSelection(t *testing.T) {
 
 func TestRestoreSession_UsesAutoLabelWhenPersistedLabelMissing(t *testing.T) {
 	builder := &fakeAgentBuilder{}
-	runtimeManager := &fakeRelayRuntimeManager{providerID: "new-relay-provider"}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "new-balda-provider"}
 	locator := testTelegramLocator(11, 43)
 	store := &fakeSessionStore{
-		recordsByAddress: map[string]relaystate.SessionRecord{
-			sessionAddressKey(relaystate.ChannelTypeTelegram, "11:43"): {
+		recordsByAddress: map[string]baldastate.SessionRecord{
+			sessionAddressKey(baldastate.ChannelTypeTelegram, "11:43"): {
 				SessionID:   locator.SessionID,
-				ChannelType: relaystate.ChannelTypeTelegram,
+				ChannelType: baldastate.ChannelTypeTelegram,
 				AddressKey:  "11:43",
 				AddressJSON: `{"chat_id":11,"topic_id":43}`,
 				AgentName:   " ",
-				Status:      relaystate.SessionStatusActive,
+				Status:      baldastate.SessionStatusActive,
 			},
 		},
 	}
 
 	m := &Manager{
-		relayProviderName: "new-relay-provider",
+		baldaProviderName: "new-balda-provider",
 		runtimeManager:    runtimeManager,
 		agentBuilder:      builder,
 		logger:            zerolog.Nop(),
@@ -722,29 +722,29 @@ func TestRestoreSession_FailsWhenPersistedWorkspaceBranchMissing(t *testing.T) {
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
 	builder := &fakeAgentBuilder{}
-	runtimeManager := &fakeRelayRuntimeManager{providerID: "new-relay-provider"}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "new-balda-provider"}
 	locator := testTelegramLocator(12, 44)
 	store := &fakeSessionStore{
-		recordsByAddress: map[string]relaystate.SessionRecord{
-			sessionAddressKey(relaystate.ChannelTypeTelegram, "12:44"): {
+		recordsByAddress: map[string]baldastate.SessionRecord{
+			sessionAddressKey(baldastate.ChannelTypeTelegram, "12:44"): {
 				SessionID:    locator.SessionID,
-				ChannelType:  relaystate.ChannelTypeTelegram,
+				ChannelType:  baldastate.ChannelTypeTelegram,
 				AddressKey:   "12:44",
 				AddressJSON:  `{"chat_id":12,"topic_id":44}`,
 				AgentName:    "persisted",
 				WorkspaceDir: filepath.Join(t.TempDir(), "missing-workspace"),
 				BranchName:   "norma/balda/missing-branch",
-				Status:       relaystate.SessionStatusActive,
+				Status:       baldastate.SessionStatusActive,
 			},
 		},
 	}
 
 	m := &Manager{
-		relayProviderName: "new-relay-provider",
+		baldaProviderName: "new-balda-provider",
 		runtimeManager:    runtimeManager,
 		agentBuilder:      builder,
 		workingDir:        workingDir,
-		workspaces:        relayagent.NewWorkspaceManager(workingDir, t.TempDir(), currentBranch(t, ctx, workingDir)),
+		workspaces:        baldaagent.NewWorkspaceManager(workingDir, t.TempDir(), currentBranch(t, ctx, workingDir)),
 		workspaceEnabled:  true,
 		logger:            zerolog.Nop(),
 		sessions:          make(map[string]*TopicSession),
@@ -791,7 +791,7 @@ func testTelegramLocator(chatID int64, topicID int) SessionLocator {
 	}
 	raw, _ := json.Marshal(address)
 	locator, err := NewSessionLocator(
-		relaystate.ChannelTypeTelegram,
+		baldastate.ChannelTypeTelegram,
 		fmt.Sprintf("%d:%d", chatID, topicID),
 		string(raw),
 		fmt.Sprintf("tg-%d-%d", chatID, topicID),
@@ -806,12 +806,12 @@ type fakeSessionStore struct {
 	deletedSessionID string
 	deleteCtxErr     error
 	getByAddressErr  error
-	recordsByAddress map[string]relaystate.SessionRecord
-	recordsByID      map[string]relaystate.SessionRecord
-	listRecords      []relaystate.SessionRecord
+	recordsByAddress map[string]baldastate.SessionRecord
+	recordsByID      map[string]baldastate.SessionRecord
+	listRecords      []baldastate.SessionRecord
 }
 
-func (f *fakeSessionStore) Upsert(context.Context, relaystate.SessionRecord) error {
+func (f *fakeSessionStore) Upsert(context.Context, baldastate.SessionRecord) error {
 	return nil
 }
 
@@ -819,20 +819,20 @@ func sessionAddressKey(channelType, addressKey string) string {
 	return channelType + "|" + addressKey
 }
 
-func (f *fakeSessionStore) GetByAddress(_ context.Context, channelType, addressKey string) (relaystate.SessionRecord, bool, error) {
+func (f *fakeSessionStore) GetByAddress(_ context.Context, channelType, addressKey string) (baldastate.SessionRecord, bool, error) {
 	if f.getByAddressErr != nil {
-		return relaystate.SessionRecord{}, false, f.getByAddressErr
+		return baldastate.SessionRecord{}, false, f.getByAddressErr
 	}
 	if f.recordsByAddress == nil {
-		return relaystate.SessionRecord{}, false, nil
+		return baldastate.SessionRecord{}, false, nil
 	}
 	record, ok := f.recordsByAddress[sessionAddressKey(channelType, addressKey)]
 	return record, ok, nil
 }
 
-func (f *fakeSessionStore) GetBySessionID(_ context.Context, sessionID string) (relaystate.SessionRecord, bool, error) {
+func (f *fakeSessionStore) GetBySessionID(_ context.Context, sessionID string) (baldastate.SessionRecord, bool, error) {
 	if f.recordsByID == nil {
-		return relaystate.SessionRecord{}, false, nil
+		return baldastate.SessionRecord{}, false, nil
 	}
 	record, ok := f.recordsByID[sessionID]
 	return record, ok, nil
@@ -844,11 +844,11 @@ func (f *fakeSessionStore) DeleteBySessionID(ctx context.Context, sessionID stri
 	return nil
 }
 
-func (f *fakeSessionStore) List(context.Context) ([]relaystate.SessionRecord, error) {
+func (f *fakeSessionStore) List(context.Context) ([]baldastate.SessionRecord, error) {
 	if f.listRecords == nil {
 		return nil, nil
 	}
-	return append([]relaystate.SessionRecord(nil), f.listRecords...), nil
+	return append([]baldastate.SessionRecord(nil), f.listRecords...), nil
 }
 
 func initGitRepo(t *testing.T, ctx context.Context, workingDir string) {

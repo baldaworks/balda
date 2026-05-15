@@ -61,7 +61,7 @@ func TestNormalizeMCPServers(t *testing.T) {
 	}{
 		{
 			name:       "deduplicates and trims",
-			mcpServers: []string{" relay ", "workspace", "balda", ""},
+			mcpServers: []string{" balda ", "workspace", "balda", ""},
 			want:       []string{"balda", "workspace"},
 		},
 		{

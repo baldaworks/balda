@@ -167,7 +167,7 @@ func (c *fakeTelegramClient) CloseForumTopicWithResponse(_ context.Context, body
 	}, nil
 }
 
-type fakeRelayOwnerActivator struct {
+type fakeBaldaOwnerActivator struct {
 	calls []activationCall
 	err   error
 }
@@ -177,7 +177,7 @@ type activationCall struct {
 	chatID  int64
 }
 
-func (f *fakeRelayOwnerActivator) ActivateOwner(_ context.Context, ownerID, chatID int64) error {
+func (f *fakeBaldaOwnerActivator) ActivateOwner(_ context.Context, ownerID, chatID int64) error {
 	f.calls = append(f.calls, activationCall{ownerID: ownerID, chatID: chatID})
 	return f.err
 }
@@ -278,8 +278,8 @@ func TestParseStartCommandArgs(t *testing.T) {
 func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 	t.Run("accepts owner command as owner bootstrap", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-		balda := &fakeRelayOwnerActivator{}
-		handler.SetRelayHandler(balda)
+		balda := &fakeBaldaOwnerActivator{}
+		handler.SetBaldaHandler(balda)
 
 		err := handler.onCommand(context.Background(), newStartEvent("owner=secret-token", 101, 9001))
 		if err != nil {
@@ -307,8 +307,8 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 
 	t.Run("accepts owner deeplink payload as owner bootstrap", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-		balda := &fakeRelayOwnerActivator{}
-		handler.SetRelayHandler(balda)
+		balda := &fakeBaldaOwnerActivator{}
+		handler.SetBaldaHandler(balda)
 
 		err := handler.onCommand(context.Background(), newStartEvent("owner_secret-token", 101, 9001))
 		if err != nil {
@@ -399,8 +399,8 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 
 func TestStartHandlerOnCommand_ExistingOwner_StartsRootWhenMissing(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-	balda := &fakeRelayOwnerActivator{}
-	handler.SetRelayHandler(balda)
+	balda := &fakeBaldaOwnerActivator{}
+	handler.SetBaldaHandler(balda)
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -423,8 +423,8 @@ func TestStartHandlerOnCommand_ExistingOwner_StartsRootWhenMissing(t *testing.T)
 
 func TestStartHandlerOnCommand_ExistingOwnerExplicitOwnerModeReactivates(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-	balda := &fakeRelayOwnerActivator{}
-	handler.SetRelayHandler(balda)
+	balda := &fakeBaldaOwnerActivator{}
+	handler.SetBaldaHandler(balda)
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -447,8 +447,8 @@ func TestStartHandlerOnCommand_ExistingOwnerExplicitOwnerModeReactivates(t *test
 
 func TestStartHandlerOnCommand_ExistingOwnerInviteModeDoesNotReactivate(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-	balda := &fakeRelayOwnerActivator{}
-	handler.SetRelayHandler(balda)
+	balda := &fakeBaldaOwnerActivator{}
+	handler.SetBaldaHandler(balda)
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -471,8 +471,8 @@ func TestStartHandlerOnCommand_ExistingOwnerInviteModeDoesNotReactivate(t *testi
 
 func TestStartHandlerOnCommand_ExistingOwnerOtherInviteDoesNotConsumeOrReactivate(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-	balda := &fakeRelayOwnerActivator{}
-	handler.SetRelayHandler(balda)
+	balda := &fakeBaldaOwnerActivator{}
+	handler.SetBaldaHandler(balda)
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -527,10 +527,10 @@ func TestStartHandlerOnCommand_InviteModeRegistersCollaborator(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Welcome! You are now a bot collaborator.")
 }
 
-func TestStartHandlerOnCommand_RelayActivationFailure_DoesNotClaimRelayActive(t *testing.T) {
+func TestStartHandlerOnCommand_BaldaActivationFailure_DoesNotClaimBaldaActive(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-	balda := &fakeRelayOwnerActivator{err: errors.New("precreate failed")}
-	handler.SetRelayHandler(balda)
+	balda := &fakeBaldaOwnerActivator{err: errors.New("precreate failed")}
+	handler.SetBaldaHandler(balda)
 
 	err := handler.onCommand(context.Background(), newStartEvent("owner=secret-token", 101, 9001))
 	if err != nil {
@@ -545,10 +545,10 @@ func TestStartHandlerOnCommand_RelayActivationFailure_DoesNotClaimRelayActive(t 
 	assertLastSentNotContains(t, tgClient, "Balda mode is active.")
 }
 
-func TestStartHandlerOnCommand_ExistingOwnerActivationFailure_DoesNotClaimRelayActive(t *testing.T) {
+func TestStartHandlerOnCommand_ExistingOwnerActivationFailure_DoesNotClaimBaldaActive(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
-	balda := &fakeRelayOwnerActivator{err: errors.New("precreate failed")}
-	handler.SetRelayHandler(balda)
+	balda := &fakeBaldaOwnerActivator{err: errors.New("precreate failed")}
+	handler.SetBaldaHandler(balda)
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -656,7 +656,7 @@ func assertLastSentNotContains(t *testing.T, tgClient *fakeTelegramClient, unwan
 	}
 }
 
-type fakeRelayHandler struct {
+type fakeBaldaHandler struct {
 	bootstrapCalls []bootstrapCall
 	bootstrapErr   error
 	ownerID        int64
@@ -669,7 +669,7 @@ type bootstrapCall struct {
 	chatID  int64
 }
 
-func (f *fakeRelayHandler) ActivateOwner(_ context.Context, ownerID, chatID int64) error {
+func (f *fakeBaldaHandler) ActivateOwner(_ context.Context, ownerID, chatID int64) error {
 	f.ownerID = ownerID
 	f.chatID = chatID
 	if f.bootstrapErr != nil {
@@ -679,15 +679,15 @@ func (f *fakeRelayHandler) ActivateOwner(_ context.Context, ownerID, chatID int6
 	return nil
 }
 
-func (f *fakeRelayHandler) SetAuthToken(token string) {
+func (f *fakeBaldaHandler) SetAuthToken(token string) {
 	f.authToken = token
 }
 
-func (f *fakeRelayHandler) GetAuthToken() string {
+func (f *fakeBaldaHandler) GetAuthToken() string {
 	return f.authToken
 }
 
-func newRelayHandlerTestHarness(t *testing.T) (*StartHandler, *auth.OwnerStore, *fakeTelegramClient, *fakeRelayHandler) {
+func newBaldaHandlerTestHarness(t *testing.T) (*StartHandler, *auth.OwnerStore, *fakeTelegramClient, *fakeBaldaHandler) {
 	t.Helper()
 
 	stateStore := &fakeOwnerKVStore{}
@@ -698,21 +698,21 @@ func newRelayHandlerTestHarness(t *testing.T) (*StartHandler, *auth.OwnerStore, 
 
 	tgClient := &fakeTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	relayHandler := &fakeRelayHandler{}
+	baldaHandler := &fakeBaldaHandler{}
 	startHandler := NewStartHandler(StartHandlerParams{
 		OwnerStore: ownerStore,
 		Messenger:  msg,
 		AuthToken:  "",
 	})
-	startHandler.SetRelayHandler(relayHandler)
+	startHandler.SetBaldaHandler(baldaHandler)
 
-	return startHandler, ownerStore, tgClient, relayHandler
+	return startHandler, ownerStore, tgClient, baldaHandler
 }
 
 func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 	t.Run("calls ActivateOwner and bootstraps session", func(t *testing.T) {
-		handler, store, _, relayHandler := newRelayHandlerTestHarness(t)
-		relayHandler.SetAuthToken("secret-token")
+		handler, store, _, baldaHandler := newBaldaHandlerTestHarness(t)
+		baldaHandler.SetAuthToken("secret-token")
 
 		registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 		if err != nil {
@@ -727,10 +727,10 @@ func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 			t.Fatalf("onCommand(): %v", err)
 		}
 
-		if len(relayHandler.bootstrapCalls) != 1 {
-			t.Fatalf("bootstrapOwnerSession calls = %d, want 1", len(relayHandler.bootstrapCalls))
+		if len(baldaHandler.bootstrapCalls) != 1 {
+			t.Fatalf("bootstrapOwnerSession calls = %d, want 1", len(baldaHandler.bootstrapCalls))
 		}
-		call := relayHandler.bootstrapCalls[0]
+		call := baldaHandler.bootstrapCalls[0]
 		if call.ownerID != 101 {
 			t.Fatalf("bootstrap ownerID = %d, want 101", call.ownerID)
 		}
@@ -740,9 +740,9 @@ func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 	})
 
 	t.Run("bootstrap failure results in failure message", func(t *testing.T) {
-		handler, store, tgClient, relayHandler := newRelayHandlerTestHarness(t)
-		relayHandler.SetAuthToken("secret-token")
-		relayHandler.bootstrapErr = errors.New("config reload failed")
+		handler, store, tgClient, baldaHandler := newBaldaHandlerTestHarness(t)
+		baldaHandler.SetAuthToken("secret-token")
+		baldaHandler.bootstrapErr = errors.New("config reload failed")
 
 		registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 		if err != nil {

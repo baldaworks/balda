@@ -8,14 +8,14 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog/log"
 )
 
 // SetOwner binds the handler to the owner. Pass chatID=0 when the chat
 // is not yet known (it will be set from the first incoming message).
-func (h *RelayHandler) SetOwner(ownerID, chatID int64) {
+func (h *BaldaHandler) SetOwner(ownerID, chatID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -28,7 +28,7 @@ func (h *RelayHandler) SetOwner(ownerID, chatID int64) {
 }
 
 // SendToOwner sends a message from the agent to the owner.
-func (h *RelayHandler) SendToOwner(ctx context.Context, msg string) error {
+func (h *BaldaHandler) SendToOwner(ctx context.Context, msg string) error {
 	chatID := h.getChatID()
 	if chatID == 0 {
 		return fmt.Errorf("owner not set")
@@ -41,31 +41,31 @@ func (h *RelayHandler) SendToOwner(ctx context.Context, msg string) error {
 }
 
 // ActivateOwner binds owner/chat for balda traffic and bootstraps the owner session.
-func (h *RelayHandler) ActivateOwner(ctx context.Context, ownerID, chatID int64) error {
+func (h *BaldaHandler) ActivateOwner(ctx context.Context, ownerID, chatID int64) error {
 	h.SetOwner(ownerID, chatID)
 	return h.bootstrapOwnerSession(ctx, ownerID, chatID)
 }
 
-func (h *RelayHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) error {
-	relayProviderName := h.getProviderName()
-	if relayProviderName == "" {
+func (h *BaldaHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatID int64) error {
+	baldaProviderName := h.getProviderName()
+	if baldaProviderName == "" {
 		return fmt.Errorf("balda provider is not configured")
 	}
 
-	locator := relaytelegram.NewLocator(chatID, 0)
-	transportUserID := relaytelegram.UserID(ownerID)
+	locator := baldatelegram.NewLocator(chatID, 0)
+	transportUserID := baldatelegram.UserID(ownerID)
 
 	ts, err := h.sessionManager.GetSession(locator)
 	if err != nil {
-		ts, err = h.sessionManager.RestoreSession(ctx, relaysession.SessionContext{
+		ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
 			Locator: locator,
 			UserID:  transportUserID,
 		})
 		if err != nil {
-			if !errors.Is(err, relaysession.ErrNoPersistedSession) {
+			if !errors.Is(err, baldasession.ErrNoPersistedSession) {
 				return fmt.Errorf("restore owner session: %w", err)
 			}
-			ts, err = h.sessionManager.EnsureSession(ctx, relaysession.SessionContext{
+			ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
 				Locator: locator,
 				UserID:  transportUserID,
 			}, ownerSessionLabel)
@@ -75,7 +75,7 @@ func (h *RelayHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatI
 		}
 	}
 
-	metadata := h.sessionManager.GetAgentMetadata(relayProviderName)
+	metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
 	welcomeMsg := BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
 	_ = h.channel.SendMarkdown(ctx, locator, welcomeMsg)
 	h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
@@ -83,12 +83,12 @@ func (h *RelayHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatI
 	h.logger.Info().
 		Int64("owner_id", ownerID).
 		Int64("chat_id", chatID).
-		Str("agent", relayProviderName).
+		Str("agent", baldaProviderName).
 		Msg("owner session bootstrapped")
 	return nil
 }
 
-func (h *RelayHandler) sendSessionStartupNotice(ctx context.Context, locator relaysession.SessionLocator, sessionID string) {
+func (h *BaldaHandler) sendSessionStartupNotice(ctx context.Context, locator baldasession.SessionLocator, sessionID string) {
 	if h.sessionManager == nil {
 		return
 	}
@@ -103,25 +103,25 @@ func (h *RelayHandler) sendSessionStartupNotice(ctx context.Context, locator rel
 	}
 }
 
-func (h *RelayHandler) getOwnerID() int64 {
+func (h *BaldaHandler) getOwnerID() int64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.ownerID
 }
 
-func (h *RelayHandler) getChatID() int64 {
+func (h *BaldaHandler) getChatID() int64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.chatID
 }
 
-func (h *RelayHandler) setChatID(chatID int64) {
+func (h *BaldaHandler) setChatID(chatID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.chatID = chatID
 }
 
-func (h *RelayHandler) onStart(ctx context.Context) error {
+func (h *BaldaHandler) onStart(ctx context.Context) error {
 	if err := h.initializeBotUsername(ctx); err != nil {
 		return fmt.Errorf("resolve balda telegram bot identity: %w", err)
 	}
@@ -156,7 +156,7 @@ func (h *RelayHandler) onStart(ctx context.Context) error {
 	return nil
 }
 
-func (h *RelayHandler) initializeBotUsername(ctx context.Context) error {
+func (h *BaldaHandler) initializeBotUsername(ctx context.Context) error {
 	if h.tgClient == nil {
 		return fmt.Errorf("telegram client is required")
 	}
@@ -203,7 +203,7 @@ func (h *RelayHandler) initializeBotUsername(ctx context.Context) error {
 	return nil
 }
 
-func (h *RelayHandler) logOwnerAuthIfNeeded() {
+func (h *BaldaHandler) logOwnerAuthIfNeeded() {
 	if h.authToken == "" || h.ownerStore.HasOwner() {
 		return
 	}
@@ -219,17 +219,17 @@ func (h *RelayHandler) logOwnerAuthIfNeeded() {
 		Msg("balda owner authentication required")
 }
 
-func (h *RelayHandler) getProviderName() string {
-	providerName := strings.TrimSpace(h.sessionManager.RelayProviderID())
+func (h *BaldaHandler) getProviderName() string {
+	providerName := strings.TrimSpace(h.sessionManager.BaldaProviderID())
 	if providerName == "" {
 		h.mu.RLock()
 		defer h.mu.RUnlock()
-		providerName = strings.TrimSpace(h.relayProviderName)
+		providerName = strings.TrimSpace(h.baldaProviderName)
 	}
 	return providerName
 }
 
-func (h *RelayHandler) welcomeDisplayName(messageCtx relaytelegram.MessageContext, ts *relaysession.TopicSession) string {
+func (h *BaldaHandler) welcomeDisplayName(messageCtx baldatelegram.MessageContext, ts *baldasession.TopicSession) string {
 	if !messageCtx.IsDM {
 		return ownerSessionLabel
 	}
@@ -239,14 +239,14 @@ func (h *RelayHandler) welcomeDisplayName(messageCtx relaytelegram.MessageContex
 	return ts.GetAgentName()
 }
 
-func (h *RelayHandler) currentTime() time.Time {
+func (h *BaldaHandler) currentTime() time.Time {
 	if h.now != nil {
 		return h.now()
 	}
 	return time.Now()
 }
 
-func (h *RelayHandler) getBotIdentity() (int64, string) {
+func (h *BaldaHandler) getBotIdentity() (int64, string) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.botUserID, h.botUsername

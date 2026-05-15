@@ -11,10 +11,26 @@ import (
 )
 
 //go:embed migrations/*.sql
-var relayMigrationsFS embed.FS
+var baldaMigrationsFS embed.FS
+
+var requiredBaldaSQLiteTables = []string{
+	"balda_app_kv",
+	"balda_session_metadata",
+	"balda_telegram_offsets",
+	"balda_collaborators",
+	"balda_adk_app_state",
+	"balda_adk_user_state",
+	"balda_adk_sessions",
+	"balda_adk_events",
+	"balda_scheduled_jobs",
+}
 
 func migrate(ctx context.Context, db *sql.DB) error {
-	migrationsDir, err := fs.Sub(relayMigrationsFS, "migrations")
+	if err := rejectObsoletePreBaldaSchema(ctx, db); err != nil {
+		return err
+	}
+
+	migrationsDir, err := fs.Sub(baldaMigrationsFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("open balda migrations fs: %w", err)
 	}
@@ -27,5 +43,59 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("apply balda migrations: %w", err)
 	}
+	if err := validateBaldaSQLiteSchema(ctx, db); err != nil {
+		return err
+	}
 	return nil
+}
+
+func rejectObsoletePreBaldaSchema(ctx context.Context, db *sql.DB) error {
+	hasMigrations, err := sqliteTableExists(ctx, db, "schema_migrations")
+	if err != nil {
+		return fmt.Errorf("inspect schema_migrations table: %w", err)
+	}
+	if !hasMigrations {
+		return nil
+	}
+
+	hasBaldaSchema, err := sqliteTableExists(ctx, db, "balda_app_kv")
+	if err != nil {
+		return fmt.Errorf("inspect balda_app_kv table: %w", err)
+	}
+	if hasBaldaSchema {
+		return nil
+	}
+
+	return fmt.Errorf("obsolete pre-Balda state schema detected; back up and remove .config/balda/balda.db, then run balda init again")
+}
+
+func validateBaldaSQLiteSchema(ctx context.Context, db *sql.DB) error {
+	for _, table := range requiredBaldaSQLiteTables {
+		exists, err := sqliteTableExists(ctx, db, table)
+		if err != nil {
+			return fmt.Errorf("inspect %s table: %w", table, err)
+		}
+		if !exists {
+			return fmt.Errorf("balda state schema missing %s; back up and remove .config/balda/balda.db, then run balda init again", table)
+		}
+	}
+	return nil
+}
+
+func sqliteTableExists(ctx context.Context, db *sql.DB, name string) (bool, error) {
+	var exists int
+	err := db.QueryRowContext(ctx, `
+		SELECT 1
+		FROM sqlite_master
+		WHERE type = 'table' AND name = ?
+		LIMIT 1`,
+		name,
+	).Scan(&exists)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

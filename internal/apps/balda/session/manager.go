@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	relayagent "github.com/normahq/balda/internal/apps/balda/agent"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/git"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -21,7 +21,7 @@ const cleanupTimeout = 10 * time.Second
 
 const sessionStatusPersisted = "persisted"
 
-const relayADKAppName = "norma-balda"
+const baldaADKAppName = "norma-balda"
 
 const workspaceSyncSkippedNotice = "Workspace was restored without syncing the latest base changes because auto-sync conflicted. Use balda.workspace.import to retry later."
 
@@ -30,7 +30,7 @@ var ErrNoPersistedSession = errors.New("no persisted session")
 type agentBuilder interface {
 	CreateRuntimeSession(
 		ctx context.Context,
-		runtime *relayagent.BuiltRuntime,
+		runtime *baldaagent.BuiltRuntime,
 		agentName string,
 		userID string,
 		sessionID string,
@@ -38,29 +38,29 @@ type agentBuilder interface {
 	) (adksession.Session, error)
 	ValidateAgent(agentName string) error
 	GetAgentInfo(agentName string) (string, []string)
-	GetAgentMetadata(agentName string) relayagent.AgentMetadata
+	GetAgentMetadata(agentName string) baldaagent.AgentMetadata
 	ProviderIDs() []string
 }
 
-type relayRuntimeManager interface {
-	Runtime(ctx context.Context) (*relayagent.BuiltRuntime, error)
+type baldaRuntimeManager interface {
+	Runtime(ctx context.Context) (*baldaagent.BuiltRuntime, error)
 	ProviderID() string
 }
 
-type AgentMetadata = relayagent.AgentMetadata
+type AgentMetadata = baldaagent.AgentMetadata
 
 // Manager manages balda ADK sessions and persists session metadata.
 type Manager struct {
 	agentBuilder       agentBuilder
-	runtimeManager     relayRuntimeManager
-	relayMCPServerIDs  []string
-	relayProviderName  string
+	runtimeManager     baldaRuntimeManager
+	baldaMCPServerIDs  []string
+	baldaProviderName  string
 	workingDir         string
-	workspaces         *relayagent.WorkspaceManager
+	workspaces         *baldaagent.WorkspaceManager
 	workspaceEnabled   bool
 	workspaceBaseRef   string
 	sessionsPersistent bool
-	sessionStore       relaystate.SessionStore
+	sessionStore       baldastate.SessionStore
 	logger             zerolog.Logger
 
 	mu              sync.RWMutex
@@ -73,16 +73,16 @@ type ManagerParams struct {
 	fx.In
 
 	LC                 fx.Lifecycle
-	AgentBuilder       *relayagent.Builder
-	RuntimeManager     *relayagent.RuntimeManager
-	RelayMCPServerIDs  []string `name:"relay_mcp_servers"`
-	RelayProviderID    string   `name:"relay_provider"`
+	AgentBuilder       *baldaagent.Builder
+	RuntimeManager     *baldaagent.RuntimeManager
+	BaldaMCPServerIDs  []string `name:"balda_mcp_servers"`
+	BaldaProviderID    string   `name:"balda_provider"`
 	WorkingDir         string
-	StateDir           string `name:"relay_state_dir"`
-	WorkspaceEnabled   bool   `name:"relay_workspace_enabled"`
-	WorkspaceBaseRef   string `name:"relay_workspace_base_branch"`
-	SessionsPersistent bool   `name:"relay_sessions_persistent"`
-	StateProvider      relaystate.Provider
+	StateDir           string `name:"balda_state_dir"`
+	WorkspaceEnabled   bool   `name:"balda_workspace_enabled"`
+	WorkspaceBaseRef   string `name:"balda_workspace_base_branch"`
+	SessionsPersistent bool   `name:"balda_sessions_persistent"`
+	StateProvider      baldastate.Provider
 	Logger             zerolog.Logger
 }
 
@@ -95,10 +95,10 @@ func NewManager(p ManagerParams) (*Manager, error) {
 	m := &Manager{
 		agentBuilder:       p.AgentBuilder,
 		runtimeManager:     p.RuntimeManager,
-		relayMCPServerIDs:  append([]string(nil), p.RelayMCPServerIDs...),
-		relayProviderName:  strings.TrimSpace(p.RelayProviderID),
+		baldaMCPServerIDs:  append([]string(nil), p.BaldaMCPServerIDs...),
+		baldaProviderName:  strings.TrimSpace(p.BaldaProviderID),
 		workingDir:         p.WorkingDir,
-		workspaces:         relayagent.NewWorkspaceManager(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef),
+		workspaces:         baldaagent.NewWorkspaceManager(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef),
 		workspaceEnabled:   p.WorkspaceEnabled,
 		workspaceBaseRef:   p.WorkspaceBaseRef,
 		sessionsPersistent: p.SessionsPersistent,
@@ -137,26 +137,26 @@ func (m *Manager) ValidateAgent(agentName string) error {
 func (m *Manager) GetAgentInfo(agentName string) (string, []string) {
 	m.mu.RLock()
 	builder := m.agentBuilder
-	relayMCPServerIDs := append([]string(nil), m.relayMCPServerIDs...)
+	baldaMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
 	m.mu.RUnlock()
 	if builder == nil {
-		return agentName, relayMCPServerIDs
+		return agentName, baldaMCPServerIDs
 	}
 	description, mcpServers := builder.GetAgentInfo(agentName)
-	return description, mergeUniqueStringIDs(mcpServers, relayMCPServerIDs)
+	return description, mergeUniqueStringIDs(mcpServers, baldaMCPServerIDs)
 }
 
 // GetAgentMetadata returns balda-provider metadata with provider-scoped MCP IDs.
 func (m *Manager) GetAgentMetadata(agentName string) AgentMetadata {
 	m.mu.RLock()
 	builder := m.agentBuilder
-	relayMCPServerIDs := append([]string(nil), m.relayMCPServerIDs...)
+	baldaMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
 	m.mu.RUnlock()
 	if builder == nil {
 		return AgentMetadata{}
 	}
 	meta := builder.GetAgentMetadata(agentName)
-	meta.MCPServers = mergeUniqueStringIDs(meta.MCPServers, relayMCPServerIDs)
+	meta.MCPServers = mergeUniqueStringIDs(meta.MCPServers, baldaMCPServerIDs)
 	return meta
 }
 
@@ -171,8 +171,8 @@ func (m *Manager) ProviderIDs() []string {
 	return builder.ProviderIDs()
 }
 
-// RelayProviderID returns the configured balda provider ID.
-func (m *Manager) RelayProviderID() string {
+// BaldaProviderID returns the configured balda provider ID.
+func (m *Manager) BaldaProviderID() string {
 	return m.getProviderName()
 }
 
@@ -181,7 +181,7 @@ func (m *Manager) CreateSession(ctx context.Context, sessionCtx SessionContext, 
 	return m.createSession(ctx, sessionCtx, agentName, nil)
 }
 
-func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, agentName string, persisted *relaystate.SessionRecord) error {
+func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, agentName string, persisted *baldastate.SessionRecord) error {
 	locator := sessionCtx.Locator
 	userID := strings.TrimSpace(sessionCtx.UserID)
 	if userID == "" {
@@ -254,9 +254,9 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		}
 		return err
 	}
-	relayProvider := strings.TrimSpace(runtimeManager.ProviderID())
-	if relayProvider == "" {
-		relayProvider = m.getProviderName()
+	baldaProvider := strings.TrimSpace(runtimeManager.ProviderID())
+	if baldaProvider == "" {
+		baldaProvider = m.getProviderName()
 	}
 
 	agentSessionID := m.newAgentSessionID(sessionID)
@@ -266,7 +266,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	sess, err := builder.CreateRuntimeSession(
 		ctx,
 		rootRuntime,
-		relayProvider,
+		baldaProvider,
 		userID,
 		agentSessionID,
 		workspaceDir,
@@ -276,7 +276,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 			Err(err).
 			Str("session_id", sessionID).
 			Str("agent_session_id", agentSessionID).
-			Str("agent", relayProvider).
+			Str("agent", baldaProvider).
 			Str("label", agentName).
 			Msg("failed to create runtime session")
 		if m.workspaceEnabled {
@@ -300,7 +300,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		startupNotice:  startupNotice,
 	}
 
-	if err := m.persistSessionRecord(ctx, ts, relaystate.SessionStatusActive); err != nil {
+	if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
 		if closeErr := m.cleanupTopicSession(ctx, ts, sessionCleanupOptions{deleteADK: true, cleanupWorkspace: true}); closeErr != nil {
 			m.logger.Warn().Err(closeErr).Str("session_id", sessionID).Msg("failed to rollback session after persist error")
 		}
@@ -402,7 +402,7 @@ func (m *Manager) ResetSession(ctx context.Context, locator SessionLocator) erro
 	}
 	appName := strings.TrimSpace(rootRuntime.AppName)
 	if appName == "" {
-		appName = relayADKAppName
+		appName = baldaADKAppName
 	}
 	if err := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
 		AppName:   appName,
@@ -490,7 +490,7 @@ func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opt
 	if opts.deleteADK && ts != nil && ts.sessionSvc != nil {
 		sessionID := strings.TrimSpace(ts.GetAgentSessionID())
 		userID := strings.TrimSpace(ts.userID)
-		appName := relayADKAppName
+		appName := baldaADKAppName
 		if ts.sess != nil {
 			if sessionAppName := strings.TrimSpace(ts.sess.AppName()); sessionAppName != "" {
 				appName = sessionAppName
@@ -522,10 +522,10 @@ func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, st
 		return fmt.Errorf("topic session is required")
 	}
 	if strings.TrimSpace(status) == "" {
-		status = relaystate.SessionStatusActive
+		status = baldastate.SessionStatusActive
 	}
 
-	return m.sessionStore.Upsert(ctx, relaystate.SessionRecord{
+	return m.sessionStore.Upsert(ctx, baldastate.SessionRecord{
 		SessionID:    ts.sessionID,
 		UserID:       ts.userID,
 		ChannelType:  ts.locator.ChannelType,

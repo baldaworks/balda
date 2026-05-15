@@ -20,10 +20,10 @@ func TestMountWorktree_AllowsBranchAlreadyCheckedOutInMainWorktree(t *testing.T)
 	runGit(t, ctx, repoDir, "add", "seed.txt")
 	runGit(t, ctx, repoDir, "commit", "-m", "chore: seed")
 
-	branchName := "norma/relay/tg-1-0"
+	branchName := "norma/balda/tg-1-0"
 	runGit(t, ctx, repoDir, "checkout", "-b", branchName)
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	mounted, err := MountWorktree(ctx, repoDir, workspaceDir, branchName, "HEAD")
 	if err != nil {
 		t.Fatalf("MountWorktree() error = %v", err)

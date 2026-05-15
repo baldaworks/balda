@@ -13,42 +13,42 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func ensureRelayConfigGitignore(configDir string) error {
+func ensureBaldaConfigGitignore(configDir string) error {
 	gitignorePath := filepath.Join(configDir, ".gitignore")
 	if _, err := os.Stat(gitignorePath); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat %s: %w", gitignorePath, err)
 	}
-	if err := os.WriteFile(gitignorePath, []byte(relayConfigGitignoreContent), 0o600); err != nil {
+	if err := os.WriteFile(gitignorePath, []byte(baldaConfigGitignoreContent), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", gitignorePath, err)
 	}
 	return nil
 }
 
-func buildRelayInitDocument(workingDir string) (map[string]any, []string, error) {
-	detectedAgents := detectRelayInitAgents()
+func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error) {
+	detectedAgents := detectBaldaInitAgents()
 	if len(detectedAgents) == 0 {
 		return nil, nil, fmt.Errorf(
 			"no supported agent CLI detected in PATH; install at least one of: codex, opencode, copilot, gemini, claude",
 		)
 	}
 
-	var relayDefaults map[string]any
-	if err := yaml.Unmarshal(defaultRelayConfig, &relayDefaults); err != nil {
+	var baldaDefaults map[string]any
+	if err := yaml.Unmarshal(defaultBaldaConfig, &baldaDefaults); err != nil {
 		return nil, nil, fmt.Errorf("parse default balda config template: %w", err)
 	}
 
-	relaySection, ok := toStringAnyMap(relayDefaults["balda"])
+	baldaSection, ok := toStringAnyMap(baldaDefaults["balda"])
 	if !ok {
 		return nil, nil, fmt.Errorf("default balda template is missing balda section")
 	}
-	ensureRelayMCPServersDefault(relaySection)
-	relayBaseBranch, err := relayInitCurrentBranch(workingDir)
+	ensureBaldaMCPServersDefault(baldaSection)
+	baldaBaseBranch, err := baldaInitCurrentBranch(workingDir)
 	if err != nil {
-		relayBaseBranch = ""
+		baldaBaseBranch = ""
 	}
-	if err := setRelayWorkspaceBaseBranch(relaySection, relayBaseBranch); err != nil {
+	if err := setBaldaWorkspaceBaseBranch(baldaSection, baldaBaseBranch); err != nil {
 		return nil, nil, err
 	}
 
@@ -59,25 +59,25 @@ func buildRelayInitDocument(workingDir string) (map[string]any, []string, error)
 
 	doc := map[string]any{
 		"runtime": map[string]any{
-			"providers":   buildRelayInitAgents(detectedAgents),
+			"providers":   buildBaldaInitAgents(detectedAgents),
 			"mcp_servers": map[string]any{},
 		},
-		"balda":    relaySection,
-		"profiles": buildRelayInitProfiles(agentIDs),
+		"balda":    baldaSection,
+		"profiles": buildBaldaInitProfiles(agentIDs),
 	}
 
 	return doc, agentIDs, nil
 }
 
-func detectRelayInitCurrentBranch(workingDir string) (string, error) {
+func detectBaldaInitCurrentBranch(workingDir string) (string, error) {
 	return git.CurrentBranch(context.Background(), workingDir)
 }
 
-func detectRelayInitAgents() []relayInitAgentTemplate {
-	detected := make([]relayInitAgentTemplate, 0, len(relayInitAgentTemplates))
-	for _, template := range relayInitAgentTemplates {
+func detectBaldaInitAgents() []baldaInitAgentTemplate {
+	detected := make([]baldaInitAgentTemplate, 0, len(baldaInitAgentTemplates))
+	for _, template := range baldaInitAgentTemplates {
 		for _, binary := range template.DetectBinary {
-			if _, err := relayInitLookPath(binary); err == nil {
+			if _, err := baldaInitLookPath(binary); err == nil {
 				detected = append(detected, template)
 				break
 			}
@@ -86,7 +86,7 @@ func detectRelayInitAgents() []relayInitAgentTemplate {
 	return detected
 }
 
-func buildRelayInitAgents(detected []relayInitAgentTemplate) map[string]any {
+func buildBaldaInitAgents(detected []baldaInitAgentTemplate) map[string]any {
 	agents := make(map[string]any, len(detected)+1)
 	poolMembers := make([]any, 0, len(detected))
 
@@ -111,7 +111,7 @@ func buildRelayInitAgents(detected []relayInitAgentTemplate) map[string]any {
 	return agents
 }
 
-func buildRelayInitProfiles(agentIDs []string) map[string]any {
+func buildBaldaInitProfiles(agentIDs []string) map[string]any {
 	profiles := make(map[string]any, len(agentIDs))
 	if len(agentIDs) == 0 {
 		return profiles
@@ -128,10 +128,10 @@ func buildRelayInitProfiles(agentIDs []string) map[string]any {
 	return profiles
 }
 
-func ensureRelayMCPServersDefault(relaySection map[string]any) {
-	raw, exists := relaySection["mcp_servers"]
+func ensureBaldaMCPServersDefault(baldaSection map[string]any) {
+	raw, exists := baldaSection["mcp_servers"]
 	if !exists || raw == nil {
-		relaySection["mcp_servers"] = []any{}
+		baldaSection["mcp_servers"] = []any{}
 		return
 	}
 	if _, ok := raw.([]any); ok {
@@ -140,67 +140,67 @@ func ensureRelayMCPServersDefault(relaySection map[string]any) {
 	if _, ok := raw.([]string); ok {
 		return
 	}
-	relaySection["mcp_servers"] = []any{}
+	baldaSection["mcp_servers"] = []any{}
 }
 
-func setRelayProvider(doc map[string]any, providerID string) error {
-	relaySection, ok := toStringAnyMap(doc["balda"])
+func setBaldaProvider(doc map[string]any, providerID string) error {
+	baldaSection, ok := toStringAnyMap(doc["balda"])
 	if !ok {
 		return fmt.Errorf("balda section is missing from generated config")
 	}
-	relaySection["provider"] = providerID
-	doc["balda"] = relaySection
+	baldaSection["provider"] = providerID
+	doc["balda"] = baldaSection
 
 	return nil
 }
 
-func setRelayTelegramToken(doc map[string]any, token string) error {
-	relaySection, ok := toStringAnyMap(doc["balda"])
+func setBaldaTelegramToken(doc map[string]any, token string) error {
+	baldaSection, ok := toStringAnyMap(doc["balda"])
 	if !ok {
 		return fmt.Errorf("balda section is missing from generated config")
 	}
-	telegramSection, ok := toStringAnyMap(relaySection["telegram"])
+	telegramSection, ok := toStringAnyMap(baldaSection["telegram"])
 	if !ok {
 		return fmt.Errorf("balda.telegram section is missing from generated config")
 	}
 	telegramSection["token"] = token
-	relaySection["telegram"] = telegramSection
-	doc["balda"] = relaySection
+	baldaSection["telegram"] = telegramSection
+	doc["balda"] = baldaSection
 	return nil
 }
 
-func setRelayGlobalInstructionExample(doc map[string]any) error {
-	relaySection, ok := toStringAnyMap(doc["balda"])
+func setBaldaGlobalInstructionExample(doc map[string]any) error {
+	baldaSection, ok := toStringAnyMap(doc["balda"])
 	if !ok {
 		return fmt.Errorf("balda section is missing from generated config")
 	}
 
-	if existing, exists := relaySection["global_instruction"]; !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
-		relaySection["global_instruction"] = relayInitGlobalInstructionExample
+	if existing, exists := baldaSection["global_instruction"]; !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
+		baldaSection["global_instruction"] = baldaInitGlobalInstructionExample
 	}
 
-	doc["balda"] = relaySection
+	doc["balda"] = baldaSection
 	return nil
 }
 
-func setRelayWorkspaceBaseBranch(relaySection map[string]any, baseBranch string) error {
-	workspaceSection, ok := toStringAnyMap(relaySection["workspace"])
+func setBaldaWorkspaceBaseBranch(baldaSection map[string]any, baseBranch string) error {
+	workspaceSection, ok := toStringAnyMap(baldaSection["workspace"])
 	if !ok {
 		return fmt.Errorf("balda.workspace section is missing from generated config")
 	}
 	workspaceSection["base_branch"] = strings.TrimSpace(baseBranch)
-	relaySection["workspace"] = workspaceSection
+	baldaSection["workspace"] = workspaceSection
 	return nil
 }
 
-func relayStateDirFromInitDocument(doc map[string]any) (string, error) {
-	relaySection, ok := toStringAnyMap(doc["balda"])
+func baldaStateDirFromInitDocument(doc map[string]any) (string, error) {
+	baldaSection, ok := toStringAnyMap(doc["balda"])
 	if !ok {
 		return "", fmt.Errorf("balda section is missing from generated config")
 	}
-	stateDirRaw, ok := relaySection["state_dir"]
+	stateDirRaw, ok := baldaSection["state_dir"]
 	if !ok {
-		return relayRuntimeStatePath, nil
+		return baldaRuntimeStatePath, nil
 	}
 	stateDir := strings.TrimSpace(fmt.Sprintf("%v", stateDirRaw))
 	if stateDir == "" {
@@ -229,10 +229,10 @@ func toStringAnyMap(raw any) (map[string]any, bool) {
 }
 
 var (
-	relayInitInput           io.Reader = os.Stdin
-	relayInitOutput          io.Writer = os.Stdout
-	relayInitIsInteractive             = defaultRelayInitIsInteractive
-	relayInitLookPath                  = exec.LookPath
-	relayInitCurrentBranch             = detectRelayInitCurrentBranch
-	relayInitLoadBotIdentity           = loadBotIdentityFromToken
+	baldaInitInput           io.Reader = os.Stdin
+	baldaInitOutput          io.Writer = os.Stdout
+	baldaInitIsInteractive             = defaultBaldaInitIsInteractive
+	baldaInitLookPath                  = exec.LookPath
+	baldaInitCurrentBranch             = detectBaldaInitCurrentBranch
+	baldaInitLoadBotIdentity           = loadBotIdentityFromToken
 )

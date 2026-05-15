@@ -9,13 +9,13 @@ import (
 	"strings"
 
 	"github.com/ipfans/fxlogger"
-	relayagent "github.com/normahq/balda/internal/apps/balda/agent"
+	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/normahq/balda/internal/apps/balda/shutdown"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
@@ -35,10 +35,10 @@ import (
 type workspaceBaseBranchParams struct {
 	fx.In
 
-	WorkspaceEnabled bool `name:"relay_workspace_enabled"`
+	WorkspaceEnabled bool `name:"balda_workspace_enabled"`
 }
 
-const bundledRelayMCPServerID = "balda"
+const bundledBaldaMCPServerID = "balda"
 
 const (
 	sessionPersistenceMemory = "memory"
@@ -73,39 +73,39 @@ func Module(
 ) fx.Option {
 	// Convert balda config to tgbotkit config.
 	tgbotkitCfg := tgbotkit.Config{
-		Token: cfg.Relay.Telegram.Token,
+		Token: cfg.Balda.Telegram.Token,
 		Webhook: tgbotkit.WebhookConfig{
-			Enabled:    cfg.Relay.Telegram.Webhook.Enabled,
-			ListenAddr: cfg.Relay.Telegram.Webhook.ListenAddr,
-			Path:       cfg.Relay.Telegram.Webhook.Path,
-			URL:        cfg.Relay.Telegram.Webhook.URL,
-			AuthToken:  cfg.Relay.Telegram.Webhook.AuthToken,
+			Enabled:    cfg.Balda.Telegram.Webhook.Enabled,
+			ListenAddr: cfg.Balda.Telegram.Webhook.ListenAddr,
+			Path:       cfg.Balda.Telegram.Webhook.Path,
+			URL:        cfg.Balda.Telegram.Webhook.URL,
+			AuthToken:  cfg.Balda.Telegram.Webhook.AuthToken,
 		},
 	}
 
 	logger := log.Logger.With().Str("component", "balda").Logger()
-	workingDir, err := paths.ResolveWorkingDir(cfg.Relay.WorkingDir)
+	workingDir, err := paths.ResolveWorkingDir(cfg.Balda.WorkingDir)
 	if err != nil {
 		return fx.Module("balda", fx.Error(fmt.Errorf("resolve balda working_dir: %w", err)))
 	}
 	configPath := paths.ConfigPath(workingDir)
-	if err := validateRelayMCPConfiguration(cfg, normaCfg, configPath); err != nil {
+	if err := validateBaldaMCPConfiguration(cfg, normaCfg, configPath); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	formattingMode, err := validateTelegramFormattingMode(cfg.Relay.Telegram.FormattingMode)
+	formattingMode, err := validateTelegramFormattingMode(cfg.Balda.Telegram.FormattingMode)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	stateDir, err := paths.ResolveStateDir(workingDir, cfg.Relay.StateDir)
+	stateDir, err := paths.ResolveStateDir(workingDir, cfg.Balda.StateDir)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	sessionPersistence, err := validateSessionPersistence(cfg.Relay.Sessions.Persistence)
+	sessionPersistence, err := validateSessionPersistence(cfg.Balda.Sessions.Persistence)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	jobSchedulerConfig := buildJobSchedulerConfig(cfg.Relay)
-	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Relay)
+	jobSchedulerConfig := buildJobSchedulerConfig(cfg.Balda)
+	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 
 	// Start with global MCP servers.
 	mcpServers := make(map[string]agentconfig.MCPServerConfig, len(normaCfg.MCPServers))
@@ -127,19 +127,19 @@ func Module(
 		fx.Provide(
 			fx.Annotate(
 				func() string { return stateDir },
-				fx.ResultTags(`name:"relay_state_dir"`),
+				fx.ResultTags(`name:"balda_state_dir"`),
 			),
 			func() *memory.Store {
-				return memory.NewStore(stateDir, cfg.Relay.Memory.Enabled)
+				return memory.NewStore(stateDir, cfg.Balda.Memory.Enabled)
 			},
 		),
 		fx.Provide(
-			func(lc fx.Lifecycle) (relaystate.Provider, error) {
+			func(lc fx.Lifecycle) (baldastate.Provider, error) {
 				if err := os.MkdirAll(stateDir, 0o755); err != nil {
 					return nil, fmt.Errorf("create balda state dir: %w", err)
 				}
 				dbPath := filepath.Join(stateDir, "balda.db")
-				provider, err := relaystate.NewSQLiteProvider(context.Background(), dbPath)
+				provider, err := baldastate.NewSQLiteProvider(context.Background(), dbPath)
 				if err != nil {
 					return nil, fmt.Errorf("open balda state provider: %w", err)
 				}
@@ -150,22 +150,22 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider relaystate.Provider) updatepoller.OffsetStore {
+			func(provider baldastate.Provider) updatepoller.OffsetStore {
 				return provider.PollingOffsetStore()
 			},
-			func(provider relaystate.Provider) sessionmcp.Store {
+			func(provider baldastate.Provider) sessionmcp.Store {
 				return provider.SessionMCPKV()
 			},
 		),
 		fx.Provide(
 			fx.Annotate(
-				func(provider relaystate.Provider) adksession.Service {
+				func(provider baldastate.Provider) adksession.Service {
 					if sessionPersistence == sessionPersistenceSQLite {
 						return provider.ADKSessions()
 					}
 					return adksession.InMemoryService()
 				},
-				fx.ResultTags(`name:"relay_adk_session_service"`),
+				fx.ResultTags(`name:"balda_adk_session_service"`),
 			),
 		),
 		fx.Provide(
@@ -173,7 +173,7 @@ func Module(
 				func() bool {
 					return sessionPersistence == sessionPersistenceSQLite
 				},
-				fx.ResultTags(`name:"relay_sessions_persistent"`),
+				fx.ResultTags(`name:"balda_sessions_persistent"`),
 			),
 		),
 		fx.Provide(
@@ -181,9 +181,9 @@ func Module(
 				func() (bool, error) {
 					mode, enabled, err := resolveWorkspaceEnabledForApp(
 						context.Background(),
-						cfg.Relay.Workspace.Mode,
+						cfg.Balda.Workspace.Mode,
 						workingDir,
-						cfg.Relay.Workspace.BaseBranch,
+						cfg.Balda.Workspace.BaseBranch,
 						git.Available,
 					)
 					if err != nil {
@@ -198,7 +198,7 @@ func Module(
 						Msg("balda workspace mode resolved")
 					return enabled, nil
 				},
-				fx.ResultTags(`name:"relay_workspace_enabled"`),
+				fx.ResultTags(`name:"balda_workspace_enabled"`),
 			),
 		),
 		fx.Provide(
@@ -207,7 +207,7 @@ func Module(
 					baseBranch, source, err := resolveWorkspaceBaseBranch(
 						context.Background(),
 						workingDir,
-						cfg.Relay.Workspace.BaseBranch,
+						cfg.Balda.Workspace.BaseBranch,
 						p.WorkspaceEnabled,
 					)
 					if err != nil {
@@ -220,27 +220,27 @@ func Module(
 						Msg("balda workspace base branch resolved")
 					return baseBranch, nil
 				},
-				fx.ResultTags(`name:"relay_workspace_base_branch"`),
+				fx.ResultTags(`name:"balda_workspace_base_branch"`),
 			),
 		),
 		fx.Provide(
 			fx.Annotate(
-				func() []string { return append([]string(nil), cfg.Relay.MCPServers...) },
-				fx.ResultTags(`name:"relay_mcp_servers"`),
+				func() []string { return append([]string(nil), cfg.Balda.MCPServers...) },
+				fx.ResultTags(`name:"balda_mcp_servers"`),
 			),
 		),
 		fx.Provide(
 			fx.Annotate(
 				func() []string { return sortedMCPServerIDs(normaCfg.MCPServers) },
-				fx.ResultTags(`name:"relay_runtime_mcp_server_ids"`),
+				fx.ResultTags(`name:"balda_runtime_mcp_server_ids"`),
 			),
 		),
 		fx.Provide(
 			fx.Annotate(
 				func() string {
-					return strings.TrimSpace(cfg.Relay.GlobalInstruction)
+					return strings.TrimSpace(cfg.Balda.GlobalInstruction)
 				},
-				fx.ResultTags(`name:"relay_global_instruction"`),
+				fx.ResultTags(`name:"balda_global_instruction"`),
 			),
 		),
 		fx.Provide(
@@ -248,46 +248,46 @@ func Module(
 				func() string {
 					return formattingMode
 				},
-				fx.ResultTags(`name:"relay_telegram_formatting_mode"`),
+				fx.ResultTags(`name:"balda_telegram_formatting_mode"`),
 			),
 		),
 		fx.Provide(
 			fx.Annotate(
 				func() bool {
-					return cfg.Relay.Telegram.PlanUpdates
+					return cfg.Balda.Telegram.PlanUpdates
 				},
-				fx.ResultTags(`name:"relay_telegram_plan_updates"`),
+				fx.ResultTags(`name:"balda_telegram_plan_updates"`),
 			),
 		),
 		fx.Provide(
 			fx.Annotate(
 				func() int {
-					return cfg.Relay.Goal.MaxIterations
+					return cfg.Balda.Goal.MaxIterations
 				},
-				fx.ResultTags(`name:"relay_goal_max_iterations"`),
+				fx.ResultTags(`name:"balda_goal_max_iterations"`),
 			),
 		),
 		fx.Provide(
 			fx.Annotate(
 				func() string { return strings.TrimSpace(ownerToken) },
-				fx.ResultTags(`name:"relay_auth_token"`),
+				fx.ResultTags(`name:"balda_auth_token"`),
 			),
 		),
 		fx.Provide(
 			fx.Annotate(
 				func() string {
-					return cfg.Relay.Provider
+					return cfg.Balda.Provider
 				},
-				fx.ResultTags(`name:"relay_provider"`),
+				fx.ResultTags(`name:"balda_provider"`),
 			),
 		),
-		fx.Provide(func(provider relaystate.Provider) (*auth.OwnerStore, error) {
+		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
 			return auth.NewOwnerStore(provider.AppKV())
 		}),
-		fx.Provide(func(provider relaystate.Provider) (*auth.InviteStore, error) {
+		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
 		}),
-		fx.Provide(func(provider relaystate.Provider) *auth.CollaboratorStore {
+		fx.Provide(func(provider baldastate.Provider) *auth.CollaboratorStore {
 			// Wrap the state.CollaboratorStore interface in *auth.CollaboratorStore
 			// The wrapper delegates to the underlying store implementation
 			return auth.NewCollaboratorStore(provider.Collaborators())
@@ -296,7 +296,7 @@ func Module(
 			return agentfactory.New(
 				normaCfg.Providers,
 				reg,
-				agentfactory.WithPermissionHandler(relayagent.DefaultPermissionHandler),
+				agentfactory.WithPermissionHandler(baldaagent.DefaultPermissionHandler),
 			)
 		}),
 		tgbotkit.Module,
@@ -305,7 +305,7 @@ func Module(
 			handlers.NewInternalMCPManager,
 		),
 		// Start Balda provider runtime and Telegram runtime only after bundled internal MCP is started.
-		fx.Invoke(func(lc fx.Lifecycle, bot *runtime.Bot, runtimeManager *relayagent.RuntimeManager, mcpManager *handlers.InternalMCPManager) {
+		fx.Invoke(func(lc fx.Lifecycle, bot *runtime.Bot, runtimeManager *baldaagent.RuntimeManager, mcpManager *handlers.InternalMCPManager) {
 			runCtx, cancel := context.WithCancel(context.Background())
 			lc.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
@@ -335,12 +335,12 @@ func Module(
 	)
 }
 
-var removedBuiltInRelayMCPServerIDs = map[string]string{
-	"runtime.state":     bundledRelayMCPServerID,
-	"runtime.workspace": bundledRelayMCPServerID,
-	"runtime.relay":     bundledRelayMCPServerID,
-	"balda.state":       bundledRelayMCPServerID,
-	"balda.workspace":   bundledRelayMCPServerID,
+var removedBuiltInBaldaMCPServerIDs = map[string]string{
+	"runtime.state":     bundledBaldaMCPServerID,
+	"runtime.workspace": bundledBaldaMCPServerID,
+	"runtime.balda":     bundledBaldaMCPServerID,
+	"balda.state":       bundledBaldaMCPServerID,
+	"balda.workspace":   bundledBaldaMCPServerID,
 }
 
 var removedConfigMCPServerIDs = map[string]struct{}{
@@ -348,27 +348,27 @@ var removedConfigMCPServerIDs = map[string]struct{}{
 	"balda.config":   {},
 }
 
-func validateRelayMCPConfiguration(cfg Config, normaCfg runtimeconfig.RuntimeConfig, configPath string) error {
+func validateBaldaMCPConfiguration(cfg Config, normaCfg runtimeconfig.RuntimeConfig, configPath string) error {
 	errs := make([]string, 0)
 
 	for id := range normaCfg.MCPServers {
 		switch id {
-		case bundledRelayMCPServerID:
+		case bundledBaldaMCPServerID:
 			errs = append(errs, `runtime.mcp_servers.balda is reserved for the built-in balda MCP server`)
 		default:
 			if _, ok := removedConfigMCPServerIDs[id]; ok {
 				errs = append(errs, fmt.Sprintf("runtime.mcp_servers.%s conflicts with removed built-in config MCP server ID %q; edit the balda config file directly at %q", id, id, configPath))
-			} else if replacement, ok := removedBuiltInRelayMCPServerIDs[id]; ok {
+			} else if replacement, ok := removedBuiltInBaldaMCPServerIDs[id]; ok {
 				errs = append(errs, fmt.Sprintf("runtime.mcp_servers.%s conflicts with removed built-in MCP server ID %q; rename the custom server and use %q for the built-in balda MCP server", id, id, replacement))
 			}
 		}
 	}
 
-	for i, id := range cfg.Relay.MCPServers {
+	for i, id := range cfg.Balda.MCPServers {
 		trimmed := strings.TrimSpace(id)
 		if _, ok := removedConfigMCPServerIDs[trimmed]; ok {
 			errs = append(errs, fmt.Sprintf("balda.mcp_servers[%d] references removed built-in config MCP server %q; edit the balda config file directly at %q", i, id, configPath))
-		} else if replacement, ok := removedBuiltInRelayMCPServerIDs[trimmed]; ok {
+		} else if replacement, ok := removedBuiltInBaldaMCPServerIDs[trimmed]; ok {
 			errs = append(errs, fmt.Sprintf("balda.mcp_servers[%d] references removed built-in MCP server %q; use %q", i, id, replacement))
 		}
 	}
@@ -378,7 +378,7 @@ func validateRelayMCPConfiguration(cfg Config, normaCfg runtimeconfig.RuntimeCon
 			trimmed := strings.TrimSpace(id)
 			if _, ok := removedConfigMCPServerIDs[trimmed]; ok {
 				errs = append(errs, fmt.Errorf("runtime.providers.%s.mcp_servers[%d] references removed built-in config MCP server %q; edit the balda config file directly at %q", agentName, i, id, configPath).Error())
-			} else if replacement, ok := removedBuiltInRelayMCPServerIDs[trimmed]; ok {
+			} else if replacement, ok := removedBuiltInBaldaMCPServerIDs[trimmed]; ok {
 				errs = append(errs, fmt.Errorf("runtime.providers.%s.mcp_servers[%d] references removed built-in MCP server %q; use %q", agentName, i, id, replacement).Error())
 			}
 		}
@@ -508,7 +508,7 @@ func validateSessionPersistence(raw string) (string, error) {
 	}
 }
 
-func buildJobSchedulerConfig(cfg RelayConfig) handlers.JobSchedulerConfig {
+func buildJobSchedulerConfig(cfg BaldaConfig) handlers.JobSchedulerConfig {
 	locatorAliases := make(map[string]handlers.JobLocatorAlias, len(cfg.Locators))
 	for alias, locator := range cfg.Locators {
 		trimmedAlias := strings.TrimSpace(alias)
@@ -536,7 +536,7 @@ func buildJobSchedulerConfig(cfg RelayConfig) handlers.JobSchedulerConfig {
 	}
 }
 
-func buildInboundWebhookConfig(cfg RelayConfig) handlers.InboundWebhookConfig {
+func buildInboundWebhookConfig(cfg BaldaConfig) handlers.InboundWebhookConfig {
 	locatorAliases := make(map[string]handlers.WebhookLocatorAlias, len(cfg.Locators))
 	for alias, locator := range cfg.Locators {
 		trimmedAlias := strings.TrimSpace(alias)

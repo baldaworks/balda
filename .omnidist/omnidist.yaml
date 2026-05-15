@@ -30,7 +30,7 @@ profiles:
         keywords:
           - ai
           - llm
-          - relay
+          - balda
           - telegram
           - agent
           - cli

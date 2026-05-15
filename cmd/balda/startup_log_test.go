@@ -93,7 +93,7 @@ func TestLoadBotIdentity(t *testing.T) {
 	})
 }
 
-func TestLogRelayStartup_DoesNotLogOwnerAuth(t *testing.T) {
+func TestLogBaldaStartup_DoesNotLogOwnerAuth(t *testing.T) {
 	var buf bytes.Buffer
 	prevLogger := log.Logger
 	log.Logger = zerolog.New(&buf)
@@ -101,7 +101,7 @@ func TestLogRelayStartup_DoesNotLogOwnerAuth(t *testing.T) {
 		log.Logger = prevLogger
 	})
 
-	logRelayStartup(context.Background(), "")
+	logBaldaStartup(context.Background(), "")
 
 	output := buf.String()
 	if strings.Contains(output, "token123") {

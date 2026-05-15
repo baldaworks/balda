@@ -7,18 +7,18 @@ import (
 	"strings"
 	"testing"
 
-	relayapp "github.com/normahq/balda/internal/apps/balda"
+	baldaapp "github.com/normahq/balda/internal/apps/balda"
 	"github.com/normahq/runtime/appconfig"
 )
 
-type relayTestConfigDocument struct {
+type baldaTestConfigDocument struct {
 	Runtime appconfig.RuntimeConfig `mapstructure:"runtime"`
-	Relay   relayapp.RelayConfig    `mapstructure:"balda"`
+	Balda   baldaapp.BaldaConfig    `mapstructure:"balda"`
 }
 
-const testRelayDefaultProfile = "default"
+const testBaldaDefaultProfile = "default"
 
-func TestLoadConfigDocument_AppliesProfileRelayOverrides(t *testing.T) {
+func TestLoadConfigDocument_AppliesProfileBaldaOverrides(t *testing.T) {
 	workingDir := t.TempDir()
 	t.Setenv("BALDA_TELEGRAM_WEBHOOK_ENABLED", "true")
 	t.Setenv("BALDA_TELEGRAM_PLAN_UPDATES", "true")
@@ -26,28 +26,28 @@ func TestLoadConfigDocument_AppliesProfileRelayOverrides(t *testing.T) {
 
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
   providers:
-    relay_agent:
+    balda_agent:
       type: opencode_acp
       opencode_acp:
         model: opencode/big-pickle
 profiles:
   default:
     balda:
-      provider: relay_agent
+      provider: balda_agent
       global_instruction: from profile
 balda:
   telegram:
     plan_updates: false
 `); err != nil {
-		t.Fatalf("write relay config: %v", err)
+		t.Fatalf("write balda config: %v", err)
 	}
 
-	var doc relayTestConfigDocument
+	var doc baldaTestConfigDocument
 	selectedProfile, err := appconfig.LoadConfigDocument(
-		appconfig.RuntimeLoadOptions{WorkingDir: workingDir, Profile: testRelayDefaultProfile},
+		appconfig.RuntimeLoadOptions{WorkingDir: workingDir, Profile: testBaldaDefaultProfile},
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
-			DefaultsYAML:       defaultRelayConfig,
+			DefaultsYAML:       defaultBaldaConfig,
 			UseDotConfigAppDir: true,
 		},
 		&doc,
@@ -55,25 +55,25 @@ balda:
 	if err != nil {
 		t.Fatalf("LoadConfigDocument: %v", err)
 	}
-	if selectedProfile != testRelayDefaultProfile {
-		t.Fatalf("profile = %q, want %s", selectedProfile, testRelayDefaultProfile)
+	if selectedProfile != testBaldaDefaultProfile {
+		t.Fatalf("profile = %q, want %s", selectedProfile, testBaldaDefaultProfile)
 	}
 
-	relayCfg := relayapp.Config{Relay: doc.Relay}
+	baldaCfg := baldaapp.Config{Balda: doc.Balda}
 
-	if relayCfg.Relay.Provider != "relay_agent" {
-		t.Fatalf("provider = %q, want relay_agent", relayCfg.Relay.Provider)
+	if baldaCfg.Balda.Provider != "balda_agent" {
+		t.Fatalf("provider = %q, want balda_agent", baldaCfg.Balda.Provider)
 	}
-	if relayCfg.Relay.GlobalInstruction != "from profile" {
-		t.Fatalf("global_instruction = %q, want from profile", relayCfg.Relay.GlobalInstruction)
+	if baldaCfg.Balda.GlobalInstruction != "from profile" {
+		t.Fatalf("global_instruction = %q, want from profile", baldaCfg.Balda.GlobalInstruction)
 	}
-	if !relayCfg.Relay.Telegram.Webhook.Enabled {
+	if !baldaCfg.Balda.Telegram.Webhook.Enabled {
 		t.Fatal("webhook.enabled = false, want true from env override")
 	}
-	if !relayCfg.Relay.Telegram.PlanUpdates {
+	if !baldaCfg.Balda.Telegram.PlanUpdates {
 		t.Fatal("plan_updates = false, want true from env override")
 	}
-	if relayCfg.Relay.Memory.Enabled {
+	if baldaCfg.Balda.Memory.Enabled {
 		t.Fatal("memory.enabled = true, want false from env override")
 	}
 }
@@ -83,7 +83,7 @@ func TestLoadConfigDocument_ImplicitDefaultProfileDoesNotRequireProfilesDefault(
 
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
   providers:
-    relay_agent:
+    balda_agent:
       type: opencode_acp
       opencode_acp:
         model: opencode/big-pickle
@@ -92,17 +92,17 @@ profiles:
     balda:
       provider: codex
 balda:
-  provider: relay_agent
+  provider: balda_agent
 `); err != nil {
-		t.Fatalf("write relay config: %v", err)
+		t.Fatalf("write balda config: %v", err)
 	}
 
-	var doc relayTestConfigDocument
+	var doc baldaTestConfigDocument
 	selectedProfile, err := appconfig.LoadConfigDocument(
 		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
-			DefaultsYAML:       defaultRelayConfig,
+			DefaultsYAML:       defaultBaldaConfig,
 			UseDotConfigAppDir: true,
 		},
 		&doc,
@@ -110,17 +110,17 @@ balda:
 	if err != nil {
 		t.Fatalf("LoadConfigDocument: %v", err)
 	}
-	if selectedProfile != testRelayDefaultProfile {
-		t.Fatalf("profile = %q, want %s", selectedProfile, testRelayDefaultProfile)
+	if selectedProfile != testBaldaDefaultProfile {
+		t.Fatalf("profile = %q, want %s", selectedProfile, testBaldaDefaultProfile)
 	}
-	if doc.Relay.Provider != "relay_agent" {
-		t.Fatalf("provider = %q, want relay_agent", doc.Relay.Provider)
+	if doc.Balda.Provider != "balda_agent" {
+		t.Fatalf("provider = %q, want balda_agent", doc.Balda.Provider)
 	}
-	if !doc.Relay.Memory.Enabled {
+	if !doc.Balda.Memory.Enabled {
 		t.Fatal("memory.enabled = false, want true from defaults")
 	}
-	if doc.Relay.Sessions.Persistence != "sqlite" {
-		t.Fatalf("sessions.persistence = %q, want sqlite from defaults", doc.Relay.Sessions.Persistence)
+	if doc.Balda.Sessions.Persistence != "sqlite" {
+		t.Fatalf("sessions.persistence = %q, want sqlite from defaults", doc.Balda.Sessions.Persistence)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestLoadConfigDocument_ExplicitMissingProfileFails(t *testing.T) {
 
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
   providers:
-    relay_agent:
+    balda_agent:
       type: opencode_acp
       opencode_acp:
         model: opencode/big-pickle
@@ -138,17 +138,17 @@ profiles:
     balda:
       provider: codex
 balda:
-  provider: relay_agent
+  provider: balda_agent
 `); err != nil {
-		t.Fatalf("write relay config: %v", err)
+		t.Fatalf("write balda config: %v", err)
 	}
 
-	var doc relayTestConfigDocument
+	var doc baldaTestConfigDocument
 	_, err := appconfig.LoadConfigDocument(
-		appconfig.RuntimeLoadOptions{WorkingDir: workingDir, Profile: testRelayDefaultProfile},
+		appconfig.RuntimeLoadOptions{WorkingDir: workingDir, Profile: testBaldaDefaultProfile},
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
-			DefaultsYAML:       defaultRelayConfig,
+			DefaultsYAML:       defaultBaldaConfig,
 			UseDotConfigAppDir: true,
 		},
 		&doc,

@@ -22,7 +22,7 @@ func TestWorkspaceImportDiscardsDirtyChangesAndSyncsToMaster(t *testing.T) {
 	runGit(t, ctx, workingDir, "add", "base.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-1-0"
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 	t.Cleanup(func() {
@@ -69,7 +69,7 @@ func TestWorkspaceImportRebasesCleanBranch(t *testing.T) {
 	runGit(t, ctx, workingDir, "add", "base.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-1-1"
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 	t.Cleanup(func() {
@@ -114,7 +114,7 @@ func TestWorkspaceImportUsesCurrentHeadBranchNotHardcodedMaster(t *testing.T) {
 	runGit(t, ctx, workingDir, "add", "base.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-2-1"
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 	t.Cleanup(func() {
@@ -135,7 +135,7 @@ func TestWorkspaceImportUsesCurrentHeadBranchNotHardcodedMaster(t *testing.T) {
 	}
 }
 
-func TestEnsureWorkspace_UsesStateDirRelaySessionsRoot(t *testing.T) {
+func TestEnsureWorkspace_UsesStateDirBaldaSessionsRoot(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -187,7 +187,7 @@ func TestEnsureWorkspace_RemountsExistingBranchWithoutSyncWhenImportConflicts(t 
 
 	sessionID := "tg-9-9"
 	branchName := "norma/balda/tg-9-9"
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 	t.Cleanup(func() {
 		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
@@ -235,7 +235,7 @@ func TestEnsureWorkspace_RemountsCleanBranchWithoutSyncWhenFreshMountConflicts(t
 
 	sessionID := "tg-10-10"
 	branchName := "norma/balda/tg-10-10"
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 
 	writeFile(t, filepath.Join(workspaceDir, "conflict.txt"), testWorkspaceBranchContent)
@@ -282,7 +282,7 @@ func TestWorkspaceImportAbortsRebaseOnConflict(t *testing.T) {
 	runGit(t, ctx, workingDir, "add", "conflict.txt")
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-1-2"
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 	t.Cleanup(func() {
@@ -337,7 +337,7 @@ func TestWorkspaceExportSquashMergesIntoConfiguredBaseBranch(t *testing.T) {
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 	runGit(t, ctx, workingDir, "branch", "-M", "main")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-1-3"
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "main")
 	t.Cleanup(func() {
@@ -349,7 +349,7 @@ func TestWorkspaceExportSquashMergesIntoConfiguredBaseBranch(t *testing.T) {
 	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: branch feature")
 
 	m := NewWorkspaceManager(workingDir, t.TempDir(), "main")
-	if err := m.Export(ctx, workspaceDir, branchName, "feat: export relay changes"); err != nil {
+	if err := m.Export(ctx, workspaceDir, branchName, "feat: export balda changes"); err != nil {
 		t.Fatalf("Export() error = %v", err)
 	}
 
@@ -359,8 +359,8 @@ func TestWorkspaceExportSquashMergesIntoConfiguredBaseBranch(t *testing.T) {
 	if got := strings.TrimSpace(runGit(t, ctx, workingDir, "rev-parse", "--abbrev-ref", "HEAD")); got != "main" {
 		t.Fatalf("base repo branch = %q, want main", got)
 	}
-	if got := strings.TrimSpace(runGit(t, ctx, workingDir, "log", "-1", "--pretty=%s")); got != "feat: export relay changes" {
-		t.Fatalf("last commit subject = %q, want feat: export relay changes", got)
+	if got := strings.TrimSpace(runGit(t, ctx, workingDir, "log", "-1", "--pretty=%s")); got != "feat: export balda changes" {
+		t.Fatalf("last commit subject = %q, want feat: export balda changes", got)
 	}
 }
 
@@ -376,7 +376,7 @@ func TestWorkspaceExportFailsWhenBaseBranchMismatch(t *testing.T) {
 	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 	runGit(t, ctx, workingDir, "branch", "-M", "main")
 
-	workspaceDir := filepath.Join(t.TempDir(), "relay-workspace")
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	branchName := "norma/balda/tg-1-4"
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "main")
 	t.Cleanup(func() {
@@ -390,7 +390,7 @@ func TestWorkspaceExportFailsWhenBaseBranchMismatch(t *testing.T) {
 	runGit(t, ctx, workingDir, "checkout", "-b", "develop")
 
 	m := NewWorkspaceManager(workingDir, t.TempDir(), "main")
-	err := m.Export(ctx, workspaceDir, branchName, "feat: export relay changes")
+	err := m.Export(ctx, workspaceDir, branchName, "feat: export balda changes")
 	if err == nil {
 		t.Fatal("Export() error = nil, want branch mismatch error")
 	}

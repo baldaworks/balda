@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	relaychannel "github.com/normahq/balda/internal/apps/balda/channel"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -20,20 +20,20 @@ import (
 )
 
 const (
-	relayRunTurnGenericEmptyTerminalMessage = "The provider ended the turn without a usable reply. Please try again."
-	relayRunTurnFinalAnswerText             = "final answer"
-	relayRunTurnThinkingOne                 = "Thinking."
-	relayRunTurnThinkingTwo                 = "Thinking.."
+	baldaRunTurnGenericEmptyTerminalMessage = "The provider ended the turn without a usable reply. Please try again."
+	baldaRunTurnFinalAnswerText             = "final answer"
+	baldaRunTurnThinkingOne                 = "Thinking."
+	baldaRunTurnThinkingTwo                 = "Thinking.."
 )
 
-type relayRunTurnTelegramClient struct {
+type baldaRunTurnTelegramClient struct {
 	client.ClientWithResponsesInterface
 	drafts      []client.SendMessageDraftJSONRequestBody
 	messages    []client.SendMessageJSONRequestBody
 	chatActions []client.SendChatActionJSONRequestBody
 }
 
-func (c *relayRunTurnTelegramClient) SendMessageWithResponse(
+func (c *baldaRunTurnTelegramClient) SendMessageWithResponse(
 	_ context.Context,
 	body client.SendMessageJSONRequestBody,
 	_ ...client.RequestEditorFn,
@@ -51,7 +51,7 @@ func (c *relayRunTurnTelegramClient) SendMessageWithResponse(
 	}, nil
 }
 
-func (c *relayRunTurnTelegramClient) SendMessageDraftWithResponse(
+func (c *baldaRunTurnTelegramClient) SendMessageDraftWithResponse(
 	_ context.Context,
 	body client.SendMessageDraftJSONRequestBody,
 	_ ...client.RequestEditorFn,
@@ -69,7 +69,7 @@ func (c *relayRunTurnTelegramClient) SendMessageDraftWithResponse(
 	}, nil
 }
 
-func (c *relayRunTurnTelegramClient) SendChatActionWithResponse(
+func (c *baldaRunTurnTelegramClient) SendChatActionWithResponse(
 	_ context.Context,
 	body client.SendChatActionJSONRequestBody,
 	_ ...client.RequestEditorFn,
@@ -87,7 +87,7 @@ func (c *relayRunTurnTelegramClient) SendChatActionWithResponse(
 	}, nil
 }
 
-func relayRunTurnDraftText(t *testing.T, draft client.SendMessageDraftJSONRequestBody) string {
+func baldaRunTurnDraftText(t *testing.T, draft client.SendMessageDraftJSONRequestBody) string {
 	t.Helper()
 	if draft.Text == nil {
 		t.Fatal("draft text is nil")
@@ -95,7 +95,7 @@ func relayRunTurnDraftText(t *testing.T, draft client.SendMessageDraftJSONReques
 	return *draft.Text
 }
 
-func newRelayPlanSnapshot(entries ...map[string]any) map[string]any {
+func newBaldaPlanSnapshot(entries ...map[string]any) map[string]any {
 	return map[string]any{
 		"entries": entries,
 	}
@@ -104,28 +104,28 @@ func newRelayPlanSnapshot(entries ...map[string]any) map[string]any {
 func TestRunTurn_SendsPlanUpdateDraftFromCustomMetadataInDM(t *testing.T) {
 	t.Parallel()
 
-	h, tgClient := newRelayRunTurnTestHandler(t, false)
+	h, tgClient := newBaldaRunTurnTestHandler(t, false)
 	h.planUpdatesEnabled = true
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(invocationID)
 		plan.Partial = true
 		plan.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
-			"acp_plan": newRelayPlanSnapshot(
+			"acp_plan": newBaldaPlanSnapshot(
 				map[string]any{"content": "Run tests", "status": "in_progress", "priority": "medium"},
 				map[string]any{"content": "Ship fix", "status": "pending", "priority": "high"},
 			),
 		}
 
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.TurnComplete = true
 
 		return []*adksession.Event{plan, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true, Thinking: true}
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -133,13 +133,13 @@ func TestRunTurn_SendsPlanUpdateDraftFromCustomMetadataInDM(t *testing.T) {
 	if len(tgClient.drafts) != 1 {
 		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
 	}
-	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != "Plan update\n- [in progress] Run tests\n- [pending] Ship fix" {
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != "Plan update\n- [in progress] Run tests\n- [pending] Ship fix" {
 		t.Fatalf("draft[0].text = %q, want plan update text", got)
 	}
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnFinalAnswerText {
+	if got := tgClient.messages[0].Text; got != baldaRunTurnFinalAnswerText {
 		t.Fatalf("message text = %q, want final answer", got)
 	}
 }
@@ -147,21 +147,21 @@ func TestRunTurn_SendsPlanUpdateDraftFromCustomMetadataInDM(t *testing.T) {
 func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunner(t)
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true, Thinking: true}
+	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -169,8 +169,8 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 	if len(tgClient.drafts) != 1 {
 		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
 	}
-	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
+		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
 	}
 	for i, draft := range tgClient.drafts {
 		if draft.MessageThreadId == nil || *draft.MessageThreadId != 77 {
@@ -196,7 +196,7 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if !strings.Contains(tgClient.messages[0].Text, relayRunTurnFinalAnswerText) {
+	if !strings.Contains(tgClient.messages[0].Text, baldaRunTurnFinalAnswerText) {
 		t.Fatalf("message text = %q, want to contain final answer", tgClient.messages[0].Text)
 	}
 	if tgClient.messages[0].ParseMode == nil || *tgClient.messages[0].ParseMode != "MarkdownV2" {
@@ -207,21 +207,21 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 func TestRunTurn_SkipsTypingAndDraftWhenAllProgressDisabled(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunner(t)
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
@@ -234,7 +234,7 @@ func TestRunTurn_SkipsTypingAndDraftWhenAllProgressDisabled(t *testing.T) {
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if !strings.Contains(tgClient.messages[0].Text, relayRunTurnFinalAnswerText) {
+	if !strings.Contains(tgClient.messages[0].Text, baldaRunTurnFinalAnswerText) {
 		t.Fatalf("message text = %q, want to contain final answer", tgClient.messages[0].Text)
 	}
 }
@@ -242,21 +242,21 @@ func TestRunTurn_SkipsTypingAndDraftWhenAllProgressDisabled(t *testing.T) {
 func TestRunTurn_SendsTypingWithoutThinkingDraftInPublicChat(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunner(t)
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true, Thinking: false}
+	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -277,35 +277,35 @@ func TestRunTurn_SendsTypingWithoutThinkingDraftInPublicChat(t *testing.T) {
 func TestRunTurn_SendsPlanUpdateMessagesInPublicChat(t *testing.T) {
 	t.Parallel()
 
-	h, tgClient := newRelayRunTurnTestHandler(t, true)
+	h, tgClient := newBaldaRunTurnTestHandler(t, true)
 	h.planUpdatesEnabled = true
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		planOne := adksession.NewEvent(invocationID)
 		planOne.Partial = true
 		planOne.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
-			"acp_plan":        newRelayPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
+			"acp_plan":        newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
 		}
 
 		planTwo := adksession.NewEvent(invocationID)
 		planTwo.Partial = true
 		planTwo.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
-			"acp_plan": newRelayPlanSnapshot(
+			"acp_plan": newBaldaPlanSnapshot(
 				map[string]any{"content": "Run tests", "status": "completed"},
 				map[string]any{"content": "Ship fix", "status": "in_progress"},
 			),
 		}
 
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.TurnComplete = true
 
 		return []*adksession.Event{planOne, planTwo, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true}
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -322,7 +322,7 @@ func TestRunTurn_SendsPlanUpdateMessagesInPublicChat(t *testing.T) {
 	if got := tgClient.messages[1].Text; got != "Plan update\n- [completed] Run tests\n- [in progress] Ship fix" {
 		t.Fatalf("messages[1].text = %q, want second plan update", got)
 	}
-	if got := tgClient.messages[2].Text; got != relayRunTurnFinalAnswerText {
+	if got := tgClient.messages[2].Text; got != baldaRunTurnFinalAnswerText {
 		t.Fatalf("messages[2].text = %q, want final answer", got)
 	}
 	if tgClient.messages[0].ParseMode != nil || tgClient.messages[1].ParseMode != nil {
@@ -333,20 +333,20 @@ func TestRunTurn_SendsPlanUpdateMessagesInPublicChat(t *testing.T) {
 func TestRunTurn_SendsProgressAndGenericMessageForNonThoughtEventsWithoutFinalReply(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		toolCall := adksession.NewEvent(invocationID)
 		toolCall.Content = &genai.Content{
 			Role: genai.RoleModel,
@@ -364,8 +364,8 @@ func TestRunTurn_SendsProgressAndGenericMessageForNonThoughtEventsWithoutFinalRe
 
 		return []*adksession.Event{toolCall, partial, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true}
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -379,17 +379,17 @@ func TestRunTurn_SendsProgressAndGenericMessageForNonThoughtEventsWithoutFinalRe
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnGenericEmptyTerminalMessage {
-		t.Fatalf("message text = %q, want %q", got, relayRunTurnGenericEmptyTerminalMessage)
+	if got := tgClient.messages[0].Text; got != baldaRunTurnGenericEmptyTerminalMessage {
+		t.Fatalf("message text = %q, want %q", got, baldaRunTurnGenericEmptyTerminalMessage)
 	}
 }
 
 func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
@@ -401,7 +401,7 @@ func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 		baseTime.Add(telegramProgressThrottleInterval),
 	}
 	timeIdx := 0
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 		now: func() time.Time {
@@ -414,9 +414,9 @@ func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 		},
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunner(t)
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true}
+	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -432,9 +432,9 @@ func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
@@ -446,7 +446,7 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 		baseTime.Add(telegramProgressThrottleInterval),
 	}
 	timeIdx := 0
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 		now: func() time.Time {
@@ -459,9 +459,9 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 		},
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunner(t)
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Thinking: true}
+	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Thinking: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -469,11 +469,11 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 	if len(tgClient.drafts) != 2 {
 		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
 	}
-	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
+		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
 	}
-	if got := relayRunTurnDraftText(t, tgClient.drafts[1]); got != relayRunTurnThinkingTwo {
-		t.Fatalf("draft[1].text = %q, want %s", got, relayRunTurnThinkingTwo)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[1]); got != baldaRunTurnThinkingTwo {
+		t.Fatalf("draft[1].text = %q, want %s", got, baldaRunTurnThinkingTwo)
 	}
 	if timeIdx != len(times) {
 		t.Fatalf("clock calls = %d, want %d", timeIdx, len(times))
@@ -483,9 +483,9 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
@@ -497,7 +497,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		baseTime.Add(2 * telegramProgressThrottleInterval),
 	}
 	timeIdx := 0
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel:            channel,
 		logger:             zerolog.Nop(),
 		planUpdatesEnabled: true,
@@ -511,7 +511,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		},
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		thought := adksession.NewEvent(invocationID)
 		thought.Partial = true
 		thought.Content = &genai.Content{
@@ -523,7 +523,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		plan.Partial = true
 		plan.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
-			"acp_plan":        newRelayPlanSnapshot(map[string]any{"content": "Run tests", "status": "in_progress"}),
+			"acp_plan":        newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "in_progress"}),
 		}
 
 		thoughtTwo := adksession.NewEvent(invocationID)
@@ -534,13 +534,13 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		}
 
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.TurnComplete = true
 
 		return []*adksession.Event{thought, plan, thoughtTwo, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Thinking: true}
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Thinking: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -548,10 +548,10 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 	if len(tgClient.drafts) != 2 {
 		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
 	}
-	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
+		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
 	}
-	if got := relayRunTurnDraftText(t, tgClient.drafts[1]); got != "Plan update\n- [in progress] Run tests" {
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[1]); got != "Plan update\n- [in progress] Run tests" {
 		t.Fatalf("draft[1].text = %q, want plan update text", got)
 	}
 }
@@ -559,22 +559,22 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 func TestRunTurn_SendsFinalResponseWithoutParseModeWhenConfiguredNone(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunner(t)
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
@@ -589,40 +589,40 @@ func TestRunTurn_SendsFinalResponseWithoutParseModeWhenConfiguredNone(t *testing
 func TestRunTurn_SkipsExactDuplicateFinalAfterStreamedText(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		partial := adksession.NewEvent(invocationID)
 		partial.Partial = true
-		partial.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		partial.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 
 		final := adksession.NewEvent(invocationID)
-		final.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		final.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 
 		done := adksession.NewEvent(invocationID)
 		done.TurnComplete = true
 
 		return []*adksession.Event{partial, final, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := strings.TrimSpace(tgClient.messages[0].Text); got != relayRunTurnFinalAnswerText {
+	if got := strings.TrimSpace(tgClient.messages[0].Text); got != baldaRunTurnFinalAnswerText {
 		t.Fatalf("message text = %q, want final answer", tgClient.messages[0].Text)
 	}
 }
@@ -630,20 +630,20 @@ func TestRunTurn_SkipsExactDuplicateFinalAfterStreamedText(t *testing.T) {
 func TestRunTurn_MergesFinalResponseDeltaChunksOnTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		chunkOne := adksession.NewEvent(invocationID)
 		chunkOne.Content = genai.NewContentFromText("Пункт списка1\n", genai.RoleModel)
 
@@ -658,8 +658,8 @@ func TestRunTurn_MergesFinalResponseDeltaChunksOnTurnComplete(t *testing.T) {
 
 		return []*adksession.Event{chunkOne, chunkTwo, chunkThree, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
@@ -675,20 +675,20 @@ func TestRunTurn_MergesFinalResponseDeltaChunksOnTurnComplete(t *testing.T) {
 func TestRunTurn_AppendsFinalResponseTextEventsOnTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		chunkOne := adksession.NewEvent(invocationID)
 		chunkOne.Content = genai.NewContentFromText("Doing", genai.RoleModel)
 
@@ -703,8 +703,8 @@ func TestRunTurn_AppendsFinalResponseTextEventsOnTurnComplete(t *testing.T) {
 
 		return []*adksession.Event{chunkOne, chunkTwo, chunkThree, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
@@ -719,19 +719,19 @@ func TestRunTurn_AppendsFinalResponseTextEventsOnTurnComplete(t *testing.T) {
 func TestRunTurn_SendsGenericMessageWhenOnlyNonFinalTextExistsOnTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		nonFinalOne := adksession.NewEvent(invocationID)
 		nonFinalOne.Content = &genai.Content{
 			Role: genai.RoleModel,
@@ -755,36 +755,36 @@ func TestRunTurn_SendsGenericMessageWhenOnlyNonFinalTextExistsOnTurnComplete(t *
 
 		return []*adksession.Event{nonFinalOne, nonFinalTwo, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnGenericEmptyTerminalMessage {
-		t.Fatalf("message text = %q, want %q", got, relayRunTurnGenericEmptyTerminalMessage)
+	if got := tgClient.messages[0].Text; got != baldaRunTurnGenericEmptyTerminalMessage {
+		t.Fatalf("message text = %q, want %q", got, baldaRunTurnGenericEmptyTerminalMessage)
 	}
 }
 
 func TestRunTurn_DoesNotLeakNonFinalProgressTextInPublicChat(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		progressOne := adksession.NewEvent(invocationID)
 		progressOne.Content = &genai.Content{
 			Role: genai.RoleModel,
@@ -811,8 +811,8 @@ func TestRunTurn_DoesNotLeakNonFinalProgressTextInPublicChat(t *testing.T) {
 
 		return []*adksession.Event{progressOne, progressTwo, final, done}
 	})
-	locator := relaytelegram.NewLocator(-5173524191, 0)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true}
+	locator := baldatelegram.NewLocator(-5173524191, 0)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
 	if err := h.runTurn(context.Background(), "approve PR", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -838,20 +838,20 @@ func TestRunTurn_DoesNotLeakNonFinalProgressTextInPublicChat(t *testing.T) {
 func TestRunTurn_SendsFinalTextFromTurnCompleteEvent(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		progress := adksession.NewEvent(invocationID)
 		progress.Partial = true
 		progress.Content = genai.NewContentFromText("working...", genai.RoleModel)
@@ -873,21 +873,21 @@ func TestRunTurn_SendsFinalTextFromTurnCompleteEvent(t *testing.T) {
 		}
 
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.FinishReason = genai.FinishReasonStop
 		done.TurnComplete = true
 
 		return []*adksession.Event{progress, toolUpdate, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnFinalAnswerText {
+	if got := tgClient.messages[0].Text; got != baldaRunTurnFinalAnswerText {
 		t.Fatalf("message text = %q, want final answer", got)
 	}
 }
@@ -895,22 +895,22 @@ func TestRunTurn_SendsFinalTextFromTurnCompleteEvent(t *testing.T) {
 func TestRunTurn_UsesLegacyPlanStateDeltaFallback(t *testing.T) {
 	t.Parallel()
 
-	h, tgClient := newRelayRunTurnTestHandler(t, true)
+	h, tgClient := newBaldaRunTurnTestHandler(t, true)
 	h.planUpdatesEnabled = true
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(invocationID)
 		plan.Partial = true
-		plan.Actions.StateDelta["acp_plan"] = newRelayPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"})
+		plan.Actions.StateDelta["acp_plan"] = newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"})
 
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.TurnComplete = true
 
 		return []*adksession.Event{plan, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true}
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -926,32 +926,32 @@ func TestRunTurn_UsesLegacyPlanStateDeltaFallback(t *testing.T) {
 func TestRunTurn_DeduplicatesRepeatedPlanUpdates(t *testing.T) {
 	t.Parallel()
 
-	h, tgClient := newRelayRunTurnTestHandler(t, true)
+	h, tgClient := newBaldaRunTurnTestHandler(t, true)
 	h.planUpdatesEnabled = true
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		planOne := adksession.NewEvent(invocationID)
 		planOne.Partial = true
 		planOne.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
-			"acp_plan":        newRelayPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
+			"acp_plan":        newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
 		}
 
 		planTwo := adksession.NewEvent(invocationID)
 		planTwo.Partial = true
 		planTwo.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
-			"acp_plan":        newRelayPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
+			"acp_plan":        newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
 		}
 
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.TurnComplete = true
 
 		return []*adksession.Event{planOne, planTwo, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Typing: true}
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -964,25 +964,25 @@ func TestRunTurn_DeduplicatesRepeatedPlanUpdates(t *testing.T) {
 func TestRunTurn_PlanUpdatesDisabledKeepsLegacyThinkingBehavior(t *testing.T) {
 	t.Parallel()
 
-	h, tgClient := newRelayRunTurnTestHandler(t, true)
+	h, tgClient := newBaldaRunTurnTestHandler(t, true)
 	h.planUpdatesEnabled = false
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(invocationID)
 		plan.Partial = true
 		plan.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
-			"acp_plan":        newRelayPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
+			"acp_plan":        newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "pending"}),
 		}
 
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.TurnComplete = true
 
 		return []*adksession.Event{plan, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	progressPolicy := relaychannel.ProgressPolicy{Thinking: true}
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Thinking: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -990,8 +990,8 @@ func TestRunTurn_PlanUpdatesDisabledKeepsLegacyThinkingBehavior(t *testing.T) {
 	if len(tgClient.drafts) != 1 {
 		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
 	}
-	if got := relayRunTurnDraftText(t, tgClient.drafts[0]); got != relayRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, relayRunTurnThinkingOne)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
+		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
 	}
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
@@ -1001,26 +1001,26 @@ func TestRunTurn_PlanUpdatesDisabledKeepsLegacyThinkingBehavior(t *testing.T) {
 func TestRunTurn_DoesNotSendWithoutTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		final := adksession.NewEvent(invocationID)
-		final.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		final.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		return []*adksession.Event{final}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
@@ -1032,20 +1032,20 @@ func TestRunTurn_DoesNotSendWithoutTurnComplete(t *testing.T) {
 func TestRunTurn_SendsGenericMessageWhenOnlyPartialTextExistsOnTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		partialOne := adksession.NewEvent(invocationID)
 		partialOne.Partial = true
 		partialOne.Content = genai.NewContentFromText("Doing", genai.RoleModel)
@@ -1059,36 +1059,36 @@ func TestRunTurn_SendsGenericMessageWhenOnlyPartialTextExistsOnTurnComplete(t *t
 
 		return []*adksession.Event{partialOne, partialTwo, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnGenericEmptyTerminalMessage {
-		t.Fatalf("message text = %q, want %q", got, relayRunTurnGenericEmptyTerminalMessage)
+	if got := tgClient.messages[0].Text; got != baldaRunTurnGenericEmptyTerminalMessage {
+		t.Fatalf("message text = %q, want %q", got, baldaRunTurnGenericEmptyTerminalMessage)
 	}
 }
 
 func TestRunTurn_SendsGenericMessageWhenOnlyPartialMarkdownChunksExistOnTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		partialOne := adksession.NewEvent(invocationID)
 		partialOne.Partial = true
 		partialOne.Content = genai.NewContentFromText("**Статус задачи**", genai.RoleModel)
@@ -1106,36 +1106,36 @@ func TestRunTurn_SendsGenericMessageWhenOnlyPartialMarkdownChunksExistOnTurnComp
 
 		return []*adksession.Event{partialOne, partialTwo, partialThree, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnGenericEmptyTerminalMessage {
-		t.Fatalf("message text = %q, want %q", got, relayRunTurnGenericEmptyTerminalMessage)
+	if got := tgClient.messages[0].Text; got != baldaRunTurnGenericEmptyTerminalMessage {
+		t.Fatalf("message text = %q, want %q", got, baldaRunTurnGenericEmptyTerminalMessage)
 	}
 }
 
 func TestRunTurn_SendsGenericMessageWhenOnlyThoughtOrPartialTextExistsOnTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	h := &RelayHandler{
+	h := &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		thought := adksession.NewEvent(invocationID)
 		thought.Partial = true
 		thought.Content = &genai.Content{
@@ -1154,16 +1154,16 @@ func TestRunTurn_SendsGenericMessageWhenOnlyThoughtOrPartialTextExistsOnTurnComp
 
 		return []*adksession.Event{thought, partial, done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnGenericEmptyTerminalMessage {
-		t.Fatalf("message text = %q, want %q", got, relayRunTurnGenericEmptyTerminalMessage)
+	if got := tgClient.messages[0].Text; got != baldaRunTurnGenericEmptyTerminalMessage {
+		t.Fatalf("message text = %q, want %q", got, baldaRunTurnGenericEmptyTerminalMessage)
 	}
 }
 
@@ -1175,14 +1175,14 @@ func TestRunTurn_SendsFinishReasonMessageOnEmptyTurnComplete(t *testing.T) {
 		finishReason genai.FinishReason
 		want         string
 	}{
-		{name: "empty", finishReason: genai.FinishReason(""), want: relayRunTurnGenericEmptyTerminalMessage},
-		{name: "unspecified", finishReason: genai.FinishReasonUnspecified, want: relayRunTurnGenericEmptyTerminalMessage},
-		{name: "stop", finishReason: genai.FinishReasonStop, want: relayRunTurnGenericEmptyTerminalMessage},
+		{name: "empty", finishReason: genai.FinishReason(""), want: baldaRunTurnGenericEmptyTerminalMessage},
+		{name: "unspecified", finishReason: genai.FinishReasonUnspecified, want: baldaRunTurnGenericEmptyTerminalMessage},
+		{name: "stop", finishReason: genai.FinishReasonStop, want: baldaRunTurnGenericEmptyTerminalMessage},
 		{name: "max tokens", finishReason: genai.FinishReasonMaxTokens, want: "The provider hit the output limit before producing a visible reply. Ask for a shorter answer or split the request."},
 		{name: "safety", finishReason: genai.FinishReasonSafety, want: "The provider blocked this turn for safety reasons. Please rephrase and try again."},
 		{name: "recitation", finishReason: genai.FinishReasonRecitation, want: "The provider blocked this turn because it may reproduce protected source material. Please rephrase and try again."},
 		{name: "language", finishReason: genai.FinishReasonLanguage, want: "The provider could not answer because the request used an unsupported language. Please rephrase in a supported language and try again."},
-		{name: "other", finishReason: genai.FinishReasonOther, want: relayRunTurnGenericEmptyTerminalMessage},
+		{name: "other", finishReason: genai.FinishReasonOther, want: baldaRunTurnGenericEmptyTerminalMessage},
 		{name: "blocklist", finishReason: genai.FinishReasonBlocklist, want: "The provider blocked this turn because it matched restricted terms. Please rephrase and try again."},
 		{name: "prohibited content", finishReason: genai.FinishReasonProhibitedContent, want: "The provider rejected this turn as prohibited content. Please rephrase and try again."},
 		{name: "spii", finishReason: genai.FinishReasonSPII, want: "The provider blocked this turn because it may contain sensitive personal information. Please remove that information and try again."},
@@ -1193,23 +1193,23 @@ func TestRunTurn_SendsFinishReasonMessageOnEmptyTurnComplete(t *testing.T) {
 		{name: "no image", finishReason: genai.FinishReasonNoImage, want: "The provider completed the turn without returning an image. Please try a different request."},
 		{name: "image recitation", finishReason: genai.FinishReasonImageRecitation, want: "The provider blocked image generation because it may reproduce protected source material. Please try a different request."},
 		{name: "image other", finishReason: genai.FinishReasonImageOther, want: "The provider ended image generation without a usable result. Please try again."},
-		{name: "unknown", finishReason: genai.FinishReason("MYSTERY"), want: relayRunTurnGenericEmptyTerminalMessage},
+		{name: "unknown", finishReason: genai.FinishReason("MYSTERY"), want: baldaRunTurnGenericEmptyTerminalMessage},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			h, tgClient := newRelayRunTurnTestHandler(t, false)
-			adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+			h, tgClient := newBaldaRunTurnTestHandler(t, false)
+			adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 				done := adksession.NewEvent(invocationID)
 				done.FinishReason = tt.finishReason
 				done.TurnComplete = true
 
 				return []*adksession.Event{done}
 			})
-			locator := relaytelegram.NewLocator(9001, 77)
-			if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+			locator := baldatelegram.NewLocator(9001, 77)
+			if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 				t.Fatalf("runTurn() error = %v", err)
 			}
 
@@ -1229,11 +1229,11 @@ func TestRunTurn_SendsFinishReasonMessageOnEmptyTurnComplete(t *testing.T) {
 func TestRunTurn_AppendsProviderMessageExcerptForEmptyTurnComplete(t *testing.T) {
 	t.Parallel()
 
-	h, tgClient := newRelayRunTurnTestHandler(t, false)
+	h, tgClient := newBaldaRunTurnTestHandler(t, false)
 	rawMessage := "line   one\nline\t two   " + strings.Repeat("x", 400)
 	expectedExcerpt := "line one line two " + strings.Repeat("x", 282)
 
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		done := adksession.NewEvent(invocationID)
 		done.FinishReason = genai.FinishReasonProhibitedContent
 		done.ErrorMessage = rawMessage
@@ -1241,8 +1241,8 @@ func TestRunTurn_AppendsProviderMessageExcerptForEmptyTurnComplete(t *testing.T)
 
 		return []*adksession.Event{done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
@@ -1258,32 +1258,32 @@ func TestRunTurn_AppendsProviderMessageExcerptForEmptyTurnComplete(t *testing.T)
 func TestRunTurn_DoesNotAppendFinishReasonMessageWhenFinalTextExists(t *testing.T) {
 	t.Parallel()
 
-	h, tgClient := newRelayRunTurnTestHandler(t, true)
-	adkRunner, sessionID := newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	h, tgClient := newBaldaRunTurnTestHandler(t, true)
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		done := adksession.NewEvent(invocationID)
-		done.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 		done.FinishReason = genai.FinishReasonMaxTokens
 		done.TurnComplete = true
 
 		return []*adksession.Event{done}
 	})
-	locator := relaytelegram.NewLocator(9001, 77)
-	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, relaychannel.ProgressPolicy{}); err != nil {
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	if got := tgClient.messages[0].Text; got != relayRunTurnFinalAnswerText {
+	if got := tgClient.messages[0].Text; got != baldaRunTurnFinalAnswerText {
 		t.Fatalf("message text = %q, want final answer", got)
 	}
 }
 
-func newRelayRunTurnTestRunner(t *testing.T) (*runner.Runner, string) {
+func newBaldaRunTurnTestRunner(t *testing.T) (*runner.Runner, string) {
 	t.Helper()
 
-	return newRelayRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+	return newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		thoughtOne := adksession.NewEvent(invocationID)
 		thoughtOne.Content = &genai.Content{
 			Role:  genai.RoleModel,
@@ -1297,7 +1297,7 @@ func newRelayRunTurnTestRunner(t *testing.T) (*runner.Runner, string) {
 		}
 
 		reply := adksession.NewEvent(invocationID)
-		reply.Content = genai.NewContentFromText(relayRunTurnFinalAnswerText, genai.RoleModel)
+		reply.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
 
 		done := adksession.NewEvent(invocationID)
 		done.TurnComplete = true
@@ -1306,35 +1306,35 @@ func newRelayRunTurnTestRunner(t *testing.T) (*runner.Runner, string) {
 	})
 }
 
-func newRelayRunTurnTestHandler(t *testing.T, agentReplyFormattingNone bool) (*RelayHandler, *relayRunTurnTelegramClient) {
+func newBaldaRunTurnTestHandler(t *testing.T, agentReplyFormattingNone bool) (*BaldaHandler, *baldaRunTurnTelegramClient) {
 	t.Helper()
 
-	tgClient := &relayRunTurnTelegramClient{}
+	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	if agentReplyFormattingNone {
 		msg.SetAgentReplyFormattingMode("none")
 	}
-	channel := relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
 
-	return &RelayHandler{
+	return &BaldaHandler{
 		channel: channel,
 		logger:  zerolog.Nop(),
 	}, tgClient
 }
 
-func newRelayRunTurnTestRunnerWithEvents(
+func newBaldaRunTurnTestRunnerWithEvents(
 	t *testing.T,
 	eventsFn func(invocationID string) []*adksession.Event,
 ) (*runner.Runner, string) {
 	t.Helper()
 
-	relayAgent, err := adkagent.New(adkagent.Config{
-		Name:        "RelayRunTurnTestAgent",
-		Description: "Emits scripted events for relay runTurn tests",
+	baldaAgent, err := adkagent.New(adkagent.Config{
+		Name:        "BaldaRunTurnTestAgent",
+		Description: "Emits scripted events for balda runTurn tests",
 		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
 				for _, ev := range eventsFn(ctx.InvocationID()) {
@@ -1351,8 +1351,8 @@ func newRelayRunTurnTestRunnerWithEvents(
 
 	sessionService := adksession.InMemoryService()
 	adkRunner, err := runner.New(runner.Config{
-		AppName:        "relay-run-turn-test",
-		Agent:          relayAgent,
+		AppName:        "balda-run-turn-test",
+		Agent:          baldaAgent,
 		SessionService: sessionService,
 	})
 	if err != nil {
@@ -1360,7 +1360,7 @@ func newRelayRunTurnTestRunnerWithEvents(
 	}
 
 	sess, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
-		AppName: "relay-run-turn-test",
+		AppName: "balda-run-turn-test",
 		UserID:  "tg-101",
 	})
 	if err != nil {

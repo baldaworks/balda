@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/rs/zerolog"
 )
 
@@ -180,7 +180,7 @@ func TestTurnDispatcher_CancelSessionClearsPendingAndCancelsRunning(t *testing.T
 		t.Fatalf("Enqueue(pending) error = %v", err)
 	}
 
-	hadInFlight, dropped, err := dispatcher.CancelSession(relaytelegram.NewLocator(3, 0), true)
+	hadInFlight, dropped, err := dispatcher.CancelSession(baldatelegram.NewLocator(3, 0), true)
 	if err != nil {
 		t.Fatalf("CancelSession() error = %v", err)
 	}

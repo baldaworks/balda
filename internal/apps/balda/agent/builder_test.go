@@ -54,7 +54,7 @@ func TestMergeMCPServerIDs(t *testing.T) {
 	}
 }
 
-func TestBuildRelayInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{
@@ -65,10 +65,10 @@ func TestBuildRelayInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
 				},
 			},
 		},
-		relayGlobalInstruction: "balda instruction",
+		baldaGlobalInstruction: "balda instruction",
 	}
 
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -79,7 +79,7 @@ func TestBuildRelayInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
 
 	wantSnippet := "Global instruction:\nbalda instruction\n\nInstruction:\nnorma instruction"
 	if !strings.Contains(got, wantSnippet) {
-		t.Fatalf("buildRelayInstruction() missing snippet %q in output:\n%s", wantSnippet, got)
+		t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", wantSnippet, got)
 	}
 }
 
@@ -104,11 +104,11 @@ func TestProviderIDs(t *testing.T) {
 	}
 }
 
-func TestBuildRelayInstruction_OmitsInstructionSectionsWhenEmpty(t *testing.T) {
+func TestBuildBaldaInstruction_OmitsInstructionSectionsWhenEmpty(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{}
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -118,17 +118,17 @@ func TestBuildRelayInstruction_OmitsInstructionSectionsWhenEmpty(t *testing.T) {
 	)
 
 	if strings.Contains(got, "Global instruction:") || strings.Contains(got, "Instruction:") {
-		t.Fatalf("buildRelayInstruction() unexpectedly contained instruction block:\n%s", got)
+		t.Fatalf("buildBaldaInstruction() unexpectedly contained instruction block:\n%s", got)
 	}
 }
 
-func TestBuildRelayInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{
 		memoryStore: memory.NewStore(t.TempDir(), true),
 	}
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -138,26 +138,26 @@ func TestBuildRelayInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.
 	)
 
 	for _, snippet := range []string{
-		"SOUL.md session-start instructions:\n{relay_soul?}",
+		"SOUL.md session-start instructions:\n{balda_soul?}",
 		"Memory guidance:",
 		"balda.memory.remember",
 		"explicitly asks you to remember/save",
 		"future sessions after start/restore",
-		"MEMORY.md session-start facts:\n{relay_memory?}",
+		"MEMORY.md session-start facts:\n{balda_memory?}",
 	} {
 		if !strings.Contains(got, snippet) {
-			t.Fatalf("buildRelayInstruction() missing snippet %q in output:\n%s", snippet, got)
+			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
 		}
 	}
 }
 
-func TestBuildRelayInstruction_ExcludesMemoryWhenDisabled(t *testing.T) {
+func TestBuildBaldaInstruction_ExcludesMemoryWhenDisabled(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{
 		memoryStore: memory.NewStore(t.TempDir(), false),
 	}
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -166,22 +166,22 @@ func TestBuildRelayInstruction_ExcludesMemoryWhenDisabled(t *testing.T) {
 		"main",
 	)
 
-	if !strings.Contains(got, "SOUL.md session-start instructions:\n{relay_soul?}") {
-		t.Fatalf("buildRelayInstruction() missing SOUL placeholder in output:\n%s", got)
+	if !strings.Contains(got, "SOUL.md session-start instructions:\n{balda_soul?}") {
+		t.Fatalf("buildBaldaInstruction() missing SOUL placeholder in output:\n%s", got)
 	}
 	for _, forbidden := range []string{
 		"Memory guidance:",
 		"balda.memory.remember",
 		"MEMORY.md session-start facts:",
-		"{relay_memory?}",
+		"{balda_memory?}",
 	} {
 		if strings.Contains(got, forbidden) {
-			t.Fatalf("buildRelayInstruction() contained %q with memory disabled:\n%s", forbidden, got)
+			t.Fatalf("buildBaldaInstruction() contained %q with memory disabled:\n%s", forbidden, got)
 		}
 	}
 }
 
-func TestBuildRelayInstruction_IncludesGitWorkspaceContext(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesGitWorkspaceContext(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{
@@ -190,7 +190,7 @@ func TestBuildRelayInstruction_IncludesGitWorkspaceContext(t *testing.T) {
 		workingDir:          "/repo",
 	}
 
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -212,19 +212,19 @@ func TestBuildRelayInstruction_IncludesGitWorkspaceContext(t *testing.T) {
 	}
 	for _, snippet := range wantSnippets {
 		if !strings.Contains(got, snippet) {
-			t.Fatalf("buildRelayInstruction() missing snippet %q in output:\n%s", snippet, got)
+			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
 		}
 	}
 	if strings.Contains(got, "ask one short clarifying question") {
-		t.Fatalf("buildRelayInstruction() unexpectedly included clarification mandate:\n%s", got)
+		t.Fatalf("buildBaldaInstruction() unexpectedly included clarification mandate:\n%s", got)
 	}
 }
 
-func TestBuildRelayInstruction_IncludesDirectModeSettingsWhenWorkspaceDisabled(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesDirectModeSettingsWhenWorkspaceDisabled(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{workspaceEnabled: false, workingDir: "/repo"}
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -244,23 +244,23 @@ func TestBuildRelayInstruction_IncludesDirectModeSettingsWhenWorkspaceDisabled(t
 	}
 	for _, snippet := range wantSnippets {
 		if !strings.Contains(got, snippet) {
-			t.Fatalf("buildRelayInstruction() missing snippet %q in output:\n%s", snippet, got)
+			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
 		}
 	}
 
 	if strings.Contains(got, "Git workspace guidance:") {
-		t.Fatalf("buildRelayInstruction() unexpectedly included git guidance in direct mode:\n%s", got)
+		t.Fatalf("buildBaldaInstruction() unexpectedly included git guidance in direct mode:\n%s", got)
 	}
 	if strings.Contains(got, "Available namespaces:") {
-		t.Fatalf("buildRelayInstruction() unexpectedly included generic MCP namespace docs:\n%s", got)
+		t.Fatalf("buildBaldaInstruction() unexpectedly included generic MCP namespace docs:\n%s", got)
 	}
 }
 
-func TestBuildRelayInstruction_IncludesFormattingGuidance_DefaultMarkdownV2(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesFormattingGuidance_DefaultMarkdownV2(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{}
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -276,19 +276,19 @@ func TestBuildRelayInstruction_IncludesFormattingGuidance_DefaultMarkdownV2(t *t
 	}
 	for _, snippet := range wantSnippets {
 		if !strings.Contains(got, snippet) {
-			t.Fatalf("buildRelayInstruction() missing snippet %q in output:\n%s", snippet, got)
+			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
 		}
 	}
 	if strings.Contains(got, "core.telegram.org/bots/api#formatting-options") {
-		t.Fatalf("buildRelayInstruction() unexpectedly contains docs URL:\n%s", got)
+		t.Fatalf("buildBaldaInstruction() unexpectedly contains docs URL:\n%s", got)
 	}
 }
 
-func TestBuildRelayInstruction_IncludesFormattingGuidance_HTML(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesFormattingGuidance_HTML(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{telegramFormattingMode: "html"}
-	got := builder.buildRelayInstruction(
+	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
 		"alpha",
@@ -304,7 +304,7 @@ func TestBuildRelayInstruction_IncludesFormattingGuidance_HTML(t *testing.T) {
 	}
 	for _, snippet := range wantSnippets {
 		if !strings.Contains(got, snippet) {
-			t.Fatalf("buildRelayInstruction() missing snippet %q in output:\n%s", snippet, got)
+			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
 		}
 	}
 }

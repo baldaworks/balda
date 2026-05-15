@@ -50,7 +50,7 @@ func (s *sqliteKVStore) SetWithTTL(ctx context.Context, key string, value any, t
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO relay_app_kv (namespace, key, value_json, expires_at, updated_at)
+		INSERT INTO balda_app_kv (namespace, key, value_json, expires_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(namespace, key)
 		DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at, updated_at = excluded.updated_at`,
@@ -68,7 +68,7 @@ func (s *sqliteKVStore) Delete(ctx context.Context, key string) error {
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
-		DELETE FROM relay_app_kv
+		DELETE FROM balda_app_kv
 		WHERE namespace = ? AND key = ?`,
 		s.namespace, trimmedKey,
 	); err != nil {
@@ -81,7 +81,7 @@ func (s *sqliteKVStore) List(ctx context.Context, prefix string) ([]string, erro
 	args := []any{s.namespace}
 	query := `
 		SELECT key
-		FROM relay_app_kv
+		FROM balda_app_kv
 		WHERE namespace = ?`
 
 	trimmedPrefix := strings.TrimSpace(prefix)
@@ -121,7 +121,7 @@ func (s *sqliteKVStore) isKeyExpired(ctx context.Context, key string) bool {
 	var expiresAt sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT expires_at
-		FROM relay_app_kv
+		FROM balda_app_kv
 		WHERE namespace = ? AND key = ?`,
 		s.namespace, key,
 	).Scan(&expiresAt)
@@ -139,7 +139,7 @@ func (s *sqliteKVStore) isKeyExpired(ctx context.Context, key string) bool {
 
 func (s *sqliteKVStore) Clear(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `
-		DELETE FROM relay_app_kv
+		DELETE FROM balda_app_kv
 		WHERE namespace = ?`,
 		s.namespace,
 	); err != nil {
@@ -158,7 +158,7 @@ func (s *sqliteKVStore) GetJSON(ctx context.Context, key string) (any, bool, err
 	var expiresAt sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT value_json, expires_at
-		FROM relay_app_kv
+		FROM balda_app_kv
 		WHERE namespace = ? AND key = ?`,
 		s.namespace, trimmedKey,
 	).Scan(&raw, &expiresAt)
@@ -198,7 +198,7 @@ func (s *sqliteKVStore) SetJSON(ctx context.Context, key string, value any) erro
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO relay_app_kv (namespace, key, value_json, updated_at)
+		INSERT INTO balda_app_kv (namespace, key, value_json, updated_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(namespace, key)
 		DO UPDATE SET value_json = excluded.value_json, expires_at = NULL, updated_at = excluded.updated_at`,

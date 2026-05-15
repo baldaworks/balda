@@ -1,4 +1,4 @@
-# relay — AGENTS.md
+# balda — AGENTS.md
 
 ## Development Standards
 
@@ -23,19 +23,19 @@ go tool golangci-lint run
 - Initialize logging through `internal/logging.Init()`.
 - Prefer structured logging fields over formatted strings.
 
-## Relay Guardrails
+## Balda Guardrails
 
-- Keep Relay startup order strict: config load -> bundled MCP lifecycle -> relay provider -> channel runtime.
+- Keep Balda startup order strict: config load -> bundled MCP lifecycle -> balda provider -> channel runtime.
 - Keep channel/session boundaries stable (`chat_id`, `topic_id`) and preserve lazy restore semantics.
 - Keep workspace mode behavior stable (`on|off|auto`) with safe defaults and explicit failures.
-- Keep Relay MCP/server contracts backward compatible (`balda.workspace.*` and alias tools).
+- Keep Balda MCP/server contracts backward compatible (`balda.workspace.*` and alias tools).
 - Keep config loading via app-specific `.config/balda/config.yaml` with `BALDA_*` env overrides.
 
 ## Bot Commands (Current Contract)
 
 - `/start owner=<owner_token>`: direct message only; owner authentication/bootstrap entrypoint.
 - `/start invite=<invite_token>`: direct message only; collaborator invite onboarding entrypoint.
-- `/topic <name>`: owner/collaborator, direct message only; creates a topic session labeled `<name>` using the configured relay provider.
+- `/topic <name>`: owner/collaborator, direct message only; creates a topic session labeled `<name>` using the configured balda provider.
 - `/goal <objective>`: owner/collaborator; starts a Goalkeeper loop in the current session context/workspace with started/iteration/final updates.
 - `/close`: owner/collaborator, direct message only; closes a topic session or stops the owner session.
 - `/cancel`: owner/collaborator; cancels in-flight turn processing, drops queued turns, and aborts active `/goal` run for the current session.
@@ -47,7 +47,7 @@ go tool golangci-lint run
 
 - Product installation/usage docs are in `README.md`.
 - Development/contribution workflow is in `CONTRIBUTING.md`.
-- Relay technical spec and operational details are in `docs/balda.md`.
+- Balda technical spec and operational details are in `docs/balda.md`.
 
 ## Release
 

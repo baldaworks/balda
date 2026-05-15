@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
@@ -273,9 +273,9 @@ func TestCommandHandlerOnCommand_TopicCollaboratorAllowed(t *testing.T) {
 	assertLastSentContains(t, tgClient, "ops run")
 }
 
-func TestCommandHandlerOnCommand_TopicNoRelayProvider_ShowsError(t *testing.T) {
+func TestCommandHandlerOnCommand_TopicNoBaldaProvider_ShowsError(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-	sm.relayProvider = ""
+	sm.baldaProvider = ""
 
 	err := handler.onCommand(context.Background(), newCommandEvent("topic", "alpha", 101, 9001, nil))
 	if err != nil {
@@ -548,7 +548,7 @@ type fakeCommandSessionManager struct {
 	stopCalls     []stopSessionCall
 	resetCalls    []resetSessionCall
 	createCalls   []createSessionCall
-	relayProvider string
+	baldaProvider string
 	metadata      session.AgentMetadata
 	resetErr      error
 }
@@ -591,8 +591,8 @@ func (f *fakeCommandSessionManager) GetAgentMetadata(string) session.AgentMetada
 	return f.metadata
 }
 
-func (f *fakeCommandSessionManager) RelayProviderID() string {
-	return f.relayProvider
+func (f *fakeCommandSessionManager) BaldaProviderID() string {
+	return f.baldaProvider
 }
 
 func (f *fakeCommandSessionManager) StopSession(locator session.SessionLocator) {
@@ -681,7 +681,7 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 	sessionManager := &fakeCommandSessionManager{}
 	turnDispatcher := &fakeTurnDispatcher{}
 	goalRunner := &fakeGoalRunner{startResult: true}
-	sessionManager.relayProvider = testProviderAlpha
+	sessionManager.baldaProvider = testProviderAlpha
 	sessionManager.metadata = session.AgentMetadata{
 		Type:       "opencode_acp",
 		Model:      "gpt-5",
@@ -690,7 +690,7 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 	handler := &CommandHandler{
 		ownerStore:        ownerStore,
 		collaboratorStore: collaboratorStore,
-		channel: relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+		channel: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 			Messenger: msg,
 			TGClient:  tgClient,
 			Logger:    zerolog.Nop(),

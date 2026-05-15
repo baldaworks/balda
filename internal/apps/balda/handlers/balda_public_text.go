@@ -5,11 +5,11 @@ import (
 	"sort"
 	"strings"
 
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/tgbotkit/client"
 )
 
-func (h *RelayHandler) normalizePublicText(messageCtx relaytelegram.MessageContext) (string, bool) {
+func (h *BaldaHandler) normalizePublicText(messageCtx baldatelegram.MessageContext) (string, bool) {
 	botUserID, botUsername := h.getBotIdentity()
 
 	if botUsername != "" {

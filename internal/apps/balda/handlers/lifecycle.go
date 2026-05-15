@@ -12,7 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
@@ -34,7 +34,7 @@ type InternalMCPManager struct {
 	registry         mcpregistry.Registry
 	workingDir       string
 	sessionManager   *session.Manager
-	channel          *relaytelegram.Adapter
+	channel          *baldatelegram.Adapter
 	messenger        *messenger.Messenger
 	ownerStore       *auth.OwnerStore
 	stateStore       sessionmcp.Store
@@ -43,13 +43,13 @@ type InternalMCPManager struct {
 }
 
 const (
-	bundledRelayServerID = "balda"
+	bundledBaldaServerID = "balda"
 
 	internalMCPReadHeaderTimeout = 5 * time.Second
 	internalMCPIdleTimeout       = 60 * time.Second
 )
 
-func bundledRelayServerInstructions(workspaceEnabled, memoryEnabled bool) string {
+func bundledBaldaServerInstructions(workspaceEnabled, memoryEnabled bool) string {
 	instructions := `Use this bundled balda server for session-local balda tools.
 
 - balda.state stores persistent Balda session and app state in balda.db.
@@ -69,12 +69,12 @@ type internalMCPParams struct {
 	fx.In
 
 	LC               fx.Lifecycle
-	WorkspaceEnabled bool `name:"relay_workspace_enabled"`
+	WorkspaceEnabled bool `name:"balda_workspace_enabled"`
 	Logger           zerolog.Logger
 	Registry         *mcpregistry.MapRegistry
 	WorkingDir       string
 	SessionManager   *session.Manager
-	Channel          *relaytelegram.Adapter
+	Channel          *baldatelegram.Adapter
 	Messenger        *messenger.Messenger
 	OwnerStore       *auth.OwnerStore
 	StateStore       sessionmcp.Store
@@ -152,7 +152,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 			Name:    "balda",
 			Version: "1.0.0",
 		},
-		&mcp.ServerOptions{Instructions: bundledRelayServerInstructions(m.workspaceEnabled, m.memoryStore.MemoryEnabled())},
+		&mcp.ServerOptions{Instructions: bundledBaldaServerInstructions(m.workspaceEnabled, m.memoryStore.MemoryEnabled())},
 	)
 
 	sessionmcp.RegisterTools(server, m.stateStore)
@@ -166,9 +166,9 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	}
 
 	handlersByID := map[string]http.Handler{
-		bundledRelayServerID: streamableHandlerForServer(server),
+		bundledBaldaServerID: streamableHandlerForServer(server),
 	}
-	routes := []string{"/mcp", bundledRoutePath(bundledRelayServerID)}
+	routes := []string{"/mcp", bundledRoutePath(bundledBaldaServerID)}
 
 	res, err := startBundledMCPHTTPServer(ctx, "127.0.0.1:0", handlersByID)
 	if err != nil {
@@ -176,9 +176,9 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	}
 	m.addCleanup(res.Close)
 
-	m.registry.Set(bundledRelayServerID, agentconfig.MCPServerConfig{
+	m.registry.Set(bundledBaldaServerID, agentconfig.MCPServerConfig{
 		Type: agentconfig.MCPServerTypeHTTP,
-		URL:  bundledRegistryURL(res.Addr, bundledRelayServerID),
+		URL:  bundledRegistryURL(res.Addr, bundledBaldaServerID),
 	})
 
 	sort.Strings(routes)
@@ -199,7 +199,7 @@ func bundledRoutePath(serverID string) string {
 }
 
 func bundledRegistryURL(addr, serverID string) string {
-	if serverID == bundledRelayServerID {
+	if serverID == bundledBaldaServerID {
 		return fmt.Sprintf("http://%s/mcp", addr)
 	}
 	return fmt.Sprintf("http://%s%s", addr, bundledRoutePath(serverID))
@@ -224,7 +224,7 @@ func startBundledMCPHTTPServer(ctx context.Context, addr string, handlersByID ma
 	for _, id := range ids {
 		handler := handlersByID[id]
 		mux.Handle(bundledRoutePath(id), handler)
-		if id == bundledRelayServerID {
+		if id == bundledBaldaServerID {
 			mux.Handle("/mcp", handler)
 		}
 	}
@@ -266,7 +266,7 @@ func (m *InternalMCPManager) addCleanup(f func() error) {
 
 func isBundled(id string) bool {
 	switch id {
-	case bundledRelayServerID:
+	case bundledBaldaServerID:
 		return true
 	default:
 		return false

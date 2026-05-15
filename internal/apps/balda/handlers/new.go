@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
-	relaywelcome "github.com/normahq/balda/internal/apps/balda/welcome"
+	baldawelcome "github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
 	"go.uber.org/fx"
@@ -20,7 +20,7 @@ import (
 type commandSessionManager interface {
 	CreateSession(ctx context.Context, sessionCtx session.SessionContext, agentName string) error
 	GetAgentMetadata(agentName string) session.AgentMetadata
-	RelayProviderID() string
+	BaldaProviderID() string
 	ResetSession(ctx context.Context, locator session.SessionLocator) error
 	StopSession(locator session.SessionLocator)
 }
@@ -29,7 +29,7 @@ type commandSessionManager interface {
 type CommandHandler struct {
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore
-	channel           *relaytelegram.Adapter
+	channel           *baldatelegram.Adapter
 	sessionManager    commandSessionManager
 	turnDispatcher    turnQueue
 	goalRunner        goalCommandRunner
@@ -39,7 +39,7 @@ type CommandHandler struct {
 }
 
 func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServers []string) string {
-	return relaywelcome.BuildAgentWelcomeMessage(name, sessionID, agentType, model, mcpServers)
+	return baldawelcome.BuildAgentWelcomeMessage(name, sessionID, agentType, model, mcpServers)
 }
 
 type commandHandlerParams struct {
@@ -47,7 +47,7 @@ type commandHandlerParams struct {
 
 	OwnerStore        *auth.OwnerStore
 	CollaboratorStore *auth.CollaboratorStore
-	Channel           *relaytelegram.Adapter
+	Channel           *baldatelegram.Adapter
 	SessionManager    *session.Manager
 	TurnDispatcher    *TurnDispatcher
 	GoalRunner        *GoalRunner
@@ -103,7 +103,7 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 	}
 }
 
-func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -126,7 +126,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx relaytele
 		return nil
 	}
 
-	started, err := h.goalRunner.Start(ctx, commandCtx.Locator, objective, relaytelegram.UserID(commandCtx.UserID))
+	started, err := h.goalRunner.Start(ctx, commandCtx.Locator, objective, baldatelegram.UserID(commandCtx.UserID))
 	if err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to start /goal run")
 		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to start goal run: %v", err)); sendErr != nil {
@@ -144,7 +144,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx relaytele
 	return nil
 }
 
-func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -166,8 +166,8 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx relaytel
 		}
 		return nil
 	}
-	relayProviderID := strings.TrimSpace(h.sessionManager.RelayProviderID())
-	if relayProviderID == "" {
+	baldaProviderID := strings.TrimSpace(h.sessionManager.BaldaProviderID())
+	if baldaProviderID == "" {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "balda.provider is not configured."); err != nil {
 			return err
 		}
@@ -190,7 +190,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx relaytel
 	}
 	if err := h.sessionManager.CreateSession(ctx, session.SessionContext{
 		Locator: topicLocator,
-		UserID:  relaytelegram.UserID(commandCtx.UserID),
+		UserID:  baldatelegram.UserID(commandCtx.UserID),
 	}, topicName); err != nil {
 		log.Error().Err(err).Str("topic_name", topicName).Msg("failed to create topic session after topic creation")
 		_ = h.channel.Close(ctx, topicLocator)
@@ -200,7 +200,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx relaytel
 		return nil
 	}
 
-	metadata := h.sessionManager.GetAgentMetadata(relayProviderID)
+	metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
 
 	welcomeMsg := BuildAgentWelcomeMessage(topicName, topicLocator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
 	if err := h.channel.SendMarkdown(ctx, topicLocator, welcomeMsg); err != nil {
@@ -211,7 +211,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx relaytel
 	return nil
 }
 
-func (h *CommandHandler) onMemoryCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *CommandHandler) onMemoryCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -273,7 +273,7 @@ func (h *CommandHandler) sendPlainChunks(ctx context.Context, locator session.Se
 	return nil
 }
 
-func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -331,7 +331,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx relaytel
 	return nil
 }
 
-func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -362,7 +362,7 @@ func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx relaytel
 	return nil
 }
 
-func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx relaytelegram.CommandContext) error {
+func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err

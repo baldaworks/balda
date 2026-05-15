@@ -17,7 +17,7 @@ type RuntimeManager struct {
 	builder           *Builder
 	providerID        string
 	workingDir        string
-	relayMCPServerIDs []string
+	baldaMCPServerIDs []string
 	logger            zerolog.Logger
 
 	mu      sync.RWMutex
@@ -30,9 +30,9 @@ type RuntimeManagerParams struct {
 
 	LC                fx.Lifecycle
 	Builder           *Builder
-	RelayProviderID   string `name:"relay_provider"`
+	BaldaProviderID   string `name:"balda_provider"`
 	WorkingDir        string
-	RelayMCPServerIDs []string `name:"relay_mcp_servers"`
+	BaldaMCPServerIDs []string `name:"balda_mcp_servers"`
 	Logger            zerolog.Logger
 }
 
@@ -40,9 +40,9 @@ type RuntimeManagerParams struct {
 func NewRuntimeManager(p RuntimeManagerParams) *RuntimeManager {
 	m := &RuntimeManager{
 		builder:           p.Builder,
-		providerID:        strings.TrimSpace(p.RelayProviderID),
+		providerID:        strings.TrimSpace(p.BaldaProviderID),
 		workingDir:        strings.TrimSpace(p.WorkingDir),
-		relayMCPServerIDs: append([]string(nil), p.RelayMCPServerIDs...),
+		baldaMCPServerIDs: append([]string(nil), p.BaldaMCPServerIDs...),
 		logger:            p.Logger.With().Str("component", "balda.runtime_manager").Logger(),
 	}
 
@@ -79,7 +79,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	builder := m.builder
 	providerID := strings.TrimSpace(m.providerID)
 	workingDir := m.workingDir
-	extraMCPServerIDs := append([]string(nil), m.relayMCPServerIDs...)
+	extraMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
 	m.mu.RUnlock()
 
 	if builder == nil {

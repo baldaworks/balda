@@ -18,13 +18,13 @@ import (
 )
 
 //go:embed balda.yaml
-var defaultRelayConfig []byte
+var defaultBaldaConfig []byte
 
 const shutdownTimeout = 10 * time.Second
 
-type relayConfigDocument struct {
+type baldaConfigDocument struct {
 	Runtime appconfig.RuntimeConfig `mapstructure:"runtime"`
-	Relay   balda.RelayConfig       `mapstructure:"balda"`
+	Balda   balda.BaldaConfig       `mapstructure:"balda"`
 }
 
 func startCommand() *cobra.Command {
@@ -39,7 +39,7 @@ func startCommand() *cobra.Command {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
 
-			var doc relayConfigDocument
+			var doc baldaConfigDocument
 			_, err = appconfig.LoadConfigDocument(
 				appconfig.RuntimeLoadOptions{
 					WorkingDir: workingDir,
@@ -48,7 +48,7 @@ func startCommand() *cobra.Command {
 				},
 				appconfig.AppLoadOptions{
 					AppName:            "balda",
-					DefaultsYAML:       defaultRelayConfig,
+					DefaultsYAML:       defaultBaldaConfig,
 					UseDotConfigAppDir: true,
 				},
 				&doc,
@@ -56,17 +56,17 @@ func startCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := applyRelayLogging(doc.Relay.Logger); err != nil {
+			if err := applyBaldaLogging(doc.Balda.Logger); err != nil {
 				return fmt.Errorf("configure balda logging: %w", err)
 			}
 
-			relayCfg := balda.Config{Relay: doc.Relay}
+			baldaCfg := balda.Config{Balda: doc.Balda}
 
-			if relayCfg.Relay.Telegram.Token == "" {
+			if baldaCfg.Balda.Telegram.Token == "" {
 				return fmt.Errorf("telegram token is required\nSet it via:\n  - Environment: BALDA_TELEGRAM_TOKEN=<token>\n  - CWD .env: %s with BALDA_TELEGRAM_TOKEN=<token>\n  - App config: balda.telegram.token in .config/balda/config.yaml\n  - Profile override: profiles.<name>.balda.telegram.token in the same file", filepath.Join(workingDir, ".env"))
 			}
 
-			stateDir, err := resolveRelayStateDir(workingDir, relayCfg.Relay.StateDir)
+			stateDir, err := resolveBaldaStateDir(workingDir, baldaCfg.Balda.StateDir)
 			if err != nil {
 				return fmt.Errorf("resolve balda state_dir: %w", err)
 			}
@@ -74,8 +74,8 @@ func startCommand() *cobra.Command {
 				return fmt.Errorf("create balda state dir: %w", err)
 			}
 
-			dbPath := filepath.Join(stateDir, relayStateDBFileName)
-			ownerToken, err := loadOrCreateRelayOwnerToken(context.Background(), dbPath)
+			dbPath := filepath.Join(stateDir, baldaStateDBFileName)
+			ownerToken, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
 			if err != nil {
 				return fmt.Errorf("bootstrap balda owner token: %w", err)
 			}
@@ -86,7 +86,7 @@ func startCommand() *cobra.Command {
 				Profile:    viper.GetString("profile"),
 			}
 
-			app := balda.App(relayCfg, doc.Runtime, ownerToken, runtimeLoadOpts, defaultRelayConfig)
+			app := balda.App(baldaCfg, doc.Runtime, ownerToken, runtimeLoadOpts, defaultBaldaConfig)
 
 			ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
@@ -95,7 +95,7 @@ func startCommand() *cobra.Command {
 				return fmt.Errorf("starting Balda app: %w", err)
 			}
 
-			logRelayStartup(ctx, relayCfg.Relay.Telegram.Token)
+			logBaldaStartup(ctx, baldaCfg.Balda.Telegram.Token)
 
 			<-ctx.Done()
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)

@@ -12,10 +12,10 @@ import (
 func TestValidateApp(t *testing.T) {
 	ctx := context.Background()
 	workingDir := t.TempDir()
-	runGitForRelay(t, ctx, workingDir, "init")
+	runGitForBalda(t, ctx, workingDir, "init")
 
 	cfg := Config{
-		Relay: RelayConfig{
+		Balda: BaldaConfig{
 			Telegram: TelegramConfig{
 				Token: "test-token",
 			},
@@ -43,10 +43,10 @@ func TestValidateApp(t *testing.T) {
 func TestValidateApp_InvalidTelegramFormattingModeFails(t *testing.T) {
 	ctx := context.Background()
 	workingDir := t.TempDir()
-	runGitForRelay(t, ctx, workingDir, "init")
+	runGitForBalda(t, ctx, workingDir, "init")
 
 	cfg := Config{
-		Relay: RelayConfig{
+		Balda: BaldaConfig{
 			Telegram: TelegramConfig{
 				Token:          "test-token",
 				FormattingMode: "markdown",

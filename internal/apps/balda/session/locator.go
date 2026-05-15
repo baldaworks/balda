@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
-// SessionLocator identifies a relay session without exposing channel-specific
+// SessionLocator identifies a balda session without exposing channel-specific
 // tuple parameters through the manager API.
 type SessionLocator struct {
 	ChannelType string
@@ -40,6 +40,6 @@ func NewSessionLocator(channelType, addressKey, addressJSON, sessionID string) (
 }
 
 // LocatorFromRecord reconstructs a session locator from persisted metadata.
-func LocatorFromRecord(record relaystate.SessionRecord) (SessionLocator, error) {
+func LocatorFromRecord(record baldastate.SessionRecord) (SessionLocator, error) {
 	return NewSessionLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
 }

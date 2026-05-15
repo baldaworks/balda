@@ -47,7 +47,7 @@ func TestRegisterToolsAddsMemoryToolsWhenEnabled(t *testing.T) {
 func newMemoryMCPTestSession(t *testing.T, store *Store) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
 
-	server := mcp.NewServer(&mcp.Implementation{Name: "relay-memory-test", Version: "1.0.0"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "balda-memory-test", Version: "1.0.0"}, nil)
 	RegisterTools(server, store)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

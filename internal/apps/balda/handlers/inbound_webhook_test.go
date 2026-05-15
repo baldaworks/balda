@@ -11,9 +11,9 @@ import (
 	"testing"
 	"text/template"
 
-	relaychannel "github.com/normahq/balda/internal/apps/balda/channel"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"google.golang.org/adk/runner"
 )
@@ -121,7 +121,7 @@ func TestInboundWebhookReceiver_TemplateRenderError(t *testing.T) {
 	t.Parallel()
 
 	receiver := newInboundWebhookReceiverForTest()
-	locator := relaytelegram.NewLocator(9001, 77)
+	locator := baldatelegram.NewLocator(9001, 77)
 	receiver.routes = map[string]inboundWebhookRoute{
 		"/webhook1": {
 			Name:           "webhook1",
@@ -159,7 +159,7 @@ func TestInboundWebhookReceiver_SessionNotFound(t *testing.T) {
 func TestInboundWebhookReceiver_QueueFull(t *testing.T) {
 	t.Parallel()
 
-	locator := relaytelegram.NewLocator(9001, 77)
+	locator := baldatelegram.NewLocator(9001, 77)
 	ts := newSchedulerTopicSession(t, locator, "tg-101", locator.SessionID, nil)
 
 	sessionMgr := &fakeInboundSessionManager{
@@ -191,13 +191,13 @@ func TestInboundWebhookReceiver_QueueFull(t *testing.T) {
 func TestInboundWebhookReceiver_AcceptsAndDispatches(t *testing.T) {
 	t.Parallel()
 
-	locator := relaytelegram.NewLocator(9001, 99)
+	locator := baldatelegram.NewLocator(9001, 99)
 	ts := newSchedulerTopicSession(t, locator, "tg-101", locator.SessionID, nil)
 
 	sessionMgr := &fakeInboundSessionManager{
 		session:       ts,
 		getErrOnce:    errors.New("not in memory"),
-		info:          relaysession.TopicSessionInfo{SessionID: locator.SessionID, Locator: locator, UserID: "tg-101"},
+		info:          baldasession.TopicSessionInfo{SessionID: locator.SessionID, Locator: locator, UserID: "tg-101"},
 		restoreResult: ts,
 	}
 	queue := &fakeInboundTurnQueue{runImmediately: true}
@@ -205,7 +205,7 @@ func TestInboundWebhookReceiver_AcceptsAndDispatches(t *testing.T) {
 	receiver := newInboundWebhookReceiverForTest()
 	receiver.sessions = sessionMgr
 	receiver.dispatch = queue
-	receiver.relay = executor
+	receiver.balda = executor
 	receiver.routes = map[string]inboundWebhookRoute{
 		"/webhook1": {
 			Name:           "webhook1",
@@ -253,17 +253,17 @@ func TestInboundWebhookReceiver_AcceptsAndDispatches(t *testing.T) {
 }
 
 type fakeInboundSessionManager struct {
-	session       *relaysession.TopicSession
+	session       *baldasession.TopicSession
 	getErrOnce    error
 	getCalls      int
-	info          relaysession.TopicSessionInfo
+	info          baldasession.TopicSessionInfo
 	infoErr       error
-	restoreResult *relaysession.TopicSession
+	restoreResult *baldasession.TopicSession
 	restoreErr    error
 	restoreCalls  int
 }
 
-func (f *fakeInboundSessionManager) GetSession(_ relaysession.SessionLocator) (*relaysession.TopicSession, error) {
+func (f *fakeInboundSessionManager) GetSession(_ baldasession.SessionLocator) (*baldasession.TopicSession, error) {
 	f.getCalls++
 	if f.getErrOnce != nil {
 		err := f.getErrOnce
@@ -276,17 +276,17 @@ func (f *fakeInboundSessionManager) GetSession(_ relaysession.SessionLocator) (*
 	return f.session, nil
 }
 
-func (f *fakeInboundSessionManager) GetSessionInfo(_ context.Context, _ string) (relaysession.TopicSessionInfo, error) {
+func (f *fakeInboundSessionManager) GetSessionInfo(_ context.Context, _ string) (baldasession.TopicSessionInfo, error) {
 	if f.infoErr != nil {
-		return relaysession.TopicSessionInfo{}, f.infoErr
+		return baldasession.TopicSessionInfo{}, f.infoErr
 	}
 	return f.info, nil
 }
 
 func (f *fakeInboundSessionManager) RestoreSession(
 	_ context.Context,
-	_ relaysession.SessionContext,
-) (*relaysession.TopicSession, error) {
+	_ baldasession.SessionContext,
+) (*baldasession.TopicSession, error) {
 	f.restoreCalls++
 	if f.restoreErr != nil {
 		return nil, f.restoreErr
@@ -316,7 +316,7 @@ func (f *fakeInboundTurnQueue) Enqueue(task TurnTask) (int, error) {
 	return position, nil
 }
 
-func (*fakeInboundTurnQueue) CancelSession(relaysession.SessionLocator, bool) (bool, int, error) {
+func (*fakeInboundTurnQueue) CancelSession(baldasession.SessionLocator, bool) (bool, int, error) {
 	return false, 0, nil
 }
 
@@ -332,10 +332,10 @@ func (f *fakeInboundTurnExecutor) runTurnTask(
 	_ string,
 	_ string,
 	_ string,
-	_ relaysession.SessionLocator,
+	_ baldasession.SessionLocator,
 	_ int,
 	_ int,
-	_ relaychannel.ProgressPolicy,
+	_ baldachannel.ProgressPolicy,
 ) error {
 	f.calls++
 	f.prompt = text
@@ -343,7 +343,7 @@ func (f *fakeInboundTurnExecutor) runTurnTask(
 }
 
 func newInboundWebhookReceiverForTest() *InboundWebhookReceiver {
-	locator := relaytelegram.NewLocator(9001, 77)
+	locator := baldatelegram.NewLocator(9001, 77)
 	return &InboundWebhookReceiver{
 		enabled: true,
 		routes: map[string]inboundWebhookRoute{
@@ -356,7 +356,7 @@ func newInboundWebhookReceiverForTest() *InboundWebhookReceiver {
 		},
 		sessions: &fakeInboundSessionManager{},
 		dispatch: &fakeInboundTurnQueue{},
-		relay:    &fakeInboundTurnExecutor{},
+		balda:    &fakeInboundTurnExecutor{},
 		logger:   zerolog.Nop(),
 	}
 }

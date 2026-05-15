@@ -5,5 +5,5 @@ package session
 type SessionContext struct {
 	Locator                    SessionLocator
 	UserID                     string
-	AllowRelayProviderFallback bool
+	AllowBaldaProviderFallback bool
 }

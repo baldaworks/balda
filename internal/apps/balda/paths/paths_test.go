@@ -43,7 +43,7 @@ func TestResolveWorkingDir_RelativeBecomesAbsolute(t *testing.T) {
 }
 
 func TestResolveStateDir_RelativeUsesWorkingDir(t *testing.T) {
-	workingDir := "/tmp/norma-relay-work"
+	workingDir := "/tmp/norma-balda-work"
 
 	got, err := ResolveStateDir(workingDir, ".config/balda")
 	if err != nil {
@@ -60,7 +60,7 @@ func TestResolveStateDir_RelativeUsesWorkingDir(t *testing.T) {
 }
 
 func TestResolveStateDir_RequiresValue(t *testing.T) {
-	if _, err := ResolveStateDir("/tmp/norma-relay-work", ""); err == nil {
+	if _, err := ResolveStateDir("/tmp/norma-balda-work", ""); err == nil {
 		t.Fatal("ResolveStateDir returned nil error for empty state_dir")
 	}
 }

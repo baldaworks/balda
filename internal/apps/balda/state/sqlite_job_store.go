@@ -66,7 +66,7 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 	updatedAt := now
 
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO relay_scheduled_jobs (
+		INSERT INTO balda_scheduled_jobs (
 			job_id, session_id, channel_type, address_key, address_json, prompt, schedule_spec, timezone, status,
 			max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
 		)
@@ -87,7 +87,7 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 			last_run_at = excluded.last_run_at,
 			last_error = excluded.last_error,
 			updated_at = excluded.updated_at,
-			created_at = relay_scheduled_jobs.created_at`,
+			created_at = balda_scheduled_jobs.created_at`,
 		jobID,
 		strings.TrimSpace(record.SessionID),
 		channelType,
@@ -116,7 +116,7 @@ func (s *sqliteScheduledJobStore) GetByID(ctx context.Context, jobID string) (Sc
 	row := s.db.QueryRowContext(ctx, `
 		SELECT job_id, session_id, channel_type, address_key, address_json, prompt, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM relay_scheduled_jobs
+		FROM balda_scheduled_jobs
 		WHERE job_id = ?`,
 		strings.TrimSpace(jobID),
 	)
@@ -132,7 +132,7 @@ func (s *sqliteScheduledJobStore) List(ctx context.Context) ([]ScheduledJobRecor
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT job_id, session_id, channel_type, address_key, address_json, prompt, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM relay_scheduled_jobs
+		FROM balda_scheduled_jobs
 		ORDER BY job_id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list scheduled jobs: %w", err)
@@ -150,7 +150,7 @@ func (s *sqliteScheduledJobStore) ListByAddress(
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT job_id, session_id, channel_type, address_key, address_json, prompt, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM relay_scheduled_jobs
+		FROM balda_scheduled_jobs
 		WHERE channel_type = ? AND address_key = ?
 		ORDER BY next_run_at ASC`,
 		strings.TrimSpace(channelType), strings.TrimSpace(addressKey),
@@ -171,7 +171,7 @@ func (s *sqliteScheduledJobStore) ListDue(ctx context.Context, now time.Time, li
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT job_id, session_id, channel_type, address_key, address_json, prompt, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM relay_scheduled_jobs
+		FROM balda_scheduled_jobs
 		WHERE status = ? AND next_run_at <= ?
 		ORDER BY next_run_at ASC
 		LIMIT ?`,
@@ -194,7 +194,7 @@ func (s *sqliteScheduledJobStore) Delete(ctx context.Context, jobID string) erro
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
-		DELETE FROM relay_scheduled_jobs
+		DELETE FROM balda_scheduled_jobs
 		WHERE job_id = ?`,
 		trimmed,
 	); err != nil {

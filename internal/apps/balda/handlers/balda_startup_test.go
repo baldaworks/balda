@@ -9,18 +9,18 @@ import (
 	"strings"
 	"testing"
 
-	relayagent "github.com/normahq/balda/internal/apps/balda/agent"
+	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	adksession "google.golang.org/adk/session"
 )
 
-type fakeRelayStartupTGClient struct {
+type fakeBaldaStartupTGClient struct {
 	*fakeTelegramClient
 
 	getMeResp  *client.GetMeResponse
@@ -28,9 +28,9 @@ type fakeRelayStartupTGClient struct {
 	getMeCalls int
 }
 
-const testRelayStartupBotUsername = "ValeraBot"
+const testBaldaStartupBotUsername = "ValeraBot"
 
-func (f *fakeRelayStartupTGClient) GetMeWithResponse(_ context.Context, _ ...client.RequestEditorFn) (*client.GetMeResponse, error) {
+func (f *fakeBaldaStartupTGClient) GetMeWithResponse(_ context.Context, _ ...client.RequestEditorFn) (*client.GetMeResponse, error) {
 	f.getMeCalls++
 	if f.getMeErr != nil {
 		return nil, f.getMeErr
@@ -38,8 +38,8 @@ func (f *fakeRelayStartupTGClient) GetMeWithResponse(_ context.Context, _ ...cli
 	return f.getMeResp, nil
 }
 
-func TestRelayHandlerOnStart_FailsWhenGetMeTransportFails(t *testing.T) {
-	handler := newRelayStartupHandlerForTest(t, &fakeRelayStartupTGClient{
+func TestBaldaHandlerOnStart_FailsWhenGetMeTransportFails(t *testing.T) {
+	handler := newBaldaStartupHandlerForTest(t, &fakeBaldaStartupTGClient{
 		getMeErr: errors.New("network timeout"),
 	}, "", zerolog.Nop())
 
@@ -55,8 +55,8 @@ func TestRelayHandlerOnStart_FailsWhenGetMeTransportFails(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnStart_FailsWhenGetMeUnauthorized(t *testing.T) {
-	handler := newRelayStartupHandlerForTest(t, &fakeRelayStartupTGClient{
+func TestBaldaHandlerOnStart_FailsWhenGetMeUnauthorized(t *testing.T) {
+	handler := newBaldaStartupHandlerForTest(t, &fakeBaldaStartupTGClient{
 		getMeResp: &client.GetMeResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized"},
 			JSON401: &client.ErrorResponse{
@@ -74,8 +74,8 @@ func TestRelayHandlerOnStart_FailsWhenGetMeUnauthorized(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnStart_FailsWhenGetMeUsernameEmpty(t *testing.T) {
-	handler := newRelayStartupHandlerForTest(t, &fakeRelayStartupTGClient{
+func TestBaldaHandlerOnStart_FailsWhenGetMeUsernameEmpty(t *testing.T) {
+	handler := newBaldaStartupHandlerForTest(t, &fakeBaldaStartupTGClient{
 		getMeResp: &client.GetMeResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
 			JSON200: &struct {
@@ -99,9 +99,9 @@ func TestRelayHandlerOnStart_FailsWhenGetMeUsernameEmpty(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnStart_LoadsBotIdentityWhenGetMeSucceeds(t *testing.T) {
-	username := testRelayStartupBotUsername
-	tgClient := &fakeRelayStartupTGClient{
+func TestBaldaHandlerOnStart_LoadsBotIdentityWhenGetMeSucceeds(t *testing.T) {
+	username := testBaldaStartupBotUsername
+	tgClient := &fakeBaldaStartupTGClient{
 		getMeResp: &client.GetMeResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
 			JSON200: &struct {
@@ -116,7 +116,7 @@ func TestRelayHandlerOnStart_LoadsBotIdentityWhenGetMeSucceeds(t *testing.T) {
 			},
 		},
 	}
-	handler := newRelayStartupHandlerForTest(t, tgClient, "", zerolog.Nop())
+	handler := newBaldaStartupHandlerForTest(t, tgClient, "", zerolog.Nop())
 
 	if err := handler.onStart(context.Background()); err != nil {
 		t.Fatalf("onStart() error = %v", err)
@@ -128,14 +128,14 @@ func TestRelayHandlerOnStart_LoadsBotIdentityWhenGetMeSucceeds(t *testing.T) {
 	if gotBotID != 7791683989 {
 		t.Fatalf("bot user id = %d, want 7791683989", gotBotID)
 	}
-	if gotUsername != testRelayStartupBotUsername {
-		t.Fatalf("bot username = %q, want %s", gotUsername, testRelayStartupBotUsername)
+	if gotUsername != testBaldaStartupBotUsername {
+		t.Fatalf("bot username = %q, want %s", gotUsername, testBaldaStartupBotUsername)
 	}
 }
 
-func TestRelayHandlerOnStart_LogsOwnerAuthWhenOwnerUnknown(t *testing.T) {
-	username := testRelayStartupBotUsername
-	tgClient := &fakeRelayStartupTGClient{
+func TestBaldaHandlerOnStart_LogsOwnerAuthWhenOwnerUnknown(t *testing.T) {
+	username := testBaldaStartupBotUsername
+	tgClient := &fakeBaldaStartupTGClient{
 		getMeResp: &client.GetMeResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
 			JSON200: &struct {
@@ -152,7 +152,7 @@ func TestRelayHandlerOnStart_LogsOwnerAuthWhenOwnerUnknown(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	handler := newRelayStartupHandlerForTest(t, tgClient, "owner-token", zerolog.New(&buf))
+	handler := newBaldaStartupHandlerForTest(t, tgClient, "owner-token", zerolog.New(&buf))
 
 	if err := handler.onStart(context.Background()); err != nil {
 		t.Fatalf("onStart() error = %v", err)
@@ -162,14 +162,14 @@ func TestRelayHandlerOnStart_LogsOwnerAuthWhenOwnerUnknown(t *testing.T) {
 	if !strings.Contains(output, "/start owner=owner-token") {
 		t.Fatalf("startup log missing auth command, output=%q", output)
 	}
-	if !strings.Contains(output, "https://t.me/"+testRelayStartupBotUsername+"?start=owner_owner-token") {
+	if !strings.Contains(output, "https://t.me/"+testBaldaStartupBotUsername+"?start=owner_owner-token") {
 		t.Fatalf("startup log missing auth url, output=%q", output)
 	}
 }
 
-func TestRelayHandlerOnStart_DoesNotLogOwnerAuthWhenOwnerRegistered(t *testing.T) {
-	username := testRelayStartupBotUsername
-	tgClient := &fakeRelayStartupTGClient{
+func TestBaldaHandlerOnStart_DoesNotLogOwnerAuthWhenOwnerRegistered(t *testing.T) {
+	username := testBaldaStartupBotUsername
+	tgClient := &fakeBaldaStartupTGClient{
 		getMeResp: &client.GetMeResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
 			JSON200: &struct {
@@ -186,7 +186,7 @@ func TestRelayHandlerOnStart_DoesNotLogOwnerAuthWhenOwnerRegistered(t *testing.T
 	}
 
 	var buf bytes.Buffer
-	handler := newRelayStartupHandlerForTest(t, tgClient, "owner-token", zerolog.New(&buf))
+	handler := newBaldaStartupHandlerForTest(t, tgClient, "owner-token", zerolog.New(&buf))
 	if _, err := handler.ownerStore.RegisterOwner(42, 0, "owner", "Balda", "Owner", false); err != nil {
 		t.Fatalf("RegisterOwner() error = %v", err)
 	}
@@ -203,27 +203,27 @@ func TestRelayHandlerOnStart_DoesNotLogOwnerAuthWhenOwnerRegistered(t *testing.T
 	if strings.Contains(output, "/start owner=owner-token") {
 		t.Fatalf("startup log unexpectedly included auth command, output=%q", output)
 	}
-	if strings.Contains(output, "https://t.me/"+testRelayStartupBotUsername+"?start=owner_owner-token") {
+	if strings.Contains(output, "https://t.me/"+testBaldaStartupBotUsername+"?start=owner_owner-token") {
 		t.Fatalf("startup log unexpectedly included auth url, output=%q", output)
 	}
 }
 
-func TestRelayHandlerOnStart_FailsWhenOwnerBootstrapFails(t *testing.T) {
+func TestBaldaHandlerOnStart_FailsWhenOwnerBootstrapFails(t *testing.T) {
 	handler, _ := newRegisteredOwnerStartupHandler(t)
-	sessionManager := &relaysession.Manager{}
-	setUnexportedField(t, sessionManager, "agentBuilder", &fakeRelayStartupFailBuilder{
-		metadata: relayagent.AgentMetadata{
+	sessionManager := &baldasession.Manager{}
+	setUnexportedField(t, sessionManager, "agentBuilder", &fakeBaldaStartupFailBuilder{
+		metadata: baldaagent.AgentMetadata{
 			Type:       "codex_acp",
 			Model:      "gpt-5.3-codex",
 			MCPServers: []string{"balda"},
 		},
 		err: errors.New("runtime session creation failed"),
 	})
-	setUnexportedField(t, sessionManager, "runtimeManager", &fakeRelayRestoreRuntimeManager{providerID: "balda-provider"})
-	setUnexportedField(t, sessionManager, "relayProviderName", "balda-provider")
-	setUnexportedField(t, sessionManager, "sessionStore", &fakeRelayRestoreSessionStore{})
+	setUnexportedField(t, sessionManager, "runtimeManager", &fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"})
+	setUnexportedField(t, sessionManager, "baldaProviderName", "balda-provider")
+	setUnexportedField(t, sessionManager, "sessionStore", &fakeBaldaRestoreSessionStore{})
 	setUnexportedField(t, sessionManager, "logger", zerolog.Nop())
-	setUnexportedField(t, sessionManager, "sessions", map[string]*relaysession.TopicSession{})
+	setUnexportedField(t, sessionManager, "sessions", map[string]*baldasession.TopicSession{})
 	handler.sessionManager = sessionManager
 
 	err := handler.onStart(context.Background())
@@ -235,7 +235,7 @@ func TestRelayHandlerOnStart_FailsWhenOwnerBootstrapFails(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnStart_DoesNotFailWhenReadyMessageFails(t *testing.T) {
+func TestBaldaHandlerOnStart_DoesNotFailWhenReadyMessageFails(t *testing.T) {
 	handler, tgClient := newRegisteredOwnerStartupHandler(t)
 	tgClient.sendErr = errors.New("telegram send failed")
 
@@ -247,68 +247,68 @@ func TestRelayHandlerOnStart_DoesNotFailWhenReadyMessageFails(t *testing.T) {
 func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testing.T) {
 	ctx := context.Background()
 	workingDir := t.TempDir()
-	initRelayRestoreGitRepo(t, ctx, workingDir)
+	initBaldaRestoreGitRepo(t, ctx, workingDir)
 
-	writeRelayRestoreFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
-	runRelayRestoreGit(t, ctx, workingDir, "add", "seed.txt")
-	runRelayRestoreGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+	writeBaldaRestoreFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
+	runBaldaRestoreGit(t, ctx, workingDir, "add", "seed.txt")
+	runBaldaRestoreGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
 
 	stateDir := t.TempDir()
-	locator := relaytelegram.NewLocator(9001, 0)
+	locator := baldatelegram.NewLocator(9001, 0)
 	branchName := "persisted/owner-branch"
 	workspaceDir := filepath.Join(stateDir, "persisted-owner-workspace")
-	runRelayRestoreGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
+	runBaldaRestoreGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 	t.Cleanup(func() {
-		_ = runRelayRestoreGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
+		_ = runBaldaRestoreGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
 	})
 
-	store := &fakeRelayRestoreSessionStore{
-		record: relaystate.SessionRecord{
+	store := &fakeBaldaRestoreSessionStore{
+		record: baldastate.SessionRecord{
 			SessionID:    locator.SessionID,
-			UserID:       relaytelegram.UserID(101),
+			UserID:       baldatelegram.UserID(101),
 			ChannelType:  locator.ChannelType,
 			AddressKey:   locator.AddressKey,
 			AddressJSON:  locator.AddressJSON,
 			AgentName:    ownerSessionLabel,
 			WorkspaceDir: workspaceDir,
 			BranchName:   branchName,
-			Status:       relaystate.SessionStatusActive,
+			Status:       baldastate.SessionStatusActive,
 		},
 		foundByAddress: true,
 	}
 
-	builder := &fakeRelayRestoreAgentBuilder{
-		metadata: relayagent.AgentMetadata{
+	builder := &fakeBaldaRestoreAgentBuilder{
+		metadata: baldaagent.AgentMetadata{
 			Type:       "codex_acp",
 			Model:      "gpt-5.3-codex",
 			MCPServers: []string{"balda"},
 		},
 	}
-	runtimeManager := &fakeRelayRestoreRuntimeManager{providerID: "balda-provider"}
-	sessionManager := &relaysession.Manager{}
+	runtimeManager := &fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"}
+	sessionManager := &baldasession.Manager{}
 	setUnexportedField(t, sessionManager, "agentBuilder", builder)
 	setUnexportedField(t, sessionManager, "runtimeManager", runtimeManager)
-	setUnexportedField(t, sessionManager, "relayProviderName", "balda-provider")
+	setUnexportedField(t, sessionManager, "baldaProviderName", "balda-provider")
 	setUnexportedField(t, sessionManager, "workingDir", workingDir)
-	setUnexportedField(t, sessionManager, "workspaces", relayagent.NewWorkspaceManager(workingDir, stateDir, relayRestoreCurrentBranch(t, ctx, workingDir)))
+	setUnexportedField(t, sessionManager, "workspaces", baldaagent.NewWorkspaceManager(workingDir, stateDir, baldaRestoreCurrentBranch(t, ctx, workingDir)))
 	setUnexportedField(t, sessionManager, "workspaceEnabled", true)
 	setUnexportedField(t, sessionManager, "sessionStore", store)
 	setUnexportedField(t, sessionManager, "logger", zerolog.Nop())
-	setUnexportedField(t, sessionManager, "sessions", map[string]*relaysession.TopicSession{})
+	setUnexportedField(t, sessionManager, "sessions", map[string]*baldasession.TopicSession{})
 
-	tgClient := &fakeRelayStartupTGClient{
+	tgClient := &fakeBaldaStartupTGClient{
 		fakeTelegramClient: &fakeTelegramClient{},
 	}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	handler := &RelayHandler{
-		channel: relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	handler := &BaldaHandler{
+		channel: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 			Messenger: msg,
 			TGClient:  tgClient,
 			Logger:    zerolog.Nop(),
 		}),
 		sessionManager:    sessionManager,
 		messenger:         msg,
-		relayProviderName: "balda-provider",
+		baldaProviderName: "balda-provider",
 		logger:            zerolog.Nop(),
 	}
 
@@ -328,7 +328,7 @@ func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testin
 	}
 }
 
-func newRelayStartupHandlerForTest(t *testing.T, tgClient client.ClientWithResponsesInterface, authToken string, logger zerolog.Logger) *RelayHandler {
+func newBaldaStartupHandlerForTest(t *testing.T, tgClient client.ClientWithResponsesInterface, authToken string, logger zerolog.Logger) *BaldaHandler {
 	t.Helper()
 
 	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
@@ -336,7 +336,7 @@ func newRelayStartupHandlerForTest(t *testing.T, tgClient client.ClientWithRespo
 		t.Fatalf("new owner store: %v", err)
 	}
 
-	return &RelayHandler{
+	return &BaldaHandler{
 		ownerStore: ownerStore,
 		tgClient:   tgClient,
 		authToken:  authToken,
@@ -344,11 +344,11 @@ func newRelayStartupHandlerForTest(t *testing.T, tgClient client.ClientWithRespo
 	}
 }
 
-func newRegisteredOwnerStartupHandler(t *testing.T) (*RelayHandler, *fakeRelayStartupTGClient) {
+func newRegisteredOwnerStartupHandler(t *testing.T) (*BaldaHandler, *fakeBaldaStartupTGClient) {
 	t.Helper()
 
-	username := testRelayStartupBotUsername
-	tgClient := &fakeRelayStartupTGClient{
+	username := testBaldaStartupBotUsername
+	tgClient := &fakeBaldaStartupTGClient{
 		fakeTelegramClient: &fakeTelegramClient{},
 		getMeResp: &client.GetMeResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
@@ -365,41 +365,41 @@ func newRegisteredOwnerStartupHandler(t *testing.T) (*RelayHandler, *fakeRelaySt
 		},
 	}
 
-	handler := newRelayStartupHandlerForTest(t, tgClient, "owner-token", zerolog.Nop())
+	handler := newBaldaStartupHandlerForTest(t, tgClient, "owner-token", zerolog.Nop())
 	if _, err := handler.ownerStore.RegisterOwner(42, 9001, "owner", "Balda", "Owner", false); err != nil {
 		t.Fatalf("RegisterOwner() error = %v", err)
 	}
 
-	builder := &fakeRelayRestoreAgentBuilder{
-		metadata: relayagent.AgentMetadata{
+	builder := &fakeBaldaRestoreAgentBuilder{
+		metadata: baldaagent.AgentMetadata{
 			Type:       "codex_acp",
 			Model:      "gpt-5.3-codex",
 			MCPServers: []string{"balda"},
 		},
 	}
-	runtimeManager := &fakeRelayRestoreRuntimeManager{providerID: "balda-provider"}
-	sessionManager := newRelayRestoreSessionManager(t, builder, runtimeManager, &fakeRelayRestoreSessionStore{})
+	runtimeManager := &fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"}
+	sessionManager := newBaldaRestoreSessionManager(t, builder, runtimeManager, &fakeBaldaRestoreSessionStore{})
 
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	handler.channel = relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	handler.channel = baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
 	handler.sessionManager = sessionManager
 	handler.messenger = msg
-	handler.relayProviderName = "balda-provider"
+	handler.baldaProviderName = "balda-provider"
 	return handler, tgClient
 }
 
-type fakeRelayStartupFailBuilder struct {
-	metadata relayagent.AgentMetadata
+type fakeBaldaStartupFailBuilder struct {
+	metadata baldaagent.AgentMetadata
 	err      error
 }
 
-func (f *fakeRelayStartupFailBuilder) CreateRuntimeSession(
+func (f *fakeBaldaStartupFailBuilder) CreateRuntimeSession(
 	context.Context,
-	*relayagent.BuiltRuntime,
+	*baldaagent.BuiltRuntime,
 	string,
 	string,
 	string,
@@ -408,18 +408,18 @@ func (f *fakeRelayStartupFailBuilder) CreateRuntimeSession(
 	return nil, f.err
 }
 
-func (*fakeRelayStartupFailBuilder) ValidateAgent(string) error {
+func (*fakeBaldaStartupFailBuilder) ValidateAgent(string) error {
 	return nil
 }
 
-func (*fakeRelayStartupFailBuilder) GetAgentInfo(string) (string, []string) {
+func (*fakeBaldaStartupFailBuilder) GetAgentInfo(string) (string, []string) {
 	return "", nil
 }
 
-func (f *fakeRelayStartupFailBuilder) GetAgentMetadata(string) relayagent.AgentMetadata {
+func (f *fakeBaldaStartupFailBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
 	return f.metadata
 }
 
-func (*fakeRelayStartupFailBuilder) ProviderIDs() []string {
+func (*fakeBaldaStartupFailBuilder) ProviderIDs() []string {
 	return []string{"balda-provider"}
 }

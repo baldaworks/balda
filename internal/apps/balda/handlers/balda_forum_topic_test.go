@@ -7,9 +7,9 @@ import (
 	"unsafe"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -19,47 +19,47 @@ import (
 	"github.com/tgbotkit/runtime/messagetype"
 )
 
-var _ tgbotkit.Registry = (*fakeRelayRegistry)(nil)
+var _ tgbotkit.Registry = (*fakeBaldaRegistry)(nil)
 
-type fakeRelayRegistry struct {
+type fakeBaldaRegistry struct {
 	onMessageCalls   int
 	messageTypeCalls []messagetype.MessageType
 }
 
-func (f *fakeRelayRegistry) OnUpdate(rtHandlers.UpdateHandler) eventemitter.UnsubscribeFunc {
+func (f *fakeBaldaRegistry) OnUpdate(rtHandlers.UpdateHandler) eventemitter.UnsubscribeFunc {
 	return func() {}
 }
 
-func (f *fakeRelayRegistry) OnMessage(rtHandlers.MessageHandler) eventemitter.UnsubscribeFunc {
+func (f *fakeBaldaRegistry) OnMessage(rtHandlers.MessageHandler) eventemitter.UnsubscribeFunc {
 	f.onMessageCalls++
 	return func() {}
 }
 
-func (f *fakeRelayRegistry) OnMessageType(t messagetype.MessageType, _ rtHandlers.MessageHandler) eventemitter.UnsubscribeFunc {
+func (f *fakeBaldaRegistry) OnMessageType(t messagetype.MessageType, _ rtHandlers.MessageHandler) eventemitter.UnsubscribeFunc {
 	f.messageTypeCalls = append(f.messageTypeCalls, t)
 	return func() {}
 }
 
-func (f *fakeRelayRegistry) OnCommand(rtHandlers.CommandHandler) eventemitter.UnsubscribeFunc {
+func (f *fakeBaldaRegistry) OnCommand(rtHandlers.CommandHandler) eventemitter.UnsubscribeFunc {
 	return func() {}
 }
 
-type fakeRelayAuthorizer struct {
+type fakeBaldaAuthorizer struct {
 	ownerID        int64
 	isCollaborator bool
 }
 
-func (f *fakeRelayAuthorizer) IsOwner(userID int64) bool {
+func (f *fakeBaldaAuthorizer) IsOwner(userID int64) bool {
 	return userID == f.ownerID
 }
 
-func (f *fakeRelayAuthorizer) IsCollaborator(userID int64) bool {
+func (f *fakeBaldaAuthorizer) IsCollaborator(userID int64) bool {
 	return f.isCollaborator
 }
 
-func TestRelayHandlerRegister_RegistersForumTopicMessageTypes(t *testing.T) {
-	registry := &fakeRelayRegistry{}
-	handler := &RelayHandler{logger: zerolog.Nop(), channel: newRelayTestTelegramAdapter()}
+func TestBaldaHandlerRegister_RegistersForumTopicMessageTypes(t *testing.T) {
+	registry := &fakeBaldaRegistry{}
+	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
 
 	handler.Register(registry)
 
@@ -83,8 +83,8 @@ func TestRelayHandlerRegister_RegistersForumTopicMessageTypes(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnForumTopicLifecycle_NonClosingEventsDoNotStopSession(t *testing.T) {
-	handler := &RelayHandler{logger: zerolog.Nop(), channel: newRelayTestTelegramAdapter()}
+func TestBaldaHandlerOnForumTopicLifecycle_NonClosingEventsDoNotStopSession(t *testing.T) {
+	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
 
 	tests := []messagetype.MessageType{
 		messagetype.ForumTopicCreated,
@@ -116,14 +116,14 @@ func TestRelayHandlerOnForumTopicLifecycle_NonClosingEventsDoNotStopSession(t *t
 	}
 }
 
-func TestRelayHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T) {
+func TestBaldaHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T) {
 	topicID := 77
-	locator := relaytelegram.NewLocator(9001, topicID)
-	sessionManager := newRelaySessionManagerWithSession(t, locator, newRelayTopicSession(t, locator.SessionID))
+	locator := baldatelegram.NewLocator(9001, topicID)
+	sessionManager := newBaldaSessionManagerWithSession(t, locator, newBaldaTopicSession(t, locator.SessionID))
 	turnDispatcher := &fakeTurnDispatcher{}
-	handler := &RelayHandler{
+	handler := &BaldaHandler{
 		logger:         zerolog.Nop(),
-		channel:        newRelayTestTelegramAdapter(),
+		channel:        newBaldaTestTelegramAdapter(),
 		sessionManager: sessionManager,
 		turnDispatcher: turnDispatcher,
 	}
@@ -157,8 +157,8 @@ func TestRelayHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T)
 	}
 }
 
-func TestRelayHandlerOnForumTopicLifecycle_IgnoresOtherChatWhenBound(t *testing.T) {
-	handler := &RelayHandler{logger: zerolog.Nop(), channel: newRelayTestTelegramAdapter()}
+func TestBaldaHandlerOnForumTopicLifecycle_IgnoresOtherChatWhenBound(t *testing.T) {
+	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
 	handler.setChatID(9001)
 
 	topicID := 13
@@ -183,8 +183,8 @@ func TestRelayHandlerOnForumTopicLifecycle_IgnoresOtherChatWhenBound(t *testing.
 	}
 }
 
-func TestRelayHandlerOnForumTopicLifecycle_IgnoresEventWithoutTopicID(t *testing.T) {
-	handler := &RelayHandler{logger: zerolog.Nop(), channel: newRelayTestTelegramAdapter()}
+func TestBaldaHandlerOnForumTopicLifecycle_IgnoresEventWithoutTopicID(t *testing.T) {
+	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
 
 	event := &events.MessageEvent{
 		Type: messagetype.ForumTopicClosed,
@@ -202,8 +202,8 @@ func TestRelayHandlerOnForumTopicLifecycle_IgnoresEventWithoutTopicID(t *testing
 	}
 }
 
-func TestRelayHandlerOnMessage_IgnoresNilFrom(t *testing.T) {
-	handler := &RelayHandler{logger: zerolog.Nop(), channel: newRelayTestTelegramAdapter()}
+func TestBaldaHandlerOnMessage_IgnoresNilFrom(t *testing.T) {
+	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
 	handler.SetOwner(101, 9001)
 
 	text := "hello"
@@ -224,8 +224,8 @@ func TestRelayHandlerOnMessage_IgnoresNilFrom(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnMessage_ChannelIgnoresNonMention(t *testing.T) {
-	handler, turns, _ := newRelayMessageHandlerHarness(t, 0)
+func TestBaldaHandlerOnMessage_ChannelIgnoresNonMention(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
 
 	text := "hello world"
 	event := &events.MessageEvent{
@@ -249,8 +249,8 @@ func TestRelayHandlerOnMessage_ChannelIgnoresNonMention(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnMessage_ChannelMentionBypassesGate(t *testing.T) {
-	handler, turns, locator := newRelayMessageHandlerHarness(t, 0)
+func TestBaldaHandlerOnMessage_ChannelMentionBypassesGate(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
 
 	text := "@testbot hello world"
 	entities := []client.MessageEntity{{Type: "mention", Offset: 0, Length: len("@testbot")}}
@@ -279,8 +279,8 @@ func TestRelayHandlerOnMessage_ChannelMentionBypassesGate(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnMessage_DMNonMentionAllowed(t *testing.T) {
-	handler, turns, locator := newRelayMessageHandlerHarness(t, 0)
+func TestBaldaHandlerOnMessage_DMNonMentionAllowed(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
 
 	text := "hello from dm"
 	event := &events.MessageEvent{
@@ -307,8 +307,8 @@ func TestRelayHandlerOnMessage_DMNonMentionAllowed(t *testing.T) {
 	}
 }
 
-func TestRelayHandlerOnMessage_TopicUnknownThreadIgnoresNonMentionNonReply(t *testing.T) {
-	handler, turns, _ := newRelayMessageHandlerHarness(t, 77)
+func TestBaldaHandlerOnMessage_TopicUnknownThreadIgnoresNonMentionNonReply(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 77)
 
 	text := "hello from the topic"
 	topicID := 99
@@ -334,8 +334,8 @@ func TestRelayHandlerOnMessage_TopicUnknownThreadIgnoresNonMentionNonReply(t *te
 	}
 }
 
-func TestRelayHandlerOnMessage_TopicKnownThreadStillRequiresMentionOrReply(t *testing.T) {
-	handler, turns, _ := newRelayMessageHandlerHarness(t, 77)
+func TestBaldaHandlerOnMessage_TopicKnownThreadStillRequiresMentionOrReply(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 77)
 
 	text := "hello from the topic"
 	topicID := 77
@@ -361,8 +361,8 @@ func TestRelayHandlerOnMessage_TopicKnownThreadStillRequiresMentionOrReply(t *te
 	}
 }
 
-func TestRelayHandlerOnMessage_RejectsFalsePositiveBotMentionPrefix(t *testing.T) {
-	handler, turns, _ := newRelayMessageHandlerHarness(t, 0)
+func TestBaldaHandlerOnMessage_RejectsFalsePositiveBotMentionPrefix(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
 
 	text := "@testbotx please ignore this"
 	event := &events.MessageEvent{
@@ -386,8 +386,8 @@ func TestRelayHandlerOnMessage_RejectsFalsePositiveBotMentionPrefix(t *testing.T
 	}
 }
 
-func TestRelayHandlerOnMessage_ChannelReplyToBotBypassesMentionGate(t *testing.T) {
-	handler, turns, locator := newRelayMessageHandlerHarness(t, 0)
+func TestBaldaHandlerOnMessage_ChannelReplyToBotBypassesMentionGate(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
 
 	text := "following up in channel"
 	event := &events.MessageEvent{
@@ -415,8 +415,8 @@ func TestRelayHandlerOnMessage_ChannelReplyToBotBypassesMentionGate(t *testing.T
 	}
 }
 
-func TestRelayHandlerOnMessage_TopicReplyToBotBypassesMentionGate(t *testing.T) {
-	handler, turns, locator := newRelayMessageHandlerHarness(t, 77)
+func TestBaldaHandlerOnMessage_TopicReplyToBotBypassesMentionGate(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 77)
 
 	text := "topic follow up"
 	topicID := 77
@@ -446,8 +446,8 @@ func TestRelayHandlerOnMessage_TopicReplyToBotBypassesMentionGate(t *testing.T) 
 	}
 }
 
-func TestRelayHandlerOnMessage_ChannelReplyToDifferentBotIgnored(t *testing.T) {
-	handler, turns, _ := newRelayMessageHandlerHarness(t, 0)
+func TestBaldaHandlerOnMessage_ChannelReplyToDifferentBotIgnored(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
 
 	text := "following up in channel"
 	event := &events.MessageEvent{
@@ -472,17 +472,17 @@ func TestRelayHandlerOnMessage_ChannelReplyToDifferentBotIgnored(t *testing.T) {
 	}
 }
 
-func newRelayTestTelegramAdapter() *relaytelegram.Adapter {
+func newBaldaTestTelegramAdapter() *baldatelegram.Adapter {
 	tgClient := &fakeTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	return relaytelegram.NewAdapter(relaytelegram.AdapterParams{
+	return baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
 }
 
-func newRelayMessageHandlerHarness(t *testing.T, topicID int) (*RelayHandler, *fakeTurnDispatcher, relaysession.SessionLocator) {
+func newBaldaMessageHandlerHarness(t *testing.T, topicID int) (*BaldaHandler, *fakeTurnDispatcher, baldasession.SessionLocator) {
 	t.Helper()
 
 	stateStore := &fakeOwnerKVStore{}
@@ -494,20 +494,20 @@ func newRelayMessageHandlerHarness(t *testing.T, topicID int) (*RelayHandler, *f
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
 
-	locator := relaytelegram.NewLocator(9001, topicID)
-	sessionManager := newRelaySessionManagerWithSession(t, locator, newRelayTopicSession(t, locator.SessionID))
+	locator := baldatelegram.NewLocator(9001, topicID)
+	sessionManager := newBaldaSessionManagerWithSession(t, locator, newBaldaTopicSession(t, locator.SessionID))
 	turnDispatcher := &fakeTurnDispatcher{}
-	handler := &RelayHandler{
+	handler := &BaldaHandler{
 		ownerStore:     ownerStore,
-		channel:        newRelayTestTelegramAdapter(),
+		channel:        newBaldaTestTelegramAdapter(),
 		sessionManager: sessionManager,
 		turnDispatcher: turnDispatcher,
 		logger:         zerolog.Nop(),
-		authorizer:     &fakeRelayAuthorizer{ownerID: 101},
+		authorizer:     &fakeBaldaAuthorizer{ownerID: 101},
 	}
 	handler.SetOwner(101, 9001)
-	setUnexportedField(t, handler, "relayProviderName", "alpha")
-	handler.botUsername = testRelayBotUsername
+	setUnexportedField(t, handler, "baldaProviderName", "alpha")
+	handler.botUsername = testBaldaBotUsername
 	handler.botUserID = 4242
 
 	return handler, turnDispatcher, locator
@@ -523,19 +523,19 @@ func replyToMessageFrom(userID int64, isBot bool) *client.Message {
 	}
 }
 
-func newRelaySessionManagerWithSession(t *testing.T, locator relaysession.SessionLocator, ts *relaysession.TopicSession) *relaysession.Manager {
+func newBaldaSessionManagerWithSession(t *testing.T, locator baldasession.SessionLocator, ts *baldasession.TopicSession) *baldasession.Manager {
 	t.Helper()
 
-	m := &relaysession.Manager{}
-	setUnexportedField(t, m, "sessions", map[string]*relaysession.TopicSession{locator.SessionID: ts})
-	setUnexportedField(t, m, "sessionStore", &fakeRelayRestoreSessionStore{})
+	m := &baldasession.Manager{}
+	setUnexportedField(t, m, "sessions", map[string]*baldasession.TopicSession{locator.SessionID: ts})
+	setUnexportedField(t, m, "sessionStore", &fakeBaldaRestoreSessionStore{})
 	return m
 }
 
-func newRelayTopicSession(t *testing.T, sessionID string) *relaysession.TopicSession {
+func newBaldaTopicSession(t *testing.T, sessionID string) *baldasession.TopicSession {
 	t.Helper()
 
-	ts := &relaysession.TopicSession{}
+	ts := &baldasession.TopicSession{}
 	setUnexportedField(t, ts, "sessionID", sessionID)
 	return ts
 }

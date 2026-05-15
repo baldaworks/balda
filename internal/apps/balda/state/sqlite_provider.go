@@ -32,7 +32,7 @@ func (p *sqliteProvider) AddCollaborator(ctx context.Context, c auth.Collaborato
 	}
 
 	_, err := p.db.ExecContext(ctx, `
-		INSERT OR REPLACE INTO relay_collaborators (user_id, username, first_name, added_by, added_at)
+		INSERT OR REPLACE INTO balda_collaborators (user_id, username, first_name, added_by, added_at)
 		VALUES (?, ?, ?, ?, ?)`,
 		c.UserID, c.Username, c.FirstName, c.AddedBy, c.AddedAt.Format(time.RFC3339),
 	)
@@ -48,7 +48,7 @@ func (p *sqliteProvider) RemoveCollaborator(ctx context.Context, userID string) 
 	}
 
 	_, err := p.db.ExecContext(ctx, `
-		DELETE FROM relay_collaborators
+		DELETE FROM balda_collaborators
 		WHERE user_id = ?`,
 		userID,
 	)
@@ -62,7 +62,7 @@ func (p *sqliteProvider) GetCollaborator(ctx context.Context, userID string) (*a
 	var username, firstName, addedBy, addedAt string
 	err := p.db.QueryRowContext(ctx, `
 		SELECT username, first_name, added_by, added_at
-		FROM relay_collaborators
+		FROM balda_collaborators
 		WHERE user_id = ?`,
 		userID,
 	).Scan(&username, &firstName, &addedBy, &addedAt)
@@ -90,7 +90,7 @@ func (p *sqliteProvider) GetCollaborator(ctx context.Context, userID string) (*a
 func (p *sqliteProvider) ListCollaborators(ctx context.Context) ([]auth.Collaborator, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT user_id, username, first_name, added_by, added_at
-		FROM relay_collaborators
+		FROM balda_collaborators
 		ORDER BY added_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list collaborators: %w", err)

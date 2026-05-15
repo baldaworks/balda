@@ -14,12 +14,12 @@ const (
 	acpPlanEntriesKey  = "entries"
 )
 
-func relayPlanProgressText(ev *adksession.Event) (string, bool) {
-	snapshot, ok := relayPlanSnapshotFromEvent(ev)
+func baldaPlanProgressText(ev *adksession.Event) (string, bool) {
+	snapshot, ok := baldaPlanSnapshotFromEvent(ev)
 	if !ok {
 		return "", false
 	}
-	entries, ok := relayPlanEntries(snapshot)
+	entries, ok := baldaPlanEntries(snapshot)
 	if !ok || len(entries) == 0 {
 		return "", false
 	}
@@ -41,17 +41,17 @@ func relayPlanProgressText(ev *adksession.Event) (string, bool) {
 	return strings.Join(lines, "\n"), true
 }
 
-func relayPlanSnapshotFromEvent(ev *adksession.Event) (map[string]any, bool) {
+func baldaPlanSnapshotFromEvent(ev *adksession.Event) (map[string]any, bool) {
 	if ev == nil {
 		return nil, false
 	}
-	if snapshot, ok := relayPlanSnapshotFromMetadata(ev.CustomMetadata); ok {
+	if snapshot, ok := baldaPlanSnapshotFromMetadata(ev.CustomMetadata); ok {
 		return snapshot, true
 	}
-	return relayPlanSnapshotFromStateDelta(ev.Actions.StateDelta)
+	return baldaPlanSnapshotFromStateDelta(ev.Actions.StateDelta)
 }
 
-func relayPlanSnapshotFromMetadata(metadata map[string]any) (map[string]any, bool) {
+func baldaPlanSnapshotFromMetadata(metadata map[string]any) (map[string]any, bool) {
 	if len(metadata) == 0 {
 		return nil, false
 	}
@@ -60,28 +60,28 @@ func relayPlanSnapshotFromMetadata(metadata map[string]any) (map[string]any, boo
 			return nil, false
 		}
 	}
-	return relayPlanSnapshotFromValue(metadata[acpPlanMetadataKey])
+	return baldaPlanSnapshotFromValue(metadata[acpPlanMetadataKey])
 }
 
-func relayPlanSnapshotFromStateDelta(stateDelta map[string]any) (map[string]any, bool) {
+func baldaPlanSnapshotFromStateDelta(stateDelta map[string]any) (map[string]any, bool) {
 	if len(stateDelta) == 0 {
 		return nil, false
 	}
-	return relayPlanSnapshotFromValue(stateDelta[acpPlanMetadataKey])
+	return baldaPlanSnapshotFromValue(stateDelta[acpPlanMetadataKey])
 }
 
-func relayPlanSnapshotFromValue(raw any) (map[string]any, bool) {
+func baldaPlanSnapshotFromValue(raw any) (map[string]any, bool) {
 	snapshot, ok := raw.(map[string]any)
 	if !ok {
 		return nil, false
 	}
-	if _, ok := relayPlanEntries(snapshot); !ok {
+	if _, ok := baldaPlanEntries(snapshot); !ok {
 		return nil, false
 	}
 	return snapshot, true
 }
 
-func relayPlanEntries(snapshot map[string]any) ([]map[string]any, bool) {
+func baldaPlanEntries(snapshot map[string]any) ([]map[string]any, bool) {
 	rawEntries, ok := snapshot[acpPlanEntriesKey]
 	if !ok {
 		return nil, false

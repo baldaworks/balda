@@ -4,16 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/tgbotkit/client"
 )
 
 func TestNormalizePublicText_MentionEntityAnywhereBuildsStructuredInputWithReply(t *testing.T) {
-	h := &RelayHandler{}
+	h := &BaldaHandler{}
 	setUnexportedField(t, h, "botUsername", "testbot")
 
 	text := "please @testbot review this"
-	normalized, ok := h.normalizePublicText(relaytelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
 		Text:         text,
 		ReplyContent: "previous message body",
 		Entities: []client.MessageEntity{
@@ -36,10 +36,10 @@ func TestNormalizePublicText_MentionEntityAnywhereBuildsStructuredInputWithReply
 }
 
 func TestNormalizePublicText_MentionOnlyWithReplyContentIsProcessed(t *testing.T) {
-	h := &RelayHandler{}
+	h := &BaldaHandler{}
 	setUnexportedField(t, h, "botUsername", "testbot")
 
-	normalized, ok := h.normalizePublicText(relaytelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
 		Text:         "@testbot",
 		ReplyContent: "quoted context",
 		Entities: []client.MessageEntity{
@@ -57,10 +57,10 @@ func TestNormalizePublicText_MentionOnlyWithReplyContentIsProcessed(t *testing.T
 }
 
 func TestNormalizePublicText_MentionOnlyWithoutReplyContentIsIgnored(t *testing.T) {
-	h := &RelayHandler{}
+	h := &BaldaHandler{}
 	setUnexportedField(t, h, "botUsername", "testbot")
 
-	normalized, ok := h.normalizePublicText(relaytelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
 		Text: "@testbot",
 		Entities: []client.MessageEntity{
 			{Type: "mention", Offset: 0, Length: len("@testbot")},
@@ -73,11 +73,11 @@ func TestNormalizePublicText_MentionOnlyWithoutReplyContentIsIgnored(t *testing.
 }
 
 func TestNormalizePublicText_DirectReplyToBotPathUnchanged(t *testing.T) {
-	h := &RelayHandler{}
+	h := &BaldaHandler{}
 	setUnexportedField(t, h, "botUserID", int64(4242))
 	setUnexportedField(t, h, "botUsername", "testbot")
 
-	normalized, ok := h.normalizePublicText(relaytelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
 		Text:          "follow up message",
 		IsReply:       true,
 		ReplyToIsBot:  true,

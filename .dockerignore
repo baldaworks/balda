@@ -1,6 +1,6 @@
 .git
 .beads
-.config/relay
+.config/balda
 .env
 .codex
 .claude

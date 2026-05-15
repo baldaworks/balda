@@ -10,42 +10,42 @@ import (
 	"strings"
 	"testing"
 
-	relaystate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/runtime/appconfig"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	testRelayProviderCodex    = "codex"
-	testRelayProviderOpencode = "opencode"
-	testRelayProviderCopilot  = "copilot"
-	testRelayTokenMyToken     = "my-token"
+	testBaldaProviderCodex    = "codex"
+	testBaldaProviderOpencode = "opencode"
+	testBaldaProviderCopilot  = "copilot"
+	testBaldaTokenMyToken     = "my-token"
 )
 
 func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *testing.T) {
 	workingDir := setWorkingDir(t)
 	setDetectedBinaries(t, "codex", "opencode", "copilot", "gemini", "claude")
 	setDetectedBaseBranch(t, "main", nil)
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
-		return botIdentity{username: "NormaBot", name: "Norma Relay"}, nil
+		return botIdentity{username: "NormaBot", name: "Norma Balda"}, nil
 	})
-	setRelayOwnerTokenGenerator(t, "owner-token-init")
+	setBaldaOwnerTokenGenerator(t, "owner-token-init")
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("tg-token\n")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return false }
+	baldaInitInput = strings.NewReader("tg-token\n")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return false }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -53,40 +53,40 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 		t.Fatalf("init command failed: %v", err)
 	}
 
-	assertRelayInitArtifacts(t, workingDir)
+	assertBaldaInitArtifacts(t, workingDir)
 
-	doc := mustReadRelayDoc(t, workingDir)
+	doc := mustReadBaldaDoc(t, workingDir)
 	assertNoCLISection(t, doc)
 
-	relaySection, ok := toStringAnyMap(doc["balda"])
+	baldaSection, ok := toStringAnyMap(doc["balda"])
 	if !ok {
-		t.Fatal("relay section missing in generated config")
+		t.Fatal("balda section missing in generated config")
 	}
-	if got := relaySection["provider"]; got != testRelayProviderCodex {
-		t.Fatalf("balda.provider = %#v, want %s", got, testRelayProviderCodex)
+	if got := baldaSection["provider"]; got != testBaldaProviderCodex {
+		t.Fatalf("balda.provider = %#v, want %s", got, testBaldaProviderCodex)
 	}
-	telegramSection, ok := toStringAnyMap(relaySection["telegram"])
+	telegramSection, ok := toStringAnyMap(baldaSection["telegram"])
 	if !ok {
 		t.Fatal("balda.telegram section missing in generated config")
 	}
 	if got := telegramSection["token"]; got != "" {
 		t.Fatalf("balda.telegram.token = %#v, want empty string when stored in .env", got)
 	}
-	rawRelayMCPServers, ok := relaySection["mcp_servers"].([]any)
+	rawBaldaMCPServers, ok := baldaSection["mcp_servers"].([]any)
 	if !ok {
-		t.Fatalf("balda.mcp_servers type = %T, want []any", relaySection["mcp_servers"])
+		t.Fatalf("balda.mcp_servers type = %T, want []any", baldaSection["mcp_servers"])
 	}
-	if len(rawRelayMCPServers) != 0 {
-		t.Fatalf("balda.mcp_servers = %#v, want empty", rawRelayMCPServers)
+	if len(rawBaldaMCPServers) != 0 {
+		t.Fatalf("balda.mcp_servers = %#v, want empty", rawBaldaMCPServers)
 	}
-	workspaceSection, ok := toStringAnyMap(relaySection["workspace"])
+	workspaceSection, ok := toStringAnyMap(baldaSection["workspace"])
 	if !ok {
 		t.Fatal("balda.workspace section missing in generated config")
 	}
 	if got := workspaceSection["base_branch"]; got != "main" {
 		t.Fatalf("balda.workspace.base_branch = %#v, want main", got)
 	}
-	assertRelayGlobalInstructionExample(t, relaySection)
+	assertBaldaGlobalInstructionExample(t, baldaSection)
 
 	normaSection, ok := toStringAnyMap(doc["runtime"])
 	if !ok {
@@ -105,8 +105,8 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 		t.Fatalf("runtime.mcp_servers = %#v, want empty map", mcpServers)
 	}
 	assertMapHasOnlyKeys(t, providers, []string{"codex", "opencode", "copilot", "gemini", "claude_code", "pool"})
-	assertAgentModel(t, providers, "codex", "codex_acp", relayInitCodexModel)
-	assertAgentModel(t, providers, "claude_code", "claude_code_acp", relayInitClaudeCodeModel)
+	assertAgentModel(t, providers, "codex", "codex_acp", baldaInitCodexModel)
+	assertAgentModel(t, providers, "claude_code", "claude_code_acp", baldaInitClaudeCodeModel)
 
 	poolMembers := readPoolMembers(t, providers)
 	wantMembers := []string{"codex", "opencode", "copilot", "gemini", "claude_code"}
@@ -129,10 +129,10 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 		t.Fatal("profiles.pool must not be generated")
 	}
 
-	assertRelayOwnerTokenStored(t, workingDir, "owner-token-init")
+	assertBaldaOwnerTokenStored(t, workingDir, "owner-token-init")
 	assertDotEnvTokenValue(t, workingDir, "tg-token")
 
-	out := relayInitOutput.(*bytes.Buffer).String()
+	out := baldaInitOutput.(*bytes.Buffer).String()
 	if !strings.Contains(out, "start command: balda start") {
 		t.Fatalf("init output missing start command: %q", out)
 	}
@@ -150,10 +150,10 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 func TestInitCommand_DoesNotDetectLegacyClaudecodeBinary(t *testing.T) {
 	setDetectedBinaries(t, "claudecode")
 
-	if _, _, err := buildRelayInitDocument(t.TempDir()); err == nil {
-		t.Fatal("buildRelayInitDocument succeeded with only claudecode in PATH, want error")
+	if _, _, err := buildBaldaInitDocument(t.TempDir()); err == nil {
+		t.Fatal("buildBaldaInitDocument succeeded with only claudecode in PATH, want error")
 	} else if !strings.Contains(err.Error(), "codex, opencode, copilot, gemini, claude") {
-		t.Fatalf("buildRelayInitDocument error = %v, want supported CLI list with claude", err)
+		t.Fatalf("buildBaldaInitDocument error = %v, want supported CLI list with claude", err)
 	}
 }
 
@@ -161,26 +161,26 @@ func TestInitCommand_InteractiveSelectionAndToken(t *testing.T) {
 	workingDir := setWorkingDir(t)
 	setDetectedBinaries(t, "codex", "opencode", "gemini")
 	setDetectedBaseBranch(t, "", fmt.Errorf("not a git repo"))
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
-		if token != testRelayTokenMyToken {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
+		if token != testBaldaTokenMyToken {
 			return botIdentity{}, fmt.Errorf("invalid token")
 		}
 		return botIdentity{username: "NormaBot"}, nil
 	})
-	setRelayOwnerTokenGenerator(t, "owner-token-interactive")
+	setBaldaOwnerTokenGenerator(t, "owner-token-interactive")
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("2\n" + testRelayTokenMyToken + "\n2\n")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return true }
+	baldaInitInput = strings.NewReader("2\n" + testBaldaTokenMyToken + "\n2\n")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return true }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -188,15 +188,15 @@ func TestInitCommand_InteractiveSelectionAndToken(t *testing.T) {
 		t.Fatalf("init command failed: %v", err)
 	}
 
-	doc := mustReadRelayDoc(t, workingDir)
-	relaySection := mustMap(t, doc, "balda")
-	if got := relaySection["provider"]; got != testRelayProviderOpencode {
-		t.Fatalf("balda.provider = %#v, want %s", got, testRelayProviderOpencode)
+	doc := mustReadBaldaDoc(t, workingDir)
+	baldaSection := mustMap(t, doc, "balda")
+	if got := baldaSection["provider"]; got != testBaldaProviderOpencode {
+		t.Fatalf("balda.provider = %#v, want %s", got, testBaldaProviderOpencode)
 	}
-	assertRelayGlobalInstructionExample(t, relaySection)
-	telegramSection := mustMap(t, relaySection, "telegram")
-	if got := telegramSection["token"]; got != testRelayTokenMyToken {
-		t.Fatalf("balda.telegram.token = %#v, want %s", got, testRelayTokenMyToken)
+	assertBaldaGlobalInstructionExample(t, baldaSection)
+	telegramSection := mustMap(t, baldaSection, "telegram")
+	if got := telegramSection["token"]; got != testBaldaTokenMyToken {
+		t.Fatalf("balda.telegram.token = %#v, want %s", got, testBaldaTokenMyToken)
 	}
 	assertDotEnvTokenMissing(t, workingDir)
 	profiles := mustMap(t, doc, "profiles")
@@ -204,32 +204,32 @@ func TestInitCommand_InteractiveSelectionAndToken(t *testing.T) {
 		t.Fatal("profiles.default must not be generated")
 	}
 	assertProfileRoot(t, profiles, "opencode", "opencode")
-	assertRelayOwnerTokenStored(t, workingDir, "owner-token-interactive")
+	assertBaldaOwnerTokenStored(t, workingDir, "owner-token-interactive")
 }
 
 func TestInitCommand_InteractiveDefaultPrioritizesCopilotBeforeGemini(t *testing.T) {
 	workingDir := setWorkingDir(t)
 	setDetectedBinaries(t, "copilot", "gemini")
 	setDetectedBaseBranch(t, "", fmt.Errorf("not a git repo"))
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
-		if token != testRelayTokenMyToken {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
+		if token != testBaldaTokenMyToken {
 			return botIdentity{}, fmt.Errorf("invalid token")
 		}
 		return botIdentity{username: "NormaBot"}, nil
 	})
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("\n" + testRelayTokenMyToken + "\n\n")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return true }
+	baldaInitInput = strings.NewReader("\n" + testBaldaTokenMyToken + "\n\n")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return true }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -237,17 +237,17 @@ func TestInitCommand_InteractiveDefaultPrioritizesCopilotBeforeGemini(t *testing
 		t.Fatalf("init command failed: %v", err)
 	}
 
-	doc := mustReadRelayDoc(t, workingDir)
-	relaySection := mustMap(t, doc, "balda")
-	if got := relaySection["provider"]; got != testRelayProviderCopilot {
-		t.Fatalf("balda.provider = %#v, want %s", got, testRelayProviderCopilot)
+	doc := mustReadBaldaDoc(t, workingDir)
+	baldaSection := mustMap(t, doc, "balda")
+	if got := baldaSection["provider"]; got != testBaldaProviderCopilot {
+		t.Fatalf("balda.provider = %#v, want %s", got, testBaldaProviderCopilot)
 	}
-	telegramSection := mustMap(t, relaySection, "telegram")
+	telegramSection := mustMap(t, baldaSection, "telegram")
 	if got := telegramSection["token"]; got != "" {
 		t.Fatalf("balda.telegram.token = %#v, want empty string when stored in .env", got)
 	}
-	assertDotEnvTokenValue(t, workingDir, testRelayTokenMyToken)
-	assertRelayGlobalInstructionExample(t, relaySection)
+	assertDotEnvTokenValue(t, workingDir, testBaldaTokenMyToken)
+	assertBaldaGlobalInstructionExample(t, baldaSection)
 }
 
 func TestInitCommand_FailsWhenNoSupportedAgentCLIFound(t *testing.T) {
@@ -255,18 +255,18 @@ func TestInitCommand_FailsWhenNoSupportedAgentCLIFound(t *testing.T) {
 	setDetectedBinaries(t)
 	setDetectedBaseBranch(t, "", fmt.Errorf("not a git repo"))
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return false }
+	baldaInitInput = strings.NewReader("")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return false }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -284,11 +284,11 @@ func TestInitCommand_FailsWhenConfigAlreadyExists(t *testing.T) {
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "", fmt.Errorf("not a git repo"))
 
-	configPath := filepath.Join(workingDir, relayConfigRelDir, relayConfigFileName)
+	configPath := filepath.Join(workingDir, baldaConfigRelDir, baldaConfigFileName)
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(configPath, []byte("relay:\n  provider: existing\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("balda:\n  provider: existing\n"), 0o600); err != nil {
 		t.Fatalf("write existing config: %v", err)
 	}
 
@@ -296,18 +296,18 @@ func TestInitCommand_FailsWhenConfigAlreadyExists(t *testing.T) {
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected error when relay config already exists")
+		t.Fatal("expected error when balda config already exists")
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	gitignorePath := filepath.Join(workingDir, relayConfigRelDir, ".gitignore")
+	gitignorePath := filepath.Join(workingDir, baldaConfigRelDir, ".gitignore")
 	content, readErr := os.ReadFile(gitignorePath)
 	if readErr != nil {
 		t.Fatalf("read %s: %v", gitignorePath, readErr)
 	}
-	if got, want := string(content), relayConfigGitignoreContent; got != want {
+	if got, want := string(content), baldaConfigGitignoreContent; got != want {
 		t.Fatalf("%s content = %q, want %q", gitignorePath, got, want)
 	}
 }
@@ -316,15 +316,15 @@ func TestInitCommand_PreservesExistingConfigGitignore(t *testing.T) {
 	workingDir := setWorkingDir(t)
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "main", nil)
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
-		return botIdentity{username: "NormaBot", name: "Norma Relay"}, nil
+		return botIdentity{username: "NormaBot", name: "Norma Balda"}, nil
 	})
 
 	customGitignore := "# keep local state files for this repo\n*\n!.gitignore\n"
-	gitignorePath := filepath.Join(workingDir, relayConfigRelDir, ".gitignore")
+	gitignorePath := filepath.Join(workingDir, baldaConfigRelDir, ".gitignore")
 	if err := os.MkdirAll(filepath.Dir(gitignorePath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -332,18 +332,18 @@ func TestInitCommand_PreservesExistingConfigGitignore(t *testing.T) {
 		t.Fatalf("write existing .gitignore: %v", err)
 	}
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("tg-token\n")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return false }
+	baldaInitInput = strings.NewReader("tg-token\n")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return false }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -360,86 +360,86 @@ func TestInitCommand_PreservesExistingConfigGitignore(t *testing.T) {
 	}
 }
 
-func TestInitCommand_RemovedRelayProviderFlagRejected(t *testing.T) {
+func TestInitCommand_RemovedBaldaProviderFlagRejected(t *testing.T) {
 	_ = setWorkingDir(t)
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "", fmt.Errorf("not a git repo"))
 
 	cmd := initCommand()
-	cmd.SetArgs([]string{"--relay-root-agent", "codex"})
+	cmd.SetArgs([]string{"--balda-root-agent", "codex"})
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected unknown flag error for removed --relay-root-agent")
+		t.Fatal("expected unknown flag error for removed --balda-root-agent")
 	}
 	if !strings.Contains(err.Error(), "unknown flag") {
 		t.Fatalf("error = %q, want unknown flag", err.Error())
 	}
 }
 
-func TestChooseRelayProvider_NonInteractivePicksTopPriority(t *testing.T) {
-	got, err := chooseRelayProvider([]string{"codex", "opencode"}, strings.NewReader(""), &bytes.Buffer{}, false)
+func TestChooseBaldaProvider_NonInteractivePicksTopPriority(t *testing.T) {
+	got, err := chooseBaldaProvider([]string{"codex", "opencode"}, strings.NewReader(""), &bytes.Buffer{}, false)
 	if err != nil {
-		t.Fatalf("chooseRelayProvider: %v", err)
+		t.Fatalf("chooseBaldaProvider: %v", err)
 	}
 	if got != "codex" {
 		t.Fatalf("selected = %q, want codex", got)
 	}
 }
 
-func TestChooseRelayProvider_InteractiveSelectionByNumber(t *testing.T) {
+func TestChooseBaldaProvider_InteractiveSelectionByNumber(t *testing.T) {
 	var out bytes.Buffer
-	got, err := chooseRelayProvider([]string{"alpha", "beta"}, strings.NewReader("2\n"), &out, true)
+	got, err := chooseBaldaProvider([]string{"alpha", "beta"}, strings.NewReader("2\n"), &out, true)
 	if err != nil {
-		t.Fatalf("chooseRelayProvider: %v", err)
+		t.Fatalf("chooseBaldaProvider: %v", err)
 	}
 	if got != "beta" {
 		t.Fatalf("selected = %q, want beta", got)
 	}
 }
 
-func TestChooseRelayTelegramTokenStorage_NonInteractiveDefaultsEnv(t *testing.T) {
-	got, err := chooseRelayTelegramTokenStorage(strings.NewReader(""), &bytes.Buffer{}, false)
+func TestChooseBaldaTelegramTokenStorage_NonInteractiveDefaultsEnv(t *testing.T) {
+	got, err := chooseBaldaTelegramTokenStorage(strings.NewReader(""), &bytes.Buffer{}, false)
 	if err != nil {
-		t.Fatalf("chooseRelayTelegramTokenStorage: %v", err)
+		t.Fatalf("chooseBaldaTelegramTokenStorage: %v", err)
 	}
-	if got != relayTokenStorageEnv {
-		t.Fatalf("storage = %q, want %q", got, relayTokenStorageEnv)
+	if got != baldaTokenStorageEnv {
+		t.Fatalf("storage = %q, want %q", got, baldaTokenStorageEnv)
 	}
 }
 
-func TestChooseRelayTelegramTokenStorage_InteractiveSelection(t *testing.T) {
+func TestChooseBaldaTelegramTokenStorage_InteractiveSelection(t *testing.T) {
 	var out bytes.Buffer
-	got, err := chooseRelayTelegramTokenStorage(strings.NewReader("2\n"), &out, true)
+	got, err := chooseBaldaTelegramTokenStorage(strings.NewReader("2\n"), &out, true)
 	if err != nil {
-		t.Fatalf("chooseRelayTelegramTokenStorage: %v", err)
+		t.Fatalf("chooseBaldaTelegramTokenStorage: %v", err)
 	}
-	if got != relayTokenStorageConfig {
-		t.Fatalf("storage = %q, want %q", got, relayTokenStorageConfig)
+	if got != baldaTokenStorageConfig {
+		t.Fatalf("storage = %q, want %q", got, baldaTokenStorageConfig)
 	}
 }
 
-func TestInitCommand_GeneratedConfigLoadableByRelayLoader(t *testing.T) {
+func TestInitCommand_GeneratedConfigLoadableByBaldaLoader(t *testing.T) {
 	workingDir := setWorkingDir(t)
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "main", nil)
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
 		return botIdentity{username: "NormaBot"}, nil
 	})
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
-	relayInitInput = strings.NewReader("tg-token\n")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return false }
+	baldaInitInput = strings.NewReader("tg-token\n")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return false }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -447,12 +447,12 @@ func TestInitCommand_GeneratedConfigLoadableByRelayLoader(t *testing.T) {
 		t.Fatalf("init command failed: %v", err)
 	}
 
-	var doc relayTestConfigDocument
+	var doc baldaTestConfigDocument
 	selectedProfile, err := appconfig.LoadConfigDocument(
 		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
-			DefaultsYAML:       defaultRelayConfig,
+			DefaultsYAML:       defaultBaldaConfig,
 			UseDotConfigAppDir: true,
 		},
 		&doc,
@@ -463,11 +463,11 @@ func TestInitCommand_GeneratedConfigLoadableByRelayLoader(t *testing.T) {
 	if selectedProfile != "default" {
 		t.Fatalf("selected profile = %q, want default", selectedProfile)
 	}
-	if got := doc.Relay.Provider; got != testRelayProviderCodex {
-		t.Fatalf("doc.Relay.Provider = %q, want %s", got, testRelayProviderCodex)
+	if got := doc.Balda.Provider; got != testBaldaProviderCodex {
+		t.Fatalf("doc.Balda.Provider = %q, want %s", got, testBaldaProviderCodex)
 	}
-	if got := doc.Relay.Sessions.Persistence; got != "sqlite" {
-		t.Fatalf("doc.Relay.Sessions.Persistence = %q, want sqlite", got)
+	if got := doc.Balda.Sessions.Persistence; got != "sqlite" {
+		t.Fatalf("doc.Balda.Sessions.Persistence = %q, want sqlite", got)
 	}
 }
 
@@ -475,22 +475,22 @@ func TestInitCommand_FailsWhenTelegramTokenMissing(t *testing.T) {
 	_ = setWorkingDir(t)
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "main", nil)
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, _ string) (botIdentity, error) {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, _ string) (botIdentity, error) {
 		return botIdentity{username: "NormaBot"}, nil
 	})
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return false }
+	baldaInitInput = strings.NewReader("")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return false }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -507,22 +507,22 @@ func TestInitCommand_FailsWhenTelegramTokenValidationFails(t *testing.T) {
 	_ = setWorkingDir(t)
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "main", nil)
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, _ string) (botIdentity, error) {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, _ string) (botIdentity, error) {
 		return botIdentity{}, fmt.Errorf("invalid bot token")
 	})
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("bad-token\n")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return false }
+	baldaInitInput = strings.NewReader("bad-token\n")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return false }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -539,7 +539,7 @@ func TestInitCommand_NonInteractiveUpsertsExistingDotEnvToken(t *testing.T) {
 	workingDir := setWorkingDir(t)
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "main", nil)
-	setRelayInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
+	setBaldaInitBotIdentityLoader(t, func(_ context.Context, token string) (botIdentity, error) {
 		if token != "fresh-token" {
 			return botIdentity{}, fmt.Errorf("invalid token")
 		}
@@ -554,18 +554,18 @@ func TestInitCommand_NonInteractiveUpsertsExistingDotEnvToken(t *testing.T) {
 		t.Fatalf("write .env: %v", err)
 	}
 
-	prevInput := relayInitInput
-	prevOutput := relayInitOutput
-	prevInteractive := relayInitIsInteractive
+	prevInput := baldaInitInput
+	prevOutput := baldaInitOutput
+	prevInteractive := baldaInitIsInteractive
 	t.Cleanup(func() {
-		relayInitInput = prevInput
-		relayInitOutput = prevOutput
-		relayInitIsInteractive = prevInteractive
+		baldaInitInput = prevInput
+		baldaInitOutput = prevOutput
+		baldaInitIsInteractive = prevInteractive
 	})
 
-	relayInitInput = strings.NewReader("fresh-token\n")
-	relayInitOutput = &bytes.Buffer{}
-	relayInitIsInteractive = func() bool { return false }
+	baldaInitInput = strings.NewReader("fresh-token\n")
+	baldaInitOutput = &bytes.Buffer{}
+	baldaInitIsInteractive = func() bool { return false }
 
 	cmd := initCommand()
 	cmd.SetArgs([]string{})
@@ -607,16 +607,16 @@ func setWorkingDir(t *testing.T) string {
 
 func setDetectedBinaries(t *testing.T, binaries ...string) {
 	t.Helper()
-	prevLookPath := relayInitLookPath
+	prevLookPath := baldaInitLookPath
 	t.Cleanup(func() {
-		relayInitLookPath = prevLookPath
+		baldaInitLookPath = prevLookPath
 	})
 
 	present := make(map[string]struct{}, len(binaries))
 	for _, name := range binaries {
 		present[strings.TrimSpace(name)] = struct{}{}
 	}
-	relayInitLookPath = func(file string) (string, error) {
+	baldaInitLookPath = func(file string) (string, error) {
 		if _, ok := present[file]; ok {
 			return "/usr/bin/" + file, nil
 		}
@@ -626,38 +626,38 @@ func setDetectedBinaries(t *testing.T, binaries ...string) {
 
 func setDetectedBaseBranch(t *testing.T, branch string, branchErr error) {
 	t.Helper()
-	prev := relayInitCurrentBranch
+	prev := baldaInitCurrentBranch
 	t.Cleanup(func() {
-		relayInitCurrentBranch = prev
+		baldaInitCurrentBranch = prev
 	})
-	relayInitCurrentBranch = func(string) (string, error) {
+	baldaInitCurrentBranch = func(string) (string, error) {
 		return branch, branchErr
 	}
 }
 
-func setRelayInitBotIdentityLoader(t *testing.T, loader func(context.Context, string) (botIdentity, error)) {
+func setBaldaInitBotIdentityLoader(t *testing.T, loader func(context.Context, string) (botIdentity, error)) {
 	t.Helper()
-	prev := relayInitLoadBotIdentity
+	prev := baldaInitLoadBotIdentity
 	t.Cleanup(func() {
-		relayInitLoadBotIdentity = prev
+		baldaInitLoadBotIdentity = prev
 	})
-	relayInitLoadBotIdentity = loader
+	baldaInitLoadBotIdentity = loader
 }
 
-func setRelayOwnerTokenGenerator(t *testing.T, token string) {
+func setBaldaOwnerTokenGenerator(t *testing.T, token string) {
 	t.Helper()
-	prev := relayGenerateOwnerToken
+	prev := baldaGenerateOwnerToken
 	t.Cleanup(func() {
-		relayGenerateOwnerToken = prev
+		baldaGenerateOwnerToken = prev
 	})
-	relayGenerateOwnerToken = func() (string, error) {
+	baldaGenerateOwnerToken = func() (string, error) {
 		return token, nil
 	}
 }
 
-func mustReadRelayDoc(t *testing.T, workingDir string) map[string]any {
+func mustReadBaldaDoc(t *testing.T, workingDir string) map[string]any {
 	t.Helper()
-	content, err := os.ReadFile(filepath.Join(workingDir, relayConfigRelDir, relayConfigFileName))
+	content, err := os.ReadFile(filepath.Join(workingDir, baldaConfigRelDir, baldaConfigFileName))
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -668,19 +668,19 @@ func mustReadRelayDoc(t *testing.T, workingDir string) map[string]any {
 	return doc
 }
 
-func assertRelayInitArtifacts(t *testing.T, workingDir string) {
+func assertBaldaInitArtifacts(t *testing.T, workingDir string) {
 	t.Helper()
 
-	gitignorePath := filepath.Join(workingDir, relayConfigRelDir, ".gitignore")
+	gitignorePath := filepath.Join(workingDir, baldaConfigRelDir, ".gitignore")
 	content, err := os.ReadFile(gitignorePath)
 	if err != nil {
 		t.Fatalf("read %s: %v", gitignorePath, err)
 	}
-	if got, want := string(content), relayConfigGitignoreContent; got != want {
+	if got, want := string(content), baldaConfigGitignoreContent; got != want {
 		t.Fatalf("%s content = %q, want %q", gitignorePath, got, want)
 	}
 
-	stateDir := filepath.Join(workingDir, relayRuntimeStatePath)
+	stateDir := filepath.Join(workingDir, baldaRuntimeStatePath)
 	info, err := os.Stat(stateDir)
 	if err != nil {
 		t.Fatalf("stat %s: %v", stateDir, err)
@@ -689,23 +689,23 @@ func assertRelayInitArtifacts(t *testing.T, workingDir string) {
 		t.Fatalf("%s is not a directory", stateDir)
 	}
 
-	dbPath := filepath.Join(stateDir, relayStateDBFileName)
+	dbPath := filepath.Join(stateDir, baldaStateDBFileName)
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatalf("stat %s: %v", dbPath, err)
 	}
 }
 
-func assertRelayOwnerTokenStored(t *testing.T, workingDir string, want string) {
+func assertBaldaOwnerTokenStored(t *testing.T, workingDir string, want string) {
 	t.Helper()
 
-	dbPath := filepath.Join(workingDir, relayRuntimeStatePath, relayStateDBFileName)
-	provider, err := relaystate.NewSQLiteProvider(context.Background(), dbPath)
+	dbPath := filepath.Join(workingDir, baldaRuntimeStatePath, baldaStateDBFileName)
+	provider, err := baldastate.NewSQLiteProvider(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("open provider: %v", err)
 	}
 	defer func() { _ = provider.Close() }()
 
-	got, ok, err := provider.AppKV().Get(context.Background(), relayOwnerAuthTokenKV)
+	got, ok, err := provider.AppKV().Get(context.Background(), baldaOwnerAuthTokenKV)
 	if err != nil {
 		t.Fatalf("read owner token: %v", err)
 	}
@@ -828,15 +828,15 @@ func readPoolMembers(t *testing.T, providers map[string]any) []string {
 func assertProfileRoot(t *testing.T, profiles map[string]any, profileName, wantRoot string) {
 	t.Helper()
 	profile := mustMap(t, profiles, profileName)
-	relayProfile := mustMap(t, profile, "balda")
-	if got := relayProfile["provider"]; got != wantRoot {
+	baldaProfile := mustMap(t, profile, "balda")
+	if got := baldaProfile["provider"]; got != wantRoot {
 		t.Fatalf("profiles.%s.balda.provider = %#v, want %s", profileName, got, wantRoot)
 	}
 }
 
-func assertRelayGlobalInstructionExample(t *testing.T, relaySection map[string]any) {
+func assertBaldaGlobalInstructionExample(t *testing.T, baldaSection map[string]any) {
 	t.Helper()
-	rawPrompt, ok := relaySection["global_instruction"]
+	rawPrompt, ok := baldaSection["global_instruction"]
 	if !ok {
 		t.Fatalf("balda.global_instruction key is missing")
 	}
@@ -847,8 +847,8 @@ func assertRelayGlobalInstructionExample(t *testing.T, relaySection map[string]a
 	if strings.TrimSpace(prompt) == "" {
 		t.Fatalf("balda.global_instruction is empty")
 	}
-	if prompt != relayInitGlobalInstructionExample {
-		t.Fatalf("balda.global_instruction = %q, want %q", prompt, relayInitGlobalInstructionExample)
+	if prompt != baldaInitGlobalInstructionExample {
+		t.Fatalf("balda.global_instruction = %q, want %q", prompt, baldaInitGlobalInstructionExample)
 	}
 }
 

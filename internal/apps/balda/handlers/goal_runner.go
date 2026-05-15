@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	relaytelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	relaysession "github.com/normahq/balda/internal/apps/balda/session"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"google.golang.org/adk/agent"
@@ -19,24 +19,24 @@ import (
 const defaultGoalMaxIterations = 25
 
 type goalCommandRunner interface {
-	Start(ctx context.Context, locator relaysession.SessionLocator, objective string, transportUserID string) (bool, error)
-	Cancel(locator relaysession.SessionLocator) bool
+	Start(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error)
+	Cancel(locator baldasession.SessionLocator) bool
 }
 
 type goalRunnerParams struct {
 	fx.In
 
 	LC             fx.Lifecycle
-	SessionManager *relaysession.Manager
-	Channel        *relaytelegram.Adapter
+	SessionManager *baldasession.Manager
+	Channel        *baldatelegram.Adapter
 	Logger         zerolog.Logger
-	MaxIterations  int `name:"relay_goal_max_iterations"`
+	MaxIterations  int `name:"balda_goal_max_iterations"`
 }
 
 // GoalRunner executes /goal loops per session with cancellation support.
 type GoalRunner struct {
-	sessionManager *relaysession.Manager
-	channel        *relaytelegram.Adapter
+	sessionManager *baldasession.Manager
+	channel        *baldatelegram.Adapter
 	logger         zerolog.Logger
 	maxIterations  int
 
@@ -70,7 +70,7 @@ func normalizeGoalMaxIterations(v int) int {
 
 func (g *GoalRunner) Start(
 	ctx context.Context,
-	locator relaysession.SessionLocator,
+	locator baldasession.SessionLocator,
 	objective string,
 	transportUserID string,
 ) (bool, error) {
@@ -115,15 +115,15 @@ func (g *GoalRunner) Start(
 
 func (g *GoalRunner) resolveSession(
 	ctx context.Context,
-	locator relaysession.SessionLocator,
+	locator baldasession.SessionLocator,
 	transportUserID string,
-) (*relaysession.TopicSession, error) {
+) (*baldasession.TopicSession, error) {
 	ts, err := g.sessionManager.GetSession(locator)
 	if err == nil {
 		return ts, nil
 	}
 
-	return g.sessionManager.RestoreSession(ctx, relaysession.SessionContext{
+	return g.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
 		Locator: locator,
 		UserID:  transportUserID,
 	})
@@ -131,8 +131,8 @@ func (g *GoalRunner) resolveSession(
 
 func (g *GoalRunner) runGoalLoop(
 	ctx context.Context,
-	locator relaysession.SessionLocator,
-	ts *relaysession.TopicSession,
+	locator baldasession.SessionLocator,
+	ts *baldasession.TopicSession,
 	objective string,
 ) {
 	if ts == nil {
@@ -280,7 +280,7 @@ func parseGoalReply(reply string) (done bool, message string) {
 	return done, strings.TrimSpace(message)
 }
 
-func (g *GoalRunner) Cancel(locator relaysession.SessionLocator) bool {
+func (g *GoalRunner) Cancel(locator baldasession.SessionLocator) bool {
 	sessionID := strings.TrimSpace(locator.SessionID)
 	if sessionID == "" {
 		return false
