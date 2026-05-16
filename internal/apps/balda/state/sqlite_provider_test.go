@@ -11,6 +11,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const expectedSQLiteSchemaMigrationVersion = 10
+
 func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
 	defer closeProvider(t, provider)
@@ -236,8 +238,8 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("query schema_migrations version: %v", err)
 	}
-	if version != 9 {
-		t.Fatalf("schema_migrations version = %d, want 9", version)
+	if version != expectedSQLiteSchemaMigrationVersion {
+		t.Fatalf("schema_migrations version = %d, want %d", version, expectedSQLiteSchemaMigrationVersion)
 	}
 	assertSQLiteSchemaHasNoRelayLeftovers(t, ctx, db)
 }
@@ -354,8 +356,8 @@ func TestSQLiteProvider_AdoptsExistingLegacySchema(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("query schema_migrations version: %v", err)
 	}
-	if version != 9 {
-		t.Fatalf("schema_migrations version = %d, want 9", version)
+	if version != expectedSQLiteSchemaMigrationVersion {
+		t.Fatalf("schema_migrations version = %d, want %d", version, expectedSQLiteSchemaMigrationVersion)
 	}
 }
 
@@ -391,6 +393,32 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 		t.Fatalf("session_id after migration = %q, want tg-1-2", record.SessionID)
 	}
 
+	ownerValue, ok, err := provider.AppKV().GetJSON(ctx, "owner")
+	if err != nil {
+		t.Fatalf("GetJSON(owner) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetJSON(owner) found = false, want true after namespace migration")
+	}
+	owner, ok := ownerValue.(map[string]any)
+	if !ok {
+		t.Fatalf("GetJSON(owner) type = %T, want map[string]any", ownerValue)
+	}
+	if owner["username"] != "metalagman" {
+		t.Fatalf("owner username after namespace migration = %v, want metalagman", owner["username"])
+	}
+
+	token, ok, err := provider.AppKV().Get(ctx, "owner_auth_token")
+	if err != nil {
+		t.Fatalf("Get(owner_auth_token) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Get(owner_auth_token) found = false, want true after namespace migration")
+	}
+	if token != "balda-token" {
+		t.Fatalf("owner_auth_token after namespace migration = %q, want balda-token", token)
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
@@ -400,6 +428,8 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 	assertTableExists(t, ctx, db, "balda_app_kv")
 	assertTableMissing(t, ctx, db, "relay_app_kv")
 	assertSQLiteSchemaHasNoRelayLeftovers(t, ctx, db)
+	assertKVNamespaceMissing(t, ctx, db, "relay.app")
+	assertKVNamespaceMissing(t, ctx, db, "relay.session_mcp")
 
 	var appName string
 	if err := db.QueryRowContext(ctx, `SELECT app_name FROM balda_adk_sessions WHERE user_id = 'tg-101'`).Scan(&appName); err != nil {
@@ -413,8 +443,8 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatalf("query schema_migrations version: %v", err)
 	}
-	if version != 9 {
-		t.Fatalf("schema_migrations version = %d, want 9", version)
+	if version != expectedSQLiteSchemaMigrationVersion {
+		t.Fatalf("schema_migrations version = %d, want %d", version, expectedSQLiteSchemaMigrationVersion)
 	}
 }
 
@@ -517,6 +547,16 @@ func seedRelayDBAtVersion8(t *testing.T, dbPath string) {
 			expires_at TEXT,
 			PRIMARY KEY (namespace, key)
 		);`,
+		`INSERT INTO relay_app_kv (namespace, key, value_json, updated_at)
+		 VALUES
+			(
+				'relay.app',
+				'owner',
+				'{"user_id":2317500,"chat_id":2317500,"username":"metalagman","first_name":"Alexey","last_name":"Samoylov","has_topics_enabled":false,"registered_at":"2026-04-22T19:00:07.616352877+06:00"}',
+				'2026-01-01T00:00:00Z'
+			),
+			('relay.app', 'owner_auth_token', '"relay-token"', '2026-01-01T00:00:00Z'),
+			('balda.app', 'owner_auth_token', '"balda-token"', '2026-01-01T00:00:00Z');`,
 		`CREATE TABLE relay_session_metadata (
 			session_id TEXT PRIMARY KEY,
 			chat_id INTEGER NOT NULL,
@@ -683,5 +723,17 @@ func assertSQLiteSchemaHasNoRelayLeftovers(t *testing.T, ctx context.Context, db
 	}
 	if len(leftovers) > 0 {
 		t.Fatalf("sqlite schema has relay leftovers: %v", leftovers)
+	}
+}
+
+func assertKVNamespaceMissing(t *testing.T, ctx context.Context, db *sql.DB, namespace string) {
+	t.Helper()
+
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM balda_app_kv WHERE namespace = ?`, namespace).Scan(&count); err != nil {
+		t.Fatalf("query namespace %q: %v", namespace, err)
+	}
+	if count != 0 {
+		t.Fatalf("namespace %q row count = %d, want 0", namespace, count)
 	}
 }
