@@ -9,7 +9,7 @@ import (
 const testOwnerTokenPersisted = "owner-token-persisted"
 
 func TestLoadOrCreateBaldaOwnerToken_GeneratesAndReuses(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), baldaStateDBFileName)
+	dbPath := baldaStateDBPath(t.TempDir())
 
 	previousGenerator := baldaGenerateOwnerToken
 	defer func() { baldaGenerateOwnerToken = previousGenerator }()

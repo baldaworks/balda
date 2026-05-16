@@ -189,7 +189,7 @@ func TestSQLiteProvider_ScheduledJobStoreRoundTrip(t *testing.T) {
 }
 
 func TestSQLiteProvider_OffsetPersistsAcrossReopen(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
 	providerA, err := NewSQLiteProvider(ctx, dbPath)
@@ -217,7 +217,7 @@ func TestSQLiteProvider_OffsetPersistsAcrossReopen(t *testing.T) {
 }
 
 func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
 	provider, err := NewSQLiteProvider(ctx, dbPath)
@@ -243,7 +243,7 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 }
 
 func TestSQLiteProvider_ADKSessionPersistsAcrossReopen(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
 	providerA, err := NewSQLiteProvider(ctx, dbPath)
@@ -304,7 +304,7 @@ func TestSQLiteProvider_ADKSessionPersistsAcrossReopen(t *testing.T) {
 }
 
 func TestSQLiteProvider_AdoptsExistingLegacySchema(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
 	seedLegacyRelayDB(t, dbPath)
@@ -360,7 +360,7 @@ func TestSQLiteProvider_AdoptsExistingLegacySchema(t *testing.T) {
 }
 
 func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
 	seedRelayDBAtVersion8(t, dbPath)
@@ -421,7 +421,7 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 func newTestProvider(t *testing.T) Provider {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
 	provider, err := NewSQLiteProvider(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)

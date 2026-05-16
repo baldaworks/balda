@@ -64,6 +64,43 @@ func TestIsExpectedBotRunShutdown(t *testing.T) {
 	}
 }
 
+func TestOpenBaldaStateProviderUsesStateDB(t *testing.T) {
+	stateDir := t.TempDir()
+
+	provider, err := openBaldaStateProvider(context.Background(), stateDir)
+	if err != nil {
+		t.Fatalf("openBaldaStateProvider() error = %v", err)
+	}
+	defer func() { _ = provider.Close() }()
+
+	if _, err := os.Stat(paths.StateDBPath(stateDir)); err != nil {
+		t.Fatalf("stat state db: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "balda.db")); !os.IsNotExist(err) {
+		t.Fatalf("legacy balda.db stat error = %v, want not exist", err)
+	}
+}
+
+func TestOpenBaldaStateProviderRejectsLegacyOnlyDB(t *testing.T) {
+	stateDir := t.TempDir()
+	legacyPath := filepath.Join(stateDir, "balda.db")
+	if err := os.WriteFile(legacyPath, []byte("legacy"), 0o600); err != nil {
+		t.Fatalf("write legacy db: %v", err)
+	}
+
+	provider, err := openBaldaStateProvider(context.Background(), stateDir)
+	if provider != nil {
+		_ = provider.Close()
+	}
+	if err == nil {
+		t.Fatal("openBaldaStateProvider() error = nil, want legacy database error")
+	}
+	if !strings.Contains(err.Error(), legacyPath) ||
+		!strings.Contains(err.Error(), paths.StateDBPath(stateDir)) {
+		t.Fatalf("openBaldaStateProvider() error = %q, want manual state.db guidance", err)
+	}
+}
+
 func TestValidateBaldaMCPConfiguration_RejectsRemovedBuiltInServerReferences(t *testing.T) {
 	cfg := Config{
 		Balda: BaldaConfig{

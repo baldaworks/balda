@@ -135,13 +135,9 @@ func Module(
 		),
 		fx.Provide(
 			func(lc fx.Lifecycle) (baldastate.Provider, error) {
-				if err := os.MkdirAll(stateDir, 0o755); err != nil {
-					return nil, fmt.Errorf("create balda state dir: %w", err)
-				}
-				dbPath := filepath.Join(stateDir, "balda.db")
-				provider, err := baldastate.NewSQLiteProvider(context.Background(), dbPath)
+				provider, err := openBaldaStateProvider(context.Background(), stateDir)
 				if err != nil {
-					return nil, fmt.Errorf("open balda state provider: %w", err)
+					return nil, err
 				}
 				lc.Append(fx.Hook{
 					OnStop: func(ctx context.Context) error {
@@ -393,6 +389,20 @@ func validateBaldaMCPConfiguration(cfg Config, normaCfg runtimeconfig.RuntimeCon
 
 func isExpectedBotRunShutdown(err error) bool {
 	return shutdown.IsExpected(err)
+}
+
+func openBaldaStateProvider(ctx context.Context, stateDir string) (baldastate.Provider, error) {
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create balda state dir: %w", err)
+	}
+	if err := paths.RequireStateDBReady(stateDir); err != nil {
+		return nil, err
+	}
+	provider, err := baldastate.NewSQLiteProvider(ctx, paths.StateDBPath(stateDir))
+	if err != nil {
+		return nil, fmt.Errorf("open balda state provider: %w", err)
+	}
+	return provider, nil
 }
 
 func warnLegacyWorkspaceDir(logger zerolog.Logger, workingDir, stateDir string, workspaceEnabled bool) {

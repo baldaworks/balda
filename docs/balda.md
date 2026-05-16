@@ -31,9 +31,12 @@ balda start
 
 `balda init` requires a Telegram bot token, detects supported provider CLIs
 (`codex`, `opencode`, `copilot`, `gemini`, `claude`), writes
-`.config/balda/config.yaml`, initializes `.config/balda/balda.db`, and prints
+`.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
 both an owner auth command and Telegram auth URL. The default token storage is
 CWD `.env` as `BALDA_TELEGRAM_TOKEN`.
+When upgrading older state, rename `.config/balda/balda.db` to
+`.config/balda/state.db` or copy `.config/relay/relay.db` there before
+startup; Balda does not auto-adopt legacy DB filenames.
 
 Owner onboarding is completed in a direct message with the bot by opening the
 printed auth URL or sending:
@@ -60,7 +63,7 @@ docker compose up -d balda
 
 The Compose service bind-mounts the current directory as `/workspace`, so the
 container uses the same `.env`, `.config/balda/config.yaml`,
-`.config/balda/balda.db`, and `.git` as host execution.
+`.config/balda/state.db`, and `.git` as host execution.
 
 ## Package Dependencies
 
@@ -231,7 +234,7 @@ project:
 
 - `.env` is loaded from `/workspace/.env`.
 - `.config/balda/config.yaml` remains the selected app config.
-- `.config/balda/balda.db` persists owner auth, session metadata, MCP KV, and
+- `.config/balda/state.db` persists owner auth, session metadata, MCP KV, and
   Telegram polling offsets on the host.
 - `.config/balda/MEMORY.md` and optional `.config/balda/SOUL.md` stay on the
   host. `MEMORY.md` is used when `balda.memory.enabled=true`; `SOUL.md` is
@@ -375,13 +378,14 @@ session-start snapshot. New or restored sessions read the latest file.
 ### Balda settings
 
 - `balda.working_dir`: optional balda working directory (defaults to process CWD)
-- `balda.state_dir`: balda state directory for persistent balda SQLite state (`balda.db`).
+- `balda.state_dir`: balda state directory for persistent balda SQLite state (`state.db`).
   - Stores owner/app KV, `balda.state` MCP KV, session metadata, optional ADK session history, and Telegram polling offset.
   - Schema is migration-versioned and auto-applied on startup.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
+  - Legacy `balda.db` and `relay.db` filenames must be moved or copied to `state.db` manually before startup.
 - `balda.sessions.persistence`: `sqlite|memory` (default `sqlite`)
-  - `sqlite`: ADK session events and state are persisted in `balda.db` and reused after restart until `/reset` or explicit `/close`.
+  - `sqlite`: ADK session events and state are persisted in `state.db` and reused after restart until `/reset` or explicit `/close`.
   - `memory`: ADK conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot `MEMORY.md`, register `balda.memory.*` MCP tools, or expose `/memory` contents.
@@ -395,7 +399,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - optional session-start operator instructions use `${balda.state_dir}/SOUL.md`
   - Balda reads the file on session start/restore when it exists; this is independent from `balda.memory.enabled`.
   - Balda does not expose MCP mutation for `SOUL.md`; edit the file directly.
-- owner auth token is generated during `balda init`, persisted in `balda.db`, and reused by `balda start`
+- owner auth token is generated during `balda init`, persisted in `state.db`, and reused by `balda start`
   - if token is missing in existing state, `balda start` backfills one-time and persists it
   - if no owner is registered yet, `balda start` logs the owner bootstrap command and deeplink again to help finish first-time onboarding
   - after the first successful owner auth, normal startup logs go back to bot identity only and no longer expose owner auth tokens or auth URLs
@@ -430,8 +434,8 @@ Session key:
 - Canonical Balda session IDs are channel-scoped. Telegram uses `tg-<chat_id>-<topic_id>`.
 - The owner session is bootstrapped for the bound owner DM chat (`topic_id=0`) during activation/startup when an owner is already registered.
 
-Balda always persists session metadata in `balda.db` for lazy restore.
-By default, Balda also persists ADK session events and state in `balda.db` until `/reset` or explicit `/close`. Set `balda.sessions.persistence=memory` to keep ADK conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
+Balda always persists session metadata in `state.db` for lazy restore.
+By default, Balda also persists ADK session events and state in `state.db` until `/reset` or explicit `/close`. Set `balda.sessions.persistence=memory` to keep ADK conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
 
 ## Message Flow
 
@@ -540,7 +544,7 @@ Balda can optionally expose local webhook routes that map path -> locator alias 
 
 - `balda.workspace.import`
   - rebases the session workspace onto the configured base branch
-  - works for active or persisted sessions as long as workspace metadata exists in `balda.db`
+  - works for active or persisted sessions as long as workspace metadata exists in `state.db`
   - is the explicit retry path when restart restore skipped base sync because of a conflict
 - `balda.workspace.export`
   - squash-merges the session workspace branch into the configured base branch with the provided Conventional Commit message

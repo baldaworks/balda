@@ -22,7 +22,7 @@ const (
 	httpIdleTimeout       = 60 * time.Second
 )
 
-const serverInstructions = `Use this server to persist balda state in balda.db.
+const serverInstructions = `Use this server to persist balda state in state.db.
 
 - balda.state.* reads and writes session or app key-value data.
 - balda.state.ns_* scopes keys under an explicit namespace such as a session ID or agent name.

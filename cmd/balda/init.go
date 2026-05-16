@@ -117,7 +117,10 @@ func initCommand() *cobra.Command {
 			if err := os.MkdirAll(stateDir, 0o700); err != nil {
 				return fmt.Errorf("create Balda runtime state directory: %w", err)
 			}
-			dbPath := filepath.Join(stateDir, baldaStateDBFileName)
+			if err := requireBaldaStateDBReady(stateDir); err != nil {
+				return err
+			}
+			dbPath := baldaStateDBPath(stateDir)
 
 			ownerToken, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
 			if err != nil {

@@ -52,7 +52,7 @@ func validateBaldaSQLiteSchema(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("inspect %s table: %w", table, err)
 		}
 		if !exists {
-			return fmt.Errorf("balda state schema missing %s; back up and remove .config/balda/balda.db, then run balda init again", table)
+			return fmt.Errorf("balda state schema missing %s; back up and remove .config/balda/state.db, then run balda init again", table)
 		}
 	}
 	return nil

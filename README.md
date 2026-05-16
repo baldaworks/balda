@@ -66,8 +66,11 @@ balda init
 ```
 
 `balda init` detects provider CLIs, validates the Telegram token, writes
-`.config/balda/config.yaml`, initializes `.config/balda/balda.db`, and prints
+`.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
 the next commands. By default, the Telegram token is stored in `.env`.
+When upgrading older state, rename `.config/balda/balda.db` to
+`.config/balda/state.db` or copy `.config/relay/relay.db` there before
+startup; Balda does not auto-adopt legacy DB filenames.
 
 Start Balda:
 
@@ -96,7 +99,7 @@ for local Docker Compose runtime.
 
 This path is designed for real project work. The current directory is mounted as
 `/workspace`, so Balda sees your host checkout, `.git`, `.env`,
-`.config/balda/config.yaml`, and `.config/balda/balda.db`.
+`.config/balda/config.yaml`, and `.config/balda/state.db`.
 
 ```bash
 docker compose build balda

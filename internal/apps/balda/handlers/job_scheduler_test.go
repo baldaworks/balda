@@ -586,7 +586,7 @@ func newSchedulerForTest(
 func newSchedulerJobStore(t *testing.T) baldastate.ScheduledJobStore {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "balda.db")
+	dbPath := filepath.Join(t.TempDir(), "state.db")
 	provider, err := baldastate.NewSQLiteProvider(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)

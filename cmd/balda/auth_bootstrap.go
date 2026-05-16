@@ -10,15 +10,20 @@ import (
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
-const (
-	baldaStateDBFileName  = "balda.db"
-	baldaOwnerAuthTokenKV = "owner_auth_token"
-)
+const baldaOwnerAuthTokenKV = "owner_auth_token"
 
 var baldaGenerateOwnerToken = auth.GenerateOwnerToken
 
 func resolveBaldaStateDir(workingDir, rawStateDir string) (string, error) {
 	return paths.ResolveStateDir(workingDir, rawStateDir)
+}
+
+func baldaStateDBPath(stateDir string) string {
+	return paths.StateDBPath(stateDir)
+}
+
+func requireBaldaStateDBReady(stateDir string) error {
+	return paths.RequireStateDBReady(stateDir)
 }
 
 func loadOrCreateBaldaOwnerToken(ctx context.Context, dbPath string) (string, error) {
