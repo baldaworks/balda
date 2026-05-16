@@ -34,9 +34,8 @@ balda start
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
 both an owner auth command and Telegram auth URL. The default token storage is
 CWD `.env` as `BALDA_TELEGRAM_TOKEN`.
-When upgrading older state, rename `.config/balda/balda.db` to
-`.config/balda/state.db` or copy `.config/relay/relay.db` there before
-startup; Balda does not auto-adopt legacy DB filenames.
+To preserve older state, rename `.config/balda/balda.db` to
+`.config/balda/state.db` or copy `.config/relay/relay.db` there.
 
 Owner onboarding is completed in a direct message with the bot by opening the
 printed auth URL or sending:
@@ -383,7 +382,6 @@ session-start snapshot. New or restored sessions read the latest file.
   - Schema is migration-versioned and auto-applied on startup.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
-  - Legacy `balda.db` and `relay.db` filenames must be moved or copied to `state.db` manually before startup.
 - `balda.sessions.persistence`: `sqlite|memory` (default `sqlite`)
   - `sqlite`: ADK session events and state are persisted in `state.db` and reused after restart until `/reset` or explicit `/close`.
   - `memory`: ADK conversation/runtime state is process-local; only Balda metadata is persisted.

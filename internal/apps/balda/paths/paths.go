@@ -15,8 +15,6 @@ const (
 	StateDBFileName = "state.db"
 )
 
-var legacyStateDBFileNames = []string{"balda.db", "relay.db"}
-
 // ConfigDir returns the balda config directory path for the given working dir.
 func ConfigDir(workingDir string) string {
 	trimmed := strings.TrimSpace(workingDir)
@@ -34,34 +32,6 @@ func ConfigPath(workingDir string) string {
 // StateDBPath returns the canonical Balda SQLite state database path.
 func StateDBPath(stateDir string) string {
 	return filepath.Join(stateDir, StateDBFileName)
-}
-
-// RequireStateDBReady rejects legacy-only state database filenames before a
-// new empty state.db can be created.
-func RequireStateDBReady(stateDir string) error {
-	statePath := StateDBPath(stateDir)
-	if _, err := os.Stat(statePath); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat balda state db %q: %w", statePath, err)
-	}
-
-	for _, legacyName := range legacyStateDBFileNames {
-		legacyPath := filepath.Join(stateDir, legacyName)
-		if _, err := os.Stat(legacyPath); err == nil {
-			return fmt.Errorf("legacy state database %q found but Balda now uses %q; move or copy it manually before starting, for example: %s", legacyPath, statePath, legacyStateDBMigrationCommand(legacyName, legacyPath, statePath))
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("stat legacy state db %q: %w", legacyPath, err)
-		}
-	}
-	return nil
-}
-
-func legacyStateDBMigrationCommand(legacyName, legacyPath, statePath string) string {
-	if legacyName == "relay.db" {
-		return fmt.Sprintf("cp %q %q", legacyPath, statePath)
-	}
-	return fmt.Sprintf("mv %q %q", legacyPath, statePath)
 }
 
 // ResolveWorkingDir returns an absolute clean working directory path.

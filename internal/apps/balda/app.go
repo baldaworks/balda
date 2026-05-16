@@ -395,9 +395,6 @@ func openBaldaStateProvider(ctx context.Context, stateDir string) (baldastate.Pr
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create balda state dir: %w", err)
 	}
-	if err := paths.RequireStateDBReady(stateDir); err != nil {
-		return nil, err
-	}
 	provider, err := baldastate.NewSQLiteProvider(ctx, paths.StateDBPath(stateDir))
 	if err != nil {
 		return nil, fmt.Errorf("open balda state provider: %w", err)

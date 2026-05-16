@@ -22,10 +22,6 @@ func baldaStateDBPath(stateDir string) string {
 	return paths.StateDBPath(stateDir)
 }
 
-func requireBaldaStateDBReady(stateDir string) error {
-	return paths.RequireStateDBReady(stateDir)
-}
-
 func loadOrCreateBaldaOwnerToken(ctx context.Context, dbPath string) (string, error) {
 	provider, err := baldastate.NewSQLiteProvider(ctx, dbPath)
 	if err != nil {

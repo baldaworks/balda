@@ -81,7 +81,7 @@ func TestOpenBaldaStateProviderUsesStateDB(t *testing.T) {
 	}
 }
 
-func TestOpenBaldaStateProviderRejectsLegacyOnlyDB(t *testing.T) {
+func TestOpenBaldaStateProviderIgnoresLegacyOnlyDB(t *testing.T) {
 	stateDir := t.TempDir()
 	legacyPath := filepath.Join(stateDir, "balda.db")
 	if err := os.WriteFile(legacyPath, []byte("legacy"), 0o600); err != nil {
@@ -89,15 +89,20 @@ func TestOpenBaldaStateProviderRejectsLegacyOnlyDB(t *testing.T) {
 	}
 
 	provider, err := openBaldaStateProvider(context.Background(), stateDir)
-	if provider != nil {
-		_ = provider.Close()
+	if err != nil {
+		t.Fatalf("openBaldaStateProvider() error = %v", err)
 	}
-	if err == nil {
-		t.Fatal("openBaldaStateProvider() error = nil, want legacy database error")
+	defer func() { _ = provider.Close() }()
+
+	if _, err := os.Stat(paths.StateDBPath(stateDir)); err != nil {
+		t.Fatalf("stat state db: %v", err)
 	}
-	if !strings.Contains(err.Error(), legacyPath) ||
-		!strings.Contains(err.Error(), paths.StateDBPath(stateDir)) {
-		t.Fatalf("openBaldaStateProvider() error = %q, want manual state.db guidance", err)
+	content, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatalf("read legacy db: %v", err)
+	}
+	if string(content) != "legacy" {
+		t.Fatalf("legacy db content = %q, want unchanged", string(content))
 	}
 }
 
