@@ -6,20 +6,39 @@ import (
 	"strings"
 	"sync"
 
+	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
-	"google.golang.org/adk/agent"
+	adkagent "google.golang.org/adk/agent"
 	"google.golang.org/adk/runner"
+	adksession "google.golang.org/adk/session"
 	"google.golang.org/genai"
 )
 
 const defaultGoalMaxIterations = 25
 
+const (
+	goalkeeperMetadataEventKey     = "norma.goalkeeper.event"
+	goalkeeperMetadataStepKey      = "norma.goalkeeper.step"
+	goalkeeperMetadataEscalatedKey = "escalated"
+
+	goalkeeperStepEventStarted   = "step_started"
+	goalkeeperStepEventCompleted = "step_completed"
+	goalkeeperStepEventFailed    = "step_failed"
+
+	goalkeeperValidatorStep = "validator"
+	goalkeeperValidatorName = "GoalkeeperValidator"
+)
+
 type goalCommandRunner interface {
 	Start(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error)
 	Cancel(locator baldasession.SessionLocator) bool
+}
+
+type goalkeeperRuntimeBuilder interface {
+	BuildGoalkeeperRuntime(ctx context.Context, cfg baldaagent.GoalkeeperRuntimeConfig) (*baldaagent.GoalkeeperRuntime, error)
 }
 
 type goalRunnerParams struct {
@@ -27,6 +46,7 @@ type goalRunnerParams struct {
 
 	LC             fx.Lifecycle
 	SessionManager *baldasession.Manager
+	RuntimeManager *baldaagent.RuntimeManager
 	Channel        *baldatelegram.Adapter
 	Logger         zerolog.Logger
 	MaxIterations  int `name:"balda_goal_max_iterations"`
@@ -35,6 +55,7 @@ type goalRunnerParams struct {
 // GoalRunner executes /goal loops per session with cancellation support.
 type GoalRunner struct {
 	sessionManager *baldasession.Manager
+	runtimeManager goalkeeperRuntimeBuilder
 	channel        *baldatelegram.Adapter
 	logger         zerolog.Logger
 	maxIterations  int
@@ -46,6 +67,7 @@ type GoalRunner struct {
 func NewGoalRunner(params goalRunnerParams) *GoalRunner {
 	g := &GoalRunner{
 		sessionManager: params.SessionManager,
+		runtimeManager: params.RuntimeManager,
 		channel:        params.Channel,
 		logger:         params.Logger.With().Str("component", "balda.goal_runner").Logger(),
 		maxIterations:  normalizeGoalMaxIterations(params.MaxIterations),
@@ -145,52 +167,151 @@ func (g *GoalRunner) runGoalLoop(
 		_ = g.channel.SendPlain(ctx, locator, "Goal run failed: session is unavailable.")
 		return
 	}
+	if g.runtimeManager == nil {
+		_ = g.channel.SendPlain(ctx, locator, "Goal run failed: runtime is unavailable.")
+		return
+	}
+
+	goalRuntime, err := g.runtimeManager.BuildGoalkeeperRuntime(ctx, baldaagent.GoalkeeperRuntimeConfig{
+		SessionID:     ts.GetSessionID(),
+		BranchName:    ts.GetBranchName(),
+		WorkspaceDir:  ts.GetWorkspaceDir(),
+		MaxIterations: uint(maxIterations),
+	})
+	if err != nil {
+		_ = g.channel.SendPlain(context.Background(), locator, fmt.Sprintf("Goal run failed: %v", err))
+		return
+	}
+	defer func() {
+		if err := goalRuntime.Close(); err != nil {
+			g.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to close goalkeeper runtime")
+		}
+	}()
+
 	_ = g.channel.SendPlain(
 		ctx,
 		locator,
 		fmt.Sprintf("Goal run started. Max iterations: %d.\nGoal: %s", maxIterations, objective),
 	)
 
-	previousSummary := ""
-	for iteration := 1; iteration <= maxIterations; iteration++ {
+	result, err := runGoalkeeperWorkflow(
+		ctx,
+		goalRuntime.Runner,
+		ts.GetUserID(),
+		goalSessionID,
+		formatGoalkeeperPrompt(objective),
+		func(update goalValidationUpdate) {
+			prefix := fmt.Sprintf("Goal validation %d/%d:", update.Iteration, maxIterations)
+			if update.GoalReached {
+				prefix = fmt.Sprintf("Goal validation %d/%d passed:", update.Iteration, maxIterations)
+			}
+			_ = g.channel.SendPlain(ctx, locator, prefix+"\n"+update.Text)
+		},
+	)
+	if err != nil {
 		if ctx.Err() != nil {
 			_ = g.channel.SendPlain(context.Background(), locator, "Goal run canceled.")
 			return
 		}
-
-		prompt := buildGoalPrompt(objective, previousSummary, iteration, maxIterations)
-		reply, err := runGoalIteration(ctx, ts.GetRunner(), ts.GetUserID(), goalSessionID, prompt)
-		if err != nil {
-			if ctx.Err() != nil {
-				_ = g.channel.SendPlain(context.Background(), locator, "Goal run canceled.")
-				return
-			}
-			_ = g.channel.SendPlain(context.Background(), locator, fmt.Sprintf("Goal run failed: %v", err))
-			return
-		}
-
-		done, message := parseGoalReply(reply)
-		if message == "" {
-			message = "no update"
-		}
-
-		_ = g.channel.SendPlain(
-			ctx,
-			locator,
-			fmt.Sprintf("Goal iteration %d/%d: %s", iteration, maxIterations, message),
-		)
-
-		if done {
-			_ = g.channel.SendPlain(ctx, locator, "Goal run completed.")
-			return
-		}
-		previousSummary = message
+		_ = g.channel.SendPlain(context.Background(), locator, fmt.Sprintf("Goal run failed: %v", err))
+		return
 	}
 
-	_ = g.channel.SendPlain(ctx, locator, "Goal run reached max iterations without completion.")
+	if result.GoalReached {
+		_ = g.channel.SendPlain(ctx, locator, "Goal run completed.")
+		return
+	}
+
+	_ = g.channel.SendPlain(ctx, locator, "Goal run reached max iterations without passing validation.")
 }
 
-func runGoalIteration(
+type goalRunResult struct {
+	FinalText   string
+	GoalReached bool
+	Iterations  int
+}
+
+type goalValidationUpdate struct {
+	Iteration   int
+	Text        string
+	GoalReached bool
+}
+
+func runGoalkeeperWorkflow(
+	ctx context.Context,
+	r *runner.Runner,
+	userID string,
+	goalSessionID string,
+	prompt string,
+	onValidation func(goalValidationUpdate),
+) (goalRunResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return goalRunResult{}, err
+	}
+	if r == nil {
+		return goalRunResult{}, fmt.Errorf("runner is required")
+	}
+	userContent := genai.NewContentFromText(prompt, genai.RoleUser)
+
+	result := goalRunResult{}
+	currentStep := ""
+	lastText := ""
+	lastValidatorText := ""
+	for ev, err := range r.Run(ctx, userID, goalSessionID, userContent, adkagent.RunConfig{}) {
+		if err != nil {
+			return result, fmt.Errorf("run goalkeeper workflow: %w", err)
+		}
+		if ev == nil {
+			continue
+		}
+
+		if kind, step, ok := goalkeeperStepEvent(ev); ok {
+			switch kind {
+			case goalkeeperStepEventStarted:
+				currentStep = step
+			case goalkeeperStepEventCompleted, goalkeeperStepEventFailed:
+				if step == goalkeeperValidatorStep && metadataBool(ev, goalkeeperMetadataEscalatedKey) {
+					result.GoalReached = true
+				}
+				if currentStep == step {
+					currentStep = ""
+				}
+			}
+			continue
+		}
+
+		text := visibleEventText(ev)
+		if text == "" {
+			continue
+		}
+		lastText = text
+		if isValidatorEvent(currentStep, ev) && ev.IsFinalResponse() {
+			result.Iterations++
+			lastValidatorText = text
+			if ev.Actions.Escalate {
+				result.GoalReached = true
+			}
+			if onValidation != nil {
+				onValidation(goalValidationUpdate{
+					Iteration:   result.Iterations,
+					Text:        text,
+					GoalReached: ev.Actions.Escalate,
+				})
+			}
+		}
+	}
+
+	result.FinalText = lastValidatorText
+	if result.FinalText == "" {
+		result.FinalText = lastText
+	}
+	return result, nil
+}
+
+func runAgentTurn(
 	ctx context.Context,
 	r *runner.Runner,
 	userID string,
@@ -210,9 +331,9 @@ func runGoalIteration(
 
 	var out strings.Builder
 	sawTurnComplete := false
-	for ev, err := range r.Run(ctx, userID, goalSessionID, userContent, agent.RunConfig{}) {
+	for ev, err := range r.Run(ctx, userID, goalSessionID, userContent, adkagent.RunConfig{}) {
 		if err != nil {
-			return "", fmt.Errorf("run goal iteration: %w", err)
+			return "", fmt.Errorf("run agent turn: %w", err)
 		}
 		if ev == nil {
 			continue
@@ -235,52 +356,58 @@ func runGoalIteration(
 	return strings.TrimSpace(out.String()), nil
 }
 
-func buildGoalPrompt(objective, previous string, iteration, maxIterations int) string {
-	return fmt.Sprintf(
-		`You are Goalkeeper running an iterative goal loop.
-Objective: %s
-Previous iteration summary: %s
-Iteration: %d/%d
-
-Return exactly two lines:
-STATUS: done|continue
-MESSAGE: <one concise update for the user>
-
-Use STATUS: done only when the objective is fully complete.`,
-		strings.TrimSpace(objective),
-		strings.TrimSpace(previous),
-		iteration,
-		maxIterations,
-	)
+func runGoalIteration(
+	ctx context.Context,
+	r *runner.Runner,
+	userID string,
+	goalSessionID string,
+	prompt string,
+) (string, error) {
+	return runAgentTurn(ctx, r, userID, goalSessionID, prompt)
 }
 
-func parseGoalReply(reply string) (done bool, message string) {
-	text := strings.TrimSpace(reply)
-	if text == "" {
-		return false, ""
-	}
+func formatGoalkeeperPrompt(goal string) string {
+	return "Goal:\n" + strings.TrimSpace(goal)
+}
 
-	lines := strings.Split(text, "\n")
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
-		}
-		upper := strings.ToUpper(line)
-		if strings.HasPrefix(upper, "STATUS:") {
-			value := strings.TrimSpace(line[len("STATUS:"):])
-			done = strings.EqualFold(value, "done")
-			continue
-		}
-		if strings.HasPrefix(upper, "MESSAGE:") {
-			message = strings.TrimSpace(line[len("MESSAGE:"):])
-		}
+func goalkeeperStepEvent(ev *adksession.Event) (kind string, step string, ok bool) {
+	if ev == nil || ev.CustomMetadata == nil {
+		return "", "", false
 	}
+	kind, _ = ev.CustomMetadata[goalkeeperMetadataEventKey].(string)
+	step, _ = ev.CustomMetadata[goalkeeperMetadataStepKey].(string)
+	if kind == "" || step == "" {
+		return "", "", false
+	}
+	return kind, step, true
+}
 
-	if strings.TrimSpace(message) == "" {
-		message = text
+func metadataBool(ev *adksession.Event, key string) bool {
+	if ev == nil || ev.CustomMetadata == nil {
+		return false
 	}
-	return done, strings.TrimSpace(message)
+	value, _ := ev.CustomMetadata[key].(bool)
+	return value
+}
+
+func isValidatorEvent(currentStep string, ev *adksession.Event) bool {
+	if currentStep == goalkeeperValidatorStep {
+		return true
+	}
+	return ev != nil && ev.Author == goalkeeperValidatorName
+}
+
+func visibleEventText(ev *adksession.Event) string {
+	if ev == nil || ev.Content == nil {
+		return ""
+	}
+	var parts []string
+	for _, part := range ev.Content.Parts {
+		if part != nil && !part.Thought && strings.TrimSpace(part.Text) != "" {
+			parts = append(parts, strings.TrimSpace(part.Text))
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func (g *GoalRunner) Cancel(locator baldasession.SessionLocator) bool {

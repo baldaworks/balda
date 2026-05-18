@@ -144,7 +144,7 @@ Built-in provider types:
 ## Bot Commands
 
 - `/topic <name>`: create a named topic session.
-- `/goal <objective>`: start a Goalkeeper loop in the current session context/workspace.
+- `/goal <objective>`: start a Goalkeeper worker -> validator loop in the current session context/workspace. See [`docs/goalkeeper.md`](docs/goalkeeper.md).
 - `/reset`: clear conversation history for the current session.
 - `/close`: reset history, then close the current topic or restart the owner session on the next message.
 - `/cancel`: cancel in-flight work, drop queued turns, and abort active `/goal` run for the current session.
@@ -214,7 +214,7 @@ Common settings:
 - `balda.inbound_webhooks.*`: optional local inbound webhook receiver for external event-to-session prompt injection via configured route aliases and templates.
 - `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until `/reset` or explicit `/close`.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
-- `balda.goal.max_iterations`: maximum `/goal` loop iterations; defaults to `25`.
+- `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
 - `balda.locators`: canonical session locator aliases for config-managed scheduler jobs and inbound webhook routes.
 - `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `alias`, `cron`, `prompt`).
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.

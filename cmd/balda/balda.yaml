@@ -84,7 +84,7 @@ balda:
     enabled: true
 
   goal:
-    # /goal loop iteration cap.
+    # /goal Goalkeeper worker/validator iteration cap.
     # Balda clamps invalid values to 25.
     max_iterations: 25
 

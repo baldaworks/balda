@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/shutdown"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
+	adkagent "google.golang.org/adk/agent"
+	"google.golang.org/adk/runner"
 )
 
 // RuntimeManager owns the single app-scoped balda provider runtime.
@@ -34,6 +37,28 @@ type RuntimeManagerParams struct {
 	WorkingDir        string
 	BaldaMCPServerIDs []string `name:"balda_mcp_servers"`
 	Logger            zerolog.Logger
+}
+
+// GoalkeeperRuntimeConfig configures a per-run Goalkeeper workflow runtime.
+type GoalkeeperRuntimeConfig struct {
+	SessionID     string
+	BranchName    string
+	WorkspaceDir  string
+	MaxIterations uint
+}
+
+// GoalkeeperRuntime owns the per-run Goalkeeper workflow runner and agents.
+type GoalkeeperRuntime struct {
+	Agent  adkagent.Agent
+	Runner *runner.Runner
+}
+
+// Close releases child provider agents created for the workflow.
+func (r *GoalkeeperRuntime) Close() error {
+	if r == nil {
+		return nil
+	}
+	return closeRuntimeAgent(r.Agent)
 }
 
 // NewRuntimeManager creates the app-scoped balda runtime owner.
@@ -116,6 +141,62 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	return runtime, nil
 }
 
+// BuildGoalkeeperRuntime creates a per-run Goalkeeper workflow using the
+// app-scoped session service so the workflow runs in the current Balda session.
+func (m *RuntimeManager) BuildGoalkeeperRuntime(
+	ctx context.Context,
+	cfg GoalkeeperRuntimeConfig,
+) (*GoalkeeperRuntime, error) {
+	runtime, err := m.Runtime(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.RLock()
+	builder := m.builder
+	providerID := strings.TrimSpace(m.providerID)
+	workingDir := strings.TrimSpace(m.workingDir)
+	extraMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
+	m.mu.RUnlock()
+
+	if builder == nil {
+		return nil, fmt.Errorf("agent builder is required")
+	}
+	if providerID == "" {
+		return nil, fmt.Errorf("balda provider is not configured")
+	}
+
+	workspaceDir := strings.TrimSpace(cfg.WorkspaceDir)
+	if workspaceDir == "" {
+		workspaceDir = workingDir
+	}
+	workflow, err := builder.BuildGoalkeeperWorkflow(ctx, GoalkeeperBuildConfig{
+		ProviderID:        providerID,
+		SessionID:         cfg.SessionID,
+		BranchName:        cfg.BranchName,
+		WorkspaceDir:      workspaceDir,
+		MaxIterations:     cfg.MaxIterations,
+		ExtraMCPServerIDs: extraMCPServerIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := runner.New(runner.Config{
+		AppName:        runtime.AppName,
+		Agent:          workflow,
+		SessionService: runtime.SessionSvc,
+	})
+	if err != nil {
+		_ = closeRuntimeAgent(workflow)
+		return nil, fmt.Errorf("creating goalkeeper runner: %w", err)
+	}
+	return &GoalkeeperRuntime{
+		Agent:  workflow,
+		Runner: r,
+	}, nil
+}
+
 func (m *RuntimeManager) close() error {
 	m.mu.Lock()
 	runtime := m.runtime
@@ -132,15 +213,23 @@ func closeBuiltRuntime(runtime *BuiltRuntime) error {
 }
 
 func closeRuntimeAgent(agent any) error {
-	closer, ok := agent.(io.Closer)
-	if !ok {
+	if agent == nil {
 		return nil
 	}
-	if err := closer.Close(); err != nil {
-		if shutdown.IsExpected(err) {
-			return nil
+	errs := make([]error, 0)
+	if ag, ok := agent.(adkagent.Agent); ok {
+		for _, sub := range ag.SubAgents() {
+			if err := closeRuntimeAgent(sub); err != nil {
+				errs = append(errs, err)
+			}
 		}
-		return fmt.Errorf("close balda provider runtime agent: %w", err)
 	}
-	return nil
+	if closer, ok := agent.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			if !shutdown.IsExpected(err) {
+				errs = append(errs, fmt.Errorf("close balda runtime agent: %w", err))
+			}
+		}
+	}
+	return errors.Join(errs...)
 }

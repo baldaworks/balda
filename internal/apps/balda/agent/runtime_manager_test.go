@@ -30,7 +30,7 @@ func TestCloseRuntimeAgent_ReturnsUnexpectedCloseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("closeRuntimeAgent() error = nil, want non-nil")
 	}
-	if !strings.Contains(err.Error(), "close balda provider runtime agent: close failed") {
+	if !strings.Contains(err.Error(), "close balda runtime agent: close failed") {
 		t.Fatalf("closeRuntimeAgent() error = %v, want wrapped close failure", err)
 	}
 }

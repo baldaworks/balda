@@ -6,6 +6,7 @@
 - Prefer project-local tooling via `go tool ...` when available.
 - Use Conventional Commits for all commits.
 - Sync shared branches with merge (`git pull --no-rebase`), not rebase.
+- When you finish implementation work, commit the completed changes before handing off.
 
 ## Quality Gates (Required)
 
@@ -36,7 +37,7 @@ go tool golangci-lint run
 - `/start owner=<owner_token>`: direct message only; owner authentication/bootstrap entrypoint.
 - `/start invite=<invite_token>`: direct message only; collaborator invite onboarding entrypoint.
 - `/topic <name>`: owner/collaborator, direct message only; creates a topic session labeled `<name>` using the configured balda provider.
-- `/goal <objective>`: owner/collaborator; starts a Goalkeeper loop in the current session context/workspace with started/iteration/final updates.
+- `/goal <objective>`: owner/collaborator; starts a Goalkeeper worker -> validator loop in the current session context/workspace with started/validation/final updates.
 - `/close`: owner/collaborator, direct message only; closes a topic session or stops the owner session.
 - `/cancel`: owner/collaborator; cancels in-flight turn processing, drops queued turns, and aborts active `/goal` run for the current session.
 - `/user add|list|remove <user_id>`: owner only; collaborator invite and management commands.
@@ -172,6 +173,7 @@ For more details, see README.md and docs/QUICKSTART.md.
 
 **CRITICAL RULES:**
 - Work is NOT complete until `git push` succeeds
+- Always commit completed work before handing off; do not leave finished implementation changes only in the working tree
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds

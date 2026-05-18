@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/ipfans/fxlogger v0.2.0
 	github.com/joho/godotenv v1.5.1
+	github.com/kazhuravlev/options-gen v0.55.5
 	github.com/metalagman/appkit v0.1.0
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/normahq/runtime v0.0.3-0.20260518104501-ab09f8b048b9
@@ -150,7 +151,6 @@ require (
 	github.com/jjti/go-spancheck v0.6.5 // indirect
 	github.com/julz/importas v0.2.0 // indirect
 	github.com/karamaru-alpha/copyloopvar v1.2.2 // indirect
-	github.com/kazhuravlev/options-gen v0.55.5 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kisielk/errcheck v1.10.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.6 // indirect
