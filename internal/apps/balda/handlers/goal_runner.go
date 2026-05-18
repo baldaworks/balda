@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -141,7 +140,11 @@ func (g *GoalRunner) runGoalLoop(
 	}
 
 	maxIterations := g.maxIterations
-	goalSessionID := fmt.Sprintf("%s-goal-%d", strings.TrimSpace(ts.GetSessionID()), time.Now().UnixNano())
+	goalSessionID := strings.TrimSpace(ts.GetAgentSessionID())
+	if goalSessionID == "" {
+		_ = g.channel.SendPlain(ctx, locator, "Goal run failed: session is unavailable.")
+		return
+	}
 	_ = g.channel.SendPlain(
 		ctx,
 		locator,
