@@ -10,8 +10,9 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/metalagman/appkit v0.1.0
 	github.com/modelcontextprotocol/go-sdk v1.5.0
-	github.com/normahq/runtime v0.0.2
+	github.com/normahq/runtime v0.0.3-0.20260518104501-ab09f8b048b9
 	github.com/pressly/goose/v3 v3.16.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
@@ -199,7 +200,6 @@ require (
 	github.com/raeperd/recvcheck v0.2.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/ryancurrah/gomodguard v1.4.1 // indirect
 	github.com/ryanrolds/sqlclosecheck v0.6.0 // indirect
