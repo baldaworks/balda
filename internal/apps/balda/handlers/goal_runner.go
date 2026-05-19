@@ -195,7 +195,7 @@ func (g *GoalRunner) runGoalLoop(
 	g.sendGoalMessage(
 		ctx,
 		locator,
-		fmt.Sprintf("Goal run started. Max iterations: %d.\nGoal: %s", maxIterations, objective),
+		fmt.Sprintf("Goal run started. Max iterations: %d.\n\nGoal: %s", maxIterations, objective),
 	)
 
 	result, err := runGoalkeeperWorkflow(
@@ -277,10 +277,11 @@ func formatGoalPhaseUpdate(update goalPhaseUpdate, maxIterations int) string {
 				prefix = fmt.Sprintf("Goal iteration %d/%d: validator failed.", update.Iteration, maxIterations)
 			}
 		}
-		if strings.TrimSpace(update.Text) == "" {
+		details := strings.TrimSpace(update.Text)
+		if details == "" {
 			return prefix
 		}
-		return prefix + "\n" + update.Text
+		return prefix + "\n\n" + details
 	default:
 		return ""
 	}

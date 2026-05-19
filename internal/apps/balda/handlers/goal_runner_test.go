@@ -84,13 +84,13 @@ func TestGoalRunnerRunGoalLoopUsesCopiedWorkflowRuntime(t *testing.T) {
 	if !strings.Contains(got, "Goal iteration 1/3: worker started.") {
 		t.Fatalf("goal runner messages = %q, want worker started progress", got)
 	}
-	if !strings.Contains(got, "Goal iteration 1/3: worker finished.\nworker result") {
+	if !strings.Contains(got, "Goal iteration 1/3: worker finished.\n\nworker result") {
 		t.Fatalf("goal runner messages = %q, want worker finished result", got)
 	}
 	if !strings.Contains(got, "Goal iteration 1/3: validator started.") {
 		t.Fatalf("goal runner messages = %q, want validator started progress", got)
 	}
-	if !strings.Contains(got, "Goal iteration 1/3: validator finished (pass).\nverdict: pass\nworker_result=created artifact") {
+	if !strings.Contains(got, "Goal iteration 1/3: validator finished (pass).\n\nverdict: pass\nworker_result=created artifact") {
 		t.Fatalf("goal runner messages = %q, want passing validator result", got)
 	}
 	if !strings.Contains(got, "Goal run completed.") {
@@ -144,7 +144,7 @@ func TestGoalRunnerRunGoalLoopRetriesFailVerdictUntilMax(t *testing.T) {
 	if !strings.Contains(got, "Goal iteration 2/2: worker started.") {
 		t.Fatalf("goal runner messages = %q, want second iteration worker started progress", got)
 	}
-	if !strings.Contains(got, "Goal iteration 2/2: validator finished (fail).\nverdict: fail\nnot done") {
+	if !strings.Contains(got, "Goal iteration 2/2: validator finished (fail).\n\nverdict: fail\nnot done") {
 		t.Fatalf("goal runner messages = %q, want second failed validator result", got)
 	}
 	if !strings.Contains(got, "Goal run reached max iterations without passing validation.") {
@@ -291,9 +291,19 @@ func TestGoalRunnerRunGoalLoopUsesAgentFormattingMode(t *testing.T) {
 	if len(tgClient.messages) == 0 {
 		t.Fatal("sent messages = 0, want at least one goal update")
 	}
+	foundValidator := false
 	for i, sent := range tgClient.messages {
 		if sent.ParseMode == nil || *sent.ParseMode != testParseModeMarkdown {
 			t.Fatalf("messages[%d].parse_mode = %v, want MarkdownV2", i, sent.ParseMode)
 		}
+		if strings.Contains(sent.Text, "verdict: pass") {
+			foundValidator = true
+			if !strings.Contains(sent.Text, "\n\nverdict: pass") {
+				t.Fatalf("messages[%d].text = %q, want paragraph separation before validator verdict", i, sent.Text)
+			}
+		}
+	}
+	if !foundValidator {
+		t.Fatalf("sent messages missing validator verdict text: %#v", tgClient.messages)
 	}
 }
