@@ -80,8 +80,17 @@ func TestGoalRunnerRunGoalLoopUsesCopiedWorkflowRuntime(t *testing.T) {
 	if strings.Contains(got, "Goal run failed") {
 		t.Fatalf("goal runner sent failure message:\n%s", got)
 	}
-	if !strings.Contains(got, "Goal validation 1/3 passed:\nverdict: pass\nworker_result=created artifact") {
-		t.Fatalf("goal runner messages = %q, want passing validator update", got)
+	if !strings.Contains(got, "Goal iteration 1/3: worker started.") {
+		t.Fatalf("goal runner messages = %q, want worker started progress", got)
+	}
+	if !strings.Contains(got, "Goal iteration 1/3: worker finished.\nworker result") {
+		t.Fatalf("goal runner messages = %q, want worker finished result", got)
+	}
+	if !strings.Contains(got, "Goal iteration 1/3: validator started.") {
+		t.Fatalf("goal runner messages = %q, want validator started progress", got)
+	}
+	if !strings.Contains(got, "Goal iteration 1/3: validator finished (pass).\nverdict: pass\nworker_result=created artifact") {
+		t.Fatalf("goal runner messages = %q, want passing validator result", got)
 	}
 	if !strings.Contains(got, "Goal run completed.") {
 		t.Fatalf("goal runner messages = %q, want completion message", got)
@@ -130,8 +139,11 @@ func TestGoalRunnerRunGoalLoopRetriesFailVerdictUntilMax(t *testing.T) {
 		t.Fatalf("workerRuns, validatorRuns = %d, %d; want 2, 2", workerRuns, validatorRuns)
 	}
 	got := goalRunnerSentText(tgClient)
-	if !strings.Contains(got, "Goal validation 2/2:\nverdict: fail\nnot done") {
-		t.Fatalf("goal runner messages = %q, want second failed validator update", got)
+	if !strings.Contains(got, "Goal iteration 2/2: worker started.") {
+		t.Fatalf("goal runner messages = %q, want second iteration worker started progress", got)
+	}
+	if !strings.Contains(got, "Goal iteration 2/2: validator finished (fail).\nverdict: fail\nnot done") {
+		t.Fatalf("goal runner messages = %q, want second failed validator result", got)
 	}
 	if !strings.Contains(got, "Goal run reached max iterations without passing validation.") {
 		t.Fatalf("goal runner messages = %q, want max-iteration failure", got)

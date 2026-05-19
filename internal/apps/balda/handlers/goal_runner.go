@@ -28,8 +28,12 @@ const (
 	goalkeeperStepEventCompleted = "step_completed"
 	goalkeeperStepEventFailed    = "step_failed"
 
+	goalkeeperWorkerStep    = "worker"
 	goalkeeperValidatorStep = "validator"
 	goalkeeperValidatorName = "GoalkeeperValidator"
+
+	goalPhaseStarted  = "started"
+	goalPhaseFinished = "finished"
 )
 
 type goalCommandRunner interface {
@@ -200,12 +204,12 @@ func (g *GoalRunner) runGoalLoop(
 		ts.GetUserID(),
 		goalSessionID,
 		formatGoalkeeperPrompt(objective),
-		func(update goalValidationUpdate) {
-			prefix := fmt.Sprintf("Goal validation %d/%d:", update.Iteration, maxIterations)
-			if update.GoalReached {
-				prefix = fmt.Sprintf("Goal validation %d/%d passed:", update.Iteration, maxIterations)
+		func(update goalPhaseUpdate) {
+			msg := formatGoalPhaseUpdate(update, maxIterations)
+			if msg == "" {
+				return
 			}
-			_ = g.channel.SendPlain(ctx, locator, prefix+"\n"+update.Text)
+			_ = g.channel.SendPlain(ctx, locator, msg)
 		},
 	)
 	if err != nil {
@@ -231,10 +235,48 @@ type goalRunResult struct {
 	Iterations  int
 }
 
-type goalValidationUpdate struct {
+type goalPhaseUpdate struct {
 	Iteration   int
+	Step        string
+	Kind        string
 	Text        string
 	GoalReached bool
+	Failed      bool
+}
+
+func formatGoalPhaseUpdate(update goalPhaseUpdate, maxIterations int) string {
+	if update.Iteration <= 0 {
+		return ""
+	}
+	step := strings.TrimSpace(update.Step)
+	if step == "" {
+		return ""
+	}
+	switch update.Kind {
+	case goalPhaseStarted:
+		return fmt.Sprintf("Goal iteration %d/%d: %s started.", update.Iteration, maxIterations, step)
+	case goalPhaseFinished:
+		prefix := fmt.Sprintf("Goal iteration %d/%d: %s finished.", update.Iteration, maxIterations, step)
+		if update.Failed {
+			prefix = fmt.Sprintf("Goal iteration %d/%d: %s failed.", update.Iteration, maxIterations, step)
+		}
+		if step == goalkeeperValidatorStep {
+			status := "fail"
+			if update.GoalReached {
+				status = "pass"
+			}
+			prefix = fmt.Sprintf("Goal iteration %d/%d: validator finished (%s).", update.Iteration, maxIterations, status)
+			if update.Failed {
+				prefix = fmt.Sprintf("Goal iteration %d/%d: validator failed.", update.Iteration, maxIterations)
+			}
+		}
+		if strings.TrimSpace(update.Text) == "" {
+			return prefix
+		}
+		return prefix + "\n" + update.Text
+	default:
+		return ""
+	}
 }
 
 func runGoalkeeperWorkflow(
@@ -243,7 +285,7 @@ func runGoalkeeperWorkflow(
 	userID string,
 	goalSessionID string,
 	prompt string,
-	onValidation func(goalValidationUpdate),
+	onProgress func(goalPhaseUpdate),
 ) (goalRunResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -257,7 +299,12 @@ func runGoalkeeperWorkflow(
 	userContent := genai.NewContentFromText(prompt, genai.RoleUser)
 
 	result := goalRunResult{}
+	currentIteration := 0
 	currentStep := ""
+	stepText := map[string]string{
+		goalkeeperWorkerStep:    "",
+		goalkeeperValidatorStep: "",
+	}
 	lastText := ""
 	lastValidatorText := ""
 	for ev, err := range r.Run(ctx, userID, goalSessionID, userContent, adkagent.RunConfig{}) {
@@ -271,10 +318,43 @@ func runGoalkeeperWorkflow(
 		if kind, step, ok := goalkeeperStepEvent(ev); ok {
 			switch kind {
 			case goalkeeperStepEventStarted:
+				if step == goalkeeperWorkerStep {
+					currentIteration++
+					stepText[goalkeeperWorkerStep] = ""
+					stepText[goalkeeperValidatorStep] = ""
+				}
+				if step == goalkeeperValidatorStep && currentIteration == 0 {
+					currentIteration = 1
+				}
 				currentStep = step
+				if onProgress != nil {
+					onProgress(goalPhaseUpdate{
+						Iteration: currentIteration,
+						Step:      step,
+						Kind:      goalPhaseStarted,
+					})
+				}
 			case goalkeeperStepEventCompleted, goalkeeperStepEventFailed:
+				stepResult := strings.TrimSpace(stepText[step])
+				failed := kind == goalkeeperStepEventFailed
 				if step == goalkeeperValidatorStep && metadataBool(ev, goalkeeperMetadataEscalatedKey) {
 					result.GoalReached = true
+				}
+				if step == goalkeeperValidatorStep {
+					result.Iterations = currentIteration
+					if stepResult != "" {
+						lastValidatorText = stepResult
+					}
+				}
+				if onProgress != nil {
+					onProgress(goalPhaseUpdate{
+						Iteration:   currentIteration,
+						Step:        step,
+						Kind:        goalPhaseFinished,
+						Text:        stepResult,
+						GoalReached: step == goalkeeperValidatorStep && metadataBool(ev, goalkeeperMetadataEscalatedKey),
+						Failed:      failed,
+					})
 				}
 				if currentStep == step {
 					currentStep = ""
@@ -288,18 +368,13 @@ func runGoalkeeperWorkflow(
 			continue
 		}
 		lastText = text
+		if currentStep != "" {
+			stepText[currentStep] = text
+		}
 		if isValidatorEvent(currentStep, ev) && ev.IsFinalResponse() {
-			result.Iterations++
 			lastValidatorText = text
 			if ev.Actions.Escalate {
 				result.GoalReached = true
-			}
-			if onValidation != nil {
-				onValidation(goalValidationUpdate{
-					Iteration:   result.Iterations,
-					Text:        text,
-					GoalReached: ev.Actions.Escalate,
-				})
 			}
 		}
 	}
