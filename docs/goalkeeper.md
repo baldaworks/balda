@@ -15,7 +15,9 @@ Both child agents are built from the configured `balda.provider`. They use the s
 The loop is fixed:
 
 - the worker receives the goal and performs the requested work in the current workspace
+- the worker final visible response is persisted in ADK session state as `app:goalkeeper_worker_output`
 - the validator runs after the worker and validates the result against the same goal
+- the validator prompt injects `{app:goalkeeper_worker_output?}` so validation sees the worker summary even when session transcript context is limited
 - if the validator final visible response starts with `verdict: pass`, the loop exits
 - otherwise the worker and validator retry until `balda.goal.max_iterations` is exhausted
 

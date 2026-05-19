@@ -11,7 +11,7 @@ require (
 	github.com/kazhuravlev/options-gen v0.55.5
 	github.com/metalagman/appkit v0.1.0
 	github.com/modelcontextprotocol/go-sdk v1.5.0
-	github.com/normahq/runtime v0.0.3-0.20260518104501-ab09f8b048b9
+	github.com/normahq/runtime v0.0.3-0.20260519061938-1ca1042f07f2
 	github.com/pressly/goose/v3 v3.16.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1

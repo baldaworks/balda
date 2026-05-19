@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	goalkeeperWorkerName    = "GoalkeeperWorker"
-	goalkeeperValidatorName = "GoalkeeperValidator"
+	goalkeeperWorkerName           = "GoalkeeperWorker"
+	goalkeeperValidatorName        = "GoalkeeperValidator"
+	goalkeeperWorkerOutputStateKey = "app:goalkeeper_worker_output"
 )
 
 // GoalkeeperBuildConfig configures the Balda Goalkeeper workflow agent.
@@ -64,6 +65,7 @@ func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBui
 		WorkspaceDir:      workspaceDir,
 		RepoBranchAtStart: repoBranchAtStart,
 		RoleInstruction:   goalkeeperWorkerInstruction(),
+		OutputKey:         goalkeeperWorkerOutputStateKey,
 		MCPServerIDs:      mcpServerIDs,
 	})
 	if err != nil {
@@ -78,7 +80,7 @@ func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBui
 		SessionBranch:     sessionBranch,
 		WorkspaceDir:      workspaceDir,
 		RepoBranchAtStart: repoBranchAtStart,
-		RoleInstruction:   goalkeeperValidatorInstruction(),
+		RoleInstruction:   goalkeeperValidatorInstruction(goalkeeperWorkerOutputStateKey),
 		MCPServerIDs:      mcpServerIDs,
 	})
 	if err != nil {
@@ -108,10 +110,20 @@ type goalkeeperChildAgentConfig struct {
 	WorkspaceDir      string
 	RepoBranchAtStart string
 	RoleInstruction   string
+	OutputKey         string
 	MCPServerIDs      []string
 }
 
 func (b *Builder) buildGoalkeeperChildAgent(ctx context.Context, cfg goalkeeperChildAgentConfig) (adkagent.Agent, error) {
+	req := b.goalkeeperChildBuildRequest(cfg)
+	ag, err := b.factory.Build(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("creating %s from provider %q: %w", cfg.Name, cfg.ProviderID, err)
+	}
+	return ag, nil
+}
+
+func (b *Builder) goalkeeperChildBuildRequest(cfg goalkeeperChildAgentConfig) agentfactory.BuildRequest {
 	baseInstruction := b.buildBaldaInstruction(
 		cfg.SessionID,
 		"telegram",
@@ -120,20 +132,15 @@ func (b *Builder) buildGoalkeeperChildAgent(ctx context.Context, cfg goalkeeperC
 		cfg.WorkspaceDir,
 		cfg.RepoBranchAtStart,
 	)
-	req := agentfactory.BuildRequest{
+	return agentfactory.BuildRequest{
 		AgentID:          cfg.ProviderID,
 		Name:             cfg.Name,
 		Description:      cfg.Description,
 		WorkingDirectory: cfg.WorkspaceDir,
 		Instruction:      joinGoalkeeperInstructions(baseInstruction, cfg.RoleInstruction),
+		OutputKey:        strings.TrimSpace(cfg.OutputKey),
 		MCPServerIDs:     cfg.MCPServerIDs,
 	}
-
-	ag, err := b.factory.Build(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("creating %s from provider %q: %w", cfg.Name, cfg.ProviderID, err)
-	}
-	return ag, nil
 }
 
 func joinGoalkeeperInstructions(baseInstruction, roleInstruction string) string {
@@ -161,10 +168,11 @@ func goalkeeperWorkerInstruction() string {
 	}, "\n")
 }
 
-func goalkeeperValidatorInstruction() string {
+func goalkeeperValidatorInstruction(workerOutputStateKey string) string {
 	return strings.Join([]string{
 		"You are the Goalkeeper validator agent.",
 		"Validate the prior worker result against the original user goal using the shared ADK session context.",
+		fmt.Sprintf("The worker final visible result is available in session state as `{%s?}`.", strings.TrimSpace(workerOutputStateKey)),
 		"Inspect the current working directory as needed.",
 		"Do not intentionally mutate files or continue the worker's implementation work.",
 		"Start with exactly `verdict: pass` or `verdict: fail`.",
