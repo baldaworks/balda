@@ -365,14 +365,15 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.telegram.webhook.auth_token`: webhook auth token required when `balda.telegram.webhook.enabled=true`; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`
 - `balda.telegram.webhook.listen_addr`: local webhook listen address (default: `0.0.0.0:8080`)
 - `balda.telegram.webhook.path`: local webhook path (default: `/telegram/webhook`)
-- `balda.inbound_webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
-- `balda.inbound_webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
-- `balda.inbound_webhooks.routes`: route table keyed by route name
-  - required when `balda.inbound_webhooks.enabled=true`
+- `balda.webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
+- `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
+- `balda.webhooks.routes`: route table keyed by route name
+  - required when `balda.webhooks.enabled=true`
   - each route requires:
     - `path`: local inbound webhook path (for example `/webhook/release`)
-    - `report_to`: locator alias key from `balda.locators`
     - `prompt_template`: Go `text/template` rendered with `RequestID`, `Path`, `Method`, `RawBody`, and `Headers`
+  - runtime target is fixed to owner DM session (`alias: owner`)
+  - inbound webhook requests are not authenticated by balda; keep the listener private or front it with gateway auth
 
 ### Balda settings
 
@@ -481,8 +482,8 @@ Balda runs with a single provider per process (`balda.provider`).
 
 ### Scheduled job runtime semantics (internal)
 
-Balda includes an internal locator-targeted scheduler backed by `balda_scheduled_jobs`.
-Jobs are managed from config on startup using `balda.locators` and `balda.scheduler.jobs`.
+Balda includes an internal owner-targeted scheduler backed by `balda_scheduled_jobs`.
+Jobs are managed from config on startup using `balda.scheduler.jobs`.
 
 - Eligibility: only `status=active` jobs with `next_run_at <= now` are polled.
 - Dispatch path: due jobs resolve a session by canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`) and enqueue a turn through the same per-session `TurnDispatcher` path as normal messages.
@@ -497,22 +498,24 @@ Jobs are managed from config on startup using `balda.locators` and `balda.schedu
 
 ### Inbound webhook contract (internal)
 
-Balda can optionally expose local webhook routes that map path -> locator alias -> prompt template.
+Balda can optionally expose local webhook routes that map path -> prompt template.
 
-- Endpoint config: `balda.inbound_webhooks.enabled`, `listen_addr`, `routes`.
+- Endpoint config: `balda.webhooks.enabled`, `listen_addr`, `routes`.
+- Security: balda does not validate webhook signatures/tokens for this receiver. Keep the endpoint private or protected by a trusted gateway.
 - Method: `POST` only.
 - Route resolution:
   - request path must match a configured route `path`
-  - each route defines `report_to` (locator alias in `balda.locators`)
-  - session target is resolved from alias, not from request payload
+  - session target is fixed to owner DM alias (`target=alias`, `key=owner`)
 - Prompt generation:
   - request body is treated as opaque raw text
   - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
   - rendered prompt must be non-empty
 - Session resolution:
-  - looks up active session by configured locator
-  - lazily restores persisted session when inactive in memory
-  - enqueues through the same per-session `TurnDispatcher` + `runTurnTask` path as Telegram messages
+  - resolves owner DM locator from owner store
+  - looks up active session by owner locator
+  - lazily restores persisted session when inactive in memory; creates owner session when no persisted session exists
+  - enqueues through the same per-session `TurnDispatcher` path as Telegram messages
+  - runs via `runTurnTaskWithDelivery(..., deliver=false)` (fire-and-forget; no chat reply emission)
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", request_id, session_id, queue_position}`
   - route not found: `404` + `error.code="route_not_found"`

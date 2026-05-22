@@ -181,7 +181,7 @@ balda:
       path: "/telegram/webhook"
       url: ""
       auth_token: ""
-  inbound_webhooks:
+  webhooks:
     enabled: false
     listen_addr: "127.0.0.1:8090"
     routes: {}
@@ -196,7 +196,6 @@ balda:
     enabled: true
   goal:
     max_iterations: 25
-  locators: {}
   scheduler:
     jobs: []
   workspace:
@@ -211,12 +210,12 @@ Common settings:
 - `balda.provider`: provider ID selected during `balda init`.
 - `balda.telegram.token`: Telegram bot token, usually supplied by `.env` as `BALDA_TELEGRAM_TOKEN`.
 - `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
-- `balda.inbound_webhooks.*`: optional local inbound webhook receiver for external event-to-session prompt injection via configured route aliases and templates.
+- `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session prompt injection via route templates (`path`, `prompt_template`) into the owner DM session.
+- `balda.webhooks.*` security: inbound webhook requests are not authenticated by Balda; keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
 - `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until `/reset` or explicit `/close`.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
-- `balda.locators`: canonical session locator aliases for config-managed scheduler jobs and inbound webhook routes.
-- `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `alias`, `cron`, `prompt`).
+- `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `cron`, `prompt`) that target the owner DM session.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
 - `balda.mcp_servers`: extra MCP server IDs added to every Balda-started session.
