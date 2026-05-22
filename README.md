@@ -3,16 +3,18 @@
 [![test](https://github.com/normahq/balda/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/normahq/balda/actions/workflows/test.yml)
 [![lint](https://github.com/normahq/balda/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/normahq/balda/actions/workflows/lint.yml)
 
-## Telegram control plane for coding agents
+## Autonomous Worker Comrade for Teams
 
-Balda is a lightweight Telegram app for running long-lived ACP coding agents
-from DMs, groups, and topic chats. Point it at a project, connect your bot,
-and keep agent work moving without leaving Telegram.
+Balda exists to give teams a persistent AI worker they can assign real work to.
 
-It runs as one app with local SQLite state: no Redis, Postgres, object storage,
-queues, public webhook, or published port required. Use Codex, OpenCode,
-Copilot, Gemini, Claude Code, or any ACP-compatible command, with durable
-history, memory, MCP tools, and optional git workspace isolation.
+It takes work from the team's conversation, keeps project context, uses the
+team's tools, and keeps moving until there is a concrete result to review. A
+task can start as a message, a topic, a goal, a schedule, or an external event;
+Balda turns that intent into an active worker session.
+
+The name comes from Pushkin's работник Балда: practical, direct, and focused on
+getting the job done. That is the project goal: an autonomous worker comrade for
+teams.
 
 ```bash
 npm install -g -y @normahq/balda
@@ -20,21 +22,22 @@ balda init
 balda start
 ```
 
-## What You Get
+## Product Goals
 
 | Feature | What it means |
 |---------|---------------|
-| No backing services | Balda stores local state in SQLite and does not require Redis, Postgres, queues, or object storage. |
-| No webhook required | Polling mode is the default, so local quickstarts do not need a public URL or published port. |
-| Any ACP agent | Use built-in providers for `codex`, `opencode`, `copilot`, `gemini`, and `claude`, or wire any ACP-compatible command with `generic_acp`. |
-| Telegram control plane | One owner, optional collaborators, direct-message sessions, topic sessions with `/topic <name>`, and public-chat mention/reply routing. |
-| Git workspaces | Each session can get its own git worktree, with `balda.workspace.import` and `balda.workspace.export` MCP tools for safe branch flow. |
-| Durable sessions | SQLite persistence is on by default, so conversation history survives restarts until `/reset` or explicit `/close`. |
-| Memory system | `MEMORY.md` stores facts, `/memory` shows them, and `balda.memory.*` MCP tools let agents remember user-approved facts. |
-| MCP support | Add stdio, HTTP, or SSE MCP servers globally, per provider, or for every Balda session. |
-| Docker Compose runtime | Run Balda in a container while using the current directory, `.env`, `.git`, and `.config/balda` from the host. |
+| Assignable work | People can give Balda a task or goal the same way they would assign work to a teammate. |
+| Persistent worker context | Balda remembers team and project facts and carries task context across sessions, interruptions, and restarts. |
+| Team conversation as work intake | Work can start from chat, topics, mentions, commands, schedules, or incoming external events. |
+| Focused work sessions | Separate threads/topics can become separate work contexts, so different tasks do not collapse into one conversation. |
+| Autonomous execution loops | Balda can keep working toward a goal, validate progress, and continue until there is a result. |
+| Project tool access | Balda can use the same project tools the team relies on, including repo/workspace operations and configured integrations. |
+| Event-driven work | Webhooks and scheduled triggers become inputs to agents, not just notifications. |
+| Collaborative visibility | The team can see progress, cancel work, reset context, inspect memory, and manage who can assign work. |
+| Reviewable outcomes | Balda should return something the team can evaluate: a summary, changed files, a commit, validation output, or a next action. |
+| Operationally simple deployment | Teams can run Balda close to their project without building a platform first. |
 
-## How It Works
+## How Balda Works Today
 
 1. Pick an ACP provider.
 2. Connect a Telegram bot token.
