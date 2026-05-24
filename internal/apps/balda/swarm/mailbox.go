@@ -243,6 +243,13 @@ func (s *MailboxService) ListReadyMailboxes(ctx context.Context, limit int) ([]s
 	return s.store.ListReadyMailboxes(ctx, limit)
 }
 
+func (s *MailboxService) PendingCount(ctx context.Context, mailbox string) (int, error) {
+	if s == nil || s.store == nil {
+		return 0, nil
+	}
+	return s.store.PendingCount(ctx, mailbox)
+}
+
 func (s *MailboxService) Notify(ctx context.Context, addr ActorAddress) error {
 	if !s.Enabled() {
 		return nil

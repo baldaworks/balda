@@ -393,7 +393,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.enabled`: enables swarm rollout plumbing (default `true`)
 - `balda.swarm.mode`: actor runtime mode (default `shadow`)
   - `shadow`: persist Telegram, webhook, schedule, and `/goal` envelopes in SQLite with `status=shadow`, then keep the existing direct dispatch path.
-  - `mailbox`: persist work in SQLite swarm mailboxes and use embedded NATS for wakeups. Goal tasks run through TaskActor, AgentActor executor/reviewer roles, and DeliveryActor.
+  - `mailbox`: persist work in SQLite swarm mailboxes and use embedded NATS for wakeups. Goal tasks run through TaskActor, AgentActor planner/executor/reviewer roles, and DeliveryActor.
 - `balda.swarm.webhook_mode`: generic inbound webhook runtime mode (`legacy|shadow|mailbox`, default `shadow`)
 - `balda.swarm.scheduler_mode`: config-managed recurring job runtime mode (`legacy|shadow|mailbox`, default `shadow`)
 - `balda.swarm.shadow.enabled`: enables shadow dual-write when any resolved swarm mode is `shadow` (default `true`).
@@ -402,6 +402,12 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.queue.cap`: queued/retry message cap per mailbox (default `20`).
 - `balda.swarm.queue.drop`: overflow behavior (`summarize|old|new`, default `summarize`).
 - `balda.swarm.queue.by_namespace`: namespace queue mode overrides. Defaults: `task.control=interrupt`, `webhook.inbound=followup`, `schedule.inbound=collect`, `memory.sync=collect`.
+- `balda.swarm.agents`: logical single-process swarm agents used by the allocator. Defaults are:
+  - `planner`: plans work and splits it into subtasks.
+  - `executor`: uses project tools and makes changes; advisory tools `workspace`, `shell`, `mcp`.
+  - `reviewer`: validates results and inspects risks; advisory tools `workspace`, `shell`.
+  - `memory`: extracts durable facts and summaries; advisory tool `memory`.
+  Tools are routing/prompt hints only; optional `cost_penalty` lowers allocator preference for expensive roles. All logical agents still use the configured Balda provider runtime in the first release.
 - Queue collect/summarize rewrites only session-actor envelopes. Typed task envelopes keep their original payload contracts; if they cannot be safely summarized, overflow handling falls back to canceling old queued messages.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `/memory` reads the current file in owner/collaborator direct messages.
@@ -486,7 +492,7 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/topic <name>` (DM only, owner/collaborator): creates a new Telegram topic and a topic-bound session.
   - `<name>` is required.
   - `<name>` is a session label, not a provider selector.
-- `/goal <objective>` (owner/collaborator): creates a durable `swarm_tasks` record and starts work in the current session context/workspace. Legacy/shadow modes run the Goalkeeper worker -> validator loop directly; mailbox mode routes through TaskActor -> AgentActor executor/reviewer -> DeliveryActor. Started/validation/final updates use `balda.telegram.formatting_mode`. See [`docs/goalkeeper.md`](goalkeeper.md).
+- `/goal <objective>` (owner/collaborator): creates a durable `swarm_tasks` record and starts work in the current session context/workspace. Legacy/shadow modes run the Goalkeeper worker -> validator loop directly; mailbox mode routes through TaskActor -> AgentActor planner/executor/reviewer -> DeliveryActor. Started/validation/final updates use `balda.telegram.formatting_mode`. See [`docs/goalkeeper.md`](goalkeeper.md).
   - concurrent `/goal` runs in the same session are rejected.
 - `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
 - `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Balda metadata or the workspace branch.
@@ -504,9 +510,10 @@ record, regardless of the active swarm rollout mode.
   and progress into task status/events.
 - Shadow mode: `/goal` creates the same task record, persists a shadow envelope
   for rollout comparison, then runs the existing Goalkeeper loop.
-- Mailbox mode: `/goal` publishes a durable task envelope. TaskActor creates a
-  plan, dispatches AgentActor executor/reviewer commands, records results, and
-  sends progress/final messages through DeliveryActor.
+- Mailbox mode: `/goal` publishes a durable task envelope. TaskActor asks the
+  planner AgentActor for the plan, persists planner output as the task plan,
+  dispatches executor/reviewer commands, records results, and sends
+  progress/final messages through DeliveryActor.
 - Task statuses are `created`, `queued`, `running`, `waiting_for_agent`,
   `waiting_for_user`, `validating`, `completed`, `failed`, `canceled`, and
   `deadlettered`.

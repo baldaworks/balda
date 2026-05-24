@@ -137,6 +137,12 @@ balda:
 	if !doc.Balda.Swarm.Shadow.Enabled {
 		t.Fatal("swarm.shadow.enabled = false, want true from defaults")
 	}
+	if got := doc.Balda.Swarm.Agents["planner"].Role; got != "Plan work and split into subtasks" {
+		t.Fatalf("swarm.agents.planner.role = %q, want default planner role", got)
+	}
+	if got := strings.Join(doc.Balda.Swarm.Agents["executor"].Tools, ","); got != "workspace,shell,mcp" {
+		t.Fatalf("swarm.agents.executor.tools = %q, want workspace,shell,mcp", got)
+	}
 }
 
 func TestLoadConfigDocument_ExplicitMissingProfileFails(t *testing.T) {

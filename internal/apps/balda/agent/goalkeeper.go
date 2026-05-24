@@ -19,8 +19,10 @@ const (
 	goalkeeperWorkerName           = "GoalkeeperWorker"
 	goalkeeperValidatorName        = "GoalkeeperValidator"
 	goalkeeperWorkerOutputStateKey = "goalkeeper_worker_output"
+	taskRolePlanner                = "planner"
 	taskRoleExecutor               = "executor"
 	taskRoleReviewer               = "reviewer"
+	taskRoleMemory                 = "memory"
 )
 
 // GoalkeeperBuildConfig configures the Balda Goalkeeper workflow agent.
@@ -249,10 +251,14 @@ func goalkeeperValidatorInstruction() string {
 
 func normalizeTaskRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "planner":
+		return taskRolePlanner
 	case "executor", "worker":
 		return taskRoleExecutor
 	case "reviewer", "validator":
 		return taskRoleReviewer
+	case "memory":
+		return taskRoleMemory
 	default:
 		return ""
 	}
@@ -260,6 +266,13 @@ func normalizeTaskRole(role string) string {
 
 func taskRoleAgentSpec(role string) (name string, description string, instruction string) {
 	switch role {
+	case taskRolePlanner:
+		return "BaldaTaskPlanner", "Balda task planner agent", strings.Join([]string{
+			"You are the Balda task planner agent.",
+			"Plan work and split one objective into clear execution and validation steps.",
+			"Do not intentionally mutate files or run broad implementation work during planning.",
+			"Return a concise actionable plan with risks and assumptions.",
+		}, "\n")
 	case taskRoleExecutor:
 		return "BaldaTaskExecutor", "Balda task executor agent", strings.Join([]string{
 			"You are the Balda task executor agent.",
@@ -279,6 +292,13 @@ func taskRoleAgentSpec(role string) (name string, description string, instructio
 			"`verdict: pass` means the objective was reached.",
 			"`verdict: fail` means the objective was not reached.",
 			"Then provide brief evidence and a concise final summary.",
+		}, "\n")
+	case taskRoleMemory:
+		return "BaldaTaskMemory", "Balda task memory agent", strings.Join([]string{
+			"You are the Balda task memory agent.",
+			"Extract durable facts, decisions, and concise summaries from task context.",
+			"Do not intentionally mutate project files.",
+			"Return only the facts or summary that should be retained.",
 		}, "\n")
 	default:
 		return "", "", ""

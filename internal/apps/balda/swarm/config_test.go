@@ -24,6 +24,12 @@ func TestConfigNormalized_DefaultsModesToShadow(t *testing.T) {
 	if got.Queue.ByNamespace[NamespaceTaskControl] != QueueModeInterrupt {
 		t.Fatalf("Queue task.control mode = %q, want %q", got.Queue.ByNamespace[NamespaceTaskControl], QueueModeInterrupt)
 	}
+	if _, ok := got.Agents[AgentNamePlanner]; !ok {
+		t.Fatalf("Agents missing default planner: %+v", got.Agents)
+	}
+	if _, ok := got.Agents[AgentNameExecutor]; !ok {
+		t.Fatalf("Agents missing default executor: %+v", got.Agents)
+	}
 }
 
 func TestConfigNormalized_RejectsInvalidModes(t *testing.T) {
@@ -37,6 +43,19 @@ func TestConfigNormalized_RejectsInvalidModes(t *testing.T) {
 		if _, err := cfg.Normalized(); err == nil {
 			t.Fatalf("Normalized(%+v) error = nil, want non-nil", cfg)
 		}
+	}
+}
+
+func TestConfigNormalized_RejectsInvalidAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Agents: map[string]AgentSpec{
+			"custom": {Role: "Custom", Tools: []string{"unsupported"}},
+		},
+	}
+	if _, err := cfg.Normalized(); err == nil {
+		t.Fatal("Normalized() error = nil, want non-nil")
 	}
 }
 

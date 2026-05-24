@@ -24,6 +24,7 @@ type taskAgentActor struct {
 	sessions       *baldasession.Manager
 	runtimeBuilder taskAgentRuntimeBuilder
 	coordinator    *swarm.Coordinator
+	agents         *swarm.AgentRegistry
 	taskRuns       *taskRunRegistry
 	logger         zerolog.Logger
 }
@@ -34,6 +35,7 @@ type taskAgentActorParams struct {
 	SessionManager *baldasession.Manager
 	RuntimeManager *baldaagent.RuntimeManager
 	Coordinator    *swarm.Coordinator
+	Agents         *swarm.AgentRegistry
 	TaskRuns       *taskRunRegistry
 	Logger         zerolog.Logger
 }
@@ -43,6 +45,7 @@ func newTaskAgentActor(params taskAgentActorParams) swarm.Actor {
 		sessions:       params.SessionManager,
 		runtimeBuilder: params.RuntimeManager,
 		coordinator:    params.Coordinator,
+		agents:         params.Agents,
 		taskRuns:       params.TaskRuns,
 		logger:         params.Logger.With().Str("component", "balda.task_agent_actor").Logger(),
 	}
@@ -67,6 +70,15 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 	}
 	if payload.Role == "" {
 		return swarm.PolicyError(fmt.Errorf("task agent role is required"))
+	}
+	payload.AgentName = firstNonEmpty(payload.AgentName, env.To.Key, payload.Role)
+	spec, ok := a.resolveAgentSpec(payload.AgentName)
+	if !ok {
+		return swarm.PolicyError(fmt.Errorf("task agent %q is not configured", payload.AgentName))
+	}
+	payload.AgentName = spec.Name
+	if len(payload.RequestedTools) == 0 {
+		payload.RequestedTools = spec.Tools
 	}
 	if payload.Iteration <= 0 {
 		payload.Iteration = 1
@@ -102,7 +114,7 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 	defer a.taskRuns.unregister(payload.TaskID)
 	defer cancel()
 
-	prompt := formatTaskAgentPrompt(payload)
+	prompt := formatTaskAgentPrompt(payload, spec)
 	text, err := runAgentTurn(runCtx, runtime.Runner, ts.GetUserID(), ts.GetAgentSessionID(), prompt)
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) {
@@ -111,6 +123,13 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 		return a.publishResult(ctx, env, payload, text, err)
 	}
 	return a.publishResult(ctx, env, payload, text, nil)
+}
+
+func (a *taskAgentActor) resolveAgentSpec(name string) (swarm.AgentSpec, bool) {
+	if a.agents == nil {
+		return swarm.AgentSpec{Name: normalizeTaskAgentRole(name), Role: strings.TrimSpace(name)}, normalizeTaskAgentRole(name) != ""
+	}
+	return a.agents.Get(name)
 }
 
 func (a *taskAgentActor) resolveSession(ctx context.Context, payload taskAgentCommandPayload) (*baldasession.TopicSession, error) {
@@ -143,11 +162,14 @@ func (a *taskAgentActor) publishResult(
 	}
 	result := taskAgentResultPayload{
 		TaskID:           command.TaskID,
+		AgentName:        command.AgentName,
 		Role:             command.Role,
+		RequestedTools:   append([]string(nil), command.RequestedTools...),
 		Iteration:        command.Iteration,
 		Locator:          command.Locator,
 		Objective:        command.Objective,
 		Plan:             command.Plan,
+		PlannerOutput:    command.PlannerOutput,
 		TransportUserID:  command.TransportUserID,
 		ExecutorOutput:   command.ExecutorOutput,
 		ReviewerFeedback: command.ReviewerFeedback,
@@ -169,14 +191,14 @@ func (a *taskAgentActor) publishResult(
 		ID:            uuid.NewString(),
 		Namespace:     swarm.NamespaceAgentResult,
 		Kind:          swarm.KindGoal,
-		From:          swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: command.Role},
+		From:          swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: firstNonEmpty(command.AgentName, command.Role)},
 		To:            swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: command.TaskID},
 		SessionID:     command.Locator.SessionID,
 		TaskID:        command.TaskID,
 		CorrelationID: firstNonEmpty(cause.CorrelationID, command.TaskID),
 		CausationID:   cause.ID,
 		Priority:      75,
-		DedupeKey:     command.TaskID + ":result:" + command.Role + ":" + strconv.Itoa(command.Iteration),
+		DedupeKey:     command.TaskID + ":result:" + firstNonEmpty(command.AgentName, command.Role) + ":" + command.Role + ":" + strconv.Itoa(command.Iteration),
 		PayloadJSON:   string(data),
 	}
 	if _, err := a.coordinator.Submit(ctx, env); err != nil {
@@ -185,13 +207,47 @@ func (a *taskAgentActor) publishResult(
 	return nil
 }
 
-func formatTaskAgentPrompt(payload taskAgentCommandPayload) string {
+func formatTaskAgentPrompt(payload taskAgentCommandPayload, spec swarm.AgentSpec) string {
+	base := formatTaskAgentRoleWrapper(payload, spec)
 	switch normalizeTaskAgentRole(payload.Role) {
 	case taskAgentRoleReviewer:
-		return formatTaskReviewerPrompt(payload)
+		return joinPromptSections(base, formatTaskReviewerPrompt(payload))
+	case taskAgentRolePlanner:
+		return joinPromptSections(base, formatTaskPlannerPrompt(payload))
 	default:
-		return formatTaskExecutorPrompt(payload)
+		return joinPromptSections(base, formatTaskExecutorPrompt(payload))
 	}
+}
+
+func formatTaskAgentRoleWrapper(payload taskAgentCommandPayload, spec swarm.AgentSpec) string {
+	var out strings.Builder
+	out.WriteString("You are a Balda swarm logical agent.\n")
+	out.WriteString("Agent: ")
+	out.WriteString(firstNonEmpty(spec.Name, payload.AgentName, payload.Role))
+	if role := strings.TrimSpace(spec.Role); role != "" {
+		out.WriteString("\nRole: ")
+		out.WriteString(role)
+	}
+	tools := spec.Tools
+	if len(tools) == 0 {
+		tools = payload.RequestedTools
+	}
+	if len(tools) > 0 {
+		out.WriteString("\nAdvisory tools: ")
+		out.WriteString(strings.Join(tools, ", "))
+		out.WriteString("\nUse only tools that are actually available in the configured runtime.")
+	}
+	return out.String()
+}
+
+func formatTaskPlannerPrompt(payload taskAgentCommandPayload) string {
+	var out strings.Builder
+	out.WriteString("Task objective:\n")
+	out.WriteString(strings.TrimSpace(payload.Objective))
+	out.WriteString("\n\nIteration budget: ")
+	out.WriteString(strconv.Itoa(normalizeGoalMaxIterations(payload.MaxIterations)))
+	out.WriteString("\n\nCreate a concise execution plan for the executor. Include validation steps and any risks or assumptions. Do not make code changes in the planning step.")
+	return out.String()
 }
 
 func formatTaskExecutorPrompt(payload taskAgentCommandPayload) string {
@@ -205,6 +261,10 @@ func formatTaskExecutorPrompt(payload taskAgentCommandPayload) string {
 	if plan := strings.TrimSpace(payload.Plan); plan != "" {
 		out.WriteString("\n\nCurrent plan:\n")
 		out.WriteString(plan)
+	}
+	if plannerOutput := strings.TrimSpace(payload.PlannerOutput); plannerOutput != "" && plannerOutput != strings.TrimSpace(payload.Plan) {
+		out.WriteString("\n\nPlanner output:\n")
+		out.WriteString(plannerOutput)
 	}
 	if feedback := strings.TrimSpace(payload.ReviewerFeedback); feedback != "" {
 		out.WriteString("\n\nReviewer feedback from previous iteration:\n")
@@ -226,6 +286,10 @@ func formatTaskReviewerPrompt(payload taskAgentCommandPayload) string {
 		out.WriteString("\n\nCurrent plan:\n")
 		out.WriteString(plan)
 	}
+	if plannerOutput := strings.TrimSpace(payload.PlannerOutput); plannerOutput != "" && plannerOutput != strings.TrimSpace(payload.Plan) {
+		out.WriteString("\n\nPlanner output:\n")
+		out.WriteString(plannerOutput)
+	}
 	out.WriteString("\n\nExecutor result:\n")
 	if executorOutput := strings.TrimSpace(payload.ExecutorOutput); executorOutput != "" {
 		out.WriteString(executorOutput)
@@ -234,4 +298,14 @@ func formatTaskReviewerPrompt(payload taskAgentCommandPayload) string {
 	}
 	out.WriteString("\n\nValidate the result. Start with exactly `verdict: pass` or `verdict: fail`, then provide evidence.")
 	return out.String()
+}
+
+func joinPromptSections(parts ...string) string {
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return strings.Join(out, "\n\n")
 }

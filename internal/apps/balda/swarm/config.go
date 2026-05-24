@@ -30,6 +30,7 @@ type Config struct {
 	SchedulerMode string
 	Shadow        ShadowConfig
 	Queue         QueueConfig
+	Agents        map[string]AgentSpec
 }
 
 type ShadowConfig struct {
@@ -97,6 +98,14 @@ func (c Config) Normalized() (Config, error) {
 	}
 	if c.Queue, err = c.Queue.Normalized(); err != nil {
 		return Config{}, err
+	}
+	agents, err := NormalizeAgentSpecs(c.Agents)
+	if err != nil {
+		return Config{}, err
+	}
+	c.Agents = make(map[string]AgentSpec, len(agents))
+	for _, spec := range agents {
+		c.Agents[spec.Name] = spec
 	}
 	return c, nil
 }

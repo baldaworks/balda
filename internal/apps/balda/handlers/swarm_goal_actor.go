@@ -21,8 +21,10 @@ const (
 	taskPayloadKindAgentResult  = "agent_result"
 	taskPayloadKindDelivery     = "delivery"
 
-	taskAgentRoleExecutor = "executor"
-	taskAgentRoleReviewer = "reviewer"
+	taskAgentRolePlanner  = swarm.AgentNamePlanner
+	taskAgentRoleExecutor = swarm.AgentNameExecutor
+	taskAgentRoleReviewer = swarm.AgentNameReviewer
+	taskAgentRoleMemory   = swarm.AgentNameMemory
 )
 
 type taskEnvelopePayload struct {
@@ -50,11 +52,14 @@ type scheduledJobTaskPayload struct {
 
 type taskAgentCommandPayload struct {
 	TaskID           string                      `json:"task_id"`
+	AgentName        string                      `json:"agent_name,omitempty"`
 	Role             string                      `json:"role"`
+	RequestedTools   []string                    `json:"requested_tools,omitempty"`
 	Iteration        int                         `json:"iteration"`
 	Locator          baldasession.SessionLocator `json:"locator"`
 	Objective        string                      `json:"objective"`
 	Plan             string                      `json:"plan,omitempty"`
+	PlannerOutput    string                      `json:"planner_output,omitempty"`
 	TransportUserID  string                      `json:"transport_user_id"`
 	ExecutorOutput   string                      `json:"executor_output,omitempty"`
 	ReviewerFeedback string                      `json:"reviewer_feedback,omitempty"`
@@ -63,11 +68,14 @@ type taskAgentCommandPayload struct {
 
 type taskAgentResultPayload struct {
 	TaskID           string                      `json:"task_id"`
+	AgentName        string                      `json:"agent_name,omitempty"`
 	Role             string                      `json:"role"`
+	RequestedTools   []string                    `json:"requested_tools,omitempty"`
 	Iteration        int                         `json:"iteration"`
 	Locator          baldasession.SessionLocator `json:"locator"`
 	Objective        string                      `json:"objective"`
 	Plan             string                      `json:"plan,omitempty"`
+	PlannerOutput    string                      `json:"planner_output,omitempty"`
 	TransportUserID  string                      `json:"transport_user_id"`
 	ExecutorOutput   string                      `json:"executor_output,omitempty"`
 	ReviewerFeedback string                      `json:"reviewer_feedback,omitempty"`
@@ -157,7 +165,7 @@ func (h *CommandHandler) createGoalTask(
 		Objective:     strings.TrimSpace(objective),
 		Status:        baldastate.SwarmTaskStatusCreated,
 		OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
-		AssignedActor: swarm.ActorTypeAgent + ":" + taskAgentRoleExecutor,
+		AssignedActor: swarm.ActorTypeAgent + ":" + taskAgentRolePlanner,
 		Priority:      90,
 		CreatedBy:     strings.TrimSpace(transportUserID),
 		CreatedFrom:   "goal",
@@ -241,6 +249,7 @@ func goalTaskTitle(objective string) string {
 type taskActorExecutor struct {
 	tasks       *swarm.TaskService
 	coordinator *swarm.Coordinator
+	agents      *swarm.AgentAllocator
 	scheduler   *JobScheduler
 	maxIters    int
 }
@@ -250,14 +259,16 @@ type taskActorExecutorParams struct {
 
 	TaskService *swarm.TaskService
 	Coordinator *swarm.Coordinator
-	Scheduler   *JobScheduler `optional:"true"`
-	MaxIters    int           `name:"balda_goal_max_iterations"`
+	Agents      *swarm.AgentAllocator `optional:"true"`
+	Scheduler   *JobScheduler         `optional:"true"`
+	MaxIters    int                   `name:"balda_goal_max_iterations"`
 }
 
 func newTaskActorExecutor(params taskActorExecutorParams) swarm.Actor {
 	return &taskActorExecutor{
 		tasks:       params.TaskService,
 		coordinator: params.Coordinator,
+		agents:      params.Agents,
 		scheduler:   params.Scheduler,
 		maxIters:    normalizeGoalMaxIterations(params.MaxIters),
 	}
@@ -327,7 +338,8 @@ func (e *taskActorExecutor) startGoalTask(ctx context.Context, env swarm.Envelop
 		Objective:     objective,
 		MaxIterations: maxIterations,
 		Steps: []string{
-			"Execute the objective with the configured Balda provider.",
+			"Ask the planner agent for a focused execution plan.",
+			"Execute the approved plan with the configured Balda provider.",
 			"Validate the executor result with a reviewer agent.",
 			"Repeat executor/reviewer iterations until validation passes or the iteration budget is exhausted.",
 		},
@@ -335,17 +347,15 @@ func (e *taskActorExecutor) startGoalTask(ctx context.Context, env swarm.Envelop
 	if err := e.tasks.SetPlan(ctx, taskID, "task.actor", plan); err != nil {
 		return swarm.TransientError(err)
 	}
-	planText := formatGoalTaskPlan(plan)
 	if err := e.deliver(ctx, taskID, payload.Locator, fmt.Sprintf("Goal run started. Max iterations: %d.\n\nGoal: %s", maxIterations, objective), "started"); err != nil {
 		return err
 	}
 	return e.dispatchAgent(ctx, taskAgentCommandPayload{
 		TaskID:          taskID,
-		Role:            taskAgentRoleExecutor,
+		Role:            taskAgentRolePlanner,
 		Iteration:       1,
 		Locator:         payload.Locator,
 		Objective:       objective,
-		Plan:            planText,
 		TransportUserID: payload.TransportUserID,
 		MaxIterations:   maxIterations,
 	})
@@ -372,7 +382,7 @@ func (e *taskActorExecutor) ensureGoalTask(
 		Objective:     objective,
 		Status:        baldastate.SwarmTaskStatusCreated,
 		OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
-		AssignedActor: swarm.ActorTypeAgent + ":" + taskAgentRoleExecutor,
+		AssignedActor: swarm.ActorTypeAgent + ":" + taskAgentRolePlanner,
 		Priority:      90,
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
 		CreatedFrom:   "goal",
@@ -395,15 +405,36 @@ func (e *taskActorExecutor) dispatchAgent(ctx context.Context, payload taskAgent
 	if payload.Iteration <= 0 {
 		payload.Iteration = 1
 	}
+	if len(payload.RequestedTools) == 0 {
+		payload.RequestedTools = defaultTaskAgentTools(role)
+	}
+	agentName := role
+	if e.agents != nil {
+		spec, err := e.agents.Allocate(ctx, swarm.AgentAllocationRequest{
+			Name:              payload.AgentName,
+			Role:              role,
+			Tools:             payload.RequestedTools,
+			WorkspaceAffinity: strings.TrimSpace(payload.Locator.SessionID) != "",
+		})
+		if err != nil {
+			return swarm.PolicyError(err)
+		}
+		agentName = spec.Name
+	}
+	payload.AgentName = agentName
 	status := baldastate.SwarmTaskStatusWaitingForAgent
 	stepName := "executor"
-	if role == taskAgentRoleReviewer {
+	switch role {
+	case taskAgentRolePlanner:
+		stepName = "planner"
+	case taskAgentRoleReviewer:
 		status = baldastate.SwarmTaskStatusValidating
 		stepName = "validator"
 	}
 	if err := e.tasks.MarkStatus(ctx, payload.TaskID, status, "task.actor", "", "", map[string]any{
-		"role":      role,
-		"iteration": payload.Iteration,
+		"role":       role,
+		"agent_name": agentName,
+		"iteration":  payload.Iteration,
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
@@ -417,8 +448,10 @@ func (e *taskActorExecutor) dispatchAgent(ctx context.Context, payload taskAgent
 		return err
 	}
 	if err := e.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentCommand, "task.actor", "", map[string]any{
-		"role":      role,
-		"iteration": payload.Iteration,
+		"role":            role,
+		"agent_name":      agentName,
+		"requested_tools": payload.RequestedTools,
+		"iteration":       payload.Iteration,
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
@@ -431,12 +464,12 @@ func (e *taskActorExecutor) dispatchAgent(ctx context.Context, payload taskAgent
 		Namespace:     swarm.NamespaceAgentCommand,
 		Kind:          swarm.KindGoal,
 		From:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: payload.TaskID},
-		To:            swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: role},
+		To:            swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: agentName},
 		SessionID:     payload.Locator.SessionID,
 		TaskID:        payload.TaskID,
 		CorrelationID: payload.TaskID,
 		Priority:      70,
-		DedupeKey:     payload.TaskID + ":agent:" + role + ":" + strconv.Itoa(payload.Iteration),
+		DedupeKey:     payload.TaskID + ":agent:" + agentName + ":" + role + ":" + strconv.Itoa(payload.Iteration),
 		PayloadJSON:   string(data),
 	}
 	if _, err := e.coordinator.Submit(ctx, env); err != nil {
@@ -468,14 +501,17 @@ func (e *taskActorExecutor) handleAgentResult(ctx context.Context, env swarm.Env
 	}
 
 	if err := e.tasks.AppendEvent(ctx, taskID, swarm.TaskEventAgentResult, "task.actor", env.ID, map[string]any{
-		"role":      role,
-		"iteration": payload.Iteration,
-		"text":      strings.TrimSpace(payload.Text),
+		"role":       role,
+		"agent_name": strings.TrimSpace(payload.AgentName),
+		"iteration":  payload.Iteration,
+		"text":       strings.TrimSpace(payload.Text),
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
 
 	switch role {
+	case taskAgentRolePlanner:
+		return e.handlePlannerResult(ctx, payload)
 	case taskAgentRoleExecutor:
 		return e.handleExecutorResult(ctx, payload)
 	case taskAgentRoleReviewer:
@@ -483,6 +519,42 @@ func (e *taskActorExecutor) handleAgentResult(ctx context.Context, env swarm.Env
 	default:
 		return swarm.PolicyError(fmt.Errorf("unsupported task agent role %q", payload.Role))
 	}
+}
+
+func (e *taskActorExecutor) handlePlannerResult(ctx context.Context, payload taskAgentResultPayload) error {
+	text := strings.TrimSpace(payload.Text)
+	if text == "" {
+		text = "(planner returned no visible output)"
+	}
+	payload.Plan = text
+	payload.PlannerOutput = text
+	if err := e.tasks.SetPlan(ctx, payload.TaskID, "task.actor", map[string]any{
+		"objective":      strings.TrimSpace(payload.Objective),
+		"max_iterations": normalizeGoalMaxIterations(payload.MaxIterations),
+		"planner_output": text,
+	}); err != nil {
+		return swarm.TransientError(err)
+	}
+	if err := e.deliver(
+		ctx,
+		payload.TaskID,
+		payload.Locator,
+		fmt.Sprintf("Goal iteration %d/%d: planner finished.\n\n%s", payload.Iteration, normalizeGoalMaxIterations(payload.MaxIterations), text),
+		"finished:planner:"+strconv.Itoa(payload.Iteration),
+	); err != nil {
+		return err
+	}
+	return e.dispatchAgent(ctx, taskAgentCommandPayload{
+		TaskID:          payload.TaskID,
+		Role:            taskAgentRoleExecutor,
+		Iteration:       payload.Iteration,
+		Locator:         payload.Locator,
+		Objective:       payload.Objective,
+		Plan:            text,
+		PlannerOutput:   text,
+		TransportUserID: payload.TransportUserID,
+		MaxIterations:   payload.MaxIterations,
+	})
 }
 
 func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload taskAgentResultPayload) error {
@@ -507,6 +579,7 @@ func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload ta
 		Locator:          payload.Locator,
 		Objective:        payload.Objective,
 		Plan:             payload.Plan,
+		PlannerOutput:    payload.PlannerOutput,
 		TransportUserID:  payload.TransportUserID,
 		ExecutorOutput:   text,
 		ReviewerFeedback: payload.ReviewerFeedback,
@@ -552,6 +625,7 @@ func (e *taskActorExecutor) handleReviewerResult(ctx context.Context, payload ta
 		Locator:          payload.Locator,
 		Objective:        payload.Objective,
 		Plan:             payload.Plan,
+		PlannerOutput:    payload.PlannerOutput,
 		TransportUserID:  payload.TransportUserID,
 		ReviewerFeedback: text,
 		MaxIterations:    maxIterations,
@@ -604,28 +678,31 @@ func (e *taskActorExecutor) deliver(
 	return nil
 }
 
-func formatGoalTaskPlan(plan goalTaskPlan) string {
-	var out strings.Builder
-	out.WriteString("Objective:\n")
-	out.WriteString(strings.TrimSpace(plan.Objective))
-	out.WriteString("\n\nPlan:\n")
-	for idx, step := range plan.Steps {
-		out.WriteString(strconv.Itoa(idx + 1))
-		out.WriteString(". ")
-		out.WriteString(step)
-		out.WriteString("\n")
-	}
-	return strings.TrimSpace(out.String())
-}
-
 func normalizeTaskAgentRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "planner":
+		return taskAgentRolePlanner
 	case "executor", "worker":
 		return taskAgentRoleExecutor
 	case "reviewer", "validator":
 		return taskAgentRoleReviewer
+	case "memory":
+		return taskAgentRoleMemory
 	default:
 		return ""
+	}
+}
+
+func defaultTaskAgentTools(role string) []string {
+	switch normalizeTaskAgentRole(role) {
+	case taskAgentRoleExecutor:
+		return []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}
+	case taskAgentRoleReviewer:
+		return []string{swarm.AgentToolWorkspace, swarm.AgentToolShell}
+	case taskAgentRoleMemory:
+		return []string{swarm.AgentToolMemory}
+	default:
+		return nil
 	}
 }
 
@@ -637,6 +714,7 @@ func taskResultPayload(payload taskAgentResultPayload, goalReached bool) map[str
 	return map[string]any{
 		"goal_reached":      goalReached,
 		"iterations":        payload.Iteration,
+		"planner_output":    strings.TrimSpace(payload.PlannerOutput),
 		"executor_output":   strings.TrimSpace(payload.ExecutorOutput),
 		"reviewer_output":   strings.TrimSpace(payload.Text),
 		"reviewer_feedback": strings.TrimSpace(payload.ReviewerFeedback),

@@ -80,12 +80,13 @@ type GoalConfig struct {
 
 // SwarmConfig controls the actor mailbox runtime.
 type SwarmConfig struct {
-	Enabled       bool              `mapstructure:"enabled"`
-	Mode          string            `mapstructure:"mode"`
-	WebhookMode   string            `mapstructure:"webhook_mode"`
-	SchedulerMode string            `mapstructure:"scheduler_mode"`
-	Shadow        SwarmShadowConfig `mapstructure:"shadow"`
-	Queue         SwarmQueueConfig  `mapstructure:"queue"`
+	Enabled       bool                        `mapstructure:"enabled"`
+	Mode          string                      `mapstructure:"mode"`
+	WebhookMode   string                      `mapstructure:"webhook_mode"`
+	SchedulerMode string                      `mapstructure:"scheduler_mode"`
+	Shadow        SwarmShadowConfig           `mapstructure:"shadow"`
+	Queue         SwarmQueueConfig            `mapstructure:"queue"`
+	Agents        map[string]SwarmAgentConfig `mapstructure:"agents"`
 }
 
 // SwarmShadowConfig controls safe dual-write rollout behavior.
@@ -100,6 +101,13 @@ type SwarmQueueConfig struct {
 	Cap         int            `mapstructure:"cap"`
 	Drop        string         `mapstructure:"drop"`
 	ByNamespace map[string]any `mapstructure:"by_namespace"`
+}
+
+// SwarmAgentConfig configures a logical single-process swarm agent.
+type SwarmAgentConfig struct {
+	Role        string   `mapstructure:"role"`
+	Tools       []string `mapstructure:"tools"`
+	CostPenalty int      `mapstructure:"cost_penalty"`
 }
 
 // SchedulerConfig controls startup-managed recurring jobs.
