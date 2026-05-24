@@ -89,6 +89,12 @@ balda:
     # Balda clamps invalid values to 25.
     max_iterations: 25
 
+  swarm:
+    # Actor mailbox runtime.
+    enabled: true
+    # mailbox: route work through durable SQLite mailboxes and embedded NATS wakeups.
+    mode: "mailbox"
+
   scheduler:
     # Startup-reconciled recurring jobs.
     # Jobs are upserted by id on boot; missing ids are removed from state.db.

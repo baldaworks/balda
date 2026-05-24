@@ -233,8 +233,8 @@ project:
 
 - `.env` is loaded from `/workspace/.env`.
 - `.config/balda/config.yaml` remains the selected app config.
-- `.config/balda/state.db` persists owner auth, session metadata, MCP KV, and
-  Telegram polling offsets on the host.
+- `.config/balda/state.db` persists owner auth, session metadata, swarm
+  mailboxes/tasks, MCP KV, and Telegram polling offsets on the host.
 - `.config/balda/MEMORY.md` and optional `.config/balda/SOUL.md` stay on the
   host. `MEMORY.md` is used when `balda.memory.enabled=true`; `SOUL.md` is
   always read when present.
@@ -379,7 +379,7 @@ session-start snapshot. New or restored sessions read the latest file.
 
 - `balda.working_dir`: optional balda working directory (defaults to process CWD)
 - `balda.state_dir`: balda state directory for persistent balda SQLite state (`state.db`).
-  - Stores owner/app KV, `balda.state` MCP KV, session metadata, optional ADK session history, and Telegram polling offset.
+  - Stores owner/app KV, `balda.state` MCP KV, session metadata, swarm mailboxes/tasks, optional ADK session history, and Telegram polling offset.
   - Schema is migration-versioned and auto-applied on startup.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
@@ -390,6 +390,9 @@ session-start snapshot. New or restored sessions read the latest file.
   - when disabled, Balda does not snapshot `MEMORY.md`, register `balda.memory.*` MCP tools, or expose `/memory` contents.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal` (default `25`)
   - invalid values are clamped to `25`.
+- `balda.swarm.enabled`: enables the actor mailbox runtime (default `true`)
+- `balda.swarm.mode`: actor runtime mode (default `mailbox`)
+  - `mailbox`: persist work in SQLite swarm mailboxes and use embedded NATS for wakeups.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `/memory` reads the current file in owner/collaborator direct messages.
   - `balda.memory.read` reads the file from MCP.
@@ -486,7 +489,7 @@ Balda includes an internal owner-targeted scheduler backed by `balda_scheduled_j
 Jobs are managed from config on startup using `balda.scheduler.jobs`.
 
 - Eligibility: only `status=active` jobs with `next_run_at <= now` are polled.
-- Dispatch path: due jobs resolve a session by canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`) and enqueue a turn through the same per-session `TurnDispatcher` path as normal messages.
+- Dispatch path: due jobs resolve a session by canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`) and publish durable swarm task messages; task/session actors delegate execution to the same per-session `TurnDispatcher` path as normal messages.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
 - Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are removed.
 - Claim-before-run: scheduler writes `last_dispatch_key` and advances `next_run_at` to the next cron occurrence before enqueueing work, so stale duplicate due reads do not enqueue the same due slot twice.
@@ -514,7 +517,7 @@ Balda can optionally expose local webhook routes that map path -> prompt templat
   - resolves owner DM locator from owner store
   - looks up active session by owner locator
   - lazily restores persisted session when inactive in memory; creates owner session when no persisted session exists
-  - enqueues through the same per-session `TurnDispatcher` path as Telegram messages
+  - publishes a durable swarm session message, then the session actor delegates to the same per-session `TurnDispatcher` path as Telegram messages
   - runs via `runTurnTaskWithDelivery(..., deliver=false)` (fire-and-forget; no chat reply emission)
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", request_id, session_id, queue_position}`

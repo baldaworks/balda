@@ -308,6 +308,7 @@ func (h *BaldaHandler) enqueueTurn(
 		TopicID:        topicID,
 		ProgressPolicy: progressPolicy,
 		Deliver:        true,
+		Source:         "telegram",
 	})
 	if err != nil {
 		return err

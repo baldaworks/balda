@@ -22,10 +22,12 @@ type sessionTurnPayload struct {
 	TopicID        int                         `json:"topic_id,omitempty"`
 	ProgressPolicy baldachannel.ProgressPolicy `json:"progress_policy,omitempty"`
 	Deliver        bool                        `json:"deliver"`
+	Source         string                      `json:"source,omitempty"`
+	DedupeKey      string                      `json:"dedupe_key,omitempty"`
 }
 
 func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload sessionTurnPayload) (int, error) {
-	if h.swarmCoordinator != nil {
+	if h.swarmCoordinator != nil && h.swarmCoordinator.Enabled() {
 		return h.submitSessionTurnToSwarm(ctx, payload)
 	}
 	return h.enqueueSessionTurnDirect(payload)
@@ -39,14 +41,20 @@ func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload ses
 	if err != nil {
 		return 0, fmt.Errorf("encode session turn payload: %w", err)
 	}
+	source := strings.TrimSpace(payload.Source)
+	if source == "" {
+		source = "telegram"
+	}
 	submitted, err := h.swarmCoordinator.Submit(ctx, swarm.Envelope{
-		Target:  swarm.ActorAddress{Target: swarm.ActorTypeSession, Key: payload.Locator.SessionID},
-		Content: string(data),
+		Namespace:   sessionTurnNamespace(source),
+		Kind:        sessionTurnKind(source),
+		From:        swarm.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeSession, Key: payload.Locator.SessionID},
+		SessionID:   payload.Locator.SessionID,
+		DedupeKey:   strings.TrimSpace(payload.DedupeKey),
+		PayloadJSON: string(data),
 	})
 	if err != nil {
-		if swarm.IsMailboxFull(err) {
-			return 0, ErrTurnQueueFull
-		}
 		return 0, err
 	}
 	return submitted.QueuePosition, nil
@@ -106,21 +114,30 @@ type sessionActorExecutorParams struct {
 	Handler *BaldaHandler
 }
 
-func newSessionActorExecutor(params sessionActorExecutorParams) swarm.Executor {
+func newSessionActorExecutor(params sessionActorExecutorParams) swarm.Actor {
 	return &sessionActorExecutor{handler: params.Handler}
 }
 
-func (e *sessionActorExecutor) ActorType() string {
-	return swarm.ActorTypeSession
+func (e *sessionActorExecutor) Address() string {
+	return swarm.WildcardAddress(swarm.ActorTypeSession)
 }
 
-func (e *sessionActorExecutor) Execute(ctx context.Context, env swarm.Envelope) error {
+func (e *sessionActorExecutor) Handle(ctx context.Context, env swarm.Envelope) error {
+	switch strings.TrimSpace(env.Namespace) {
+	case swarm.NamespaceHumanInbound, swarm.NamespaceWebhookInbound, swarm.NamespaceScheduleInbound, swarm.NamespaceAgentCommand, swarm.NamespaceTaskControl:
+		return e.enqueueTurn(ctx, env)
+	default:
+		return swarm.PolicyError(fmt.Errorf("unsupported session namespace %q", env.Namespace))
+	}
+}
+
+func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelope) error {
 	var payload sessionTurnPayload
-	if err := json.Unmarshal([]byte(env.Content), &payload); err != nil {
-		return fmt.Errorf("decode session turn payload: %w", err)
+	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		return swarm.PermanentError(fmt.Errorf("decode session turn payload: %w", err))
 	}
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		payload.Locator.SessionID = strings.TrimSpace(env.Target.Key)
+		payload.Locator.SessionID = strings.TrimSpace(env.To.Key)
 	}
 	if e.handler.turnDispatcher == nil {
 		return e.handler.runSessionTurnPayload(ctx, payload)
@@ -137,15 +154,44 @@ func (e *sessionActorExecutor) Execute(ctx context.Context, env swarm.Envelope) 
 	})
 	if err != nil {
 		if errors.Is(err, ErrTurnQueueFull) {
-			return err
+			return swarm.TransientError(err)
 		}
-		return fmt.Errorf("enqueue session actor turn: %w", err)
+		return swarm.TransientError(fmt.Errorf("enqueue session actor turn: %w", err))
 	}
 
 	select {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		return ctx.Err()
+		return swarm.TransientError(ctx.Err())
 	}
+}
+
+func sessionTurnNamespace(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "webhook":
+		return swarm.NamespaceWebhookInbound
+	case "schedule":
+		return swarm.NamespaceScheduleInbound
+	case "agent":
+		return swarm.NamespaceAgentCommand
+	default:
+		return swarm.NamespaceHumanInbound
+	}
+}
+
+func sessionTurnKind(source string) string {
+	if strings.EqualFold(strings.TrimSpace(source), "webhook") {
+		return swarm.KindWebhookEvent
+	}
+	return swarm.KindMessage
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

@@ -107,6 +107,10 @@ func Module(
 	}
 	jobSchedulerConfig := buildJobSchedulerConfig(cfg.Balda)
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
+	swarmConfig := swarm.Config{
+		Enabled: cfg.Balda.Swarm.Enabled,
+		Mode:    strings.TrimSpace(cfg.Balda.Swarm.Mode),
+	}
 
 	// Start with global MCP servers.
 	mcpServers := make(map[string]agentconfig.MCPServerConfig, len(normaCfg.MCPServers))
@@ -124,6 +128,7 @@ func Module(
 			mcpReg,
 			jobSchedulerConfig,
 			inboundWebhookConfig,
+			swarmConfig,
 		),
 		fx.Provide(
 			fx.Annotate(

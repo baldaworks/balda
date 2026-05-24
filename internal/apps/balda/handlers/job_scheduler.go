@@ -302,7 +302,7 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job baldastate.Scheduled
 	}
 
 	prompt := strings.TrimSpace(current.Prompt)
-	if s.coordinator != nil {
+	if s.coordinator != nil && s.coordinator.Enabled() {
 		return s.dispatchScheduledJobTask(ctx, current, target, prompt, dispatchKey)
 	}
 
@@ -340,8 +340,14 @@ func (s *JobScheduler) dispatchScheduledJobTask(
 		return s.markFailure(ctx, job.JobID, fmt.Errorf("encode scheduled job task: %w", err))
 	}
 	if _, err := s.coordinator.Submit(ctx, swarm.Envelope{
-		Target:  swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "scheduled-" + job.JobID + "-" + dispatchKey},
-		Content: string(data),
+		Namespace:   swarm.NamespaceScheduleInbound,
+		Kind:        swarm.KindScheduledJob,
+		From:        swarm.ActorAddress{Target: "schedule", Key: job.JobID},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "scheduled-" + job.JobID + "-" + dispatchKey},
+		SessionID:   target.Locator.SessionID,
+		TaskID:      "scheduled-" + job.JobID + "-" + dispatchKey,
+		DedupeKey:   dispatchKey,
+		PayloadJSON: string(data),
 	}); err != nil {
 		return s.markFailure(ctx, job.JobID, fmt.Errorf("enqueue scheduled job task: %w", err))
 	}

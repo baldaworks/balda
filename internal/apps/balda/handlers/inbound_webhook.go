@@ -449,6 +449,8 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		TopicID:        target.TopicID,
 		ProgressPolicy: inboundWebhookProgressPolicy(),
 		Deliver:        env.ReportTo != nil,
+		Source:         "webhook",
+		DedupeKey:      "webhook:" + route.Name + ":" + requestID,
 	})
 	if enqueueErr != nil {
 		if errors.Is(enqueueErr, ErrTurnQueueFull) {

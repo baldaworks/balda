@@ -5,14 +5,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
+	ActorTypeSystem   = "system"
 	ActorTypeSession  = "session"
 	ActorTypeTask     = "task"
 	ActorTypeAgent    = "agent"
 	ActorTypeDelivery = "delivery"
 	ActorTypeMemory   = "memory"
+
+	NamespaceHumanInbound    = "human.inbound"
+	NamespaceWebhookInbound  = "webhook.inbound"
+	NamespaceScheduleInbound = "schedule.inbound"
+	NamespaceAgentCommand    = "agent.command"
+	NamespaceTaskControl     = "task.control"
+
+	KindMessage      = "message"
+	KindWebhookEvent = "webhook_event"
+	KindScheduledJob = "scheduled_job"
+	KindGoal         = "goal"
 )
 
 type ActorAddress struct {
@@ -20,15 +33,19 @@ type ActorAddress struct {
 	Key    string `json:"key"`
 }
 
-type Envelope struct {
-	ID       string            `json:"id"`
-	Target   ActorAddress      `json:"target"`
-	Content  string            `json:"content"`
-	ReportTo *ActorAddress     `json:"report_to,omitempty"`
-	Meta     map[string]string `json:"meta,omitempty"`
+func SystemAddress(key string) ActorAddress {
+	return ActorAddress{Target: ActorTypeSystem, Key: key}
+}
+
+func WildcardAddress(target string) string {
+	return strings.ToLower(strings.TrimSpace(target)) + ":*"
 }
 
 func (a ActorAddress) MailboxID() (string, error) {
+	return a.String()
+}
+
+func (a ActorAddress) String() (string, error) {
 	target := strings.ToLower(strings.TrimSpace(a.Target))
 	key := strings.TrimSpace(a.Key)
 	if target == "" {
@@ -40,12 +57,45 @@ func (a ActorAddress) MailboxID() (string, error) {
 	return target + ":" + key, nil
 }
 
+type Envelope struct {
+	ID            string            `json:"id"`
+	Namespace     string            `json:"namespace"`
+	Kind          string            `json:"kind"`
+	From          ActorAddress      `json:"from"`
+	To            ActorAddress      `json:"to"`
+	SessionID     string            `json:"session_id,omitempty"`
+	TaskID        string            `json:"task_id,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	CausationID   string            `json:"causation_id,omitempty"`
+	Priority      int               `json:"priority,omitempty"`
+	DedupeKey     string            `json:"dedupe_key,omitempty"`
+	Attempt       int               `json:"attempt,omitempty"`
+	MaxAttempts   int               `json:"max_attempts,omitempty"`
+	NotBefore     time.Time         `json:"not_before,omitempty"`
+	ExpiresAt     time.Time         `json:"expires_at,omitempty"`
+	PayloadJSON   string            `json:"payload_json"`
+	Meta          map[string]string `json:"meta,omitempty"`
+	ReportTo      *ActorAddress     `json:"report_to,omitempty"`
+}
+
 func (e Envelope) Validate() error {
 	if strings.TrimSpace(e.ID) == "" {
 		return fmt.Errorf("envelope id is required")
 	}
-	if _, err := e.Target.MailboxID(); err != nil {
-		return err
+	if strings.TrimSpace(e.Namespace) == "" {
+		return fmt.Errorf("envelope namespace is required")
+	}
+	if strings.TrimSpace(e.Kind) == "" {
+		return fmt.Errorf("envelope kind is required")
+	}
+	if _, err := e.From.String(); err != nil {
+		return fmt.Errorf("envelope from: %w", err)
+	}
+	if _, err := e.To.String(); err != nil {
+		return fmt.Errorf("envelope to: %w", err)
+	}
+	if strings.TrimSpace(e.PayloadJSON) == "" {
+		return fmt.Errorf("envelope payload_json is required")
 	}
 	return nil
 }

@@ -2,16 +2,12 @@ package state
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/session"
 )
-
-// ErrMailboxFull means the target mailbox reached its active queue limit.
-var ErrMailboxFull = errors.New("mailbox is full")
 
 const (
 	// NamespaceApp stores balda app internal state (for example owner auth).
@@ -30,16 +26,23 @@ const (
 	// ScheduledJobStatusPaused means the job is persisted but not dispatched.
 	ScheduledJobStatusPaused = "paused"
 
-	// MailboxMessageStatusPending means the message is waiting for its actor.
-	MailboxMessageStatusPending = "pending"
-	// MailboxMessageStatusRunning means an actor claimed the message.
-	MailboxMessageStatusRunning = "running"
-	// MailboxMessageStatusDone means the actor completed the message.
-	MailboxMessageStatusDone = "done"
-	// MailboxMessageStatusFailed means the actor failed the message.
-	MailboxMessageStatusFailed = "failed"
-	// MailboxMessageStatusCanceled means the message was canceled before completion.
-	MailboxMessageStatusCanceled = "canceled"
+	// SwarmMessageStatusQueued means the message can be claimed immediately.
+	SwarmMessageStatusQueued = "queued"
+	// SwarmMessageStatusLeased means a worker owns the message until lease_until.
+	SwarmMessageStatusLeased = "leased"
+	// SwarmMessageStatusAcked means the actor handled the message successfully.
+	SwarmMessageStatusAcked = "acked"
+	// SwarmMessageStatusRetry means the message can be claimed after not_before.
+	SwarmMessageStatusRetry = "retry"
+	// SwarmMessageStatusDead means the message failed permanently.
+	SwarmMessageStatusDead = "dead"
+	// SwarmMessageStatusCanceled means the message was canceled before completion.
+	SwarmMessageStatusCanceled = "canceled"
+	// SwarmMessageStatusExpired means expires_at elapsed before successful handling.
+	SwarmMessageStatusExpired = "expired"
+
+	// SwarmMessageDefaultMaxAttempts is the default retry budget for messages.
+	SwarmMessageDefaultMaxAttempts = 3
 )
 
 // Provider exposes balda state capabilities behind a backend-agnostic interface.
@@ -50,7 +53,7 @@ type Provider interface {
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
 	ScheduledJobs() ScheduledJobStore
-	Mailboxes() MailboxMessageStore
+	Swarm() SwarmStore
 	PollingOffsetStore() updatepoller.OffsetStore
 	Collaborators() CollaboratorStore
 	Close() error
@@ -130,34 +133,59 @@ type ScheduledJobStore interface {
 	Delete(ctx context.Context, jobID string) error
 }
 
-// MailboxMessageRecord persists one actor mailbox message.
-type MailboxMessageRecord struct {
-	Sequence       int64
-	MessageID      string
-	MailboxID      string
-	ActorType      string
-	ActorKey       string
-	Subject        string
-	PayloadJSON    string
-	Status         string
-	IdempotencyKey string
-	Attempts       int
-	LastError      string
-	AvailableAt    time.Time
-	ClaimedAt      time.Time
-	CompletedAt    time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+// SwarmMessageRecord persists one durable actor mailbox message.
+type SwarmMessageRecord struct {
+	ID            string
+	Mailbox       string
+	Namespace     string
+	Kind          string
+	FromAddr      string
+	ToAddr        string
+	SessionID     string
+	TaskID        string
+	CorrelationID string
+	CausationID   string
+	Priority      int
+	DedupeKey     string
+	Status        string
+	Attempt       int
+	MaxAttempts   int
+	NotBefore     time.Time
+	ExpiresAt     time.Time
+	LeaseOwner    string
+	LeaseUntil    time.Time
+	PayloadJSON   string
+	MetaJSON      string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	CompletedAt   time.Time
+	Error         string
 }
 
-// MailboxMessageStore persists actor mailbox messages.
-type MailboxMessageStore interface {
-	Enqueue(ctx context.Context, record MailboxMessageRecord, activeLimit int) (int, error)
-	ClaimNext(ctx context.Context, mailboxID string, now time.Time) (MailboxMessageRecord, bool, error)
-	Complete(ctx context.Context, messageID string) error
-	Fail(ctx context.Context, messageID string, cause error) error
-	CancelMailbox(ctx context.Context, mailboxID string) (int, error)
-	ResetRunning(ctx context.Context) (int, error)
-	ListPendingMailboxes(ctx context.Context, limit int) ([]string, error)
-	GetByID(ctx context.Context, messageID string) (MailboxMessageRecord, bool, error)
+// SwarmPublishResult describes whether a publish inserted a new row or deduped.
+type SwarmPublishResult struct {
+	ID        string
+	Mailbox   string
+	Published bool
+}
+
+// SwarmRecoveryResult describes rows repaired by a recovery sweep.
+type SwarmRecoveryResult struct {
+	RetriedLeases int
+	Expired       int
+}
+
+// SwarmStore persists actor mailbox messages and task state.
+type SwarmStore interface {
+	Publish(ctx context.Context, record SwarmMessageRecord) (SwarmPublishResult, error)
+	PublishBatch(ctx context.Context, records []SwarmMessageRecord) ([]SwarmPublishResult, error)
+	Claim(ctx context.Context, mailbox string, owner string, limit int, lease time.Duration) ([]SwarmMessageRecord, error)
+	Ack(ctx context.Context, mailbox string, messageID string) error
+	Retry(ctx context.Context, mailbox string, messageID string, next time.Time, reason string) error
+	DeadLetter(ctx context.Context, mailbox string, messageID string, reason string) error
+	CancelByTask(ctx context.Context, taskID string, reason string) (int, error)
+	CancelBySession(ctx context.Context, sessionID string, reason string) (int, error)
+	Recover(ctx context.Context, now time.Time) (SwarmRecoveryResult, error)
+	ListReadyMailboxes(ctx context.Context, limit int) ([]string, error)
+	GetMessage(ctx context.Context, messageID string) (SwarmMessageRecord, bool, error)
 }

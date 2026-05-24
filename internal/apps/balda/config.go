@@ -16,6 +16,7 @@ type BaldaConfig struct {
 	Sessions          SessionsConfig  `mapstructure:"sessions"`
 	Memory            MemoryConfig    `mapstructure:"memory"`
 	Goal              GoalConfig      `mapstructure:"goal"`
+	Swarm             SwarmConfig     `mapstructure:"swarm"`
 	Scheduler         SchedulerConfig `mapstructure:"scheduler"`
 	Workspace         WorkspaceConfig `mapstructure:"workspace"`
 	MCPServers        []string        `mapstructure:"mcp_servers"`
@@ -75,6 +76,12 @@ type MemoryConfig struct {
 // GoalConfig controls /goal command execution behavior.
 type GoalConfig struct {
 	MaxIterations int `mapstructure:"max_iterations"`
+}
+
+// SwarmConfig controls the actor mailbox runtime.
+type SwarmConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Mode    string `mapstructure:"mode"`
 }
 
 // SchedulerConfig controls startup-managed recurring jobs.

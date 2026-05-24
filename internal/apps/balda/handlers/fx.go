@@ -41,13 +41,13 @@ var Module = fx.Module("balda_handlers",
 		NewUserHandler,
 		fx.Annotate(
 			newSessionActorExecutor,
-			fx.As(new(swarm.Executor)),
-			fx.ResultTags(`group:"balda_swarm_executors"`),
+			fx.As(new(swarm.Actor)),
+			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
 			newTaskActorExecutor,
-			fx.As(new(swarm.Executor)),
-			fx.ResultTags(`group:"balda_swarm_executors"`),
+			fx.As(new(swarm.Actor)),
+			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
 			registerStartHandler,
