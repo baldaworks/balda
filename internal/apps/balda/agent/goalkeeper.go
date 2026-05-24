@@ -19,6 +19,8 @@ const (
 	goalkeeperWorkerName           = "GoalkeeperWorker"
 	goalkeeperValidatorName        = "GoalkeeperValidator"
 	goalkeeperWorkerOutputStateKey = "goalkeeper_worker_output"
+	taskRoleExecutor               = "executor"
+	taskRoleReviewer               = "reviewer"
 )
 
 // GoalkeeperBuildConfig configures the Balda Goalkeeper workflow agent.
@@ -28,6 +30,17 @@ type GoalkeeperBuildConfig struct {
 	BranchName          string
 	WorkspaceDir        string
 	MaxIterations       uint
+	BundledMCPServerIDs []string
+	ExtraMCPServerIDs   []string
+}
+
+// TaskRoleBuildConfig configures one Balda task role agent.
+type TaskRoleBuildConfig struct {
+	ProviderID          string
+	SessionID           string
+	BranchName          string
+	WorkspaceDir        string
+	Role                string
 	BundledMCPServerIDs []string
 	ExtraMCPServerIDs   []string
 }
@@ -112,6 +125,46 @@ func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBui
 	return workflow, nil
 }
 
+// BuildTaskRoleAgent builds one provider-backed task role agent.
+func (b *Builder) BuildTaskRoleAgent(ctx context.Context, cfg TaskRoleBuildConfig) (adkagent.Agent, error) {
+	if b == nil || b.factory == nil {
+		return nil, fmt.Errorf("agent builder is required")
+	}
+	providerID := strings.TrimSpace(cfg.ProviderID)
+	if providerID == "" {
+		return nil, fmt.Errorf("balda provider is not configured")
+	}
+	sessionID := strings.TrimSpace(cfg.SessionID)
+	if sessionID == "" {
+		return nil, fmt.Errorf("session id is required")
+	}
+	workspaceDir := strings.TrimSpace(cfg.WorkspaceDir)
+	if workspaceDir == "" {
+		return nil, fmt.Errorf("workspace dir is required")
+	}
+	role := normalizeTaskRole(cfg.Role)
+	if role == "" {
+		return nil, fmt.Errorf("task role is required")
+	}
+	name, description, instruction := taskRoleAgentSpec(role)
+	sessionBranch := strings.TrimSpace(cfg.BranchName)
+	if sessionBranch == "" {
+		sessionBranch = fmt.Sprintf("norma/balda/%s", sessionID)
+	}
+	mcpServerIDs := b.buildAgentMCPServerIDs(providerID, cfg.BundledMCPServerIDs, cfg.ExtraMCPServerIDs)
+	return b.buildGoalkeeperChildAgent(ctx, goalkeeperChildAgentConfig{
+		ProviderID:        providerID,
+		Name:              name,
+		Description:       description,
+		SessionID:         sessionID,
+		SessionBranch:     sessionBranch,
+		WorkspaceDir:      workspaceDir,
+		RepoBranchAtStart: b.currentRepoBranch(ctx),
+		RoleInstruction:   instruction,
+		MCPServerIDs:      mcpServerIDs,
+	})
+}
+
 type goalkeeperChildAgentConfig struct {
 	ProviderID        string
 	Name              string
@@ -192,6 +245,44 @@ func goalkeeperValidatorInstruction() string {
 		"`verdict: fail` means the goal was not reached.",
 		"Then provide brief evidence and a concise final summary.",
 	}, "\n")
+}
+
+func normalizeTaskRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "executor", "worker":
+		return taskRoleExecutor
+	case "reviewer", "validator":
+		return taskRoleReviewer
+	default:
+		return ""
+	}
+}
+
+func taskRoleAgentSpec(role string) (name string, description string, instruction string) {
+	switch role {
+	case taskRoleExecutor:
+		return "BaldaTaskExecutor", "Balda task executor agent", strings.Join([]string{
+			"You are the Balda task executor agent.",
+			"You receive one task objective plus the current plan and optional reviewer feedback.",
+			"Do the requested work in the current working directory.",
+			"Prefer direct execution over clarification when execution is possible.",
+			"Ask clarifying questions only when execution is blocked by missing critical information.",
+			"Return a concise plain-text summary with changed files and evidence.",
+			"Run only checks directly relevant to the task unless the task asks for broader verification.",
+		}, "\n")
+	case taskRoleReviewer:
+		return "BaldaTaskReviewer", "Balda task reviewer agent", strings.Join([]string{
+			"You are the Balda task reviewer agent.",
+			"Validate the executor result against the original objective and current repository state.",
+			"Do not intentionally mutate files or continue implementation work.",
+			"Start with exactly `verdict: pass` or `verdict: fail`.",
+			"`verdict: pass` means the objective was reached.",
+			"`verdict: fail` means the objective was not reached.",
+			"Then provide brief evidence and a concise final summary.",
+		}, "\n")
+	default:
+		return "", "", ""
+	}
 }
 
 func wrapGoalkeeperValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKey string) (adkagent.Agent, error) {

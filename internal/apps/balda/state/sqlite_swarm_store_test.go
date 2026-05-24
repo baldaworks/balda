@@ -255,6 +255,91 @@ func TestSQLiteSwarmStore_ExpiresMessages(t *testing.T) {
 	}
 }
 
+func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.Swarm()
+
+	created, err := store.CreateTask(ctx, SwarmTaskRecord{
+		ID:            "task-1",
+		SessionID:     "session-1",
+		Title:         "Goal: test",
+		Objective:     "test",
+		Status:        SwarmTaskStatusCreated,
+		AssignedActor: "agent:executor",
+		CreatedBy:     "tg-101",
+		CreatedFrom:   "goal",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if !created {
+		t.Fatal("CreateTask() created = false, want true")
+	}
+	created, err = store.CreateTask(ctx, SwarmTaskRecord{
+		ID:        "task-1",
+		Objective: "duplicate",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(duplicate) error = %v", err)
+	}
+	if created {
+		t.Fatal("CreateTask(duplicate) created = true, want false")
+	}
+
+	if err := store.UpdateTaskStatus(ctx, "task-1", SwarmTaskStatusWaitingForAgent, "waiting"); err != nil {
+		t.Fatalf("UpdateTaskStatus(waiting) error = %v", err)
+	}
+	if err := store.SetTaskPlan(ctx, "task-1", `{"steps":["run"]}`); err != nil {
+		t.Fatalf("SetTaskPlan() error = %v", err)
+	}
+	if err := store.AppendTaskEvent(ctx, SwarmTaskEventRecord{
+		ID:          "event-1",
+		TaskID:      "task-1",
+		EventType:   "agent_command",
+		Actor:       "task.actor",
+		PayloadJSON: `{"role":"executor"}`,
+	}); err != nil {
+		t.Fatalf("AppendTaskEvent() error = %v", err)
+	}
+
+	active, err := store.ListActiveTasksBySession(ctx, "session-1")
+	if err != nil {
+		t.Fatalf("ListActiveTasksBySession() error = %v", err)
+	}
+	if len(active) != 1 || active[0].ID != "task-1" {
+		t.Fatalf("active tasks = %+v, want task-1", active)
+	}
+
+	if err := store.SetTaskResult(ctx, "task-1", `{"ok":true}`, SwarmTaskStatusCompleted, ""); err != nil {
+		t.Fatalf("SetTaskResult() error = %v", err)
+	}
+	got, ok, err := store.GetTask(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+	if !ok || got.Status != SwarmTaskStatusCompleted || got.PlanJSON == "" || got.ResultJSON == "" || got.StartedAt.IsZero() || got.CompletedAt.IsZero() {
+		t.Fatalf("task = %+v, found=%v, want completed with plan/result/timestamps", got, ok)
+	}
+
+	active, err = store.ListActiveTasksBySession(ctx, "session-1")
+	if err != nil {
+		t.Fatalf("ListActiveTasksBySession(after complete) error = %v", err)
+	}
+	if len(active) != 0 {
+		t.Fatalf("active tasks after complete = %+v, want none", active)
+	}
+	events, err := store.ListTaskEvents(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("ListTaskEvents() error = %v", err)
+	}
+	if len(events) != 1 || events[0].EventType != "agent_command" {
+		t.Fatalf("events = %+v, want agent_command", events)
+	}
+}
+
 func swarmRecord(id, mailbox string, priority int) SwarmMessageRecord {
 	record := swarmRecordWithSessionTask(id, mailbox, "", "")
 	record.Priority = priority

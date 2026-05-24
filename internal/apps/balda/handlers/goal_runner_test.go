@@ -65,7 +65,7 @@ func TestGoalRunnerRunGoalLoopUsesCopiedWorkflowRuntime(t *testing.T) {
 		maxIterations: 3,
 	}
 
-	runner.runGoalLoop(context.Background(), locator, ts, "deploy release")
+	runner.runGoalLoop(context.Background(), "", locator, ts, "deploy release")
 
 	if got := strings.Join(order, ","); got != "worker,validator" {
 		t.Fatalf("workflow order = %s, want worker,validator", got)
@@ -135,7 +135,7 @@ func TestGoalRunnerRunGoalLoopRetriesFailVerdictUntilMax(t *testing.T) {
 		maxIterations: 2,
 	}
 
-	runner.runGoalLoop(context.Background(), locator, ts, "finish docs")
+	runner.runGoalLoop(context.Background(), "", locator, ts, "finish docs")
 
 	if workerRuns != 2 || validatorRuns != 2 {
 		t.Fatalf("workerRuns, validatorRuns = %d, %d; want 2, 2", workerRuns, validatorRuns)
@@ -286,7 +286,7 @@ func TestGoalRunnerRunGoalLoopUsesAgentFormattingMode(t *testing.T) {
 		maxIterations: 1,
 	}
 
-	runner.runGoalLoop(context.Background(), locator, ts, "deploy release")
+	runner.runGoalLoop(context.Background(), "", locator, ts, "deploy release")
 
 	if len(tgClient.messages) == 0 {
 		t.Fatal("sent messages = 0, want at least one goal update")

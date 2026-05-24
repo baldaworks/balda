@@ -47,14 +47,44 @@ type GoalkeeperRuntimeConfig struct {
 	MaxIterations uint
 }
 
+// TaskAgentRuntimeConfig configures one per-task role agent.
+type TaskAgentRuntimeConfig struct {
+	SessionID    string
+	BranchName   string
+	WorkspaceDir string
+	Role         string
+}
+
 // GoalkeeperRuntime owns the per-run Goalkeeper workflow runner and agents.
 type GoalkeeperRuntime struct {
 	Agent  adkagent.Agent
 	Runner *runner.Runner
 }
 
+// TaskAgentRuntime owns a short-lived task role runner and provider agent.
+type TaskAgentRuntime struct {
+	Agent  adkagent.Agent
+	Runner *runner.Runner
+}
+
+type childRuntimeBase struct {
+	runtime           *BuiltRuntime
+	builder           *Builder
+	providerID        string
+	workingDir        string
+	extraMCPServerIDs []string
+}
+
 // Close releases child provider agents created for the workflow.
 func (r *GoalkeeperRuntime) Close() error {
+	if r == nil {
+		return nil
+	}
+	return closeRuntimeAgent(r.Agent)
+}
+
+// Close releases the provider agent created for one task role run.
+func (r *TaskAgentRuntime) Close() error {
 	if r == nil {
 		return nil
 	}
@@ -147,54 +177,104 @@ func (m *RuntimeManager) BuildGoalkeeperRuntime(
 	ctx context.Context,
 	cfg GoalkeeperRuntimeConfig,
 ) (*GoalkeeperRuntime, error) {
-	runtime, err := m.Runtime(ctx)
+	base, err := m.childRuntimeBase(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	m.mu.RLock()
-	builder := m.builder
-	providerID := strings.TrimSpace(m.providerID)
-	workingDir := strings.TrimSpace(m.workingDir)
-	extraMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
-	m.mu.RUnlock()
-
-	if builder == nil {
-		return nil, fmt.Errorf("agent builder is required")
-	}
-	if providerID == "" {
-		return nil, fmt.Errorf("balda provider is not configured")
-	}
-
-	workspaceDir := strings.TrimSpace(cfg.WorkspaceDir)
-	if workspaceDir == "" {
-		workspaceDir = workingDir
-	}
-	workflow, err := builder.BuildGoalkeeperWorkflow(ctx, GoalkeeperBuildConfig{
-		ProviderID:        providerID,
+	workflow, err := base.builder.BuildGoalkeeperWorkflow(ctx, GoalkeeperBuildConfig{
+		ProviderID:        base.providerID,
 		SessionID:         cfg.SessionID,
 		BranchName:        cfg.BranchName,
-		WorkspaceDir:      workspaceDir,
+		WorkspaceDir:      base.workspaceDir(cfg.WorkspaceDir),
 		MaxIterations:     cfg.MaxIterations,
-		ExtraMCPServerIDs: extraMCPServerIDs,
+		ExtraMCPServerIDs: base.extraMCPServerIDs,
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	r, err := runner.New(runner.Config{
-		AppName:        runtime.AppName,
-		Agent:          workflow,
-		SessionService: runtime.SessionSvc,
-	})
+	r, err := base.runner(workflow, "goalkeeper")
 	if err != nil {
 		_ = closeRuntimeAgent(workflow)
-		return nil, fmt.Errorf("creating goalkeeper runner: %w", err)
+		return nil, err
 	}
 	return &GoalkeeperRuntime{
 		Agent:  workflow,
 		Runner: r,
 	}, nil
+}
+
+// BuildTaskAgentRuntime creates a short-lived role agent backed by the balda provider.
+func (m *RuntimeManager) BuildTaskAgentRuntime(
+	ctx context.Context,
+	cfg TaskAgentRuntimeConfig,
+) (*TaskAgentRuntime, error) {
+	base, err := m.childRuntimeBase(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ag, err := base.builder.BuildTaskRoleAgent(ctx, TaskRoleBuildConfig{
+		ProviderID:        base.providerID,
+		SessionID:         cfg.SessionID,
+		BranchName:        cfg.BranchName,
+		WorkspaceDir:      base.workspaceDir(cfg.WorkspaceDir),
+		Role:              cfg.Role,
+		ExtraMCPServerIDs: base.extraMCPServerIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	r, err := base.runner(ag, "task role")
+	if err != nil {
+		_ = closeRuntimeAgent(ag)
+		return nil, err
+	}
+	return &TaskAgentRuntime{Agent: ag, Runner: r}, nil
+}
+
+func (m *RuntimeManager) childRuntimeBase(ctx context.Context) (childRuntimeBase, error) {
+	runtime, err := m.Runtime(ctx)
+	if err != nil {
+		return childRuntimeBase{}, err
+	}
+
+	m.mu.RLock()
+	base := childRuntimeBase{
+		runtime:           runtime,
+		builder:           m.builder,
+		providerID:        strings.TrimSpace(m.providerID),
+		workingDir:        strings.TrimSpace(m.workingDir),
+		extraMCPServerIDs: append([]string(nil), m.baldaMCPServerIDs...),
+	}
+	m.mu.RUnlock()
+
+	if base.builder == nil {
+		return childRuntimeBase{}, fmt.Errorf("agent builder is required")
+	}
+	if base.providerID == "" {
+		return childRuntimeBase{}, fmt.Errorf("balda provider is not configured")
+	}
+	return base, nil
+}
+
+func (b childRuntimeBase) workspaceDir(raw string) string {
+	if workspaceDir := strings.TrimSpace(raw); workspaceDir != "" {
+		return workspaceDir
+	}
+	return b.workingDir
+}
+
+func (b childRuntimeBase) runner(agent adkagent.Agent, label string) (*runner.Runner, error) {
+	r, err := runner.New(runner.Config{
+		AppName:        b.runtime.AppName,
+		Agent:          agent,
+		SessionService: b.runtime.SessionSvc,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating %s runner: %w", label, err)
+	}
+	return r, nil
 }
 
 func (m *RuntimeManager) close() error {

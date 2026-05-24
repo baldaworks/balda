@@ -393,7 +393,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.enabled`: enables swarm rollout plumbing (default `true`)
 - `balda.swarm.mode`: actor runtime mode (default `shadow`)
   - `shadow`: persist Telegram, webhook, schedule, and `/goal` envelopes in SQLite with `status=shadow`, then keep the existing direct dispatch path.
-  - `mailbox`: persist work in SQLite swarm mailboxes and use embedded NATS for wakeups.
+  - `mailbox`: persist work in SQLite swarm mailboxes and use embedded NATS for wakeups. Goal tasks run through TaskActor, AgentActor executor/reviewer roles, and DeliveryActor.
 - `balda.swarm.webhook_mode`: generic inbound webhook runtime mode (`legacy|shadow|mailbox`, default `shadow`)
 - `balda.swarm.scheduler_mode`: config-managed recurring job runtime mode (`legacy|shadow|mailbox`, default `shadow`)
 - `balda.swarm.shadow.enabled`: enables shadow dual-write when any resolved swarm mode is `shadow` (default `true`).
@@ -486,12 +486,33 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/topic <name>` (DM only, owner/collaborator): creates a new Telegram topic and a topic-bound session.
   - `<name>` is required.
   - `<name>` is a session label, not a provider selector.
-- `/goal <objective>` (owner/collaborator): starts a Goalkeeper worker -> validator loop in the current session context/workspace and posts started/validation/final updates using `balda.telegram.formatting_mode`. See [`docs/goalkeeper.md`](goalkeeper.md).
+- `/goal <objective>` (owner/collaborator): creates a durable `swarm_tasks` record and starts work in the current session context/workspace. Legacy/shadow modes run the Goalkeeper worker -> validator loop directly; mailbox mode routes through TaskActor -> AgentActor executor/reviewer -> DeliveryActor. Started/validation/final updates use `balda.telegram.formatting_mode`. See [`docs/goalkeeper.md`](goalkeeper.md).
   - concurrent `/goal` runs in the same session are rejected.
 - `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
 - `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Balda metadata or the workspace branch.
-- `/cancel` (owner/collaborator): cancels active turn, drops queued turns, and aborts active `/goal` run for current session.
+- `/cancel` (owner/collaborator): cancels active turn, drops queued turns, marks active session tasks canceled, and aborts active `/goal` work for current session.
 - `/memory` (DM only, owner/collaborator): prints current `${balda.state_dir}/MEMORY.md` contents when `balda.memory.enabled=true`; otherwise reports that memory is disabled.
+
+### Task actor runtime semantics (internal)
+
+Assignable work is persisted in `swarm_tasks` with append-only
+`swarm_task_events`. `/goal` is the first command that always creates a task
+record, regardless of the active swarm rollout mode.
+
+- Legacy mode: `/goal` creates a task record, marks it queued, then runs the
+  existing in-process Goalkeeper loop. GoalRunner mirrors lifecycle transitions
+  and progress into task status/events.
+- Shadow mode: `/goal` creates the same task record, persists a shadow envelope
+  for rollout comparison, then runs the existing Goalkeeper loop.
+- Mailbox mode: `/goal` publishes a durable task envelope. TaskActor creates a
+  plan, dispatches AgentActor executor/reviewer commands, records results, and
+  sends progress/final messages through DeliveryActor.
+- Task statuses are `created`, `queued`, `running`, `waiting_for_agent`,
+  `waiting_for_user`, `validating`, `completed`, `failed`, `canceled`, and
+  `deadlettered`.
+- Runtime deadletters mark the owning task `deadlettered`. `/cancel` cancels
+  queued mailbox messages, marks active session tasks `canceled`, and cancels
+  any currently running task agent turn.
 
 ### Scheduled job runtime semantics (internal)
 

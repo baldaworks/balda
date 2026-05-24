@@ -34,6 +34,8 @@ type CommandHandler struct {
 	sessionManager    commandSessionManager
 	turnDispatcher    turnQueue
 	swarmCoordinator  *swarm.Coordinator
+	tasks             *swarm.TaskService
+	taskRuns          *taskRunRegistry
 	goalRunner        goalCommandRunner
 	messenger         *messenger.Messenger
 	userHandler       *userHandler
@@ -53,6 +55,8 @@ type commandHandlerParams struct {
 	SessionManager    *session.Manager
 	TurnDispatcher    *TurnDispatcher
 	SwarmCoordinator  *swarm.Coordinator
+	TaskService       *swarm.TaskService
+	TaskRuns          *taskRunRegistry
 	GoalRunner        *GoalRunner
 	Messenger         *messenger.Messenger
 	UserHandler       *userHandler
@@ -68,6 +72,8 @@ func NewCommandHandler(params commandHandlerParams) *CommandHandler {
 		sessionManager:    params.SessionManager,
 		turnDispatcher:    params.TurnDispatcher,
 		swarmCoordinator:  params.SwarmCoordinator,
+		tasks:             params.TaskService,
+		taskRuns:          params.TaskRuns,
 		goalRunner:        params.GoalRunner,
 		messenger:         params.Messenger,
 		userHandler:       params.UserHandler,
@@ -418,13 +424,26 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 		}
 	}
 
+	taskCanceled := 0
+	if h.tasks != nil {
+		taskIDs, cancelErr := h.tasks.CancelBySession(ctx, commandCtx.Locator.SessionID, "command.cancel", "session canceled by user")
+		if cancelErr != nil {
+			log.Warn().Err(cancelErr).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to cancel active tasks")
+		}
+		for _, taskID := range taskIDs {
+			if h.taskRuns != nil && h.taskRuns.cancel(taskID) {
+				taskCanceled++
+			}
+		}
+	}
+
 	goalCanceled := false
 	if h.goalRunner != nil {
 		goalCanceled = h.goalRunner.Cancel(commandCtx.Locator)
 	}
 
 	totalDropped := dropped + mailboxDropped
-	if !hadInFlight && totalDropped == 0 && !goalCanceled {
+	if !hadInFlight && totalDropped == 0 && !goalCanceled && taskCanceled == 0 {
 		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "No running or queued turns for this session."); err != nil {
 			return err
 		}
@@ -440,6 +459,9 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 	}
 	if goalCanceled {
 		response = fmt.Sprintf("%s Canceled active goal run.", response)
+	}
+	if taskCanceled > 0 {
+		response = fmt.Sprintf("%s Canceled %d active task(s).", response, taskCanceled)
 	}
 	if err := h.channel.SendPlain(ctx, commandCtx.Locator, response); err != nil {
 		return err

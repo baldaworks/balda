@@ -67,6 +67,7 @@ func (r *Registry) Resolve(address string) (Actor, bool) {
 
 type Runtime struct {
 	mailboxes *MailboxService
+	tasks     *TaskService
 	registry  ActorRegistry
 	logger    zerolog.Logger
 	workerID  string
@@ -83,6 +84,7 @@ type runtimeParams struct {
 	LC        fx.Lifecycle
 	Bus       WakeBus
 	Mailboxes *MailboxService
+	Tasks     *TaskService
 	Logger    zerolog.Logger
 	Actors    []Actor `group:"balda_swarm_actors"`
 }
@@ -102,6 +104,7 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 	}
 	r := &Runtime{
 		mailboxes: params.Mailboxes,
+		tasks:     params.Tasks,
 		registry:  registry,
 		logger:    params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
 		workerID:  "balda-single-worker",
@@ -216,6 +219,7 @@ func (r *Runtime) handleEnvelope(ctx context.Context, mailbox string, env Envelo
 	}
 	actor, ok := r.registry.Resolve(to)
 	if !ok {
+		r.deadletterTask(ctx, env, "actor not found: "+to)
 		return r.mailboxes.DeadLetter(context.Background(), mailbox, env.ID, "actor not found: "+to)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
@@ -229,12 +233,27 @@ func (r *Runtime) settleError(ctx context.Context, mailbox string, env Envelope,
 	case ErrorKindDuplicate:
 		return r.mailboxes.Ack(ctx, mailbox, env.ID)
 	case ErrorKindAuth, ErrorKindPolicy, ErrorKindPermanent:
+		r.deadletterTask(ctx, env, err.Error())
 		return r.mailboxes.DeadLetter(ctx, mailbox, env.ID, err.Error())
 	default:
 		if env.MaxAttempts > 0 && env.Attempt >= env.MaxAttempts {
+			r.deadletterTask(ctx, env, err.Error())
 			return r.mailboxes.DeadLetter(ctx, mailbox, env.ID, err.Error())
 		}
 		return r.mailboxes.Retry(ctx, mailbox, env.ID, nextRetryAt(env.Attempt), err.Error())
+	}
+}
+
+func (r *Runtime) deadletterTask(ctx context.Context, env Envelope, reason string) {
+	if r == nil || r.tasks == nil {
+		return
+	}
+	taskID := strings.TrimSpace(env.TaskID)
+	if taskID == "" {
+		return
+	}
+	if err := r.tasks.DeadLetter(ctx, taskID, "swarm.runtime", env.ID, reason); err != nil {
+		r.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to mark swarm task deadlettered")
 	}
 }
 

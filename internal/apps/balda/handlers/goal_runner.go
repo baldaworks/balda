@@ -9,6 +9,8 @@ import (
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/agent"
@@ -38,7 +40,9 @@ const (
 
 type goalCommandRunner interface {
 	Start(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error)
+	StartTask(ctx context.Context, taskID string, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error)
 	Cancel(locator baldasession.SessionLocator) bool
+	MaxIterations() int
 }
 
 type goalkeeperRuntimeBuilder interface {
@@ -52,6 +56,7 @@ type goalRunnerParams struct {
 	SessionManager *baldasession.Manager
 	RuntimeManager *baldaagent.RuntimeManager
 	Channel        *baldatelegram.Adapter
+	TaskService    *swarm.TaskService
 	Logger         zerolog.Logger
 	MaxIterations  int `name:"balda_goal_max_iterations"`
 }
@@ -61,6 +66,7 @@ type GoalRunner struct {
 	sessionManager *baldasession.Manager
 	runtimeManager goalkeeperRuntimeBuilder
 	channel        *baldatelegram.Adapter
+	tasks          *swarm.TaskService
 	logger         zerolog.Logger
 	maxIterations  int
 
@@ -73,6 +79,7 @@ func NewGoalRunner(params goalRunnerParams) *GoalRunner {
 		sessionManager: params.SessionManager,
 		runtimeManager: params.RuntimeManager,
 		channel:        params.Channel,
+		tasks:          params.TaskService,
 		logger:         params.Logger.With().Str("component", "balda.goal_runner").Logger(),
 		maxIterations:  normalizeGoalMaxIterations(params.MaxIterations),
 		running:        make(map[string]context.CancelFunc),
@@ -95,6 +102,23 @@ func normalizeGoalMaxIterations(v int) int {
 
 func (g *GoalRunner) Start(
 	ctx context.Context,
+	locator baldasession.SessionLocator,
+	objective string,
+	transportUserID string,
+) (bool, error) {
+	return g.StartTask(ctx, "", locator, objective, transportUserID)
+}
+
+func (g *GoalRunner) MaxIterations() int {
+	if g == nil {
+		return defaultGoalMaxIterations
+	}
+	return normalizeGoalMaxIterations(g.maxIterations)
+}
+
+func (g *GoalRunner) StartTask(
+	ctx context.Context,
+	taskID string,
 	locator baldasession.SessionLocator,
 	objective string,
 	transportUserID string,
@@ -132,7 +156,7 @@ func (g *GoalRunner) Start(
 
 	go func() {
 		defer g.removeRun(sessionID)
-		g.runGoalLoop(runCtx, locator, ts, goal)
+		g.runGoalLoop(runCtx, strings.TrimSpace(taskID), locator, ts, goal)
 	}()
 
 	return true, nil
@@ -156,11 +180,13 @@ func (g *GoalRunner) resolveSession(
 
 func (g *GoalRunner) runGoalLoop(
 	ctx context.Context,
+	taskID string,
 	locator baldasession.SessionLocator,
 	ts *baldasession.TopicSession,
 	objective string,
 ) {
 	if ts == nil {
+		g.markTaskStatus(context.Background(), taskID, baldastate.SwarmTaskStatusFailed, "goal.runner", "session is unavailable", nil)
 		g.sendGoalMessage(ctx, locator, "Goal run failed: session is unavailable.")
 		return
 	}
@@ -168,14 +194,17 @@ func (g *GoalRunner) runGoalLoop(
 	maxIterations := g.maxIterations
 	goalSessionID := strings.TrimSpace(ts.GetAgentSessionID())
 	if goalSessionID == "" {
+		g.markTaskStatus(context.Background(), taskID, baldastate.SwarmTaskStatusFailed, "goal.runner", "session is unavailable", nil)
 		g.sendGoalMessage(ctx, locator, "Goal run failed: session is unavailable.")
 		return
 	}
 	if g.runtimeManager == nil {
+		g.markTaskStatus(context.Background(), taskID, baldastate.SwarmTaskStatusFailed, "goal.runner", "runtime is unavailable", nil)
 		g.sendGoalMessage(ctx, locator, "Goal run failed: runtime is unavailable.")
 		return
 	}
 
+	g.markTaskStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, "goal.runner", "", nil)
 	goalRuntime, err := g.runtimeManager.BuildGoalkeeperRuntime(ctx, baldaagent.GoalkeeperRuntimeConfig{
 		SessionID:     ts.GetSessionID(),
 		BranchName:    ts.GetBranchName(),
@@ -183,6 +212,7 @@ func (g *GoalRunner) runGoalLoop(
 		MaxIterations: uint(maxIterations),
 	})
 	if err != nil {
+		g.markTaskStatus(context.Background(), taskID, baldastate.SwarmTaskStatusFailed, "goal.runner", err.Error(), nil)
 		g.sendGoalMessage(context.Background(), locator, fmt.Sprintf("Goal run failed: %v", err))
 		return
 	}
@@ -205,6 +235,7 @@ func (g *GoalRunner) runGoalLoop(
 		goalSessionID,
 		formatGoalkeeperPrompt(objective),
 		func(update goalPhaseUpdate) {
+			g.recordGoalProgress(ctx, taskID, update)
 			msg := formatGoalPhaseUpdate(update, maxIterations)
 			if msg == "" {
 				return
@@ -214,19 +245,76 @@ func (g *GoalRunner) runGoalLoop(
 	)
 	if err != nil {
 		if ctx.Err() != nil {
+			g.markTaskStatus(context.Background(), taskID, baldastate.SwarmTaskStatusCanceled, "goal.runner", "goal run canceled", nil)
 			g.sendGoalMessage(context.Background(), locator, "Goal run canceled.")
 			return
 		}
+		g.markTaskStatus(context.Background(), taskID, baldastate.SwarmTaskStatusFailed, "goal.runner", err.Error(), nil)
 		g.sendGoalMessage(context.Background(), locator, fmt.Sprintf("Goal run failed: %v", err))
 		return
 	}
 
 	if result.GoalReached {
+		g.setTaskResult(ctx, taskID, result, baldastate.SwarmTaskStatusCompleted, "")
 		g.sendGoalMessage(ctx, locator, "Goal run completed.")
 		return
 	}
 
+	g.setTaskResult(ctx, taskID, result, baldastate.SwarmTaskStatusFailed, "max iterations reached")
 	g.sendGoalMessage(ctx, locator, "Goal run reached max iterations without passing validation.")
+}
+
+func (g *GoalRunner) markTaskStatus(ctx context.Context, taskID string, status string, actor string, reason string, payload any) {
+	if strings.TrimSpace(taskID) == "" || g == nil || g.tasks == nil {
+		return
+	}
+	if err := g.tasks.MarkStatus(ctx, taskID, status, actor, "", reason, payload); err != nil {
+		g.logger.Warn().Err(err).Str("task_id", taskID).Str("status", status).Msg("failed to mark goal task status")
+	}
+}
+
+func (g *GoalRunner) setTaskResult(ctx context.Context, taskID string, result goalRunResult, status string, reason string) {
+	if strings.TrimSpace(taskID) == "" || g == nil || g.tasks == nil {
+		return
+	}
+	payload := map[string]any{
+		"final_text":   result.FinalText,
+		"goal_reached": result.GoalReached,
+		"iterations":   result.Iterations,
+	}
+	if err := g.tasks.SetResult(ctx, taskID, payload, status, "goal.runner", reason); err != nil {
+		g.logger.Warn().Err(err).Str("task_id", taskID).Str("status", status).Msg("failed to set goal task result")
+	}
+}
+
+func (g *GoalRunner) recordGoalProgress(ctx context.Context, taskID string, update goalPhaseUpdate) {
+	if strings.TrimSpace(taskID) == "" || g == nil || g.tasks == nil {
+		return
+	}
+	status := ""
+	if update.Kind == goalPhaseStarted {
+		switch update.Step {
+		case goalkeeperWorkerStep:
+			status = baldastate.SwarmTaskStatusWaitingForAgent
+		case goalkeeperValidatorStep:
+			status = baldastate.SwarmTaskStatusValidating
+		}
+	}
+	payload := map[string]any{
+		"iteration":    update.Iteration,
+		"step":         update.Step,
+		"kind":         update.Kind,
+		"text":         update.Text,
+		"goal_reached": update.GoalReached,
+		"failed":       update.Failed,
+	}
+	if status != "" {
+		g.markTaskStatus(ctx, taskID, status, "goal.runner", "", payload)
+		return
+	}
+	if err := g.tasks.AppendEvent(ctx, taskID, swarm.TaskEventAgentResult, "goal.runner", "", payload); err != nil {
+		g.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to append goal task progress")
+	}
 }
 
 func (g *GoalRunner) sendGoalMessage(ctx context.Context, locator baldasession.SessionLocator, text string) {

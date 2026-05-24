@@ -45,6 +45,27 @@ const (
 
 	// SwarmMessageDefaultMaxAttempts is the default retry budget for messages.
 	SwarmMessageDefaultMaxAttempts = 3
+
+	// SwarmTaskStatusCreated means a task record exists but has not been queued.
+	SwarmTaskStatusCreated = "created"
+	// SwarmTaskStatusQueued means task work is queued for actor execution.
+	SwarmTaskStatusQueued = "queued"
+	// SwarmTaskStatusRunning means a task actor is actively coordinating work.
+	SwarmTaskStatusRunning = "running"
+	// SwarmTaskStatusWaitingForAgent means task execution waits on an agent role.
+	SwarmTaskStatusWaitingForAgent = "waiting_for_agent"
+	// SwarmTaskStatusWaitingForUser means task execution is blocked on user input.
+	SwarmTaskStatusWaitingForUser = "waiting_for_user"
+	// SwarmTaskStatusValidating means a reviewer/validator is checking the work.
+	SwarmTaskStatusValidating = "validating"
+	// SwarmTaskStatusCompleted means the task finished successfully.
+	SwarmTaskStatusCompleted = "completed"
+	// SwarmTaskStatusFailed means the task exhausted its retry/iteration budget.
+	SwarmTaskStatusFailed = "failed"
+	// SwarmTaskStatusCanceled means the task was canceled before completion.
+	SwarmTaskStatusCanceled = "canceled"
+	// SwarmTaskStatusDeadLettered means the actor runtime deadlettered the task.
+	SwarmTaskStatusDeadLettered = "deadlettered"
 )
 
 // Provider exposes balda state capabilities behind a backend-agnostic interface.
@@ -177,6 +198,40 @@ type SwarmRecoveryResult struct {
 	Expired       int
 }
 
+// SwarmTaskRecord persists one assignable work item.
+type SwarmTaskRecord struct {
+	ID            string
+	SessionID     string
+	ParentTaskID  string
+	Title         string
+	Objective     string
+	Status        string
+	OwnerActor    string
+	AssignedActor string
+	Priority      int
+	CreatedBy     string
+	CreatedFrom   string
+	PlanJSON      string
+	ResultJSON    string
+	Error         string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	StartedAt     time.Time
+	CompletedAt   time.Time
+	CanceledAt    time.Time
+}
+
+// SwarmTaskEventRecord persists an append-only task event.
+type SwarmTaskEventRecord struct {
+	ID          string
+	TaskID      string
+	EventType   string
+	Actor       string
+	MessageID   string
+	PayloadJSON string
+	CreatedAt   time.Time
+}
+
 // SwarmStore persists actor mailbox messages and task state.
 type SwarmStore interface {
 	Publish(ctx context.Context, record SwarmMessageRecord) (SwarmPublishResult, error)
@@ -192,4 +247,12 @@ type SwarmStore interface {
 	Recover(ctx context.Context, now time.Time) (SwarmRecoveryResult, error)
 	ListReadyMailboxes(ctx context.Context, limit int) ([]string, error)
 	GetMessage(ctx context.Context, messageID string) (SwarmMessageRecord, bool, error)
+	CreateTask(ctx context.Context, record SwarmTaskRecord) (bool, error)
+	GetTask(ctx context.Context, taskID string) (SwarmTaskRecord, bool, error)
+	ListActiveTasksBySession(ctx context.Context, sessionID string) ([]SwarmTaskRecord, error)
+	UpdateTaskStatus(ctx context.Context, taskID string, status string, reason string) error
+	SetTaskPlan(ctx context.Context, taskID string, planJSON string) error
+	SetTaskResult(ctx context.Context, taskID string, resultJSON string, status string, reason string) error
+	AppendTaskEvent(ctx context.Context, record SwarmTaskEventRecord) error
+	ListTaskEvents(ctx context.Context, taskID string) ([]SwarmTaskEventRecord, error)
 }

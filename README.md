@@ -147,10 +147,10 @@ Built-in provider types:
 ## Bot Commands
 
 - `/topic <name>`: create a named topic session.
-- `/goal <objective>`: start a Goalkeeper worker -> validator loop in the current session context/workspace. Goal updates are sent with `balda.telegram.formatting_mode`. See [`docs/goalkeeper.md`](docs/goalkeeper.md).
+- `/goal <objective>`: create a durable task record and work toward the goal in the current session context/workspace. Legacy/shadow modes run the Goalkeeper worker -> validator loop directly; mailbox mode routes the task through task, executor, reviewer, and delivery actors. Goal updates use `balda.telegram.formatting_mode`. See [`docs/goalkeeper.md`](docs/goalkeeper.md).
 - `/reset`: clear conversation history for the current session.
 - `/close`: reset history, then close the current topic or restart the owner session on the next message.
-- `/cancel`: cancel in-flight work, drop queued turns, and abort active `/goal` run for the current session.
+- `/cancel`: cancel in-flight work, drop queued turns, cancel active task records, and abort active `/goal` work for the current session.
 - `/memory`: print current `${balda.state_dir}/MEMORY.md` contents when memory is enabled.
 - `/start owner=<owner_token>`: authenticate the owner in direct messages.
 - `/start invite=<invite_token>`: onboard a collaborator in direct messages.
@@ -236,7 +236,7 @@ Common settings:
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
 - `balda.swarm.enabled`: `true` by default; enables swarm rollout plumbing.
-- `balda.swarm.mode`: `shadow` by default; `shadow` dual-writes envelopes to SQLite and keeps the existing direct dispatch path, while `mailbox` routes work through SQLite-backed actor mailboxes with embedded NATS wakeups.
+- `balda.swarm.mode`: `shadow` by default; `shadow` dual-writes envelopes to SQLite and keeps the existing direct dispatch path, while `mailbox` routes work through SQLite-backed actor mailboxes with embedded NATS wakeups. `/goal` creates `swarm_tasks` records in all modes; mailbox mode coordinates Goal tasks through TaskActor -> AgentActor executor/reviewer -> DeliveryActor.
 - `balda.swarm.webhook_mode`: `shadow` by default; controls only generic inbound webhook intake (`legacy|shadow|mailbox`).
 - `balda.swarm.scheduler_mode`: `shadow` by default; controls only config-managed recurring jobs (`legacy|shadow|mailbox`).
 - `balda.swarm.shadow.enabled`: `true` by default; stores Telegram, webhook, schedule, and `/goal` envelopes with `status=shadow` for rollout comparison when a resolved mode is `shadow`.

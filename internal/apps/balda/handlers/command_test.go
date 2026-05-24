@@ -3,17 +3,23 @@ package handlers
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
 )
 
 const (
@@ -334,6 +340,84 @@ func TestCommandHandlerOnCommand_GoalStartsRun(t *testing.T) {
 	}
 }
 
+func TestCommandHandlerSubmitGoalTask_CreatesTaskRecordInEveryMode(t *testing.T) {
+	ctx := context.Background()
+	locator := session.SessionLocator{
+		SessionID:   "tg-9001-99",
+		ChannelType: "telegram",
+		AddressKey:  "tg-9001-99",
+	}
+
+	tests := []struct {
+		name             string
+		cfg              swarm.Config
+		expectGoalRunner bool
+		expectMailbox    bool
+	}{
+		{
+			name:             "legacy",
+			cfg:              swarm.Config{Enabled: true, Mode: swarm.ModeLegacy},
+			expectGoalRunner: true,
+		},
+		{
+			name:             "shadow",
+			cfg:              swarm.Config{Enabled: true, Mode: swarm.ModeShadow, Shadow: swarm.ShadowConfig{Enabled: true}},
+			expectGoalRunner: true,
+		},
+		{
+			name:          "mailbox",
+			cfg:           swarm.Config{Enabled: true, Mode: swarm.ModeMailbox},
+			expectMailbox: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, coordinator, tasks := newCommandHandlerSwarmServices(t, ctx, tc.cfg)
+			goal := &fakeGoalRunner{startResult: true, maxIters: 7}
+			handler := &CommandHandler{
+				swarmCoordinator: coordinator,
+				tasks:            tasks,
+				goalRunner:       goal,
+			}
+
+			started, err := handler.submitGoalTask(ctx, locator, "deploy release", testTelegramUserID101)
+			if err != nil {
+				t.Fatalf("submitGoalTask() error = %v", err)
+			}
+			if !started {
+				t.Fatal("submitGoalTask() started = false, want true")
+			}
+			if got := len(goal.startCalls); got != boolToInt(tc.expectGoalRunner) {
+				t.Fatalf("GoalRunner StartTask calls = %d, want %d", got, boolToInt(tc.expectGoalRunner))
+			}
+
+			active, err := provider.Swarm().ListActiveTasksBySession(ctx, locator.SessionID)
+			if err != nil {
+				t.Fatalf("ListActiveTasksBySession() error = %v", err)
+			}
+			if len(active) != 1 {
+				t.Fatalf("active tasks = %+v, want one", active)
+			}
+			task := active[0]
+			if task.Objective != "deploy release" || task.Status != baldastate.SwarmTaskStatusQueued || task.CreatedFrom != "goal" {
+				t.Fatalf("task = %+v, want queued goal task", task)
+			}
+
+			claimed, err := provider.Swarm().Claim(ctx, "task:"+task.ID, "test-worker", 1, time.Minute)
+			if err != nil {
+				t.Fatalf("Claim(task mailbox) error = %v", err)
+			}
+			if tc.expectMailbox && len(claimed) != 1 {
+				t.Fatalf("claimed mailbox messages = %+v, want one", claimed)
+			}
+			if !tc.expectMailbox && len(claimed) != 0 {
+				t.Fatalf("claimed mailbox messages = %+v, want none", claimed)
+			}
+		})
+	}
+}
+
 func TestCommandHandlerOnCommand_GoalRejectsConcurrentRun(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
 	goal := handler.goalRunner.(*fakeGoalRunner)
@@ -643,6 +727,7 @@ type fakeGoalRunner struct {
 	startErr     error
 	cancelCalls  []string
 	cancelResult bool
+	maxIters     int
 }
 
 func (f *fakeTurnDispatcher) Enqueue(task TurnTask) (int, error) {
@@ -667,6 +752,16 @@ func (f *fakeGoalRunner) Start(
 	objective string,
 	transportUserID string,
 ) (bool, error) {
+	return f.StartTask(context.Background(), "", locator, objective, transportUserID)
+}
+
+func (f *fakeGoalRunner) StartTask(
+	_ context.Context,
+	_ string,
+	locator session.SessionLocator,
+	objective string,
+	transportUserID string,
+) (bool, error) {
 	f.startCalls = append(f.startCalls, goalStartCall{
 		SessionID:       locator.SessionID,
 		Objective:       objective,
@@ -676,6 +771,13 @@ func (f *fakeGoalRunner) Start(
 		return false, f.startErr
 	}
 	return f.startResult, nil
+}
+
+func (f *fakeGoalRunner) MaxIterations() int {
+	if f.maxIters <= 0 {
+		return defaultGoalMaxIterations
+	}
+	return f.maxIters
 }
 
 func (f *fakeGoalRunner) Cancel(locator session.SessionLocator) bool {
@@ -728,6 +830,55 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 		memoryStore:    memory.NewStore(t.TempDir(), true),
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
+}
+
+func newCommandHandlerSwarmServices(
+	t *testing.T,
+	ctx context.Context,
+	cfg swarm.Config,
+) (baldastate.Provider, *swarm.Coordinator, *swarm.TaskService) {
+	t.Helper()
+
+	normalized, err := cfg.Normalized()
+	if err != nil {
+		t.Fatalf("Normalize swarm config: %v", err)
+	}
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := provider.Close(); err != nil {
+			t.Fatalf("provider.Close() error = %v", err)
+		}
+	})
+
+	var coordinator *swarm.Coordinator
+	var tasks *swarm.TaskService
+	app := fxtest.New(t,
+		fx.Supply(
+			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
+			fx.Annotate(handlerShadowWakeBus{}, fx.As(new(swarm.WakeBus))),
+			normalized,
+		),
+		fx.Provide(
+			swarm.NewShadowMetrics,
+			swarm.NewMailboxService,
+			swarm.NewTaskService,
+			swarm.NewCoordinator,
+		),
+		fx.Populate(&coordinator, &tasks),
+	)
+	app.RequireStart()
+	t.Cleanup(func() { app.RequireStop() })
+	return provider, coordinator, tasks
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 type fakeCollaboratorBackend struct {
