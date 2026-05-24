@@ -520,8 +520,8 @@ func normalizeSwarmMessage(record SwarmMessageRecord, now time.Time) (SwarmMessa
 	if record.Status == "" {
 		record.Status = SwarmMessageStatusQueued
 	}
-	if record.Status != SwarmMessageStatusQueued {
-		return SwarmMessageRecord{}, fmt.Errorf("swarm publish status must be %q", SwarmMessageStatusQueued)
+	if record.Status != SwarmMessageStatusQueued && record.Status != SwarmMessageStatusShadow {
+		return SwarmMessageRecord{}, fmt.Errorf("swarm publish status must be %q or %q", SwarmMessageStatusQueued, SwarmMessageStatusShadow)
 	}
 	if record.MaxAttempts <= 0 {
 		record.MaxAttempts = SwarmMessageDefaultMaxAttempts

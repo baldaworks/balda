@@ -27,6 +27,14 @@ type sessionTurnPayload struct {
 }
 
 func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload sessionTurnPayload) (int, error) {
+	if h.swarmCoordinator != nil && h.swarmCoordinator.ShadowEnabled() {
+		h.shadowSessionTurn(ctx, payload)
+		position, err := h.enqueueSessionTurnDirect(payload)
+		if err == nil {
+			h.swarmCoordinator.RecordShadowDispatch()
+		}
+		return position, err
+	}
 	if h.swarmCoordinator != nil && h.swarmCoordinator.Enabled() {
 		return h.submitSessionTurnToSwarm(ctx, payload)
 	}
@@ -34,18 +42,41 @@ func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload sessionTur
 }
 
 func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload sessionTurnPayload) (int, error) {
+	env, err := sessionTurnEnvelope(payload)
+	if err != nil {
+		return 0, err
+	}
+	submitted, err := h.swarmCoordinator.Submit(ctx, env)
+	if err != nil {
+		return 0, err
+	}
+	return submitted.QueuePosition, nil
+}
+
+func (h *BaldaHandler) shadowSessionTurn(ctx context.Context, payload sessionTurnPayload) {
+	env, err := sessionTurnEnvelope(payload)
+	if err != nil {
+		h.logger.Warn().Err(err).Msg("failed to build swarm shadow session envelope")
+		return
+	}
+	if _, err := h.swarmCoordinator.SubmitShadow(ctx, env); err != nil {
+		h.logger.Warn().Err(err).Str("session_id", payload.Locator.SessionID).Msg("failed to persist swarm shadow session envelope")
+	}
+}
+
+func sessionTurnEnvelope(payload sessionTurnPayload) (swarm.Envelope, error) {
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return 0, fmt.Errorf("session id is required")
+		return swarm.Envelope{}, fmt.Errorf("session id is required")
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return 0, fmt.Errorf("encode session turn payload: %w", err)
+		return swarm.Envelope{}, fmt.Errorf("encode session turn payload: %w", err)
 	}
 	source := strings.TrimSpace(payload.Source)
 	if source == "" {
 		source = "telegram"
 	}
-	submitted, err := h.swarmCoordinator.Submit(ctx, swarm.Envelope{
+	return swarm.Envelope{
 		Namespace:   sessionTurnNamespace(source),
 		Kind:        sessionTurnKind(source),
 		From:        swarm.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
@@ -53,11 +84,7 @@ func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload ses
 		SessionID:   payload.Locator.SessionID,
 		DedupeKey:   strings.TrimSpace(payload.DedupeKey),
 		PayloadJSON: string(data),
-	})
-	if err != nil {
-		return 0, err
-	}
-	return submitted.QueuePosition, nil
+	}, nil
 }
 
 func (h *BaldaHandler) enqueueSessionTurnDirect(payload sessionTurnPayload) (int, error) {

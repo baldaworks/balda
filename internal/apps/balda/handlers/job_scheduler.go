@@ -302,6 +302,9 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job baldastate.Scheduled
 	}
 
 	prompt := strings.TrimSpace(current.Prompt)
+	if s.coordinator != nil && s.coordinator.ShadowEnabled() {
+		s.shadowScheduledJobTask(ctx, current, target, prompt, dispatchKey)
+	}
 	if s.coordinator != nil && s.coordinator.Enabled() {
 		return s.dispatchScheduledJobTask(ctx, current, target, prompt, dispatchKey)
 	}
@@ -314,6 +317,9 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job baldastate.Scheduled
 	}); err != nil {
 		return s.markFailure(ctx, jobID, fmt.Errorf("enqueue scheduled job: %w", err))
 	}
+	if s.coordinator != nil && s.coordinator.ShadowEnabled() {
+		s.coordinator.RecordShadowDispatch()
+	}
 
 	return nil
 }
@@ -325,6 +331,39 @@ func (s *JobScheduler) dispatchScheduledJobTask(
 	prompt string,
 	dispatchKey string,
 ) error {
+	env, err := scheduledJobEnvelope(job, target, prompt, dispatchKey)
+	if err != nil {
+		return s.markFailure(ctx, job.JobID, err)
+	}
+	if _, err := s.coordinator.Submit(ctx, env); err != nil {
+		return s.markFailure(ctx, job.JobID, fmt.Errorf("enqueue scheduled job task: %w", err))
+	}
+	return nil
+}
+
+func (s *JobScheduler) shadowScheduledJobTask(
+	ctx context.Context,
+	job baldastate.ScheduledJobRecord,
+	target resolvedEnvelopeTarget,
+	prompt string,
+	dispatchKey string,
+) {
+	env, err := scheduledJobEnvelope(job, target, prompt, dispatchKey)
+	if err != nil {
+		s.logger.Warn().Err(err).Str("job_id", job.JobID).Msg("failed to build swarm shadow scheduled job envelope")
+		return
+	}
+	if _, err := s.coordinator.SubmitShadow(ctx, env); err != nil {
+		s.logger.Warn().Err(err).Str("job_id", job.JobID).Msg("failed to persist swarm shadow scheduled job envelope")
+	}
+}
+
+func scheduledJobEnvelope(
+	job baldastate.ScheduledJobRecord,
+	target resolvedEnvelopeTarget,
+	prompt string,
+	dispatchKey string,
+) (swarm.Envelope, error) {
 	payload := taskEnvelopePayload{
 		Kind: taskPayloadKindScheduledJob,
 		ScheduledJob: &scheduledJobTaskPayload{
@@ -337,21 +376,19 @@ func (s *JobScheduler) dispatchScheduledJobTask(
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return s.markFailure(ctx, job.JobID, fmt.Errorf("encode scheduled job task: %w", err))
+		return swarm.Envelope{}, fmt.Errorf("encode scheduled job task: %w", err)
 	}
-	if _, err := s.coordinator.Submit(ctx, swarm.Envelope{
+	taskID := "scheduled-" + job.JobID + "-" + dispatchKey
+	return swarm.Envelope{
 		Namespace:   swarm.NamespaceScheduleInbound,
 		Kind:        swarm.KindScheduledJob,
 		From:        swarm.ActorAddress{Target: "schedule", Key: job.JobID},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "scheduled-" + job.JobID + "-" + dispatchKey},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
 		SessionID:   target.Locator.SessionID,
-		TaskID:      "scheduled-" + job.JobID + "-" + dispatchKey,
+		TaskID:      taskID,
 		DedupeKey:   dispatchKey,
 		PayloadJSON: string(data),
-	}); err != nil {
-		return s.markFailure(ctx, job.JobID, fmt.Errorf("enqueue scheduled job task: %w", err))
-	}
-	return nil
+	}, nil
 }
 
 func (s *JobScheduler) resolveTopicSession(

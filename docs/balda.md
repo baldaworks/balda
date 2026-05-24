@@ -390,9 +390,11 @@ session-start snapshot. New or restored sessions read the latest file.
   - when disabled, Balda does not snapshot `MEMORY.md`, register `balda.memory.*` MCP tools, or expose `/memory` contents.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal` (default `25`)
   - invalid values are clamped to `25`.
-- `balda.swarm.enabled`: enables the actor mailbox runtime (default `true`)
-- `balda.swarm.mode`: actor runtime mode (default `mailbox`)
+- `balda.swarm.enabled`: enables swarm rollout plumbing (default `true`)
+- `balda.swarm.mode`: actor runtime mode (default `shadow`)
+  - `shadow`: persist Telegram, webhook, schedule, and `/goal` envelopes in SQLite with `status=shadow`, then keep the existing direct dispatch path.
   - `mailbox`: persist work in SQLite swarm mailboxes and use embedded NATS for wakeups.
+- `balda.swarm.shadow.enabled`: enables shadow dual-write when `balda.swarm.mode=shadow` (default `true`).
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `/memory` reads the current file in owner/collaborator direct messages.
   - `balda.memory.read` reads the file from MCP.
@@ -489,7 +491,7 @@ Balda includes an internal owner-targeted scheduler backed by `balda_scheduled_j
 Jobs are managed from config on startup using `balda.scheduler.jobs`.
 
 - Eligibility: only `status=active` jobs with `next_run_at <= now` are polled.
-- Dispatch path: due jobs resolve a session by canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`) and publish durable swarm task messages; task/session actors delegate execution to the same per-session `TurnDispatcher` path as normal messages.
+- Dispatch path: due jobs resolve a session by canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`); in default shadow mode they store a comparison envelope and enqueue the existing per-session `TurnDispatcher` work, while mailbox mode publishes durable swarm task messages for task/session actors.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
 - Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are removed.
 - Claim-before-run: scheduler writes `last_dispatch_key` and advances `next_run_at` to the next cron occurrence before enqueueing work, so stale duplicate due reads do not enqueue the same due slot twice.
@@ -517,7 +519,7 @@ Balda can optionally expose local webhook routes that map path -> prompt templat
   - resolves owner DM locator from owner store
   - looks up active session by owner locator
   - lazily restores persisted session when inactive in memory; creates owner session when no persisted session exists
-  - publishes a durable swarm session message, then the session actor delegates to the same per-session `TurnDispatcher` path as Telegram messages
+  - default shadow mode stores a comparison envelope and enqueues the same per-session `TurnDispatcher` path as Telegram messages; mailbox mode publishes a durable swarm session message first
   - runs via `runTurnTaskWithDelivery(..., deliver=false)` (fire-and-forget; no chat reply emission)
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", request_id, session_id, queue_position}`

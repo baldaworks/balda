@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
 )
 
@@ -38,9 +39,40 @@ type scheduledJobTaskPayload struct {
 }
 
 func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error) {
+	if h.swarmCoordinator != nil && h.swarmCoordinator.ShadowEnabled() {
+		h.shadowGoalTask(ctx, locator, objective, transportUserID)
+		started, err := h.goalRunner.Start(ctx, locator, objective, transportUserID)
+		if err == nil && started {
+			h.swarmCoordinator.RecordShadowDispatch()
+		}
+		return started, err
+	}
 	if h.swarmCoordinator == nil || !h.swarmCoordinator.Enabled() {
 		return h.goalRunner.Start(ctx, locator, objective, transportUserID)
 	}
+	env, err := goalTaskEnvelope(locator, objective, transportUserID)
+	if err != nil {
+		return false, err
+	}
+	_, err = h.swarmCoordinator.Submit(ctx, env)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (h *CommandHandler) shadowGoalTask(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) {
+	env, err := goalTaskEnvelope(locator, objective, transportUserID)
+	if err != nil {
+		log.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to build swarm shadow goal envelope")
+		return
+	}
+	if _, err := h.swarmCoordinator.SubmitShadow(ctx, env); err != nil {
+		log.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to persist swarm shadow goal envelope")
+	}
+}
+
+func goalTaskEnvelope(locator baldasession.SessionLocator, objective string, transportUserID string) (swarm.Envelope, error) {
 	taskID := "goal-" + locator.SessionID + "-" + uuid.NewString()
 	payload := taskEnvelopePayload{
 		Kind: taskPayloadKindGoal,
@@ -52,9 +84,9 @@ func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasessio
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return false, fmt.Errorf("encode goal task payload: %w", err)
+		return swarm.Envelope{}, fmt.Errorf("encode goal task payload: %w", err)
 	}
-	_, err = h.swarmCoordinator.Submit(ctx, swarm.Envelope{
+	return swarm.Envelope{
 		Namespace:   swarm.NamespaceAgentCommand,
 		Kind:        swarm.KindGoal,
 		From:        swarm.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
@@ -62,11 +94,7 @@ func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasessio
 		SessionID:   locator.SessionID,
 		TaskID:      taskID,
 		PayloadJSON: string(data),
-	})
-	if err != nil {
-		return false, err
-	}
-	return true, nil
+	}, nil
 }
 
 type taskActorExecutor struct {

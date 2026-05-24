@@ -14,8 +14,29 @@ func (c *Coordinator) Enabled() bool {
 	return c != nil && c.mailboxes != nil && c.mailboxes.Enabled()
 }
 
+func (c *Coordinator) ShadowEnabled() bool {
+	return c != nil && c.mailboxes != nil && c.mailboxes.ShadowEnabled()
+}
+
 func (c *Coordinator) Submit(ctx context.Context, env Envelope) (SubmittedMessage, error) {
 	return c.mailboxes.Publish(ctx, env)
+}
+
+func (c *Coordinator) SubmitShadow(ctx context.Context, env Envelope) (SubmittedMessage, error) {
+	return c.mailboxes.PublishShadow(ctx, env)
+}
+
+func (c *Coordinator) RecordShadowDispatch() {
+	if c != nil && c.mailboxes != nil {
+		c.mailboxes.RecordShadowDispatch()
+	}
+}
+
+func (c *Coordinator) ShadowMetricsSnapshot() map[string]uint64 {
+	if c == nil || c.mailboxes == nil {
+		return NewShadowMetrics().Snapshot()
+	}
+	return c.mailboxes.ShadowMetricsSnapshot()
 }
 
 func (c *Coordinator) CancelSession(ctx context.Context, sessionID string, reason string) (int, error) {

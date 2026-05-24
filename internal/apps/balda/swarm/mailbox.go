@@ -18,9 +18,10 @@ const (
 )
 
 type MailboxService struct {
-	store baldastate.SwarmStore
-	bus   WakeBus
-	cfg   Config
+	store   baldastate.SwarmStore
+	bus     WakeBus
+	cfg     Config
+	metrics *ShadowMetrics
 }
 
 type mailboxServiceParams struct {
@@ -29,6 +30,7 @@ type mailboxServiceParams struct {
 	StateProvider baldastate.Provider
 	Bus           WakeBus
 	Config        Config
+	Metrics       *ShadowMetrics
 }
 
 func NewMailboxService(params mailboxServiceParams) (*MailboxService, error) {
@@ -38,11 +40,20 @@ func NewMailboxService(params mailboxServiceParams) (*MailboxService, error) {
 	if params.Bus == nil {
 		return nil, fmt.Errorf("swarm wake bus is required")
 	}
-	return &MailboxService{store: params.StateProvider.Swarm(), bus: params.Bus, cfg: params.Config}, nil
+	return &MailboxService{
+		store:   params.StateProvider.Swarm(),
+		bus:     params.Bus,
+		cfg:     params.Config,
+		metrics: params.Metrics,
+	}, nil
 }
 
 func (s *MailboxService) Enabled() bool {
 	return s != nil && s.cfg.MailboxEnabled()
+}
+
+func (s *MailboxService) ShadowEnabled() bool {
+	return s != nil && s.cfg.ShadowEnabled()
 }
 
 type SubmittedMessage struct {
@@ -78,6 +89,39 @@ func (s *MailboxService) Publish(ctx context.Context, env Envelope) (SubmittedMe
 		if err := s.Notify(ctx, env.To); err != nil {
 			return SubmittedMessage{}, err
 		}
+	}
+	return SubmittedMessage{MessageID: env.ID, MailboxID: mailbox, Published: result.Published}, nil
+}
+
+func (s *MailboxService) PublishShadow(ctx context.Context, env Envelope) (SubmittedMessage, error) {
+	if !s.ShadowEnabled() {
+		return SubmittedMessage{}, nil
+	}
+	if strings.TrimSpace(env.ID) == "" {
+		env.ID = uuid.NewString()
+	}
+	if err := env.Validate(); err != nil {
+		return SubmittedMessage{}, err
+	}
+	mailbox, err := env.To.MailboxID()
+	if err != nil {
+		return SubmittedMessage{}, err
+	}
+	record, err := envelopeToRecord(env, mailbox)
+	if err != nil {
+		return SubmittedMessage{}, err
+	}
+	record.Status = baldastate.SwarmMessageStatusShadow
+	result, err := s.store.Publish(ctx, record)
+	if err != nil {
+		return SubmittedMessage{}, err
+	}
+	s.metrics.RecordEnvelope()
+	if strings.TrimSpace(env.SessionID) == "" {
+		s.metrics.RecordMissingSession()
+	}
+	if !result.Published {
+		s.metrics.RecordDedupeHit()
 	}
 	return SubmittedMessage{MessageID: env.ID, MailboxID: mailbox, Published: result.Published}, nil
 }
@@ -180,6 +224,14 @@ func (s *MailboxService) Notify(ctx context.Context, addr ActorAddress) error {
 		return nil
 	}
 	return s.bus.Publish(ctx, addr)
+}
+
+func (s *MailboxService) RecordShadowDispatch() {
+	s.metrics.RecordDispatch()
+}
+
+func (s *MailboxService) ShadowMetricsSnapshot() map[string]uint64 {
+	return s.metrics.Snapshot()
 }
 
 func envelopeToRecord(env Envelope, mailbox string) (baldastate.SwarmMessageRecord, error) {

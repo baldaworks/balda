@@ -122,6 +122,12 @@ balda:
 	if doc.Balda.Sessions.Persistence != "sqlite" {
 		t.Fatalf("sessions.persistence = %q, want sqlite from defaults", doc.Balda.Sessions.Persistence)
 	}
+	if doc.Balda.Swarm.Mode != "shadow" {
+		t.Fatalf("swarm.mode = %q, want shadow from defaults", doc.Balda.Swarm.Mode)
+	}
+	if !doc.Balda.Swarm.Shadow.Enabled {
+		t.Fatal("swarm.shadow.enabled = false, want true from defaults")
+	}
 }
 
 func TestLoadConfigDocument_ExplicitMissingProfileFails(t *testing.T) {

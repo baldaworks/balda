@@ -201,7 +201,9 @@ balda:
     max_iterations: 25
   swarm:
     enabled: true
-    mode: "mailbox"
+    mode: "shadow"
+    shadow:
+      enabled: true
   scheduler:
     jobs: []
   workspace:
@@ -221,8 +223,9 @@ Common settings:
 - `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until `/reset` or explicit `/close`.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
-- `balda.swarm.enabled`: `true` by default; enables SQLite-backed actor mailboxes.
-- `balda.swarm.mode`: `mailbox` by default; routes work through SQLite-backed actor mailboxes with embedded NATS wakeups.
+- `balda.swarm.enabled`: `true` by default; enables swarm rollout plumbing.
+- `balda.swarm.mode`: `shadow` by default; `shadow` dual-writes envelopes to SQLite and keeps the existing direct dispatch path, while `mailbox` routes work through SQLite-backed actor mailboxes with embedded NATS wakeups.
+- `balda.swarm.shadow.enabled`: `true` by default; stores Telegram, webhook, schedule, and `/goal` envelopes with `status=shadow` for rollout comparison when `mode=shadow`.
 - `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `cron`, `prompt`) that target the owner DM session.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.

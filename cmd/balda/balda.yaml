@@ -90,10 +90,14 @@ balda:
     max_iterations: 25
 
   swarm:
-    # Actor mailbox runtime.
+    # Actor runtime rollout controls.
     enabled: true
+    # shadow: persist envelopes for comparison and keep existing direct dispatch.
     # mailbox: route work through durable SQLite mailboxes and embedded NATS wakeups.
-    mode: "mailbox"
+    mode: "shadow"
+    shadow:
+      # If true in shadow mode, Telegram/webhook/schedule/goal inputs are dual-written to state.db.
+      enabled: true
 
   scheduler:
     # Startup-reconciled recurring jobs.

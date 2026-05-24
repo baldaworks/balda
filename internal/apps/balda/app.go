@@ -110,6 +110,9 @@ func Module(
 	swarmConfig := swarm.Config{
 		Enabled: cfg.Balda.Swarm.Enabled,
 		Mode:    strings.TrimSpace(cfg.Balda.Swarm.Mode),
+		Shadow: swarm.ShadowConfig{
+			Enabled: cfg.Balda.Swarm.Shadow.Enabled,
+		},
 	}
 
 	// Start with global MCP servers.

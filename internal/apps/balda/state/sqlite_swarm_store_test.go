@@ -145,6 +145,45 @@ func TestSQLiteSwarmStore_DedupeAndCancel(t *testing.T) {
 	}
 }
 
+func TestSQLiteSwarmStore_ShadowMessagesAreNotClaimable(t *testing.T) {
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.Swarm()
+	record := swarmRecord("shadow", "session:shadow", 0)
+	record.Status = SwarmMessageStatusShadow
+	record.DedupeKey = "event-1"
+	if _, err := store.Publish(ctx, record); err != nil {
+		t.Fatalf("Publish(shadow) error = %v", err)
+	}
+	queued := swarmRecord("queued", "session:shadow", 0)
+	queued.DedupeKey = "event-1"
+	published, err := store.Publish(ctx, queued)
+	if err != nil {
+		t.Fatalf("Publish(queued) error = %v", err)
+	}
+	if !published.Published {
+		t.Fatal("Publish(queued) Published = false, want true despite matching shadow dedupe")
+	}
+
+	claimed, err := store.Claim(ctx, "session:shadow", "worker-1", 8, time.Minute)
+	if err != nil {
+		t.Fatalf("Claim(shadow) error = %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].ID != "queued" {
+		t.Fatalf("claimed messages = %+v, want queued only", claimed)
+	}
+
+	got, ok, err := store.GetMessage(ctx, "shadow")
+	if err != nil {
+		t.Fatalf("GetMessage(shadow) error = %v", err)
+	}
+	if !ok || got.Status != SwarmMessageStatusShadow {
+		t.Fatalf("shadow message = %+v, found=%v, want status shadow", got, ok)
+	}
+}
+
 func TestSQLiteSwarmStore_ExpiresMessages(t *testing.T) {
 	provider := newTestProvider(t)
 	defer closeProvider(t, provider)

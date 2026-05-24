@@ -40,6 +40,8 @@ const (
 	SwarmMessageStatusCanceled = "canceled"
 	// SwarmMessageStatusExpired means expires_at elapsed before successful handling.
 	SwarmMessageStatusExpired = "expired"
+	// SwarmMessageStatusShadow means the message is stored for rollout comparison only.
+	SwarmMessageStatusShadow = "shadow"
 
 	// SwarmMessageDefaultMaxAttempts is the default retry budget for messages.
 	SwarmMessageDefaultMaxAttempts = 3

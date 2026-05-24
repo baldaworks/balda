@@ -5,6 +5,7 @@ import "go.uber.org/fx"
 var Module = fx.Module("balda_swarm",
 	fx.Provide(
 		fx.Annotate(NewEmbeddedBus, fx.As(new(WakeBus))),
+		NewShadowMetrics,
 		NewMailboxService,
 		NewCoordinator,
 		fx.Annotate(NewAgentActor, fx.As(new(Actor)), fx.ResultTags(`group:"balda_swarm_actors"`)),
