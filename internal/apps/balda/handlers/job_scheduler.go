@@ -302,10 +302,10 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job baldastate.Scheduled
 	}
 
 	prompt := strings.TrimSpace(current.Prompt)
-	if s.coordinator != nil && s.coordinator.ShadowEnabled() {
+	if s.coordinator != nil && s.coordinator.SchedulerShadowEnabled() {
 		s.shadowScheduledJobTask(ctx, current, target, prompt, dispatchKey)
 	}
-	if s.coordinator != nil && s.coordinator.Enabled() {
+	if s.coordinator != nil && s.coordinator.SchedulerMailboxEnabled() {
 		return s.dispatchScheduledJobTask(ctx, current, target, prompt, dispatchKey)
 	}
 
@@ -317,7 +317,7 @@ func (s *JobScheduler) dispatchJob(ctx context.Context, job baldastate.Scheduled
 	}); err != nil {
 		return s.markFailure(ctx, jobID, fmt.Errorf("enqueue scheduled job: %w", err))
 	}
-	if s.coordinator != nil && s.coordinator.ShadowEnabled() {
+	if s.coordinator != nil && s.coordinator.SchedulerShadowEnabled() {
 		s.coordinator.RecordShadowDispatch()
 	}
 

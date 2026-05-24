@@ -16,7 +16,10 @@ type baldaTestConfigDocument struct {
 	Balda   baldaapp.BaldaConfig    `mapstructure:"balda"`
 }
 
-const testBaldaDefaultProfile = "default"
+const (
+	testBaldaDefaultProfile  = "default"
+	testBaldaSwarmModeShadow = "shadow"
+)
 
 func TestLoadConfigDocument_AppliesProfileBaldaOverrides(t *testing.T) {
 	workingDir := t.TempDir()
@@ -122,8 +125,14 @@ balda:
 	if doc.Balda.Sessions.Persistence != "sqlite" {
 		t.Fatalf("sessions.persistence = %q, want sqlite from defaults", doc.Balda.Sessions.Persistence)
 	}
-	if doc.Balda.Swarm.Mode != "shadow" {
+	if doc.Balda.Swarm.Mode != testBaldaSwarmModeShadow {
 		t.Fatalf("swarm.mode = %q, want shadow from defaults", doc.Balda.Swarm.Mode)
+	}
+	if doc.Balda.Swarm.WebhookMode != testBaldaSwarmModeShadow {
+		t.Fatalf("swarm.webhook_mode = %q, want shadow from defaults", doc.Balda.Swarm.WebhookMode)
+	}
+	if doc.Balda.Swarm.SchedulerMode != testBaldaSwarmModeShadow {
+		t.Fatalf("swarm.scheduler_mode = %q, want shadow from defaults", doc.Balda.Swarm.SchedulerMode)
 	}
 	if !doc.Balda.Swarm.Shadow.Enabled {
 		t.Fatal("swarm.shadow.enabled = false, want true from defaults")

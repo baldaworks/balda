@@ -80,9 +80,11 @@ type GoalConfig struct {
 
 // SwarmConfig controls the actor mailbox runtime.
 type SwarmConfig struct {
-	Enabled bool              `mapstructure:"enabled"`
-	Mode    string            `mapstructure:"mode"`
-	Shadow  SwarmShadowConfig `mapstructure:"shadow"`
+	Enabled       bool              `mapstructure:"enabled"`
+	Mode          string            `mapstructure:"mode"`
+	WebhookMode   string            `mapstructure:"webhook_mode"`
+	SchedulerMode string            `mapstructure:"scheduler_mode"`
+	Shadow        SwarmShadowConfig `mapstructure:"shadow"`
 }
 
 // SwarmShadowConfig controls safe dual-write rollout behavior.

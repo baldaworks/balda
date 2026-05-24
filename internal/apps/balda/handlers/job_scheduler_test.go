@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 	"google.golang.org/adk/runner"
 )
@@ -166,6 +168,89 @@ func TestJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T) {
 	if got, want := updated.LastDispatchKey, dispatchAttemptKey(record.JobID, dueAt); got != want {
 		t.Fatalf("LastDispatchKey = %q, want %q", got, want)
 	}
+}
+
+func TestJobSchedulerDispatchJob_SchedulerLegacyEnqueuesDirectOnly(t *testing.T) {
+	t.Parallel()
+
+	runSchedulerModeDispatchTest(t, schedulerModeDispatchCase{
+		mode:            "legacy",
+		jobID:           "job-legacy",
+		prompt:          "legacy direct",
+		now:             time.Date(2026, time.May, 14, 13, 30, 0, 0, time.UTC),
+		wantQueuedTasks: 1,
+	})
+}
+
+func TestJobSchedulerDispatchJob_SchedulerShadowPersistsAndEnqueuesDirect(t *testing.T) {
+	t.Parallel()
+
+	runSchedulerModeDispatchTest(t, schedulerModeDispatchCase{
+		mode:            "shadow",
+		jobID:           "job-shadow",
+		prompt:          "shadow direct",
+		now:             time.Date(2026, time.May, 14, 13, 45, 0, 0, time.UTC),
+		wantQueuedTasks: 1,
+		wantSwarmStatus: baldastate.SwarmMessageStatusShadow,
+	})
+}
+
+func TestJobSchedulerDispatchJob_SchedulerMailboxPublishesTaskOnly(t *testing.T) {
+	t.Parallel()
+
+	runSchedulerModeDispatchTest(t, schedulerModeDispatchCase{
+		mode:            "mailbox",
+		jobID:           "job-mailbox",
+		prompt:          "mailbox task",
+		now:             time.Date(2026, time.May, 14, 14, 15, 0, 0, time.UTC),
+		wantQueuedTasks: 0,
+		wantSwarmStatus: baldastate.SwarmMessageStatusQueued,
+	})
+}
+
+type schedulerModeDispatchCase struct {
+	mode            string
+	jobID           string
+	prompt          string
+	now             time.Time
+	wantQueuedTasks int
+	wantSwarmStatus string
+}
+
+func runSchedulerModeDispatchTest(t *testing.T, tc schedulerModeDispatchCase) {
+	t.Helper()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+	provider, coordinator := newHandlerSwarmCoordinator(t, ctx, dbPath, swarmConfigForSchedulerMode(t, tc.mode))
+	t.Cleanup(func() { _ = provider.Close() })
+	store := provider.ScheduledJobs()
+	locator := baldatelegram.NewLocator(9001, 0)
+	dueAt := tc.now.Add(-time.Second)
+	record := schedulerDueRecord(locator, tc.jobID, tc.prompt, dueAt)
+	if err := store.Upsert(ctx, record); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	queue := &fakeSchedulerTurnQueue{}
+	scheduler := newSchedulerForTest(t, store, &fakeSchedulerSessionManager{
+		session: newSchedulerTopicSession(t, locator, "tg-303", "adk-3", nil),
+	}, queue, &fakeSchedulerChannel{}, tc.now)
+	scheduler.coordinator = coordinator
+
+	if err := scheduler.dispatchJob(ctx, record, tc.now); err != nil {
+		t.Fatalf("dispatchJob() error = %v", err)
+	}
+	if len(queue.tasks) != tc.wantQueuedTasks {
+		t.Fatalf("queued tasks = %d, want %d", len(queue.tasks), tc.wantQueuedTasks)
+	}
+	if tc.wantSwarmStatus == "" {
+		if got := countSwarmMessages(t, ctx, dbPath); got != 0 {
+			t.Fatalf("swarm message count = %d, want 0", got)
+		}
+		return
+	}
+	assertSchedulerSwarmMessage(t, ctx, dbPath, tc.wantSwarmStatus, locator.SessionID, dispatchAttemptKey(record.JobID, dueAt))
 }
 
 func TestJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
@@ -610,6 +695,81 @@ func newOwnerStoreForTest(t *testing.T, userID int64, chatID int64) *auth.OwnerS
 		t.Fatalf("RegisterOwner() error = %v", err)
 	}
 	return store
+}
+
+func swarmConfigForSchedulerMode(t *testing.T, mode string) swarm.Config {
+	t.Helper()
+
+	cfg, err := (swarm.Config{
+		Enabled:       true,
+		Mode:          swarm.ModeLegacy,
+		SchedulerMode: mode,
+		Shadow:        swarm.ShadowConfig{Enabled: true},
+	}).Normalized()
+	if err != nil {
+		t.Fatalf("Normalize scheduler swarm config: %v", err)
+	}
+	return cfg
+}
+
+func schedulerDueRecord(
+	locator baldasession.SessionLocator,
+	jobID string,
+	prompt string,
+	dueAt time.Time,
+) baldastate.ScheduledJobRecord {
+	return baldastate.ScheduledJobRecord{
+		JobID:        jobID,
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Prompt:       prompt,
+		ScheduleSpec: "@every 5s",
+		Status:       baldastate.ScheduledJobStatusActive,
+		NextRunAt:    dueAt,
+	}
+}
+
+func assertSchedulerSwarmMessage(
+	t *testing.T,
+	ctx context.Context,
+	dbPath string,
+	wantStatus string,
+	wantSessionID string,
+	wantDedupeKey string,
+) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	var status, namespace, kind, sessionID, dedupeKey string
+	if err := db.QueryRowContext(ctx, `
+		SELECT status, namespace, kind, COALESCE(session_id, ''), COALESCE(dedupe_key, '')
+		FROM swarm_messages
+		LIMIT 1`,
+	).Scan(&status, &namespace, &kind, &sessionID, &dedupeKey); err != nil {
+		t.Fatalf("query scheduler swarm message: %v", err)
+	}
+	if status != wantStatus {
+		t.Fatalf("status = %q, want %q", status, wantStatus)
+	}
+	if namespace != swarm.NamespaceScheduleInbound {
+		t.Fatalf("namespace = %q, want %q", namespace, swarm.NamespaceScheduleInbound)
+	}
+	if kind != swarm.KindScheduledJob {
+		t.Fatalf("kind = %q, want %q", kind, swarm.KindScheduledJob)
+	}
+	if sessionID != wantSessionID {
+		t.Fatalf("session_id = %q, want %q", sessionID, wantSessionID)
+	}
+	if dedupeKey != wantDedupeKey {
+		t.Fatalf("dedupe_key = %q, want %q", dedupeKey, wantDedupeKey)
+	}
 }
 
 func newSchedulerJobStore(t *testing.T) baldastate.ScheduledJobStore {

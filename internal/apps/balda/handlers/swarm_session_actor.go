@@ -27,6 +27,28 @@ type sessionTurnPayload struct {
 }
 
 func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload sessionTurnPayload) (int, error) {
+	if strings.EqualFold(strings.TrimSpace(payload.Source), "webhook") {
+		return h.submitWebhookSessionTurn(ctx, payload)
+	}
+	return h.submitGlobalSessionTurn(ctx, payload)
+}
+
+func (h *BaldaHandler) submitWebhookSessionTurn(ctx context.Context, payload sessionTurnPayload) (int, error) {
+	if h.swarmCoordinator != nil && h.swarmCoordinator.WebhookShadowEnabled() {
+		h.shadowSessionTurn(ctx, payload)
+		position, err := h.enqueueSessionTurnDirect(payload)
+		if err == nil {
+			h.swarmCoordinator.RecordShadowDispatch()
+		}
+		return position, err
+	}
+	if h.swarmCoordinator != nil && h.swarmCoordinator.WebhookMailboxEnabled() {
+		return h.submitSessionTurnToSwarm(ctx, payload)
+	}
+	return h.enqueueSessionTurnDirect(payload)
+}
+
+func (h *BaldaHandler) submitGlobalSessionTurn(ctx context.Context, payload sessionTurnPayload) (int, error) {
 	if h.swarmCoordinator != nil && h.swarmCoordinator.ShadowEnabled() {
 		h.shadowSessionTurn(ctx, payload)
 		position, err := h.enqueueSessionTurnDirect(payload)

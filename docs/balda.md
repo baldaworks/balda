@@ -394,7 +394,9 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.mode`: actor runtime mode (default `shadow`)
   - `shadow`: persist Telegram, webhook, schedule, and `/goal` envelopes in SQLite with `status=shadow`, then keep the existing direct dispatch path.
   - `mailbox`: persist work in SQLite swarm mailboxes and use embedded NATS for wakeups.
-- `balda.swarm.shadow.enabled`: enables shadow dual-write when `balda.swarm.mode=shadow` (default `true`).
+- `balda.swarm.webhook_mode`: generic inbound webhook runtime mode (`legacy|shadow|mailbox`, default `shadow`)
+- `balda.swarm.scheduler_mode`: config-managed recurring job runtime mode (`legacy|shadow|mailbox`, default `shadow`)
+- `balda.swarm.shadow.enabled`: enables shadow dual-write when any resolved swarm mode is `shadow` (default `true`).
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `/memory` reads the current file in owner/collaborator direct messages.
   - `balda.memory.read` reads the file from MCP.

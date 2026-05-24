@@ -409,7 +409,7 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 		return nil
 	}
 	mailboxDropped := 0
-	if h.swarmCoordinator != nil && h.swarmCoordinator.Enabled() {
+	if h.swarmCoordinator != nil && h.swarmCoordinator.RuntimeEnabled() {
 		canceled, cancelErr := h.swarmCoordinator.CancelSession(ctx, commandCtx.Locator.SessionID, "session canceled by user")
 		if cancelErr != nil {
 			log.Warn().Err(cancelErr).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to cancel session mailbox")

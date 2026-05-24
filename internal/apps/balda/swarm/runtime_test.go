@@ -114,6 +114,30 @@ func TestRuntime_ActorErrorsSettleByKind(t *testing.T) {
 	}
 }
 
+func TestRuntime_StartsWhenScopedModeUsesMailbox(t *testing.T) {
+	ctx := context.Background()
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	service := &MailboxService{
+		store: provider.Swarm(),
+		bus:   testWakeBus{},
+		cfg:   Config{Enabled: true, Mode: ModeShadow, WebhookMode: ModeMailbox},
+	}
+	runtime := newRuntimeForTest(service, NewRegistry())
+	if err := runtime.Start(ctx, testWakeBus{}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if runtime.cancel == nil {
+		t.Fatal("runtime cancel = nil, want started runtime")
+	}
+	if err := runtime.Stop(ctx); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
 func newRuntimeTestMailboxService(t *testing.T, ctx context.Context) (baldastate.Provider, *MailboxService) {
 	t.Helper()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))

@@ -108,11 +108,17 @@ func Module(
 	jobSchedulerConfig := buildJobSchedulerConfig(cfg.Balda)
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 	swarmConfig := swarm.Config{
-		Enabled: cfg.Balda.Swarm.Enabled,
-		Mode:    strings.TrimSpace(cfg.Balda.Swarm.Mode),
+		Enabled:       cfg.Balda.Swarm.Enabled,
+		Mode:          strings.TrimSpace(cfg.Balda.Swarm.Mode),
+		WebhookMode:   strings.TrimSpace(cfg.Balda.Swarm.WebhookMode),
+		SchedulerMode: strings.TrimSpace(cfg.Balda.Swarm.SchedulerMode),
 		Shadow: swarm.ShadowConfig{
 			Enabled: cfg.Balda.Swarm.Shadow.Enabled,
 		},
+	}
+	swarmConfig, err = swarmConfig.Normalized()
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
 	}
 
 	// Start with global MCP servers.

@@ -11,11 +11,31 @@ func NewCoordinator(mailboxes *MailboxService) *Coordinator {
 }
 
 func (c *Coordinator) Enabled() bool {
+	return c != nil && c.mailboxes != nil && c.mailboxes.GlobalMailboxEnabled()
+}
+
+func (c *Coordinator) RuntimeEnabled() bool {
 	return c != nil && c.mailboxes != nil && c.mailboxes.Enabled()
 }
 
 func (c *Coordinator) ShadowEnabled() bool {
 	return c != nil && c.mailboxes != nil && c.mailboxes.ShadowEnabled()
+}
+
+func (c *Coordinator) WebhookMailboxEnabled() bool {
+	return c != nil && c.mailboxes != nil && c.mailboxes.WebhookMailboxEnabled()
+}
+
+func (c *Coordinator) WebhookShadowEnabled() bool {
+	return c != nil && c.mailboxes != nil && c.mailboxes.WebhookShadowEnabled()
+}
+
+func (c *Coordinator) SchedulerMailboxEnabled() bool {
+	return c != nil && c.mailboxes != nil && c.mailboxes.SchedulerMailboxEnabled()
+}
+
+func (c *Coordinator) SchedulerShadowEnabled() bool {
+	return c != nil && c.mailboxes != nil && c.mailboxes.SchedulerShadowEnabled()
 }
 
 func (c *Coordinator) Submit(ctx context.Context, env Envelope) (SubmittedMessage, error) {

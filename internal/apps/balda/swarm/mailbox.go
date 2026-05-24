@@ -52,8 +52,32 @@ func (s *MailboxService) Enabled() bool {
 	return s != nil && s.cfg.MailboxEnabled()
 }
 
+func (s *MailboxService) GlobalMailboxEnabled() bool {
+	return s != nil && s.cfg.GlobalMailboxEnabled()
+}
+
+func (s *MailboxService) WebhookMailboxEnabled() bool {
+	return s != nil && s.cfg.WebhookMailboxEnabled()
+}
+
+func (s *MailboxService) SchedulerMailboxEnabled() bool {
+	return s != nil && s.cfg.SchedulerMailboxEnabled()
+}
+
 func (s *MailboxService) ShadowEnabled() bool {
 	return s != nil && s.cfg.ShadowEnabled()
+}
+
+func (s *MailboxService) ShadowRuntimeEnabled() bool {
+	return s != nil && s.cfg.ShadowRuntimeEnabled()
+}
+
+func (s *MailboxService) WebhookShadowEnabled() bool {
+	return s != nil && s.cfg.WebhookShadowEnabled()
+}
+
+func (s *MailboxService) SchedulerShadowEnabled() bool {
+	return s != nil && s.cfg.SchedulerShadowEnabled()
 }
 
 type SubmittedMessage struct {
@@ -94,7 +118,7 @@ func (s *MailboxService) Publish(ctx context.Context, env Envelope) (SubmittedMe
 }
 
 func (s *MailboxService) PublishShadow(ctx context.Context, env Envelope) (SubmittedMessage, error) {
-	if !s.ShadowEnabled() {
+	if !s.ShadowRuntimeEnabled() {
 		return SubmittedMessage{}, nil
 	}
 	if strings.TrimSpace(env.ID) == "" {

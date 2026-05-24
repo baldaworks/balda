@@ -202,6 +202,8 @@ balda:
   swarm:
     enabled: true
     mode: "shadow"
+    webhook_mode: "shadow"
+    scheduler_mode: "shadow"
     shadow:
       enabled: true
   scheduler:
@@ -225,7 +227,9 @@ Common settings:
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
 - `balda.swarm.enabled`: `true` by default; enables swarm rollout plumbing.
 - `balda.swarm.mode`: `shadow` by default; `shadow` dual-writes envelopes to SQLite and keeps the existing direct dispatch path, while `mailbox` routes work through SQLite-backed actor mailboxes with embedded NATS wakeups.
-- `balda.swarm.shadow.enabled`: `true` by default; stores Telegram, webhook, schedule, and `/goal` envelopes with `status=shadow` for rollout comparison when `mode=shadow`.
+- `balda.swarm.webhook_mode`: `shadow` by default; controls only generic inbound webhook intake (`legacy|shadow|mailbox`).
+- `balda.swarm.scheduler_mode`: `shadow` by default; controls only config-managed recurring jobs (`legacy|shadow|mailbox`).
+- `balda.swarm.shadow.enabled`: `true` by default; stores Telegram, webhook, schedule, and `/goal` envelopes with `status=shadow` for rollout comparison when a resolved mode is `shadow`.
 - `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `cron`, `prompt`) that target the owner DM session.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
