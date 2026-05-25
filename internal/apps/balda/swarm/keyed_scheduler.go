@@ -4,7 +4,10 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 )
+
+const actorLaneIdleTTL = time.Hour
 
 type ActorHandler func(ctx context.Context, env Envelope) error
 
@@ -14,7 +17,9 @@ type KeyedActorScheduler struct {
 }
 
 type ActorLane struct {
-	mu sync.Mutex
+	mu       sync.Mutex
+	active   int
+	lastUsed time.Time
 }
 
 func NewKeyedActorScheduler() *KeyedActorScheduler {
@@ -25,7 +30,9 @@ func (s *KeyedActorScheduler) Dispatch(ctx context.Context, env Envelope, handle
 	if s == nil || handler == nil {
 		return nil
 	}
-	lane := s.lane(actorKey(env))
+	key := actorKey(env)
+	lane := s.acquire(key)
+	defer s.release(key, lane)
 	lane.mu.Lock()
 	defer lane.mu.Unlock()
 	select {
@@ -36,19 +43,46 @@ func (s *KeyedActorScheduler) Dispatch(ctx context.Context, env Envelope, handle
 	}
 }
 
-func (s *KeyedActorScheduler) lane(key string) *ActorLane {
+func (s *KeyedActorScheduler) acquire(key string) *ActorLane {
+	trimmed := strings.TrimSpace(key)
+	if trimmed == "" {
+		trimmed = "unknown"
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneLocked(now)
+	lane := s.lanes[trimmed]
+	if lane == nil {
+		lane = &ActorLane{}
+		s.lanes[trimmed] = lane
+	}
+	lane.active++
+	lane.lastUsed = now
+	return lane
+}
+
+func (s *KeyedActorScheduler) release(key string, lane *ActorLane) {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
 		trimmed = "unknown"
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	lane := s.lanes[trimmed]
-	if lane == nil {
-		lane = &ActorLane{}
-		s.lanes[trimmed] = lane
+	if lane.active > 0 {
+		lane.active--
 	}
-	return lane
+	lane.lastUsed = time.Now()
+	s.lanes[trimmed] = lane
+}
+
+func (s *KeyedActorScheduler) pruneLocked(now time.Time) {
+	cutoff := now.Add(-actorLaneIdleTTL)
+	for key, lane := range s.lanes {
+		if lane.active == 0 && !lane.lastUsed.IsZero() && lane.lastUsed.Before(cutoff) {
+			delete(s.lanes, key)
+		}
+	}
 }
 
 func actorKey(env Envelope) string {

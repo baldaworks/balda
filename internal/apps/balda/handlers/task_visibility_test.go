@@ -57,13 +57,16 @@ func TestCommandHandlerTaskVisibilityCommands(t *testing.T) {
 	if err := handler.onCommand(ctx, newCommandEvent("task", "task-active cancel", 101, 9001, nil)); err != nil {
 		t.Fatalf("/task cancel error = %v", err)
 	}
-	assertLastSentContains(t, tgClient, "Canceled task task-active")
+	assertLastSentContains(t, tgClient, "Cancel requested for task task-active")
+	if len(bus.commands) != 1 || bus.commands[0].Namespace != swarm.NamespaceTaskControl || bus.commands[0].TaskID != "task-active" {
+		t.Fatalf("published cancel commands = %+v, want one task control command", bus.commands)
+	}
 	got, ok, err := provider.Swarm().GetTask(ctx, "task-active")
 	if err != nil {
 		t.Fatalf("GetTask(active) error = %v", err)
 	}
-	if !ok || got.Status != baldastate.SwarmTaskStatusCanceled {
-		t.Fatalf("task-active = %+v, found=%v, want canceled", got, ok)
+	if !ok || got.Status != baldastate.SwarmTaskStatusQueued {
+		t.Fatalf("task-active = %+v, found=%v, want queued until control actor runs", got, ok)
 	}
 }
 

@@ -49,6 +49,8 @@ const (
 
 	// SwarmDeliveryStatusPending means a delivery side effect is reserved but not confirmed.
 	SwarmDeliveryStatusPending = "pending"
+	// SwarmDeliveryStatusSending means a delivery side effect attempt is in progress.
+	SwarmDeliveryStatusSending = "sending"
 	// SwarmDeliveryStatusSent means a delivery side effect was successfully sent.
 	SwarmDeliveryStatusSent = "sent"
 	// SwarmDeliveryStatusFailed means the latest delivery attempt failed.
@@ -214,6 +216,7 @@ type SwarmStore interface {
 	AppendTaskEvent(ctx context.Context, record SwarmTaskEventRecord) error
 	ListTaskEvents(ctx context.Context, taskID string) ([]SwarmTaskEventRecord, error)
 	ReserveDelivery(ctx context.Context, record SwarmDeliveryRecord) (SwarmDeliveryRecord, bool, error)
+	MarkDeliverySending(ctx context.Context, deliveryKey string) error
 	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
 }

@@ -247,24 +247,6 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		}
 	}
 
-	if h.turnDispatcher == nil {
-		if err := h.runTurnTask(
-			ctx,
-			text,
-			ts.GetRunner(),
-			ts.GetUserID(),
-			ts.GetSessionID(),
-			ts.GetAgentSessionID(),
-			locator,
-			messageCtx.MessageID,
-			topicID,
-			messageCtx.ProgressPolicy,
-		); err != nil {
-			log.Error().Err(err).Int("topic_id", topicID).Msg("Agent execution failed")
-		}
-		return nil
-	}
-
 	if err := h.enqueueTurn(
 		ctx,
 		text,
@@ -314,33 +296,6 @@ func (h *BaldaHandler) enqueueTurn(
 		return err
 	}
 	return nil
-}
-
-func (h *BaldaHandler) runTurnTask(
-	ctx context.Context,
-	text string,
-	r *runner.Runner,
-	userID string,
-	sessionID string,
-	agentSessionID string,
-	locator baldasession.SessionLocator,
-	messageID int,
-	topicID int,
-	progressPolicy baldachannel.ProgressPolicy,
-) error {
-	return h.runTurnTaskWithDelivery(
-		ctx,
-		text,
-		r,
-		userID,
-		sessionID,
-		agentSessionID,
-		locator,
-		messageID,
-		topicID,
-		progressPolicy,
-		true,
-	)
 }
 
 func (h *BaldaHandler) runTurnTaskWithDelivery(

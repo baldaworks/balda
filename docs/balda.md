@@ -496,12 +496,12 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/tasks` (owner/collaborator): lists active task records for the current session.
 - `/task <id>` (owner/collaborator): shows task status, objective, source, timestamps, latest events, and the reviewable outcome when the task is terminal.
 - `/task <id> events` (owner/collaborator): prints the append-only task event stream.
-- `/task <id> cancel` (owner/collaborator): publishes a task-control command, cancels active local task work when present, and marks the task `canceled`.
-- `/swarm status` (owner/collaborator): shows JetStream command/event/DLQ streams, worker consumer state, configured logical agents, and task status counts.
+- `/task <id> cancel` (owner/collaborator): publishes a durable task-control command; ControlActor cancels active local task work when present and marks the task `canceled` when the command is processed.
+- `/swarm status` (owner/collaborator): shows JetStream command/event/DLQ streams, worker and projector consumer state, configured logical agents, and task status counts.
 - `/mailbox status` (owner/collaborator): compatibility alias for JetStream swarm status.
 - `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
 - `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Balda metadata or the workspace branch.
-- `/cancel` (owner/collaborator): cancels active turn, drops queued turns, marks active session tasks canceled, and aborts active `/goal` work for current session.
+- `/cancel` (owner/collaborator): publishes a durable session-control command; ControlActor cancels active turns, drops queued turns, marks active session tasks canceled, and aborts active `/goal` work when the command is processed.
 - `/memory` (DM only, owner/collaborator): prints current `${balda.state_dir}/MEMORY.md` contents when `balda.memory.enabled=true`; otherwise reports that memory is disabled.
 
 ### Task actor runtime semantics (internal)
@@ -521,16 +521,17 @@ are product state created by TaskActor after command delivery.
   `task.assigned`, `task.started`, `agent.started`, `agent.progress`,
   `agent.result`, `task.validating`, `task.completed`, `task.failed`,
   `task.canceled`, and `delivery.sent`.
-- Runtime deadletters mark the owning task `deadlettered`. `/cancel` publishes
-  control work, marks active session tasks `canceled`, and cancels any currently
-  running task agent turn.
+- Runtime deadletters mark the owning task `deadlettered`. `/cancel` and
+  `/task <id> cancel` publish durable control commands; ControlActor applies
+  the cancellation, marks matching task records `canceled`, and cancels any
+  currently running task agent turn.
 - Terminal task delivery and `/task <id>` render reviewable outcomes with:
   Result, Artifacts, Confidence, and Next action. Artifacts are best-effort
   workspace data from the bound session: changed files, branch, current commit,
   workspace export hint, and validation output.
-- Visibility commands are read-only except `/task <id> cancel`. `/tasks` is
-  scoped to the current session; `/task <id>` can inspect any visible task ID
-  known to the instance.
+- Visibility commands are read-only except `/task <id> cancel`, which only
+  publishes control work. `/tasks` is scoped to the current session; `/task
+  <id>` can inspect any visible task ID known to the instance.
 
 ### JetStream runtime semantics (internal)
 

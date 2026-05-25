@@ -401,14 +401,16 @@ func TestCommandHandlerOnCommand_CancelClearsQueueAndInFlight(t *testing.T) {
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	if len(turns.cancelCalls) != 1 {
-		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
 	}
-	if turns.cancelCalls[0].SessionID != "tg-9001-88" {
-		t.Fatalf("CancelSession call = %+v, want session=tg-9001-88", turns.cancelCalls[0])
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	assertLastSentContains(t, tgClient, "Canceled current turn.")
-	assertLastSentContains(t, tgClient, "Dropped 2 queued message(s).")
+	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	}
+	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
 func TestCommandHandlerOnCommand_CancelNoActiveTurns(t *testing.T) {
@@ -419,10 +421,13 @@ func TestCommandHandlerOnCommand_CancelNoActiveTurns(t *testing.T) {
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	if len(turns.cancelCalls) != 1 {
-		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
 	}
-	assertLastSentContains(t, tgClient, "No running or queued turns for this session.")
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
 func TestCommandHandlerOnCommand_CancelCancelsGoalRun(t *testing.T) {
@@ -435,10 +440,13 @@ func TestCommandHandlerOnCommand_CancelCancelsGoalRun(t *testing.T) {
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	if len(turns.cancelCalls) != 1 {
-		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
 	}
-	assertLastSentContains(t, tgClient, "Canceled active goal run.")
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
 func TestCommandHandlerOnCommand_CancelWithArgsShowsUsage(t *testing.T) {
@@ -477,10 +485,13 @@ func TestCommandHandlerOnCommand_CancelCollaboratorAllowed(t *testing.T) {
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	if len(turns.cancelCalls) != 1 {
-		t.Fatalf("CancelSession calls = %d, want 1", len(turns.cancelCalls))
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
 	}
-	assertLastSentContains(t, tgClient, "No running or queued turns for this session.")
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
 func TestCommandHandlerOnCommand_ResetClearsSessionHistory(t *testing.T) {
@@ -749,7 +760,6 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 	sessionManager := &fakeCommandSessionManager{}
 	turnDispatcher := &fakeTurnDispatcher{}
 	goalRunner := &fakeGoalRunner{startResult: true}
-	commandBus := &recordingHandlerCommandBus{}
 	sessionManager.baldaProvider = testProviderAlpha
 	sessionManager.metadata = session.AgentMetadata{
 		Type:       "opencode_acp",
@@ -766,9 +776,10 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 		}),
 		sessionManager:   sessionManager,
 		turnDispatcher:   turnDispatcher,
-		swarmCoordinator: swarm.NewCoordinator(commandBus, swarm.Config{Enabled: true}),
+		swarmCoordinator: swarm.NewCoordinator(turnDispatcher, swarm.Config{Enabled: true}),
 		goalRunner:       goalRunner,
 		messenger:        msg,
+		commandBus:       turnDispatcher,
 		memoryStore:      memory.NewStore(t.TempDir(), true),
 	}
 	return handler, sessionManager, turnDispatcher, tgClient

@@ -20,6 +20,8 @@ type CommandMessage interface {
 	Envelope() Envelope
 	Subject() string
 	InProgress(ctx context.Context) error
+	DeliveryAttempt() int
+	MaxDeliveries() int
 }
 
 // CommandHandler handles one durable command message.
@@ -100,6 +102,11 @@ func (UnsupportedCommandBus) Status(context.Context) (CommandBusStatus, error) {
 
 // EventHandler is kept for event projector code that consumes decoded events.
 type EventHandler func(ctx context.Context, subject string, env Envelope) error
+
+// EventConsumer consumes durable JetStream events for read-model projection.
+type EventConsumer interface {
+	RunEventConsumer(ctx context.Context, handler EventHandler) error
+}
 
 // Subscription is a cancellable event subscription.
 type Subscription interface {

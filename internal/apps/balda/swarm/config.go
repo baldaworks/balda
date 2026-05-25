@@ -20,10 +20,11 @@ const (
 )
 
 const (
-	DefaultCommandStream  = "BALDA_COMMANDS"
-	DefaultCommandConsumer = "BALDA_WORKER_COMMANDS"
-	DefaultEventStream    = "BALDA_EVENTS"
-	DefaultDLQStream      = "BALDA_DLQ"
+	DefaultCommandStream          = "BALDA_COMMANDS"
+	DefaultCommandConsumer        = "BALDA_WORKER_COMMANDS"
+	DefaultEventStream            = "BALDA_EVENTS"
+	DefaultEventProjectorConsumer = "BALDA_EVENT_PROJECTOR"
+	DefaultDLQStream              = "BALDA_DLQ"
 )
 
 type Config struct {

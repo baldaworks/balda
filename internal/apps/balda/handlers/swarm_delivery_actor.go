@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -15,6 +16,8 @@ import (
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
+
+const deliveryPendingRetryAfter = 30 * time.Second
 
 type taskDeliveryActor struct {
 	channel *baldatelegram.Adapter
@@ -60,7 +63,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) erro
 	deliveryKey := deliveryKeyForEnvelope(env)
 	payloadHash := hashDeliveryPayload(env.PayloadJSON)
 	if a.tasks != nil {
-		record, _, err := a.tasks.ReserveDelivery(ctx, baldastate.SwarmDeliveryRecord{
+		record, created, err := a.tasks.ReserveDelivery(ctx, baldastate.SwarmDeliveryRecord{
 			ID:          uuid.NewString(),
 			DeliveryKey: deliveryKey,
 			TaskID:      payload.TaskID,
@@ -80,6 +83,12 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) erro
 		}
 		if record.Status == baldastate.SwarmDeliveryStatusSent {
 			return nil
+		}
+		if !created && !deliveryReadyForAttempt(record) {
+			return swarm.TransientError(fmt.Errorf("delivery %q is already %s; last updated at %s", deliveryKey, record.Status, record.UpdatedAt.Format(time.RFC3339)))
+		}
+		if err := a.tasks.MarkDeliverySending(ctx, deliveryKey); err != nil {
+			return swarm.TransientError(err)
 		}
 	}
 	if err := a.channel.SendAgentReply(ctx, payload.Locator, text); err != nil {
@@ -101,6 +110,22 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) erro
 		}
 	}
 	return nil
+}
+
+func deliveryReadyForAttempt(record baldastate.SwarmDeliveryRecord) bool {
+	switch record.Status {
+	case baldastate.SwarmDeliveryStatusSent:
+		return false
+	case baldastate.SwarmDeliveryStatusFailed:
+		return true
+	case baldastate.SwarmDeliveryStatusPending, baldastate.SwarmDeliveryStatusSending:
+		if record.UpdatedAt.IsZero() {
+			return true
+		}
+		return time.Since(record.UpdatedAt) >= deliveryPendingRetryAfter
+	default:
+		return true
+	}
 }
 
 func deliveryKeyForEnvelope(env swarm.Envelope) string {

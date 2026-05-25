@@ -397,73 +397,27 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 		return nil
 	}
 
-	if h.turnDispatcher == nil {
-		if h.goalRunner == nil {
-			if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Cancel is unavailable right now. Please try again."); err != nil {
-				return err
-			}
-			return nil
-		}
-		if h.goalRunner.Cancel(commandCtx.Locator) {
-			if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Canceled active goal run."); err != nil {
-				return err
-			}
-			return nil
-		}
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "No running or queued turns for this session."); err != nil {
+	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Cancel is unavailable right now. Please try again."); err != nil {
 			return err
 		}
 		return nil
 	}
-
-	hadInFlight, dropped, err := h.turnDispatcher.CancelSession(commandCtx.Locator, true)
+	env, err := controlCancelEnvelope(commandCtx.Locator, "", baldatelegram.UserID(commandCtx.UserID), "session canceled by user")
 	if err != nil {
-		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to cancel session turns")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to cancel current turn: %v", err)); sendErr != nil {
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to build cancel request: %v", err)); sendErr != nil {
 			return sendErr
 		}
 		return nil
 	}
-	taskCanceled := 0
-	if h.tasks != nil {
-		taskIDs, cancelErr := h.tasks.CancelBySession(ctx, commandCtx.Locator.SessionID, "command.cancel", "session canceled by user")
-		if cancelErr != nil {
-			log.Warn().Err(cancelErr).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to cancel active tasks")
-		}
-		for _, taskID := range taskIDs {
-			if h.taskRuns != nil && h.taskRuns.cancel(taskID) {
-				taskCanceled++
-			}
-		}
-	}
-
-	goalCanceled := false
-	if h.goalRunner != nil {
-		goalCanceled = h.goalRunner.Cancel(commandCtx.Locator)
-	}
-
-	totalDropped := dropped
-	if !hadInFlight && totalDropped == 0 && !goalCanceled && taskCanceled == 0 {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "No running or queued turns for this session."); err != nil {
-			return err
+	if _, err := h.swarmCoordinator.Submit(ctx, env); err != nil {
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish cancel command")
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to request cancel: %v", err)); sendErr != nil {
+			return sendErr
 		}
 		return nil
 	}
-
-	response := "Canceled current turn."
-	if !hadInFlight {
-		response = "No running turn to cancel."
-	}
-	if totalDropped > 0 {
-		response = fmt.Sprintf("%s Dropped %d queued message(s).", response, totalDropped)
-	}
-	if goalCanceled {
-		response = fmt.Sprintf("%s Canceled active goal run.", response)
-	}
-	if taskCanceled > 0 {
-		response = fmt.Sprintf("%s Canceled %d active task(s).", response, taskCanceled)
-	}
-	if err := h.channel.SendPlain(ctx, commandCtx.Locator, response); err != nil {
+	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Cancel requested."); err != nil {
 		return err
 	}
 	return nil

@@ -61,6 +61,11 @@ var Module = fx.Module("balda_handlers",
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
+			newTaskControlActor,
+			fx.As(new(swarm.Actor)),
+			fx.ResultTags(`group:"balda_swarm_actors"`),
+		),
+		fx.Annotate(
 			registerStartHandler,
 			fx.As(new(tgbotkit.Handler)),
 			fx.ResultTags(`group:"bot_handlers"`),

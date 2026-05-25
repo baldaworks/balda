@@ -219,8 +219,8 @@ func (s *sqliteSwarmStore) AppendTaskEvent(ctx context.Context, record SwarmTask
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO swarm_task_events (id, task_id, event_type, actor, message_id, payload_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			INSERT OR IGNORE INTO swarm_task_events (id, task_id, event_type, actor, message_id, payload_json, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		normalized.ID,
 		normalized.TaskID,
 		normalized.EventType,
@@ -306,6 +306,27 @@ func (s *sqliteSwarmStore) ReserveDelivery(ctx context.Context, record SwarmDeli
 		return SwarmDeliveryRecord{}, false, fmt.Errorf("reserved swarm delivery %q not found", normalized.DeliveryKey)
 	}
 	return got, count > 0, nil
+}
+
+func (s *sqliteSwarmStore) MarkDeliverySending(ctx context.Context, deliveryKey string) error {
+	trimmedKey := strings.TrimSpace(deliveryKey)
+	if trimmedKey == "" {
+		return fmt.Errorf("delivery key is required")
+	}
+	now := time.Now().UTC()
+	if _, err := s.db.ExecContext(ctx, `
+			UPDATE swarm_delivery_outbox
+			SET status = ?,
+			    error = NULL,
+			    updated_at = ?
+			WHERE delivery_key = ?`,
+		SwarmDeliveryStatusSending,
+		now.Format(time.RFC3339),
+		trimmedKey,
+	); err != nil {
+		return fmt.Errorf("mark swarm delivery %q sending: %w", trimmedKey, err)
+	}
+	return nil
 }
 
 func (s *sqliteSwarmStore) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
@@ -623,7 +644,7 @@ func normalizeSwarmDeliveryStatus(status string) (string, error) {
 		trimmed = SwarmDeliveryStatusPending
 	}
 	switch trimmed {
-	case SwarmDeliveryStatusPending, SwarmDeliveryStatusSent, SwarmDeliveryStatusFailed:
+	case SwarmDeliveryStatusPending, SwarmDeliveryStatusSending, SwarmDeliveryStatusSent, SwarmDeliveryStatusFailed:
 		return trimmed, nil
 	default:
 		return "", fmt.Errorf("invalid swarm delivery status %q", status)

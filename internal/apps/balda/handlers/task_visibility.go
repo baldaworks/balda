@@ -97,18 +97,18 @@ func (h *CommandHandler) cancelTaskCommand(ctx context.Context, commandCtx balda
 	if isTerminalTaskStatus(task.Status) {
 		return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Task %s is already %s.", task.ID, task.Status))
 	}
-	runCanceled := false
-	if h.taskRuns != nil {
-		runCanceled = h.taskRuns.cancel(task.ID)
+	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
+		return h.channel.SendPlain(ctx, commandCtx.Locator, "Cancel is unavailable right now. Please try again.")
 	}
-	if !runCanceled && h.goalRunner != nil && task.SessionID == commandCtx.Locator.SessionID {
-		runCanceled = h.goalRunner.Cancel(commandCtx.Locator)
+	env, err := controlCancelEnvelope(commandCtx.Locator, task.ID, baldatelegram.UserID(commandCtx.UserID), "task canceled by user")
+	if err != nil {
+		return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to build cancel request: %v", err))
 	}
-	if err := h.tasks.CancelTask(ctx, task.ID, "command.task", "task canceled by user"); err != nil {
-		log.Warn().Err(err).Str("task_id", task.ID).Msg("failed to mark task canceled")
-		return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to cancel task: %v", err))
+	if _, err := h.swarmCoordinator.Submit(ctx, env); err != nil {
+		log.Warn().Err(err).Str("task_id", task.ID).Msg("failed to publish task cancel command")
+		return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to request task cancel: %v", err))
 	}
-	return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Canceled task %s. Active run canceled: %t.", task.ID, runCanceled))
+	return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Cancel requested for task %s.", task.ID))
 }
 
 func (h *CommandHandler) showTaskEventsCommand(ctx context.Context, commandCtx baldatelegram.CommandContext, task baldastate.SwarmTaskRecord) error {
@@ -184,6 +184,20 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 		writeConsumerStatus(&out, "\n\nBALDA_WORKER_COMMANDS", status.Worker)
 		writeStreamStatus(&out, "\n\nBALDA_EVENTS", status.Events)
 		writeStreamStatus(&out, "\n\nBALDA_DLQ", status.DLQ)
+		if len(status.ProjectionLag) > 0 {
+			out.WriteString("\n\nProjectors")
+			keys := make([]string, 0, len(status.ProjectionLag))
+			for name := range status.ProjectionLag {
+				keys = append(keys, name)
+			}
+			sort.Strings(keys)
+			for _, name := range keys {
+				out.WriteString("\n- ")
+				out.WriteString(name)
+				out.WriteString("_lag: ")
+				fmt.Fprintf(&out, "%d", status.ProjectionLag[name])
+			}
+		}
 	} else {
 		out.WriteString("\n- unavailable")
 	}

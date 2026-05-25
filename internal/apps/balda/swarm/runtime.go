@@ -153,10 +153,16 @@ func (r *Runtime) HandleCommand(ctx context.Context, cmd CommandMessage) error {
 	}
 	heartbeatCtx, stop := r.startHeartbeat(ctx, cmd, env)
 	defer stop()
+	var err error
 	if r.scheduler != nil {
-		return r.scheduler.Dispatch(heartbeatCtx, env, r.handleEnvelopeDirect)
+		err = r.scheduler.Dispatch(heartbeatCtx, env, r.handleEnvelopeDirect)
+	} else {
+		err = r.handleEnvelopeDirect(heartbeatCtx, env)
 	}
-	return r.handleEnvelopeDirect(heartbeatCtx, env)
+	if err != nil && heartbeatCtx.Err() == nil && isRetryableRuntimeError(err) && retryExhaustedCommand(cmd) {
+		r.deadletterTask(ctx, env, "retry exhausted: "+err.Error())
+	}
+	return err
 }
 
 func (r *Runtime) handleEnvelopeDirect(ctx context.Context, env Envelope) error {
@@ -231,6 +237,14 @@ func isRetryableRuntimeError(err error) bool {
 	default:
 		return true
 	}
+}
+
+func retryExhaustedCommand(cmd CommandMessage) bool {
+	if cmd == nil {
+		return false
+	}
+	maxDeliveries := cmd.MaxDeliveries()
+	return maxDeliveries > 0 && cmd.DeliveryAttempt() >= maxDeliveries
 }
 
 func nextRetryDelay(attempt int) time.Duration {

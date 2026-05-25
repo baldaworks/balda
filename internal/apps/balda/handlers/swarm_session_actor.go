@@ -144,9 +144,7 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 		payload.Locator.SessionID = strings.TrimSpace(env.To.Key)
 	}
 	if e.handler.turnDispatcher == nil {
-		err := e.handler.runSessionTurnPayload(ctx, payload)
-		e.recordSessionTaskResult(ctx, env, err)
-		return err
+		return swarm.TransientError(fmt.Errorf("turn dispatcher is required"))
 	}
 	if swarm.QueueModeOf(env) == swarm.QueueModeInterrupt {
 		_, _, err := e.handler.turnDispatcher.CancelSession(payload.Locator, true)

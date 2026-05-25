@@ -38,6 +38,11 @@ func (b *Bus) Status(ctx context.Context) (swarm.CommandBusStatus, error) {
 	if err != nil {
 		return status, err
 	}
+	if b.eventConsumer != nil {
+		if info, err := b.eventConsumer.Info(ctx); err == nil {
+			status.ProjectionLag[swarm.DefaultEventProjectorConsumer] = projectionLag(status.Events.LastSeq, info.AckFloor.Stream)
+		}
+	}
 	status.Worker, err = b.consumerStatus(ctx)
 	return status, err
 }
@@ -65,6 +70,13 @@ func streamStatusFromInfo(info *jetstream.StreamInfo) swarm.StreamStatus {
 		FirstSeq: info.State.FirstSeq,
 		LastSeq:  info.State.LastSeq,
 	}
+}
+
+func projectionLag(lastSeq uint64, ackFloor uint64) uint64 {
+	if ackFloor >= lastSeq {
+		return 0
+	}
+	return lastSeq - ackFloor
 }
 
 func (b *Bus) consumerStatus(ctx context.Context) (swarm.ConsumerStatus, error) {

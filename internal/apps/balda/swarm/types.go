@@ -29,6 +29,7 @@ const (
 	KindWebhookEvent = "webhook_event"
 	KindScheduledJob = "scheduled_job"
 	KindGoal         = "goal"
+	KindCancel       = "cancel"
 )
 
 type ActorAddress struct {

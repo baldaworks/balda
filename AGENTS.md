@@ -41,11 +41,11 @@ go tool golangci-lint run
 - `/tasks`: owner/collaborator; lists active task records for the current session.
 - `/task <id>`: owner/collaborator; inspects task status, latest events, and terminal reviewable outcome.
 - `/task <id> events`: owner/collaborator; prints the task event stream.
-- `/task <id> cancel`: owner/collaborator; publishes task-control work, cancels active task run when present, and marks the task canceled.
-- `/swarm status`: owner/collaborator; shows JetStream command/event/DLQ streams, worker consumer state, logical agents, and task counts.
+- `/task <id> cancel`: owner/collaborator; publishes durable task-control work; ControlActor cancels active task run when present and marks the task canceled when processed.
+- `/swarm status`: owner/collaborator; shows JetStream command/event/DLQ streams, worker/projector consumer state, logical agents, and task counts.
 - `/mailbox status`: owner/collaborator; compatibility alias for JetStream swarm status.
 - `/close`: owner/collaborator, direct message only; closes a topic session or stops the owner session.
-- `/cancel`: owner/collaborator; cancels in-flight turn processing, drops queued turns, and aborts active `/goal` run for the current session.
+- `/cancel`: owner/collaborator; publishes durable session-control work; ControlActor cancels in-flight turn processing, drops queued turns, cancels active tasks, and aborts active `/goal` work when processed.
 - `/user add|list|remove <user_id>`: owner only; collaborator invite and management commands.
 - Recurring jobs are config-managed via `balda.locators` + `balda.scheduler.jobs` and reconciled on startup.
 - Keep command behavior and access expectations backward compatible; when changing commands, update `README.md` and `docs/balda.md` as part of the same change.

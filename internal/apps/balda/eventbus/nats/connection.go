@@ -14,12 +14,13 @@ import (
 )
 
 type Bus struct {
-	cfg      resolvedConfig
-	embedded *EmbeddedNATS
-	conn     *gnats.Conn
-	js       jetstream.JetStream
-	consumer jetstream.Consumer
-	logger   zerolog.Logger
+	cfg           resolvedConfig
+	embedded      *EmbeddedNATS
+	conn          *gnats.Conn
+	js            jetstream.JetStream
+	consumer      jetstream.Consumer
+	eventConsumer jetstream.Consumer
+	logger        zerolog.Logger
 }
 
 type Params struct {
@@ -163,5 +164,17 @@ func (b *Bus) ensureRuntime(ctx context.Context) error {
 		return fmt.Errorf("create jetstream command consumer: %w", err)
 	}
 	b.consumer = consumer
+	eventConsumer, err := b.js.CreateOrUpdateConsumer(ctx, b.cfg.Swarm.Events.Stream, jetstream.ConsumerConfig{
+		Durable:       swarm.DefaultEventProjectorConsumer,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		AckWait:       b.cfg.AckWait,
+		MaxAckPending: b.cfg.Swarm.Commands.MaxAckPending,
+		FilterSubject: swarm.SubjectEventAll,
+	})
+	if err != nil {
+		return fmt.Errorf("create jetstream event projector consumer: %w", err)
+	}
+	b.eventConsumer = eventConsumer
 	return nil
 }

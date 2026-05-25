@@ -151,12 +151,12 @@ Built-in provider types:
 - `/tasks`: list active task records for the current session.
 - `/task <id>`: inspect task status, objective, latest events, and reviewable outcome when the task is terminal.
 - `/task <id> events`: print the task event stream.
-- `/task <id> cancel`: publish a task-control command, cancel active local task work when present, and mark the task canceled.
-- `/swarm status`: show JetStream command/event/DLQ streams, worker consumer state, logical agents, and task status counts.
+- `/task <id> cancel`: publish a durable task-control command; ControlActor cancels active local task work when present and marks the task canceled when the command is processed.
+- `/swarm status`: show JetStream command/event/DLQ streams, worker and projector consumer state, logical agents, and task status counts.
 - `/mailbox status`: compatibility alias for JetStream swarm status.
 - `/reset`: clear conversation history for the current session.
 - `/close`: reset history, then close the current topic or restart the owner session on the next message.
-- `/cancel`: cancel in-flight work, drop queued turns, cancel active task records, and abort active `/goal` work for the current session.
+- `/cancel`: publish a durable session-control command; ControlActor cancels in-flight work, drops queued turns, cancels active task records, and aborts active `/goal` work when processed.
 - `/memory`: print current `${balda.state_dir}/MEMORY.md` contents when memory is enabled.
 - `/start owner=<owner_token>`: authenticate the owner in direct messages.
 - `/start invite=<invite_token>`: onboard a collaborator in direct messages.
@@ -268,7 +268,7 @@ Common settings:
 - `balda.swarm.dlq.*`: JetStream dead-letter stream settings for terminal command failures.
 - `balda.swarm.queue.*`: reserved for future actor-lane policy; JetStream is the only command queue.
 - `balda.swarm.agents.*`: logical single-process agent roles used by the swarm allocator. Defaults are `planner`, `executor`, `reviewer`, and `memory`; `tools` are advisory routing hints (`workspace`, `shell`, `mcp`, `memory`), not separate runtimes. Optional `cost_penalty` lowers allocator preference for expensive roles.
-- Task visibility: `/tasks`, `/task <id>`, `/task <id> events`, `/task <id> cancel`, `/swarm status`, and `/mailbox status` read product projections from SQLite and transport state from JetStream.
+- Task visibility: `/tasks`, `/task <id>`, and `/task <id> events` read product projections from SQLite. `/task <id> cancel` writes a durable JetStream control command. `/swarm status` and `/mailbox status` read JetStream transport state plus projection lag.
 - `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `cron`, `prompt`) that target the owner DM session.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.

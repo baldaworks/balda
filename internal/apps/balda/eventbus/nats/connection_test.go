@@ -88,6 +88,57 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 	}
 }
 
+func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:         fxtest.NewLifecycle(t),
+		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	env := commandTestEnvelope("env-retry-exhausted")
+	if _, err := bus.PublishCommand(context.Background(), env); err != nil {
+		t.Fatalf("PublishCommand() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handled := make(chan struct{}, 1)
+	go func() {
+		_ = bus.RunCommandConsumer(ctx, func(_ context.Context, msg swarm.CommandMessage) error {
+			handled <- struct{}{}
+			if msg.DeliveryAttempt() != 1 || msg.MaxDeliveries() != 1 {
+				t.Errorf("delivery metadata = %d/%d, want 1/1", msg.DeliveryAttempt(), msg.MaxDeliveries())
+			}
+			return swarm.TransientError(context.DeadlineExceeded)
+		})
+	}()
+	select {
+	case <-handled:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for command handler")
+	}
+	for {
+		status, err := bus.streamStatus(context.Background(), swarm.DefaultDLQStream)
+		if err != nil {
+			t.Fatalf("DLQ stream status: %v", err)
+		}
+		if status.Messages == 1 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("DLQ messages = %d, want 1", status.Messages)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
 func TestBus_StatusReportsJetStreamOnly(t *testing.T) {
 	busRaw, err := NewCommandBus(Params{
 		LC:         fxtest.NewLifecycle(t),

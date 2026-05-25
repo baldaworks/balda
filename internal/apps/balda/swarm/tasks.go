@@ -153,10 +153,14 @@ func (s *TaskService) AppendEvent(ctx context.Context, taskID string, eventType 
 		MessageID:   strings.TrimSpace(messageID),
 		PayloadJSON: data,
 	}
+	if s.bus != nil {
+		if err := s.publishTaskEvent(ctx, event); err != nil {
+			return err
+		}
+	}
 	if err := s.store.AppendTaskEvent(ctx, event); err != nil {
 		return err
 	}
-	s.publishTaskEvent(ctx, event)
 	return nil
 }
 
@@ -203,6 +207,13 @@ func (s *TaskService) MarkDeliverySent(ctx context.Context, deliveryKey string, 
 	return s.store.MarkDeliverySent(ctx, deliveryKey, providerMessageID)
 }
 
+func (s *TaskService) MarkDeliverySending(ctx context.Context, deliveryKey string) error {
+	if s == nil {
+		return nil
+	}
+	return s.store.MarkDeliverySending(ctx, deliveryKey)
+}
+
 func (s *TaskService) MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error {
 	if s == nil {
 		return nil
@@ -229,9 +240,9 @@ func taskEventForStatus(status string) string {
 	}
 }
 
-func (s *TaskService) publishTaskEvent(ctx context.Context, event baldastate.SwarmTaskEventRecord) {
+func (s *TaskService) publishTaskEvent(ctx context.Context, event baldastate.SwarmTaskEventRecord) error {
 	if s == nil || s.bus == nil {
-		return
+		return nil
 	}
 	payload := strings.TrimSpace(event.PayloadJSON)
 	if payload == "" {
@@ -251,7 +262,7 @@ func (s *TaskService) publishTaskEvent(ctx context.Context, event baldastate.Swa
 			"message_id": event.MessageID,
 		},
 	}
-	_ = s.bus.PublishEvent(ctx, subjectForTaskEvent(event.EventType), env)
+	return s.bus.PublishEvent(ctx, subjectForTaskEvent(event.EventType), env)
 }
 
 func subjectForTaskEvent(eventType string) string {
