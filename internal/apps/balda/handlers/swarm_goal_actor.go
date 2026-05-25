@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -198,17 +200,15 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload sessionTur
 	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
 		return nil, "", fmt.Errorf("jetstream swarm runtime is unavailable")
 	}
-	taskID := "webhook-" + strings.TrimSpace(routeName) + "-" + uuid.NewString()
+	dedupeBase := webhookDedupeBase(routeName, requestID, payload.DedupeKey)
+	taskID := webhookTaskID(routeName, dedupeBase)
+	payload.DedupeKey = dedupeBase + ":session"
 	data, err := json.Marshal(taskEnvelopePayload{
 		Kind:        taskPayloadKindSessionTurn,
 		SessionTurn: &payload,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("encode webhook task payload: %w", err)
-	}
-	dedupeKey := strings.TrimSpace(payload.DedupeKey)
-	if dedupeKey == "" {
-		dedupeKey = "webhook:" + strings.TrimSpace(routeName) + ":" + strings.TrimSpace(requestID)
 	}
 	env := swarm.Envelope{
 		ID:          uuid.NewString(),
@@ -219,7 +219,7 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload sessionTur
 		SessionID:   payload.Locator.SessionID,
 		TaskID:      taskID,
 		Priority:    80,
-		DedupeKey:   dedupeKey,
+		DedupeKey:   dedupeBase + ":task",
 		PayloadJSON: string(data),
 	}
 	result, err := h.swarmCoordinator.Submit(ctx, env)
@@ -227,6 +227,54 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload sessionTur
 		return nil, "", err
 	}
 	return result, taskID, nil
+}
+
+func webhookDedupeBase(routeName string, requestID string, raw string) string {
+	base := strings.TrimSpace(raw)
+	base = strings.TrimSuffix(base, ":task")
+	base = strings.TrimSuffix(base, ":session")
+	if base != "" {
+		return base
+	}
+	return strings.Join([]string{"webhook", strings.TrimSpace(routeName), strings.TrimSpace(requestID)}, ":")
+}
+
+func webhookTaskID(routeName string, dedupeBase string) string {
+	return "webhook-" + safeTaskIDPart(routeName) + "-" + shortTaskHash(dedupeBase)
+}
+
+func safeTaskIDPart(raw string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	var out strings.Builder
+	lastDash := false
+	for _, r := range trimmed {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			out.WriteRune(r)
+			lastDash = false
+		case r == '-' || r == '_':
+			out.WriteRune(r)
+			lastDash = false
+		default:
+			if out.Len() > 0 && !lastDash {
+				out.WriteByte('-')
+				lastDash = true
+			}
+		}
+		if out.Len() >= 48 {
+			break
+		}
+	}
+	part := strings.Trim(out.String(), "-_")
+	if part == "" {
+		return "inbound"
+	}
+	return part
+}
+
+func shortTaskHash(value string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func (e *taskActorExecutor) Address() string {
@@ -304,11 +352,6 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 	sessionEnv.CausationID = env.ID
 	if _, err := e.coordinator.Submit(ctx, sessionEnv); err != nil {
 		return swarm.TransientError(err)
-	}
-	if taskID != "" && e.tasks != nil {
-		if err := e.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusCompleted, "task.actor", sessionEnv.ID, "", nil); err != nil {
-			return swarm.TransientError(err)
-		}
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -359,6 +360,7 @@ func scheduledJobEnvelope(
 	}
 	taskID := "scheduled-" + job.JobID + "-" + dispatchKey
 	return swarm.Envelope{
+		ID:          uuid.NewString(),
 		Namespace:   swarm.NamespaceScheduleInbound,
 		Kind:        swarm.KindScheduledJob,
 		From:        swarm.ActorAddress{Target: "schedule", Key: job.JobID},
@@ -413,7 +415,7 @@ func (s *JobScheduler) executeJobTurn(
 			s.logger.Info().Str("job_id", jobID).Msg("scheduled job turn canceled")
 			return nil
 		}
-		_ = s.markFailure(context.Background(), jobID, fmt.Errorf("execute scheduled job: %w", err))
+		_ = s.recordExecutionFailure(context.Background(), jobID, fmt.Errorf("execute scheduled job: %w", err))
 		return err
 	}
 
@@ -430,7 +432,7 @@ func (s *JobScheduler) executeScheduledJobTask(ctx context.Context, payload sche
 	}
 	userID := strings.TrimSpace(payload.UserID)
 	if userID == "" {
-		return s.markFailure(ctx, jobID, fmt.Errorf("scheduler task user id is required"))
+		return s.recordExecutionFailure(ctx, jobID, fmt.Errorf("scheduler task user id is required"))
 	}
 	ts, err := s.resolveTopicSession(ctx, resolvedEnvelopeTarget{
 		Locator: payload.Locator,
@@ -438,7 +440,7 @@ func (s *JobScheduler) executeScheduledJobTask(ctx context.Context, payload sche
 		TopicID: payload.TopicID,
 	})
 	if err != nil {
-		return s.markFailure(ctx, jobID, fmt.Errorf("resolve session: %w", err))
+		return s.recordExecutionFailure(ctx, jobID, fmt.Errorf("resolve session: %w", err))
 	}
 	return s.executeJobTurn(ctx, payload.Locator, jobID, strings.TrimSpace(payload.Prompt), ts)
 }
@@ -496,6 +498,24 @@ func (s *JobScheduler) markFailure(ctx context.Context, jobID string, cause erro
 	}
 	if err := s.jobStore.Upsert(ctx, job); err != nil {
 		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
+	}
+	return cause
+}
+
+func (s *JobScheduler) recordExecutionFailure(ctx context.Context, jobID string, cause error) error {
+	job, ok, err := s.jobStore.GetByID(ctx, jobID)
+	if err != nil {
+		return fmt.Errorf("load scheduled job %q: %w", jobID, err)
+	}
+	if !ok {
+		return fmt.Errorf("scheduled job %q not found", jobID)
+	}
+	now := s.now().UTC()
+	job.LastError = strings.TrimSpace(cause.Error())
+	job.LastRunAt = now
+	job.Status = baldastate.ScheduledJobStatusActive
+	if err := s.jobStore.Upsert(ctx, job); err != nil {
+		return fmt.Errorf("upsert scheduled job %q execution failure: %w", jobID, err)
 	}
 	return cause
 }

@@ -401,18 +401,13 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.commands.ack_wait`, `max_deliver`, `max_ack_pending`, `fetch_batch`, `fetch_wait`: pull-consumer and redelivery settings.
 - `balda.swarm.events.stream`: event stream name (default `BALDA_EVENTS`)
 - `balda.swarm.dlq.stream`: dead-letter stream name (default `BALDA_DLQ`)
-- `balda.swarm.queue.default_mode`: local keyed scheduler queue mode (`followup|collect|interrupt`, default `followup`).
-- `balda.swarm.queue.debounce_ms`: collect debounce window in milliseconds (default `500`).
-- `balda.swarm.queue.cap`: local queued/retry message cap per actor lane (default `20`).
-- `balda.swarm.queue.drop`: overflow behavior (`summarize|old|new`, default `summarize`).
-- `balda.swarm.queue.by_namespace`: namespace queue mode overrides. Defaults: `task.control=interrupt`, `webhook.inbound=followup`, `schedule.inbound=collect`, `memory.sync=collect`.
+- `balda.swarm.queue.*`: reserved for future actor-lane policy; JetStream is the only command queue.
 - `balda.swarm.agents`: logical single-process swarm agents used by the allocator. Defaults are:
   - `planner`: plans work and splits it into subtasks.
   - `executor`: uses project tools and makes changes; advisory tools `workspace`, `shell`, `mcp`.
   - `reviewer`: validates results and inspects risks; advisory tools `workspace`, `shell`.
   - `memory`: extracts durable facts and summaries; advisory tool `memory`.
   Tools are routing/prompt hints only; optional `cost_penalty` lowers allocator preference for expensive roles. All logical agents still use the configured Balda provider runtime in the first release.
-- Queue collect/summarize rewrites only local actor-lane work. Typed task envelopes keep their original payload contracts; if they cannot be safely summarized, overflow handling falls back to canceling old queued messages.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `/memory` reads the current file in owner/collaborator direct messages.
   - `balda.memory.read` reads the file from MCP.
@@ -580,11 +575,10 @@ Jobs are managed from config on startup using `balda.scheduler.jobs`.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
 - Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are removed.
 - Publish-before-mark: scheduler publishes the JetStream command first, then writes `last_dispatch_key` and advances `next_run_at`, so a failed publish does not mark work dispatched.
-- Success: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and job remains `active`.
-- Failure: `retry_count` increments and `last_error` is recorded.
-  - if `retry_count <= max_retries`: job stays `active`, `next_run_at = now + retryDelay(retry_count)`.
-  - if `retry_count > max_retries`: job is moved to `paused` and will not be dispatched until reactivated.
-- Retry delay policy: linear backoff in seconds (`1s`, `2s`, `3s`, ...) capped at `60s`.
+- Success after actor execution: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and job remains `active`.
+- Pre-publish failure: target resolution, invalid schedule, or JetStream publish failure increments `retry_count`, records `last_error`, and may pause the job after `max_retries`.
+- Execution failure after JetStream delivery: `last_run_at` and `last_error` are recorded for visibility, but scheduler retry fields and `next_run_at` are not changed. JetStream owns command retry, redelivery, and DLQ after publish.
+- Pre-publish retry delay policy: linear backoff in seconds (`1s`, `2s`, `3s`, ...) capped at `60s`.
 
 ### Inbound webhook contract (internal)
 
@@ -607,7 +601,7 @@ Balda can optionally expose local webhook routes that map path -> prompt templat
   - publishes a durable JetStream task command; TaskActor then emits a session command for execution
   - uses `deliver=false` by default, so the resulting session turn is fire-and-forget unless route delivery is enabled later
 - Response model (JSON):
-  - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, task_id, session_id, stream, sequence}`
+  - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, task_id, session_id, stream, sequence, duplicate?}`
   - route not found: `404` + `error.code="route_not_found"`
   - invalid method: `405` + `error.code="invalid_method"`
   - invalid body/template render: `400` + `error.code="invalid_payload"`

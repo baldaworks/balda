@@ -53,6 +53,41 @@ func TestBus_PublishCommandAndConsumeEmbeddedJetStream(t *testing.T) {
 	}
 }
 
+func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:         fxtest.NewLifecycle(t),
+		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm:      swarm.Config{Enabled: true},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	env := commandTestEnvelope("env-duplicate")
+	env.DedupeKey = "dedupe-duplicate"
+	first, err := bus.PublishCommand(context.Background(), env)
+	if err != nil {
+		t.Fatalf("PublishCommand(first) error = %v", err)
+	}
+	second, err := bus.PublishCommand(context.Background(), env)
+	if err != nil {
+		t.Fatalf("PublishCommand(second) error = %v", err)
+	}
+	if first.Duplicate {
+		t.Fatalf("first publish duplicate = true, want false")
+	}
+	if !second.Duplicate {
+		t.Fatalf("second publish duplicate = false, want true")
+	}
+	if second.MsgID != env.DedupeKey {
+		t.Fatalf("second msg id = %q, want %q", second.MsgID, env.DedupeKey)
+	}
+}
+
 func TestBus_StatusReportsJetStreamOnly(t *testing.T) {
 	busRaw, err := NewCommandBus(Params{
 		LC:         fxtest.NewLifecycle(t),

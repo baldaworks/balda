@@ -157,6 +157,7 @@ func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult
 		payload["sequence"] = result.Sequence
 		payload["subject"] = result.Subject
 		payload["msg_id"] = result.MsgID
+		payload["duplicate"] = result.Duplicate
 	}
 	if strings.TrimSpace(reason) != "" {
 		payload["reason"] = reason

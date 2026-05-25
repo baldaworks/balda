@@ -89,7 +89,7 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 	if err != nil {
 		return nil, fmt.Errorf("publish jetstream command %q: %w", subject, err)
 	}
-	result := &swarm.CommandPublishResult{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID}
+	result := &swarm.CommandPublishResult{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
 	_ = b.PublishEvent(ctx, swarm.SubjectEventCommandAccepted, commandEventEnvelope(env, result, "accepted", ""))
 	return result, nil
 }

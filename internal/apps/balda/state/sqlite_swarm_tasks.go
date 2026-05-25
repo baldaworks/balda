@@ -263,6 +263,106 @@ func (s *sqliteSwarmStore) ListTaskEvents(ctx context.Context, taskID string) ([
 	return out, nil
 }
 
+func (s *sqliteSwarmStore) ReserveDelivery(ctx context.Context, record SwarmDeliveryRecord) (SwarmDeliveryRecord, bool, error) {
+	now := time.Now().UTC()
+	normalized, err := normalizeSwarmDelivery(record, now)
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, err
+	}
+	res, err := s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO swarm_delivery_outbox (
+			id, delivery_key, task_id, session_id, channel, address_key, kind, payload_json,
+			payload_hash, status, provider_message_id, sent_at, error, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		normalized.ID,
+		normalized.DeliveryKey,
+		nullIfEmpty(normalized.TaskID),
+		nullIfEmpty(normalized.SessionID),
+		normalized.Channel,
+		normalized.AddressKey,
+		normalized.Kind,
+		normalized.PayloadJSON,
+		normalized.PayloadHash,
+		normalized.Status,
+		nullIfEmpty(normalized.ProviderMessageID),
+		optionalTimeValue(normalized.SentAt),
+		nullIfEmpty(normalized.Error),
+		normalized.CreatedAt.Format(time.RFC3339),
+		normalized.UpdatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, fmt.Errorf("reserve swarm delivery %q: %w", normalized.DeliveryKey, err)
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, fmt.Errorf("count reserved swarm delivery %q: %w", normalized.DeliveryKey, err)
+	}
+	got, ok, err := s.getDeliveryByKey(ctx, normalized.DeliveryKey)
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, err
+	}
+	if !ok {
+		return SwarmDeliveryRecord{}, false, fmt.Errorf("reserved swarm delivery %q not found", normalized.DeliveryKey)
+	}
+	return got, count > 0, nil
+}
+
+func (s *sqliteSwarmStore) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
+	trimmedKey := strings.TrimSpace(deliveryKey)
+	if trimmedKey == "" {
+		return fmt.Errorf("delivery key is required")
+	}
+	now := time.Now().UTC()
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE swarm_delivery_outbox
+		SET status = ?,
+		    provider_message_id = ?,
+		    sent_at = COALESCE(sent_at, ?),
+		    error = NULL,
+		    updated_at = ?
+		WHERE delivery_key = ?`,
+		SwarmDeliveryStatusSent,
+		nullIfEmpty(providerMessageID),
+		now.Format(time.RFC3339),
+		now.Format(time.RFC3339),
+		trimmedKey,
+	); err != nil {
+		return fmt.Errorf("mark swarm delivery %q sent: %w", trimmedKey, err)
+	}
+	return nil
+}
+
+func (s *sqliteSwarmStore) MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error {
+	trimmedKey := strings.TrimSpace(deliveryKey)
+	if trimmedKey == "" {
+		return fmt.Errorf("delivery key is required")
+	}
+	now := time.Now().UTC()
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE swarm_delivery_outbox
+		SET status = ?,
+		    error = ?,
+		    updated_at = ?
+		WHERE delivery_key = ?`,
+		SwarmDeliveryStatusFailed,
+		nullIfEmpty(reason),
+		now.Format(time.RFC3339),
+		trimmedKey,
+	); err != nil {
+		return fmt.Errorf("mark swarm delivery %q failed: %w", trimmedKey, err)
+	}
+	return nil
+}
+
+func (s *sqliteSwarmStore) getDeliveryByKey(ctx context.Context, deliveryKey string) (SwarmDeliveryRecord, bool, error) {
+	record, ok, err := scanSwarmDelivery(s.db.QueryRowContext(ctx, swarmDeliverySelectSQL+` WHERE delivery_key = ?`, strings.TrimSpace(deliveryKey)).Scan)
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, err
+	}
+	return record, ok, nil
+}
+
 const swarmTaskSelectSQL = `
 	SELECT id, COALESCE(session_id, ''), COALESCE(parent_task_id, ''), COALESCE(title, ''), objective,
 	       status, COALESCE(owner_actor, ''), COALESCE(assigned_actor, ''), priority,
@@ -274,6 +374,12 @@ const swarmTaskSelectSQL = `
 const swarmTaskEventSelectSQL = `
 	SELECT id, task_id, event_type, COALESCE(actor, ''), COALESCE(message_id, ''), COALESCE(payload_json, ''), created_at
 	FROM swarm_task_events`
+
+const swarmDeliverySelectSQL = `
+	SELECT id, delivery_key, COALESCE(task_id, ''), COALESCE(session_id, ''), channel, address_key, kind,
+	       payload_json, payload_hash, status, COALESCE(provider_message_id, ''), COALESCE(sent_at, ''),
+	       COALESCE(error, ''), created_at, updated_at
+	FROM swarm_delivery_outbox`
 
 func scanSwarmTask(scan func(dest ...any) error) (SwarmTaskRecord, bool, error) {
 	var (
@@ -361,6 +467,54 @@ func scanSwarmTaskEvent(scan func(dest ...any) error) (SwarmTaskEventRecord, err
 	return record, nil
 }
 
+func scanSwarmDelivery(scan func(dest ...any) error) (SwarmDeliveryRecord, bool, error) {
+	var (
+		record       SwarmDeliveryRecord
+		sentAtRaw    string
+		createdAtRaw string
+		updatedAtRaw string
+	)
+	err := scan(
+		&record.ID,
+		&record.DeliveryKey,
+		&record.TaskID,
+		&record.SessionID,
+		&record.Channel,
+		&record.AddressKey,
+		&record.Kind,
+		&record.PayloadJSON,
+		&record.PayloadHash,
+		&record.Status,
+		&record.ProviderMessageID,
+		&sentAtRaw,
+		&record.Error,
+		&createdAtRaw,
+		&updatedAtRaw,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return SwarmDeliveryRecord{}, false, nil
+		}
+		return SwarmDeliveryRecord{}, false, fmt.Errorf("scan swarm delivery: %w", err)
+	}
+	createdAt, err := parseRequiredRFC3339(createdAtRaw)
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, fmt.Errorf("parse delivery created_at: %w", err)
+	}
+	updatedAt, err := parseRequiredRFC3339(updatedAtRaw)
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, fmt.Errorf("parse delivery updated_at: %w", err)
+	}
+	sentAt, err := parseOptionalRFC3339(sentAtRaw)
+	if err != nil {
+		return SwarmDeliveryRecord{}, false, fmt.Errorf("parse delivery sent_at: %w", err)
+	}
+	record.CreatedAt = createdAt
+	record.UpdatedAt = updatedAt
+	record.SentAt = sentAt
+	return record, true, nil
+}
+
 func normalizeSwarmTask(record SwarmTaskRecord, now time.Time) (SwarmTaskRecord, error) {
 	record.ID = strings.TrimSpace(record.ID)
 	if record.ID == "" {
@@ -393,6 +547,53 @@ func normalizeSwarmTask(record SwarmTaskRecord, now time.Time) (SwarmTaskRecord,
 	return record, nil
 }
 
+func normalizeSwarmDelivery(record SwarmDeliveryRecord, now time.Time) (SwarmDeliveryRecord, error) {
+	record.ID = strings.TrimSpace(record.ID)
+	if record.ID == "" {
+		return SwarmDeliveryRecord{}, fmt.Errorf("swarm delivery id is required")
+	}
+	record.DeliveryKey = strings.TrimSpace(record.DeliveryKey)
+	if record.DeliveryKey == "" {
+		return SwarmDeliveryRecord{}, fmt.Errorf("swarm delivery key is required")
+	}
+	record.Channel = strings.TrimSpace(record.Channel)
+	if record.Channel == "" {
+		return SwarmDeliveryRecord{}, fmt.Errorf("swarm delivery channel is required")
+	}
+	record.AddressKey = strings.TrimSpace(record.AddressKey)
+	if record.AddressKey == "" {
+		return SwarmDeliveryRecord{}, fmt.Errorf("swarm delivery address key is required")
+	}
+	record.Kind = strings.TrimSpace(record.Kind)
+	if record.Kind == "" {
+		return SwarmDeliveryRecord{}, fmt.Errorf("swarm delivery kind is required")
+	}
+	record.PayloadJSON = strings.TrimSpace(record.PayloadJSON)
+	if record.PayloadJSON == "" {
+		return SwarmDeliveryRecord{}, fmt.Errorf("swarm delivery payload is required")
+	}
+	record.PayloadHash = strings.TrimSpace(record.PayloadHash)
+	if record.PayloadHash == "" {
+		return SwarmDeliveryRecord{}, fmt.Errorf("swarm delivery payload hash is required")
+	}
+	status, err := normalizeSwarmDeliveryStatus(record.Status)
+	if err != nil {
+		return SwarmDeliveryRecord{}, err
+	}
+	record.Status = status
+	record.TaskID = strings.TrimSpace(record.TaskID)
+	record.SessionID = strings.TrimSpace(record.SessionID)
+	record.ProviderMessageID = strings.TrimSpace(record.ProviderMessageID)
+	record.Error = strings.TrimSpace(record.Error)
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = now
+	}
+	record.CreatedAt = record.CreatedAt.UTC()
+	record.UpdatedAt = now
+	record.SentAt = record.SentAt.UTC()
+	return record, nil
+}
+
 func normalizeSwarmTaskEvent(record SwarmTaskEventRecord, now time.Time) (SwarmTaskEventRecord, error) {
 	record.ID = strings.TrimSpace(record.ID)
 	if record.ID == "" {
@@ -414,6 +615,19 @@ func normalizeSwarmTaskEvent(record SwarmTaskEventRecord, now time.Time) (SwarmT
 	}
 	record.CreatedAt = record.CreatedAt.UTC()
 	return record, nil
+}
+
+func normalizeSwarmDeliveryStatus(status string) (string, error) {
+	trimmed := strings.TrimSpace(status)
+	if trimmed == "" {
+		trimmed = SwarmDeliveryStatusPending
+	}
+	switch trimmed {
+	case SwarmDeliveryStatusPending, SwarmDeliveryStatusSent, SwarmDeliveryStatusFailed:
+		return trimmed, nil
+	default:
+		return "", fmt.Errorf("invalid swarm delivery status %q", status)
+	}
 }
 
 func normalizeSwarmTaskStatus(status string) (string, error) {

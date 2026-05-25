@@ -109,7 +109,7 @@ type SwarmDLQConfig struct {
 	Stream string `mapstructure:"stream"`
 }
 
-// SwarmQueueConfig controls mailbox queue policy.
+// SwarmQueueConfig is reserved for actor-lane policy; JetStream remains the command queue.
 type SwarmQueueConfig struct {
 	DefaultMode string         `mapstructure:"default_mode"`
 	DebounceMS  int            `mapstructure:"debounce_ms"`

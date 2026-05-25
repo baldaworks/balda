@@ -61,6 +61,9 @@ func TestJobSchedulerDispatchJob_PublishesCommandAndReschedules(t *testing.T) {
 	if got, want := command.Kind, swarm.KindScheduledJob; got != want {
 		t.Fatalf("kind = %q, want %q", got, want)
 	}
+	if command.ID == "" {
+		t.Fatal("command id is empty")
+	}
 	if got, want := command.SessionID, locator.SessionID; got != want {
 		t.Fatalf("session_id = %q, want %q", got, want)
 	}
@@ -254,6 +257,61 @@ func TestJobSchedulerMarkFailure_RetryThenPause(t *testing.T) {
 	}
 	if got := afterSecond.Status; got != baldastate.ScheduledJobStatusPaused {
 		t.Fatalf("Status after second failure = %q, want paused", got)
+	}
+}
+
+func TestJobSchedulerRecordExecutionFailureDoesNotScheduleRetry(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	locator := baldatelegram.NewLocator(9001, 102)
+	start := time.Date(2026, time.May, 14, 14, 30, 0, 0, time.UTC)
+	nextRun := start.Add(30 * time.Minute)
+
+	record := baldastate.ScheduledJobRecord{
+		JobID:        "job-exec-fail",
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Prompt:       "will fail in actor",
+		ScheduleSpec: "@every 1h",
+		Status:       baldastate.ScheduledJobStatusActive,
+		MaxRetries:   1,
+		RetryCount:   1,
+		NextRunAt:    nextRun,
+	}
+	if err := store.Upsert(ctx, record); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	clock := &schedulerClock{now: start}
+	scheduler := &JobScheduler{
+		jobStore: store,
+		logger:   zerolog.Nop(),
+		now:      clock.Now,
+	}
+
+	cause := errors.New("actor execution failed")
+	if err := scheduler.recordExecutionFailure(ctx, record.JobID, cause); !errors.Is(err, cause) {
+		t.Fatalf("recordExecutionFailure() error = %v, want %v", err, cause)
+	}
+	got, ok, err := store.GetByID(ctx, record.JobID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetByID() = not found, want found")
+	}
+	if got.RetryCount != record.RetryCount {
+		t.Fatalf("RetryCount = %d, want unchanged %d", got.RetryCount, record.RetryCount)
+	}
+	if !got.NextRunAt.Equal(nextRun) {
+		t.Fatalf("NextRunAt = %s, want unchanged %s", got.NextRunAt, nextRun)
+	}
+	if got.Status != baldastate.ScheduledJobStatusActive || !strings.Contains(got.LastError, "actor execution failed") {
+		t.Fatalf("job after execution failure = %+v, want active with last error", got)
 	}
 }
 

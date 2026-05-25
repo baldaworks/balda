@@ -229,16 +229,6 @@ balda:
       stream: "BALDA_EVENTS"
     dlq:
       stream: "BALDA_DLQ"
-    queue:
-      default_mode: "followup"
-      debounce_ms: 500
-      cap: 20
-      drop: "summarize"
-      by_namespace:
-        task.control: "interrupt"
-        webhook.inbound: "followup"
-        schedule.inbound: "collect"
-        memory.sync: "collect"
     agents:
       planner:
         role: "Plan work and split into subtasks"
@@ -276,7 +266,7 @@ Common settings:
 - `balda.swarm.commands.*`: JetStream command stream and durable pull consumer settings. `BALDA_COMMANDS` is the only command queue.
 - `balda.swarm.events.*`: JetStream event stream settings for command/task/delivery events.
 - `balda.swarm.dlq.*`: JetStream dead-letter stream settings for terminal command failures.
-- `balda.swarm.queue.*`: local keyed actor scheduling policy. Namespace overrides make `task.control` interrupt active work, while webhook intake follows up and schedule/memory inputs can collect.
+- `balda.swarm.queue.*`: reserved for future actor-lane policy; JetStream is the only command queue.
 - `balda.swarm.agents.*`: logical single-process agent roles used by the swarm allocator. Defaults are `planner`, `executor`, `reviewer`, and `memory`; `tools` are advisory routing hints (`workspace`, `shell`, `mcp`, `memory`), not separate runtimes. Optional `cost_penalty` lowers allocator preference for expensive roles.
 - Task visibility: `/tasks`, `/task <id>`, `/task <id> events`, `/task <id> cancel`, `/swarm status`, and `/mailbox status` read product projections from SQLite and transport state from JetStream.
 - `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `cron`, `prompt`) that target the owner DM session.

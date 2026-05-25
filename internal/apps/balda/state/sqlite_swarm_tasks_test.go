@@ -96,3 +96,68 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 		t.Fatalf("task status counts = %+v, want completed=1", counts)
 	}
 }
+
+func TestSQLiteSwarmStore_DeliveryOutboxLifecycle(t *testing.T) {
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.Swarm()
+
+	record, created, err := store.ReserveDelivery(ctx, SwarmDeliveryRecord{
+		ID:          "delivery-1",
+		DeliveryKey: "task-1:delivery:started",
+		TaskID:      "task-1",
+		SessionID:   "session-1",
+		Channel:     "telegram",
+		AddressKey:  "9001:1",
+		Kind:        "delivery",
+		PayloadJSON: `{"text":"hello"}`,
+		PayloadHash: "hash-1",
+	})
+	if err != nil {
+		t.Fatalf("ReserveDelivery() error = %v", err)
+	}
+	if !created || record.Status != SwarmDeliveryStatusPending {
+		t.Fatalf("ReserveDelivery() = %+v created=%v, want pending created", record, created)
+	}
+
+	again, created, err := store.ReserveDelivery(ctx, SwarmDeliveryRecord{
+		ID:          "delivery-duplicate",
+		DeliveryKey: "task-1:delivery:started",
+		TaskID:      "task-1",
+		SessionID:   "session-1",
+		Channel:     "telegram",
+		AddressKey:  "9001:1",
+		Kind:        "delivery",
+		PayloadJSON: `{"text":"hello"}`,
+		PayloadHash: "hash-1",
+	})
+	if err != nil {
+		t.Fatalf("ReserveDelivery(duplicate) error = %v", err)
+	}
+	if created || again.ID != "delivery-1" {
+		t.Fatalf("ReserveDelivery(duplicate) = %+v created=%v, want existing", again, created)
+	}
+
+	if err := store.MarkDeliverySent(ctx, record.DeliveryKey, "tg-42"); err != nil {
+		t.Fatalf("MarkDeliverySent() error = %v", err)
+	}
+	sent, created, err := store.ReserveDelivery(ctx, SwarmDeliveryRecord{
+		ID:          "delivery-after-sent",
+		DeliveryKey: record.DeliveryKey,
+		TaskID:      "task-1",
+		SessionID:   "session-1",
+		Channel:     "telegram",
+		AddressKey:  "9001:1",
+		Kind:        "delivery",
+		PayloadJSON: `{"text":"hello"}`,
+		PayloadHash: "hash-1",
+	})
+	if err != nil {
+		t.Fatalf("ReserveDelivery(after sent) error = %v", err)
+	}
+	if created || sent.Status != SwarmDeliveryStatusSent || sent.ProviderMessageID != "tg-42" || sent.SentAt.IsZero() {
+		t.Fatalf("ReserveDelivery(after sent) = %+v created=%v, want sent existing", sent, created)
+	}
+}

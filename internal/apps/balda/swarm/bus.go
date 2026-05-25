@@ -8,10 +8,11 @@ import (
 
 // CommandPublishResult is the JetStream acknowledgement for an accepted command.
 type CommandPublishResult struct {
-	Stream   string
-	Sequence uint64
-	Subject  string
-	MsgID    string
+	Stream    string
+	Sequence  uint64
+	Subject   string
+	MsgID     string
+	Duplicate bool
 }
 
 // CommandMessage is a command delivered by the durable command bus.

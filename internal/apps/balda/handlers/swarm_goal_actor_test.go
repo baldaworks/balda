@@ -80,6 +80,128 @@ func TestTaskActorPlannerResultStoresPlanAndDispatchesExecutor(t *testing.T) {
 	}
 }
 
+func TestSubmitWebhookTaskUsesStableTaskAndDistinctDedupeKeys(t *testing.T) {
+	ctx := context.Background()
+	bus := &recordingHandlerCommandBus{}
+	handler := &BaldaHandler{swarmCoordinator: swarm.NewCoordinator(bus, swarm.Config{Enabled: true})}
+	locator := taskActorTestLocator()
+	payload := sessionTurnPayload{
+		Text:      "release event",
+		Locator:   locator,
+		UserID:    "tg-101",
+		Source:    "webhook",
+		DedupeKey: "webhook:release:req-1",
+	}
+
+	result, taskID, err := handler.submitWebhookTask(ctx, payload, "release", "req-1")
+	if err != nil {
+		t.Fatalf("submitWebhookTask() error = %v", err)
+	}
+	_, duplicateTaskID, err := handler.submitWebhookTask(ctx, payload, "release", "req-1")
+	if err != nil {
+		t.Fatalf("submitWebhookTask(duplicate) error = %v", err)
+	}
+	if taskID == "" || duplicateTaskID != taskID {
+		t.Fatalf("task ids = %q/%q, want stable non-empty task id", taskID, duplicateTaskID)
+	}
+	if result.MsgID != "webhook:release:req-1:task" {
+		t.Fatalf("msg id = %q, want task-scoped dedupe", result.MsgID)
+	}
+	if got := len(bus.commands); got != 2 {
+		t.Fatalf("published commands = %d, want 2 recording bus calls", got)
+	}
+	parent := bus.commands[0]
+	if parent.DedupeKey != "webhook:release:req-1:task" {
+		t.Fatalf("parent dedupe = %q, want task-scoped key", parent.DedupeKey)
+	}
+	var body taskEnvelopePayload
+	if err := json.Unmarshal([]byte(parent.PayloadJSON), &body); err != nil {
+		t.Fatalf("decode parent payload: %v", err)
+	}
+	if body.SessionTurn == nil || body.SessionTurn.DedupeKey != "webhook:release:req-1:session" {
+		t.Fatalf("child dedupe in payload = %+v, want session-scoped key", body.SessionTurn)
+	}
+}
+
+func TestTaskActorDispatchSessionTurnKeepsTaskRunningUntilSessionCompletes(t *testing.T) {
+	ctx := context.Background()
+	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	_ = provider
+	_ = coordinator
+	_ = allocator
+	exec := &taskActorExecutor{tasks: tasks, coordinator: swarm.NewCoordinator(bus, swarm.Config{Enabled: true})}
+	locator := taskActorTestLocator()
+	taskID := "webhook-release-abc"
+	payload := sessionTurnPayload{
+		Text:      "release event",
+		Locator:   locator,
+		UserID:    "tg-101",
+		Source:    "webhook",
+		DedupeKey: "webhook:release:req-1:session",
+	}
+	env := swarm.Envelope{
+		ID:          "task-command-1",
+		Namespace:   swarm.NamespaceWebhookInbound,
+		Kind:        swarm.KindWebhookEvent,
+		From:        swarm.ActorAddress{Target: "webhook", Key: "release"},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		SessionID:   locator.SessionID,
+		TaskID:      taskID,
+		PayloadJSON: `{}`,
+	}
+
+	if err := exec.dispatchSessionTurn(ctx, env, payload); err != nil {
+		t.Fatalf("dispatchSessionTurn() error = %v", err)
+	}
+	task, ok, err := tasks.Get(ctx, taskID)
+	if err != nil {
+		t.Fatalf("Get(task) error = %v", err)
+	}
+	if !ok || task.Status != baldastate.SwarmTaskStatusRunning {
+		t.Fatalf("task = %+v found=%v, want running until SessionActor completes it", task, ok)
+	}
+	last := bus.commands[len(bus.commands)-1]
+	if last.To.Target != swarm.ActorTypeSession || last.DedupeKey != payload.DedupeKey {
+		t.Fatalf("child session command = %+v, want session command with child dedupe", last)
+	}
+}
+
+func TestSessionActorCompletesTaskAfterTurnSuccess(t *testing.T) {
+	ctx := context.Background()
+	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = coordinator
+	_ = allocator
+	taskID := "webhook-release-complete"
+	_, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
+		ID:          taskID,
+		SessionID:   "tg-9001-99",
+		Title:       "Webhook task",
+		Objective:   "release event",
+		Status:      baldastate.SwarmTaskStatusRunning,
+		CreatedFrom: "webhook",
+	}, "test", nil)
+	if err != nil {
+		t.Fatalf("Create task: %v", err)
+	}
+	exec := &sessionActorExecutor{tasks: tasks}
+	exec.recordSessionTaskResult(ctx, swarm.Envelope{
+		ID:        "session-command-1",
+		Namespace: swarm.NamespaceWebhookInbound,
+		Kind:      swarm.KindWebhookEvent,
+		TaskID:    taskID,
+	}, nil)
+
+	task, ok, err := tasks.Get(ctx, taskID)
+	if err != nil {
+		t.Fatalf("Get(task) error = %v", err)
+	}
+	if !ok || task.Status != baldastate.SwarmTaskStatusCompleted {
+		t.Fatalf("task = %+v found=%v, want completed", task, ok)
+	}
+}
+
 func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, *swarm.Coordinator, *swarm.TaskService, *swarm.AgentAllocator) {
 	t.Helper()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))

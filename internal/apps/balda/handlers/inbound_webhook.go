@@ -143,6 +143,7 @@ type inboundWebhookAcceptedResponse struct {
 	SessionID string `json:"session_id"`
 	Stream    string `json:"stream"`
 	Sequence  uint64 `json:"sequence"`
+	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
 type inboundWebhookErrorResponse struct {
@@ -495,6 +496,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		SessionID: target.Locator.SessionID,
 		Stream:    result.Stream,
 		Sequence:  result.Sequence,
+		Duplicate: result.Duplicate,
 	})
 }
 

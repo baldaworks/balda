@@ -46,6 +46,13 @@ const (
 	SwarmTaskStatusCanceled = "canceled"
 	// SwarmTaskStatusDeadLettered means the actor runtime deadlettered the task.
 	SwarmTaskStatusDeadLettered = "deadlettered"
+
+	// SwarmDeliveryStatusPending means a delivery side effect is reserved but not confirmed.
+	SwarmDeliveryStatusPending = "pending"
+	// SwarmDeliveryStatusSent means a delivery side effect was successfully sent.
+	SwarmDeliveryStatusSent = "sent"
+	// SwarmDeliveryStatusFailed means the latest delivery attempt failed.
+	SwarmDeliveryStatusFailed = "failed"
 )
 
 // Provider exposes balda state capabilities behind a backend-agnostic interface.
@@ -176,6 +183,25 @@ type SwarmTaskEventRecord struct {
 	CreatedAt   time.Time
 }
 
+// SwarmDeliveryRecord persists idempotency state for external delivery side effects.
+type SwarmDeliveryRecord struct {
+	ID                string
+	DeliveryKey       string
+	TaskID            string
+	SessionID         string
+	Channel           string
+	AddressKey        string
+	Kind              string
+	PayloadJSON       string
+	PayloadHash       string
+	Status            string
+	ProviderMessageID string
+	SentAt            time.Time
+	Error             string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 // SwarmStore persists swarm product/read-model state.
 type SwarmStore interface {
 	CreateTask(ctx context.Context, record SwarmTaskRecord) (bool, error)
@@ -187,4 +213,7 @@ type SwarmStore interface {
 	SetTaskResult(ctx context.Context, taskID string, resultJSON string, status string, reason string) error
 	AppendTaskEvent(ctx context.Context, record SwarmTaskEventRecord) error
 	ListTaskEvents(ctx context.Context, taskID string) ([]SwarmTaskEventRecord, error)
+	ReserveDelivery(ctx context.Context, record SwarmDeliveryRecord) (SwarmDeliveryRecord, bool, error)
+	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
+	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
 }

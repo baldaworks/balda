@@ -2,11 +2,15 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -53,8 +57,41 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) erro
 	if a.channel == nil {
 		return swarm.TransientError(fmt.Errorf("telegram channel adapter is required"))
 	}
+	deliveryKey := deliveryKeyForEnvelope(env)
+	payloadHash := hashDeliveryPayload(env.PayloadJSON)
+	if a.tasks != nil {
+		record, _, err := a.tasks.ReserveDelivery(ctx, baldastate.SwarmDeliveryRecord{
+			ID:          uuid.NewString(),
+			DeliveryKey: deliveryKey,
+			TaskID:      payload.TaskID,
+			SessionID:   payload.Locator.SessionID,
+			Channel:     firstNonEmpty(payload.Locator.ChannelType, "telegram"),
+			AddressKey:  firstNonEmpty(payload.Locator.AddressKey, payload.Locator.SessionID),
+			Kind:        env.Kind,
+			PayloadJSON: env.PayloadJSON,
+			PayloadHash: payloadHash,
+			Status:      baldastate.SwarmDeliveryStatusPending,
+		})
+		if err != nil {
+			return swarm.TransientError(err)
+		}
+		if record.PayloadHash != "" && record.PayloadHash != payloadHash {
+			return swarm.PermanentError(fmt.Errorf("delivery key %q already reserved for different payload", deliveryKey))
+		}
+		if record.Status == baldastate.SwarmDeliveryStatusSent {
+			return nil
+		}
+	}
 	if err := a.channel.SendAgentReply(ctx, payload.Locator, text); err != nil {
+		if a.tasks != nil {
+			_ = a.tasks.MarkDeliveryFailed(ctx, deliveryKey, err.Error())
+		}
 		return swarm.TransientError(err)
+	}
+	if a.tasks != nil {
+		if err := a.tasks.MarkDeliverySent(ctx, deliveryKey, ""); err != nil {
+			return swarm.TransientError(err)
+		}
 	}
 	if a.tasks != nil && strings.TrimSpace(payload.TaskID) != "" {
 		if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventDeliverySent, "delivery.actor", env.ID, map[string]any{
@@ -64,4 +101,19 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) erro
 		}
 	}
 	return nil
+}
+
+func deliveryKeyForEnvelope(env swarm.Envelope) string {
+	if key := strings.TrimSpace(env.DedupeKey); key != "" {
+		return key
+	}
+	if key := strings.TrimSpace(env.ID); key != "" {
+		return key
+	}
+	return "delivery:" + shortTaskHash(env.PayloadJSON)
+}
+
+func hashDeliveryPayload(payload string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(payload)))
+	return hex.EncodeToString(sum[:])
 }

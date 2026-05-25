@@ -189,6 +189,27 @@ func (s *TaskService) DeadLetter(ctx context.Context, taskID string, actor strin
 	return s.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusDeadLettered, actor, messageID, reason, nil)
 }
 
+func (s *TaskService) ReserveDelivery(ctx context.Context, record baldastate.SwarmDeliveryRecord) (baldastate.SwarmDeliveryRecord, bool, error) {
+	if s == nil {
+		return baldastate.SwarmDeliveryRecord{}, false, nil
+	}
+	return s.store.ReserveDelivery(ctx, record)
+}
+
+func (s *TaskService) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
+	if s == nil {
+		return nil
+	}
+	return s.store.MarkDeliverySent(ctx, deliveryKey, providerMessageID)
+}
+
+func (s *TaskService) MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error {
+	if s == nil {
+		return nil
+	}
+	return s.store.MarkDeliveryFailed(ctx, deliveryKey, reason)
+}
+
 func taskEventForStatus(status string) string {
 	switch strings.TrimSpace(status) {
 	case baldastate.SwarmTaskStatusQueued, baldastate.SwarmTaskStatusWaitingForAgent, baldastate.SwarmTaskStatusWaitingForUser:

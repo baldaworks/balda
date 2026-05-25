@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"go.uber.org/fx"
 )
@@ -107,16 +108,18 @@ func (h *BaldaHandler) runSessionTurnPayload(ctx context.Context, payload sessio
 
 type sessionActorExecutor struct {
 	handler *BaldaHandler
+	tasks   *swarm.TaskService
 }
 
 type sessionActorExecutorParams struct {
 	fx.In
 
 	Handler *BaldaHandler
+	Tasks   *swarm.TaskService `optional:"true"`
 }
 
 func newSessionActorExecutor(params sessionActorExecutorParams) swarm.Actor {
-	return &sessionActorExecutor{handler: params.Handler}
+	return &sessionActorExecutor{handler: params.Handler, tasks: params.Tasks}
 }
 
 func (e *sessionActorExecutor) Address() string {
@@ -141,7 +144,9 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 		payload.Locator.SessionID = strings.TrimSpace(env.To.Key)
 	}
 	if e.handler.turnDispatcher == nil {
-		return e.handler.runSessionTurnPayload(ctx, payload)
+		err := e.handler.runSessionTurnPayload(ctx, payload)
+		e.recordSessionTaskResult(ctx, env, err)
+		return err
 	}
 	if swarm.QueueModeOf(env) == swarm.QueueModeInterrupt {
 		_, _, err := e.handler.turnDispatcher.CancelSession(payload.Locator, true)
@@ -168,9 +173,22 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 
 	select {
 	case err := <-done:
+		e.recordSessionTaskResult(ctx, env, err)
 		return err
 	case <-ctx.Done():
 		return swarm.TransientError(ctx.Err())
+	}
+}
+
+func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env swarm.Envelope, runErr error) {
+	if e == nil || e.tasks == nil || strings.TrimSpace(env.TaskID) == "" {
+		return
+	}
+	if runErr == nil {
+		_ = e.tasks.MarkStatus(ctx, env.TaskID, baldastate.SwarmTaskStatusCompleted, "session.actor", env.ID, "", map[string]any{
+			"namespace": env.Namespace,
+			"kind":      env.Kind,
+		})
 	}
 }
 
