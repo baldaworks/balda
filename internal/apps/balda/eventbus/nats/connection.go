@@ -95,7 +95,11 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 	}
 	result := &swarm.CommandPublishResult{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
 	if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAccepted, commandEventEnvelope(env, result, "accepted", "")); err != nil {
-		return nil, fmt.Errorf("publish command accepted event: %w", err)
+		b.logger.Warn().
+			Err(err).
+			Str("envelope_id", env.ID).
+			Str("subject", subject).
+			Msg("failed to publish command accepted event")
 	}
 	return result, nil
 }
@@ -130,7 +134,10 @@ func (b *Bus) publishDLQ(ctx context.Context, env swarm.Envelope, reason string,
 	}
 	if emitEvent {
 		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandDeadLettered, commandEventEnvelope(env, nil, "deadlettered", reason)); err != nil {
-			return fmt.Errorf("publish command deadlettered event: %w", err)
+			b.logger.Warn().
+				Err(err).
+				Str("envelope_id", env.ID).
+				Msg("failed to publish command deadlettered event")
 		}
 	}
 	return nil

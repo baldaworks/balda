@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,9 @@ func (b *Bus) RunCommandConsumer(ctx context.Context, handler swarm.CommandHandl
 	if b == nil || b.consumer == nil {
 		return fmt.Errorf("jetstream command consumer is required")
 	}
+	workers := make(chan struct{}, b.commandWorkerLimit())
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	for {
 		select {
 		case <-ctx.Done():
@@ -48,10 +52,34 @@ func (b *Bus) RunCommandConsumer(ctx context.Context, handler swarm.CommandHandl
 			continue
 		}
 		for msg := range batch.Messages() {
-			if err := b.handleMessage(ctx, msg, handler); err != nil {
-				b.logger.Warn().Err(err).Str("subject", msg.Subject()).Msg("failed to settle jetstream command")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case workers <- struct{}{}:
 			}
+			wg.Add(1)
+			go func(msg jetstream.Msg) {
+				defer wg.Done()
+				defer func() { <-workers }()
+				if err := b.handleMessage(ctx, msg, handler); err != nil {
+					b.logger.Warn().Err(err).Str("subject", msg.Subject()).Msg("failed to settle jetstream command")
+				}
+			}(msg)
 		}
+	}
+}
+
+func (b *Bus) commandWorkerLimit() int {
+	if b == nil {
+		return 1
+	}
+	switch {
+	case b.cfg.Swarm.Commands.MaxAckPending > 0:
+		return b.cfg.Swarm.Commands.MaxAckPending
+	case b.cfg.Swarm.Commands.FetchBatch > 0:
+		return b.cfg.Swarm.Commands.FetchBatch
+	default:
+		return 1
 	}
 }
 
@@ -70,29 +98,59 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 	}
 	err = handler(ctx, cmd)
 	if err == nil {
-		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAcked, commandEventEnvelope(env, nil, "acked", "")); err != nil {
-			return fmt.Errorf("publish command acked event: %w", err)
+		if err := msg.DoubleAck(ctx); err != nil {
+			return err
 		}
-		return msg.DoubleAck(ctx)
+		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAcked, commandEventEnvelope(env, nil, "acked", "")); err != nil {
+			b.logger.Warn().
+				Err(err).
+				Str("envelope_id", env.ID).
+				Msg("failed to publish command acked event")
+		}
+		return nil
 	}
 	if isRetryable(err) {
 		if retryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
 			reason := "retry exhausted: " + err.Error()
-			if err := b.PublishDLQ(ctx, env, reason); err != nil {
+			if err := b.publishDLQ(ctx, env, reason, false); err != nil {
 				return err
 			}
-			return msg.TermWithReason(reason)
+			if err := msg.TermWithReason(reason); err != nil {
+				return err
+			}
+			b.publishCommandEventBestEffort(ctx, swarm.SubjectEventCommandDeadLettered, env, "deadlettered", reason)
+			return nil
 		}
 		delay := computeBackoff(env.Attempt)
-		if eventErr := b.PublishEvent(ctx, swarm.SubjectEventCommandRetrying, commandEventEnvelope(env, nil, "retrying", err.Error())); eventErr != nil {
-			return fmt.Errorf("publish command retrying event: %w", eventErr)
+		if settleErr := msg.NakWithDelay(delay); settleErr != nil {
+			return settleErr
 		}
-		return msg.NakWithDelay(delay)
+		if eventErr := b.PublishEvent(ctx, swarm.SubjectEventCommandRetrying, commandEventEnvelope(env, nil, "retrying", err.Error())); eventErr != nil {
+			b.logger.Warn().
+				Err(eventErr).
+				Str("envelope_id", env.ID).
+				Msg("failed to publish command retrying event")
+		}
+		return nil
 	}
-	if dlqErr := b.PublishDLQ(ctx, env, err.Error()); dlqErr != nil {
+	if dlqErr := b.publishDLQ(ctx, env, err.Error(), false); dlqErr != nil {
 		return dlqErr
 	}
-	return msg.TermWithReason(err.Error())
+	if err := msg.TermWithReason(err.Error()); err != nil {
+		return err
+	}
+	b.publishCommandEventBestEffort(ctx, swarm.SubjectEventCommandDeadLettered, env, "deadlettered", err.Error())
+	return nil
+}
+
+func (b *Bus) publishCommandEventBestEffort(ctx context.Context, subject string, env swarm.Envelope, status string, reason string) {
+	if err := b.PublishEvent(ctx, subject, commandEventEnvelope(env, nil, status, reason)); err != nil {
+		b.logger.Warn().
+			Err(err).
+			Str("envelope_id", env.ID).
+			Str("event_status", status).
+			Msg("failed to publish command lifecycle event")
+	}
 }
 
 func (b *Bus) RunEventConsumer(ctx context.Context, handler swarm.EventHandler) error {

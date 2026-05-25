@@ -48,19 +48,3 @@ func TestConfigNormalized_RejectsInvalidQueuePolicy(t *testing.T) {
 		}
 	}
 }
-
-func TestQueueConfigPolicyForAppliesOverridesAndPriority(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := (QueueConfig{DefaultMode: QueueModeFollowup, ByNamespace: map[string]string{NamespaceWebhookInbound: QueueModeInterrupt}}).Normalized()
-	if err != nil {
-		t.Fatalf("Normalized() error = %v", err)
-	}
-	policy := cfg.PolicyFor(NamespaceWebhookInbound)
-	if policy.Mode != QueueModeInterrupt {
-		t.Fatalf("Mode = %q, want %q", policy.Mode, QueueModeInterrupt)
-	}
-	if policy.Priority != 80 {
-		t.Fatalf("Priority = %d, want 80", policy.Priority)
-	}
-}

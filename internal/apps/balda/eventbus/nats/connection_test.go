@@ -2,6 +2,7 @@ package natsbus
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -69,7 +70,7 @@ func TestBus_PublishCommandAndConsumeEmbeddedJetStream(t *testing.T) {
 	}
 }
 
-func TestBus_PublishCommandReturnsErrorWhenAcceptedEventCannotPublish(t *testing.T) {
+func TestBus_PublishCommandSucceedsWhenAcceptedEventCannotPublish(t *testing.T) {
 	busRaw, err := NewCommandBus(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
@@ -86,9 +87,12 @@ func TestBus_PublishCommandReturnsErrorWhenAcceptedEventCannotPublish(t *testing
 		t.Fatalf("DeleteStream(events) error = %v", err)
 	}
 
-	_, err = bus.PublishCommand(context.Background(), commandTestEnvelope("accepted-event-fails"))
-	if err == nil {
-		t.Fatal("PublishCommand() error = nil, want accepted event publish failure")
+	ack, err := bus.PublishCommand(context.Background(), commandTestEnvelope("accepted-event-fails"))
+	if err != nil {
+		t.Fatalf("PublishCommand() error = %v, want nil because command is durable", err)
+	}
+	if ack.Stream != swarm.DefaultCommandStream || ack.Sequence == 0 {
+		t.Fatalf("PublishCommand() ack = %+v, want command stream ack", ack)
 	}
 }
 
@@ -137,6 +141,121 @@ func TestBus_CommandLifecycleEventsUseDistinctDedupeIDs(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatalf("event stream messages = %d, want accepted/running/acked", status.Messages)
 		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
+func TestBus_CommandAckedEventFailureDoesNotRedeliverCompletedCommand(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:     fxtest.NewLifecycle(t),
+		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
+			AckWait:    "100ms",
+			FetchWait:  "50ms",
+			MaxDeliver: 2,
+		}},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("acked-event-fails")); err != nil {
+		t.Fatalf("PublishCommand() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	handled := make(chan struct{}, 1)
+	var calls atomic.Int32
+	go func() {
+		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+			calls.Add(1)
+			if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
+				t.Errorf("DeleteStream(events) error = %v", err)
+			}
+			handled <- struct{}{}
+			return nil
+		})
+	}()
+	select {
+	case <-handled:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for command handler")
+	}
+	for {
+		status, err := bus.streamStatus(context.Background(), swarm.DefaultCommandStream)
+		if err != nil {
+			t.Fatalf("command stream status: %v", err)
+		}
+		if status.Messages == 0 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("command stream messages = %d, want 0 after DoubleAck", status.Messages)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	time.Sleep(2 * bus.cfg.AckWait)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("handler calls = %d, want 1", got)
+	}
+}
+
+func TestBus_RunCommandConsumerHandlesCommandsConcurrently(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:     fxtest.NewLifecycle(t),
+		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
+			FetchBatch:    2,
+			MaxAckPending: 2,
+			FetchWait:     "50ms",
+		}},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	for _, id := range []string{"concurrent-a", "concurrent-b"} {
+		env := commandTestEnvelope(id)
+		env.TaskID = id
+		env.To = swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: id}
+		if _, err := bus.PublishCommand(context.Background(), env); err != nil {
+			t.Fatalf("PublishCommand(%s) error = %v", id, err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	done := make(chan string, 2)
+	go func() {
+		_ = bus.RunCommandConsumer(ctx, func(_ context.Context, msg swarm.CommandMessage) error {
+			started <- msg.Envelope().ID
+			<-release
+			done <- msg.Envelope().ID
+			return nil
+		})
+	}()
+	first := waitCommandStarted(t, ctx, started)
+	second := waitCommandStarted(t, ctx, started)
+	if first == second {
+		t.Fatalf("started commands = %q/%q, want two distinct commands", first, second)
+	}
+	close(release)
+	for range 2 {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for concurrent command completion")
 		}
 	}
 }
@@ -391,5 +510,16 @@ func commandTestEnvelope(id string) swarm.Envelope {
 		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"ok":true}`,
+	}
+}
+
+func waitCommandStarted(t *testing.T, ctx context.Context, ch <-chan string) string {
+	t.Helper()
+	select {
+	case got := <-ch:
+		return got
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for command handler start")
+		return ""
 	}
 }

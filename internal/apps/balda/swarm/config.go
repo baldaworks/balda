@@ -3,7 +3,6 @@ package swarm
 import (
 	"fmt"
 	"strings"
-	"time"
 )
 
 const (
@@ -60,14 +59,6 @@ type QueueConfig struct {
 	Cap         int
 	Drop        string
 	ByNamespace map[string]string
-}
-
-type QueuePolicy struct {
-	Mode     string
-	Drop     string
-	Debounce time.Duration
-	Cap      int
-	Priority int
 }
 
 func (c Config) RuntimeEnabled() bool {
@@ -131,25 +122,6 @@ func (c DLQConfig) Normalized() DLQConfig {
 		c.Stream = DefaultDLQStream
 	}
 	return c
-}
-
-func (c QueueConfig) PolicyFor(namespace string) QueuePolicy {
-	normalized, err := c.Normalized()
-	if err != nil {
-		normalized = defaultQueueConfig()
-	}
-	ns := strings.TrimSpace(namespace)
-	mode := normalized.DefaultMode
-	if override := strings.TrimSpace(normalized.ByNamespace[ns]); override != "" {
-		mode = override
-	}
-	return QueuePolicy{
-		Mode:     mode,
-		Drop:     normalized.Drop,
-		Debounce: time.Duration(normalized.DebounceMS) * time.Millisecond,
-		Cap:      normalized.Cap,
-		Priority: defaultPriorityForNamespace(ns),
-	}
 }
 
 func (c QueueConfig) Normalized() (QueueConfig, error) {
@@ -234,28 +206,5 @@ func defaultQueueConfig() QueueConfig {
 			NamespaceScheduleInbound: QueueModeCollect,
 			NamespaceMemorySync:      QueueModeCollect,
 		},
-	}
-}
-
-func defaultPriorityForNamespace(namespace string) int {
-	switch strings.TrimSpace(namespace) {
-	case NamespaceTaskControl:
-		return 100
-	case NamespaceHumanInbound:
-		return 90
-	case NamespaceWebhookInbound:
-		return 80
-	case NamespaceAgentResult:
-		return 70
-	case NamespaceScheduleInbound:
-		return 50
-	case NamespaceAgentCommand:
-		return 30
-	case NamespaceMemorySync:
-		return 10
-	case NamespaceTelemetry:
-		return 0
-	default:
-		return 0
 	}
 }
