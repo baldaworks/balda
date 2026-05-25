@@ -39,12 +39,6 @@ type JobSchedulerConfig struct {
 	Jobs []ConfiguredScheduledJob
 }
 
-type schedulerSessionManager interface {
-	GetSession(locator baldasession.SessionLocator) (*baldasession.TopicSession, error)
-	EnsureSession(ctx context.Context, sessionCtx baldasession.SessionContext, label string) (*baldasession.TopicSession, error)
-	RestoreSession(ctx context.Context, sessionCtx baldasession.SessionContext) (*baldasession.TopicSession, error)
-}
-
 type schedulerChannel interface {
 	SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error
 	SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error
@@ -53,20 +47,18 @@ type schedulerChannel interface {
 type jobSchedulerParams struct {
 	fx.In
 
-	LC             fx.Lifecycle
-	StateProvider  baldastate.Provider
-	SessionManager *baldasession.Manager
-	Coordinator    *swarm.Coordinator
-	Channel        *baldatelegram.Adapter
-	OwnerStore     *auth.OwnerStore
-	Logger         zerolog.Logger
-	Config         JobSchedulerConfig
+	LC            fx.Lifecycle
+	StateProvider baldastate.Provider
+	Coordinator   *swarm.Coordinator
+	Channel       *baldatelegram.Adapter
+	OwnerStore    *auth.OwnerStore
+	Logger        zerolog.Logger
+	Config        JobSchedulerConfig
 }
 
 // JobScheduler dispatches due locator-bound recurring jobs into the turn queue.
 type JobScheduler struct {
 	jobStore    baldastate.ScheduledJobStore
-	sessions    schedulerSessionManager
 	coordinator *swarm.Coordinator
 	channel     schedulerChannel
 	owner       *auth.OwnerStore
@@ -85,9 +77,6 @@ func NewJobScheduler(params jobSchedulerParams) (*JobScheduler, error) {
 	if params.StateProvider == nil {
 		return nil, fmt.Errorf("balda state provider is required")
 	}
-	if params.SessionManager == nil {
-		return nil, fmt.Errorf("balda session manager is required")
-	}
 	if params.Channel == nil {
 		return nil, fmt.Errorf("balda channel adapter is required")
 	}
@@ -104,7 +93,6 @@ func NewJobScheduler(params jobSchedulerParams) (*JobScheduler, error) {
 
 	scheduler := &JobScheduler{
 		jobStore:     params.StateProvider.ScheduledJobs(),
-		sessions:     params.SessionManager,
 		coordinator:  params.Coordinator,
 		channel:      params.Channel,
 		owner:        params.OwnerStore,
@@ -372,36 +360,6 @@ func scheduledJobEnvelope(
 	}, nil
 }
 
-func (s *JobScheduler) resolveTopicSession(
-	ctx context.Context,
-	target resolvedEnvelopeTarget,
-) (*baldasession.TopicSession, error) {
-	locator := target.Locator
-	ts, err := s.sessions.GetSession(locator)
-	if err == nil {
-		return ts, nil
-	}
-
-	userID := strings.TrimSpace(target.UserID)
-	if userID == "" {
-		return nil, fmt.Errorf("owner target user id is required")
-	}
-	ts, err = s.sessions.RestoreSession(ctx, baldasession.SessionContext{
-		Locator: locator,
-		UserID:  userID,
-	})
-	if err == nil {
-		return ts, nil
-	}
-	if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-		return nil, err
-	}
-	return s.sessions.EnsureSession(ctx, baldasession.SessionContext{
-		Locator: locator,
-		UserID:  userID,
-	}, ownerSessionLabel)
-}
-
 func (s *JobScheduler) executeJobTurn(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
@@ -423,26 +381,6 @@ func (s *JobScheduler) executeJobTurn(
 		s.logger.Warn().Err(err).Str("job_id", jobID).Msg("failed to mark scheduled job success")
 	}
 	return nil
-}
-
-func (s *JobScheduler) executeScheduledJobTask(ctx context.Context, payload scheduledJobTaskPayload) error {
-	jobID := strings.TrimSpace(payload.JobID)
-	if jobID == "" {
-		return fmt.Errorf("job id is required")
-	}
-	userID := strings.TrimSpace(payload.UserID)
-	if userID == "" {
-		return s.recordExecutionFailure(ctx, jobID, fmt.Errorf("scheduler task user id is required"))
-	}
-	ts, err := s.resolveTopicSession(ctx, resolvedEnvelopeTarget{
-		Locator: payload.Locator,
-		UserID:  userID,
-		TopicID: payload.TopicID,
-	})
-	if err != nil {
-		return s.recordExecutionFailure(ctx, jobID, fmt.Errorf("resolve session: %w", err))
-	}
-	return s.executeJobTurn(ctx, payload.Locator, jobID, strings.TrimSpace(payload.Prompt), ts)
 }
 
 func isScheduledJobCancellation(ctx context.Context, err error) bool {

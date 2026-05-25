@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -90,6 +93,30 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 		return swarm.PolicyError(fmt.Errorf("task objective is required"))
 	}
 
+	stepKey := taskAgentStepKey(payload)
+	payloadHash := hashTaskAgentCommandPayload(payload)
+	if a.tasks != nil {
+		record, created, err := a.tasks.ReserveAgentStep(ctx, baldastate.SwarmAgentStepRecord{
+			ID:          uuid.NewString(),
+			StepKey:     stepKey,
+			TaskID:      payload.TaskID,
+			AgentName:   payload.AgentName,
+			Role:        payload.Role,
+			Iteration:   payload.Iteration,
+			PayloadHash: payloadHash,
+			Status:      baldastate.SwarmAgentStepStatusRunning,
+		})
+		if err != nil {
+			return swarm.TransientError(err)
+		}
+		if record.PayloadHash != "" && record.PayloadHash != payloadHash {
+			return swarm.PermanentError(fmt.Errorf("agent step %q already reserved for different payload", stepKey))
+		}
+		if !created && agentStepHasStoredResult(record) {
+			return a.publishStoredResult(ctx, env, payload, record.ResultJSON)
+		}
+	}
+
 	ts, err := a.resolveSession(ctx, payload)
 	if err != nil {
 		return swarm.TransientError(err)
@@ -123,11 +150,11 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 	})
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) {
-			return a.publishResult(ctx, env, payload, "", fmt.Errorf("goal run canceled"))
+			return a.publishResult(ctx, env, payload, stepKey, "", fmt.Errorf("goal run canceled"))
 		}
-		return a.publishResult(ctx, env, payload, text, err)
+		return a.publishResult(ctx, env, payload, stepKey, text, err)
 	}
-	return a.publishResult(ctx, env, payload, text, nil)
+	return a.publishResult(ctx, env, payload, stepKey, text, nil)
 }
 
 func (a *taskAgentActor) recordProgress(ctx context.Context, payload taskAgentCommandPayload, text string) {
@@ -177,12 +204,56 @@ func (a *taskAgentActor) publishResult(
 	ctx context.Context,
 	cause swarm.Envelope,
 	command taskAgentCommandPayload,
+	stepKey string,
 	text string,
 	runErr error,
+) error {
+	data, err := marshalTaskAgentResult(command, text, runErr)
+	if err != nil {
+		return err
+	}
+	if a.tasks != nil {
+		if runErr != nil {
+			if err := a.tasks.FailAgentStep(ctx, stepKey, data, runErr.Error()); err != nil {
+				return swarm.TransientError(err)
+			}
+		} else if err := a.tasks.CompleteAgentStep(ctx, stepKey, data); err != nil {
+			return swarm.TransientError(err)
+		}
+	}
+	return a.publishStoredResult(ctx, cause, command, data)
+}
+
+func (a *taskAgentActor) publishStoredResult(
+	ctx context.Context,
+	cause swarm.Envelope,
+	command taskAgentCommandPayload,
+	payloadJSON string,
 ) error {
 	if a.coordinator == nil || !a.coordinator.RuntimeEnabled() {
 		return swarm.TransientError(fmt.Errorf("swarm coordinator is required"))
 	}
+	env := swarm.Envelope{
+		ID:            uuid.NewString(),
+		Namespace:     swarm.NamespaceAgentResult,
+		Kind:          swarm.KindGoal,
+		From:          swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: firstNonEmpty(command.AgentName, command.Role)},
+		To:            swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: command.TaskID},
+		SessionID:     command.Locator.SessionID,
+		TaskID:        command.TaskID,
+		CorrelationID: firstNonEmpty(cause.CorrelationID, command.TaskID),
+		CausationID:   cause.ID,
+		Priority:      75,
+		DedupeKey:     taskAgentResultDedupeKey(command),
+		PayloadJSON:   strings.TrimSpace(payloadJSON),
+	}
+	if _, err := a.coordinator.Submit(ctx, env); err != nil {
+		return swarm.TransientError(err)
+	}
+	return nil
+}
+
+func marshalTaskAgentResult(command taskAgentCommandPayload, text string, runErr error) (string, error) {
 	result := taskAgentResultPayload{
 		TaskID:           command.TaskID,
 		AgentName:        command.AgentName,
@@ -208,26 +279,35 @@ func (a *taskAgentActor) publishResult(
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return swarm.PermanentError(fmt.Errorf("encode task agent result: %w", err))
+		return "", swarm.PermanentError(fmt.Errorf("encode task agent result: %w", err))
 	}
-	env := swarm.Envelope{
-		ID:            uuid.NewString(),
-		Namespace:     swarm.NamespaceAgentResult,
-		Kind:          swarm.KindGoal,
-		From:          swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: firstNonEmpty(command.AgentName, command.Role)},
-		To:            swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: command.TaskID},
-		SessionID:     command.Locator.SessionID,
-		TaskID:        command.TaskID,
-		CorrelationID: firstNonEmpty(cause.CorrelationID, command.TaskID),
-		CausationID:   cause.ID,
-		Priority:      75,
-		DedupeKey:     command.TaskID + ":result:" + firstNonEmpty(command.AgentName, command.Role) + ":" + command.Role + ":" + strconv.Itoa(command.Iteration),
-		PayloadJSON:   string(data),
+	return string(data), nil
+}
+
+func taskAgentStepKey(command taskAgentCommandPayload) string {
+	return command.TaskID + ":agent:" + firstNonEmpty(command.AgentName, command.Role) + ":" + command.Role + ":" + strconv.Itoa(command.Iteration)
+}
+
+func taskAgentResultDedupeKey(command taskAgentCommandPayload) string {
+	return command.TaskID + ":result:" + firstNonEmpty(command.AgentName, command.Role) + ":" + command.Role + ":" + strconv.Itoa(command.Iteration)
+}
+
+func hashTaskAgentCommandPayload(command taskAgentCommandPayload) string {
+	data, err := json.Marshal(command)
+	if err != nil {
+		data = []byte(taskAgentStepKey(command))
 	}
-	if _, err := a.coordinator.Submit(ctx, env); err != nil {
-		return swarm.TransientError(err)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func agentStepHasStoredResult(record baldastate.SwarmAgentStepRecord) bool {
+	switch record.Status {
+	case baldastate.SwarmAgentStepStatusSucceeded, baldastate.SwarmAgentStepStatusFailed:
+		return strings.TrimSpace(record.ResultJSON) != ""
+	default:
+		return false
 	}
-	return nil
 }
 
 func formatTaskAgentPrompt(payload taskAgentCommandPayload, spec swarm.AgentSpec) string {

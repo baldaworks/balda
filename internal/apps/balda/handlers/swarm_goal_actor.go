@@ -307,10 +307,7 @@ func (e *taskActorExecutor) Handle(ctx context.Context, env swarm.Envelope) erro
 		if payload.ScheduledJob == nil {
 			return swarm.PolicyError(fmt.Errorf("scheduled job task payload is required"))
 		}
-		if e.scheduler == nil {
-			return swarm.TransientError(fmt.Errorf("job scheduler is required"))
-		}
-		return e.scheduler.executeScheduledJobTask(ctx, *payload.ScheduledJob)
+		return e.startScheduledJobTask(ctx, env, *payload.ScheduledJob)
 	case taskPayloadKindSessionTurn:
 		if payload.SessionTurn == nil {
 			return swarm.PolicyError(fmt.Errorf("session turn task payload is required"))
@@ -324,6 +321,11 @@ func (e *taskActorExecutor) Handle(ctx context.Context, env swarm.Envelope) erro
 func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.Envelope, payload sessionTurnPayload) error {
 	taskID := firstNonEmpty(env.TaskID, env.To.Key)
 	if taskID != "" && e.tasks != nil {
+		if task, ok, err := e.tasks.Get(ctx, taskID); err != nil {
+			return swarm.TransientError(err)
+		} else if ok && isTerminalTaskStatus(task.Status) {
+			return nil
+		}
 		_, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
 			ID:            taskID,
 			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
@@ -356,6 +358,66 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 	return nil
 }
 
+func (e *taskActorExecutor) startScheduledJobTask(ctx context.Context, env swarm.Envelope, payload scheduledJobTaskPayload) error {
+	taskID := firstNonEmpty(env.TaskID, env.To.Key)
+	prompt := strings.TrimSpace(payload.Prompt)
+	if taskID == "" {
+		return swarm.PolicyError(fmt.Errorf("task id is required"))
+	}
+	if strings.TrimSpace(payload.JobID) == "" {
+		return swarm.PolicyError(fmt.Errorf("scheduled job id is required"))
+	}
+	if prompt == "" {
+		return swarm.PolicyError(fmt.Errorf("scheduled job prompt is required"))
+	}
+	if e.tasks != nil {
+		if task, ok, err := e.tasks.Get(ctx, taskID); err != nil {
+			return swarm.TransientError(err)
+		} else if ok && isTerminalTaskStatus(task.Status) {
+			return nil
+		}
+		_, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
+			ID:            taskID,
+			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
+			Title:         "Scheduled job: " + strings.TrimSpace(payload.JobID),
+			Objective:     prompt,
+			Status:        baldastate.SwarmTaskStatusCreated,
+			OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
+			AssignedActor: swarm.ActorTypeSession + ":" + payload.Locator.SessionID,
+			Priority:      50,
+			CreatedBy:     strings.TrimSpace(payload.UserID),
+			CreatedFrom:   sessionTurnSourceSchedule,
+		}, "task.actor", payload)
+		if err != nil {
+			return swarm.TransientError(err)
+		}
+		if err := e.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, "task.actor", env.ID, "", nil); err != nil {
+			return swarm.TransientError(err)
+		}
+	}
+	sessionPayload := sessionTurnPayload{
+		Text:           prompt,
+		Locator:        payload.Locator,
+		UserID:         payload.UserID,
+		ScheduledJobID: payload.JobID,
+		TopicID:        payload.TopicID,
+		Deliver:        false,
+		Source:         sessionTurnSourceSchedule,
+		DedupeKey:      firstNonEmpty(env.DedupeKey, taskID) + ":session",
+	}
+	sessionEnv, err := sessionTurnEnvelope(sessionPayload)
+	if err != nil {
+		return swarm.PermanentError(err)
+	}
+	sessionEnv.TaskID = taskID
+	sessionEnv.CorrelationID = firstNonEmpty(env.CorrelationID, taskID)
+	sessionEnv.CausationID = env.ID
+	if _, err := e.coordinator.Submit(ctx, sessionEnv); err != nil {
+		return swarm.TransientError(err)
+	}
+	return nil
+}
+
 func (e *taskActorExecutor) startGoalTask(ctx context.Context, env swarm.Envelope, payload goalTaskPayload) error {
 	taskID := firstNonEmpty(payload.TaskID, env.TaskID, env.To.Key)
 	objective := strings.TrimSpace(payload.Objective)
@@ -364,6 +426,9 @@ func (e *taskActorExecutor) startGoalTask(ctx context.Context, env swarm.Envelop
 	}
 	if objective == "" {
 		return swarm.PolicyError(fmt.Errorf("goal objective is required"))
+	}
+	if e.taskStatusIs(ctx, taskID, baldastate.SwarmTaskStatusCompleted, baldastate.SwarmTaskStatusFailed, baldastate.SwarmTaskStatusCanceled, baldastate.SwarmTaskStatusDeadLettered) {
+		return nil
 	}
 	maxIterations := normalizeGoalMaxIterations(payload.MaxIterations)
 	if maxIterations == defaultGoalMaxIterations && e.maxIters != defaultGoalMaxIterations {
@@ -532,6 +597,12 @@ func (e *taskActorExecutor) handleAgentResult(ctx context.Context, env swarm.Env
 		return swarm.PolicyError(fmt.Errorf("unsupported task agent role %q", payload.Role))
 	}
 	payload.Role = role
+	if e.taskStatusIs(ctx, taskID, baldastate.SwarmTaskStatusCanceled, baldastate.SwarmTaskStatusDeadLettered) {
+		return nil
+	}
+	if role != taskAgentRoleReviewer && e.taskStatusIs(ctx, taskID, baldastate.SwarmTaskStatusCompleted, baldastate.SwarmTaskStatusFailed) {
+		return nil
+	}
 	if errText := strings.TrimSpace(payload.Error); errText != "" {
 		status := baldastate.SwarmTaskStatusFailed
 		if strings.Contains(strings.ToLower(errText), "cancel") {
@@ -562,6 +633,22 @@ func (e *taskActorExecutor) handleAgentResult(ctx context.Context, env swarm.Env
 	default:
 		return swarm.PolicyError(fmt.Errorf("unsupported task agent role %q", payload.Role))
 	}
+}
+
+func (e *taskActorExecutor) taskStatusIs(ctx context.Context, taskID string, statuses ...string) bool {
+	if e == nil || e.tasks == nil || strings.TrimSpace(taskID) == "" {
+		return false
+	}
+	task, ok, err := e.tasks.Get(ctx, taskID)
+	if err != nil || !ok {
+		return false
+	}
+	for _, status := range statuses {
+		if strings.TrimSpace(task.Status) == strings.TrimSpace(status) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *taskActorExecutor) handlePlannerResult(ctx context.Context, payload taskAgentResultPayload) error {

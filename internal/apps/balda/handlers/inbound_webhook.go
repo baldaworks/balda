@@ -66,12 +66,6 @@ type inboundWebhookRoute struct {
 	PromptTemplate *template.Template
 }
 
-type inboundWebhookSessionManager interface {
-	GetSession(locator baldasession.SessionLocator) (*baldasession.TopicSession, error)
-	EnsureSession(ctx context.Context, sessionCtx baldasession.SessionContext, label string) (*baldasession.TopicSession, error)
-	RestoreSession(ctx context.Context, sessionCtx baldasession.SessionContext) (*baldasession.TopicSession, error)
-}
-
 type inboundTurnExecutor interface {
 	submitWebhookTask(ctx context.Context, payload sessionTurnPayload, routeName string, requestID string) (*swarm.CommandPublishResult, string, error)
 	runTurnTaskWithDelivery(
@@ -94,7 +88,6 @@ type inboundWebhookParams struct {
 
 	LC         fx.Lifecycle
 	Config     InboundWebhookConfig
-	Sessions   *baldasession.Manager
 	Balda      *BaldaHandler
 	OwnerStore *auth.OwnerStore
 	Logger     zerolog.Logger
@@ -105,7 +98,6 @@ type InboundWebhookReceiver struct {
 	enabled    bool
 	listenAddr string
 	routes     map[string]inboundWebhookRoute
-	sessions   inboundWebhookSessionManager
 	balda      inboundTurnExecutor
 	owner      *auth.OwnerStore
 	logger     zerolog.Logger
@@ -193,7 +185,6 @@ func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookRece
 		enabled:    normalized.Enabled,
 		listenAddr: normalized.ListenAddr,
 		routes:     normalized.Routes,
-		sessions:   params.Sessions,
 		balda:      params.Balda,
 		owner:      params.OwnerStore,
 		logger:     params.Logger.With().Str("component", "balda.inbound_webhook").Logger(),
@@ -201,9 +192,6 @@ func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookRece
 
 	if !receiver.enabled {
 		return receiver, nil
-	}
-	if receiver.sessions == nil {
-		return nil, fmt.Errorf("balda session manager is required for inbound webhooks")
 	}
 	if receiver.balda == nil {
 		return nil, fmt.Errorf("balda handler is required for inbound webhooks")
@@ -434,22 +422,14 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		return
 	}
 
-	ts, resolveErr := r.resolveInboundWebhookSession(req.Context(), target)
-	if resolveErr != nil {
-		r.metrics.notFound.Add(1)
-		r.writeInboundWebhookError(w, requestID, resolveErr)
-		return
-	}
-
 	result, taskID, enqueueErr := r.balda.submitWebhookTask(req.Context(), sessionTurnPayload{
 		Text:           env.Content,
 		Locator:        target.Locator,
-		UserID:         ts.GetUserID(),
-		AgentSessionID: ts.GetAgentSessionID(),
+		UserID:         target.UserID,
 		TopicID:        target.TopicID,
 		ProgressPolicy: inboundWebhookProgressPolicy(),
 		Deliver:        env.ReportTo != nil,
-		Source:         "webhook",
+		Source:         sessionTurnSourceWebhook,
 		DedupeKey:      "webhook:" + route.Name + ":" + requestID,
 	}, route.Name, requestID)
 	if enqueueErr != nil {
@@ -543,53 +523,6 @@ func renderInboundWebhookPrompt(route inboundWebhookRoute, data inboundWebhookTe
 		return "", fmt.Errorf("rendered prompt is empty")
 	}
 	return prompt, nil
-}
-
-func (r *InboundWebhookReceiver) resolveInboundWebhookSession(
-	ctx context.Context,
-	target resolvedEnvelopeTarget,
-) (*baldasession.TopicSession, *inboundWebhookHTTPError) {
-	locator := target.Locator
-	ts, err := r.sessions.GetSession(locator)
-	if err != nil {
-		userID := strings.TrimSpace(target.UserID)
-		if userID == "" {
-			return nil, newInboundWebhookHTTPError(
-				http.StatusNotFound,
-				inboundWebhookCodeSessionNotFound,
-				fmt.Sprintf("session %q has no user id for restore", locator.SessionID),
-				nil,
-			)
-		}
-		ts, err = r.sessions.RestoreSession(ctx, baldasession.SessionContext{
-			Locator: locator,
-			UserID:  userID,
-		})
-		if err != nil {
-			if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-				return nil, newInboundWebhookHTTPError(
-					http.StatusNotFound,
-					inboundWebhookCodeSessionNotFound,
-					fmt.Sprintf("session %q restore failed", locator.SessionID),
-					err,
-				)
-			}
-			ts, err = r.sessions.EnsureSession(ctx, baldasession.SessionContext{
-				Locator: locator,
-				UserID:  userID,
-			}, ownerSessionLabel)
-			if err != nil {
-				return nil, newInboundWebhookHTTPError(
-					http.StatusNotFound,
-					inboundWebhookCodeSessionNotFound,
-					fmt.Sprintf("session %q create failed", locator.SessionID),
-					err,
-				)
-			}
-		}
-	}
-
-	return ts, nil
 }
 
 func (r *InboundWebhookReceiver) writeInboundWebhookError(

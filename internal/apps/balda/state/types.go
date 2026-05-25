@@ -55,6 +55,13 @@ const (
 	SwarmDeliveryStatusSent = "sent"
 	// SwarmDeliveryStatusFailed means the latest delivery attempt failed.
 	SwarmDeliveryStatusFailed = "failed"
+
+	// SwarmAgentStepStatusRunning means an agent step has been reserved but no result is stored.
+	SwarmAgentStepStatusRunning = "running"
+	// SwarmAgentStepStatusSucceeded means an agent step result is stored and can be replayed.
+	SwarmAgentStepStatusSucceeded = "succeeded"
+	// SwarmAgentStepStatusFailed means an agent step error result is stored and can be replayed.
+	SwarmAgentStepStatusFailed = "failed"
 )
 
 // Provider exposes balda state capabilities behind a backend-agnostic interface.
@@ -204,6 +211,23 @@ type SwarmDeliveryRecord struct {
 	UpdatedAt         time.Time
 }
 
+// SwarmAgentStepRecord persists idempotency state for one logical agent step.
+type SwarmAgentStepRecord struct {
+	ID          string
+	StepKey     string
+	TaskID      string
+	AgentName   string
+	Role        string
+	Iteration   int
+	PayloadHash string
+	Status      string
+	ResultJSON  string
+	Error       string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	CompletedAt time.Time
+}
+
 // SwarmStore persists swarm product/read-model state.
 type SwarmStore interface {
 	CreateTask(ctx context.Context, record SwarmTaskRecord) (bool, error)
@@ -219,4 +243,7 @@ type SwarmStore interface {
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
 	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
+	ReserveAgentStep(ctx context.Context, record SwarmAgentStepRecord) (SwarmAgentStepRecord, bool, error)
+	CompleteAgentStep(ctx context.Context, stepKey string, resultJSON string) error
+	FailAgentStep(ctx context.Context, stepKey string, resultJSON string, reason string) error
 }

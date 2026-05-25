@@ -227,6 +227,27 @@ func (s *TaskService) MarkDeliveryFailed(ctx context.Context, deliveryKey string
 	return s.store.MarkDeliveryFailed(ctx, deliveryKey, reason)
 }
 
+func (s *TaskService) ReserveAgentStep(ctx context.Context, record baldastate.SwarmAgentStepRecord) (baldastate.SwarmAgentStepRecord, bool, error) {
+	if s == nil {
+		return baldastate.SwarmAgentStepRecord{}, false, nil
+	}
+	return s.store.ReserveAgentStep(ctx, record)
+}
+
+func (s *TaskService) CompleteAgentStep(ctx context.Context, stepKey string, resultJSON string) error {
+	if s == nil {
+		return nil
+	}
+	return s.store.CompleteAgentStep(ctx, stepKey, resultJSON)
+}
+
+func (s *TaskService) FailAgentStep(ctx context.Context, stepKey string, resultJSON string, reason string) error {
+	if s == nil {
+		return nil
+	}
+	return s.store.FailAgentStep(ctx, stepKey, resultJSON, reason)
+}
+
 func taskEventForStatus(status string) string {
 	switch strings.TrimSpace(status) {
 	case baldastate.SwarmTaskStatusQueued, baldastate.SwarmTaskStatusWaitingForAgent, baldastate.SwarmTaskStatusWaitingForUser:

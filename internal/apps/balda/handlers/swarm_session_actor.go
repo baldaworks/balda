@@ -15,11 +15,18 @@ import (
 	"go.uber.org/fx"
 )
 
+const (
+	sessionTurnSourceTelegram = "telegram"
+	sessionTurnSourceWebhook  = "webhook"
+	sessionTurnSourceSchedule = "schedule"
+)
+
 type sessionTurnPayload struct {
 	Text           string                      `json:"text"`
 	Locator        baldasession.SessionLocator `json:"locator"`
 	UserID         string                      `json:"user_id,omitempty"`
 	AgentSessionID string                      `json:"agent_session_id,omitempty"`
+	ScheduledJobID string                      `json:"scheduled_job_id,omitempty"`
 	MessageID      int                         `json:"message_id,omitempty"`
 	TopicID        int                         `json:"topic_id,omitempty"`
 	ProgressPolicy baldachannel.ProgressPolicy `json:"progress_policy,omitempty"`
@@ -53,12 +60,12 @@ func sessionTurnEnvelope(payload sessionTurnPayload) (swarm.Envelope, error) {
 	}
 	source := strings.TrimSpace(payload.Source)
 	if source == "" {
-		source = "telegram"
+		source = sessionTurnSourceTelegram
 	}
 	priority := 90
-	if strings.EqualFold(source, "webhook") {
+	if strings.EqualFold(source, sessionTurnSourceWebhook) {
 		priority = 80
-	} else if strings.EqualFold(source, "schedule") {
+	} else if strings.EqualFold(source, sessionTurnSourceSchedule) {
 		priority = 50
 	}
 	return swarm.Envelope{
@@ -77,11 +84,30 @@ func sessionTurnEnvelope(payload sessionTurnPayload) (swarm.Envelope, error) {
 func (h *BaldaHandler) runSessionTurnPayload(ctx context.Context, payload sessionTurnPayload) error {
 	ts, err := h.sessionManager.GetSession(payload.Locator)
 	if err != nil {
-		h.logger.Debug().
-			Str("session_id", payload.Locator.SessionID).
-			Str("address_key", payload.Locator.AddressKey).
-			Msg("dropping queued turn for inactive session")
-		return nil
+		userID := strings.TrimSpace(payload.UserID)
+		if userID == "" {
+			h.logger.Debug().
+				Str("session_id", payload.Locator.SessionID).
+				Str("address_key", payload.Locator.AddressKey).
+				Msg("dropping queued turn for inactive session without restore user")
+			return nil
+		}
+		ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
+			Locator: payload.Locator,
+			UserID:  userID,
+		})
+		if err != nil {
+			if !errors.Is(err, baldasession.ErrNoPersistedSession) {
+				return fmt.Errorf("restore session for queued turn: %w", err)
+			}
+			ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
+				Locator: payload.Locator,
+				UserID:  userID,
+			}, ownerSessionLabel)
+			if err != nil {
+				return fmt.Errorf("create session for queued turn: %w", err)
+			}
+		}
 	}
 	userID := strings.TrimSpace(payload.UserID)
 	if userID == "" {
@@ -109,6 +135,7 @@ func (h *BaldaHandler) runSessionTurnPayload(ctx context.Context, payload sessio
 type sessionActorExecutor struct {
 	handler *BaldaHandler
 	tasks   *swarm.TaskService
+	jobs    *JobScheduler
 }
 
 type sessionActorExecutorParams struct {
@@ -116,10 +143,11 @@ type sessionActorExecutorParams struct {
 
 	Handler *BaldaHandler
 	Tasks   *swarm.TaskService `optional:"true"`
+	Jobs    *JobScheduler      `optional:"true"`
 }
 
 func newSessionActorExecutor(params sessionActorExecutorParams) swarm.Actor {
-	return &sessionActorExecutor{handler: params.Handler, tasks: params.Tasks}
+	return &sessionActorExecutor{handler: params.Handler, tasks: params.Tasks, jobs: params.Jobs}
 }
 
 func (e *sessionActorExecutor) Address() string {
@@ -142,6 +170,9 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 	}
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
 		payload.Locator.SessionID = strings.TrimSpace(env.To.Key)
+	}
+	if e.sessionTaskAlreadyDone(ctx, env.TaskID) {
+		return nil
 	}
 	if e.handler.turnDispatcher == nil {
 		return swarm.TransientError(fmt.Errorf("turn dispatcher is required"))
@@ -171,15 +202,36 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 
 	select {
 	case err := <-done:
-		e.recordSessionTaskResult(ctx, env, err)
+		e.recordSessionTaskResult(ctx, env, payload, err)
 		return err
 	case <-ctx.Done():
 		return swarm.TransientError(ctx.Err())
 	}
 }
 
-func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env swarm.Envelope, runErr error) {
-	if e == nil || e.tasks == nil || strings.TrimSpace(env.TaskID) == "" {
+func (e *sessionActorExecutor) sessionTaskAlreadyDone(ctx context.Context, taskID string) bool {
+	if e == nil || e.tasks == nil || strings.TrimSpace(taskID) == "" {
+		return false
+	}
+	task, ok, err := e.tasks.Get(ctx, taskID)
+	if err != nil || !ok {
+		return false
+	}
+	return isTerminalTaskStatus(task.Status)
+}
+
+func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env swarm.Envelope, payload sessionTurnPayload, runErr error) {
+	if e == nil {
+		return
+	}
+	if e.jobs != nil && strings.TrimSpace(payload.ScheduledJobID) != "" {
+		if runErr == nil {
+			_ = e.jobs.markSuccess(context.Background(), payload.ScheduledJobID)
+		} else {
+			_ = e.jobs.recordExecutionFailure(context.Background(), payload.ScheduledJobID, runErr)
+		}
+	}
+	if e.tasks == nil || strings.TrimSpace(env.TaskID) == "" {
 		return
 	}
 	if runErr == nil {
@@ -187,14 +239,19 @@ func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env 
 			"namespace": env.Namespace,
 			"kind":      env.Kind,
 		})
+		return
 	}
+	_ = e.tasks.MarkStatus(ctx, env.TaskID, baldastate.SwarmTaskStatusFailed, "session.actor", env.ID, runErr.Error(), map[string]any{
+		"namespace": env.Namespace,
+		"kind":      env.Kind,
+	})
 }
 
 func sessionTurnNamespace(source string) string {
 	switch strings.ToLower(strings.TrimSpace(source)) {
-	case "webhook":
+	case sessionTurnSourceWebhook:
 		return swarm.NamespaceWebhookInbound
-	case "schedule":
+	case sessionTurnSourceSchedule:
 		return swarm.NamespaceScheduleInbound
 	case "agent":
 		return swarm.NamespaceAgentCommand
@@ -204,7 +261,7 @@ func sessionTurnNamespace(source string) string {
 }
 
 func sessionTurnKind(source string) string {
-	if strings.EqualFold(strings.TrimSpace(source), "webhook") {
+	if strings.EqualFold(strings.TrimSpace(source), sessionTurnSourceWebhook) {
 		return swarm.KindWebhookEvent
 	}
 	return swarm.KindMessage

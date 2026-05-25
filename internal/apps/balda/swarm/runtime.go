@@ -153,10 +153,6 @@ func (r *Runtime) Stop(ctx context.Context) error {
 
 func (r *Runtime) HandleCommand(ctx context.Context, cmd CommandMessage) error {
 	env := cmd.Envelope()
-	if r.isCanceledOrCompleted(ctx, env) {
-		_ = r.bus.PublishEvent(ctx, SubjectEventCommandNoop, commandNoopEvent(env))
-		return nil
-	}
 	heartbeatCtx, stop := r.startHeartbeat(ctx, cmd, env)
 	defer stop()
 	var err error
@@ -210,17 +206,6 @@ func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env En
 		}
 	}()
 	return child, cancel
-}
-
-func (r *Runtime) isCanceledOrCompleted(ctx context.Context, env Envelope) bool {
-	if r == nil || r.tasks == nil || strings.TrimSpace(env.TaskID) == "" {
-		return false
-	}
-	task, ok, err := r.tasks.Get(ctx, env.TaskID)
-	if err != nil || !ok {
-		return false
-	}
-	return task.Status == "completed" || task.Status == "failed" || task.Status == "canceled" || task.Status == "deadlettered"
 }
 
 func (r *Runtime) deadletterTask(ctx context.Context, env Envelope, reason string) {

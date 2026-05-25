@@ -26,6 +26,7 @@ var requiredBaldaSQLiteTables = []string{
 	"swarm_tasks",
 	"swarm_task_events",
 	"swarm_delivery_outbox",
+	"swarm_agent_steps",
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

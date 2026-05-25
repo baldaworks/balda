@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	gnats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
@@ -56,6 +57,7 @@ func (b *Bus) RunCommandConsumer(ctx context.Context, handler swarm.CommandHandl
 func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swarm.CommandHandler) error {
 	env, err := swarm.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
+		_ = b.publishRawDLQ(ctx, msg, "decode failed: "+err.Error())
 		_ = msg.TermWithReason("decode failed: " + err.Error())
 		return err
 	}
@@ -114,6 +116,7 @@ func (b *Bus) RunEventConsumer(ctx context.Context, handler swarm.EventHandler) 
 func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler swarm.EventHandler) error {
 	env, err := swarm.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
+		_ = b.publishRawDLQ(ctx, msg, "decode failed: "+err.Error())
 		_ = msg.TermWithReason("decode failed: " + err.Error())
 		return err
 	}
@@ -181,6 +184,41 @@ func newDLQMessage(env swarm.Envelope, reason string) (*gnats.Msg, error) {
 	}
 	msg.Header.Set("Balda-DLQ-Reason", reason)
 	return msg, nil
+}
+
+func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason string) error {
+	headers := make(map[string][]string, len(source.Headers()))
+	for key, values := range source.Headers() {
+		headers[key] = append([]string(nil), values...)
+	}
+	payload := map[string]any{
+		"subject": source.Subject(),
+		"reason":  reason,
+		"headers": headers,
+		"payload": string(source.Data()),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	env := swarm.Envelope{
+		ID:          "poison-" + uuid.NewString(),
+		Namespace:   swarm.NamespaceTelemetry,
+		Kind:        "poison_message",
+		From:        swarm.SystemAddress("jetstream"),
+		To:          swarm.SystemAddress("dlq"),
+		PayloadJSON: string(data),
+	}
+	msg, err := messageFromEnvelope(swarm.SubjectDLQCommand, env)
+	if err != nil {
+		return err
+	}
+	msg.Header.Set("Balda-DLQ-Reason", reason)
+	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Swarm.DLQ.Stream), jetstream.WithMsgID(env.ID))
+	if err != nil {
+		return fmt.Errorf("publish raw jetstream dlq: %w", err)
+	}
+	return nil
 }
 
 func isRetryable(err error) bool {

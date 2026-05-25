@@ -161,3 +161,62 @@ func TestSQLiteSwarmStore_DeliveryOutboxLifecycle(t *testing.T) {
 		t.Fatalf("ReserveDelivery(after sent) = %+v created=%v, want sent existing", sent, created)
 	}
 }
+
+func TestSQLiteSwarmStore_AgentStepLifecycle(t *testing.T) {
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.Swarm()
+
+	record, created, err := store.ReserveAgentStep(ctx, SwarmAgentStepRecord{
+		ID:          "step-1",
+		StepKey:     "task-1:agent:executor:executor:1",
+		TaskID:      "task-1",
+		AgentName:   "executor",
+		Role:        "executor",
+		Iteration:   1,
+		PayloadHash: "hash-1",
+	})
+	if err != nil {
+		t.Fatalf("ReserveAgentStep() error = %v", err)
+	}
+	if !created || record.Status != SwarmAgentStepStatusRunning {
+		t.Fatalf("ReserveAgentStep() = %+v created=%v, want running created", record, created)
+	}
+
+	again, created, err := store.ReserveAgentStep(ctx, SwarmAgentStepRecord{
+		ID:          "step-duplicate",
+		StepKey:     record.StepKey,
+		TaskID:      "task-1",
+		AgentName:   "executor",
+		Role:        "executor",
+		Iteration:   1,
+		PayloadHash: "hash-1",
+	})
+	if err != nil {
+		t.Fatalf("ReserveAgentStep(duplicate) error = %v", err)
+	}
+	if created || again.ID != "step-1" || again.Status != SwarmAgentStepStatusRunning {
+		t.Fatalf("ReserveAgentStep(duplicate) = %+v created=%v, want existing running", again, created)
+	}
+
+	if err := store.CompleteAgentStep(ctx, record.StepKey, `{"kind":"agent_result"}`); err != nil {
+		t.Fatalf("CompleteAgentStep() error = %v", err)
+	}
+	completed, created, err := store.ReserveAgentStep(ctx, SwarmAgentStepRecord{
+		ID:          "step-after-complete",
+		StepKey:     record.StepKey,
+		TaskID:      "task-1",
+		AgentName:   "executor",
+		Role:        "executor",
+		Iteration:   1,
+		PayloadHash: "hash-1",
+	})
+	if err != nil {
+		t.Fatalf("ReserveAgentStep(after complete) error = %v", err)
+	}
+	if created || completed.Status != SwarmAgentStepStatusSucceeded || completed.ResultJSON == "" || completed.CompletedAt.IsZero() {
+		t.Fatalf("ReserveAgentStep(after complete) = %+v created=%v, want stored succeeded result", completed, created)
+	}
+}

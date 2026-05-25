@@ -42,11 +42,9 @@ func TestJobSchedulerDispatchJob_PublishesCommandAndReschedules(t *testing.T) {
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	ts := newSchedulerTopicSession(t, locator, "tg-101", "adk-1", nil)
-	sessions := &fakeSchedulerSessionManager{session: ts}
 	channel := &fakeSchedulerChannel{}
 	bus := &recordingHandlerCommandBus{}
-	scheduler := newSchedulerForTest(t, store, sessions, bus, channel, now)
+	scheduler := newSchedulerForTest(t, store, bus, channel, now)
 
 	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
 		t.Fatalf("dispatchJob() error = %v", err)
@@ -113,20 +111,11 @@ func TestJobSchedulerDispatchJob_PublishesWithoutRestoringSession(t *testing.T) 
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	restoreTS := newSchedulerTopicSession(t, locator, "tg-202", "adk-2", nil)
-	sessions := &fakeSchedulerSessionManager{
-		getErr:  errors.New("not found"),
-		info:    baldasession.TopicSessionInfo{UserID: "tg-202"},
-		restore: restoreTS,
-	}
 	bus := &recordingHandlerCommandBus{}
-	scheduler := newSchedulerForTest(t, store, sessions, bus, &fakeSchedulerChannel{}, now)
+	scheduler := newSchedulerForTest(t, store, bus, &fakeSchedulerChannel{}, now)
 
 	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
 		t.Fatalf("dispatchJob() error = %v", err)
-	}
-	if got := sessions.restoreCalls; got != 0 {
-		t.Fatalf("restore calls = %d, want 0; TaskActor restores sessions after JetStream delivery", got)
 	}
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("published commands = %d, want 1", got)
@@ -157,11 +146,8 @@ func TestJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T) {
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	sessions := &fakeSchedulerSessionManager{
-		session: newSchedulerTopicSession(t, locator, "tg-303", "adk-3", nil),
-	}
 	bus := &recordingHandlerCommandBus{}
-	scheduler := newSchedulerForTest(t, store, sessions, bus, &fakeSchedulerChannel{}, now)
+	scheduler := newSchedulerForTest(t, store, bus, &fakeSchedulerChannel{}, now)
 
 	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
 		t.Fatalf("dispatchJob() first call error = %v", err)
@@ -557,63 +543,6 @@ func TestJobSchedulerExecuteJobTurn_CanceledContextDoesNotMarkFailure(t *testing
 	}
 }
 
-type fakeSchedulerSessionManager struct {
-	session      *baldasession.TopicSession
-	getErr       error
-	info         baldasession.TopicSessionInfo
-	infoErr      error
-	restore      *baldasession.TopicSession
-	restoreErr   error
-	restoreCalls int
-	ensure       *baldasession.TopicSession
-	ensureErr    error
-	ensureCalls  int
-}
-
-func (f *fakeSchedulerSessionManager) GetSession(_ baldasession.SessionLocator) (*baldasession.TopicSession, error) {
-	if f.getErr != nil {
-		return nil, f.getErr
-	}
-	if f.session == nil {
-		return nil, errors.New("session not found")
-	}
-	return f.session, nil
-}
-
-func (f *fakeSchedulerSessionManager) GetSessionInfo(_ context.Context, _ string) (baldasession.TopicSessionInfo, error) {
-	if f.infoErr != nil {
-		return baldasession.TopicSessionInfo{}, f.infoErr
-	}
-	return f.info, nil
-}
-
-func (f *fakeSchedulerSessionManager) RestoreSession(_ context.Context, _ baldasession.SessionContext) (*baldasession.TopicSession, error) {
-	f.restoreCalls++
-	if f.restoreErr != nil {
-		return nil, f.restoreErr
-	}
-	if f.restore == nil {
-		return nil, errors.New("restore unavailable")
-	}
-	return f.restore, nil
-}
-
-func (f *fakeSchedulerSessionManager) EnsureSession(
-	_ context.Context,
-	_ baldasession.SessionContext,
-	_ string,
-) (*baldasession.TopicSession, error) {
-	f.ensureCalls++
-	if f.ensureErr != nil {
-		return nil, f.ensureErr
-	}
-	if f.ensure != nil {
-		f.session = f.ensure
-		return f.ensure, nil
-	}
-	return nil, errors.New("ensure unavailable")
-}
-
 type fakeSchedulerChannel struct {
 	plainTexts   []string
 	agentReplies []string
@@ -640,7 +569,6 @@ func (c *schedulerClock) Now() time.Time {
 func newSchedulerForTest(
 	t *testing.T,
 	store baldastate.ScheduledJobStore,
-	sessions schedulerSessionManager,
 	bus *recordingHandlerCommandBus,
 	channel schedulerChannel,
 	now time.Time,
@@ -651,7 +579,6 @@ func newSchedulerForTest(
 	}
 	return &JobScheduler{
 		jobStore:     store,
-		sessions:     sessions,
 		coordinator:  swarm.NewCoordinator(bus, swarm.Config{Enabled: true}),
 		channel:      channel,
 		owner:        newOwnerStoreForTest(t, 101, 9001),

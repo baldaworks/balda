@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,35 +118,26 @@ func TestInboundWebhookReceiver_TemplateRenderError(t *testing.T) {
 	assertInboundWebhookError(t, rec, http.StatusBadRequest, inboundWebhookCodeInvalidPayload)
 }
 
-func TestInboundWebhookReceiver_SessionNotFound(t *testing.T) {
+func TestInboundWebhookReceiver_AcceptsWithoutSessionRestore(t *testing.T) {
 	t.Parallel()
 
-	sessionMgr := &fakeInboundSessionManager{
-		infoErr: errors.New("missing session"),
-	}
 	receiver := newInboundWebhookReceiverForTest(t)
-	receiver.sessions = sessionMgr
 
 	req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("payload"))
 	rec := httptest.NewRecorder()
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusNotFound, inboundWebhookCodeSessionNotFound)
+	if got, want := rec.Code, http.StatusAccepted; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
 }
 
 func TestInboundWebhookReceiver_QueueFull(t *testing.T) {
 	t.Parallel()
 
-	locator := baldatelegram.NewLocator(9001, 0)
-	ts := newSchedulerTopicSession(t, locator, "tg-101", locator.SessionID, nil)
-
-	sessionMgr := &fakeInboundSessionManager{
-		session: ts,
-	}
 	executor := &fakeInboundTurnExecutor{submitErr: ErrTurnQueueFull}
 	receiver := newInboundWebhookReceiverForTest(t)
-	receiver.sessions = sessionMgr
 	receiver.balda = executor
 	receiver.routes = map[string]inboundWebhookRoute{
 		"/webhook1": {
@@ -169,17 +159,8 @@ func TestInboundWebhookReceiver_AcceptsAndPublishesCommand(t *testing.T) {
 	t.Parallel()
 
 	locator := baldatelegram.NewLocator(9001, 0)
-	ts := newSchedulerTopicSession(t, locator, "tg-101", locator.SessionID, nil)
-
-	sessionMgr := &fakeInboundSessionManager{
-		session:       ts,
-		getErrOnce:    errors.New("not in memory"),
-		info:          baldasession.TopicSessionInfo{SessionID: locator.SessionID, Locator: locator, UserID: "tg-101"},
-		restoreResult: ts,
-	}
 	executor := &fakeInboundTurnExecutor{}
 	receiver := newInboundWebhookReceiverForTest(t)
-	receiver.sessions = sessionMgr
 	receiver.balda = executor
 	receiver.routes = map[string]inboundWebhookRoute{
 		"/webhook1": {
@@ -233,74 +214,6 @@ func TestInboundWebhookReceiver_AcceptsAndPublishesCommand(t *testing.T) {
 	if executor.deliver {
 		t.Fatal("executor deliver = true, want false for omitted report_to")
 	}
-	if got := sessionMgr.restoreCalls; got != 1 {
-		t.Fatalf("restore calls = %d, want 1", got)
-	}
-}
-
-type fakeInboundSessionManager struct {
-	session       *baldasession.TopicSession
-	getErrOnce    error
-	getCalls      int
-	info          baldasession.TopicSessionInfo
-	infoErr       error
-	restoreResult *baldasession.TopicSession
-	restoreErr    error
-	restoreCalls  int
-	ensureResult  *baldasession.TopicSession
-	ensureErr     error
-	ensureCalls   int
-}
-
-func (f *fakeInboundSessionManager) GetSession(_ baldasession.SessionLocator) (*baldasession.TopicSession, error) {
-	f.getCalls++
-	if f.getErrOnce != nil {
-		err := f.getErrOnce
-		f.getErrOnce = nil
-		return nil, err
-	}
-	if f.session == nil {
-		return nil, errors.New("session missing")
-	}
-	return f.session, nil
-}
-
-func (f *fakeInboundSessionManager) GetSessionInfo(_ context.Context, _ string) (baldasession.TopicSessionInfo, error) {
-	if f.infoErr != nil {
-		return baldasession.TopicSessionInfo{}, f.infoErr
-	}
-	return f.info, nil
-}
-
-func (f *fakeInboundSessionManager) RestoreSession(
-	_ context.Context,
-	_ baldasession.SessionContext,
-) (*baldasession.TopicSession, error) {
-	f.restoreCalls++
-	if f.restoreErr != nil {
-		return nil, f.restoreErr
-	}
-	if f.restoreResult != nil {
-		f.session = f.restoreResult
-		return f.restoreResult, nil
-	}
-	return nil, errors.New("no restore result")
-}
-
-func (f *fakeInboundSessionManager) EnsureSession(
-	_ context.Context,
-	_ baldasession.SessionContext,
-	_ string,
-) (*baldasession.TopicSession, error) {
-	f.ensureCalls++
-	if f.ensureErr != nil {
-		return nil, f.ensureErr
-	}
-	if f.ensureResult != nil {
-		f.session = f.ensureResult
-		return f.ensureResult, nil
-	}
-	return nil, errors.New("no ensure result")
 }
 
 type fakeInboundTurnExecutor struct {
@@ -362,10 +275,9 @@ func newInboundWebhookReceiverForTest(t *testing.T) *InboundWebhookReceiver {
 				PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
 			},
 		},
-		sessions: &fakeInboundSessionManager{},
-		balda:    &fakeInboundTurnExecutor{},
-		owner:    newOwnerStoreForTest(t, 101, 9001),
-		logger:   zerolog.Nop(),
+		balda:  &fakeInboundTurnExecutor{},
+		owner:  newOwnerStoreForTest(t, 101, 9001),
+		logger: zerolog.Nop(),
 	}
 }
 

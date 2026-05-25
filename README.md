@@ -256,7 +256,7 @@ Common settings:
 - `balda.provider`: provider ID selected during `balda init`.
 - `balda.telegram.token`: Telegram bot token, usually supplied by `.env` as `BALDA_TELEGRAM_TOKEN`.
 - `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
-- `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session prompt injection via route templates (`path`, `prompt_template`) into the owner DM session.
+- `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session prompt injection via route templates (`path`, `prompt_template`) into the owner DM session. Webhook ingress publishes to JetStream first; SessionActor restores or creates the owner session when the command is executed.
 - `balda.webhooks.*` security: inbound webhook requests are not authenticated by Balda; keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
 - `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until `/reset` or explicit `/close`.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
@@ -269,7 +269,7 @@ Common settings:
 - `balda.swarm.queue.*`: reserved for future actor-lane policy; JetStream is the only command queue.
 - `balda.swarm.agents.*`: logical single-process agent roles used by the swarm allocator. Defaults are `planner`, `executor`, `reviewer`, and `memory`; `tools` are advisory routing hints (`workspace`, `shell`, `mcp`, `memory`), not separate runtimes. Optional `cost_penalty` lowers allocator preference for expensive roles.
 - Task visibility: task events are published to `BALDA_EVENTS` and projected into SQLite for `/tasks`, `/task <id>`, and `/task <id> events`. Actor success does not depend on synchronous SQLite event projection. `/task <id> cancel` writes a durable JetStream control command. `/swarm status` and `/mailbox status` read JetStream transport state plus projection lag.
-- `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `cron`, `prompt`) that target the owner DM session.
+- `balda.scheduler.jobs`: startup-reconciled recurring jobs (`id`, `cron`, `prompt`) that publish first-class scheduled task commands targeting the owner DM session.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
 - `balda.mcp_servers`: extra MCP server IDs added to every Balda-started session.

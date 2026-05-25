@@ -570,6 +570,9 @@ runs, retries, or wakes up.
 - Embedded NATS binds to `127.0.0.1` by default and is not exposed externally.
   JetStream files live under `.balda/nats`, which is runtime state and should
   not be committed.
+- Poison command/event messages that cannot decode as Balda envelopes are
+  terminated and copied to `BALDA_DLQ` with the raw subject, headers, payload,
+  and decode reason.
 - Agent commands are locally serialized per task and agent
   (`task:<task_id>:agent:<name>`), so different tasks can run logical agents in
   parallel while a single task lifecycle remains ordered.
@@ -604,10 +607,11 @@ Balda can optionally expose local webhook routes that map path -> prompt templat
   - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
   - rendered prompt must be non-empty
 - Session resolution:
-  - resolves owner DM locator from owner store
-  - looks up active session by owner locator
-  - lazily restores persisted session when inactive in memory; creates owner session when no persisted session exists
-  - publishes a durable JetStream task command; TaskActor then emits a session command for execution
+  - ingress resolves only the owner DM locator and user id from owner store
+  - ingress publishes a durable JetStream task command after prompt rendering
+  - TaskActor then emits a session command for execution
+  - SessionActor lazily restores the persisted session when inactive in memory and creates the owner session when no persisted session exists
+  - webhook acceptance therefore depends on JetStream publish, not on synchronous session restore
   - uses `deliver=false` by default, so the resulting session turn is fire-and-forget unless route delivery is enabled later
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, task_id, session_id, stream, sequence, duplicate?}`

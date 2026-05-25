@@ -34,6 +34,9 @@ type Params struct {
 }
 
 func NewCommandBus(params Params) (swarm.CommandBus, error) {
+	if !params.Swarm.Enabled {
+		return swarm.UnsupportedCommandBus{}, nil
+	}
 	cfg, err := resolveConfig(params.Config, params.Swarm, params.WorkingDir)
 	if err != nil {
 		return nil, err

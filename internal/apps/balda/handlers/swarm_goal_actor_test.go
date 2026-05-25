@@ -166,6 +166,59 @@ func TestTaskActorDispatchSessionTurnKeepsTaskRunningUntilSessionCompletes(t *te
 	}
 }
 
+func TestTaskActorStartScheduledJobDispatchesSessionTurn(t *testing.T) {
+	ctx := context.Background()
+	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	_ = provider
+	_ = allocator
+	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
+	locator := taskActorTestLocator()
+	taskID := "scheduled-daily-review-slot-1"
+	payload := scheduledJobTaskPayload{
+		JobID:   "daily-review",
+		Prompt:  "review open work",
+		Locator: locator,
+		UserID:  "tg-101",
+	}
+	data, err := json.Marshal(taskEnvelopePayload{Kind: taskPayloadKindScheduledJob, ScheduledJob: &payload})
+	if err != nil {
+		t.Fatalf("encode scheduled payload: %v", err)
+	}
+	env := swarm.Envelope{
+		ID:          "scheduled-command-1",
+		Namespace:   swarm.NamespaceScheduleInbound,
+		Kind:        swarm.KindScheduledJob,
+		From:        swarm.ActorAddress{Target: "schedule", Key: "daily-review"},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		SessionID:   locator.SessionID,
+		TaskID:      taskID,
+		DedupeKey:   "schedule:daily-review:slot-1",
+		PayloadJSON: string(data),
+	}
+
+	if err := exec.startScheduledJobTask(ctx, env, payload); err != nil {
+		t.Fatalf("startScheduledJobTask() error = %v", err)
+	}
+	task, ok, err := tasks.Get(ctx, taskID)
+	if err != nil {
+		t.Fatalf("Get(task) error = %v", err)
+	}
+	if !ok || task.Status != baldastate.SwarmTaskStatusRunning || task.CreatedFrom != "schedule" {
+		t.Fatalf("task = %+v found=%v, want running scheduled task", task, ok)
+	}
+	last := bus.commands[len(bus.commands)-1]
+	if last.To.Target != swarm.ActorTypeSession || last.DedupeKey != "schedule:daily-review:slot-1:session" {
+		t.Fatalf("child command = %+v, want session command with child dedupe", last)
+	}
+	var child sessionTurnPayload
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &child); err != nil {
+		t.Fatalf("decode child session payload: %v", err)
+	}
+	if child.ScheduledJobID != "daily-review" || child.Deliver || child.Source != "schedule" {
+		t.Fatalf("child payload = %+v, want scheduled no-delivery turn", child)
+	}
+}
+
 func TestSessionActorCompletesTaskAfterTurnSuccess(t *testing.T) {
 	ctx := context.Background()
 	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
@@ -191,7 +244,7 @@ func TestSessionActorCompletesTaskAfterTurnSuccess(t *testing.T) {
 		Namespace: swarm.NamespaceWebhookInbound,
 		Kind:      swarm.KindWebhookEvent,
 		TaskID:    taskID,
-	}, nil)
+	}, sessionTurnPayload{}, nil)
 
 	task, ok, err := tasks.Get(ctx, taskID)
 	if err != nil {

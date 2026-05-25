@@ -78,7 +78,7 @@ type CommandBusStatusProvider interface {
 	Status(ctx context.Context) (CommandBusStatus, error)
 }
 
-// UnsupportedCommandBus is used only in tests that do not exercise transport.
+// UnsupportedCommandBus is installed when the swarm runtime is disabled.
 type UnsupportedCommandBus struct{}
 
 func (UnsupportedCommandBus) PublishCommand(context.Context, Envelope) (*CommandPublishResult, error) {
