@@ -786,9 +786,11 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 }
 
 type recordingHandlerCommandBus struct {
-	commands    []swarm.Envelope
-	commandErrs []error
-	eventErrs   []error
+	commands      []swarm.Envelope
+	commandErrs   []error
+	eventSubjects []string
+	eventEnvs     []swarm.Envelope
+	eventErrs     []error
 }
 
 func (b *recordingHandlerCommandBus) PublishCommand(_ context.Context, env swarm.Envelope) (*swarm.CommandPublishResult, error) {
@@ -803,7 +805,9 @@ func (b *recordingHandlerCommandBus) PublishCommand(_ context.Context, env swarm
 	return &swarm.CommandPublishResult{Stream: swarm.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: swarm.SubjectForEnvelope(env), MsgID: swarm.DedupeKeyOrID(env)}, nil
 }
 
-func (b *recordingHandlerCommandBus) PublishEvent(context.Context, string, swarm.Envelope) error {
+func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject string, env swarm.Envelope) error {
+	b.eventSubjects = append(b.eventSubjects, subject)
+	b.eventEnvs = append(b.eventEnvs, env)
 	if len(b.eventErrs) > 0 {
 		err := b.eventErrs[0]
 		b.eventErrs = b.eventErrs[1:]

@@ -495,12 +495,7 @@ func (e *taskActorExecutor) ensureGoalTask(
 	if e.tasks == nil {
 		return swarm.TransientError(fmt.Errorf("task service is required"))
 	}
-	if _, ok, err := e.tasks.Get(ctx, taskID); err != nil {
-		return swarm.TransientError(err)
-	} else if ok {
-		return nil
-	}
-	_, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
+	record := baldastate.SwarmTaskRecord{
 		ID:            taskID,
 		SessionID:     strings.TrimSpace(payload.Locator.SessionID),
 		Title:         goalTaskTitle(objective),
@@ -511,11 +506,23 @@ func (e *taskActorExecutor) ensureGoalTask(
 		Priority:      90,
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
 		CreatedFrom:   "goal",
-	}, "task.actor", payload)
+	}
+	if _, err := e.tasks.Create(ctx, record, "task.actor", payload); err != nil {
+		return swarm.TransientError(err)
+	}
+	task, ok, err := e.tasks.Get(ctx, taskID)
 	if err != nil {
 		return swarm.TransientError(err)
 	}
-	return e.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusQueued, "task.actor", "", "", nil)
+	if !ok {
+		return swarm.TransientError(fmt.Errorf("goal task %q was not persisted", taskID))
+	}
+	switch strings.TrimSpace(task.Status) {
+	case "", baldastate.SwarmTaskStatusCreated, baldastate.SwarmTaskStatusQueued:
+		return e.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusQueued, "task.actor", "", "", nil)
+	default:
+		return nil
+	}
 }
 
 type taskAgentDispatch struct {
@@ -712,23 +719,7 @@ func (e *taskActorExecutor) handlePlannerResult(ctx context.Context, payload tas
 	}
 	payload.Plan = text
 	payload.PlannerOutput = text
-	if err := e.tasks.SetPlan(ctx, payload.TaskID, "task.actor", map[string]any{
-		"objective":      strings.TrimSpace(payload.Objective),
-		"max_iterations": normalizeGoalMaxIterations(payload.MaxIterations),
-		"planner_output": text,
-	}); err != nil {
-		return swarm.TransientError(err)
-	}
-	if err := e.deliver(
-		ctx,
-		payload.TaskID,
-		payload.Locator,
-		fmt.Sprintf("Goal iteration %d/%d: planner finished.\n\n%s", payload.Iteration, normalizeGoalMaxIterations(payload.MaxIterations), text),
-		"finished:planner:"+strconv.Itoa(payload.Iteration),
-	); err != nil {
-		return err
-	}
-	return e.dispatchAgent(ctx, taskAgentCommandPayload{
+	dispatch, err := e.prepareAgentDispatch(ctx, taskAgentCommandPayload{
 		TaskID:          payload.TaskID,
 		Role:            taskAgentRoleExecutor,
 		Iteration:       payload.Iteration,
@@ -739,6 +730,29 @@ func (e *taskActorExecutor) handlePlannerResult(ctx context.Context, payload tas
 		TransportUserID: payload.TransportUserID,
 		MaxIterations:   payload.MaxIterations,
 	})
+	if err != nil {
+		return err
+	}
+	if err := e.tasks.SetPlan(ctx, payload.TaskID, "task.actor", map[string]any{
+		"objective":      strings.TrimSpace(payload.Objective),
+		"max_iterations": normalizeGoalMaxIterations(payload.MaxIterations),
+		"planner_output": text,
+	}); err != nil {
+		return swarm.TransientError(err)
+	}
+	if err := e.submitAgentDispatch(ctx, dispatch); err != nil {
+		return err
+	}
+	if err := e.deliver(
+		ctx,
+		payload.TaskID,
+		payload.Locator,
+		fmt.Sprintf("Goal iteration %d/%d: planner finished.\n\n%s", payload.Iteration, normalizeGoalMaxIterations(payload.MaxIterations), text),
+		"finished:planner:"+strconv.Itoa(payload.Iteration),
+	); err != nil {
+		return err
+	}
+	return e.recordAgentDispatch(ctx, dispatch)
 }
 
 func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload taskAgentResultPayload) error {
@@ -747,16 +761,7 @@ func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload ta
 		text = "(executor returned no visible output)"
 	}
 	payload.ExecutorOutput = text
-	if err := e.deliver(
-		ctx,
-		payload.TaskID,
-		payload.Locator,
-		fmt.Sprintf("Goal iteration %d/%d: executor finished.\n\n%s", payload.Iteration, normalizeGoalMaxIterations(payload.MaxIterations), text),
-		"finished:executor:"+strconv.Itoa(payload.Iteration),
-	); err != nil {
-		return err
-	}
-	return e.dispatchAgent(ctx, taskAgentCommandPayload{
+	dispatch, err := e.prepareAgentDispatch(ctx, taskAgentCommandPayload{
 		TaskID:           payload.TaskID,
 		Role:             taskAgentRoleReviewer,
 		Iteration:        payload.Iteration,
@@ -769,6 +774,22 @@ func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload ta
 		ReviewerFeedback: payload.ReviewerFeedback,
 		MaxIterations:    payload.MaxIterations,
 	})
+	if err != nil {
+		return err
+	}
+	if err := e.submitAgentDispatch(ctx, dispatch); err != nil {
+		return err
+	}
+	if err := e.deliver(
+		ctx,
+		payload.TaskID,
+		payload.Locator,
+		fmt.Sprintf("Goal iteration %d/%d: executor finished.\n\n%s", payload.Iteration, normalizeGoalMaxIterations(payload.MaxIterations), text),
+		"finished:executor:"+strconv.Itoa(payload.Iteration),
+	); err != nil {
+		return err
+	}
+	return e.recordAgentDispatch(ctx, dispatch)
 }
 
 func (e *taskActorExecutor) handleReviewerResult(ctx context.Context, payload taskAgentResultPayload) error {

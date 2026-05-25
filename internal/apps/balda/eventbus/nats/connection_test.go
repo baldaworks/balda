@@ -69,6 +69,78 @@ func TestBus_PublishCommandAndConsumeEmbeddedJetStream(t *testing.T) {
 	}
 }
 
+func TestBus_PublishCommandReturnsErrorWhenAcceptedEventCannotPublish(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:         fxtest.NewLifecycle(t),
+		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm:      swarm.Config{Enabled: true},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+	if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
+		t.Fatalf("DeleteStream(events) error = %v", err)
+	}
+
+	_, err = bus.PublishCommand(context.Background(), commandTestEnvelope("accepted-event-fails"))
+	if err == nil {
+		t.Fatal("PublishCommand() error = nil, want accepted event publish failure")
+	}
+}
+
+func TestBus_CommandLifecycleEventsUseDistinctDedupeIDs(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:         fxtest.NewLifecycle(t),
+		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{FetchWait: "50ms"}},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	env := commandTestEnvelope("lifecycle-dedupe")
+	env.DedupeKey = "shared-command-dedupe"
+	if _, err := bus.PublishCommand(context.Background(), env); err != nil {
+		t.Fatalf("PublishCommand() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handled := make(chan struct{}, 1)
+	go func() {
+		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+			handled <- struct{}{}
+			return nil
+		})
+	}()
+	select {
+	case <-handled:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for command handler")
+	}
+	for {
+		status, err := bus.streamStatus(context.Background(), swarm.DefaultEventStream)
+		if err != nil {
+			t.Fatalf("event stream status: %v", err)
+		}
+		if status.Messages == 3 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("event stream messages = %d, want accepted/running/acked", status.Messages)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
 func TestBus_CommandDecodeFailurePublishesRawDLQ(t *testing.T) {
 	busRaw, err := NewCommandBus(Params{
 		LC:         fxtest.NewLifecycle(t),

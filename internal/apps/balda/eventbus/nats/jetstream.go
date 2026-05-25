@@ -44,6 +44,7 @@ func (b *Bus) RunCommandConsumer(ctx context.Context, handler swarm.CommandHandl
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		for msg := range batch.Messages() {
@@ -64,23 +65,33 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 	numDelivered := messageDeliveryAttempt(msg)
 	env.Attempt = numDelivered - 1
 	cmd := commandMessage{subject: msg.Subject(), env: env, msg: msg, numDelivered: numDelivered, maxDeliveries: b.cfg.Swarm.Commands.MaxDeliver}
-	_ = b.PublishEvent(ctx, swarm.SubjectEventCommandRunning, commandEventEnvelope(env, nil, "running", ""))
+	if err := b.PublishEvent(ctx, swarm.SubjectEventCommandRunning, commandEventEnvelope(env, nil, "running", "")); err != nil {
+		return fmt.Errorf("publish command running event: %w", err)
+	}
 	err = handler(ctx, cmd)
 	if err == nil {
-		_ = b.PublishEvent(ctx, swarm.SubjectEventCommandAcked, commandEventEnvelope(env, nil, "acked", ""))
+		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAcked, commandEventEnvelope(env, nil, "acked", "")); err != nil {
+			return fmt.Errorf("publish command acked event: %w", err)
+		}
 		return msg.DoubleAck(ctx)
 	}
 	if isRetryable(err) {
 		if retryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
 			reason := "retry exhausted: " + err.Error()
-			_ = b.PublishDLQ(ctx, env, reason)
+			if err := b.PublishDLQ(ctx, env, reason); err != nil {
+				return err
+			}
 			return msg.TermWithReason(reason)
 		}
 		delay := computeBackoff(env.Attempt)
-		_ = b.PublishEvent(ctx, swarm.SubjectEventCommandRetrying, commandEventEnvelope(env, nil, "retrying", err.Error()))
+		if eventErr := b.PublishEvent(ctx, swarm.SubjectEventCommandRetrying, commandEventEnvelope(env, nil, "retrying", err.Error())); eventErr != nil {
+			return fmt.Errorf("publish command retrying event: %w", eventErr)
+		}
 		return msg.NakWithDelay(delay)
 	}
-	_ = b.PublishDLQ(ctx, env, err.Error())
+	if dlqErr := b.PublishDLQ(ctx, env, err.Error()); dlqErr != nil {
+		return dlqErr
+	}
 	return msg.TermWithReason(err.Error())
 }
 
@@ -272,6 +283,7 @@ func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult
 	out.Namespace = swarm.NamespaceTelemetry
 	out.Kind = "command_event"
 	out.PayloadJSON = string(data)
+	out.DedupeKey = out.ID
 	if out.Meta == nil {
 		out.Meta = map[string]string{}
 	}

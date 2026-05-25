@@ -94,7 +94,9 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 		return nil, fmt.Errorf("publish jetstream command %q: %w", subject, err)
 	}
 	result := &swarm.CommandPublishResult{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
-	_ = b.PublishEvent(ctx, swarm.SubjectEventCommandAccepted, commandEventEnvelope(env, result, "accepted", ""))
+	if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAccepted, commandEventEnvelope(env, result, "accepted", "")); err != nil {
+		return nil, fmt.Errorf("publish command accepted event: %w", err)
+	}
 	return result, nil
 }
 
@@ -127,7 +129,9 @@ func (b *Bus) publishDLQ(ctx context.Context, env swarm.Envelope, reason string,
 		return fmt.Errorf("publish jetstream dlq: %w", err)
 	}
 	if emitEvent {
-		_ = b.PublishEvent(ctx, swarm.SubjectEventCommandDeadLettered, commandEventEnvelope(env, nil, "deadlettered", reason))
+		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandDeadLettered, commandEventEnvelope(env, nil, "deadlettered", reason)); err != nil {
+			return fmt.Errorf("publish command deadlettered event: %w", err)
+		}
 	}
 	return nil
 }

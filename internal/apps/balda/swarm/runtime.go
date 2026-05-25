@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"strings"
@@ -126,7 +127,7 @@ func (r *Runtime) Start(context.Context) error {
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		if err := r.bus.RunCommandConsumer(runCtx, r.HandleCommand); err != nil && !strings.Contains(err.Error(), "context canceled") {
+		if err := r.bus.RunCommandConsumer(runCtx, r.HandleCommand); err != nil && !errors.Is(err, context.Canceled) {
 			r.logger.Error().Err(err).Msg("jetstream command consumer stopped")
 		}
 	}()
@@ -257,8 +258,10 @@ func nextRetryDelay(attempt int) time.Duration {
 
 func commandNoopEvent(env Envelope) Envelope {
 	out := env
+	out.ID = strings.TrimSpace(env.ID) + ":event:in_progress"
 	out.Namespace = NamespaceTelemetry
 	out.Kind = "command_event"
+	out.DedupeKey = out.ID
 	if strings.TrimSpace(out.PayloadJSON) == "" {
 		out.PayloadJSON = `{"ok":true}`
 	}

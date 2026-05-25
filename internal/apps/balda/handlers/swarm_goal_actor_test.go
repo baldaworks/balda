@@ -102,6 +102,16 @@ func TestTaskActorPlannerResultStoresPlanAndDispatchesExecutor(t *testing.T) {
 		t.Fatalf("handleAgentResult(planner) error = %v", err)
 	}
 
+	appended := bus.commands[3:]
+	if len(appended) != 3 {
+		t.Fatalf("planner appended commands = %d, want executor + finished delivery + executor-start delivery", len(appended))
+	}
+	if appended[0].To.Target != swarm.ActorTypeAgent || appended[0].To.Key != swarm.AgentNameExecutor {
+		t.Fatalf("first planner follow-up = %+v, want executor command before visible finish", appended[0].To)
+	}
+	if !strings.Contains(appended[1].DedupeKey, ":delivery:finished:planner:1") {
+		t.Fatalf("second planner follow-up dedupe = %q, want planner finished delivery", appended[1].DedupeKey)
+	}
 	executor := lastPublishedCommandTo(t, bus, swarm.ActorTypeAgent, swarm.AgentNameExecutor)
 	if executor.To.Target != swarm.ActorTypeAgent || executor.To.Key != swarm.AgentNameExecutor {
 		t.Fatalf("executor command target = %+v, want agent:executor", executor.To)
@@ -120,6 +130,74 @@ func TestTaskActorPlannerResultStoresPlanAndDispatchesExecutor(t *testing.T) {
 	}
 	if !ok || !strings.Contains(task.PlanJSON, "inspect tests") {
 		t.Fatalf("task = %+v found=%v, want planner output", task, ok)
+	}
+}
+
+func TestTaskActorExecutorResultDispatchesReviewerBeforeProgress(t *testing.T) {
+	ctx := context.Background()
+	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
+	locator := taskActorTestLocator()
+	env, goal := taskActorGoalEnvelope(t, locator, "fix failing tests", 3)
+	if err := exec.startGoalTask(ctx, env, goal); err != nil {
+		t.Fatalf("startGoalTask() error = %v", err)
+	}
+	plannerText := "1. inspect tests\n2. patch code"
+	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "planner-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNamePlanner}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
+		TaskID: goal.TaskID, AgentName: swarm.AgentNamePlanner, Role: taskAgentRolePlanner, Iteration: 1, Locator: locator, Objective: goal.Objective, TransportUserID: goal.TransportUserID, Text: plannerText, MaxIterations: goal.MaxIterations,
+	}); err != nil {
+		t.Fatalf("handleAgentResult(planner) error = %v", err)
+	}
+	beforeExecutor := len(bus.commands)
+
+	executorText := "patched code and ran tests"
+	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "executor-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNameExecutor}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
+		TaskID: goal.TaskID, AgentName: swarm.AgentNameExecutor, Role: taskAgentRoleExecutor, Iteration: 1, Locator: locator, Objective: goal.Objective, Plan: plannerText, PlannerOutput: plannerText, TransportUserID: goal.TransportUserID, Text: executorText, MaxIterations: goal.MaxIterations,
+	}); err != nil {
+		t.Fatalf("handleAgentResult(executor) error = %v", err)
+	}
+
+	appended := bus.commands[beforeExecutor:]
+	if len(appended) != 3 {
+		t.Fatalf("executor appended commands = %d, want reviewer + finished delivery + validator-start delivery", len(appended))
+	}
+	if appended[0].To.Target != swarm.ActorTypeAgent || appended[0].To.Key != swarm.AgentNameReviewer {
+		t.Fatalf("first executor follow-up = %+v, want reviewer command before visible finish", appended[0].To)
+	}
+	if !strings.Contains(appended[1].DedupeKey, ":delivery:finished:executor:1") {
+		t.Fatalf("second executor follow-up dedupe = %q, want executor finished delivery", appended[1].DedupeKey)
+	}
+}
+
+func TestTaskActorEnsureGoalTaskReemitsCreatedEventForExistingTask(t *testing.T) {
+	ctx := context.Background()
+	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
+	locator := taskActorTestLocator()
+	_, goal := taskActorGoalEnvelope(t, locator, "repair task event", 3)
+	bus.eventErrs = []error{errors.New("event stream unavailable")}
+
+	if err := exec.ensureGoalTask(ctx, goal.TaskID, goal, goal.Objective); err == nil {
+		t.Fatal("ensureGoalTask(first) error = nil, want task.created event publish failure")
+	}
+	if task, ok, err := tasks.Get(ctx, goal.TaskID); err != nil || !ok || task.Status != baldastate.SwarmTaskStatusCreated {
+		t.Fatalf("task after failed create event = %+v found=%v err=%v, want persisted created task", task, ok, err)
+	}
+	if err := exec.ensureGoalTask(ctx, goal.TaskID, goal, goal.Objective); err != nil {
+		t.Fatalf("ensureGoalTask(retry) error = %v", err)
+	}
+	if len(bus.eventEnvs) != 3 {
+		t.Fatalf("event publish attempts = %d, want failed created + repaired created + queued", len(bus.eventEnvs))
+	}
+	if bus.eventEnvs[0].ID != bus.eventEnvs[1].ID {
+		t.Fatalf("created event ids = %q/%q, want deterministic re-emission", bus.eventEnvs[0].ID, bus.eventEnvs[1].ID)
+	}
+	task, ok, err := tasks.Get(ctx, goal.TaskID)
+	if err != nil {
+		t.Fatalf("Get(task) error = %v", err)
+	}
+	if !ok || task.Status != baldastate.SwarmTaskStatusQueued {
+		t.Fatalf("task = %+v found=%v, want queued after repaired ensure", task, ok)
 	}
 }
 

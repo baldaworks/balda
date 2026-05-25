@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -55,7 +56,7 @@ func (p *EventProjector) Start(context.Context) error {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		if err := p.consumer.RunEventConsumer(runCtx, p.Project); err != nil && !strings.Contains(err.Error(), "context canceled") {
+		if err := p.consumer.RunEventConsumer(runCtx, p.Project); err != nil && !errors.Is(err, context.Canceled) {
 			p.logger.Error().Err(err).Msg("jetstream event projector stopped")
 		}
 	}()
