@@ -1,6 +1,9 @@
 package swarm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const subjectTestTaskID = "task-1"
 
@@ -14,6 +17,7 @@ func TestSubjectForEnvelope_UsesStableCommandSubjects(t *testing.T) {
 		{name: "task", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeTask, Key: subjectTestTaskID}), want: SubjectCommandTask},
 		{name: "agent", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeAgent, Key: "planner"}), want: SubjectCommandAgent},
 		{name: "delivery", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeDelivery, Key: "tg-1"}), want: SubjectCommandDelivery},
+		{name: "memory", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeMemory, Key: "global"}), want: SubjectCommandMemory},
 		{name: "control", env: controlTestEnvelope(), want: SubjectCommandControl},
 	}
 	for _, tt := range tests {
@@ -22,6 +26,25 @@ func TestSubjectForEnvelope_UsesStableCommandSubjects(t *testing.T) {
 				t.Fatalf("SubjectForEnvelope() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCommandSubjects_UseCommandNamespacePrefix(t *testing.T) {
+	t.Parallel()
+
+	commandSubjects := []string{
+		SubjectCommandSession,
+		SubjectCommandTask,
+		SubjectCommandAgent,
+		SubjectCommandDelivery,
+		SubjectCommandMemory,
+		SubjectCommandControl,
+		SubjectCommandAll,
+	}
+	for _, subject := range commandSubjects {
+		if !strings.HasPrefix(subject, "balda.v1.cmd") {
+			t.Fatalf("command subject %q must start with balda.v1.cmd", subject)
+		}
 	}
 }
 
