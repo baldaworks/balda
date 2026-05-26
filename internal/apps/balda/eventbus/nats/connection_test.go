@@ -16,6 +16,8 @@ import (
 	"go.uber.org/fx/fxtest"
 )
 
+const testEventKindTask = "task_event"
+
 func TestNewCommandBus_DisabledSwarmReturnsUnsupportedBus(t *testing.T) {
 	bus, err := NewCommandBus(Params{
 		LC:         fxtest.NewLifecycle(t),
@@ -739,7 +741,7 @@ func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
 
 	env := commandTestEnvelope("event-dedupe")
 	env.Namespace = swarm.NamespaceTelemetry
-	env.Kind = "task_event"
+	env.Kind = testEventKindTask
 	env.Meta = map[string]string{"event_type": swarm.TaskEventAgentStarted}
 	if err := bus.PublishEvent(context.Background(), swarm.SubjectEventTaskUpdated, env); err != nil {
 		t.Fatalf("PublishEvent(first) error = %v", err)
@@ -881,7 +883,7 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 
 	env := commandTestEnvelope("event-projection-failed")
 	env.Namespace = swarm.NamespaceTelemetry
-	env.Kind = "task_event"
+	env.Kind = testEventKindTask
 	env.Meta = map[string]string{"event_type": swarm.TaskEventAgentProgress}
 	if err := bus.PublishEvent(context.Background(), swarm.SubjectEventTaskUpdated, env); err != nil {
 		t.Fatalf("PublishEvent() error = %v", err)
@@ -913,6 +915,64 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 			t.Fatalf("DLQ messages = %d, want 1", status.Messages)
 		case <-time.After(25 * time.Millisecond):
 		}
+	}
+}
+
+func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:         fxtest.NewLifecycle(t),
+		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	projectionCtx, projectionCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer projectionCancel()
+	projectionHandled := make(chan struct{}, 1)
+	go func() {
+		_ = bus.RunEventConsumer(projectionCtx, func(context.Context, string, swarm.Envelope) error {
+			select {
+			case projectionHandled <- struct{}{}:
+			default:
+			}
+			return swarm.PermanentError(errors.New("projection failed"))
+		})
+	}()
+	eventEnv := commandTestEnvelope("projection-failure-does-not-block")
+	eventEnv.Namespace = swarm.NamespaceTelemetry
+	eventEnv.Kind = testEventKindTask
+	eventEnv.Meta = map[string]string{"event_type": swarm.TaskEventAgentProgress}
+	if err := bus.PublishEvent(context.Background(), swarm.SubjectEventTaskUpdated, eventEnv); err != nil {
+		t.Fatalf("PublishEvent() error = %v", err)
+	}
+	select {
+	case <-projectionHandled:
+	case <-projectionCtx.Done():
+		t.Fatal("timed out waiting for projection failure")
+	}
+
+	commandCtx, commandCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer commandCancel()
+	commandHandled := make(chan struct{}, 1)
+	go func() {
+		_ = bus.RunCommandConsumer(commandCtx, func(context.Context, swarm.CommandMessage) error {
+			commandHandled <- struct{}{}
+			return nil
+		})
+	}()
+	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("command-after-projection-failure")); err != nil {
+		t.Fatalf("PublishCommand() error = %v", err)
+	}
+	select {
+	case <-commandHandled:
+	case <-commandCtx.Done():
+		t.Fatal("timed out waiting for command handling after projection failure")
 	}
 }
 
