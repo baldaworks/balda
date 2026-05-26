@@ -19,13 +19,10 @@ CREATE INDEX IF NOT EXISTS idx_balda_scheduled_tasks_due
 CREATE INDEX IF NOT EXISTS idx_balda_scheduled_tasks_locator
     ON balda_scheduled_tasks(channel_type, address_key);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(19, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 19;
 
 DROP INDEX IF EXISTS idx_balda_scheduled_tasks_locator;
 DROP INDEX IF EXISTS idx_balda_scheduled_tasks_due;

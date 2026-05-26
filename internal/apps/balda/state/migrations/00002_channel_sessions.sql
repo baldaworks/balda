@@ -22,12 +22,9 @@ WHERE branch_name LIKE 'norma/balda/relay-%';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_session_metadata_channel_address
     ON relay_session_metadata(channel_type, address_key);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(2, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 2;
 DROP INDEX IF EXISTS idx_relay_session_metadata_channel_address;
 -- +goose StatementEnd

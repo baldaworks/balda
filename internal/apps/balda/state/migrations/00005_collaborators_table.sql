@@ -8,12 +8,9 @@ CREATE TABLE IF NOT EXISTS relay_collaborators (
     added_at TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(5, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 5;
 DROP TABLE IF EXISTS relay_collaborators;
 -- +goose StatementEnd

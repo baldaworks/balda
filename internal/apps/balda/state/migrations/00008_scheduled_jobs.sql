@@ -26,13 +26,10 @@ CREATE INDEX IF NOT EXISTS idx_relay_scheduled_jobs_due
 CREATE INDEX IF NOT EXISTS idx_relay_scheduled_jobs_locator
     ON relay_scheduled_jobs(channel_type, address_key);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(8, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 8;
 DROP INDEX IF EXISTS idx_relay_scheduled_jobs_locator;
 DROP INDEX IF EXISTS idx_relay_scheduled_jobs_due;
 DROP TABLE IF EXISTS relay_scheduled_jobs;

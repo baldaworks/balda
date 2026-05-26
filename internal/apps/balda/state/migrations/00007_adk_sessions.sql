@@ -43,13 +43,10 @@ CREATE INDEX IF NOT EXISTS idx_relay_adk_sessions_app_user
 CREATE INDEX IF NOT EXISTS idx_relay_adk_events_session_order
     ON relay_adk_events(app_name, user_id, session_id, timestamp, ordinal);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(7, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 7;
 DROP INDEX IF EXISTS idx_relay_adk_events_session_order;
 DROP INDEX IF EXISTS idx_relay_adk_sessions_app_user;
 DROP TABLE IF EXISTS relay_adk_events;

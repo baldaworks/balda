@@ -65,13 +65,10 @@ CREATE INDEX IF NOT EXISTS idx_balda_session_metadata_status
 CREATE UNIQUE INDEX IF NOT EXISTS idx_balda_session_metadata_channel_address
     ON balda_session_metadata(channel_type, address_key);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(11, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 11;
 -- The removed UNIQUE(chat_id, topic_id) constraint is intentionally not restored.
 -- Reintroducing it can fail or lose non-Telegram/channel-address rows created after this migration.
 -- +goose StatementEnd

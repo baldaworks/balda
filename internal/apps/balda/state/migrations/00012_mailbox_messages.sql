@@ -29,13 +29,10 @@ CREATE INDEX IF NOT EXISTS idx_balda_mailbox_messages_pending
 CREATE INDEX IF NOT EXISTS idx_balda_mailbox_messages_status
     ON balda_mailbox_messages(status, updated_at);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(12, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 12;
 DROP INDEX IF EXISTS idx_balda_mailbox_messages_status;
 DROP INDEX IF EXISTS idx_balda_mailbox_messages_pending;
 DROP INDEX IF EXISTS idx_balda_mailbox_messages_idempotency;

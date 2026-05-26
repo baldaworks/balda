@@ -7,13 +7,10 @@ DROP INDEX IF EXISTS idx_swarm_messages_task;
 DROP INDEX IF EXISTS idx_swarm_messages_correlation;
 DROP TABLE IF EXISTS swarm_messages;
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(16, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 16;
 
 CREATE TABLE IF NOT EXISTS swarm_messages (
     id TEXT PRIMARY KEY,

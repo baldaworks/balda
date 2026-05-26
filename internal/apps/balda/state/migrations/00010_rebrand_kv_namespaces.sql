@@ -17,13 +17,10 @@ WHERE namespace IN ('relay.app', 'relay.session_mcp');
 DELETE FROM balda_app_kv
 WHERE namespace IN ('relay.app', 'relay.session_mcp');
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(10, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 10;
 
 INSERT OR IGNORE INTO balda_app_kv (namespace, key, value_json, expires_at, updated_at)
 SELECT

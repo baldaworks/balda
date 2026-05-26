@@ -32,15 +32,12 @@ UPDATE balda_adk_user_state SET app_name = 'norma-balda' WHERE app_name = 'norma
 UPDATE balda_adk_sessions SET app_name = 'norma-balda' WHERE app_name = 'norma-relay';
 UPDATE balda_adk_events SET app_name = 'norma-balda' WHERE app_name = 'norma-relay';
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(9, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
 PRAGMA defer_foreign_keys = ON;
 
-DELETE FROM schema_migrations WHERE version = 9;
 
 DROP INDEX IF EXISTS idx_balda_session_metadata_status;
 DROP INDEX IF EXISTS idx_balda_session_metadata_channel_address;

@@ -19,13 +19,10 @@ CREATE TABLE IF NOT EXISTS swarm_agent_steps (
 CREATE INDEX IF NOT EXISTS idx_swarm_agent_steps_task
 ON swarm_agent_steps(task_id, created_at);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(18, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 18;
 
 DROP INDEX IF EXISTS idx_swarm_agent_steps_task;
 DROP TABLE IF EXISTS swarm_agent_steps;

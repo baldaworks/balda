@@ -12,7 +12,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteSchemaMigrationVersion = 19
+const expectedSQLiteMigrationVersion = 19
 
 func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
@@ -327,13 +327,7 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	var version int
-	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
-		t.Fatalf("query schema_migrations version: %v", err)
-	}
-	if version != expectedSQLiteSchemaMigrationVersion {
-		t.Fatalf("schema_migrations version = %d, want %d", version, expectedSQLiteSchemaMigrationVersion)
-	}
+	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 	assertSQLiteSchemaHasNoRelayLeftovers(t, ctx, db)
 	assertSessionMetadataHasNoLegacyChatTopicUnique(t, ctx, db)
 }
@@ -446,13 +440,7 @@ func TestSQLiteProvider_AdoptsExistingLegacySchema(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	var version int
-	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
-		t.Fatalf("query schema_migrations version: %v", err)
-	}
-	if version != expectedSQLiteSchemaMigrationVersion {
-		t.Fatalf("schema_migrations version = %d, want %d", version, expectedSQLiteSchemaMigrationVersion)
-	}
+	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 }
 
 func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
@@ -547,13 +535,7 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 	}
 	assertTableMissing(t, ctx, db, "balda_scheduled_jobs")
 
-	var version int
-	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
-		t.Fatalf("query schema_migrations version: %v", err)
-	}
-	if version != expectedSQLiteSchemaMigrationVersion {
-		t.Fatalf("schema_migrations version = %d, want %d", version, expectedSQLiteSchemaMigrationVersion)
-	}
+	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 }
 
 func TestSQLiteProvider_Migration11BackfillsBuggyLegacySessionColumns(t *testing.T) {
@@ -903,6 +885,17 @@ func seedBaldaDBAtVersion10WithBuggyZeroLegacySession(t *testing.T, db *sql.DB) 
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("seed balda version 10 db stmt failed: %v\nstmt: %s", err, stmt)
 		}
+	}
+}
+
+func assertGooseVersion(t *testing.T, ctx context.Context, db *sql.DB, want int) {
+	t.Helper()
+	var version int
+	if err := db.QueryRowContext(ctx, `SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`).Scan(&version); err != nil {
+		t.Fatalf("query goose_db_version version: %v", err)
+	}
+	if version != want {
+		t.Fatalf("goose_db_version max(version_id) = %d, want %d", version, want)
 	}
 }
 

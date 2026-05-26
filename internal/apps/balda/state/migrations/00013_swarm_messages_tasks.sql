@@ -95,13 +95,10 @@ CREATE TABLE IF NOT EXISTS swarm_task_events (
 CREATE INDEX IF NOT EXISTS idx_swarm_task_events_task
 ON swarm_task_events(task_id, created_at);
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(13, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 13;
 
 DROP INDEX IF EXISTS idx_swarm_task_events_task;
 DROP TABLE IF EXISTS swarm_task_events;

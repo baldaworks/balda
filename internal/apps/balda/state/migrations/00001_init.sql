@@ -1,9 +1,5 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version INTEGER PRIMARY KEY,
-    applied_at TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS relay_app_kv (
     namespace TEXT NOT NULL,
@@ -33,16 +29,12 @@ CREATE TABLE IF NOT EXISTS relay_telegram_offsets (
     updated_at TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO schema_migrations(version, applied_at)
-VALUES(1, datetime('now'));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM schema_migrations WHERE version = 1;
 DROP INDEX IF EXISTS idx_relay_session_metadata_status;
 DROP TABLE IF EXISTS relay_telegram_offsets;
 DROP TABLE IF EXISTS relay_session_metadata;
 DROP TABLE IF EXISTS relay_app_kv;
-DROP TABLE IF EXISTS schema_migrations;
 -- +goose StatementEnd
