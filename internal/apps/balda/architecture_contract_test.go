@@ -65,6 +65,29 @@ func TestJetStreamArchitectureContract_Static(t *testing.T) {
 		}
 	})
 
+	t.Run("sqlite mailbox polling loop cannot be started by runtime code", func(t *testing.T) {
+		forbiddenPollingSymbols := []string{
+			"MailboxPoller",
+			"MailboxPollingLoop",
+			"RunMailboxLoop",
+			"StartMailboxLoop",
+			"RunSQLiteMailbox",
+			"StartSQLiteMailbox",
+			"ClaimRunnableCommand",
+			"ClaimRunnableCommands",
+			"PollRunnableCommand",
+			"PollRunnableCommands",
+		}
+		for _, needle := range forbiddenPollingSymbols {
+			t.Run(needle, func(t *testing.T) {
+				matches := findSourceMatches(t, root, files, regexp.MustCompile(regexp.QuoteMeta(needle)))
+				if len(matches) > 0 {
+					t.Fatalf("legacy sqlite mailbox polling symbol %q found in production Go files:\n%s", needle, formatSourceMatches(matches))
+				}
+			})
+		}
+	})
+
 	t.Run("ingress publishes commands before local state is advanced", func(t *testing.T) {
 		schedulerSource := readSource(t, filepath.Join(root, "handlers/scheduled_task_scheduler.go"))
 		if !strings.Contains(schedulerSource, "s.coordinator.Submit(ctx, env)") {
