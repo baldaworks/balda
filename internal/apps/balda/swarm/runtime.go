@@ -74,6 +74,9 @@ type Runtime struct {
 	scheduler *KeyedActorScheduler
 	logger    zerolog.Logger
 	enabled   bool
+	// heartbeatTick controls the in-progress ack cadence for long-running commands.
+	// Zero falls back to the package default.
+	heartbeatTick time.Duration
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -101,12 +104,13 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 		}
 	}
 	r := &Runtime{
-		bus:       params.Bus,
-		tasks:     params.Tasks,
-		registry:  registry,
-		scheduler: NewKeyedActorScheduler(),
-		logger:    params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
-		enabled:   params.Config.Enabled,
+		bus:           params.Bus,
+		tasks:         params.Tasks,
+		registry:      registry,
+		scheduler:     NewKeyedActorScheduler(),
+		logger:        params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
+		enabled:       params.Config.Enabled,
+		heartbeatTick: heartbeatInterval,
 	}
 	params.LC.Append(fx.Hook{
 		OnStart: r.Start,
@@ -192,7 +196,7 @@ func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env En
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		ticker := time.NewTicker(heartbeatInterval)
+		ticker := time.NewTicker(r.heartbeatTickInterval())
 		defer ticker.Stop()
 		for {
 			select {
@@ -207,6 +211,13 @@ func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env En
 		}
 	}()
 	return child, cancel
+}
+
+func (r *Runtime) heartbeatTickInterval() time.Duration {
+	if r == nil || r.heartbeatTick <= 0 {
+		return heartbeatInterval
+	}
+	return r.heartbeatTick
 }
 
 func (r *Runtime) deadletterTask(ctx context.Context, env Envelope, reason string) {
