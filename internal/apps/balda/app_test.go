@@ -227,6 +227,39 @@ func TestValidateSessionPersistence(t *testing.T) {
 	}
 }
 
+func TestValidateLegacyRuntimeModes(t *testing.T) {
+	t.Parallel()
+
+	err := validateLegacyRuntimeModes(BaldaConfig{
+		RemovedEventBus: map[string]any{"mode": "sqlite"},
+		Swarm:           SwarmConfig{RemovedMode: "shadow"},
+		Webhooks:        WebhooksConfig{RemovedMode: "mailbox"},
+		Scheduler:       SchedulerConfig{RemovedMode: "mailbox"},
+	})
+	if err == nil {
+		t.Fatal("validateLegacyRuntimeModes() error = nil, want non-nil")
+	}
+	want := []string{
+		"balda.event_bus is no longer supported",
+		"balda.swarm.mode is no longer supported",
+		"balda.webhooks.mode is no longer supported",
+		"balda.scheduler.mode is no longer supported",
+	}
+	for _, marker := range want {
+		if !strings.Contains(err.Error(), marker) {
+			t.Fatalf("validateLegacyRuntimeModes() error = %q, want marker %q", err.Error(), marker)
+		}
+	}
+}
+
+func TestValidateLegacyRuntimeModes_AllowsCurrentConfig(t *testing.T) {
+	t.Parallel()
+
+	if err := validateLegacyRuntimeModes(BaldaConfig{}); err != nil {
+		t.Fatalf("validateLegacyRuntimeModes() error = %v, want nil", err)
+	}
+}
+
 func TestBuildScheduledTaskSchedulerConfig(t *testing.T) {
 	t.Parallel()
 

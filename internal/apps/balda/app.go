@@ -109,6 +109,9 @@ func Module(
 	if err := validateSchedulerConfig(cfg.Balda.Scheduler); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	if err := validateLegacyRuntimeModes(cfg.Balda); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	scheduledTaskSchedulerConfig := buildScheduledTaskSchedulerConfig(cfg.Balda)
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 	swarmConfig := swarm.Config{
@@ -552,6 +555,26 @@ func validateSchedulerConfig(cfg SchedulerConfig) error {
 		return fmt.Errorf("balda.scheduler.jobs is no longer supported; use balda.scheduler.tasks with envelope.target, envelope.key, and envelope.content")
 	}
 	return nil
+}
+
+func validateLegacyRuntimeModes(cfg BaldaConfig) error {
+	var errs []string
+	if cfg.RemovedEventBus != nil {
+		errs = append(errs, "balda.event_bus is no longer supported; configure balda.nats for JetStream")
+	}
+	if cfg.Swarm.RemovedMode != nil {
+		errs = append(errs, "balda.swarm.mode is no longer supported; use balda.swarm.enabled with JetStream-only runtime")
+	}
+	if cfg.Webhooks.RemovedMode != nil {
+		errs = append(errs, "balda.webhooks.mode is no longer supported; webhooks publish JetStream commands only")
+	}
+	if cfg.Scheduler.RemovedMode != nil {
+		errs = append(errs, "balda.scheduler.mode is no longer supported; scheduler publishes JetStream commands only")
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("invalid legacy mode configuration: %s", strings.Join(errs, "; "))
 }
 
 func buildScheduledTaskSchedulerConfig(cfg BaldaConfig) handlers.ScheduledTaskSchedulerConfig {

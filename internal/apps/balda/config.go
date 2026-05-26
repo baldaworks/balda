@@ -24,6 +24,8 @@ type BaldaConfig struct {
 	Workspace         WorkspaceConfig      `mapstructure:"workspace"`
 	MCPServers        []string             `mapstructure:"mcp_servers"`
 	GlobalInstruction string               `mapstructure:"global_instruction"`
+	// RemovedEventBus detects stale balda.event_bus config and fails startup loudly.
+	RemovedEventBus any `mapstructure:"event_bus"`
 }
 
 // TelegramConfig holds the Telegram bot configuration.
@@ -48,6 +50,8 @@ type WebhooksConfig struct {
 	Enabled    bool                          `mapstructure:"enabled"`
 	ListenAddr string                        `mapstructure:"listen_addr"`
 	Routes     map[string]WebhookRouteConfig `mapstructure:"routes"`
+	// RemovedMode detects stale balda.webhooks.mode config and fails startup loudly.
+	RemovedMode any `mapstructure:"mode"`
 }
 
 // WebhookRouteConfig binds a webhook path to route envelope/auth/dedupe policy.
@@ -119,6 +123,8 @@ type SwarmConfig struct {
 	Events   SwarmEventConfig            `mapstructure:"events"`
 	DLQ      SwarmDLQConfig              `mapstructure:"dlq"`
 	Agents   map[string]SwarmAgentConfig `mapstructure:"agents"`
+	// RemovedMode detects stale balda.swarm.mode config and fails startup loudly.
+	RemovedMode any `mapstructure:"mode"`
 }
 
 type SwarmCommandConfig struct {
@@ -149,6 +155,8 @@ type SwarmAgentConfig struct {
 // SchedulerConfig controls startup-managed recurring tasks.
 type SchedulerConfig struct {
 	Tasks []ScheduledTaskConfig `mapstructure:"tasks"`
+	// RemovedMode detects stale balda.scheduler.mode config so it fails loudly instead of being ignored.
+	RemovedMode any `mapstructure:"mode"`
 	// RemovedJobs detects stale balda.scheduler.jobs config so it fails loudly instead of being ignored.
 	RemovedJobs any `mapstructure:"jobs"`
 }
