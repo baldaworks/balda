@@ -319,12 +319,12 @@ func (e *taskActorExecutor) Handle(ctx context.Context, env swarm.Envelope) erro
 func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.Envelope, payload sessionTurnPayload) error {
 	taskID := firstNonEmpty(env.TaskID, env.To.Key)
 	if taskID != "" && e.tasks != nil {
-		if task, ok, err := e.tasks.Get(ctx, taskID); err != nil {
+		if _, ok, err := e.tasks.Get(ctx, taskID); err != nil {
 			return swarm.TransientError(err)
-		} else if ok && isTerminalTaskStatus(task.Status) {
+		} else if ok {
 			return nil
 		}
-		_, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
+		created, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
 			ID:            taskID,
 			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
 			Title:         "Webhook task",
@@ -338,6 +338,9 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 		}, "task.actor", payload)
 		if err != nil {
 			return swarm.TransientError(err)
+		}
+		if !created {
+			return nil
 		}
 	}
 	sessionEnv, err := sessionTurnEnvelope(payload)
@@ -374,12 +377,12 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 		return swarm.PolicyError(fmt.Errorf("scheduled task content is required"))
 	}
 	if e.tasks != nil {
-		if task, ok, err := e.tasks.Get(ctx, taskID); err != nil {
+		if _, ok, err := e.tasks.Get(ctx, taskID); err != nil {
 			return swarm.TransientError(err)
-		} else if ok && isTerminalTaskStatus(task.Status) {
+		} else if ok {
 			return nil
 		}
-		_, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
+		created, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
 			ID:            taskID,
 			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
 			Title:         "Scheduled task: " + strings.TrimSpace(payload.TaskID),
@@ -393,6 +396,9 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 		}, "task.actor", payload)
 		if err != nil {
 			return swarm.TransientError(err)
+		}
+		if !created {
+			return nil
 		}
 	}
 	sessionPayload := sessionTurnPayload{

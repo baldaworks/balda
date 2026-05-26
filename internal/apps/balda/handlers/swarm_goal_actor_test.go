@@ -282,6 +282,67 @@ func TestTaskActorDispatchSessionTurnKeepsTaskRunningUntilSessionCompletes(t *te
 	}
 }
 
+func TestTaskActorDispatchSessionTurnSkipsExistingTasks(t *testing.T) {
+	statuses := []string{
+		baldastate.SwarmTaskStatusCreated,
+		baldastate.SwarmTaskStatusRunning,
+		baldastate.SwarmTaskStatusCompleted,
+		baldastate.SwarmTaskStatusFailed,
+		baldastate.SwarmTaskStatusCanceled,
+	}
+	for _, status := range statuses {
+		t.Run(status, func(t *testing.T) {
+			ctx := context.Background()
+			_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
+			exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
+			locator := taskActorTestLocator()
+			taskID := "webhook-redelivery-" + strings.ReplaceAll(status, "_", "-")
+			if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
+				ID:            taskID,
+				SessionID:     locator.SessionID,
+				Title:         "Webhook task",
+				Objective:     "release event",
+				Status:        status,
+				OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
+				AssignedActor: swarm.ActorTypeSession + ":" + locator.SessionID,
+				CreatedFrom:   "webhook",
+			}, "test", nil); err != nil {
+				t.Fatalf("Create task: %v", err)
+			}
+			before := len(bus.commands)
+
+			err := exec.dispatchSessionTurn(ctx, swarm.Envelope{
+				ID:        "task-command-" + status,
+				Namespace: swarm.NamespaceWebhookInbound,
+				Kind:      swarm.KindWebhookEvent,
+				From:      swarm.ActorAddress{Target: "webhook", Key: "release"},
+				To:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+				SessionID: locator.SessionID,
+				TaskID:    taskID,
+			}, sessionTurnPayload{
+				Text:      "release event",
+				Locator:   locator,
+				UserID:    "tg-101",
+				Source:    "webhook",
+				DedupeKey: "webhook:release:req-1:session",
+			})
+			if err != nil {
+				t.Fatalf("dispatchSessionTurn() error = %v", err)
+			}
+			if got := len(bus.commands); got != before {
+				t.Fatalf("published commands = %d, want %d for existing %s task", got, before, status)
+			}
+			task, ok, err := tasks.Get(ctx, taskID)
+			if err != nil {
+				t.Fatalf("Get(task) error = %v", err)
+			}
+			if !ok || task.Status != status {
+				t.Fatalf("task = %+v found=%v, want status %q preserved", task, ok, status)
+			}
+		})
+	}
+}
+
 func TestTaskActorStartScheduledTaskDispatchesSessionTurn(t *testing.T) {
 	ctx := context.Background()
 	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
@@ -332,6 +393,67 @@ func TestTaskActorStartScheduledTaskDispatchesSessionTurn(t *testing.T) {
 	}
 	if child.ScheduledTaskID != "daily-review" || child.Deliver || child.Source != "schedule" {
 		t.Fatalf("child payload = %+v, want scheduled no-delivery turn", child)
+	}
+}
+
+func TestTaskActorStartScheduledTaskSkipsExistingTasks(t *testing.T) {
+	statuses := []string{
+		baldastate.SwarmTaskStatusCreated,
+		baldastate.SwarmTaskStatusRunning,
+		baldastate.SwarmTaskStatusCompleted,
+		baldastate.SwarmTaskStatusFailed,
+		baldastate.SwarmTaskStatusCanceled,
+	}
+	for _, status := range statuses {
+		t.Run(status, func(t *testing.T) {
+			ctx := context.Background()
+			_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
+			exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
+			locator := taskActorTestLocator()
+			taskID := "scheduled-redelivery-" + strings.ReplaceAll(status, "_", "-")
+			if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
+				ID:            taskID,
+				SessionID:     locator.SessionID,
+				Title:         "Scheduled task: daily-review",
+				Objective:     "review open work",
+				Status:        status,
+				OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
+				AssignedActor: swarm.ActorTypeSession + ":" + locator.SessionID,
+				CreatedFrom:   "schedule",
+			}, "test", nil); err != nil {
+				t.Fatalf("Create task: %v", err)
+			}
+			before := len(bus.commands)
+
+			err := exec.startScheduledTaskTask(ctx, swarm.Envelope{
+				ID:        "scheduled-command-" + status,
+				Namespace: swarm.NamespaceScheduleInbound,
+				Kind:      swarm.KindScheduledTask,
+				From:      swarm.ActorAddress{Target: "schedule", Key: "daily-review"},
+				To:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+				SessionID: locator.SessionID,
+				TaskID:    taskID,
+				DedupeKey: "schedule:daily-review:slot-1",
+			}, scheduledTaskPayload{
+				TaskID:  "daily-review",
+				Content: "review open work",
+				Locator: locator,
+				UserID:  "tg-101",
+			})
+			if err != nil {
+				t.Fatalf("startScheduledTaskTask() error = %v", err)
+			}
+			if got := len(bus.commands); got != before {
+				t.Fatalf("published commands = %d, want %d for existing %s task", got, before, status)
+			}
+			task, ok, err := tasks.Get(ctx, taskID)
+			if err != nil {
+				t.Fatalf("Get(task) error = %v", err)
+			}
+			if !ok || task.Status != status {
+				t.Fatalf("task = %+v found=%v, want status %q preserved", task, ok, status)
+			}
+		})
 	}
 }
 
