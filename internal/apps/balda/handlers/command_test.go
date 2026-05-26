@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -345,8 +346,7 @@ func TestCommandHandlerSubmitGoalTask_PublishesJetStreamCommandOnly(t *testing.T
 	}
 
 	bus := &recordingHandlerCommandBus{}
-	goal := &fakeGoalRunner{startResult: true, maxIters: 7}
-	handler := &CommandHandler{swarmCoordinator: swarm.NewCoordinator(bus, swarm.Config{Enabled: true}), goalRunner: goal}
+	handler := &CommandHandler{swarmCoordinator: swarm.NewCoordinator(bus, swarm.Config{Enabled: true}), goalMaxIterations: 7}
 
 	started, err := handler.submitGoalTask(ctx, locator, "deploy release", testTelegramUserID101)
 	if err != nil {
@@ -355,26 +355,26 @@ func TestCommandHandlerSubmitGoalTask_PublishesJetStreamCommandOnly(t *testing.T
 	if !started {
 		t.Fatal("submitGoalTask() started = false, want true")
 	}
-	if len(goal.startCalls) != 0 {
-		t.Fatalf("GoalRunner StartTask calls = %d, want 0", len(goal.startCalls))
-	}
 	if len(bus.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(bus.commands))
+	}
+	var payload taskEnvelopePayload
+	if err := json.Unmarshal([]byte(bus.commands[0].PayloadJSON), &payload); err != nil {
+		t.Fatalf("decode goal command payload: %v", err)
+	}
+	if payload.Goal == nil || payload.Goal.MaxIterations != 7 {
+		t.Fatalf("goal payload = %+v, want max_iterations=7 from config", payload.Goal)
 	}
 }
 
 func TestCommandHandlerOnCommand_GoalWithoutArgsShowsUsage(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	goal := handler.goalRunner.(*fakeGoalRunner)
 
 	err := handler.onCommand(context.Background(), newCommandEvent("goal", "", 101, 9001, nil))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	if len(goal.startCalls) != 0 {
-		t.Fatalf("GoalRunner Start calls = %d, want 0", len(goal.startCalls))
-	}
 	assertLastSentContains(t, tgClient, "Usage: /goal <objective>")
 }
 
@@ -415,25 +415,6 @@ func TestCommandHandlerOnCommand_CancelClearsQueueAndInFlight(t *testing.T) {
 
 func TestCommandHandlerOnCommand_CancelNoActiveTurns(t *testing.T) {
 	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("cancel", "", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
-	}
-	if len(turns.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(turns.commands))
-	}
-	assertLastSentContains(t, tgClient, "Cancel requested.")
-}
-
-func TestCommandHandlerOnCommand_CancelCancelsGoalRun(t *testing.T) {
-	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
-	goal := handler.goalRunner.(*fakeGoalRunner)
-	goal.cancelResult = true
 
 	err := handler.onCommand(context.Background(), newCommandEvent("cancel", "", 101, 9001, nil))
 	if err != nil {
@@ -604,12 +585,6 @@ type cancelSessionCall struct {
 	ClearQueued bool
 }
 
-type goalStartCall struct {
-	SessionID       string
-	Objective       string
-	TransportUserID string
-}
-
 func (f *fakeCommandSessionManager) CreateSession(_ context.Context, sessionCtx session.SessionContext, agentName string) error {
 	f.createCalls = append(f.createCalls, createSessionCall{
 		SessionID: sessionCtx.Locator.SessionID,
@@ -654,15 +629,6 @@ type fakeTurnDispatcher struct {
 	cancelErr         error
 }
 
-type fakeGoalRunner struct {
-	startCalls   []goalStartCall
-	startResult  bool
-	startErr     error
-	cancelCalls  []string
-	cancelResult bool
-	maxIters     int
-}
-
 func (f *fakeTurnDispatcher) Enqueue(task TurnTask) (int, error) {
 	f.enqueueCalls = append(f.enqueueCalls, task)
 	return 0, nil
@@ -697,45 +663,6 @@ func (f *fakeTurnDispatcher) CancelSession(locator session.SessionLocator, clear
 	return f.cancelHadInFlight, f.cancelDropped, nil
 }
 
-func (f *fakeGoalRunner) Start(
-	_ context.Context,
-	locator session.SessionLocator,
-	objective string,
-	transportUserID string,
-) (bool, error) {
-	return f.StartTask(context.Background(), "", locator, objective, transportUserID)
-}
-
-func (f *fakeGoalRunner) StartTask(
-	_ context.Context,
-	_ string,
-	locator session.SessionLocator,
-	objective string,
-	transportUserID string,
-) (bool, error) {
-	f.startCalls = append(f.startCalls, goalStartCall{
-		SessionID:       locator.SessionID,
-		Objective:       objective,
-		TransportUserID: transportUserID,
-	})
-	if f.startErr != nil {
-		return false, f.startErr
-	}
-	return f.startResult, nil
-}
-
-func (f *fakeGoalRunner) MaxIterations() int {
-	if f.maxIters <= 0 {
-		return defaultGoalMaxIterations
-	}
-	return f.maxIters
-}
-
-func (f *fakeGoalRunner) Cancel(locator session.SessionLocator) bool {
-	f.cancelCalls = append(f.cancelCalls, locator.SessionID)
-	return f.cancelResult
-}
-
 func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSessionManager, *fakeTurnDispatcher, *fakeTelegramClient) {
 	t.Helper()
 
@@ -759,7 +686,6 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 	msg.SetAgentReplyFormattingMode("none")
 	sessionManager := &fakeCommandSessionManager{}
 	turnDispatcher := &fakeTurnDispatcher{}
-	goalRunner := &fakeGoalRunner{startResult: true}
 	sessionManager.baldaProvider = testProviderAlpha
 	sessionManager.metadata = session.AgentMetadata{
 		Type:       "opencode_acp",
@@ -774,13 +700,13 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 			TGClient:  tgClient,
 			Logger:    zerolog.Nop(),
 		}),
-		sessionManager:   sessionManager,
-		turnDispatcher:   turnDispatcher,
-		swarmCoordinator: swarm.NewCoordinator(turnDispatcher, swarm.Config{Enabled: true}),
-		goalRunner:       goalRunner,
-		messenger:        msg,
-		commandBus:       turnDispatcher,
-		memoryStore:      memory.NewStore(t.TempDir(), true),
+		sessionManager:    sessionManager,
+		turnDispatcher:    turnDispatcher,
+		swarmCoordinator:  swarm.NewCoordinator(turnDispatcher, swarm.Config{Enabled: true}),
+		goalMaxIterations: normalizeGoalMaxIterations(0),
+		messenger:         msg,
+		commandBus:        turnDispatcher,
+		memoryStore:       memory.NewStore(t.TempDir(), true),
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
 }

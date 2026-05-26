@@ -29,7 +29,6 @@ type taskControlActor struct {
 	turnDispatcher turnQueue
 	tasks          *swarm.TaskService
 	taskRuns       *taskRunRegistry
-	goalRunner     goalCommandRunner
 	channel        *baldatelegram.Adapter
 	logger         zerolog.Logger
 }
@@ -40,7 +39,6 @@ type taskControlActorParams struct {
 	TurnDispatcher *TurnDispatcher
 	TaskService    *swarm.TaskService
 	TaskRuns       *taskRunRegistry
-	GoalRunner     *GoalRunner
 	Channel        *baldatelegram.Adapter
 	Logger         zerolog.Logger
 }
@@ -50,7 +48,6 @@ func newTaskControlActor(params taskControlActorParams) swarm.Actor {
 		turnDispatcher: params.TurnDispatcher,
 		tasks:          params.TaskService,
 		taskRuns:       params.TaskRuns,
-		goalRunner:     params.GoalRunner,
 		channel:        params.Channel,
 		logger:         params.Logger.With().Str("component", "balda.task_control_actor").Logger(),
 	}
@@ -101,9 +98,6 @@ func (a *taskControlActor) cancelTask(ctx context.Context, env swarm.Envelope, p
 	if a.taskRuns != nil {
 		runCanceled = a.taskRuns.cancel(task.ID)
 	}
-	if !runCanceled && a.goalRunner != nil && task.SessionID == payload.Locator.SessionID {
-		runCanceled = a.goalRunner.Cancel(payload.Locator)
-	}
 	if !runCanceled && a.turnDispatcher != nil && strings.TrimSpace(payload.Locator.SessionID) != "" {
 		hadInFlight, dropped, err := a.turnDispatcher.CancelSession(payload.Locator, true)
 		if err != nil {
@@ -144,11 +138,7 @@ func (a *taskControlActor) cancelSession(ctx context.Context, payload taskContro
 			}
 		}
 	}
-	goalCanceled := false
-	if a.goalRunner != nil {
-		goalCanceled = a.goalRunner.Cancel(payload.Locator)
-	}
-	a.sendControlMessage(ctx, payload.Locator, formatCancelResponse(hadInFlight, dropped, goalCanceled, taskCanceled))
+	a.sendControlMessage(ctx, payload.Locator, formatCancelResponse(hadInFlight, dropped, taskCanceled))
 	return nil
 }
 
@@ -161,8 +151,8 @@ func (a *taskControlActor) sendControlMessage(ctx context.Context, locator balda
 	}
 }
 
-func formatCancelResponse(hadInFlight bool, dropped int, goalCanceled bool, taskCanceled int) string {
-	if !hadInFlight && dropped == 0 && !goalCanceled && taskCanceled == 0 {
+func formatCancelResponse(hadInFlight bool, dropped int, taskCanceled int) string {
+	if !hadInFlight && dropped == 0 && taskCanceled == 0 {
 		return "No running or queued turns for this session."
 	}
 	response := "Canceled current turn."
@@ -171,9 +161,6 @@ func formatCancelResponse(hadInFlight bool, dropped int, goalCanceled bool, task
 	}
 	if dropped > 0 {
 		response += fmt.Sprintf("\nDropped %d queued message(s).", dropped)
-	}
-	if goalCanceled {
-		response += "\nCanceled active goal run."
 	}
 	if taskCanceled > 0 {
 		response += fmt.Sprintf("\nCanceled %d active task(s).", taskCanceled)

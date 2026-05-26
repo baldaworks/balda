@@ -27,12 +27,10 @@ func TestTaskControlActorCancelsSessionWork(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 	turns := &fakeTurnDispatcher{cancelHadInFlight: true, cancelDropped: 2}
-	goal := &fakeGoalRunner{cancelResult: true}
 	actor := &taskControlActor{
 		turnDispatcher: turns,
 		tasks:          tasks,
 		taskRuns:       newTaskRunRegistry(),
-		goalRunner:     goal,
 		channel:        newBaldaTestTelegramAdapter(),
 	}
 	env, err := controlCancelEnvelope(locator, "", testTelegramUserID101, "session canceled by user")

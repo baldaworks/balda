@@ -100,10 +100,7 @@ type goalTaskPlan struct {
 }
 
 func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error) {
-	maxIterations := defaultGoalMaxIterations
-	if h.goalRunner != nil {
-		maxIterations = h.goalRunner.MaxIterations()
-	}
+	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
 	env, err := goalTaskEnvelope(locator, objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
