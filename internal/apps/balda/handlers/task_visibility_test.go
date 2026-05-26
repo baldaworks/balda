@@ -78,6 +78,39 @@ func TestCommandHandlerTaskVisibilityCommands(t *testing.T) {
 	}
 }
 
+func TestCommandHandlerTaskVisibilityShowsTaskStatusWithoutProjectedEvents(t *testing.T) {
+	ctx := context.Background()
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	_, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	handler.swarmConfig = swarm.Config{Enabled: true}
+	handler.swarmCoordinator = coordinator
+	handler.commandBus = bus
+	handler.tasks = tasks
+	handler.agentRegistry = registry
+
+	createTaskRecord(t, ctx, tasks, baldastate.SwarmTaskRecord{
+		ID:          "task-no-events",
+		SessionID:   "tg-9001-0",
+		Title:       "Goal: no events",
+		Objective:   "show status from task row",
+		Status:      baldastate.SwarmTaskStatusRunning,
+		CreatedFrom: "goal",
+	})
+	if err := tasks.MarkStatus(ctx, "task-no-events", baldastate.SwarmTaskStatusRunning, "test", "", "", nil); err != nil {
+		t.Fatalf("MarkStatus() error = %v", err)
+	}
+
+	if err := handler.onCommand(ctx, newCommandEvent("task", "task-no-events", 101, 9001, nil)); err != nil {
+		t.Fatalf("/task error = %v", err)
+	}
+	assertLastSentContains(t, tgClient, "Status: running")
+
+	if err := handler.onCommand(ctx, newCommandEvent("task", "task-no-events events", 101, 9001, nil)); err != nil {
+		t.Fatalf("/task events error = %v", err)
+	}
+	assertLastSentContains(t, tgClient, "No events for task task-no-events.")
+}
+
 func TestCommandHandlerSwarmAndMailboxStatusCommands(t *testing.T) {
 	ctx := context.Background()
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
@@ -103,6 +136,7 @@ func TestCommandHandlerSwarmAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentContains(t, tgClient, "state_source_of_truth: sqlite")
 	assertLastSentContains(t, tgClient, "event_publishing_mode: best_effort_visibility")
 	assertLastSentContains(t, tgClient, "created: 1")
+	assertLastSentContains(t, tgClient, "BALDA_EVENT_PROJECTOR_lag: 2")
 
 	if err := handler.onCommand(ctx, newCommandEvent("mailbox", "status", 101, 9001, nil)); err != nil {
 		t.Fatalf("/mailbox status error = %v", err)
@@ -170,6 +204,9 @@ func (*statusCommandBus) Status(context.Context) (swarm.CommandBusStatus, error)
 		Events:     swarm.StreamStatus{Name: swarm.DefaultEventStream, Messages: 2, FirstSeq: 1, LastSeq: 2},
 		DLQ:        swarm.StreamStatus{Name: swarm.DefaultDLQStream},
 		Worker:     swarm.ConsumerStatus{Name: swarm.DefaultCommandConsumer},
+		ProjectionLag: map[string]uint64{
+			swarm.DefaultEventProjectorConsumer: 2,
+		},
 	}, nil
 }
 
