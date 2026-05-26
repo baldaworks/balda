@@ -192,6 +192,7 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 	done := make(chan error, 1)
 	_, err := e.handler.turnDispatcher.Enqueue(TurnTask{
 		SessionID: payload.Locator.SessionID,
+		Context:   ctx,
 		Run: func(runCtx context.Context) error {
 			err := e.handler.runSessionTurnPayload(runCtx, payload)
 			done <- err

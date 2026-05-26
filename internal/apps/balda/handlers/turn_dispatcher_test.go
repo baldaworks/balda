@@ -195,6 +195,78 @@ func TestTurnDispatcher_CancelSessionClearsPendingAndCancelsRunning(t *testing.T
 	ensureNoSignal(t, pendingExecuted, 200*time.Millisecond, "pending task should be dropped after cancel")
 }
 
+func TestTurnDispatcher_TaskContextCancellationStopsRunningTask(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := newTurnDispatcher(zerolog.Nop())
+	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
+
+	taskCtx, cancelTask := context.WithCancel(context.Background())
+	defer cancelTask()
+
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+
+	_, err := dispatcher.Enqueue(TurnTask{
+		SessionID: "tg-ctx-1",
+		Context:   taskCtx,
+		Run: func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			close(stopped)
+			return ctx.Err()
+		},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	waitForSignal(t, started, "task start")
+	cancelTask()
+	waitForSignal(t, stopped, "task context cancellation")
+}
+
+func TestTurnDispatcher_SkipsTaskRunWhenTaskContextAlreadyCanceled(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := newTurnDispatcher(zerolog.Nop())
+	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	executed := make(chan struct{}, 1)
+
+	_, err := dispatcher.Enqueue(TurnTask{
+		SessionID: "tg-ctx-2",
+		Run: func(context.Context) error {
+			close(started)
+			<-release
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(first) error = %v", err)
+	}
+	waitForSignal(t, started, "first task start")
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = dispatcher.Enqueue(TurnTask{
+		SessionID: "tg-ctx-2",
+		Context:   canceledCtx,
+		Run: func(context.Context) error {
+			executed <- struct{}{}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(canceled) error = %v", err)
+	}
+
+	close(release)
+	ensureNoSignal(t, executed, 250*time.Millisecond, "canceled task should not run")
+}
+
 func TestTurnDispatcher_AllowsConcurrentSessions(t *testing.T) {
 	t.Parallel()
 

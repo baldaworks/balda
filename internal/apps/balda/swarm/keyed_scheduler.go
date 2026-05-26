@@ -86,16 +86,22 @@ func (s *KeyedActorScheduler) pruneLocked(now time.Time) {
 }
 
 func actorKey(env Envelope) string {
-	switch strings.TrimSpace(env.Namespace) {
-	case NamespaceTaskControl:
-		if taskID := strings.TrimSpace(env.TaskID); taskID != "" {
+	namespace := strings.TrimSpace(env.Namespace)
+	taskID := strings.TrimSpace(env.TaskID)
+	if taskID != "" {
+		switch namespace {
+		case NamespaceTaskControl,
+			NamespaceAgentCommand,
+			NamespaceAgentResult,
+			NamespaceHumanInbound,
+			NamespaceWebhookInbound,
+			NamespaceScheduleInbound:
 			return "task:" + taskID
 		}
+	}
+	switch namespace {
 	case NamespaceAgentCommand:
 		if key := strings.TrimSpace(env.To.Key); key != "" {
-			if taskID := strings.TrimSpace(env.TaskID); taskID != "" {
-				return "task:" + taskID + ":agent:" + key
-			}
 			return "agent:" + key
 		}
 	case NamespaceHumanInbound, NamespaceWebhookInbound, NamespaceScheduleInbound:

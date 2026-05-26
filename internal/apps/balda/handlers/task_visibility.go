@@ -217,6 +217,10 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 	if h.tasks == nil {
 		out.WriteString("\n- unavailable")
 	} else {
+		out.WriteString("\n- state_source_of_truth: ")
+		out.WriteString(h.tasks.StateSourceOfTruth())
+		out.WriteString("\n- event_publishing_mode: ")
+		out.WriteString(h.tasks.EventPublishingMode())
 		counts, err := h.tasks.StatusCounts(ctx)
 		if err != nil {
 			return "", err

@@ -99,6 +99,8 @@ func TestCommandHandlerSwarmAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentNotContains(t, tgClient, "shadow_mode")
 	assertLastSentNotContains(t, tgClient, "legacy_direct_path")
 	assertLastSentContains(t, tgClient, "planner")
+	assertLastSentContains(t, tgClient, "state_source_of_truth: sqlite")
+	assertLastSentContains(t, tgClient, "event_publishing_mode: best_effort_visibility")
 	assertLastSentContains(t, tgClient, "created: 1")
 
 	if err := handler.onCommand(ctx, newCommandEvent("mailbox", "status", 101, 9001, nil)); err != nil {

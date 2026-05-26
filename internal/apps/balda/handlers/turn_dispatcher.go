@@ -22,6 +22,7 @@ var ErrTurnQueueFull = errors.New("turn queue is full")
 
 type TurnTask struct {
 	SessionID string
+	Context   context.Context
 	Run       func(context.Context) error
 }
 
@@ -191,13 +192,22 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 			return
 		}
 
-		runCtx, cancel := context.WithCancel(context.Background())
+		baseCtx := task.Context
+		if baseCtx == nil {
+			baseCtx = context.Background()
+		}
+		runCtx, cancel := context.WithCancel(baseCtx)
 		d.mu.Lock()
 		queue.running = true
 		queue.inFlightCancel = cancel
 		d.mu.Unlock()
 
-		err := task.Run(runCtx)
+		var err error
+		if runCtx.Err() != nil {
+			err = runCtx.Err()
+		} else {
+			err = task.Run(runCtx)
+		}
 		cancel()
 
 		d.mu.Lock()

@@ -28,6 +28,13 @@ const (
 	TaskEventDeliverySent   = "delivery.sent"
 )
 
+const (
+	// TaskStateSourceOfTruth states that task lifecycle state is committed in SQLite first.
+	TaskStateSourceOfTruth = "sqlite"
+	// TaskEventPublishingMode states that task events are best-effort visibility updates.
+	TaskEventPublishingMode = "best_effort_visibility"
+)
+
 type TaskService struct {
 	store baldastate.SwarmStore
 	bus   EventPublisher
@@ -47,6 +54,14 @@ func NewTaskService(params taskServiceParams) (*TaskService, error) {
 	return &TaskService{store: params.StateProvider.Swarm(), bus: params.Bus}, nil
 }
 
+func (s *TaskService) StateSourceOfTruth() string {
+	return TaskStateSourceOfTruth
+}
+
+func (s *TaskService) EventPublishingMode() string {
+	return TaskEventPublishingMode
+}
+
 func (s *TaskService) Create(ctx context.Context, record baldastate.SwarmTaskRecord, actor string, payload any) (bool, error) {
 	if s == nil {
 		return false, nil
@@ -58,6 +73,7 @@ func (s *TaskService) Create(ctx context.Context, record baldastate.SwarmTaskRec
 	if strings.TrimSpace(payloadJSON) == "" {
 		payloadJSON = "{}"
 	}
+	// Contract: task state is authoritative in SQLite; event publication is visibility-only.
 	created, err := s.store.CreateTask(ctx, record)
 	if err != nil {
 		return false, err
@@ -104,6 +120,7 @@ func (s *TaskService) MarkStatus(ctx context.Context, taskID string, status stri
 	if s == nil {
 		return nil
 	}
+	// Contract: persist lifecycle transition first, then best-effort event emission.
 	if err := s.store.UpdateTaskStatus(ctx, taskID, status, reason); err != nil {
 		return err
 	}
@@ -139,6 +156,7 @@ func (s *TaskService) SetResult(ctx context.Context, taskID string, result any, 
 	if err != nil {
 		return err
 	}
+	// Contract: result/state write is authoritative; event emission is best-effort visibility.
 	if err := s.store.SetTaskResult(ctx, taskID, data, status, reason); err != nil {
 		return err
 	}
