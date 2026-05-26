@@ -50,6 +50,7 @@ type GoalkeeperRuntimeConfig struct {
 // TaskAgentRuntimeConfig configures one per-task role agent.
 type TaskAgentRuntimeConfig struct {
 	SessionID    string
+	UserID       string
 	BranchName   string
 	WorkspaceDir string
 	Role         string
@@ -213,12 +214,27 @@ func (m *RuntimeManager) BuildTaskAgentRuntime(
 	if err != nil {
 		return nil, err
 	}
+	userID := strings.TrimSpace(cfg.UserID)
+	if userID == "" {
+		return nil, fmt.Errorf("task agent user id is required")
+	}
+	workspaceDir := base.workspaceDir(cfg.WorkspaceDir)
+	if _, err := base.builder.CreateRuntimeSession(
+		ctx,
+		base.runtime,
+		base.providerID,
+		userID,
+		cfg.SessionID,
+		workspaceDir,
+	); err != nil {
+		return nil, fmt.Errorf("create task agent runtime session: %w", err)
+	}
 
 	ag, err := base.builder.BuildTaskRoleAgent(ctx, TaskRoleBuildConfig{
 		ProviderID:        base.providerID,
 		SessionID:         cfg.SessionID,
 		BranchName:        cfg.BranchName,
-		WorkspaceDir:      base.workspaceDir(cfg.WorkspaceDir),
+		WorkspaceDir:      workspaceDir,
 		Role:              cfg.Role,
 		ExtraMCPServerIDs: base.extraMCPServerIDs,
 	})

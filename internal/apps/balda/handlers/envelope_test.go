@@ -20,7 +20,7 @@ func TestResolveEnvelopeTarget_AliasOwner(t *testing.T) {
 	if got, want := target.Locator.SessionID, "tg-9001-0"; got != want {
 		t.Fatalf("session_id = %q, want %q", got, want)
 	}
-	if got, want := target.UserID, "tg-101"; got != want {
+	if got, want := target.UserID, testTelegramUserID101; got != want {
 		t.Fatalf("user_id = %q, want %q", got, want)
 	}
 	if got := target.TopicID; got != 0 {

@@ -252,6 +252,9 @@ func TestTaskAgentActorHandleUsesDerivedADKSessionID(t *testing.T) {
 	if runtimeBuilder.cfgs[0].SessionID == locator.SessionID {
 		t.Fatalf("runtime session id = %q, want derived task session (not base session id)", runtimeBuilder.cfgs[0].SessionID)
 	}
+	if runtimeBuilder.cfgs[0].UserID != "tg-101" {
+		t.Fatalf("runtime user id = %q, want tg-101", runtimeBuilder.cfgs[0].UserID)
+	}
 	if !strings.HasPrefix(runtimeBuilder.cfgs[0].SessionID, locator.SessionID+"-a") {
 		t.Fatalf("runtime session id = %q, want derived id based on active agent session id", runtimeBuilder.cfgs[0].SessionID)
 	}
@@ -315,7 +318,7 @@ func (b *recordingTaskAgentRuntimeBuilder) BuildTaskAgentRuntime(
 	}
 	if _, err := sessionService.Create(ctx, &adksession.CreateRequest{
 		AppName:   "task-agent-runtime-builder-test",
-		UserID:    "tg-101",
+		UserID:    cfg.UserID,
 		SessionID: cfg.SessionID,
 	}); err != nil {
 		return nil, err

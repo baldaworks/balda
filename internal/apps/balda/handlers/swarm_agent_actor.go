@@ -130,6 +130,7 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 	}
 	runtime, err := a.runtimeBuilder.BuildTaskAgentRuntime(ctx, baldaagent.TaskAgentRuntimeConfig{
 		SessionID:    payload.ADKSessionID,
+		UserID:       ts.GetUserID(),
 		BranchName:   ts.GetBranchName(),
 		WorkspaceDir: ts.GetWorkspaceDir(),
 		Role:         payload.Role,
