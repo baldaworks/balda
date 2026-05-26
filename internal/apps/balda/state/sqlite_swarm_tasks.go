@@ -129,8 +129,15 @@ func (s *sqliteSwarmStore) UpdateTaskStatus(ctx context.Context, taskID string, 
 	if trimmedTaskID == "" {
 		return fmt.Errorf("task id is required")
 	}
+	currentStatus, err := s.currentTaskStatus(ctx, trimmedTaskID)
+	if err != nil {
+		return err
+	}
 	normalizedStatus, err := normalizeSwarmTaskStatus(status)
 	if err != nil {
+		return err
+	}
+	if err := guardTaskStatusTransition(currentStatus, normalizedStatus); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
@@ -182,8 +189,15 @@ func (s *sqliteSwarmStore) SetTaskResult(ctx context.Context, taskID string, res
 	if trimmedTaskID == "" {
 		return fmt.Errorf("task id is required")
 	}
+	currentStatus, err := s.currentTaskStatus(ctx, trimmedTaskID)
+	if err != nil {
+		return err
+	}
 	normalizedStatus, err := normalizeSwarmTaskStatus(status)
 	if err != nil {
+		return err
+	}
+	if err := guardTaskStatusTransition(currentStatus, normalizedStatus); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
@@ -899,4 +913,44 @@ func optionalTimeValue(value time.Time) any {
 		return nil
 	}
 	return value.UTC().Format(time.RFC3339)
+}
+
+func (s *sqliteSwarmStore) currentTaskStatus(ctx context.Context, taskID string) (string, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT status FROM swarm_tasks WHERE id = ?`, taskID)
+	var status string
+	if err := row.Scan(&status); err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("swarm task %q not found", taskID)
+		}
+		return "", fmt.Errorf("read swarm task %q status: %w", taskID, err)
+	}
+	normalized, err := normalizeSwarmTaskStatus(status)
+	if err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
+func guardTaskStatusTransition(current string, next string) error {
+	current = strings.TrimSpace(current)
+	next = strings.TrimSpace(next)
+	if current == "" || current == next {
+		return nil
+	}
+	if isTerminalSwarmTaskStatus(current) {
+		return fmt.Errorf("invalid swarm task transition %q -> %q: terminal status", current, next)
+	}
+	if next == SwarmTaskStatusCreated {
+		return fmt.Errorf("invalid swarm task transition %q -> %q", current, next)
+	}
+	return nil
+}
+
+func isTerminalSwarmTaskStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case SwarmTaskStatusCompleted, SwarmTaskStatusFailed, SwarmTaskStatusCanceled, SwarmTaskStatusDeadLettered:
+		return true
+	default:
+		return false
+	}
 }

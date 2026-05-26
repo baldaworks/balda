@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -94,6 +95,73 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 	}
 	if len(counts) != 1 || counts[0].Status != SwarmTaskStatusCompleted || counts[0].Count != 1 {
 		t.Fatalf("task status counts = %+v, want completed=1", counts)
+	}
+}
+
+func TestSQLiteSwarmStore_TaskStatusTransitionsAreGuarded(t *testing.T) {
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.Swarm()
+
+	_, err := store.CreateTask(ctx, SwarmTaskRecord{
+		ID:        "task-guarded",
+		SessionID: "session-1",
+		Objective: "guard transitions",
+		Status:    SwarmTaskStatusRunning,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if err := store.UpdateTaskStatus(ctx, "task-guarded", SwarmTaskStatusCompleted, "done"); err != nil {
+		t.Fatalf("UpdateTaskStatus(completed) error = %v", err)
+	}
+
+	err = store.UpdateTaskStatus(ctx, "task-guarded", SwarmTaskStatusRunning, "reopen")
+	if err == nil || !strings.Contains(err.Error(), "invalid swarm task transition") {
+		t.Fatalf("UpdateTaskStatus(reopen) error = %v, want invalid transition", err)
+	}
+	got, ok, err := store.GetTask(ctx, "task-guarded")
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+	if !ok || got.Status != SwarmTaskStatusCompleted {
+		t.Fatalf("task = %+v found=%v, want status completed", got, ok)
+	}
+
+	if err := store.UpdateTaskStatus(ctx, "task-guarded", SwarmTaskStatusCompleted, "idempotent"); err != nil {
+		t.Fatalf("UpdateTaskStatus(idempotent terminal) error = %v", err)
+	}
+}
+
+func TestSQLiteSwarmStore_SetTaskResultTransitionGuarded(t *testing.T) {
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.Swarm()
+
+	_, err := store.CreateTask(ctx, SwarmTaskRecord{
+		ID:        "task-canceled",
+		SessionID: "session-1",
+		Objective: "canceled",
+		Status:    SwarmTaskStatusCanceled,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	err = store.SetTaskResult(ctx, "task-canceled", `{"ok":true}`, SwarmTaskStatusCompleted, "should fail")
+	if err == nil || !strings.Contains(err.Error(), "invalid swarm task transition") {
+		t.Fatalf("SetTaskResult() error = %v, want invalid transition", err)
+	}
+	got, ok, err := store.GetTask(ctx, "task-canceled")
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+	if !ok || got.Status != SwarmTaskStatusCanceled {
+		t.Fatalf("task = %+v found=%v, want status canceled", got, ok)
 	}
 }
 
