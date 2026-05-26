@@ -645,12 +645,6 @@ func (f *fakeTurnDispatcher) PublishCommand(_ context.Context, env swarm.Envelop
 }
 
 func (*fakeTurnDispatcher) PublishEvent(context.Context, string, swarm.Envelope) error { return nil }
-func (*fakeTurnDispatcher) PublishDLQ(context.Context, swarm.Envelope, string) error   { return nil }
-func (*fakeTurnDispatcher) RunCommandConsumer(ctx context.Context, _ swarm.CommandHandler) error {
-	<-ctx.Done()
-	return ctx.Err()
-}
-func (*fakeTurnDispatcher) Drain(context.Context) error { return nil }
 
 func (f *fakeTurnDispatcher) CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error) {
 	f.cancelCalls = append(f.cancelCalls, cancelSessionCall{
@@ -705,7 +699,6 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 		swarmCoordinator:  swarm.NewCoordinator(turnDispatcher, swarm.Config{Enabled: true}),
 		goalMaxIterations: normalizeGoalMaxIterations(0),
 		messenger:         msg,
-		commandBus:        turnDispatcher,
 		memoryStore:       memory.NewStore(t.TempDir(), true),
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
@@ -741,14 +734,6 @@ func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject str
 	}
 	return nil
 }
-func (*recordingHandlerCommandBus) PublishDLQ(context.Context, swarm.Envelope, string) error {
-	return nil
-}
-func (*recordingHandlerCommandBus) RunCommandConsumer(ctx context.Context, _ swarm.CommandHandler) error {
-	<-ctx.Done()
-	return ctx.Err()
-}
-func (*recordingHandlerCommandBus) Drain(context.Context) error { return nil }
 
 type fakeCollaboratorBackend struct {
 	entries map[string]auth.Collaborator

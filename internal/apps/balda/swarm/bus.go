@@ -36,13 +36,50 @@ type CommandMessage interface {
 // CommandHandler handles one durable command message.
 type CommandHandler func(ctx context.Context, msg CommandMessage) error
 
-// CommandBus is Balda's transport contract. JetStream is the only runtime implementation.
-type CommandBus interface {
+// CommandPublisher publishes durable actor commands.
+type CommandPublisher interface {
 	PublishCommand(ctx context.Context, env Envelope) (*CommandPublishResult, error)
+}
+
+// EventPublisher publishes durable visibility events.
+type EventPublisher interface {
 	PublishEvent(ctx context.Context, subject string, env Envelope) error
+}
+
+// DLQPublisher publishes terminal command failures.
+type DLQPublisher interface {
 	PublishDLQ(ctx context.Context, env Envelope, reason string) error
+}
+
+// CommandConsumer consumes durable actor commands.
+type CommandConsumer interface {
 	RunCommandConsumer(ctx context.Context, handler CommandHandler) error
+}
+
+// BusDrainer drains transport resources.
+type BusDrainer interface {
 	Drain(ctx context.Context) error
+}
+
+// CoordinatorBus is the command/event subset used by ingress coordinators.
+type CoordinatorBus interface {
+	CommandPublisher
+	EventPublisher
+}
+
+// RuntimeBus is the command/event subset used by the actor runtime.
+type RuntimeBus interface {
+	CommandConsumer
+	EventPublisher
+}
+
+// CommandBus is Balda's full transport contract. JetStream is the only runtime implementation.
+type CommandBus interface {
+	CommandPublisher
+	EventPublisher
+	DLQPublisher
+	CommandConsumer
+	BusDrainer
 }
 
 // CommandBusStatus describes JetStream stream and consumer state for /swarm status.

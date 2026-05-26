@@ -17,9 +17,6 @@ type recordingTaskCommandBus struct {
 	errs     []error
 }
 
-func (*recordingTaskCommandBus) PublishCommand(context.Context, Envelope) (*CommandPublishResult, error) {
-	return nil, nil
-}
 func (b *recordingTaskCommandBus) PublishEvent(_ context.Context, subject string, env Envelope) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -32,12 +29,6 @@ func (b *recordingTaskCommandBus) PublishEvent(_ context.Context, subject string
 	}
 	return nil
 }
-func (*recordingTaskCommandBus) PublishDLQ(context.Context, Envelope, string) error { return nil }
-func (*recordingTaskCommandBus) RunCommandConsumer(ctx context.Context, _ CommandHandler) error {
-	<-ctx.Done()
-	return ctx.Err()
-}
-func (*recordingTaskCommandBus) Drain(context.Context) error { return nil }
 
 func TestTaskServiceAppendEventPublishesJetStreamEvent(t *testing.T) {
 	ctx := context.Background()

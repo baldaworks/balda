@@ -35,7 +35,7 @@ type CommandHandler struct {
 	turnDispatcher    turnQueue
 	swarmCoordinator  *swarm.Coordinator
 	swarmConfig       swarm.Config
-	commandBus        swarm.CommandBus
+	commandBus        swarm.CommandBusStatusProvider
 	agentRegistry     *swarm.AgentRegistry
 	tasks             *swarm.TaskService
 	taskRuns          *taskRunRegistry
@@ -59,7 +59,7 @@ type commandHandlerParams struct {
 	TurnDispatcher    *TurnDispatcher
 	SwarmCoordinator  *swarm.Coordinator
 	SwarmConfig       swarm.Config
-	CommandBus        swarm.CommandBus
+	CommandBus        swarm.CommandBusStatusProvider
 	AgentRegistry     *swarm.AgentRegistry
 	TaskService       *swarm.TaskService
 	TaskRuns          *taskRunRegistry

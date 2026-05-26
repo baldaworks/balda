@@ -451,7 +451,14 @@ func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Pr
 	var tasks *swarm.TaskService
 	var allocator *swarm.AgentAllocator
 	app := fxtest.New(t,
-		fx.Supply(fx.Annotate(provider, fx.As(new(baldastate.Provider))), fx.Annotate(bus, fx.As(new(swarm.CommandBus))), cfg),
+		fx.Supply(
+			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
+			cfg,
+		),
+		fx.Provide(
+			func() swarm.CoordinatorBus { return bus },
+			func() swarm.EventPublisher { return bus },
+		),
 		fx.Provide(swarm.NewTaskService, swarm.NewAgentRegistry, swarm.NewAgentAllocator, swarm.NewCoordinator),
 		fx.Populate(&coordinator, &tasks, &allocator),
 	)

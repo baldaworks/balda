@@ -26,22 +26,46 @@ type eventProjectorParams struct {
 	fx.In
 
 	LC            fx.Lifecycle
-	Bus           CommandBus
+	Consumer      EventConsumer `optional:"true"`
 	Config        Config
 	StateProvider baldastate.Provider
 	Logger        zerolog.Logger
+}
+
+type eventConsumerParams struct {
+	fx.In
+
+	Bus    CommandBus
+	Config Config
+}
+
+type disabledEventConsumer struct{}
+
+func (disabledEventConsumer) RunEventConsumer(ctx context.Context, _ EventHandler) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func NewEventConsumer(params eventConsumerParams) (EventConsumer, error) {
+	if !params.Config.Enabled {
+		return disabledEventConsumer{}, nil
+	}
+	consumer, ok := params.Bus.(EventConsumer)
+	if !ok {
+		return nil, fmt.Errorf("event projector requires an event-consumer command bus")
+	}
+	return consumer, nil
 }
 
 func NewEventProjector(params eventProjectorParams) (*EventProjector, error) {
 	if params.StateProvider == nil {
 		return nil, fmt.Errorf("balda state provider is required")
 	}
-	consumer, ok := params.Bus.(EventConsumer)
-	if params.Config.Enabled && !ok {
+	if params.Config.Enabled && params.Consumer == nil {
 		return nil, fmt.Errorf("event projector requires an event-consumer command bus")
 	}
 	p := &EventProjector{
-		consumer: consumer,
+		consumer: params.Consumer,
 		store:    params.StateProvider.Swarm(),
 		logger:   params.Logger.With().Str("component", "balda.swarm.event_projector").Logger(),
 		enabled:  params.Config.Enabled,

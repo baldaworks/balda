@@ -157,8 +157,8 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 	out.WriteString("\n- runtime enabled: ")
 	fmt.Fprintf(&out, "%t", h.swarmCoordinator != nil && h.swarmCoordinator.RuntimeEnabled())
 	out.WriteString("\n\nCommand bus")
-	if statusProvider, ok := h.commandBus.(swarm.CommandBusStatusProvider); ok {
-		status, err := statusProvider.Status(ctx)
+	if h.commandBus != nil {
+		status, err := h.commandBus.Status(ctx)
 		if err != nil {
 			return "", err
 		}

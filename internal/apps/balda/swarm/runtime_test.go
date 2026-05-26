@@ -43,20 +43,15 @@ type recordingCommandBus struct {
 	runCalls int
 }
 
-func (b *recordingCommandBus) PublishCommand(context.Context, Envelope) (*CommandPublishResult, error) {
-	return nil, nil
-}
 func (b *recordingCommandBus) PublishEvent(_ context.Context, subject string, _ Envelope) error {
 	b.events = append(b.events, subject)
 	return nil
 }
-func (b *recordingCommandBus) PublishDLQ(context.Context, Envelope, string) error { return nil }
 func (b *recordingCommandBus) RunCommandConsumer(ctx context.Context, _ CommandHandler) error {
 	b.runCalls++
 	<-ctx.Done()
 	return ctx.Err()
 }
-func (b *recordingCommandBus) Drain(context.Context) error { return nil }
 
 func TestRuntimeStartDisabledDoesNotRunConsumer(t *testing.T) {
 	bus := &recordingCommandBus{}
@@ -148,7 +143,7 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 	}
 }
 
-func newRuntimeForTest(bus CommandBus, registry ActorRegistry) *Runtime {
+func newRuntimeForTest(bus RuntimeBus, registry ActorRegistry) *Runtime {
 	return &Runtime{bus: bus, registry: registry, scheduler: NewKeyedActorScheduler()}
 }
 

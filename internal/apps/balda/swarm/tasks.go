@@ -30,14 +30,14 @@ const (
 
 type TaskService struct {
 	store baldastate.SwarmStore
-	bus   CommandBus
+	bus   EventPublisher
 }
 
 type taskServiceParams struct {
 	fx.In
 
 	StateProvider baldastate.Provider
-	Bus           CommandBus `optional:"true"`
+	Bus           EventPublisher `optional:"true"`
 }
 
 func NewTaskService(params taskServiceParams) (*TaskService, error) {

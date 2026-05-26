@@ -21,35 +21,54 @@ func (c *recordingEventConsumer) RunEventConsumer(ctx context.Context, _ EventHa
 	return ctx.Err()
 }
 
-func TestNewEventProjectorRequiresEventConsumerWhenEnabled(t *testing.T) {
+func TestNewEventConsumerRequiresEventConsumerWhenEnabled(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	provider := newEventProjectorStateProvider(t, ctx)
-
-	projector, err := NewEventProjector(eventProjectorParams{
-		LC:            fxtest.NewLifecycle(t),
-		Bus:           UnsupportedCommandBus{},
-		Config:        Config{Enabled: true},
-		StateProvider: provider,
-		Logger:        zerolog.Nop(),
+	consumer, err := NewEventConsumer(eventConsumerParams{
+		Bus:    UnsupportedCommandBus{},
+		Config: Config{Enabled: true},
 	})
 	if err == nil || !strings.Contains(err.Error(), "event-consumer command bus") {
-		t.Fatalf("NewEventProjector() = (%v, %v), want event consumer error", projector, err)
+		t.Fatalf("NewEventConsumer() = (%v, %v), want event consumer error", consumer, err)
 	}
 }
 
-func TestNewEventProjectorAllowsMissingEventConsumerWhenDisabled(t *testing.T) {
+func TestNewEventConsumerAllowsMissingEventConsumerWhenDisabled(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	provider := newEventProjectorStateProvider(t, ctx)
+	consumer, err := NewEventConsumer(eventConsumerParams{
+		Bus:    UnsupportedCommandBus{},
+		Config: Config{Enabled: false},
+	})
+	if err != nil {
+		t.Fatalf("NewEventConsumer() error = %v, want nil", err)
+	}
+	if consumer == nil {
+		t.Fatal("NewEventConsumer() = nil, want disabled event consumer")
+	}
+}
+
+func TestNewEventProjectorRequiresConsumerWhenEnabled(t *testing.T) {
+	t.Parallel()
 
 	projector, err := NewEventProjector(eventProjectorParams{
 		LC:            fxtest.NewLifecycle(t),
-		Bus:           UnsupportedCommandBus{},
+		Config:        Config{Enabled: true},
+		StateProvider: newEventProjectorStateProvider(t, context.Background()),
+		Logger:        zerolog.Nop(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "event-consumer command bus") {
+		t.Fatalf("NewEventProjector() = (%v, %v), want consumer error", projector, err)
+	}
+}
+
+func TestNewEventProjectorAllowsMissingConsumerWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	projector, err := NewEventProjector(eventProjectorParams{
+		LC:            fxtest.NewLifecycle(t),
 		Config:        Config{Enabled: false},
-		StateProvider: provider,
+		StateProvider: newEventProjectorStateProvider(t, context.Background()),
 		Logger:        zerolog.Nop(),
 	})
 	if err != nil {

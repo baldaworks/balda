@@ -68,7 +68,7 @@ func (r *Registry) Resolve(address string) (Actor, bool) {
 }
 
 type Runtime struct {
-	bus       CommandBus
+	bus       RuntimeBus
 	tasks     *TaskService
 	registry  ActorRegistry
 	scheduler *KeyedActorScheduler
@@ -83,7 +83,7 @@ type runtimeParams struct {
 	fx.In
 
 	LC     fx.Lifecycle
-	Bus    CommandBus
+	Bus    RuntimeBus
 	Config Config
 	Tasks  *TaskService
 	Logger zerolog.Logger

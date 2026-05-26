@@ -6,11 +6,11 @@ import (
 )
 
 type Coordinator struct {
-	bus CommandBus
+	bus CoordinatorBus
 	cfg Config
 }
 
-func NewCoordinator(bus CommandBus, cfg Config) *Coordinator {
+func NewCoordinator(bus CoordinatorBus, cfg Config) *Coordinator {
 	return &Coordinator{bus: bus, cfg: cfg}
 }
 
