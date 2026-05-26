@@ -85,6 +85,9 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) erro
 			return nil
 		}
 		if !created && !deliveryReadyForAttempt(record) {
+			if record.Status == baldastate.SwarmDeliveryStatusSending {
+				return swarm.TransientError(fmt.Errorf("delivery %q has ambiguous sending status; automatic resend is disabled; last updated at %s", deliveryKey, record.UpdatedAt.Format(time.RFC3339)))
+			}
 			return swarm.TransientError(fmt.Errorf("delivery %q is already %s; last updated at %s", deliveryKey, record.Status, record.UpdatedAt.Format(time.RFC3339)))
 		}
 		if err := a.tasks.MarkDeliverySending(ctx, deliveryKey); err != nil {
@@ -116,9 +119,13 @@ func deliveryReadyForAttempt(record baldastate.SwarmDeliveryRecord) bool {
 	switch record.Status {
 	case baldastate.SwarmDeliveryStatusSent:
 		return false
+	case baldastate.SwarmDeliveryStatusSending:
+		// A crash after Telegram accepted the message but before MarkDeliverySent
+		// leaves this state ambiguous. Never auto-resend it.
+		return false
 	case baldastate.SwarmDeliveryStatusFailed:
 		return true
-	case baldastate.SwarmDeliveryStatusPending, baldastate.SwarmDeliveryStatusSending:
+	case baldastate.SwarmDeliveryStatusPending:
 		if record.UpdatedAt.IsZero() {
 			return true
 		}

@@ -49,7 +49,8 @@ const (
 
 	// SwarmDeliveryStatusPending means a delivery side effect is reserved but not confirmed.
 	SwarmDeliveryStatusPending = "pending"
-	// SwarmDeliveryStatusSending means a delivery side effect attempt is in progress.
+	// SwarmDeliveryStatusSending means a delivery side effect attempt is in progress
+	// or its outcome is ambiguous after process failure.
 	SwarmDeliveryStatusSending = "sending"
 	// SwarmDeliveryStatusSent means a delivery side effect was successfully sent.
 	SwarmDeliveryStatusSent = "sent"

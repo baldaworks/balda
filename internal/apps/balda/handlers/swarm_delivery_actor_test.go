@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
@@ -14,41 +15,8 @@ import (
 
 func TestTaskDeliveryActorDeduplicatesSentDelivery(t *testing.T) {
 	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = bus
-	_ = coordinator
-	_ = allocator
-	tgClient := &fakeTelegramClient{}
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	msg.SetAgentReplyFormattingMode("none")
-	actor := &taskDeliveryActor{
-		channel: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
-			Messenger: msg,
-			TGClient:  tgClient,
-			Logger:    zerolog.Nop(),
-		}),
-		tasks:  tasks,
-		logger: zerolog.Nop(),
-	}
-
-	locator := baldatelegram.NewLocator(9001, 99)
-	payload := taskDeliveryPayload{TaskID: "task-1", Locator: locator, Text: "Goal started"}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-	env := swarm.Envelope{
-		ID:          "delivery-command-1",
-		Namespace:   swarm.NamespaceAgentResult,
-		Kind:        taskPayloadKindDelivery,
-		From:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "9001:99"},
-		SessionID:   locator.SessionID,
-		TaskID:      "task-1",
-		DedupeKey:   "task-1:delivery:started",
-		PayloadJSON: string(data),
-	}
+	actor, _, tgClient := newTaskDeliveryActorForTest(t, ctx)
+	env, _ := deliveryEnvelopeForTest(t, "delivery-command-1", "task-1:delivery:started", "Goal started")
 
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() first error = %v", err)
@@ -63,41 +31,8 @@ func TestTaskDeliveryActorDeduplicatesSentDelivery(t *testing.T) {
 
 func TestTaskDeliveryActorDefersDuplicatePendingDelivery(t *testing.T) {
 	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = bus
-	_ = coordinator
-	_ = allocator
-	tgClient := &fakeTelegramClient{}
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	msg.SetAgentReplyFormattingMode("none")
-	actor := &taskDeliveryActor{
-		channel: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
-			Messenger: msg,
-			TGClient:  tgClient,
-			Logger:    zerolog.Nop(),
-		}),
-		tasks:  tasks,
-		logger: zerolog.Nop(),
-	}
-
-	locator := baldatelegram.NewLocator(9001, 99)
-	payload := taskDeliveryPayload{TaskID: "task-1", Locator: locator, Text: "Goal started"}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-	env := swarm.Envelope{
-		ID:          "delivery-command-pending",
-		Namespace:   swarm.NamespaceAgentResult,
-		Kind:        taskPayloadKindDelivery,
-		From:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "9001:99"},
-		SessionID:   locator.SessionID,
-		TaskID:      "task-1",
-		DedupeKey:   "task-1:delivery:pending",
-		PayloadJSON: string(data),
-	}
+	actor, tasks, tgClient := newTaskDeliveryActorForTest(t, ctx)
+	env, payload := deliveryEnvelopeForTest(t, "delivery-command-pending", "task-1:delivery:pending", "Goal started")
 	if _, _, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusPending)); err != nil {
 		t.Fatalf("ReserveDelivery() error = %v", err)
 	}
@@ -107,6 +42,73 @@ func TestTaskDeliveryActorDefersDuplicatePendingDelivery(t *testing.T) {
 	if got := len(tgClient.messages); got != 0 {
 		t.Fatalf("sent telegram messages = %d, want 0 while duplicate is pending", got)
 	}
+}
+
+func TestTaskDeliveryActorDoesNotRetryAmbiguousSendingDelivery(t *testing.T) {
+	ctx := context.Background()
+	actor, tasks, tgClient := newTaskDeliveryActorForTest(t, ctx)
+	env, payload := deliveryEnvelopeForTest(t, "delivery-command-sending", "task-1:delivery:completed", "Goal completed")
+	if _, _, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusSending)); err != nil {
+		t.Fatalf("ReserveDelivery() error = %v", err)
+	}
+	if err := actor.Handle(ctx, env); swarm.ClassifyError(err) != swarm.ErrorKindTransient {
+		t.Fatalf("Handle() error kind = %s, want transient: %v", swarm.ClassifyError(err), err)
+	}
+	if got := len(tgClient.messages); got != 0 {
+		t.Fatalf("sent telegram messages = %d, want 0 for ambiguous sending delivery", got)
+	}
+}
+
+func TestDeliveryReadyForAttemptNeverRetriesSendingDelivery(t *testing.T) {
+	record := baldastate.SwarmDeliveryRecord{
+		Status:    baldastate.SwarmDeliveryStatusSending,
+		UpdatedAt: time.Now().Add(-2 * deliveryPendingRetryAfter),
+	}
+	if deliveryReadyForAttempt(record) {
+		t.Fatal("deliveryReadyForAttempt(sending) = true, want false because send outcome is ambiguous")
+	}
+}
+
+func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*taskDeliveryActor, *swarm.TaskService, *fakeTelegramClient) {
+	t.Helper()
+	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = coordinator
+	_ = allocator
+	tgClient := &fakeTelegramClient{}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("none")
+	return &taskDeliveryActor{
+		channel: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+			Messenger: msg,
+			TGClient:  tgClient,
+			Logger:    zerolog.Nop(),
+		}),
+		tasks:  tasks,
+		logger: zerolog.Nop(),
+	}, tasks, tgClient
+}
+
+func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text string) (swarm.Envelope, taskDeliveryPayload) {
+	t.Helper()
+	locator := baldatelegram.NewLocator(9001, 99)
+	payload := taskDeliveryPayload{TaskID: "task-1", Locator: locator, Text: text}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	return swarm.Envelope{
+		ID:          id,
+		Namespace:   swarm.NamespaceAgentResult,
+		Kind:        taskPayloadKindDelivery,
+		From:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "9001:99"},
+		SessionID:   locator.SessionID,
+		TaskID:      "task-1",
+		DedupeKey:   dedupeKey,
+		PayloadJSON: string(data),
+	}, payload
 }
 
 func deliveryRecordForTest(env swarm.Envelope, payload taskDeliveryPayload, status string) baldastate.SwarmDeliveryRecord {
