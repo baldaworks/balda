@@ -271,7 +271,6 @@ func (h *StartHandler) sendOwnerRegisteredMessage(ctx context.Context, chatID in
 		text += "\n\n" + baldaStartFailureMessage(startErr)
 		return h.messenger.SendPlain(ctx, chatID, text, 0)
 	}
-	text += "\n\nBalda mode is active."
 	return h.messenger.SendPlain(ctx, chatID, text, 0)
 }
 
@@ -281,7 +280,6 @@ func (h *StartHandler) ownerAlreadyRegisteredMessage(startErr error) string {
 		msg += "\n\n" + baldaStartFailureMessage(startErr)
 		return msg
 	}
-	msg += " Balda mode is active."
 	return msg
 }
 
