@@ -161,6 +161,8 @@ func projectedEventType(subject string, env Envelope) string {
 		return "command.deadlettered"
 	case SubjectEventCommandNoop:
 		return "command.noop"
+	case SubjectEventCommandDecodeFailed:
+		return "command.decode_failed"
 	case SubjectEventTaskCreated:
 		return TaskEventTaskCreated
 	case SubjectEventTaskUpdated:

@@ -21,6 +21,7 @@ const (
 	SubjectEventCommandRetrying     = "balda.v1.evt.command.retrying"
 	SubjectEventCommandDeadLettered = "balda.v1.evt.command.deadlettered"
 	SubjectEventCommandNoop         = "balda.v1.evt.command.noop"
+	SubjectEventCommandDecodeFailed = "balda.v1.evt.command.decode_failed"
 	SubjectEventTaskCreated         = "balda.v1.evt.task.created"
 	SubjectEventTaskUpdated         = "balda.v1.evt.task.updated"
 	SubjectEventTaskCompleted       = "balda.v1.evt.task.completed"

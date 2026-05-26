@@ -144,6 +144,31 @@ func TestEventProjectorProjectsCommandEventForTask(t *testing.T) {
 	}
 }
 
+func TestEventProjectorProjectsCommandDecodeFailedEventForTask(t *testing.T) {
+	ctx := context.Background()
+	provider := newEventProjectorStateProvider(t, ctx)
+	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
+	env := Envelope{
+		ID:          "cmd-1:event:decode_failed",
+		Namespace:   NamespaceTelemetry,
+		Kind:        "command_event",
+		From:        SystemAddress("jetstream"),
+		To:          ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		TaskID:      "task-1",
+		PayloadJSON: `{"reason":"decode failed: invalid json"}`,
+	}
+	if err := projector.Project(ctx, SubjectEventCommandDecodeFailed, env); err != nil {
+		t.Fatalf("Project() error = %v", err)
+	}
+	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("ListTaskEvents() error = %v", err)
+	}
+	if len(events) != 1 || events[0].EventType != "command.decode_failed" {
+		t.Fatalf("events = %+v, want command.decode_failed projection", events)
+	}
+}
+
 func newEventProjectorStateProvider(t *testing.T, ctx context.Context) baldastate.Provider {
 	t.Helper()
 

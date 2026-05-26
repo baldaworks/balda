@@ -575,7 +575,8 @@ runs, retries, or wakes up.
   - Projections are derived views; projection lag/failure never blocks command
     settlement.
 - Command lifecycle events (`command.accepted`, `command.running`,
-  `command.acked`, `command.retrying`, `command.deadlettered`) are
+  `command.in_progress`, `command.acked`, `command.retrying`,
+  `command.deadlettered`, `command.noop`, `command.decode_failed`) are
   best-effort visibility telemetry. Command ack/nak/term settlement does not
   depend on successful lifecycle event publication.
 
@@ -598,6 +599,7 @@ runs, retries, or wakes up.
     `balda.v1.evt.command.running`, `balda.v1.evt.command.in_progress`,
     `balda.v1.evt.command.acked`, `balda.v1.evt.command.retrying`,
     `balda.v1.evt.command.deadlettered`, `balda.v1.evt.command.noop`,
+    `balda.v1.evt.command.decode_failed`,
     `balda.v1.evt.task.created`,
     `balda.v1.evt.task.updated`, `balda.v1.evt.task.completed`,
     `balda.v1.evt.delivery.sent`.

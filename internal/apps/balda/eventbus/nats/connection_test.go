@@ -608,7 +608,7 @@ func TestBus_CommandWorkerLimitUsesFetchBatch(t *testing.T) {
 	}
 }
 
-func TestBus_CommandDecodeFailurePublishesRawDLQ(t *testing.T) {
+func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	busRaw, err := NewCommandBus(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
@@ -644,17 +644,48 @@ func TestBus_CommandDecodeFailurePublishesRawDLQ(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DLQ stream status: %v", err)
 		}
-		if status.Messages == 1 {
-			cancel()
-			<-done
-			return
+		eventStatus, err := bus.streamStatus(context.Background(), swarm.DefaultEventStream)
+		if err != nil {
+			t.Fatalf("event stream status: %v", err)
+		}
+		if status.Messages == 1 && eventStatus.Messages == 1 {
+			break
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatalf("DLQ messages = %d, want 1", status.Messages)
+			t.Fatalf("DLQ/event messages = %d/%d, want 1/1", status.Messages, eventStatus.Messages)
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
+	eventConsumer, err := bus.js.CreateOrUpdateConsumer(context.Background(), swarm.DefaultEventStream, jetstream.ConsumerConfig{
+		Durable:       "decode-failed-inspector",
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		FilterSubject: swarm.SubjectEventCommandDecodeFailed,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrUpdateConsumer(decode-failed-inspector) error = %v", err)
+	}
+	msgBatch, err := eventConsumer.Fetch(1, jetstream.FetchMaxWait(2*time.Second))
+	if err != nil {
+		t.Fatalf("Fetch(decode_failed) error = %v", err)
+	}
+	msg, ok := <-msgBatch.Messages()
+	if !ok {
+		t.Fatal("decode_failed event message not found")
+	}
+	got, err := swarm.DecodeEnvelope(string(msg.Data()))
+	if err != nil {
+		t.Fatalf("DecodeEnvelope(decode_failed event) error = %v", err)
+	}
+	if got.Meta["event_type"] != "command.decode_failed" {
+		t.Fatalf("decode_failed event_type = %q, want %q", got.Meta["event_type"], "command.decode_failed")
+	}
+	if err := msg.DoubleAck(context.Background()); err != nil {
+		t.Fatalf("DoubleAck(decode_failed event) error = %v", err)
+	}
+	cancel()
+	<-done
 }
 
 func TestBus_PublishCommandReportsDuplicate(t *testing.T) {

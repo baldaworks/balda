@@ -15,6 +15,7 @@ import (
 )
 
 const commandSettlementTimeout = 5 * time.Second
+const unknownDecodeTarget = "unknown"
 
 type commandMessage struct {
 	subject       string
@@ -103,9 +104,11 @@ func (b *Bus) commandWorkerLimit() int {
 func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swarm.CommandHandler) error {
 	env, err := swarm.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
+		decodeFailureEnv := commandDecodeFailureEnvelope(msg, err)
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
 		_ = b.publishRawDLQ(settleCtx, msg, "decode failed: "+err.Error())
+		b.publishCommandEventBestEffort(settleCtx, swarm.SubjectEventCommandDecodeFailed, decodeFailureEnv, "decode_failed", err.Error())
 		_ = msg.TermWithReason("decode failed: " + err.Error())
 		return err
 	}
@@ -376,4 +379,38 @@ func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult
 		out.To = swarm.SystemAddress("jetstream")
 	}
 	return out
+}
+
+func commandDecodeFailureEnvelope(msg jetstream.Msg, err error) swarm.Envelope {
+	id := strings.TrimSpace(msg.Headers().Get(swarm.HeaderEnvelopeID))
+	if id == "" {
+		id = "poison-" + uuid.NewString()
+	}
+	namespace := strings.TrimSpace(msg.Headers().Get(swarm.HeaderNamespace))
+	if namespace == "" {
+		namespace = swarm.NamespaceTelemetry
+	}
+	toTarget, toKey := unknownDecodeTarget, unknownDecodeTarget
+	if strings.HasPrefix(msg.Subject(), "balda.v1.cmd.") {
+		toTarget = strings.TrimPrefix(msg.Subject(), "balda.v1.cmd.")
+		toKey = strings.TrimSpace(msg.Headers().Get(swarm.HeaderActorKey))
+		if toKey == "" {
+			toKey = unknownDecodeTarget
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"subject": msg.Subject(),
+		"reason":  "decode failed: " + err.Error(),
+		"payload": string(msg.Data()),
+	})
+	return swarm.Envelope{
+		ID:          id,
+		Namespace:   namespace,
+		Kind:        "decode_failed",
+		From:        swarm.SystemAddress("jetstream"),
+		To:          swarm.ActorAddress{Target: toTarget, Key: toKey},
+		SessionID:   strings.TrimSpace(msg.Headers().Get(swarm.HeaderSessionID)),
+		TaskID:      strings.TrimSpace(msg.Headers().Get(swarm.HeaderTaskID)),
+		PayloadJSON: string(payload),
+	}
 }
