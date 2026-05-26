@@ -58,6 +58,7 @@ type taskAgentCommandPayload struct {
 	TaskID           string                      `json:"task_id"`
 	AgentName        string                      `json:"agent_name,omitempty"`
 	Role             string                      `json:"role"`
+	ADKSessionID     string                      `json:"adk_session_id,omitempty"`
 	RequestedTools   []string                    `json:"requested_tools,omitempty"`
 	Iteration        int                         `json:"iteration"`
 	Locator          baldasession.SessionLocator `json:"locator"`
@@ -74,6 +75,7 @@ type taskAgentResultPayload struct {
 	TaskID           string                      `json:"task_id"`
 	AgentName        string                      `json:"agent_name,omitempty"`
 	Role             string                      `json:"role"`
+	ADKSessionID     string                      `json:"adk_session_id,omitempty"`
 	RequestedTools   []string                    `json:"requested_tools,omitempty"`
 	Iteration        int                         `json:"iteration"`
 	Locator          baldasession.SessionLocator `json:"locator"`
@@ -678,10 +680,11 @@ func (e *taskActorExecutor) handleAgentResult(ctx context.Context, env swarm.Env
 	}
 
 	if err := e.tasks.AppendEvent(ctx, taskID, swarm.TaskEventAgentResult, "task.actor", env.ID, map[string]any{
-		"role":       role,
-		"agent_name": strings.TrimSpace(payload.AgentName),
-		"iteration":  payload.Iteration,
-		"text":       strings.TrimSpace(payload.Text),
+		"role":           role,
+		"agent_name":     strings.TrimSpace(payload.AgentName),
+		"adk_session_id": strings.TrimSpace(payload.ADKSessionID),
+		"iteration":      payload.Iteration,
+		"text":           strings.TrimSpace(payload.Text),
 	}); err != nil {
 		return swarm.TransientError(err)
 	}

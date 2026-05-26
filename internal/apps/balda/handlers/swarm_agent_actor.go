@@ -124,11 +124,12 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 	if err != nil {
 		return swarm.TransientError(err)
 	}
+	payload.ADKSessionID = taskAgentADKSessionID(ts.GetAgentSessionID(), payload)
 	if a.runtimeBuilder == nil {
 		return swarm.TransientError(fmt.Errorf("task agent runtime builder is required"))
 	}
 	runtime, err := a.runtimeBuilder.BuildTaskAgentRuntime(ctx, baldaagent.TaskAgentRuntimeConfig{
-		SessionID:    ts.GetSessionID(),
+		SessionID:    payload.ADKSessionID,
 		BranchName:   ts.GetBranchName(),
 		WorkspaceDir: ts.GetWorkspaceDir(),
 		Role:         payload.Role,
@@ -148,7 +149,7 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 	defer cancel()
 
 	prompt := formatTaskAgentPrompt(payload, spec)
-	text, err := runAgentTurnWithProgress(runCtx, runtime.Runner, ts.GetUserID(), ts.GetAgentSessionID(), prompt, func(progress string) {
+	text, err := runAgentTurnWithProgress(runCtx, runtime.Runner, ts.GetUserID(), payload.ADKSessionID, prompt, func(progress string) {
 		a.recordProgress(ctx, payload, progress)
 	})
 	if err != nil {
@@ -169,10 +170,11 @@ func (a *taskAgentActor) recordProgress(ctx context.Context, payload taskAgentCo
 		return
 	}
 	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentProgress, "agent:"+payload.AgentName, "", map[string]any{
-		"role":       payload.Role,
-		"agent_name": payload.AgentName,
-		"iteration":  payload.Iteration,
-		"text":       progress,
+		"role":           payload.Role,
+		"agent_name":     payload.AgentName,
+		"adk_session_id": payload.ADKSessionID,
+		"iteration":      payload.Iteration,
+		"text":           progress,
 	}); err != nil {
 		a.logger.Warn().Err(err).Str("task_id", payload.TaskID).Str("agent_name", payload.AgentName).Msg("failed to record task agent progress")
 	}
@@ -269,6 +271,7 @@ func marshalTaskAgentResult(command taskAgentCommandPayload, text string, runErr
 		TaskID:           command.TaskID,
 		AgentName:        command.AgentName,
 		Role:             command.Role,
+		ADKSessionID:     command.ADKSessionID,
 		RequestedTools:   append([]string(nil), command.RequestedTools...),
 		Iteration:        command.Iteration,
 		Locator:          command.Locator,
@@ -297,6 +300,24 @@ func marshalTaskAgentResult(command taskAgentCommandPayload, text string, runErr
 
 func taskAgentStepKey(command taskAgentCommandPayload) string {
 	return command.TaskID + ":agent:" + firstNonEmpty(command.AgentName, command.Role) + ":" + command.Role + ":" + strconv.Itoa(command.Iteration)
+}
+
+func taskAgentADKSessionID(baseSessionID string, command taskAgentCommandPayload) string {
+	base := strings.TrimSpace(baseSessionID)
+	if base == "" {
+		base = strings.TrimSpace(command.Locator.SessionID)
+	}
+	if base == "" {
+		base = "balda-task"
+	}
+	role := normalizeTaskAgentRole(command.Role)
+	if role == "" {
+		role = safeTaskIDPart(command.Role)
+	}
+	if role == "" {
+		role = taskAgentRoleExecutor
+	}
+	return base + "-task-" + role + "-" + shortTaskHash(command.TaskID+":"+role)
 }
 
 func taskAgentResultDedupeKey(command taskAgentCommandPayload) string {
