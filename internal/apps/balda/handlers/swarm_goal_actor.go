@@ -477,9 +477,6 @@ func (e *taskActorExecutor) startGoalTask(ctx context.Context, env swarm.Envelop
 	if err != nil {
 		return err
 	}
-	if err := e.submitAgentDispatch(ctx, dispatch); err != nil {
-		return err
-	}
 	if err := e.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, "task.actor", env.ID, "", map[string]any{
 		"objective": objective,
 	}); err != nil {
@@ -488,7 +485,10 @@ func (e *taskActorExecutor) startGoalTask(ctx context.Context, env swarm.Envelop
 	if err := e.deliver(ctx, taskID, payload.Locator, fmt.Sprintf("Goal run started. Max iterations: %d.\n\nGoal: %s", maxIterations, objective), "started"); err != nil {
 		return err
 	}
-	return e.recordAgentDispatch(ctx, dispatch)
+	if err := e.recordAgentDispatch(ctx, dispatch); err != nil {
+		return err
+	}
+	return e.submitAgentDispatch(ctx, dispatch)
 }
 
 func (e *taskActorExecutor) ensureGoalTask(
@@ -544,10 +544,10 @@ func (e *taskActorExecutor) dispatchAgent(ctx context.Context, payload taskAgent
 	if err != nil {
 		return err
 	}
-	if err := e.submitAgentDispatch(ctx, dispatch); err != nil {
+	if err := e.recordAgentDispatch(ctx, dispatch); err != nil {
 		return err
 	}
-	return e.recordAgentDispatch(ctx, dispatch)
+	return e.submitAgentDispatch(ctx, dispatch)
 }
 
 func (e *taskActorExecutor) prepareAgentDispatch(ctx context.Context, payload taskAgentCommandPayload) (taskAgentDispatch, error) {
@@ -632,15 +632,6 @@ func (e *taskActorExecutor) recordAgentDispatch(ctx context.Context, dispatch ta
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
-	if err := e.deliver(
-		ctx,
-		payload.TaskID,
-		payload.Locator,
-		fmt.Sprintf("Goal iteration %d/%d: %s started.", payload.Iteration, normalizeGoalMaxIterations(payload.MaxIterations), dispatch.StepName),
-		"started:"+dispatch.Role+":"+strconv.Itoa(payload.Iteration),
-	); err != nil {
-		return err
-	}
 	if err := e.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentStarted, "task.actor", dispatch.Envelope.DedupeKey, map[string]any{
 		"role":            dispatch.Role,
 		"agent_name":      dispatch.AgentName,
@@ -649,7 +640,13 @@ func (e *taskActorExecutor) recordAgentDispatch(ctx context.Context, dispatch ta
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
-	return nil
+	return e.deliver(
+		ctx,
+		payload.TaskID,
+		payload.Locator,
+		fmt.Sprintf("Goal iteration %d/%d: %s started.", payload.Iteration, normalizeGoalMaxIterations(payload.MaxIterations), dispatch.StepName),
+		"started:"+dispatch.Role+":"+strconv.Itoa(payload.Iteration),
+	)
 }
 
 func (e *taskActorExecutor) handleAgentResult(ctx context.Context, env swarm.Envelope, payload taskAgentResultPayload) error {
@@ -745,9 +742,6 @@ func (e *taskActorExecutor) handlePlannerResult(ctx context.Context, payload tas
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
-	if err := e.submitAgentDispatch(ctx, dispatch); err != nil {
-		return err
-	}
 	if err := e.deliver(
 		ctx,
 		payload.TaskID,
@@ -757,7 +751,10 @@ func (e *taskActorExecutor) handlePlannerResult(ctx context.Context, payload tas
 	); err != nil {
 		return err
 	}
-	return e.recordAgentDispatch(ctx, dispatch)
+	if err := e.recordAgentDispatch(ctx, dispatch); err != nil {
+		return err
+	}
+	return e.submitAgentDispatch(ctx, dispatch)
 }
 
 func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload taskAgentResultPayload) error {
@@ -782,9 +779,6 @@ func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload ta
 	if err != nil {
 		return err
 	}
-	if err := e.submitAgentDispatch(ctx, dispatch); err != nil {
-		return err
-	}
 	if err := e.deliver(
 		ctx,
 		payload.TaskID,
@@ -794,7 +788,10 @@ func (e *taskActorExecutor) handleExecutorResult(ctx context.Context, payload ta
 	); err != nil {
 		return err
 	}
-	return e.recordAgentDispatch(ctx, dispatch)
+	if err := e.recordAgentDispatch(ctx, dispatch); err != nil {
+		return err
+	}
+	return e.submitAgentDispatch(ctx, dispatch)
 }
 
 func (e *taskActorExecutor) handleReviewerResult(ctx context.Context, payload taskAgentResultPayload) error {

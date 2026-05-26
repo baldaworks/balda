@@ -15,7 +15,7 @@ import (
 	"go.uber.org/fx/fxtest"
 )
 
-func TestTaskActorStartGoalDispatchesPlannerBeforeProgress(t *testing.T) {
+func TestTaskActorStartGoalRecordsProgressBeforePlannerDispatch(t *testing.T) {
 	ctx := context.Background()
 	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
 	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
@@ -29,7 +29,7 @@ func TestTaskActorStartGoalDispatchesPlannerBeforeProgress(t *testing.T) {
 	if len(bus.commands) != 3 {
 		t.Fatalf("published commands = %d, want planner + start delivery + planner-start delivery", len(bus.commands))
 	}
-	planner := bus.commands[0]
+	planner := bus.commands[len(bus.commands)-1]
 	if planner.To.Target != swarm.ActorTypeAgent || planner.To.Key != swarm.AgentNamePlanner {
 		t.Fatalf("planner command target = %+v, want agent:planner", planner.To)
 	}
@@ -42,7 +42,7 @@ func TestTaskActorStartGoalDispatchesPlannerBeforeProgress(t *testing.T) {
 	}
 }
 
-func TestTaskActorAgentPublishFailureDoesNotAdvanceTask(t *testing.T) {
+func TestTaskActorAgentPublishFailureKeepsTaskAwaitingAgentRetry(t *testing.T) {
 	ctx := context.Background()
 	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
 	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
@@ -79,8 +79,8 @@ func TestTaskActorAgentPublishFailureDoesNotAdvanceTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get(task) error = %v", err)
 	}
-	if !ok || task.Status != baldastate.SwarmTaskStatusRunning {
-		t.Fatalf("task = %+v found=%v, want status to remain running", task, ok)
+	if !ok || task.Status != baldastate.SwarmTaskStatusValidating {
+		t.Fatalf("task = %+v found=%v, want validating after recorded reviewer dispatch", task, ok)
 	}
 }
 
@@ -106,11 +106,11 @@ func TestTaskActorPlannerResultStoresPlanAndDispatchesExecutor(t *testing.T) {
 	if len(appended) != 3 {
 		t.Fatalf("planner appended commands = %d, want executor + finished delivery + executor-start delivery", len(appended))
 	}
-	if appended[0].To.Target != swarm.ActorTypeAgent || appended[0].To.Key != swarm.AgentNameExecutor {
-		t.Fatalf("first planner follow-up = %+v, want executor command before visible finish", appended[0].To)
+	if !strings.Contains(appended[0].DedupeKey, ":delivery:finished:planner:1") {
+		t.Fatalf("first planner follow-up dedupe = %q, want planner finished delivery", appended[0].DedupeKey)
 	}
-	if !strings.Contains(appended[1].DedupeKey, ":delivery:finished:planner:1") {
-		t.Fatalf("second planner follow-up dedupe = %q, want planner finished delivery", appended[1].DedupeKey)
+	if !strings.Contains(appended[1].DedupeKey, ":delivery:started:executor:1") {
+		t.Fatalf("second planner follow-up dedupe = %q, want executor-start delivery", appended[1].DedupeKey)
 	}
 	executor := lastPublishedCommandTo(t, bus, swarm.ActorTypeAgent, swarm.AgentNameExecutor)
 	if executor.To.Target != swarm.ActorTypeAgent || executor.To.Key != swarm.AgentNameExecutor {
@@ -161,11 +161,11 @@ func TestTaskActorExecutorResultDispatchesReviewerBeforeProgress(t *testing.T) {
 	if len(appended) != 3 {
 		t.Fatalf("executor appended commands = %d, want reviewer + finished delivery + validator-start delivery", len(appended))
 	}
-	if appended[0].To.Target != swarm.ActorTypeAgent || appended[0].To.Key != swarm.AgentNameReviewer {
-		t.Fatalf("first executor follow-up = %+v, want reviewer command before visible finish", appended[0].To)
+	if !strings.Contains(appended[0].DedupeKey, ":delivery:finished:executor:1") {
+		t.Fatalf("first executor follow-up dedupe = %q, want executor finished delivery", appended[0].DedupeKey)
 	}
-	if !strings.Contains(appended[1].DedupeKey, ":delivery:finished:executor:1") {
-		t.Fatalf("second executor follow-up dedupe = %q, want executor finished delivery", appended[1].DedupeKey)
+	if !strings.Contains(appended[1].DedupeKey, ":delivery:started:reviewer:1") {
+		t.Fatalf("second executor follow-up dedupe = %q, want reviewer-start delivery", appended[1].DedupeKey)
 	}
 }
 

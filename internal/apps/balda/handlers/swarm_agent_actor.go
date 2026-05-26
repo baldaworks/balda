@@ -115,6 +115,9 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 		if !created && agentStepHasStoredResult(record) {
 			return a.publishStoredResult(ctx, env, payload, record.ResultJSON)
 		}
+		if !created && strings.TrimSpace(record.Status) == baldastate.SwarmAgentStepStatusRunning {
+			return swarm.TransientError(fmt.Errorf("agent step %q is already running", stepKey))
+		}
 	}
 
 	ts, err := a.resolveSession(ctx, payload)
