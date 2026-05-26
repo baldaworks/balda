@@ -84,19 +84,16 @@ type CommandBus interface {
 
 // CommandBusStatus describes JetStream stream and consumer state for /swarm status.
 type CommandBusStatus struct {
-	CommandBus       string
-	SQLiteCommandBus bool
-	ShadowMode       bool
-	LegacyDirectPath bool
-	Embedded         bool
-	Running          bool
-	JetStream        bool
-	ClientURL        string
-	Commands         StreamStatus
-	Events           StreamStatus
-	DLQ              StreamStatus
-	Worker           ConsumerStatus
-	ProjectionLag    map[string]uint64
+	CommandBus    string
+	Embedded      bool
+	Running       bool
+	JetStream     bool
+	ClientURL     string
+	Commands      StreamStatus
+	Events        StreamStatus
+	DLQ           StreamStatus
+	Worker        ConsumerStatus
+	ProjectionLag map[string]uint64
 }
 
 // StreamStatus contains compact JetStream stream metadata.
@@ -143,7 +140,7 @@ func (UnsupportedCommandBus) RunCommandConsumer(ctx context.Context, _ CommandHa
 func (UnsupportedCommandBus) Drain(context.Context) error { return nil }
 
 func (UnsupportedCommandBus) Status(context.Context) (CommandBusStatus, error) {
-	return CommandBusStatus{CommandBus: "unavailable", SQLiteCommandBus: false, ShadowMode: false, LegacyDirectPath: false}, nil
+	return CommandBusStatus{CommandBus: "unavailable"}, nil
 }
 
 // EventHandler is kept for event projector code that consumes decoded events.

@@ -578,7 +578,7 @@ func TestBus_StatusReportsJetStreamOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
-	if status.CommandBus != "jetstream" || status.SQLiteCommandBus || status.ShadowMode || status.LegacyDirectPath {
+	if status.CommandBus != "jetstream" || !status.JetStream {
 		t.Fatalf("Status() = %+v, want hard JetStream", status)
 	}
 }

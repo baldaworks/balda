@@ -95,8 +95,9 @@ func TestCommandHandlerSwarmAndMailboxStatusCommands(t *testing.T) {
 	}
 	assertLastSentContains(t, tgClient, "Swarm status")
 	assertLastSentContains(t, tgClient, "command_bus: jetstream")
-	assertLastSentContains(t, tgClient, "sqlite_command_bus: false")
-	assertLastSentContains(t, tgClient, "legacy_direct_path: false")
+	assertLastSentNotContains(t, tgClient, "sqlite_command_bus")
+	assertLastSentNotContains(t, tgClient, "shadow_mode")
+	assertLastSentNotContains(t, tgClient, "legacy_direct_path")
 	assertLastSentContains(t, tgClient, "planner")
 	assertLastSentContains(t, tgClient, "created: 1")
 
@@ -142,17 +143,14 @@ type statusCommandBus struct{ recordingHandlerCommandBus }
 
 func (*statusCommandBus) Status(context.Context) (swarm.CommandBusStatus, error) {
 	return swarm.CommandBusStatus{
-		CommandBus:       "jetstream",
-		SQLiteCommandBus: false,
-		ShadowMode:       false,
-		LegacyDirectPath: false,
-		Embedded:         true,
-		Running:          true,
-		JetStream:        true,
-		Commands:         swarm.StreamStatus{Name: swarm.DefaultCommandStream, Messages: 1, FirstSeq: 1, LastSeq: 1},
-		Events:           swarm.StreamStatus{Name: swarm.DefaultEventStream, Messages: 2, FirstSeq: 1, LastSeq: 2},
-		DLQ:              swarm.StreamStatus{Name: swarm.DefaultDLQStream},
-		Worker:           swarm.ConsumerStatus{Name: swarm.DefaultCommandConsumer},
+		CommandBus: "jetstream",
+		Embedded:   true,
+		Running:    true,
+		JetStream:  true,
+		Commands:   swarm.StreamStatus{Name: swarm.DefaultCommandStream, Messages: 1, FirstSeq: 1, LastSeq: 1},
+		Events:     swarm.StreamStatus{Name: swarm.DefaultEventStream, Messages: 2, FirstSeq: 1, LastSeq: 2},
+		DLQ:        swarm.StreamStatus{Name: swarm.DefaultDLQStream},
+		Worker:     swarm.ConsumerStatus{Name: swarm.DefaultCommandConsumer},
 	}, nil
 }
 

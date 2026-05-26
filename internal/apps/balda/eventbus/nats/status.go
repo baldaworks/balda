@@ -10,13 +10,10 @@ import (
 
 func (b *Bus) Status(ctx context.Context) (swarm.CommandBusStatus, error) {
 	status := swarm.CommandBusStatus{
-		CommandBus:       "jetstream",
-		SQLiteCommandBus: false,
-		ShadowMode:       false,
-		LegacyDirectPath: false,
-		Embedded:         b.cfg.NATS.Embedded,
-		JetStream:        true,
-		ProjectionLag:    map[string]uint64{},
+		CommandBus:    "jetstream",
+		Embedded:      b.cfg.NATS.Embedded,
+		JetStream:     true,
+		ProjectionLag: map[string]uint64{},
 	}
 	if b.conn != nil && !b.conn.IsClosed() {
 		status.Running = true
