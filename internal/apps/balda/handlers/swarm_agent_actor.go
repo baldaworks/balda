@@ -95,30 +95,6 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 
 	stepKey := taskAgentStepKey(payload)
 	payloadHash := hashTaskAgentCommandPayload(payload)
-	if a.tasks != nil {
-		record, created, err := a.tasks.ReserveAgentStep(ctx, baldastate.SwarmAgentStepRecord{
-			ID:          uuid.NewString(),
-			StepKey:     stepKey,
-			TaskID:      payload.TaskID,
-			AgentName:   payload.AgentName,
-			Role:        payload.Role,
-			Iteration:   payload.Iteration,
-			PayloadHash: payloadHash,
-			Status:      baldastate.SwarmAgentStepStatusRunning,
-		})
-		if err != nil {
-			return swarm.TransientError(err)
-		}
-		if record.PayloadHash != "" && record.PayloadHash != payloadHash {
-			return swarm.PermanentError(fmt.Errorf("agent step %q already reserved for different payload", stepKey))
-		}
-		if !created && agentStepHasStoredResult(record) {
-			return a.publishStoredResult(ctx, env, payload, record.ResultJSON)
-		}
-		if !created && strings.TrimSpace(record.Status) == baldastate.SwarmAgentStepStatusRunning {
-			return swarm.TransientError(fmt.Errorf("agent step %q is already running", stepKey))
-		}
-	}
 
 	ts, err := a.resolveSession(ctx, payload)
 	if err != nil {
@@ -143,6 +119,30 @@ func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
 			a.logger.Warn().Err(err).Str("task_id", payload.TaskID).Str("role", payload.Role).Msg("failed to close task agent runtime")
 		}
 	}()
+	if a.tasks != nil {
+		record, created, err := a.tasks.ReserveAgentStep(ctx, baldastate.SwarmAgentStepRecord{
+			ID:          uuid.NewString(),
+			StepKey:     stepKey,
+			TaskID:      payload.TaskID,
+			AgentName:   payload.AgentName,
+			Role:        payload.Role,
+			Iteration:   payload.Iteration,
+			PayloadHash: payloadHash,
+			Status:      baldastate.SwarmAgentStepStatusRunning,
+		})
+		if err != nil {
+			return swarm.TransientError(err)
+		}
+		if record.PayloadHash != "" && record.PayloadHash != payloadHash {
+			return swarm.PermanentError(fmt.Errorf("agent step %q already reserved for different payload", stepKey))
+		}
+		if !created && agentStepHasStoredResult(record) {
+			return a.publishStoredResult(ctx, env, payload, record.ResultJSON)
+		}
+		if !created && strings.TrimSpace(record.Status) == baldastate.SwarmAgentStepStatusRunning {
+			return swarm.TransientError(fmt.Errorf("agent step %q is already running", stepKey))
+		}
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	runID := a.taskRuns.register(payload.TaskID, cancel)

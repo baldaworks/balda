@@ -26,7 +26,19 @@ func TestTaskAgentActorHandleSkipsDuplicateRunningStep(t *testing.T) {
 	_ = bus
 	_ = coordinator
 	_ = allocator
+	manager := newBaldaRestoreSessionManager(
+		t,
+		&fakeBaldaRestoreAgentBuilder{},
+		&fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"},
+		&fakeBaldaRestoreSessionStore{},
+	)
 	payload, env := taskAgentCommandForTest(t, "task-running-duplicate", taskAgentRoleExecutor, 1)
+	if _, err := manager.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: payload.Locator,
+		UserID:  payload.TransportUserID,
+	}, ownerSessionLabel); err != nil {
+		t.Fatalf("EnsureSession() error = %v", err)
+	}
 	stepKey := taskAgentStepKey(payload)
 	if _, _, err := tasks.ReserveAgentStep(ctx, baldastate.SwarmAgentStepRecord{
 		ID:          "step-running-duplicate",
@@ -41,7 +53,11 @@ func TestTaskAgentActorHandleSkipsDuplicateRunningStep(t *testing.T) {
 		t.Fatalf("ReserveAgentStep() error = %v", err)
 	}
 
-	actor := &taskAgentActor{tasks: tasks}
+	actor := &taskAgentActor{
+		sessions:       manager,
+		runtimeBuilder: &recordingTaskAgentRuntimeBuilder{t: t},
+		tasks:          tasks,
+	}
 	err := actor.Handle(ctx, env)
 	if err == nil {
 		t.Fatal("Handle() error = nil, want duplicate running step")
@@ -57,7 +73,19 @@ func TestTaskAgentActorHandleSkipsDuplicateRunningStep(t *testing.T) {
 func TestTaskAgentActorHandleReplaysStoredSucceededResult(t *testing.T) {
 	ctx := context.Background()
 	_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
+	manager := newBaldaRestoreSessionManager(
+		t,
+		&fakeBaldaRestoreAgentBuilder{},
+		&fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"},
+		&fakeBaldaRestoreSessionStore{},
+	)
 	payload, env := taskAgentCommandForTest(t, "task-replay-succeeded", taskAgentRoleExecutor, 1)
+	if _, err := manager.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: payload.Locator,
+		UserID:  payload.TransportUserID,
+	}, ownerSessionLabel); err != nil {
+		t.Fatalf("EnsureSession() error = %v", err)
+	}
 	stepKey := taskAgentStepKey(payload)
 	resultJSON, err := marshalTaskAgentResult(payload, "done", nil)
 	if err != nil {
@@ -79,7 +107,12 @@ func TestTaskAgentActorHandleReplaysStoredSucceededResult(t *testing.T) {
 		t.Fatalf("CompleteAgentStep() error = %v", err)
 	}
 
-	actor := &taskAgentActor{tasks: tasks, coordinator: coordinator}
+	actor := &taskAgentActor{
+		sessions:       manager,
+		runtimeBuilder: &recordingTaskAgentRuntimeBuilder{t: t},
+		tasks:          tasks,
+		coordinator:    coordinator,
+	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -95,7 +128,19 @@ func TestTaskAgentActorHandleReplaysStoredSucceededResult(t *testing.T) {
 func TestTaskAgentActorHandleReplaysStoredFailedResult(t *testing.T) {
 	ctx := context.Background()
 	_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
+	manager := newBaldaRestoreSessionManager(
+		t,
+		&fakeBaldaRestoreAgentBuilder{},
+		&fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"},
+		&fakeBaldaRestoreSessionStore{},
+	)
 	payload, env := taskAgentCommandForTest(t, "task-replay-failed", taskAgentRoleReviewer, 2)
+	if _, err := manager.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: payload.Locator,
+		UserID:  payload.TransportUserID,
+	}, ownerSessionLabel); err != nil {
+		t.Fatalf("EnsureSession() error = %v", err)
+	}
 	stepKey := taskAgentStepKey(payload)
 	resultJSON, err := marshalTaskAgentResult(payload, "", errors.New("agent failed"))
 	if err != nil {
@@ -117,7 +162,12 @@ func TestTaskAgentActorHandleReplaysStoredFailedResult(t *testing.T) {
 		t.Fatalf("FailAgentStep() error = %v", err)
 	}
 
-	actor := &taskAgentActor{tasks: tasks, coordinator: coordinator}
+	actor := &taskAgentActor{
+		sessions:       manager,
+		runtimeBuilder: &recordingTaskAgentRuntimeBuilder{t: t},
+		tasks:          tasks,
+		coordinator:    coordinator,
+	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -134,7 +184,19 @@ func TestTaskAgentActorHandleRejectsStepPayloadHashMismatch(t *testing.T) {
 	_ = bus
 	_ = coordinator
 	_ = allocator
+	manager := newBaldaRestoreSessionManager(
+		t,
+		&fakeBaldaRestoreAgentBuilder{},
+		&fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"},
+		&fakeBaldaRestoreSessionStore{},
+	)
 	payload, env := taskAgentCommandForTest(t, "task-hash-mismatch", taskAgentRolePlanner, 1)
+	if _, err := manager.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: payload.Locator,
+		UserID:  payload.TransportUserID,
+	}, ownerSessionLabel); err != nil {
+		t.Fatalf("EnsureSession() error = %v", err)
+	}
 	stepKey := taskAgentStepKey(payload)
 	if _, _, err := tasks.ReserveAgentStep(ctx, baldastate.SwarmAgentStepRecord{
 		ID:          "step-hash-mismatch",
@@ -149,7 +211,11 @@ func TestTaskAgentActorHandleRejectsStepPayloadHashMismatch(t *testing.T) {
 		t.Fatalf("ReserveAgentStep() error = %v", err)
 	}
 
-	actor := &taskAgentActor{tasks: tasks}
+	actor := &taskAgentActor{
+		sessions:       manager,
+		runtimeBuilder: &recordingTaskAgentRuntimeBuilder{t: t},
+		tasks:          tasks,
+	}
 	err := actor.Handle(ctx, env)
 	if err == nil {
 		t.Fatal("Handle() error = nil, want payload mismatch")
@@ -275,6 +341,69 @@ func TestTaskAgentActorHandleUsesDerivedADKSessionID(t *testing.T) {
 	}
 }
 
+func TestTaskAgentActorHandleRuntimeBootstrapFailureDoesNotReserveRunningStep(t *testing.T) {
+	ctx := context.Background()
+	_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
+	manager := newBaldaRestoreSessionManager(
+		t,
+		&fakeBaldaRestoreAgentBuilder{},
+		&fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"},
+		&fakeBaldaRestoreSessionStore{},
+	)
+	locator := taskActorTestLocator()
+	if _, err := manager.EnsureSession(ctx, baldasession.SessionContext{
+		Locator: locator,
+		UserID:  "tg-101",
+	}, ownerSessionLabel); err != nil {
+		t.Fatalf("EnsureSession() error = %v", err)
+	}
+
+	runtimeBuilder := &failingTaskAgentRuntimeBuilder{
+		t:           t,
+		failBuilds:  1,
+		errOnBuild:  errors.New("runtime bootstrap failed"),
+	}
+	actor := &taskAgentActor{
+		sessions:       manager,
+		runtimeBuilder: runtimeBuilder,
+		coordinator:    coordinator,
+		tasks:          tasks,
+	}
+	payload, env := taskAgentCommandForTest(t, "task-bootstrap-retry", taskAgentRoleExecutor, 1)
+
+	err := actor.Handle(ctx, env)
+	if err == nil {
+		t.Fatal("Handle() error = nil, want transient bootstrap error")
+	}
+	if swarm.ClassifyError(err) != swarm.ErrorKindTransient {
+		t.Fatalf("ClassifyError(%v) = %s, want transient", err, swarm.ClassifyError(err))
+	}
+	if len(runtimeBuilder.cfgs) != 1 {
+		t.Fatalf("BuildTaskAgentRuntime() calls after first attempt = %d, want 1", len(runtimeBuilder.cfgs))
+	}
+
+	if err := actor.Handle(ctx, env); err != nil {
+		t.Fatalf("Handle() retry error = %v", err)
+	}
+	if len(runtimeBuilder.cfgs) != 2 {
+		t.Fatalf("BuildTaskAgentRuntime() calls after retry = %d, want 2", len(runtimeBuilder.cfgs))
+	}
+	if runtimeBuilder.cfgs[0].SessionID != runtimeBuilder.cfgs[1].SessionID {
+		t.Fatalf("runtime session ids differ across retry: %q vs %q", runtimeBuilder.cfgs[0].SessionID, runtimeBuilder.cfgs[1].SessionID)
+	}
+	resultEnv := lastPublishedCommandTo(t, bus, swarm.ActorTypeTask, payload.TaskID)
+	var resultPayload taskEnvelopePayload
+	if err := json.Unmarshal([]byte(resultEnv.PayloadJSON), &resultPayload); err != nil {
+		t.Fatalf("decode result payload: %v", err)
+	}
+	if resultPayload.AgentResult == nil {
+		t.Fatal("result payload agent_result is nil")
+	}
+	if strings.TrimSpace(resultPayload.AgentResult.ADKSessionID) != runtimeBuilder.cfgs[1].SessionID {
+		t.Fatalf("result adk_session_id = %q, want %q", resultPayload.AgentResult.ADKSessionID, runtimeBuilder.cfgs[1].SessionID)
+	}
+}
+
 type recordingTaskAgentRuntimeBuilder struct {
 	t    *testing.T
 	cfgs []baldaagent.TaskAgentRuntimeConfig
@@ -286,7 +415,35 @@ func (b *recordingTaskAgentRuntimeBuilder) BuildTaskAgentRuntime(
 ) (*baldaagent.TaskAgentRuntime, error) {
 	b.t.Helper()
 	b.cfgs = append(b.cfgs, cfg)
+	return newTaskAgentRuntimeForTest(ctx, cfg)
+}
 
+type failingTaskAgentRuntimeBuilder struct {
+	t          *testing.T
+	failBuilds int
+	errOnBuild error
+	cfgs       []baldaagent.TaskAgentRuntimeConfig
+}
+
+func (b *failingTaskAgentRuntimeBuilder) BuildTaskAgentRuntime(
+	ctx context.Context,
+	cfg baldaagent.TaskAgentRuntimeConfig,
+) (*baldaagent.TaskAgentRuntime, error) {
+	b.t.Helper()
+	b.cfgs = append(b.cfgs, cfg)
+	if len(b.cfgs) <= b.failBuilds {
+		if b.errOnBuild != nil {
+			return nil, b.errOnBuild
+		}
+		return nil, errors.New("task runtime build failed")
+	}
+	return newTaskAgentRuntimeForTest(ctx, cfg)
+}
+
+func newTaskAgentRuntimeForTest(
+	ctx context.Context,
+	cfg baldaagent.TaskAgentRuntimeConfig,
+) (*baldaagent.TaskAgentRuntime, error) {
 	ag, err := adkagent.New(adkagent.Config{
 		Name:        "TaskAgentRuntimeBuilderTestAgent",
 		Description: "Emits one final response",
