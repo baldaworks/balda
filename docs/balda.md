@@ -708,6 +708,20 @@ All events are published as the same envelope shape. For event envelopes,
 - Operational inspection:
   - `/dlq` surfaces backlog counters; `/swarm status` includes DLQ stream metrics and redelivery pressure.
 
+#### Failure-mode matrix
+
+| Failure mode | Where detected | Settlement/result | User-visible impact | Operator action |
+|---|---|---|---|---|
+| JetStream unavailable at startup | app startup/runtime bootstrap | startup fails fast | ingress not started; no work accepted | restore NATS/JetStream and restart |
+| Command publish rejected (queue pressure/transport) | ingress publish path | request rejected (`queue_full`/`dispatch_failed`) | command not accepted; no task created | inspect stream limits/backpressure, retry ingress |
+| Envelope decode failure (command consumer) | command consumer decode | `TermWithReason`, publish poison record to `BALDA_DLQ`, emit `command.decode_failed` | affected message skipped; no handler side effects | inspect DLQ payload, fix producer/schema, replay if needed |
+| Retryable actor/runtime error | command handler/runtime | `NakWithDelay`, emit `command.retrying` | delayed completion | inspect retries, root-cause transient dependency failures |
+| Retry exhaustion (`max_deliver` reached) | command consumer | publish `BALDA_DLQ`, `TermWithReason`, emit `command.deadlettered` | task may end `deadlettered`; no further retries | inspect `/dlq`, replay/fix or cancel |
+| Permanent actor/runtime error | handler/runtime classification | publish `BALDA_DLQ`, `TermWithReason` | task fails/deadletters without retry loop | inspect reason, patch code/config, replay if safe |
+| Projection apply/decode failure | event projector consumer | retry for transient; terminal to DLQ for permanent | command flow continues; read models stale/lagging | check `/projection status`, fix projector bug, replay events |
+| Delivery redelivery after partial send | DeliveryActor/outbox reserve | duplicate suppressed by delivery key (noop path) | final user message not duplicated | inspect outbox row/status if delivery appears missing |
+| Cancellation races with queued/running work | ControlActor + task/session actors | control command applied; canceled/terminal commands settle noop/ack | task/session stops promptly, later duplicates ignored | verify task state/events; no queue surgery needed |
+
 - NATS identity is carried in headers: `Balda-Envelope-ID`,
   `Balda-Session-ID`, `Balda-Task-ID`, `Balda-Correlation-ID`,
   `Balda-Causation-ID`, `Balda-Dedupe-Key`, `Balda-Actor-Key`,
