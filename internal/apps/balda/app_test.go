@@ -12,6 +12,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/norma/pkg/runtime/agentconfig"
 	runtimeconfig "github.com/normahq/norma/pkg/runtime/appconfig"
@@ -319,6 +320,106 @@ func TestValidateSchedulerConfigRejectsLegacyJobs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "balda.scheduler.jobs is no longer supported") {
 		t.Fatalf("validateSchedulerConfig() error = %v, want legacy jobs guidance", err)
+	}
+}
+
+func TestValidateRuntimeConfigLint_RejectsDisabledSwarm(t *testing.T) {
+	t.Parallel()
+
+	err := validateRuntimeConfigLint(swarm.Config{
+		Enabled: false,
+		Commands: swarm.CommandConfig{
+			Stream:   "BALDA_COMMANDS",
+			Consumer: "BALDA_WORKER_COMMANDS",
+		},
+		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
+	}, handlers.InboundWebhookConfig{})
+	if err == nil {
+		t.Fatal("validateRuntimeConfigLint() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "balda.swarm.enabled must be true") {
+		t.Fatalf("validateRuntimeConfigLint() error = %v, want swarm enabled marker", err)
+	}
+}
+
+func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateJetStreamNames(t *testing.T) {
+	t.Parallel()
+
+	err := validateRuntimeConfigLint(swarm.Config{
+		Enabled: true,
+		Commands: swarm.CommandConfig{
+			Stream:   "BALDA COMMANDS",
+			Consumer: "BALDA_EVENT_PROJECTOR",
+		},
+		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    swarm.DLQConfig{Stream: "BALDA_EVENTS"},
+	}, handlers.InboundWebhookConfig{})
+	if err == nil {
+		t.Fatal("validateRuntimeConfigLint() error = nil, want non-nil")
+	}
+	markers := []string{
+		`balda.swarm.commands.stream must match "^[A-Za-z0-9_-]+$"`,
+		"balda.swarm.commands.stream, balda.swarm.events.stream, and balda.swarm.dlq.stream must be distinct",
+		"balda.swarm.commands.consumer must differ from balda.swarm.events.consumer",
+	}
+	for _, marker := range markers {
+		if !strings.Contains(err.Error(), marker) {
+			t.Fatalf("validateRuntimeConfigLint() error = %v, want marker %q", err, marker)
+		}
+	}
+}
+
+func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testing.T) {
+	t.Parallel()
+
+	err := validateRuntimeConfigLint(swarm.Config{
+		Enabled: true,
+		Commands: swarm.CommandConfig{
+			Stream:   "BALDA_COMMANDS",
+			Consumer: "BALDA_WORKER_COMMANDS",
+		},
+		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
+	}, handlers.InboundWebhookConfig{
+		Enabled:    true,
+		ListenAddr: "0.0.0.0:8090",
+		Routes: map[string]handlers.InboundWebhookRouteConfig{
+			"release": {
+				Auth: handlers.InboundWebhookRouteAuthConfig{Type: "none"},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("validateRuntimeConfigLint() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "must configure auth.type=header") {
+		t.Fatalf("validateRuntimeConfigLint() error = %v, want auth marker", err)
+	}
+}
+
+func TestValidateRuntimeConfigLint_AllowsLoopbackWebhookWithoutRouteAuth(t *testing.T) {
+	t.Parallel()
+
+	err := validateRuntimeConfigLint(swarm.Config{
+		Enabled: true,
+		Commands: swarm.CommandConfig{
+			Stream:   "BALDA_COMMANDS",
+			Consumer: "BALDA_WORKER_COMMANDS",
+		},
+		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
+	}, handlers.InboundWebhookConfig{
+		Enabled:    true,
+		ListenAddr: "127.0.0.1:8090",
+		Routes: map[string]handlers.InboundWebhookRouteConfig{
+			"release": {
+				Auth: handlers.InboundWebhookRouteAuthConfig{Type: "none"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("validateRuntimeConfigLint() error = %v, want nil", err)
 	}
 }
 

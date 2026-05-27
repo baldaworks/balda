@@ -3,8 +3,10 @@ package balda
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -46,6 +48,8 @@ const (
 	sessionPersistenceMemory = "memory"
 	sessionPersistenceSQLite = "sqlite"
 )
+
+var configIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // App creates a new fx.App for the Balda bot with the provided configuration.
 func App(
@@ -135,6 +139,9 @@ func Module(
 	}
 	eventBusConfig, err := cfg.Balda.NATS.Normalized()
 	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	if err := validateRuntimeConfigLint(swarmConfig, inboundWebhookConfig); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 
@@ -575,6 +582,111 @@ func validateLegacyRuntimeModes(cfg BaldaConfig) error {
 		return nil
 	}
 	return fmt.Errorf("invalid legacy mode configuration: %s", strings.Join(errs, "; "))
+}
+
+func validateRuntimeConfigLint(swarmCfg swarm.Config, webhookCfg handlers.InboundWebhookConfig) error {
+	errs := make([]string, 0)
+
+	if !swarmCfg.Enabled {
+		errs = append(errs, "balda.swarm.enabled must be true for JetStream-first runtime")
+	}
+
+	streamNames := map[string]string{
+		"balda.swarm.commands.stream": swarmCfg.Commands.Stream,
+		"balda.swarm.events.stream":   swarmCfg.Events.Stream,
+		"balda.swarm.dlq.stream":      swarmCfg.DLQ.Stream,
+	}
+	for field, value := range streamNames {
+		if err := validateIdentifierValue(field, value); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if duplicate := firstDuplicateValue(streamNames); duplicate != "" {
+		errs = append(errs, "balda.swarm.commands.stream, balda.swarm.events.stream, and balda.swarm.dlq.stream must be distinct")
+	}
+
+	consumerNames := map[string]string{
+		"balda.swarm.commands.consumer": swarmCfg.Commands.Consumer,
+		"balda.swarm.events.consumer":   swarm.DefaultEventProjectorConsumer,
+	}
+	for field, value := range consumerNames {
+		if err := validateIdentifierValue(field, value); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(swarmCfg.Commands.Consumer), strings.TrimSpace(swarm.DefaultEventProjectorConsumer)) {
+		errs = append(errs, "balda.swarm.commands.consumer must differ from balda.swarm.events.consumer")
+	}
+
+	if webhookCfg.Enabled && isPublicListenAddress(webhookCfg.ListenAddr) {
+		unsecuredRoutes := make([]string, 0)
+		for routeName, route := range webhookCfg.Routes {
+			authType := strings.ToLower(strings.TrimSpace(route.Auth.Type))
+			authValue := strings.TrimSpace(route.Auth.Value)
+			if authType == "header" && authValue != "" {
+				continue
+			}
+			unsecuredRoutes = append(unsecuredRoutes, routeName)
+		}
+		if len(unsecuredRoutes) > 0 {
+			sort.Strings(unsecuredRoutes)
+			errs = append(errs, fmt.Sprintf(
+				"balda.webhooks.listen_addr %q is publicly reachable; routes %s must configure auth.type=header with a non-empty auth value",
+				webhookCfg.ListenAddr,
+				strings.Join(unsecuredRoutes, ", "),
+			))
+		}
+	}
+
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("invalid runtime configuration: %s", strings.Join(errs, "; "))
+}
+
+func validateIdentifierValue(field, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if !configIdentifierPattern.MatchString(trimmed) {
+		return fmt.Errorf("%s must match %q", field, configIdentifierPattern.String())
+	}
+	return nil
+}
+
+func firstDuplicateValue(values map[string]string) string {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if _, ok := seen[normalized]; ok {
+			return normalized
+		}
+		seen[normalized] = struct{}{}
+	}
+	return ""
+}
+
+func isPublicListenAddress(raw string) bool {
+	host := strings.TrimSpace(raw)
+	if host == "" {
+		return false
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = strings.TrimSpace(parsedHost)
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return true
+	}
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return true
+	}
+	return !ip.IsLoopback()
 }
 
 func buildScheduledTaskSchedulerConfig(cfg BaldaConfig) handlers.ScheduledTaskSchedulerConfig {

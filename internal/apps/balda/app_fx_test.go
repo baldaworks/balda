@@ -21,6 +21,9 @@ func TestValidateApp(t *testing.T) {
 			},
 			WorkingDir: workingDir,
 			StateDir:   ".config/balda",
+			Swarm: SwarmConfig{
+				Enabled: true,
+			},
 			Workspace: WorkspaceConfig{
 				Mode: string(WorkspaceModeAuto),
 			},
@@ -53,6 +56,9 @@ func TestValidateApp_InvalidTelegramFormattingModeFails(t *testing.T) {
 			},
 			WorkingDir: workingDir,
 			StateDir:   ".config/balda",
+			Swarm: SwarmConfig{
+				Enabled: true,
+			},
 			Workspace: WorkspaceConfig{
 				Mode: string(WorkspaceModeAuto),
 			},
