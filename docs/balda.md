@@ -692,6 +692,22 @@ All events are published as the same envelope shape. For event envelopes,
   - task status transitions are guarded and terminal states are immutable.
   - repeated terminal lifecycle commands/events keep task state unchanged.
 
+#### Retry and DLQ rules
+
+- Retry classification:
+  - retryable failures are settled with `NakWithDelay` and emit `command.retrying`.
+  - permanent/policy/auth/decode terminal failures are settled with `TermWithReason` and emit/persist `command.deadlettered` or `command.decode_failed`.
+- Retry schedule:
+  - backoff is exponential with bounded cap (base `1s`, max `1m`), constrained by consumer `max_deliver`.
+  - long-running handlers send `InProgress` heartbeats to prevent premature redelivery.
+- Retry exhaustion:
+  - when delivery attempts reach `max_deliver`, command is moved to `BALDA_DLQ` with reason `retry exhausted: <error>`.
+- DLQ payload contract:
+  - keeps original envelope identity/routing/payload (`id`, namespace, from/to, task/session scope).
+  - includes failure reason and JetStream origin metadata (subject/headers for poison decode cases).
+- Operational inspection:
+  - `/dlq` surfaces backlog counters; `/swarm status` includes DLQ stream metrics and redelivery pressure.
+
 - NATS identity is carried in headers: `Balda-Envelope-ID`,
   `Balda-Session-ID`, `Balda-Task-ID`, `Balda-Correlation-ID`,
   `Balda-Causation-ID`, `Balda-Dedupe-Key`, `Balda-Actor-Key`,
