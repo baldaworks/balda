@@ -54,24 +54,11 @@ func TestIsJetStreamQueuePressure(t *testing.T) {
 }
 
 func TestBus_PublishCommandAndConsumeEmbeddedJetStream(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
-		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
-		Swarm:      swarm.Config{Enabled: true},
-		WorkingDir: t.TempDir(),
-		Logger:     zerolog.Nop(),
-	})
-	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
-	}
-	bus := busRaw.(*Bus)
-	defer func() { _ = bus.Drain(context.Background()) }()
+	h := StartTestJetStream(t, swarm.Config{Enabled: true})
+	bus := h.Bus
 
 	env := commandTestEnvelope("env-1")
-	ack, err := bus.PublishCommand(context.Background(), env)
-	if err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
-	}
+	ack := h.PublishCommand(t, env)
 	if ack.Stream != swarm.DefaultCommandStream || ack.Subject != swarm.SubjectCommandTask || ack.Sequence == 0 {
 		t.Fatalf("PublishCommand() ack = %+v", ack)
 	}
@@ -96,26 +83,13 @@ func TestBus_PublishCommandAndConsumeEmbeddedJetStream(t *testing.T) {
 }
 
 func TestBus_PublishCommandSucceedsWhenAcceptedEventCannotPublish(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
-		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
-		Swarm:      swarm.Config{Enabled: true},
-		WorkingDir: t.TempDir(),
-		Logger:     zerolog.Nop(),
-	})
-	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
-	}
-	bus := busRaw.(*Bus)
-	defer func() { _ = bus.Drain(context.Background()) }()
+	h := StartTestJetStream(t, swarm.Config{Enabled: true})
+	bus := h.Bus
 	if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
 		t.Fatalf("DeleteStream(events) error = %v", err)
 	}
 
-	ack, err := bus.PublishCommand(context.Background(), commandTestEnvelope("accepted-event-fails"))
-	if err != nil {
-		t.Fatalf("PublishCommand() error = %v, want nil because command is durable", err)
-	}
+	ack := h.PublishCommand(t, commandTestEnvelope("accepted-event-fails"))
 	if ack.Stream != swarm.DefaultCommandStream || ack.Sequence == 0 {
 		t.Fatalf("PublishCommand() ack = %+v, want command stream ack", ack)
 	}
