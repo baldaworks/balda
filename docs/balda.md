@@ -908,6 +908,23 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - Example:
     🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `opencode/big-pickle` • **Type:** `opencode_acp` • **MCP:** `balda`
 
+### Workspace allocation contract
+
+- Workspace allocation is session-scoped:
+  - session branch name: `norma/balda/<session_id>`
+  - workspace dir root: `${balda.state_dir}/balda-sessions/<session_id>`
+- Allocation lifecycle:
+  - on session create/restore in workspace mode, Balda ensures a dedicated worktree at that path
+  - if the workspace path already exists with a different branch binding, Balda rejects it as a workspace collision
+  - on normal close/stop flows, Balda removes the worktree mount via `CleanupWorkspace`
+- Restore and sync behavior:
+  - Balda first tries to import/rebase the session branch onto `balda.workspace.base_branch`
+  - on conflict, Balda remounts a clean worktree on the same session branch and marks sync skipped
+  - users can retry sync later with `balda.workspace.import`
+- Source of truth:
+  - persisted metadata (`workspace_dir`, `branch_name`) is stored in `state.db` session records
+  - TaskActor and AgentActor resolve workspace metadata from session info when dispatching/handling task-agent commands
+
 ## Troubleshooting
 
 - Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify local disk limits.
