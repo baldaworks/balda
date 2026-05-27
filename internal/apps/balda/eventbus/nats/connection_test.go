@@ -2,6 +2,7 @@ package natsbus
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -723,6 +724,41 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 	}
 	if second.MsgID != env.DedupeKey {
 		t.Fatalf("second msg id = %q, want %q", second.MsgID, env.DedupeKey)
+	}
+
+	noopConsumer, err := bus.js.CreateOrUpdateConsumer(context.Background(), swarm.DefaultEventStream, jetstream.ConsumerConfig{
+		Durable:       "noop-dedupe-inspector",
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		FilterSubject: swarm.SubjectEventCommandNoop,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrUpdateConsumer(noop-dedupe-inspector) error = %v", err)
+	}
+	batch, err := noopConsumer.Fetch(1, jetstream.FetchMaxWait(time.Second))
+	if err != nil {
+		t.Fatalf("Fetch(command.noop) error = %v", err)
+	}
+	msg, ok := <-batch.Messages()
+	if !ok {
+		t.Fatal("command.noop event message = nil, want duplicate noop lifecycle event")
+	}
+	got, err := swarm.DecodeEnvelope(string(msg.Data()))
+	if err != nil {
+		t.Fatalf("DecodeEnvelope(command.noop) error = %v", err)
+	}
+	if got.Meta["event_type"] != "command.noop" {
+		t.Fatalf("command.noop event_type = %q, want %q", got.Meta["event_type"], "command.noop")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(got.PayloadJSON), &payload); err != nil {
+		t.Fatalf("Unmarshal(command.noop payload) error = %v", err)
+	}
+	if reason, _ := payload["reason"].(string); reason != "duplicate publish suppressed" {
+		t.Fatalf("command.noop payload reason = %q, want %q", reason, "duplicate publish suppressed")
+	}
+	if err := msg.DoubleAck(context.Background()); err != nil {
+		t.Fatalf("DoubleAck(command.noop) error = %v", err)
 	}
 }
 

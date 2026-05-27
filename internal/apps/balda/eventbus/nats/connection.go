@@ -106,6 +106,16 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 			Str("subject", subject).
 			Msg("failed to publish command accepted event")
 	}
+	if ack.Duplicate {
+		const noopReason = "duplicate publish suppressed"
+		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandNoop, commandEventEnvelope(env, result, "noop", noopReason)); err != nil {
+			b.logger.Warn().
+				Err(err).
+				Str("envelope_id", env.ID).
+				Str("subject", subject).
+				Msg("failed to publish command noop event")
+		}
+	}
 	return result, nil
 }
 
