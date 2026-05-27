@@ -121,6 +121,43 @@ func TestSessionActorSettleSessionTurnResultKeepsNonTaskErrorsRetryable(t *testi
 	}
 }
 
+func TestSessionActorEnqueueTurnSkipsDeadLetteredTask(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = coordinator
+	_ = allocator
+	if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
+		ID:        "task-session-deadlettered",
+		SessionID: "tg-9001-77",
+		Objective: "run session task",
+		Status:    baldastate.SwarmTaskStatusDeadLettered,
+	}, "test", nil); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	turns := &fakeTurnDispatcher{}
+	exec := &sessionActorExecutor{
+		handler: &BaldaHandler{
+			turnDispatcher: turns,
+			logger:         zerolog.Nop(),
+		},
+		tasks: tasks,
+	}
+	env := testSessionTurnEnvelope(t, nil)
+	env.TaskID = "task-session-deadlettered"
+
+	if err := exec.enqueueTurn(ctx, env); err != nil {
+		t.Fatalf("enqueueTurn() error = %v, want nil noop for deadlettered task", err)
+	}
+	if len(turns.enqueueCalls) != 0 {
+		t.Fatalf("Enqueue calls = %d, want 0 for deadlettered task", len(turns.enqueueCalls))
+	}
+}
+
 func TestSubmitSessionTurnToSwarm_RequiresRuntimeEnabled(t *testing.T) {
 	t.Parallel()
 
@@ -129,7 +166,7 @@ func TestSubmitSessionTurnToSwarm_RequiresRuntimeEnabled(t *testing.T) {
 	}
 
 	_, err := handler.submitSessionTurnToSwarm(context.Background(), sessionTurnPayload{
-		Text:    "hello",
+		Text: "hello",
 		Locator: baldasession.SessionLocator{
 			ChannelType: "telegram",
 			AddressKey:  "tg-9001-77",

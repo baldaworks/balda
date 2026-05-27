@@ -289,6 +289,7 @@ func TestTaskActorDispatchSessionTurnSkipsExistingTasks(t *testing.T) {
 		baldastate.SwarmTaskStatusCompleted,
 		baldastate.SwarmTaskStatusFailed,
 		baldastate.SwarmTaskStatusCanceled,
+		baldastate.SwarmTaskStatusDeadLettered,
 	}
 	for _, status := range statuses {
 		t.Run(status, func(t *testing.T) {
@@ -403,6 +404,7 @@ func TestTaskActorStartScheduledTaskSkipsExistingTasks(t *testing.T) {
 		baldastate.SwarmTaskStatusCompleted,
 		baldastate.SwarmTaskStatusFailed,
 		baldastate.SwarmTaskStatusCanceled,
+		baldastate.SwarmTaskStatusDeadLettered,
 	}
 	for _, status := range statuses {
 		t.Run(status, func(t *testing.T) {
