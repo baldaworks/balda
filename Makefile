@@ -1,4 +1,4 @@
-.PHONY: dev scenarios jetstream-state
+.PHONY: dev scenarios jetstream-state projection-replay
 
 dev:
 	@./scripts/dev/run-balda-embedded-jetstream.sh
@@ -8,3 +8,6 @@ scenarios:
 
 jetstream-state:
 	@./scripts/dev/dump-jetstream-state.sh
+
+projection-replay:
+	@./scripts/dev/replay-events-into-projections.sh

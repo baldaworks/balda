@@ -98,6 +98,12 @@ Dump JetStream stream/consumer state (requires `nats` CLI and a running local NA
 make jetstream-state
 ```
 
+Replay projection events through the deterministic projector replay suite:
+
+```bash
+make projection-replay
+```
+
 Authenticate in Telegram with the printed auth URL, or send the printed command
 directly to your bot:
 

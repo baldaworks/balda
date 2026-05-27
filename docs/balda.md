@@ -58,6 +58,13 @@ To dump JetStream stream/consumer state from a running local NATS endpoint
 make jetstream-state
 ```
 
+To replay projection events through the deterministic projector replay suite,
+run:
+
+```bash
+make projection-replay
+```
+
 `balda init` requires a Telegram bot token, detects supported provider CLIs
 (`codex`, `opencode`, `copilot`, `gemini`, `claude`), writes
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
