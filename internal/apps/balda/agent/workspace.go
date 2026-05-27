@@ -54,6 +54,9 @@ func (m *WorkspaceManager) EnsureWorkspace(ctx context.Context, key, branchName,
 	branchExists := branchName != "" && git.BranchExists(ctx, m.workingDir, branchName)
 
 	if fi, err := os.Stat(workspaceDir); err == nil && fi.IsDir() {
+		if err := validateWorkspaceBranch(ctx, workspaceDir, branchName); err != nil {
+			return result, err
+		}
 		if branchExists {
 			// Workspace already exists — import latest base when we are resuming an existing branch.
 			if err := m.Import(ctx, workspaceDir); err != nil {
@@ -246,4 +249,28 @@ func (m *WorkspaceManager) recreateWorkspaceWithoutSync(ctx context.Context, wor
 
 	result.SyncSkipped = true
 	return result, nil
+}
+
+func validateWorkspaceBranch(ctx context.Context, workspaceDir, expectedBranch string) error {
+	branch := strings.TrimSpace(expectedBranch)
+	if branch == "" {
+		return nil
+	}
+	if !git.Available(ctx, workspaceDir) {
+		return fmt.Errorf("workspace collision: %q exists but is not a git repository", workspaceDir)
+	}
+	currentBranch, err := git.CurrentBranch(ctx, workspaceDir)
+	if err != nil {
+		return fmt.Errorf("workspace collision: resolve branch for %q: %w", workspaceDir, err)
+	}
+	currentBranch = strings.TrimSpace(currentBranch)
+	if currentBranch == "" || currentBranch == branch {
+		return nil
+	}
+	return fmt.Errorf(
+		"workspace collision: %q is already mounted for branch %q; expected %q",
+		workspaceDir,
+		currentBranch,
+		branch,
+	)
 }

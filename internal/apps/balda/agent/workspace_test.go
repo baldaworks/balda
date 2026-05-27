@@ -325,6 +325,75 @@ func TestWorkspaceImportAbortsRebaseOnConflict(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkspace_DifferentSessionsUseDistinctWorkspaceDirs(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	initGitRepo(t, ctx, workingDir)
+
+	writeFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
+	runGit(t, ctx, workingDir, "add", "seed.txt")
+	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+
+	stateDir := t.TempDir()
+	m := NewWorkspaceManager(workingDir, stateDir, currentBranch(t, ctx, workingDir))
+
+	first, err := m.EnsureWorkspace(ctx, "tg-1-1", "norma/balda/tg-1-1", "")
+	if err != nil {
+		t.Fatalf("EnsureWorkspace(first) error = %v", err)
+	}
+	second, err := m.EnsureWorkspace(ctx, "tg-2-2", "norma/balda/tg-2-2", "")
+	if err != nil {
+		t.Fatalf("EnsureWorkspace(second) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", first.Dir)
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", second.Dir)
+	})
+
+	if first.Dir == second.Dir {
+		t.Fatalf("workspace dirs are equal: %q", first.Dir)
+	}
+	if strings.Contains(first.Dir, "tg-2-2") {
+		t.Fatalf("first workspace dir = %q, want isolated session path", first.Dir)
+	}
+	if strings.Contains(second.Dir, "tg-1-1") {
+		t.Fatalf("second workspace dir = %q, want isolated session path", second.Dir)
+	}
+}
+
+func TestEnsureWorkspace_RejectsWorkspacePathCollisionAcrossBranches(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	initGitRepo(t, ctx, workingDir)
+
+	writeFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
+	runGit(t, ctx, workingDir, "add", "seed.txt")
+	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+
+	stateDir := t.TempDir()
+	m := NewWorkspaceManager(workingDir, stateDir, currentBranch(t, ctx, workingDir))
+
+	first, err := m.EnsureWorkspace(ctx, "tg-1-1", "norma/balda/tg-1-1", "")
+	if err != nil {
+		t.Fatalf("EnsureWorkspace(first) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", first.Dir)
+	})
+
+	_, err = m.EnsureWorkspace(ctx, "tg-2-2", "norma/balda/tg-2-2", first.Dir)
+	if err == nil {
+		t.Fatal("EnsureWorkspace(collision) error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "workspace collision") {
+		t.Fatalf("EnsureWorkspace(collision) error = %q, want workspace collision marker", err)
+	}
+}
+
 func TestWorkspaceExportSquashMergesIntoConfiguredBaseBranch(t *testing.T) {
 	t.Parallel()
 
