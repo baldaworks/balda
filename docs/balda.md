@@ -39,6 +39,12 @@ balda init
 balda start
 ```
 
+For repo-local development with embedded JetStream forced on, run:
+
+```bash
+make dev
+```
+
 `balda init` requires a Telegram bot token, detects supported provider CLIs
 (`codex`, `opencode`, `copilot`, `gemini`, `claude`), writes
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints

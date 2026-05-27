@@ -80,6 +80,12 @@ Start Balda:
 balda start
 ```
 
+Local repo development helper (forces embedded JetStream runtime):
+
+```bash
+make dev
+```
+
 Authenticate in Telegram with the printed auth URL, or send the printed command
 directly to your bot:
 
