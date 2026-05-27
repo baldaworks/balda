@@ -254,6 +254,9 @@ func (h *CommandHandler) onActorsCommand(ctx context.Context, commandCtx baldate
 		out.WriteString(" {shell_policy=")
 		out.WriteString(agent.ShellExecutionPolicy())
 		out.WriteString("}")
+		out.WriteString(" {workspace_access=")
+		out.WriteString(agent.WorkspaceAccessPolicy())
+		out.WriteString("}")
 		if allowed, ok := swarm.AllowedToolsForRole(agent.Name); ok {
 			out.WriteString(" {allowed_tools=")
 			out.WriteString(formatAllowedTools(allowed))
@@ -341,6 +344,9 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 			}
 			out.WriteString(" {shell_policy=")
 			out.WriteString(agent.ShellExecutionPolicy())
+			out.WriteString("}")
+			out.WriteString(" {workspace_access=")
+			out.WriteString(agent.WorkspaceAccessPolicy())
 			out.WriteString("}")
 			if allowed, ok := swarm.AllowedToolsForRole(agent.Name); ok {
 				out.WriteString(" {allowed_tools=")

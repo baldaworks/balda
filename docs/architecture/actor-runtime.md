@@ -11,6 +11,7 @@ Status: active
 - Retry/permanent failure handling is explicit and classified.
 - Task actors attach role-based shell execution policy metadata (`none`, `read_only`, `workspace_write`) to runtime status surfaces.
 - Role-level allowed tool contracts are stable and inspectable (`planner=none`, `executor=workspace,shell,mcp`, `reviewer=workspace,shell`, `memory=memory`).
+- Workspace access boundaries are role-based and inspectable (`none`, `read_only`, `read_write`).
 
 ## Related tests
 

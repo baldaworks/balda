@@ -134,6 +134,7 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentNotContains(t, tgClient, "legacy_direct_path")
 	assertLastSentContains(t, tgClient, "planner")
 	assertLastSentContains(t, tgClient, "shell_policy=workspace_write")
+	assertLastSentContains(t, tgClient, "workspace_access=read_write")
 	assertLastSentContains(t, tgClient, "allowed_tools=workspace,shell,mcp")
 	assertLastSentContains(t, tgClient, "state_source_of_truth: sqlite")
 	assertLastSentContains(t, tgClient, "event_publishing_mode: best_effort_visibility")
@@ -173,6 +174,7 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Actors status")
 	assertLastSentContains(t, tgClient, "planner")
 	assertLastSentContains(t, tgClient, "shell_policy=read_only")
+	assertLastSentContains(t, tgClient, "workspace_access=read_only")
 	assertLastSentContains(t, tgClient, "allowed_tools=none")
 }
 

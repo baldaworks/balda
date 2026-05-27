@@ -152,6 +152,71 @@ func TestAllowedToolsForRole(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAccessForRole(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		role   string
+		want   string
+		wantOK bool
+	}{
+		{name: "planner", role: AgentNamePlanner, want: AgentWorkspaceAccessNone, wantOK: true},
+		{name: "executor alias", role: "worker", want: AgentWorkspaceAccessReadWrite, wantOK: true},
+		{name: "reviewer", role: AgentNameReviewer, want: AgentWorkspaceAccessReadOnly, wantOK: true},
+		{name: "memory", role: AgentNameMemory, want: AgentWorkspaceAccessNone, wantOK: true},
+		{name: "unknown", role: "custom", want: "", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := WorkspaceAccessForRole(tt.role)
+			if ok != tt.wantOK {
+				t.Fatalf("WorkspaceAccessForRole(%q) ok = %t, want %t", tt.role, ok, tt.wantOK)
+			}
+			if got != tt.want {
+				t.Fatalf("WorkspaceAccessForRole(%q) = %q, want %q", tt.role, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentSpecWorkspaceAccessPolicy_CustomByTools(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		spec AgentSpec
+		want string
+	}{
+		{
+			name: "workspace and shell",
+			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolWorkspace, AgentToolShell}},
+			want: AgentWorkspaceAccessReadWrite,
+		},
+		{
+			name: "workspace only",
+			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolWorkspace}},
+			want: AgentWorkspaceAccessReadOnly,
+		},
+		{
+			name: "no workspace",
+			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolShell}},
+			want: AgentWorkspaceAccessNone,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.spec.WorkspaceAccessPolicy(); got != tc.want {
+				t.Fatalf("WorkspaceAccessPolicy() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func specsByName(specs []AgentSpec) map[string]AgentSpec {
 	out := make(map[string]AgentSpec, len(specs))
 	for _, spec := range specs {

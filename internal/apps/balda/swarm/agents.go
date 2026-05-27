@@ -21,6 +21,10 @@ const (
 	AgentShellPolicyNone           = "none"
 	AgentShellPolicyReadOnly       = "read_only"
 	AgentShellPolicyWorkspaceWrite = "workspace_write"
+
+	AgentWorkspaceAccessNone      = "none"
+	AgentWorkspaceAccessReadOnly  = "read_only"
+	AgentWorkspaceAccessReadWrite = "read_write"
 )
 
 var supportedAgentTools = map[string]struct{}{
@@ -37,6 +41,13 @@ var roleAllowedTools = map[string][]string{
 	AgentNameExecutor: {AgentToolWorkspace, AgentToolShell, AgentToolMCP},
 	AgentNameReviewer: {AgentToolWorkspace, AgentToolShell},
 	AgentNameMemory:   {AgentToolMemory},
+}
+
+var roleWorkspaceAccess = map[string]string{
+	AgentNamePlanner:  AgentWorkspaceAccessNone,
+	AgentNameExecutor: AgentWorkspaceAccessReadWrite,
+	AgentNameReviewer: AgentWorkspaceAccessReadOnly,
+	AgentNameMemory:   AgentWorkspaceAccessNone,
 }
 
 type AgentSpec struct {
@@ -198,6 +209,46 @@ func AllowedToolsForRole(role string) ([]string, bool) {
 		return nil, false
 	}
 	return append([]string(nil), allowed...), true
+}
+
+// WorkspaceAccessForRole returns role-level workspace boundary policy.
+// The bool result reports whether the role is known.
+func WorkspaceAccessForRole(role string) (string, bool) {
+	switch NormalizeAgentName(role) {
+	case "worker":
+		role = AgentNameExecutor
+	case "validator":
+		role = AgentNameReviewer
+	default:
+		role = NormalizeAgentName(role)
+	}
+	access, ok := roleWorkspaceAccess[role]
+	if !ok {
+		return "", false
+	}
+	return access, true
+}
+
+// WorkspaceAccessPolicy returns the actor workspace boundary policy derived
+// from role defaults and, for custom agents, from tool/shell capability hints.
+func (s AgentSpec) WorkspaceAccessPolicy() string {
+	if access, ok := WorkspaceAccessForRole(s.Name); ok {
+		return access
+	}
+	hasWorkspace := false
+	for _, tool := range s.Tools {
+		if NormalizeAgentName(tool) == AgentToolWorkspace {
+			hasWorkspace = true
+			break
+		}
+	}
+	if !hasWorkspace {
+		return AgentWorkspaceAccessNone
+	}
+	if s.ShellExecutionPolicy() == AgentShellPolicyWorkspaceWrite {
+		return AgentWorkspaceAccessReadWrite
+	}
+	return AgentWorkspaceAccessReadOnly
 }
 
 func (r *AgentRegistry) Get(name string) (AgentSpec, bool) {
