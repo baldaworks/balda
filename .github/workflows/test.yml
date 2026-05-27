@@ -74,3 +74,39 @@ jobs:
           go-version-file: 'go.mod'
       - name: Projection replay tests
         run: go test -race -count=15 ./internal/apps/balda/swarm -run 'TestEventProjectorReplayAfterRestartRemainsIdempotent'
+
+  structural-contracts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - name: Structural contract tests
+        run: go test ./internal/apps/balda -run 'TestJetStreamArchitectureContract_Static|TestDocumentationContract'
+
+  jetstream-integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - name: Embedded JetStream integration tests
+        run: go test -race ./internal/apps/balda/eventbus/nats
+
+  ingress-e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - name: Webhook, scheduler, and goal E2E tests
+        run: go test -race ./internal/apps/balda/handlers -run 'TestInboundWebhookReceiver_AcceptsAndPublishesCommand|TestInboundWebhookReceiver_SessionModePublishesSessionCommand|TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules|TestCommandHandlerSubmitGoalTask_PublishesJetStreamCommandOnly|TestTaskActorStartGoalRecordsProgressBeforePlannerDispatch'
