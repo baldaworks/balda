@@ -567,6 +567,53 @@ Balda uses JetStream as the command bus, event bus, retry transport, replay log,
 and DLQ. SQLite remains product/read-model state only; it does not decide what
 runs, retries, or wakes up.
 
+```mermaid
+flowchart LR
+    subgraph Ingress["Ingress"]
+        TG["Telegram"]
+        WH["Webhooks"]
+        SCH["Scheduler"]
+        GOAL["/goal"]
+    end
+
+    subgraph JS["JetStream"]
+        CMD["BALDA_COMMANDS
+balda.v1.cmd.>"]
+        WKR["BALDA_WORKER_COMMANDS
+durable pull consumer"]
+        EVT["BALDA_EVENTS
+balda.v1.evt.>"]
+        PRJ["BALDA_EVENT_PROJECTOR
+durable pull consumer"]
+        DLQ["BALDA_DLQ
+balda.v1.dlq.>"]
+    end
+
+    subgraph Runtime["Actor Runtime"]
+        RT["ActorRuntime"]
+        LNS["KeyedActorScheduler lanes
+session/task/agent/delivery/memory"]
+        ACT["Session/Task/Agent/Delivery/Memory actors"]
+    end
+
+    subgraph State["SQLite product/read-model state"]
+        TASKS["swarm_tasks + swarm_task_events"]
+        OUTBOX["swarm_delivery_outbox"]
+        META["owner/session/scheduler/memory metadata"]
+    end
+
+    TG --> CMD
+    WH --> CMD
+    SCH --> CMD
+    GOAL --> CMD
+    CMD --> WKR --> RT --> LNS --> ACT
+    ACT --> EVT
+    RT -- retry exhausted / permanent / decode failure --> DLQ
+    EVT --> PRJ --> TASKS
+    ACT --> OUTBOX
+    TASKS --> META
+```
+
 - Ownership boundary:
   - JetStream owns command intake, command replay, retry/redelivery scheduling,
     and DLQ transport.
