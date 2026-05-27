@@ -581,6 +581,23 @@ runs, retries, or wakes up.
   best-effort visibility telemetry. Command ack/nak/term settlement does not
   depend on successful lifecycle event publication.
 
+#### Projection rules
+
+- Projection input source is `BALDA_EVENTS` only. Projectors must not read
+  command ownership from SQLite queue rows.
+- Projectors are idempotent by event identity (`event_id`/message identity) and
+  can safely replay events after restart.
+- Projection failure does not block command execution or JetStream command
+  settlement. Command success/failure is decided by actor side effects plus
+  JetStream ack/nak/term only.
+- Permanent projection decode/apply failures are terminated to `BALDA_DLQ`
+  with source envelope and failure reason.
+- Projection lag is expected and observable through `/swarm status` and
+  `/projection status`; lag recovery happens by durable consumer catch-up.
+- Read models (`/tasks`, `/task <id>`, `/task <id> events`, `/queue status`)
+  are eventually consistent projections, not the command transport source of
+  truth.
+
 - Required streams:
   - `BALDA_COMMANDS`: work-queue stream for `balda.v1.cmd.>` commands.
   - `BALDA_EVENTS`: limits-retention stream for `balda.v1.evt.>` events.
