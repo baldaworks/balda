@@ -2,6 +2,11 @@ package swarm
 
 import (
 	"context"
+	"fmt"
+	"runtime"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -242,5 +247,128 @@ func TestKeyedActorSchedulerPrunesIdleLanes(t *testing.T) {
 	}
 	if _, ok := scheduler.lanes["session:s-2"]; !ok {
 		t.Fatalf("active lane session:s-2 missing")
+	}
+}
+
+func TestKeyedActorSchedulerRaceSameLane(t *testing.T) {
+	scheduler := NewKeyedActorScheduler()
+	env := Envelope{
+		ID:          "race-same-lane",
+		Namespace:   NamespaceAgentCommand,
+		Kind:        KindGoal,
+		From:        ActorAddress{Target: ActorTypeTask, Key: "task-race"},
+		To:          ActorAddress{Target: ActorTypeAgent, Key: AgentNameExecutor},
+		TaskID:      "task-race",
+		PayloadJSON: `{}`,
+	}
+
+	const workers = 32
+	const iterationsPerWorker = 20
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers*iterationsPerWorker)
+
+	var inFlight int64
+	var maxInFlight int64
+
+	for worker := range workers {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			<-start
+			for i := range iterationsPerWorker {
+				callEnv := env
+				callEnv.ID = fmt.Sprintf("%s-%d-%d", env.ID, worker, i)
+				callEnv.CausationID = "worker-" + strconv.Itoa(worker)
+				callEnv.CorrelationID = "iter-" + strconv.Itoa(i)
+				err := scheduler.Dispatch(context.Background(), callEnv, func(context.Context, Envelope) error {
+					current := atomic.AddInt64(&inFlight, 1)
+					for {
+						seen := atomic.LoadInt64(&maxInFlight)
+						if current <= seen || atomic.CompareAndSwapInt64(&maxInFlight, seen, current) {
+							break
+						}
+					}
+					time.Sleep(time.Microsecond)
+					atomic.AddInt64(&inFlight, -1)
+					return nil
+				})
+				if err != nil {
+					errCh <- err
+					return
+				}
+			}
+		}(worker)
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+	if got := atomic.LoadInt64(&maxInFlight); got > 1 {
+		t.Fatalf("same actor lane ran concurrently: max_in_flight=%d, want 1", got)
+	}
+}
+
+func TestKeyedActorSchedulerRaceDifferentLanes(t *testing.T) {
+	scheduler := NewKeyedActorScheduler()
+	const workers = 24
+	const iterationsPerWorker = 16
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers*iterationsPerWorker)
+
+	var inFlight int64
+	var maxInFlight int64
+
+	for worker := range workers {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			<-start
+			for i := range iterationsPerWorker {
+				taskID := "task-race-" + strconv.Itoa(worker%12)
+				env := Envelope{
+					ID:          fmt.Sprintf("race-different-lanes-%d-%d", worker, i),
+					Namespace:   NamespaceAgentCommand,
+					Kind:        KindGoal,
+					From:        ActorAddress{Target: ActorTypeTask, Key: taskID},
+					To:          ActorAddress{Target: ActorTypeAgent, Key: AgentNameExecutor},
+					TaskID:      taskID,
+					PayloadJSON: `{}`,
+				}
+				err := scheduler.Dispatch(context.Background(), env, func(context.Context, Envelope) error {
+					current := atomic.AddInt64(&inFlight, 1)
+					for {
+						seen := atomic.LoadInt64(&maxInFlight)
+						if current <= seen || atomic.CompareAndSwapInt64(&maxInFlight, seen, current) {
+							break
+						}
+					}
+					time.Sleep(time.Microsecond)
+					atomic.AddInt64(&inFlight, -1)
+					return nil
+				})
+				if err != nil {
+					errCh <- err
+					return
+				}
+				if i%4 == 0 {
+					runtime.Gosched()
+				}
+			}
+		}(worker)
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+	if got := atomic.LoadInt64(&maxInFlight); got <= 1 {
+		t.Fatalf("different actor lanes never overlapped: max_in_flight=%d, want >1", got)
 	}
 }
