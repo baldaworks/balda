@@ -152,7 +152,7 @@ Built-in provider types:
 - `/task <id>`: inspect task status, objective, latest events, and reviewable outcome when the task is terminal.
 - `/task <id> events`: print the task event stream.
 - `/task <id> cancel`: publish a durable task-control command; ControlActor cancels active local task work when present and marks the task canceled when the command is processed.
-- `/swarm status`: show JetStream command/event/DLQ streams, worker and projector consumer state, logical agents, and task status counts.
+- `/swarm status`: show JetStream command/event/DLQ streams, worker and projector consumer state, logical agents, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
 - `/queue status`: show JetStream queue/runtime status (preferred command).
 - `/mailbox status`: compatibility alias for `/queue status`.
 - `/dlq`: show JetStream DLQ stream backlog summary.
@@ -266,6 +266,7 @@ Common settings:
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
 - `balda.nats.*`: embedded JetStream is required by default, binds to `127.0.0.1` on a random local port, keeps monitoring disabled, and stores JetStream files under `.balda/nats`.
+- Legacy runtime keys are rejected at startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`).
 - `balda.swarm.enabled`: `true` by default; enables the actor runtime and event projector. When false, Balda still starts but ingress that requires swarm returns runtime unavailable; there is no direct execution fallback.
 - `balda.swarm.commands.*`: JetStream command stream and durable pull consumer settings. `BALDA_COMMANDS` is the only command queue.
 - `balda.swarm.events.*`: JetStream event stream settings for command/task/delivery events.
@@ -321,6 +322,9 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 - Memory facts are not visible in an active session: memory is snapshotted when a session starts or restores; use `/reset` or `/close` to recreate the provider session.
 - Workspace import/export issues: check `balda.workspace.mode`, `balda.workspace.base_branch`, and that Balda is running in the expected git checkout.
 - Progress updates are too noisy: set `balda.telegram.plan_updates=false`.
+- Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify disk space.
+- Startup fails with command/event consumer creation errors: verify unique consumer names in `balda.swarm.commands.consumer` and that no external process is mutating the same embedded store concurrently.
+- `/swarm status` shows growing `commands_backlog`/`num_redelivered`: check actor failures, retry pressure, and `/dlq` for terminal reasons before increasing transport limits.
 
 ## Documentation
 

@@ -416,6 +416,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.nats.jetstream`: JetStream is required and forced on startup.
 - `balda.nats.store_dir`: JetStream store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
 - `balda.nats.max_memory` / `max_store`: embedded JetStream resource caps (defaults `256mb` and `2gb`)
+- legacy runtime keys are rejected on startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`)
 - `balda.swarm.enabled`: enables the actor runtime and event projector (default `true`). When false, Balda still starts but ingress that requires swarm returns runtime unavailable; there is no direct execution fallback.
 - `balda.swarm.commands.stream`: command stream name (default `BALDA_COMMANDS`)
 - `balda.swarm.commands.consumer`: durable worker consumer name (default `BALDA_WORKER_COMMANDS`)
@@ -518,7 +519,7 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/task <id>` (owner/collaborator): shows task status, objective, source, timestamps, latest events, and the reviewable outcome when the task is terminal.
 - `/task <id> events` (owner/collaborator): prints the append-only task event stream.
 - `/task <id> cancel` (owner/collaborator): publishes a durable task-control command; ControlActor cancels active local task work when present and marks the task `canceled` when the command is processed.
-- `/swarm status` (owner/collaborator): shows JetStream command/event/DLQ streams, worker and projector consumer state, configured logical agents, and task status counts.
+- `/swarm status` (owner/collaborator): shows JetStream command/event/DLQ streams, worker and projector consumer state, configured logical agents, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
 - `/queue status` (owner/collaborator): preferred JetStream queue/runtime status command.
 - `/mailbox status` (owner/collaborator): compatibility alias for `/queue status`.
 - `/dlq` (owner/collaborator): shows JetStream DLQ stream backlog summary.
@@ -721,6 +722,13 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 - Welcome message uses a user-friendly MarkdownV2 format:
   - Example:
     🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `opencode/big-pickle` • **Type:** `opencode_acp` • **MCP:** `balda`
+
+## Troubleshooting
+
+- Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify local disk limits.
+- Startup fails with `create jetstream command consumer`/`event projector consumer`: verify `balda.swarm.commands.consumer` uniqueness and avoid concurrent writers against the same embedded NATS store dir.
+- `/swarm status` shows rising `commands_backlog` or `commands_redelivered_total`: inspect retrying/deadlettered lifecycle events and `/dlq` before increasing `max_ack_pending` or `fetch_batch`.
+- Webhook ingress returns `503 dispatch_failed`: confirm JetStream startup succeeded and command publish acknowledgements are being returned.
 
 ## Workspace MCP Usage
 
