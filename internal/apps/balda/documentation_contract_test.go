@@ -90,6 +90,19 @@ func TestDocumentationContract(t *testing.T) {
 		assertMarkdownStatus(t, activeDir, "Status: active")
 		assertMarkdownStatus(t, completedDir, "Status: completed")
 	})
+
+	t.Run("completed exec plans are archived outside active directory", func(t *testing.T) {
+		activeDir := filepath.Join(repoRoot, "docs/exec-plans/active")
+		completedDir := filepath.Join(repoRoot, "docs/exec-plans/completed")
+
+		activeFiles := markdownFilenames(t, activeDir)
+		completedFiles := markdownFilenames(t, completedDir)
+		for name := range activeFiles {
+			if _, ok := completedFiles[name]; ok {
+				t.Fatalf("exec plan %q exists in both active and completed directories", name)
+			}
+		}
+	})
 }
 
 func repositoryRoot(t *testing.T) string {
@@ -172,4 +185,20 @@ func assertMarkdownStatus(t *testing.T, dir string, statusLine string) {
 			t.Fatalf("%s missing required status marker %q", filepath.ToSlash(path), statusLine)
 		}
 	}
+}
+
+func markdownFilenames(t *testing.T, dir string) map[string]struct{} {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", filepath.ToSlash(dir), err)
+	}
+	out := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		out[entry.Name()] = struct{}{}
+	}
+	return out
 }
