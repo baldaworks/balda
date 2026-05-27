@@ -15,10 +15,28 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
+      - name: Prepare test artifact workspace
+        run: mkdir -p .tmp
       - name: Test
-        run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp
+        run: |
+          set -o pipefail
+          go test -v -race -covermode=atomic -coverprofile=coverage.out ./... 2>&1 | tee test.log
       - name: Vulnerability check
-        run: go tool govulncheck ./...
+        run: |
+          set -o pipefail
+          go tool govulncheck ./... 2>&1 | tee -a test.log
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-failure-artifacts
+          path: |
+            test.log
+            .tmp/**/*.db
+            .tmp/**/.balda/nats/**
+          if-no-files-found: warn
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
