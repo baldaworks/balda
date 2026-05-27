@@ -169,12 +169,96 @@ func TestEventProjectorProjectsCommandDecodeFailedEventForTask(t *testing.T) {
 	}
 }
 
+func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+
+	providerA := newEventProjectorStateProviderAtPath(t, ctx, dbPath)
+	projectorA := &EventProjector{store: providerA.Swarm(), logger: zerolog.Nop()}
+	eventCreated := Envelope{
+		ID:          "evt-task-created",
+		Namespace:   NamespaceTelemetry,
+		Kind:        "task_event",
+		From:        SystemAddress("task-events"),
+		To:          ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		TaskID:      "task-replay",
+		PayloadJSON: `{"status":"created"}`,
+		Meta:        map[string]string{"event_type": TaskEventTaskCreated, "actor": "task:actor", "message_id": "m-1"},
+	}
+	eventProgress := Envelope{
+		ID:          "evt-task-progress",
+		Namespace:   NamespaceTelemetry,
+		Kind:        "task_event",
+		From:        SystemAddress("task-events"),
+		To:          ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		TaskID:      "task-replay",
+		PayloadJSON: `{"status":"running"}`,
+		Meta:        map[string]string{"event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
+	}
+	if err := projectorA.Project(ctx, SubjectEventTaskCreated, eventCreated); err != nil {
+		t.Fatalf("Project(created) error = %v", err)
+	}
+	if err := projectorA.Project(ctx, SubjectEventTaskUpdated, eventProgress); err != nil {
+		t.Fatalf("Project(progress) error = %v", err)
+	}
+	if err := providerA.Close(); err != nil {
+		t.Fatalf("providerA.Close() error = %v", err)
+	}
+
+	providerB := newEventProjectorStateProviderAtPath(t, ctx, dbPath)
+	projectorB := &EventProjector{store: providerB.Swarm(), logger: zerolog.Nop()}
+	eventCompleted := Envelope{
+		ID:          "evt-task-completed",
+		Namespace:   NamespaceTelemetry,
+		Kind:        "task_event",
+		From:        SystemAddress("task-events"),
+		To:          ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		TaskID:      "task-replay",
+		PayloadJSON: `{"status":"completed"}`,
+		Meta:        map[string]string{"event_type": TaskEventTaskCompleted, "actor": "task:actor", "message_id": "m-3"},
+	}
+	if err := projectorB.Project(ctx, SubjectEventTaskCreated, eventCreated); err != nil {
+		t.Fatalf("Project(replay created) error = %v", err)
+	}
+	if err := projectorB.Project(ctx, SubjectEventTaskUpdated, eventProgress); err != nil {
+		t.Fatalf("Project(replay progress) error = %v", err)
+	}
+	if err := projectorB.Project(ctx, SubjectEventTaskCompleted, eventCompleted); err != nil {
+		t.Fatalf("Project(completed) error = %v", err)
+	}
+
+	events, err := providerB.Swarm().ListTaskEvents(ctx, "task-replay")
+	if err != nil {
+		t.Fatalf("ListTaskEvents() error = %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("projected replay events len = %d, want 3", len(events))
+	}
+	if events[0].ID != eventCreated.ID || events[1].ID != eventProgress.ID || events[2].ID != eventCompleted.ID {
+		t.Fatalf("projected replay event IDs = [%s %s %s], want [%s %s %s]", events[0].ID, events[1].ID, events[2].ID, eventCreated.ID, eventProgress.ID, eventCompleted.ID)
+	}
+	if events[0].EventType != TaskEventTaskCreated || events[1].EventType != TaskEventAgentProgress || events[2].EventType != TaskEventTaskCompleted {
+		t.Fatalf("projected replay event types = [%s %s %s], want [%s %s %s]", events[0].EventType, events[1].EventType, events[2].EventType, TaskEventTaskCreated, TaskEventAgentProgress, TaskEventTaskCompleted)
+	}
+}
+
 func newEventProjectorStateProvider(t *testing.T, ctx context.Context) baldastate.Provider {
 	t.Helper()
 
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	return provider
+}
+
+func newEventProjectorStateProviderAtPath(t *testing.T, ctx context.Context, path string) baldastate.Provider {
+	t.Helper()
+
+	provider, err := baldastate.NewSQLiteProvider(ctx, path)
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider(%s) error = %v", path, err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	return provider

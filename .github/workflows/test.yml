@@ -62,3 +62,15 @@ jobs:
           go-version-file: 'go.mod'
       - name: Race test actor lanes
         run: go test -race -count=25 ./internal/apps/balda/swarm -run 'TestKeyedActorSchedulerRace'
+
+  projection-replay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - name: Projection replay tests
+        run: go test -race -count=15 ./internal/apps/balda/swarm -run 'TestEventProjectorReplayAfterRestartRemainsIdempotent'
