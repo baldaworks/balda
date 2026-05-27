@@ -674,6 +674,24 @@ All events are published as the same envelope shape. For event envelopes,
 | `balda.v1.evt.task.completed` | `task.completed` | `id`, `task_id`, `namespace`, `kind=task_event` | terminal task outcome details | TaskActor/TaskService |
 | `balda.v1.evt.delivery.sent` | `delivery.sent` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery metadata (`delivery_key`, channel/provider ids when available) | DeliveryActor |
 
+#### Idempotency rules
+
+- Command publish idempotency:
+  - JetStream `MsgID` is `dedupe_key` when present, otherwise envelope `id`.
+  - duplicate publishes emit `command.noop` and do not create duplicate command work.
+- Command consumption idempotency:
+  - all handlers must tolerate redelivery (`at-least-once`).
+  - terminal/canceled task commands settle as ack/noop instead of repeating side effects.
+- Projection idempotency:
+  - projector writes use stable event IDs and `INSERT OR IGNORE` semantics in SQLite.
+  - replaying the same event stream must not duplicate projected task events.
+- Delivery idempotency:
+  - DeliveryActor reserves `delivery_key` in `swarm_delivery_outbox` before provider send.
+  - duplicate delivery reservations become noop, preventing duplicate user-visible messages.
+- Task lifecycle idempotency:
+  - task status transitions are guarded and terminal states are immutable.
+  - repeated terminal lifecycle commands/events keep task state unchanged.
+
 - NATS identity is carried in headers: `Balda-Envelope-ID`,
   `Balda-Session-ID`, `Balda-Task-ID`, `Balda-Correlation-ID`,
   `Balda-Causation-ID`, `Balda-Dedupe-Key`, `Balda-Actor-Key`,
