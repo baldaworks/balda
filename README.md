@@ -92,6 +92,12 @@ Run fake ingress scenarios (Telegram/webhook/scheduler command publish paths):
 make scenarios
 ```
 
+Dump JetStream stream/consumer state (requires `nats` CLI and a running local NATS endpoint):
+
+```bash
+make jetstream-state
+```
+
 Authenticate in Telegram with the printed auth URL, or send the printed command
 directly to your bot:
 

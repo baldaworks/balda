@@ -51,6 +51,13 @@ To exercise fake ingress scenarios (Telegram/webhook/scheduler paths), run:
 make scenarios
 ```
 
+To dump JetStream stream/consumer state from a running local NATS endpoint
+(requires `nats` CLI), run:
+
+```bash
+make jetstream-state
+```
+
 `balda init` requires a Telegram bot token, detects supported provider CLIs
 (`codex`, `opencode`, `copilot`, `gemini`, `claude`), writes
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
