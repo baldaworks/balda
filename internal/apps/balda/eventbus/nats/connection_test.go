@@ -708,6 +708,8 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 
 	env := commandTestEnvelope("env-duplicate")
 	env.DedupeKey = "dedupe-duplicate"
+	env.CorrelationID = "corr-duplicate"
+	env.CausationID = "cause-duplicate"
 	first, err := bus.PublishCommand(context.Background(), env)
 	if err != nil {
 		t.Fatalf("PublishCommand(first) error = %v", err)
@@ -756,6 +758,15 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 	}
 	if reason, _ := payload["reason"].(string); reason != "duplicate publish suppressed" {
 		t.Fatalf("command.noop payload reason = %q, want %q", reason, "duplicate publish suppressed")
+	}
+	if correlationID, _ := payload["correlation_id"].(string); correlationID != env.CorrelationID {
+		t.Fatalf("command.noop payload correlation_id = %q, want %q", correlationID, env.CorrelationID)
+	}
+	if causationID, _ := payload["causation_id"].(string); causationID != env.CausationID {
+		t.Fatalf("command.noop payload causation_id = %q, want %q", causationID, env.CausationID)
+	}
+	if actorKey, _ := payload["actor_key"].(string); actorKey != env.To.Key {
+		t.Fatalf("command.noop payload actor_key = %q, want %q", actorKey, env.To.Key)
 	}
 	if err := msg.DoubleAck(context.Background()); err != nil {
 		t.Fatalf("DoubleAck(command.noop) error = %v", err)

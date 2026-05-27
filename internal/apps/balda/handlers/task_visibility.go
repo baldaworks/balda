@@ -304,6 +304,15 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 				fmt.Fprintf(&out, "%d", status.ProjectionLag[name])
 			}
 		}
+		out.WriteString("\n\nMetrics")
+		out.WriteString("\n- commands_backlog: ")
+		fmt.Fprintf(&out, "%d", status.Worker.NumPending)
+		out.WriteString("\n- commands_redelivered_total: ")
+		fmt.Fprintf(&out, "%d", status.Worker.NumRedelivered)
+		out.WriteString("\n- dlq_messages_total: ")
+		fmt.Fprintf(&out, "%d", status.DLQ.Messages)
+		out.WriteString("\n- projection_lag_total: ")
+		fmt.Fprintf(&out, "%d", sumProjectionLag(status.ProjectionLag))
 	} else {
 		out.WriteString("\n- unavailable")
 	}
@@ -372,6 +381,14 @@ func writeConsumerStatus(out *strings.Builder, title string, status swarm.Consum
 	fmt.Fprintf(out, "%d", status.NumAckPending)
 	out.WriteString("\n- num_redelivered: ")
 	fmt.Fprintf(out, "%d", status.NumRedelivered)
+}
+
+func sumProjectionLag(lag map[string]uint64) uint64 {
+	var total uint64
+	for _, value := range lag {
+		total += value
+	}
+	return total
 }
 
 func (h *CommandHandler) taskArtifacts(ctx context.Context, task baldastate.SwarmTaskRecord) taskArtifactSnapshot {

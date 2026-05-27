@@ -99,10 +99,27 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 		return nil, fmt.Errorf("publish jetstream command %q: %w", subject, err)
 	}
 	result := &swarm.CommandPublishResult{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
+	b.logger.Debug().
+		Str("subject", subject).
+		Str("envelope_id", strings.TrimSpace(env.ID)).
+		Str("task_id", strings.TrimSpace(env.TaskID)).
+		Str("session_id", strings.TrimSpace(env.SessionID)).
+		Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
+		Str("causation_id", strings.TrimSpace(env.CausationID)).
+		Str("actor_key", strings.TrimSpace(env.To.Key)).
+		Str("stream", ack.Stream).
+		Uint64("sequence", ack.Sequence).
+		Str("msg_id", msgID).
+		Bool("duplicate", ack.Duplicate).
+		Msg("published command to jetstream")
 	if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAccepted, commandEventEnvelope(env, result, "accepted", "")); err != nil {
 		b.logger.Warn().
 			Err(err).
 			Str("envelope_id", env.ID).
+			Str("task_id", strings.TrimSpace(env.TaskID)).
+			Str("session_id", strings.TrimSpace(env.SessionID)).
+			Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
+			Str("causation_id", strings.TrimSpace(env.CausationID)).
 			Str("subject", subject).
 			Msg("failed to publish command accepted event")
 	}
@@ -112,6 +129,10 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 			b.logger.Warn().
 				Err(err).
 				Str("envelope_id", env.ID).
+				Str("task_id", strings.TrimSpace(env.TaskID)).
+				Str("session_id", strings.TrimSpace(env.SessionID)).
+				Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
+				Str("causation_id", strings.TrimSpace(env.CausationID)).
 				Str("subject", subject).
 				Msg("failed to publish command noop event")
 		}
@@ -186,6 +207,10 @@ func (b *Bus) publishDLQ(ctx context.Context, env swarm.Envelope, reason string,
 			b.logger.Warn().
 				Err(err).
 				Str("envelope_id", env.ID).
+				Str("task_id", strings.TrimSpace(env.TaskID)).
+				Str("session_id", strings.TrimSpace(env.SessionID)).
+				Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
+				Str("causation_id", strings.TrimSpace(env.CausationID)).
 				Msg("failed to publish command deadlettered event")
 		}
 	}

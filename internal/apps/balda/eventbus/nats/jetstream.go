@@ -12,6 +12,7 @@ import (
 	gnats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/rs/zerolog"
 )
 
 const commandSettlementTimeout = 5 * time.Second
@@ -110,12 +111,14 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 		_ = b.publishRawDLQ(settleCtx, msg, "decode failed: "+err.Error())
 		b.publishCommandEventBestEffort(settleCtx, swarm.SubjectEventCommandDecodeFailed, decodeFailureEnv, "decode_failed", err.Error())
 		_ = msg.TermWithReason("decode failed: " + err.Error())
+		commandLogEvent(b.logger.Warn(), msg).Err(err).Msg("failed to decode command envelope; moved to dlq")
 		return err
 	}
 	numDelivered := messageDeliveryAttempt(msg)
 	env.Attempt = numDelivered - 1
 	cmd := commandMessage{subject: msg.Subject(), env: env, msg: msg, numDelivered: numDelivered, maxDeliveries: b.cfg.Swarm.Commands.MaxDeliver}
 	b.publishCommandEventBestEffort(ctx, swarm.SubjectEventCommandRunning, env, "running", "")
+	commandLogEnvelope(commandLogEvent(b.logger.Debug(), msg), env).Msg("command running")
 	err = handler(ctx, cmd)
 	settleCtx, settleCancel := settlementContext(ctx)
 	defer settleCancel()
@@ -129,6 +132,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 				Str("envelope_id", env.ID).
 				Msg("failed to publish command acked event")
 		}
+		commandLogEnvelope(commandLogEvent(b.logger.Info(), msg), env).Msg("command handled and acknowledged")
 		return nil
 	}
 	if isRetryable(err) {
@@ -141,6 +145,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 				return err
 			}
 			b.publishCommandEventBestEffort(settleCtx, swarm.SubjectEventCommandDeadLettered, env, "deadlettered", reason)
+			commandLogEnvelope(commandLogEvent(b.logger.Warn(), msg), env).Err(err).Str("reason", reason).Msg("command retries exhausted; moved to dlq")
 			return nil
 		}
 		delay := computeBackoff(env.Attempt)
@@ -153,6 +158,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 				Str("envelope_id", env.ID).
 				Msg("failed to publish command retrying event")
 		}
+		commandLogEnvelope(commandLogEvent(b.logger.Warn(), msg), env).Err(err).Dur("retry_delay", delay).Msg("command failed with retryable error")
 		return nil
 	}
 	if dlqErr := b.publishDLQ(settleCtx, env, err.Error(), false); dlqErr != nil {
@@ -162,6 +168,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 		return err
 	}
 	b.publishCommandEventBestEffort(settleCtx, swarm.SubjectEventCommandDeadLettered, env, "deadlettered", err.Error())
+	commandLogEnvelope(commandLogEvent(b.logger.Warn(), msg), env).Err(err).Msg("command failed with permanent error; moved to dlq")
 	return nil
 }
 
@@ -345,11 +352,17 @@ func computeBackoff(attempt int) time.Duration {
 
 func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult, status string, reason string) swarm.Envelope {
 	payload := map[string]any{
-		"envelope_id": env.ID,
-		"task_id":     env.TaskID,
-		"session_id":  env.SessionID,
-		"namespace":   env.Namespace,
-		"status":      status,
+		"envelope_id":    env.ID,
+		"task_id":        env.TaskID,
+		"session_id":     env.SessionID,
+		"namespace":      env.Namespace,
+		"status":         status,
+		"correlation_id": env.CorrelationID,
+		"causation_id":   env.CausationID,
+		"actor_key":      strings.TrimSpace(env.To.Key),
+	}
+	if strings.EqualFold(strings.TrimSpace(env.To.Target), swarm.ActorTypeDelivery) {
+		payload["delivery_key"] = strings.TrimSpace(env.To.Key)
 	}
 	if result != nil {
 		payload["stream"] = result.Stream
@@ -413,4 +426,30 @@ func commandDecodeFailureEnvelope(msg jetstream.Msg, err error) swarm.Envelope {
 		TaskID:      strings.TrimSpace(msg.Headers().Get(swarm.HeaderTaskID)),
 		PayloadJSON: string(payload),
 	}
+}
+
+func commandLogEvent(evt *zerolog.Event, msg jetstream.Msg) *zerolog.Event {
+	evt = evt.
+		Str("subject", msg.Subject()).
+		Int("delivery_attempt", messageDeliveryAttempt(msg))
+	if md, err := msg.Metadata(); err == nil {
+		evt = evt.
+			Str("stream", md.Stream).
+			Uint64("stream_sequence", md.Sequence.Stream).
+			Uint64("consumer_sequence", md.Sequence.Consumer)
+	}
+	return evt
+}
+
+func commandLogEnvelope(evt *zerolog.Event, env swarm.Envelope) *zerolog.Event {
+	to, _ := env.To.String()
+	return evt.
+		Str("envelope_id", strings.TrimSpace(env.ID)).
+		Str("namespace", strings.TrimSpace(env.Namespace)).
+		Str("task_id", strings.TrimSpace(env.TaskID)).
+		Str("session_id", strings.TrimSpace(env.SessionID)).
+		Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
+		Str("causation_id", strings.TrimSpace(env.CausationID)).
+		Str("actor_key", strings.TrimSpace(env.To.Key)).
+		Str("to", strings.TrimSpace(to))
 }
