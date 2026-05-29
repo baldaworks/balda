@@ -49,12 +49,13 @@ type goalTaskPayload struct {
 }
 
 type scheduledTaskPayload struct {
-	TaskID   string                       `json:"task_id"`
-	Content  string                       `json:"content"`
-	Locator  baldasession.SessionLocator  `json:"locator"`
-	ReportTo *baldasession.SessionLocator `json:"report_to,omitempty"`
-	UserID   string                       `json:"user_id"`
-	TopicID  int                          `json:"topic_id,omitempty"`
+	TaskID       string                       `json:"task_id"`
+	Content      string                       `json:"content"`
+	Locator      baldasession.SessionLocator  `json:"locator"`
+	ReportTo     *baldasession.SessionLocator `json:"report_to,omitempty"`
+	ParentTaskID string                       `json:"parent_task_id,omitempty"`
+	UserID       string                       `json:"user_id"`
+	TopicID      int                          `json:"topic_id,omitempty"`
 }
 
 type taskAgentCommandPayload struct {
@@ -356,6 +357,7 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 		created, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
 			ID:            taskID,
 			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
+			ParentTaskID:  strings.TrimSpace(payload.ParentTaskID),
 			Title:         "Webhook task",
 			Objective:     strings.TrimSpace(payload.Text),
 			Status:        baldastate.SwarmTaskStatusCreated,
@@ -414,6 +416,7 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 		created, err := e.tasks.Create(ctx, baldastate.SwarmTaskRecord{
 			ID:            taskID,
 			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
+			ParentTaskID:  strings.TrimSpace(payload.ParentTaskID),
 			Title:         "Scheduled task: " + strings.TrimSpace(payload.TaskID),
 			Objective:     content,
 			Status:        baldastate.SwarmTaskStatusCreated,
@@ -434,6 +437,7 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 		Text:            content,
 		Locator:         payload.Locator,
 		ReportTo:        payload.ReportTo,
+		ParentTaskID:    strings.TrimSpace(payload.ParentTaskID),
 		UserID:          payload.UserID,
 		ScheduledTaskID: payload.TaskID,
 		TopicID:         payload.TopicID,

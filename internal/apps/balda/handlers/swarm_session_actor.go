@@ -25,6 +25,7 @@ type sessionTurnPayload struct {
 	Text            string                       `json:"text"`
 	Locator         baldasession.SessionLocator  `json:"locator"`
 	ReportTo        *baldasession.SessionLocator `json:"report_to,omitempty"`
+	ParentTaskID    string                       `json:"parent_task_id,omitempty"`
 	UserID          string                       `json:"user_id,omitempty"`
 	AgentSessionID  string                       `json:"agent_session_id,omitempty"`
 	ScheduledTaskID string                       `json:"scheduled_task_id,omitempty"`

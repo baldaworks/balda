@@ -260,12 +260,14 @@ func TestTaskActorDispatchSessionTurnKeepsTaskRunningUntilSessionCompletes(t *te
 	exec := &taskActorExecutor{tasks: tasks, coordinator: swarm.NewCoordinator(bus, swarm.Config{Enabled: true})}
 	locator := taskActorTestLocator()
 	taskID := "webhook-release-abc"
+	parentTaskID := "parent-task-1"
 	payload := sessionTurnPayload{
-		Text:      "release event",
-		Locator:   locator,
-		UserID:    "tg-101",
-		Source:    "webhook",
-		DedupeKey: "webhook:release:req-1:session",
+		Text:         "release event",
+		Locator:      locator,
+		ParentTaskID: parentTaskID,
+		UserID:       "tg-101",
+		Source:       "webhook",
+		DedupeKey:    "webhook:release:req-1:session",
 	}
 	env := swarm.Envelope{
 		ID:          "task-command-1",
@@ -287,6 +289,9 @@ func TestTaskActorDispatchSessionTurnKeepsTaskRunningUntilSessionCompletes(t *te
 	}
 	if !ok || task.Status != baldastate.SwarmTaskStatusRunning {
 		t.Fatalf("task = %+v found=%v, want running until SessionActor completes it", task, ok)
+	}
+	if task.ParentTaskID != parentTaskID {
+		t.Fatalf("task.ParentTaskID = %q, want %q", task.ParentTaskID, parentTaskID)
 	}
 	last := bus.commands[len(bus.commands)-1]
 	if last.To.Target != swarm.ActorTypeSession || last.DedupeKey != payload.DedupeKey {
