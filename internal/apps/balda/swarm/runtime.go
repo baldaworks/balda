@@ -55,12 +55,11 @@ func registerActors(actors []Actor) (dispatch.Registry, error) {
 }
 
 type Runtime struct {
-	bus      RuntimeBus
-	tasks    *TaskService
-	registry dispatch.Registry
-	engine   *actorengine.DispatchRuntime
-	logger   zerolog.Logger
-	enabled  bool
+	bus     RuntimeBus
+	tasks   *TaskService
+	engine  *actorengine.DispatchRuntime
+	logger  zerolog.Logger
+	enabled bool
 	// heartbeatTick controls the in-progress ack cadence for long-running commands.
 	// Zero falls back to the package default.
 	heartbeatTick time.Duration
@@ -97,7 +96,6 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 	r := &Runtime{
 		bus:           params.Bus,
 		tasks:         params.Tasks,
-		registry:      registry,
 		logger:        params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
 		enabled:       params.Config.Enabled,
 		heartbeatTick: heartbeatInterval,
