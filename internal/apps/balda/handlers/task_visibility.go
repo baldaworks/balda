@@ -657,12 +657,16 @@ func formatTaskDetail(task baldastate.SwarmTaskRecord, events []baldastate.Swarm
 
 func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArtifactSnapshot) string {
 	result := parseTaskResult(task.ResultJSON)
+	parsedOutcome, hasOutcome := reviewableOutcomeFromResult(result)
 	goalReached := boolFromResult(result, "goal_reached")
 	executorOutput := firstNonEmpty(stringFromResult(result, "executor_output"), stringFromResult(result, "final_text"))
 	reviewerOutput := firstNonEmpty(stringFromResult(result, "reviewer_output"), stringFromResult(result, "reviewer_feedback"))
 	executorOutput = redactSecrets(executorOutput)
 	reviewerOutput = redactSecrets(reviewerOutput)
 	whatWasDone := firstNonEmpty(executorOutput, task.Objective)
+	if hasOutcome {
+		whatWasDone = firstNonEmpty(parsedOutcome.WhatWasDone, whatWasDone)
+	}
 	if !goalReached && task.Status != baldastate.SwarmTaskStatusCompleted && stringFromResult(result, "final_text") != "" {
 		whatWasDone = redactSecrets(stringFromResult(result, "final_text"))
 	}
@@ -689,42 +693,93 @@ func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArti
 		out.WriteString("no pending workspace changes detected")
 	}
 	out.WriteString("\n- Validation output: ")
-	out.WriteString(limitRunes(oneLine(firstNonEmpty(reviewerOutput, "not available")), maxTaskOutcomeTextRunes))
+	validationOutput := firstNonEmpty(reviewerOutput, "not available")
+	if hasOutcome {
+		validationOutput = firstNonEmpty(parsedOutcome.Validation, validationOutput)
+	}
+	out.WriteString(limitRunes(oneLine(validationOutput), maxTaskOutcomeTextRunes))
 
 	out.WriteString("\n\nConfidence")
 	out.WriteString("\n- What was verified: ")
-	switch {
-	case goalReached || strings.HasPrefix(strings.ToLower(strings.TrimSpace(reviewerOutput)), "verdict: pass"):
-		out.WriteString("reviewer returned pass")
-	case reviewerOutput != "":
-		out.WriteString("reviewer returned feedback")
-	default:
-		out.WriteString("no explicit validation captured")
+	if hasOutcome {
+		out.WriteString(firstNonEmpty(parsedOutcome.Verified, "no explicit validation captured"))
+	} else {
+		switch {
+		case goalReached || strings.HasPrefix(strings.ToLower(strings.TrimSpace(reviewerOutput)), "verdict: pass"):
+			out.WriteString("reviewer returned pass")
+		case reviewerOutput != "":
+			out.WriteString("reviewer returned feedback")
+		default:
+			out.WriteString("no explicit validation captured")
+		}
 	}
 	out.WriteString("\n- What was not verified: ")
-	switch {
-	case artifacts.GitError != "":
-		out.WriteString(artifacts.GitError)
-	case reviewerOutput == "":
-		out.WriteString("validation output was not captured")
-	default:
-		out.WriteString("manual review still required")
+	if hasOutcome && strings.TrimSpace(parsedOutcome.NotVerified) != "" {
+		out.WriteString(parsedOutcome.NotVerified)
+	} else {
+		switch {
+		case artifacts.GitError != "":
+			out.WriteString(artifacts.GitError)
+		case reviewerOutput == "":
+			out.WriteString("validation output was not captured")
+		default:
+			out.WriteString("manual review still required")
+		}
 	}
 
 	out.WriteString("\n\nNext action\n- ")
-	switch {
-	case task.Status == baldastate.SwarmTaskStatusCompleted && len(artifacts.ChangedFiles) > 0:
-		out.WriteString("Review workspace changes and run `balda.workspace.export` when ready.")
-	case task.Status == baldastate.SwarmTaskStatusCompleted:
-		out.WriteString("Review the result and close or continue with a follow-up task.")
-	case task.Status == baldastate.SwarmTaskStatusFailed:
-		out.WriteString("Review failure evidence and rerun `/goal` or assign a narrower follow-up task.")
-	case task.Status == baldastate.SwarmTaskStatusCanceled:
-		out.WriteString("Start a new task when ready.")
-	default:
-		out.WriteString("Inspect events and decide whether to continue, cancel, or ask a human.")
+	if hasOutcome && strings.TrimSpace(parsedOutcome.NextAction) != "" {
+		out.WriteString(parsedOutcome.NextAction)
+	} else {
+		switch {
+		case task.Status == baldastate.SwarmTaskStatusCompleted && len(artifacts.ChangedFiles) > 0:
+			out.WriteString("Review workspace changes and run `balda.workspace.export` when ready.")
+		case task.Status == baldastate.SwarmTaskStatusCompleted:
+			out.WriteString("Review the result and close or continue with a follow-up task.")
+		case task.Status == baldastate.SwarmTaskStatusFailed:
+			out.WriteString("Review failure evidence and rerun `/goal` or assign a narrower follow-up task.")
+		case task.Status == baldastate.SwarmTaskStatusCanceled:
+			out.WriteString("Start a new task when ready.")
+		default:
+			out.WriteString("Inspect events and decide whether to continue, cancel, or ask a human.")
+		}
 	}
 	return out.String()
+}
+
+type reviewableOutcomePayload struct {
+	SchemaVersion string
+	WhatWasDone   string
+	Validation    string
+	Verified      string
+	NotVerified   string
+	NextAction    string
+}
+
+func reviewableOutcomeFromResult(result map[string]any) (reviewableOutcomePayload, bool) {
+	if len(result) == 0 {
+		return reviewableOutcomePayload{}, false
+	}
+	raw, ok := result["reviewable_outcome"]
+	if !ok {
+		return reviewableOutcomePayload{}, false
+	}
+	outcomeMap, ok := raw.(map[string]any)
+	if !ok {
+		return reviewableOutcomePayload{}, false
+	}
+	out := reviewableOutcomePayload{
+		SchemaVersion: redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["schema_version"]))),
+		WhatWasDone:   redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_done"]))),
+		Validation:    redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["validation_output"]))),
+		Verified:      redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_verified"]))),
+		NotVerified:   redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_not_verified"]))),
+		NextAction:    redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["next_action"]))),
+	}
+	if out.SchemaVersion == "" && out.WhatWasDone == "" && out.Validation == "" && out.Verified == "" && out.NotVerified == "" && out.NextAction == "" {
+		return reviewableOutcomePayload{}, false
+	}
+	return out, true
 }
 
 func formatTaskEventStream(taskID string, events []baldastate.SwarmTaskEventRecord) string {

@@ -158,6 +158,55 @@ func TestCommandHandlerTaskVisibilityRedactsSecrets(t *testing.T) {
 	assertLastSentNotContains(t, tgClient, "password=hidden")
 }
 
+func TestCommandHandlerTaskVisibilityUsesReviewableOutcomeSchema(t *testing.T) {
+	ctx := context.Background()
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	_, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	handler.swarmConfig = swarm.Config{Enabled: true}
+	handler.swarmCoordinator = coordinator
+	handler.swarmRuntime = fakeSwarmRuntimeStatusProvider{}
+	handler.commandBus = bus
+	handler.tasks = tasks
+	handler.agentRegistry = registry
+
+	createTaskRecord(t, ctx, tasks, baldastate.SwarmTaskRecord{
+		ID:          "task-outcome-schema",
+		SessionID:   "tg-9001-0",
+		Title:       "Goal: outcome schema",
+		Objective:   "validate schema rendering",
+		Status:      baldastate.SwarmTaskStatusCreated,
+		CreatedFrom: "goal",
+	})
+	if err := tasks.SetResult(
+		ctx,
+		"task-outcome-schema",
+		map[string]any{
+			"schema_version": "task_result.v1",
+			"goal_reached":   true,
+			"reviewable_outcome": map[string]any{
+				"schema_version":        "task_reviewable_outcome.v1",
+				"what_was_done":         "Implemented structured outcome payload",
+				"validation_output":     "verdict: pass",
+				"what_was_verified":     "reviewer returned pass",
+				"what_was_not_verified": "manual review still required",
+				"next_action":           "Publish workspace snapshot for human review.",
+			},
+		},
+		baldastate.SwarmTaskStatusCompleted,
+		"test",
+		"",
+	); err != nil {
+		t.Fatalf("SetResult(outcome-schema) error = %v", err)
+	}
+
+	if err := handler.onCommand(ctx, newCommandEvent("task", "task-outcome-schema", 101, 9001, nil)); err != nil {
+		t.Fatalf("/task outcome-schema error = %v", err)
+	}
+	assertLastSentContains(t, tgClient, "Implemented structured outcome payload")
+	assertLastSentContains(t, tgClient, "reviewer returned pass")
+	assertLastSentContains(t, tgClient, "Publish workspace snapshot for human review.")
+}
+
 func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	ctx := context.Background()
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)

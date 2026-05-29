@@ -28,7 +28,8 @@ const (
 	taskAgentRoleReviewer = swarm.AgentNameReviewer
 	taskAgentRoleMemory   = swarm.AgentNameMemory
 
-	taskResultSchemaVersionV1 = "task_result.v1"
+	taskResultSchemaVersionV1          = "task_result.v1"
+	taskReviewableOutcomeSchemaVersion = "task_reviewable_outcome.v1"
 )
 
 type taskEnvelopePayload struct {
@@ -103,13 +104,23 @@ type taskDeliveryPayload struct {
 }
 
 type taskResultPayloadV1 struct {
-	SchemaVersion  string `json:"schema_version"`
-	GoalReached    bool   `json:"goal_reached"`
-	Iterations     int    `json:"iterations"`
-	PlannerOutput  string `json:"planner_output,omitempty"`
-	ExecutorOutput string `json:"executor_output,omitempty"`
-	ReviewerOutput string `json:"reviewer_output,omitempty"`
-	ReviewerNotes  string `json:"reviewer_feedback,omitempty"`
+	SchemaVersion     string                  `json:"schema_version"`
+	GoalReached       bool                    `json:"goal_reached"`
+	Iterations        int                     `json:"iterations"`
+	PlannerOutput     string                  `json:"planner_output,omitempty"`
+	ExecutorOutput    string                  `json:"executor_output,omitempty"`
+	ReviewerOutput    string                  `json:"reviewer_output,omitempty"`
+	ReviewerNotes     string                  `json:"reviewer_feedback,omitempty"`
+	ReviewableOutcome taskReviewableOutcomeV1 `json:"reviewable_outcome"`
+}
+
+type taskReviewableOutcomeV1 struct {
+	SchemaVersion string `json:"schema_version"`
+	WhatWasDone   string `json:"what_was_done,omitempty"`
+	Validation    string `json:"validation_output,omitempty"`
+	Verified      string `json:"what_was_verified,omitempty"`
+	NotVerified   string `json:"what_was_not_verified,omitempty"`
+	NextAction    string `json:"next_action,omitempty"`
 }
 
 type goalTaskPlan struct {
@@ -1006,13 +1017,38 @@ func reviewerPassed(text string) bool {
 }
 
 func taskResultPayload(payload taskAgentResultPayload, goalReached bool) taskResultPayloadV1 {
+	executorOutput := redactSecrets(strings.TrimSpace(payload.ExecutorOutput))
+	reviewerOutput := redactSecrets(strings.TrimSpace(payload.Text))
+	reviewerNotes := redactSecrets(strings.TrimSpace(payload.ReviewerFeedback))
+	whatWasDone := firstNonEmpty(executorOutput, reviewerOutput, strings.TrimSpace(payload.Objective))
+	validation := firstNonEmpty(reviewerNotes, reviewerOutput)
+	verified := "no explicit validation captured"
+	if reviewerPassed(reviewerOutput) {
+		verified = "reviewer returned pass"
+	} else if validation != "" {
+		verified = "reviewer returned feedback"
+	}
+	nextAction := "Inspect events and decide whether to continue, cancel, or ask a human."
+	if goalReached {
+		nextAction = "Review workspace changes and run balda.workspace.export when ready."
+	} else if payload.MaxIterations > 0 && payload.Iteration >= payload.MaxIterations {
+		nextAction = "Review failure evidence and rerun /goal or assign a narrower follow-up task."
+	}
 	return taskResultPayloadV1{
 		SchemaVersion:  taskResultSchemaVersionV1,
 		GoalReached:    goalReached,
 		Iterations:     payload.Iteration,
 		PlannerOutput:  redactSecrets(strings.TrimSpace(payload.PlannerOutput)),
-		ExecutorOutput: redactSecrets(strings.TrimSpace(payload.ExecutorOutput)),
-		ReviewerOutput: redactSecrets(strings.TrimSpace(payload.Text)),
-		ReviewerNotes:  redactSecrets(strings.TrimSpace(payload.ReviewerFeedback)),
+		ExecutorOutput: executorOutput,
+		ReviewerOutput: reviewerOutput,
+		ReviewerNotes:  reviewerNotes,
+		ReviewableOutcome: taskReviewableOutcomeV1{
+			SchemaVersion: taskReviewableOutcomeSchemaVersion,
+			WhatWasDone:   whatWasDone,
+			Validation:    validation,
+			Verified:      verified,
+			NotVerified:   "manual review still required",
+			NextAction:    nextAction,
+		},
 	}
 }

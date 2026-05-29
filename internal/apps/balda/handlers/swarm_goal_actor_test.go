@@ -687,6 +687,9 @@ func TestTaskResultPayloadRedactsSecrets(t *testing.T) {
 	if got.SchemaVersion != taskResultSchemaVersionV1 {
 		t.Fatalf("SchemaVersion = %q, want %q", got.SchemaVersion, taskResultSchemaVersionV1)
 	}
+	if got.ReviewableOutcome.SchemaVersion != taskReviewableOutcomeSchemaVersion {
+		t.Fatalf("ReviewableOutcome.SchemaVersion = %q, want %q", got.ReviewableOutcome.SchemaVersion, taskReviewableOutcomeSchemaVersion)
+	}
 	if !got.GoalReached {
 		t.Fatal("GoalReached = false, want true")
 	}
@@ -706,6 +709,8 @@ func TestTaskResultPayloadRedactsSecrets(t *testing.T) {
 	assertRedacted("executor_output", got.ExecutorOutput)
 	assertRedacted("reviewer_output", got.ReviewerOutput)
 	assertRedacted("reviewer_feedback", got.ReviewerNotes)
+	assertRedacted("reviewable_outcome.what_was_done", got.ReviewableOutcome.WhatWasDone)
+	assertRedacted("reviewable_outcome.validation_output", got.ReviewableOutcome.Validation)
 }
 
 func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, *swarm.Coordinator, *swarm.TaskService, *swarm.AgentAllocator) {
