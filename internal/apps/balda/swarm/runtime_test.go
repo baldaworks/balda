@@ -10,6 +10,7 @@ import (
 	"time"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	actorengine "github.com/normahq/norma/actorlayer/engine"
 )
 
 type testActor struct {
@@ -290,35 +291,25 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 
 func newRuntimeForTest(bus RuntimeBus, registry ActorRegistry) *Runtime {
 	rt := &Runtime{bus: bus, registry: registry, heartbeatTick: heartbeatInterval}
-	resolver, ok := registry.(EngineResolver)
-	if !ok {
-		resolver = runtimeResolver{registry: registry}
-	}
-	engine, err := newRuntimeEngine(runtimeEngineConfig{
-		Resolver:       resolver,
-		EventSink:      runtimeEngineEventSink{bus: bus},
-		DeadLetterTask: rt.deadletterTask,
-		IsRetryable:    isRetryableRuntimeError,
-		ComputeBackoff: nextRetryDelay,
-		RetryExhausted: retryExhaustedCommand,
+	engine, err := actorengine.New(actorengine.Config{
+		Resolver: runtimeResolver{registry: registry},
+		Retry: actorengine.RetryPolicy{
+			IsRetryable: isRetryableRuntimeError,
+			Backoff:     nextRetryDelay,
+			RetryExhausted: func(delivery actorengine.Delivery) bool {
+				wrapped, ok := delivery.(*runtimeDelivery)
+				if !ok {
+					return false
+				}
+				return retryExhaustedCommand(wrapped.cmd)
+			},
+		},
 	})
 	if err != nil {
 		panic(err)
 	}
 	rt.engine = engine
 	return rt
-}
-
-type runtimeResolver struct {
-	registry ActorRegistry
-}
-
-func (r runtimeResolver) Resolve(address string) (Actor, bool) {
-	return r.registry.Resolve(address)
-}
-
-func (runtimeResolver) LaneKey(env Envelope) string {
-	return actorLaneKey(env)
 }
 
 func runtimeTestEnvelope(id string, to ActorAddress) Envelope {

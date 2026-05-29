@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	actorengine "github.com/normahq/norma/actorlayer/engine"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -75,7 +76,7 @@ type Runtime struct {
 	bus      RuntimeBus
 	tasks    *TaskService
 	registry ActorRegistry
-	engine   *runtimeEngine
+	engine   *actorengine.Runtime
 	logger   zerolog.Logger
 	enabled  bool
 	// heartbeatTick controls the in-progress ack cadence for long-running commands.
@@ -115,13 +116,19 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 		enabled:       params.Config.Enabled,
 		heartbeatTick: heartbeatInterval,
 	}
-	engine, err := newRuntimeEngine(runtimeEngineConfig{
-		Resolver:       registry,
-		EventSink:      runtimeEngineEventSink{bus: params.Bus},
-		DeadLetterTask: r.deadletterTask,
-		IsRetryable:    isRetryableRuntimeError,
-		ComputeBackoff: nextRetryDelay,
-		RetryExhausted: retryExhaustedCommand,
+	engine, err := actorengine.New(actorengine.Config{
+		Resolver: runtimeResolver{registry: registry},
+		Retry: actorengine.RetryPolicy{
+			IsRetryable: isRetryableRuntimeError,
+			Backoff:     nextRetryDelay,
+			RetryExhausted: func(delivery actorengine.Delivery) bool {
+				wrapped, ok := delivery.(*runtimeDelivery)
+				if !ok {
+					return false
+				}
+				return retryExhaustedCommand(wrapped.cmd)
+			},
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -178,7 +185,13 @@ func (r *Runtime) HandleCommand(ctx context.Context, cmd CommandMessage) error {
 	if r.engine == nil {
 		return nil
 	}
-	return r.engine.HandleDelivery(heartbeatCtx, cmd)
+	delivery := &runtimeDelivery{
+		cmd: cmd,
+		onDeadLetter: func(reason string) {
+			r.deadletterTask(ctx, env, reason)
+		},
+	}
+	return r.engine.Handle(heartbeatCtx, delivery, r.handleDelivery)
 }
 
 func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env Envelope) (context.Context, func()) {
@@ -194,14 +207,7 @@ func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env En
 				if err := cmd.InProgress(child); err != nil {
 					r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to send jetstream in-progress ack")
 				}
-				if r.engine != nil {
-					r.engine.emit(child, EngineLifecycleEvent{
-						Status:      EngineEventInProgress,
-						Envelope:    env,
-						Attempt:     cmd.DeliveryAttempt(),
-						MaxAttempts: cmd.MaxDeliveries(),
-					})
-				}
+				_ = r.bus.PublishEvent(child, SubjectEventCommandInProgress, commandNoopEvent(env))
 			case <-child.Done():
 				return
 			}
@@ -274,17 +280,4 @@ func commandNoopEvent(env Envelope) Envelope {
 		out.PayloadJSON = `{"ok":true}`
 	}
 	return out
-}
-
-type runtimeEngineEventSink struct {
-	bus RuntimeBus
-}
-
-func (s runtimeEngineEventSink) PublishLifecycleEvent(ctx context.Context, event EngineLifecycleEvent) {
-	if s.bus == nil {
-		return
-	}
-	if event.Status == EngineEventInProgress {
-		_ = s.bus.PublishEvent(ctx, SubjectEventCommandInProgress, commandNoopEvent(event.Envelope))
-	}
 }
