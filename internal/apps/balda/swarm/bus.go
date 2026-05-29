@@ -202,3 +202,8 @@ type Subscription interface {
 func RetryDelay(attempt int) time.Duration {
 	return nextRetryDelay(attempt)
 }
+
+// RetryExhausted reports whether an attempt has reached terminal retry limit.
+func RetryExhausted(attempt int, maxAttempts int) bool {
+	return maxAttempts > 0 && attempt >= maxAttempts
+}

@@ -240,7 +240,7 @@ func retryExhaustedCommand(cmd CommandMessage) bool {
 		return false
 	}
 	maxDeliveries := cmd.MaxDeliveries()
-	return maxDeliveries > 0 && cmd.DeliveryAttempt() >= maxDeliveries
+	return RetryExhausted(cmd.DeliveryAttempt(), maxDeliveries)
 }
 
 func nextRetryDelay(attempt int) time.Duration {

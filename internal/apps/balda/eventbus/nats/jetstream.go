@@ -243,7 +243,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 		return cmd.Ack(settleCtx)
 	}
 	if swarm.IsRetryableError(err) {
-		if retryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
+		if swarm.RetryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
 			reason := "retry exhausted: " + err.Error()
 			cmd.env = decorateDLQEnvelope(cmd.env, reason, swarm.ClassifyError(err), b.cfg.Swarm.Commands.Stream, b.cfg.Swarm.Commands.Consumer, msg.Subject(), numDelivered)
 			return cmd.DeadLetter(settleCtx, reason)
@@ -307,7 +307,7 @@ func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler
 	}
 	if err := handler(ctx, msg.Subject(), env); err != nil {
 		numDelivered := messageDeliveryAttempt(msg)
-		if swarm.IsRetryableError(err) && !retryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
+		if swarm.IsRetryableError(err) && !swarm.RetryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
 			return msg.NakWithDelay(swarm.RetryDelay(numDelivered - 1))
 		}
 		reason := "event projection failed: " + err.Error()
@@ -428,10 +428,6 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 		return fmt.Errorf("publish raw jetstream dlq: %w", err)
 	}
 	return nil
-}
-
-func retryExhausted(numDelivered int, maxDeliver int) bool {
-	return maxDeliver > 0 && numDelivered >= maxDeliver
 }
 
 func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult, status string, reason string, extra map[string]any) swarm.Envelope {
