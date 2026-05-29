@@ -3,28 +3,41 @@ package swarm
 import (
 	"context"
 	"fmt"
-	actorengine "github.com/normahq/norma/actorlayer/engine"
 	"time"
 )
-
-type runtimeResolver struct {
-	registry ActorRegistry
-}
-
-func (r runtimeResolver) LaneKey(delivery actorengine.Delivery) string {
-	if delivery == nil {
-		return unknownLaneKey
-	}
-	env, ok := delivery.Envelope().(Envelope)
-	if !ok {
-		return unknownLaneKey
-	}
-	return actorLaneKey(env)
-}
 
 type runtimeDelivery struct {
 	cmd          CommandMessage
 	onDeadLetter func(reason string)
+}
+
+func runtimeAddressOf(envelope any, registry ActorRegistry) (string, error) {
+	if registry == nil {
+		return "", PermanentError(fmt.Errorf("actor registry is required"))
+	}
+	env, ok := envelope.(Envelope)
+	if !ok {
+		return "", DecodeError(fmt.Errorf("unexpected delivery envelope type %T", envelope))
+	}
+	to, err := env.To.String()
+	if err != nil {
+		return "", DecodeError(err)
+	}
+	if to == "" {
+		return "", DecodeError(fmt.Errorf("empty actor address"))
+	}
+	if _, found := registry.Resolve(to); !found {
+		return "", PermanentError(fmt.Errorf("actor not found: %s", to))
+	}
+	return to, nil
+}
+
+func actorLaneKeyFromEnvelope(envelope any) string {
+	env, ok := envelope.(Envelope)
+	if !ok {
+		return "unknown"
+	}
+	return actorLaneKey(env)
 }
 
 func (d *runtimeDelivery) Envelope() any { return d.cmd.Envelope() }
@@ -46,20 +59,4 @@ func (d *runtimeDelivery) DeadLetter(ctx context.Context, reason string) error {
 		d.onDeadLetter(reason)
 	}
 	return d.cmd.DeadLetter(ctx, reason)
-}
-
-func (r *Runtime) handleDelivery(ctx context.Context, delivery actorengine.Delivery) error {
-	env, ok := delivery.Envelope().(Envelope)
-	if !ok {
-		return DecodeError(fmt.Errorf("unexpected delivery envelope type %T", delivery.Envelope()))
-	}
-	to, err := env.To.String()
-	if err != nil {
-		return DecodeError(err)
-	}
-	ref, found := r.registry.Resolve(to)
-	if !found {
-		return PermanentError(fmt.Errorf("actor not found: %s", to))
-	}
-	return ref.Handle(ctx, env)
 }

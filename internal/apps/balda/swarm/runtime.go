@@ -20,7 +20,6 @@ const heartbeatInterval = 30 * time.Second
 const (
 	retryBaseDelay = time.Second
 	retryMaxDelay  = time.Minute
-	unknownLaneKey = "unknown"
 )
 
 type Actor interface {
@@ -45,8 +44,8 @@ func (a dispatchActor) Handle(ctx context.Context, envelope any) error {
 type ActorRegistry interface {
 	Register(actor Actor) error
 	Resolve(address string) (Actor, bool)
+	DispatchRegistry() dispatch.Registry
 	Shutdown(ctx context.Context) error
-	LaneKey(env Envelope) string
 }
 
 type Registry struct {
@@ -67,14 +66,6 @@ func (r *Registry) Register(actor Actor) error {
 	}
 	if err := r.actors.Register(dispatchActor{actor: actor, address: address}); err != nil {
 		return err
-	}
-	if idx := strings.Index(address, ":"); idx > 0 {
-		wildcard := address[:idx] + ":*"
-		if _, exists := r.actors.Resolve(wildcard); !exists {
-			if err := r.actors.Register(dispatchActor{actor: actor, address: wildcard}); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -98,6 +89,13 @@ func (r *Registry) Resolve(address string) (Actor, bool) {
 	return dispatchActor.actor, true
 }
 
+func (r *Registry) DispatchRegistry() dispatch.Registry {
+	if r == nil {
+		return nil
+	}
+	return r.actors
+}
+
 func (r *Registry) Shutdown(_ context.Context) error {
 	if r == nil {
 		return nil
@@ -105,15 +103,11 @@ func (r *Registry) Shutdown(_ context.Context) error {
 	return nil
 }
 
-func (r *Registry) LaneKey(env Envelope) string {
-	return actorLaneKey(env)
-}
-
 type Runtime struct {
 	bus      RuntimeBus
 	tasks    *TaskService
 	registry ActorRegistry
-	engine   *actorengine.Runtime
+	engine   *actorengine.DispatchRuntime
 	logger   zerolog.Logger
 	enabled  bool
 	// heartbeatTick controls the in-progress ack cadence for long-running commands.
@@ -162,8 +156,12 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 		enabled:       params.Config.Enabled,
 		heartbeatTick: heartbeatInterval,
 	}
-	engine, err := actorengine.New(actorengine.Config{
-		Resolver: runtimeResolver{registry: registry},
+	engine, err := actorengine.NewDispatchRuntime(actorengine.RuntimeConfig{
+		Registry: registry.DispatchRegistry(),
+		AddressOf: func(envelope any) (string, error) {
+			return runtimeAddressOf(envelope, registry)
+		},
+		LaneKey: actorLaneKeyFromEnvelope,
 		Retry: actorengine.RetryPolicy{
 			IsRetryable: isRetryableRuntimeError,
 			Backoff:     nextRetryDelay,
@@ -245,9 +243,7 @@ func (r *Runtime) HandleCommand(ctx context.Context, cmd CommandMessage) error {
 			r.deadletterTask(ctx, env, reason)
 		},
 	}
-	return r.engine.Handle(heartbeatCtx, delivery, func(ctx context.Context, delivery actorengine.Delivery) error {
-		return r.handleDelivery(ctx, delivery)
-	})
+	return r.engine.Handle(heartbeatCtx, delivery)
 }
 
 func (r *Runtime) LaneStatus() RuntimeLaneStatus {
