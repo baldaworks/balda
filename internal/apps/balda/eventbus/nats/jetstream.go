@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,8 +18,6 @@ import (
 
 const commandSettlementTimeout = 5 * time.Second
 const unknownDecodeTarget = "unknown"
-const commandBackoffBaseDelay = time.Second
-const commandBackoffMaxDelay = time.Minute
 
 const (
 	dlqMetaErrorClass   = "dlq_error_class"
@@ -251,7 +248,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 			cmd.env = decorateDLQEnvelope(cmd.env, reason, swarm.ClassifyError(err), b.cfg.Swarm.Commands.Stream, b.cfg.Swarm.Commands.Consumer, msg.Subject(), numDelivered)
 			return cmd.DeadLetter(settleCtx, reason)
 		}
-		delay := computeBackoff(env.Attempt)
+		delay := swarm.RetryDelay(env.Attempt)
 		return cmd.Retry(settleCtx, delay, err.Error())
 	}
 	cmd.env = decorateDLQEnvelope(cmd.env, err.Error(), swarm.ClassifyError(err), b.cfg.Swarm.Commands.Stream, b.cfg.Swarm.Commands.Consumer, msg.Subject(), numDelivered)
@@ -311,7 +308,7 @@ func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler
 	if err := handler(ctx, msg.Subject(), env); err != nil {
 		numDelivered := messageDeliveryAttempt(msg)
 		if swarm.IsRetryableError(err) && !retryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
-			return msg.NakWithDelay(computeBackoff(numDelivered - 1))
+			return msg.NakWithDelay(swarm.RetryDelay(numDelivered - 1))
 		}
 		reason := "event projection failed: " + err.Error()
 		dlqEnv := decorateDLQEnvelope(env, reason, swarm.ClassifyError(err), b.cfg.Swarm.Events.Stream, swarm.DefaultEventProjectorConsumer, msg.Subject(), numDelivered)
@@ -435,23 +432,6 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 
 func retryExhausted(numDelivered int, maxDeliver int) bool {
 	return maxDeliver > 0 && numDelivered >= maxDeliver
-}
-
-func computeBackoff(attempt int) time.Duration {
-	if attempt < 0 {
-		attempt = 0
-	}
-	delay := commandBackoffBaseDelay
-	for range attempt {
-		delay *= 2
-		if delay >= commandBackoffMaxDelay {
-			delay = commandBackoffMaxDelay
-			break
-		}
-	}
-	jitterCap := max(delay/4, time.Millisecond)
-	jitter := time.Duration(rand.Int64N(int64(jitterCap)))
-	return delay + jitter
 }
 
 func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult, status string, reason string, extra map[string]any) swarm.Envelope {

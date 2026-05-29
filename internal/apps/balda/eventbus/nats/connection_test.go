@@ -442,17 +442,19 @@ func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
 	assertCommandStreamDrained(t, bus)
 }
 
-func TestComputeBackoffAppliesExponentialDelayWithJitter(t *testing.T) {
+func TestRetryDelayAppliesExponentialDelayWithJitter(t *testing.T) {
 	t.Parallel()
 
-	low := computeBackoff(0)
-	if low < commandBackoffBaseDelay || low > commandBackoffBaseDelay+(commandBackoffBaseDelay/4) {
-		t.Fatalf("computeBackoff(0) = %s, want in [%s, %s]", low, commandBackoffBaseDelay, commandBackoffBaseDelay+(commandBackoffBaseDelay/4))
+	low := swarm.RetryDelay(0)
+	baseDelay := time.Second
+	if low < baseDelay || low > baseDelay+(baseDelay/4) {
+		t.Fatalf("RetryDelay(0) = %s, want in [%s, %s]", low, baseDelay, baseDelay+(baseDelay/4))
 	}
 
-	high := computeBackoff(16)
-	if high < commandBackoffMaxDelay || high > commandBackoffMaxDelay+(commandBackoffMaxDelay/4) {
-		t.Fatalf("computeBackoff(16) = %s, want in [%s, %s]", high, commandBackoffMaxDelay, commandBackoffMaxDelay+(commandBackoffMaxDelay/4))
+	high := swarm.RetryDelay(16)
+	maxDelay := time.Minute
+	if high < maxDelay || high > maxDelay+(maxDelay/4) {
+		t.Fatalf("RetryDelay(16) = %s, want in [%s, %s]", high, maxDelay, maxDelay+(maxDelay/4))
 	}
 }
 

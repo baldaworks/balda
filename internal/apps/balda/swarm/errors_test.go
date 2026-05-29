@@ -2,7 +2,10 @@ package swarm
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+
+	actorengine "github.com/normahq/norma/actorlayer/engine"
 )
 
 func TestClassifyErrorKinds(t *testing.T) {
@@ -30,4 +33,40 @@ func TestClassifyErrorKinds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsRetryableError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolve error is non-retryable", func(t *testing.T) {
+		t.Parallel()
+		err := &actorengine.ResolveError{Address: "session:missing"}
+		if got := IsRetryableError(err); got {
+			t.Fatalf("IsRetryableError() = true, want false")
+		}
+	})
+
+	t.Run("wrapped resolve error is non-retryable", func(t *testing.T) {
+		t.Parallel()
+		err := fmt.Errorf("dispatch failed: %w", &actorengine.ResolveError{Address: "session:wrapped"})
+		if got := IsRetryableError(err); got {
+			t.Fatalf("IsRetryableError() = true, want false")
+		}
+	})
+
+	t.Run("wrapped canonical actor not found is non-retryable", func(t *testing.T) {
+		t.Parallel()
+		err := fmt.Errorf("lookup failed: %w", actorengine.ErrActorNotFound)
+		if got := IsRetryableError(err); got {
+			t.Fatalf("IsRetryableError() = true, want false")
+		}
+	})
+
+	t.Run("other errors stay classified by actor errors", func(t *testing.T) {
+		t.Parallel()
+		err := fmt.Errorf("%w", PermanentError(errors.New("persist failed")))
+		if got := IsRetryableError(err); got {
+			t.Fatalf("IsRetryableError() = true, want false")
+		}
+	})
 }

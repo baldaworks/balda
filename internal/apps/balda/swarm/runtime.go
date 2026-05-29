@@ -105,7 +105,7 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 		AddressOf: runtimeAddressOf,
 		LaneKey:   actorLaneKeyFromEnvelope,
 		Retry: actorengine.RetryPolicy{
-			IsRetryable: isRetryableRuntimeError,
+			IsRetryable: IsRetryableError,
 			Backoff:     nextRetryDelay,
 			RetryExhausted: func(delivery actorengine.Delivery) bool {
 				wrapped, ok := delivery.(*runtimeDelivery)
@@ -233,10 +233,6 @@ func (r *Runtime) deadletterTask(ctx context.Context, env Envelope, reason strin
 	if err := r.tasks.DeadLetter(ctx, taskID, "swarm.runtime", env.ID, reason); err != nil {
 		r.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to mark swarm task deadlettered")
 	}
-}
-
-func isRetryableRuntimeError(err error) bool {
-	return IsRetryableError(err)
 }
 
 func retryExhaustedCommand(cmd CommandMessage) bool {

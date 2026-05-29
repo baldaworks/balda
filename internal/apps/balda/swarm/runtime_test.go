@@ -2,7 +2,6 @@ package swarm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -415,42 +414,6 @@ func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
 	}
 }
 
-func TestIsRetryableRuntimeError(t *testing.T) {
-	t.Parallel()
-
-	t.Run("resolve error is non-retryable", func(t *testing.T) {
-		t.Parallel()
-		err := &actorengine.ResolveError{Address: "session:missing"}
-		if got := isRetryableRuntimeError(err); got {
-			t.Fatalf("isRetryableRuntimeError() = true, want false")
-		}
-	})
-
-	t.Run("wrapped resolve error is non-retryable", func(t *testing.T) {
-		t.Parallel()
-		err := fmt.Errorf("dispatch failed: %w", &actorengine.ResolveError{Address: "session:wrapped"})
-		if got := isRetryableRuntimeError(err); got {
-			t.Fatalf("isRetryableRuntimeError() = true, want false")
-		}
-	})
-
-	t.Run("wrapped canonical actor not found is non-retryable", func(t *testing.T) {
-		t.Parallel()
-		err := fmt.Errorf("lookup failed: %w", actorengine.ErrActorNotFound)
-		if got := isRetryableRuntimeError(err); got {
-			t.Fatalf("isRetryableRuntimeError() = true, want false")
-		}
-	})
-
-	t.Run("other errors stay classified by actor errors", func(t *testing.T) {
-		t.Parallel()
-		err := fmt.Errorf("%w", PermanentError(errors.New("persist failed")))
-		if got := isRetryableRuntimeError(err); got {
-			t.Fatalf("isRetryableRuntimeError() = true, want false")
-		}
-	})
-}
-
 func newRuntimeForTest(bus RuntimeBus, registry dispatch.Registry) *Runtime {
 	rt := &Runtime{bus: bus, heartbeatTick: heartbeatInterval}
 	engine, err := actorengine.NewDispatchRuntime(actorengine.RuntimeConfig{
@@ -458,7 +421,7 @@ func newRuntimeForTest(bus RuntimeBus, registry dispatch.Registry) *Runtime {
 		AddressOf: runtimeAddressOf,
 		LaneKey:   actorLaneKeyFromEnvelope,
 		Retry: actorengine.RetryPolicy{
-			IsRetryable: isRetryableRuntimeError,
+			IsRetryable: IsRetryableError,
 			Backoff:     nextRetryDelay,
 			RetryExhausted: func(delivery actorengine.Delivery) bool {
 				wrapped, ok := delivery.(*runtimeDelivery)
