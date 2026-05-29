@@ -594,7 +594,8 @@ after command delivery.
   models. Event projection failure never decides command success. Semantic
   event types include `task.created`, `task.assigned`, `task.started`,
   `agent.started`, `agent.progress`, `agent.result`, `task.validating`,
-  `task.completed`, `task.failed`, `task.canceled`, and `delivery.sent`.
+  `task.completed`, `task.failed`, `task.canceled`, `delivery.sent`, and
+  `delivery.failed`.
 - Runtime deadletters mark the owning task `deadlettered`. `/cancel` and
   `/task <id> cancel` publish durable control commands; ControlActor applies
   the cancellation, marks matching task records `canceled`, and cancels any
@@ -727,7 +728,7 @@ session/task/agent/delivery/memory"]
     `balda.v1.evt.command.decode_failed`,
     `balda.v1.evt.task.created`,
     `balda.v1.evt.task.updated`, `balda.v1.evt.task.completed`,
-    `balda.v1.evt.delivery.sent`.
+    `balda.v1.evt.delivery.sent`, `balda.v1.evt.delivery.failed`.
   - DLQ: `balda.v1.dlq.command`.
 
 #### Command schema table
@@ -769,6 +770,7 @@ All events are published as the same envelope shape. For event envelopes,
 | `balda.v1.evt.task.updated` | `task.updated` | `id`, `task_id`, `namespace`, `kind=task_event` | task lifecycle details | TaskActor/TaskService |
 | `balda.v1.evt.task.completed` | `task.completed` | `id`, `task_id`, `namespace`, `kind=task_event` | terminal task outcome details | TaskActor/TaskService |
 | `balda.v1.evt.delivery.sent` | `delivery.sent` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery metadata (`delivery_key`, channel/provider ids when available) | DeliveryActor |
+| `balda.v1.evt.delivery.failed` | `delivery.failed` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery failure details (`reason`, delivery metadata when available) | DeliveryActor |
 
 #### Idempotency rules
 

@@ -26,6 +26,7 @@ const (
 	TaskEventTaskFailed     = "task.failed"
 	TaskEventTaskCanceled   = "task.canceled"
 	TaskEventDeliverySent   = "delivery.sent"
+	TaskEventDeliveryFailed = "delivery.failed"
 )
 
 const (
@@ -396,6 +397,8 @@ func subjectForTaskEvent(eventType string) string {
 		return SubjectEventTaskUpdated
 	case TaskEventDeliverySent:
 		return SubjectEventDeliverySent
+	case TaskEventDeliveryFailed:
+		return SubjectEventDeliveryFailed
 	case TaskEventTaskCreated:
 		return SubjectEventTaskCreated
 	case TaskEventTaskCompleted:

@@ -97,6 +97,14 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) erro
 	if err := a.channel.SendAgentReply(ctx, payload.Locator, text); err != nil {
 		if a.tasks != nil {
 			_ = a.tasks.MarkDeliveryFailed(ctx, deliveryKey, err.Error())
+			if strings.TrimSpace(payload.TaskID) != "" {
+				if appendErr := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
+					"text":   text,
+					"reason": err.Error(),
+				}); appendErr != nil {
+					a.logger.Warn().Err(appendErr).Str("task_id", payload.TaskID).Msg("failed to record task delivery failure event")
+				}
+			}
 		}
 		return swarm.TransientError(err)
 	}

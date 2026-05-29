@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 
 func TestTaskDeliveryActorDeduplicatesSentDelivery(t *testing.T) {
 	ctx := context.Background()
-	actor, _, tgClient := newTaskDeliveryActorForTest(t, ctx)
+	actor, _, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	env, _ := deliveryEnvelopeForTest(t, "delivery-command-1", "task-1:delivery:started", "Goal started")
 
 	if err := actor.Handle(ctx, env); err != nil {
@@ -31,7 +32,7 @@ func TestTaskDeliveryActorDeduplicatesSentDelivery(t *testing.T) {
 
 func TestTaskDeliveryActorDefersDuplicatePendingDelivery(t *testing.T) {
 	ctx := context.Background()
-	actor, tasks, tgClient := newTaskDeliveryActorForTest(t, ctx)
+	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	env, payload := deliveryEnvelopeForTest(t, "delivery-command-pending", "task-1:delivery:pending", "Goal started")
 	if _, _, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusPending)); err != nil {
 		t.Fatalf("ReserveDelivery() error = %v", err)
@@ -46,7 +47,7 @@ func TestTaskDeliveryActorDefersDuplicatePendingDelivery(t *testing.T) {
 
 func TestTaskDeliveryActorDoesNotRetryAmbiguousSendingDelivery(t *testing.T) {
 	ctx := context.Background()
-	actor, tasks, tgClient := newTaskDeliveryActorForTest(t, ctx)
+	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	env, payload := deliveryEnvelopeForTest(t, "delivery-command-sending", "task-1:delivery:completed", "Goal completed")
 	if _, _, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusSending)); err != nil {
 		t.Fatalf("ReserveDelivery() error = %v", err)
@@ -69,7 +70,32 @@ func TestDeliveryReadyForAttemptNeverRetriesSendingDelivery(t *testing.T) {
 	}
 }
 
-func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*taskDeliveryActor, *swarm.TaskService, *fakeTelegramClient) {
+func TestTaskDeliveryActorPublishesFailedEventOnSendError(t *testing.T) {
+	ctx := context.Background()
+	actor, _, tgClient, bus := newTaskDeliveryActorForTest(t, ctx)
+	tgClient.sendErr = errors.New("telegram send failed")
+	env, _ := deliveryEnvelopeForTest(t, "delivery-command-failed", "task-1:delivery:failed", "Goal failed")
+
+	err := actor.Handle(ctx, env)
+	if swarm.ClassifyError(err) != swarm.ErrorKindTransient {
+		t.Fatalf("Handle() error kind = %s, want transient: %v", swarm.ClassifyError(err), err)
+	}
+
+	if len(bus.eventSubjects) != 1 {
+		t.Fatalf("published event subjects len = %d, want 1", len(bus.eventSubjects))
+	}
+	if got := bus.eventSubjects[0]; got != swarm.SubjectEventDeliveryFailed {
+		t.Fatalf("event subject = %q, want %q", got, swarm.SubjectEventDeliveryFailed)
+	}
+	if len(bus.eventEnvs) != 1 {
+		t.Fatalf("published event envelopes len = %d, want 1", len(bus.eventEnvs))
+	}
+	if got := bus.eventEnvs[0].Meta["event_type"]; got != swarm.TaskEventDeliveryFailed {
+		t.Fatalf("event type = %q, want %q", got, swarm.TaskEventDeliveryFailed)
+	}
+}
+
+func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*taskDeliveryActor, *swarm.TaskService, *fakeTelegramClient, *recordingHandlerCommandBus) {
 	t.Helper()
 	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
 	_ = provider
@@ -78,7 +104,6 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*taskDelive
 	_ = allocator
 	tgClient := &fakeTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	msg.SetAgentReplyFormattingMode("none")
 	return &taskDeliveryActor{
 		channel: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 			Messenger: msg,
@@ -87,7 +112,7 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*taskDelive
 		}),
 		tasks:  tasks,
 		logger: zerolog.Nop(),
-	}, tasks, tgClient
+	}, tasks, tgClient, bus
 }
 
 func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text string) (swarm.Envelope, taskDeliveryPayload) {

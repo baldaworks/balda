@@ -171,6 +171,8 @@ func projectedEventType(subject string, env Envelope) string {
 		return TaskEventTaskCompleted
 	case SubjectEventDeliverySent:
 		return TaskEventDeliverySent
+	case SubjectEventDeliveryFailed:
+		return TaskEventDeliveryFailed
 	default:
 		return ""
 	}

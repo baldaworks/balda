@@ -60,6 +60,26 @@ func TestTaskServiceAppendEventPublishesJetStreamEvent(t *testing.T) {
 	}
 }
 
+func TestTaskServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
+	ctx := context.Background()
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	bus := &recordingTaskCommandBus{}
+	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	if err != nil {
+		t.Fatalf("NewTaskService() error = %v", err)
+	}
+	if err := service.AppendEvent(ctx, "task-1", TaskEventDeliveryFailed, "delivery.actor", "msg-1", map[string]any{"reason": "telegram send failed"}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	if len(bus.subjects) != 1 || bus.subjects[0] != SubjectEventDeliveryFailed {
+		t.Fatalf("subjects = %+v, want %q", bus.subjects, SubjectEventDeliveryFailed)
+	}
+}
+
 func TestTaskServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))

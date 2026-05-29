@@ -169,6 +169,31 @@ func TestEventProjectorProjectsCommandDecodeFailedEventForTask(t *testing.T) {
 	}
 }
 
+func TestEventProjectorProjectsDeliveryFailedEventForTask(t *testing.T) {
+	ctx := context.Background()
+	provider := newEventProjectorStateProvider(t, ctx)
+	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
+	env := Envelope{
+		ID:          "delivery-1:event:failed",
+		Namespace:   NamespaceTelemetry,
+		Kind:        "task_event",
+		From:        SystemAddress("task-events"),
+		To:          ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		TaskID:      "task-1",
+		PayloadJSON: `{"reason":"telegram send failed"}`,
+	}
+	if err := projector.Project(ctx, SubjectEventDeliveryFailed, env); err != nil {
+		t.Fatalf("Project() error = %v", err)
+	}
+	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("ListTaskEvents() error = %v", err)
+	}
+	if len(events) != 1 || events[0].EventType != TaskEventDeliveryFailed {
+		t.Fatalf("events = %+v, want delivery.failed projection", events)
+	}
+}
+
 func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "state.db")

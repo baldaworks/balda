@@ -26,6 +26,7 @@ const (
 	SubjectEventTaskUpdated         = "balda.v1.evt.task.updated"
 	SubjectEventTaskCompleted       = "balda.v1.evt.task.completed"
 	SubjectEventDeliverySent        = "balda.v1.evt.delivery.sent"
+	SubjectEventDeliveryFailed      = "balda.v1.evt.delivery.failed"
 	SubjectEventAll                 = "balda.v1.evt.>"
 
 	SubjectDLQCommand = "balda.v1.dlq.command"
