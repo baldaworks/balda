@@ -17,13 +17,18 @@ import (
 )
 
 type Bus struct {
-	cfg           resolvedConfig
-	embedded      *EmbeddedNATS
-	conn          *gnats.Conn
-	js            jetstream.JetStream
-	consumer      jetstream.Consumer
-	eventConsumer jetstream.Consumer
-	logger        zerolog.Logger
+	cfg                  resolvedConfig
+	embedded             *EmbeddedNATS
+	conn                 *gnats.Conn
+	js                   jetstream.JetStream
+	consumer             jetstream.Consumer
+	eventConsumer        jetstream.Consumer
+	logger               zerolog.Logger
+	commandsPublished    atomic.Uint64
+	commandsRunning      atomic.Uint64
+	commandsAcked        atomic.Uint64
+	commandsRetrying     atomic.Uint64
+	commandsDeadlettered atomic.Uint64
 	// duplicateSuppressed tracks duplicate publishes that are safely
 	// nooped by JetStream dedupe and surfaced via status metrics.
 	duplicateSuppressed atomic.Uint64
@@ -103,6 +108,7 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 		return nil, fmt.Errorf("publish jetstream command %q: %w", subject, err)
 	}
 	result := &swarm.CommandPublishResult{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
+	b.commandsPublished.Add(1)
 	logEvt := b.logger.Debug().
 		Str("subject", subject).
 		Str("envelope_id", strings.TrimSpace(env.ID)).

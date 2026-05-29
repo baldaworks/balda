@@ -97,17 +97,22 @@ type CommandBus interface {
 
 // CommandBusStatus describes JetStream stream and consumer state for /swarm status.
 type CommandBusStatus struct {
-	CommandBus    string
-	Embedded      bool
-	Running       bool
-	JetStream     bool
-	ClientURL     string
-	DisabledMode  string
-	Commands      StreamStatus
-	Events        StreamStatus
-	DLQ           StreamStatus
-	Worker        ConsumerStatus
-	ProjectionLag map[string]uint64
+	CommandBus                string
+	Embedded                  bool
+	Running                   bool
+	JetStream                 bool
+	ClientURL                 string
+	DisabledMode              string
+	Commands                  StreamStatus
+	Events                    StreamStatus
+	DLQ                       StreamStatus
+	Worker                    ConsumerStatus
+	ProjectionLag             map[string]uint64
+	CommandsPublishedTotal    uint64
+	CommandsRunningTotal      uint64
+	CommandsAckedTotal        uint64
+	CommandsRetryingTotal     uint64
+	CommandsDeadletteredTotal uint64
 	// DeliveryDuplicateSuppressedTotal counts duplicate command publishes that were
 	// suppressed by JetStream idempotency semantics.
 	DeliveryDuplicateSuppressedTotal uint64

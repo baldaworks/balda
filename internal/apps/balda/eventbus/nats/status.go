@@ -15,6 +15,11 @@ func (b *Bus) Status(ctx context.Context) (swarm.CommandBusStatus, error) {
 		JetStream:     true,
 		ProjectionLag: map[string]uint64{},
 	}
+	status.CommandsPublishedTotal = b.commandsPublished.Load()
+	status.CommandsRunningTotal = b.commandsRunning.Load()
+	status.CommandsAckedTotal = b.commandsAcked.Load()
+	status.CommandsRetryingTotal = b.commandsRetrying.Load()
+	status.CommandsDeadletteredTotal = b.commandsDeadlettered.Load()
 	status.DeliveryDuplicateSuppressedTotal = b.duplicateSuppressed.Load()
 	if b.conn != nil && !b.conn.IsClosed() {
 		status.Running = true

@@ -752,6 +752,9 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 	if status.DeliveryDuplicateSuppressedTotal != 1 {
 		t.Fatalf("delivery_duplicate_suppressed_total = %d, want 1", status.DeliveryDuplicateSuppressedTotal)
 	}
+	if status.CommandsPublishedTotal != 2 {
+		t.Fatalf("commands_published_total = %d, want 2", status.CommandsPublishedTotal)
+	}
 }
 
 func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {

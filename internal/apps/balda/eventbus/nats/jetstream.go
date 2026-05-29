@@ -40,6 +40,9 @@ func (m *commandMessage) MaxDeliveries() int   { return m.maxDeliveries }
 
 func (m *commandMessage) Ack(ctx context.Context) error {
 	return m.settle(func() error {
+		if m.bus != nil {
+			m.bus.commandsAcked.Add(1)
+		}
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
 		if err := m.msg.DoubleAck(settleCtx); err != nil {
@@ -58,6 +61,9 @@ func (m *commandMessage) Ack(ctx context.Context) error {
 
 func (m *commandMessage) Retry(ctx context.Context, delay time.Duration, reason string) error {
 	return m.settle(func() error {
+		if m.bus != nil {
+			m.bus.commandsRetrying.Add(1)
+		}
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
 		if err := m.msg.NakWithDelay(delay); err != nil {
@@ -76,6 +82,9 @@ func (m *commandMessage) Retry(ctx context.Context, delay time.Duration, reason 
 
 func (m *commandMessage) DeadLetter(ctx context.Context, reason string) error {
 	return m.settle(func() error {
+		if m.bus != nil {
+			m.bus.commandsDeadlettered.Add(1)
+		}
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
 		if err := m.bus.publishDLQ(settleCtx, m.env, reason, false); err != nil {
@@ -202,6 +211,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 		maxDeliveries: b.cfg.Swarm.Commands.MaxDeliver,
 		bus:           b,
 	}
+	b.commandsRunning.Add(1)
 	b.publishCommandEventBestEffort(ctx, swarm.SubjectEventCommandRunning, env, "running", "")
 	commandLogEnvelope(commandLogEvent(b.logger.Debug(), msg), env).Msg("command running")
 	err = handler(ctx, cmd)
