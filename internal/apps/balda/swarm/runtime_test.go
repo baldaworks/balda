@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -156,6 +157,71 @@ func TestRuntime_HandleCommandDispatchesActorWithNormalizedAddress(t *testing.T)
 	}
 	if actor.calls != 1 {
 		t.Fatalf("actor calls = %d, want 1", actor.calls)
+	}
+}
+
+func TestRuntimeAddressOf(t *testing.T) {
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	actor := &testActor{address: WildcardAddress(ActorTypeSession)}
+	if err := registry.Register(actor); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		env      Envelope
+		haveAddr string
+		wantErr  string
+		registry ActorRegistry
+	}{
+		{
+			name:     "nil registry",
+			env:      runtimeTestEnvelope("nil-registry", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
+			registry: nil,
+			wantErr:  "actor registry is required",
+		},
+		{
+			name:     "empty address",
+			env:      runtimeTestEnvelope("empty-address", ActorAddress{}),
+			registry: registry,
+			wantErr:  "actor target is required",
+		},
+		{
+			name:     "unknown actor",
+			env:      runtimeTestEnvelope("unknown", ActorAddress{Target: ActorTypeTask, Key: "x-1"}),
+			registry: registry,
+			wantErr:  "actor not found",
+		},
+		{
+			name:     "known actor",
+			env:      runtimeTestEnvelope("known", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
+			registry: registry,
+			haveAddr: "session:s-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotAddr, err := runtimeAddressOf(tt.env, tt.registry)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("runtimeAddressOf() error = nil, want contains %q", tt.wantErr)
+				}
+				if got, want := err.Error(), tt.wantErr; !strings.Contains(got, want) {
+					t.Fatalf("runtimeAddressOf() error = %q, want contains %q", got, want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("runtimeAddressOf() error = %v, want nil", err)
+			}
+			if gotAddr != tt.haveAddr {
+				t.Fatalf("runtimeAddressOf() address = %q, want %q", gotAddr, tt.haveAddr)
+			}
+		})
 	}
 }
 
