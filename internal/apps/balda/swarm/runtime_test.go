@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -401,6 +402,34 @@ func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
 	if status.Active != 0 || len(status.Keys) != 0 {
 		t.Fatalf("LaneStatus() after completion = %+v, want zero", status)
 	}
+}
+
+func TestIsRetryableRuntimeError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolve error is non-retryable", func(t *testing.T) {
+		t.Parallel()
+		err := &actorengine.ResolveError{Address: "session:missing"}
+		if got := isRetryableRuntimeError(err); got {
+			t.Fatalf("isRetryableRuntimeError() = true, want false")
+		}
+	})
+
+	t.Run("wrapped resolve error is non-retryable", func(t *testing.T) {
+		t.Parallel()
+		err := fmt.Errorf("dispatch failed: %w", &actorengine.ResolveError{Address: "session:wrapped"})
+		if got := isRetryableRuntimeError(err); got {
+			t.Fatalf("isRetryableRuntimeError() = true, want false")
+		}
+	})
+
+	t.Run("other errors stay classified by actor errors", func(t *testing.T) {
+		t.Parallel()
+		err := fmt.Errorf("%w", PermanentError(errors.New("persist failed")))
+		if got := isRetryableRuntimeError(err); got {
+			t.Fatalf("isRetryableRuntimeError() = true, want false")
+		}
+	})
 }
 
 func newRuntimeForTest(bus RuntimeBus, registry dispatch.Registry) *Runtime {

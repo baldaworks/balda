@@ -236,8 +236,11 @@ func (r *Runtime) deadletterTask(ctx context.Context, env Envelope, reason strin
 }
 
 func isRetryableRuntimeError(err error) bool {
-	if err != nil && strings.HasPrefix(strings.TrimSpace(err.Error()), "actor not found:") {
-		return false
+	if err != nil {
+		var resolveErr *actorengine.ResolveError
+		if errors.As(err, &resolveErr) && resolveErr != nil {
+			return false
+		}
 	}
 	switch ClassifyError(err) {
 	case ErrorKindDuplicate, ErrorKindAuth, ErrorKindPolicy, ErrorKindPermanent, ErrorKindDecode, ErrorKindCanceled:
