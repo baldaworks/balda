@@ -38,10 +38,11 @@ func TestJetStreamArchitectureContract_Static(t *testing.T) {
 			"eventbus/nats/jetstream.go",
 			"swarm/bus.go",
 			"swarm/runtime.go",
+			"swarm/runtime_engine_adapter.go",
 		})
 		runtimeSource := readSource(t, filepath.Join(root, "swarm/runtime.go"))
-		if !strings.Contains(runtimeSource, "RunCommandConsumer(runCtx, r.HandleCommand)") {
-			t.Fatal("swarm runtime must dispatch actor commands only from the JetStream command consumer")
+		if !strings.Contains(runtimeSource, "runtimeSource{") || !strings.Contains(runtimeSource, "r.engine.Run(runCtx") {
+			t.Fatal("swarm runtime must dispatch actor commands through engine runtime over command source")
 		}
 	})
 

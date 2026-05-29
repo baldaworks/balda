@@ -110,10 +110,16 @@ func (r *Runtime) Start(context.Context) error {
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
+	source := runtimeSource{
+		bus: r.bus,
+		prepareFn: func(ctx context.Context, cmd CommandMessage) (context.Context, func(), actorengine.Delivery) {
+			return r.prepareCommandDelivery(ctx, cmd)
+		},
+	}
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		if err := r.bus.RunCommandConsumer(runCtx, r.HandleCommand); err != nil && !errors.Is(err, context.Canceled) {
+		if err := r.engine.Run(runCtx, source); err != nil && !errors.Is(err, context.Canceled) {
 			r.logger.Error().Err(err).Msg("jetstream command consumer stopped")
 		}
 	}()
@@ -141,19 +147,27 @@ func (r *Runtime) Stop(ctx context.Context) error {
 }
 
 func (r *Runtime) HandleCommand(ctx context.Context, cmd CommandMessage) error {
-	env := cmd.Envelope()
-	heartbeatCtx, stop := r.startHeartbeat(ctx, cmd, env)
+	executionCtx, stop, delivery := r.prepareCommandDelivery(ctx, cmd)
 	defer stop()
 	if r.engine == nil {
 		return nil
 	}
+	return r.engine.Handle(executionCtx, delivery)
+}
+
+func (r *Runtime) prepareCommandDelivery(ctx context.Context, cmd CommandMessage) (context.Context, func(), actorengine.Delivery) {
+	if r == nil || cmd == nil {
+		return ctx, func() {}, &runtimeDelivery{cmd: cmd}
+	}
+	env := cmd.Envelope()
+	heartbeatCtx, stop := r.startHeartbeat(ctx, cmd, env)
 	delivery := &runtimeDelivery{
 		cmd: cmd,
 		onDeadLetter: func(reason string) {
 			r.deadletterTask(ctx, env, reason)
 		},
 	}
-	return r.engine.Handle(heartbeatCtx, delivery)
+	return heartbeatCtx, stop, delivery
 }
 
 func (r *Runtime) LaneStatus() RuntimeLaneStatus {

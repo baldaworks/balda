@@ -5,11 +5,38 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	actorengine "github.com/normahq/norma/actorlayer/engine"
 )
 
 type runtimeDelivery struct {
 	cmd          CommandMessage
 	onDeadLetter func(reason string)
+}
+
+type runtimeSource struct {
+	bus       RuntimeBus
+	prepareFn func(context.Context, CommandMessage) (context.Context, func(), actorengine.Delivery)
+}
+
+func (s runtimeSource) Run(ctx context.Context, handler actorengine.Handler) error {
+	if s.bus == nil {
+		return fmt.Errorf("jetstream command bus is required")
+	}
+	if handler == nil {
+		return fmt.Errorf("runtime handler is required")
+	}
+	if s.prepareFn == nil {
+		return fmt.Errorf("runtime command delivery factory is required")
+	}
+	return s.bus.RunCommandConsumer(ctx, func(ctx context.Context, cmd CommandMessage) error {
+		if cmd == nil {
+			return fmt.Errorf("command is required")
+		}
+		executionCtx, stop, delivery := s.prepareFn(ctx, cmd)
+		defer stop()
+		return handler(executionCtx, delivery)
+	})
 }
 
 func assertEnvelope(envelope any) (Envelope, error) {
