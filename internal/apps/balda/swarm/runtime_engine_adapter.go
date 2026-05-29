@@ -12,10 +12,22 @@ type runtimeDelivery struct {
 	onDeadLetter func(reason string)
 }
 
-func runtimeAddressOf(envelope any) (string, error) {
+func assertEnvelope(envelope any) (Envelope, error) {
 	env, ok := envelope.(Envelope)
 	if !ok {
-		return "", DecodeError(fmt.Errorf("unexpected delivery envelope type %T", envelope))
+		return Envelope{}, DecodeError(fmt.Errorf("unexpected actor envelope type %T", envelope))
+	}
+	return env, nil
+}
+
+func AssertEnvelope(envelope any) (Envelope, error) {
+	return assertEnvelope(envelope)
+}
+
+func runtimeAddressOf(envelope any) (string, error) {
+	env, err := assertEnvelope(envelope)
+	if err != nil {
+		return "", err
 	}
 	to, err := env.To.String()
 	if err != nil {

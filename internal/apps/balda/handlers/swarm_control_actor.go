@@ -58,7 +58,11 @@ func (a *taskControlActor) Address() string {
 	return "system:control"
 }
 
-func (a *taskControlActor) Handle(ctx context.Context, env swarm.Envelope) error {
+func (a *taskControlActor) Handle(ctx context.Context, envelope any) error {
+	env, err := swarm.AssertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(env.Namespace) != swarm.NamespaceTaskControl {
 		return swarm.PolicyError(fmt.Errorf("unsupported control namespace %q", env.Namespace))
 	}

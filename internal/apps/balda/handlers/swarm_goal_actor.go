@@ -323,7 +323,11 @@ func (e *taskActorExecutor) Address() string {
 	return swarm.WildcardAddress(swarm.ActorTypeTask)
 }
 
-func (e *taskActorExecutor) Handle(ctx context.Context, env swarm.Envelope) error {
+func (e *taskActorExecutor) Handle(ctx context.Context, envelope any) error {
+	env, err := swarm.AssertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(env.Namespace) == swarm.NamespaceAgentResult {
 		var payload taskEnvelopePayload
 		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {

@@ -160,7 +160,11 @@ func (e *sessionActorExecutor) Address() string {
 	return swarm.WildcardAddress(swarm.ActorTypeSession)
 }
 
-func (e *sessionActorExecutor) Handle(ctx context.Context, env swarm.Envelope) error {
+func (e *sessionActorExecutor) Handle(ctx context.Context, envelope any) error {
+	env, err := swarm.AssertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	switch strings.TrimSpace(env.Namespace) {
 	case swarm.NamespaceHumanInbound, swarm.NamespaceWebhookInbound, swarm.NamespaceScheduleInbound, swarm.NamespaceAgentCommand, swarm.NamespaceTaskControl:
 		return e.enqueueTurn(ctx, env)

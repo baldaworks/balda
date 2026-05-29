@@ -61,7 +61,11 @@ func (a *taskAgentActor) Address() string {
 	return swarm.WildcardAddress(swarm.ActorTypeAgent)
 }
 
-func (a *taskAgentActor) Handle(ctx context.Context, env swarm.Envelope) error {
+func (a *taskAgentActor) Handle(ctx context.Context, envelope any) error {
+	env, err := swarm.AssertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(env.Namespace) != swarm.NamespaceAgentCommand {
 		return swarm.PolicyError(fmt.Errorf("unsupported agent namespace %q", env.Namespace))
 	}

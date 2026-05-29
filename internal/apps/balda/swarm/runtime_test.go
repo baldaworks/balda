@@ -23,7 +23,11 @@ type testActor struct {
 }
 
 func (a *testActor) Address() string { return a.address }
-func (a *testActor) Handle(ctx context.Context, env Envelope) error {
+func (a *testActor) Handle(ctx context.Context, envelope any) error {
+	env, err := assertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	a.calls++
 	if a.run != nil {
 		return a.run(ctx, env)
@@ -168,7 +172,7 @@ func TestRuntimeAddressOf(t *testing.T) {
 		{
 			name:    "type error",
 			env:     struct{ v string }{v: "not-an-envelope"},
-			wantErr: "unexpected delivery envelope type",
+			wantErr: "unexpected actor envelope type",
 		},
 		{
 			name:    "empty address",

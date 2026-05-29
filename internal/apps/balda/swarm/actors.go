@@ -53,7 +53,11 @@ func (a unsupportedActor) Address() string {
 	return a.address
 }
 
-func (a unsupportedActor) Handle(_ context.Context, env Envelope) error {
+func (a unsupportedActor) Handle(_ context.Context, envelope any) error {
+	env, err := assertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	return PolicyError(fmt.Errorf("%s actor does not support %q/%q yet", a.name, env.Namespace, env.Kind))
 }
 
@@ -61,7 +65,11 @@ func (memoryActor) Address() string {
 	return WildcardAddress(ActorTypeMemory)
 }
 
-func (a memoryActor) Handle(ctx context.Context, env Envelope) error {
+func (a memoryActor) Handle(ctx context.Context, envelope any) error {
+	env, err := assertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	if env.Namespace != NamespaceMemorySync {
 		return PolicyError(fmt.Errorf("memory actor does not support %q/%q yet", env.Namespace, env.Kind))
 	}

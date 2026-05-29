@@ -45,7 +45,11 @@ func (a *taskDeliveryActor) Address() string {
 	return swarm.WildcardAddress(swarm.ActorTypeDelivery)
 }
 
-func (a *taskDeliveryActor) Handle(ctx context.Context, env swarm.Envelope) error {
+func (a *taskDeliveryActor) Handle(ctx context.Context, envelope any) error {
+	env, err := swarm.AssertEnvelope(envelope)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(env.Kind) != taskPayloadKindDelivery {
 		return swarm.PolicyError(fmt.Errorf("unsupported delivery kind %q", env.Kind))
 	}

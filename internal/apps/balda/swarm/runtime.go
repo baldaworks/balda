@@ -16,32 +16,12 @@ import (
 
 const heartbeatInterval = 30 * time.Second
 
-type Actor interface {
-	Address() string
-	Handle(ctx context.Context, env Envelope) error
-}
-
-type dispatchActor struct {
-	actor   Actor
-	address string
-}
-
-func (a dispatchActor) Address() string { return a.address }
-func (a dispatchActor) Handle(ctx context.Context, envelope any) error {
-	typed, ok := envelope.(Envelope)
-	if !ok {
-		return DecodeError(fmt.Errorf("unexpected actor envelope type %T", envelope))
-	}
-	return a.actor.Handle(ctx, typed)
-}
+type Actor = dispatch.Actor
 
 func registerActors(actors []Actor) (dispatch.Registry, error) {
 	registry := dispatch.NewMemoryRegistry()
 	for _, actor := range actors {
-		if actor == nil {
-			continue
-		}
-		if err := registry.Register(dispatchActor{actor: actor, address: actor.Address()}); err != nil {
+		if err := registry.Register(actor); err != nil {
 			return nil, err
 		}
 	}
