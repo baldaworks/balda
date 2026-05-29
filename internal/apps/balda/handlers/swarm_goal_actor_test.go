@@ -723,6 +723,101 @@ func TestTaskActorPrepareAgentDispatchRejectsRoleToolPolicy(t *testing.T) {
 	}
 }
 
+func TestTaskActorPrepareAgentDispatchBuildsAgentCommandEnvelopeContract(t *testing.T) {
+	ctx := context.Background()
+	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	_ = provider
+	_ = bus
+	_ = coordinator
+	_ = tasks
+	locator := taskActorTestLocator()
+	taskID := "goal-" + locator.SessionID
+	exec := &taskActorExecutor{agents: allocator}
+
+	dispatch, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
+		TaskID:          taskID,
+		Role:            taskAgentRoleExecutor,
+		Iteration:       2,
+		Locator:         locator,
+		Objective:       "Fix flaky tests",
+		TransportUserID: testTelegramUserID101,
+		MaxIterations:   4,
+	})
+	if err != nil {
+		t.Fatalf("prepareAgentDispatch() error = %v", err)
+	}
+	env := dispatch.Envelope
+	if env.Namespace != swarm.NamespaceAgentCommand {
+		t.Fatalf("envelope namespace = %q, want %q", env.Namespace, swarm.NamespaceAgentCommand)
+	}
+	if env.Kind != swarm.KindGoal {
+		t.Fatalf("envelope kind = %q, want %q", env.Kind, swarm.KindGoal)
+	}
+	if env.From.Target != swarm.ActorTypeTask || env.From.Key != taskID {
+		t.Fatalf("envelope from = %+v, want task:%s", env.From, taskID)
+	}
+	if env.To.Target != swarm.ActorTypeAgent || env.To.Key != swarm.AgentNameExecutor {
+		t.Fatalf("envelope to = %+v, want agent:%s", env.To, swarm.AgentNameExecutor)
+	}
+	if env.TaskID != taskID || env.SessionID != locator.SessionID || env.CorrelationID != taskID {
+		t.Fatalf("envelope scope = task:%q session:%q corr:%q, want %q/%q/%q", env.TaskID, env.SessionID, env.CorrelationID, taskID, locator.SessionID, taskID)
+	}
+	if strings.TrimSpace(env.DedupeKey) == "" || env.ID != env.DedupeKey {
+		t.Fatalf("envelope dedupe/id = %q/%q, want non-empty dedupe and ID==DedupeKey", env.ID, env.DedupeKey)
+	}
+	var payload taskAgentCommandPayload
+	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		t.Fatalf("decode envelope payload: %v", err)
+	}
+	if payload.Role != taskAgentRoleExecutor || payload.AgentName != swarm.AgentNameExecutor || payload.Iteration != 2 {
+		t.Fatalf("payload = %+v, want role executor, agent executor, iteration 2", payload)
+	}
+}
+
+func TestTaskActorDispatchAgentPublishesAgentCommand(t *testing.T) {
+	ctx := context.Background()
+	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	locator := taskActorTestLocator()
+	taskID := "goal-dispatch-agent-command"
+	if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
+		ID:          taskID,
+		SessionID:   locator.SessionID,
+		Title:       "Goal",
+		Objective:   "Fix flaky tests",
+		Status:      baldastate.SwarmTaskStatusRunning,
+		CreatedFrom: "goal",
+	}, "test", nil); err != nil {
+		t.Fatalf("Create task: %v", err)
+	}
+	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
+	before := len(bus.commands)
+	if err := exec.dispatchAgent(ctx, taskAgentCommandPayload{
+		TaskID:          taskID,
+		Role:            taskAgentRoleExecutor,
+		Iteration:       1,
+		Locator:         locator,
+		Objective:       "Fix flaky tests",
+		TransportUserID: testTelegramUserID101,
+		MaxIterations:   3,
+	}); err != nil {
+		t.Fatalf("dispatchAgent() error = %v", err)
+	}
+	appended := bus.commands[before:]
+	if len(appended) != 2 {
+		t.Fatalf("appended commands = %d, want start delivery + agent command", len(appended))
+	}
+	command := lastPublishedCommandTo(t, bus, swarm.ActorTypeAgent, swarm.AgentNameExecutor)
+	if command.Namespace != swarm.NamespaceAgentCommand {
+		t.Fatalf("published command namespace = %q, want %q", command.Namespace, swarm.NamespaceAgentCommand)
+	}
+	if command.TaskID != taskID {
+		t.Fatalf("published command task_id = %q, want %q", command.TaskID, taskID)
+	}
+	if strings.TrimSpace(command.DedupeKey) == "" {
+		t.Fatal("published command dedupe key is empty")
+	}
+}
+
 func TestTaskActorDeliverAssignsDedupeKeyWithoutTaskID(t *testing.T) {
 	ctx := context.Background()
 	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
