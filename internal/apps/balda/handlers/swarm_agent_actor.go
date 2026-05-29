@@ -432,10 +432,25 @@ func formatTaskAgentRoleWrapper(payload taskAgentCommandPayload, spec swarm.Agen
 func formatTaskPlannerPrompt(payload taskAgentCommandPayload) string {
 	var out strings.Builder
 	out.WriteString("Task objective:\n")
-	out.WriteString(strings.TrimSpace(payload.Objective))
+	objective := strings.TrimSpace(payload.Objective)
+	if objective == "" {
+		objective = "(none provided)"
+	}
+	out.WriteString(objective)
 	out.WriteString("\n\nIteration budget: ")
 	out.WriteString(strconv.Itoa(normalizeGoalMaxIterations(payload.MaxIterations)))
-	out.WriteString("\n\nCreate a concise execution plan for the executor. Include validation steps and any risks or assumptions. Do not make code changes in the planning step.")
+	out.WriteString("\n\nPlanner contract:")
+	out.WriteString("\n- Create a concise, actionable execution plan for the executor.")
+	out.WriteString("\n- Include validation steps and key risks/assumptions.")
+	out.WriteString("\n- Do not make code changes in the planning step.")
+	out.WriteString("\n- Response format:")
+	out.WriteString("\nplan:")
+	out.WriteString("\n- <step 1>")
+	out.WriteString("\n- <step 2>")
+	out.WriteString("\nvalidation:")
+	out.WriteString("\n- <check 1>")
+	out.WriteString("\nrisks:")
+	out.WriteString("\n- <risk or 'none'>")
 	return out.String()
 }
 

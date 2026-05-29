@@ -547,6 +547,41 @@ func TestFormatTaskExecutorPromptOmitsOptionalDuplicatePlannerOutput(t *testing.
 	}
 }
 
+func TestFormatTaskPlannerPromptIncludesContractAndResponseShape(t *testing.T) {
+	payload := taskAgentCommandPayload{
+		Role:          taskAgentRolePlanner,
+		Objective:     "Ship actorlayer runtime cutover.",
+		MaxIterations: 7,
+	}
+
+	got := formatTaskPlannerPrompt(payload)
+	for _, want := range []string{
+		"Task objective:\nShip actorlayer runtime cutover.",
+		"Iteration budget: 7",
+		"Planner contract:",
+		"Create a concise, actionable execution plan for the executor.",
+		"Response format:",
+		"plan:",
+		"- <step 1>",
+		"validation:",
+		"risks:",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatTaskPlannerPrompt() missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatTaskPlannerPromptHandlesEmptyObjective(t *testing.T) {
+	got := formatTaskPlannerPrompt(taskAgentCommandPayload{Role: taskAgentRolePlanner, MaxIterations: 0})
+	if !strings.Contains(got, "Task objective:\n(none provided)") {
+		t.Fatalf("formatTaskPlannerPrompt() = %q, want explicit empty objective marker", got)
+	}
+	if !strings.Contains(got, "Iteration budget: "+strconv.Itoa(defaultGoalMaxIterations)) {
+		t.Fatalf("formatTaskPlannerPrompt() = %q, want default iteration budget", got)
+	}
+}
+
 type recordingTaskAgentRuntimeBuilder struct {
 	t    *testing.T
 	cfgs []baldaagent.TaskAgentRuntimeConfig
