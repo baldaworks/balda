@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,8 @@ import (
 
 const commandSettlementTimeout = 5 * time.Second
 const unknownDecodeTarget = "unknown"
+const commandBackoffBaseDelay = time.Second
+const commandBackoffMaxDelay = time.Minute
 
 type commandMessage struct {
 	subject       string
@@ -48,7 +51,7 @@ func (m *commandMessage) Ack(ctx context.Context) error {
 		if err := m.msg.DoubleAck(settleCtx); err != nil {
 			return err
 		}
-		if err := m.bus.PublishEvent(settleCtx, swarm.SubjectEventCommandAcked, commandEventEnvelope(m.env, nil, "acked", "")); err != nil {
+		if err := m.bus.PublishEvent(settleCtx, swarm.SubjectEventCommandAcked, commandEventEnvelope(m.env, nil, "acked", "", nil)); err != nil {
 			m.bus.logger.Warn().
 				Err(err).
 				Str("envelope_id", m.env.ID).
@@ -69,7 +72,11 @@ func (m *commandMessage) Retry(ctx context.Context, delay time.Duration, reason 
 		if err := m.msg.NakWithDelay(delay); err != nil {
 			return err
 		}
-		if err := m.bus.PublishEvent(settleCtx, swarm.SubjectEventCommandRetrying, commandEventEnvelope(m.env, nil, "retrying", reason)); err != nil {
+		eventExtras := map[string]any{
+			"retry_delay_ms":  delay.Milliseconds(),
+			"next_attempt_at": time.Now().UTC().Add(delay).Format(time.RFC3339Nano),
+		}
+		if err := m.bus.PublishEvent(settleCtx, swarm.SubjectEventCommandRetrying, commandEventEnvelope(m.env, nil, "retrying", reason, eventExtras)); err != nil {
 			m.bus.logger.Warn().
 				Err(err).
 				Str("envelope_id", m.env.ID).
@@ -245,7 +252,7 @@ func settlementContext(parent context.Context) (context.Context, context.CancelF
 }
 
 func (b *Bus) publishCommandEventBestEffort(ctx context.Context, subject string, env swarm.Envelope, status string, reason string) {
-	if err := b.PublishEvent(ctx, subject, commandEventEnvelope(env, nil, status, reason)); err != nil {
+	if err := b.PublishEvent(ctx, subject, commandEventEnvelope(env, nil, status, reason, nil)); err != nil {
 		b.logger.Warn().
 			Err(err).
 			Str("envelope_id", env.ID).
@@ -408,17 +415,20 @@ func computeBackoff(attempt int) time.Duration {
 	if attempt < 0 {
 		attempt = 0
 	}
-	delay := time.Second
+	delay := commandBackoffBaseDelay
 	for range attempt {
 		delay *= 2
-		if delay >= time.Minute {
-			return time.Minute
+		if delay >= commandBackoffMaxDelay {
+			delay = commandBackoffMaxDelay
+			break
 		}
 	}
-	return delay
+	jitterCap := max(delay/4, time.Millisecond)
+	jitter := time.Duration(rand.Int64N(int64(jitterCap)))
+	return delay + jitter
 }
 
-func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult, status string, reason string) swarm.Envelope {
+func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult, status string, reason string, extra map[string]any) swarm.Envelope {
 	payload := map[string]any{
 		"envelope_id":    env.ID,
 		"task_id":        env.TaskID,
@@ -441,6 +451,12 @@ func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult
 	}
 	if strings.TrimSpace(reason) != "" {
 		payload["reason"] = reason
+	}
+	for key, value := range extra {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		payload[key] = value
 	}
 	data, _ := json.Marshal(payload)
 	out := env

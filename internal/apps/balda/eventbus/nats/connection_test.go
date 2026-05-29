@@ -316,6 +316,90 @@ func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) 
 	}
 }
 
+func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:     fxtest.NewLifecycle(t),
+		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
+			AckWait:    "100ms",
+			FetchWait:  "50ms",
+			MaxDeliver: 2,
+		}},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("retrying-metadata")); err != nil {
+		t.Fatalf("PublishCommand() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var calls atomic.Int32
+	done := make(chan struct{}, 1)
+	go func() {
+		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+			if calls.Add(1) == 1 {
+				return swarm.TransientError(errors.New("retry please"))
+			}
+			done <- struct{}{}
+			return nil
+		})
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for command redelivery")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("handler calls = %d, want 2 (retry + success)", got)
+	}
+
+	retryingConsumer, err := bus.js.CreateOrUpdateConsumer(context.Background(), swarm.DefaultEventStream, jetstream.ConsumerConfig{
+		Durable:       "retrying-metadata-inspector",
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		FilterSubject: swarm.SubjectEventCommandRetrying,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrUpdateConsumer(retrying-metadata-inspector) error = %v", err)
+	}
+	batch, err := retryingConsumer.Fetch(1, jetstream.FetchMaxWait(2*time.Second))
+	if err != nil {
+		t.Fatalf("Fetch(command.retrying) error = %v", err)
+	}
+	msg, ok := <-batch.Messages()
+	if !ok {
+		t.Fatal("command.retrying event message not found")
+	}
+	got, err := swarm.DecodeEnvelope(string(msg.Data()))
+	if err != nil {
+		t.Fatalf("DecodeEnvelope(command.retrying) error = %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(got.PayloadJSON), &payload); err != nil {
+		t.Fatalf("Unmarshal(command.retrying payload) error = %v", err)
+	}
+	delayMS, ok := payload["retry_delay_ms"].(float64)
+	if !ok || delayMS <= 0 {
+		t.Fatalf("retry_delay_ms = %v, want positive number", payload["retry_delay_ms"])
+	}
+	nextAttemptAt, ok := payload["next_attempt_at"].(string)
+	if !ok || strings.TrimSpace(nextAttemptAt) == "" {
+		t.Fatalf("next_attempt_at = %v, want non-empty RFC3339 timestamp", payload["next_attempt_at"])
+	}
+	if _, err := time.Parse(time.RFC3339Nano, nextAttemptAt); err != nil {
+		t.Fatalf("next_attempt_at parse error = %v", err)
+	}
+	if err := msg.DoubleAck(context.Background()); err != nil {
+		t.Fatalf("DoubleAck(command.retrying event) error = %v", err)
+	}
+}
+
 func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
 	busRaw, err := NewCommandBus(Params{
 		LC:     fxtest.NewLifecycle(t),
@@ -356,6 +440,20 @@ func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
 	}
 	waitStreamMessages(t, bus, swarm.DefaultDLQStream, 1)
 	assertCommandStreamDrained(t, bus)
+}
+
+func TestComputeBackoffAppliesExponentialDelayWithJitter(t *testing.T) {
+	t.Parallel()
+
+	low := computeBackoff(0)
+	if low < commandBackoffBaseDelay || low > commandBackoffBaseDelay+(commandBackoffBaseDelay/4) {
+		t.Fatalf("computeBackoff(0) = %s, want in [%s, %s]", low, commandBackoffBaseDelay, commandBackoffBaseDelay+(commandBackoffBaseDelay/4))
+	}
+
+	high := computeBackoff(16)
+	if high < commandBackoffMaxDelay || high > commandBackoffMaxDelay+(commandBackoffMaxDelay/4) {
+		t.Fatalf("computeBackoff(16) = %s, want in [%s, %s]", high, commandBackoffMaxDelay, commandBackoffMaxDelay+(commandBackoffMaxDelay/4))
+	}
 }
 
 func TestBus_CommandSuccessSettlesWithCanceledParent(t *testing.T) {

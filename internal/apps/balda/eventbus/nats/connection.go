@@ -124,7 +124,7 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 		Str("msg_id", msgID).
 		Bool("duplicate", ack.Duplicate)
 	withDeliveryKey(logEvt, env).Msg("published command to jetstream")
-	if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAccepted, commandEventEnvelope(env, result, "accepted", "")); err != nil {
+	if err := b.PublishEvent(ctx, swarm.SubjectEventCommandAccepted, commandEventEnvelope(env, result, "accepted", "", nil)); err != nil {
 		logEvt := b.logger.Warn().
 			Err(err).
 			Str("envelope_id", env.ID).
@@ -138,7 +138,7 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 	if ack.Duplicate {
 		b.duplicateSuppressed.Add(1)
 		const noopReason = "duplicate publish suppressed"
-		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandNoop, commandEventEnvelope(env, result, "noop", noopReason)); err != nil {
+		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandNoop, commandEventEnvelope(env, result, "noop", noopReason, nil)); err != nil {
 			logEvt := b.logger.Warn().
 				Err(err).
 				Str("envelope_id", env.ID).
@@ -216,7 +216,7 @@ func (b *Bus) publishDLQ(ctx context.Context, env swarm.Envelope, reason string,
 		return fmt.Errorf("publish jetstream dlq: %w", err)
 	}
 	if emitEvent {
-		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandDeadLettered, commandEventEnvelope(env, nil, "deadlettered", reason)); err != nil {
+		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandDeadLettered, commandEventEnvelope(env, nil, "deadlettered", reason, nil)); err != nil {
 			logEvt := b.logger.Warn().
 				Err(err).
 				Str("envelope_id", env.ID).
