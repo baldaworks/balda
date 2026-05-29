@@ -30,8 +30,9 @@ func registerActors(actors []Actor) (dispatch.Registry, error) {
 
 type Runtime struct {
 	bus     RuntimeBus
+	actors  dispatch.Registry
 	tasks   *TaskService
-	engine  *actorengine.DispatchRuntime
+	engine  *actorengine.Runtime
 	logger  zerolog.Logger
 	enabled bool
 	// heartbeatTick controls the in-progress ack cadence for long-running commands.
@@ -69,15 +70,15 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 	}
 	r := &Runtime{
 		bus:           params.Bus,
+		actors:        registry,
 		tasks:         params.Tasks,
 		logger:        params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
 		enabled:       params.Config.Enabled,
 		heartbeatTick: heartbeatInterval,
 	}
-	engine, err := actorengine.NewDispatchRuntime(actorengine.RuntimeConfig{
-		Registry:  registry,
-		AddressOf: runtimeAddressOf,
-		LaneKey:   actorLaneKeyFromEnvelope,
+	engine, err := actorengine.New(actorengine.Config{
+		Resolver: runtimeResolver{},
+		Sink:     r,
 		Retry: actorengine.RetryPolicy{
 			IsRetryable: IsRetryableError,
 			Backoff:     RetryDelay,
@@ -119,7 +120,7 @@ func (r *Runtime) Start(context.Context) error {
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		if err := r.engine.Run(runCtx, source); err != nil && !errors.Is(err, context.Canceled) {
+		if err := r.engine.Run(runCtx, source, r.route); err != nil && !errors.Is(err, context.Canceled) {
 			r.logger.Error().Err(err).Msg("jetstream command consumer stopped")
 		}
 	}()
@@ -152,7 +153,7 @@ func (r *Runtime) handleCommand(ctx context.Context, cmd CommandMessage) error {
 	if r.engine == nil {
 		return nil
 	}
-	return r.engine.Handle(executionCtx, delivery)
+	return r.engine.Handle(executionCtx, delivery, r.route)
 }
 
 func (r *Runtime) prepareCommandDelivery(ctx context.Context, cmd CommandMessage) (context.Context, func(), actorengine.Delivery) {
@@ -166,7 +167,7 @@ func (r *Runtime) prepareCommandDelivery(ctx context.Context, cmd CommandMessage
 			r.deadletterTask(ctx, env, reason)
 		},
 	}
-	heartbeatCtx, stop := r.startHeartbeat(ctx, cmd, env)
+	heartbeatCtx, stop := r.startHeartbeat(ctx, cmd, env, delivery)
 	return heartbeatCtx, stop, delivery
 }
 
@@ -181,7 +182,10 @@ func (r *Runtime) LaneStatus() RuntimeLaneStatus {
 	}
 }
 
-func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env Envelope) (context.Context, func()) {
+func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env Envelope, delivery actorengine.Delivery) (context.Context, func()) {
+	if r == nil || r.engine == nil || cmd == nil || delivery == nil {
+		return ctx, func() {}
+	}
 	heartbeatCtx := withEnvelopeContext(ctx, env)
 	child, cancel := context.WithCancel(heartbeatCtx)
 	r.wg.Add(1)
@@ -195,13 +199,31 @@ func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env En
 				if err := cmd.InProgress(child); err != nil {
 					r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to send jetstream in-progress ack")
 				}
-				r.Publish(child, actorengine.Event{Type: actorengine.EventInProgress})
+				r.engine.EmitInProgress(child, delivery)
 			case <-child.Done():
 				return
 			}
 		}
 	}()
 	return child, cancel
+}
+
+func (r *Runtime) route(ctx context.Context, delivery actorengine.Delivery) error {
+	if r == nil {
+		return nil
+	}
+	address, err := runtimeAddressOf(delivery.Envelope())
+	if err != nil {
+		return err
+	}
+	if r.actors == nil {
+		return &actorengine.ResolveError{Address: address}
+	}
+	actor, found := r.actors.Resolve(address)
+	if !found {
+		return &actorengine.ResolveError{Address: address}
+	}
+	return actor.Handle(ctx, delivery.Envelope())
 }
 
 func (r *Runtime) Publish(ctx context.Context, event actorengine.Event) {

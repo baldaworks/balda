@@ -419,11 +419,10 @@ func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
 }
 
 func newRuntimeForTest(bus RuntimeBus, registry dispatch.Registry) *Runtime {
-	rt := &Runtime{bus: bus, heartbeatTick: heartbeatInterval}
-	engine, err := actorengine.NewDispatchRuntime(actorengine.RuntimeConfig{
-		Registry:  registry,
-		AddressOf: runtimeAddressOf,
-		LaneKey:   actorLaneKeyFromEnvelope,
+	rt := &Runtime{bus: bus, actors: registry, heartbeatTick: heartbeatInterval}
+	engine, err := actorengine.New(actorengine.Config{
+		Resolver: runtimeResolver{},
+		Sink:     rt,
 		Retry: actorengine.RetryPolicy{
 			IsRetryable: IsRetryableError,
 			Backoff:     RetryDelay,

@@ -39,6 +39,13 @@ type runtimeSource struct {
 	prepareFn func(context.Context, CommandMessage) (context.Context, func(), actorengine.Delivery)
 }
 
+type runtimeResolver struct {
+}
+
+func (r runtimeResolver) LaneKey(delivery actorengine.Delivery) string {
+	return actorLaneKeyFromEnvelope(delivery.Envelope())
+}
+
 func (s runtimeSource) Run(ctx context.Context, handler actorengine.Handler) error {
 	if s.bus == nil {
 		return fmt.Errorf("jetstream command bus is required")
