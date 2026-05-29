@@ -561,6 +561,38 @@ func TestCommandHandlerOnCommand_MemoryReadsCurrentMemory(t *testing.T) {
 	assertLastSentContains(t, tgClient, "project uses Balda memory")
 }
 
+func TestCommandHandlerOnCommand_MemoryInspectShowsReadModel(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	handler.memoryStore = memory.NewStore(t.TempDir(), true)
+	if err := handler.memoryStore.Remember(context.Background(), "first fact"); err != nil {
+		t.Fatalf("Remember(first) error = %v", err)
+	}
+	if err := handler.memoryStore.Remember(context.Background(), "second fact"); err != nil {
+		t.Fatalf("Remember(second) error = %v", err)
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("memory", "inspect", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Memory inspect")
+	assertLastSentContains(t, tgClient, "entries: 2")
+	assertLastSentContains(t, tgClient, "last_entry: second fact")
+}
+
+func TestCommandHandlerOnCommand_MemoryInspectInvalidArgs(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+	handler.memoryStore = memory.NewStore(t.TempDir(), true)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("memory", "details", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Usage: /memory [inspect]")
+}
+
 func TestCommandHandlerOnCommand_MemoryRequiresDM(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
 	handler.memoryStore = memory.NewStore(t.TempDir(), true)

@@ -259,8 +259,10 @@ func (h *CommandHandler) onMemoryCommand(ctx context.Context, commandCtx baldate
 		}
 		return nil
 	}
-	if strings.TrimSpace(commandCtx.Args) != "" {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /memory"); err != nil {
+	args := strings.TrimSpace(commandCtx.Args)
+	inspect := strings.EqualFold(args, "inspect")
+	if args != "" && !inspect {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /memory [inspect]"); err != nil {
 			return err
 		}
 		return nil
@@ -286,7 +288,36 @@ func (h *CommandHandler) onMemoryCommand(ctx context.Context, commandCtx baldate
 		}
 		return nil
 	}
+	if inspect {
+		return h.channel.SendAgentReply(ctx, commandCtx.Locator, formatMemoryInspect(h.memoryStore.MemoryPath(), content))
+	}
 	return h.sendPlainChunks(ctx, commandCtx.Locator, content)
+}
+
+func formatMemoryInspect(path string, content string) string {
+	trimmed := strings.TrimSpace(content)
+	lines := strings.Split(trimmed, "\n")
+	entries := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if value := strings.TrimSpace(line); value != "" {
+			entries = append(entries, value)
+		}
+	}
+	last := ""
+	if len(entries) > 0 {
+		last = entries[len(entries)-1]
+	}
+	var out strings.Builder
+	out.WriteString("Memory inspect")
+	out.WriteString("\n- path: ")
+	out.WriteString(strings.TrimSpace(path))
+	out.WriteString("\n- entries: ")
+	fmt.Fprintf(&out, "%d", len(entries))
+	out.WriteString("\n- chars: ")
+	fmt.Fprintf(&out, "%d", len([]rune(trimmed)))
+	out.WriteString("\n- last_entry: ")
+	out.WriteString(limitRunes(oneLine(redactSecrets(last)), 240))
+	return out.String()
 }
 
 func (h *CommandHandler) sendPlainChunks(ctx context.Context, locator session.SessionLocator, text string) error {
