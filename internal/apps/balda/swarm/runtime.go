@@ -42,12 +42,12 @@ type Registry struct {
 	actors map[string]actorlayer.Ref
 }
 
-func NewRegistry() *Registry {
+func NewRegistry() (*Registry, error) {
 	system, err := actorlayer.NewSystem(actorlayer.Config{})
 	if err != nil {
-		panic(fmt.Sprintf("create actorlayer system: %v", err))
+		return nil, fmt.Errorf("create actorlayer system: %w", err)
 	}
-	return &Registry{system: system, actors: make(map[string]actorlayer.Ref)}
+	return &Registry{system: system, actors: make(map[string]actorlayer.Ref)}, nil
 }
 
 func (r *Registry) Register(actor Actor) error {
@@ -72,15 +72,20 @@ func (r *Registry) Register(actor Actor) error {
 					if !ok {
 						replyErr := DecodeError(fmt.Errorf("unexpected actor payload type %T", env.Payload))
 						if env.ReplyTo != nil {
-							_ = ctx.Tell(ctx, *env.ReplyTo, replyErr)
+							if err := deliverActorReply(ctx, *env.ReplyTo, replyErr); err != nil {
+								return fmt.Errorf("reply decode error: %w", err)
+							}
 						}
 						return nil
 					}
 					handleErr := actor.Handle(ctx, payload)
 					if env.ReplyTo != nil {
-						_ = ctx.Tell(ctx, *env.ReplyTo, handleErr)
+						if err := deliverActorReply(ctx, *env.ReplyTo, handleErr); err != nil {
+							return fmt.Errorf("reply actor result: %w", err)
+						}
+						return nil
 					}
-					return nil
+					return handleErr
 				}), nil
 			},
 		},
@@ -122,6 +127,15 @@ func (r *Registry) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	return r.system.Shutdown(ctx)
+}
+
+func deliverActorReply(ctx actorlayer.Context, replyTo actorlayer.Ref, payload any) error {
+	replyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	if err := ctx.Tell(replyCtx, replyTo, payload); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *Registry) LaneKey(env Envelope) string {
@@ -167,7 +181,10 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 	if params.Bus == nil {
 		return nil, fmt.Errorf("jetstream command bus is required")
 	}
-	registry := NewRegistry()
+	registry, err := NewRegistry()
+	if err != nil {
+		return nil, err
+	}
 	for _, actor := range params.Actors {
 		if err := registry.Register(actor); err != nil {
 			return nil, err

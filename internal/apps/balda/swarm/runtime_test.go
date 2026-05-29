@@ -124,7 +124,10 @@ func TestRuntimeStartDisabledDoesNotRunConsumer(t *testing.T) {
 func TestRuntime_HandleCommandDispatchesActor(t *testing.T) {
 	bus := &recordingCommandBus{}
 	actor := &testActor{address: WildcardAddress(ActorTypeSession)}
-	registry := NewRegistry()
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
 	if err := registry.Register(actor); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
@@ -138,9 +141,13 @@ func TestRuntime_HandleCommandDispatchesActor(t *testing.T) {
 }
 
 func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
-	runtime := newRuntimeForTest(&recordingCommandBus{}, NewRegistry())
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	var deadletterReason string
-	err := runtime.HandleCommand(context.Background(), testCommandMessage{
+	err = runtime.HandleCommand(context.Background(), testCommandMessage{
 		env: runtimeTestEnvelope("unknown", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		deadletter: func(_ context.Context, reason string) error {
 			deadletterReason = reason
@@ -157,13 +164,16 @@ func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 
 func TestRuntime_ActorErrorRequestsRetry(t *testing.T) {
 	actor := &testActor{address: WildcardAddress(ActorTypeSession), err: TransientError(fmt.Errorf("temporary"))}
-	registry := NewRegistry()
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
 	if err := registry.Register(actor); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	var called bool
-	err := runtime.HandleCommand(context.Background(), testCommandMessage{
+	err = runtime.HandleCommand(context.Background(), testCommandMessage{
 		env: runtimeTestEnvelope("retry", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		retry: func(_ context.Context, _ time.Duration, _ string) error {
 			called = true
@@ -199,7 +209,10 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 	actor := &testActor{address: WildcardAddress(ActorTypeSession), err: TransientError(fmt.Errorf("temporary"))}
-	registry := NewRegistry()
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
 	if err := registry.Register(actor); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
@@ -248,7 +261,10 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 			}
 		},
 	}
-	registry := NewRegistry()
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
 	if err := registry.Register(actor); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
@@ -305,7 +321,10 @@ func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
 			}
 		},
 	}
-	registry := NewRegistry()
+	registry, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
 	if err := registry.Register(actor); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
