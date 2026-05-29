@@ -113,6 +113,8 @@ type CommandBusStatus struct {
 	CommandsAckedTotal        uint64
 	CommandsRetryingTotal     uint64
 	CommandsDeadletteredTotal uint64
+	CommandDurationSeconds    float64
+	ActorDurationSeconds      float64
 	// DeliveryDuplicateSuppressedTotal counts duplicate command publishes that were
 	// suppressed by JetStream idempotency semantics.
 	DeliveryDuplicateSuppressedTotal uint64

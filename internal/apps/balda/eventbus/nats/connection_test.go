@@ -1101,6 +1101,58 @@ func TestBus_StatusReportsJetStreamOnly(t *testing.T) {
 	}
 }
 
+func TestBus_StatusTracksCommandAndActorDurations(t *testing.T) {
+	busRaw, err := NewCommandBus(Params{
+		LC:         fxtest.NewLifecycle(t),
+		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Swarm:      swarm.Config{Enabled: true},
+		WorkingDir: t.TempDir(),
+		Logger:     zerolog.Nop(),
+	})
+	if err != nil {
+		t.Fatalf("NewCommandBus() error = %v", err)
+	}
+	bus := busRaw.(*Bus)
+	defer func() { _ = bus.Drain(context.Background()) }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handled := make(chan struct{}, 1)
+	go func() {
+		_ = bus.RunCommandConsumer(ctx, func(_ context.Context, _ swarm.CommandMessage) error {
+			time.Sleep(15 * time.Millisecond)
+			handled <- struct{}{}
+			return nil
+		})
+	}()
+	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("duration-metric")); err != nil {
+		t.Fatalf("PublishCommand() error = %v", err)
+	}
+	select {
+	case <-handled:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for command handling")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		status, err := bus.Status(context.Background())
+		if err != nil {
+			t.Fatalf("Status() error = %v", err)
+		}
+		if status.CommandsAckedTotal >= 1 && status.CommandDurationSeconds > 0 && status.ActorDurationSeconds > 0 {
+			if status.CommandDurationSeconds < status.ActorDurationSeconds {
+				t.Fatalf("command_duration_seconds = %f, want >= actor_duration_seconds = %f", status.CommandDurationSeconds, status.ActorDurationSeconds)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("duration metrics not updated: status=%+v", status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestBus_EnsureRuntimeCreatesRequiredStreamsAndConsumers(t *testing.T) {
 	busRaw, err := NewCommandBus(Params{
 		LC:         fxtest.NewLifecycle(t),

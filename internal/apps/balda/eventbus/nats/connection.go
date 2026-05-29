@@ -29,6 +29,8 @@ type Bus struct {
 	commandsAcked        atomic.Uint64
 	commandsRetrying     atomic.Uint64
 	commandsDeadlettered atomic.Uint64
+	commandDurationNanos atomic.Uint64
+	actorDurationNanos   atomic.Uint64
 	// duplicateSuppressed tracks duplicate publishes that are safely
 	// nooped by JetStream dedupe and surfaced via status metrics.
 	duplicateSuppressed atomic.Uint64

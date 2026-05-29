@@ -191,6 +191,8 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentContains(t, tgClient, "commands_acked_total: 0")
 	assertLastSentContains(t, tgClient, "commands_retrying_total: 0")
 	assertLastSentContains(t, tgClient, "commands_deadlettered_total: 0")
+	assertLastSentContains(t, tgClient, "command_duration_seconds: 0.000")
+	assertLastSentContains(t, tgClient, "actor_duration_seconds: 0.000")
 	assertLastSentContains(t, tgClient, "commands_redelivered_total: 0")
 	assertLastSentContains(t, tgClient, "dlq_messages_total: 0")
 	assertLastSentContains(t, tgClient, "projection_lag_total: 2")

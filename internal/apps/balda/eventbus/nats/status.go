@@ -3,6 +3,7 @@ package natsbus
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
@@ -20,6 +21,8 @@ func (b *Bus) Status(ctx context.Context) (swarm.CommandBusStatus, error) {
 	status.CommandsAckedTotal = b.commandsAcked.Load()
 	status.CommandsRetryingTotal = b.commandsRetrying.Load()
 	status.CommandsDeadletteredTotal = b.commandsDeadlettered.Load()
+	status.CommandDurationSeconds = float64(b.commandDurationNanos.Load()) / float64(time.Second)
+	status.ActorDurationSeconds = float64(b.actorDurationNanos.Load()) / float64(time.Second)
 	status.DeliveryDuplicateSuppressedTotal = b.duplicateSuppressed.Load()
 	if b.conn != nil && !b.conn.IsClosed() {
 		status.Running = true

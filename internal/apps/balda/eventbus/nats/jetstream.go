@@ -190,6 +190,10 @@ func (b *Bus) commandWorkerLimit() int {
 }
 
 func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swarm.CommandHandler) error {
+	commandStartedAt := time.Now()
+	defer func() {
+		b.commandDurationNanos.Add(uint64(time.Since(commandStartedAt)))
+	}()
 	env, err := swarm.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		decodeFailureEnv := commandDecodeFailureEnvelope(msg, err)
@@ -214,7 +218,9 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swar
 	b.commandsRunning.Add(1)
 	b.publishCommandEventBestEffort(ctx, swarm.SubjectEventCommandRunning, env, "running", "")
 	commandLogEnvelope(commandLogEvent(b.logger.Debug(), msg), env).Msg("command running")
+	actorStartedAt := time.Now()
 	err = handler(ctx, cmd)
+	b.actorDurationNanos.Add(uint64(time.Since(actorStartedAt)))
 	if cmd.isSettled() {
 		return nil
 	}
