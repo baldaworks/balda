@@ -181,6 +181,75 @@ func TestTaskActorExecutorResultDispatchesReviewerBeforeProgress(t *testing.T) {
 	}
 }
 
+func TestTaskActorReviewerPassPublishesMemorySyncCommands(t *testing.T) {
+	ctx := context.Background()
+	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
+	locator := taskActorTestLocator()
+	ts := newBaldaTopicSession(t, locator.SessionID)
+	manager := newBaldaSessionManagerWithSession(t, locator, ts)
+	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, sessions: manager, maxIters: 3}
+	env, goal := taskActorGoalEnvelope(t, locator, "fix failing tests", 3)
+	if err := exec.startGoalTask(ctx, env, goal); err != nil {
+		t.Fatalf("startGoalTask() error = %v", err)
+	}
+	plannerText := "1. inspect tests\n2. patch code"
+	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "planner-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNamePlanner}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
+		TaskID: goal.TaskID, AgentName: swarm.AgentNamePlanner, Role: taskAgentRolePlanner, Iteration: 1, Locator: locator, Objective: goal.Objective, TransportUserID: goal.TransportUserID, Text: plannerText, MaxIterations: goal.MaxIterations,
+	}); err != nil {
+		t.Fatalf("handleAgentResult(planner) error = %v", err)
+	}
+	executorText := "patched code and ran tests"
+	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "executor-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNameExecutor}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
+		TaskID: goal.TaskID, AgentName: swarm.AgentNameExecutor, Role: taskAgentRoleExecutor, Iteration: 1, Locator: locator, Objective: goal.Objective, Plan: plannerText, PlannerOutput: plannerText, TransportUserID: goal.TransportUserID, Text: executorText, MaxIterations: goal.MaxIterations,
+	}); err != nil {
+		t.Fatalf("handleAgentResult(executor) error = %v", err)
+	}
+	beforeReviewer := len(bus.commands)
+	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "reviewer-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNameReviewer}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
+		TaskID: goal.TaskID, AgentName: swarm.AgentNameReviewer, Role: taskAgentRoleReviewer, Iteration: 1, Locator: locator, Objective: goal.Objective, Plan: plannerText, PlannerOutput: plannerText, ExecutorOutput: executorText, TransportUserID: goal.TransportUserID, Text: "verdict: pass\nall checks passed", MaxIterations: goal.MaxIterations,
+	}); err != nil {
+		t.Fatalf("handleAgentResult(reviewer) error = %v", err)
+	}
+
+	appended := bus.commands[beforeReviewer:]
+	if len(appended) != 5 {
+		t.Fatalf("reviewer appended commands = %d, want reviewer delivery + 3 memory sync + completion delivery", len(appended))
+	}
+	memoryCommands := 0
+	operations := map[string]bool{}
+	for _, cmd := range appended {
+		if cmd.To.Target != swarm.ActorTypeMemory {
+			continue
+		}
+		memoryCommands++
+		if cmd.Namespace != swarm.NamespaceMemorySync {
+			t.Fatalf("memory command namespace = %q, want %q", cmd.Namespace, swarm.NamespaceMemorySync)
+		}
+		if cmd.TaskID != goal.TaskID || cmd.SessionID != locator.SessionID {
+			t.Fatalf("memory command scope = task:%q session:%q, want %q/%q", cmd.TaskID, cmd.SessionID, goal.TaskID, locator.SessionID)
+		}
+		var syncPayload taskMemorySyncPayload
+		if err := json.Unmarshal([]byte(cmd.PayloadJSON), &syncPayload); err != nil {
+			t.Fatalf("decode memory payload: %v", err)
+		}
+		if strings.TrimSpace(syncPayload.Scope) != taskMemoryScopeCompleted {
+			t.Fatalf("memory payload scope = %q, want %q", syncPayload.Scope, taskMemoryScopeCompleted)
+		}
+		if strings.TrimSpace(syncPayload.Content) == "" {
+			t.Fatalf("memory payload content is empty for operation %q", syncPayload.Operation)
+		}
+		operations[syncPayload.Operation] = true
+	}
+	if memoryCommands != 3 {
+		t.Fatalf("memory commands = %d, want 3", memoryCommands)
+	}
+	for _, operation := range []string{taskMemoryOperationSummary, taskMemoryOperationFacts, taskMemoryOperationContext} {
+		if !operations[operation] {
+			t.Fatalf("missing memory operation %q in %+v", operation, operations)
+		}
+	}
+}
+
 func TestTaskActorEnsureGoalTaskIgnoresCreatedEventPublishFailure(t *testing.T) {
 	ctx := context.Background()
 	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)

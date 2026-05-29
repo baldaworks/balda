@@ -30,6 +30,12 @@ const (
 
 	taskResultSchemaVersionV1          = "task_result.v1"
 	taskReviewableOutcomeSchemaVersion = "task_reviewable_outcome.v1"
+
+	taskMemoryScopeCompleted   = "task.completed"
+	taskMemoryOperationSummary = "task_summary"
+	taskMemoryOperationFacts   = "fact_extract"
+	taskMemoryOperationContext = "context_pack"
+	taskMemoryActorKeyGlobal   = "global"
 )
 
 type taskEnvelopePayload struct {
@@ -122,6 +128,14 @@ type taskReviewableOutcomeV1 struct {
 	Verified      string `json:"what_was_verified,omitempty"`
 	NotVerified   string `json:"what_was_not_verified,omitempty"`
 	NextAction    string `json:"next_action,omitempty"`
+}
+
+type taskMemorySyncPayload struct {
+	Operation string `json:"operation,omitempty"`
+	Scope     string `json:"scope,omitempty"`
+	TaskID    string `json:"task_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	Content   string `json:"content,omitempty"`
 }
 
 type goalTaskPlan struct {
@@ -895,8 +909,12 @@ func (e *taskActorExecutor) handleReviewerResult(ctx context.Context, payload ta
 		return err
 	}
 	if passed {
-		if err := e.tasks.SetResult(ctx, payload.TaskID, taskResultPayload(payload, true), baldastate.SwarmTaskStatusCompleted, "task.actor", ""); err != nil {
+		result := taskResultPayload(payload, true)
+		if err := e.tasks.SetResult(ctx, payload.TaskID, result, baldastate.SwarmTaskStatusCompleted, "task.actor", ""); err != nil {
 			return swarm.TransientError(err)
+		}
+		if err := e.enqueueTaskCompletionMemorySync(ctx, payload, result); err != nil {
+			return err
 		}
 		return e.deliver(ctx, payload.TaskID, payload.Locator, e.renderTaskOutcome(ctx, payload.TaskID, "Goal run completed."), "completed")
 	}
@@ -921,6 +939,79 @@ func (e *taskActorExecutor) handleReviewerResult(ctx context.Context, payload ta
 		ReviewerFeedback: text,
 		MaxIterations:    maxIterations,
 	})
+}
+
+func (e *taskActorExecutor) enqueueTaskCompletionMemorySync(ctx context.Context, payload taskAgentResultPayload, result taskResultPayloadV1) error {
+	if e == nil || e.coordinator == nil || !e.coordinator.RuntimeEnabled() {
+		return swarm.TransientError(fmt.Errorf("swarm coordinator is required"))
+	}
+	if strings.TrimSpace(payload.TaskID) == "" {
+		return swarm.PolicyError(fmt.Errorf("task id is required"))
+	}
+	commands := []taskMemorySyncPayload{
+		{
+			Operation: taskMemoryOperationSummary,
+			Scope:     taskMemoryScopeCompleted,
+			TaskID:    strings.TrimSpace(payload.TaskID),
+			SessionID: strings.TrimSpace(payload.Locator.SessionID),
+			Content: strings.TrimSpace(strings.Join([]string{
+				"Objective: " + strings.TrimSpace(payload.Objective),
+				"What was done: " + strings.TrimSpace(result.ReviewableOutcome.WhatWasDone),
+				"Validation: " + strings.TrimSpace(firstNonEmpty(result.ReviewableOutcome.Validation, result.ReviewerOutput)),
+				"Next action: " + strings.TrimSpace(result.ReviewableOutcome.NextAction),
+			}, "\n")),
+		},
+		{
+			Operation: taskMemoryOperationFacts,
+			Scope:     taskMemoryScopeCompleted,
+			TaskID:    strings.TrimSpace(payload.TaskID),
+			SessionID: strings.TrimSpace(payload.Locator.SessionID),
+			Content: strings.TrimSpace(strings.Join([]string{
+				"fact: " + strings.TrimSpace(result.ReviewableOutcome.WhatWasDone),
+				"fact: " + strings.TrimSpace(result.ReviewableOutcome.Verified),
+				"fact: " + strings.TrimSpace(result.ReviewableOutcome.NextAction),
+			}, "\n")),
+		},
+		{
+			Operation: taskMemoryOperationContext,
+			Scope:     taskMemoryScopeCompleted,
+			TaskID:    strings.TrimSpace(payload.TaskID),
+			SessionID: strings.TrimSpace(payload.Locator.SessionID),
+			Content: strings.TrimSpace(strings.Join([]string{
+				"task_id=" + strings.TrimSpace(payload.TaskID),
+				"session_id=" + strings.TrimSpace(payload.Locator.SessionID),
+				"iteration=" + strconv.Itoa(payload.Iteration),
+				"goal_reached=true",
+			}, "\n")),
+		},
+	}
+	for _, command := range commands {
+		if strings.TrimSpace(command.Content) == "" {
+			continue
+		}
+		commandJSON, err := json.Marshal(command)
+		if err != nil {
+			return swarm.PermanentError(fmt.Errorf("encode memory sync command: %w", err))
+		}
+		dedupeKey := strings.TrimSpace(payload.TaskID) + ":memory:" + command.Operation + ":" + strconv.Itoa(payload.Iteration)
+		env := swarm.Envelope{
+			ID:            dedupeKey,
+			Namespace:     swarm.NamespaceMemorySync,
+			Kind:          command.Operation,
+			From:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: strings.TrimSpace(payload.TaskID)},
+			To:            swarm.ActorAddress{Target: swarm.ActorTypeMemory, Key: taskMemoryActorKeyGlobal},
+			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
+			TaskID:        strings.TrimSpace(payload.TaskID),
+			CorrelationID: strings.TrimSpace(payload.TaskID),
+			Priority:      60,
+			DedupeKey:     dedupeKey,
+			PayloadJSON:   string(commandJSON),
+		}
+		if _, err := e.coordinator.Submit(ctx, env); err != nil {
+			return swarm.TransientError(err)
+		}
+	}
+	return nil
 }
 
 func (e *taskActorExecutor) renderTaskOutcome(ctx context.Context, taskID string, fallback string) string {
