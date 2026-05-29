@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gnats "github.com/nats-io/nats.go"
@@ -23,6 +24,9 @@ type Bus struct {
 	consumer      jetstream.Consumer
 	eventConsumer jetstream.Consumer
 	logger        zerolog.Logger
+	// duplicateSuppressed tracks duplicate publishes that are safely
+	// nooped by JetStream dedupe and surfaced via status metrics.
+	duplicateSuppressed atomic.Uint64
 }
 
 type Params struct {
@@ -124,6 +128,7 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 		withDeliveryKey(logEvt, env).Msg("failed to publish command accepted event")
 	}
 	if ack.Duplicate {
+		b.duplicateSuppressed.Add(1)
 		const noopReason = "duplicate publish suppressed"
 		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandNoop, commandEventEnvelope(env, result, "noop", noopReason)); err != nil {
 			logEvt := b.logger.Warn().

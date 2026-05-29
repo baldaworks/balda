@@ -745,6 +745,13 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 	if err := msg.DoubleAck(context.Background()); err != nil {
 		t.Fatalf("DoubleAck(command.noop) error = %v", err)
 	}
+	status, err := bus.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if status.DeliveryDuplicateSuppressedTotal != 1 {
+		t.Fatalf("delivery_duplicate_suppressed_total = %d, want 1", status.DeliveryDuplicateSuppressedTotal)
+	}
 }
 
 func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {

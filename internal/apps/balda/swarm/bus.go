@@ -108,6 +108,9 @@ type CommandBusStatus struct {
 	DLQ           StreamStatus
 	Worker        ConsumerStatus
 	ProjectionLag map[string]uint64
+	// DeliveryDuplicateSuppressedTotal counts duplicate command publishes that were
+	// suppressed by JetStream idempotency semantics.
+	DeliveryDuplicateSuppressedTotal uint64
 }
 
 // StreamStatus contains compact JetStream stream metadata.

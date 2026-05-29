@@ -15,6 +15,7 @@ func (b *Bus) Status(ctx context.Context) (swarm.CommandBusStatus, error) {
 		JetStream:     true,
 		ProjectionLag: map[string]uint64{},
 	}
+	status.DeliveryDuplicateSuppressedTotal = b.duplicateSuppressed.Load()
 	if b.conn != nil && !b.conn.IsClosed() {
 		status.Running = true
 		status.ClientURL = b.conn.ConnectedUrl()

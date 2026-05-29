@@ -380,6 +380,8 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 		fmt.Fprintf(&out, "%d", sumProjectionLag(status.ProjectionLag))
 		out.WriteString("\n- projection_lag_seconds: ")
 		fmt.Fprintf(&out, "%d", projectionLagSeconds(status.ProjectionLag))
+		out.WriteString("\n- delivery_duplicate_suppressed_total: ")
+		fmt.Fprintf(&out, "%d", status.DeliveryDuplicateSuppressedTotal)
 	} else {
 		out.WriteString("\n- unavailable")
 	}

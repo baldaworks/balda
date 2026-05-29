@@ -190,6 +190,7 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentContains(t, tgClient, "dlq_messages_total: 0")
 	assertLastSentContains(t, tgClient, "projection_lag_total: 2")
 	assertLastSentContains(t, tgClient, "projection_lag_seconds: 2")
+	assertLastSentContains(t, tgClient, "delivery_duplicate_suppressed_total: 0")
 
 	if err := handler.onCommand(ctx, newCommandEvent("mailbox", "status", 101, 9001, nil)); err != nil {
 		t.Fatalf("/mailbox status error = %v", err)
