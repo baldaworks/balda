@@ -459,7 +459,16 @@ func formatTaskExecutorPrompt(payload taskAgentCommandPayload) string {
 		out.WriteString("\n\nReviewer feedback from previous iteration:\n")
 		out.WriteString(feedback)
 	}
-	out.WriteString("\n\nDo the work now. Return a concise summary with changed files and verification evidence.")
+	out.WriteString("\n\nExecutor contract:")
+	out.WriteString("\n- Execute the plan against the current workspace state.")
+	out.WriteString("\n- If reviewer feedback is present, address it explicitly.")
+	out.WriteString("\n- If blocked, state the blocker and next required input.")
+	out.WriteString("\n- Response format:")
+	out.WriteString("\nverdict: done|blocked")
+	out.WriteString("\nsummary: <what was changed>")
+	out.WriteString("\nchanged_files: <paths or 'none'>")
+	out.WriteString("\nverification: <commands/results or 'not run'>")
+	out.WriteString("\nrisks: <open issues or 'none'>")
 	return out.String()
 }
 

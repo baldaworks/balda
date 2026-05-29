@@ -451,9 +451,9 @@ func TestTaskAgentActorHandleRuntimeBootstrapFailureDoesNotReserveRunningStep(t 
 	}
 
 	runtimeBuilder := &failingTaskAgentRuntimeBuilder{
-		t:           t,
-		failBuilds:  1,
-		errOnBuild:  errors.New("runtime bootstrap failed"),
+		t:          t,
+		failBuilds: 1,
+		errOnBuild: errors.New("runtime bootstrap failed"),
 	}
 	actor := &taskAgentActor{
 		sessions:       manager,
@@ -493,6 +493,57 @@ func TestTaskAgentActorHandleRuntimeBootstrapFailureDoesNotReserveRunningStep(t 
 	}
 	if strings.TrimSpace(resultPayload.AgentResult.ADKSessionID) != runtimeBuilder.cfgs[1].SessionID {
 		t.Fatalf("result adk_session_id = %q, want %q", resultPayload.AgentResult.ADKSessionID, runtimeBuilder.cfgs[1].SessionID)
+	}
+}
+
+func TestFormatTaskExecutorPromptIncludesExecutionContractAndContext(t *testing.T) {
+	payload := taskAgentCommandPayload{
+		Role:             taskAgentRoleExecutor,
+		Iteration:        2,
+		MaxIterations:    5,
+		Objective:        "Ship actorlayer runtime cutover.",
+		Plan:             "1) add engine adapter\n2) run tests",
+		PlannerOutput:    "plan details and guardrails",
+		ReviewerFeedback: "fix flaky test assertions",
+	}
+
+	got := formatTaskExecutorPrompt(payload)
+
+	for _, want := range []string{
+		"Task objective:\nShip actorlayer runtime cutover.",
+		"Iteration: 2/5",
+		"Current plan:\n1) add engine adapter\n2) run tests",
+		"Planner output:\nplan details and guardrails",
+		"Reviewer feedback from previous iteration:\nfix flaky test assertions",
+		"Executor contract:",
+		"verdict: done|blocked",
+		"summary: <what was changed>",
+		"changed_files: <paths or 'none'>",
+		"verification: <commands/results or 'not run'>",
+		"risks: <open issues or 'none'>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatTaskExecutorPrompt() missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatTaskExecutorPromptOmitsOptionalDuplicatePlannerOutput(t *testing.T) {
+	payload := taskAgentCommandPayload{
+		Role:          taskAgentRoleExecutor,
+		Iteration:     1,
+		MaxIterations: 3,
+		Objective:     "Fix the failing test.",
+		Plan:          "same plan text",
+		PlannerOutput: "same plan text",
+	}
+
+	got := formatTaskExecutorPrompt(payload)
+	if strings.Contains(got, "Planner output:") {
+		t.Fatalf("formatTaskExecutorPrompt() = %q, want planner output section omitted when duplicate", got)
+	}
+	if strings.Contains(got, "Reviewer feedback from previous iteration:") {
+		t.Fatalf("formatTaskExecutorPrompt() = %q, want reviewer feedback section omitted when empty", got)
 	}
 }
 
