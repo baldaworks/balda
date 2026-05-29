@@ -51,6 +51,8 @@ const (
 
 var configIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+const defaultWorkspaceSessionsDirName = "sessions"
+
 // App creates a new fx.App for the Balda bot with the provided configuration.
 func App(
 	cfg Config,
@@ -114,6 +116,10 @@ func Module(
 		return fx.Module("balda", fx.Error(err))
 	}
 	if err := validateLegacyRuntimeModes(cfg.Balda); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	workspaceSessionsDir, err := resolveWorkspaceSessionsDir(cfg.Balda.Workspace.SessionsDir)
+	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 	scheduledTaskSchedulerConfig := buildScheduledTaskSchedulerConfig(cfg.Balda)
@@ -225,7 +231,7 @@ func Module(
 					if err != nil {
 						return false, err
 					}
-					warnLegacyWorkspaceDir(logger, workingDir, stateDir, enabled)
+					warnLegacyWorkspaceDir(logger, workingDir, stateDir, workspaceSessionsDir, enabled)
 					logger.Info().
 						Str("workspace_mode", string(mode)).
 						Bool("workspace_enabled", enabled).
@@ -235,6 +241,12 @@ func Module(
 					return enabled, nil
 				},
 				fx.ResultTags(`name:"balda_workspace_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return workspaceSessionsDir },
+				fx.ResultTags(`name:"balda_workspace_sessions_dir"`),
 			),
 		),
 		fx.Provide(
@@ -444,13 +456,17 @@ func openBaldaStateProvider(ctx context.Context, stateDir string) (baldastate.Pr
 	return provider, nil
 }
 
-func warnLegacyWorkspaceDir(logger zerolog.Logger, workingDir, stateDir string, workspaceEnabled bool) {
+func warnLegacyWorkspaceDir(logger zerolog.Logger, workingDir, stateDir, sessionsDir string, workspaceEnabled bool) {
 	if !workspaceEnabled {
 		return
 	}
+	dirName := strings.TrimSpace(sessionsDir)
+	if dirName == "" {
+		dirName = defaultWorkspaceSessionsDirName
+	}
 
 	legacyDir := filepath.Join(workingDir, ".norma", "balda-sessions")
-	newDir := filepath.Join(stateDir, "balda-sessions")
+	newDir := filepath.Join(stateDir, dirName)
 	if filepath.Clean(legacyDir) == filepath.Clean(newDir) {
 		return
 	}
@@ -467,6 +483,20 @@ func warnLegacyWorkspaceDir(logger zerolog.Logger, workingDir, stateDir string, 
 		Str("legacy_workspace_dir", legacyDir).
 		Str("workspace_dir", newDir).
 		Msg("legacy balda workspace directory detected and ignored")
+}
+
+func resolveWorkspaceSessionsDir(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return defaultWorkspaceSessionsDirName, nil
+	}
+	if strings.Contains(trimmed, "/") || strings.Contains(trimmed, "\\") || filepath.IsAbs(trimmed) {
+		return "", fmt.Errorf("invalid balda.workspace.sessions_dir %q: expected a single directory name", raw)
+	}
+	if !configIdentifierPattern.MatchString(trimmed) {
+		return "", fmt.Errorf("invalid balda.workspace.sessions_dir %q: must match %q", raw, configIdentifierPattern.String())
+	}
+	return trimmed, nil
 }
 
 func resolveWorkspaceBaseBranch(

@@ -176,6 +176,8 @@ balda:
     # Base branch used for workspace branching/import/export.
     # If empty, balda resolves from current HEAD branch at startup.
     base_branch: ""
+    # Workspace directory name under balda.state_dir used for per-session worktrees.
+    sessions_dir: "sessions"
 
   # Extra MCP server IDs (from runtime.mcp_servers) injected into every balda-started session.
   # Effective MCP IDs are: bundled default `balda` + agent mcp_servers + balda.mcp_servers.

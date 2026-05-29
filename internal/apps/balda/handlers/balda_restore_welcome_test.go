@@ -183,7 +183,7 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 	locator := baldatelegram.NewLocator(9001, topicID)
 	branchName := "norma/balda/" + locator.SessionID
 	stateDir := t.TempDir()
-	workspaceDir := filepath.Join(stateDir, "balda-sessions", locator.SessionID)
+	workspaceDir := filepath.Join(stateDir, "sessions", locator.SessionID)
 	runBaldaRestoreGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 
 	writeBaldaRestoreFile(t, filepath.Join(workspaceDir, "conflict.txt"), testBaldaBranchContent)

@@ -99,8 +99,9 @@ type LoggerConfig struct {
 
 // WorkspaceConfig controls balda Git workspace behavior.
 type WorkspaceConfig struct {
-	Mode       string `mapstructure:"mode"`
-	BaseBranch string `mapstructure:"base_branch"`
+	Mode        string `mapstructure:"mode"`
+	BaseBranch  string `mapstructure:"base_branch"`
+	SessionsDir string `mapstructure:"sessions_dir"`
 }
 
 type SessionsConfig struct {

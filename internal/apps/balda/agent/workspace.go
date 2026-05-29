@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,11 @@ import (
 	"github.com/normahq/balda/internal/git"
 	"github.com/rs/zerolog/log"
 )
+
+const defaultWorkspaceSessionsDir = "sessions"
+
+// ErrWorkspaceCollision marks workspace path/branch collisions.
+var ErrWorkspaceCollision = errors.New("workspace collision")
 
 // WorkspaceManager manages git worktrees for balda sessions.
 type WorkspaceManager struct {
@@ -27,11 +33,41 @@ type EnsureWorkspaceResult struct {
 
 // NewWorkspaceManager creates a WorkspaceManager for the given working directory.
 func NewWorkspaceManager(workingDir, stateDir, baseBranch string) *WorkspaceManager {
+	return NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baseBranch, "")
+}
+
+// NewWorkspaceManagerWithSessionsDir creates a WorkspaceManager with a custom sessions dir name.
+func NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baseBranch, sessionsDir string) *WorkspaceManager {
+	dirName := strings.TrimSpace(sessionsDir)
+	if dirName == "" {
+		dirName = defaultWorkspaceSessionsDir
+	}
 	return &WorkspaceManager{
 		workingDir:    workingDir,
-		workspacesDir: filepath.Join(strings.TrimSpace(stateDir), "balda-sessions"),
+		workspacesDir: filepath.Join(strings.TrimSpace(stateDir), dirName),
 		baseBranch:    strings.TrimSpace(baseBranch),
 	}
+}
+
+// CanonicalWorkspaceDir returns the canonical workspace directory path for a session key.
+func (m *WorkspaceManager) CanonicalWorkspaceDir(key string) string {
+	return filepath.Join(m.workspacesDir, key)
+}
+
+// IsCanonicalWorkspacePath reports whether a path matches the canonical workspace directory for a key.
+func (m *WorkspaceManager) IsCanonicalWorkspacePath(key, path string) bool {
+	expected := filepath.Clean(m.CanonicalWorkspaceDir(key))
+	actual := filepath.Clean(strings.TrimSpace(path))
+	return actual != "" && actual == expected
+}
+
+// ForceRemountCanonicalWorkspace forcefully clears the canonical workspace path and remounts it.
+func (m *WorkspaceManager) ForceRemountCanonicalWorkspace(ctx context.Context, key, branchName string) (EnsureWorkspaceResult, error) {
+	workspaceDir := m.CanonicalWorkspaceDir(key)
+	if err := m.forceCleanupWorkspacePath(ctx, workspaceDir); err != nil {
+		return EnsureWorkspaceResult{Dir: workspaceDir}, err
+	}
+	return m.EnsureWorkspace(ctx, key, branchName, workspaceDir)
 }
 
 // EnsureWorkspace creates or returns an existing workspace directory.
@@ -251,24 +287,43 @@ func (m *WorkspaceManager) recreateWorkspaceWithoutSync(ctx context.Context, wor
 	return result, nil
 }
 
+func (m *WorkspaceManager) forceCleanupWorkspacePath(ctx context.Context, workspaceDir string) error {
+	trimmedDir := strings.TrimSpace(workspaceDir)
+	if trimmedDir == "" {
+		return nil
+	}
+	if _, err := os.Stat(trimmedDir); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("stat workspace dir %q: %w", trimmedDir, err)
+	}
+
+	_ = git.RemoveWorktree(ctx, m.workingDir, trimmedDir)
+	if err := os.RemoveAll(trimmedDir); err != nil {
+		return fmt.Errorf("remove workspace dir %q: %w", trimmedDir, err)
+	}
+	return nil
+}
+
 func validateWorkspaceBranch(ctx context.Context, workspaceDir, expectedBranch string) error {
 	branch := strings.TrimSpace(expectedBranch)
 	if branch == "" {
 		return nil
 	}
 	if !git.Available(ctx, workspaceDir) {
-		return fmt.Errorf("workspace collision: %q exists but is not a git repository", workspaceDir)
+		return fmt.Errorf("%w: %q exists but is not a git repository", ErrWorkspaceCollision, workspaceDir)
 	}
 	currentBranch, err := git.CurrentBranch(ctx, workspaceDir)
 	if err != nil {
-		return fmt.Errorf("workspace collision: resolve branch for %q: %w", workspaceDir, err)
+		return fmt.Errorf("%w: resolve branch for %q: %w", ErrWorkspaceCollision, workspaceDir, err)
 	}
 	currentBranch = strings.TrimSpace(currentBranch)
 	if currentBranch == "" || currentBranch == branch {
 		return nil
 	}
 	return fmt.Errorf(
-		"workspace collision: %q is already mounted for branch %q; expected %q",
+		"%w: %q is already mounted for branch %q; expected %q",
+		ErrWorkspaceCollision,
 		workspaceDir,
 		currentBranch,
 		branch,

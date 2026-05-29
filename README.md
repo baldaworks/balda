@@ -276,6 +276,7 @@ balda:
   workspace:
     mode: "auto"
     base_branch: ""
+    sessions_dir: "sessions"
   mcp_servers: []
   global_instruction: ""
 ```
@@ -303,6 +304,7 @@ Common settings:
 - `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
+- `balda.workspace.sessions_dir`: directory name under `balda.state_dir` used for per-session worktrees (defaults to `sessions`).
 - `balda.mcp_servers`: extra MCP server IDs added to every Balda-started session.
 
 ## MCP Servers

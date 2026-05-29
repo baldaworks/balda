@@ -763,6 +763,150 @@ func TestRestoreSession_FailsWhenPersistedWorkspaceBranchMissing(t *testing.T) {
 	}
 }
 
+func TestRestoreSession_RehomesLegacyWorkspacePathToCanonicalPath(t *testing.T) {
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	initGitRepo(t, ctx, workingDir)
+
+	writeFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
+	runGit(t, ctx, workingDir, "add", "seed.txt")
+	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+
+	builder := &fakeAgentBuilder{}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "new-balda-provider"}
+	stateDir := t.TempDir()
+	locator := testTelegramLocator(22, 101)
+	branchName := "norma/relay/" + locator.SessionID
+	legacyWorkspaceDir := filepath.Join(stateDir, "relay-sessions", locator.SessionID)
+	canonicalWorkspaceDir := filepath.Join(stateDir, "sessions", locator.SessionID)
+	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, legacyWorkspaceDir, "HEAD")
+	t.Cleanup(func() {
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", legacyWorkspaceDir)
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", canonicalWorkspaceDir)
+	})
+
+	store := &fakeSessionStore{
+		recordsByAddress: map[string]baldastate.SessionRecord{
+			sessionAddressKey(baldastate.ChannelTypeTelegram, locator.AddressKey): {
+				SessionID:    locator.SessionID,
+				ChannelType:  baldastate.ChannelTypeTelegram,
+				AddressKey:   locator.AddressKey,
+				AddressJSON:  locator.AddressJSON,
+				AgentName:    "persisted",
+				WorkspaceDir: legacyWorkspaceDir,
+				BranchName:   branchName,
+				Status:       baldastate.SessionStatusActive,
+			},
+		},
+	}
+
+	m := &Manager{
+		baldaProviderName: "new-balda-provider",
+		runtimeManager:    runtimeManager,
+		agentBuilder:      builder,
+		workingDir:        workingDir,
+		workspaces:        baldaagent.NewWorkspaceManager(workingDir, stateDir, currentBranch(t, ctx, workingDir)),
+		workspaceEnabled:  true,
+		logger:            zerolog.Nop(),
+		sessions:          make(map[string]*TopicSession),
+		sessionStore:      store,
+	}
+
+	ts, err := m.RestoreSession(ctx, SessionContext{
+		Locator: locator,
+		UserID:  "tg-201",
+	})
+	if err != nil {
+		t.Fatalf("RestoreSession() error = %v", err)
+	}
+
+	if got := ts.GetWorkspaceDir(); got != canonicalWorkspaceDir {
+		t.Fatalf("workspace dir = %q, want %q", got, canonicalWorkspaceDir)
+	}
+	if got := ts.GetBranchName(); got != branchName {
+		t.Fatalf("branch name = %q, want %q", got, branchName)
+	}
+	if head := strings.TrimSpace(runGit(t, ctx, canonicalWorkspaceDir, "rev-parse", "--abbrev-ref", "HEAD")); head != branchName {
+		t.Fatalf("canonical workspace HEAD = %q, want %q", head, branchName)
+	}
+
+	if len(store.upsertedRecords) == 0 {
+		t.Fatal("session metadata was not persisted after restore")
+	}
+	gotRecord := store.upsertedRecords[len(store.upsertedRecords)-1]
+	if gotRecord.WorkspaceDir != canonicalWorkspaceDir {
+		t.Fatalf("persisted workspace_dir = %q, want %q", gotRecord.WorkspaceDir, canonicalWorkspaceDir)
+	}
+}
+
+func TestRestoreSession_ForceRemountsCanonicalWorkspaceAfterCollision(t *testing.T) {
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	initGitRepo(t, ctx, workingDir)
+
+	writeFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
+	runGit(t, ctx, workingDir, "add", "seed.txt")
+	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+
+	builder := &fakeAgentBuilder{}
+	runtimeManager := &fakeBaldaRuntimeManager{providerID: "new-balda-provider"}
+	stateDir := t.TempDir()
+	locator := testTelegramLocator(23, 102)
+	branchName := "norma/relay/" + locator.SessionID
+	legacyWorkspaceDir := filepath.Join(stateDir, "relay-sessions", locator.SessionID)
+	canonicalWorkspaceDir := filepath.Join(stateDir, "sessions", locator.SessionID)
+	conflictBranch := "feature/conflict-" + locator.SessionID
+
+	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, legacyWorkspaceDir, "HEAD")
+	runGit(t, ctx, workingDir, "worktree", "add", "-b", conflictBranch, canonicalWorkspaceDir, "HEAD")
+	t.Cleanup(func() {
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", legacyWorkspaceDir)
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", canonicalWorkspaceDir)
+	})
+
+	store := &fakeSessionStore{
+		recordsByAddress: map[string]baldastate.SessionRecord{
+			sessionAddressKey(baldastate.ChannelTypeTelegram, locator.AddressKey): {
+				SessionID:    locator.SessionID,
+				ChannelType:  baldastate.ChannelTypeTelegram,
+				AddressKey:   locator.AddressKey,
+				AddressJSON:  locator.AddressJSON,
+				AgentName:    "persisted",
+				WorkspaceDir: legacyWorkspaceDir,
+				BranchName:   branchName,
+				Status:       baldastate.SessionStatusActive,
+			},
+		},
+	}
+
+	m := &Manager{
+		baldaProviderName: "new-balda-provider",
+		runtimeManager:    runtimeManager,
+		agentBuilder:      builder,
+		workingDir:        workingDir,
+		workspaces:        baldaagent.NewWorkspaceManager(workingDir, stateDir, currentBranch(t, ctx, workingDir)),
+		workspaceEnabled:  true,
+		logger:            zerolog.Nop(),
+		sessions:          make(map[string]*TopicSession),
+		sessionStore:      store,
+	}
+
+	ts, err := m.RestoreSession(ctx, SessionContext{
+		Locator: locator,
+		UserID:  "tg-201",
+	})
+	if err != nil {
+		t.Fatalf("RestoreSession() error = %v", err)
+	}
+
+	if got := ts.GetWorkspaceDir(); got != canonicalWorkspaceDir {
+		t.Fatalf("workspace dir = %q, want %q", got, canonicalWorkspaceDir)
+	}
+	if head := strings.TrimSpace(runGit(t, ctx, canonicalWorkspaceDir, "rev-parse", "--abbrev-ref", "HEAD")); head != branchName {
+		t.Fatalf("canonical workspace HEAD = %q, want %q", head, branchName)
+	}
+}
+
 func TestTakeStartupNotice_ReturnsAndClears(t *testing.T) {
 	m := &Manager{
 		sessions: map[string]*TopicSession{
@@ -809,9 +953,11 @@ type fakeSessionStore struct {
 	recordsByAddress map[string]baldastate.SessionRecord
 	recordsByID      map[string]baldastate.SessionRecord
 	listRecords      []baldastate.SessionRecord
+	upsertedRecords  []baldastate.SessionRecord
 }
 
-func (f *fakeSessionStore) Upsert(context.Context, baldastate.SessionRecord) error {
+func (f *fakeSessionStore) Upsert(_ context.Context, record baldastate.SessionRecord) error {
+	f.upsertedRecords = append(f.upsertedRecords, record)
 	return nil
 }
 
@@ -883,6 +1029,12 @@ func runGit(t *testing.T, ctx context.Context, dir string, args ...string) strin
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return string(out)
+}
+
+func runGitAllowError(ctx context.Context, dir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	return cmd.Run()
 }
 
 func currentBranch(t *testing.T, ctx context.Context, dir string) string {

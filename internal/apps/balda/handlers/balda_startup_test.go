@@ -257,9 +257,11 @@ func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testin
 	locator := baldatelegram.NewLocator(9001, 0)
 	branchName := "persisted/owner-branch"
 	workspaceDir := filepath.Join(stateDir, "persisted-owner-workspace")
+	canonicalWorkspaceDir := filepath.Join(stateDir, "sessions", locator.SessionID)
 	runBaldaRestoreGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 	t.Cleanup(func() {
 		_ = runBaldaRestoreGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
+		_ = runBaldaRestoreGitAllowError(ctx, workingDir, "worktree", "remove", "--force", canonicalWorkspaceDir)
 	})
 
 	store := &fakeBaldaRestoreSessionStore{
@@ -323,8 +325,8 @@ func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testin
 	if got := ts.GetBranchName(); got != branchName {
 		t.Fatalf("branch name = %q, want %q", got, branchName)
 	}
-	if got := ts.GetWorkspaceDir(); got != workspaceDir {
-		t.Fatalf("workspace dir = %q, want %q", got, workspaceDir)
+	if got := ts.GetWorkspaceDir(); got != canonicalWorkspaceDir {
+		t.Fatalf("workspace dir = %q, want %q", got, canonicalWorkspaceDir)
 	}
 }
 

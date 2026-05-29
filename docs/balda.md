@@ -506,6 +506,9 @@ session-start snapshot. New or restored sessions read the latest file.
   - `balda init` detects current HEAD branch and writes it when available
   - if empty, balda resolves base branch from current HEAD at startup
   - `balda.workspace.export` requires main repo to be on this branch
+- `balda.workspace.sessions_dir`: directory name under `balda.state_dir` used for per-session worktrees
+  - defaults to `sessions`
+  - old persisted workspace paths are rehomed to this canonical root on restore
 - Balda is Beads-independent by default and does not auto-start bundled `norma.tasks` MCP.
 
 ## Session Model
@@ -942,7 +945,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 
 - Workspace allocation is session-scoped:
   - session branch name: `norma/balda/<session_id>`
-  - workspace dir root: `${balda.state_dir}/balda-sessions/<session_id>`
+  - workspace dir root: `${balda.state_dir}/<balda.workspace.sessions_dir>/<session_id>` (defaults to `sessions`)
 - Allocation lifecycle:
   - on session create/restore in workspace mode, Balda ensures a dedicated worktree at that path
   - if the workspace path already exists with a different branch binding, Balda rejects it as a workspace collision

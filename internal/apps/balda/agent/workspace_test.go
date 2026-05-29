@@ -135,7 +135,7 @@ func TestWorkspaceImportUsesCurrentHeadBranchNotHardcodedMaster(t *testing.T) {
 	}
 }
 
-func TestEnsureWorkspace_UsesStateDirBaldaSessionsRoot(t *testing.T) {
+func TestEnsureWorkspace_UsesStateDirSessionsRoot(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -160,7 +160,7 @@ func TestEnsureWorkspace_UsesStateDirBaldaSessionsRoot(t *testing.T) {
 		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
 	})
 
-	want := filepath.Join(stateDir, "balda-sessions", sessionID)
+	want := filepath.Join(stateDir, "sessions", sessionID)
 	if workspaceDir != want {
 		t.Fatalf("workspaceDir = %q, want %q", workspaceDir, want)
 	}

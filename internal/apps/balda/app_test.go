@@ -607,6 +607,32 @@ func TestResolveWorkspaceEnabledForApp_OnRemainsEnabledForGitRepo(t *testing.T) 
 	}
 }
 
+func TestResolveWorkspaceSessionsDir_DefaultWhenEmpty(t *testing.T) {
+	got, err := resolveWorkspaceSessionsDir("")
+	if err != nil {
+		t.Fatalf("resolveWorkspaceSessionsDir() error = %v", err)
+	}
+	if got != "sessions" {
+		t.Fatalf("resolveWorkspaceSessionsDir() = %q, want sessions", got)
+	}
+}
+
+func TestResolveWorkspaceSessionsDir_RejectsInvalidPath(t *testing.T) {
+	if _, err := resolveWorkspaceSessionsDir("custom/sessions"); err == nil {
+		t.Fatal("resolveWorkspaceSessionsDir() error = nil, want non-nil")
+	}
+}
+
+func TestResolveWorkspaceSessionsDir_AcceptsIdentifier(t *testing.T) {
+	got, err := resolveWorkspaceSessionsDir("balda_sessions")
+	if err != nil {
+		t.Fatalf("resolveWorkspaceSessionsDir() error = %v", err)
+	}
+	if got != "balda_sessions" {
+		t.Fatalf("resolveWorkspaceSessionsDir() = %q, want balda_sessions", got)
+	}
+}
+
 func initGitRepoForBalda(t *testing.T, ctx context.Context, dir string) {
 	t.Helper()
 	runGitForBalda(t, ctx, dir, "init")

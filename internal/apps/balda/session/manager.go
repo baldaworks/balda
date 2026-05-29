@@ -72,18 +72,19 @@ type Manager struct {
 type ManagerParams struct {
 	fx.In
 
-	LC                 fx.Lifecycle
-	AgentBuilder       *baldaagent.Builder
-	RuntimeManager     *baldaagent.RuntimeManager
-	BaldaMCPServerIDs  []string `name:"balda_mcp_servers"`
-	BaldaProviderID    string   `name:"balda_provider"`
-	WorkingDir         string
-	StateDir           string `name:"balda_state_dir"`
-	WorkspaceEnabled   bool   `name:"balda_workspace_enabled"`
-	WorkspaceBaseRef   string `name:"balda_workspace_base_branch"`
-	SessionsPersistent bool   `name:"balda_sessions_persistent"`
-	StateProvider      baldastate.Provider
-	Logger             zerolog.Logger
+	LC                   fx.Lifecycle
+	AgentBuilder         *baldaagent.Builder
+	RuntimeManager       *baldaagent.RuntimeManager
+	BaldaMCPServerIDs    []string `name:"balda_mcp_servers"`
+	BaldaProviderID      string   `name:"balda_provider"`
+	WorkingDir           string
+	StateDir             string `name:"balda_state_dir"`
+	WorkspaceEnabled     bool   `name:"balda_workspace_enabled"`
+	WorkspaceSessionsDir string `name:"balda_workspace_sessions_dir"`
+	WorkspaceBaseRef     string `name:"balda_workspace_base_branch"`
+	SessionsPersistent   bool   `name:"balda_sessions_persistent"`
+	StateProvider        baldastate.Provider
+	Logger               zerolog.Logger
 }
 
 // NewManager creates a session Manager.
@@ -98,7 +99,7 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		baldaMCPServerIDs:  append([]string(nil), p.BaldaMCPServerIDs...),
 		baldaProviderName:  strings.TrimSpace(p.BaldaProviderID),
 		workingDir:         p.WorkingDir,
-		workspaces:         baldaagent.NewWorkspaceManager(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef),
+		workspaces:         baldaagent.NewWorkspaceManagerWithSessionsDir(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef, p.WorkspaceSessionsDir),
 		workspaceEnabled:   p.WorkspaceEnabled,
 		workspaceBaseRef:   p.WorkspaceBaseRef,
 		sessionsPersistent: p.SessionsPersistent,
@@ -216,7 +217,9 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	startupNotice := ""
 	if m.workspaceEnabled {
 		branchName = m.SessionBranchName(sessionID)
-		existingPath := ""
+		canonicalPath := m.workspaces.CanonicalWorkspaceDir(sessionID)
+		existingPath := canonicalPath
+		persistedWorkspacePath := ""
 		if persisted != nil {
 			if persistedBranch := strings.TrimSpace(persisted.BranchName); persistedBranch != "" {
 				branchName = persistedBranch
@@ -224,13 +227,35 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 					return fmt.Errorf("persisted workspace branch %q not found", branchName)
 				}
 			}
-			existingPath = strings.TrimSpace(persisted.WorkspaceDir)
+			persistedWorkspacePath = strings.TrimSpace(persisted.WorkspaceDir)
+			if persistedWorkspacePath != "" && m.workspaces.IsCanonicalWorkspacePath(sessionID, persistedWorkspacePath) {
+				existingPath = persistedWorkspacePath
+			} else if persistedWorkspacePath != "" {
+				m.logger.Warn().
+					Str("session_id", sessionID).
+					Str("persisted_workspace", persistedWorkspacePath).
+					Str("canonical_workspace", canonicalPath).
+					Str("branch", branchName).
+					Msg("persisted workspace path is legacy/non-canonical; using canonical workspace path")
+			}
 		}
 
 		workspace, err := m.workspaces.EnsureWorkspace(ctx, sessionID, branchName, existingPath)
 		if err != nil {
-			m.logger.Error().Err(err).Str("session_id", sessionID).Msg("failed to create workspace")
-			return fmt.Errorf("create workspace: %w", err)
+			if errors.Is(err, baldaagent.ErrWorkspaceCollision) {
+				m.logger.Warn().
+					Err(err).
+					Str("session_id", sessionID).
+					Str("persisted_workspace", persistedWorkspacePath).
+					Str("canonical_workspace", canonicalPath).
+					Str("branch", branchName).
+					Msg("workspace collision detected; force-remounting canonical workspace path")
+				workspace, err = m.workspaces.ForceRemountCanonicalWorkspace(ctx, sessionID, branchName)
+			}
+			if err != nil {
+				m.logger.Error().Err(err).Str("session_id", sessionID).Msg("failed to create workspace")
+				return fmt.Errorf("create workspace: %w", err)
+			}
 		}
 		workspaceDir = workspace.Dir
 		if workspace.SyncSkipped {
