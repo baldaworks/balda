@@ -27,6 +27,8 @@ const (
 	taskAgentRoleExecutor = swarm.AgentNameExecutor
 	taskAgentRoleReviewer = swarm.AgentNameReviewer
 	taskAgentRoleMemory   = swarm.AgentNameMemory
+
+	taskResultSchemaVersionV1 = "task_result.v1"
 )
 
 type taskEnvelopePayload struct {
@@ -98,6 +100,16 @@ type taskDeliveryPayload struct {
 	TaskID  string                      `json:"task_id"`
 	Locator baldasession.SessionLocator `json:"locator"`
 	Text    string                      `json:"text"`
+}
+
+type taskResultPayloadV1 struct {
+	SchemaVersion  string `json:"schema_version"`
+	GoalReached    bool   `json:"goal_reached"`
+	Iterations     int    `json:"iterations"`
+	PlannerOutput  string `json:"planner_output,omitempty"`
+	ExecutorOutput string `json:"executor_output,omitempty"`
+	ReviewerOutput string `json:"reviewer_output,omitempty"`
+	ReviewerNotes  string `json:"reviewer_feedback,omitempty"`
 }
 
 type goalTaskPlan struct {
@@ -993,13 +1005,14 @@ func reviewerPassed(text string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(text)), "verdict: pass")
 }
 
-func taskResultPayload(payload taskAgentResultPayload, goalReached bool) map[string]any {
-	return map[string]any{
-		"goal_reached":      goalReached,
-		"iterations":        payload.Iteration,
-		"planner_output":    redactSecrets(strings.TrimSpace(payload.PlannerOutput)),
-		"executor_output":   redactSecrets(strings.TrimSpace(payload.ExecutorOutput)),
-		"reviewer_output":   redactSecrets(strings.TrimSpace(payload.Text)),
-		"reviewer_feedback": redactSecrets(strings.TrimSpace(payload.ReviewerFeedback)),
+func taskResultPayload(payload taskAgentResultPayload, goalReached bool) taskResultPayloadV1 {
+	return taskResultPayloadV1{
+		SchemaVersion:  taskResultSchemaVersionV1,
+		GoalReached:    goalReached,
+		Iterations:     payload.Iteration,
+		PlannerOutput:  redactSecrets(strings.TrimSpace(payload.PlannerOutput)),
+		ExecutorOutput: redactSecrets(strings.TrimSpace(payload.ExecutorOutput)),
+		ReviewerOutput: redactSecrets(strings.TrimSpace(payload.Text)),
+		ReviewerNotes:  redactSecrets(strings.TrimSpace(payload.ReviewerFeedback)),
 	}
 }

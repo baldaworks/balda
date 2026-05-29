@@ -684,21 +684,28 @@ func TestTaskResultPayloadRedactsSecrets(t *testing.T) {
 		ReviewerFeedback: "password=raw",
 	}, true)
 
-	assertRedacted := func(key string) {
+	if got.SchemaVersion != taskResultSchemaVersionV1 {
+		t.Fatalf("SchemaVersion = %q, want %q", got.SchemaVersion, taskResultSchemaVersionV1)
+	}
+	if !got.GoalReached {
+		t.Fatal("GoalReached = false, want true")
+	}
+
+	assertRedacted := func(name string, value string) {
 		t.Helper()
-		value := strings.TrimSpace(got[key].(string))
+		value = strings.TrimSpace(value)
 		if !strings.Contains(value, "[REDACTED]") {
-			t.Fatalf("%s = %q, want redacted marker", key, value)
+			t.Fatalf("%s = %q, want redacted marker", name, value)
 		}
 		if strings.Contains(value, "raw") || strings.Contains(value, "super-secret") {
-			t.Fatalf("%s = %q, contains unredacted secret", key, value)
+			t.Fatalf("%s = %q, contains unredacted secret", name, value)
 		}
 	}
 
-	assertRedacted("planner_output")
-	assertRedacted("executor_output")
-	assertRedacted("reviewer_output")
-	assertRedacted("reviewer_feedback")
+	assertRedacted("planner_output", got.PlannerOutput)
+	assertRedacted("executor_output", got.ExecutorOutput)
+	assertRedacted("reviewer_output", got.ReviewerOutput)
+	assertRedacted("reviewer_feedback", got.ReviewerNotes)
 }
 
 func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, *swarm.Coordinator, *swarm.TaskService, *swarm.AgentAllocator) {
