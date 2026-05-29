@@ -239,7 +239,7 @@ func (r *Runtime) HandleCommand(ctx context.Context, cmd CommandMessage) error {
 }
 
 func (r *Runtime) LaneStatus() RuntimeLaneStatus {
-	if r == nil {
+	if r == nil || r.engine == nil {
 		return RuntimeLaneStatus{}
 	}
 	r.laneMu.Lock()
