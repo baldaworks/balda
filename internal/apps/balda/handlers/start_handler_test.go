@@ -299,12 +299,12 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 		if len(balda.calls) != 1 {
 			t.Fatalf("ActivateOwner calls = %d, want 1", len(balda.calls))
 		}
-			if got := balda.calls[0]; got.ownerID != 101 || got.chatID != 9001 {
-				t.Fatalf("ActivateOwner call = %+v, want owner=101 chat=9001", got)
-			}
-			assertLastSentContains(t, tgClient, "Congratulations")
-			assertLastSentNotContains(t, tgClient, "Balda mode is active.")
-		})
+		if got := balda.calls[0]; got.ownerID != 101 || got.chatID != 9001 {
+			t.Fatalf("ActivateOwner call = %+v, want owner=101 chat=9001", got)
+		}
+		assertLastSentContains(t, tgClient, "Congratulations")
+		assertLastSentNotContains(t, tgClient, "Balda mode is active.")
+	})
 
 	t.Run("accepts owner deeplink payload as owner bootstrap", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
@@ -319,12 +319,12 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 		if !store.HasOwner() {
 			t.Fatal("owner not registered")
 		}
-			if len(balda.calls) != 1 {
-				t.Fatalf("ActivateOwner calls = %d, want 1", len(balda.calls))
-			}
-			assertLastSentContains(t, tgClient, "Congratulations")
-			assertLastSentNotContains(t, tgClient, "Balda mode is active.")
-		})
+		if len(balda.calls) != 1 {
+			t.Fatalf("ActivateOwner calls = %d, want 1", len(balda.calls))
+		}
+		assertLastSentContains(t, tgClient, "Congratulations")
+		assertLastSentNotContains(t, tgClient, "Balda mode is active.")
+	})
 
 	t.Run("rejects malformed question-mark token", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
