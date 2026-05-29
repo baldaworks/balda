@@ -189,6 +189,7 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentContains(t, tgClient, "commands_redelivered_total: 0")
 	assertLastSentContains(t, tgClient, "dlq_messages_total: 0")
 	assertLastSentContains(t, tgClient, "projection_lag_total: 2")
+	assertLastSentContains(t, tgClient, "projection_lag_seconds: 2")
 
 	if err := handler.onCommand(ctx, newCommandEvent("mailbox", "status", 101, 9001, nil)); err != nil {
 		t.Fatalf("/mailbox status error = %v", err)
@@ -219,6 +220,7 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	}
 	assertLastSentContains(t, tgClient, "Projection status")
 	assertLastSentContains(t, tgClient, "BALDA_EVENT_PROJECTOR_lag: 2")
+	assertLastSentContains(t, tgClient, "projection_lag_seconds: 2")
 
 	if err := handler.onCommand(ctx, newCommandEvent("actors", "status", 101, 9001, nil)); err != nil {
 		t.Fatalf("/actors status error = %v", err)

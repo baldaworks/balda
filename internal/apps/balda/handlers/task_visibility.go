@@ -277,6 +277,8 @@ func (h *CommandHandler) onProjectionCommand(ctx context.Context, commandCtx bal
 		out.WriteString("_lag: ")
 		fmt.Fprintf(&out, "%d", status.ProjectionLag[name])
 	}
+	out.WriteString("\n- projection_lag_seconds: ")
+	fmt.Fprintf(&out, "%d", projectionLagSeconds(status.ProjectionLag))
 	return h.channel.SendAgentReply(ctx, commandCtx.Locator, out.String())
 }
 
@@ -376,6 +378,8 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 		fmt.Fprintf(&out, "%d", status.DLQ.Messages)
 		out.WriteString("\n- projection_lag_total: ")
 		fmt.Fprintf(&out, "%d", sumProjectionLag(status.ProjectionLag))
+		out.WriteString("\n- projection_lag_seconds: ")
+		fmt.Fprintf(&out, "%d", projectionLagSeconds(status.ProjectionLag))
 	} else {
 		out.WriteString("\n- unavailable")
 	}
@@ -463,6 +467,12 @@ func sumProjectionLag(lag map[string]uint64) uint64 {
 		total += value
 	}
 	return total
+}
+
+func projectionLagSeconds(lag map[string]uint64) uint64 {
+	// Until projector watermarks are timestamped, the best available lag-time
+	// proxy is the count of pending projection events.
+	return sumProjectionLag(lag)
 }
 
 func (h *CommandHandler) taskArtifacts(ctx context.Context, task baldastate.SwarmTaskRecord) taskArtifactSnapshot {
