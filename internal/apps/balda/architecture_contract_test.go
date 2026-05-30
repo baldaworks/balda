@@ -230,6 +230,20 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
+	t.Run("unused mcp server entrypoints stay deleted", func(t *testing.T) {
+		paths := []string{
+			filepath.Clean(filepath.Join(root, "../sessionmcp/server.go")),
+			filepath.Clean(filepath.Join(root, "../workspacemcp/server.go")),
+		}
+		pattern := regexp.MustCompile(`func\s+RunHTTP?\s*\(`)
+		for _, path := range paths {
+			source := readSource(t, path)
+			if pattern.FindStringIndex(source) != nil {
+				t.Fatalf("%s still defines unused MCP server entrypoint", filepath.ToSlash(path))
+			}
+		}
+	})
+
 	t.Run("handler wiring stays package-local", func(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`type\s+StartHandlerParams\s+struct|func\s+NewStartHandler\s*\(|func\s+\(h\s+\*StartHandler\)\s+SetBaldaHandler\s*\(|func\s+NewBaldaHandler\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SetOwner\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+ActivateOwner\s*\(|func\s+NewCommandHandler\s*\(|func\s+NewUserHandler\s*\(|func\s+NewScheduledTaskScheduler\s*\(|func\s+NewInboundWebhookReceiver\s*\(|func\s+WireHandlers\s*\(`))
 		if len(matches) > 0 {

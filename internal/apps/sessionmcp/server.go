@@ -29,25 +29,6 @@ const serverInstructions = `Use this server to persist balda state in state.db.
 - balda.state.clear deletes all data owned by this server and is destructive.
 - balda.state.get_json, set_json, and merge_json are for JSON values rather than raw strings.`
 
-// Run serves the session state MCP server over stdio.
-func Run(ctx context.Context, store Store) error {
-	server, err := NewServer(store)
-	if err != nil {
-		return err
-	}
-	return server.Run(ctx, &mcp.StdioTransport{})
-}
-
-// RunHTTP serves the session state MCP server over HTTP.
-func RunHTTP(ctx context.Context, store Store, addr string) error {
-	result, err := StartHTTPServer(ctx, store, addr)
-	if err != nil {
-		return err
-	}
-	<-ctx.Done()
-	return result.Close()
-}
-
 // HTTPServerResult contains the address and cleanup function for an embedded HTTP server.
 type HTTPServerResult struct {
 	// Addr is the actual listen address (e.g., "127.0.0.1:54321").

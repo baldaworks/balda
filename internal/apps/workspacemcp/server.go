@@ -70,23 +70,6 @@ type WorkspaceService interface {
 	Export(ctx context.Context, sessionID string, commitMessage string) error
 }
 
-func Run(ctx context.Context, svc WorkspaceService) error {
-	server, err := NewServer(svc)
-	if err != nil {
-		return err
-	}
-	return server.Run(ctx, &mcp.StdioTransport{})
-}
-
-func RunHTTP(ctx context.Context, svc WorkspaceService, addr string) error {
-	result, err := StartHTTPServer(ctx, svc, addr)
-	if err != nil {
-		return err
-	}
-	<-ctx.Done()
-	return result.Close()
-}
-
 type HTTPServerResult struct {
 	Addr  string
 	Close func() error

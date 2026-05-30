@@ -359,16 +359,6 @@ func TestSharedStateAcrossStores(t *testing.T) {
 	}
 }
 
-func TestRunHTTPRequiresStore(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := RunHTTP(ctx, nil, "localhost:0")
-	if err == nil {
-		t.Fatal("RunHTTP(nil store) error = nil, want non-nil")
-	}
-}
-
 func TestStartHTTPServerStartsAndReturnsAddr(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
