@@ -10,11 +10,9 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
-	"google.golang.org/adk/runner"
 )
 
 func TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules(t *testing.T) {
@@ -42,9 +40,8 @@ func TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules(t *te
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	channel := &fakeSchedulerChannel{}
 	bus := &recordingHandlerCommandBus{}
-	scheduler := newSchedulerForTest(t, store, bus, channel, now)
+	scheduler := newSchedulerForTest(t, store, bus, now)
 
 	if err := scheduler.dispatchTask(ctx, record, now); err != nil {
 		t.Fatalf("dispatchTask() error = %v", err)
@@ -112,7 +109,7 @@ func TestScheduledTaskSchedulerDispatchTask_PublishesWithoutRestoringSession(t *
 	}
 
 	bus := &recordingHandlerCommandBus{}
-	scheduler := newSchedulerForTest(t, store, bus, &fakeSchedulerChannel{}, now)
+	scheduler := newSchedulerForTest(t, store, bus, now)
 
 	if err := scheduler.dispatchTask(ctx, record, now); err != nil {
 		t.Fatalf("dispatchTask() error = %v", err)
@@ -147,7 +144,7 @@ func TestScheduledTaskSchedulerDispatchTask_IdempotentForSameDueSlot(t *testing.
 	}
 
 	bus := &recordingHandlerCommandBus{}
-	scheduler := newSchedulerForTest(t, store, bus, &fakeSchedulerChannel{}, now)
+	scheduler := newSchedulerForTest(t, store, bus, now)
 
 	if err := scheduler.dispatchTask(ctx, record, now); err != nil {
 		t.Fatalf("dispatchTask() first call error = %v", err)
@@ -456,153 +453,6 @@ func TestNormalizeScheduledTaskSchedulerConfig_TrimsEnvelope(t *testing.T) {
 	}
 }
 
-func TestScheduledTaskSchedulerExecuteTaskTurn_SuccessResetsRetryWithoutReply(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store := newSchedulerTaskStore(t)
-	locator := baldatelegram.NewLocator(9001, 111)
-	now := time.Date(2026, time.May, 14, 15, 0, 0, 0, time.UTC)
-
-	record := baldastate.ScheduledTaskRecord{
-		TaskID:       "task-success",
-		SessionID:    locator.SessionID,
-		ChannelType:  locator.ChannelType,
-		AddressKey:   locator.AddressKey,
-		AddressJSON:  locator.AddressJSON,
-		Content:      "run once",
-		ScheduleSpec: "@every 30s",
-		Status:       baldastate.ScheduledTaskStatusActive,
-		RetryCount:   2,
-		NextRunAt:    now.Add(30 * time.Second),
-	}
-	if err := store.Upsert(ctx, record); err != nil {
-		t.Fatalf("Upsert() error = %v", err)
-	}
-
-	adkRunner, adkSessionID := newBaldaRunTurnTestRunner(t)
-	ts := newSchedulerTopicSession(t, locator, "tg-101", adkSessionID, adkRunner)
-	channel := &fakeSchedulerChannel{}
-	scheduler := &ScheduledTaskScheduler{
-		taskStore: store,
-		channel:   channel,
-		logger:    zerolog.Nop(),
-		now: func() time.Time {
-			return now
-		},
-	}
-
-	if err := scheduler.executeTaskTurn(ctx, locator, record.TaskID, "ship it", ts); err != nil {
-		t.Fatalf("executeTaskTurn() error = %v", err)
-	}
-	if got := len(channel.agentReplies); got != 0 {
-		t.Fatalf("agent reply sends = %d, want 0", got)
-	}
-	if got := len(channel.plainTexts); got != 0 {
-		t.Fatalf("plain sends = %d, want 0", got)
-	}
-
-	updated, ok, err := store.GetByID(ctx, record.TaskID)
-	if err != nil {
-		t.Fatalf("GetByID() error = %v", err)
-	}
-	if !ok {
-		t.Fatal("GetByID() = not found")
-	}
-	if got := updated.RetryCount; got != 0 {
-		t.Fatalf("RetryCount after success = %d, want 0", got)
-	}
-	if got := updated.Status; got != baldastate.ScheduledTaskStatusActive {
-		t.Fatalf("Status after success = %q, want active", got)
-	}
-	if got := updated.LastRunAt; !got.Equal(now) {
-		t.Fatalf("LastRunAt after success = %s, want %s", got, now)
-	}
-}
-
-func TestScheduledTaskSchedulerExecuteTaskTurn_CanceledContextDoesNotMarkFailure(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	store := newSchedulerTaskStore(t)
-	locator := baldatelegram.NewLocator(9001, 112)
-	now := time.Date(2026, time.May, 14, 15, 30, 0, 0, time.UTC)
-
-	record := baldastate.ScheduledTaskRecord{
-		TaskID:       "task-canceled",
-		SessionID:    locator.SessionID,
-		ChannelType:  locator.ChannelType,
-		AddressKey:   locator.AddressKey,
-		AddressJSON:  locator.AddressJSON,
-		Content:      "run once",
-		ScheduleSpec: "@every 30s",
-		Status:       baldastate.ScheduledTaskStatusActive,
-		MaxRetries:   3,
-		NextRunAt:    now.Add(30 * time.Second),
-	}
-	if err := store.Upsert(context.Background(), record); err != nil {
-		t.Fatalf("Upsert() error = %v", err)
-	}
-
-	ts := newSchedulerTopicSession(t, locator, "tg-101", "adk-canceled", nil)
-	channel := &fakeSchedulerChannel{}
-	scheduler := &ScheduledTaskScheduler{
-		taskStore: store,
-		channel:   channel,
-		logger:    zerolog.Nop(),
-		now: func() time.Time {
-			return now
-		},
-	}
-
-	if err := scheduler.executeTaskTurn(ctx, locator, record.TaskID, "ship it", ts); err != nil {
-		t.Fatalf("executeTaskTurn() error = %v, want nil for cancellation", err)
-	}
-	if got := len(channel.plainTexts); got != 0 {
-		t.Fatalf("plain failure messages = %d, want 0", got)
-	}
-	if got := len(channel.agentReplies); got != 0 {
-		t.Fatalf("agent replies = %d, want 0", got)
-	}
-
-	updated, ok, err := store.GetByID(context.Background(), record.TaskID)
-	if err != nil {
-		t.Fatalf("GetByID() error = %v", err)
-	}
-	if !ok {
-		t.Fatal("GetByID() = not found")
-	}
-	if got := updated.RetryCount; got != 0 {
-		t.Fatalf("RetryCount after cancellation = %d, want 0", got)
-	}
-	if got := updated.LastError; got != "" {
-		t.Fatalf("LastError after cancellation = %q, want empty", got)
-	}
-	if !updated.LastRunAt.IsZero() {
-		t.Fatalf("LastRunAt after cancellation = %s, want zero", updated.LastRunAt)
-	}
-	if got := updated.Status; got != baldastate.ScheduledTaskStatusActive {
-		t.Fatalf("Status after cancellation = %q, want active", got)
-	}
-}
-
-type fakeSchedulerChannel struct {
-	plainTexts   []string
-	agentReplies []string
-}
-
-func (f *fakeSchedulerChannel) SendPlain(_ context.Context, _ baldasession.SessionLocator, text string) error {
-	f.plainTexts = append(f.plainTexts, text)
-	return nil
-}
-
-func (f *fakeSchedulerChannel) SendAgentReply(_ context.Context, _ baldasession.SessionLocator, text string) error {
-	f.agentReplies = append(f.agentReplies, text)
-	return nil
-}
-
 type schedulerClock struct {
 	now time.Time
 }
@@ -615,7 +465,6 @@ func newSchedulerForTest(
 	t *testing.T,
 	store baldastate.ScheduledTaskStore,
 	bus *recordingHandlerCommandBus,
-	channel schedulerChannel,
 	now time.Time,
 ) *ScheduledTaskScheduler {
 	t.Helper()
@@ -625,7 +474,6 @@ func newSchedulerForTest(
 	return &ScheduledTaskScheduler{
 		taskStore:    store,
 		dispatcher:   bus,
-		channel:      channel,
 		owner:        newOwnerStoreForTest(t, 101, 9001),
 		logger:       zerolog.Nop(),
 		pollInterval: defaultSchedulerPollInterval,
@@ -659,22 +507,4 @@ func newSchedulerTaskStore(t *testing.T) baldastate.ScheduledTaskStore {
 		_ = provider.Close()
 	})
 	return provider.ScheduledTasks()
-}
-
-func newSchedulerTopicSession(
-	t *testing.T,
-	locator baldasession.SessionLocator,
-	userID string,
-	agentSessionID string,
-	adkRunner *runner.Runner,
-) *baldasession.TopicSession {
-	t.Helper()
-
-	ts := &baldasession.TopicSession{}
-	setUnexportedField(t, ts, "sessionID", locator.SessionID)
-	setUnexportedField(t, ts, "locator", locator)
-	setUnexportedField(t, ts, "userID", userID)
-	setUnexportedField(t, ts, "agentSessionID", agentSessionID)
-	setUnexportedField(t, ts, "runner", adkRunner)
-	return ts
 }

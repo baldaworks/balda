@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/agent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -36,6 +38,7 @@ var Module = fx.Module("balda_handlers",
 		NewStartHandler,
 		NewBaldaHandler,
 		provideSessionTurnRunner,
+		provideScheduledTaskRecorder,
 		NewCommandHandler,
 		NewUserHandler,
 		fx.Annotate(
@@ -75,8 +78,32 @@ func registerStartHandler(h *StartHandler) tgbotkit.Handler {
 	return h
 }
 
+type sessionTurnRunnerAdapter struct {
+	handler *BaldaHandler
+}
+
 func provideSessionTurnRunner(h *BaldaHandler) actors.SessionTurnRunner {
-	return h
+	return sessionTurnRunnerAdapter{handler: h}
+}
+
+func (a sessionTurnRunnerAdapter) RunSessionTurnPayload(ctx context.Context, payload actors.SessionTurnPayload) error {
+	return a.handler.runSessionTurnPayload(ctx, payload)
+}
+
+type scheduledTaskRecorderAdapter struct {
+	scheduler *ScheduledTaskScheduler
+}
+
+func provideScheduledTaskRecorder(s *ScheduledTaskScheduler) actors.ScheduledTaskRecorder {
+	return scheduledTaskRecorderAdapter{scheduler: s}
+}
+
+func (a scheduledTaskRecorderAdapter) MarkSuccess(ctx context.Context, taskID string) error {
+	return a.scheduler.markSuccess(ctx, taskID)
+}
+
+func (a scheduledTaskRecorderAdapter) RecordExecutionFailure(ctx context.Context, taskID string, cause error) error {
+	return a.scheduler.recordExecutionFailure(ctx, taskID, cause)
 }
 
 func registerBaldaHandler(h *BaldaHandler) tgbotkit.Handler {

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -47,18 +46,12 @@ type ScheduledTaskSchedulerConfig struct {
 	Tasks []ConfiguredScheduledTask
 }
 
-type schedulerChannel interface {
-	SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error
-	SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error
-}
-
 type scheduledTaskSchedulerParams struct {
 	fx.In
 
 	LC            fx.Lifecycle
 	StateProvider baldastate.Provider
 	Dispatcher    swarm.ActorDispatcher
-	Channel       *baldatelegram.Adapter
 	OwnerStore    *auth.OwnerStore
 	Logger        zerolog.Logger
 	Config        ScheduledTaskSchedulerConfig
@@ -68,7 +61,6 @@ type scheduledTaskSchedulerParams struct {
 type ScheduledTaskScheduler struct {
 	taskStore  baldastate.ScheduledTaskStore
 	dispatcher swarm.ActorDispatcher
-	channel    schedulerChannel
 	owner      *auth.OwnerStore
 	logger     zerolog.Logger
 	config     ScheduledTaskSchedulerConfig
@@ -85,9 +77,6 @@ func NewScheduledTaskScheduler(params scheduledTaskSchedulerParams) (*ScheduledT
 	if params.StateProvider == nil {
 		return nil, fmt.Errorf("balda state provider is required")
 	}
-	if params.Channel == nil {
-		return nil, fmt.Errorf("balda channel adapter is required")
-	}
 	if params.Dispatcher == nil {
 		return nil, fmt.Errorf("balda actor dispatcher is required for scheduler")
 	}
@@ -102,7 +91,6 @@ func NewScheduledTaskScheduler(params scheduledTaskSchedulerParams) (*ScheduledT
 	scheduler := &ScheduledTaskScheduler{
 		taskStore:    params.StateProvider.ScheduledTasks(),
 		dispatcher:   params.Dispatcher,
-		channel:      params.Channel,
 		owner:        params.OwnerStore,
 		logger:       params.Logger.With().Str("component", "balda.scheduled_task_scheduler").Logger(),
 		config:       config,
@@ -370,39 +358,6 @@ func scheduledTaskReportTarget(task baldastate.ScheduledTaskRecord) (*baldasessi
 	return &locator, nil
 }
 
-func (s *ScheduledTaskScheduler) executeTaskTurn(
-	ctx context.Context,
-	locator baldasession.SessionLocator,
-	taskID string,
-	content string,
-	ts *baldasession.TopicSession,
-) error {
-	_, err := runGoalIteration(ctx, ts.GetRunner(), ts.GetUserID(), ts.GetAgentSessionID(), content)
-	if err != nil {
-		if isScheduledTaskCancellation(ctx, err) {
-			s.logger.Info().Str("task_id", taskID).Msg("scheduled task turn canceled")
-			return nil
-		}
-		_ = s.recordExecutionFailure(context.Background(), taskID, fmt.Errorf("execute scheduled task: %w", err))
-		return err
-	}
-
-	if err := s.markSuccess(context.Background(), taskID); err != nil {
-		s.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to mark scheduled task success")
-	}
-	return nil
-}
-
-func isScheduledTaskCancellation(ctx context.Context, err error) bool {
-	if errors.Is(err, context.Canceled) {
-		return true
-	}
-	if ctx != nil && errors.Is(ctx.Err(), context.Canceled) {
-		return true
-	}
-	return false
-}
-
 func (s *ScheduledTaskScheduler) markSuccess(ctx context.Context, taskID string) error {
 	task, ok, err := s.taskStore.GetByID(ctx, taskID)
 	if err != nil {
@@ -419,10 +374,6 @@ func (s *ScheduledTaskScheduler) markSuccess(ctx context.Context, taskID string)
 		return fmt.Errorf("upsert scheduled task %q: %w", taskID, err)
 	}
 	return nil
-}
-
-func (s *ScheduledTaskScheduler) MarkSuccess(ctx context.Context, taskID string) error {
-	return s.markSuccess(ctx, taskID)
 }
 
 func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, taskID string, cause error) error {
@@ -470,10 +421,6 @@ func (s *ScheduledTaskScheduler) recordExecutionFailure(ctx context.Context, tas
 		return fmt.Errorf("upsert scheduled task %q execution failure: %w", taskID, err)
 	}
 	return cause
-}
-
-func (s *ScheduledTaskScheduler) RecordExecutionFailure(ctx context.Context, taskID string, cause error) error {
-	return s.recordExecutionFailure(ctx, taskID, cause)
 }
 
 func normalizeScheduledTaskSchedulerConfig(raw ScheduledTaskSchedulerConfig) (ScheduledTaskSchedulerConfig, error) {
