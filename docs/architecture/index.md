@@ -24,7 +24,7 @@ Use this map to find the authoritative runtime contracts.
 
 ## Runtime Flow
 
-Telegram/webhook/scheduler ingress -> `ActorDispatcher` -> NATS adapter -> actorlayer `Source`/`Delivery` -> Norma dispatch runtime -> Balda product actor -> event projection/status.
+Telegram/webhook/scheduler ingress -> `ActorDispatcher` -> NATS adapter -> actorlayer `Source`/`Delivery` -> Norma dispatch runtime -> Balda product actor -> event projection/read-model updates.
 
 ## Related tests
 

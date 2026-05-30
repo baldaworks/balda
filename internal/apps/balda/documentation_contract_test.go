@@ -199,6 +199,27 @@ func TestDocumentationContract(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("architecture docs do not describe removed status interface surfaces", func(t *testing.T) {
+		paths := []string{
+			filepath.Join(repoRoot, "docs/architecture/index.md"),
+			filepath.Join(repoRoot, "docs/architecture/runtime-contract.md"),
+			filepath.Join(repoRoot, "docs/architecture/actor-runtime.md"),
+		}
+		forbidden := []*regexp.Regexp{
+			regexp.MustCompile(`event projection/status`),
+			regexp.MustCompile(`dispatch/event/status interfaces`),
+			regexp.MustCompile(`projection/status integration`),
+		}
+		for _, path := range paths {
+			body := readFile(t, path)
+			for _, pattern := range forbidden {
+				if pattern.FindStringIndex(body) != nil {
+					t.Fatalf("%s still describes removed status surface %q", filepath.ToSlash(path), pattern.String())
+				}
+			}
+		}
+	})
 }
 
 func repositoryRoot(t *testing.T) string {

@@ -9,11 +9,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/memory"
 )
 
-type unsupportedActor struct {
-	address string
-	name    string
-}
-
 type memoryActor struct {
 	memoryStore *memory.Store
 }
@@ -33,28 +28,8 @@ type memorySyncPayload struct {
 	Content   string `json:"content,omitempty"`
 }
 
-func NewMemoryActor() Actor {
-	return memoryActor{}
-}
-
-func NewMemoryActorWithStore(memoryStore *memory.Store) Actor {
+func newMemoryActorWithStore(memoryStore *memory.Store) Actor {
 	return memoryActor{memoryStore: memoryStore}
-}
-
-func NewDeliveryActor() Actor {
-	return unsupportedActor{address: WildcardAddress(ActorTypeDelivery), name: ActorTypeDelivery}
-}
-
-func (a unsupportedActor) Address() string {
-	return a.address
-}
-
-func (a unsupportedActor) Handle(_ context.Context, envelope any) error {
-	env, err := assertEnvelope(envelope)
-	if err != nil {
-		return err
-	}
-	return PolicyError(fmt.Errorf("%s actor does not support %q/%q yet", a.name, env.Namespace, env.Kind))
 }
 
 func (memoryActor) Address() string {

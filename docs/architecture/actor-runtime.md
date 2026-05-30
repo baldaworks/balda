@@ -61,7 +61,7 @@ Status: active
 - Balda transport/runtime code owns:
   - transport protocol and transport-level acknowledgements,
   - queue policy integration (retry/dead-letter thresholds, heartbeats, and backoff tuning),
-  - and projection/status integration.
+  - and projection/read-model integration.
 
 ### Why this split exists
 

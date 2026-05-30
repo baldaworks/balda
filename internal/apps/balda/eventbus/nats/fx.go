@@ -7,10 +7,10 @@ import (
 var Module = fx.Module("balda_eventbus_nats",
 	fx.Provide(
 		NewBus,
-		NewActorDispatcher,
-		NewEventPublisher,
-		NewBusDrainer,
-		NewActorDeliverySource,
-		NewEventConsumer,
+		newActorDispatcher,
+		newEventPublisher,
+		newBusDrainer,
+		newActorDeliverySource,
+		newEventConsumer,
 	),
 )
