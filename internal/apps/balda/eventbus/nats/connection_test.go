@@ -14,14 +14,15 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
 )
 
 const testEventKindTask = "task_event"
 
-func TestNewCommandBus_DisabledSwarmReturnsUnsupportedBus(t *testing.T) {
-	bus, err := NewCommandBus(Params{
+func TestNewActorRuntimeTransport_DisabledSwarmReturnsUnsupportedBus(t *testing.T) {
+	bus, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: false},
@@ -29,10 +30,10 @@ func TestNewCommandBus_DisabledSwarmReturnsUnsupportedBus(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
-	if _, ok := bus.(swarm.UnsupportedCommandBus); !ok {
-		t.Fatalf("bus type = %T, want swarm.UnsupportedCommandBus", bus)
+	if _, ok := bus.(swarm.UnsupportedActorRuntimeTransport); !ok {
+		t.Fatalf("bus type = %T, want swarm.UnsupportedActorRuntimeTransport", bus)
 	}
 }
 
@@ -53,22 +54,22 @@ func TestIsJetStreamQueuePressure(t *testing.T) {
 	}
 }
 
-func TestBus_PublishCommandAndConsumeEmbeddedJetStream(t *testing.T) {
+func TestBus_DispatchAndConsumeEmbeddedJetStream(t *testing.T) {
 	h := StartTestJetStream(t, swarm.Config{Enabled: true})
 	bus := h.Bus
 
 	env := commandTestEnvelope("env-1")
-	ack := h.PublishCommand(t, env)
+	ack := h.Dispatch(t, env)
 	if ack.Stream != swarm.DefaultCommandStream || ack.Subject != swarm.SubjectCommandGoalkeeper || ack.Sequence == 0 {
-		t.Fatalf("PublishCommand() ack = %+v", ack)
+		t.Fatalf("Dispatch() ack = %+v", ack)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	seen := make(chan swarm.Envelope, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(_ context.Context, msg swarm.CommandMessage) error {
-			seen <- msg.Envelope()
+		_ = bus.Run(ctx, func(_ context.Context, msg actorengine.Delivery) error {
+			seen <- testDeliveryEnvelope(t, msg)
 			return nil
 		})
 	}()
@@ -82,21 +83,21 @@ func TestBus_PublishCommandAndConsumeEmbeddedJetStream(t *testing.T) {
 	}
 }
 
-func TestBus_PublishCommandSucceedsWhenAcceptedEventCannotPublish(t *testing.T) {
+func TestBus_DispatchSucceedsWhenAcceptedEventCannotPublish(t *testing.T) {
 	h := StartTestJetStream(t, swarm.Config{Enabled: true})
 	bus := h.Bus
 	if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
 		t.Fatalf("DeleteStream(events) error = %v", err)
 	}
 
-	ack := h.PublishCommand(t, commandTestEnvelope("accepted-event-fails"))
+	ack := h.Dispatch(t, commandTestEnvelope("accepted-event-fails"))
 	if ack.Stream != swarm.DefaultCommandStream || ack.Sequence == 0 {
-		t.Fatalf("PublishCommand() ack = %+v, want command stream ack", ack)
+		t.Fatalf("Dispatch() ack = %+v, want command stream ack", ack)
 	}
 }
 
 func TestBus_CommandLifecycleEventsUseDistinctDedupeIDs(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{FetchWait: "50ms"}},
@@ -104,21 +105,21 @@ func TestBus_CommandLifecycleEventsUseDistinctDedupeIDs(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
 	env := commandTestEnvelope("lifecycle-dedupe")
 	env.DedupeKey = "shared-command-dedupe"
-	if _, err := bus.PublishCommand(context.Background(), env); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), env); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	handled := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			handled <- struct{}{}
 			return nil
 		})
@@ -145,7 +146,7 @@ func TestBus_CommandLifecycleEventsUseDistinctDedupeIDs(t *testing.T) {
 }
 
 func TestBus_CommandRunningEventFailureDoesNotBlockCommandHandling(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -157,13 +158,13 @@ func TestBus_CommandRunningEventFailureDoesNotBlockCommandHandling(t *testing.T)
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("running-event-fails")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("running-event-fails")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
 		t.Fatalf("DeleteStream(events) error = %v", err)
@@ -173,7 +174,7 @@ func TestBus_CommandRunningEventFailureDoesNotBlockCommandHandling(t *testing.T)
 	handled := make(chan struct{}, 1)
 	var calls atomic.Int32
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			calls.Add(1)
 			handled <- struct{}{}
 			return nil
@@ -208,7 +209,7 @@ func TestBus_CommandRunningEventFailureDoesNotBlockCommandHandling(t *testing.T)
 }
 
 func TestBus_CommandAckedEventFailureDoesNotRedeliverCompletedCommand(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -220,20 +221,20 @@ func TestBus_CommandAckedEventFailureDoesNotRedeliverCompletedCommand(t *testing
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("acked-event-fails")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("acked-event-fails")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	handled := make(chan struct{}, 1)
 	var calls atomic.Int32
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			calls.Add(1)
 			if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
 				t.Errorf("DeleteStream(events) error = %v", err)
@@ -268,7 +269,7 @@ func TestBus_CommandAckedEventFailureDoesNotRedeliverCompletedCommand(t *testing
 }
 
 func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -280,20 +281,20 @@ func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) 
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("retrying-event-fails")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("retrying-event-fails")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	var calls atomic.Int32
 	done := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			call := calls.Add(1)
 			if call == 1 {
 				if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
@@ -317,7 +318,7 @@ func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) 
 }
 
 func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -329,20 +330,20 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("retrying-metadata")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("retrying-metadata")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	var calls atomic.Int32
 	done := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			if calls.Add(1) == 1 {
 				return swarm.TransientError(errors.New("retry please"))
 			}
@@ -401,7 +402,7 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 }
 
 func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -413,19 +414,19 @@ func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("deadlettered-event-fails")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("deadlettered-event-fails")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	handled := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
 				t.Errorf("DeleteStream(events) error = %v", err)
 			}
@@ -459,7 +460,7 @@ func TestRetryDelayAppliesExponentialDelayWithJitter(t *testing.T) {
 }
 
 func TestBus_CommandSuccessSettlesWithCanceledParent(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -471,13 +472,13 @@ func TestBus_CommandSuccessSettlesWithCanceledParent(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("settle-success-canceled")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("settle-success-canceled")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	defer cancelRun()
@@ -485,7 +486,7 @@ func TestBus_CommandSuccessSettlesWithCanceledParent(t *testing.T) {
 	done := make(chan error, 1)
 	var calls atomic.Int32
 	go func() {
-		done <- bus.RunCommandConsumer(runCtx, func(ctx context.Context, _ swarm.CommandMessage) error {
+		done <- bus.Run(runCtx, func(ctx context.Context, _ actorengine.Delivery) error {
 			calls.Add(1)
 			cancelRun()
 			<-ctx.Done()
@@ -504,7 +505,7 @@ func TestBus_CommandSuccessSettlesWithCanceledParent(t *testing.T) {
 }
 
 func TestBus_CommandDLQSettlesWithCanceledParent(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -516,20 +517,20 @@ func TestBus_CommandDLQSettlesWithCanceledParent(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("settle-dlq-canceled")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("settle-dlq-canceled")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	defer cancelRun()
 	handled := make(chan struct{}, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- bus.RunCommandConsumer(runCtx, func(ctx context.Context, _ swarm.CommandMessage) error {
+		done <- bus.Run(runCtx, func(ctx context.Context, _ actorengine.Delivery) error {
 			cancelRun()
 			<-ctx.Done()
 			handled <- struct{}{}
@@ -543,8 +544,8 @@ func TestBus_CommandDLQSettlesWithCanceledParent(t *testing.T) {
 	waitConsumerCanceled(t, done)
 }
 
-func TestBus_RunCommandConsumerHandlesCommandsConcurrently(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+func TestBus_RunHandlesCommandsConcurrently(t *testing.T) {
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -556,7 +557,7 @@ func TestBus_RunCommandConsumerHandlesCommandsConcurrently(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -565,8 +566,8 @@ func TestBus_RunCommandConsumerHandlesCommandsConcurrently(t *testing.T) {
 		env := commandTestEnvelope(id)
 		env.TaskID = id
 		env.To = swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: id}
-		if _, err := bus.PublishCommand(context.Background(), env); err != nil {
-			t.Fatalf("PublishCommand(%s) error = %v", id, err)
+		if _, err := bus.Dispatch(context.Background(), env); err != nil {
+			t.Fatalf("Dispatch(%s) error = %v", id, err)
 		}
 	}
 
@@ -576,10 +577,10 @@ func TestBus_RunCommandConsumerHandlesCommandsConcurrently(t *testing.T) {
 	release := make(chan struct{})
 	done := make(chan string, 2)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(_ context.Context, msg swarm.CommandMessage) error {
-			started <- msg.Envelope().ID
+		_ = bus.Run(ctx, func(_ context.Context, msg actorengine.Delivery) error {
+			started <- testDeliveryEnvelope(t, msg).ID
 			<-release
-			done <- msg.Envelope().ID
+			done <- testDeliveryEnvelope(t, msg).ID
 			return nil
 		})
 	}()
@@ -598,8 +599,8 @@ func TestBus_RunCommandConsumerHandlesCommandsConcurrently(t *testing.T) {
 	}
 }
 
-func TestBus_RunCommandConsumerLimitsInFlightToFetchBatch(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+func TestBus_RunLimitsInFlightToFetchBatch(t *testing.T) {
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -611,7 +612,7 @@ func TestBus_RunCommandConsumerLimitsInFlightToFetchBatch(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -621,8 +622,8 @@ func TestBus_RunCommandConsumerLimitsInFlightToFetchBatch(t *testing.T) {
 		env := commandTestEnvelope(id)
 		env.TaskID = id
 		env.To = swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: id}
-		if _, err := bus.PublishCommand(context.Background(), env); err != nil {
-			t.Fatalf("PublishCommand(%d) error = %v", i, err)
+		if _, err := bus.Dispatch(context.Background(), env); err != nil {
+			t.Fatalf("Dispatch(%d) error = %v", i, err)
 		}
 	}
 
@@ -632,7 +633,7 @@ func TestBus_RunCommandConsumerLimitsInFlightToFetchBatch(t *testing.T) {
 	started := atomic.Int64{}
 	done := make(chan error, 1)
 	go func() {
-		done <- bus.RunCommandConsumer(runCtx, func(_ context.Context, _ swarm.CommandMessage) error {
+		done <- bus.Run(runCtx, func(_ context.Context, _ actorengine.Delivery) error {
 			started.Add(1)
 			<-release
 			return nil
@@ -687,7 +688,7 @@ func TestBus_CommandWorkerLimitUsesFetchBatch(t *testing.T) {
 }
 
 func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
@@ -695,7 +696,7 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -711,7 +712,7 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			t.Error("handler called for poison command")
 			return nil
 		})
@@ -766,8 +767,8 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	<-done
 }
 
-func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+func TestBus_DispatchReportsDuplicate(t *testing.T) {
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -775,7 +776,7 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -784,13 +785,13 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 	env.DedupeKey = "dedupe-duplicate"
 	env.CorrelationID = "corr-duplicate"
 	env.CausationID = "cause-duplicate"
-	first, err := bus.PublishCommand(context.Background(), env)
+	first, err := bus.Dispatch(context.Background(), env)
 	if err != nil {
-		t.Fatalf("PublishCommand(first) error = %v", err)
+		t.Fatalf("Dispatch(first) error = %v", err)
 	}
-	second, err := bus.PublishCommand(context.Background(), env)
+	second, err := bus.Dispatch(context.Background(), env)
 	if err != nil {
-		t.Fatalf("PublishCommand(second) error = %v", err)
+		t.Fatalf("Dispatch(second) error = %v", err)
 	}
 	if first.Duplicate {
 		t.Fatalf("first publish duplicate = true, want false")
@@ -858,7 +859,7 @@ func TestBus_PublishCommandReportsDuplicate(t *testing.T) {
 }
 
 func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -866,7 +867,7 @@ func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -891,7 +892,7 @@ func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
 }
 
 func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
@@ -899,23 +900,23 @@ func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
 	env := commandTestEnvelope("env-retry-exhausted")
-	if _, err := bus.PublishCommand(context.Background(), env); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), env); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	handled := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(_ context.Context, msg swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(_ context.Context, msg actorengine.Delivery) error {
 			handled <- struct{}{}
-			if msg.DeliveryAttempt() != 1 || msg.MaxDeliveries() != 1 {
-				t.Errorf("delivery metadata = %d/%d, want 1/1", msg.DeliveryAttempt(), msg.MaxDeliveries())
+			if msg.Attempt() != 1 || msg.MaxAttempts() != 1 {
+				t.Errorf("delivery metadata = %d/%d, want 1/1", msg.Attempt(), msg.MaxAttempts())
 			}
 			return swarm.TransientError(context.DeadlineExceeded)
 		})
@@ -942,7 +943,7 @@ func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
 }
 
 func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -950,7 +951,7 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1000,7 +1001,7 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 }
 
 func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm: swarm.Config{Enabled: true, Commands: swarm.CommandConfig{
@@ -1012,21 +1013,21 @@ func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
 
 	env := commandTestEnvelope("dlq-metadata")
-	if _, err := bus.PublishCommand(context.Background(), env); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), env); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	done := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			done <- struct{}{}
 			return swarm.PermanentError(errors.New("policy denied"))
 		})
@@ -1076,7 +1077,7 @@ func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
 }
 
 func TestBus_GetDLQEntryBySequence(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -1084,7 +1085,7 @@ func TestBus_GetDLQEntryBySequence(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1111,7 +1112,7 @@ func TestBus_GetDLQEntryBySequence(t *testing.T) {
 }
 
 func TestBus_GetDLQEntryReturnsNotFound(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -1119,7 +1120,7 @@ func TestBus_GetDLQEntryReturnsNotFound(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1131,7 +1132,7 @@ func TestBus_GetDLQEntryReturnsNotFound(t *testing.T) {
 }
 
 func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
@@ -1139,7 +1140,7 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1182,7 +1183,7 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 }
 
 func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true, Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
@@ -1190,7 +1191,7 @@ func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1224,13 +1225,13 @@ func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
 	defer commandCancel()
 	commandHandled := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(commandCtx, func(context.Context, swarm.CommandMessage) error {
+		_ = bus.Run(commandCtx, func(context.Context, actorengine.Delivery) error {
 			commandHandled <- struct{}{}
 			return nil
 		})
 	}()
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("command-after-projection-failure")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("command-after-projection-failure")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	select {
 	case <-commandHandled:
@@ -1256,7 +1257,7 @@ func TestBus_EnsureRuntimeRequiresJetStream(t *testing.T) {
 }
 
 func TestBus_StatusReportsJetStreamOnly(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -1264,7 +1265,7 @@ func TestBus_StatusReportsJetStreamOnly(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1272,13 +1273,13 @@ func TestBus_StatusReportsJetStreamOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
-	if status.CommandBus != "jetstream" || !status.JetStream {
+	if status.Transport != "jetstream" || !status.JetStream {
 		t.Fatalf("Status() = %+v, want hard JetStream", status)
 	}
 }
 
 func TestBus_StatusTracksCommandAndActorDurations(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -1286,7 +1287,7 @@ func TestBus_StatusTracksCommandAndActorDurations(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1295,14 +1296,14 @@ func TestBus_StatusTracksCommandAndActorDurations(t *testing.T) {
 	defer cancel()
 	handled := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunCommandConsumer(ctx, func(_ context.Context, _ swarm.CommandMessage) error {
+		_ = bus.Run(ctx, func(_ context.Context, _ actorengine.Delivery) error {
 			time.Sleep(15 * time.Millisecond)
 			handled <- struct{}{}
 			return nil
 		})
 	}()
-	if _, err := bus.PublishCommand(context.Background(), commandTestEnvelope("duration-metric")); err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+	if _, err := bus.Dispatch(context.Background(), commandTestEnvelope("duration-metric")); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	select {
 	case <-handled:
@@ -1330,7 +1331,7 @@ func TestBus_StatusTracksCommandAndActorDurations(t *testing.T) {
 }
 
 func TestBus_EnsureRuntimeCreatesRequiredStreamsAndConsumers(t *testing.T) {
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarm.Config{Enabled: true},
@@ -1338,7 +1339,7 @@ func TestBus_EnsureRuntimeCreatesRequiredStreamsAndConsumers(t *testing.T) {
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewCommandBus() error = %v", err)
+		t.Fatalf("NewActorRuntimeTransport() error = %v", err)
 	}
 	bus := busRaw.(*Bus)
 	defer func() { _ = bus.Drain(context.Background()) }()
@@ -1441,6 +1442,15 @@ func commandTestEnvelope(id string) swarm.Envelope {
 	}
 }
 
+func testDeliveryEnvelope(t *testing.T, delivery actorengine.Delivery) swarm.Envelope {
+	t.Helper()
+	env, ok := delivery.Envelope().(swarm.Envelope)
+	if !ok {
+		t.Fatalf("delivery envelope type = %T, want swarm.Envelope", delivery.Envelope())
+	}
+	return env
+}
+
 func waitCommandStarted(t *testing.T, ctx context.Context, ch <-chan string) string {
 	t.Helper()
 	select {
@@ -1470,7 +1480,7 @@ func waitConsumerCanceled(t *testing.T, done <-chan error) {
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("RunCommandConsumer() error = %v, want context canceled", err)
+			t.Fatalf("Run() error = %v, want context canceled", err)
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for command consumer shutdown")

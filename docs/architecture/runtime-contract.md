@@ -7,10 +7,10 @@ Status: active
 
 - Startup order stays strict: config -> bundled MCP lifecycle -> balda provider -> channel runtime.
 - JetStream must be available before ingress accepts work.
-- No runtime path executes user work without a JetStream command publish ack.
+- No runtime path executes user work without durable actor dispatch acceptance.
 - SessionActor is the only actor that can enqueue TurnDispatcher work.
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
-- Runtime boundaries are strict and explicit: actor execution flows through Norma actorlayer, while command transport policy stays in Balda.
+- Runtime boundaries are strict and explicit: actor execution and delivery settlement flow through Norma actorlayer contracts, while concrete JetStream policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
 - Norma actorlayer is a typed engine only: it can receive commands/deliveries and emit events, but does not make Balda-specific product policy decisions.
 
@@ -26,7 +26,7 @@ Status: active
 - Balda integration layer (policy owner):
   - Product actor implementations and command contracts in `internal/apps/balda/actors`.
   - Telegram, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
-  - Command transport semantics: JetStream command stream, ack/nak/term behavior, heartbeats, in-progress redelivery.
+  - Concrete JetStream adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery/dispatch.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
   - Task/projector side effects in SQLite (`swarm_tasks`, `swarm_task_events`, command/task status state).
   - Command visibility and operator-facing status surfaces (`/queue status`, `/dlq`, `/projection status`).
@@ -36,7 +36,7 @@ Status: active
 - Boundary obligations:
   - Actor definitions and actor state must not select or branch on provider IDs.
   - Provider-specific types stay outside actorlayer-facing contracts.
-  - JetStream settlement exposes the same lifecycle outcomes to actorlayer regardless of command kind.
+  - JetStream settlement is hidden behind actorlayer delivery methods and exposes the same lifecycle outcomes regardless of command kind.
 
 ## Related tests
 

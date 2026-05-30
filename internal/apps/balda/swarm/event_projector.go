@@ -35,7 +35,7 @@ type eventProjectorParams struct {
 type eventConsumerParams struct {
 	fx.In
 
-	Bus    CommandBus
+	Bus    ActorRuntimeTransport
 	Config Config
 }
 
@@ -52,7 +52,7 @@ func NewEventConsumer(params eventConsumerParams) (EventConsumer, error) {
 	}
 	consumer, ok := params.Bus.(EventConsumer)
 	if !ok {
-		return nil, fmt.Errorf("event projector requires an event-consumer command bus")
+		return nil, fmt.Errorf("event projector requires an actor runtime event consumer")
 	}
 	return consumer, nil
 }
@@ -62,7 +62,7 @@ func NewEventProjector(params eventProjectorParams) (*EventProjector, error) {
 		return nil, fmt.Errorf("balda state provider is required")
 	}
 	if params.Config.Enabled && params.Consumer == nil {
-		return nil, fmt.Errorf("event projector requires an event-consumer command bus")
+		return nil, fmt.Errorf("event projector requires an actor runtime event consumer")
 	}
 	p := &EventProjector{
 		consumer: params.Consumer,

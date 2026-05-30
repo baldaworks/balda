@@ -433,7 +433,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	payload actors.SessionTurnPayload,
 	routeName string,
 	requestID string,
-) (*swarm.CommandPublishResult, string, error) {
+) (*swarm.DispatchReceipt, string, error) {
 	if f.submitErr != nil {
 		return nil, "", f.submitErr
 	}
@@ -445,7 +445,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	f.lastRouteName = routeName
 	f.lastRequestID = requestID
 	taskID := "webhook-" + routeName + "-test"
-	return &swarm.CommandPublishResult{
+	return &swarm.DispatchReceipt{
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: 1,
 		Subject:  swarm.SubjectCommandTask,
@@ -453,7 +453,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	}, taskID, nil
 }
 
-func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload actors.SessionTurnPayload) (*swarm.CommandPublishResult, error) {
+func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
 	if f.submitErr != nil {
 		return nil, f.submitErr
 	}
@@ -462,7 +462,7 @@ func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload a
 	f.prompt = payload.Text
 	f.deliver = payload.Deliver
 	f.payload = payload
-	return &swarm.CommandPublishResult{
+	return &swarm.DispatchReceipt{
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: 1,
 		Subject:  swarm.SubjectCommandSession,

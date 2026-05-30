@@ -1,38 +1,42 @@
 package natsbus
 
-import "github.com/normahq/balda/internal/apps/balda/swarm"
+import (
+	"context"
 
-func NewCommandPublisher(bus swarm.CommandBus) swarm.CommandPublisher {
-	return bus
+	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
+)
+
+func NewActorDispatcher(transport swarm.ActorRuntimeTransport) swarm.ActorDispatcher {
+	return transport
 }
 
-func NewEventPublisher(bus swarm.CommandBus) swarm.EventPublisher {
-	return bus
+func NewEventPublisher(transport swarm.ActorRuntimeTransport) swarm.EventPublisher {
+	return transport
 }
 
-func NewDLQPublisher(bus swarm.CommandBus) swarm.DLQPublisher {
-	return bus
+func NewBusDrainer(transport swarm.ActorRuntimeTransport) swarm.BusDrainer {
+	return transport
 }
 
-func NewCommandConsumer(bus swarm.CommandBus) swarm.CommandConsumer {
-	return bus
+func NewActorDeliverySource(transport swarm.ActorRuntimeTransport) actorengine.Source {
+	if source, ok := transport.(actorengine.Source); ok {
+		return source
+	}
+	return disabledActorDeliverySource{}
 }
 
-func NewBusDrainer(bus swarm.CommandBus) swarm.BusDrainer {
-	return bus
+type disabledActorDeliverySource struct{}
+
+func (disabledActorDeliverySource) Run(ctx context.Context, _ actorengine.Handler) error {
+	<-ctx.Done()
+	return ctx.Err()
 }
 
-func NewCoordinatorBus(bus swarm.CommandBus) swarm.CoordinatorBus {
-	return bus
-}
-
-func NewRuntimeBus(bus swarm.CommandBus) swarm.RuntimeBus {
-	return bus
-}
-
-func NewCommandBusStatusProvider(bus swarm.CommandBus) swarm.CommandBusStatusProvider {
-	if status, ok := bus.(swarm.CommandBusStatusProvider); ok {
+func NewActorRuntimeStatusProvider(transport swarm.ActorRuntimeTransport) swarm.ActorRuntimeStatusProvider {
+	bus := transport
+	if status, ok := bus.(swarm.ActorRuntimeStatusProvider); ok {
 		return status
 	}
-	return swarm.UnsupportedCommandBus{}
+	return swarm.UnsupportedActorRuntimeTransport{}
 }

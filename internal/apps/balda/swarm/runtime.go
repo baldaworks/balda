@@ -46,7 +46,8 @@ func registerActors(actors []Actor) (runtimeActorRegistry, error) {
 }
 
 type Runtime struct {
-	bus     RuntimeBus
+	source  actorengine.Source
+	events  EventPublisher
 	actors  runtimeActorRegistry
 	tasks   *TaskService
 	engine  runtimeRuntime
@@ -67,7 +68,8 @@ type runtimeParams struct {
 	fx.In
 
 	LC     fx.Lifecycle
-	Bus    RuntimeBus
+	Source actorengine.Source
+	Events EventPublisher `optional:"true"`
 	Config Config
 	Tasks  *TaskService
 	Logger zerolog.Logger
@@ -75,15 +77,16 @@ type runtimeParams struct {
 }
 
 func NewRuntime(params runtimeParams) (*Runtime, error) {
-	if params.Bus == nil {
-		return nil, fmt.Errorf("jetstream command bus is required")
+	if params.Source == nil {
+		return nil, fmt.Errorf("actor delivery source is required")
 	}
 	registry, err := registerActors(params.Actors)
 	if err != nil {
 		return nil, err
 	}
 	r := &Runtime{
-		bus:           params.Bus,
+		source:        params.Source,
+		events:        params.Events,
 		actors:        registry,
 		tasks:         params.Tasks,
 		logger:        params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
@@ -94,15 +97,9 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 		Resolver: runtimeResolver{},
 		Sink:     r,
 		Retry: actorengine.RetryPolicy{
-			IsRetryable: IsRetryableError,
-			Backoff:     RetryDelay,
-			RetryExhausted: func(delivery actorengine.Delivery) bool {
-				wrapped, ok := delivery.(*runtimeDelivery)
-				if !ok {
-					return false
-				}
-				return retryExhaustedCommand(wrapped.cmd)
-			},
+			IsRetryable:    IsRetryableError,
+			Backoff:        RetryDelay,
+			RetryExhausted: retryExhaustedDelivery,
 		},
 	})
 	if err != nil {
@@ -125,17 +122,12 @@ func (r *Runtime) Start(context.Context) error {
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
-	source := runtimeSource{
-		bus: r.bus,
-		prepareFn: func(ctx context.Context, cmd CommandMessage) (context.Context, func(), actorengine.Delivery) {
-			return r.prepareCommandDelivery(ctx, cmd)
-		},
-	}
+	source := runtimeSource{source: r.source, prepareFn: r.prepareDelivery}
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
 		if err := r.engine.Run(runCtx, source, r.route); err != nil && !errors.Is(err, context.Canceled) {
-			r.logger.Error().Err(err).Msg("jetstream command consumer stopped")
+			r.logger.Error().Err(err).Msg("actor delivery source stopped")
 		}
 	}()
 	return nil
@@ -161,28 +153,28 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	return stopErr
 }
 
-func (r *Runtime) handleCommand(ctx context.Context, cmd CommandMessage) error {
-	executionCtx, stop, delivery := r.prepareCommandDelivery(ctx, cmd)
+func (r *Runtime) handleDelivery(ctx context.Context, delivery actorengine.Delivery) error {
+	executionCtx, stop, prepared := r.prepareDelivery(ctx, delivery)
 	defer stop()
 	if r.engine == nil {
 		return nil
 	}
-	return r.engine.Handle(executionCtx, delivery, r.route)
+	return r.engine.Handle(executionCtx, prepared, r.route)
 }
 
-func (r *Runtime) prepareCommandDelivery(ctx context.Context, cmd CommandMessage) (context.Context, func(), actorengine.Delivery) {
-	if r == nil || cmd == nil {
-		return ctx, func() {}, &runtimeDelivery{cmd: cmd}
+func (r *Runtime) prepareDelivery(ctx context.Context, delivery actorengine.Delivery) (context.Context, func(), actorengine.Delivery) {
+	if r == nil || delivery == nil {
+		return ctx, func() {}, delivery
 	}
-	env := cmd.Envelope()
-	delivery := &runtimeDelivery{
-		cmd: cmd,
+	env, _ := delivery.Envelope().(Envelope)
+	wrapped := &runtimeDelivery{
+		delivery: delivery,
 		onDeadLetter: func(reason string) {
 			r.deadletterTask(ctx, env, reason)
 		},
 	}
-	heartbeatCtx, stop := r.startHeartbeat(ctx, cmd, env, delivery)
-	return heartbeatCtx, stop, delivery
+	heartbeatCtx, stop := r.startHeartbeat(ctx, env, wrapped)
+	return heartbeatCtx, stop, wrapped
 }
 
 func (r *Runtime) LaneStatus() RuntimeLaneStatus {
@@ -210,8 +202,8 @@ func (r *Runtime) route(ctx context.Context, delivery actorengine.Delivery) erro
 	return actor.Handle(ctx, delivery.Envelope())
 }
 
-func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env Envelope, delivery actorengine.Delivery) (context.Context, func()) {
-	if r == nil || r.engine == nil || cmd == nil || delivery == nil {
+func (r *Runtime) startHeartbeat(ctx context.Context, env Envelope, delivery actorengine.Delivery) (context.Context, func()) {
+	if r == nil || r.engine == nil || delivery == nil {
 		return ctx, func() {}
 	}
 	heartbeatCtx := withEnvelopeContext(ctx, env)
@@ -224,8 +216,8 @@ func (r *Runtime) startHeartbeat(ctx context.Context, cmd CommandMessage, env En
 		for {
 			select {
 			case <-ticker.C:
-				if err := cmd.InProgress(child); err != nil {
-					r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to send jetstream in-progress ack")
+				if err := delivery.InProgress(child); err != nil {
+					r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to send actor delivery in-progress")
 				}
 				r.engine.EmitInProgress(child, delivery)
 			case <-child.Done():
@@ -244,7 +236,10 @@ func (r *Runtime) Publish(ctx context.Context, event actorengine.Event) {
 	if !ok {
 		return
 	}
-	if err := r.bus.PublishEvent(ctx, SubjectEventCommandInProgress, commandNoopEvent(env)); err != nil {
+	if r.events == nil {
+		return
+	}
+	if err := r.events.PublishEvent(ctx, SubjectEventCommandInProgress, commandNoopEvent(env)); err != nil {
 		r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to publish command in-progress event")
 	}
 }
@@ -269,12 +264,11 @@ func (r *Runtime) deadletterTask(ctx context.Context, env Envelope, reason strin
 	}
 }
 
-func retryExhaustedCommand(cmd CommandMessage) bool {
-	if cmd == nil {
+func retryExhaustedDelivery(delivery actorengine.Delivery) bool {
+	if delivery == nil {
 		return false
 	}
-	maxDeliveries := cmd.MaxDeliveries()
-	return RetryExhausted(cmd.DeliveryAttempt(), maxDeliveries)
+	return RetryExhausted(delivery.Attempt(), delivery.MaxAttempts())
 }
 
 func commandNoopEvent(env Envelope) Envelope {
@@ -290,7 +284,7 @@ func commandNoopEvent(env Envelope) Envelope {
 }
 
 type runtimeDelivery struct {
-	cmd          CommandMessage
+	delivery     actorengine.Delivery
 	onDeadLetter func(reason string)
 }
 
@@ -315,8 +309,8 @@ func withEnvelopeContext(ctx context.Context, env Envelope) context.Context {
 }
 
 type runtimeSource struct {
-	bus       RuntimeBus
-	prepareFn func(context.Context, CommandMessage) (context.Context, func(), actorengine.Delivery)
+	source    actorengine.Source
+	prepareFn func(context.Context, actorengine.Delivery) (context.Context, func(), actorengine.Delivery)
 }
 
 type runtimeResolver struct{}
@@ -326,8 +320,8 @@ func (r runtimeResolver) LaneKey(delivery actorengine.Delivery) string {
 }
 
 func (s runtimeSource) Run(ctx context.Context, handler actorengine.Handler) error {
-	if s.bus == nil {
-		return fmt.Errorf("jetstream command bus is required")
+	if s.source == nil {
+		return fmt.Errorf("actor delivery source is required")
 	}
 	if handler == nil {
 		return fmt.Errorf("runtime handler is required")
@@ -335,13 +329,13 @@ func (s runtimeSource) Run(ctx context.Context, handler actorengine.Handler) err
 	if s.prepareFn == nil {
 		return fmt.Errorf("runtime command delivery factory is required")
 	}
-	return s.bus.RunCommandConsumer(ctx, func(ctx context.Context, cmd CommandMessage) error {
-		if cmd == nil {
-			return fmt.Errorf("command is required")
+	return s.source.Run(ctx, func(ctx context.Context, delivery actorengine.Delivery) error {
+		if delivery == nil {
+			return fmt.Errorf("actor delivery is required")
 		}
-		executionCtx, stop, delivery := s.prepareFn(ctx, cmd)
+		executionCtx, stop, prepared := s.prepareFn(ctx, delivery)
 		defer stop()
-		return handler(executionCtx, delivery)
+		return handler(executionCtx, prepared)
 	})
 }
 
@@ -380,23 +374,23 @@ func actorLaneKeyFromEnvelope(envelope any) string {
 	return actorLaneKey(env)
 }
 
-func (d *runtimeDelivery) Envelope() any { return d.cmd.Envelope() }
-func (d *runtimeDelivery) Attempt() int  { return d.cmd.DeliveryAttempt() }
+func (d *runtimeDelivery) Envelope() any { return d.delivery.Envelope() }
+func (d *runtimeDelivery) Attempt() int  { return d.delivery.Attempt() }
 func (d *runtimeDelivery) MaxAttempts() int {
-	return d.cmd.MaxDeliveries()
+	return d.delivery.MaxAttempts()
 }
 func (d *runtimeDelivery) InProgress(ctx context.Context) error {
-	return d.cmd.InProgress(ctx)
+	return d.delivery.InProgress(ctx)
 }
 func (d *runtimeDelivery) Ack(ctx context.Context) error {
-	return d.cmd.Ack(ctx)
+	return d.delivery.Ack(ctx)
 }
 func (d *runtimeDelivery) Retry(ctx context.Context, delay time.Duration, reason string) error {
-	return d.cmd.Retry(ctx, delay, reason)
+	return d.delivery.Retry(ctx, delay, reason)
 }
 func (d *runtimeDelivery) DeadLetter(ctx context.Context, reason string) error {
 	if d.onDeadLetter != nil {
 		d.onDeadLetter(reason)
 	}
-	return d.cmd.DeadLetter(ctx, reason)
+	return d.delivery.DeadLetter(ctx, reason)
 }

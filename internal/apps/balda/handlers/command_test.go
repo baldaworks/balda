@@ -701,9 +701,9 @@ func (f *fakeTurnDispatcher) Enqueue(task actors.TurnTask) (int, error) {
 	return 0, nil
 }
 
-func (f *fakeTurnDispatcher) PublishCommand(_ context.Context, env swarm.Envelope) (*swarm.CommandPublishResult, error) {
+func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env swarm.Envelope) (*swarm.DispatchReceipt, error) {
 	f.commands = append(f.commands, env)
-	return &swarm.CommandPublishResult{
+	return &swarm.DispatchReceipt{
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: uint64(len(f.commands)),
 		Subject:  swarm.SubjectForEnvelope(env),
@@ -779,7 +779,7 @@ type recordingHandlerCommandBus struct {
 	eventErrs     []error
 }
 
-func (b *recordingHandlerCommandBus) PublishCommand(_ context.Context, env swarm.Envelope) (*swarm.CommandPublishResult, error) {
+func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env swarm.Envelope) (*swarm.DispatchReceipt, error) {
 	if len(b.commandErrs) > 0 {
 		err := b.commandErrs[0]
 		b.commandErrs = b.commandErrs[1:]
@@ -788,7 +788,7 @@ func (b *recordingHandlerCommandBus) PublishCommand(_ context.Context, env swarm
 		}
 	}
 	b.commands = append(b.commands, env)
-	return &swarm.CommandPublishResult{Stream: swarm.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: swarm.SubjectForEnvelope(env), MsgID: swarm.DedupeKeyOrID(env)}, nil
+	return &swarm.DispatchReceipt{Stream: swarm.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: swarm.SubjectForEnvelope(env), MsgID: swarm.DedupeKeyOrID(env)}, nil
 }
 
 func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject string, env swarm.Envelope) error {

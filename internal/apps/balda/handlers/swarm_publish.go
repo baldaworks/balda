@@ -11,11 +11,11 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 )
 
-func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.CommandPublishResult, error) {
+func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
 	return h.submitSessionTurnToSwarm(ctx, payload)
 }
 
-func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.CommandPublishResult, error) {
+func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
 	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
 		return nil, fmt.Errorf("jetstream swarm runtime is unavailable")
 	}
@@ -23,10 +23,10 @@ func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload act
 	if err != nil {
 		return nil, err
 	}
-	return h.swarmCoordinator.Submit(ctx, env)
+	return h.swarmCoordinator.Dispatch(ctx, env)
 }
 
-func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.CommandPublishResult, string, error) {
+func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.DispatchReceipt, string, error) {
 	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
 		return nil, "", fmt.Errorf("jetstream swarm runtime is unavailable")
 	}
@@ -34,7 +34,7 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.Ses
 	if err != nil {
 		return nil, "", err
 	}
-	result, err := h.swarmCoordinator.Submit(ctx, env)
+	result, err := h.swarmCoordinator.Dispatch(ctx, env)
 	if err != nil {
 		return nil, "", err
 	}
@@ -105,7 +105,7 @@ func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasessio
 	if h.swarmCoordinator == nil || !h.swarmCoordinator.Enabled() {
 		return false, fmt.Errorf("jetstream swarm runtime is unavailable")
 	}
-	_, err = h.swarmCoordinator.Submit(ctx, env)
+	_, err = h.swarmCoordinator.Dispatch(ctx, env)
 	if err != nil {
 		return false, err
 	}

@@ -16,10 +16,10 @@ type TestJetStreamHarness struct {
 }
 
 // StartTestJetStream creates an embedded JetStream bus backed by a temp store dir.
-// It ensures required streams/consumers are available through NewCommandBus startup.
+// It ensures required streams/consumers are available through NewActorRuntimeTransport startup.
 func StartTestJetStream(t *testing.T, swarmCfg swarm.Config) *TestJetStreamHarness {
 	t.Helper()
-	busRaw, err := NewCommandBus(Params{
+	busRaw, err := NewActorRuntimeTransport(Params{
 		LC:         fxtest.NewLifecycle(t),
 		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
 		Swarm:      swarmCfg,
@@ -27,7 +27,7 @@ func StartTestJetStream(t *testing.T, swarmCfg swarm.Config) *TestJetStreamHarne
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("StartTestJetStream() NewCommandBus error = %v", err)
+		t.Fatalf("StartTestJetStream() NewActorRuntimeTransport error = %v", err)
 	}
 	bus, ok := busRaw.(*Bus)
 	if !ok {
@@ -37,12 +37,12 @@ func StartTestJetStream(t *testing.T, swarmCfg swarm.Config) *TestJetStreamHarne
 	return &TestJetStreamHarness{Bus: bus}
 }
 
-// PublishCommand is a test command publisher helper for fixtures/scenarios.
-func (h *TestJetStreamHarness) PublishCommand(t *testing.T, env swarm.Envelope) *swarm.CommandPublishResult {
+// Dispatch is a test command publisher helper for fixtures/scenarios.
+func (h *TestJetStreamHarness) Dispatch(t *testing.T, env swarm.Envelope) *swarm.DispatchReceipt {
 	t.Helper()
-	ack, err := h.Bus.PublishCommand(context.Background(), env)
+	ack, err := h.Bus.Dispatch(context.Background(), env)
 	if err != nil {
-		t.Fatalf("PublishCommand() error = %v", err)
+		t.Fatalf("Dispatch() error = %v", err)
 	}
 	return ack
 }

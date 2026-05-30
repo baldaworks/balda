@@ -1,4 +1,4 @@
-# JetStream Command Bus
+# JetStream Actorlayer Adapter
 
 Owner: Balda maintainers  
 Status: active
@@ -10,6 +10,8 @@ Status: active
 - `BALDA_DLQ` stores terminal command failures.
 - Worker and projector use durable pull consumers with explicit settlement.
 - Command subjects stay under `balda.v1.cmd.*`; events under `balda.v1.evt.*`.
+- Product/runtime packages consume actorlayer `Source`/`Delivery` and Balda
+  `ActorDispatcher` abstractions, not NATS/JetStream APIs.
 
 ## Related tests
 

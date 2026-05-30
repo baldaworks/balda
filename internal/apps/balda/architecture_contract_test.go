@@ -50,16 +50,49 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
-	t.Run("actors execute from the JetStream command consumer", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`RunCommandConsumer\s*\(`))
-		assertOnlyAllowedFiles(t, matches, []string{
-			"eventbus/nats/jetstream.go",
-			"swarm/bus.go",
-			"swarm/runtime.go",
-		})
+	t.Run("actors execute from actorlayer delivery source", func(t *testing.T) {
 		runtimeSource := readSource(t, filepath.Join(root, "swarm/runtime.go"))
+		if !strings.Contains(runtimeSource, "Source actorengine.Source") {
+			t.Fatal("swarm runtime must depend on actorlayer Source, not a direct transport consumer")
+		}
 		if !strings.Contains(runtimeSource, "runtimeSource{") || !strings.Contains(runtimeSource, "r.engine.Run(runCtx") {
-			t.Fatal("swarm runtime must dispatch actor commands through actorlayer runtime over the JetStream command source")
+			t.Fatal("swarm runtime must dispatch actor deliveries through actorlayer runtime")
+		}
+	})
+
+	t.Run("nats imports stay inside jetstream adapter", func(t *testing.T) {
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`github\.com/nats-io/`))
+		assertOnlyAllowedFiles(t, matches, []string{
+			"eventbus/nats/connection.go",
+			"eventbus/nats/dlq_inspector.go",
+			"eventbus/nats/embedded_server.go",
+			"eventbus/nats/jetstream.go",
+			"eventbus/nats/status.go",
+			"eventbus/nats/subjects.go",
+		})
+	})
+
+	t.Run("product code does not use direct transport contracts", func(t *testing.T) {
+		forbidden := []string{
+			"CommandMessage",
+			"CommandPublisher",
+			"CommandConsumer",
+			"CoordinatorBus",
+			"RuntimeBus",
+			"RunCommandConsumer",
+			"PublishCommand(",
+		}
+		for _, needle := range forbidden {
+			t.Run(needle, func(t *testing.T) {
+				pattern := regexp.QuoteMeta(needle)
+				if !strings.Contains(needle, "(") {
+					pattern = `\b` + pattern + `\b`
+				}
+				matches := findSourceMatches(t, root, files, regexp.MustCompile(pattern))
+				assertOnlyAllowedFiles(t, matches, []string{
+					"architecture_contract_test.go",
+				})
+			})
 		}
 	})
 
@@ -120,8 +153,8 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 
 	t.Run("ingress publishes commands before local state is advanced", func(t *testing.T) {
 		schedulerSource := readSource(t, filepath.Join(root, "handlers/scheduled_task_scheduler.go"))
-		if !strings.Contains(schedulerSource, "s.coordinator.Submit(ctx, env)") {
-			t.Fatal("scheduler ingress must publish the durable JetStream command through SwarmCoordinator")
+		if !strings.Contains(schedulerSource, "s.coordinator.Dispatch(ctx, env)") {
+			t.Fatal("scheduler ingress must dispatch durable actor work through SwarmCoordinator")
 		}
 		if !strings.Contains(schedulerSource, "Mark the slot only after JetStream accepts the command.") {
 			t.Fatal("scheduler must document and preserve publish-before-dispatch-state ordering")
@@ -159,13 +192,13 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		const ensureRuntimeCall = "bus.ensureRuntime(context.Background())"
 		const lifecycleHook = "params.LC.Append(fx.Hook{OnStop: bus.Drain})"
 		if !strings.Contains(busSource, ensureRuntimeCall) {
-			t.Fatalf("command bus must call %q during construction", ensureRuntimeCall)
+			t.Fatalf("actor runtime transport must call %q during construction", ensureRuntimeCall)
 		}
 		if !strings.Contains(busSource, lifecycleHook) {
-			t.Fatalf("command bus lifecycle hook %q is missing", lifecycleHook)
+			t.Fatalf("actor runtime transport lifecycle hook %q is missing", lifecycleHook)
 		}
 		if strings.Index(busSource, ensureRuntimeCall) > strings.Index(busSource, lifecycleHook) {
-			t.Fatal("command bus readiness checks must run before transport lifecycle can continue")
+			t.Fatal("actor runtime transport readiness checks must run before transport lifecycle can continue")
 		}
 	})
 

@@ -35,7 +35,7 @@ func (a *testActor) Handle(ctx context.Context, envelope any) error {
 	return a.err
 }
 
-type testCommandMessage struct {
+type testDelivery struct {
 	env           Envelope
 	numDelivered  int
 	maxDeliveries int
@@ -45,36 +45,35 @@ type testCommandMessage struct {
 	deadletter    func(context.Context, string) error
 }
 
-func (m testCommandMessage) Envelope() Envelope { return m.env }
-func (m testCommandMessage) Subject() string    { return SubjectForEnvelope(m.env) }
-func (m testCommandMessage) InProgress(ctx context.Context) error {
+func (m testDelivery) Envelope() any { return m.env }
+func (m testDelivery) InProgress(ctx context.Context) error {
 	if m.inProgress != nil {
 		return m.inProgress(ctx)
 	}
 	return nil
 }
-func (m testCommandMessage) DeliveryAttempt() int {
+func (m testDelivery) Attempt() int {
 	if m.numDelivered <= 0 {
 		return 1
 	}
 	return m.numDelivered
 }
-func (m testCommandMessage) MaxDeliveries() int { return m.maxDeliveries }
-func (m testCommandMessage) Ack(ctx context.Context) error {
+func (m testDelivery) MaxAttempts() int { return m.maxDeliveries }
+func (m testDelivery) Ack(ctx context.Context) error {
 	if m.ack != nil {
 		return m.ack(ctx)
 	}
 	return nil
 }
 
-func (m testCommandMessage) Retry(ctx context.Context, delay time.Duration, reason string) error {
+func (m testDelivery) Retry(ctx context.Context, delay time.Duration, reason string) error {
 	if m.retry != nil {
 		return m.retry(ctx, delay, reason)
 	}
 	return nil
 }
 
-func (m testCommandMessage) DeadLetter(ctx context.Context, reason string) error {
+func (m testDelivery) DeadLetter(ctx context.Context, reason string) error {
 	if m.deadletter != nil {
 		return m.deadletter(ctx, reason)
 	}
@@ -93,7 +92,7 @@ func (b *recordingCommandBus) PublishEvent(_ context.Context, subject string, _ 
 	b.events = append(b.events, subject)
 	return nil
 }
-func (b *recordingCommandBus) RunCommandConsumer(ctx context.Context, _ CommandHandler) error {
+func (b *recordingCommandBus) Run(ctx context.Context, _ actorengine.Handler) error {
 	b.runCalls++
 	<-ctx.Done()
 	return ctx.Err()
@@ -127,12 +126,12 @@ func newTestRegistry(t *testing.T, actors ...Actor) dispatch.Registry {
 
 func TestRuntimeStartDisabledDoesNotRunConsumer(t *testing.T) {
 	bus := &recordingCommandBus{}
-	runtime := &Runtime{bus: bus, enabled: false}
+	runtime := &Runtime{source: bus, enabled: false}
 	if err := runtime.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	if bus.runCalls != 0 {
-		t.Fatalf("RunCommandConsumer calls = %d, want 0", bus.runCalls)
+		t.Fatalf("Run calls = %d, want 0", bus.runCalls)
 	}
 }
 
@@ -141,8 +140,8 @@ func TestRuntime_HandleCommandDispatchesActor(t *testing.T) {
 	actor := &testActor{address: WildcardAddress(ActorTypeSession)}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(bus, registry)
-	if err := runtime.handleCommand(context.Background(), testCommandMessage{env: runtimeTestEnvelope("ok", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
-		t.Fatalf("handleCommand() error = %v", err)
+	if err := runtime.handleDelivery(context.Background(), testDelivery{env: runtimeTestEnvelope("ok", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
+		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if actor.calls != 1 {
 		t.Fatalf("actor calls = %d, want 1", actor.calls)
@@ -154,8 +153,8 @@ func TestRuntime_HandleCommandDispatchesActorWithNormalizedAddress(t *testing.T)
 	actor := &testActor{address: "  SESSION:S-1  "}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(bus, registry)
-	if err := runtime.handleCommand(context.Background(), testCommandMessage{env: runtimeTestEnvelope("normalized", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
-		t.Fatalf("handleCommand() error = %v", err)
+	if err := runtime.handleDelivery(context.Background(), testDelivery{env: runtimeTestEnvelope("normalized", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
+		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if actor.calls != 1 {
 		t.Fatalf("actor calls = %d, want 1", actor.calls)
@@ -213,7 +212,7 @@ func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	var deadletterReason string
 	var retried bool
-	err := runtime.handleCommand(context.Background(), testCommandMessage{
+	err := runtime.handleDelivery(context.Background(), testDelivery{
 		env: runtimeTestEnvelope("unknown", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		deadletter: func(_ context.Context, reason string) error {
 			deadletterReason = reason
@@ -225,7 +224,7 @@ func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("handleCommand() error = %v", err)
+		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if deadletterReason == "" {
 		t.Fatal("DeadLetter() was not called")
@@ -243,7 +242,7 @@ func TestRuntime_ActorErrorRequestsRetry(t *testing.T) {
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	var called bool
-	err := runtime.handleCommand(context.Background(), testCommandMessage{
+	err := runtime.handleDelivery(context.Background(), testDelivery{
 		env: runtimeTestEnvelope("retry", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		retry: func(_ context.Context, _ time.Duration, _ string) error {
 			called = true
@@ -251,7 +250,7 @@ func TestRuntime_ActorErrorRequestsRetry(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("handleCommand() error = %v", err)
+		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if !called {
 		t.Fatal("Retry() was not called")
@@ -285,7 +284,7 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 	env := runtimeTestEnvelope("retry-exhausted", ActorAddress{Target: ActorTypeSession, Key: "s-1"})
 	env.TaskID = "task-retry"
 	var deadletterCalled bool
-	err = runtime.handleCommand(ctx, testCommandMessage{
+	err = runtime.handleDelivery(ctx, testDelivery{
 		env:           env,
 		numDelivered:  5,
 		maxDeliveries: 5,
@@ -295,7 +294,7 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("handleCommand() error = %v", err)
+		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if !deadletterCalled {
 		t.Fatal("DeadLetter() was not called")
@@ -331,7 +330,7 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 	var inProgressCalls atomic.Int32
 	done := make(chan error, 1)
 	go func() {
-		done <- runtime.handleCommand(context.Background(), testCommandMessage{
+		done <- runtime.handleDelivery(context.Background(), testDelivery{
 			env: runtimeTestEnvelope("long-running", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 			inProgress: func(context.Context) error {
 				inProgressCalls.Add(1)
@@ -356,7 +355,7 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("handleCommand() error = %v, want nil", err)
+			t.Fatalf("handleDelivery() error = %v, want nil", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for long-running command completion")
@@ -386,7 +385,7 @@ func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runtime.handleCommand(context.Background(), testCommandMessage{env: env})
+		done <- runtime.handleDelivery(context.Background(), testDelivery{env: env})
 	}()
 
 	select {
@@ -406,7 +405,7 @@ func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("handleCommand() error = %v", err)
+			t.Fatalf("handleDelivery() error = %v", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for completion")
@@ -418,21 +417,15 @@ func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
 	}
 }
 
-func newRuntimeForTest(bus RuntimeBus, registry dispatch.Registry) *Runtime {
-	rt := &Runtime{bus: bus, actors: registry, heartbeatTick: heartbeatInterval}
+func newRuntimeForTest(bus *recordingCommandBus, registry dispatch.Registry) *Runtime {
+	rt := &Runtime{source: bus, events: bus, actors: registry, heartbeatTick: heartbeatInterval}
 	engine, err := actorengine.New(actorengine.Config{
 		Resolver: runtimeResolver{},
 		Sink:     rt,
 		Retry: actorengine.RetryPolicy{
-			IsRetryable: IsRetryableError,
-			Backoff:     RetryDelay,
-			RetryExhausted: func(delivery actorengine.Delivery) bool {
-				wrapped, ok := delivery.(*runtimeDelivery)
-				if !ok {
-					return false
-				}
-				return retryExhaustedCommand(wrapped.cmd)
-			},
+			IsRetryable:    IsRetryableError,
+			Backoff:        RetryDelay,
+			RetryExhausted: retryExhaustedDelivery,
 		},
 	})
 	if err != nil {

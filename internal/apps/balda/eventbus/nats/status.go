@@ -9,9 +9,9 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 )
 
-func (b *Bus) Status(ctx context.Context) (swarm.CommandBusStatus, error) {
-	status := swarm.CommandBusStatus{
-		CommandBus:    "jetstream",
+func (b *Bus) Status(ctx context.Context) (swarm.RuntimeStatus, error) {
+	status := swarm.RuntimeStatus{
+		Transport:     "jetstream",
 		Embedded:      b.cfg.NATS.Embedded,
 		JetStream:     true,
 		ProjectionLag: map[string]uint64{},

@@ -37,7 +37,7 @@ type CommandHandler struct {
 	swarmCoordinator  *swarm.Coordinator
 	swarmRuntime      swarmRuntimeStatusProvider
 	swarmConfig       swarm.Config
-	commandBus        swarm.CommandBusStatusProvider
+	commandBus        swarm.ActorRuntimeStatusProvider
 	tasks             *swarm.TaskService
 	taskRuns          *actors.TaskRunRegistry
 	goalMaxIterations int
@@ -65,7 +65,7 @@ type commandHandlerParams struct {
 	SwarmCoordinator  *swarm.Coordinator
 	SwarmRuntime      *swarm.Runtime
 	SwarmConfig       swarm.Config
-	CommandBus        swarm.CommandBusStatusProvider
+	Transport         swarm.ActorRuntimeStatusProvider
 	TaskService       *swarm.TaskService
 	TaskRuns          *actors.TaskRunRegistry
 	MaxIterations     int `name:"balda_goal_max_iterations"`
@@ -85,7 +85,7 @@ func NewCommandHandler(params commandHandlerParams) *CommandHandler {
 		swarmCoordinator:  params.SwarmCoordinator,
 		swarmRuntime:      params.SwarmRuntime,
 		swarmConfig:       params.SwarmConfig,
-		commandBus:        params.CommandBus,
+		commandBus:        params.Transport,
 		tasks:             params.TaskService,
 		taskRuns:          params.TaskRuns,
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
@@ -454,7 +454,7 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 		}
 		return nil
 	}
-	if _, err := h.swarmCoordinator.Submit(ctx, env); err != nil {
+	if _, err := h.swarmCoordinator.Dispatch(ctx, env); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish cancel command")
 		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to request cancel: %v", err)); sendErr != nil {
 			return sendErr

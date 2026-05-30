@@ -305,7 +305,7 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 	if strings.TrimSpace(sessionEnv.DedupeKey) != "" {
 		sessionEnv.ID = sessionEnv.DedupeKey
 	}
-	if _, err := e.coordinator.Submit(ctx, sessionEnv); err != nil {
+	if _, err := e.coordinator.Dispatch(ctx, sessionEnv); err != nil {
 		return swarm.TransientError(err)
 	}
 	if taskID != "" && e.tasks != nil {
@@ -376,7 +376,7 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 	if strings.TrimSpace(sessionEnv.DedupeKey) != "" {
 		sessionEnv.ID = sessionEnv.DedupeKey
 	}
-	if _, err := e.coordinator.Submit(ctx, sessionEnv); err != nil {
+	if _, err := e.coordinator.Dispatch(ctx, sessionEnv); err != nil {
 		return swarm.TransientError(err)
 	}
 	if e.tasks != nil {

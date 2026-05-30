@@ -528,7 +528,7 @@ func (a *goalkeeperActor) enqueueTaskCompletionMemorySync(ctx context.Context, p
 			DedupeKey:     dedupeKey,
 			PayloadJSON:   string(commandJSON),
 		}
-		if _, err := a.coordinator.Submit(ctx, env); err != nil {
+		if _, err := a.coordinator.Dispatch(ctx, env); err != nil {
 			return swarm.TransientError(err)
 		}
 	}
@@ -609,7 +609,7 @@ func (a *goalkeeperActor) deliver(
 		DedupeKey:     dedupeKey,
 		PayloadJSON:   string(data),
 	}
-	if _, err := a.coordinator.Submit(ctx, env); err != nil {
+	if _, err := a.coordinator.Dispatch(ctx, env); err != nil {
 		return swarm.TransientError(err)
 	}
 	return nil

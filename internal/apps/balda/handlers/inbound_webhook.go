@@ -128,8 +128,8 @@ type inboundWebhookDedupePolicy struct {
 }
 
 type inboundTurnExecutor interface {
-	submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.CommandPublishResult, string, error)
-	submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.CommandPublishResult, error)
+	submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.DispatchReceipt, string, error)
+	submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error)
 }
 
 type inboundWebhookParams struct {
@@ -612,7 +612,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		DedupeKey:      dedupeKey,
 	}
 	var (
-		result     *swarm.CommandPublishResult
+		result     *swarm.DispatchReceipt
 		taskID     string
 		enqueueErr error
 	)

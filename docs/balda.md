@@ -168,7 +168,7 @@ Balda treats `actorlayer` as a pure typed actor engine and never as product poli
 - `balda.provider` selects one app-scoped ADK provider runtime for all Balda sessions and Goalkeeper worker/validator runs in the process.
 - Actorlayer owns generic actor mechanics: registration, addressing, lane execution, lifecycle state, and delivery hooks.
 - Balda owns product actors and product behavior implemented as actors: session, task, goalkeeper, delivery, control, and memory.
-- Balda maps JetStream command messages into actorlayer deliveries and owns command settlement.
+- Balda exposes JetStream to product/runtime code only as actorlayer source, delivery, and dispatch abstractions; the concrete transport stays inside the NATS adapter.
 
 The boundary is intentionally explicit:
 
@@ -183,16 +183,16 @@ The boundary is intentionally explicit:
 - Ensure no ADK, provider, or queue API types enter the actor layer contract.
 - Keep retry/dead-letter policy, projection writes, and reporting in Balda-owned modules.
 - Preserve command envelope metadata (`chat_id`, `topic_id`, `goal_id`) at the actorlayer boundary.
-- Verify task/actor scenarios through the configured `balda.provider` runtime and JetStream command path.
+- Verify task/actor scenarios through the configured `balda.provider` runtime and actorlayer dispatch path.
 
 ### Implementation Map
 
 Balda's actorlayer integration is intentionally direct:
 
-- `internal/apps/balda/swarm/runtime.go`: adapts JetStream `CommandMessage` values into `actorlayer/engine` deliveries and owns actor lane execution.
-- `internal/apps/balda/actors`: defines Balda product actors for sessions, tasks, task agents, delivery, control, and memory command contracts.
-- `internal/apps/balda/handlers`: owns ingress, command parsing, and publishing actor command envelopes.
-- `internal/apps/balda/eventbus/nats`: owns JetStream publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing.
+- `internal/apps/balda/swarm/runtime.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
+- `internal/apps/balda/actors`: defines Balda product actors for sessions, tasks, goalkeeper, delivery, control, and memory command contracts.
+- `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
+- `internal/apps/balda/eventbus/nats`: adapts JetStream publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped ADK provider runtime selected by `balda.provider` and the per-session ADK state.
 - `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, tasks, projections, memory, and delivery outbox rows.
 
@@ -641,9 +641,10 @@ after command delivery.
 
 ### JetStream runtime semantics (internal)
 
-Balda uses JetStream as the command bus, event bus, retry transport, replay log,
-and DLQ. SQLite remains product/read-model state only; it does not decide what
-runs, retries, or wakes up.
+Balda uses JetStream as the concrete durable adapter behind actorlayer dispatch,
+source, delivery, retry, replay, event, and DLQ contracts. SQLite remains
+product/read-model state only; it does not decide what runs, retries, or wakes
+up.
 
 ```mermaid
 flowchart LR
@@ -668,10 +669,11 @@ balda.v1.dlq.>"]
     end
 
     subgraph Runtime["Actor Runtime"]
+        SRC["actorengine.Source/Delivery adapter"]
         RT["ActorRuntime"]
         LNS["Actorlayer engine lanes
-session/task/agent/delivery/memory"]
-        ACT["Session/Task/Agent/Delivery/Memory actors"]
+session/task/goalkeeper/delivery/memory"]
+        ACT["Session/Task/Goalkeeper/Delivery/Memory actors"]
     end
 
     subgraph State["SQLite product/read-model state"]
@@ -684,7 +686,7 @@ session/task/agent/delivery/memory"]
     WH --> CMD
     SCH --> CMD
     GOAL --> CMD
-    CMD --> WKR --> RT --> LNS --> ACT
+    CMD --> WKR --> SRC --> RT --> LNS --> ACT
     ACT --> EVT
     RT -- retry exhausted / permanent / decode failure --> DLQ
     EVT --> PRJ --> TASKS
@@ -693,8 +695,10 @@ session/task/agent/delivery/memory"]
 ```
 
 - Ownership boundary:
-  - JetStream owns command intake, command replay, retry/redelivery scheduling,
-    and DLQ transport.
+  - JetStream owns durable storage and wire-level settlement inside
+    `internal/apps/balda/eventbus/nats`.
+  - Actorlayer `Source`/`Delivery`/dispatch contracts are the boundary consumed
+    by runtime, handlers, and product actors.
   - SQLite owns product state/read models (`swarm_tasks`, projected
     `swarm_task_events`, delivery outbox records, session metadata, memory
     state, scheduler metadata).
@@ -878,13 +882,13 @@ All events are published as the same envelope shape. For event envelopes,
   - capacity: `max_ack_pending`
   - fetch window: `fetch_batch`, `fetch_wait`
   - visibility: `/swarm status` worker metrics (`num_pending`, `num_ack_pending`, `num_redelivered`)
-- Local command handler workers:
-  - owner: process-local `RunCommandConsumer`
+- Local actor delivery workers:
+  - owner: process-local JetStream actorlayer source adapter
   - capacity: `fetch_batch` (bounded local fan-out)
   - behavior: no persistence, no retry policy; settlement remains JetStream-owned
 - Actor lanes:
   - owner: process-local actorlayer runtime engine
-  - capacity: 1 active handler per actor key (`task:<id>`, session/agent fallbacks)
+  - capacity: 1 active handler per actor key (`task:<id>`, session/goalkeeper fallbacks)
   - behavior: serializes mutable task/session state transitions
 - Session turn queue:
   - owner: process-local `TurnDispatcher` inside SessionActor

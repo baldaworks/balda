@@ -24,7 +24,7 @@ func submitSessionCancelControl(
 	if err != nil {
 		return fmt.Errorf("build session cancel control envelope: %w", err)
 	}
-	if _, err := coordinator.Submit(ctx, env); err != nil {
+	if _, err := coordinator.Dispatch(ctx, env); err != nil {
 		return fmt.Errorf("publish session cancel control command: %w", err)
 	}
 	return nil

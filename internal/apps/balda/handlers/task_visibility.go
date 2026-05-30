@@ -110,7 +110,7 @@ func (h *CommandHandler) cancelTaskCommand(ctx context.Context, commandCtx balda
 	if err != nil {
 		return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to build cancel request: %v", err))
 	}
-	if _, err := h.swarmCoordinator.Submit(ctx, env); err != nil {
+	if _, err := h.swarmCoordinator.Dispatch(ctx, env); err != nil {
 		log.Warn().Err(err).Str("task_id", task.ID).Msg("failed to publish task cancel command")
 		return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to request task cancel: %v", err))
 	}
@@ -322,7 +322,7 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 			return "", err
 		}
 		out.WriteString("\n- command_bus: ")
-		out.WriteString(firstNonEmpty(status.CommandBus, "unknown"))
+		out.WriteString(firstNonEmpty(status.Transport, "unknown"))
 		if contract := strings.TrimSpace(status.DisabledMode); contract != "" {
 			out.WriteString("\n- disabled_mode_contract: ")
 			out.WriteString(contract)

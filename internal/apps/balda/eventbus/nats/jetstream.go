@@ -13,6 +13,7 @@ import (
 	gnats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
 	"github.com/rs/zerolog"
 )
 
@@ -39,13 +40,12 @@ type commandMessage struct {
 	settled bool
 }
 
-func (m *commandMessage) Envelope() swarm.Envelope { return m.env }
-func (m *commandMessage) Subject() string          { return m.subject }
+func (m *commandMessage) Envelope() any { return m.env }
 func (m *commandMessage) InProgress(context.Context) error {
 	return m.msg.InProgress()
 }
-func (m *commandMessage) DeliveryAttempt() int { return m.numDelivered }
-func (m *commandMessage) MaxDeliveries() int   { return m.maxDeliveries }
+func (m *commandMessage) Attempt() int     { return m.numDelivered }
+func (m *commandMessage) MaxAttempts() int { return m.maxDeliveries }
 
 func (m *commandMessage) Ack(ctx context.Context) error {
 	return m.settle(func() error {
@@ -134,9 +134,9 @@ func (m *commandMessage) settle(fn func() error) error {
 	return nil
 }
 
-func (b *Bus) RunCommandConsumer(ctx context.Context, handler swarm.CommandHandler) error {
+func (b *Bus) Run(ctx context.Context, handler actorengine.Handler) error {
 	if b == nil || b.consumer == nil {
-		return fmt.Errorf("jetstream command consumer is required")
+		return fmt.Errorf("actor delivery consumer is required")
 	}
 	workerLimit := b.commandWorkerLimit()
 	workers := make(chan struct{}, workerLimit)
@@ -202,7 +202,7 @@ func (b *Bus) commandWorkerLimit() int {
 	}
 }
 
-func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler swarm.CommandHandler) error {
+func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler actorengine.Handler) error {
 	commandStartedAt := time.Now()
 	defer func() {
 		b.commandDurationNanos.Add(uint64(time.Since(commandStartedAt)))
@@ -430,7 +430,7 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 	return nil
 }
 
-func commandEventEnvelope(env swarm.Envelope, result *swarm.CommandPublishResult, status string, reason string, extra map[string]any) swarm.Envelope {
+func commandEventEnvelope(env swarm.Envelope, result *swarm.DispatchReceipt, status string, reason string, extra map[string]any) swarm.Envelope {
 	payload := map[string]any{
 		"envelope_id":    env.ID,
 		"task_id":        env.TaskID,

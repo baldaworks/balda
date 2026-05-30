@@ -47,7 +47,7 @@ Status: active
   - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
   - and lifecycle events suitable for external telemetry.
 - Provider runtime: `balda.provider` selects the single app-scoped ADK provider runtime used by all Balda sessions and Goalkeeper worker/validator runs.
-- Delivery boundary: Balda maps JetStream command messages into actorlayer deliveries and owns command settlement.
+- Delivery boundary: Balda maps JetStream messages inside `eventbus/nats` into actorlayer `Source`/`Delivery` contracts; runtime and product actors never consume NATS/JetStream APIs directly.
 
 ### Ownership split
 
@@ -75,6 +75,6 @@ Status: active
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
 - Telegram/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers publish actor commands but do not own actor behavior or actor registration.
 - ADK session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
-- JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats` and the `swarm.CommandMessage` contract.
+- JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and Balda `ActorDispatcher` contracts.
 - Task projection, retry classification, DLQ reporting, and user-visible status live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.
 - Balda must not grow `internal/apps/balda/norma`, `internal/apps/balda/adapters`, or actor-runtime selector packages. Future generic actor adapters belong to Norma-owned public packages such as `github.com/normahq/norma/pkg/actoradapter/...`.

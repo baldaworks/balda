@@ -317,7 +317,7 @@ func TestCommandHandlerSwarmStatusShowsDisabledModeContract(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
 	handler.swarmConfig = swarm.Config{Enabled: false}
 	handler.swarmCoordinator = nil
-	handler.commandBus = swarm.UnsupportedCommandBus{}
+	handler.commandBus = swarm.UnsupportedActorRuntimeTransport{}
 
 	if err := handler.onCommand(ctx, newCommandEvent("swarm", "status", 101, 9001, nil)); err != nil {
 		t.Fatalf("/swarm status error = %v", err)
@@ -349,14 +349,14 @@ func TestCommandHandlerDLQEntryUsageAndNotFound(t *testing.T) {
 	assertLastSentContains(t, tgClient, "DLQ entry 999 not found.")
 }
 
-func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *statusCommandBus, *swarm.Coordinator, *swarm.TaskService) {
+func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *statusTransport, *swarm.Coordinator, *swarm.TaskService) {
 	t.Helper()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	bus := &statusCommandBus{}
+	bus := &statusTransport{}
 	cfg, err := (swarm.Config{Enabled: true}).Normalized()
 	if err != nil {
 		t.Fatalf("Normalize swarm config: %v", err)
@@ -369,7 +369,7 @@ func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldasta
 			cfg,
 		),
 		fx.Provide(
-			func() swarm.CoordinatorBus { return bus },
+			func() swarm.ActorDispatcher { return bus },
 			func() swarm.EventPublisher { return bus },
 		),
 		fx.Provide(swarm.NewTaskService, swarm.NewCoordinator),
@@ -380,25 +380,25 @@ func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldasta
 	return provider, bus, coordinator, tasks
 }
 
-type statusCommandBus struct{ recordingHandlerCommandBus }
+type statusTransport struct{ recordingHandlerCommandBus }
 
-func (*statusCommandBus) Status(context.Context) (swarm.CommandBusStatus, error) {
-	return swarm.CommandBusStatus{
-		CommandBus: "jetstream",
-		Embedded:   true,
-		Running:    true,
-		JetStream:  true,
-		Commands:   swarm.StreamStatus{Name: swarm.DefaultCommandStream, Messages: 1, FirstSeq: 1, LastSeq: 1},
-		Events:     swarm.StreamStatus{Name: swarm.DefaultEventStream, Messages: 2, FirstSeq: 1, LastSeq: 2},
-		DLQ:        swarm.StreamStatus{Name: swarm.DefaultDLQStream},
-		Worker:     swarm.ConsumerStatus{Name: swarm.DefaultCommandConsumer},
+func (*statusTransport) Status(context.Context) (swarm.RuntimeStatus, error) {
+	return swarm.RuntimeStatus{
+		Transport: "jetstream",
+		Embedded:  true,
+		Running:   true,
+		JetStream: true,
+		Commands:  swarm.StreamStatus{Name: swarm.DefaultCommandStream, Messages: 1, FirstSeq: 1, LastSeq: 1},
+		Events:    swarm.StreamStatus{Name: swarm.DefaultEventStream, Messages: 2, FirstSeq: 1, LastSeq: 2},
+		DLQ:       swarm.StreamStatus{Name: swarm.DefaultDLQStream},
+		Worker:    swarm.ConsumerStatus{Name: swarm.DefaultCommandConsumer},
 		ProjectionLag: map[string]uint64{
 			swarm.DefaultEventProjectorConsumer: 2,
 		},
 	}, nil
 }
 
-func (*statusCommandBus) GetDLQEntry(_ context.Context, sequence uint64) (swarm.DLQEntry, error) {
+func (*statusTransport) GetDLQEntry(_ context.Context, sequence uint64) (swarm.DLQEntry, error) {
 	if sequence != 7 {
 		return swarm.DLQEntry{}, fmt.Errorf("%w: sequence=%d", swarm.ErrDLQEntryNotFound, sequence)
 	}

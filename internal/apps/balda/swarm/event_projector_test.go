@@ -25,10 +25,10 @@ func TestNewEventConsumerRequiresEventConsumerWhenEnabled(t *testing.T) {
 	t.Parallel()
 
 	consumer, err := NewEventConsumer(eventConsumerParams{
-		Bus:    UnsupportedCommandBus{},
+		Bus:    UnsupportedActorRuntimeTransport{},
 		Config: Config{Enabled: true},
 	})
-	if err == nil || !strings.Contains(err.Error(), "event-consumer command bus") {
+	if err == nil || !strings.Contains(err.Error(), "actor runtime event consumer") {
 		t.Fatalf("NewEventConsumer() = (%v, %v), want event consumer error", consumer, err)
 	}
 }
@@ -37,7 +37,7 @@ func TestNewEventConsumerAllowsMissingEventConsumerWhenDisabled(t *testing.T) {
 	t.Parallel()
 
 	consumer, err := NewEventConsumer(eventConsumerParams{
-		Bus:    UnsupportedCommandBus{},
+		Bus:    UnsupportedActorRuntimeTransport{},
 		Config: Config{Enabled: false},
 	})
 	if err != nil {
@@ -57,7 +57,7 @@ func TestNewEventProjectorRequiresConsumerWhenEnabled(t *testing.T) {
 		StateProvider: newEventProjectorStateProvider(t, context.Background()),
 		Logger:        zerolog.Nop(),
 	})
-	if err == nil || !strings.Contains(err.Error(), "event-consumer command bus") {
+	if err == nil || !strings.Contains(err.Error(), "actor runtime event consumer") {
 		t.Fatalf("NewEventProjector() = (%v, %v), want consumer error", projector, err)
 	}
 }

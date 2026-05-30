@@ -98,7 +98,7 @@ func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Pr
 			zerolog.Nop(),
 			swarm.Config{Enabled: true},
 		),
-		fx.Provide(func() swarm.CoordinatorBus { return bus }),
+		fx.Provide(func() swarm.ActorDispatcher { return bus }),
 		fx.Provide(func() swarm.EventPublisher { return bus }),
 		fx.Provide(swarm.NewTaskService, swarm.NewCoordinator),
 		fx.Populate(&coordinator, &tasks),

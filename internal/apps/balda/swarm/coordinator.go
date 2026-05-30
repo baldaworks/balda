@@ -6,38 +6,42 @@ import (
 )
 
 type Coordinator struct {
-	bus CoordinatorBus
-	cfg Config
+	dispatcher ActorDispatcher
+	cfg        Config
 }
 
-func NewCoordinator(bus CoordinatorBus, cfg Config) *Coordinator {
-	return &Coordinator{bus: bus, cfg: cfg}
+func NewCoordinator(dispatcher ActorDispatcher, cfg Config) *Coordinator {
+	return &Coordinator{dispatcher: dispatcher, cfg: cfg}
 }
 
 func (c *Coordinator) Enabled() bool {
-	return c != nil && c.cfg.Enabled && c.bus != nil
+	return c != nil && c.cfg.Enabled && c.dispatcher != nil
 }
 
 func (c *Coordinator) RuntimeEnabled() bool {
 	return c.Enabled()
 }
 
-func (c *Coordinator) Submit(ctx context.Context, env Envelope) (*CommandPublishResult, error) {
-	if c == nil || c.bus == nil {
-		return nil, fmt.Errorf("jetstream command bus is required")
+func (c *Coordinator) Dispatch(ctx context.Context, env Envelope) (*DispatchReceipt, error) {
+	if c == nil || c.dispatcher == nil {
+		return nil, fmt.Errorf("actor dispatcher is required")
 	}
 	if !c.Enabled() {
-		return nil, fmt.Errorf("jetstream swarm runtime is disabled")
+		return nil, fmt.Errorf("actor runtime is disabled")
 	}
-	return c.bus.PublishCommand(ctx, env)
+	return c.dispatcher.Dispatch(ctx, env)
 }
 
 func (c *Coordinator) PublishEvent(ctx context.Context, subject string, env Envelope) error {
-	if c == nil || c.bus == nil {
-		return fmt.Errorf("jetstream event bus is required")
+	if c == nil || c.dispatcher == nil {
+		return fmt.Errorf("actor event publisher is required")
+	}
+	publisher, ok := c.dispatcher.(EventPublisher)
+	if !ok {
+		return fmt.Errorf("actor event publisher is required")
 	}
 	if !c.Enabled() {
-		return fmt.Errorf("jetstream swarm runtime is disabled")
+		return fmt.Errorf("actor runtime is disabled")
 	}
-	return c.bus.PublishEvent(ctx, subject, env)
+	return publisher.PublishEvent(ctx, subject, env)
 }

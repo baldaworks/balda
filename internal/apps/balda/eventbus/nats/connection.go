@@ -12,6 +12,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -46,9 +47,9 @@ type Params struct {
 	Logger     zerolog.Logger
 }
 
-func NewCommandBus(params Params) (swarm.CommandBus, error) {
+func NewActorRuntimeTransport(params Params) (swarm.ActorRuntimeTransport, error) {
 	if !params.Swarm.Enabled {
-		return swarm.UnsupportedCommandBus{}, nil
+		return swarm.UnsupportedActorRuntimeTransport{}, nil
 	}
 	cfg, err := resolveConfig(params.Config, params.Swarm, params.WorkingDir)
 	if err != nil {
@@ -92,7 +93,15 @@ func NewCommandBus(params Params) (swarm.CommandBus, error) {
 	return bus, nil
 }
 
-func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.CommandPublishResult, error) {
+func (b *Bus) Enabled() bool {
+	return b != nil && b.js != nil
+}
+
+func (b *Bus) RuntimeEnabled() bool {
+	return b.Enabled()
+}
+
+func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.DispatchReceipt, error) {
 	if err := env.Validate(); err != nil {
 		return nil, err
 	}
@@ -109,7 +118,7 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 		}
 		return nil, fmt.Errorf("publish jetstream command %q: %w", subject, err)
 	}
-	result := &swarm.CommandPublishResult{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
+	result := &swarm.DispatchReceipt{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
 	b.commandsPublished.Add(1)
 	logEvt := b.logger.Debug().
 		Str("subject", subject).
@@ -152,6 +161,8 @@ func (b *Bus) PublishCommand(ctx context.Context, env swarm.Envelope) (*swarm.Co
 	}
 	return result, nil
 }
+
+var _ actorengine.Source = (*Bus)(nil)
 
 func isJetStreamQueuePressure(err error) bool {
 	var jsErr jetstream.JetStreamError

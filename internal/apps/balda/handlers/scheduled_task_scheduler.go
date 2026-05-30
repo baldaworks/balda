@@ -343,7 +343,7 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 	if err != nil {
 		return s.markFailure(ctx, task.TaskID, err)
 	}
-	if _, err := s.coordinator.Submit(ctx, env); err != nil {
+	if _, err := s.coordinator.Dispatch(ctx, env); err != nil {
 		return s.markFailure(ctx, task.TaskID, fmt.Errorf("publish scheduled task command: %w", err))
 	}
 	return nil
