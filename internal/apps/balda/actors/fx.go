@@ -20,7 +20,7 @@ var Module = fx.Module("balda_actors",
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			newTaskAgentActor,
+			newGoalkeeperActor,
 			fx.As(new(swarm.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),

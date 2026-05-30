@@ -42,13 +42,13 @@ go tool golangci-lint run
 - `/task <id>`: owner/collaborator; inspects task status, latest projected events, and terminal reviewable outcome.
 - `/task <id> events`: owner/collaborator; prints the task event stream projected from `BALDA_EVENTS`.
 - `/task <id> cancel`: owner/collaborator; publishes durable task-control work; ControlActor cancels active task run when present and marks the task canceled when processed.
-- `/swarm status`: owner/collaborator; shows JetStream command/event/DLQ streams, worker/projector consumer state, logical agents, and task counts.
+- `/swarm status`: owner/collaborator; shows JetStream command/event/DLQ streams, worker/projector consumer state, Balda product actors, and task counts.
 - `/queue status`: owner/collaborator; shows JetStream queue/runtime status (preferred command).
 - `/mailbox status`: owner/collaborator; compatibility alias for `/queue status`.
 - `/dlq`: owner/collaborator; shows JetStream DLQ stream backlog summary.
 - `/dlq <stream_seq>`: owner/collaborator; inspects one `BALDA_DLQ` entry by stream sequence.
 - `/projection status`: owner/collaborator; shows event-projector lag and projection health summary.
-- `/actors status`: owner/collaborator; shows configured logical agent roles/toolsets.
+- `/actors status`: owner/collaborator; shows Balda product actor status and active runtime lanes.
 - `/close`: owner/collaborator, direct message only; closes a topic session or stops the owner session.
 - `/cancel`: owner/collaborator; publishes durable session-control work; ControlActor cancels in-flight turn processing, drops queued turns, cancels active tasks, and aborts active `/goal` work when processed.
 - `/user add|list|remove <user_id>`: owner only; collaborator invite and management commands.

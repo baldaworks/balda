@@ -7,8 +7,6 @@ import (
 var Module = fx.Module("balda_swarm",
 	fx.Provide(
 		NewTaskService,
-		NewAgentRegistry,
-		NewAgentAllocator,
 		NewCoordinator,
 		NewEventConsumer,
 		NewEventProjector,

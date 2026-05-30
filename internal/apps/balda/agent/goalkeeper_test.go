@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/goalkeeper"
+	"github.com/normahq/norma/pkg/goalkeeper"
 	adkagent "google.golang.org/adk/agent"
 	adkrunner "google.golang.org/adk/runner"
 	adksession "google.golang.org/adk/session"

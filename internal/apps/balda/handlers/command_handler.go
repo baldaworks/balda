@@ -38,7 +38,6 @@ type CommandHandler struct {
 	swarmRuntime      swarmRuntimeStatusProvider
 	swarmConfig       swarm.Config
 	commandBus        swarm.CommandBusStatusProvider
-	agentRegistry     *swarm.AgentRegistry
 	tasks             *swarm.TaskService
 	taskRuns          *actors.TaskRunRegistry
 	goalMaxIterations int
@@ -67,7 +66,6 @@ type commandHandlerParams struct {
 	SwarmRuntime      *swarm.Runtime
 	SwarmConfig       swarm.Config
 	CommandBus        swarm.CommandBusStatusProvider
-	AgentRegistry     *swarm.AgentRegistry
 	TaskService       *swarm.TaskService
 	TaskRuns          *actors.TaskRunRegistry
 	MaxIterations     int `name:"balda_goal_max_iterations"`
@@ -88,7 +86,6 @@ func NewCommandHandler(params commandHandlerParams) *CommandHandler {
 		swarmRuntime:      params.SwarmRuntime,
 		swarmConfig:       params.SwarmConfig,
 		commandBus:        params.CommandBus,
-		agentRegistry:     params.AgentRegistry,
 		tasks:             params.TaskService,
 		taskRuns:          params.TaskRuns,
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),

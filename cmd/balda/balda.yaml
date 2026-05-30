@@ -133,20 +133,6 @@ balda:
       stream: "BALDA_EVENTS"
     dlq:
       stream: "BALDA_DLQ"
-    agents:
-      # Logical single-process swarm roles. Tools are advisory routing hints.
-      planner:
-        role: "Plan work and split into subtasks"
-        tools: []
-      executor:
-        role: "Use project tools and make changes"
-        tools: ["workspace", "shell", "mcp"]
-      reviewer:
-        role: "Validate result and inspect risks"
-        tools: ["workspace", "shell"]
-      memory:
-        role: "Extract durable facts and summaries"
-        tools: ["memory"]
 
   scheduler:
     # Startup-reconciled recurring tasks.

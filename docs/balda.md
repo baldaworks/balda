@@ -165,9 +165,9 @@ flowchart TB
 
 Balda treats `actorlayer` as a pure typed actor engine and never as product policy.
 
-- `balda.provider` selects one app-scoped ADK provider runtime for all Balda sessions and task role agents in the process.
+- `balda.provider` selects one app-scoped ADK provider runtime for all Balda sessions and Goalkeeper worker/validator runs in the process.
 - Actorlayer owns generic actor mechanics: registration, addressing, lane execution, lifecycle state, and delivery hooks.
-- Balda owns product actors and product behavior implemented as actors: session, task, agent, delivery, control, and memory.
+- Balda owns product actors and product behavior implemented as actors: session, task, goalkeeper, delivery, control, and memory.
 - Balda maps JetStream command messages into actorlayer deliveries and owns command settlement.
 
 The boundary is intentionally explicit:
@@ -498,22 +498,8 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.events.stream`: event stream name (default `BALDA_EVENTS`)
 - `balda.swarm.dlq.stream`: dead-letter stream name (default `BALDA_DLQ`)
 - Actor-lane queue policy is not a public config surface yet; JetStream is the only command queue. SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint.
-- `balda.swarm.agents`: logical single-process swarm agents used by the allocator. Defaults are:
-  - `planner`: plans work and splits it into subtasks.
-  - `executor`: uses project tools and makes changes; advisory tools `workspace`, `shell`, `mcp`.
-  - `reviewer`: validates results and inspects risks; advisory tools `workspace`, `shell`, `mcp`.
-  - `memory`: extracts durable facts and summaries; advisory tool `memory`.
-  Tools are routing/prompt hints only; optional `cost_penalty` lowers allocator preference for expensive roles. All logical agents still use the configured Balda provider runtime in the first release.
-  Tool contract:
-  - `planner`: `workspace,shell,mcp`
-  - `executor`: `workspace,shell,mcp`
-  - `reviewer`: `workspace,shell,mcp`
-  - `memory`: `memory`
-  Shell/tool behavior is derived from each agent's configured tools:
-  - `shell+workspace -> workspace_write`
-  - `shell only -> read_only`
-  - no shell -> `""` (not shell-write).
-  - `/actors status` and `/swarm status` expose each configured actor role and tools.
+- `/goal` uses the Balda GoalkeeperActor, which wraps Norma's reusable ADK Goalkeeper workflow. The workflow runs a worker agent followed by a validator agent in the same ADK session until the validator returns `verdict: pass` or `balda.goal.max_iterations` is reached.
+- `/actors status` and `/swarm status` expose Balda product actors and active runtime lanes; `/goal` does not use planner/executor/reviewer role actors.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `/memory` reads the current file in owner/collaborator direct messages.
   - `balda.memory.read` reads the file from MCP.
@@ -600,20 +586,20 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/topic <name>` (DM only, owner/collaborator): creates a new Telegram topic and a topic-bound session.
   - `<name>` is required.
   - `<name>` is a session label, not a provider selector.
-- `/goal <objective>` (owner/collaborator): publishes a durable JetStream task command and starts work in the current session context/workspace through TaskActor -> AgentActor planner/executor/reviewer -> DeliveryActor. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See [`docs/goalkeeper.md`](goalkeeper.md).
+- `/goal <objective>` (owner/collaborator): publishes a durable JetStream command to GoalkeeperActor and starts Norma's ADK worker -> validator workflow in the current session context/workspace. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See [`docs/goalkeeper.md`](goalkeeper.md).
   - concurrent `/goal` runs in the same session are rejected.
 - `/tasks` (owner/collaborator): lists active task records for the current session.
 - `/task <id>` (owner/collaborator): shows task status, objective, source, timestamps, latest events, and the reviewable outcome when the task is terminal.
 - `/task <id> events` (owner/collaborator): prints the append-only task event stream.
 - `/task <id> cancel` (owner/collaborator): publishes a durable task-control command; ControlActor cancels active local task work when present and marks the task `canceled` when the command is processed.
-- `/swarm status` (owner/collaborator): shows JetStream command/event/DLQ streams, worker and projector consumer state, configured logical agents, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
+- `/swarm status` (owner/collaborator): shows JetStream command/event/DLQ streams, worker and projector consumer state, Balda product actors, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
 - `/queue status` (owner/collaborator): preferred JetStream queue/runtime status command.
 - `/mailbox status` (owner/collaborator): compatibility alias for `/queue status`.
 - `/dlq` (owner/collaborator): shows JetStream DLQ stream backlog summary.
 - `/dlq <stream_seq>` (owner/collaborator): inspects a single `BALDA_DLQ`
   message by stream sequence.
 - `/projection status` (owner/collaborator): shows event-projector lag and projection health summary.
-- `/actors status` (owner/collaborator): shows configured logical agent roles/toolsets.
+- `/actors status` (owner/collaborator): shows Balda product actor status and active runtime lanes.
 - `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
 - `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Balda metadata or the workspace branch.
 - `/cancel` (owner/collaborator): publishes a durable session-control command; ControlActor cancels active session work, drops queued session work, marks active session tasks canceled, and aborts active `/goal` work when the command is processed.
@@ -626,10 +612,9 @@ Assignable work is persisted in `swarm_tasks`; task history is published to
 JetStream command first; task records are product state created by TaskActor
 after command delivery.
 
-- `/goal` publishes a durable task envelope. TaskActor asks the planner
-  AgentActor for the plan, persists planner output as the task plan, dispatches
-  executor/reviewer commands, records results, and sends progress/final
-  messages through DeliveryActor.
+- `/goal` publishes a durable goalkeeper envelope. GoalkeeperActor restores or creates
+  the session, runs the Norma Goalkeeper worker/validator workflow, records the task
+  result, and sends progress/final messages through DeliveryActor.
 - Task statuses are `created`, `queued`, `running`, `waiting_for_agent`,
   `waiting_for_user`, `validating`, `completed`, `failed`, `canceled`, and
   `deadlettered`.
@@ -762,7 +747,7 @@ session/task/agent/delivery/memory"]
 
 - Stable subjects:
   - Commands: `balda.v1.cmd.session`, `balda.v1.cmd.task`,
-    `balda.v1.cmd.agent`, `balda.v1.cmd.memory`,
+    `balda.v1.cmd.goalkeeper`, `balda.v1.cmd.memory`,
     `balda.v1.cmd.delivery`, `balda.v1.cmd.control`.
   - Events: `balda.v1.evt.command.accepted`,
     `balda.v1.evt.command.running`, `balda.v1.evt.command.in_progress`,
@@ -784,8 +769,8 @@ All commands use the common envelope schema:
 | Subject | Primary routing rule | Typical namespaces | Required contextual fields | Payload contract |
 |---|---|---|---|---|
 | `balda.v1.cmd.session` | `to.target=session` or namespace fallback | `human.inbound` | `session_id` for existing sessions | session-turn payload (prompt/content + locator/user metadata) |
-| `balda.v1.cmd.task` | `to.target=task` or namespace fallback | `webhook.inbound`, `schedule.inbound`, `agent.command` | `task_id` for existing task mutations; optional on task creation commands | task objective/target payload (goal, webhook task, scheduled task) |
-| `balda.v1.cmd.agent` | `to.target=agent` | `agent.command` | `task_id` for task-owned agent loops | planner/executor/reviewer command payload |
+| `balda.v1.cmd.task` | `to.target=task` or namespace fallback | `webhook.inbound`, `schedule.inbound` | `task_id` for existing task mutations; optional on task creation commands | webhook task or scheduled task payload |
+| `balda.v1.cmd.goalkeeper` | `to.target=goalkeeper` | `goal.command` | `task_id` for goal runs | goal objective/session payload |
 | `balda.v1.cmd.memory` | `to.target=memory` | `memory.sync` | optional `task_id`/`session_id` scope | memory operation payload (`task_summary`, `session_summary`, `fact_extract`, `context_pack`) |
 | `balda.v1.cmd.delivery` | `to.target=delivery` | `agent.result` / delivery work namespaces | delivery address in `to.key`; `task_id` when task-owned | outbound delivery payload (channel message/terminal update) |
 | `balda.v1.cmd.control` | `namespace=task.control` (forced) | `task.control` | `task_id` and/or `session_id` | cancel/control payload (`reason`, actor/user origin) |
@@ -874,7 +859,7 @@ All events are published as the same envelope shape. For event envelopes,
   terminated and copied to `BALDA_DLQ` with the raw subject, headers, payload,
   and decode reason.
 - Task-mutating envelopes are serialized on a single task lane
-  (`task:<task_id>`) across task control, agent command/result, and task-bound
+  (`task:<task_id>`) across task control, goal command/result, and task-bound
   human/webhook/schedule ingress. Different task IDs still run concurrently.
 - Command consumer backpressure boundary:
   - JetStream durable pull consumer (`BALDA_WORKER_COMMANDS`) is the transport queue.
@@ -996,7 +981,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - users can retry sync later with `balda.workspace.import`
 - Source of truth:
   - persisted metadata (`workspace_dir`, `branch_name`) is stored in `state.db` session records
-  - TaskActor and AgentActor resolve workspace metadata from session info when dispatching/handling task-agent commands
+  - TaskActor and GoalkeeperActor resolve workspace metadata from session info when dispatching/handling task and goal commands
 
 ## Troubleshooting
 

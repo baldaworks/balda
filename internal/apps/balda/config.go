@@ -119,11 +119,10 @@ type GoalConfig struct {
 
 // SwarmConfig controls the JetStream-backed actor runtime.
 type SwarmConfig struct {
-	Enabled  bool                        `mapstructure:"enabled"`
-	Commands SwarmCommandConfig          `mapstructure:"commands"`
-	Events   SwarmEventConfig            `mapstructure:"events"`
-	DLQ      SwarmDLQConfig              `mapstructure:"dlq"`
-	Agents   map[string]SwarmAgentConfig `mapstructure:"agents"`
+	Enabled  bool               `mapstructure:"enabled"`
+	Commands SwarmCommandConfig `mapstructure:"commands"`
+	Events   SwarmEventConfig   `mapstructure:"events"`
+	DLQ      SwarmDLQConfig     `mapstructure:"dlq"`
 	// RemovedMode detects stale balda.swarm.mode config and fails startup loudly.
 	RemovedMode any `mapstructure:"mode"`
 }
@@ -144,13 +143,6 @@ type SwarmEventConfig struct {
 
 type SwarmDLQConfig struct {
 	Stream string `mapstructure:"stream"`
-}
-
-// SwarmAgentConfig configures a logical single-process swarm agent.
-type SwarmAgentConfig struct {
-	Role        string   `mapstructure:"role"`
-	Tools       []string `mapstructure:"tools"`
-	CostPenalty int      `mapstructure:"cost_penalty"`
 }
 
 // SchedulerConfig controls startup-managed recurring tasks.

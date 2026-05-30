@@ -134,12 +134,6 @@ balda:
 	if doc.Balda.Swarm.Commands.Consumer != "BALDA_WORKER_COMMANDS" {
 		t.Fatalf("swarm.commands.consumer = %q, want BALDA_WORKER_COMMANDS", doc.Balda.Swarm.Commands.Consumer)
 	}
-	if got := doc.Balda.Swarm.Agents["planner"].Role; got != "Plan work and split into subtasks" {
-		t.Fatalf("swarm.agents.planner.role = %q, want default planner role", got)
-	}
-	if got := strings.Join(doc.Balda.Swarm.Agents["executor"].Tools, ","); got != "workspace,shell,mcp" {
-		t.Fatalf("swarm.agents.executor.tools = %q, want workspace,shell,mcp", got)
-	}
 }
 
 func TestLoadConfigDocument_CapturesLegacySchedulerJobs(t *testing.T) {

@@ -294,21 +294,17 @@ func (h *CommandHandler) onActorsCommand(ctx context.Context, commandCtx baldate
 	}
 	var out strings.Builder
 	out.WriteString("Actors status")
-	if h.agentRegistry == nil || len(h.agentRegistry.All()) == 0 {
-		out.WriteString("\n- none configured")
-		return h.channel.SendAgentReply(ctx, commandCtx.Locator, out.String())
-	}
-	for _, agent := range h.agentRegistry.All() {
-		out.WriteString("\n- ")
-		out.WriteString(agent.Name)
-		out.WriteString(": ")
-		out.WriteString(agent.Role)
-		if len(agent.Tools) > 0 {
-			out.WriteString(" [")
-			out.WriteString(strings.Join(agent.Tools, ", "))
-			out.WriteString("]")
-		}
-	}
+	out.WriteString("\n- session: handles user turns")
+	out.WriteString("\n- task: routes webhook and scheduled work")
+	out.WriteString("\n- goalkeeper: runs /goal with Norma Goalkeeper")
+	out.WriteString("\n- delivery: sends task updates")
+	out.WriteString("\n- control: cancels sessions and tasks")
+	out.WriteString("\n- memory: syncs completed task context")
+	lanes := h.activeRuntimeLanes()
+	out.WriteString("\n- active_actor_lanes: ")
+	fmt.Fprintf(&out, "%d", lanes.Active)
+	out.WriteString("\n- active_actor_lane_keys: ")
+	out.WriteString(formatLaneKeys(lanes.Keys, maxStatusLaneKeys))
 	return h.channel.SendAgentReply(ctx, commandCtx.Locator, out.String())
 }
 
@@ -397,22 +393,13 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 		out.WriteString("\n- unavailable")
 	}
 
-	out.WriteString("\n\nAgents")
-	if h.agentRegistry == nil || len(h.agentRegistry.All()) == 0 {
-		out.WriteString("\n- none configured")
-	} else {
-		for _, agent := range h.agentRegistry.All() {
-			out.WriteString("\n- ")
-			out.WriteString(agent.Name)
-			out.WriteString(": ")
-			out.WriteString(agent.Role)
-			if len(agent.Tools) > 0 {
-				out.WriteString(" [")
-				out.WriteString(strings.Join(agent.Tools, ", "))
-				out.WriteString("]")
-			}
-		}
-	}
+	out.WriteString("\n\nActors")
+	out.WriteString("\n- session")
+	out.WriteString("\n- task")
+	out.WriteString("\n- goalkeeper")
+	out.WriteString("\n- delivery")
+	out.WriteString("\n- control")
+	out.WriteString("\n- memory")
 
 	out.WriteString("\n\nTasks")
 	if h.tasks == nil {

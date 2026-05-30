@@ -7,8 +7,9 @@ import (
 	"io"
 	"iter"
 	"strings"
+	"sync"
 
-	"github.com/normahq/balda/internal/apps/balda/goalkeeper"
+	"github.com/normahq/norma/pkg/goalkeeper"
 	"github.com/normahq/norma/pkg/runtime/agentfactory"
 	adkagent "google.golang.org/adk/agent"
 	adksession "google.golang.org/adk/session"
@@ -19,10 +20,6 @@ const (
 	goalkeeperWorkerName           = "GoalkeeperWorker"
 	goalkeeperValidatorName        = "GoalkeeperValidator"
 	goalkeeperWorkerOutputStateKey = "goalkeeper_worker_output"
-	taskRolePlanner                = "planner"
-	taskRoleExecutor               = "executor"
-	taskRoleReviewer               = "reviewer"
-	taskRoleMemory                 = "memory"
 )
 
 // GoalkeeperBuildConfig configures the Balda Goalkeeper workflow agent.
@@ -36,18 +33,7 @@ type GoalkeeperBuildConfig struct {
 	ExtraMCPServerIDs   []string
 }
 
-// TaskRoleBuildConfig configures one Balda task role agent.
-type TaskRoleBuildConfig struct {
-	ProviderID          string
-	SessionID           string
-	BranchName          string
-	WorkspaceDir        string
-	Role                string
-	BundledMCPServerIDs []string
-	ExtraMCPServerIDs   []string
-}
-
-// BuildGoalkeeperWorkflow builds the copied Goalkeeper worker -> validator loop
+// BuildGoalkeeperWorkflow builds Norma's Goalkeeper worker -> validator loop
 // using Balda's configured provider for both child agents.
 func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBuildConfig) (adkagent.Agent, error) {
 	if b == nil || b.factory == nil {
@@ -124,47 +110,7 @@ func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBui
 		_ = closeRuntimeAgent(validator)
 		return nil, err
 	}
-	return workflow, nil
-}
-
-// BuildTaskRoleAgent builds one provider-backed task role agent.
-func (b *Builder) BuildTaskRoleAgent(ctx context.Context, cfg TaskRoleBuildConfig) (adkagent.Agent, error) {
-	if b == nil || b.factory == nil {
-		return nil, fmt.Errorf("agent builder is required")
-	}
-	providerID := strings.TrimSpace(cfg.ProviderID)
-	if providerID == "" {
-		return nil, fmt.Errorf("balda provider is not configured")
-	}
-	sessionID := strings.TrimSpace(cfg.SessionID)
-	if sessionID == "" {
-		return nil, fmt.Errorf("session id is required")
-	}
-	workspaceDir := strings.TrimSpace(cfg.WorkspaceDir)
-	if workspaceDir == "" {
-		return nil, fmt.Errorf("workspace dir is required")
-	}
-	role := normalizeTaskRole(cfg.Role)
-	if role == "" {
-		return nil, fmt.Errorf("task role is required")
-	}
-	name, description, instruction := taskRoleAgentSpec(role)
-	sessionBranch := strings.TrimSpace(cfg.BranchName)
-	if sessionBranch == "" {
-		sessionBranch = fmt.Sprintf("norma/balda/%s", sessionID)
-	}
-	mcpServerIDs := b.buildAgentMCPServerIDs(providerID, cfg.BundledMCPServerIDs, cfg.ExtraMCPServerIDs)
-	return b.buildGoalkeeperChildAgent(ctx, goalkeeperChildAgentConfig{
-		ProviderID:        providerID,
-		Name:              name,
-		Description:       description,
-		SessionID:         sessionID,
-		SessionBranch:     sessionBranch,
-		WorkspaceDir:      workspaceDir,
-		RepoBranchAtStart: b.currentRepoBranch(ctx),
-		RoleInstruction:   instruction,
-		MCPServerIDs:      mcpServerIDs,
-	})
+	return &closableGoalkeeperWorkflow{Agent: workflow, closers: goalkeeperChildClosers(worker, validator)}, nil
 }
 
 type goalkeeperChildAgentConfig struct {
@@ -247,62 +193,6 @@ func goalkeeperValidatorInstruction() string {
 		"`verdict: fail` means the goal was not reached.",
 		"Then provide brief evidence and a concise final summary.",
 	}, "\n")
-}
-
-func normalizeTaskRole(role string) string {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "planner":
-		return taskRolePlanner
-	case "executor", "worker":
-		return taskRoleExecutor
-	case "reviewer", "validator":
-		return taskRoleReviewer
-	case "memory":
-		return taskRoleMemory
-	default:
-		return ""
-	}
-}
-
-func taskRoleAgentSpec(role string) (name string, description string, instruction string) {
-	switch role {
-	case taskRolePlanner:
-		return "BaldaTaskPlanner", "Balda task planner agent", strings.Join([]string{
-			"You are the Balda task planner agent.",
-			"Plan work and split one objective into clear execution and validation steps.",
-			"Do not intentionally mutate files or run broad implementation work during planning.",
-			"Return a concise actionable plan with risks and assumptions.",
-		}, "\n")
-	case taskRoleExecutor:
-		return "BaldaTaskExecutor", "Balda task executor agent", strings.Join([]string{
-			"You are the Balda task executor agent.",
-			"You receive one task objective plus the current plan and optional reviewer feedback.",
-			"Do the requested work in the current working directory.",
-			"Prefer direct execution over clarification when execution is possible.",
-			"Ask clarifying questions only when execution is blocked by missing critical information.",
-			"Return a concise plain-text summary with changed files and evidence.",
-			"Run only checks directly relevant to the task unless the task asks for broader verification.",
-		}, "\n")
-	case taskRoleReviewer:
-		return "BaldaTaskReviewer", "Balda task reviewer agent", strings.Join([]string{
-			"You are the Balda task reviewer agent.",
-			"Validate the executor result against the original objective and current repository state.",
-			"Do not intentionally mutate files or continue implementation work.",
-			"Start with exactly `verdict: pass` or `verdict: fail`.",
-			"`verdict: pass` means the objective was reached.",
-			"`verdict: fail` means the objective was not reached.",
-			"Then provide brief evidence and a concise final summary.",
-		}, "\n")
-	case taskRoleMemory:
-		return "BaldaTaskMemory", "Balda task memory agent", strings.Join([]string{
-			"You are the Balda task memory agent.",
-			"Extract durable facts, decisions, and concise summaries from task context.",
-			"Do not intentionally mutate project files.",
-			"Return only the facts or summary that should be retained.",
-		}, "\n")
-	default:
-		return "", "", ""
-	}
 }
 
 func wrapGoalkeeperValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKey string) (adkagent.Agent, error) {
@@ -408,4 +298,44 @@ type goalkeeperUserContentContext struct {
 
 func (c goalkeeperUserContentContext) UserContent() *genai.Content {
 	return c.userContent
+}
+
+type closableGoalkeeperWorkflow struct {
+	adkagent.Agent
+	closers []io.Closer
+	once    sync.Once
+	err     error
+}
+
+func (w *closableGoalkeeperWorkflow) Close() error {
+	if w == nil {
+		return nil
+	}
+	w.once.Do(func() {
+		errs := make([]error, 0, len(w.closers)+1)
+		if err := closeRuntimeAgent(w.Agent); err != nil {
+			errs = append(errs, err)
+		}
+		for _, closer := range w.closers {
+			if closer == nil {
+				continue
+			}
+			if err := closer.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		w.err = errors.Join(errs...)
+	})
+	return w.err
+}
+
+func goalkeeperChildClosers(agents ...adkagent.Agent) []io.Closer {
+	closers := make([]io.Closer, 0, len(agents))
+	for _, ag := range agents {
+		closer, ok := ag.(io.Closer)
+		if ok {
+			closers = append(closers, closer)
+		}
+	}
+	return closers
 }

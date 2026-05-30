@@ -354,8 +354,8 @@ func TestCommandHandlerOnCommand_GoalStartsRun(t *testing.T) {
 		t.Fatalf("published commands = %d, want 1", len(bus.commands))
 	}
 	cmd := bus.commands[0]
-	if cmd.To.Target != swarm.ActorTypeTask || cmd.Namespace != swarm.NamespaceAgentCommand || cmd.Kind != swarm.KindGoal {
-		t.Fatalf("published command = %+v, want goal task command", cmd)
+	if cmd.To.Target != swarm.ActorTypeGoalkeeper || cmd.Namespace != swarm.NamespaceGoalCommand || cmd.Kind != swarm.KindGoal {
+		t.Fatalf("published command = %+v, want goalkeeper command", cmd)
 	}
 	if len(tgClient.messages) != 0 {
 		t.Fatalf("sent messages = %d, want 0", len(tgClient.messages))

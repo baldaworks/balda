@@ -10,9 +10,6 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/git"
-	adkagent "google.golang.org/adk/agent"
-	"google.golang.org/adk/runner"
-	"google.golang.org/genai"
 )
 
 const (
@@ -275,53 +272,4 @@ func limitRunes(raw string, limit int) string {
 		return string(runes)
 	}
 	return string(runes[:limit]) + "..."
-}
-
-func runAgentTurnWithProgress(
-	ctx context.Context,
-	r *runner.Runner,
-	userID string,
-	goalSessionID string,
-	prompt string,
-	onProgress func(string),
-) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	if r == nil {
-		return "", fmt.Errorf("runner is required")
-	}
-	userContent := genai.NewContentFromText(prompt, genai.RoleUser)
-
-	var out strings.Builder
-	sawTurnComplete := false
-	for ev, err := range r.Run(ctx, userID, goalSessionID, userContent, adkagent.RunConfig{}) {
-		if err != nil {
-			return "", fmt.Errorf("run agent turn: %w", err)
-		}
-		if ev == nil {
-			continue
-		}
-		if ev.Content != nil {
-			for _, part := range ev.Content.Parts {
-				if part == nil || part.Thought || part.Text == "" {
-					continue
-				}
-				out.WriteString(part.Text)
-				if onProgress != nil && !ev.IsFinalResponse() {
-					onProgress(part.Text)
-				}
-			}
-		}
-		if ev.TurnComplete {
-			sawTurnComplete = true
-		}
-	}
-	if !sawTurnComplete {
-		return strings.TrimSpace(out.String()), fmt.Errorf("goal iteration ended without completion")
-	}
-	return strings.TrimSpace(out.String()), nil
 }

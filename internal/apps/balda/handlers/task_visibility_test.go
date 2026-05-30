@@ -18,13 +18,12 @@ import (
 func TestCommandHandlerTaskVisibilityCommands(t *testing.T) {
 	ctx := context.Background()
 	handler, sm, _, tgClient := newCommandHandlerTestHarness(t)
-	provider, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	provider, bus, coordinator, tasks := newTaskVisibilitySwarmServices(t, ctx)
 	handler.swarmConfig = swarm.Config{Enabled: true}
 	handler.swarmCoordinator = coordinator
 	handler.swarmRuntime = fakeSwarmRuntimeStatusProvider{}
 	handler.commandBus = bus
 	handler.tasks = tasks
-	handler.agentRegistry = registry
 	handler.taskRuns = actors.NewTaskRunRegistry()
 	sm.sessionInfos = map[string]baldasession.TopicSessionInfo{
 		"tg-9001-0": {SessionID: "tg-9001-0", Locator: baldasession.SessionLocator{SessionID: "tg-9001-0", ChannelType: "telegram", AddressKey: "9001:0"}, BranchName: "norma/balda/tg-9001-0"},
@@ -85,13 +84,12 @@ func TestCommandHandlerTaskVisibilityCommands(t *testing.T) {
 func TestCommandHandlerTaskVisibilityShowsTaskStatusWithoutProjectedEvents(t *testing.T) {
 	ctx := context.Background()
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	_, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	_, bus, coordinator, tasks := newTaskVisibilitySwarmServices(t, ctx)
 	handler.swarmConfig = swarm.Config{Enabled: true}
 	handler.swarmCoordinator = coordinator
 	handler.swarmRuntime = fakeSwarmRuntimeStatusProvider{}
 	handler.commandBus = bus
 	handler.tasks = tasks
-	handler.agentRegistry = registry
 
 	createTaskRecord(t, ctx, tasks, baldastate.SwarmTaskRecord{
 		ID:          "task-no-events",
@@ -119,13 +117,12 @@ func TestCommandHandlerTaskVisibilityShowsTaskStatusWithoutProjectedEvents(t *te
 func TestCommandHandlerTaskVisibilityRedactsSecrets(t *testing.T) {
 	ctx := context.Background()
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	_, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	_, bus, coordinator, tasks := newTaskVisibilitySwarmServices(t, ctx)
 	handler.swarmConfig = swarm.Config{Enabled: true}
 	handler.swarmCoordinator = coordinator
 	handler.swarmRuntime = fakeSwarmRuntimeStatusProvider{}
 	handler.commandBus = bus
 	handler.tasks = tasks
-	handler.agentRegistry = registry
 
 	createTaskRecord(t, ctx, tasks, baldastate.SwarmTaskRecord{
 		ID:          "task-redact",
@@ -162,13 +159,12 @@ func TestCommandHandlerTaskVisibilityRedactsSecrets(t *testing.T) {
 func TestCommandHandlerTaskVisibilityUsesReviewableOutcomeSchema(t *testing.T) {
 	ctx := context.Background()
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	_, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	_, bus, coordinator, tasks := newTaskVisibilitySwarmServices(t, ctx)
 	handler.swarmConfig = swarm.Config{Enabled: true}
 	handler.swarmCoordinator = coordinator
 	handler.swarmRuntime = fakeSwarmRuntimeStatusProvider{}
 	handler.commandBus = bus
 	handler.tasks = tasks
-	handler.agentRegistry = registry
 
 	createTaskRecord(t, ctx, tasks, baldastate.SwarmTaskRecord{
 		ID:          "task-outcome-schema",
@@ -211,7 +207,7 @@ func TestCommandHandlerTaskVisibilityUsesReviewableOutcomeSchema(t *testing.T) {
 func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	ctx := context.Background()
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	_, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	_, bus, coordinator, tasks := newTaskVisibilitySwarmServices(t, ctx)
 	handler.swarmConfig = swarm.Config{Enabled: true}
 	handler.swarmCoordinator = coordinator
 	handler.swarmRuntime = fakeSwarmRuntimeStatusProvider{
@@ -222,7 +218,6 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	}
 	handler.commandBus = bus
 	handler.tasks = tasks
-	handler.agentRegistry = registry
 
 	createTaskRecord(t, ctx, tasks, baldastate.SwarmTaskRecord{ID: "task-status", SessionID: "tg-9001-0", Title: "Goal: status", Objective: "status", Status: baldastate.SwarmTaskStatusCreated})
 	delivery, created, err := tasks.ReserveDelivery(ctx, baldastate.SwarmDeliveryRecord{
@@ -256,9 +251,6 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 	assertLastSentNotContains(t, tgClient, "sqlite_command_bus")
 	assertLastSentNotContains(t, tgClient, "shadow_mode")
 	assertLastSentNotContains(t, tgClient, "legacy_direct_path")
-	assertLastSentContains(t, tgClient, "planner")
-	assertLastSentContains(t, tgClient, "Plan work and split into subtasks")
-	assertLastSentContains(t, tgClient, "[workspace, shell, mcp]")
 	assertLastSentContains(t, tgClient, "state_source_of_truth: sqlite")
 	assertLastSentContains(t, tgClient, "event_publishing_mode: best_effort_visibility")
 	assertLastSentContains(t, tgClient, "created: 1")
@@ -317,9 +309,7 @@ func TestCommandHandlerSwarmQueueAndMailboxStatusCommands(t *testing.T) {
 		t.Fatalf("/actors status error = %v", err)
 	}
 	assertLastSentContains(t, tgClient, "Actors status")
-	assertLastSentContains(t, tgClient, "planner")
-	assertLastSentContains(t, tgClient, "Plan work and split into subtasks")
-	assertLastSentContains(t, tgClient, "[workspace, shell, mcp]")
+	assertLastSentContains(t, tgClient, "goalkeeper")
 }
 
 func TestCommandHandlerSwarmStatusShowsDisabledModeContract(t *testing.T) {
@@ -341,13 +331,12 @@ func TestCommandHandlerSwarmStatusShowsDisabledModeContract(t *testing.T) {
 func TestCommandHandlerDLQEntryUsageAndNotFound(t *testing.T) {
 	ctx := context.Background()
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	_, bus, coordinator, tasks, registry := newTaskVisibilitySwarmServices(t, ctx)
+	_, bus, coordinator, tasks := newTaskVisibilitySwarmServices(t, ctx)
 	handler.swarmConfig = swarm.Config{Enabled: true}
 	handler.swarmCoordinator = coordinator
 	handler.swarmRuntime = fakeSwarmRuntimeStatusProvider{}
 	handler.commandBus = bus
 	handler.tasks = tasks
-	handler.agentRegistry = registry
 
 	if err := handler.onCommand(ctx, newCommandEvent("dlq", "abc", 101, 9001, nil)); err != nil {
 		t.Fatalf("/dlq usage error = %v", err)
@@ -360,7 +349,7 @@ func TestCommandHandlerDLQEntryUsageAndNotFound(t *testing.T) {
 	assertLastSentContains(t, tgClient, "DLQ entry 999 not found.")
 }
 
-func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *statusCommandBus, *swarm.Coordinator, *swarm.TaskService, *swarm.AgentRegistry) {
+func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *statusCommandBus, *swarm.Coordinator, *swarm.TaskService) {
 	t.Helper()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -374,7 +363,6 @@ func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldasta
 	}
 	var coordinator *swarm.Coordinator
 	var tasks *swarm.TaskService
-	var registry *swarm.AgentRegistry
 	app := fxtest.New(t,
 		fx.Supply(
 			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
@@ -384,12 +372,12 @@ func newTaskVisibilitySwarmServices(t *testing.T, ctx context.Context) (baldasta
 			func() swarm.CoordinatorBus { return bus },
 			func() swarm.EventPublisher { return bus },
 		),
-		fx.Provide(swarm.NewTaskService, swarm.NewAgentRegistry, swarm.NewCoordinator),
-		fx.Populate(&coordinator, &tasks, &registry),
+		fx.Provide(swarm.NewTaskService, swarm.NewCoordinator),
+		fx.Populate(&coordinator, &tasks),
 	)
 	app.RequireStart()
 	t.Cleanup(func() { app.RequireStop() })
-	return provider, bus, coordinator, tasks, registry
+	return provider, bus, coordinator, tasks
 }
 
 type statusCommandBus struct{ recordingHandlerCommandBus }

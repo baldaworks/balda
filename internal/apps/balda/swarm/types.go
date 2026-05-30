@@ -9,18 +9,18 @@ import (
 )
 
 const (
-	ActorTypeSystem   = "system"
-	ActorTypeSession  = "session"
-	ActorTypeTask     = "task"
-	ActorTypeAgent    = "agent"
-	ActorTypeDelivery = "delivery"
-	ActorTypeMemory   = "memory"
+	ActorTypeSystem     = "system"
+	ActorTypeSession    = "session"
+	ActorTypeTask       = "task"
+	ActorTypeGoalkeeper = "goalkeeper"
+	ActorTypeDelivery   = "delivery"
+	ActorTypeMemory     = "memory"
 
 	NamespaceHumanInbound    = "human.inbound"
 	NamespaceWebhookInbound  = "webhook.inbound"
 	NamespaceScheduleInbound = "schedule.inbound"
 	NamespaceAgentResult     = "agent.result"
-	NamespaceAgentCommand    = "agent.command"
+	NamespaceGoalCommand     = "goal.command"
 	NamespaceTaskControl     = "task.control"
 	NamespaceMemorySync      = "memory.sync"
 	NamespaceTelemetry       = "telemetry"

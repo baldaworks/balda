@@ -98,7 +98,7 @@ func (h *BaldaHandler) RunSessionTurnPayload(ctx context.Context, payload actors
 
 func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error) {
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := actors.GoalTaskEnvelope(locator, objective, transportUserID, maxIterations)
+	env, err := actors.GoalkeeperTaskEnvelope(locator, objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
 	}

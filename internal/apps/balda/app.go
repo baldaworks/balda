@@ -138,7 +138,6 @@ func Module(
 		},
 		Events: swarm.EventStreamConfig{Stream: strings.TrimSpace(cfg.Balda.Swarm.Events.Stream)},
 		DLQ:    swarm.DLQConfig{Stream: strings.TrimSpace(cfg.Balda.Swarm.DLQ.Stream)},
-		Agents: buildSwarmAgentSpecs(cfg.Balda.Swarm.Agents),
 	}
 	swarmConfig, err = swarmConfig.Normalized()
 	if err != nil {
@@ -788,24 +787,4 @@ func buildInboundWebhookConfig(cfg BaldaConfig) handlers.InboundWebhookConfig {
 		ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr),
 		Routes:     routes,
 	}
-}
-
-func buildSwarmAgentSpecs(raw map[string]SwarmAgentConfig) map[string]swarm.AgentSpec {
-	if len(raw) == 0 {
-		return nil
-	}
-	out := make(map[string]swarm.AgentSpec, len(raw))
-	for name, cfg := range raw {
-		key := strings.TrimSpace(name)
-		if key == "" {
-			continue
-		}
-		out[key] = swarm.AgentSpec{
-			Name:        key,
-			Role:        strings.TrimSpace(cfg.Role),
-			Tools:       append([]string(nil), cfg.Tools...),
-			CostPenalty: cfg.CostPenalty,
-		}
-	}
-	return out
 }

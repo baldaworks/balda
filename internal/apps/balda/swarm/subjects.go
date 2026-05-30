@@ -6,13 +6,13 @@ import (
 )
 
 const (
-	SubjectCommandSession  = "balda.v1.cmd.session"
-	SubjectCommandTask     = "balda.v1.cmd.task"
-	SubjectCommandAgent    = "balda.v1.cmd.agent"
-	SubjectCommandDelivery = "balda.v1.cmd.delivery"
-	SubjectCommandMemory   = "balda.v1.cmd.memory"
-	SubjectCommandControl  = "balda.v1.cmd.control"
-	SubjectCommandAll      = "balda.v1.cmd.>"
+	SubjectCommandSession    = "balda.v1.cmd.session"
+	SubjectCommandTask       = "balda.v1.cmd.task"
+	SubjectCommandGoalkeeper = "balda.v1.cmd.goalkeeper"
+	SubjectCommandDelivery   = "balda.v1.cmd.delivery"
+	SubjectCommandMemory     = "balda.v1.cmd.memory"
+	SubjectCommandControl    = "balda.v1.cmd.control"
+	SubjectCommandAll        = "balda.v1.cmd.>"
 
 	SubjectEventCommandAccepted     = "balda.v1.evt.command.accepted"
 	SubjectEventCommandRunning      = "balda.v1.evt.command.running"
@@ -54,8 +54,8 @@ func SubjectForEnvelope(env Envelope) string {
 		return SubjectCommandSession
 	case ActorTypeTask:
 		return SubjectCommandTask
-	case ActorTypeAgent:
-		return SubjectCommandAgent
+	case ActorTypeGoalkeeper:
+		return SubjectCommandGoalkeeper
 	case ActorTypeDelivery:
 		return SubjectCommandDelivery
 	case ActorTypeMemory:
@@ -88,8 +88,8 @@ func DedupeKeyOrID(env Envelope) string {
 
 func subjectForNamespace(namespace string) string {
 	switch strings.TrimSpace(namespace) {
-	case NamespaceAgentCommand:
-		return SubjectCommandAgent
+	case NamespaceGoalCommand:
+		return SubjectCommandGoalkeeper
 	case NamespaceMemorySync:
 		return SubjectCommandMemory
 	case NamespaceTaskControl:

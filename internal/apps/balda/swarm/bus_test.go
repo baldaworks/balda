@@ -16,7 +16,7 @@ func TestSubjectForEnvelope_UsesStableCommandSubjects(t *testing.T) {
 	}{
 		{name: "session", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeSession, Key: "tg-1.2"}), want: SubjectCommandSession},
 		{name: "task", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeTask, Key: subjectTestTaskID}), want: SubjectCommandTask},
-		{name: "agent", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeAgent, Key: "planner"}), want: SubjectCommandAgent},
+		{name: "goalkeeper", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeGoalkeeper, Key: "goal-1"}), want: SubjectCommandGoalkeeper},
 		{name: "delivery", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeDelivery, Key: "tg-1"}), want: SubjectCommandDelivery},
 		{name: "memory", env: subjectTestEnvelope(ActorAddress{Target: ActorTypeMemory, Key: "global"}), want: SubjectCommandMemory},
 		{name: "control", env: controlTestEnvelope(), want: SubjectCommandControl},
@@ -36,7 +36,7 @@ func TestCommandSubjects_UseCommandNamespacePrefix(t *testing.T) {
 	commandSubjects := []string{
 		SubjectCommandSession,
 		SubjectCommandTask,
-		SubjectCommandAgent,
+		SubjectCommandGoalkeeper,
 		SubjectCommandDelivery,
 		SubjectCommandMemory,
 		SubjectCommandControl,

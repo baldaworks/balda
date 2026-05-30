@@ -19,7 +19,6 @@ type Config struct {
 	Commands CommandConfig
 	Events   EventStreamConfig
 	DLQ      DLQConfig
-	Agents   map[string]AgentSpec
 }
 
 type CommandConfig struct {
@@ -48,14 +47,6 @@ func (c Config) Normalized() (Config, error) {
 	c.Commands = c.Commands.Normalized()
 	c.Events = c.Events.Normalized()
 	c.DLQ = c.DLQ.Normalized()
-	agents, err := NormalizeAgentSpecs(c.Agents)
-	if err != nil {
-		return Config{}, err
-	}
-	c.Agents = make(map[string]AgentSpec, len(agents))
-	for _, spec := range agents {
-		c.Agents[spec.Name] = spec
-	}
 	return c, nil
 }
 

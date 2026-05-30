@@ -33,10 +33,6 @@ type memorySyncPayload struct {
 	Content   string `json:"content,omitempty"`
 }
 
-func NewAgentActor() Actor {
-	return unsupportedActor{address: WildcardAddress(ActorTypeAgent), name: ActorTypeAgent}
-}
-
 func NewMemoryActor() Actor {
 	return memoryActor{}
 }

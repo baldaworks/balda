@@ -10,17 +10,16 @@ Status: active
 - Runtime execution uses `actorlayer/engine.Runtime`; Balda adapts JetStream commands into actorlayer deliveries.
 - Command settlement happens after actor side effects complete.
 - Retry/permanent failure handling is explicit and classified.
-- Task actor status includes role configuration and associated tools; runtime capability is derived from those tool sets.
-- Role-level tool contracts are advisory and visible in runtime status payloads.
-- Per-role shell/workspace behavior is derived from each agent's configured toolset at dispatch time.
+- Product actors own Balda behavior: SessionActor handles turns, TaskActor routes webhook/scheduled work, GoalkeeperActor runs `/goal`, DeliveryActor sends updates, ControlActor cancels work, and MemoryActor syncs durable context.
+- `/goal` uses Norma's reusable ADK Goalkeeper workflow through GoalkeeperActor; it does not dispatch planner/executor/reviewer role actors.
 - Task progress/results and task visibility payload summaries redact common secret/token patterns before persistence and delivery.
 - The execution core does not depend on ADK, Balda, JetStream, Telegram, MCP, or provider SDK APIs.
 
 ## Related tests
 
 - `internal/apps/balda/swarm/runtime_test.go`
-- `internal/apps/balda/swarm/agents_test.go`
 - `internal/apps/balda/actors/swarm_session_actor_test.go`
+- `internal/apps/balda/actors/swarm_goalkeeper_actor_test.go`
 - `internal/apps/balda/actors/swarm_control_actor_test.go`
 - `internal/apps/balda/actors/swarm_delivery_actor_test.go`
 - `internal/apps/balda/handlers/task_visibility_test.go`
@@ -35,8 +34,8 @@ Status: active
 
 - Actor key mapping changes.
 - Command heartbeat or settlement behavior changes.
-- Task/agent/delivery actor lifecycle changes.
-- Agent toolset and allocator behavior changes.
+- Task/goalkeeper/delivery actor lifecycle changes.
+- Goalkeeper workflow, session, or task-result behavior changes.
 
 ## Norma actorlayer contract boundaries
 
@@ -47,7 +46,7 @@ Status: active
   - typed envelope handling,
   - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
   - and lifecycle events suitable for external telemetry.
-- Provider runtime: `balda.provider` selects the single app-scoped ADK provider runtime used by all Balda sessions and task role agents.
+- Provider runtime: `balda.provider` selects the single app-scoped ADK provider runtime used by all Balda sessions and Goalkeeper worker/validator runs.
 - Delivery boundary: Balda maps JetStream command messages into actorlayer deliveries and owns command settlement.
 
 ### Ownership split
@@ -55,7 +54,7 @@ Status: active
 - Actorlayer owns:
   - generic actor mechanics: registration, addressing, deterministic lane execution, lifecycle state transitions, and delivery hooks.
 - Balda product actor code owns:
-  - product actor implementations in `internal/apps/balda/actors` for session, task, agent, delivery, control, and memory behavior,
+  - product actor implementations in `internal/apps/balda/actors` for session, task, goalkeeper, delivery, control, and memory behavior,
   - product command payloads/envelope builders consumed by ingress,
   - provider runtime invocation details (ADK session execution, tools, model/runtime context),
   - task/session/delivery state transitions and user-visible outcomes.

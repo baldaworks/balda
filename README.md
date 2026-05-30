@@ -171,18 +171,18 @@ Built-in provider types:
 ## Bot Commands
 
 - `/topic <name>`: create a named topic session.
-- `/goal <objective>`: publish a durable JetStream task command and work toward the goal in the current session context/workspace through task, planner, executor, reviewer, and delivery actors. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See [`docs/goalkeeper.md`](docs/goalkeeper.md).
+- `/goal <objective>`: publish a durable JetStream command to the Goalkeeper actor and work toward the goal in the current session context/workspace with Norma's ADK worker -> validator loop. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See [`docs/goalkeeper.md`](docs/goalkeeper.md).
 - `/tasks`: list active task records for the current session.
 - `/task <id>`: inspect task status, objective, latest events, and reviewable outcome when the task is terminal.
 - `/task <id> events`: print the task event stream.
 - `/task <id> cancel`: publish a durable task-control command; ControlActor cancels active local task work when present and marks the task canceled when the command is processed.
-- `/swarm status`: show JetStream command/event/DLQ streams, worker and projector consumer state, logical agents, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
+- `/swarm status`: show JetStream command/event/DLQ streams, worker and projector consumer state, product actors, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
 - `/queue status`: show JetStream queue/runtime status (preferred command).
 - `/mailbox status`: compatibility alias for `/queue status`.
 - `/dlq`: show JetStream DLQ stream backlog summary.
 - `/dlq <stream_seq>`: inspect one DLQ entry by `BALDA_DLQ` stream sequence.
 - `/projection status`: show projector lag and projection health summary.
-- `/actors status`: show configured logical agents and toolsets.
+- `/actors status`: show Balda product actor status and active runtime lanes.
 - `/reset`: clear conversation history for the current session.
 - `/close`: reset history, then close the current topic or restart the owner session on the next message.
 - `/cancel`: publish a durable session-control command; ControlActor cancels in-flight work, drops queued session work, cancels active task records, and aborts active `/goal` work when processed.
@@ -258,19 +258,6 @@ balda:
       stream: "BALDA_EVENTS"
     dlq:
       stream: "BALDA_DLQ"
-    agents:
-      planner:
-        role: "Plan work and split into subtasks"
-        tools: []
-      executor:
-        role: "Use project tools and make changes"
-        tools: ["workspace", "shell", "mcp"]
-      reviewer:
-        role: "Validate result and inspect risks"
-        tools: ["workspace", "shell", "mcp"]
-      memory:
-        role: "Extract durable facts and summaries"
-        tools: ["memory"]
   scheduler:
     tasks: []
   workspace:
@@ -298,7 +285,6 @@ Common settings:
 - `balda.swarm.events.*`: JetStream event stream settings for command/task/delivery events.
 - `balda.swarm.dlq.*`: JetStream dead-letter stream settings for terminal command failures.
 - Actor-lane queue policy is not a public config surface yet; JetStream is the only durable command queue. Local in-process command fan-out is bounded to `fetch_batch`, and SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint.
-- `balda.swarm.agents.*`: logical single-process agent roles used by the swarm allocator. Defaults are `planner`, `executor`, `reviewer`, and `memory`; `tools` are advisory routing hints (`workspace`, `shell`, `mcp`, `memory`), not separate runtimes. Optional `cost_penalty` lowers allocator preference for expensive roles.
 - Task visibility: task events are published to `BALDA_EVENTS` and projected into SQLite for `/tasks`, `/task <id>`, and `/task <id> events`. Actor success does not depend on synchronous SQLite event projection. `/task <id> cancel` writes a durable JetStream control command. `/swarm status` and `/mailbox status` read JetStream transport state plus projection lag.
 - Command lifecycle events (`accepted|running|acked|retrying|deadlettered`) are best-effort visibility telemetry. Command settlement does not depend on lifecycle event publication.
 - `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set.

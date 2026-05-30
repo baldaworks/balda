@@ -42,28 +42,14 @@ type RuntimeManagerParams struct {
 // GoalkeeperRuntimeConfig configures a per-run Goalkeeper workflow runtime.
 type GoalkeeperRuntimeConfig struct {
 	SessionID     string
+	UserID        string
 	BranchName    string
 	WorkspaceDir  string
 	MaxIterations uint
 }
 
-// TaskAgentRuntimeConfig configures one per-task role agent.
-type TaskAgentRuntimeConfig struct {
-	SessionID    string
-	UserID       string
-	BranchName   string
-	WorkspaceDir string
-	Role         string
-}
-
 // GoalkeeperRuntime owns the per-run Goalkeeper workflow runner and agents.
 type GoalkeeperRuntime struct {
-	Agent  adkagent.Agent
-	Runner *runner.Runner
-}
-
-// TaskAgentRuntime owns a short-lived task role runner and provider agent.
-type TaskAgentRuntime struct {
 	Agent  adkagent.Agent
 	Runner *runner.Runner
 }
@@ -78,14 +64,6 @@ type childRuntimeBase struct {
 
 // Close releases child provider agents created for the workflow.
 func (r *GoalkeeperRuntime) Close() error {
-	if r == nil {
-		return nil
-	}
-	return closeRuntimeAgent(r.Agent)
-}
-
-// Close releases the provider agent created for one task role run.
-func (r *TaskAgentRuntime) Close() error {
 	if r == nil {
 		return nil
 	}
@@ -182,12 +160,27 @@ func (m *RuntimeManager) BuildGoalkeeperRuntime(
 	if err != nil {
 		return nil, err
 	}
+	userID := strings.TrimSpace(cfg.UserID)
+	if userID == "" {
+		return nil, fmt.Errorf("goalkeeper user id is required")
+	}
+	workspaceDir := base.workspaceDir(cfg.WorkspaceDir)
+	if _, err := base.builder.CreateRuntimeSession(
+		ctx,
+		base.runtime,
+		base.providerID,
+		userID,
+		cfg.SessionID,
+		workspaceDir,
+	); err != nil {
+		return nil, fmt.Errorf("create goalkeeper runtime session: %w", err)
+	}
 
 	workflow, err := base.builder.BuildGoalkeeperWorkflow(ctx, GoalkeeperBuildConfig{
 		ProviderID:        base.providerID,
 		SessionID:         cfg.SessionID,
 		BranchName:        cfg.BranchName,
-		WorkspaceDir:      base.workspaceDir(cfg.WorkspaceDir),
+		WorkspaceDir:      workspaceDir,
 		MaxIterations:     cfg.MaxIterations,
 		ExtraMCPServerIDs: base.extraMCPServerIDs,
 	})
@@ -203,50 +196,6 @@ func (m *RuntimeManager) BuildGoalkeeperRuntime(
 		Agent:  workflow,
 		Runner: r,
 	}, nil
-}
-
-// BuildTaskAgentRuntime creates a short-lived role agent backed by the balda provider.
-func (m *RuntimeManager) BuildTaskAgentRuntime(
-	ctx context.Context,
-	cfg TaskAgentRuntimeConfig,
-) (*TaskAgentRuntime, error) {
-	base, err := m.childRuntimeBase(ctx)
-	if err != nil {
-		return nil, err
-	}
-	userID := strings.TrimSpace(cfg.UserID)
-	if userID == "" {
-		return nil, fmt.Errorf("task agent user id is required")
-	}
-	workspaceDir := base.workspaceDir(cfg.WorkspaceDir)
-	if _, err := base.builder.CreateRuntimeSession(
-		ctx,
-		base.runtime,
-		base.providerID,
-		userID,
-		cfg.SessionID,
-		workspaceDir,
-	); err != nil {
-		return nil, fmt.Errorf("create task agent runtime session: %w", err)
-	}
-
-	ag, err := base.builder.BuildTaskRoleAgent(ctx, TaskRoleBuildConfig{
-		ProviderID:        base.providerID,
-		SessionID:         cfg.SessionID,
-		BranchName:        cfg.BranchName,
-		WorkspaceDir:      workspaceDir,
-		Role:              cfg.Role,
-		ExtraMCPServerIDs: base.extraMCPServerIDs,
-	})
-	if err != nil {
-		return nil, err
-	}
-	r, err := base.runner(ag, "task role")
-	if err != nil {
-		_ = closeRuntimeAgent(ag)
-		return nil, err
-	}
-	return &TaskAgentRuntime{Agent: ag, Runner: r}, nil
 }
 
 func (m *RuntimeManager) childRuntimeBase(ctx context.Context) (childRuntimeBase, error) {

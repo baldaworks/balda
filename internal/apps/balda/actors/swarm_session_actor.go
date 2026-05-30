@@ -107,7 +107,7 @@ func (e *sessionActorExecutor) Handle(ctx context.Context, envelope any) error {
 		return err
 	}
 	switch strings.TrimSpace(env.Namespace) {
-	case swarm.NamespaceHumanInbound, swarm.NamespaceWebhookInbound, swarm.NamespaceScheduleInbound, swarm.NamespaceAgentCommand, swarm.NamespaceTaskControl:
+	case swarm.NamespaceHumanInbound, swarm.NamespaceWebhookInbound, swarm.NamespaceScheduleInbound, swarm.NamespaceGoalCommand, swarm.NamespaceTaskControl:
 		return e.enqueueTurn(ctx, env)
 	default:
 		return swarm.PolicyError(fmt.Errorf("unsupported session namespace %q", env.Namespace))
@@ -231,7 +231,7 @@ func sessionTurnNamespace(source string) string {
 	case sessionTurnSourceSchedule:
 		return swarm.NamespaceScheduleInbound
 	case "agent":
-		return swarm.NamespaceAgentCommand
+		return swarm.NamespaceGoalCommand
 	default:
 		return swarm.NamespaceHumanInbound
 	}

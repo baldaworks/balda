@@ -21,9 +21,6 @@ func TestConfigNormalized_DefaultsToJetStreamRuntime(t *testing.T) {
 	if got.Events.Stream != DefaultEventStream || got.DLQ.Stream != DefaultDLQStream {
 		t.Fatalf("Events/DLQ defaults = %+v/%+v", got.Events, got.DLQ)
 	}
-	if _, ok := got.Agents[AgentNamePlanner]; !ok {
-		t.Fatalf("Agents missing default planner: %+v", got.Agents)
-	}
 }
 
 func TestCommandConfigNormalized_ClampsFetchBatchToMaxAckPending(t *testing.T) {
@@ -37,14 +34,5 @@ func TestCommandConfigNormalized_ClampsFetchBatchToMaxAckPending(t *testing.T) {
 	got = (CommandConfig{FetchBatch: 128}).Normalized()
 	if got.MaxAckPending != 64 || got.FetchBatch != 64 {
 		t.Fatalf("CommandConfig.Normalized() = %+v, want fetch_batch clamped to default max_ack_pending", got)
-	}
-}
-
-func TestConfigNormalized_RejectsInvalidAgentConfig(t *testing.T) {
-	t.Parallel()
-
-	cfg := Config{Agents: map[string]AgentSpec{"custom": {Role: "Custom", Tools: []string{"unsupported"}}}}
-	if _, err := cfg.Normalized(); err == nil {
-		t.Fatal("Normalized() error = nil, want non-nil")
 	}
 }

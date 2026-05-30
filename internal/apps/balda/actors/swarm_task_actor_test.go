@@ -3,967 +3,68 @@ package actors
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"path/filepath"
-	"strings"
 	"testing"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
 
-func TestTaskActorStartGoalRecordsProgressBeforePlannerDispatch(t *testing.T) {
+func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
-	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
-	locator := taskActorTestLocator()
-	env, goal := taskActorGoalEnvelope(t, locator, "fix failing tests", 3)
-
-	if err := exec.startGoalTask(ctx, env, goal); err != nil {
-		t.Fatalf("startGoalTask() error = %v", err)
-	}
-
-	if len(bus.commands) != 3 {
-		t.Fatalf("published commands = %d, want planner + start delivery + planner-start delivery", len(bus.commands))
-	}
-	planner := bus.commands[len(bus.commands)-1]
-	if planner.To.Target != swarm.ActorTypeAgent || planner.To.Key != swarm.AgentNamePlanner {
-		t.Fatalf("planner command target = %+v, want agent:planner", planner.To)
-	}
-	var command taskAgentCommandPayload
-	if err := json.Unmarshal([]byte(planner.PayloadJSON), &command); err != nil {
-		t.Fatalf("decode planner command: %v", err)
-	}
-	if command.Role != taskAgentRolePlanner || command.AgentName != swarm.AgentNamePlanner {
-		t.Fatalf("planner command role/name = %q/%q, want planner/planner", command.Role, command.AgentName)
-	}
-}
-
-func TestTaskActorAgentPublishFailureKeepsTaskAwaitingAgentRetry(t *testing.T) {
-	ctx := context.Background()
-	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
-	locator := taskActorTestLocator()
-	const taskID = "goal-publish-failure"
-	if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
-		ID:          taskID,
-		SessionID:   locator.SessionID,
-		Title:       "Goal",
-		Objective:   "fix ordering",
-		Status:      baldastate.SwarmTaskStatusRunning,
-		CreatedFrom: "goal",
-	}, "test", nil); err != nil {
-		t.Fatalf("Create task: %v", err)
-	}
-	bus.commandErrs = []error{errors.New("jetstream unavailable")}
-
-	err := exec.dispatchAgent(ctx, taskAgentCommandPayload{
-		TaskID:          taskID,
-		Role:            taskAgentRoleReviewer,
-		Iteration:       1,
-		Locator:         locator,
-		Objective:       "fix ordering",
-		TransportUserID: "tg-101",
-		MaxIterations:   3,
-	})
-	if err == nil {
-		t.Fatal("dispatchAgent() error = nil, want publish failure")
-	}
-	if len(bus.commands) != 0 {
-		t.Fatalf("published commands = %d, want 0 after failed publish", len(bus.commands))
-	}
-	task, ok, err := tasks.Get(ctx, taskID)
-	if err != nil {
-		t.Fatalf("Get(task) error = %v", err)
-	}
-	if !ok || task.Status != baldastate.SwarmTaskStatusValidating {
-		t.Fatalf("task = %+v found=%v, want validating after recorded reviewer dispatch", task, ok)
-	}
-}
-
-func TestTaskActorPlannerResultStoresPlanAndDispatchesExecutor(t *testing.T) {
-	ctx := context.Background()
-	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	locator := taskActorTestLocator()
-	ts := newBaldaTopicSession(t, locator.SessionID)
-	wantBranch := "norma/balda/" + locator.SessionID
-	wantWorkspace := "/tmp/balda-workspaces/" + locator.SessionID
-	setUnexportedField(t, ts, "branchName", wantBranch)
-	setUnexportedField(t, ts, "workspaceDir", wantWorkspace)
-	manager := newBaldaSessionManagerWithSession(t, locator, ts)
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, sessions: manager, maxIters: 3}
-	env, goal := taskActorGoalEnvelope(t, locator, "fix failing tests", 3)
-	if err := exec.startGoalTask(ctx, env, goal); err != nil {
-		t.Fatalf("startGoalTask() error = %v", err)
-	}
-
-	plannerText := "1. inspect tests\n2. patch code\n3. run go test ./..."
-	resultEnv := swarm.Envelope{ID: "planner-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNamePlanner}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}
-	if err := exec.handleAgentResult(ctx, resultEnv, taskAgentResultPayload{
-		TaskID: goal.TaskID, AgentName: swarm.AgentNamePlanner, Role: taskAgentRolePlanner, Iteration: 1, Locator: locator, Objective: goal.Objective, TransportUserID: goal.TransportUserID, Text: plannerText, MaxIterations: goal.MaxIterations,
-	}); err != nil {
-		t.Fatalf("handleAgentResult(planner) error = %v", err)
-	}
-
-	appended := bus.commands[3:]
-	if len(appended) != 3 {
-		t.Fatalf("planner appended commands = %d, want executor + finished delivery + executor-start delivery", len(appended))
-	}
-	if !strings.Contains(appended[0].DedupeKey, ":delivery:finished:planner:1") {
-		t.Fatalf("first planner follow-up dedupe = %q, want planner finished delivery", appended[0].DedupeKey)
-	}
-	if !strings.Contains(appended[1].DedupeKey, ":delivery:started:executor:1") {
-		t.Fatalf("second planner follow-up dedupe = %q, want executor-start delivery", appended[1].DedupeKey)
-	}
-	executor := lastPublishedCommandTo(t, bus, swarm.ActorTypeAgent, swarm.AgentNameExecutor)
-	if executor.To.Target != swarm.ActorTypeAgent || executor.To.Key != swarm.AgentNameExecutor {
-		t.Fatalf("executor command target = %+v, want agent:executor", executor.To)
-	}
-	var command taskAgentCommandPayload
-	if err := json.Unmarshal([]byte(executor.PayloadJSON), &command); err != nil {
-		t.Fatalf("decode executor command: %v", err)
-	}
-	if command.Role != taskAgentRoleExecutor || command.Plan != plannerText || command.PlannerOutput != plannerText {
-		t.Fatalf("executor command = %+v, want executor with planner text", command)
-	}
-	if command.BranchName != wantBranch {
-		t.Fatalf("executor branch_name = %q, want %q", command.BranchName, wantBranch)
-	}
-	if command.WorkspaceDir != wantWorkspace {
-		t.Fatalf("executor workspace_dir = %q, want %q", command.WorkspaceDir, wantWorkspace)
-	}
-
-	task, ok, err := tasks.Get(ctx, goal.TaskID)
-	if err != nil {
-		t.Fatalf("Get(task) error = %v", err)
-	}
-	if !ok || !strings.Contains(task.PlanJSON, "inspect tests") {
-		t.Fatalf("task = %+v found=%v, want planner output", task, ok)
-	}
-}
-
-func TestTaskActorExecutorResultDispatchesReviewerBeforeProgress(t *testing.T) {
-	ctx := context.Background()
-	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
-	locator := taskActorTestLocator()
-	env, goal := taskActorGoalEnvelope(t, locator, "fix failing tests", 3)
-	if err := exec.startGoalTask(ctx, env, goal); err != nil {
-		t.Fatalf("startGoalTask() error = %v", err)
-	}
-	plannerText := "1. inspect tests\n2. patch code"
-	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "planner-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNamePlanner}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
-		TaskID: goal.TaskID, AgentName: swarm.AgentNamePlanner, Role: taskAgentRolePlanner, Iteration: 1, Locator: locator, Objective: goal.Objective, TransportUserID: goal.TransportUserID, Text: plannerText, MaxIterations: goal.MaxIterations,
-	}); err != nil {
-		t.Fatalf("handleAgentResult(planner) error = %v", err)
-	}
-	beforeExecutor := len(bus.commands)
-
-	executorText := "patched code and ran tests"
-	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "executor-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNameExecutor}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
-		TaskID: goal.TaskID, AgentName: swarm.AgentNameExecutor, Role: taskAgentRoleExecutor, Iteration: 1, Locator: locator, Objective: goal.Objective, Plan: plannerText, PlannerOutput: plannerText, TransportUserID: goal.TransportUserID, Text: executorText, MaxIterations: goal.MaxIterations,
-	}); err != nil {
-		t.Fatalf("handleAgentResult(executor) error = %v", err)
-	}
-
-	appended := bus.commands[beforeExecutor:]
-	if len(appended) != 3 {
-		t.Fatalf("executor appended commands = %d, want reviewer + finished delivery + validator-start delivery", len(appended))
-	}
-	if !strings.Contains(appended[0].DedupeKey, ":delivery:finished:executor:1") {
-		t.Fatalf("first executor follow-up dedupe = %q, want executor finished delivery", appended[0].DedupeKey)
-	}
-	if !strings.Contains(appended[1].DedupeKey, ":delivery:started:reviewer:1") {
-		t.Fatalf("second executor follow-up dedupe = %q, want reviewer-start delivery", appended[1].DedupeKey)
-	}
-}
-
-func TestTaskActorReviewerPassPublishesMemorySyncCommands(t *testing.T) {
-	ctx := context.Background()
-	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	locator := taskActorTestLocator()
-	ts := newBaldaTopicSession(t, locator.SessionID)
-	manager := newBaldaSessionManagerWithSession(t, locator, ts)
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, sessions: manager, maxIters: 3}
-	env, goal := taskActorGoalEnvelope(t, locator, "fix failing tests", 3)
-	if err := exec.startGoalTask(ctx, env, goal); err != nil {
-		t.Fatalf("startGoalTask() error = %v", err)
-	}
-	plannerText := "1. inspect tests\n2. patch code"
-	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "planner-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNamePlanner}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
-		TaskID: goal.TaskID, AgentName: swarm.AgentNamePlanner, Role: taskAgentRolePlanner, Iteration: 1, Locator: locator, Objective: goal.Objective, TransportUserID: goal.TransportUserID, Text: plannerText, MaxIterations: goal.MaxIterations,
-	}); err != nil {
-		t.Fatalf("handleAgentResult(planner) error = %v", err)
-	}
-	executorText := "patched code and ran tests"
-	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "executor-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNameExecutor}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
-		TaskID: goal.TaskID, AgentName: swarm.AgentNameExecutor, Role: taskAgentRoleExecutor, Iteration: 1, Locator: locator, Objective: goal.Objective, Plan: plannerText, PlannerOutput: plannerText, TransportUserID: goal.TransportUserID, Text: executorText, MaxIterations: goal.MaxIterations,
-	}); err != nil {
-		t.Fatalf("handleAgentResult(executor) error = %v", err)
-	}
-	beforeReviewer := len(bus.commands)
-	if err := exec.handleAgentResult(ctx, swarm.Envelope{ID: "reviewer-result-1", Namespace: swarm.NamespaceAgentResult, Kind: swarm.KindGoal, From: swarm.ActorAddress{Target: swarm.ActorTypeAgent, Key: swarm.AgentNameReviewer}, To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: goal.TaskID}, SessionID: locator.SessionID, TaskID: goal.TaskID, PayloadJSON: `{}`}, taskAgentResultPayload{
-		TaskID: goal.TaskID, AgentName: swarm.AgentNameReviewer, Role: taskAgentRoleReviewer, Iteration: 1, Locator: locator, Objective: goal.Objective, Plan: plannerText, PlannerOutput: plannerText, ExecutorOutput: executorText, TransportUserID: goal.TransportUserID, Text: "verdict: pass\nall checks passed", MaxIterations: goal.MaxIterations,
-	}); err != nil {
-		t.Fatalf("handleAgentResult(reviewer) error = %v", err)
-	}
-
-	appended := bus.commands[beforeReviewer:]
-	if len(appended) != 5 {
-		t.Fatalf("reviewer appended commands = %d, want reviewer delivery + 3 memory sync + completion delivery", len(appended))
-	}
-	memoryCommands := 0
-	operations := map[string]bool{}
-	for _, cmd := range appended {
-		if cmd.To.Target != swarm.ActorTypeMemory {
-			continue
-		}
-		memoryCommands++
-		if cmd.Namespace != swarm.NamespaceMemorySync {
-			t.Fatalf("memory command namespace = %q, want %q", cmd.Namespace, swarm.NamespaceMemorySync)
-		}
-		if cmd.TaskID != goal.TaskID || cmd.SessionID != locator.SessionID {
-			t.Fatalf("memory command scope = task:%q session:%q, want %q/%q", cmd.TaskID, cmd.SessionID, goal.TaskID, locator.SessionID)
-		}
-		var syncPayload taskMemorySyncPayload
-		if err := json.Unmarshal([]byte(cmd.PayloadJSON), &syncPayload); err != nil {
-			t.Fatalf("decode memory payload: %v", err)
-		}
-		if strings.TrimSpace(syncPayload.Scope) != taskMemoryScopeCompleted {
-			t.Fatalf("memory payload scope = %q, want %q", syncPayload.Scope, taskMemoryScopeCompleted)
-		}
-		if strings.TrimSpace(syncPayload.Content) == "" {
-			t.Fatalf("memory payload content is empty for operation %q", syncPayload.Operation)
-		}
-		operations[syncPayload.Operation] = true
-	}
-	if memoryCommands != 3 {
-		t.Fatalf("memory commands = %d, want 3", memoryCommands)
-	}
-	for _, operation := range []string{taskMemoryOperationSummary, taskMemoryOperationFacts, taskMemoryOperationContext} {
-		if !operations[operation] {
-			t.Fatalf("missing memory operation %q in %+v", operation, operations)
-		}
-	}
-}
-
-func TestTaskActorEnsureGoalTaskIgnoresCreatedEventPublishFailure(t *testing.T) {
-	ctx := context.Background()
-	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
-	locator := taskActorTestLocator()
-	_, goal := taskActorGoalEnvelope(t, locator, "repair task event", 3)
-	bus.eventErrs = []error{errors.New("event stream unavailable")}
-
-	if err := exec.ensureGoalTask(ctx, goal.TaskID, goal, goal.Objective); err != nil {
-		t.Fatalf("ensureGoalTask(first) error = %v, want nil because task events are visibility-only", err)
-	}
-	if len(bus.eventEnvs) != 2 {
-		t.Fatalf("event publish attempts = %d, want created + queued visibility attempts", len(bus.eventEnvs))
-	}
-	wantCreatedEventID := "task:" + goal.TaskID + ":event:created"
-	if bus.eventEnvs[0].ID != wantCreatedEventID {
-		t.Fatalf("created event id = %q, want deterministic task.created event id", bus.eventEnvs[0].ID)
-	}
-	task, ok, err := tasks.Get(ctx, goal.TaskID)
-	if err != nil {
-		t.Fatalf("Get(task) error = %v", err)
-	}
-	if !ok || task.Status != baldastate.SwarmTaskStatusQueued {
-		t.Fatalf("task = %+v found=%v, want queued after repaired ensure", task, ok)
-	}
-}
-
-func TestSubmitWebhookTaskUsesStableTaskAndDistinctDedupeKeys(t *testing.T) {
-	locator := taskActorTestLocator()
-	payload := SessionTurnPayload{
-		Text:      "release event",
-		Locator:   locator,
-		UserID:    "tg-101",
-		Source:    "webhook",
-		DedupeKey: "webhook:release:req-1",
-	}
-
-	parent, taskID, err := WebhookTaskEnvelope(payload, "release", "req-1")
+	_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
+	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
+	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
+	env, taskID, err := WebhookTaskEnvelope(SessionTurnPayload{
+		Text:    "handle webhook",
+		Locator: locator,
+		UserID:  "101",
+		Source:  sessionTurnSourceWebhook,
+	}, "github", "delivery-1")
 	if err != nil {
 		t.Fatalf("WebhookTaskEnvelope() error = %v", err)
 	}
-	_, duplicateTaskID, err := WebhookTaskEnvelope(payload, "release", "req-1")
-	if err != nil {
-		t.Fatalf("WebhookTaskEnvelope(duplicate) error = %v", err)
+	if err := exec.Handle(ctx, env); err != nil {
+		t.Fatalf("Handle() error = %v", err)
 	}
-	if taskID == "" || duplicateTaskID != taskID {
-		t.Fatalf("task ids = %q/%q, want stable non-empty task id", taskID, duplicateTaskID)
-	}
-	if parent.DedupeKey != "webhook:release:req-1:task" {
-		t.Fatalf("parent dedupe = %q, want task-scoped key", parent.DedupeKey)
-	}
-	var body taskEnvelopePayload
-	if err := json.Unmarshal([]byte(parent.PayloadJSON), &body); err != nil {
-		t.Fatalf("decode parent payload: %v", err)
-	}
-	if body.SessionTurn == nil || body.SessionTurn.DedupeKey != "webhook:release:req-1:session" {
-		t.Fatalf("child dedupe in payload = %+v, want session-scoped key", body.SessionTurn)
-	}
-}
-
-func TestTaskActorDispatchSessionTurnKeepsTaskRunningUntilSessionCompletes(t *testing.T) {
-	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = coordinator
-	_ = allocator
-	exec := &taskActorExecutor{tasks: tasks, coordinator: swarm.NewCoordinator(bus, swarm.Config{Enabled: true})}
-	locator := taskActorTestLocator()
-	taskID := "webhook-release-abc"
-	parentTaskID := "parent-task-1"
-	payload := SessionTurnPayload{
-		Text:         "release event",
-		Locator:      locator,
-		ParentTaskID: parentTaskID,
-		UserID:       "tg-101",
-		Source:       "webhook",
-		DedupeKey:    "webhook:release:req-1:session",
-	}
-	env := swarm.Envelope{
-		ID:          "task-command-1",
-		Namespace:   swarm.NamespaceWebhookInbound,
-		Kind:        swarm.KindWebhookEvent,
-		From:        swarm.ActorAddress{Target: "webhook", Key: "release"},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
-		SessionID:   locator.SessionID,
-		TaskID:      taskID,
-		PayloadJSON: `{}`,
-	}
-
-	if err := exec.dispatchSessionTurn(ctx, env, payload); err != nil {
-		t.Fatalf("dispatchSessionTurn() error = %v", err)
+	if got := lastPublishedCommandTo(t, bus, swarm.ActorTypeSession, locator.SessionID); got.TaskID != taskID {
+		t.Fatalf("published task id = %q, want %q", got.TaskID, taskID)
 	}
 	task, ok, err := tasks.Get(ctx, taskID)
 	if err != nil {
-		t.Fatalf("Get(task) error = %v", err)
+		t.Fatalf("Get() error = %v", err)
 	}
-	if !ok || task.Status != baldastate.SwarmTaskStatusRunning {
-		t.Fatalf("task = %+v found=%v, want running until SessionActor completes it", task, ok)
+	if !ok {
+		t.Fatalf("task %q not found", taskID)
 	}
-	if task.ParentTaskID != parentTaskID {
-		t.Fatalf("task.ParentTaskID = %q, want %q", task.ParentTaskID, parentTaskID)
-	}
-	last := bus.commands[len(bus.commands)-1]
-	if last.To.Target != swarm.ActorTypeSession || last.DedupeKey != payload.DedupeKey {
-		t.Fatalf("child session command = %+v, want session command with child dedupe", last)
+	if task.Status != baldastate.SwarmTaskStatusRunning {
+		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusRunning)
 	}
 }
 
-func TestTaskActorDispatchSessionTurnSkipsExistingTasks(t *testing.T) {
-	statuses := []string{
-		baldastate.SwarmTaskStatusCreated,
-		baldastate.SwarmTaskStatusRunning,
-		baldastate.SwarmTaskStatusCompleted,
-		baldastate.SwarmTaskStatusFailed,
-		baldastate.SwarmTaskStatusCanceled,
-		baldastate.SwarmTaskStatusDeadLettered,
-	}
-	for _, status := range statuses {
-		t.Run(status, func(t *testing.T) {
-			ctx := context.Background()
-			_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
-			exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
-			locator := taskActorTestLocator()
-			taskID := "webhook-redelivery-" + strings.ReplaceAll(status, "_", "-")
-			if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
-				ID:            taskID,
-				SessionID:     locator.SessionID,
-				Title:         "Webhook task",
-				Objective:     "release event",
-				Status:        status,
-				OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
-				AssignedActor: swarm.ActorTypeSession + ":" + locator.SessionID,
-				CreatedFrom:   "webhook",
-			}, "test", nil); err != nil {
-				t.Fatalf("Create task: %v", err)
-			}
-			before := len(bus.commands)
-
-			err := exec.dispatchSessionTurn(ctx, swarm.Envelope{
-				ID:        "task-command-" + status,
-				Namespace: swarm.NamespaceWebhookInbound,
-				Kind:      swarm.KindWebhookEvent,
-				From:      swarm.ActorAddress{Target: "webhook", Key: "release"},
-				To:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
-				SessionID: locator.SessionID,
-				TaskID:    taskID,
-			}, SessionTurnPayload{
-				Text:      "release event",
-				Locator:   locator,
-				UserID:    "tg-101",
-				Source:    "webhook",
-				DedupeKey: "webhook:release:req-1:session",
-			})
-			if err != nil {
-				t.Fatalf("dispatchSessionTurn() error = %v", err)
-			}
-			if got := len(bus.commands); got != before {
-				t.Fatalf("published commands = %d, want %d for existing %s task", got, before, status)
-			}
-			task, ok, err := tasks.Get(ctx, taskID)
-			if err != nil {
-				t.Fatalf("Get(task) error = %v", err)
-			}
-			if !ok || task.Status != status {
-				t.Fatalf("task = %+v found=%v, want status %q preserved", task, ok, status)
-			}
-		})
-	}
-}
-
-func TestTaskActorStartScheduledTaskDispatchesSessionTurn(t *testing.T) {
-	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = allocator
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
-	locator := taskActorTestLocator()
-	taskID := "scheduled-daily-review-slot-1"
-	payload := scheduledTaskPayload{
-		TaskID:  "daily-review",
-		Content: "review open work",
-		Locator: locator,
-		UserID:  "tg-101",
-	}
-	data, err := json.Marshal(taskEnvelopePayload{Kind: taskPayloadKindScheduledTask, ScheduledTask: &payload})
-	if err != nil {
-		t.Fatalf("encode scheduled payload: %v", err)
-	}
-	env := swarm.Envelope{
-		ID:          "scheduled-command-1",
-		Namespace:   swarm.NamespaceScheduleInbound,
-		Kind:        swarm.KindScheduledTask,
-		From:        swarm.ActorAddress{Target: "schedule", Key: "daily-review"},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
-		SessionID:   locator.SessionID,
-		TaskID:      taskID,
-		DedupeKey:   "schedule:daily-review:slot-1",
-		PayloadJSON: string(data),
-	}
-
-	if err := exec.startScheduledTaskTask(ctx, env, payload); err != nil {
-		t.Fatalf("startScheduledTaskTask() error = %v", err)
-	}
-	task, ok, err := tasks.Get(ctx, taskID)
-	if err != nil {
-		t.Fatalf("Get(task) error = %v", err)
-	}
-	if !ok || task.Status != baldastate.SwarmTaskStatusRunning || task.CreatedFrom != "schedule" {
-		t.Fatalf("task = %+v found=%v, want running scheduled task", task, ok)
-	}
-	last := bus.commands[len(bus.commands)-1]
-	if last.To.Target != swarm.ActorTypeSession || last.DedupeKey != "schedule:daily-review:slot-1:session" {
-		t.Fatalf("child command = %+v, want session command with child dedupe", last)
-	}
-	var child SessionTurnPayload
-	if err := json.Unmarshal([]byte(last.PayloadJSON), &child); err != nil {
-		t.Fatalf("decode child session payload: %v", err)
-	}
-	if child.ScheduledTaskID != "daily-review" || child.Deliver || child.Source != "schedule" {
-		t.Fatalf("child payload = %+v, want scheduled no-delivery turn", child)
-	}
-}
-
-func TestTaskActorStartScheduledTaskSkipsExistingTasks(t *testing.T) {
-	statuses := []string{
-		baldastate.SwarmTaskStatusCreated,
-		baldastate.SwarmTaskStatusRunning,
-		baldastate.SwarmTaskStatusCompleted,
-		baldastate.SwarmTaskStatusFailed,
-		baldastate.SwarmTaskStatusCanceled,
-		baldastate.SwarmTaskStatusDeadLettered,
-	}
-	for _, status := range statuses {
-		t.Run(status, func(t *testing.T) {
-			ctx := context.Background()
-			_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
-			exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
-			locator := taskActorTestLocator()
-			taskID := "scheduled-redelivery-" + strings.ReplaceAll(status, "_", "-")
-			if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
-				ID:            taskID,
-				SessionID:     locator.SessionID,
-				Title:         "Scheduled task: daily-review",
-				Objective:     "review open work",
-				Status:        status,
-				OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
-				AssignedActor: swarm.ActorTypeSession + ":" + locator.SessionID,
-				CreatedFrom:   "schedule",
-			}, "test", nil); err != nil {
-				t.Fatalf("Create task: %v", err)
-			}
-			before := len(bus.commands)
-
-			err := exec.startScheduledTaskTask(ctx, swarm.Envelope{
-				ID:        "scheduled-command-" + status,
-				Namespace: swarm.NamespaceScheduleInbound,
-				Kind:      swarm.KindScheduledTask,
-				From:      swarm.ActorAddress{Target: "schedule", Key: "daily-review"},
-				To:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
-				SessionID: locator.SessionID,
-				TaskID:    taskID,
-				DedupeKey: "schedule:daily-review:slot-1",
-			}, scheduledTaskPayload{
-				TaskID:  "daily-review",
-				Content: "review open work",
-				Locator: locator,
-				UserID:  "tg-101",
-			})
-			if err != nil {
-				t.Fatalf("startScheduledTaskTask() error = %v", err)
-			}
-			if got := len(bus.commands); got != before {
-				t.Fatalf("published commands = %d, want %d for existing %s task", got, before, status)
-			}
-			task, ok, err := tasks.Get(ctx, taskID)
-			if err != nil {
-				t.Fatalf("Get(task) error = %v", err)
-			}
-			if !ok || task.Status != status {
-				t.Fatalf("task = %+v found=%v, want status %q preserved", task, ok, status)
-			}
-		})
-	}
-}
-
-func TestSessionActorCompletesTaskAfterTurnSuccess(t *testing.T) {
-	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = bus
-	_ = coordinator
-	_ = allocator
-	taskID := "webhook-release-complete"
-	_, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
-		ID:          taskID,
-		SessionID:   "tg-9001-99",
-		Title:       "Webhook task",
-		Objective:   "release event",
-		Status:      baldastate.SwarmTaskStatusRunning,
-		CreatedFrom: "webhook",
-	}, "test", nil)
-	if err != nil {
-		t.Fatalf("Create task: %v", err)
-	}
-	exec := &sessionActorExecutor{tasks: tasks}
-	if err := exec.recordSessionTaskResult(ctx, swarm.Envelope{
-		ID:        "session-command-1",
-		Namespace: swarm.NamespaceWebhookInbound,
-		Kind:      swarm.KindWebhookEvent,
-		TaskID:    taskID,
-	}, SessionTurnPayload{}, nil); err != nil {
-		t.Fatalf("recordSessionTaskResult() error = %v", err)
-	}
-
-	task, ok, err := tasks.Get(ctx, taskID)
-	if err != nil {
-		t.Fatalf("Get(task) error = %v", err)
-	}
-	if !ok || task.Status != baldastate.SwarmTaskStatusCompleted {
-		t.Fatalf("task = %+v found=%v, want completed", task, ok)
-	}
-}
-
-func TestSessionActorIgnoresTaskResultEventPublishFailure(t *testing.T) {
-	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = coordinator
-	_ = allocator
-	const taskID = "webhook-release-persist-fails"
-	if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
-		ID:          taskID,
-		SessionID:   "tg-9001-99",
-		Title:       "Webhook task",
-		Objective:   "release event",
-		Status:      baldastate.SwarmTaskStatusRunning,
-		CreatedFrom: "webhook",
-	}, "test", nil); err != nil {
-		t.Fatalf("Create task: %v", err)
-	}
-	bus.eventErrs = []error{errors.New("event stream unavailable")}
-	exec := &sessionActorExecutor{tasks: tasks}
-
-	err := exec.recordSessionTaskResult(ctx, swarm.Envelope{
-		ID:        "session-command-1",
-		Namespace: swarm.NamespaceWebhookInbound,
-		Kind:      swarm.KindWebhookEvent,
-		TaskID:    taskID,
-	}, SessionTurnPayload{}, nil)
-	if err != nil {
-		t.Fatalf("recordSessionTaskResult() error = %v, want nil because task events are visibility-only", err)
-	}
-	task, ok, err := tasks.Get(ctx, taskID)
-	if err != nil || !ok {
-		t.Fatalf("Get(task) = %+v found=%v err=%v", task, ok, err)
-	}
-	if task.Status != baldastate.SwarmTaskStatusCompleted {
-		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusCompleted)
-	}
-}
-
-func TestTaskAgentResolveSessionEnsuresMissingSession(t *testing.T) {
-	ctx := context.Background()
-	locator := taskActorTestLocator()
-	locator.AddressJSON = `{"chat_id":9001,"topic_id":99}`
-	store := &fakeBaldaRestoreSessionStore{}
-	manager := newBaldaRestoreSessionManager(t, &fakeBaldaRestoreAgentBuilder{}, &fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"}, store)
-	actor := &taskAgentActor{sessions: manager}
-
-	ts, err := actor.resolveSession(ctx, taskAgentCommandPayload{
-		Locator:         locator,
-		TransportUserID: "tg-101",
-	})
-	if err != nil {
-		t.Fatalf("resolveSession() error = %v", err)
-	}
-	if ts.GetSessionID() != locator.SessionID {
-		t.Fatalf("session id = %q, want %q", ts.GetSessionID(), locator.SessionID)
-	}
-	if store.lastUpsert.SessionID != locator.SessionID || store.lastUpsert.UserID != "tg-101" {
-		t.Fatalf("last upsert = %+v, want ensured session for tg-101", store.lastUpsert)
-	}
-}
-
-func TestTaskActorPrepareAgentDispatchHydratesWorkspaceFromSessionInfo(t *testing.T) {
-	ctx := context.Background()
-	locator := taskActorTestLocator()
-	ts := newBaldaTopicSession(t, locator.SessionID)
-	wantBranch := "norma/balda/" + locator.SessionID
-	wantWorkspace := "/tmp/balda-workspaces/" + locator.SessionID
-	setUnexportedField(t, ts, "branchName", wantBranch)
-	setUnexportedField(t, ts, "workspaceDir", wantWorkspace)
-	manager := newBaldaSessionManagerWithSession(t, locator, ts)
-	exec := &taskActorExecutor{sessions: manager}
-
-	dispatch, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
-		TaskID:          "goal-" + locator.SessionID,
-		Role:            taskAgentRolePlanner,
-		Iteration:       1,
-		Locator:         locator,
-		Objective:       "fix failing tests",
-		TransportUserID: testTelegramUserID101,
-		MaxIterations:   3,
-	})
-	if err != nil {
-		t.Fatalf("prepareAgentDispatch() error = %v", err)
-	}
-	if dispatch.Payload.BranchName != wantBranch {
-		t.Fatalf("branch_name = %q, want %q", dispatch.Payload.BranchName, wantBranch)
-	}
-	if dispatch.Payload.WorkspaceDir != wantWorkspace {
-		t.Fatalf("workspace_dir = %q, want %q", dispatch.Payload.WorkspaceDir, wantWorkspace)
-	}
-}
-
-func TestTaskActorPrepareAgentDispatchEnsuresSessionWhenWorkspaceMissing(t *testing.T) {
-	ctx := context.Background()
-	locator := taskActorTestLocator()
-	locator.AddressJSON = `{"chat_id":9001,"topic_id":99}`
-	store := &fakeBaldaRestoreSessionStore{}
-	manager := newBaldaRestoreSessionManager(t, &fakeBaldaRestoreAgentBuilder{}, &fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"}, store)
-	exec := &taskActorExecutor{sessions: manager}
-
-	if _, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
-		TaskID:          "goal-" + locator.SessionID,
-		Role:            taskAgentRoleExecutor,
-		Iteration:       1,
-		Locator:         locator,
-		Objective:       "fix failing tests",
-		TransportUserID: testTelegramUserID101,
-		MaxIterations:   3,
-	}); err != nil {
-		t.Fatalf("prepareAgentDispatch() error = %v", err)
-	}
-	if store.lastUpsert.SessionID != locator.SessionID || store.lastUpsert.UserID != testTelegramUserID101 {
-		t.Fatalf("last upsert = %+v, want ensured session for tg-101", store.lastUpsert)
-	}
-}
-
-func TestTaskActorPrepareAgentDispatchAllowsRequestedToolsWithoutRolePolicy(t *testing.T) {
-	ctx := context.Background()
-	exec := &taskActorExecutor{}
-	dispatch, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
-		TaskID:          "goal-tg-9001-99",
-		Role:            taskAgentRolePlanner,
-		Iteration:       1,
-		Locator:         taskActorTestLocator(),
-		Objective:       "plan only",
-		RequestedTools:  []string{swarm.AgentToolShell},
-		TransportUserID: testTelegramUserID101,
-		MaxIterations:   3,
-	})
-	if err != nil {
-		t.Fatalf("prepareAgentDispatch() error = %v, want nil", err)
-	}
-	if dispatch.Payload.Role != taskAgentRolePlanner {
-		t.Fatalf("dispatch payload role = %q, want %q", dispatch.Payload.Role, taskAgentRolePlanner)
-	}
-	if got := dispatch.Payload.RequestedTools; len(got) != 1 || got[0] != swarm.AgentToolShell {
-		t.Fatalf("dispatch requested tools = %#v, want []string{%q}", got, swarm.AgentToolShell)
-	}
-}
-
-func TestTaskActorPrepareAgentDispatchDefaultsToWorkspaceShellMCPProjectTools(t *testing.T) {
+func TestScheduledTaskEnvelopeDispatchesSessionTurn(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name      string
-		role      string
-		wantTools []string
-	}{
-		{name: "planner", role: taskAgentRolePlanner, wantTools: []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}},
-		{name: "executor", role: taskAgentRoleExecutor, wantTools: []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}},
-		{name: "reviewer", role: taskAgentRoleReviewer, wantTools: []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			ctx := context.Background()
-			exec := &taskActorExecutor{}
-			dispatch, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
-				TaskID:          "goal-tg-9001-99",
-				Role:            tc.role,
-				Iteration:       1,
-				Locator:         taskActorTestLocator(),
-				Objective:       "project tooling",
-				TransportUserID: testTelegramUserID101,
-				MaxIterations:   3,
-			})
-			if err != nil {
-				t.Fatalf("prepareAgentDispatch() error = %v", err)
-			}
-			if got := dispatch.Payload.RequestedTools; len(got) != len(tc.wantTools) {
-				t.Fatalf("dispatch requested tools = %#v, want %v", got, tc.wantTools)
-			}
-			for i := range tc.wantTools {
-				if got := dispatch.Payload.RequestedTools[i]; got != tc.wantTools[i] {
-					t.Fatalf("dispatch requested tools[%d] = %q, want %q", i, got, tc.wantTools[i])
-				}
-			}
-		})
-	}
-}
-
-func TestTaskActorPrepareAgentDispatchBuildsAgentCommandEnvelopeContract(t *testing.T) {
 	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = bus
-	_ = coordinator
-	_ = tasks
-	locator := taskActorTestLocator()
-	taskID := "goal-" + locator.SessionID
-	exec := &taskActorExecutor{agents: allocator}
-
-	dispatch, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
-		TaskID:          taskID,
-		Role:            taskAgentRoleExecutor,
-		Iteration:       2,
-		Locator:         locator,
-		Objective:       "Fix flaky tests",
-		TransportUserID: testTelegramUserID101,
-		MaxIterations:   4,
-	})
+	_, bus, coordinator, tasks, _ := newTaskActorSwarmServices(t, ctx)
+	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator}
+	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
+	env, err := ScheduledTaskEnvelope("daily", "summarize", locator, nil, "101", 0, "tick-1")
 	if err != nil {
-		t.Fatalf("prepareAgentDispatch() error = %v", err)
+		t.Fatalf("ScheduledTaskEnvelope() error = %v", err)
 	}
-	env := dispatch.Envelope
-	if env.Namespace != swarm.NamespaceAgentCommand {
-		t.Fatalf("envelope namespace = %q, want %q", env.Namespace, swarm.NamespaceAgentCommand)
+	if err := exec.Handle(ctx, env); err != nil {
+		t.Fatalf("Handle() error = %v", err)
 	}
-	if env.Kind != swarm.KindGoal {
-		t.Fatalf("envelope kind = %q, want %q", env.Kind, swarm.KindGoal)
+	published := lastPublishedCommandTo(t, bus, swarm.ActorTypeSession, locator.SessionID)
+	if published.Namespace != swarm.NamespaceScheduleInbound {
+		t.Fatalf("published namespace = %q, want %q", published.Namespace, swarm.NamespaceScheduleInbound)
 	}
-	if env.From.Target != swarm.ActorTypeTask || env.From.Key != taskID {
-		t.Fatalf("envelope from = %+v, want task:%s", env.From, taskID)
-	}
-	if env.To.Target != swarm.ActorTypeAgent || env.To.Key != swarm.AgentNameExecutor {
-		t.Fatalf("envelope to = %+v, want agent:%s", env.To, swarm.AgentNameExecutor)
-	}
-	if env.TaskID != taskID || env.SessionID != locator.SessionID || env.CorrelationID != taskID {
-		t.Fatalf("envelope scope = task:%q session:%q corr:%q, want %q/%q/%q", env.TaskID, env.SessionID, env.CorrelationID, taskID, locator.SessionID, taskID)
-	}
-	if strings.TrimSpace(env.DedupeKey) == "" || env.ID != env.DedupeKey {
-		t.Fatalf("envelope dedupe/id = %q/%q, want non-empty dedupe and ID==DedupeKey", env.ID, env.DedupeKey)
-	}
-	var payload taskAgentCommandPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		t.Fatalf("decode envelope payload: %v", err)
-	}
-	if payload.Role != taskAgentRoleExecutor || payload.AgentName != swarm.AgentNameExecutor || payload.Iteration != 2 {
-		t.Fatalf("payload = %+v, want role executor, agent executor, iteration 2", payload)
-	}
-}
-
-func TestTaskActorDispatchAgentPublishesAgentCommand(t *testing.T) {
-	ctx := context.Background()
-	_, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	locator := taskActorTestLocator()
-	taskID := "goal-dispatch-agent-command"
-	if _, err := tasks.Create(ctx, baldastate.SwarmTaskRecord{
-		ID:          taskID,
-		SessionID:   locator.SessionID,
-		Title:       "Goal",
-		Objective:   "Fix flaky tests",
-		Status:      baldastate.SwarmTaskStatusRunning,
-		CreatedFrom: "goal",
-	}, "test", nil); err != nil {
-		t.Fatalf("Create task: %v", err)
-	}
-	exec := &taskActorExecutor{tasks: tasks, coordinator: coordinator, agents: allocator, maxIters: 3}
-	before := len(bus.commands)
-	if err := exec.dispatchAgent(ctx, taskAgentCommandPayload{
-		TaskID:          taskID,
-		Role:            taskAgentRoleExecutor,
-		Iteration:       1,
-		Locator:         locator,
-		Objective:       "Fix flaky tests",
-		TransportUserID: testTelegramUserID101,
-		MaxIterations:   3,
-	}); err != nil {
-		t.Fatalf("dispatchAgent() error = %v", err)
-	}
-	appended := bus.commands[before:]
-	if len(appended) != 2 {
-		t.Fatalf("appended commands = %d, want start delivery + agent command", len(appended))
-	}
-	command := lastPublishedCommandTo(t, bus, swarm.ActorTypeAgent, swarm.AgentNameExecutor)
-	if command.Namespace != swarm.NamespaceAgentCommand {
-		t.Fatalf("published command namespace = %q, want %q", command.Namespace, swarm.NamespaceAgentCommand)
-	}
-	if command.TaskID != taskID {
-		t.Fatalf("published command task_id = %q, want %q", command.TaskID, taskID)
-	}
-	if strings.TrimSpace(command.DedupeKey) == "" {
-		t.Fatal("published command dedupe key is empty")
-	}
-}
-
-func TestTaskActorDeliverAssignsDedupeKeyWithoutTaskID(t *testing.T) {
-	ctx := context.Background()
-	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
-	_ = provider
-	_ = tasks
-	_ = allocator
-	exec := &taskActorExecutor{coordinator: coordinator}
-	locator := taskActorTestLocator()
-
-	if err := exec.deliver(ctx, "", locator, "done", "final"); err != nil {
-		t.Fatalf("deliver() error = %v", err)
-	}
-	if len(bus.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(bus.commands))
-	}
-	cmd := bus.commands[0]
-	if strings.TrimSpace(cmd.DedupeKey) == "" {
-		t.Fatal("delivery dedupe key is empty")
-	}
-	if cmd.ID != cmd.DedupeKey {
-		t.Fatalf("delivery envelope id = %q, want dedupe key %q", cmd.ID, cmd.DedupeKey)
-	}
-	if !strings.Contains(cmd.DedupeKey, ":delivery:final") {
-		t.Fatalf("delivery dedupe key = %q, want :delivery:final suffix", cmd.DedupeKey)
-	}
-}
-
-func TestTaskResultPayloadRedactsSecrets(t *testing.T) {
-	got := taskResultPayload(taskAgentResultPayload{
-		PlannerOutput:    "api_key=raw",
-		ExecutorOutput:   "token=raw",
-		Text:             "Authorization: Bearer super-secret",
-		ReviewerFeedback: "password=raw",
-	}, true)
-
-	if got.SchemaVersion != taskResultSchemaVersionV1 {
-		t.Fatalf("SchemaVersion = %q, want %q", got.SchemaVersion, taskResultSchemaVersionV1)
-	}
-	if got.ReviewableOutcome.SchemaVersion != taskReviewableOutcomeSchemaVersion {
-		t.Fatalf("ReviewableOutcome.SchemaVersion = %q, want %q", got.ReviewableOutcome.SchemaVersion, taskReviewableOutcomeSchemaVersion)
-	}
-	if !got.GoalReached {
-		t.Fatal("GoalReached = false, want true")
-	}
-
-	assertRedacted := func(name string, value string) {
-		t.Helper()
-		value = strings.TrimSpace(value)
-		if !strings.Contains(value, "[REDACTED]") {
-			t.Fatalf("%s = %q, want redacted marker", name, value)
-		}
-		if strings.Contains(value, "raw") || strings.Contains(value, "super-secret") {
-			t.Fatalf("%s = %q, contains unredacted secret", name, value)
-		}
-	}
-
-	assertRedacted("planner_output", got.PlannerOutput)
-	assertRedacted("executor_output", got.ExecutorOutput)
-	assertRedacted("reviewer_output", got.ReviewerOutput)
-	assertRedacted("reviewer_feedback", got.ReviewerNotes)
-	assertRedacted("reviewable_outcome.what_was_done", got.ReviewableOutcome.WhatWasDone)
-	assertRedacted("reviewable_outcome.validation_output", got.ReviewableOutcome.Validation)
-}
-
-func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, *swarm.Coordinator, *swarm.TaskService, *swarm.AgentAllocator) {
-	t.Helper()
-	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteProvider() error = %v", err)
-	}
-	t.Cleanup(func() { _ = provider.Close() })
-
-	bus := &recordingHandlerCommandBus{}
-	cfg, err := (swarm.Config{Enabled: true}).Normalized()
-	if err != nil {
-		t.Fatalf("Normalize swarm config: %v", err)
-	}
-	var coordinator *swarm.Coordinator
-	var tasks *swarm.TaskService
-	var allocator *swarm.AgentAllocator
-	app := fxtest.New(t,
-		fx.Supply(
-			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
-			cfg,
-		),
-		fx.Provide(
-			func() swarm.CoordinatorBus { return bus },
-			func() swarm.EventPublisher { return bus },
-		),
-		fx.Provide(swarm.NewTaskService, swarm.NewAgentRegistry, swarm.NewAgentAllocator, swarm.NewCoordinator),
-		fx.Populate(&coordinator, &tasks, &allocator),
-	)
-	app.RequireStart()
-	t.Cleanup(func() { app.RequireStop() })
-	return provider, bus, coordinator, tasks, allocator
-}
-
-func taskActorTestLocator() baldasession.SessionLocator {
-	return baldasession.SessionLocator{SessionID: "tg-9001-99", ChannelType: "telegram", AddressKey: "9001:99"}
-}
-
-func taskActorGoalEnvelope(t *testing.T, locator baldasession.SessionLocator, objective string, maxIterations int) (swarm.Envelope, goalTaskPayload) {
-	t.Helper()
-	env, err := GoalTaskEnvelope(locator, objective, "tg-101", maxIterations)
-	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
-	}
-	var payload taskEnvelopePayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		t.Fatalf("decode goal payload: %v", err)
-	}
-	if payload.Goal == nil {
-		t.Fatal("goal payload is nil")
-	}
-	return env, *payload.Goal
 }
 
 func lastPublishedCommandTo(t *testing.T, bus *recordingHandlerCommandBus, target string, key string) swarm.Envelope {
@@ -974,6 +75,35 @@ func lastPublishedCommandTo(t *testing.T, bus *recordingHandlerCommandBus, targe
 			return env
 		}
 	}
-	t.Fatalf("no command to %s:%s in %+v", target, key, bus.commands)
+	data, _ := json.MarshalIndent(bus.commands, "", "  ")
+	t.Fatalf("no published command to %s:%s; published=%s", target, key, string(data))
 	return swarm.Envelope{}
+}
+
+func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, *swarm.Coordinator, *swarm.TaskService, any) {
+	t.Helper()
+	provider, err := baldastate.NewSQLiteProvider(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = provider.Close()
+	})
+	bus := &recordingHandlerCommandBus{}
+	var coordinator *swarm.Coordinator
+	var tasks *swarm.TaskService
+	app := fxtest.New(t,
+		fx.Supply(
+			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
+			zerolog.Nop(),
+			swarm.Config{Enabled: true},
+		),
+		fx.Provide(func() swarm.CoordinatorBus { return bus }),
+		fx.Provide(func() swarm.EventPublisher { return bus }),
+		fx.Provide(swarm.NewTaskService, swarm.NewCoordinator),
+		fx.Populate(&coordinator, &tasks),
+	)
+	app.RequireStart()
+	t.Cleanup(func() { app.RequireStop() })
+	return provider, bus, coordinator, tasks, nil
 }

@@ -8,7 +8,7 @@ func actorLaneKey(env Envelope) string {
 	if taskID != "" {
 		switch namespace {
 		case NamespaceTaskControl,
-			NamespaceAgentCommand,
+			NamespaceGoalCommand,
 			NamespaceHumanInbound,
 			NamespaceWebhookInbound,
 			NamespaceScheduleInbound:
@@ -23,9 +23,9 @@ func actorLaneKey(env Envelope) string {
 		}
 	}
 	switch namespace {
-	case NamespaceAgentCommand:
+	case NamespaceGoalCommand:
 		if key := strings.TrimSpace(env.To.Key); key != "" {
-			return "agent:" + key
+			return "goalkeeper:" + key
 		}
 	case NamespaceHumanInbound, NamespaceWebhookInbound, NamespaceScheduleInbound:
 		if sessionID := strings.TrimSpace(env.SessionID); sessionID != "" {

@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"unsafe"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
@@ -14,7 +13,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
-	adksession "google.golang.org/adk/session"
 	"testing"
 )
 
@@ -126,24 +124,6 @@ func newBaldaTestTelegramAdapter() *baldatelegram.Adapter {
 	})
 }
 
-func newBaldaRestoreSessionManager(
-	t *testing.T,
-	builder *fakeBaldaRestoreAgentBuilder,
-	runtimeManager *fakeBaldaRestoreRuntimeManager,
-	store *fakeBaldaRestoreSessionStore,
-) *session.Manager {
-	t.Helper()
-
-	m := &session.Manager{}
-	setUnexportedField(t, m, "agentBuilder", builder)
-	setUnexportedField(t, m, "runtimeManager", runtimeManager)
-	setUnexportedField(t, m, "baldaProviderName", "balda-provider")
-	setUnexportedField(t, m, "sessionStore", store)
-	setUnexportedField(t, m, "logger", zerolog.Nop())
-	setUnexportedField(t, m, "sessions", map[string]*session.TopicSession{})
-	return m
-}
-
 func newBaldaSessionManagerWithSession(t *testing.T, locator session.SessionLocator, ts *session.TopicSession) *session.Manager {
 	t.Helper()
 
@@ -200,49 +180,6 @@ func (f *fakeBaldaRestoreSessionStore) List(context.Context) ([]baldastate.Sessi
 		return nil, nil
 	}
 	return []baldastate.SessionRecord{f.record}, nil
-}
-
-type fakeBaldaRestoreAgentBuilder struct {
-	metadata baldaagent.AgentMetadata
-}
-
-func (*fakeBaldaRestoreAgentBuilder) CreateRuntimeSession(
-	context.Context,
-	*baldaagent.BuiltRuntime,
-	string,
-	string,
-	string,
-	string,
-) (adksession.Session, error) {
-	return nil, nil
-}
-
-func (*fakeBaldaRestoreAgentBuilder) ValidateAgent(string) error {
-	return nil
-}
-
-func (*fakeBaldaRestoreAgentBuilder) GetAgentInfo(string) (string, []string) {
-	return "", nil
-}
-
-func (f *fakeBaldaRestoreAgentBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
-	return f.metadata
-}
-
-func (*fakeBaldaRestoreAgentBuilder) ProviderIDs() []string {
-	return []string{"balda-provider"}
-}
-
-type fakeBaldaRestoreRuntimeManager struct {
-	providerID string
-}
-
-func (*fakeBaldaRestoreRuntimeManager) Runtime(context.Context) (*baldaagent.BuiltRuntime, error) {
-	return &baldaagent.BuiltRuntime{}, nil
-}
-
-func (f *fakeBaldaRestoreRuntimeManager) ProviderID() string {
-	return f.providerID
 }
 
 func setUnexportedField[T any](t *testing.T, target any, fieldName string, value T) {
