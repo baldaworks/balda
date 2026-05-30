@@ -119,7 +119,6 @@ type GoalConfig struct {
 
 // SwarmConfig controls the JetStream-backed actor runtime.
 type SwarmConfig struct {
-	Enabled  bool               `mapstructure:"enabled"`
 	Commands SwarmCommandConfig `mapstructure:"commands"`
 	Events   SwarmEventConfig   `mapstructure:"events"`
 	DLQ      SwarmDLQConfig     `mapstructure:"dlq"`

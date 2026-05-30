@@ -92,13 +92,13 @@ balda:
 
   sessions:
     # ADK conversation/session persistence:
-    # - sqlite: persist runtime conversation state in state.db until /reset or explicit /close (default)
+    # - sqlite: persist runtime conversation state in state.db until the session is explicitly closed (default)
     # - memory: keep runtime conversation state in memory only
     persistence: "sqlite"
 
   memory:
     # Internal durable memory backed by ${balda.state_dir}/MEMORY.md.
-    # If false, /memory and balda.memory.* MCP tools are disabled.
+    # If false, balda.memory.* MCP tools are disabled.
     # SOUL.md remains active independently when present.
     enabled: true
 
@@ -120,7 +120,6 @@ balda:
     expose_monitoring: false
 
   swarm:
-    enabled: true
     commands:
       stream: "BALDA_COMMANDS"
       consumer: "BALDA_WORKER_COMMANDS"

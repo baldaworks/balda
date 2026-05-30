@@ -5,7 +5,7 @@ import "testing"
 func TestConfigNormalized_DefaultsToJetStreamRuntime(t *testing.T) {
 	t.Parallel()
 
-	got, err := (Config{Enabled: true}).Normalized()
+	got, err := (Config{}).Normalized()
 	if err != nil {
 		t.Fatalf("Normalized() error = %v", err)
 	}

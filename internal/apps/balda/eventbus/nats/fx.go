@@ -11,8 +11,6 @@ var Module = fx.Module("balda_eventbus_nats",
 		NewEventPublisher,
 		NewBusDrainer,
 		NewActorDeliverySource,
-		NewActorRuntimeStatusProvider,
 		NewEventConsumer,
-		NewDLQInspector,
 	),
 )

@@ -491,7 +491,6 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.nats.store_dir`: JetStream store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
 - `balda.nats.max_memory` / `max_store`: embedded JetStream resource caps (defaults `256mb` and `2gb`)
 - legacy runtime keys are rejected on startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`)
-- `balda.swarm.enabled`: legacy compatibility flag; the actor runtime and event projector are always on.
 - `balda.swarm.commands.stream`: command stream name (default `BALDA_COMMANDS`)
 - `balda.swarm.commands.consumer`: durable worker consumer name (default `BALDA_WORKER_COMMANDS`)
 - `balda.swarm.commands.ack_wait`, `max_deliver`, `max_ack_pending`, `fetch_batch`, `fetch_wait`: pull-consumer and redelivery settings.
@@ -610,20 +609,20 @@ after command delivery.
   `agent.started`, `agent.progress`, `agent.result`, `task.validating`,
   `task.completed`, `task.failed`, `task.canceled`, `delivery.sent`, and
   `delivery.failed`.
-- Runtime deadletters mark the owning task `deadlettered`. `/cancel` and
-  `/task <id> cancel` publish durable control commands; ControlActor applies
-  the cancellation, marks matching task records `canceled`, and cancels any
-  currently running task agent turn.
-- Terminal task delivery and `/task <id>` render reviewable outcomes with:
+- Runtime deadletters mark the owning task `deadlettered`. Session cancel
+  commands and internal control envelopes publish durable control work;
+  ControlActor applies the cancellation, marks matching task records
+  `canceled`, and cancels any currently running task agent turn.
+- Terminal task delivery stores and, when applicable, sends reviewable
+  outcomes with:
   Result, Artifacts, Confidence, and Next action. Artifacts are best-effort
   workspace data from the bound session: changed files, branch, current commit,
   workspace export hint, and validation output.
-- Task progress/results and `/task` event payload summaries redact common
+- Task progress/results and projected event payload summaries redact common
   secret patterns (for example bearer tokens, `token=...`, `password=...`,
   Telegram bot tokens, and PEM private keys) before persistence and delivery.
-- Visibility commands are read-only except `/task <id> cancel`, which only
-  publishes control work. `/tasks` is scoped to the current session; `/task
-  <id>` can inspect any visible task ID known to the instance.
+- Task records and projected task events remain internal runtime/operator data.
+  Telegram does not expose direct task inspection or per-task control commands.
 
 ### JetStream runtime semantics (internal)
 
@@ -819,7 +818,7 @@ All events are published as the same envelope shape. For event envelopes,
   - keeps original envelope identity/routing/payload (`id`, namespace, from/to, task/session scope).
   - includes failure reason and JetStream origin metadata (subject/headers for poison decode cases).
 - Operational inspection:
-  - `/dlq` surfaces backlog counters; `/swarm status` includes DLQ stream metrics and redelivery pressure.
+  - inspect DLQ stream contents, JetStream metadata, and structured logs when command failures need replay or triage.
 
 #### Failure-mode matrix
 
@@ -829,9 +828,9 @@ All events are published as the same envelope shape. For event envelopes,
 | Command publish rejected (queue pressure/transport) | ingress publish path | request rejected (`queue_full`/`dispatch_failed`) | command not accepted; no task created | inspect stream limits/backpressure, retry ingress |
 | Envelope decode failure (command consumer) | command consumer decode | `TermWithReason`, publish poison record to `BALDA_DLQ`, emit `command.decode_failed` | affected message skipped; no handler side effects | inspect DLQ payload, fix producer/schema, replay if needed |
 | Retryable actor/runtime error | command handler/runtime | `NakWithDelay`, emit `command.retrying` | delayed completion | inspect retries, root-cause transient dependency failures |
-| Retry exhaustion (`max_deliver` reached) | command consumer | publish `BALDA_DLQ`, `TermWithReason`, emit `command.deadlettered` | task may end `deadlettered`; no further retries | inspect `/dlq`, replay/fix or cancel |
+| Retry exhaustion (`max_deliver` reached) | command consumer | publish `BALDA_DLQ`, `TermWithReason`, emit `command.deadlettered` | task may end `deadlettered`; no further retries | inspect DLQ entries and logs, replay/fix or cancel |
 | Permanent actor/runtime error | handler/runtime classification | publish `BALDA_DLQ`, `TermWithReason` | task fails/deadletters without retry loop | inspect reason, patch code/config, replay if safe |
-| Projection apply/decode failure | event projector consumer | retry for transient; terminal to DLQ for permanent | command flow continues; read models stale/lagging | check `/projection status`, fix projector bug, replay events |
+| Projection apply/decode failure | event projector consumer | retry for transient; terminal to DLQ for permanent | command flow continues; read models stale/lagging | inspect projector logs and replay state, fix the bug, replay events |
 | Delivery redelivery after partial send | DeliveryActor/outbox reserve | duplicate suppressed by delivery key (noop path) | final user message not duplicated | inspect outbox row/status if delivery appears missing |
 | Cancellation races with queued/running work | ControlActor + task/session actors | control command applied; canceled/terminal commands settle noop/ack | task/session stops promptly, later duplicates ignored | verify task state/events; no queue surgery needed |
 
@@ -859,12 +858,12 @@ All events are published as the same envelope shape. For event envelopes,
   - owner: JetStream
   - capacity/backpressure: stream limits + discard policy (`balda.nats.streams.commands.*`)
   - retry/redelivery: JetStream consumer (`Ack`, `NakWithDelay`, `InProgress`, `Term`)
-  - visibility: `/swarm status` stream metrics (`messages`, `bytes`, seq range)
+  - inspection: JetStream stream metadata (`messages`, `bytes`, seq range`) and logs
 - JetStream worker consumer (`BALDA_WORKER_COMMANDS`):
   - owner: JetStream
   - capacity: `max_ack_pending`
   - fetch window: `fetch_batch`, `fetch_wait`
-  - visibility: `/swarm status` worker metrics (`num_pending`, `num_ack_pending`, `num_redelivered`)
+  - inspection: JetStream consumer metadata (`num_pending`, `num_ack_pending`, `num_redelivered`) and logs
 - Local actor delivery workers:
   - owner: process-local JetStream actorlayer source adapter
   - capacity: `fetch_batch` (bounded local fan-out)
@@ -928,7 +927,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - `dedupe.source=header` uses `dedupe.header` value when present
   - `dedupe.source=body_sha256` uses body hash
 - Response model (JSON):
-  - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, task_id, session_id, stream, sequence, duplicate?}`
+  - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, duplicate?}`
   - route not found: `404` + `error.code="route_not_found"`
   - invalid method: `405` + `error.code="invalid_method"`
   - auth reject: `401` + `error.code="unauthorized"`
@@ -974,7 +973,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 
 - Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify local disk limits.
 - Startup fails with `create jetstream command consumer`/`event projector consumer`: verify `balda.swarm.commands.consumer` uniqueness and avoid concurrent writers against the same embedded NATS store dir.
-- `/swarm status` shows rising `commands_backlog` or `commands_redelivered_total`: inspect retrying/deadlettered lifecycle events and `/dlq` before increasing `max_ack_pending` or `fetch_batch`.
+- Rising command backlog or redelivery counts in JetStream metadata usually means retrying or deadlettering work; inspect lifecycle events, DLQ stream contents, and logs before increasing `max_ack_pending` or `fetch_batch`.
 - Webhook ingress returns `503 dispatch_failed`: confirm JetStream startup succeeded and command publish acknowledgements are being returned.
 
 ## Workspace MCP Usage

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	gnats "github.com/nats-io/nats.go"
@@ -18,23 +17,13 @@ import (
 )
 
 type Bus struct {
-	cfg                  resolvedConfig
-	embedded             *EmbeddedNATS
-	conn                 *gnats.Conn
-	js                   jetstream.JetStream
-	consumer             jetstream.Consumer
-	eventConsumer        jetstream.Consumer
-	logger               zerolog.Logger
-	commandsPublished    atomic.Uint64
-	commandsRunning      atomic.Uint64
-	commandsAcked        atomic.Uint64
-	commandsRetrying     atomic.Uint64
-	commandsDeadlettered atomic.Uint64
-	commandDurationNanos atomic.Uint64
-	actorDurationNanos   atomic.Uint64
-	// duplicateSuppressed tracks duplicate publishes that are safely
-	// nooped by JetStream dedupe and surfaced via status metrics.
-	duplicateSuppressed atomic.Uint64
+	cfg           resolvedConfig
+	embedded      *EmbeddedNATS
+	conn          *gnats.Conn
+	js            jetstream.JetStream
+	consumer      jetstream.Consumer
+	eventConsumer jetstream.Consumer
+	logger        zerolog.Logger
 }
 
 type Params struct {
@@ -90,10 +79,6 @@ func NewBus(params Params) (*Bus, error) {
 	return bus, nil
 }
 
-func (b *Bus) Enabled() bool {
-	return b != nil && b.js != nil
-}
-
 func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.DispatchReceipt, error) {
 	if err := env.Validate(); err != nil {
 		return nil, err
@@ -112,7 +97,6 @@ func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.Dispatch
 		return nil, fmt.Errorf("publish jetstream command %q: %w", subject, err)
 	}
 	result := &swarm.DispatchReceipt{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
-	b.commandsPublished.Add(1)
 	logEvt := b.logger.Debug().
 		Str("subject", subject).
 		Str("envelope_id", strings.TrimSpace(env.ID)).
@@ -138,7 +122,6 @@ func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.Dispatch
 		withDeliveryKey(logEvt, env).Msg("failed to publish command accepted event")
 	}
 	if ack.Duplicate {
-		b.duplicateSuppressed.Add(1)
 		const noopReason = "duplicate publish suppressed"
 		if err := b.PublishEvent(ctx, swarm.SubjectEventCommandNoop, commandEventEnvelope(env, result, "noop", noopReason, nil)); err != nil {
 			logEvt := b.logger.Warn().

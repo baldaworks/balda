@@ -21,10 +21,4 @@ func NewActorDeliverySource(bus *Bus) actorengine.Source {
 	return bus
 }
 
-func NewActorRuntimeStatusProvider(bus *Bus) swarm.ActorRuntimeStatusProvider {
-	return bus
-}
-
 func NewEventConsumer(bus *Bus) swarm.EventConsumer { return bus }
-
-func NewDLQInspector(bus *Bus) swarm.DLQInspector { return bus }

@@ -60,7 +60,6 @@ type BaldaHandler struct {
 	sessionManager     *baldasession.Manager
 	turnDispatcher     actors.TurnQueue
 	actorDispatcher    swarm.ActorDispatcher
-	swarmConfig        swarm.Config
 	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
 	authToken          string
@@ -87,7 +86,6 @@ type baldaHandlerDeps struct {
 	SessionManager     *baldasession.Manager
 	TurnDispatcher     *actors.TurnDispatcher
 	ActorDispatcher    swarm.ActorDispatcher
-	SwarmConfig        swarm.Config
 	Messenger          *messenger.Messenger
 	TGClient           client.ClientWithResponsesInterface
 	AuthToken          string `name:"balda_auth_token"`
@@ -105,7 +103,6 @@ func NewBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
 		sessionManager:     deps.SessionManager,
 		turnDispatcher:     deps.TurnDispatcher,
 		actorDispatcher:    deps.ActorDispatcher,
-		swarmConfig:        deps.SwarmConfig,
 		messenger:          deps.Messenger,
 		tgClient:           deps.TGClient,
 		authToken:          strings.TrimSpace(deps.AuthToken),

@@ -54,9 +54,6 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	if sm.resetCalls[0].SessionID != "tg-9001-123" {
 		t.Fatalf("ResetSession call = %+v, want session=tg-9001-123", sm.resetCalls[0])
 	}
-	if len(sm.stopCalls) != 0 {
-		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
-	}
 	assertLastSentContains(t, tgClient, "Closing this topic and resetting session history.")
 }
 
@@ -86,9 +83,6 @@ func TestCommandHandlerOnCommand_CloseRootResetsSessionHistory(t *testing.T) {
 	if sm.resetCalls[0].SessionID != "tg-9001-0" {
 		t.Fatalf("ResetSession call = %+v, want session=tg-9001-0", sm.resetCalls[0])
 	}
-	if len(sm.stopCalls) != 0 {
-		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
-	}
 	assertLastSentContains(t, tgClient, "Session history reset.")
 }
 
@@ -103,9 +97,6 @@ func TestCommandHandlerOnCommand_CloseWithArgsShowsUsage(t *testing.T) {
 
 	if len(tgClient.closedTopicIDs) != 0 {
 		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
-	}
-	if len(sm.stopCalls) != 0 {
-		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
 	}
 	if len(sm.resetCalls) != 0 {
 		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
@@ -127,9 +118,6 @@ func TestCommandHandlerOnCommand_CloseUnauthorized(t *testing.T) {
 
 	if len(tgClient.closedTopicIDs) != 0 {
 		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
-	}
-	if len(sm.stopCalls) != 0 {
-		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
 	}
 	if len(sm.resetCalls) != 0 {
 		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
@@ -163,9 +151,6 @@ func TestCommandHandlerOnCommand_CloseCollaboratorAllowed(t *testing.T) {
 	}
 	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
 		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
-	}
-	if len(sm.stopCalls) != 0 {
-		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
 	}
 }
 
@@ -215,7 +200,7 @@ func TestCommandHandlerOnCommand_TopicInGroupChat_Rejects(t *testing.T) {
 }
 
 func TestCommandHandlerOnCommand_CloseInGroupChat_Rejects(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
 
 	topicID := 33
 	err := handler.onCommand(context.Background(), newCommandEventWithChatType("close", "", 101, 9001, &topicID, "supergroup"))
@@ -225,9 +210,6 @@ func TestCommandHandlerOnCommand_CloseInGroupChat_Rejects(t *testing.T) {
 
 	if len(tgClient.closedTopicIDs) != 0 {
 		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
-	}
-	if len(sm.stopCalls) != 0 {
-		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
 	}
 	if len(turns.cancelCalls) != 0 {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
@@ -536,7 +518,6 @@ func TestCommandHandlerOnCommand_RemovedCommandsAreSilent(t *testing.T) {
 }
 
 type fakeCommandSessionManager struct {
-	stopCalls     []stopSessionCall
 	resetCalls    []resetSessionCall
 	createCalls   []createSessionCall
 	baldaProvider string
@@ -549,10 +530,6 @@ type createSessionCall struct {
 	SessionID string
 	UserID    string
 	AgentName string
-}
-
-type stopSessionCall struct {
-	SessionID string
 }
 
 type resetSessionCall struct {
@@ -579,10 +556,6 @@ func (f *fakeCommandSessionManager) GetAgentMetadata(string) session.AgentMetada
 
 func (f *fakeCommandSessionManager) BaldaProviderID() string {
 	return f.baldaProvider
-}
-
-func (f *fakeCommandSessionManager) StopSession(locator session.SessionLocator) {
-	f.stopCalls = append(f.stopCalls, stopSessionCall{SessionID: locator.SessionID})
 }
 
 func (f *fakeCommandSessionManager) ResetSession(_ context.Context, locator session.SessionLocator) error {

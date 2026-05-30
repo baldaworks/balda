@@ -323,11 +323,10 @@ func TestValidateSchedulerConfigRejectsLegacyJobs(t *testing.T) {
 	}
 }
 
-func TestValidateRuntimeConfigLint_AllowsDisabledSwarmFlag(t *testing.T) {
+func TestValidateRuntimeConfigLint_AllowsAlwaysOnSwarmConfig(t *testing.T) {
 	t.Parallel()
 
 	if err := validateRuntimeConfigLint(swarm.Config{
-		Enabled: false,
 		Commands: swarm.CommandConfig{
 			Stream:   "BALDA_COMMANDS",
 			Consumer: "BALDA_WORKER_COMMANDS",
@@ -343,7 +342,6 @@ func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateJetStreamNames(t *t
 	t.Parallel()
 
 	err := validateRuntimeConfigLint(swarm.Config{
-		Enabled: true,
 		Commands: swarm.CommandConfig{
 			Stream:   "BALDA COMMANDS",
 			Consumer: "BALDA_EVENT_PROJECTOR",
@@ -370,7 +368,6 @@ func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testi
 	t.Parallel()
 
 	err := validateRuntimeConfigLint(swarm.Config{
-		Enabled: true,
 		Commands: swarm.CommandConfig{
 			Stream:   "BALDA_COMMANDS",
 			Consumer: "BALDA_WORKER_COMMANDS",
@@ -398,7 +395,6 @@ func TestValidateRuntimeConfigLint_AllowsLoopbackWebhookWithoutRouteAuth(t *test
 	t.Parallel()
 
 	err := validateRuntimeConfigLint(swarm.Config{
-		Enabled: true,
 		Commands: swarm.CommandConfig{
 			Stream:   "BALDA_COMMANDS",
 			Consumer: "BALDA_WORKER_COMMANDS",

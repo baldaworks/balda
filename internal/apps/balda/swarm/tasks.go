@@ -29,13 +29,6 @@ const (
 	TaskEventDeliveryFailed = "delivery.failed"
 )
 
-const (
-	// TaskStateSourceOfTruth states that task lifecycle state is committed in SQLite first.
-	TaskStateSourceOfTruth = "sqlite"
-	// TaskEventPublishingMode states that task events are best-effort visibility updates.
-	TaskEventPublishingMode = "best_effort_visibility"
-)
-
 type TaskService struct {
 	store baldastate.SwarmStore
 	bus   EventPublisher
@@ -53,14 +46,6 @@ func NewTaskService(params taskServiceParams) (*TaskService, error) {
 		return nil, fmt.Errorf("balda state provider is required")
 	}
 	return &TaskService{store: params.StateProvider.Swarm(), bus: params.Bus}, nil
-}
-
-func (s *TaskService) StateSourceOfTruth() string {
-	return TaskStateSourceOfTruth
-}
-
-func (s *TaskService) EventPublishingMode() string {
-	return TaskEventPublishingMode
 }
 
 func (s *TaskService) Create(ctx context.Context, record baldastate.SwarmTaskRecord, actor string, payload any) (bool, error) {
@@ -94,34 +79,6 @@ func (s *TaskService) Get(ctx context.Context, taskID string) (baldastate.SwarmT
 		return baldastate.SwarmTaskRecord{}, false, nil
 	}
 	return s.store.GetTask(ctx, taskID)
-}
-
-func (s *TaskService) ListActiveBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
-	if s == nil {
-		return nil, nil
-	}
-	return s.store.ListActiveTasksBySession(ctx, sessionID)
-}
-
-func (s *TaskService) ListEvents(ctx context.Context, taskID string) ([]baldastate.SwarmTaskEventRecord, error) {
-	if s == nil {
-		return nil, nil
-	}
-	return s.store.ListTaskEvents(ctx, taskID)
-}
-
-func (s *TaskService) StatusCounts(ctx context.Context) ([]baldastate.SwarmStatusCount, error) {
-	if s == nil {
-		return nil, nil
-	}
-	return s.store.ListTaskStatusCounts(ctx)
-}
-
-func (s *TaskService) DeliveryStatusCounts(ctx context.Context) ([]baldastate.SwarmStatusCount, error) {
-	if s == nil {
-		return nil, nil
-	}
-	return s.store.ListDeliveryStatusCounts(ctx)
 }
 
 func (s *TaskService) MarkStatus(ctx context.Context, taskID string, status string, actor string, messageID string, reason string, payload any) error {
@@ -349,7 +306,7 @@ func (s *TaskService) publishEventRecordBestEffort(ctx context.Context, event ba
 			Str("task_id", event.TaskID).
 			Str("event_type", event.EventType).
 			Str("event_id", event.ID).
-			Msg("failed to publish task visibility event")
+			Msg("failed to publish task event")
 	}
 }
 

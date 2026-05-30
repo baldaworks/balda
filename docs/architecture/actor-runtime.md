@@ -12,7 +12,7 @@ Status: active
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: SessionActor handles turns, TaskActor routes webhook/scheduled work, GoalkeeperActor runs `/goal`, DeliveryActor sends updates, ControlActor cancels work, and MemoryActor syncs durable context.
 - `/goal` uses Norma's reusable ADK Goalkeeper workflow through GoalkeeperActor; it does not dispatch planner/executor/reviewer role actors.
-- Task progress/results and task visibility payload summaries redact common secret/token patterns before persistence and delivery.
+- Task progress/results and projected task-event payload summaries redact common secret/token patterns before persistence and delivery.
 - The execution core does not depend on ADK, Balda, JetStream, Telegram, MCP, or provider SDK APIs.
 
 ## Related tests
@@ -22,7 +22,7 @@ Status: active
 - `internal/apps/balda/actors/swarm_goalkeeper_actor_test.go`
 - `internal/apps/balda/actors/swarm_control_actor_test.go`
 - `internal/apps/balda/actors/swarm_delivery_actor_test.go`
-- `internal/apps/balda/handlers/task_visibility_test.go`
+- `internal/apps/balda/handlers/command_test.go`
 
 ## Related packages
 
@@ -76,6 +76,6 @@ Status: active
 - Telegram/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers inject `swarm.ActorDispatcher` directly, publish actor commands, and do not own actor behavior or actor registration.
 - ADK session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and Balda `ActorDispatcher` contracts.
-- The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: `ActorDispatcher`, `EventPublisher`, actorlayer `Source`, `EventConsumer`, `BusDrainer`, `ActorRuntimeStatusProvider`, and `DLQInspector`.
-- Task projection, retry classification, DLQ reporting, and user-visible status live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.
-- Balda must not grow `internal/apps/balda/norma`, `internal/apps/balda/adapters`, or actor-runtime selector packages. Future generic actor adapters belong to Norma-owned public packages such as `github.com/normahq/norma/pkg/actoradapter/...`.
+- The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: `ActorDispatcher`, `EventPublisher`, actorlayer `Source`, `EventConsumer`, and `BusDrainer`.
+- Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.
+- Balda must not grow a local `norma` or `adapters` package under `internal/apps/balda`, or actor-runtime selector packages. Future generic actor adapters belong to Norma-owned public packages such as `github.com/normahq/norma/pkg/actoradapter/...`.

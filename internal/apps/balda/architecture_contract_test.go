@@ -74,7 +74,6 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`github\.com/nats-io/`))
 		assertOnlyAllowedFiles(t, matches, []string{
 			"eventbus/nats/connection.go",
-			"eventbus/nats/dlq_inspector.go",
 			"eventbus/nats/embedded_server.go",
 			"eventbus/nats/jetstream.go",
 			"eventbus/nats/status.go",
@@ -201,6 +200,32 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 			if strings.Contains(handlerSource, removed) {
 				t.Fatalf("command handler still routes removed command %q", removed)
 			}
+		}
+	})
+
+	t.Run("removed runtime status and dlq inspection surfaces stay deleted", func(t *testing.T) {
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bActorRuntimeStatusProvider\b|\bDLQInspector\b|\bRuntimeStatus\b|\bConsumerStatus\b|\bStreamStatus\b|\bErrDLQEntryNotFound\b|\bGetDLQEntry\s*\(`))
+		if len(matches) > 0 {
+			t.Fatalf("removed runtime status or dlq inspection surface found in production Go files:\n%s", formatSourceMatches(matches))
+		}
+	})
+
+	t.Run("runtime lane inspection stays out of the public balda surface", func(t *testing.T) {
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bRuntimeLaneStatus\b|\bLaneStatus\s*\(`))
+		if len(matches) > 0 {
+			t.Fatalf("removed lane inspection surface found in production Go files:\n%s", formatSourceMatches(matches))
+		}
+	})
+
+	t.Run("swarm runtime stays always on", func(t *testing.T) {
+		swarmConfigSource := readSource(t, filepath.Join(root, "swarm/config.go"))
+		if regexp.MustCompile(`(?m)^\s*Enabled\b`).FindStringIndex(swarmConfigSource) != nil {
+			t.Fatal("swarm.Config must not expose an Enabled field")
+		}
+
+		appConfigSource := readSource(t, filepath.Join(root, "config.go"))
+		if regexp.MustCompile(`type SwarmConfig struct \{\s*Enabled\b`).FindStringIndex(appConfigSource) != nil {
+			t.Fatal("BaldaConfig.SwarmConfig must not expose a legacy enabled field")
 		}
 	})
 

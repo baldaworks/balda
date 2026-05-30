@@ -7,7 +7,7 @@
 - Reprints the owner bootstrap command and deeplink on `balda start` while the bot is still unclaimed, then stops exposing them again after the first successful owner auth.
 - Fails startup when a registered owner session cannot be restored or created.
 - Restores owner sessions through persisted session metadata, including workspace branch/path state, before falling back to fresh create.
-- Defaults `balda.sessions.persistence` to `sqlite`, keeping ADK conversation history across restarts until `/reset` or explicit `/close`.
+- Defaults `balda.sessions.persistence` to `sqlite`, keeping ADK conversation history across restarts until the session is explicitly closed.
 - Surfaces ACP plan updates in Telegram progress and keeps them configurable via `balda.telegram.plan_updates`.
 - Restores workspace-backed sessions after restart even when base-branch auto-sync conflicts, with a warning to retry via `balda.workspace.import`.
 - Adds `balda --version` output with release version, commit, and build date metadata.

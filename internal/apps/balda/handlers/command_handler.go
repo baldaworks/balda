@@ -23,7 +23,6 @@ type commandSessionManager interface {
 	GetAgentMetadata(agentName string) session.AgentMetadata
 	BaldaProviderID() string
 	ResetSession(ctx context.Context, locator session.SessionLocator) error
-	StopSession(locator session.SessionLocator)
 }
 
 // CommandHandler handles balda commands like /topic and /close.

@@ -158,12 +158,6 @@ type ScheduledTaskStore interface {
 	Delete(ctx context.Context, taskID string) error
 }
 
-// SwarmStatusCount describes an aggregate count by status.
-type SwarmStatusCount struct {
-	Status string
-	Count  int
-}
-
 // SwarmTaskRecord persists one assignable work item.
 type SwarmTaskRecord struct {
 	ID            string
@@ -239,8 +233,6 @@ type SwarmStore interface {
 	CreateTask(ctx context.Context, record SwarmTaskRecord) (bool, error)
 	GetTask(ctx context.Context, taskID string) (SwarmTaskRecord, bool, error)
 	ListActiveTasksBySession(ctx context.Context, sessionID string) ([]SwarmTaskRecord, error)
-	ListTaskStatusCounts(ctx context.Context) ([]SwarmStatusCount, error)
-	ListDeliveryStatusCounts(ctx context.Context) ([]SwarmStatusCount, error)
 	UpdateTaskStatus(ctx context.Context, taskID string, status string, reason string) error
 	SetTaskPlan(ctx context.Context, taskID string, planJSON string) error
 	SetTaskResult(ctx context.Context, taskID string, resultJSON string, status string, reason string) error

@@ -63,6 +63,29 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("architecture docs only reference repo paths that exist", func(t *testing.T) {
+		dir := filepath.Join(repoRoot, "docs/architecture")
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read docs/architecture: %v", err)
+		}
+		pathRE := regexp.MustCompile("`((?:internal|cmd|docs)/[^`]+)`")
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			body := readFile(t, path)
+			matches := pathRE.FindAllStringSubmatch(body, -1)
+			for _, match := range matches {
+				target := filepath.Join(repoRoot, filepath.FromSlash(match[1]))
+				if _, err := os.Stat(target); err != nil {
+					t.Fatalf("%s references missing path %q: %v", filepath.ToSlash(path), match[1], err)
+				}
+			}
+		}
+	})
+
 	t.Run("stable command and event subjects in docs match code constants", func(t *testing.T) {
 		subjectsPath := filepath.Join(repoRoot, "internal/apps/balda/swarm/subjects.go")
 		docPath := filepath.Join(repoRoot, "docs/balda.md")
@@ -100,6 +123,34 @@ func TestDocumentationContract(t *testing.T) {
 		for name := range activeFiles {
 			if _, ok := completedFiles[name]; ok {
 				t.Fatalf("exec plan %q exists in both active and completed directories", name)
+			}
+		}
+	})
+
+	t.Run("user-facing docs do not advertise removed telegram debug commands", func(t *testing.T) {
+		paths := []string{
+			filepath.Join(repoRoot, "README.md"),
+			filepath.Join(repoRoot, "docs/balda.md"),
+			filepath.Join(repoRoot, "cmd/balda/balda.yaml"),
+		}
+		forbidden := []*regexp.Regexp{
+			regexp.MustCompile(`/tasks\b`),
+			regexp.MustCompile(`/task <id>`),
+			regexp.MustCompile(`/swarm status\b`),
+			regexp.MustCompile(`/queue status\b`),
+			regexp.MustCompile(`/mailbox status\b`),
+			regexp.MustCompile(`/projection status\b`),
+			regexp.MustCompile(`/actors status\b`),
+			regexp.MustCompile(`/dlq\b`),
+			regexp.MustCompile(`/reset\b`),
+			regexp.MustCompile(`balda\.swarm\.enabled`),
+		}
+		for _, path := range paths {
+			body := readFile(t, path)
+			for _, pattern := range forbidden {
+				if pattern.FindStringIndex(body) != nil {
+					t.Fatalf("%s still advertises removed surface %q", filepath.ToSlash(path), pattern.String())
+				}
 			}
 		}
 	})

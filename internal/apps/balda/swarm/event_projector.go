@@ -26,7 +26,6 @@ type eventProjectorParams struct {
 
 	LC            fx.Lifecycle
 	Consumer      EventConsumer
-	Config        Config
 	StateProvider baldastate.Provider
 	Logger        zerolog.Logger
 }

@@ -16,7 +16,6 @@ func TestNewEventProjectorRequiresConsumer(t *testing.T) {
 
 	projector, err := NewEventProjector(eventProjectorParams{
 		LC:            fxtest.NewLifecycle(t),
-		Config:        Config{Enabled: true},
 		StateProvider: newEventProjectorStateProvider(t, context.Background()),
 		Logger:        zerolog.Nop(),
 	})

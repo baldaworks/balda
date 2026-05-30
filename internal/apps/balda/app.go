@@ -126,7 +126,6 @@ func Module(
 	scheduledTaskSchedulerConfig := buildScheduledTaskSchedulerConfig(cfg.Balda)
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 	swarmConfig := swarm.Config{
-		Enabled: true,
 		Commands: swarm.CommandConfig{
 			Stream:        strings.TrimSpace(cfg.Balda.Swarm.Commands.Stream),
 			Consumer:      strings.TrimSpace(cfg.Balda.Swarm.Commands.Consumer),

@@ -89,13 +89,6 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 	if len(events) != 1 || events[0].EventType != "agent.started" {
 		t.Fatalf("events = %+v, want agent.started", events)
 	}
-	counts, err := store.ListTaskStatusCounts(ctx)
-	if err != nil {
-		t.Fatalf("ListTaskStatusCounts() error = %v", err)
-	}
-	if len(counts) != 1 || counts[0].Status != SwarmTaskStatusCompleted || counts[0].Count != 1 {
-		t.Fatalf("task status counts = %+v, want completed=1", counts)
-	}
 }
 
 func TestSQLiteSwarmStore_TaskStatusTransitionsAreGuarded(t *testing.T) {
@@ -232,12 +225,10 @@ func TestSQLiteSwarmStore_DeliveryOutboxLifecycle(t *testing.T) {
 	if err := store.MarkDeliveryFailed(ctx, record.DeliveryKey, "provider timeout"); err != nil {
 		t.Fatalf("MarkDeliveryFailed() error = %v", err)
 	}
-	deliveryCounts, err := store.ListDeliveryStatusCounts(ctx)
-	if err != nil {
-		t.Fatalf("ListDeliveryStatusCounts() error = %v", err)
-	}
-	if len(deliveryCounts) != 1 || deliveryCounts[0].Status != SwarmDeliveryStatusFailed || deliveryCounts[0].Count != 1 {
-		t.Fatalf("delivery status counts = %+v, want failed=1", deliveryCounts)
+	if delivery, created, err := store.ReserveDelivery(ctx, record); err != nil {
+		t.Fatalf("ReserveDelivery(after failed) error = %v", err)
+	} else if created || delivery.Status != SwarmDeliveryStatusFailed || delivery.Error != "provider timeout" {
+		t.Fatalf("ReserveDelivery(after failed) = %+v created=%v, want failed existing", delivery, created)
 	}
 }
 

@@ -12,10 +12,6 @@ import (
 )
 
 func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
-	return h.submitSessionTurnToSwarm(ctx, payload)
-}
-
-func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
 	if h.actorDispatcher == nil {
 		return nil, fmt.Errorf("jetstream swarm runtime is unavailable")
 	}

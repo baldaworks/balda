@@ -15,7 +15,6 @@ const (
 )
 
 type Config struct {
-	Enabled  bool
 	Commands CommandConfig
 	Events   EventStreamConfig
 	DLQ      DLQConfig

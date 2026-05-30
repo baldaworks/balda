@@ -42,16 +42,12 @@ type Runtime struct {
 	wg     sync.WaitGroup
 }
 
-// RuntimeLaneStatus summarizes currently active actor lanes.
-type RuntimeLaneStatus = actorengine.LaneStatus
-
 type runtimeParams struct {
 	fx.In
 
 	LC     fx.Lifecycle
 	Source actorengine.Source
 	Events EventPublisher `optional:"true"`
-	Config Config
 	Tasks  *TaskService
 	Logger zerolog.Logger
 	Actors []Actor `group:"balda_swarm_actors"`
@@ -156,13 +152,6 @@ func (r *Runtime) prepareDelivery(ctx context.Context, delivery actorengine.Deli
 	}
 	heartbeatCtx, stop := r.startHeartbeat(ctx, env, wrapped)
 	return heartbeatCtx, stop, wrapped
-}
-
-func (r *Runtime) LaneStatus() RuntimeLaneStatus {
-	if r == nil || r.engine == nil {
-		return RuntimeLaneStatus{}
-	}
-	return r.engine.LaneStatus()
 }
 
 func (r *Runtime) startHeartbeat(ctx context.Context, env Envelope, delivery actorengine.Delivery) (context.Context, func()) {

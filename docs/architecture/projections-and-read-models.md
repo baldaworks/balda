@@ -26,4 +26,4 @@ Status: active
 
 - Event schema/version changes.
 - Read-model schema changes.
-- New status/inspection commands.
+- New internal projection consumers or operator inspection tooling.

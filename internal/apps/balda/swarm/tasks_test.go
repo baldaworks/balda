@@ -115,25 +115,6 @@ func TestTaskServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) 
 	}
 }
 
-func TestTaskServiceStateAndEventContract(t *testing.T) {
-	ctx := context.Background()
-	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteProvider() error = %v", err)
-	}
-	t.Cleanup(func() { _ = provider.Close() })
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: &recordingTaskCommandBus{}})
-	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
-	}
-	if got := service.StateSourceOfTruth(); got != TaskStateSourceOfTruth {
-		t.Fatalf("StateSourceOfTruth() = %q, want %q", got, TaskStateSourceOfTruth)
-	}
-	if got := service.EventPublishingMode(); got != TaskEventPublishingMode {
-		t.Fatalf("EventPublishingMode() = %q, want %q", got, TaskEventPublishingMode)
-	}
-}
-
 func TestTaskServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))

@@ -8,7 +8,7 @@ Status: active
 - Architecture contracts are enforced by repository tests.
 - Embedded JetStream integration coverage remains first-class.
 - Reliability scenarios cover redelivery, retry, and terminal failure flows.
-- Status/projection behavior is testable without external infra.
+- Projection and runtime behavior are testable without external infra.
 
 ## Related tests
 
@@ -16,7 +16,7 @@ Status: active
 - `internal/apps/balda/swarm/runtime_test.go`
 - `internal/apps/balda/architecture_contract_test.go`
 - `internal/apps/balda/handlers/inbound_webhook_test.go`
-- `internal/apps/balda/handlers/task_visibility_test.go`
+- `internal/apps/balda/handlers/command_test.go`
 
 ## Related packages
 
