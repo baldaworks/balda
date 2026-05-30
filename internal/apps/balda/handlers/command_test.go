@@ -10,7 +10,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
@@ -195,7 +194,7 @@ func TestCommandHandlerOnCommand_CloseResetFailureDoesNotCloseTopic(t *testing.T
 	if len(tgClient.closedTopicIDs) != 0 {
 		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
 	}
-	assertLastSentContains(t, tgClient, "Failed to reset this session before close: reset failed")
+	assertLastSentContains(t, tgClient, "Could not close this topic.")
 }
 
 func TestCommandHandlerOnCommand_TopicInGroupChat_Rejects(t *testing.T) {
@@ -318,7 +317,7 @@ func TestCommandHandlerOnCommand_TopicNoBaldaProvider_ShowsError(t *testing.T) {
 	if len(turns.cancelCalls) != 0 {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
 	}
-	assertLastSentContains(t, tgClient, "balda.provider is not configured.")
+	assertLastSentContains(t, tgClient, "Balda is not ready right now.")
 }
 
 func TestCommandHandlerOnCommand_NewIsIgnored(t *testing.T) {
@@ -504,123 +503,36 @@ func TestCommandHandlerOnCommand_CancelCollaboratorAllowed(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
-func TestCommandHandlerOnCommand_ResetClearsSessionHistory(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	topicID := 88
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, &topicID))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 1 {
-		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
-	}
-	if sm.resetCalls[0].SessionID != "tg-9001-88" {
-		t.Fatalf("ResetSession call = %+v, want session=tg-9001-88", sm.resetCalls[0])
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
-	}
-	if len(turns.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(turns.commands))
-	}
-	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
-	}
-	if len(sm.stopCalls) != 0 {
-		t.Fatalf("StopSession calls = %d, want 0", len(sm.stopCalls))
-	}
-	assertLastSentContains(t, tgClient, "Session history reset.")
-}
-
-func TestCommandHandlerOnCommand_ResetWithArgsShowsUsage(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "now", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 0 {
-		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
-	}
-	assertLastSentContains(t, tgClient, "Usage: /reset")
-}
-
-func TestCommandHandlerOnCommand_MemoryReadsCurrentMemory(t *testing.T) {
+func TestCommandHandlerOnCommand_RemovedCommandsAreSilent(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.memoryStore = memory.NewStore(t.TempDir(), true)
-	if err := handler.memoryStore.Remember(context.Background(), "project uses Balda memory"); err != nil {
-		t.Fatalf("Remember() error = %v", err)
+
+	removed := []struct {
+		name string
+		args string
+	}{
+		{name: "reset"},
+		{name: "memory"},
+		{name: "tasks"},
+		{name: "task", args: "task-1"},
+		{name: "swarm", args: "status"},
+		{name: "queue", args: "status"},
+		{name: "mailbox", args: "status"},
+		{name: "projection", args: "status"},
+		{name: "actors", args: "status"},
+		{name: "dlq"},
 	}
 
-	err := handler.onCommand(context.Background(), newCommandEvent("memory", "", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
+	for _, tt := range removed {
+		t.Run(tt.name, func(t *testing.T) {
+			before := len(tgClient.messages)
+			if err := handler.onCommand(context.Background(), newCommandEvent(tt.name, tt.args, 101, 9001, nil)); err != nil {
+				t.Fatalf("onCommand(%s) error = %v", tt.name, err)
+			}
+			if got := len(tgClient.messages); got != before {
+				t.Fatalf("messages = %d, want %d for removed command %q", got, before, tt.name)
+			}
+		})
 	}
-
-	assertLastSentContains(t, tgClient, "project uses Balda memory")
-}
-
-func TestCommandHandlerOnCommand_MemoryInspectShowsReadModel(t *testing.T) {
-	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.memoryStore = memory.NewStore(t.TempDir(), true)
-	if err := handler.memoryStore.Remember(context.Background(), "first fact"); err != nil {
-		t.Fatalf("Remember(first) error = %v", err)
-	}
-	if err := handler.memoryStore.Remember(context.Background(), "second fact"); err != nil {
-		t.Fatalf("Remember(second) error = %v", err)
-	}
-
-	err := handler.onCommand(context.Background(), newCommandEvent("memory", "inspect", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	assertLastSentContains(t, tgClient, "Memory inspect")
-	assertLastSentContains(t, tgClient, "entries: 2")
-	assertLastSentContains(t, tgClient, "last_entry: second fact")
-}
-
-func TestCommandHandlerOnCommand_MemoryInspectInvalidArgs(t *testing.T) {
-	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.memoryStore = memory.NewStore(t.TempDir(), true)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("memory", "details", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	assertLastSentContains(t, tgClient, "Usage: /memory [inspect]")
-}
-
-func TestCommandHandlerOnCommand_MemoryRequiresDM(t *testing.T) {
-	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.memoryStore = memory.NewStore(t.TempDir(), true)
-	topicID := 10
-
-	err := handler.onCommand(context.Background(), newCommandEventWithChatType("memory", "", 101, 9001, &topicID, "supergroup"))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	assertLastSentContains(t, tgClient, "This command is only available in direct messages.")
-}
-
-func TestCommandHandlerOnCommand_MemoryDisabled(t *testing.T) {
-	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.memoryStore = memory.NewStore(t.TempDir(), false)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("memory", "", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	assertLastSentContains(t, tgClient, "Memory is disabled.")
 }
 
 type fakeCommandSessionManager struct {
@@ -762,11 +674,9 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 			Logger:    zerolog.Nop(),
 		}),
 		sessionManager:    sessionManager,
-		turnDispatcher:    turnDispatcher,
 		actorDispatcher:   turnDispatcher,
 		goalMaxIterations: normalizeGoalMaxIterations(0),
 		messenger:         msg,
-		memoryStore:       memory.NewStore(t.TempDir(), true),
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
 }

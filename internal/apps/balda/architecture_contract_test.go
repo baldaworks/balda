@@ -184,6 +184,26 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
+	t.Run("removed telegram debug commands are not routed", func(t *testing.T) {
+		handlerSource := readSource(t, filepath.Join(root, "handlers/command_handler.go"))
+		for _, removed := range []string{
+			`case "reset"`,
+			`case "tasks"`,
+			`case "task"`,
+			`case "swarm"`,
+			`case "queue"`,
+			`case "mailbox"`,
+			`case "projection"`,
+			`case "actors"`,
+			`case "dlq"`,
+			`case "memory"`,
+		} {
+			if strings.Contains(handlerSource, removed) {
+				t.Fatalf("command handler still routes removed command %q", removed)
+			}
+		}
+	})
+
 	t.Run("runtime is initialized before ingress starts accepting transport input", func(t *testing.T) {
 		appSource := readSource(t, filepath.Join(root, "app.go"))
 		const runtimeInit = "runtimeManager.EnsureRuntime(ctx)"

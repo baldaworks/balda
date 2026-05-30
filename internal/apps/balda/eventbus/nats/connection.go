@@ -48,9 +48,6 @@ type Params struct {
 }
 
 func NewBus(params Params) (*Bus, error) {
-	if !params.Swarm.Enabled {
-		return nil, fmt.Errorf("balda swarm runtime must be enabled")
-	}
 	cfg, err := resolveConfig(params.Config, params.Swarm, params.WorkingDir)
 	if err != nil {
 		return nil, err

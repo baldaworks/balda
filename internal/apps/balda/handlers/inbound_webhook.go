@@ -181,10 +181,6 @@ type inboundWebhookAcceptedResponse struct {
 	Accepted  bool   `json:"accepted"`
 	RequestID string `json:"request_id"`
 	MessageID string `json:"message_id"`
-	TaskID    string `json:"task_id"`
-	SessionID string `json:"session_id"`
-	Stream    string `json:"stream"`
-	Sequence  uint64 `json:"sequence"`
 	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
@@ -663,10 +659,6 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		Accepted:  true,
 		RequestID: requestID,
 		MessageID: result.MsgID,
-		TaskID:    taskID,
-		SessionID: target.Locator.SessionID,
-		Stream:    result.Stream,
-		Sequence:  result.Sequence,
 		Duplicate: result.Duplicate,
 	})
 }

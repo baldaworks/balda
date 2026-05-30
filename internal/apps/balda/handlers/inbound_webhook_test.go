@@ -11,7 +11,6 @@ import (
 	"text/template"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 )
@@ -266,7 +265,6 @@ func TestInboundWebhookReceiver_TurnQueueFullIsNotIngressQueueFull(t *testing.T)
 func TestInboundWebhookReceiver_AcceptsAndPublishesCommand(t *testing.T) {
 	t.Parallel()
 
-	locator := baldatelegram.NewLocator(9001, 0)
 	executor := &fakeInboundTurnExecutor{}
 	receiver := newInboundWebhookReceiverForTest(t)
 	receiver.balda = executor
@@ -302,20 +300,11 @@ func TestInboundWebhookReceiver_AcceptsAndPublishesCommand(t *testing.T) {
 	if got, want := response.RequestID, "req-1"; got != want {
 		t.Fatalf("request_id = %q, want %q", got, want)
 	}
-	if got, want := response.SessionID, locator.SessionID; got != want {
-		t.Fatalf("session_id = %q, want %q", got, want)
-	}
-	if got, want := response.Stream, swarm.DefaultCommandStream; got != want {
-		t.Fatalf("stream = %q, want %q", got, want)
-	}
-	if response.Sequence == 0 {
-		t.Fatal("sequence = 0, want JetStream sequence")
-	}
 	if response.MessageID == "" {
 		t.Fatal("message_id is empty")
 	}
-	if response.TaskID == "" {
-		t.Fatal("task_id is empty")
+	if response.Duplicate {
+		t.Fatal("duplicate = true, want false")
 	}
 	if got := executor.calls; got != 1 {
 		t.Fatalf("executor calls = %d, want 1", got)
@@ -411,8 +400,11 @@ func TestInboundWebhookReceiver_SessionModePublishesSessionCommand(t *testing.T)
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.TaskID != "" {
-		t.Fatalf("task_id = %q, want empty in session mode", response.TaskID)
+	if response.Duplicate {
+		t.Fatal("duplicate = true, want false in session mode")
+	}
+	if raw := rec.Body.String(); strings.Contains(raw, "task_id") || strings.Contains(raw, "session_id") || strings.Contains(raw, "stream") || strings.Contains(raw, "sequence") {
+		t.Fatalf("accepted webhook response leaked internal fields: %s", raw)
 	}
 }
 

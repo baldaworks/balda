@@ -479,10 +479,10 @@ session-start snapshot. New or restored sessions read the latest file.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
 - `balda.sessions.persistence`: `sqlite|memory` (default `sqlite`)
-  - `sqlite`: ADK session events and state are persisted in `state.db` and reused after restart until `/reset` or explicit `/close`.
+  - `sqlite`: ADK session events and state are persisted in `state.db` and reused after restart until the session is explicitly closed.
   - `memory`: ADK conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
-  - when disabled, Balda does not snapshot `MEMORY.md`, register `balda.memory.*` MCP tools, or expose `/memory` contents.
+  - when disabled, Balda does not snapshot `MEMORY.md` or register `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal` (default `25`)
   - invalid values are clamped to `25`.
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
@@ -491,7 +491,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.nats.store_dir`: JetStream store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
 - `balda.nats.max_memory` / `max_store`: embedded JetStream resource caps (defaults `256mb` and `2gb`)
 - legacy runtime keys are rejected on startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`)
-- `balda.swarm.enabled`: enables the actor runtime and event projector (default `true`). When false, Balda still starts but ingress that requires swarm returns runtime unavailable; there is no direct execution fallback.
+- `balda.swarm.enabled`: legacy compatibility flag; the actor runtime and event projector are always on.
 - `balda.swarm.commands.stream`: command stream name (default `BALDA_COMMANDS`)
 - `balda.swarm.commands.consumer`: durable worker consumer name (default `BALDA_WORKER_COMMANDS`)
 - `balda.swarm.commands.ack_wait`, `max_deliver`, `max_ack_pending`, `fetch_batch`, `fetch_wait`: pull-consumer and redelivery settings.
@@ -499,9 +499,8 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.dlq.stream`: dead-letter stream name (default `BALDA_DLQ`)
 - Actor-lane queue policy is not a public config surface yet; JetStream is the only command queue. SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint.
 - `/goal` uses the Balda GoalkeeperActor, which wraps Norma's reusable ADK Goalkeeper workflow. The workflow runs a worker agent followed by a validator agent in the same ADK session until the validator returns `verdict: pass` or `balda.goal.max_iterations` is reached.
-- `/actors status` and `/swarm status` expose Balda product actors and active runtime lanes; `/goal` does not use planner/executor/reviewer role actors.
+- Task records, projections, DLQ state, and runtime lanes are internal implementation details; they are not chat commands.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
-  - `/memory` reads the current file in owner/collaborator direct messages.
   - `balda.memory.read` reads the file from MCP.
   - `balda.memory.remember` appends facts to the file from MCP.
   - memory is snapshotted into ADK session state when a session starts or restores; active sessions are not refreshed after writes.
@@ -547,7 +546,7 @@ Session key:
 - The owner session is bootstrapped for the bound owner DM chat (`topic_id=0`) during activation/startup when an owner is already registered.
 
 Balda always persists session metadata in `state.db` for lazy restore.
-By default, Balda also persists ADK session events and state in `state.db` until `/reset` or explicit `/close`. Set `balda.sessions.persistence=memory` to keep ADK conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
+By default, Balda also persists ADK session events and state in `state.db` until the session is explicitly closed. Set `balda.sessions.persistence=memory` to keep ADK conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
 
 ## Message Flow
 
@@ -588,22 +587,9 @@ Balda runs with a single provider per process (`balda.provider`).
   - `<name>` is a session label, not a provider selector.
 - `/goal <objective>` (owner/collaborator): publishes a durable JetStream command to GoalkeeperActor and starts Norma's ADK worker -> validator workflow in the current session context/workspace. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See [`docs/goalkeeper.md`](goalkeeper.md).
   - concurrent `/goal` runs in the same session are rejected.
-- `/tasks` (owner/collaborator): lists active task records for the current session.
-- `/task <id>` (owner/collaborator): shows task status, objective, source, timestamps, latest events, and the reviewable outcome when the task is terminal.
-- `/task <id> events` (owner/collaborator): prints the append-only task event stream.
-- `/task <id> cancel` (owner/collaborator): publishes a durable task-control command; ControlActor cancels active local task work when present and marks the task `canceled` when the command is processed.
-- `/swarm status` (owner/collaborator): shows JetStream command/event/DLQ streams, worker and projector consumer state, Balda product actors, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
-- `/queue status` (owner/collaborator): preferred JetStream queue/runtime status command.
-- `/mailbox status` (owner/collaborator): compatibility alias for `/queue status`.
-- `/dlq` (owner/collaborator): shows JetStream DLQ stream backlog summary.
-- `/dlq <stream_seq>` (owner/collaborator): inspects a single `BALDA_DLQ`
-  message by stream sequence.
-- `/projection status` (owner/collaborator): shows event-projector lag and projection health summary.
-- `/actors status` (owner/collaborator): shows Balda product actor status and active runtime lanes.
 - `/close` (DM only, owner/collaborator): resets current session history, then in the owner DM `topic_id=0` stops the owner session; in topic contexts, closes that topic.
-- `/reset` (owner/collaborator): cancels queued work and clears the current session's persisted ADK conversation history without deleting Balda metadata or the workspace branch.
 - `/cancel` (owner/collaborator): publishes a durable session-control command; ControlActor cancels active session work, drops queued session work, marks active session tasks canceled, and aborts active `/goal` work when the command is processed.
-- `/memory` (DM only, owner/collaborator): prints current `${balda.state_dir}/MEMORY.md` contents when `balda.memory.enabled=true`; otherwise reports that memory is disabled.
+- `balda.memory.*` MCP tools are internal capabilities, not chat commands.
 
 ### Task actor runtime semantics (internal)
 
@@ -721,11 +707,8 @@ session/task/goalkeeper/delivery/memory"]
   JetStream ack/nak/term only.
 - Permanent projection decode/apply failures are terminated to `BALDA_DLQ`
   with source envelope and failure reason.
-- Projection lag is expected and observable through `/swarm status` and
-  `/projection status`; lag recovery happens by durable consumer catch-up.
-- Read models (`/tasks`, `/task <id>`, `/task <id> events`, `/queue status`)
-  are eventually consistent projections, not the command transport source of
-  truth.
+- Projection lag is expected and observable through operator logs and internal tooling; lag recovery happens by durable consumer catch-up.
+- Read models are eventually consistent projections, not the command transport source of truth.
 
 - Required streams:
   - `BALDA_COMMANDS`: work-queue stream for `balda.v1.cmd.>` commands.
@@ -1004,7 +987,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - squash-merges the session workspace branch into the configured base branch with the provided Conventional Commit message
   - also works for persisted sessions before lazy restore
 - Cleanup/export contract is explicit:
-  - `/close`, `/reset`, session stop, and process shutdown clean up the mounted worktree path when workspace mode is enabled
+  - `/close`, session stop, and process shutdown clean up the mounted worktree path when workspace mode is enabled
   - cleanup does **not** auto-export branch changes into the base branch
   - exporting branch changes is an explicit operator action via `balda.workspace.export`
 
@@ -1021,5 +1004,5 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 9. Non-terminal ADK event progress sends throttled `typing` chat actions in DM and public chats; throttled `sendMessageDraft` thinking placeholders are DM-only.
 10. Final assistant response is sent with `sendMessage` using configured `balda.telegram.formatting_mode` with fallback retry without `parse_mode` on transport or parse/escaping API errors.
 11. `/close` in a topic resets history and closes that topic; `/close` in the owner DM main chat resets only the owner session.
-12. With `balda.sessions.persistence=sqlite`, restart restores ADK conversation history and `/reset` or explicit `/close` clears it for the current session.
+12. With `balda.sessions.persistence=sqlite`, restart restores ADK conversation history and explicit `/close` clears it for the current session.
 13. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.

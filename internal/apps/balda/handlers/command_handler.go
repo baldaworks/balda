@@ -8,7 +8,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
@@ -33,21 +32,10 @@ type CommandHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	channel           *baldatelegram.Adapter
 	sessionManager    commandSessionManager
-	turnDispatcher    actors.TurnQueue
 	actorDispatcher   swarm.ActorDispatcher
-	swarmRuntime      swarmRuntimeStatusProvider
-	swarmConfig       swarm.Config
-	commandBus        swarm.ActorRuntimeStatusProvider
-	tasks             *swarm.TaskService
-	taskRuns          *actors.TaskRunRegistry
 	goalMaxIterations int
 	messenger         *messenger.Messenger
 	userHandler       *userHandler
-	memoryStore       *memory.Store
-}
-
-type swarmRuntimeStatusProvider interface {
-	LaneStatus() swarm.RuntimeLaneStatus
 }
 
 func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServers []string) string {
@@ -61,17 +49,10 @@ type commandHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
 	SessionManager    *session.Manager
-	TurnDispatcher    *actors.TurnDispatcher
 	ActorDispatcher   swarm.ActorDispatcher
-	SwarmRuntime      *swarm.Runtime
-	SwarmConfig       swarm.Config
-	Transport         swarm.ActorRuntimeStatusProvider
-	TaskService       *swarm.TaskService
-	TaskRuns          *actors.TaskRunRegistry
 	MaxIterations     int `name:"balda_goal_max_iterations"`
 	Messenger         *messenger.Messenger
 	UserHandler       *userHandler
-	MemoryStore       *memory.Store
 }
 
 // NewCommandHandler creates a new balda command handler.
@@ -81,17 +62,10 @@ func NewCommandHandler(params commandHandlerParams) *CommandHandler {
 		collaboratorStore: params.CollaboratorStore,
 		channel:           params.Channel,
 		sessionManager:    params.SessionManager,
-		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.ActorDispatcher,
-		swarmRuntime:      params.SwarmRuntime,
-		swarmConfig:       params.SwarmConfig,
-		commandBus:        params.Transport,
-		tasks:             params.TaskService,
-		taskRuns:          params.TaskRuns,
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
 		messenger:         params.Messenger,
 		userHandler:       params.UserHandler,
-		memoryStore:       params.MemoryStore,
 	}
 }
 
@@ -111,30 +85,10 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		return h.onTopicCommand(ctx, commandCtx)
 	case "close":
 		return h.onCloseCommand(ctx, commandCtx)
-	case "reset":
-		return h.onResetCommand(ctx, commandCtx)
 	case "cancel":
 		return h.onCancelCommand(ctx, commandCtx)
 	case "goal":
 		return h.onGoalCommand(ctx, commandCtx)
-	case "tasks":
-		return h.onTasksCommand(ctx, commandCtx)
-	case "task":
-		return h.onTaskCommand(ctx, commandCtx)
-	case "swarm":
-		return h.onSwarmCommand(ctx, commandCtx)
-	case "queue":
-		return h.onQueueCommand(ctx, commandCtx)
-	case "mailbox":
-		return h.onMailboxCommand(ctx, commandCtx)
-	case "projection":
-		return h.onProjectionCommand(ctx, commandCtx)
-	case "actors":
-		return h.onActorsCommand(ctx, commandCtx)
-	case "dlq":
-		return h.onDLQCommand(ctx, commandCtx)
-	case "memory":
-		return h.onMemoryCommand(ctx, commandCtx)
 	case "user":
 		// Route to UserHandler
 		return h.userHandler.HandleUserCommand(ctx, commandCtx)
@@ -162,7 +116,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatele
 	started, err := h.submitGoalTask(ctx, commandCtx.Locator, objective, baldatelegram.UserID(commandCtx.UserID))
 	if err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to start /goal run")
-		if sendErr := h.channel.SendAgentReply(ctx, commandCtx.Locator, fmt.Sprintf("Failed to start goal run: %v", err)); sendErr != nil {
+		if sendErr := h.channel.SendAgentReply(ctx, commandCtx.Locator, "Could not start goal run."); sendErr != nil {
 			return sendErr
 		}
 		return nil
@@ -201,7 +155,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatel
 	}
 	baldaProviderID := strings.TrimSpace(h.sessionManager.BaldaProviderID())
 	if baldaProviderID == "" {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "balda.provider is not configured."); err != nil {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Balda is not ready right now."); err != nil {
 			return err
 		}
 		return nil
@@ -216,7 +170,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatel
 	topicLocator, err := h.channel.CreateTopicLocator(ctx, commandCtx.ChatID, fmt.Sprintf("Balda: %s", topicName))
 	if err != nil {
 		log.Error().Err(err).Str("topic_name", topicName).Msg("failed to create topic")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to create topic session: %v", err)); sendErr != nil {
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not create topic session."); sendErr != nil {
 			return sendErr
 		}
 		return nil
@@ -227,7 +181,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatel
 	}, topicName); err != nil {
 		log.Error().Err(err).Str("topic_name", topicName).Msg("failed to create topic session after topic creation")
 		_ = h.channel.Close(ctx, topicLocator)
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to create topic session: %v", err)); sendErr != nil {
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not create topic session."); sendErr != nil {
 			return sendErr
 		}
 		return nil
@@ -241,99 +195,6 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatel
 		return err
 	}
 
-	return nil
-}
-
-func (h *CommandHandler) onMemoryCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
-	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
-			return err
-		}
-		return nil
-	}
-	if !commandCtx.IsDM {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "This command is only available in direct messages."); err != nil {
-			return err
-		}
-		return nil
-	}
-	args := strings.TrimSpace(commandCtx.Args)
-	inspect := strings.EqualFold(args, "inspect")
-	if args != "" && !inspect {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /memory [inspect]"); err != nil {
-			return err
-		}
-		return nil
-	}
-	if h.memoryStore == nil || !h.memoryStore.MemoryEnabled() {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Memory is disabled."); err != nil {
-			return err
-		}
-		return nil
-	}
-	content, err := h.memoryStore.ReadMemory(ctx)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to read balda memory")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to read memory: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	content = strings.TrimSpace(content)
-	if content == "" {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Memory is empty."); err != nil {
-			return err
-		}
-		return nil
-	}
-	if inspect {
-		return h.channel.SendAgentReply(ctx, commandCtx.Locator, formatMemoryInspect(h.memoryStore.MemoryPath(), content))
-	}
-	return h.sendPlainChunks(ctx, commandCtx.Locator, content)
-}
-
-func formatMemoryInspect(path string, content string) string {
-	trimmed := strings.TrimSpace(content)
-	lines := strings.Split(trimmed, "\n")
-	entries := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if value := strings.TrimSpace(line); value != "" {
-			entries = append(entries, value)
-		}
-	}
-	last := ""
-	if len(entries) > 0 {
-		last = entries[len(entries)-1]
-	}
-	var out strings.Builder
-	out.WriteString("Memory inspect")
-	out.WriteString("\n- path: ")
-	out.WriteString(strings.TrimSpace(path))
-	out.WriteString("\n- entries: ")
-	fmt.Fprintf(&out, "%d", len(entries))
-	out.WriteString("\n- chars: ")
-	fmt.Fprintf(&out, "%d", len([]rune(trimmed)))
-	out.WriteString("\n- last_entry: ")
-	out.WriteString(limitRunes(oneLine(redactSecrets(last)), 240))
-	return out.String()
-}
-
-func (h *CommandHandler) sendPlainChunks(ctx context.Context, locator session.SessionLocator, text string) error {
-	const maxPlainChunkRunes = 3500
-	runes := []rune(text)
-	for len(runes) > 0 {
-		n := len(runes)
-		if n > maxPlainChunkRunes {
-			n = maxPlainChunkRunes
-		}
-		chunk := strings.TrimSpace(string(runes[:n]))
-		if chunk != "" {
-			if err := h.channel.SendPlain(ctx, locator, chunk); err != nil {
-				return err
-			}
-		}
-		runes = runes[n:]
-	}
 	return nil
 }
 
@@ -365,7 +226,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatel
 		}
 		if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset session during /close")
-			if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to reset this session before close: %v", err)); sendErr != nil {
+			if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not close this topic."); sendErr != nil {
 				return sendErr
 			}
 			return nil
@@ -384,44 +245,13 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatel
 	}
 	if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset owner session during /close")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to reset this session: %v", err)); sendErr != nil {
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not reset this session."); sendErr != nil {
 			return sendErr
 		}
 		return nil
 	}
-	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Session history reset. The balda provider session will be recreated on your next message."); err != nil {
+	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Session history reset."); err != nil {
 		log.Warn().Err(err).Int64("chat_id", commandCtx.ChatID).Msg("failed to send /close owner session confirmation")
-	}
-	return nil
-}
-
-func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
-	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if strings.TrimSpace(commandCtx.Args) != "" {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /reset"); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "session canceled by reset command", false); err != nil {
-		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish /reset cancel control command")
-	}
-	if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
-		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset session")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to reset this session: %v", err)); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Session history reset. Send a new message to start fresh in this chat."); err != nil {
-		return err
 	}
 	return nil
 }
@@ -449,14 +279,14 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 	}
 	env, err := actors.ControlCancelEnvelope(commandCtx.Locator, "", baldatelegram.UserID(commandCtx.UserID), "session canceled by user")
 	if err != nil {
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to build cancel request: %v", err)); sendErr != nil {
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not request cancel."); sendErr != nil {
 			return sendErr
 		}
 		return nil
 	}
 	if _, err := h.actorDispatcher.Dispatch(ctx, env); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish cancel command")
-		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to request cancel: %v", err)); sendErr != nil {
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not request cancel."); sendErr != nil {
 			return sendErr
 		}
 		return nil

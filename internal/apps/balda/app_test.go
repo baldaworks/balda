@@ -323,10 +323,10 @@ func TestValidateSchedulerConfigRejectsLegacyJobs(t *testing.T) {
 	}
 }
 
-func TestValidateRuntimeConfigLint_RejectsDisabledSwarm(t *testing.T) {
+func TestValidateRuntimeConfigLint_AllowsDisabledSwarmFlag(t *testing.T) {
 	t.Parallel()
 
-	err := validateRuntimeConfigLint(swarm.Config{
+	if err := validateRuntimeConfigLint(swarm.Config{
 		Enabled: false,
 		Commands: swarm.CommandConfig{
 			Stream:   "BALDA_COMMANDS",
@@ -334,12 +334,8 @@ func TestValidateRuntimeConfigLint_RejectsDisabledSwarm(t *testing.T) {
 		},
 		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
-	}, handlers.InboundWebhookConfig{})
-	if err == nil {
-		t.Fatal("validateRuntimeConfigLint() error = nil, want non-nil")
-	}
-	if !strings.Contains(err.Error(), "balda.swarm.enabled must be true") {
-		t.Fatalf("validateRuntimeConfigLint() error = %v, want swarm enabled marker", err)
+	}, handlers.InboundWebhookConfig{}); err != nil {
+		t.Fatalf("validateRuntimeConfigLint() error = %v, want nil", err)
 	}
 }
 

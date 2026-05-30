@@ -283,7 +283,7 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 		t.Fatalf("sent messages did not include workspace warning: %#v", tgClient.messages)
 	}
 	for _, msg := range tgClient.messages {
-		if strings.Contains(msg.Text, "Failed to restore this session") {
+		if strings.Contains(msg.Text, "Could not restore this session") {
 			t.Fatalf("unexpected fatal restore message: %q", msg.Text)
 		}
 	}

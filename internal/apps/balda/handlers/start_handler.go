@@ -268,7 +268,7 @@ func (h *StartHandler) sendOwnerRegisteredMessage(ctx context.Context, chatID in
 
 	text := fmt.Sprintf("Congratulations, %s! You are now registered as the bot owner.", name)
 	if startErr != nil {
-		text += "\n\n" + baldaStartFailureMessage(startErr)
+		text += "\n\n" + baldaStartFailureMessage()
 		return h.messenger.SendPlain(ctx, chatID, text, 0)
 	}
 	return h.messenger.SendPlain(ctx, chatID, text, 0)
@@ -277,7 +277,7 @@ func (h *StartHandler) sendOwnerRegisteredMessage(ctx context.Context, chatID in
 func (h *StartHandler) ownerAlreadyRegisteredMessage(startErr error) string {
 	msg := "You are already registered as the bot owner."
 	if startErr != nil {
-		msg += "\n\n" + baldaStartFailureMessage(startErr)
+		msg += "\n\n" + baldaStartFailureMessage()
 		return msg
 	}
 	return msg
@@ -299,11 +299,8 @@ func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64)
 	return nil
 }
 
-func baldaStartFailureMessage(err error) string {
-	return fmt.Sprintf(
-		"Failed to start balda provider session: %v.\nPlease verify balda provider configuration, then send /start again or restart balda.",
-		err,
-	)
+func baldaStartFailureMessage() string {
+	return "Could not start balda provider session. Please try again."
 }
 
 func (h *StartHandler) handleInviteStart(ctx context.Context, chatID, userID int64, userIDStr, token string, from *client.User) error {

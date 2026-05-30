@@ -142,7 +142,7 @@ func (h *BaldaHandler) onStart(ctx context.Context) error {
 
 	if err := h.bootstrapOwnerSession(ctx, owner.UserID, owner.ChatID); err != nil {
 		h.logger.Error().Err(err).Int64("owner_id", owner.UserID).Msg("failed to bootstrap owner session during startup")
-		if sendErr := h.messenger.SendPlain(ctx, owner.UserID, fmt.Sprintf("Failed to start owner session: %v.\nPlease check balda configuration.", err), 0); sendErr != nil {
+		if sendErr := h.messenger.SendPlain(ctx, owner.UserID, "Could not start owner session. Please try again.", 0); sendErr != nil {
 			h.logger.Warn().Err(sendErr).Msg("failed to send owner session failure message")
 		}
 		return fmt.Errorf("bootstrap owner session during startup: %w", err)

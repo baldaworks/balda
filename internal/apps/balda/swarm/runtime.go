@@ -61,9 +61,6 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 	if params.Source == nil {
 		return nil, fmt.Errorf("actor delivery source is required")
 	}
-	if !params.Config.Enabled {
-		return nil, fmt.Errorf("actor runtime must be enabled")
-	}
 	registry, err := registerActors(params.Actors)
 	if err != nil {
 		return nil, err

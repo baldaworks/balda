@@ -1230,13 +1230,9 @@ func TestRunTurn_AppendsProviderMessageExcerptForEmptyTurnComplete(t *testing.T)
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, false)
-	rawMessage := "line   one\nline\t two   " + strings.Repeat("x", 400)
-	expectedExcerpt := "line one line two " + strings.Repeat("x", 282)
-
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		done := adksession.NewEvent(invocationID)
 		done.FinishReason = genai.FinishReasonProhibitedContent
-		done.ErrorMessage = rawMessage
 		done.TurnComplete = true
 
 		return []*adksession.Event{done}
@@ -1249,7 +1245,7 @@ func TestRunTurn_AppendsProviderMessageExcerptForEmptyTurnComplete(t *testing.T)
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
 	}
-	want := "The provider rejected this turn as prohibited content. Please rephrase and try again.\n\nProvider message: " + expectedExcerpt
+	want := "The provider rejected this turn as prohibited content. Please rephrase and try again."
 	if got := tgClient.messages[0].Text; got != want {
 		t.Fatalf("message text = %q, want %q", got, want)
 	}

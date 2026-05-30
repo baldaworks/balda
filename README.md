@@ -33,7 +33,7 @@ balda start
 | Autonomous execution loops | Balda can keep working toward a goal, validate progress, and continue until there is a result. |
 | Project tool access | Balda can use the same project tools the team relies on, including repo/workspace operations and configured integrations. |
 | Event-driven work | Webhooks and scheduled triggers become inputs to agents, not just notifications. |
-| Collaborative visibility | The team can see progress, cancel work, reset context, inspect memory, and manage who can assign work. |
+| Collaborative visibility | The team can see progress, cancel work, and manage who can assign work. |
 | Reviewable outcomes | Balda should return something the team can evaluate: a summary, changed files, a commit, validation output, or a next action. |
 | Operationally simple deployment | Teams can run Balda close to their project without building a platform first. |
 
@@ -170,25 +170,12 @@ Built-in provider types:
 
 ## Bot Commands
 
-- `/topic <name>`: create a named topic session.
-- `/goal <objective>`: publish a durable JetStream command to the Goalkeeper actor and work toward the goal in the current session context/workspace with Norma's ADK worker -> validator loop. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See [`docs/goalkeeper.md`](docs/goalkeeper.md).
-- `/tasks`: list active task records for the current session.
-- `/task <id>`: inspect task status, objective, latest events, and reviewable outcome when the task is terminal.
-- `/task <id> events`: print the task event stream.
-- `/task <id> cancel`: publish a durable task-control command; ControlActor cancels active local task work when present and marks the task canceled when the command is processed.
-- `/swarm status`: show JetStream command/event/DLQ streams, worker and projector consumer state, product actors, task status counts, and derived queue health metrics (backlog, redelivery, DLQ, projection lag).
-- `/queue status`: show JetStream queue/runtime status (preferred command).
-- `/mailbox status`: compatibility alias for `/queue status`.
-- `/dlq`: show JetStream DLQ stream backlog summary.
-- `/dlq <stream_seq>`: inspect one DLQ entry by `BALDA_DLQ` stream sequence.
-- `/projection status`: show projector lag and projection health summary.
-- `/actors status`: show Balda product actor status and active runtime lanes.
-- `/reset`: clear conversation history for the current session.
-- `/close`: reset history, then close the current topic or restart the owner session on the next message.
-- `/cancel`: publish a durable session-control command; ControlActor cancels in-flight work, drops queued session work, cancels active task records, and aborts active `/goal` work when processed.
-- `/memory`: print current `${balda.state_dir}/MEMORY.md` contents when memory is enabled.
 - `/start owner=<owner_token>`: authenticate the owner in direct messages.
 - `/start invite=<invite_token>`: onboard a collaborator in direct messages.
+- `/topic <name>`: create a named topic session.
+- `/goal <objective>`: publish a durable JetStream command to the Goalkeeper actor and work toward the goal in the current session context/workspace with Norma's ADK worker -> validator loop. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See [`docs/goalkeeper.md`](docs/goalkeeper.md).
+- `/close`: reset history, then close the current topic or restart the owner session on the next message.
+- `/cancel`: publish a durable session-control command; ControlActor cancels in-flight work, drops queued session work, and aborts active `/goal` work when processed.
 - `/user add|list|remove`: manage collaborators; owner only.
 
 ## Configuration
@@ -275,17 +262,17 @@ Common settings:
 - `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
 - `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session ingress. Each route defines `path`, `prompt_template`, `envelope` (`target`, `key`, optional `mode=task|session`, optional `report_to`), `auth` (`type=none|header`, `header`, `value` or `secret_env`), and `dedupe` (`source=request_id|header|body_sha256`, optional `header` for header source).
 - `balda.webhooks.*` security: set route `auth` (for example shared-token header) and keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
-- `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until `/reset` or explicit `/close`.
-- `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md`, `/memory`, and `balda.memory.*` MCP tools.
+- `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until the session is explicitly closed.
+- `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md` and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
 - `balda.nats.*`: embedded JetStream is required by default, binds to `127.0.0.1` on a random local port, keeps monitoring disabled, and stores JetStream files under `.balda/nats`.
 - Legacy runtime keys are rejected at startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`).
-- `balda.swarm.enabled`: `true` by default; enables the actor runtime and event projector. When false, Balda still starts but ingress that requires swarm returns runtime unavailable; there is no direct execution fallback.
+- `balda.swarm` configures the always-on actor runtime and event projector. The runtime is not user-disableable.
 - `balda.swarm.commands.*`: JetStream command stream and durable pull consumer settings. `BALDA_COMMANDS` is the only command queue.
 - `balda.swarm.events.*`: JetStream event stream settings for command/task/delivery events.
 - `balda.swarm.dlq.*`: JetStream dead-letter stream settings for terminal command failures.
 - Actor-lane queue policy is not a public config surface yet; JetStream is the only durable command queue. Local in-process command fan-out is bounded to `fetch_batch`, and SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint.
-- Task visibility: task events are published to `BALDA_EVENTS` and projected into SQLite for `/tasks`, `/task <id>`, and `/task <id> events`. Actor success does not depend on synchronous SQLite event projection. `/task <id> cancel` writes a durable JetStream control command. `/swarm status` and `/mailbox status` read JetStream transport state plus projection lag.
+- Task records, projections, DLQ state, and runtime status are internal implementation details used by goals, scheduling, webhooks, retries, and cancellation.
 - Command lifecycle events (`accepted|running|acked|retrying|deadlettered`) are best-effort visibility telemetry. Command settlement does not depend on lifecycle event publication.
 - `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
@@ -332,12 +319,12 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 - `no supported agent CLI detected`: install or expose one of `codex`, `opencode`, `copilot`, `gemini`, or `claude`.
 - `balda.provider is required`: rerun `balda init` or set `balda.provider` to a configured provider ID.
 - Session history should not survive restarts: set `balda.sessions.persistence=memory` or `BALDA_SESSIONS_PERSISTENCE=memory`.
-- Memory facts are not visible in an active session: memory is snapshotted when a session starts or restores; use `/reset` or `/close` to recreate the provider session.
+- Memory facts are not visible in an active session: memory is snapshotted when a session starts or restores; close and reopen the session to refresh it.
 - Workspace import/export issues: check `balda.workspace.mode`, `balda.workspace.base_branch`, and that Balda is running in the expected git checkout.
 - Progress updates are too noisy: set `balda.telegram.plan_updates=false`.
 - Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify disk space.
 - Startup fails with command/event consumer creation errors: verify unique consumer names in `balda.swarm.commands.consumer` and that no external process is mutating the same embedded store concurrently.
-- `/swarm status` shows growing `commands_backlog`/`num_redelivered`: check actor failures, retry pressure, and `/dlq` for terminal reasons before increasing transport limits.
+- Runtime status issues show up in logs and internal operator views; check actor failures, retry pressure, and DLQ handling before increasing transport limits.
 
 ## Documentation
 

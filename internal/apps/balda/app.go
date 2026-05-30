@@ -126,7 +126,7 @@ func Module(
 	scheduledTaskSchedulerConfig := buildScheduledTaskSchedulerConfig(cfg.Balda)
 	inboundWebhookConfig := buildInboundWebhookConfig(cfg.Balda)
 	swarmConfig := swarm.Config{
-		Enabled: cfg.Balda.Swarm.Enabled,
+		Enabled: true,
 		Commands: swarm.CommandConfig{
 			Stream:        strings.TrimSpace(cfg.Balda.Swarm.Commands.Stream),
 			Consumer:      strings.TrimSpace(cfg.Balda.Swarm.Commands.Consumer),
@@ -601,7 +601,7 @@ func validateLegacyRuntimeModes(cfg BaldaConfig) error {
 		errs = append(errs, "balda.event_bus is no longer supported; configure balda.nats for JetStream")
 	}
 	if cfg.Swarm.RemovedMode != nil {
-		errs = append(errs, "balda.swarm.mode is no longer supported; use balda.swarm.enabled with JetStream-only runtime")
+		errs = append(errs, "balda.swarm.mode is no longer supported; actor runtime is always on")
 	}
 	if cfg.Webhooks.RemovedMode != nil {
 		errs = append(errs, "balda.webhooks.mode is no longer supported; webhooks publish JetStream commands only")
@@ -617,10 +617,6 @@ func validateLegacyRuntimeModes(cfg BaldaConfig) error {
 
 func validateRuntimeConfigLint(swarmCfg swarm.Config, webhookCfg handlers.InboundWebhookConfig) error {
 	errs := make([]string, 0)
-
-	if !swarmCfg.Enabled {
-		errs = append(errs, "balda.swarm.enabled must be true for JetStream-first runtime")
-	}
 
 	streamNames := map[string]string{
 		"balda.swarm.commands.stream": swarmCfg.Commands.Stream,

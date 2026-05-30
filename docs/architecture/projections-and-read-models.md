@@ -8,19 +8,19 @@ Status: active
 - SQLite task/command views are read models projected from durable events.
 - Projection failures do not stop command execution.
 - Projection handlers are idempotent.
-- `/tasks`, `/task`, `/task <id> events`, and status views read product state + projections.
+- Internal task/read-model views read product state + projections; they are not chat commands.
 
 ## Related tests
 
 - `internal/apps/balda/swarm/tasks_test.go`
-- `internal/apps/balda/handlers/task_visibility_test.go`
+- `internal/apps/balda/handlers/command_test.go`
 - `internal/apps/balda/memory/store_test.go`
 
 ## Related packages
 
 - `internal/apps/balda/swarm`
 - `internal/apps/balda/state`
-- `internal/apps/balda/handlers/task_visibility.go`
+- `internal/apps/balda/handlers/command_handler.go`
 
 ## Update triggers
 

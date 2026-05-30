@@ -193,7 +193,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		sendOwnerWelcome := existingSession == nil
 		baldaProviderName := h.getProviderName()
 		if baldaProviderName == "" {
-			_ = h.channel.SendPlain(ctx, locator, "Balda provider is not configured (`balda.provider`). Please close this chat and restart balda.")
+			_ = h.channel.SendPlain(ctx, locator, "Balda is not ready right now. Please close this chat and try again.")
 			return nil
 		}
 		ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
@@ -202,7 +202,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		}, ownerSessionLabel)
 		if err != nil {
 			log.Error().Err(err).Str("agent", baldaProviderName).Msg("failed to ensure owner session")
-			_ = h.channel.SendPlain(ctx, locator, fmt.Sprintf("Failed to start owner session: %v.\n\nPlease close this chat and start again.", err))
+			_ = h.channel.SendPlain(ctx, locator, "Could not start owner session. Please close this chat and try again.")
 			return nil
 		}
 		if sendOwnerWelcome {
@@ -224,7 +224,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 				if errors.Is(err, baldasession.ErrNoPersistedSession) {
 					baldaProviderName := h.getProviderName()
 					if baldaProviderName == "" {
-						_ = h.channel.SendPlain(ctx, locator, "Balda provider is not configured (`balda.provider`). Please close this chat and restart balda.")
+						_ = h.channel.SendPlain(ctx, locator, "Balda is not ready right now. Please close this chat topic and try again.")
 						return nil
 					}
 					ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
@@ -233,12 +233,12 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 					}, autoSessionLabel)
 					if err != nil {
 						log.Error().Err(err).Str("agent", baldaProviderName).Int("topic_id", topicID).Msg("failed to create session")
-						_ = h.channel.SendPlain(ctx, locator, fmt.Sprintf("Failed to start session: %v.\n\nPlease close this chat topic and create a new session with /topic <name>.", err))
+						_ = h.channel.SendPlain(ctx, locator, "Could not start this session. Please close this chat topic and create a new one.")
 						return nil
 					}
 				} else {
 					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to restore session")
-					_ = h.channel.SendPlain(ctx, locator, fmt.Sprintf("Failed to restore this session: %v.\n\nPlease close this chat topic and create a new session with /topic <name>.", err))
+					_ = h.channel.SendPlain(ctx, locator, "Could not restore this session. Please close this chat topic and create a new one.")
 					return nil
 				}
 			}
@@ -348,9 +348,9 @@ func (h *BaldaHandler) runTurnTaskWithDelivery(
 	}
 
 	log.Error().Err(err).Int("topic_id", topicID).Msg("agent execution failed")
-	errText := fmt.Sprintf("Agent execution failed: %v.\n\nPlease close this chat and start a new session.", err)
+	errText := "Agent execution failed. Please close this chat and start a new session."
 	if topicID > 0 {
-		errText = fmt.Sprintf("Agent execution failed: %v.\n\nPlease close this chat topic and create a new session with /topic <name>.", err)
+		errText = "Agent execution failed. Please close this chat topic and create a new session with /topic <name>."
 	}
 	if sendErr := h.channel.SendPlain(context.Background(), locator, errText); sendErr != nil {
 		log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda error message")
@@ -664,13 +664,10 @@ func (h *BaldaHandler) runTurnWithDelivery(
 	return nil
 }
 
-func emptyTerminalTurnMessage(finishReason genai.FinishReason, errorMessage string) string {
+func emptyTerminalTurnMessage(finishReason genai.FinishReason, _ string) string {
 	baseMessage := emptyTerminalTurnBaseMessage(finishReason)
 	if baseMessage == "" {
 		return ""
-	}
-	if excerpt := providerMessageExcerpt(errorMessage); excerpt != "" {
-		return fmt.Sprintf("%s\n\nProvider message: %s", baseMessage, excerpt)
 	}
 	return baseMessage
 }
@@ -712,16 +709,4 @@ func emptyTerminalTurnBaseMessage(finishReason genai.FinishReason) string {
 	default:
 		return "The provider ended the turn without a usable reply. Please try again."
 	}
-}
-
-func providerMessageExcerpt(message string) string {
-	normalized := strings.Join(strings.Fields(message), " ")
-	if normalized == "" {
-		return ""
-	}
-	runes := []rune(normalized)
-	if len(runes) > 300 {
-		return string(runes[:300])
-	}
-	return normalized
 }

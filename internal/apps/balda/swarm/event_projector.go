@@ -35,9 +35,6 @@ func NewEventProjector(params eventProjectorParams) (*EventProjector, error) {
 	if params.StateProvider == nil {
 		return nil, fmt.Errorf("balda state provider is required")
 	}
-	if !params.Config.Enabled {
-		return nil, fmt.Errorf("actor runtime must be enabled")
-	}
 	if params.Consumer == nil {
 		return nil, fmt.Errorf("event projector requires an actor runtime event consumer")
 	}
