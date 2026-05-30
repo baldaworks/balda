@@ -5,8 +5,7 @@ import (
 	"strings"
 )
 
-// SessionBranchName returns the git branch name for a balda session.
-func (m *Manager) SessionBranchName(sessionID string) string {
+func (m *Manager) sessionBranchName(sessionID string) string {
 	return fmt.Sprintf("norma/balda/%s", sessionID)
 }
 

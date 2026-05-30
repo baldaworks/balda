@@ -223,6 +223,13 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
+	t.Run("dead agent and session convenience exports stay deleted", func(t *testing.T) {
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`func\s+\(m\s+\*Manager\)\s+SessionBranchName\s*\(|func\s+\(s\s+\*TopicSession\)\s+GetLocator\s*\(|func\s+\(m\s+\*Manager\)\s+GetAgentInfo\s*\(|func\s+\(m\s+\*Manager\)\s+ProviderIDs\s*\(|func\s+\(b\s+\*Builder\)\s+GetAgentInfo\s*\(|func\s+\(b\s+\*Builder\)\s+ProviderIDs\s*\(`))
+		if len(matches) > 0 {
+			t.Fatalf("dead agent/session convenience export found in production Go files:\n%s", formatSourceMatches(matches))
+		}
+	})
+
 	t.Run("handler wiring stays package-local", func(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`type\s+StartHandlerParams\s+struct|func\s+NewStartHandler\s*\(|func\s+\(h\s+\*StartHandler\)\s+SetBaldaHandler\s*\(|func\s+NewBaldaHandler\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SetOwner\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+ActivateOwner\s*\(|func\s+NewCommandHandler\s*\(|func\s+NewUserHandler\s*\(|func\s+NewScheduledTaskScheduler\s*\(|func\s+NewInboundWebhookReceiver\s*\(|func\s+WireHandlers\s*\(`))
 		if len(matches) > 0 {

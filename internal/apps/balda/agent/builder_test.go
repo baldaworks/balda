@@ -83,27 +83,6 @@ func TestBuildBaldaInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
 	}
 }
 
-func TestProviderIDs(t *testing.T) {
-	t.Parallel()
-
-	builder := &Builder{
-		normaCfg: runtimeconfig.RuntimeConfig{
-			Providers: map[string]agentconfig.Config{
-				"alpha": {},
-				"":      {},
-			},
-		},
-	}
-	rawProviderID := " beta "
-	builder.normaCfg.Providers[rawProviderID] = agentconfig.Config{}
-
-	got := builder.ProviderIDs()
-	want := []string{"alpha", "beta"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ProviderIDs() = %#v, want %#v", got, want)
-	}
-}
-
 func TestBuildBaldaInstruction_OmitsInstructionSectionsWhenEmpty(t *testing.T) {
 	t.Parallel()
 

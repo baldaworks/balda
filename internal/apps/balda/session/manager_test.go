@@ -423,14 +423,6 @@ func (f *fakeAgentBuilder) ValidateAgent(agentName string) error {
 	return nil
 }
 
-func (f *fakeAgentBuilder) ProviderIDs() []string {
-	return nil
-}
-
-func (f *fakeAgentBuilder) GetAgentInfo(agentName string) (string, []string) {
-	return "", nil
-}
-
 func (f *fakeAgentBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
 	return baldaagent.AgentMetadata{}
 }

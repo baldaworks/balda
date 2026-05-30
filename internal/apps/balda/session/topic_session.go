@@ -55,7 +55,3 @@ func (s *TopicSession) GetBranchName() string {
 func (s *TopicSession) GetAgentName() string {
 	return s.agentName
 }
-
-func (s *TopicSession) GetLocator() SessionLocator {
-	return s.locator
-}

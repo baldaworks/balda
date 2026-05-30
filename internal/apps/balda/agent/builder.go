@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"text/template"
 
@@ -402,15 +401,6 @@ func (b *Builder) buildAgentDescription(agentName string) string {
 	return agentCfg.Description(agentName)
 }
 
-// GetAgentInfo returns the description and list of MCP server names for an agent.
-func (b *Builder) GetAgentInfo(agentName string) (description string, mcpServers []string) {
-	agentCfg, ok := b.normaCfg.Providers[agentName]
-	if !ok {
-		return agentName, bundledMCPServerIDs(b.workspaceEnabled)
-	}
-	return agentCfg.Description(agentName), mergeMCPServerIDs(agentCfg.MCPServers, nil, b.workspaceEnabled)
-}
-
 // GetAgentMetadata returns provider type/model and provider-scoped MCP server IDs.
 func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 	agentCfg, ok := b.normaCfg.Providers[agentName]
@@ -423,23 +413,6 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 		Model:      modelFromAgentConfig(agentCfg),
 		MCPServers: mergeMCPServerIDs(agentCfg.MCPServers, nil, b.workspaceEnabled),
 	}
-}
-
-// ProviderIDs returns configured runtime provider IDs sorted lexicographically.
-func (b *Builder) ProviderIDs() []string {
-	if b == nil || len(b.normaCfg.Providers) == 0 {
-		return nil
-	}
-	providerIDs := make([]string, 0, len(b.normaCfg.Providers))
-	for id := range b.normaCfg.Providers {
-		trimmedID := strings.TrimSpace(id)
-		if trimmedID == "" {
-			continue
-		}
-		providerIDs = append(providerIDs, trimmedID)
-	}
-	sort.Strings(providerIDs)
-	return providerIDs
 }
 
 func (b *Builder) buildAgentMCPServerIDs(agentName string, bundled, extra []string) []string {

@@ -37,9 +37,7 @@ type agentBuilder interface {
 		workspaceDir string,
 	) (adksession.Session, error)
 	ValidateAgent(agentName string) error
-	GetAgentInfo(agentName string) (string, []string)
 	GetAgentMetadata(agentName string) baldaagent.AgentMetadata
-	ProviderIDs() []string
 }
 
 type baldaRuntimeManager interface {
@@ -134,19 +132,6 @@ func (m *Manager) ValidateAgent(agentName string) error {
 	return builder.ValidateAgent(agentName)
 }
 
-// GetAgentInfo returns the description and list of MCP server names for an agent.
-func (m *Manager) GetAgentInfo(agentName string) (string, []string) {
-	m.mu.RLock()
-	builder := m.agentBuilder
-	baldaMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
-	m.mu.RUnlock()
-	if builder == nil {
-		return agentName, baldaMCPServerIDs
-	}
-	description, mcpServers := builder.GetAgentInfo(agentName)
-	return description, mergeUniqueStringIDs(mcpServers, baldaMCPServerIDs)
-}
-
 // GetAgentMetadata returns balda-provider metadata with provider-scoped MCP IDs.
 func (m *Manager) GetAgentMetadata(agentName string) AgentMetadata {
 	m.mu.RLock()
@@ -159,17 +144,6 @@ func (m *Manager) GetAgentMetadata(agentName string) AgentMetadata {
 	meta := builder.GetAgentMetadata(agentName)
 	meta.MCPServers = mergeUniqueStringIDs(meta.MCPServers, baldaMCPServerIDs)
 	return meta
-}
-
-// ProviderIDs returns configured runtime provider IDs sorted lexicographically.
-func (m *Manager) ProviderIDs() []string {
-	m.mu.RLock()
-	builder := m.agentBuilder
-	m.mu.RUnlock()
-	if builder == nil {
-		return nil
-	}
-	return builder.ProviderIDs()
 }
 
 // BaldaProviderID returns the configured balda provider ID.
@@ -216,7 +190,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	workspaceDir := m.workingDir
 	startupNotice := ""
 	if m.workspaceEnabled {
-		branchName = m.SessionBranchName(sessionID)
+		branchName = m.sessionBranchName(sessionID)
 		canonicalPath := m.workspaces.CanonicalWorkspaceDir(sessionID)
 		existingPath := canonicalPath
 		persistedWorkspacePath := ""
