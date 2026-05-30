@@ -18,14 +18,6 @@ const (
 	AgentToolMCP       = "mcp"
 	AgentToolMemory    = "memory"
 
-	AgentShellPolicyNone           = "none"
-	AgentShellPolicyReadOnly       = "read_only"
-	AgentShellPolicyWorkspaceWrite = "workspace_write"
-
-	AgentWorkspaceAccessNone      = "none"
-	AgentWorkspaceAccessReadOnly  = "read_only"
-	AgentWorkspaceAccessReadWrite = "read_write"
-
 	agentRoleAliasWorker    = "worker"
 	agentRoleAliasValidator = "validator"
 )
@@ -39,20 +31,6 @@ var supportedAgentTools = map[string]struct{}{
 
 var agentToolOrder = []string{AgentToolWorkspace, AgentToolShell, AgentToolMCP, AgentToolMemory}
 
-var roleAllowedTools = map[string][]string{
-	AgentNamePlanner:  {},
-	AgentNameExecutor: {AgentToolWorkspace, AgentToolShell, AgentToolMCP},
-	AgentNameReviewer: {AgentToolWorkspace, AgentToolShell},
-	AgentNameMemory:   {AgentToolMemory},
-}
-
-var roleWorkspaceAccess = map[string]string{
-	AgentNamePlanner:  AgentWorkspaceAccessNone,
-	AgentNameExecutor: AgentWorkspaceAccessReadWrite,
-	AgentNameReviewer: AgentWorkspaceAccessReadOnly,
-	AgentNameMemory:   AgentWorkspaceAccessNone,
-}
-
 type AgentSpec struct {
 	Name        string
 	Role        string
@@ -60,12 +38,11 @@ type AgentSpec struct {
 	CostPenalty int
 }
 
-// ShellExecutionPolicy returns the actor shell policy derived from role defaults
-// and, for custom agents, from requested tool capabilities.
+// ShellExecutionPolicy returns the shell/tool policy derived from requested tool capabilities.
+//
+// For compatibility with callers expecting a policy-like value, an empty string means no shell tool,
+// "read_only" means shell without workspace, and "workspace_write" means shell+workspace.
 func (s AgentSpec) ShellExecutionPolicy() string {
-	if policy, ok := ShellExecutionPolicyForRole(s.Name); ok {
-		return policy
-	}
 	hasShell := false
 	hasWorkspace := false
 	for _, tool := range s.Tools {
@@ -77,28 +54,12 @@ func (s AgentSpec) ShellExecutionPolicy() string {
 		}
 	}
 	if !hasShell {
-		return AgentShellPolicyNone
+		return ""
 	}
 	if hasWorkspace {
-		return AgentShellPolicyWorkspaceWrite
+		return "workspace_write"
 	}
-	return AgentShellPolicyReadOnly
-}
-
-// ShellExecutionPolicyForRole returns role-level shell execution policy.
-// The bool result reports whether the role is known.
-func ShellExecutionPolicyForRole(role string) (string, bool) {
-	role = canonicalRoleForPolicy(role)
-	switch role {
-	case AgentNamePlanner, AgentNameMemory:
-		return AgentShellPolicyNone, true
-	case AgentNameReviewer:
-		return AgentShellPolicyReadOnly, true
-	case AgentNameExecutor:
-		return AgentShellPolicyWorkspaceWrite, true
-	default:
-		return "", false
-	}
+	return "read_only"
 }
 
 type AgentRegistry struct {
@@ -207,34 +168,9 @@ func NormalizeAgentTools(raw []string) ([]string, error) {
 	return tools, nil
 }
 
-// AllowedToolsForRole returns the role-level allowed tool set contract.
-// The bool result reports whether the role is known.
-func AllowedToolsForRole(role string) ([]string, bool) {
-	role = canonicalRoleForPolicy(role)
-	allowed, ok := roleAllowedTools[role]
-	if !ok {
-		return nil, false
-	}
-	return append([]string(nil), allowed...), true
-}
-
-// WorkspaceAccessForRole returns role-level workspace boundary policy.
-// The bool result reports whether the role is known.
-func WorkspaceAccessForRole(role string) (string, bool) {
-	role = canonicalRoleForPolicy(role)
-	access, ok := roleWorkspaceAccess[role]
-	if !ok {
-		return "", false
-	}
-	return access, true
-}
-
-// WorkspaceAccessPolicy returns the actor workspace boundary policy derived
-// from role defaults and, for custom agents, from tool/shell capability hints.
+// WorkspaceAccessPolicy returns the workspace policy derived from shell/tool capabilities.
+// It returns "" when workspace is not enabled for the configured toolset.
 func (s AgentSpec) WorkspaceAccessPolicy() string {
-	if access, ok := WorkspaceAccessForRole(s.Name); ok {
-		return access
-	}
 	hasWorkspace := false
 	for _, tool := range s.Tools {
 		if NormalizeAgentName(tool) == AgentToolWorkspace {
@@ -243,12 +179,12 @@ func (s AgentSpec) WorkspaceAccessPolicy() string {
 		}
 	}
 	if !hasWorkspace {
-		return AgentWorkspaceAccessNone
+		return ""
 	}
-	if s.ShellExecutionPolicy() == AgentShellPolicyWorkspaceWrite {
-		return AgentWorkspaceAccessReadWrite
+	if s.ShellExecutionPolicy() == "workspace_write" {
+		return "read_write"
 	}
-	return AgentWorkspaceAccessReadOnly
+	return "read_only"
 }
 
 func (r *AgentRegistry) Get(name string) (AgentSpec, bool) {
@@ -379,8 +315,9 @@ func filterAgentsByRole(specs []AgentSpec, role string) []AgentSpec {
 func defaultAgentSpecs() map[string]AgentSpec {
 	return map[string]AgentSpec{
 		AgentNamePlanner: {
-			Name: AgentNamePlanner,
-			Role: "Plan work and split into subtasks",
+			Name:  AgentNamePlanner,
+			Tools: []string{AgentToolWorkspace, AgentToolShell, AgentToolMCP},
+			Role:  "Plan work and split into subtasks",
 		},
 		AgentNameExecutor: {
 			Name:  AgentNameExecutor,
@@ -390,7 +327,7 @@ func defaultAgentSpecs() map[string]AgentSpec {
 		AgentNameReviewer: {
 			Name:  AgentNameReviewer,
 			Role:  "Validate result and inspect risks",
-			Tools: []string{AgentToolWorkspace, AgentToolShell},
+			Tools: []string{AgentToolWorkspace, AgentToolShell, AgentToolMCP},
 		},
 		AgentNameMemory: {
 			Name:  AgentNameMemory,
@@ -403,9 +340,9 @@ func defaultAgentSpecs() map[string]AgentSpec {
 func agentRoleAliases(name string) []string {
 	switch name {
 	case AgentNameExecutor:
-		return []string{"worker"}
+		return []string{agentRoleAliasWorker}
 	case AgentNameReviewer:
-		return []string{"validator"}
+		return []string{agentRoleAliasValidator}
 	default:
 		return nil
 	}
@@ -415,17 +352,6 @@ func agentRoleText(raw string) string {
 	text := strings.ToLower(strings.TrimSpace(raw))
 	text = strings.NewReplacer("_", " ", "-", " ", ".", " ", ",", " ").Replace(text)
 	return text
-}
-
-func canonicalRoleForPolicy(role string) string {
-	switch NormalizeAgentName(role) {
-	case agentRoleAliasWorker:
-		return AgentNameExecutor
-	case agentRoleAliasValidator:
-		return AgentNameReviewer
-	default:
-		return NormalizeAgentName(role)
-	}
 }
 
 func firstNonEmpty(values ...string) string {

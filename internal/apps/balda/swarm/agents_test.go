@@ -15,15 +15,39 @@ func TestNormalizeAgentSpecs_DefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("NormalizeAgentSpecs() error = %v", err)
 	}
 	byName := specsByName(specs)
-	if _, ok := byName[AgentNamePlanner]; !ok {
+	planner, ok := byName[AgentNamePlanner]
+	if !ok {
 		t.Fatalf("planner default missing: %+v", specs)
 	}
-	if got := byName[AgentNameExecutor].Role; got != "Execute with project tools" {
+	wantPlannerTools := []string{AgentToolWorkspace, AgentToolShell, AgentToolMCP}
+	if !equalStrings(planner.Tools, wantPlannerTools) {
+		t.Fatalf("planner tools = %+v, want %+v", planner.Tools, wantPlannerTools)
+	}
+	executor, ok := byName[AgentNameExecutor]
+	if !ok {
+		t.Fatalf("executor missing after override merge: %+v", specs)
+	}
+	if got := executor.Role; got != "Execute with project tools" {
 		t.Fatalf("executor role = %q, want override", got)
 	}
 	wantTools := []string{AgentToolWorkspace, AgentToolShell}
-	if !equalStrings(byName[AgentNameExecutor].Tools, wantTools) {
-		t.Fatalf("executor tools = %+v, want %+v", byName[AgentNameExecutor].Tools, wantTools)
+	if !equalStrings(executor.Tools, wantTools) {
+		t.Fatalf("executor tools = %+v, want %+v", executor.Tools, wantTools)
+	}
+	wantDefaults := []string{AgentNamePlanner, AgentNameExecutor, AgentNameReviewer}
+	for _, name := range wantDefaults {
+		got := byName[name]
+		if got.Name != name {
+			t.Fatalf("default specs missing required role %q", name)
+		}
+	}
+	reviewer, ok := byName[AgentNameReviewer]
+	if !ok {
+		t.Fatalf("reviewer default missing: %+v", specs)
+	}
+	wantReviewerTools := []string{AgentToolWorkspace, AgentToolShell, AgentToolMCP}
+	if !equalStrings(reviewer.Tools, wantReviewerTools) {
+		t.Fatalf("reviewer tools = %+v, want %+v", reviewer.Tools, wantReviewerTools)
 	}
 }
 
@@ -66,15 +90,21 @@ func TestAgentAllocator_SelectsRoleAndTieBreaksByName(t *testing.T) {
 func TestAgentSpecShellExecutionPolicy_DefaultRoles(t *testing.T) {
 	t.Parallel()
 
+	specs, err := NormalizeAgentSpecs(map[string]AgentSpec{})
+	if err != nil {
+		t.Fatalf("NormalizeAgentSpecs() error = %v", err)
+	}
+	byName := specsByName(specs)
+
 	cases := []struct {
 		name string
 		spec AgentSpec
 		want string
 	}{
-		{name: "planner", spec: AgentSpec{Name: AgentNamePlanner}, want: AgentShellPolicyNone},
-		{name: "executor", spec: AgentSpec{Name: AgentNameExecutor}, want: AgentShellPolicyWorkspaceWrite},
-		{name: "reviewer", spec: AgentSpec{Name: AgentNameReviewer}, want: AgentShellPolicyReadOnly},
-		{name: "memory", spec: AgentSpec{Name: AgentNameMemory}, want: AgentShellPolicyNone},
+		{name: "planner", spec: byName[AgentNamePlanner], want: "workspace_write"},
+		{name: "executor", spec: byName[AgentNameExecutor], want: "workspace_write"},
+		{name: "reviewer", spec: byName[AgentNameReviewer], want: "workspace_write"},
+		{name: "memory", spec: AgentSpec{Name: AgentNameMemory}, want: ""},
 	}
 
 	for _, tc := range cases {
@@ -98,17 +128,17 @@ func TestAgentSpecShellExecutionPolicy_CustomByTools(t *testing.T) {
 		{
 			name: "workspace and shell",
 			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolWorkspace, AgentToolShell}},
-			want: AgentShellPolicyWorkspaceWrite,
+			want: "workspace_write",
 		},
 		{
 			name: "shell only",
 			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolShell}},
-			want: AgentShellPolicyReadOnly,
+			want: "read_only",
 		},
 		{
 			name: "no shell",
 			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolWorkspace}},
-			want: AgentShellPolicyNone,
+			want: "",
 		},
 	}
 
@@ -122,71 +152,28 @@ func TestAgentSpecShellExecutionPolicy_CustomByTools(t *testing.T) {
 	}
 }
 
-func TestAllowedToolsForRole(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		role   string
-		want   []string
-		wantOK bool
-	}{
-		{name: "planner", role: AgentNamePlanner, want: []string{}, wantOK: true},
-		{name: "executor", role: AgentNameExecutor, want: []string{AgentToolWorkspace, AgentToolShell, AgentToolMCP}, wantOK: true},
-		{name: "reviewer alias", role: "validator", want: []string{AgentToolWorkspace, AgentToolShell}, wantOK: true},
-		{name: "memory", role: AgentNameMemory, want: []string{AgentToolMemory}, wantOK: true},
-		{name: "unknown", role: "custom", want: nil, wantOK: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, ok := AllowedToolsForRole(tt.role)
-			if ok != tt.wantOK {
-				t.Fatalf("AllowedToolsForRole(%q) ok = %t, want %t", tt.role, ok, tt.wantOK)
-			}
-			if !equalStrings(got, tt.want) {
-				t.Fatalf("AllowedToolsForRole(%q) = %#v, want %#v", tt.role, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestWorkspaceAccessForRole(t *testing.T) {
-	t.Parallel()
-
-	tests := []rolePolicyCase{
-		{name: "planner", role: AgentNamePlanner, want: AgentWorkspaceAccessNone, wantOK: true},
-		{name: "executor alias", role: "worker", want: AgentWorkspaceAccessReadWrite, wantOK: true},
-		{name: "reviewer", role: AgentNameReviewer, want: AgentWorkspaceAccessReadOnly, wantOK: true},
-		{name: "memory", role: AgentNameMemory, want: AgentWorkspaceAccessNone, wantOK: true},
-		{name: "unknown", role: "custom", want: "", wantOK: false},
-	}
-	runRolePolicyCases(t, "WorkspaceAccessForRole", WorkspaceAccessForRole, tests)
-}
-
 func TestAgentSpecWorkspaceAccessPolicy_CustomByTools(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name   string
-		spec   AgentSpec
-		want   string
+		name string
+		spec AgentSpec
+		want string
 	}{
 		{
 			name: "workspace and shell",
 			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolWorkspace, AgentToolShell}},
-			want: AgentWorkspaceAccessReadWrite,
+			want: "read_write",
 		},
 		{
 			name: "workspace only",
 			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolWorkspace}},
-			want: AgentWorkspaceAccessReadOnly,
+			want: "read_only",
 		},
 		{
 			name: "no workspace",
 			spec: AgentSpec{Name: "custom", Tools: []string{AgentToolShell}},
-			want: AgentWorkspaceAccessNone,
+			want: "",
 		},
 	}
 
@@ -195,47 +182,6 @@ func TestAgentSpecWorkspaceAccessPolicy_CustomByTools(t *testing.T) {
 			t.Parallel()
 			if got := tc.spec.WorkspaceAccessPolicy(); got != tc.want {
 				t.Fatalf("WorkspaceAccessPolicy() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestShellExecutionPolicyForRole(t *testing.T) {
-	t.Parallel()
-
-	tests := []rolePolicyCase{
-		{name: "planner", role: AgentNamePlanner, want: AgentShellPolicyNone, wantOK: true},
-		{name: "executor alias", role: "worker", want: AgentShellPolicyWorkspaceWrite, wantOK: true},
-		{name: "reviewer", role: AgentNameReviewer, want: AgentShellPolicyReadOnly, wantOK: true},
-		{name: "memory", role: AgentNameMemory, want: AgentShellPolicyNone, wantOK: true},
-		{name: "unknown", role: "custom", want: "", wantOK: false},
-	}
-	runRolePolicyCases(t, "ShellExecutionPolicyForRole", ShellExecutionPolicyForRole, tests)
-}
-
-type rolePolicyCase struct {
-	name   string
-	role   string
-	want   string
-	wantOK bool
-}
-
-func runRolePolicyCases(
-	t *testing.T,
-	fnName string,
-	resolve func(string) (string, bool),
-	tests []rolePolicyCase,
-) {
-	t.Helper()
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, ok := resolve(tt.role)
-			if ok != tt.wantOK {
-				t.Fatalf("%s(%q) ok = %t, want %t", fnName, tt.role, ok, tt.wantOK)
-			}
-			if got != tt.want {
-				t.Fatalf("%s(%q) = %q, want %q", fnName, tt.role, got, tt.want)
 			}
 		})
 	}

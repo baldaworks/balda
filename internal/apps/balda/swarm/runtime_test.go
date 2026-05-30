@@ -11,7 +11,6 @@ import (
 	"time"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	actorlayer "github.com/normahq/norma/actorlayer"
 	"github.com/normahq/norma/actorlayer/dispatch"
 	actorengine "github.com/normahq/norma/actorlayer/engine"
 )
@@ -231,8 +230,8 @@ func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 	if deadletterReason == "" {
 		t.Fatal("DeadLetter() was not called")
 	}
-	if got := deadletterReason; !strings.Contains(got, actorlayer.ErrActorNotFound.Error()) {
-		t.Fatalf("deadletter reason = %q, want to contain %q", got, actorlayer.ErrActorNotFound.Error())
+	if got := deadletterReason; !strings.Contains(got, actorengine.ErrActorNotFound.Error()) {
+		t.Fatalf("deadletter reason = %q, want to contain %q", got, actorengine.ErrActorNotFound.Error())
 	}
 	if retried {
 		t.Fatal("Retry() was called for unknown actor")

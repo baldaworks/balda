@@ -347,7 +347,7 @@ func TestTaskAgentActorHandleUsesDerivedADKSessionID(t *testing.T) {
 	}
 }
 
-func TestTaskAgentActorHandleRejectsRoleToolPolicyBeforeRuntime(t *testing.T) {
+func TestTaskAgentActorHandleAllowsRequestedToolsWithoutRolePolicyBeforeRuntime(t *testing.T) {
 	ctx := context.Background()
 	provider, bus, coordinator, tasks, allocator := newTaskActorSwarmServices(t, ctx)
 	_ = provider
@@ -376,17 +376,11 @@ func TestTaskAgentActorHandleRejectsRoleToolPolicyBeforeRuntime(t *testing.T) {
 	}
 
 	err = actor.Handle(ctx, env)
-	if err == nil {
-		t.Fatal("Handle() error = nil, want policy rejection")
+	if err != nil {
+		t.Fatalf("Handle() error = %v, want nil", err)
 	}
-	if swarm.ClassifyError(err) != swarm.ErrorKindPolicy {
-		t.Fatalf("ClassifyError(%v) = %s, want policy", err, swarm.ClassifyError(err))
-	}
-	if len(runtimeBuilder.cfgs) != 0 {
-		t.Fatalf("BuildTaskAgentRuntime() calls = %d, want 0 on policy rejection", len(runtimeBuilder.cfgs))
-	}
-	if !strings.Contains(err.Error(), "not allowed") {
-		t.Fatalf("Handle() error = %v, want role tool policy marker", err)
+	if len(runtimeBuilder.cfgs) != 1 {
+		t.Fatalf("BuildTaskAgentRuntime() calls = %d, want 1", len(runtimeBuilder.cfgs))
 	}
 }
 

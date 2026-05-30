@@ -95,9 +95,6 @@ func (a *taskAgentActor) Handle(ctx context.Context, envelope any) error {
 		return swarm.PolicyError(fmt.Errorf("requested tools: %w", err))
 	}
 	payload.RequestedTools = normalizedTools
-	if err := validateTaskAgentToolPolicy(payload); err != nil {
-		return swarm.PolicyError(err)
-	}
 	if payload.Iteration <= 0 {
 		payload.Iteration = 1
 	}
@@ -234,41 +231,6 @@ func (a *taskAgentActor) resolveSession(ctx context.Context, payload taskAgentCo
 	}
 	return a.sessions.EnsureSession(ctx, sessionCtx, ownerSessionLabel)
 }
-
-func validateTaskAgentToolPolicy(payload taskAgentCommandPayload) error {
-	role := normalizeTaskAgentRole(payload.Role)
-	if role == "" {
-		return fmt.Errorf("task agent role is required")
-	}
-	toolSet := make(map[string]struct{}, len(payload.RequestedTools))
-	for _, tool := range payload.RequestedTools {
-		toolSet[tool] = struct{}{}
-	}
-	if allowed, ok := swarm.AllowedToolsForRole(role); ok {
-		allowedSet := make(map[string]struct{}, len(allowed))
-		for _, tool := range allowed {
-			allowedSet[tool] = struct{}{}
-		}
-		for _, tool := range payload.RequestedTools {
-			if _, ok := allowedSet[tool]; ok {
-				continue
-			}
-			return fmt.Errorf("tool %q is not allowed for role %q", tool, role)
-		}
-	}
-	if shellPolicy, ok := swarm.ShellExecutionPolicyForRole(role); ok && shellPolicy == swarm.AgentShellPolicyNone {
-		if _, hasShell := toolSet[swarm.AgentToolShell]; hasShell {
-			return fmt.Errorf("role %q cannot request shell execution", role)
-		}
-	}
-	if workspaceAccess, ok := swarm.WorkspaceAccessForRole(role); ok && workspaceAccess == swarm.AgentWorkspaceAccessNone {
-		if _, hasWorkspace := toolSet[swarm.AgentToolWorkspace]; hasWorkspace {
-			return fmt.Errorf("role %q cannot request workspace access", role)
-		}
-	}
-	return nil
-}
-
 func (a *taskAgentActor) publishResult(
 	ctx context.Context,
 	cause swarm.Envelope,

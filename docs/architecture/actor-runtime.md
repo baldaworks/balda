@@ -5,16 +5,16 @@ Status: active
 
 ## Invariants
 
-- ActorRuntime consumes commands from JetStream only.
+- ActorRuntime consumes commands from JetStream.
 - Actorlayer engine lanes serialize mutable state by actor key.
-- Runtime execution uses `actorlayer/engine.Runtime` with a JetStream source adapter (`runtimeSource`) so command settlement and retry policy are centralized in the actorlayer runtime.
+- Runtime execution uses `actorlayer/engine.Runtime`; Balda adapts JetStream commands into actorlayer deliveries.
 - Command settlement happens after actor side effects complete.
 - Retry/permanent failure handling is explicit and classified.
-- Task actors attach role-based shell execution policy metadata (`none`, `read_only`, `workspace_write`) to runtime status surfaces.
-- Role-level allowed tool contracts are stable and inspectable (`planner=none`, `executor=workspace,shell,mcp`, `reviewer=workspace,shell`, `memory=memory`).
-- Workspace access boundaries are role-based and inspectable (`none`, `read_only`, `read_write`).
-- Agent commands that request tools outside role policy are rejected before runtime execution.
+- Task actor status includes role configuration and associated tools; runtime capability is derived from those tool sets.
+- Role-level tool contracts are advisory and visible in runtime status payloads.
+- Per-role shell/workspace behavior is derived from each agent's configured toolset at dispatch time.
 - Task progress/results and task visibility payload summaries redact common secret/token patterns before persistence and delivery.
+- The execution core does not depend on ADK, Balda, JetStream, Telegram, MCP, or provider SDK APIs.
 
 ## Related tests
 
@@ -35,4 +35,33 @@ Status: active
 - Actor key mapping changes.
 - Command heartbeat or settlement behavior changes.
 - Task/agent/delivery actor lifecycle changes.
-- Role tool/shell policy changes.
+- Agent toolset and allocator behavior changes.
+
+## Norma actorlayer contract boundaries
+
+### Contract shape
+
+- Engine contract: Norma actorlayer is the fixed typed dispatch+state model Balda uses for actors. It exposes:
+  - actor keying and deterministic lane routing,
+  - typed envelope handling,
+  - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
+  - and lifecycle events suitable for external telemetry.
+- Provider runtime: `balda.provider` selects the single app-scoped ADK provider runtime used by all Balda sessions and task role agents.
+- Delivery boundary: Balda maps JetStream command messages into actorlayer deliveries and owns command settlement.
+
+### Ownership split
+
+- Actorlayer owns:
+  - typed actor contracts and interfaces,
+  - execution correctness of lane transitions and actor state.
+- Balda integration code owns:
+  - transport protocol and transport-level acknowledgements,
+  - provider runtime invocation details (ADK session execution, tools, model/runtime context),
+  - queue policy integration (retry/dead-letter thresholds, heartbeats, and backoff tuning),
+  - and persistence side effects in product state stores.
+
+### Why this split exists
+
+- All actor sessions in one Balda process use the configured `balda.provider`; actor contracts do not choose providers.
+- Balda can own product semantics (queue policy, telemetry, task projection, and workspace/task metadata) while still reusing the same execution kernel.
+- Future transport/provider integration code must preserve the actorlayer engine contract and keep product policy in Balda.

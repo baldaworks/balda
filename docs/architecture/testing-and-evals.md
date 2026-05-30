@@ -12,18 +12,18 @@ Status: active
 
 ## Related tests
 
-- `internal/apps/balda/architecture_contract_test.go`
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/swarm/runtime_test.go`
+- `internal/apps/balda/architecture_contract_test.go`
 - `internal/apps/balda/handlers/inbound_webhook_test.go`
 - `internal/apps/balda/handlers/task_visibility_test.go`
 
 ## Related packages
 
-- `internal/apps/balda/architecture_contract_test.go`
 - `internal/apps/balda/eventbus/nats`
 - `internal/apps/balda/swarm`
 - `internal/apps/balda/handlers`
+- `internal/apps/balda/architecture_contract_test.go`
 
 ## Update triggers
 

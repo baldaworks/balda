@@ -153,6 +153,28 @@ flowchart TB
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
 | `welcome` | `internal/apps/balda/welcome` | Welcome message builder | (standalone) |
 
+## Actorlayer Boundary
+
+Balda treats `actorlayer` as a pure typed actor engine and never as product policy.
+
+- `balda.provider` selects one app-scoped ADK provider runtime for all Balda sessions and task role agents in the process.
+- Actorlayer owns typed actor dispatch, lane serialization, and lifecycle events.
+- Balda maps JetStream command messages into actorlayer deliveries and owns command settlement.
+
+The boundary is intentionally explicit:
+
+- Balda owns retry, dead-letter, queue visibility, and task projection policy.
+- Actor contracts expose only actor-level contracts and metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`).
+- Runtime command flow and projectors are preserved by keeping queue/provider details outside actor definitions.
+
+### Migration Checklist
+
+- Keep actor definitions and state types independent from provider IDs.
+- Ensure no ADK, provider, or queue API types enter the actor layer contract.
+- Keep retry/dead-letter policy, projection writes, and reporting in Balda-owned modules.
+- Preserve command envelope metadata (`chat_id`, `topic_id`, `goal_id`) at the actorlayer boundary.
+- Verify task/actor scenarios through the configured `balda.provider` runtime and JetStream command path.
+
 ## Startup Order (Required)
 
 Balda startup order is strict:
@@ -453,27 +475,19 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.agents`: logical single-process swarm agents used by the allocator. Defaults are:
   - `planner`: plans work and splits it into subtasks.
   - `executor`: uses project tools and makes changes; advisory tools `workspace`, `shell`, `mcp`.
-  - `reviewer`: validates results and inspects risks; advisory tools `workspace`, `shell`.
+  - `reviewer`: validates results and inspects risks; advisory tools `workspace`, `shell`, `mcp`.
   - `memory`: extracts durable facts and summaries; advisory tool `memory`.
   Tools are routing/prompt hints only; optional `cost_penalty` lowers allocator preference for expensive roles. All logical agents still use the configured Balda provider runtime in the first release.
-  Shell/tool execution policy contract:
-  - `planner`: `shell_policy=none`
-  - `executor`: `shell_policy=workspace_write`
-  - `reviewer`: `shell_policy=read_only`
-  - `memory`: `shell_policy=none`
-  Allowed tool contract:
-  - `planner`: no project tools
+  Tool contract:
+  - `planner`: `workspace,shell,mcp`
   - `executor`: `workspace,shell,mcp`
-  - `reviewer`: `workspace,shell`
+  - `reviewer`: `workspace,shell,mcp`
   - `memory`: `memory`
-  Workspace boundary contract:
-  - `planner`: `workspace_access=none`
-  - `executor`: `workspace_access=read_write`
-  - `reviewer`: `workspace_access=read_only`
-  - `memory`: `workspace_access=none`
-  - custom agents derive shell policy from tools: `shell+workspace -> workspace_write`, `shell only -> read_only`, no shell -> `none`.
-  - `/actors status` and `/swarm status` expose each configured actor role with `shell_policy=...`, `workspace_access=...`, and `allowed_tools=...`.
-  - Task/agent commands violating role tool policy are rejected as policy errors before runtime/tool execution.
+  Shell/tool behavior is derived from each agent's configured tools:
+  - `shell+workspace -> workspace_write`
+  - `shell only -> read_only`
+  - no shell -> `""` (not shell-write).
+  - `/actors status` and `/swarm status` expose each configured actor role and tools.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `/memory` reads the current file in owner/collaborator direct messages.
   - `balda.memory.read` reads the file from MCP.

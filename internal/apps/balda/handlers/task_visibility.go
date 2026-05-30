@@ -307,17 +307,6 @@ func (h *CommandHandler) onActorsCommand(ctx context.Context, commandCtx baldate
 			out.WriteString(strings.Join(agent.Tools, ", "))
 			out.WriteString("]")
 		}
-		out.WriteString(" {shell_policy=")
-		out.WriteString(agent.ShellExecutionPolicy())
-		out.WriteString("}")
-		out.WriteString(" {workspace_access=")
-		out.WriteString(agent.WorkspaceAccessPolicy())
-		out.WriteString("}")
-		if allowed, ok := swarm.AllowedToolsForRole(agent.Name); ok {
-			out.WriteString(" {allowed_tools=")
-			out.WriteString(formatAllowedTools(allowed))
-			out.WriteString("}")
-		}
 	}
 	return h.channel.SendAgentReply(ctx, commandCtx.Locator, out.String())
 }
@@ -420,17 +409,6 @@ func (h *CommandHandler) formatSwarmStatus(ctx context.Context) (string, error) 
 				out.WriteString(" [")
 				out.WriteString(strings.Join(agent.Tools, ", "))
 				out.WriteString("]")
-			}
-			out.WriteString(" {shell_policy=")
-			out.WriteString(agent.ShellExecutionPolicy())
-			out.WriteString("}")
-			out.WriteString(" {workspace_access=")
-			out.WriteString(agent.WorkspaceAccessPolicy())
-			out.WriteString("}")
-			if allowed, ok := swarm.AllowedToolsForRole(agent.Name); ok {
-				out.WriteString(" {allowed_tools=")
-				out.WriteString(formatAllowedTools(allowed))
-				out.WriteString("}")
 			}
 		}
 	}
@@ -603,13 +581,6 @@ func formatTaskList(sessionID string, tasks []baldastate.SwarmTaskRecord) string
 		out.WriteString(firstNonEmpty(task.Title, task.Objective))
 	}
 	return out.String()
-}
-
-func formatAllowedTools(tools []string) string {
-	if len(tools) == 0 {
-		return statusValueNone
-	}
-	return strings.Join(tools, ",")
 }
 
 func formatTaskDetail(task baldastate.SwarmTaskRecord, events []baldastate.SwarmTaskEventRecord, artifacts taskArtifactSnapshot) string {

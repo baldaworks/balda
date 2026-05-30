@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestJetStreamArchitectureContract_Static(t *testing.T) {
+func TestJetStreamArchitectureContractStatic(t *testing.T) {
 	root := baldaPackageRoot(t)
 	files := productionGoFiles(t, root)
 
@@ -19,7 +19,7 @@ func TestJetStreamArchitectureContract_Static(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\.Enqueue\s*\(`))
 		assertOnlyAllowedFiles(t, matches, []string{"handlers/swarm_session_actor.go"})
 		if len(matches) == 0 {
-			t.Fatal("no TurnDispatcher.Enqueue call found; expected SessionActor to remain the only adapter to TurnDispatcher")
+			t.Fatal("no TurnDispatcher.Enqueue call found; expected SessionActor to remain the only actor allowed to enqueue TurnDispatcher work")
 		}
 	})
 
@@ -41,7 +41,7 @@ func TestJetStreamArchitectureContract_Static(t *testing.T) {
 		})
 		runtimeSource := readSource(t, filepath.Join(root, "swarm/runtime.go"))
 		if !strings.Contains(runtimeSource, "runtimeSource{") || !strings.Contains(runtimeSource, "r.engine.Run(runCtx") {
-			t.Fatal("swarm runtime must dispatch actor commands through engine runtime over command source")
+			t.Fatal("swarm runtime must dispatch actor commands through actorlayer runtime over the JetStream command source")
 		}
 	})
 
@@ -123,7 +123,7 @@ func TestJetStreamArchitectureContract_Static(t *testing.T) {
 		}
 	})
 
-	t.Run("jetstream runtime is initialized before ingress starts accepting transport input", func(t *testing.T) {
+	t.Run("runtime is initialized before ingress starts accepting transport input", func(t *testing.T) {
 		appSource := readSource(t, filepath.Join(root, "app.go"))
 		const runtimeInit = "runtimeManager.EnsureRuntime(ctx)"
 		const botRun = "bot.Run(runCtx)"
@@ -134,7 +134,7 @@ func TestJetStreamArchitectureContract_Static(t *testing.T) {
 			t.Fatalf("app startup must run transport ingress via %q", botRun)
 		}
 		if strings.Index(appSource, runtimeInit) > strings.Index(appSource, botRun) {
-			t.Fatal("transport ingress runtime starts before runtime initialization; expected JetStream and runtime readiness first")
+			t.Fatal("transport ingress starts before runtime initialization")
 		}
 
 		busSource := readSource(t, filepath.Join(root, "eventbus/nats/connection.go"))
@@ -151,13 +151,46 @@ func TestJetStreamArchitectureContract_Static(t *testing.T) {
 		}
 	})
 
-	t.Run("swarm actor packages do not import ingress handlers", func(t *testing.T) {
+	t.Run("swarm runtime package does not import ingress handlers or ADK", func(t *testing.T) {
 		swarmDir := filepath.Join(root, "swarm")
 		swarmFiles := productionGoFiles(t, swarmDir)
-		handlerImportPattern := regexp.MustCompile(`github\.com/normahq/balda/internal/apps/balda/handlers`)
-		matches := findSourceMatches(t, swarmDir, swarmFiles, handlerImportPattern)
+		forbiddenImportPattern := regexp.MustCompile(`github\.com/normahq/balda/internal/apps/balda/handlers|google\.golang\.org/adk`)
+		matches := findSourceMatches(t, swarmDir, swarmFiles, forbiddenImportPattern)
 		if len(matches) > 0 {
-			t.Fatalf("swarm actor/runtime packages must not import ingress handlers:\n%s", formatSourceMatches(matches))
+			t.Fatalf("swarm runtime packages must not import ingress handlers or ADK:\n%s", formatSourceMatches(matches))
+		}
+	})
+
+	t.Run("balda does not define local actor adapter packages or runtime selectors", func(t *testing.T) {
+		forbiddenDirs := []string{
+			"adapters",
+			"norma",
+			"actoradapter",
+			"actoradapters",
+		}
+		for _, dir := range forbiddenDirs {
+			path := filepath.Join(root, dir)
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				t.Fatalf("Balda-local actor adapter package %q is forbidden; keep typed actor engine packages owned by Norma", filepath.ToSlash(path))
+			} else if err != nil && !os.IsNotExist(err) {
+				t.Fatalf("stat %s: %v", path, err)
+			}
+		}
+
+		forbiddenSelectorTerms := []string{
+			"execution_provider",
+			"delivery_provider",
+			"execution.provider",
+			"delivery.provider",
+			"RuntimeAdapterFingerprint",
+		}
+		for _, needle := range forbiddenSelectorTerms {
+			t.Run(needle, func(t *testing.T) {
+				matches := findSourceMatches(t, root, files, regexp.MustCompile(regexp.QuoteMeta(needle)))
+				if len(matches) > 0 {
+					t.Fatalf("Balda runtime selector term %q found in production Go files:\n%s", needle, formatSourceMatches(matches))
+				}
+			})
 		}
 	})
 }
@@ -185,12 +218,10 @@ func productionGoFiles(t *testing.T, root string) []string {
 			return err
 		}
 		if entry.IsDir() {
-			switch entry.Name() {
-			case "testdata":
+			if entry.Name() == "testdata" {
 				return filepath.SkipDir
-			default:
-				return nil
 			}
+			return nil
 		}
 		if strings.HasSuffix(entry.Name(), ".go") && !strings.HasSuffix(entry.Name(), "_test.go") {
 			rel, err := filepath.Rel(root, path)

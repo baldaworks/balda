@@ -699,10 +699,10 @@ func TestTaskActorPrepareAgentDispatchEnsuresSessionWhenWorkspaceMissing(t *test
 	}
 }
 
-func TestTaskActorPrepareAgentDispatchRejectsRoleToolPolicy(t *testing.T) {
+func TestTaskActorPrepareAgentDispatchAllowsRequestedToolsWithoutRolePolicy(t *testing.T) {
 	ctx := context.Background()
 	exec := &taskActorExecutor{}
-	_, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
+	dispatch, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
 		TaskID:          "goal-tg-9001-99",
 		Role:            taskAgentRolePlanner,
 		Iteration:       1,
@@ -712,14 +712,55 @@ func TestTaskActorPrepareAgentDispatchRejectsRoleToolPolicy(t *testing.T) {
 		TransportUserID: testTelegramUserID101,
 		MaxIterations:   3,
 	})
-	if err == nil {
-		t.Fatal("prepareAgentDispatch() error = nil, want policy rejection")
+	if err != nil {
+		t.Fatalf("prepareAgentDispatch() error = %v, want nil", err)
 	}
-	if swarm.ClassifyError(err) != swarm.ErrorKindPolicy {
-		t.Fatalf("ClassifyError(%v) = %s, want policy", err, swarm.ClassifyError(err))
+	if dispatch.Payload.Role != taskAgentRolePlanner {
+		t.Fatalf("dispatch payload role = %q, want %q", dispatch.Payload.Role, taskAgentRolePlanner)
 	}
-	if !strings.Contains(err.Error(), "not allowed") {
-		t.Fatalf("prepareAgentDispatch() error = %v, want role tool policy marker", err)
+	if got := dispatch.Payload.RequestedTools; len(got) != 1 || got[0] != swarm.AgentToolShell {
+		t.Fatalf("dispatch requested tools = %#v, want []string{%q}", got, swarm.AgentToolShell)
+	}
+}
+
+func TestTaskActorPrepareAgentDispatchDefaultsToWorkspaceShellMCPProjectTools(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		role      string
+		wantTools []string
+	}{
+		{name: "planner", role: taskAgentRolePlanner, wantTools: []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}},
+		{name: "executor", role: taskAgentRoleExecutor, wantTools: []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}},
+		{name: "reviewer", role: taskAgentRoleReviewer, wantTools: []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			exec := &taskActorExecutor{}
+			dispatch, err := exec.prepareAgentDispatch(ctx, taskAgentCommandPayload{
+				TaskID:          "goal-tg-9001-99",
+				Role:            tc.role,
+				Iteration:       1,
+				Locator:         taskActorTestLocator(),
+				Objective:       "project tooling",
+				TransportUserID: testTelegramUserID101,
+				MaxIterations:   3,
+			})
+			if err != nil {
+				t.Fatalf("prepareAgentDispatch() error = %v", err)
+			}
+			if got := dispatch.Payload.RequestedTools; len(got) != len(tc.wantTools) {
+				t.Fatalf("dispatch requested tools = %#v, want %v", got, tc.wantTools)
+			}
+			for i := range tc.wantTools {
+				if got := dispatch.Payload.RequestedTools[i]; got != tc.wantTools[i] {
+					t.Fatalf("dispatch requested tools[%d] = %q, want %q", i, got, tc.wantTools[i])
+				}
+			}
+		})
 	}
 }
 

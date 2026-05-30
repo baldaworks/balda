@@ -10,6 +10,7 @@ Use this map to find the authoritative runtime contracts.
 - [Runtime contract](runtime-contract.md)
 - [JetStream command bus](jetstream-command-bus.md)
 - [Actor runtime](actor-runtime.md)
+- [Norma actorlayer contract boundary](actor-runtime.md#norma-actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)
 - [Reliability](reliability.md)
 - [Testing and evals](testing-and-evals.md)
@@ -19,12 +20,13 @@ Use this map to find the authoritative runtime contracts.
 - JetStream is the only command/event transport.
 - SQLite is product/read-model state, not a command queue.
 - Ingress handlers publish commands; actors execute commands.
+- Actor execution contract is split: core actor mechanics in Norma; Balda owns the configured provider runtime, JetStream delivery, and all queue/retry/dead-letter policy.
 
 ## Related tests
 
-- `internal/apps/balda/architecture_contract_test.go`
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/swarm/runtime_test.go`
+- `internal/apps/balda/architecture_contract_test.go`
 
 ## Related packages
 

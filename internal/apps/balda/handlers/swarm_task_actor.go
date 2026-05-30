@@ -618,9 +618,6 @@ func (e *taskActorExecutor) prepareAgentDispatch(ctx context.Context, payload ta
 		return taskAgentDispatch{}, swarm.PolicyError(fmt.Errorf("requested tools: %w", err))
 	}
 	payload.RequestedTools = normalizedTools
-	if err := validateTaskAgentToolPolicy(payload); err != nil {
-		return taskAgentDispatch{}, swarm.PolicyError(err)
-	}
 	agentName := role
 	if e.agents != nil {
 		spec, err := e.agents.Allocate(ctx, swarm.AgentAllocationRequest{
@@ -1102,8 +1099,10 @@ func defaultTaskAgentTools(role string) []string {
 	switch normalizeTaskAgentRole(role) {
 	case taskAgentRoleExecutor:
 		return []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}
+	case taskAgentRolePlanner:
+		return []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}
 	case taskAgentRoleReviewer:
-		return []string{swarm.AgentToolWorkspace, swarm.AgentToolShell}
+		return []string{swarm.AgentToolWorkspace, swarm.AgentToolShell, swarm.AgentToolMCP}
 	case taskAgentRoleMemory:
 		return []string{swarm.AgentToolMemory}
 	default:

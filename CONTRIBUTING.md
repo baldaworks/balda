@@ -32,6 +32,8 @@ go tool golangci-lint run
 - Prefer project-local tooling via `go tool ...` when available.
 - Use Conventional Commits for commit messages.
 - Sync shared branches with merge (`git pull --no-rebase`), not rebase.
+- Keep Balda actor execution on Norma actorlayer. Do not add Balda-local `norma`, `adapters`, `actoradapter`, or runtime-provider selector packages.
+- `balda.provider` is the single app-scoped provider runtime for Balda sessions; actor code must not choose providers.
 
 ## Logging Policy
 

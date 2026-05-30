@@ -267,7 +267,7 @@ balda:
         tools: ["workspace", "shell", "mcp"]
       reviewer:
         role: "Validate result and inspect risks"
-        tools: ["workspace", "shell"]
+        tools: ["workspace", "shell", "mcp"]
       memory:
         role: "Extract durable facts and summaries"
         tools: ["memory"]

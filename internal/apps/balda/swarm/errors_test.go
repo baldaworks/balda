@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	actorlayer "github.com/normahq/norma/actorlayer"
+	actorengine "github.com/normahq/norma/actorlayer/engine"
 )
 
 func TestClassifyErrorKinds(t *testing.T) {
@@ -40,7 +40,7 @@ func TestIsRetryableError(t *testing.T) {
 
 	t.Run("resolve error is non-retryable", func(t *testing.T) {
 		t.Parallel()
-		err := &ResolveError{Address: "session:missing"}
+		err := &actorengine.ResolveError{Address: "session:missing"}
 		if got := IsRetryableError(err); got {
 			t.Fatalf("IsRetryableError() = true, want false")
 		}
@@ -48,7 +48,7 @@ func TestIsRetryableError(t *testing.T) {
 
 	t.Run("wrapped resolve error is non-retryable", func(t *testing.T) {
 		t.Parallel()
-		err := fmt.Errorf("dispatch failed: %w", &ResolveError{Address: "session:wrapped"})
+		err := fmt.Errorf("dispatch failed: %w", &actorengine.ResolveError{Address: "session:wrapped"})
 		if got := IsRetryableError(err); got {
 			t.Fatalf("IsRetryableError() = true, want false")
 		}
@@ -56,7 +56,7 @@ func TestIsRetryableError(t *testing.T) {
 
 	t.Run("wrapped canonical actor not found is non-retryable", func(t *testing.T) {
 		t.Parallel()
-		err := fmt.Errorf("lookup failed: %w", actorlayer.ErrActorNotFound)
+		err := fmt.Errorf("lookup failed: %w", actorengine.ErrActorNotFound)
 		if got := IsRetryableError(err); got {
 			t.Fatalf("IsRetryableError() = true, want false")
 		}
