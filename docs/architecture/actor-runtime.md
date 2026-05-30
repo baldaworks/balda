@@ -73,4 +73,4 @@ Status: active
 - ADK session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats` and the `swarm.CommandMessage` contract.
 - Task projection, retry classification, DLQ reporting, and user-visible status live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.
-- Balda must not grow `internal/apps/balda/norma`, `internal/apps/balda/adapters`, or actor-runtime selector packages. Future generic actor adapters belong to Norma-owned public packages, with package-layout cleanup tracked separately by `balda-e10r`.
+- Balda must not grow `internal/apps/balda/norma`, `internal/apps/balda/adapters`, or actor-runtime selector packages. Future generic actor adapters belong to Norma-owned public packages such as `github.com/normahq/norma/pkg/actoradapter/...`.
