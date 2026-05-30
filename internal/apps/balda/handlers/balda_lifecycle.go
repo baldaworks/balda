@@ -10,6 +10,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog/log"
 )
 
@@ -25,19 +26,6 @@ func (h *BaldaHandler) SetOwner(ownerID, chatID int64) {
 	if chatID != 0 {
 		h.chatID = chatID
 	}
-}
-
-// SendToOwner sends a message from the agent to the owner.
-func (h *BaldaHandler) SendToOwner(ctx context.Context, msg string) error {
-	chatID := h.getChatID()
-	if chatID == 0 {
-		return fmt.Errorf("owner not set")
-	}
-
-	if err := h.messenger.SendPlain(ctx, chatID, msg, 0); err != nil {
-		return fmt.Errorf("sending message: %w", err)
-	}
-	return nil
 }
 
 // ActivateOwner binds owner/chat for balda traffic and bootstraps the owner session.
@@ -76,7 +64,7 @@ func (h *BaldaHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatI
 	}
 
 	metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
-	welcomeMsg := BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+	welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
 	_ = h.channel.SendMarkdown(ctx, locator, welcomeMsg)
 	h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
 

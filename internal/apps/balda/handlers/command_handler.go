@@ -12,7 +12,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
-	baldawelcome "github.com/normahq/balda/internal/apps/balda/welcome"
+	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
 	"go.uber.org/fx"
@@ -35,10 +35,6 @@ type CommandHandler struct {
 	goalMaxIterations int
 	messenger         *messenger.Messenger
 	userHandler       *userHandler
-}
-
-func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServers []string) string {
-	return baldawelcome.BuildAgentWelcomeMessage(name, sessionID, agentType, model, mcpServers)
 }
 
 type commandHandlerParams struct {
@@ -188,7 +184,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatel
 
 	metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
 
-	welcomeMsg := BuildAgentWelcomeMessage(topicName, topicLocator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	welcomeMsg := welcome.BuildAgentWelcomeMessage(topicName, topicLocator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
 	if err := h.channel.SendMarkdown(ctx, topicLocator, welcomeMsg); err != nil {
 		log.Error().Err(err).Msg("failed to send welcome message")
 		return err

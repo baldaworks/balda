@@ -16,6 +16,7 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
+	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/normahq/balda/internal/throttle"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -204,7 +205,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		}
 		if sendOwnerWelcome {
 			metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
-			welcomeMsg := BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+			welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
 			_ = h.channel.SendMarkdown(ctx, locator, welcomeMsg)
 			h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
 		}
@@ -243,7 +244,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 				baldaProviderID := h.getProviderName()
 				metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
 				welcomeName := h.welcomeDisplayName(messageCtx, ts)
-				welcomeMsg := BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+				welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
 				_ = h.channel.SendMarkdown(ctx, locator, welcomeMsg)
 				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
 			}

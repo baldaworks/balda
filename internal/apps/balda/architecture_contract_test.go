@@ -217,9 +217,16 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 	})
 
 	t.Run("test-only helper surfaces stay out of production code", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bPublishDLQ\s*\(|\bStarted\s*\(\)\s+bool|func\s+\(h\s+\*BaldaHandler\)\s+RunSessionTurnPayload\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+MarkSuccess\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+RecordExecutionFailure\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+executeTaskTurn\s*\(`))
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bPublishDLQ\s*\(|\bStarted\s*\(\)\s+bool|func\s+\(h\s+\*BaldaHandler\)\s+RunSessionTurnPayload\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SendToOwner\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+MarkSuccess\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+RecordExecutionFailure\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+executeTaskTurn\s*\(`))
 		if len(matches) > 0 {
 			t.Fatalf("test-only helper surface found in production Go files:\n%s", formatSourceMatches(matches))
+		}
+	})
+
+	t.Run("handler package does not wrap the welcome formatter", func(t *testing.T) {
+		source := readSource(t, filepath.Join(root, "handlers/command_handler.go"))
+		if regexp.MustCompile(`func\s+BuildAgentWelcomeMessage\s*\(`).FindStringIndex(source) != nil {
+			t.Fatal("handlers/command_handler.go must not define a BuildAgentWelcomeMessage wrapper")
 		}
 	})
 
