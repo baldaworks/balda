@@ -252,19 +252,3 @@ func telegramSendContext(ctx context.Context) (context.Context, context.CancelFu
 	}
 	return context.WithTimeout(ctx, telegramSendTimeout)
 }
-
-// KeepTyping sends typing action every 4 seconds until context is canceled.
-func (m *Messenger) KeepTyping(ctx context.Context, chatID int64, topicID int) {
-	ticker := time.NewTicker(4 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := m.SendChatAction(ctx, chatID, topicID, "typing"); err != nil {
-				m.logger.Warn().Err(err).Int64("chat_id", chatID).Int("topic_id", topicID).Msg("failed to send typing chat action")
-			}
-		}
-	}
-}

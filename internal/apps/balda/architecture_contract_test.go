@@ -217,7 +217,7 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 	})
 
 	t.Run("test-only and package-local helper surfaces stay out of production api", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bPublishDLQ\s*\(|\bStarted\s*\(\)\s+bool|func\s+\(h\s+\*BaldaHandler\)\s+RunSessionTurnPayload\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SendToOwner\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+MarkSuccess\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+RecordExecutionFailure\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+executeTaskTurn\s*\(|func\s+NewMemoryActor\s*\(|func\s+NewMemoryActorWithStore\s*\(|func\s+NewDeliveryActor\s*\(|func\s+NewActorDispatcher\s*\(|func\s+NewEventPublisher\s*\(|func\s+NewBusDrainer\s*\(|func\s+NewActorDeliverySource\s*\(|func\s+NewEventConsumer\s*\(`))
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bPublishDLQ\s*\(|\bStarted\s*\(\)\s+bool|func\s+\(h\s+\*BaldaHandler\)\s+RunSessionTurnPayload\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SendToOwner\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+MarkSuccess\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+RecordExecutionFailure\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+executeTaskTurn\s*\(|func\s+NewMemoryActor\s*\(|func\s+NewMemoryActorWithStore\s*\(|func\s+NewDeliveryActor\s*\(|func\s+NewActorDispatcher\s*\(|func\s+NewEventPublisher\s*\(|func\s+NewBusDrainer\s*\(|func\s+NewActorDeliverySource\s*\(|func\s+NewEventConsumer\s*\(|func\s+\(m\s+\*Messenger\)\s+KeepTyping\s*\(`))
 		if len(matches) > 0 {
 			t.Fatalf("stale helper surface found in production Go files:\n%s", formatSourceMatches(matches))
 		}
