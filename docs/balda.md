@@ -175,6 +175,21 @@ The boundary is intentionally explicit:
 - Preserve command envelope metadata (`chat_id`, `topic_id`, `goal_id`) at the actorlayer boundary.
 - Verify task/actor scenarios through the configured `balda.provider` runtime and JetStream command path.
 
+### Implementation Map
+
+Balda's actorlayer integration is intentionally direct:
+
+- `internal/apps/balda/swarm/runtime.go`: adapts JetStream `CommandMessage` values into `actorlayer/engine` deliveries and owns actor lane execution.
+- `internal/apps/balda/handlers/swarm_*.go`: defines the Balda actors for sessions, tasks, task agents, delivery, control, and memory.
+- `internal/apps/balda/eventbus/nats`: owns JetStream publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing.
+- `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped ADK provider runtime selected by `balda.provider` and the per-session ADK state.
+- `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, tasks, projections, memory, and delivery outbox rows.
+
+Do not add Balda-local actor adapter packages such as `internal/apps/balda/norma`,
+`internal/apps/balda/adapters`, or config selectors for execution/delivery
+providers. Generic actor adapter packages are Norma-owned. Balda consumes
+Norma actorlayer and keeps product policy in Balda.
+
 ## Startup Order (Required)
 
 Balda startup order is strict:

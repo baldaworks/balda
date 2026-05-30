@@ -65,3 +65,12 @@ Status: active
 - All actor sessions in one Balda process use the configured `balda.provider`; actor contracts do not choose providers.
 - Balda can own product semantics (queue policy, telemetry, task projection, and workspace/task metadata) while still reusing the same execution kernel.
 - Future transport/provider integration code must preserve the actorlayer engine contract and keep product policy in Balda.
+
+### Balda implementation map
+
+- Actor dispatch and lane execution live in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/norma/actorlayer/engine`.
+- Actor definitions live in `internal/apps/balda/handlers/swarm_*.go` and are registered as actorlayer dispatch actors.
+- ADK session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
+- JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats` and the `swarm.CommandMessage` contract.
+- Task projection, retry classification, DLQ reporting, and user-visible status live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.
+- Balda must not grow `internal/apps/balda/norma`, `internal/apps/balda/adapters`, or actor-runtime selector packages. Future generic actor adapters belong to Norma-owned public packages, with package-layout cleanup tracked separately by `balda-e10r`.

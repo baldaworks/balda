@@ -33,6 +33,8 @@ Use this map to find the authoritative runtime contracts.
 - `internal/apps/balda/eventbus/nats`
 - `internal/apps/balda/swarm`
 - `internal/apps/balda/handlers`
+- `internal/apps/balda/agent`
+- `internal/apps/balda/session`
 - `internal/apps/balda/state`
 
 ## Update triggers
