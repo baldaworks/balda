@@ -212,7 +212,7 @@ func TestBaldaHandlerOnForumTopicLifecycle_IgnoresEventWithoutTopicID(t *testing
 
 func TestBaldaHandlerOnMessage_IgnoresNilFrom(t *testing.T) {
 	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
-	handler.SetOwner(101, 9001)
+	handler.setOwner(101, 9001)
 
 	text := "hello"
 	event := &events.MessageEvent{
@@ -562,7 +562,7 @@ func newBaldaMessageHandlerHarness(t *testing.T, topicID int) (*BaldaHandler, *f
 		logger:          zerolog.Nop(),
 		authorizer:      &fakeBaldaAuthorizer{ownerID: 101},
 	}
-	handler.SetOwner(101, 9001)
+	handler.setOwner(101, 9001)
 	setUnexportedField(t, handler, "baldaProviderName", "alpha")
 	handler.botUsername = testBaldaBotUsername
 	handler.botUserID = 4242

@@ -33,14 +33,14 @@ var Module = fx.Module("balda_handlers",
 			fx.ParamTags(``, ``, `name:"balda_telegram_formatting_mode"`),
 		),
 		baldatelegram.NewAdapter,
-		NewScheduledTaskScheduler,
-		NewInboundWebhookReceiver,
-		NewStartHandler,
-		NewBaldaHandler,
+		newScheduledTaskScheduler,
+		newInboundWebhookReceiver,
+		newStartHandler,
+		newBaldaHandler,
 		provideSessionTurnRunner,
 		provideScheduledTaskRecorder,
-		NewCommandHandler,
-		NewUserHandler,
+		newCommandHandler,
+		newUserHandler,
 		fx.Annotate(
 			registerStartHandler,
 			fx.As(new(tgbotkit.Handler)),
@@ -63,15 +63,14 @@ var Module = fx.Module("balda_handlers",
 		),
 	),
 	fx.Invoke(
-		WireHandlers,
+		wireHandlers,
 		func(*ScheduledTaskScheduler) {},
 		func(*InboundWebhookReceiver) {},
 	),
 )
 
-// WireHandlers connects the start handler to the balda handler.
-func WireHandlers(start *StartHandler, balda *BaldaHandler) {
-	start.SetBaldaHandler(balda)
+func wireHandlers(start *StartHandler, balda *BaldaHandler) {
+	start.setBaldaHandler(balda)
 }
 
 func registerStartHandler(h *StartHandler) tgbotkit.Handler {

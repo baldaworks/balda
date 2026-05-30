@@ -223,6 +223,13 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
+	t.Run("handler wiring stays package-local", func(t *testing.T) {
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`type\s+StartHandlerParams\s+struct|func\s+NewStartHandler\s*\(|func\s+\(h\s+\*StartHandler\)\s+SetBaldaHandler\s*\(|func\s+NewBaldaHandler\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SetOwner\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+ActivateOwner\s*\(|func\s+NewCommandHandler\s*\(|func\s+NewUserHandler\s*\(|func\s+NewScheduledTaskScheduler\s*\(|func\s+NewInboundWebhookReceiver\s*\(|func\s+WireHandlers\s*\(`))
+		if len(matches) > 0 {
+			t.Fatalf("handler-local wiring surface must not be exported:\n%s", formatSourceMatches(matches))
+		}
+	})
+
 	t.Run("handler package does not wrap the welcome formatter", func(t *testing.T) {
 		source := readSource(t, filepath.Join(root, "handlers/command_handler.go"))
 		if regexp.MustCompile(`func\s+BuildAgentWelcomeMessage\s*\(`).FindStringIndex(source) != nil {

@@ -35,7 +35,7 @@ type userHandlerParams struct {
 	TGClient          client.ClientWithResponsesInterface `optional:"true"`
 }
 
-func NewUserHandler(params userHandlerParams) *userHandler {
+func newUserHandler(params userHandlerParams) *userHandler {
 	return &userHandler{
 		ownerStore:        params.OwnerStore,
 		inviteStore:       params.InviteStore,

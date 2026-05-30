@@ -26,11 +26,10 @@ type StartHandler struct {
 }
 
 type baldaOwnerActivator interface {
-	ActivateOwner(ctx context.Context, ownerID, chatID int64) error
+	activateOwner(ctx context.Context, ownerID, chatID int64) error
 }
 
-// StartHandlerParams provides dependencies for StartHandler.
-type StartHandlerParams struct {
+type startHandlerParams struct {
 	fx.In
 
 	OwnerStore        *auth.OwnerStore
@@ -50,8 +49,7 @@ type startCommandArgs struct {
 	token string
 }
 
-// NewStartHandler creates a new start handler.
-func NewStartHandler(params StartHandlerParams) *StartHandler {
+func newStartHandler(params startHandlerParams) *StartHandler {
 	return &StartHandler{
 		ownerStore:        params.OwnerStore,
 		inviteStore:       params.InviteStore,
@@ -61,8 +59,7 @@ func NewStartHandler(params StartHandlerParams) *StartHandler {
 	}
 }
 
-// SetBaldaHandler sets the balda handler (needed for circular dependency).
-func (h *StartHandler) SetBaldaHandler(rh baldaOwnerActivator) {
+func (h *StartHandler) setBaldaHandler(rh baldaOwnerActivator) {
 	h.baldaHandler = rh
 }
 
@@ -288,7 +285,7 @@ func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64)
 		log.Warn().Msg("balda handler is nil; skipping owner session activation")
 		return nil
 	}
-	if err := h.baldaHandler.ActivateOwner(ctx, ownerID, chatID); err != nil {
+	if err := h.baldaHandler.activateOwner(ctx, ownerID, chatID); err != nil {
 		log.Warn().
 			Err(err).
 			Int64("owner_id", ownerID).

@@ -221,7 +221,7 @@ func newInboundWebhookHTTPError(status int, code, message string, cause error) *
 	}
 }
 
-func NewInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
+func newInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
 	normalized, err := normalizeInboundWebhookConfig(params.Config)
 	if err != nil {
 		return nil, err

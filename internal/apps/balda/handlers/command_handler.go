@@ -50,8 +50,7 @@ type commandHandlerParams struct {
 	UserHandler       *userHandler
 }
 
-// NewCommandHandler creates a new balda command handler.
-func NewCommandHandler(params commandHandlerParams) *CommandHandler {
+func newCommandHandler(params commandHandlerParams) *CommandHandler {
 	return &CommandHandler{
 		ownerStore:        params.OwnerStore,
 		collaboratorStore: params.CollaboratorStore,

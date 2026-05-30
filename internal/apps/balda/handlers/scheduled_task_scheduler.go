@@ -73,7 +73,7 @@ type ScheduledTaskScheduler struct {
 	wg     sync.WaitGroup
 }
 
-func NewScheduledTaskScheduler(params scheduledTaskSchedulerParams) (*ScheduledTaskScheduler, error) {
+func newScheduledTaskScheduler(params scheduledTaskSchedulerParams) (*ScheduledTaskScheduler, error) {
 	if params.StateProvider == nil {
 		return nil, fmt.Errorf("balda state provider is required")
 	}

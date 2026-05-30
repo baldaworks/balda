@@ -14,9 +14,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// SetOwner binds the handler to the owner. Pass chatID=0 when the chat
+// setOwner binds the handler to the owner. Pass chatID=0 when the chat
 // is not yet known (it will be set from the first incoming message).
-func (h *BaldaHandler) SetOwner(ownerID, chatID int64) {
+func (h *BaldaHandler) setOwner(ownerID, chatID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -28,9 +28,8 @@ func (h *BaldaHandler) SetOwner(ownerID, chatID int64) {
 	}
 }
 
-// ActivateOwner binds owner/chat for balda traffic and bootstraps the owner session.
-func (h *BaldaHandler) ActivateOwner(ctx context.Context, ownerID, chatID int64) error {
-	h.SetOwner(ownerID, chatID)
+func (h *BaldaHandler) activateOwner(ctx context.Context, ownerID, chatID int64) error {
+	h.setOwner(ownerID, chatID)
 	return h.bootstrapOwnerSession(ctx, ownerID, chatID)
 }
 
@@ -126,7 +125,7 @@ func (h *BaldaHandler) onStart(ctx context.Context) error {
 		return fmt.Errorf("owner.chat_id is required for balda startup; run /start to bind owner chat")
 	}
 
-	h.SetOwner(owner.UserID, owner.ChatID)
+	h.setOwner(owner.UserID, owner.ChatID)
 
 	if err := h.bootstrapOwnerSession(ctx, owner.UserID, owner.ChatID); err != nil {
 		h.logger.Error().Err(err).Int64("owner_id", owner.UserID).Msg("failed to bootstrap owner session during startup")

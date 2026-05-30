@@ -96,7 +96,7 @@ type baldaHandlerDeps struct {
 	InternalMCPManager *InternalMCPManager `optional:"true"`
 }
 
-func NewBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
+func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
 	h := &BaldaHandler{
 		ownerStore:         deps.OwnerStore,
 		collaboratorStore:  deps.CollaboratorStore,
