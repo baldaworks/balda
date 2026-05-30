@@ -2,30 +2,10 @@ package workspacemcp
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-const (
-	serverName     = "norma-workspace"
-	serverVersion  = "1.0.0"
-	defaultAddress = "127.0.0.1:9091"
-
-	httpReadHeaderTimeout = 5 * time.Second
-	httpIdleTimeout       = 60 * time.Second
-)
-
-const serverInstructions = `Use this server to sync and land balda workspaces when balda workspace mode is enabled.
-
-- balda.workspace.import rebases the session workspace branch onto the configured base branch.
-- balda.workspace.import discards uncommitted workspace changes before rebasing.
-- balda.workspace.export squash-merges the session workspace branch into the configured base branch.
-- balda.workspace.export requires a Conventional Commit message.`
 
 type ToolError struct {
 	Operation string `json:"operation" jsonschema:"tool name that produced the error"`
@@ -68,79 +48,6 @@ func failure(operation string, code string, message string) (*mcp.CallToolResult
 type WorkspaceService interface {
 	Import(ctx context.Context, sessionID string) error
 	Export(ctx context.Context, sessionID string, commitMessage string) error
-}
-
-type HTTPServerResult struct {
-	Addr  string
-	Close func() error
-
-	server *http.Server
-}
-
-func StartHTTPServer(ctx context.Context, svc WorkspaceService, addr string) (*HTTPServerResult, error) {
-	if svc == nil {
-		return nil, fmt.Errorf("service is required")
-	}
-	address := strings.TrimSpace(addr)
-	if address == "" {
-		address = defaultAddress
-	}
-
-	getServer := func(_ *http.Request) *mcp.Server {
-		server, err := NewServer(svc)
-		if err != nil {
-			return nil
-		}
-		return server
-	}
-
-	handler := mcp.NewStreamableHTTPHandler(getServer, &mcp.StreamableHTTPOptions{})
-
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		return nil, fmt.Errorf("listen on %q: %w", address, err)
-	}
-
-	actualAddr := listener.Addr().String()
-	httpServer := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: httpReadHeaderTimeout,
-		IdleTimeout:       httpIdleTimeout,
-	}
-
-	go func() {
-		<-ctx.Done()
-		_ = httpServer.Close()
-	}()
-
-	go func() {
-		_ = httpServer.Serve(listener)
-	}()
-
-	return &HTTPServerResult{
-		Addr:   actualAddr,
-		server: httpServer,
-		Close: func() error {
-			return httpServer.Close()
-		},
-	}, nil
-}
-
-func NewServer(svc WorkspaceService) (*mcp.Server, error) {
-	if svc == nil {
-		return nil, fmt.Errorf("service is required")
-	}
-
-	server := mcp.NewServer(
-		&mcp.Implementation{
-			Name:    serverName,
-			Version: serverVersion,
-		},
-		&mcp.ServerOptions{Instructions: serverInstructions},
-	)
-
-	RegisterTools(server, svc)
-	return server, nil
 }
 
 // RegisterTools adds workspace MCP tools to an existing server.

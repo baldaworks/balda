@@ -3,109 +3,15 @@ package sessionmcp
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
-	serverName    = "norma-session-state"
-	serverVersion = "1.0.0"
-
 	codeValidationError = "validation_error"
 	codeBackendError    = "backend_error"
-
-	httpReadHeaderTimeout = 5 * time.Second
-	httpIdleTimeout       = 60 * time.Second
 )
-
-const serverInstructions = `Use this server to persist balda state in state.db.
-
-- balda.state.* reads and writes session or app key-value data.
-- balda.state.ns_* scopes keys under an explicit namespace such as a session ID or agent name.
-- balda.state.clear deletes all data owned by this server and is destructive.
-- balda.state.get_json, set_json, and merge_json are for JSON values rather than raw strings.`
-
-// HTTPServerResult contains the address and cleanup function for an embedded HTTP server.
-type HTTPServerResult struct {
-	// Addr is the actual listen address (e.g., "127.0.0.1:54321").
-	Addr string
-	// Close shuts down the server.
-	Close func() error
-
-	server *http.Server
-}
-
-// StartHTTPServer starts an HTTP server on the given address and returns immediately.
-// Use ":0" to let the OS assign a random port.
-func StartHTTPServer(ctx context.Context, store Store, addr string) (*HTTPServerResult, error) {
-	if store == nil {
-		return nil, fmt.Errorf("store is required")
-	}
-	if strings.TrimSpace(addr) == "" {
-		return nil, fmt.Errorf("address is required")
-	}
-
-	getServer := func(_ *http.Request) *mcp.Server {
-		server, err := NewServer(store)
-		if err != nil {
-			return nil
-		}
-		return server
-	}
-
-	handler := mcp.NewStreamableHTTPHandler(getServer, &mcp.StreamableHTTPOptions{})
-
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("listen on %q: %w", addr, err)
-	}
-
-	actualAddr := listener.Addr().String()
-	httpServer := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: httpReadHeaderTimeout,
-		IdleTimeout:       httpIdleTimeout,
-	}
-
-	go func() {
-		<-ctx.Done()
-		_ = httpServer.Close()
-	}()
-
-	go func() {
-		_ = httpServer.Serve(listener)
-	}()
-
-	return &HTTPServerResult{
-		Addr:   actualAddr,
-		server: httpServer,
-		Close: func() error {
-			return httpServer.Close()
-		},
-	}, nil
-}
-
-// NewServer builds the session state MCP server.
-func NewServer(store Store) (*mcp.Server, error) {
-	if store == nil {
-		return nil, fmt.Errorf("store is required")
-	}
-
-	server := mcp.NewServer(
-		&mcp.Implementation{
-			Name:    serverName,
-			Version: serverVersion,
-		},
-		&mcp.ServerOptions{Instructions: serverInstructions},
-	)
-
-	RegisterTools(server, store)
-	return server, nil
-}
 
 // RegisterTools adds session-state MCP tools to an existing server.
 func RegisterTools(server *mcp.Server, store Store) {

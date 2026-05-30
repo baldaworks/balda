@@ -8,14 +8,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestWorkspaceServerPublishesInstructionsAndToolDescriptions(t *testing.T) {
+func TestWorkspaceServerPublishesToolDescriptions(t *testing.T) {
 	ctx, cleanup, session := newTestSession(t, fakeWorkspaceService{})
 	defer cleanup()
-
-	initResult := session.InitializeResult()
-	if !strings.Contains(initResult.Instructions, "workspace mode is enabled") {
-		t.Fatalf("InitializeResult().Instructions = %q, want workspace guidance", initResult.Instructions)
-	}
 
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
@@ -47,11 +42,14 @@ func (fakeWorkspaceService) Export(_ context.Context, _ string, _ string) error 
 
 func newTestSession(t *testing.T, svc WorkspaceService) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
-
-	server, err := NewServer(svc)
-	if err != nil {
-		t.Fatalf("NewServer() error = %v", err)
+	if svc == nil {
+		t.Fatal("service is required")
 	}
+	server := mcp.NewServer(
+		&mcp.Implementation{Name: "test-workspace", Version: "1.0.0"},
+		nil,
+	)
+	RegisterTools(server, svc)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -72,32 +70,4 @@ func newTestSession(t *testing.T, svc WorkspaceService) (context.Context, func()
 		_ = session.Close()
 	}
 	return ctx, cleanup, session
-}
-
-func TestStartHTTPServerUsesStreamingSafeTimeouts(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	result, err := StartHTTPServer(ctx, &fakeWorkspaceService{}, "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("StartHTTPServer() error = %v", err)
-	}
-	t.Cleanup(func() {
-		_ = result.Close()
-	})
-
-	if result.server == nil {
-		t.Fatal("StartHTTPServer() server is nil")
-	}
-	if result.server.ReadHeaderTimeout != httpReadHeaderTimeout {
-		t.Fatalf("ReadHeaderTimeout = %s, want %s", result.server.ReadHeaderTimeout, httpReadHeaderTimeout)
-	}
-	if result.server.IdleTimeout != httpIdleTimeout {
-		t.Fatalf("IdleTimeout = %s, want %s", result.server.IdleTimeout, httpIdleTimeout)
-	}
-	if result.server.ReadTimeout != 0 || result.server.WriteTimeout != 0 {
-		t.Fatalf("streaming MCP server read/write timeouts = %s/%s, want unset", result.server.ReadTimeout, result.server.WriteTimeout)
-	}
 }

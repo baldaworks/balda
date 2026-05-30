@@ -235,7 +235,7 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 			filepath.Clean(filepath.Join(root, "../sessionmcp/server.go")),
 			filepath.Clean(filepath.Join(root, "../workspacemcp/server.go")),
 		}
-		pattern := regexp.MustCompile(`func\s+RunHTTP?\s*\(`)
+		pattern := regexp.MustCompile(`type\s+HTTPServerResult\s+struct|func\s+RunHTTP?\s*\(|func\s+StartHTTPServer\s*\(|func\s+NewServer\s*\(`)
 		for _, path := range paths {
 			source := readSource(t, path)
 			if pattern.FindStringIndex(source) != nil {

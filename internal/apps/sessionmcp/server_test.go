@@ -9,20 +9,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestNewServerRequiresStore(t *testing.T) {
-	_, err := NewServer(nil)
-	if err == nil {
-		t.Fatal("NewServer(nil) error = nil, want non-nil")
-	}
-}
-
 func TestSessionStateServerListsTools(t *testing.T) {
 	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
 	defer cleanup()
-	initResult := session.InitializeResult()
-	if !strings.Contains(initResult.Instructions, "persist balda state") {
-		t.Fatalf("InitializeResult().Instructions = %q, want session-state guidance", initResult.Instructions)
-	}
 
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
@@ -359,46 +348,18 @@ func TestSharedStateAcrossStores(t *testing.T) {
 	}
 }
 
-func TestStartHTTPServerStartsAndReturnsAddr(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	result, err := StartHTTPServer(ctx, NewMemoryStore(), "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("StartHTTPServer() error = %v", err)
-	}
-	defer func() {
-		if err := result.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-	}()
-
-	if result.Addr == "" {
-		t.Fatal("StartHTTPServer() Addr is empty")
-	}
-	if result.server == nil {
-		t.Fatal("StartHTTPServer() server is nil")
-	}
-	if result.server.ReadHeaderTimeout != httpReadHeaderTimeout {
-		t.Fatalf("ReadHeaderTimeout = %s, want %s", result.server.ReadHeaderTimeout, httpReadHeaderTimeout)
-	}
-	if result.server.IdleTimeout != httpIdleTimeout {
-		t.Fatalf("IdleTimeout = %s, want %s", result.server.IdleTimeout, httpIdleTimeout)
-	}
-	if result.server.ReadTimeout != 0 || result.server.WriteTimeout != 0 {
-		t.Fatalf("streaming MCP server read/write timeouts = %s/%s, want unset", result.server.ReadTimeout, result.server.WriteTimeout)
-	}
-}
-
 // Test helpers
 
 func newTestSession(t *testing.T, store Store) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
-
-	server, err := NewServer(store)
-	if err != nil {
-		t.Fatalf("NewServer() error = %v", err)
+	if store == nil {
+		t.Fatal("store is required")
 	}
+	server := mcp.NewServer(
+		&mcp.Implementation{Name: "test-session-state", Version: "1.0.0"},
+		nil,
+	)
+	RegisterTools(server, store)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx, cancel := context.WithCancel(context.Background())
