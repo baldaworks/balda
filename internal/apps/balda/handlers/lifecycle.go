@@ -272,10 +272,3 @@ func isBundled(id string) bool {
 		return false
 	}
 }
-
-// Started reports whether internal MCP startup hook has completed.
-func (m *InternalMCPManager) Started() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.started
-}

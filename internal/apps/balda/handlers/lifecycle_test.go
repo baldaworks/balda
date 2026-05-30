@@ -14,6 +14,12 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func internalMCPStarted(m *InternalMCPManager) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.started
+}
+
 func TestIsBundled(t *testing.T) {
 	tests := []struct {
 		id   string
@@ -185,8 +191,8 @@ func TestInternalMCPManagerEnsureStarted_IsIdempotent(t *testing.T) {
 	if got := len(manager.cleanups); got != firstCleanupCount {
 		t.Fatalf("EnsureStarted() cleanup count = %d, want %d", got, firstCleanupCount)
 	}
-	if !manager.Started() {
-		t.Fatal("Started() = false, want true")
+	if !internalMCPStarted(manager) {
+		t.Fatal("started = false, want true")
 	}
 
 	t.Cleanup(func() {

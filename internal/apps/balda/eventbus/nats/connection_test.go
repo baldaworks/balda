@@ -917,8 +917,8 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 
 	env := commandTestEnvelope("dlq-shape")
 	reason := "permanent failure: policy denied"
-	if err := bus.PublishDLQ(context.Background(), env, reason); err != nil {
-		t.Fatalf("PublishDLQ() error = %v", err)
+	if err := bus.publishDLQ(context.Background(), env, reason, true); err != nil {
+		t.Fatalf("publishDLQ() error = %v", err)
 	}
 
 	dlqConsumer, err := bus.js.CreateOrUpdateConsumer(context.Background(), swarm.DefaultDLQStream, jetstream.ConsumerConfig{

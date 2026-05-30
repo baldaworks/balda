@@ -216,6 +216,13 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
+	t.Run("test-only helper surfaces stay out of production code", func(t *testing.T) {
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bPublishDLQ\s*\(|\bStarted\s*\(\)\s+bool`))
+		if len(matches) > 0 {
+			t.Fatalf("test-only helper surface found in production Go files:\n%s", formatSourceMatches(matches))
+		}
+	})
+
 	t.Run("swarm runtime stays always on", func(t *testing.T) {
 		swarmConfigSource := readSource(t, filepath.Join(root, "swarm/config.go"))
 		if regexp.MustCompile(`(?m)^\s*Enabled\b`).FindStringIndex(swarmConfigSource) != nil {

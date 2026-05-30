@@ -189,10 +189,6 @@ func (b *Bus) PublishEvent(ctx context.Context, subject string, env swarm.Envelo
 	return nil
 }
 
-func (b *Bus) PublishDLQ(ctx context.Context, env swarm.Envelope, reason string) error {
-	return b.publishDLQ(ctx, env, reason, true)
-}
-
 func (b *Bus) publishDLQ(ctx context.Context, env swarm.Envelope, reason string, emitEvent bool) error {
 	msg, err := newDLQMessage(env, reason)
 	if err != nil {
