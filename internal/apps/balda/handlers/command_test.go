@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -382,7 +383,11 @@ func TestCommandHandlerSubmitGoalTask_PublishesJetStreamCommandOnly(t *testing.T
 	if len(bus.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(bus.commands))
 	}
-	var payload taskEnvelopePayload
+	var payload struct {
+		Goal *struct {
+			MaxIterations int `json:"max_iterations"`
+		} `json:"goal"`
+	}
 	if err := json.Unmarshal([]byte(bus.commands[0].PayloadJSON), &payload); err != nil {
 		t.Fatalf("decode goal command payload: %v", err)
 	}
@@ -685,13 +690,13 @@ func (f *fakeCommandSessionManager) GetSessionInfo(_ context.Context, sessionID 
 type fakeTurnDispatcher struct {
 	commands          []swarm.Envelope
 	cancelCalls       []cancelSessionCall
-	enqueueCalls      []TurnTask
+	enqueueCalls      []actors.TurnTask
 	cancelHadInFlight bool
 	cancelDropped     int
 	cancelErr         error
 }
 
-func (f *fakeTurnDispatcher) Enqueue(task TurnTask) (int, error) {
+func (f *fakeTurnDispatcher) Enqueue(task actors.TurnTask) (int, error) {
 	f.enqueueCalls = append(f.enqueueCalls, task)
 	return 0, nil
 }

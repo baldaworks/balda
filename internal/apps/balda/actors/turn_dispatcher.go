@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -26,7 +26,7 @@ type TurnTask struct {
 	Run       func(context.Context) error
 }
 
-type turnQueue interface {
+type TurnQueue interface {
 	Enqueue(task TurnTask) (int, error)
 	CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error)
 }

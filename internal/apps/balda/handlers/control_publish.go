@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 )
@@ -19,7 +20,7 @@ func submitSessionCancelControl(
 	if coordinator == nil || !coordinator.RuntimeEnabled() {
 		return nil
 	}
-	env, err := controlCancelEnvelopeWithNotify(locator, "", requestedBy, reason, notify)
+	env, err := actors.ControlCancelEnvelopeWithNotify(locator, "", requestedBy, reason, notify)
 	if err != nil {
 		return fmt.Errorf("build session cancel control envelope: %w", err)
 	}

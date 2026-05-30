@@ -24,6 +24,8 @@ Status: active
   - No Balda provider selection, queue runtime, Telegram, MCP, or task projection policy.
 
 - Balda integration layer (policy owner):
+  - Product actor implementations and command contracts in `internal/apps/balda/actors`.
+  - Telegram, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
   - Command transport semantics: JetStream command stream, ack/nak/term behavior, heartbeats, in-progress redelivery.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
   - Task/projector side effects in SQLite (`swarm_tasks`, `swarm_task_events`, command/task status state).
@@ -45,6 +47,7 @@ Status: active
 ## Related packages
 
 - `internal/apps/balda/app.go`
+- `internal/apps/balda/actors`
 - `internal/apps/balda/handlers`
 - `internal/apps/balda/swarm`
 - `internal/apps/balda/eventbus`

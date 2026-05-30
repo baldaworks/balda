@@ -8,6 +8,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
@@ -592,7 +593,7 @@ func assertPublishedTurnIncludesReplyContext(t *testing.T, commands []swarm.Enve
 	if len(commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(commands))
 	}
-	var payload sessionTurnPayload
+	var payload actors.SessionTurnPayload
 	if err := json.Unmarshal([]byte(commands[0].PayloadJSON), &payload); err != nil {
 		t.Fatalf("decode session turn payload: %v", err)
 	}

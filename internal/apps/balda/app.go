@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ipfans/fxlogger"
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
@@ -350,6 +351,7 @@ func Module(
 		tgbotkit.Module,
 		natsbus.Module,
 		swarm.Module,
+		actors.Module,
 		handlers.Module,
 		fx.Provide(
 			handlers.NewInternalMCPManager,

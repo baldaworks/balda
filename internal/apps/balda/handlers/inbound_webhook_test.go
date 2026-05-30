@@ -10,6 +10,7 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
@@ -250,7 +251,7 @@ func TestInboundWebhookReceiver_QueueFull(t *testing.T) {
 func TestInboundWebhookReceiver_TurnQueueFullIsNotIngressQueueFull(t *testing.T) {
 	t.Parallel()
 
-	executor := &fakeInboundTurnExecutor{submitErr: ErrTurnQueueFull}
+	executor := &fakeInboundTurnExecutor{submitErr: actors.ErrTurnQueueFull}
 	receiver := newInboundWebhookReceiverForTest(t)
 	receiver.balda = executor
 
@@ -421,7 +422,7 @@ type fakeInboundTurnExecutor struct {
 	submitSessionCalls int
 	prompt             string
 	deliver            bool
-	payload            sessionTurnPayload
+	payload            actors.SessionTurnPayload
 	lastRouteName      string
 	lastRequestID      string
 	submitErr          error
@@ -429,7 +430,7 @@ type fakeInboundTurnExecutor struct {
 
 func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	_ context.Context,
-	payload sessionTurnPayload,
+	payload actors.SessionTurnPayload,
 	routeName string,
 	requestID string,
 ) (*swarm.CommandPublishResult, string, error) {
@@ -452,7 +453,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	}, taskID, nil
 }
 
-func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload sessionTurnPayload) (*swarm.CommandPublishResult, error) {
+func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload actors.SessionTurnPayload) (*swarm.CommandPublishResult, error) {
 	if f.submitErr != nil {
 		return nil, f.submitErr
 	}

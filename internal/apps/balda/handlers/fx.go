@@ -1,11 +1,11 @@
 package handlers
 
 import (
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/agent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -31,39 +31,13 @@ var Module = fx.Module("balda_handlers",
 			fx.ParamTags(``, ``, `name:"balda_telegram_formatting_mode"`),
 		),
 		baldatelegram.NewAdapter,
-		NewTurnDispatcher,
-		newTaskRunRegistry,
 		NewScheduledTaskScheduler,
 		NewInboundWebhookReceiver,
 		NewStartHandler,
 		NewBaldaHandler,
+		provideSessionTurnRunner,
 		NewCommandHandler,
 		NewUserHandler,
-		fx.Annotate(
-			newSessionActorExecutor,
-			fx.As(new(swarm.Actor)),
-			fx.ResultTags(`group:"balda_swarm_actors"`),
-		),
-		fx.Annotate(
-			newTaskActorExecutor,
-			fx.As(new(swarm.Actor)),
-			fx.ResultTags(`group:"balda_swarm_actors"`),
-		),
-		fx.Annotate(
-			newTaskAgentActor,
-			fx.As(new(swarm.Actor)),
-			fx.ResultTags(`group:"balda_swarm_actors"`),
-		),
-		fx.Annotate(
-			newTaskDeliveryActor,
-			fx.As(new(swarm.Actor)),
-			fx.ResultTags(`group:"balda_swarm_actors"`),
-		),
-		fx.Annotate(
-			newTaskControlActor,
-			fx.As(new(swarm.Actor)),
-			fx.ResultTags(`group:"balda_swarm_actors"`),
-		),
 		fx.Annotate(
 			registerStartHandler,
 			fx.As(new(tgbotkit.Handler)),
@@ -98,6 +72,10 @@ func WireHandlers(start *StartHandler, balda *BaldaHandler) {
 }
 
 func registerStartHandler(h *StartHandler) tgbotkit.Handler {
+	return h
+}
+
+func provideSessionTurnRunner(h *BaldaHandler) actors.SessionTurnRunner {
 	return h
 }
 

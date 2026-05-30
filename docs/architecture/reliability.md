@@ -13,13 +13,14 @@ Status: active
 ## Related tests
 
 - `internal/apps/balda/swarm/runtime_test.go`
-- `internal/apps/balda/handlers/swarm_delivery_actor_test.go`
+- `internal/apps/balda/actors/swarm_delivery_actor_test.go`
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/handlers/command_test.go`
 
 ## Related packages
 
 - `internal/apps/balda/swarm`
+- `internal/apps/balda/actors`
 - `internal/apps/balda/eventbus/nats`
 - `internal/apps/balda/handlers`
 - `internal/apps/balda/state`

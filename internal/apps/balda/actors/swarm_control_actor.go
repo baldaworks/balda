@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -27,9 +27,9 @@ type taskControlPayload struct {
 }
 
 type taskControlActor struct {
-	turnDispatcher turnQueue
+	turnDispatcher TurnQueue
 	tasks          *swarm.TaskService
-	taskRuns       *taskRunRegistry
+	taskRuns       *TaskRunRegistry
 	channel        *baldatelegram.Adapter
 	logger         zerolog.Logger
 }
@@ -39,7 +39,7 @@ type taskControlActorParams struct {
 
 	TurnDispatcher *TurnDispatcher
 	TaskService    *swarm.TaskService
-	TaskRuns       *taskRunRegistry
+	TaskRuns       *TaskRunRegistry
 	Channel        *baldatelegram.Adapter
 	Logger         zerolog.Logger
 }
@@ -105,7 +105,7 @@ func (a *taskControlActor) cancelTask(ctx context.Context, env swarm.Envelope, p
 	}
 	runCanceled := false
 	if a.taskRuns != nil {
-		runCanceled = a.taskRuns.cancel(task.ID)
+		runCanceled = a.taskRuns.Cancel(task.ID)
 	}
 	if !runCanceled && a.turnDispatcher != nil && strings.TrimSpace(payload.Locator.SessionID) != "" {
 		hadInFlight, dropped, err := a.turnDispatcher.CancelSession(payload.Locator, true)
@@ -144,7 +144,7 @@ func (a *taskControlActor) cancelSession(ctx context.Context, payload taskContro
 			return swarm.TransientError(err)
 		}
 		for _, taskID := range taskIDs {
-			if a.taskRuns != nil && a.taskRuns.cancel(taskID) {
+			if a.taskRuns != nil && a.taskRuns.Cancel(taskID) {
 				taskCanceled++
 			}
 		}
@@ -181,11 +181,11 @@ func formatCancelResponse(hadInFlight bool, dropped int, taskCanceled int) strin
 	return response
 }
 
-func controlCancelEnvelope(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string) (swarm.Envelope, error) {
-	return controlCancelEnvelopeWithNotify(locator, taskID, requestedBy, reason, true)
+func ControlCancelEnvelope(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string) (swarm.Envelope, error) {
+	return ControlCancelEnvelopeWithNotify(locator, taskID, requestedBy, reason, true)
 }
 
-func controlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string, notify bool) (swarm.Envelope, error) {
+func ControlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string, notify bool) (swarm.Envelope, error) {
 	payload := taskControlPayload{
 		Action:      taskControlActionCancel,
 		TaskID:      strings.TrimSpace(taskID),

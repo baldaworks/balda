@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -42,7 +42,7 @@ type taskEnvelopePayload struct {
 	Kind          string                  `json:"kind"`
 	Goal          *goalTaskPayload        `json:"goal,omitempty"`
 	ScheduledTask *scheduledTaskPayload   `json:"scheduled_task,omitempty"`
-	SessionTurn   *sessionTurnPayload     `json:"session_turn,omitempty"`
+	SessionTurn   *SessionTurnPayload     `json:"session_turn,omitempty"`
 	AgentResult   *taskAgentResultPayload `json:"agent_result,omitempty"`
 }
 
@@ -144,23 +144,7 @@ type goalTaskPlan struct {
 	Steps         []string `json:"steps"`
 }
 
-func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error) {
-	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalTaskEnvelope(locator, objective, transportUserID, maxIterations)
-	if err != nil {
-		return false, err
-	}
-	if h.swarmCoordinator == nil || !h.swarmCoordinator.Enabled() {
-		return false, fmt.Errorf("jetstream swarm runtime is unavailable")
-	}
-	_, err = h.swarmCoordinator.Submit(ctx, env)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func goalTaskEnvelope(
+func GoalTaskEnvelope(
 	locator baldasession.SessionLocator,
 	objective string,
 	transportUserID string,
@@ -212,7 +196,6 @@ type taskActorExecutor struct {
 	coordinator *swarm.Coordinator
 	agents      *swarm.AgentAllocator
 	sessions    *baldasession.Manager
-	scheduler   *ScheduledTaskScheduler
 	maxIters    int
 }
 
@@ -221,10 +204,9 @@ type taskActorExecutorParams struct {
 
 	TaskService *swarm.TaskService
 	Coordinator *swarm.Coordinator
-	Agents      *swarm.AgentAllocator   `optional:"true"`
-	Sessions    *baldasession.Manager   `optional:"true"`
-	Scheduler   *ScheduledTaskScheduler `optional:"true"`
-	MaxIters    int                     `name:"balda_goal_max_iterations"`
+	Agents      *swarm.AgentAllocator `optional:"true"`
+	Sessions    *baldasession.Manager `optional:"true"`
+	MaxIters    int                   `name:"balda_goal_max_iterations"`
 }
 
 func newTaskActorExecutor(params taskActorExecutorParams) swarm.Actor {
@@ -233,15 +215,11 @@ func newTaskActorExecutor(params taskActorExecutorParams) swarm.Actor {
 		coordinator: params.Coordinator,
 		agents:      params.Agents,
 		sessions:    params.Sessions,
-		scheduler:   params.Scheduler,
 		maxIters:    normalizeGoalMaxIterations(params.MaxIters),
 	}
 }
 
-func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload sessionTurnPayload, routeName string, requestID string) (*swarm.CommandPublishResult, string, error) {
-	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
-		return nil, "", fmt.Errorf("jetstream swarm runtime is unavailable")
-	}
+func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID string) (swarm.Envelope, string, error) {
 	dedupeBase := webhookDedupeBase(routeName, requestID, payload.DedupeKey)
 	taskID := webhookTaskID(routeName, dedupeBase)
 	payload.DedupeKey = dedupeBase + ":session"
@@ -250,9 +228,9 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload sessionTur
 		SessionTurn: &payload,
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("encode webhook task payload: %w", err)
+		return swarm.Envelope{}, "", fmt.Errorf("encode webhook task payload: %w", err)
 	}
-	env := swarm.Envelope{
+	return swarm.Envelope{
 		ID:          uuid.NewString(),
 		Namespace:   swarm.NamespaceWebhookInbound,
 		Kind:        swarm.KindWebhookEvent,
@@ -263,12 +241,45 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload sessionTur
 		Priority:    80,
 		DedupeKey:   dedupeBase + ":task",
 		PayloadJSON: string(data),
+	}, taskID, nil
+}
+
+func ScheduledTaskEnvelope(
+	scheduledTaskID string,
+	content string,
+	locator baldasession.SessionLocator,
+	reportTo *baldasession.SessionLocator,
+	userID string,
+	topicID int,
+	dispatchKey string,
+) (swarm.Envelope, error) {
+	payload := taskEnvelopePayload{
+		Kind: taskPayloadKindScheduledTask,
+		ScheduledTask: &scheduledTaskPayload{
+			TaskID:   strings.TrimSpace(scheduledTaskID),
+			Content:  content,
+			Locator:  locator,
+			ReportTo: reportTo,
+			UserID:   strings.TrimSpace(userID),
+			TopicID:  topicID,
+		},
 	}
-	result, err := h.swarmCoordinator.Submit(ctx, env)
+	data, err := json.Marshal(payload)
 	if err != nil {
-		return nil, "", err
+		return swarm.Envelope{}, fmt.Errorf("encode scheduled task task: %w", err)
 	}
-	return result, taskID, nil
+	taskID := "scheduled-" + strings.TrimSpace(scheduledTaskID) + "-" + strings.TrimSpace(dispatchKey)
+	return swarm.Envelope{
+		ID:          uuid.NewString(),
+		Namespace:   swarm.NamespaceScheduleInbound,
+		Kind:        swarm.KindScheduledTask,
+		From:        swarm.ActorAddress{Target: "schedule", Key: strings.TrimSpace(scheduledTaskID)},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		SessionID:   locator.SessionID,
+		TaskID:      taskID,
+		DedupeKey:   strings.TrimSpace(dispatchKey),
+		PayloadJSON: string(data),
+	}, nil
 }
 
 func webhookDedupeBase(routeName string, requestID string, raw string) string {
@@ -364,7 +375,7 @@ func (e *taskActorExecutor) Handle(ctx context.Context, envelope any) error {
 	}
 }
 
-func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.Envelope, payload sessionTurnPayload) error {
+func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.Envelope, payload SessionTurnPayload) error {
 	taskID := firstNonEmpty(env.TaskID, env.To.Key)
 	if taskID != "" && e.tasks != nil {
 		if _, ok, err := e.tasks.Get(ctx, taskID); err != nil {
@@ -392,7 +403,7 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 			return nil
 		}
 	}
-	sessionEnv, err := sessionTurnEnvelope(payload)
+	sessionEnv, err := SessionTurnEnvelope(payload)
 	if err != nil {
 		return swarm.PermanentError(err)
 	}
@@ -451,7 +462,7 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 			return nil
 		}
 	}
-	sessionPayload := sessionTurnPayload{
+	sessionPayload := SessionTurnPayload{
 		Text:            content,
 		Locator:         payload.Locator,
 		ReportTo:        payload.ReportTo,
@@ -463,7 +474,7 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 		Source:          sessionTurnSourceSchedule,
 		DedupeKey:       firstNonEmpty(env.DedupeKey, taskID) + ":session",
 	}
-	sessionEnv, err := sessionTurnEnvelope(sessionPayload)
+	sessionEnv, err := SessionTurnEnvelope(sessionPayload)
 	if err != nil {
 		return swarm.PermanentError(err)
 	}

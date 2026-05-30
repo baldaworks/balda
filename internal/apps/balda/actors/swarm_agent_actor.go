@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -29,7 +29,7 @@ type taskAgentActor struct {
 	coordinator    *swarm.Coordinator
 	agents         *swarm.AgentRegistry
 	tasks          *swarm.TaskService
-	taskRuns       *taskRunRegistry
+	taskRuns       *TaskRunRegistry
 	logger         zerolog.Logger
 }
 
@@ -41,7 +41,7 @@ type taskAgentActorParams struct {
 	Coordinator    *swarm.Coordinator
 	Agents         *swarm.AgentRegistry
 	TaskService    *swarm.TaskService
-	TaskRuns       *taskRunRegistry
+	TaskRuns       *TaskRunRegistry
 	Logger         zerolog.Logger
 }
 
@@ -162,8 +162,8 @@ func (a *taskAgentActor) Handle(ctx context.Context, envelope any) error {
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
-	runID := a.taskRuns.register(payload.TaskID, cancel)
-	defer a.taskRuns.unregister(payload.TaskID, runID)
+	runID := a.taskRuns.Register(payload.TaskID, cancel)
+	defer a.taskRuns.Unregister(payload.TaskID, runID)
 	defer cancel()
 
 	prompt := formatTaskAgentPrompt(payload, spec)

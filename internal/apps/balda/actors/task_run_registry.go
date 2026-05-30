@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -7,17 +7,17 @@ import (
 	"sync"
 )
 
-type taskRunRegistry struct {
+type TaskRunRegistry struct {
 	mu      sync.Mutex
 	nextID  uint64
 	cancels map[string]map[string]context.CancelFunc
 }
 
-func newTaskRunRegistry() *taskRunRegistry {
-	return &taskRunRegistry{cancels: make(map[string]map[string]context.CancelFunc)}
+func NewTaskRunRegistry() *TaskRunRegistry {
+	return &TaskRunRegistry{cancels: make(map[string]map[string]context.CancelFunc)}
 }
 
-func (r *taskRunRegistry) register(taskID string, cancel context.CancelFunc) string {
+func (r *TaskRunRegistry) Register(taskID string, cancel context.CancelFunc) string {
 	if r == nil || cancel == nil {
 		return ""
 	}
@@ -38,7 +38,7 @@ func (r *taskRunRegistry) register(taskID string, cancel context.CancelFunc) str
 	return runID
 }
 
-func (r *taskRunRegistry) unregister(taskID string, runID string) {
+func (r *TaskRunRegistry) Unregister(taskID string, runID string) {
 	if r == nil {
 		return
 	}
@@ -59,7 +59,7 @@ func (r *taskRunRegistry) unregister(taskID string, runID string) {
 	}
 }
 
-func (r *taskRunRegistry) cancel(taskID string) bool {
+func (r *TaskRunRegistry) Cancel(taskID string) bool {
 	if r == nil {
 		return false
 	}

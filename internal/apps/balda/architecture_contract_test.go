@@ -17,7 +17,7 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 
 	t.Run("turn dispatcher is only a session actor implementation detail", func(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\.Enqueue\s*\(`))
-		assertOnlyAllowedFiles(t, matches, []string{"handlers/swarm_session_actor.go"})
+		assertOnlyAllowedFiles(t, matches, []string{"actors/swarm_session_actor.go"})
 		if len(matches) == 0 {
 			t.Fatal("no TurnDispatcher.Enqueue call found; expected SessionActor to remain the only actor allowed to enqueue TurnDispatcher work")
 		}
@@ -26,10 +26,28 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 	t.Run("handlers do not call turn dispatcher cancellation directly", func(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\.CancelSession\s*\(`))
 		assertOnlyAllowedFiles(t, matches, []string{
-			"handlers/turn_dispatcher.go",
-			"handlers/swarm_control_actor.go",
-			"handlers/swarm_session_actor.go",
+			"actors/turn_dispatcher.go",
+			"actors/swarm_control_actor.go",
+			"actors/swarm_session_actor.go",
 		})
+	})
+
+	t.Run("balda product actors live outside telegram handlers", func(t *testing.T) {
+		forbiddenHandlers, err := filepath.Glob(filepath.Join(root, "handlers", "swarm_*_actor.go"))
+		if err != nil {
+			t.Fatalf("glob handler actor files: %v", err)
+		}
+		if len(forbiddenHandlers) > 0 {
+			t.Fatalf("Balda product actors must live in internal/apps/balda/actors, found handlers files: %v", forbiddenHandlers)
+		}
+		handlersSource := readPackageSource(t, filepath.Join(root, "handlers"))
+		if strings.Contains(handlersSource, `group:"balda_swarm_actors"`) {
+			t.Fatal("handlers module must not provide balda_swarm_actors; actor registration belongs to internal/apps/balda/actors")
+		}
+		actorsSource := readPackageSource(t, filepath.Join(root, "actors"))
+		if !strings.Contains(actorsSource, `group:"balda_swarm_actors"`) {
+			t.Fatal("internal/apps/balda/actors must provide Balda product actors to balda_swarm_actors")
+		}
 	})
 
 	t.Run("actors execute from the JetStream command consumer", func(t *testing.T) {
@@ -285,4 +303,15 @@ func readSource(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func readPackageSource(t *testing.T, dir string) string {
+	t.Helper()
+	files := productionGoFiles(t, dir)
+	var out strings.Builder
+	for _, rel := range files {
+		out.WriteString(readSource(t, filepath.Join(dir, filepath.FromSlash(rel))))
+		out.WriteByte('\n')
+	}
+	return out.String()
 }

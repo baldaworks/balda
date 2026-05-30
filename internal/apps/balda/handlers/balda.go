@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -57,7 +58,7 @@ type BaldaHandler struct {
 	collaboratorStore  *auth.CollaboratorStore
 	channel            *baldatelegram.Adapter
 	sessionManager     *baldasession.Manager
-	turnDispatcher     turnQueue
+	turnDispatcher     actors.TurnQueue
 	swarmCoordinator   *swarm.Coordinator
 	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
@@ -83,7 +84,7 @@ type baldaHandlerDeps struct {
 	CollaboratorStore  *auth.CollaboratorStore
 	Channel            *baldatelegram.Adapter
 	SessionManager     *baldasession.Manager
-	TurnDispatcher     *TurnDispatcher
+	TurnDispatcher     *actors.TurnDispatcher
 	SwarmCoordinator   *swarm.Coordinator
 	Messenger          *messenger.Messenger
 	TGClient           client.ClientWithResponsesInterface
@@ -283,7 +284,7 @@ func (h *BaldaHandler) enqueueTurn(
 		return fmt.Errorf("topic session is required")
 	}
 
-	_, err := h.submitSessionTurn(ctx, sessionTurnPayload{
+	_, err := h.submitSessionTurn(ctx, actors.SessionTurnPayload{
 		Text:           text,
 		Locator:        locator,
 		UserID:         ts.GetUserID(),

@@ -18,6 +18,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -127,8 +128,8 @@ type inboundWebhookDedupePolicy struct {
 }
 
 type inboundTurnExecutor interface {
-	submitWebhookTask(ctx context.Context, payload sessionTurnPayload, routeName string, requestID string) (*swarm.CommandPublishResult, string, error)
-	submitSessionTurn(ctx context.Context, payload sessionTurnPayload) (*swarm.CommandPublishResult, error)
+	submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.CommandPublishResult, string, error)
+	submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.CommandPublishResult, error)
 }
 
 type inboundWebhookParams struct {
@@ -599,7 +600,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		reportTo = &resolved.Locator
 	}
 	dedupeKey := dedupeKeyForInboundWebhook(route, req, requestID, rawBody)
-	payload := sessionTurnPayload{
+	payload := actors.SessionTurnPayload{
 		Text:           prompt,
 		Locator:        target.Locator,
 		ReportTo:       reportTo,
@@ -607,7 +608,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		TopicID:        target.TopicID,
 		ProgressPolicy: inboundWebhookProgressPolicy(),
 		Deliver:        reportTo != nil,
-		Source:         sessionTurnSourceWebhook,
+		Source:         "webhook",
 		DedupeKey:      dedupeKey,
 	}
 	var (

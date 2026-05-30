@@ -1,16 +1,14 @@
-package handlers
+package actors
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
-	"github.com/rs/zerolog"
 )
 
 func TestSessionActorInterruptQueueModeCancelsSessionBeforeEnqueue(t *testing.T) {
@@ -18,10 +16,8 @@ func TestSessionActorInterruptQueueModeCancelsSessionBeforeEnqueue(t *testing.T)
 
 	turns := &fakeTurnDispatcher{}
 	exec := &sessionActorExecutor{
-		handler: &BaldaHandler{
-			turnDispatcher: turns,
-			logger:         zerolog.Nop(),
-		},
+		turns:  turns,
+		runner: fakeSessionTurnRunner{},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -46,10 +42,8 @@ func TestSessionActorDefaultQueueModeDoesNotCancelSession(t *testing.T) {
 
 	turns := &fakeTurnDispatcher{}
 	exec := &sessionActorExecutor{
-		handler: &BaldaHandler{
-			turnDispatcher: turns,
-			logger:         zerolog.Nop(),
-		},
+		turns:  turns,
+		runner: fakeSessionTurnRunner{},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -93,7 +87,7 @@ func TestSessionActorSettleSessionTurnResultMarksTaskFailedWithoutRetry(t *testi
 	env := testSessionTurnEnvelope(t, nil)
 	env.TaskID = "task-session-failed"
 
-	if err := exec.settleSessionTurnResult(ctx, env, sessionTurnPayload{}, runErr); err != nil {
+	if err := exec.settleSessionTurnResult(ctx, env, SessionTurnPayload{}, runErr); err != nil {
 		t.Fatalf("settleSessionTurnResult() error = %v, want nil after recording task failure", err)
 	}
 
@@ -115,7 +109,7 @@ func TestSessionActorSettleSessionTurnResultKeepsNonTaskErrorsRetryable(t *testi
 	exec := &sessionActorExecutor{}
 	runErr := errors.New("runner failed")
 
-	err := exec.settleSessionTurnResult(context.Background(), testSessionTurnEnvelope(t, nil), sessionTurnPayload{}, runErr)
+	err := exec.settleSessionTurnResult(context.Background(), testSessionTurnEnvelope(t, nil), SessionTurnPayload{}, runErr)
 	if !errors.Is(err, runErr) {
 		t.Fatalf("settleSessionTurnResult() error = %v, want original run error", err)
 	}
@@ -141,11 +135,9 @@ func TestSessionActorEnqueueTurnSkipsDeadLetteredTask(t *testing.T) {
 
 	turns := &fakeTurnDispatcher{}
 	exec := &sessionActorExecutor{
-		handler: &BaldaHandler{
-			turnDispatcher: turns,
-			logger:         zerolog.Nop(),
-		},
-		tasks: tasks,
+		turns:  turns,
+		runner: fakeSessionTurnRunner{},
+		tasks:  tasks,
 	}
 	env := testSessionTurnEnvelope(t, nil)
 	env.TaskID = "task-session-deadlettered"
@@ -158,32 +150,6 @@ func TestSessionActorEnqueueTurnSkipsDeadLetteredTask(t *testing.T) {
 	}
 }
 
-func TestSubmitSessionTurnToSwarm_RequiresRuntimeEnabled(t *testing.T) {
-	t.Parallel()
-
-	handler := &BaldaHandler{
-		swarmCoordinator: swarm.NewCoordinator(&fakeTurnDispatcher{}, swarm.Config{Enabled: false}),
-	}
-
-	_, err := handler.submitSessionTurnToSwarm(context.Background(), sessionTurnPayload{
-		Text: "hello",
-		Locator: baldasession.SessionLocator{
-			ChannelType: "telegram",
-			AddressKey:  "tg-9001-77",
-			AddressJSON: `{"chat_id":9001,"topic_id":77}`,
-			SessionID:   "tg-9001-77",
-		},
-		Source:  sessionTurnSourceTelegram,
-		Deliver: true,
-	})
-	if err == nil {
-		t.Fatal("submitSessionTurnToSwarm() error = nil, want runtime unavailable")
-	}
-	if !strings.Contains(err.Error(), "runtime is unavailable") {
-		t.Fatalf("submitSessionTurnToSwarm() error = %q, want runtime unavailable marker", err.Error())
-	}
-}
-
 func testSessionTurnEnvelope(t *testing.T, meta map[string]string) swarm.Envelope {
 	t.Helper()
 
@@ -193,14 +159,14 @@ func testSessionTurnEnvelope(t *testing.T, meta map[string]string) swarm.Envelop
 		AddressJSON: `{"chat_id":9001,"topic_id":77}`,
 		SessionID:   "tg-9001-77",
 	}
-	payload, err := json.Marshal(sessionTurnPayload{
+	payload, err := json.Marshal(SessionTurnPayload{
 		Text:    "run this",
 		Locator: locator,
 		Deliver: false,
 		Source:  sessionTurnSourceTelegram,
 	})
 	if err != nil {
-		t.Fatalf("Marshal(sessionTurnPayload) error = %v", err)
+		t.Fatalf("Marshal(SessionTurnPayload) error = %v", err)
 	}
 	return swarm.Envelope{
 		ID:          "session-command-1",
@@ -212,4 +178,10 @@ func testSessionTurnEnvelope(t *testing.T, meta map[string]string) swarm.Envelop
 		PayloadJSON: string(payload),
 		Meta:        meta,
 	}
+}
+
+type fakeSessionTurnRunner struct{}
+
+func (fakeSessionTurnRunner) RunSessionTurnPayload(context.Context, SessionTurnPayload) error {
+	return nil
 }

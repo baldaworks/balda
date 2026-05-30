@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -21,7 +21,7 @@ const (
 	sessionTurnSourceSchedule = "schedule"
 )
 
-type sessionTurnPayload struct {
+type SessionTurnPayload struct {
 	Text            string                       `json:"text"`
 	Locator         baldasession.SessionLocator  `json:"locator"`
 	ReportTo        *baldasession.SessionLocator `json:"report_to,omitempty"`
@@ -37,22 +37,16 @@ type sessionTurnPayload struct {
 	DedupeKey       string                       `json:"dedupe_key,omitempty"`
 }
 
-func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload sessionTurnPayload) (*swarm.CommandPublishResult, error) {
-	return h.submitSessionTurnToSwarm(ctx, payload)
+type SessionTurnRunner interface {
+	RunSessionTurnPayload(ctx context.Context, payload SessionTurnPayload) error
 }
 
-func (h *BaldaHandler) submitSessionTurnToSwarm(ctx context.Context, payload sessionTurnPayload) (*swarm.CommandPublishResult, error) {
-	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
-		return nil, fmt.Errorf("jetstream swarm runtime is unavailable")
-	}
-	env, err := sessionTurnEnvelope(payload)
-	if err != nil {
-		return nil, err
-	}
-	return h.swarmCoordinator.Submit(ctx, env)
+type ScheduledTaskRecorder interface {
+	MarkSuccess(ctx context.Context, taskID string) error
+	RecordExecutionFailure(ctx context.Context, taskID string, cause error) error
 }
 
-func sessionTurnEnvelope(payload sessionTurnPayload) (swarm.Envelope, error) {
+func SessionTurnEnvelope(payload SessionTurnPayload) (swarm.Envelope, error) {
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
 		return swarm.Envelope{}, fmt.Errorf("session id is required")
 	}
@@ -83,77 +77,24 @@ func sessionTurnEnvelope(payload sessionTurnPayload) (swarm.Envelope, error) {
 	}, nil
 }
 
-func (h *BaldaHandler) runSessionTurnPayload(ctx context.Context, payload sessionTurnPayload) error {
-	ts, err := h.sessionManager.GetSession(payload.Locator)
-	if err != nil {
-		userID := strings.TrimSpace(payload.UserID)
-		if userID == "" {
-			h.logger.Debug().
-				Str("session_id", payload.Locator.SessionID).
-				Str("address_key", payload.Locator.AddressKey).
-				Msg("dropping queued turn for inactive session without restore user")
-			return nil
-		}
-		ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
-			Locator: payload.Locator,
-			UserID:  userID,
-		})
-		if err != nil {
-			if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-				return fmt.Errorf("restore session for queued turn: %w", err)
-			}
-			ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-				Locator: payload.Locator,
-				UserID:  userID,
-			}, ownerSessionLabel)
-			if err != nil {
-				return fmt.Errorf("create session for queued turn: %w", err)
-			}
-		}
-	}
-	userID := strings.TrimSpace(payload.UserID)
-	if userID == "" {
-		userID = ts.GetUserID()
-	}
-	agentSessionID := strings.TrimSpace(payload.AgentSessionID)
-	if agentSessionID == "" {
-		agentSessionID = ts.GetAgentSessionID()
-	}
-	deliveryLocator := payload.Locator
-	if payload.ReportTo != nil {
-		deliveryLocator = *payload.ReportTo
-	}
-	return h.runTurnTaskWithDelivery(
-		ctx,
-		payload.Text,
-		ts.GetRunner(),
-		userID,
-		ts.GetSessionID(),
-		agentSessionID,
-		deliveryLocator,
-		payload.MessageID,
-		payload.TopicID,
-		payload.ProgressPolicy,
-		payload.Deliver,
-	)
-}
-
 type sessionActorExecutor struct {
-	handler   *BaldaHandler
+	turns     TurnQueue
+	runner    SessionTurnRunner
 	tasks     *swarm.TaskService
-	scheduler *ScheduledTaskScheduler
+	scheduler ScheduledTaskRecorder
 }
 
 type sessionActorExecutorParams struct {
 	fx.In
 
-	Handler   *BaldaHandler
-	Tasks     *swarm.TaskService      `optional:"true"`
-	Scheduler *ScheduledTaskScheduler `optional:"true"`
+	Turns     *TurnDispatcher
+	Runner    SessionTurnRunner
+	Tasks     *swarm.TaskService    `optional:"true"`
+	Scheduler ScheduledTaskRecorder `optional:"true"`
 }
 
 func newSessionActorExecutor(params sessionActorExecutorParams) swarm.Actor {
-	return &sessionActorExecutor{handler: params.Handler, tasks: params.Tasks, scheduler: params.Scheduler}
+	return &sessionActorExecutor{turns: params.Turns, runner: params.Runner, tasks: params.Tasks, scheduler: params.Scheduler}
 }
 
 func (e *sessionActorExecutor) Address() string {
@@ -174,7 +115,7 @@ func (e *sessionActorExecutor) Handle(ctx context.Context, envelope any) error {
 }
 
 func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelope) error {
-	var payload sessionTurnPayload
+	var payload SessionTurnPayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
 		return swarm.PermanentError(fmt.Errorf("decode session turn payload: %w", err))
 	}
@@ -184,22 +125,25 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 	if e.sessionTaskAlreadyDone(ctx, env.TaskID) {
 		return nil
 	}
-	if e.handler.turnDispatcher == nil {
+	if e.turns == nil {
 		return swarm.TransientError(fmt.Errorf("turn dispatcher is required"))
 	}
 	if swarm.QueueModeOf(env) == swarm.QueueModeInterrupt {
-		_, _, err := e.handler.turnDispatcher.CancelSession(payload.Locator, true)
+		_, _, err := e.turns.CancelSession(payload.Locator, true)
 		if err != nil {
 			return swarm.TransientError(fmt.Errorf("interrupt session turn: %w", err))
 		}
 	}
+	if e.runner == nil {
+		return swarm.TransientError(fmt.Errorf("session turn runner is required"))
+	}
 
 	done := make(chan error, 1)
-	_, err := e.handler.turnDispatcher.Enqueue(TurnTask{
+	_, err := e.turns.Enqueue(TurnTask{
 		SessionID: payload.Locator.SessionID,
 		Context:   ctx,
 		Run: func(runCtx context.Context) error {
-			err := e.handler.runSessionTurnPayload(runCtx, payload)
+			err := e.runner.RunSessionTurnPayload(runCtx, payload)
 			done <- err
 			return err
 		},
@@ -219,7 +163,7 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 	}
 }
 
-func (e *sessionActorExecutor) settleSessionTurnResult(ctx context.Context, env swarm.Envelope, payload sessionTurnPayload, runErr error) error {
+func (e *sessionActorExecutor) settleSessionTurnResult(ctx context.Context, env swarm.Envelope, payload SessionTurnPayload, runErr error) error {
 	if recordErr := e.recordSessionTaskResult(ctx, env, payload, runErr); recordErr != nil {
 		return swarm.TransientError(recordErr)
 	}
@@ -244,17 +188,17 @@ func (e *sessionActorExecutor) sessionTaskAlreadyDone(ctx context.Context, taskI
 	return isTerminalTaskStatus(task.Status)
 }
 
-func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env swarm.Envelope, payload sessionTurnPayload, runErr error) error {
+func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env swarm.Envelope, payload SessionTurnPayload, runErr error) error {
 	if e == nil {
 		return nil
 	}
 	if e.scheduler != nil && strings.TrimSpace(payload.ScheduledTaskID) != "" {
 		if runErr == nil {
-			if err := e.scheduler.markSuccess(ctx, payload.ScheduledTaskID); err != nil {
+			if err := e.scheduler.MarkSuccess(ctx, payload.ScheduledTaskID); err != nil {
 				return fmt.Errorf("mark scheduled task %q success: %w", payload.ScheduledTaskID, err)
 			}
 		} else {
-			if err := e.scheduler.recordExecutionFailure(ctx, payload.ScheduledTaskID, runErr); err != nil {
+			if err := e.scheduler.RecordExecutionFailure(ctx, payload.ScheduledTaskID, runErr); err != nil {
 				return fmt.Errorf("record scheduled task %q failure: %w", payload.ScheduledTaskID, err)
 			}
 		}

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -10,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -357,33 +356,7 @@ func scheduledTaskEnvelope(
 	content string,
 	dispatchKey string,
 ) (swarm.Envelope, error) {
-	payload := taskEnvelopePayload{
-		Kind: taskPayloadKindScheduledTask,
-		ScheduledTask: &scheduledTaskPayload{
-			TaskID:   task.TaskID,
-			Content:  content,
-			Locator:  target.Locator,
-			ReportTo: reportTo,
-			UserID:   target.UserID,
-			TopicID:  target.TopicID,
-		},
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return swarm.Envelope{}, fmt.Errorf("encode scheduled task task: %w", err)
-	}
-	taskID := "scheduled-" + task.TaskID + "-" + dispatchKey
-	return swarm.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   swarm.NamespaceScheduleInbound,
-		Kind:        swarm.KindScheduledTask,
-		From:        swarm.ActorAddress{Target: "schedule", Key: task.TaskID},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
-		SessionID:   target.Locator.SessionID,
-		TaskID:      taskID,
-		DedupeKey:   dispatchKey,
-		PayloadJSON: string(data),
-	}, nil
+	return actors.ScheduledTaskEnvelope(task.TaskID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
 }
 
 func scheduledTaskReportTarget(task baldastate.ScheduledTaskRecord) (*baldasession.SessionLocator, error) {
@@ -448,6 +421,10 @@ func (s *ScheduledTaskScheduler) markSuccess(ctx context.Context, taskID string)
 	return nil
 }
 
+func (s *ScheduledTaskScheduler) MarkSuccess(ctx context.Context, taskID string) error {
+	return s.markSuccess(ctx, taskID)
+}
+
 func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, taskID string, cause error) error {
 	task, ok, err := s.taskStore.GetByID(ctx, taskID)
 	if err != nil {
@@ -493,6 +470,10 @@ func (s *ScheduledTaskScheduler) recordExecutionFailure(ctx context.Context, tas
 		return fmt.Errorf("upsert scheduled task %q execution failure: %w", taskID, err)
 	}
 	return cause
+}
+
+func (s *ScheduledTaskScheduler) RecordExecutionFailure(ctx context.Context, taskID string, cause error) error {
+	return s.recordExecutionFailure(ctx, taskID, cause)
 }
 
 func normalizeScheduledTaskSchedulerConfig(raw ScheduledTaskSchedulerConfig) (ScheduledTaskSchedulerConfig, error) {

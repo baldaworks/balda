@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
@@ -24,7 +25,7 @@ func TestCommandHandlerTaskVisibilityCommands(t *testing.T) {
 	handler.commandBus = bus
 	handler.tasks = tasks
 	handler.agentRegistry = registry
-	handler.taskRuns = newTaskRunRegistry()
+	handler.taskRuns = actors.NewTaskRunRegistry()
 	sm.sessionInfos = map[string]baldasession.TopicSessionInfo{
 		"tg-9001-0": {SessionID: "tg-9001-0", Locator: baldasession.SessionLocator{SessionID: "tg-9001-0", ChannelType: "telegram", AddressKey: "9001:0"}, BranchName: "norma/balda/tg-9001-0"},
 	}

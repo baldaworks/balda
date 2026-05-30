@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -9,46 +9,46 @@ import (
 func TestTaskRunRegistryCancelCancelsAllRunsForTask(t *testing.T) {
 	t.Parallel()
 
-	registry := newTaskRunRegistry()
+	registry := NewTaskRunRegistry()
 
 	ctxOne, cancelOne := context.WithCancel(context.Background())
 	defer cancelOne()
 	ctxTwo, cancelTwo := context.WithCancel(context.Background())
 	defer cancelTwo()
 
-	runOne := registry.register("task-1", cancelOne)
-	runTwo := registry.register("task-1", cancelTwo)
+	runOne := registry.Register("task-1", cancelOne)
+	runTwo := registry.Register("task-1", cancelTwo)
 	if runOne == "" || runTwo == "" || runOne == runTwo {
-		t.Fatalf("register() ids = %q/%q, want distinct non-empty run ids", runOne, runTwo)
+		t.Fatalf("Register() ids = %q/%q, want distinct non-empty run ids", runOne, runTwo)
 	}
 
-	if canceled := registry.cancel("task-1"); !canceled {
-		t.Fatal("cancel(task-1) = false, want true")
+	if canceled := registry.Cancel("task-1"); !canceled {
+		t.Fatal("Cancel(task-1) = false, want true")
 	}
 	waitContextDone(t, ctxOne, "run one cancellation")
 	waitContextDone(t, ctxTwo, "run two cancellation")
 
-	if canceled := registry.cancel("task-1"); canceled {
-		t.Fatal("cancel(task-1) second call = true, want false")
+	if canceled := registry.Cancel("task-1"); canceled {
+		t.Fatal("Cancel(task-1) second call = true, want false")
 	}
 }
 
 func TestTaskRunRegistryUnregisterRemovesSingleRunOnly(t *testing.T) {
 	t.Parallel()
 
-	registry := newTaskRunRegistry()
+	registry := NewTaskRunRegistry()
 
 	ctxOne, cancelOne := context.WithCancel(context.Background())
 	defer cancelOne()
 	ctxTwo, cancelTwo := context.WithCancel(context.Background())
 	defer cancelTwo()
 
-	runOne := registry.register("task-1", cancelOne)
-	runTwo := registry.register("task-1", cancelTwo)
-	registry.unregister("task-1", runOne)
+	runOne := registry.Register("task-1", cancelOne)
+	runTwo := registry.Register("task-1", cancelTwo)
+	registry.Unregister("task-1", runOne)
 
-	if canceled := registry.cancel("task-1"); !canceled {
-		t.Fatal("cancel(task-1) = false, want true for remaining run")
+	if canceled := registry.Cancel("task-1"); !canceled {
+		t.Fatal("Cancel(task-1) = false, want true for remaining run")
 	}
 
 	select {

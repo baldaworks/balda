@@ -20,15 +20,16 @@ Status: active
 
 - `internal/apps/balda/swarm/runtime_test.go`
 - `internal/apps/balda/swarm/agents_test.go`
-- `internal/apps/balda/handlers/swarm_session_actor_test.go`
-- `internal/apps/balda/handlers/swarm_control_actor_test.go`
-- `internal/apps/balda/handlers/swarm_delivery_actor_test.go`
+- `internal/apps/balda/actors/swarm_session_actor_test.go`
+- `internal/apps/balda/actors/swarm_control_actor_test.go`
+- `internal/apps/balda/actors/swarm_delivery_actor_test.go`
 - `internal/apps/balda/handlers/task_visibility_test.go`
 
 ## Related packages
 
 - `internal/apps/balda/swarm`
-- `internal/apps/balda/handlers/swarm_*.go`
+- `internal/apps/balda/actors`
+- `internal/apps/balda/handlers`
 
 ## Update triggers
 
@@ -52,13 +53,16 @@ Status: active
 ### Ownership split
 
 - Actorlayer owns:
-  - typed actor contracts and interfaces,
-  - execution correctness of lane transitions and actor state.
-- Balda integration code owns:
-  - transport protocol and transport-level acknowledgements,
+  - generic actor mechanics: registration, addressing, deterministic lane execution, lifecycle state transitions, and delivery hooks.
+- Balda product actor code owns:
+  - product actor implementations in `internal/apps/balda/actors` for session, task, agent, delivery, control, and memory behavior,
+  - product command payloads/envelope builders consumed by ingress,
   - provider runtime invocation details (ADK session execution, tools, model/runtime context),
+  - task/session/delivery state transitions and user-visible outcomes.
+- Balda transport/runtime code owns:
+  - transport protocol and transport-level acknowledgements,
   - queue policy integration (retry/dead-letter thresholds, heartbeats, and backoff tuning),
-  - and persistence side effects in product state stores.
+  - and projection/status integration.
 
 ### Why this split exists
 
@@ -69,7 +73,8 @@ Status: active
 ### Balda implementation map
 
 - Actor dispatch and lane execution live in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/norma/pkg/actorlayer/engine`.
-- Actor definitions live in `internal/apps/balda/handlers/swarm_*.go` and are registered as actorlayer dispatch actors.
+- Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
+- Telegram/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers publish actor commands but do not own actor behavior or actor registration.
 - ADK session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats` and the `swarm.CommandMessage` contract.
 - Task projection, retry classification, DLQ reporting, and user-visible status live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.

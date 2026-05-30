@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -32,14 +33,14 @@ type CommandHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	channel           *baldatelegram.Adapter
 	sessionManager    commandSessionManager
-	turnDispatcher    turnQueue
+	turnDispatcher    actors.TurnQueue
 	swarmCoordinator  *swarm.Coordinator
 	swarmRuntime      swarmRuntimeStatusProvider
 	swarmConfig       swarm.Config
 	commandBus        swarm.CommandBusStatusProvider
 	agentRegistry     *swarm.AgentRegistry
 	tasks             *swarm.TaskService
-	taskRuns          *taskRunRegistry
+	taskRuns          *actors.TaskRunRegistry
 	goalMaxIterations int
 	messenger         *messenger.Messenger
 	userHandler       *userHandler
@@ -61,14 +62,14 @@ type commandHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
 	SessionManager    *session.Manager
-	TurnDispatcher    *TurnDispatcher
+	TurnDispatcher    *actors.TurnDispatcher
 	SwarmCoordinator  *swarm.Coordinator
 	SwarmRuntime      *swarm.Runtime
 	SwarmConfig       swarm.Config
 	CommandBus        swarm.CommandBusStatusProvider
 	AgentRegistry     *swarm.AgentRegistry
 	TaskService       *swarm.TaskService
-	TaskRuns          *taskRunRegistry
+	TaskRuns          *actors.TaskRunRegistry
 	MaxIterations     int `name:"balda_goal_max_iterations"`
 	Messenger         *messenger.Messenger
 	UserHandler       *userHandler
@@ -449,7 +450,7 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 		}
 		return nil
 	}
-	env, err := controlCancelEnvelope(commandCtx.Locator, "", baldatelegram.UserID(commandCtx.UserID), "session canceled by user")
+	env, err := actors.ControlCancelEnvelope(commandCtx.Locator, "", baldatelegram.UserID(commandCtx.UserID), "session canceled by user")
 	if err != nil {
 		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to build cancel request: %v", err)); sendErr != nil {
 			return sendErr

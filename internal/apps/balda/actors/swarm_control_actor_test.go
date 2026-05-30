@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -31,12 +31,12 @@ func TestTaskControlActorCancelsSessionWork(t *testing.T) {
 	actor := &taskControlActor{
 		turnDispatcher: turns,
 		tasks:          tasks,
-		taskRuns:       newTaskRunRegistry(),
+		taskRuns:       NewTaskRunRegistry(),
 		channel:        newBaldaTestTelegramAdapter(),
 	}
-	env, err := controlCancelEnvelope(locator, "", testTelegramUserID101, "session canceled by user")
+	env, err := ControlCancelEnvelope(locator, "", testTelegramUserID101, "session canceled by user")
 	if err != nil {
-		t.Fatalf("controlCancelEnvelope() error = %v", err)
+		t.Fatalf("ControlCancelEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -73,12 +73,12 @@ func TestTaskControlActorCancelsTaskWork(t *testing.T) {
 	actor := &taskControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		tasks:          tasks,
-		taskRuns:       newTaskRunRegistry(),
+		taskRuns:       NewTaskRunRegistry(),
 		channel:        newBaldaTestTelegramAdapter(),
 	}
-	env, err := controlCancelEnvelope(locator, "task-one", testTelegramUserID101, "task canceled by user")
+	env, err := ControlCancelEnvelope(locator, "task-one", testTelegramUserID101, "task canceled by user")
 	if err != nil {
-		t.Fatalf("controlCancelEnvelope() error = %v", err)
+		t.Fatalf("ControlCancelEnvelope() error = %v", err)
 	}
 	if env.Namespace != swarm.NamespaceTaskControl || env.TaskID != "task-one" {
 		t.Fatalf("control env = %+v, want task control for task-one", env)
@@ -114,13 +114,13 @@ func TestTaskControlActorCancelsAllRegisteredTaskRuns(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 
-	registry := newTaskRunRegistry()
+	registry := NewTaskRunRegistry()
 	runCtxOne, cancelOne := context.WithCancel(context.Background())
 	defer cancelOne()
 	runCtxTwo, cancelTwo := context.WithCancel(context.Background())
 	defer cancelTwo()
-	registry.register("task-multi-run", cancelOne)
-	registry.register("task-multi-run", cancelTwo)
+	registry.Register("task-multi-run", cancelOne)
+	registry.Register("task-multi-run", cancelTwo)
 
 	actor := &taskControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
@@ -129,9 +129,9 @@ func TestTaskControlActorCancelsAllRegisteredTaskRuns(t *testing.T) {
 		channel:        newBaldaTestTelegramAdapter(),
 	}
 
-	env, err := controlCancelEnvelope(locator, "task-multi-run", testTelegramUserID101, "task canceled by user")
+	env, err := ControlCancelEnvelope(locator, "task-multi-run", testTelegramUserID101, "task canceled by user")
 	if err != nil {
-		t.Fatalf("controlCancelEnvelope() error = %v", err)
+		t.Fatalf("ControlCancelEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)

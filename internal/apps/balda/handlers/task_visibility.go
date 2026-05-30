@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -105,7 +106,7 @@ func (h *CommandHandler) cancelTaskCommand(ctx context.Context, commandCtx balda
 	if h.swarmCoordinator == nil || !h.swarmCoordinator.RuntimeEnabled() {
 		return h.channel.SendPlain(ctx, commandCtx.Locator, "Cancel is unavailable right now. Please try again.")
 	}
-	env, err := controlCancelEnvelope(commandCtx.Locator, task.ID, baldatelegram.UserID(commandCtx.UserID), "task canceled by user")
+	env, err := actors.ControlCancelEnvelope(commandCtx.Locator, task.ID, baldatelegram.UserID(commandCtx.UserID), "task canceled by user")
 	if err != nil {
 		return h.channel.SendPlain(ctx, commandCtx.Locator, fmt.Sprintf("Failed to build cancel request: %v", err))
 	}

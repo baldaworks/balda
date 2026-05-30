@@ -1,0 +1,327 @@
+package actors
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/internal/git"
+	adkagent "google.golang.org/adk/agent"
+	"google.golang.org/adk/runner"
+	"google.golang.org/genai"
+)
+
+const (
+	ownerSessionLabel        = "balda"
+	defaultGoalMaxIterations = 25
+	maxTaskOutcomeTextRunes  = 1200
+)
+
+var (
+	secretBearerHeaderPattern = regexp.MustCompile(`(?i)(authorization\s*:\s*bearer\s+)([^\s]+)`)
+	secretKeyValuePattern     = regexp.MustCompile(`(?i)\b(token|secret|password|api[_-]?key|access[_-]?key|private[_-]?key)\b(\s*[:=]\s*)([^\s,;]+)`)
+	secretPEMPattern          = regexp.MustCompile(`(?s)-----BEGIN [^-]+-----.*?-----END [^-]+-----`)
+	secretGitHubTokenPattern  = regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9_]{20,}\b`)
+	secretTelegramToken       = regexp.MustCompile(`\b\d{6,10}:[A-Za-z0-9_-]{20,}\b`)
+)
+
+func normalizeGoalMaxIterations(v int) int {
+	if v <= 0 {
+		return defaultGoalMaxIterations
+	}
+	return v
+}
+
+func redactSecrets(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return text
+	}
+	text = secretPEMPattern.ReplaceAllString(text, "[REDACTED_PEM]")
+	text = secretBearerHeaderPattern.ReplaceAllString(text, "${1}[REDACTED]")
+	text = secretKeyValuePattern.ReplaceAllString(text, "${1}${2}[REDACTED]")
+	text = secretGitHubTokenPattern.ReplaceAllString(text, "[REDACTED_TOKEN]")
+	text = secretTelegramToken.ReplaceAllString(text, "[REDACTED_TOKEN]")
+	return text
+}
+
+func isTerminalTaskStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case baldastate.SwarmTaskStatusCompleted,
+		baldastate.SwarmTaskStatusFailed,
+		baldastate.SwarmTaskStatusCanceled,
+		baldastate.SwarmTaskStatusDeadLettered:
+		return true
+	default:
+		return false
+	}
+}
+
+type taskSessionInfoProvider interface {
+	GetSessionInfo(ctx context.Context, sessionID string) (baldasession.TopicSessionInfo, error)
+}
+
+type taskArtifactSnapshot struct {
+	WorkspaceDir string
+	BranchName   string
+	Commit       string
+	ChangedFiles []string
+	GitError     string
+}
+
+type reviewableOutcomePayload struct {
+	SchemaVersion string
+	WhatWasDone   string
+	Validation    string
+	Verified      string
+	NotVerified   string
+	NextAction    string
+}
+
+func taskSessionInfo(ctx context.Context, rawProvider any, sessionID string) (baldasession.TopicSessionInfo, bool) {
+	provider, ok := rawProvider.(taskSessionInfoProvider)
+	if !ok || strings.TrimSpace(sessionID) == "" {
+		return baldasession.TopicSessionInfo{}, false
+	}
+	info, err := provider.GetSessionInfo(ctx, sessionID)
+	if err != nil {
+		return baldasession.TopicSessionInfo{}, false
+	}
+	return info, true
+}
+
+func taskArtifactsFromSessionProvider(ctx context.Context, provider any, task baldastate.SwarmTaskRecord) taskArtifactSnapshot {
+	info, ok := taskSessionInfo(ctx, provider, task.SessionID)
+	artifacts := taskArtifactSnapshot{}
+	if ok {
+		artifacts.WorkspaceDir = strings.TrimSpace(info.WorkspaceDir)
+		artifacts.BranchName = strings.TrimSpace(info.BranchName)
+	}
+	if artifacts.BranchName == "" {
+		artifacts.BranchName = strings.TrimSpace(task.AssignedActor)
+	}
+	return enrichGitArtifacts(ctx, artifacts)
+}
+
+func enrichGitArtifacts(ctx context.Context, artifacts taskArtifactSnapshot) taskArtifactSnapshot {
+	if artifacts.WorkspaceDir == "" {
+		return artifacts
+	}
+	if !git.Available(ctx, artifacts.WorkspaceDir) {
+		artifacts.GitError = "workspace is not a git repository"
+		return artifacts
+	}
+	status, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "status", "--short")
+	if err != nil {
+		artifacts.GitError = err.Error()
+	} else {
+		for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				artifacts.ChangedFiles = append(artifacts.ChangedFiles, trimmed)
+			}
+		}
+	}
+	commit, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "rev-parse", "--short", "HEAD")
+	if err != nil {
+		if artifacts.GitError == "" {
+			artifacts.GitError = err.Error()
+		}
+	} else {
+		artifacts.Commit = strings.TrimSpace(commit)
+	}
+	return artifacts
+}
+
+func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArtifactSnapshot) string {
+	result := parseTaskResult(task.ResultJSON)
+	parsedOutcome, hasOutcome := reviewableOutcomeFromResult(result)
+	goalReached := boolFromResult(result, "goal_reached")
+	executorOutput := firstNonEmpty(stringFromResult(result, "executor_output"), stringFromResult(result, "final_text"))
+	reviewerOutput := firstNonEmpty(stringFromResult(result, "reviewer_output"), stringFromResult(result, "reviewer_feedback"))
+	executorOutput = redactSecrets(executorOutput)
+	reviewerOutput = redactSecrets(reviewerOutput)
+	whatWasDone := firstNonEmpty(executorOutput, task.Objective)
+	if hasOutcome {
+		whatWasDone = firstNonEmpty(parsedOutcome.WhatWasDone, whatWasDone)
+	}
+	if !goalReached && task.Status != baldastate.SwarmTaskStatusCompleted && stringFromResult(result, "final_text") != "" {
+		whatWasDone = redactSecrets(stringFromResult(result, "final_text"))
+	}
+
+	var out strings.Builder
+	out.WriteString("Result\n")
+	out.WriteString("- What was done: ")
+	out.WriteString(limitRunes(oneLine(whatWasDone), maxTaskOutcomeTextRunes))
+	out.WriteString("\n\nArtifacts")
+	out.WriteString("\n- Files changed: ")
+	if len(artifacts.ChangedFiles) == 0 {
+		out.WriteString("none detected")
+	} else {
+		out.WriteString(strings.Join(artifacts.ChangedFiles, "; "))
+	}
+	out.WriteString("\n- Branch: ")
+	out.WriteString(firstNonEmpty(artifacts.BranchName, "not available"))
+	out.WriteString("\n- Commit: ")
+	out.WriteString(firstNonEmpty(artifacts.Commit, "not available"))
+	out.WriteString("\n- Workspace export: ")
+	if len(artifacts.ChangedFiles) > 0 {
+		out.WriteString("pending review/export")
+	} else {
+		out.WriteString("no pending workspace changes detected")
+	}
+	out.WriteString("\n- Validation output: ")
+	validationOutput := firstNonEmpty(reviewerOutput, "not available")
+	if hasOutcome {
+		validationOutput = firstNonEmpty(parsedOutcome.Validation, validationOutput)
+	}
+	out.WriteString(limitRunes(oneLine(validationOutput), maxTaskOutcomeTextRunes))
+
+	out.WriteString("\n\nConfidence")
+	out.WriteString("\n- What was verified: ")
+	verified := "not available"
+	if hasOutcome {
+		verified = firstNonEmpty(parsedOutcome.Verified, verified)
+	}
+	out.WriteString(limitRunes(oneLine(verified), maxTaskOutcomeTextRunes))
+	out.WriteString("\n- What was not verified: ")
+	notVerified := "not available"
+	if hasOutcome {
+		notVerified = firstNonEmpty(parsedOutcome.NotVerified, notVerified)
+	}
+	out.WriteString(limitRunes(oneLine(notVerified), maxTaskOutcomeTextRunes))
+	out.WriteString("\n- Next action: ")
+	nextAction := "review result"
+	if hasOutcome {
+		nextAction = firstNonEmpty(parsedOutcome.NextAction, nextAction)
+	}
+	out.WriteString(limitRunes(oneLine(nextAction), maxTaskOutcomeTextRunes))
+	return out.String()
+}
+
+func reviewableOutcomeFromResult(result map[string]any) (reviewableOutcomePayload, bool) {
+	if len(result) == 0 {
+		return reviewableOutcomePayload{}, false
+	}
+	raw, ok := result["reviewable_outcome"]
+	if !ok {
+		return reviewableOutcomePayload{}, false
+	}
+	outcomeMap, ok := raw.(map[string]any)
+	if !ok {
+		return reviewableOutcomePayload{}, false
+	}
+	out := reviewableOutcomePayload{
+		SchemaVersion: redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["schema_version"]))),
+		WhatWasDone:   redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_done"]))),
+		Validation:    redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["validation_output"]))),
+		Verified:      redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_verified"]))),
+		NotVerified:   redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_not_verified"]))),
+		NextAction:    redactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["next_action"]))),
+	}
+	if out.SchemaVersion == "" && out.WhatWasDone == "" && out.Validation == "" && out.Verified == "" && out.NotVerified == "" && out.NextAction == "" {
+		return reviewableOutcomePayload{}, false
+	}
+	return out, true
+}
+
+func parseTaskResult(raw string) map[string]any {
+	var out map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func stringFromResult(result map[string]any, key string) string {
+	if len(result) == 0 {
+		return ""
+	}
+	value, ok := result[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func boolFromResult(result map[string]any, key string) bool {
+	value, ok := result[key]
+	if !ok {
+		return false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	default:
+		return false
+	}
+}
+
+func oneLine(raw string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+}
+
+func limitRunes(raw string, limit int) string {
+	if limit <= 0 {
+		return raw
+	}
+	runes := []rune(strings.TrimSpace(raw))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit]) + "..."
+}
+
+func runAgentTurnWithProgress(
+	ctx context.Context,
+	r *runner.Runner,
+	userID string,
+	goalSessionID string,
+	prompt string,
+	onProgress func(string),
+) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if r == nil {
+		return "", fmt.Errorf("runner is required")
+	}
+	userContent := genai.NewContentFromText(prompt, genai.RoleUser)
+
+	var out strings.Builder
+	sawTurnComplete := false
+	for ev, err := range r.Run(ctx, userID, goalSessionID, userContent, adkagent.RunConfig{}) {
+		if err != nil {
+			return "", fmt.Errorf("run agent turn: %w", err)
+		}
+		if ev == nil {
+			continue
+		}
+		if ev.Content != nil {
+			for _, part := range ev.Content.Parts {
+				if part == nil || part.Thought || part.Text == "" {
+					continue
+				}
+				out.WriteString(part.Text)
+				if onProgress != nil && !ev.IsFinalResponse() {
+					onProgress(part.Text)
+				}
+			}
+		}
+		if ev.TurnComplete {
+			sawTurnComplete = true
+		}
+	}
+	if !sawTurnComplete {
+		return strings.TrimSpace(out.String()), fmt.Errorf("goal iteration ended without completion")
+	}
+	return strings.TrimSpace(out.String()), nil
+}

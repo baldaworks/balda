@@ -1,4 +1,4 @@
-package handlers
+package actors
 
 import (
 	"context"
@@ -278,11 +278,8 @@ func TestTaskActorEnsureGoalTaskIgnoresCreatedEventPublishFailure(t *testing.T) 
 }
 
 func TestSubmitWebhookTaskUsesStableTaskAndDistinctDedupeKeys(t *testing.T) {
-	ctx := context.Background()
-	bus := &recordingHandlerCommandBus{}
-	handler := &BaldaHandler{swarmCoordinator: swarm.NewCoordinator(bus, swarm.Config{Enabled: true})}
 	locator := taskActorTestLocator()
-	payload := sessionTurnPayload{
+	payload := SessionTurnPayload{
 		Text:      "release event",
 		Locator:   locator,
 		UserID:    "tg-101",
@@ -290,24 +287,17 @@ func TestSubmitWebhookTaskUsesStableTaskAndDistinctDedupeKeys(t *testing.T) {
 		DedupeKey: "webhook:release:req-1",
 	}
 
-	result, taskID, err := handler.submitWebhookTask(ctx, payload, "release", "req-1")
+	parent, taskID, err := WebhookTaskEnvelope(payload, "release", "req-1")
 	if err != nil {
-		t.Fatalf("submitWebhookTask() error = %v", err)
+		t.Fatalf("WebhookTaskEnvelope() error = %v", err)
 	}
-	_, duplicateTaskID, err := handler.submitWebhookTask(ctx, payload, "release", "req-1")
+	_, duplicateTaskID, err := WebhookTaskEnvelope(payload, "release", "req-1")
 	if err != nil {
-		t.Fatalf("submitWebhookTask(duplicate) error = %v", err)
+		t.Fatalf("WebhookTaskEnvelope(duplicate) error = %v", err)
 	}
 	if taskID == "" || duplicateTaskID != taskID {
 		t.Fatalf("task ids = %q/%q, want stable non-empty task id", taskID, duplicateTaskID)
 	}
-	if result.MsgID != "webhook:release:req-1:task" {
-		t.Fatalf("msg id = %q, want task-scoped dedupe", result.MsgID)
-	}
-	if got := len(bus.commands); got != 2 {
-		t.Fatalf("published commands = %d, want 2 recording bus calls", got)
-	}
-	parent := bus.commands[0]
 	if parent.DedupeKey != "webhook:release:req-1:task" {
 		t.Fatalf("parent dedupe = %q, want task-scoped key", parent.DedupeKey)
 	}
@@ -330,7 +320,7 @@ func TestTaskActorDispatchSessionTurnKeepsTaskRunningUntilSessionCompletes(t *te
 	locator := taskActorTestLocator()
 	taskID := "webhook-release-abc"
 	parentTaskID := "parent-task-1"
-	payload := sessionTurnPayload{
+	payload := SessionTurnPayload{
 		Text:         "release event",
 		Locator:      locator,
 		ParentTaskID: parentTaskID,
@@ -406,7 +396,7 @@ func TestTaskActorDispatchSessionTurnSkipsExistingTasks(t *testing.T) {
 				To:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
 				SessionID: locator.SessionID,
 				TaskID:    taskID,
-			}, sessionTurnPayload{
+			}, SessionTurnPayload{
 				Text:      "release event",
 				Locator:   locator,
 				UserID:    "tg-101",
@@ -474,7 +464,7 @@ func TestTaskActorStartScheduledTaskDispatchesSessionTurn(t *testing.T) {
 	if last.To.Target != swarm.ActorTypeSession || last.DedupeKey != "schedule:daily-review:slot-1:session" {
 		t.Fatalf("child command = %+v, want session command with child dedupe", last)
 	}
-	var child sessionTurnPayload
+	var child SessionTurnPayload
 	if err := json.Unmarshal([]byte(last.PayloadJSON), &child); err != nil {
 		t.Fatalf("decode child session payload: %v", err)
 	}
@@ -570,7 +560,7 @@ func TestSessionActorCompletesTaskAfterTurnSuccess(t *testing.T) {
 		Namespace: swarm.NamespaceWebhookInbound,
 		Kind:      swarm.KindWebhookEvent,
 		TaskID:    taskID,
-	}, sessionTurnPayload{}, nil); err != nil {
+	}, SessionTurnPayload{}, nil); err != nil {
 		t.Fatalf("recordSessionTaskResult() error = %v", err)
 	}
 
@@ -608,7 +598,7 @@ func TestSessionActorIgnoresTaskResultEventPublishFailure(t *testing.T) {
 		Namespace: swarm.NamespaceWebhookInbound,
 		Kind:      swarm.KindWebhookEvent,
 		TaskID:    taskID,
-	}, sessionTurnPayload{}, nil)
+	}, SessionTurnPayload{}, nil)
 	if err != nil {
 		t.Fatalf("recordSessionTaskResult() error = %v, want nil because task events are visibility-only", err)
 	}
@@ -962,9 +952,9 @@ func taskActorTestLocator() baldasession.SessionLocator {
 
 func taskActorGoalEnvelope(t *testing.T, locator baldasession.SessionLocator, objective string, maxIterations int) (swarm.Envelope, goalTaskPayload) {
 	t.Helper()
-	env, err := goalTaskEnvelope(locator, objective, "tg-101", maxIterations)
+	env, err := GoalTaskEnvelope(locator, objective, "tg-101", maxIterations)
 	if err != nil {
-		t.Fatalf("goalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalTaskEnvelope() error = %v", err)
 	}
 	var payload taskEnvelopePayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {

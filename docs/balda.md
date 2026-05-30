@@ -106,6 +106,7 @@ container uses the same `.env`, `.config/balda/config.yaml`,
 flowchart TB
     balda_root["github.com/normahq/balda/internal/apps/balda"]
     agent["github.com/normahq/balda/internal/apps/balda/agent"]
+    actors["github.com/normahq/balda/internal/apps/balda/actors"]
     auth["github.com/normahq/balda/internal/apps/balda/auth"]
     telegram["github.com/normahq/balda/internal/apps/balda/channel/telegram"]
     handlers["github.com/normahq/balda/internal/apps/balda/handlers"]
@@ -117,10 +118,16 @@ flowchart TB
     welcome["github.com/normahq/balda/internal/apps/balda/welcome"]
 
     balda_root --> agent
+    balda_root --> actors
     balda_root --> auth
     balda_root --> handlers
     balda_root --> state
     balda_root --> tgbotkit
+
+    actors --> agent
+    actors --> telegram
+    actors --> session
+    actors --> state
 
     telegram --> messenger
     telegram --> session
@@ -141,11 +148,12 @@ flowchart TB
 
 | Package | Import Path | Description | Depends On |
 |---------|-------------|-------------|------------|
-| `balda` | `internal/apps/balda` | Root application module | agent, auth, handlers, state, tgbotkit |
+| `balda` | `internal/apps/balda` | Root application module | actors, agent, auth, handlers, state, tgbotkit |
 | `agent` | `internal/apps/balda/agent` | Agent builder & workspace manager | `internal/git`, `pkg/runtime/*` |
+| `actors` | `internal/apps/balda/actors` | Balda product actors and actor command contracts | agent, channel/telegram, session, state, swarm |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram message adapter | messenger, session |
-| `handlers` | `internal/apps/balda/handlers` | Telegram command handlers | auth, channel/telegram, messenger, session, welcome |
+| `handlers` | `internal/apps/balda/handlers` | Telegram/webhook/scheduler ingress and command publishing | actors, auth, channel/telegram, messenger, session, welcome |
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `middleware` | `internal/apps/balda/middleware` | Auth middleware | auth |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
@@ -158,17 +166,19 @@ flowchart TB
 Balda treats `actorlayer` as a pure typed actor engine and never as product policy.
 
 - `balda.provider` selects one app-scoped ADK provider runtime for all Balda sessions and task role agents in the process.
-- Actorlayer owns typed actor dispatch, lane serialization, and lifecycle events.
+- Actorlayer owns generic actor mechanics: registration, addressing, lane execution, lifecycle state, and delivery hooks.
+- Balda owns product actors and product behavior implemented as actors: session, task, agent, delivery, control, and memory.
 - Balda maps JetStream command messages into actorlayer deliveries and owns command settlement.
 
 The boundary is intentionally explicit:
 
 - Balda owns retry, dead-letter, queue visibility, and task projection policy.
-- Actor contracts expose only actor-level contracts and metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`).
+- Actor command contracts expose only actor-level contracts and metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`).
 - Runtime command flow and projectors are preserved by keeping queue/provider details outside actor definitions.
 
 ### Migration Checklist
 
+- Keep Balda product actor definitions in `internal/apps/balda/actors`; keep ingress/Telegram command handling in `internal/apps/balda/handlers`.
 - Keep actor definitions and state types independent from provider IDs.
 - Ensure no ADK, provider, or queue API types enter the actor layer contract.
 - Keep retry/dead-letter policy, projection writes, and reporting in Balda-owned modules.
@@ -180,7 +190,8 @@ The boundary is intentionally explicit:
 Balda's actorlayer integration is intentionally direct:
 
 - `internal/apps/balda/swarm/runtime.go`: adapts JetStream `CommandMessage` values into `actorlayer/engine` deliveries and owns actor lane execution.
-- `internal/apps/balda/handlers/swarm_*.go`: defines the Balda actors for sessions, tasks, task agents, delivery, control, and memory.
+- `internal/apps/balda/actors`: defines Balda product actors for sessions, tasks, task agents, delivery, control, and memory command contracts.
+- `internal/apps/balda/handlers`: owns ingress, command parsing, and publishing actor command envelopes.
 - `internal/apps/balda/eventbus/nats`: owns JetStream publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing.
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped ADK provider runtime selected by `balda.provider` and the per-session ADK state.
 - `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, tasks, projections, memory, and delivery outbox rows.
