@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +19,23 @@ const heartbeatInterval = 30 * time.Second
 
 type Actor = dispatch.Actor
 
-func registerActors(actors []Actor) (dispatch.Registry, error) {
+// runtimeActorRegistry is the local in-memory actor registry abstraction used by the runtime.
+type runtimeActorRegistry interface {
+	Register(actor Actor) error
+	Resolve(address string) (Actor, bool)
+}
+
+// runtimeRuntime is the local runtime execution boundary used by Balda.
+type runtimeRuntime interface {
+	Run(runtimeCtx context.Context, source actorengine.Source, route runtimeRoute) error
+	Handle(handleCtx context.Context, delivery actorengine.Delivery, route runtimeRoute) error
+	EmitInProgress(eventCtx context.Context, delivery actorengine.Delivery)
+}
+
+// runtimeRoute is the execution callback contract used by the in-memory runtime.
+type runtimeRoute = actorengine.Handler
+
+func registerActors(actors []Actor) (runtimeActorRegistry, error) {
 	registry := dispatch.NewMemoryRegistry()
 	for _, actor := range actors {
 		if err := registry.Register(actor); err != nil {
@@ -30,11 +47,13 @@ func registerActors(actors []Actor) (dispatch.Registry, error) {
 
 type Runtime struct {
 	bus     RuntimeBus
-	actors  dispatch.Registry
+	actors  runtimeActorRegistry
 	tasks   *TaskService
-	engine  *actorengine.Runtime
+	engine  runtimeRuntime
 	logger  zerolog.Logger
 	enabled bool
+	lanesMu sync.Mutex
+	lanes   map[string]int
 	// heartbeatTick controls the in-progress ack cadence for long-running commands.
 	// Zero falls back to the package default.
 	heartbeatTick time.Duration
@@ -74,6 +93,7 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 		tasks:         params.Tasks,
 		logger:        params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
 		enabled:       params.Config.Enabled,
+		lanes:         make(map[string]int),
 		heartbeatTick: heartbeatInterval,
 	}
 	engine, err := actorengine.New(actorengine.Config{
@@ -172,13 +192,23 @@ func (r *Runtime) prepareCommandDelivery(ctx context.Context, cmd CommandMessage
 }
 
 func (r *Runtime) LaneStatus() RuntimeLaneStatus {
-	if r == nil || r.engine == nil {
+	if r == nil {
 		return RuntimeLaneStatus{}
 	}
-	status := r.engine.LaneStatus()
+
+	r.lanesMu.Lock()
+	defer r.lanesMu.Unlock()
+
+	keys := make([]string, 0, len(r.lanes))
+	for lane, count := range r.lanes {
+		if count > 0 {
+			keys = append(keys, lane)
+		}
+	}
+	sort.Strings(keys)
 	return RuntimeLaneStatus{
-		Active: status.Active,
-		Keys:   status.Keys,
+		Active: len(keys),
+		Keys:   keys,
 	}
 }
 
@@ -212,18 +242,52 @@ func (r *Runtime) route(ctx context.Context, delivery actorengine.Delivery) erro
 	if r == nil {
 		return nil
 	}
+	r.beginLaneTrack(delivery)
+	defer r.endLaneTrack(delivery)
 	address, err := runtimeAddressOf(delivery.Envelope())
 	if err != nil {
 		return err
 	}
 	if r.actors == nil {
-		return &actorengine.ResolveError{Address: address}
+		return &ResolveError{Address: address}
 	}
 	actor, found := r.actors.Resolve(address)
 	if !found {
-		return &actorengine.ResolveError{Address: address}
+		return &ResolveError{Address: address}
 	}
 	return actor.Handle(ctx, delivery.Envelope())
+}
+
+func (r *Runtime) beginLaneTrack(delivery actorengine.Delivery) {
+	if r == nil || delivery == nil {
+		return
+	}
+	lane := strings.TrimSpace(actorLaneKeyFromEnvelope(delivery.Envelope()))
+	if lane == "" {
+		lane = "unknown"
+	}
+
+	r.lanesMu.Lock()
+	defer r.lanesMu.Unlock()
+	r.lanes[lane]++
+}
+
+func (r *Runtime) endLaneTrack(delivery actorengine.Delivery) {
+	if r == nil || delivery == nil {
+		return
+	}
+	lane := strings.TrimSpace(actorLaneKeyFromEnvelope(delivery.Envelope()))
+	if lane == "" {
+		lane = "unknown"
+	}
+
+	r.lanesMu.Lock()
+	defer r.lanesMu.Unlock()
+	if count := r.lanes[lane] - 1; count <= 0 {
+		delete(r.lanes, lane)
+	} else {
+		r.lanes[lane] = count
+	}
 }
 
 func (r *Runtime) Publish(ctx context.Context, event actorengine.Event) {

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	actorengine "github.com/normahq/norma/actorlayer/engine"
+	actorlayer "github.com/normahq/norma/actorlayer"
 )
 
 type ErrorKind string
@@ -81,7 +81,7 @@ func IsRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, actorengine.ErrActorNotFound) {
+	if errors.Is(err, ErrActorNotFound) {
 		return false
 	}
 	switch ClassifyError(err) {
@@ -90,4 +90,22 @@ func IsRetryableError(err error) bool {
 	default:
 		return true
 	}
+}
+
+var ErrActorNotFound = actorlayer.ErrActorNotFound
+
+// ResolveError is returned when a swarm actor address cannot be resolved.
+type ResolveError struct {
+	Address string
+}
+
+func (e *ResolveError) Error() string {
+	if e == nil {
+		return "resolve error"
+	}
+	return fmt.Sprintf("%s: %s", ErrActorNotFound, e.Address)
+}
+
+func (e *ResolveError) Unwrap() error {
+	return ErrActorNotFound
 }
