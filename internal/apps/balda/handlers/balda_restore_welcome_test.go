@@ -464,20 +464,8 @@ func (*fakeBaldaRestoreAgentBuilder) CreateRuntimeSession(
 	return nil, nil
 }
 
-func (*fakeBaldaRestoreAgentBuilder) ValidateAgent(string) error {
-	return nil
-}
-
-func (*fakeBaldaRestoreAgentBuilder) GetAgentInfo(string) (string, []string) {
-	return "", nil
-}
-
 func (f *fakeBaldaRestoreAgentBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
 	return f.metadata
-}
-
-func (*fakeBaldaRestoreAgentBuilder) ProviderIDs() []string {
-	return []string{"balda-provider"}
 }
 
 type fakeBaldaRestoreRuntimeManager struct {

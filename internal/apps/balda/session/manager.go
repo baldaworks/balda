@@ -36,7 +36,6 @@ type agentBuilder interface {
 		sessionID string,
 		workspaceDir string,
 	) (adksession.Session, error)
-	ValidateAgent(agentName string) error
 	GetAgentMetadata(agentName string) baldaagent.AgentMetadata
 }
 
@@ -119,17 +118,6 @@ func NewManager(p ManagerParams) (*Manager, error) {
 	})
 
 	return m, nil
-}
-
-// ValidateAgent checks if an agent with the given name exists in the config.
-func (m *Manager) ValidateAgent(agentName string) error {
-	m.mu.RLock()
-	builder := m.agentBuilder
-	m.mu.RUnlock()
-	if builder == nil {
-		return fmt.Errorf("agent builder is required")
-	}
-	return builder.ValidateAgent(agentName)
 }
 
 // GetAgentMetadata returns balda-provider metadata with provider-scoped MCP IDs.
@@ -432,11 +420,6 @@ func (m *Manager) hardDeleteSession(locator SessionLocator) {
 	}
 
 	m.logger.Info().Str("session_id", sessionID).Msg("session stopped")
-}
-
-// StopAll closes all sessions.
-func (m *Manager) StopAll() {
-	m.stopAllWithContext(context.Background())
 }
 
 func (m *Manager) stopAllWithContext(ctx context.Context) {

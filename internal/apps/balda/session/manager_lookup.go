@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	adksession "google.golang.org/adk/session"
 )
 
 // GetSession returns the in-memory session for the given locator.
@@ -29,39 +28,6 @@ func (m *Manager) GetSession(locator SessionLocator) (*TopicSession, error) {
 	}
 
 	return ts, nil
-}
-
-// HasSession reports whether a session exists in memory or persisted metadata.
-// It does not create or restore sessions.
-func (m *Manager) HasSession(ctx context.Context, locator SessionLocator) (bool, error) {
-	sessionID := strings.TrimSpace(locator.SessionID)
-	if sessionID == "" {
-		return false, nil
-	}
-
-	m.mu.RLock()
-	_, active := m.sessions[sessionID]
-	m.mu.RUnlock()
-	if active {
-		return true, nil
-	}
-
-	if m.sessionStore == nil {
-		return false, nil
-	}
-
-	record, ok, err := m.sessionStore.GetByAddress(ctx, locator.ChannelType, locator.AddressKey)
-	if err != nil {
-		return false, fmt.Errorf("read session metadata: %w", err)
-	}
-	if !ok {
-		return false, nil
-	}
-
-	if status := strings.TrimSpace(record.Status); status != "" && status != baldastate.SessionStatusActive {
-		return false, nil
-	}
-	return true, nil
 }
 
 // EnsureSession returns the existing session or creates a new one if it doesn't exist.
@@ -139,18 +105,6 @@ func restoredSessionUserID(record baldastate.SessionRecord, fallback string) str
 	return fallback
 }
 
-// ListSessions returns info about all active sessions.
-func (m *Manager) ListSessions() []TopicSessionInfo {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	out := make([]TopicSessionInfo, 0, len(m.sessions))
-	for _, ts := range m.sessions {
-		out = append(out, topicSessionInfo(ts, baldastate.SessionStatusActive))
-	}
-	return out
-}
-
 type TopicSessionInfo struct {
 	SessionID    string
 	UserID       string
@@ -189,89 +143,6 @@ func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSe
 	}
 	info.Status = sessionStatusForInactiveRecord(record.Status)
 	return info, nil
-}
-
-func (m *Manager) ListSessionInfos(ctx context.Context) ([]TopicSessionInfo, error) {
-	persisted, err := m.sessionStore.List(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list session metadata: %w", err)
-	}
-
-	infos := make(map[string]TopicSessionInfo, len(persisted))
-	for _, record := range persisted {
-		info, err := topicSessionInfoFromRecord(record)
-		if err != nil {
-			return nil, err
-		}
-		info.Status = sessionStatusForInactiveRecord(record.Status)
-		infos[info.SessionID] = info
-	}
-
-	for _, info := range m.ListSessions() {
-		info.Status = baldastate.SessionStatusActive
-		infos[info.SessionID] = info
-	}
-
-	out := make([]TopicSessionInfo, 0, len(infos))
-	for _, info := range infos {
-		out = append(out, info)
-	}
-	return out, nil
-}
-
-func (m *Manager) StopSessionByID(ctx context.Context, sessionID string) error {
-	info, err := m.GetSessionInfo(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-	if info.Status == baldastate.SessionStatusActive {
-		m.hardDeleteSession(info.Locator)
-		return nil
-	}
-
-	if m.workspaceEnabled && strings.TrimSpace(info.WorkspaceDir) != "" {
-		if err := m.workspaces.CleanupWorkspace(ctx, info.WorkspaceDir); err != nil {
-			return fmt.Errorf("cleanup workspace: %w", err)
-		}
-	}
-	if m.sessionsPersistent {
-		if err := m.deletePersistedADKSession(ctx, info); err != nil {
-			return err
-		}
-	}
-	if err := m.sessionStore.DeleteBySessionID(ctx, info.SessionID); err != nil {
-		return fmt.Errorf("delete session metadata: %w", err)
-	}
-	return nil
-}
-
-func (m *Manager) deletePersistedADKSession(ctx context.Context, info TopicSessionInfo) error {
-	if strings.TrimSpace(info.UserID) == "" {
-		return nil
-	}
-	runtimeManager := m.runtimeManager
-	if runtimeManager == nil {
-		return fmt.Errorf("balda runtime manager is required")
-	}
-	rootRuntime, err := runtimeManager.Runtime(ctx)
-	if err != nil {
-		return err
-	}
-	if rootRuntime == nil || rootRuntime.SessionSvc == nil {
-		return fmt.Errorf("session service is required")
-	}
-	appName := strings.TrimSpace(rootRuntime.AppName)
-	if appName == "" {
-		appName = baldaADKAppName
-	}
-	if err := rootRuntime.SessionSvc.Delete(ctx, &adksession.DeleteRequest{
-		AppName:   appName,
-		UserID:    strings.TrimSpace(info.UserID),
-		SessionID: strings.TrimSpace(info.SessionID),
-	}); err != nil {
-		return fmt.Errorf("delete adk session: %w", err)
-	}
-	return nil
 }
 
 func topicSessionInfo(ts *TopicSession, status string) TopicSessionInfo {

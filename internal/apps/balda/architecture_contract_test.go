@@ -224,7 +224,7 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 	})
 
 	t.Run("dead agent and session convenience exports stay deleted", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`func\s+\(m\s+\*Manager\)\s+SessionBranchName\s*\(|func\s+\(s\s+\*TopicSession\)\s+GetLocator\s*\(|func\s+\(m\s+\*Manager\)\s+GetAgentInfo\s*\(|func\s+\(m\s+\*Manager\)\s+ProviderIDs\s*\(|func\s+\(b\s+\*Builder\)\s+GetAgentInfo\s*\(|func\s+\(b\s+\*Builder\)\s+ProviderIDs\s*\(`))
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`func\s+\(m\s+\*Manager\)\s+SessionBranchName\s*\(|func\s+\(s\s+\*TopicSession\)\s+GetLocator\s*\(|func\s+\(m\s+\*Manager\)\s+GetAgentInfo\s*\(|func\s+\(m\s+\*Manager\)\s+ProviderIDs\s*\(|func\s+\(b\s+\*Builder\)\s+GetAgentInfo\s*\(|func\s+\(b\s+\*Builder\)\s+ProviderIDs\s*\(|func\s+\(m\s+\*Manager\)\s+ValidateAgent\s*\(|func\s+\(b\s+\*Builder\)\s+ValidateAgent\s*\(|func\s+\(m\s+\*Manager\)\s+HasSession\s*\(|func\s+\(m\s+\*Manager\)\s+ListSessions\s*\(|func\s+\(m\s+\*Manager\)\s+ListSessionInfos\s*\(|func\s+\(m\s+\*Manager\)\s+StopSessionByID\s*\(|func\s+\(m\s+\*Manager\)\s+StopAll\s*\(`))
 		if len(matches) > 0 {
 			t.Fatalf("dead agent/session convenience export found in production Go files:\n%s", formatSourceMatches(matches))
 		}

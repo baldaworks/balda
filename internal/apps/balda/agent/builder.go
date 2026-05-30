@@ -162,12 +162,6 @@ func NewBuilder(params BuilderParams) *Builder {
 	}
 }
 
-// ValidateAgent checks if an agent with the given name can be created.
-// It returns an error if the agent is not found or its type is unsupported.
-func (b *Builder) ValidateAgent(agentName string) error {
-	return b.factory.ValidateAgent(agentName)
-}
-
 type BuiltAgent struct {
 	Agent      agent.Agent
 	Runner     *runner.Runner

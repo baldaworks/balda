@@ -16,7 +16,7 @@ import (
 	adksession "google.golang.org/adk/session"
 )
 
-func TestStopAll_CleansWorkspaceWhenRootContextCanceled(t *testing.T) {
+func TestStopAllWithContext_CleansWorkspaceWhenRootContextCanceled(t *testing.T) {
 	ctx := context.Background()
 	workingDir := t.TempDir()
 	initGitRepo(t, ctx, workingDir)
@@ -41,7 +41,7 @@ func TestStopAll_CleansWorkspaceWhenRootContextCanceled(t *testing.T) {
 		},
 	}
 
-	m.StopAll()
+	m.stopAllWithContext(context.Background())
 
 	if _, err := os.Stat(workspaceDir); !os.IsNotExist(err) {
 		t.Fatalf("workspace still exists after StopAll; stat err = %v", err)
@@ -141,85 +141,6 @@ func TestResetSession_DeletesADKHistoryAndPreservesMetadata(t *testing.T) {
 	}
 }
 
-func TestHasSession(t *testing.T) {
-	t.Run("active session in memory", func(t *testing.T) {
-		locator := testTelegramLocator(10, 42)
-		m := &Manager{
-			logger: zerolog.Nop(),
-			sessions: map[string]*TopicSession{
-				locator.SessionID: {
-					sessionID: locator.SessionID,
-					locator:   locator,
-				},
-			},
-		}
-
-		ok, err := m.HasSession(context.Background(), locator)
-		if err != nil {
-			t.Fatalf("HasSession() error = %v", err)
-		}
-		if !ok {
-			t.Fatal("HasSession() = false, want true for active session")
-		}
-	})
-
-	t.Run("active persisted session", func(t *testing.T) {
-		locator := testTelegramLocator(11, 77)
-		store := &fakeSessionStore{
-			recordsByAddress: map[string]baldastate.SessionRecord{
-				sessionAddressKey(baldastate.ChannelTypeTelegram, "11:77"): {
-					SessionID:   locator.SessionID,
-					ChannelType: baldastate.ChannelTypeTelegram,
-					AddressKey:  "11:77",
-					AddressJSON: `{"chat_id":11,"topic_id":77}`,
-					Status:      baldastate.SessionStatusActive,
-				},
-			},
-		}
-		m := &Manager{
-			logger:       zerolog.Nop(),
-			sessionStore: store,
-			sessions:     map[string]*TopicSession{},
-		}
-
-		ok, err := m.HasSession(context.Background(), locator)
-		if err != nil {
-			t.Fatalf("HasSession() error = %v", err)
-		}
-		if !ok {
-			t.Fatal("HasSession() = false, want true for persisted active session")
-		}
-	})
-
-	t.Run("inactive persisted session", func(t *testing.T) {
-		locator := testTelegramLocator(12, 88)
-		store := &fakeSessionStore{
-			recordsByAddress: map[string]baldastate.SessionRecord{
-				sessionAddressKey(baldastate.ChannelTypeTelegram, "12:88"): {
-					SessionID:   locator.SessionID,
-					ChannelType: baldastate.ChannelTypeTelegram,
-					AddressKey:  "12:88",
-					AddressJSON: `{"chat_id":12,"topic_id":88}`,
-					Status:      "closed",
-				},
-			},
-		}
-		m := &Manager{
-			logger:       zerolog.Nop(),
-			sessionStore: store,
-			sessions:     map[string]*TopicSession{},
-		}
-
-		ok, err := m.HasSession(context.Background(), locator)
-		if err != nil {
-			t.Fatalf("HasSession() error = %v", err)
-		}
-		if ok {
-			t.Fatal("HasSession() = true, want false for non-active persisted session")
-		}
-	})
-}
-
 func TestMergeUniqueStringIDs(t *testing.T) {
 	base := []string{"balda", "shared"}
 	extra := []string{" custom.one ", "shared", "", "custom.two"}
@@ -291,110 +212,6 @@ func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 	}
 }
 
-func TestListSessionInfos_MergesActiveAndPersisted(t *testing.T) {
-	store := &fakeSessionStore{
-		listRecords: []baldastate.SessionRecord{
-			{
-				SessionID:    "tg-1-1",
-				ChannelType:  baldastate.ChannelTypeTelegram,
-				AddressKey:   "1:1",
-				AddressJSON:  `{"chat_id":1,"topic_id":1}`,
-				AgentName:    "persisted",
-				WorkspaceDir: "/tmp/persisted",
-				BranchName:   "norma/balda/tg-1-1",
-				Status:       baldastate.SessionStatusActive,
-			},
-			{
-				SessionID:    "tg-2-2",
-				ChannelType:  baldastate.ChannelTypeTelegram,
-				AddressKey:   "2:2",
-				AddressJSON:  `{"chat_id":2,"topic_id":2}`,
-				AgentName:    "inactive",
-				WorkspaceDir: "/tmp/inactive",
-				BranchName:   "norma/balda/tg-2-2",
-				Status:       baldastate.SessionStatusActive,
-			},
-		},
-	}
-
-	m := &Manager{
-		logger:       zerolog.Nop(),
-		sessionStore: store,
-		sessions: map[string]*TopicSession{
-			"tg-1-1": {
-				sessionID: "tg-1-1",
-				locator:   testTelegramLocator(1, 1),
-				agentName: "active",
-			},
-		},
-	}
-
-	infos, err := m.ListSessionInfos(context.Background())
-	if err != nil {
-		t.Fatalf("ListSessionInfos() error = %v", err)
-	}
-	if len(infos) != 2 {
-		t.Fatalf("ListSessionInfos() len = %d, want 2", len(infos))
-	}
-
-	byID := make(map[string]TopicSessionInfo, len(infos))
-	for _, info := range infos {
-		byID[info.SessionID] = info
-	}
-	if byID["tg-1-1"].AgentName != "active" || byID["tg-1-1"].Status != baldastate.SessionStatusActive {
-		t.Fatalf("active session merge = %+v, want active override", byID["tg-1-1"])
-	}
-	if byID["tg-2-2"].Status != sessionStatusPersisted {
-		t.Fatalf("persisted session status = %q, want %q", byID["tg-2-2"].Status, sessionStatusPersisted)
-	}
-}
-
-func TestStopSessionByID_PersistedSessionCleansWorkspace(t *testing.T) {
-	ctx := context.Background()
-	workingDir := t.TempDir()
-	initGitRepo(t, ctx, workingDir)
-
-	writeFile(t, filepath.Join(workingDir, "seed.txt"), "seed\n")
-	runGit(t, ctx, workingDir, "add", "seed.txt")
-	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
-
-	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
-	runGit(t, ctx, workingDir, "worktree", "add", "-b", "norma/balda/tg-9-9", workspaceDir, "HEAD")
-
-	store := &fakeSessionStore{
-		recordsByID: map[string]baldastate.SessionRecord{
-			"tg-9-9": {
-				SessionID:    "tg-9-9",
-				ChannelType:  baldastate.ChannelTypeTelegram,
-				AddressKey:   "9:9",
-				AddressJSON:  `{"chat_id":9,"topic_id":9}`,
-				AgentName:    "opencode",
-				WorkspaceDir: workspaceDir,
-				BranchName:   "norma/balda/tg-9-9",
-				Status:       baldastate.SessionStatusActive,
-			},
-		},
-	}
-
-	m := &Manager{
-		workspaces:       baldaagent.NewWorkspaceManager(workingDir, t.TempDir(), "master"),
-		workspaceEnabled: true,
-		logger:           zerolog.Nop(),
-		sessionStore:     store,
-		sessions:         map[string]*TopicSession{},
-	}
-
-	if err := m.StopSessionByID(ctx, "tg-9-9"); err != nil {
-		t.Fatalf("StopSessionByID() error = %v", err)
-	}
-	if store.deletedSessionID != "tg-9-9" {
-		t.Fatalf("DeleteBySessionID called with %q, want %q", store.deletedSessionID, "tg-9-9")
-	}
-	if _, err := os.Stat(workspaceDir); !os.IsNotExist(err) {
-		t.Fatalf("workspace still exists after StopSessionByID; stat err = %v", err)
-	}
-}
-
 type fakeAgentBuilder struct {
 	createRuntimeSessionAgentNames    []string
 	createRuntimeSessionUserIDs       []string
@@ -417,10 +234,6 @@ func (f *fakeAgentBuilder) CreateRuntimeSession(
 		return nil, f.createRuntimeSessionErr
 	}
 	return nil, nil
-}
-
-func (f *fakeAgentBuilder) ValidateAgent(agentName string) error {
-	return nil
 }
 
 func (f *fakeAgentBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {

@@ -410,18 +410,6 @@ func (f *fakeBaldaStartupFailBuilder) CreateRuntimeSession(
 	return nil, f.err
 }
 
-func (*fakeBaldaStartupFailBuilder) ValidateAgent(string) error {
-	return nil
-}
-
-func (*fakeBaldaStartupFailBuilder) GetAgentInfo(string) (string, []string) {
-	return "", nil
-}
-
 func (f *fakeBaldaStartupFailBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
 	return f.metadata
-}
-
-func (*fakeBaldaStartupFailBuilder) ProviderIDs() []string {
-	return []string{"balda-provider"}
 }
