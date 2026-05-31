@@ -52,7 +52,7 @@ func actorError(kind ErrorKind, err error) error {
 	return &ActorError{Kind: kind, Err: err}
 }
 
-func classifyError(err error) ErrorKind {
+func ClassifyError(err error) ErrorKind {
 	if err == nil {
 		return ""
 	}
@@ -61,10 +61,6 @@ func classifyError(err error) ErrorKind {
 		return actorErr.Kind
 	}
 	return ErrorKindTransient
-}
-
-func ClassifyError(err error) ErrorKind {
-	return classifyError(err)
 }
 
 // IsRetryableError reports whether an error should be retried by runtime consumers.
