@@ -303,9 +303,26 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 		default:
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.mode: unsupported mode %q", routeName, rawRoute.Envelope.Mode)
 		}
-		authPolicy, err := normalizeInboundWebhookAuthPolicy(rawRoute.Auth)
-		if err != nil {
-			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.auth: %w", routeName, err)
+		authPolicy := inboundWebhookAuthPolicy{
+			Type:   strings.ToLower(strings.TrimSpace(rawRoute.Auth.Type)),
+			Header: strings.TrimSpace(rawRoute.Auth.Header),
+			Value:  strings.TrimSpace(rawRoute.Auth.Value),
+		}
+		if authPolicy.Type == "" {
+			authPolicy.Type = inboundWebhookAuthTypeNone
+		}
+		switch authPolicy.Type {
+		case inboundWebhookAuthTypeNone:
+			authPolicy = inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone}
+		case inboundWebhookAuthTypeHeader:
+			if authPolicy.Header == "" {
+				return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.auth: header is required for type=%q", routeName, inboundWebhookAuthTypeHeader)
+			}
+			if authPolicy.Value == "" {
+				return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.auth: value is required for type=%q", routeName, inboundWebhookAuthTypeHeader)
+			}
+		default:
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.auth: unsupported type %q", routeName, rawRoute.Auth.Type)
 		}
 		dedupePolicy, err := normalizeInboundWebhookDedupePolicy(rawRoute.Dedupe)
 		if err != nil {
@@ -325,31 +342,6 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 	}
 
 	return normalized, nil
-}
-
-func normalizeInboundWebhookAuthPolicy(raw InboundWebhookRouteAuthConfig) (inboundWebhookAuthPolicy, error) {
-	policy := inboundWebhookAuthPolicy{
-		Type:   strings.ToLower(strings.TrimSpace(raw.Type)),
-		Header: strings.TrimSpace(raw.Header),
-		Value:  strings.TrimSpace(raw.Value),
-	}
-	if policy.Type == "" {
-		policy.Type = inboundWebhookAuthTypeNone
-	}
-	switch policy.Type {
-	case inboundWebhookAuthTypeNone:
-		return inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone}, nil
-	case inboundWebhookAuthTypeHeader:
-		if policy.Header == "" {
-			return inboundWebhookAuthPolicy{}, fmt.Errorf("header is required for type=%q", inboundWebhookAuthTypeHeader)
-		}
-		if policy.Value == "" {
-			return inboundWebhookAuthPolicy{}, fmt.Errorf("value is required for type=%q", inboundWebhookAuthTypeHeader)
-		}
-		return policy, nil
-	default:
-		return inboundWebhookAuthPolicy{}, fmt.Errorf("unsupported type %q", raw.Type)
-	}
 }
 
 func normalizeInboundWebhookDedupePolicy(raw InboundWebhookRouteDedupeConfig) (inboundWebhookDedupePolicy, error) {
