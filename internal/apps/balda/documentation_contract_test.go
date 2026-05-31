@@ -280,6 +280,22 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("readme config keeps internal runtime detail out of public setup docs", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "README.md")
+		section := markdownSection(readFile(t, path), "## Configuration")
+		forbidden := []string{
+			"Actor-lane queue policy",
+			"Task records, projections, and DLQ state",
+			"Command lifecycle events (`accepted|running|acked|retrying|deadlettered`)",
+			"SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint",
+		}
+		for _, needle := range forbidden {
+			if strings.Contains(section, needle) {
+				t.Fatalf("%s configuration section still exposes internal runtime detail %q", filepath.ToSlash(path), needle)
+			}
+		}
+	})
+
 	t.Run("architecture docs do not describe removed status interface surfaces", func(t *testing.T) {
 		paths := []string{
 			filepath.Join(repoRoot, "docs/architecture/index.md"),

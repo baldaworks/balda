@@ -266,13 +266,10 @@ Common settings:
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
 - `balda.nats.*`: embedded JetStream is required by default, binds to `127.0.0.1` on a random local port, keeps monitoring disabled, and stores JetStream files under `.balda/nats`.
 - Legacy runtime keys are rejected at startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`).
-- `balda.swarm` configures the always-on actor runtime and event projector. The runtime is not user-disableable.
-- `balda.swarm.commands.*`: JetStream command stream and durable pull consumer settings. `BALDA_COMMANDS` is the only command queue.
-- `balda.swarm.events.*`: JetStream event stream settings for command/task/delivery events.
-- `balda.swarm.dlq.*`: JetStream dead-letter stream settings for terminal command failures.
-- Actor-lane queue policy is not a public config surface yet; JetStream is the only durable command queue. Local in-process command fan-out is bounded to `fetch_batch`, and SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint.
-- Task records, projections, and DLQ state are internal implementation details used by goals, scheduling, webhooks, retries, and cancellation.
-- Command lifecycle events (`accepted|running|acked|retrying|deadlettered`) are best-effort visibility telemetry. Command settlement does not depend on lifecycle event publication.
+- `balda.swarm` configures command processing for goals, scheduled work, retries, and webhook delivery. The runtime is always on.
+- `balda.swarm.commands.*`: command-processing capacity and timing settings.
+- `balda.swarm.events.*`: internal event-stream settings.
+- `balda.swarm.dlq.*`: internal failure-retention settings.
 - `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
