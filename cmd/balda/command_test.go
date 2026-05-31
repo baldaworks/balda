@@ -174,6 +174,18 @@ balda:
 	}
 }
 
+func TestDefaultBaldaConfig_AvoidsStaleTemplateWording(t *testing.T) {
+	body := string(defaultBaldaConfig)
+	for _, needle := range []string{
+		"legacy typing / Thinking... progress only",
+		"/goal Goalkeeper worker/validator iteration cap.",
+	} {
+		if strings.Contains(body, needle) {
+			t.Fatalf("defaultBaldaConfig still contains stale template wording %q", needle)
+		}
+	}
+}
+
 func TestLoadConfigDocument_ExplicitMissingProfileFails(t *testing.T) {
 	workingDir := t.TempDir()
 

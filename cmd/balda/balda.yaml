@@ -17,7 +17,7 @@ balda:
     formatting_mode: "markdownv2"
     # Surface ACP plan updates in balda progress.
     # - true: DM drafts show plan snapshots; public chats/topics receive plain-text plan messages
-    # - false: keep legacy typing / Thinking... progress only
+    # - false: keep typing / Thinking... progress only
     plan_updates: true
 
     # Optional webhook configuration
@@ -103,7 +103,7 @@ balda:
     enabled: true
 
   goal:
-    # /goal Goalkeeper worker/validator iteration cap.
+    # /goal work-validation iteration cap.
     # Balda clamps invalid values to 25.
     max_iterations: 25
 
