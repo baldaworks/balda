@@ -269,7 +269,21 @@ func Module(
 		),
 		fx.Provide(
 			fx.Annotate(
-				func() []string { return sortedMCPServerIDs(normaCfg.MCPServers) },
+				func() []string {
+					if len(normaCfg.MCPServers) == 0 {
+						return nil
+					}
+					ids := make([]string, 0, len(normaCfg.MCPServers))
+					for id := range normaCfg.MCPServers {
+						trimmed := strings.TrimSpace(id)
+						if trimmed == "" {
+							continue
+						}
+						ids = append(ids, trimmed)
+					}
+					sort.Strings(ids)
+					return ids
+				},
 				fx.ResultTags(`name:"balda_runtime_mcp_server_ids"`),
 			),
 		),
@@ -470,22 +484,6 @@ func resolveWorkspaceEnabledForApp(
 	}
 
 	return mode, enabled, nil
-}
-
-func sortedMCPServerIDs(servers map[string]agentconfig.MCPServerConfig) []string {
-	if len(servers) == 0 {
-		return nil
-	}
-	ids := make([]string, 0, len(servers))
-	for id := range servers {
-		trimmed := strings.TrimSpace(id)
-		if trimmed == "" {
-			continue
-		}
-		ids = append(ids, trimmed)
-	}
-	sort.Strings(ids)
-	return ids
 }
 
 func validateTelegramFormattingMode(raw string) (string, error) {
