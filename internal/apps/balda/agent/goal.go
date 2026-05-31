@@ -211,7 +211,13 @@ func wrapGoalValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKe
 		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
 				goal := visibleContentText(ctx.UserContent())
-				workerOutput := strings.TrimSpace(sessionStateString(ctx, key))
+				workerOutput := ""
+				if ctx != nil && ctx.Session() != nil {
+					value, err := ctx.Session().State().Get(key)
+					if err == nil && value != nil {
+						workerOutput = strings.TrimSpace(fmt.Sprintf("%v", value))
+					}
+				}
 				if goal == "" {
 					goal = "Goal:"
 				}
@@ -254,23 +260,6 @@ func (w goalValidatorWrapper) Close() error {
 		return nil
 	}
 	return w.closer.Close()
-}
-
-func sessionStateString(ctx adkagent.InvocationContext, key string) string {
-	if ctx == nil || ctx.Session() == nil {
-		return ""
-	}
-	value, err := ctx.Session().State().Get(key)
-	if err != nil {
-		if errors.Is(err, adksession.ErrStateKeyNotExist) {
-			return ""
-		}
-		return ""
-	}
-	if value == nil {
-		return ""
-	}
-	return strings.TrimSpace(fmt.Sprintf("%v", value))
 }
 
 func visibleContentText(content *genai.Content) string {
