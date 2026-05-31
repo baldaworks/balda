@@ -141,37 +141,37 @@ func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.Dispatch
 var _ actorengine.Source = (*Bus)(nil)
 
 func isRuntimeQueuePressure(err error) bool {
+	matchesQueuePressure := func(raw string) bool {
+		text := strings.ToLower(strings.TrimSpace(raw))
+		if text == "" {
+			return false
+		}
+		for _, phrase := range []string{
+			"maximum messages exceeded",
+			"maximum bytes exceeded",
+			"max messages exceeded",
+			"max bytes exceeded",
+			"resource limits exceeded",
+			"stream is full",
+			"no space left",
+			"insufficient storage",
+			"discard new",
+		} {
+			if strings.Contains(text, phrase) {
+				return true
+			}
+		}
+		return false
+	}
+
 	var jsErr jetstream.JetStreamError
 	if errors.As(err, &jsErr) {
 		apiErr := jsErr.APIError()
-		if apiErr != nil && isQueuePressureText(apiErr.Description) {
+		if apiErr != nil && matchesQueuePressure(apiErr.Description) {
 			return true
 		}
 	}
-	return isQueuePressureText(err.Error())
-}
-
-func isQueuePressureText(raw string) bool {
-	text := strings.ToLower(strings.TrimSpace(raw))
-	if text == "" {
-		return false
-	}
-	for _, phrase := range []string{
-		"maximum messages exceeded",
-		"maximum bytes exceeded",
-		"max messages exceeded",
-		"max bytes exceeded",
-		"resource limits exceeded",
-		"stream is full",
-		"no space left",
-		"insufficient storage",
-		"discard new",
-	} {
-		if strings.Contains(text, phrase) {
-			return true
-		}
-	}
-	return false
+	return matchesQueuePressure(err.Error())
 }
 
 func (b *Bus) PublishEvent(ctx context.Context, subject string, env swarm.Envelope) error {
