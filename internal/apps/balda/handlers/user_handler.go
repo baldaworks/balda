@@ -173,7 +173,7 @@ func (h *userHandler) onRemove(ctx context.Context, commandCtx baldatelegram.Com
 	}
 
 	if err := h.collaboratorStore.RemoveCollaborator(ctx, userID); err != nil {
-		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Failed to remove collaborator. Please try again."); err != nil {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not remove collaborator. Please try again."); err != nil {
 			return err
 		}
 		return nil
