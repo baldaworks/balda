@@ -93,7 +93,11 @@ func (h *userHandler) onAdd(ctx context.Context, commandCtx baldatelegram.Comman
 		return nil
 	}
 
-	inviteLink := buildInviteLink(h.getBotUsername(ctx), token)
+	username := strings.TrimSpace(h.getBotUsername(ctx))
+	if username == "" {
+		username = "<bot_username>"
+	}
+	inviteLink := fmt.Sprintf("https://t.me/%s?start=invite_%s", username, token)
 	message := fmt.Sprintf("Invite link created:\n%s\n\nVisit this link to become a bot collaborator", inviteLink)
 
 	if err := h.channel.SendPlain(ctx, commandCtx.Locator, message); err != nil {
@@ -180,12 +184,4 @@ func (h *userHandler) onRemove(ctx context.Context, commandCtx baldatelegram.Com
 		return err
 	}
 	return nil
-}
-
-func buildInviteLink(botUsername, inviteToken string) string {
-	username := strings.TrimSpace(botUsername)
-	if username == "" {
-		username = "<bot_username>"
-	}
-	return fmt.Sprintf("https://t.me/%s?start=invite_%s", username, inviteToken)
 }
