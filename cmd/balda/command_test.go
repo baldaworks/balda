@@ -174,17 +174,16 @@ balda:
 	}
 }
 
-func TestDefaultBaldaConfig_AvoidsStaleTemplateWording(t *testing.T) {
+func TestDefaultBaldaConfig_DocumentsCurrentTemplateWording(t *testing.T) {
 	body := string(defaultBaldaConfig)
-	for _, needle := range []string{
-		"legacy typing / Thinking... progress only",
-		"/goal Goalkeeper worker/validator iteration cap.",
-		"Required internal JetStream command/event bus.",
-		"Removed built-in IDs such as runtime.state, balda.state, and balda.providers are rejected.",
-		"balda.providers",
+	for _, want := range []string{
+		"# /goal work-validation iteration cap.",
+		"# Required built-in command/event runtime.",
+		"# Unsupported built-in IDs such as runtime.state, balda.state, and runtime.balda are rejected.",
+		"swarm: {}",
 	} {
-		if strings.Contains(body, needle) {
-			t.Fatalf("defaultBaldaConfig still contains stale template wording %q", needle)
+		if !strings.Contains(body, want) {
+			t.Fatalf("defaultBaldaConfig missing current template wording %q", want)
 		}
 	}
 }
