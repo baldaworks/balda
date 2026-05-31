@@ -327,6 +327,10 @@ func ensureStreams(ctx context.Context, js jetstream.JetStream, cfg resolvedConf
 }
 
 func streamConfig(name string, subjects []string, retention jetstream.RetentionPolicy, spec streamSpec) jetstream.StreamConfig {
+	discard := jetstream.DiscardOld
+	if spec.Discard == "new" {
+		discard = jetstream.DiscardNew
+	}
 	return jetstream.StreamConfig{
 		Name:       name,
 		Subjects:   subjects,
@@ -335,16 +339,9 @@ func streamConfig(name string, subjects []string, retention jetstream.RetentionP
 		MaxAge:     spec.MaxAge,
 		MaxBytes:   spec.MaxBytes,
 		MaxMsgSize: spec.MaxMsgSize,
-		Discard:    discardPolicy(spec.Discard),
+		Discard:    discard,
 		Replicas:   1,
 	}
-}
-
-func discardPolicy(raw string) jetstream.DiscardPolicy {
-	if raw == "new" {
-		return jetstream.DiscardNew
-	}
-	return jetstream.DiscardOld
 }
 
 func newDLQMessage(env swarm.Envelope, reason string) (*gnats.Msg, error) {
