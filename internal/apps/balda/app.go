@@ -482,7 +482,7 @@ func warnLegacyWorkspaceDir(logger zerolog.Logger, workingDir, stateDir, session
 	logger.Warn().
 		Str("legacy_workspace_dir", legacyDir).
 		Str("workspace_dir", newDir).
-		Msg("legacy balda workspace directory detected and ignored")
+		Msg("old balda workspace directory detected and ignored")
 }
 
 func resolveWorkspaceSessionsDir(raw string) (string, error) {

@@ -198,7 +198,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 					Str("persisted_workspace", persistedWorkspacePath).
 					Str("canonical_workspace", canonicalPath).
 					Str("branch", branchName).
-					Msg("persisted workspace path is legacy/non-canonical; using canonical workspace path")
+					Msg("persisted workspace path is non-canonical; using canonical workspace path")
 			}
 		}
 
