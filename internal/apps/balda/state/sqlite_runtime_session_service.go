@@ -144,7 +144,7 @@ func (s *sqliteRuntimeSessionService) List(ctx context.Context, req *adksession.
 
 	query := `
 		SELECT user_id, session_id, state_json, updated_at
-		FROM balda_adk_sessions
+		FROM balda_runtime_sessions
 		WHERE app_name = ?`
 	args := []any{appName}
 	if userID := strings.TrimSpace(req.UserID); userID != "" {
@@ -216,7 +216,7 @@ func (s *sqliteRuntimeSessionService) Delete(ctx context.Context, req *adksessio
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `
-		DELETE FROM balda_adk_sessions
+		DELETE FROM balda_runtime_sessions
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	); err != nil {
@@ -292,7 +292,7 @@ func (s *sqliteRuntimeSessionService) AppendEvent(ctx context.Context, curSessio
 		return fmt.Errorf("marshal runtime event %q: %w", event.ID, err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO balda_adk_events (
+		INSERT INTO balda_runtime_events (
 			app_name, user_id, session_id, event_id, ordinal, timestamp, event_json
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -485,7 +485,7 @@ func fetchRuntimeSessionState(ctx context.Context, q dbQueryer, key runtimeSessi
 	var stateJSON, updatedRaw string
 	err := q.QueryRowContext(ctx, `
 		SELECT state_json, updated_at
-		FROM balda_adk_sessions
+		FROM balda_runtime_sessions
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	).Scan(&stateJSON, &updatedRaw)
@@ -512,7 +512,7 @@ func saveRuntimeSessionState(ctx context.Context, tx *sql.Tx, key runtimeSession
 		return fmt.Errorf("encode runtime session %q state: %w", key.sessionID, err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO balda_adk_sessions (app_name, user_id, session_id, state_json, updated_at)
+		INSERT INTO balda_runtime_sessions (app_name, user_id, session_id, state_json, updated_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(app_name, user_id, session_id) DO UPDATE SET
 			state_json = excluded.state_json,
@@ -528,7 +528,7 @@ func fetchRuntimeAppState(ctx context.Context, q dbQueryer, appName string) (map
 	var raw string
 	err := q.QueryRowContext(ctx, `
 		SELECT state_json
-		FROM balda_adk_app_state
+		FROM balda_runtime_app_state
 		WHERE app_name = ?`,
 		strings.TrimSpace(appName),
 	).Scan(&raw)
@@ -547,7 +547,7 @@ func saveRuntimeAppState(ctx context.Context, tx *sql.Tx, appName string, state 
 		return fmt.Errorf("encode runtime app state: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO balda_adk_app_state (app_name, state_json, updated_at)
+		INSERT INTO balda_runtime_app_state (app_name, state_json, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(app_name) DO UPDATE SET
 			state_json = excluded.state_json,
@@ -563,7 +563,7 @@ func fetchRuntimeUserState(ctx context.Context, q dbQueryer, appName, userID str
 	var raw string
 	err := q.QueryRowContext(ctx, `
 		SELECT state_json
-		FROM balda_adk_user_state
+		FROM balda_runtime_user_state
 		WHERE app_name = ? AND user_id = ?`,
 		strings.TrimSpace(appName), strings.TrimSpace(userID),
 	).Scan(&raw)
@@ -582,7 +582,7 @@ func saveRuntimeUserState(ctx context.Context, tx *sql.Tx, appName, userID strin
 		return fmt.Errorf("encode runtime user state: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO balda_adk_user_state (app_name, user_id, state_json, updated_at)
+		INSERT INTO balda_runtime_user_state (app_name, user_id, state_json, updated_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(app_name, user_id) DO UPDATE SET
 			state_json = excluded.state_json,
@@ -598,7 +598,7 @@ func runtimeSessionExists(ctx context.Context, q dbQueryer, key runtimeSessionKe
 	var one int
 	err := q.QueryRowContext(ctx, `
 		SELECT 1
-		FROM balda_adk_sessions
+		FROM balda_runtime_sessions
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	).Scan(&one)
@@ -614,7 +614,7 @@ func runtimeSessionExists(ctx context.Context, q dbQueryer, key runtimeSessionKe
 func fetchRuntimeEvents(ctx context.Context, q dbQueryer, key runtimeSessionKey, limit int, after time.Time) ([]*adksession.Event, error) {
 	query := `
 		SELECT event_json
-		FROM balda_adk_events
+		FROM balda_runtime_events
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`
 	args := []any{key.appName, key.userID, key.sessionID}
 	if !after.IsZero() {
@@ -626,7 +626,7 @@ func fetchRuntimeEvents(ctx context.Context, q dbQueryer, key runtimeSessionKey,
 			SELECT event_json
 			FROM (
 				SELECT event_json, timestamp, ordinal
-				FROM balda_adk_events
+				FROM balda_runtime_events
 		WHERE app_name = ? AND user_id = ? AND session_id = ?` + runtimeEventAfterClause(after) + `
 				ORDER BY timestamp DESC, ordinal DESC
 				LIMIT ?
@@ -676,7 +676,7 @@ func nextRuntimeEventOrdinal(ctx context.Context, q dbQueryer, key runtimeSessio
 	var next sql.NullInt64
 	err := q.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(ordinal), 0) + 1
-		FROM balda_adk_events
+		FROM balda_runtime_events
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
 	).Scan(&next)

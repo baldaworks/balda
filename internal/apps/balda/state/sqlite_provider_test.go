@@ -515,7 +515,7 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 	assertKVNamespaceMissing(t, ctx, db, "relay.session_mcp")
 
 	var appName string
-	if err := db.QueryRowContext(ctx, `SELECT app_name FROM balda_adk_sessions WHERE user_id = 'tg-101'`).Scan(&appName); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT app_name FROM balda_runtime_sessions WHERE user_id = 'tg-101'`).Scan(&appName); err != nil {
 		t.Fatalf("query migrated adk session app_name: %v", err)
 	}
 	if appName != "norma-balda" {
@@ -856,10 +856,10 @@ func seedBaldaDBAtVersion10WithBuggyZeroLegacySession(t *testing.T, db *sql.DB) 
 		);`,
 		`CREATE TABLE balda_telegram_offsets (id INTEGER);`,
 		`CREATE TABLE balda_collaborators (id INTEGER);`,
-		`CREATE TABLE balda_adk_app_state (id INTEGER);`,
-		`CREATE TABLE balda_adk_user_state (id INTEGER);`,
-		`CREATE TABLE balda_adk_sessions (id INTEGER);`,
-		`CREATE TABLE balda_adk_events (id INTEGER);`,
+		`CREATE TABLE balda_runtime_app_state (id INTEGER);`,
+		`CREATE TABLE balda_runtime_user_state (id INTEGER);`,
+		`CREATE TABLE balda_runtime_sessions (id INTEGER);`,
+		`CREATE TABLE balda_runtime_events (id INTEGER);`,
 		`CREATE TABLE balda_scheduled_jobs (
 			job_id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,
