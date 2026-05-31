@@ -248,12 +248,3 @@ func (m *InternalMCPManager) addCleanup(f func() error) {
 	defer m.mu.Unlock()
 	m.cleanups = append(m.cleanups, f)
 }
-
-func isBundled(id string) bool {
-	switch id {
-	case bundledBaldaServerID:
-		return true
-	default:
-		return false
-	}
-}

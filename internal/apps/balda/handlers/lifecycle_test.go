@@ -137,24 +137,6 @@ func (s *testSessionStore) set(key string, value any) {
 	s.values[trimmedKey] = value
 }
 
-func TestIsBundled(t *testing.T) {
-	tests := []struct {
-		id   string
-		want bool
-	}{
-		{id: "balda", want: true},
-		{id: "norma.tasks", want: false},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.id, func(t *testing.T) {
-			if got := isBundled(tc.id); got != tc.want {
-				t.Fatalf("isBundled(%q) = %t, want %t", tc.id, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestBundledRegistryURL(t *testing.T) {
 	addr := "127.0.0.1:9010"
 	if got := bundledRegistryURL(addr, "balda"); got != "http://127.0.0.1:9010/mcp" {
