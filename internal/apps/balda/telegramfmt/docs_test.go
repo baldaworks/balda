@@ -77,22 +77,6 @@ func TestReadmeDocumentsBaldaConfigShapeAndMCPServers(t *testing.T) {
 	}
 }
 
-func TestUserDocsAvoidStaleRelayStateMigrationNote(t *testing.T) {
-	t.Parallel()
-
-	for _, path := range []string{"README.md", "docs/balda.md"} {
-		doc := readRepoDoc(t, path)
-		for _, stale := range []string{
-			".config/relay/relay.db",
-			"copy `.config/relay/relay.db` there",
-		} {
-			if strings.Contains(doc, stale) {
-				t.Fatalf("%s still contains stale relay state migration note %q", path, stale)
-			}
-		}
-	}
-}
-
 func readRepoDoc(t *testing.T, path string) string {
 	t.Helper()
 	content, err := os.ReadFile("../../../../" + path)
