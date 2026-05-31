@@ -603,7 +603,17 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		}
 		reportTo = &resolved.Locator
 	}
-	dedupeKey := dedupeKeyForInboundWebhook(route, req, requestID, rawBody)
+	dedupeBase := strings.TrimSpace(requestID)
+	switch route.Dedupe.Source {
+	case inboundWebhookDedupeSourceHeader:
+		if header := strings.TrimSpace(req.Header.Get(route.Dedupe.Header)); header != "" {
+			dedupeBase = header
+		}
+	case inboundWebhookDedupeSourceBodySHA:
+		sum := sha256.Sum256([]byte(rawBody))
+		dedupeBase = fmt.Sprintf("%x", sum[:])
+	}
+	dedupeKey := strings.Join([]string{"webhook", strings.TrimSpace(route.Name), dedupeBase}, ":")
 	payload := actors.SessionTurnPayload{
 		Text:           prompt,
 		Locator:        target.Locator,
@@ -685,20 +695,6 @@ func authorizeInboundWebhookRequest(req *http.Request, policy inboundWebhookAuth
 	default:
 		return fmt.Errorf("unsupported auth type %q", policy.Type)
 	}
-}
-
-func dedupeKeyForInboundWebhook(route inboundWebhookRoute, req *http.Request, requestID string, body string) string {
-	base := strings.TrimSpace(requestID)
-	switch route.Dedupe.Source {
-	case inboundWebhookDedupeSourceHeader:
-		if header := strings.TrimSpace(req.Header.Get(route.Dedupe.Header)); header != "" {
-			base = header
-		}
-	case inboundWebhookDedupeSourceBodySHA:
-		sum := sha256.Sum256([]byte(body))
-		base = fmt.Sprintf("%x", sum[:])
-	}
-	return strings.Join([]string{"webhook", strings.TrimSpace(route.Name), base}, ":")
 }
 
 func readInboundWebhookBody(body io.ReadCloser) (string, error) {
