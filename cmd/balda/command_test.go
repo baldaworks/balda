@@ -180,6 +180,8 @@ func TestDefaultBaldaConfig_AvoidsStaleTemplateWording(t *testing.T) {
 		"legacy typing / Thinking... progress only",
 		"/goal Goalkeeper worker/validator iteration cap.",
 		"Required internal JetStream command/event bus.",
+		"Removed built-in IDs such as runtime.state, balda.state, and balda.providers are rejected.",
+		"balda.providers",
 	} {
 		if strings.Contains(body, needle) {
 			t.Fatalf("defaultBaldaConfig still contains stale template wording %q", needle)
