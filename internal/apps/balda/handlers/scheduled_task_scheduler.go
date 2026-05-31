@@ -327,7 +327,7 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 	if err != nil {
 		return s.markFailure(ctx, task.TaskID, err)
 	}
-	env, err := scheduledTaskEnvelope(task, target, reportTo, content, dispatchKey)
+	env, err := actors.ScheduledTaskEnvelope(task.TaskID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
 	if err != nil {
 		return s.markFailure(ctx, task.TaskID, err)
 	}
@@ -335,16 +335,6 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 		return s.markFailure(ctx, task.TaskID, fmt.Errorf("publish scheduled task command: %w", err))
 	}
 	return nil
-}
-
-func scheduledTaskEnvelope(
-	task baldastate.ScheduledTaskRecord,
-	target resolvedEnvelopeTarget,
-	reportTo *baldasession.SessionLocator,
-	content string,
-	dispatchKey string,
-) (swarm.Envelope, error) {
-	return actors.ScheduledTaskEnvelope(task.TaskID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
 }
 
 func scheduledTaskReportTarget(task baldastate.ScheduledTaskRecord) (*baldasession.SessionLocator, error) {
