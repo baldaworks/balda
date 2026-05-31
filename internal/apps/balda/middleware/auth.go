@@ -100,12 +100,6 @@ type OwnerInfo struct {
 	ChatID int64
 }
 
-// GetOwnerInfo extracts owner information from the context.
-func GetOwnerInfo(ctx context.Context) *OwnerInfo {
-	info, _ := ctx.Value(ownerKey).(*OwnerInfo)
-	return info
-}
-
 func (m *ownerOnlyMiddleware) sendUnauthorizedMessage(ctx context.Context, chatID int64, text string) error {
 	_, err := m.tgClient.SendMessageWithResponse(ctx, client.SendMessageJSONRequestBody{
 		ChatId: chatID,

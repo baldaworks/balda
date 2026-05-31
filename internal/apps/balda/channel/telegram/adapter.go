@@ -80,11 +80,6 @@ func NewAdapter(params AdapterParams) *Adapter {
 	}
 }
 
-// OwnerLocator returns the Telegram owner-session locator for a chat.
-func (a *Adapter) OwnerLocator(chatID int64) baldasession.SessionLocator {
-	return NewLocator(chatID, 0)
-}
-
 // MessageContextFromEvent converts a Telegram message event into balda channel context.
 func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageContext, bool) {
 	if event == nil || event.Message == nil || event.Message.From == nil {
