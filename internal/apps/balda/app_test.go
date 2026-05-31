@@ -254,6 +254,12 @@ func TestValidateRemovedRuntimeConfig(t *testing.T) {
 	if strings.Contains(err.Error(), "legacy mode configuration") {
 		t.Fatalf("validateRemovedRuntimeConfig() error = %q, want removed-runtime wording", err.Error())
 	}
+	if strings.Contains(err.Error(), "configure balda.nats for JetStream") {
+		t.Fatalf("validateRemovedRuntimeConfig() error = %q, still contains transport-specific event_bus guidance", err.Error())
+	}
+	if !strings.Contains(err.Error(), "balda.event_bus is no longer supported; use balda.nats built-in runtime settings") {
+		t.Fatalf("validateRemovedRuntimeConfig() error = %q, want simplified event_bus guidance", err.Error())
+	}
 }
 
 func TestValidateRemovedRuntimeConfig_AllowsCurrentConfig(t *testing.T) {

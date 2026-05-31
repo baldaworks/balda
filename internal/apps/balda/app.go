@@ -597,7 +597,7 @@ func validateSchedulerConfig(cfg SchedulerConfig) error {
 func validateRemovedRuntimeConfig(cfg BaldaConfig) error {
 	var errs []string
 	if cfg.RemovedEventBus != nil {
-		errs = append(errs, "balda.event_bus is no longer supported; configure balda.nats for JetStream")
+		errs = append(errs, "balda.event_bus is no longer supported; use balda.nats built-in runtime settings")
 	}
 	if cfg.Swarm.RemovedMode != nil {
 		errs = append(errs, "balda.swarm.mode is no longer supported; actor runtime is always on")
