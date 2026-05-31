@@ -13,6 +13,7 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/internal/git"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/agent"
@@ -547,7 +548,40 @@ func (a *goalActor) renderTaskOutcome(ctx context.Context, taskID string, fallba
 	if err != nil || !ok {
 		return fallback
 	}
-	return renderReviewableOutcome(task, taskArtifactsFromSessionProvider(ctx, a.sessions, task))
+	artifacts := taskArtifactSnapshot{BranchName: strings.TrimSpace(task.AssignedActor)}
+	if a.sessions != nil && strings.TrimSpace(task.SessionID) != "" {
+		if info, err := a.sessions.GetSessionInfo(ctx, task.SessionID); err == nil {
+			artifacts.WorkspaceDir = strings.TrimSpace(info.WorkspaceDir)
+			if branchName := strings.TrimSpace(info.BranchName); branchName != "" {
+				artifacts.BranchName = branchName
+			}
+		}
+	}
+	if artifacts.WorkspaceDir != "" {
+		if !git.Available(ctx, artifacts.WorkspaceDir) {
+			artifacts.GitError = "workspace is not a git repository"
+		} else {
+			status, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "status", "--short")
+			if err != nil {
+				artifacts.GitError = err.Error()
+			} else {
+				for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+					if trimmed := strings.TrimSpace(line); trimmed != "" {
+						artifacts.ChangedFiles = append(artifacts.ChangedFiles, trimmed)
+					}
+				}
+			}
+			commit, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "rev-parse", "--short", "HEAD")
+			if err != nil {
+				if artifacts.GitError == "" {
+					artifacts.GitError = err.Error()
+				}
+			} else {
+				artifacts.Commit = strings.TrimSpace(commit)
+			}
+		}
+	}
+	return renderReviewableOutcome(task, artifacts)
 }
 
 func (a *goalActor) deliver(

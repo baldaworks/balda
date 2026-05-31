@@ -1,15 +1,12 @@
 package actors
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/git"
 )
 
 const (
@@ -58,10 +55,6 @@ func isTerminalTaskStatus(status string) bool {
 	}
 }
 
-type taskSessionInfoProvider interface {
-	GetSessionInfo(ctx context.Context, sessionID string) (baldasession.TopicSessionInfo, error)
-}
-
 type taskArtifactSnapshot struct {
 	WorkspaceDir string
 	BranchName   string
@@ -77,49 +70,6 @@ type reviewableOutcomePayload struct {
 	Verified      string
 	NotVerified   string
 	NextAction    string
-}
-
-func taskArtifactsFromSessionProvider(ctx context.Context, provider any, task baldastate.SwarmTaskRecord) taskArtifactSnapshot {
-	artifacts := taskArtifactSnapshot{}
-	if sessionProvider, ok := provider.(taskSessionInfoProvider); ok && strings.TrimSpace(task.SessionID) != "" {
-		if info, err := sessionProvider.GetSessionInfo(ctx, task.SessionID); err == nil {
-			artifacts.WorkspaceDir = strings.TrimSpace(info.WorkspaceDir)
-			artifacts.BranchName = strings.TrimSpace(info.BranchName)
-		}
-	}
-	if artifacts.BranchName == "" {
-		artifacts.BranchName = strings.TrimSpace(task.AssignedActor)
-	}
-	return enrichGitArtifacts(ctx, artifacts)
-}
-
-func enrichGitArtifacts(ctx context.Context, artifacts taskArtifactSnapshot) taskArtifactSnapshot {
-	if artifacts.WorkspaceDir == "" {
-		return artifacts
-	}
-	if !git.Available(ctx, artifacts.WorkspaceDir) {
-		artifacts.GitError = "workspace is not a git repository"
-		return artifacts
-	}
-	status, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "status", "--short")
-	if err != nil {
-		artifacts.GitError = err.Error()
-	} else {
-		for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
-			if trimmed := strings.TrimSpace(line); trimmed != "" {
-				artifacts.ChangedFiles = append(artifacts.ChangedFiles, trimmed)
-			}
-		}
-	}
-	commit, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "rev-parse", "--short", "HEAD")
-	if err != nil {
-		if artifacts.GitError == "" {
-			artifacts.GitError = err.Error()
-		}
-	} else {
-		artifacts.Commit = strings.TrimSpace(commit)
-	}
-	return artifacts
 }
 
 func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArtifactSnapshot) string {
