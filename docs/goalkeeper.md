@@ -55,14 +55,3 @@ Thought parts are ignored when checking the validator verdict. Only visible fina
 The ADK workflow stream includes metadata-only `session.Event` records around each worker and validator step. These events have no `Content`, are persisted in ADK session history, and identify `step_started`, `step_completed`, or `step_failed` in `CustomMetadata["norma.goalkeeper.event"]`.
 
 A passing validation is detected from Norma Goalkeeper's escalation marker, which is set when the validator's visible final response starts with `verdict: pass`. Malformed verdicts, missing verdicts, and `verdict: fail` do not pass validation.
-
-## Not Used
-
-Goalkeeper does not use:
-
-- Taskmaster queues
-- scheduled tasks
-- PDCA phase agents
-- structured PDCA JSON contracts
-- planner/executor/reviewer role actors
-- the removed single-root prompt loop that asked for `STATUS: done|continue`

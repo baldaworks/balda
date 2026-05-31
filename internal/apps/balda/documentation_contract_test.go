@@ -274,6 +274,24 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("goal docs avoid historical removed-system notes", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "docs/goalkeeper.md")
+		body := readFile(t, path)
+		forbidden := []string{
+			"## Not Used",
+			"Taskmaster queues",
+			"PDCA phase agents",
+			"structured PDCA JSON contracts",
+			"planner/executor/reviewer role actors",
+			"STATUS: done|continue",
+		}
+		for _, needle := range forbidden {
+			if strings.Contains(body, needle) {
+				t.Fatalf("%s still contains stale historical workflow note %q", filepath.ToSlash(path), needle)
+			}
+		}
+	})
+
 	t.Run("agent docs use merge pull workflow", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "AGENTS.md")
 		body := readFile(t, path)
