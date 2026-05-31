@@ -93,7 +93,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			Int64("user_id", userID).
 			Int64("chat_id", chatID).
 			Msg("Malformed /start argument")
-		if err := h.messenger.SendPlain(ctx, chatID, malformedStartFormatMessage(), 0); err != nil {
+		if err := h.messenger.SendPlain(ctx, chatID, "Invalid /start format. Use one of:\n• /start owner=<your_owner_token>\n• /start invite=<your_invite_token>\n\nIf using a link, use https://t.me/<bot_username>?start=owner_<your_owner_token>", 0); err != nil {
 			return err
 		}
 		return nil
@@ -228,10 +228,6 @@ func parseStartCommandArgs(raw string) (startCommandArgs, bool) {
 	default:
 		return startCommandArgs{}, true
 	}
-}
-
-func malformedStartFormatMessage() string {
-	return "Invalid /start format. Use one of:\n• /start owner=<your_owner_token>\n• /start invite=<your_invite_token>\n\nIf using a link, use https://t.me/<bot_username>?start=owner_<your_owner_token>"
 }
 
 type userInfo struct {
