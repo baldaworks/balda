@@ -69,6 +69,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_balda_session_metadata_channel_address
 
 -- +goose Down
 -- +goose StatementBegin
--- The removed UNIQUE(chat_id, topic_id) constraint is intentionally not restored.
+-- The UNIQUE(chat_id, topic_id) constraint is intentionally not restored.
 -- Reintroducing it can fail or lose non-Telegram/channel-address rows created after this migration.
 -- +goose StatementEnd
