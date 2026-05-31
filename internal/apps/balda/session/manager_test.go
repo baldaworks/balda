@@ -95,7 +95,7 @@ func TestStopSession_PersistentModeSuspendsWithoutDeletingMetadata(t *testing.T)
 	}
 }
 
-func TestResetSession_DeletesADKHistoryAndPreservesMetadata(t *testing.T) {
+func TestResetSession_DeletesRuntimeHistoryAndPreservesMetadata(t *testing.T) {
 	ctx := context.Background()
 	store := &fakeSessionStore{}
 	svc := adksession.InMemoryService()
@@ -137,7 +137,7 @@ func TestResetSession_DeletesADKHistoryAndPreservesMetadata(t *testing.T) {
 		UserID:    "tg-101",
 		SessionID: "tg-10-42",
 	}); err == nil {
-		t.Fatal("ADK session still exists after ResetSession")
+		t.Fatal("runtime session still exists after ResetSession")
 	}
 }
 
