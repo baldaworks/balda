@@ -398,7 +398,7 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 		ID:          "poison-" + uuid.NewString(),
 		Namespace:   swarm.NamespaceTelemetry,
 		Kind:        "poison_message",
-		From:        swarm.SystemAddress("jetstream"),
+		From:        swarm.SystemAddress("transport"),
 		To:          swarm.SystemAddress("dlq"),
 		PayloadJSON: string(data),
 	}
@@ -456,10 +456,10 @@ func commandEventEnvelope(env swarm.Envelope, result *swarm.DispatchReceipt, sta
 	}
 	out.Meta["event_type"] = "command." + strings.TrimSpace(status)
 	if out.From.Target == "" {
-		out.From = swarm.SystemAddress("jetstream")
+		out.From = swarm.SystemAddress("transport")
 	}
 	if out.To.Target == "" {
-		out.To = swarm.SystemAddress("jetstream")
+		out.To = swarm.SystemAddress("transport")
 	}
 	return out
 }
@@ -516,7 +516,7 @@ func commandDecodeFailureEnvelope(msg jetstream.Msg, err error) swarm.Envelope {
 		ID:          id,
 		Namespace:   namespace,
 		Kind:        "decode_failed",
-		From:        swarm.SystemAddress("jetstream"),
+		From:        swarm.SystemAddress("transport"),
 		To:          swarm.ActorAddress{Target: toTarget, Key: toKey},
 		SessionID:   strings.TrimSpace(msg.Headers().Get(swarm.HeaderSessionID)),
 		TaskID:      strings.TrimSpace(msg.Headers().Get(swarm.HeaderTaskID)),
