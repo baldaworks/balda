@@ -928,15 +928,15 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - `dedupe.source=body_sha256` uses body hash
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, duplicate?}`
-  - route not found: `404` + `error.code="route_not_found"`
-  - invalid method: `405` + `error.code="invalid_method"`
-  - auth reject: `401` + `error.code="unauthorized"`
-  - invalid body/template render: `400` + `error.code="invalid_payload"`
-  - unresolved/restore-failed session: `404` + `error.code="session_not_found"`
-  - queue pressure: `429` + `error.code="queue_full"`
-  - JetStream publish/internal failures: `503` + `error.code="dispatch_failed"`
+  - route not found: `404` + `error.code="route_not_found"` + message `could not accept request`
+  - invalid method: `405` + `error.code="invalid_method"` + message `could not accept request`
+  - auth reject: `401` + `error.code="unauthorized"` + message `could not accept request`
+  - invalid body/template render: `400` + `error.code="invalid_payload"` + message `could not accept request`
+  - unresolved/restore-failed session: `404` + `error.code="session_not_found"` + message `could not accept request`
+  - queue pressure: `429` + `error.code="queue_full"` + message `temporarily busy`
+  - JetStream publish/internal failures: `503` + `error.code="dispatch_failed"` + message `temporarily busy`
 - Observability:
-  - logs include stable fields: `request_id`, `session_id`, `channel_type`, `address_key`, `stream`, `sequence`, `task_id`, `status_code`, `error_code`
+  - logs keep request routing and transport metadata internal; public responses stay limited to request id, message id, status, acceptance, and stable error code/message values
   - internal outcome counters track accepted, invalid, not-found, queue-full, and dispatch-failure events
 
 ### Session restore/create behavior

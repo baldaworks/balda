@@ -66,6 +66,11 @@ const (
 	inboundWebhookDedupeSourceBodySHA   = "body_sha256"
 )
 
+const (
+	inboundWebhookMessageCouldNotAccept  = "could not accept request"
+	inboundWebhookMessageTemporarilyBusy = "temporarily busy"
+)
+
 // InboundWebhookRouteConfig configures one inbound webhook route.
 type InboundWebhookRouteConfig struct {
 	Path           string
@@ -512,7 +517,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusMethodNotAllowed,
 			inboundWebhookCodeInvalidMethod,
-			"method must be POST",
+			inboundWebhookMessageCouldNotAccept,
 			nil,
 		))
 		return
@@ -524,7 +529,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusNotFound,
 			inboundWebhookCodeRouteNotFound,
-			fmt.Sprintf("no inbound webhook route for path %q", req.URL.Path),
+			inboundWebhookMessageCouldNotAccept,
 			nil,
 		))
 		return
@@ -534,7 +539,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusUnauthorized,
 			inboundWebhookCodeUnauthorized,
-			"webhook request is unauthorized",
+			inboundWebhookMessageCouldNotAccept,
 			authErr,
 		))
 		return
@@ -546,7 +551,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusBadRequest,
 			inboundWebhookCodeInvalidPayload,
-			"invalid request body",
+			inboundWebhookMessageCouldNotAccept,
 			readErr,
 		))
 		return
@@ -564,7 +569,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusBadRequest,
 			inboundWebhookCodeInvalidPayload,
-			"failed to render prompt template",
+			inboundWebhookMessageCouldNotAccept,
 			renderErr,
 		))
 		return
@@ -575,7 +580,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusNotFound,
 			inboundWebhookCodeSessionNotFound,
-			"failed to resolve webhook target",
+			inboundWebhookMessageCouldNotAccept,
 			targetErr,
 		))
 		return
@@ -588,7 +593,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 			r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 				http.StatusNotFound,
 				inboundWebhookCodeSessionNotFound,
-				"failed to resolve webhook report_to",
+				inboundWebhookMessageCouldNotAccept,
 				err,
 			))
 			return
@@ -623,7 +628,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 			r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 				http.StatusTooManyRequests,
 				inboundWebhookCodeQueueFull,
-				"command queue is full",
+				inboundWebhookMessageTemporarilyBusy,
 				enqueueErr,
 			))
 			return
@@ -633,7 +638,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusServiceUnavailable,
 			inboundWebhookCodeDispatchFailed,
-			"failed to publish inbound command",
+			inboundWebhookMessageTemporarilyBusy,
 			enqueueErr,
 		))
 		return

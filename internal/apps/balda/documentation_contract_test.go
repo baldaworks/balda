@@ -239,6 +239,22 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("webhook docs keep public responses implementation-free", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "docs/balda.md")
+		section := markdownSection(readFile(t, path), "### Inbound webhook contract (internal)")
+		forbidden := []string{
+			"command queue is full",
+			"failed to publish inbound command",
+			"failed to resolve webhook target",
+			"`session_id`, `channel_type`, `address_key`, `stream`, `sequence`, `task_id`",
+		}
+		for _, needle := range forbidden {
+			if strings.Contains(section, needle) {
+				t.Fatalf("%s webhook contract still exposes implementation detail %q", filepath.ToSlash(path), needle)
+			}
+		}
+	})
+
 	t.Run("agent docs use merge pull workflow", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "AGENTS.md")
 		body := readFile(t, path)

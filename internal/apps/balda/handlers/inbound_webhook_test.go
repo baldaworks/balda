@@ -139,7 +139,7 @@ func TestInboundWebhookReceiver_InvalidMethod(t *testing.T) {
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusMethodNotAllowed, inboundWebhookCodeInvalidMethod)
+	assertInboundWebhookError(t, rec, http.StatusMethodNotAllowed, inboundWebhookCodeInvalidMethod, inboundWebhookMessageCouldNotAccept)
 }
 
 func TestInboundWebhookReceiver_RouteNotFound(t *testing.T) {
@@ -151,7 +151,7 @@ func TestInboundWebhookReceiver_RouteNotFound(t *testing.T) {
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusNotFound, inboundWebhookCodeRouteNotFound)
+	assertInboundWebhookError(t, rec, http.StatusNotFound, inboundWebhookCodeRouteNotFound, inboundWebhookMessageCouldNotAccept)
 }
 
 func TestInboundWebhookReceiver_Unauthorized(t *testing.T) {
@@ -179,7 +179,7 @@ func TestInboundWebhookReceiver_Unauthorized(t *testing.T) {
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusUnauthorized, inboundWebhookCodeUnauthorized)
+	assertInboundWebhookError(t, rec, http.StatusUnauthorized, inboundWebhookCodeUnauthorized, inboundWebhookMessageCouldNotAccept)
 }
 
 func TestInboundWebhookReceiver_TemplateRenderError(t *testing.T) {
@@ -203,7 +203,7 @@ func TestInboundWebhookReceiver_TemplateRenderError(t *testing.T) {
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusBadRequest, inboundWebhookCodeInvalidPayload)
+	assertInboundWebhookError(t, rec, http.StatusBadRequest, inboundWebhookCodeInvalidPayload, inboundWebhookMessageCouldNotAccept)
 }
 
 func TestInboundWebhookReceiver_AcceptsWithoutSessionRestore(t *testing.T) {
@@ -244,7 +244,7 @@ func TestInboundWebhookReceiver_QueueFull(t *testing.T) {
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusTooManyRequests, inboundWebhookCodeQueueFull)
+	assertInboundWebhookError(t, rec, http.StatusTooManyRequests, inboundWebhookCodeQueueFull, inboundWebhookMessageTemporarilyBusy)
 }
 
 func TestInboundWebhookReceiver_TurnQueueFullIsNotIngressQueueFull(t *testing.T) {
@@ -259,7 +259,7 @@ func TestInboundWebhookReceiver_TurnQueueFullIsNotIngressQueueFull(t *testing.T)
 
 	receiver.handleInboundWebhook(rec, req)
 
-	assertInboundWebhookError(t, rec, http.StatusServiceUnavailable, inboundWebhookCodeDispatchFailed)
+	assertInboundWebhookError(t, rec, http.StatusServiceUnavailable, inboundWebhookCodeDispatchFailed, inboundWebhookMessageTemporarilyBusy)
 }
 
 func TestInboundWebhookReceiver_AcceptsAndPublishesCommand(t *testing.T) {
@@ -484,7 +484,7 @@ func newInboundWebhookReceiverForTest(t *testing.T) *InboundWebhookReceiver {
 	}
 }
 
-func assertInboundWebhookError(t *testing.T, rec *httptest.ResponseRecorder, wantStatus int, wantCode string) {
+func assertInboundWebhookError(t *testing.T, rec *httptest.ResponseRecorder, wantStatus int, wantCode, wantMessage string) {
 	t.Helper()
 
 	if got := rec.Code; got != wantStatus {
@@ -499,5 +499,11 @@ func assertInboundWebhookError(t *testing.T, rec *httptest.ResponseRecorder, wan
 	}
 	if got := payload.Error.Code; got != wantCode {
 		t.Fatalf("error.code = %q, want %q", got, wantCode)
+	}
+	if got := payload.Error.Message; got != wantMessage {
+		t.Fatalf("error.message = %q, want %q", got, wantMessage)
+	}
+	if strings.Contains(strings.ToLower(payload.Error.Message), "queue") || strings.Contains(strings.ToLower(payload.Error.Message), "publish") {
+		t.Fatalf("error.message = %q leaked implementation detail", payload.Error.Message)
 	}
 }
