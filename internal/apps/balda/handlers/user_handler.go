@@ -31,16 +31,6 @@ type userHandlerParams struct {
 	TGClient          client.ClientWithResponsesInterface `optional:"true"`
 }
 
-func newUserHandler(params userHandlerParams) *userHandler {
-	return &userHandler{
-		ownerStore:        params.OwnerStore,
-		inviteStore:       params.InviteStore,
-		collaboratorStore: params.CollaboratorStore,
-		channel:           params.Channel,
-		tgClient:          params.TGClient,
-	}
-}
-
 func (h *userHandler) getBotUsername(ctx context.Context) string {
 	if h.botUsername != "" {
 		return h.botUsername

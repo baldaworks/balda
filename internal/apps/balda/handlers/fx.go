@@ -40,7 +40,15 @@ var Module = fx.Module("balda_handlers",
 		provideSessionTurnRunner,
 		provideScheduledTaskRecorder,
 		newCommandHandler,
-		newUserHandler,
+		func(params userHandlerParams) *userHandler {
+			return &userHandler{
+				ownerStore:        params.OwnerStore,
+				inviteStore:       params.InviteStore,
+				collaboratorStore: params.CollaboratorStore,
+				channel:           params.Channel,
+				tgClient:          params.TGClient,
+			}
+		},
 		fx.Annotate(
 			func(h *StartHandler) tgbotkit.Handler { return h },
 			fx.As(new(tgbotkit.Handler)),
