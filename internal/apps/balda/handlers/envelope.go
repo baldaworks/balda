@@ -26,10 +26,6 @@ type resolvedEnvelopeTarget struct {
 	TopicID int
 }
 
-func ownerEnvelopeTarget() envelopeTarget {
-	return envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner}
-}
-
 func resolveEnvelopeTarget(
 	_ context.Context,
 	ownerStore *auth.OwnerStore,

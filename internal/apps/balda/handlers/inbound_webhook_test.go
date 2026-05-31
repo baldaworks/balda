@@ -46,7 +46,7 @@ func TestNormalizeInboundWebhookConfig_AllowsRouteWithoutReportTo(t *testing.T) 
 	if !ok {
 		t.Fatal("route /webhook1 missing")
 	}
-	if route.Target != ownerEnvelopeTarget() {
+	if route.Target != (envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner}) {
 		t.Fatalf("target = %+v, want owner alias target", route.Target)
 	}
 	if route.Mode != inboundWebhookRouteModeTask {
@@ -163,7 +163,7 @@ func TestInboundWebhookReceiver_Unauthorized(t *testing.T) {
 			Name:           "webhook1",
 			Path:           "/webhook1",
 			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
-			Target:         ownerEnvelopeTarget(),
+			Target:         envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 			Mode:           inboundWebhookRouteModeTask,
 			Auth: inboundWebhookAuthPolicy{
 				Type:   inboundWebhookAuthTypeHeader,
@@ -191,7 +191,7 @@ func TestInboundWebhookReceiver_TemplateRenderError(t *testing.T) {
 			Name:           "webhook1",
 			Path:           "/webhook1",
 			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.Missing}}")),
-			Target:         ownerEnvelopeTarget(),
+			Target:         envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 			Mode:           inboundWebhookRouteModeTask,
 			Auth:           inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone},
 			Dedupe:         inboundWebhookDedupePolicy{Source: inboundWebhookDedupeSourceRequestID},
@@ -232,7 +232,7 @@ func TestInboundWebhookReceiver_QueueFull(t *testing.T) {
 			Name:           "webhook1",
 			Path:           "/webhook1",
 			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
-			Target:         ownerEnvelopeTarget(),
+			Target:         envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 			Mode:           inboundWebhookRouteModeTask,
 			Auth:           inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone},
 			Dedupe:         inboundWebhookDedupePolicy{Source: inboundWebhookDedupeSourceRequestID},
@@ -273,7 +273,7 @@ func TestInboundWebhookReceiver_AcceptsAndPublishesCommand(t *testing.T) {
 			Name:           "webhook1",
 			Path:           "/webhook1",
 			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("route={{.Path}} body={{.RawBody}}")),
-			Target:         ownerEnvelopeTarget(),
+			Target:         envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 			Mode:           inboundWebhookRouteModeTask,
 			Auth:           inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone},
 			Dedupe:         inboundWebhookDedupePolicy{Source: inboundWebhookDedupeSourceRequestID},
@@ -331,7 +331,7 @@ func TestInboundWebhookReceiver_UsesRouteDedupeHeaderAndReportTo(t *testing.T) {
 			Name:           "webhook1",
 			Path:           "/webhook1",
 			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
-			Target:         ownerEnvelopeTarget(),
+			Target:         envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 			Mode:           inboundWebhookRouteModeTask,
 			ReportTo:       &envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 			Auth:           inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone},
@@ -374,7 +374,7 @@ func TestInboundWebhookReceiver_SessionModePublishesSessionCommand(t *testing.T)
 			Name:           "webhook1",
 			Path:           "/webhook1",
 			PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
-			Target:         ownerEnvelopeTarget(),
+			Target:         envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 			Mode:           inboundWebhookRouteModeSession,
 			Auth:           inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone},
 			Dedupe:         inboundWebhookDedupePolicy{Source: inboundWebhookDedupeSourceBodySHA},
@@ -472,7 +472,7 @@ func newInboundWebhookReceiverForTest(t *testing.T) *InboundWebhookReceiver {
 				Name:           "webhook1",
 				Path:           "/webhook1",
 				PromptTemplate: template.Must(template.New("webhook1").Option("missingkey=error").Parse("{{.RawBody}}")),
-				Target:         ownerEnvelopeTarget(),
+				Target:         envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner},
 				Mode:           inboundWebhookRouteModeTask,
 				Auth:           inboundWebhookAuthPolicy{Type: inboundWebhookAuthTypeNone},
 				Dedupe:         inboundWebhookDedupePolicy{Source: inboundWebhookDedupeSourceRequestID},

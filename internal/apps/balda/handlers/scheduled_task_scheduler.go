@@ -258,7 +258,7 @@ func (s *ScheduledTaskScheduler) dispatchTask(ctx context.Context, task baldasta
 func (s *ScheduledTaskScheduler) resolveScheduledTaskTarget(ctx context.Context, task baldastate.ScheduledTaskRecord) (resolvedEnvelopeTarget, error) {
 	locator, err := baldasession.NewSessionLocator(task.ChannelType, task.AddressKey, task.AddressJSON, task.SessionID)
 	if err != nil {
-		return resolveEnvelopeTarget(ctx, s.owner, ownerEnvelopeTarget())
+		return resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner})
 	}
 	target := resolvedEnvelopeTarget{Locator: locator}
 	if address, ok, decodeErr := baldatelegram.DecodeLocator(locator); decodeErr != nil {
@@ -281,9 +281,13 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 	content string,
 	dispatchKey string,
 ) error {
-	reportTo, err := scheduledTaskReportTarget(task)
-	if err != nil {
-		return s.markFailure(ctx, task.TaskID, err)
+	var reportTo *baldasession.SessionLocator
+	if task.ReportToEnabled {
+		locator, err := baldasession.NewSessionLocator(task.ReportToChannelType, task.ReportToAddressKey, task.ReportToAddressJSON, task.ReportToSessionID)
+		if err != nil {
+			return s.markFailure(ctx, task.TaskID, fmt.Errorf("resolve report_to locator: %w", err))
+		}
+		reportTo = &locator
 	}
 	env, err := actors.ScheduledTaskEnvelope(task.TaskID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
 	if err != nil {
@@ -293,17 +297,6 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 		return s.markFailure(ctx, task.TaskID, fmt.Errorf("publish scheduled task command: %w", err))
 	}
 	return nil
-}
-
-func scheduledTaskReportTarget(task baldastate.ScheduledTaskRecord) (*baldasession.SessionLocator, error) {
-	if !task.ReportToEnabled {
-		return nil, nil
-	}
-	locator, err := baldasession.NewSessionLocator(task.ReportToChannelType, task.ReportToAddressKey, task.ReportToAddressJSON, task.ReportToSessionID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve report_to locator: %w", err)
-	}
-	return &locator, nil
 }
 
 func (s *ScheduledTaskScheduler) MarkSuccess(ctx context.Context, taskID string) error {

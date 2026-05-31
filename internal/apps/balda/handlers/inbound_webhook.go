@@ -273,7 +273,7 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 			Key:    strings.TrimSpace(rawRoute.Envelope.Key),
 		}
 		if target.Target == "" && target.Key == "" {
-			target = ownerEnvelopeTarget()
+			target = envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner}
 		}
 		if target.Target == "" {
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.target is required", routeName)
