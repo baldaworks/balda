@@ -187,14 +187,6 @@ func TestValidateSessionPersistence(t *testing.T) {
 	}
 }
 
-func TestValidateCurrentRuntimeConfig_AllowsCurrentConfig(t *testing.T) {
-	t.Parallel()
-
-	if err := validateUnsupportedRuntimeConfig(BaldaConfig{}); err != nil {
-		t.Fatalf("validateUnsupportedRuntimeConfig() error = %v, want nil", err)
-	}
-}
-
 func TestBuildScheduledTaskSchedulerConfig(t *testing.T) {
 	t.Parallel()
 

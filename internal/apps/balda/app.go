@@ -111,12 +111,6 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	if err := validateSchedulerConfig(cfg.Balda.Scheduler); err != nil {
-		return fx.Module("balda", fx.Error(err))
-	}
-	if err := validateUnsupportedRuntimeConfig(cfg.Balda); err != nil {
-		return fx.Module("balda", fx.Error(err))
-	}
 	workspaceSessionsDir, err := resolveWorkspaceSessionsDir(cfg.Balda.Workspace.SessionsDir)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -513,33 +507,6 @@ func validateSessionPersistence(raw string) (string, error) {
 	default:
 		return "", fmt.Errorf("invalid balda.sessions.persistence %q: supported values are %q and %q", raw, sessionPersistenceMemory, sessionPersistenceSQLite)
 	}
-}
-
-func validateSchedulerConfig(cfg SchedulerConfig) error {
-	if cfg.UnsupportedJobs != nil {
-		return fmt.Errorf("balda.scheduler.jobs is no longer supported; use balda.scheduler.tasks with envelope.target, envelope.key, and envelope.content")
-	}
-	return nil
-}
-
-func validateUnsupportedRuntimeConfig(cfg BaldaConfig) error {
-	var errs []string
-	if cfg.UnsupportedEventBus != nil {
-		errs = append(errs, "balda.event_bus is no longer supported; use balda.nats built-in runtime settings")
-	}
-	if cfg.Swarm.UnsupportedMode != nil {
-		errs = append(errs, "balda.swarm.mode is no longer supported; actor runtime is always on")
-	}
-	if cfg.Webhooks.UnsupportedMode != nil {
-		errs = append(errs, "balda.webhooks.mode is no longer supported; webhooks use the always-on runtime")
-	}
-	if cfg.Scheduler.UnsupportedMode != nil {
-		errs = append(errs, "balda.scheduler.mode is no longer supported; scheduling uses the always-on runtime")
-	}
-	if len(errs) == 0 {
-		return nil
-	}
-	return fmt.Errorf("invalid unsupported runtime configuration: %s", strings.Join(errs, "; "))
 }
 
 func validateRuntimeConfigLint(swarmCfg swarm.Config, webhookCfg handlers.InboundWebhookConfig) error {
