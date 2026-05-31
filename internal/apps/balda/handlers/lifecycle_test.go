@@ -137,16 +137,6 @@ func (s *testSessionStore) set(key string, value any) {
 	s.values[trimmedKey] = value
 }
 
-func TestBundledRegistryURL(t *testing.T) {
-	addr := "127.0.0.1:9010"
-	if got := bundledRegistryURL(addr, "balda"); got != "http://127.0.0.1:9010/mcp" {
-		t.Fatalf("bundledRegistryURL(balda) = %q, want http://127.0.0.1:9010/mcp", got)
-	}
-	if got := bundledRoutePath("balda"); got != "/mcp/balda" {
-		t.Fatalf("bundledRoutePath(balda) = %q, want /mcp/balda", got)
-	}
-}
-
 func TestBundledBaldaServerInstructionsReflectWorkspaceMode(t *testing.T) {
 	enabled := bundledBaldaServerInstructions(true, true)
 	if !strings.Contains(enabled, "balda.workspace is available") {
