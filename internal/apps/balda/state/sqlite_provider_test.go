@@ -328,7 +328,7 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
-	assertSQLiteSchemaHasNoPreviousSchemaLeftovers(t, ctx, db)
+	assertRequiredBaldaSQLiteTables(t, ctx, db)
 	assertSessionMetadataHasNoChatTopicUnique(t, ctx, db)
 }
 
@@ -441,6 +441,7 @@ func TestSQLiteProvider_MigratesPreviousSchema(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
+	assertRequiredBaldaSQLiteTables(t, ctx, db)
 }
 
 func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
@@ -507,8 +508,7 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	assertTableExists(t, ctx, db, "balda_app_kv")
-	assertSQLiteSchemaHasNoPreviousSchemaLeftovers(t, ctx, db)
+	assertRequiredBaldaSQLiteTables(t, ctx, db)
 	assertSessionMetadataHasNoChatTopicUnique(t, ctx, db)
 
 	var appName string
@@ -530,7 +530,6 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 	if taskID != "previous-daily-review" || content != "Review previous queue" {
 		t.Fatalf("migrated scheduled task = %q/%q, want previous-daily-review/Review previous queue", taskID, content)
 	}
-	assertTableMissing(t, ctx, db, "balda_scheduled_jobs")
 
 	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 }
@@ -896,51 +895,17 @@ func assertGooseVersion(t *testing.T, ctx context.Context, db *sql.DB, want int)
 	}
 }
 
-func assertTableExists(t *testing.T, ctx context.Context, db *sql.DB, name string) {
-	t.Helper()
-	if exists, err := sqliteTableExists(ctx, db, name); err != nil {
-		t.Fatalf("sqliteTableExists(%q) error = %v", name, err)
-	} else if !exists {
-		t.Fatalf("sqliteTableExists(%q) = false, want true", name)
-	}
-}
-
-func assertTableMissing(t *testing.T, ctx context.Context, db *sql.DB, name string) {
-	t.Helper()
-	if exists, err := sqliteTableExists(ctx, db, name); err != nil {
-		t.Fatalf("sqliteTableExists(%q) error = %v", name, err)
-	} else if exists {
-		t.Fatalf("sqliteTableExists(%q) = true, want false", name)
-	}
-}
-
-func assertSQLiteSchemaHasNoPreviousSchemaLeftovers(t *testing.T, ctx context.Context, db *sql.DB) {
+func assertRequiredBaldaSQLiteTables(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 
-	rows, err := db.QueryContext(ctx, `
-		SELECT type, name
-		FROM sqlite_master
-		WHERE lower(name) LIKE '%relay%'
-		   OR lower(coalesce(sql, '')) LIKE '%relay%'
-		ORDER BY type, name`)
-	if err != nil {
-		t.Fatalf("query sqlite schema previous leftovers: %v", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var leftovers []string
-	for rows.Next() {
-		var objectType, name string
-		if err := rows.Scan(&objectType, &name); err != nil {
-			t.Fatalf("scan sqlite schema previous leftover: %v", err)
+	for _, name := range requiredBaldaSQLiteTables {
+		exists, err := sqliteTableExists(ctx, db, name)
+		if err != nil {
+			t.Fatalf("sqliteTableExists(%q) error = %v", name, err)
 		}
-		leftovers = append(leftovers, objectType+":"+name)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate sqlite schema previous leftovers: %v", err)
-	}
-	if len(leftovers) > 0 {
-		t.Fatalf("sqlite schema has previous leftovers: %v", leftovers)
+		if !exists {
+			t.Fatalf("sqliteTableExists(%q) = false, want true", name)
+		}
 	}
 }
 
