@@ -193,8 +193,6 @@ func bundledRegistryURL(addr, serverID string) string {
 type bundledHTTPServerResult struct {
 	Addr  string
 	Close func() error
-
-	server *http.Server
 }
 
 func startBundledMCPHTTPServer(ctx context.Context, addr string, handlersByID map[string]http.Handler) (*bundledHTTPServerResult, error) {
@@ -235,8 +233,7 @@ func startBundledMCPHTTPServer(ctx context.Context, addr string, handlersByID ma
 	}()
 
 	return &bundledHTTPServerResult{
-		Addr:   listener.Addr().String(),
-		server: httpServer,
+		Addr: listener.Addr().String(),
 		Close: func() error {
 			return httpServer.Close()
 		},
