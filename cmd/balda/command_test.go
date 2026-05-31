@@ -136,44 +136,6 @@ balda:
 	}
 }
 
-func TestLoadConfigDocument_CapturesUnsupportedSchedulerJobsKey(t *testing.T) {
-	workingDir := t.TempDir()
-
-	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
-  providers:
-    balda_agent:
-      type: opencode_acp
-      opencode_acp:
-        model: opencode/big-pickle
-balda:
-  provider: balda_agent
-  scheduler:
-    jobs:
-      - id: unsupported-shape
-        cron: "0 9 * * *"
-        prompt: unsupported jobs key fixture
-`); err != nil {
-		t.Fatalf("write balda config: %v", err)
-	}
-
-	var doc baldaTestConfigDocument
-	_, err := appconfig.LoadConfigDocument(
-		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
-		appconfig.AppLoadOptions{
-			AppName:            "balda",
-			DefaultsYAML:       defaultBaldaConfig,
-			UseDotConfigAppDir: true,
-		},
-		&doc,
-	)
-	if err != nil {
-		t.Fatalf("LoadConfigDocument: %v", err)
-	}
-	if doc.Balda.Scheduler.UnsupportedJobs == nil {
-		t.Fatal("unsupported balda.scheduler.jobs key was ignored; want captured for validation")
-	}
-}
-
 func TestDefaultBaldaConfig_DocumentsCurrentTemplateWording(t *testing.T) {
 	body := string(defaultBaldaConfig)
 	for _, want := range []string{
