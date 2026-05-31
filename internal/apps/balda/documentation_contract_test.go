@@ -679,6 +679,7 @@ func TestDocumentationContract(t *testing.T) {
 				section: "## Invariants",
 				needles: []string{
 					"JetStream must be available before ingress accepts work.",
+					"concrete JetStream policy stays in Balda's NATS adapter.",
 				},
 			},
 			{

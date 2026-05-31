@@ -10,7 +10,7 @@ Status: active
 - No runtime path executes user work without durable actor dispatch acceptance.
 - The session-turn execution path is the only code path that can enqueue `TurnDispatcher` work.
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
-- Runtime boundaries are strict and explicit: ingress publishes through `ActorDispatcher`, actor execution and delivery settlement flow through Norma actorlayer contracts, and concrete JetStream policy stays in Balda's NATS adapter.
+- Runtime boundaries are strict and explicit: ingress publishes through `ActorDispatcher`, actor execution and delivery settlement flow through Norma actorlayer contracts, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
 - Norma actorlayer is a typed engine only: it can receive commands/deliveries and emit events, but does not make Balda-specific product policy decisions.
 
