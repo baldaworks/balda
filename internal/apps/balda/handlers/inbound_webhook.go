@@ -324,9 +324,24 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 		default:
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.auth: unsupported type %q", routeName, rawRoute.Auth.Type)
 		}
-		dedupePolicy, err := normalizeInboundWebhookDedupePolicy(rawRoute.Dedupe)
-		if err != nil {
-			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.dedupe: %w", routeName, err)
+		dedupePolicy := inboundWebhookDedupePolicy{
+			Source: strings.ToLower(strings.TrimSpace(rawRoute.Dedupe.Source)),
+			Header: strings.TrimSpace(rawRoute.Dedupe.Header),
+		}
+		if dedupePolicy.Source == "" && dedupePolicy.Header != "" {
+			dedupePolicy.Source = inboundWebhookDedupeSourceHeader
+		}
+		if dedupePolicy.Source == "" {
+			dedupePolicy.Source = inboundWebhookDedupeSourceRequestID
+		}
+		switch dedupePolicy.Source {
+		case inboundWebhookDedupeSourceRequestID, inboundWebhookDedupeSourceBodySHA:
+		case inboundWebhookDedupeSourceHeader:
+			if dedupePolicy.Header == "" {
+				return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.dedupe: header is required for source=%q", routeName, inboundWebhookDedupeSourceHeader)
+			}
+		default:
+			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.dedupe: unsupported source %q", routeName, rawRoute.Dedupe.Source)
 		}
 
 		normalized.Routes[path] = inboundWebhookRoute{
@@ -342,30 +357,6 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 	}
 
 	return normalized, nil
-}
-
-func normalizeInboundWebhookDedupePolicy(raw InboundWebhookRouteDedupeConfig) (inboundWebhookDedupePolicy, error) {
-	policy := inboundWebhookDedupePolicy{
-		Source: strings.ToLower(strings.TrimSpace(raw.Source)),
-		Header: strings.TrimSpace(raw.Header),
-	}
-	if policy.Source == "" && policy.Header != "" {
-		policy.Source = inboundWebhookDedupeSourceHeader
-	}
-	if policy.Source == "" {
-		policy.Source = inboundWebhookDedupeSourceRequestID
-	}
-	switch policy.Source {
-	case inboundWebhookDedupeSourceRequestID, inboundWebhookDedupeSourceBodySHA:
-		return policy, nil
-	case inboundWebhookDedupeSourceHeader:
-		if policy.Header == "" {
-			return inboundWebhookDedupePolicy{}, fmt.Errorf("header is required for source=%q", inboundWebhookDedupeSourceHeader)
-		}
-		return policy, nil
-	default:
-		return inboundWebhookDedupePolicy{}, fmt.Errorf("unsupported source %q", raw.Source)
-	}
 }
 
 func (r *InboundWebhookReceiver) start(_ context.Context) error {
