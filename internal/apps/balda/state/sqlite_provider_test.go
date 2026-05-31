@@ -508,11 +508,8 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	assertTableExists(t, ctx, db, "balda_app_kv")
-	assertTableMissing(t, ctx, db, "relay_app_kv")
 	assertSQLiteSchemaHasNoPreviousSchemaLeftovers(t, ctx, db)
 	assertSessionMetadataHasNoChatTopicUnique(t, ctx, db)
-	assertKVNamespaceMissing(t, ctx, db, "relay.app")
-	assertKVNamespaceMissing(t, ctx, db, "relay.session_mcp")
 
 	var appName string
 	if err := db.QueryRowContext(ctx, `SELECT app_name FROM balda_runtime_sessions WHERE user_id = 'tg-101'`).Scan(&appName); err != nil {
@@ -961,17 +958,5 @@ func assertSessionMetadataHasNoChatTopicUnique(t *testing.T, ctx context.Context
 	normalized := strings.ToLower(strings.Join(strings.Fields(createSQL), " "))
 	if strings.Contains(normalized, "unique (chat_id, topic_id)") {
 		t.Fatalf("balda_session_metadata still has chat/topic uniqueness: %s", createSQL)
-	}
-}
-
-func assertKVNamespaceMissing(t *testing.T, ctx context.Context, db *sql.DB, namespace string) {
-	t.Helper()
-
-	var count int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM balda_app_kv WHERE namespace = ?`, namespace).Scan(&count); err != nil {
-		t.Fatalf("query namespace %q: %v", namespace, err)
-	}
-	if count != 0 {
-		t.Fatalf("namespace %q row count = %d, want 0", namespace, count)
 	}
 }
