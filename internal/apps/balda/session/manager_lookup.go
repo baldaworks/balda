@@ -141,7 +141,11 @@ func (m *Manager) GetSessionInfo(ctx context.Context, sessionID string) (TopicSe
 	if err != nil {
 		return TopicSessionInfo{}, err
 	}
-	info.Status = sessionStatusForInactiveRecord(record.Status)
+	if strings.TrimSpace(record.Status) == "" || record.Status == baldastate.SessionStatusActive {
+		info.Status = sessionStatusPersisted
+	} else {
+		info.Status = record.Status
+	}
 	return info, nil
 }
 
@@ -177,13 +181,6 @@ func topicSessionInfoFromRecord(record baldastate.SessionRecord) (TopicSessionIn
 		BranchName:   record.BranchName,
 	}
 	return info, nil
-}
-
-func sessionStatusForInactiveRecord(recordStatus string) string {
-	if strings.TrimSpace(recordStatus) == "" || recordStatus == baldastate.SessionStatusActive {
-		return sessionStatusPersisted
-	}
-	return recordStatus
 }
 
 func (m *Manager) getProviderName() string {
