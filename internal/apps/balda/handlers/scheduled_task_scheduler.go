@@ -218,7 +218,7 @@ func (s *ScheduledTaskScheduler) dispatchTask(ctx context.Context, task baldasta
 		return nil
 	}
 
-	dispatchKey := dispatchAttemptKey(taskID, current.NextRunAt)
+	dispatchKey := fmt.Sprintf("%s@%s", taskID, current.NextRunAt.UTC().Format(time.RFC3339Nano))
 	if strings.TrimSpace(current.LastDispatchKey) == dispatchKey {
 		return nil
 	}
@@ -461,8 +461,4 @@ func parseScheduleSpec(spec string) (cron.Schedule, error) {
 		return nil, fmt.Errorf("unsupported schedule spec %q", spec)
 	}
 	return schedule, nil
-}
-
-func dispatchAttemptKey(taskID string, dueAt time.Time) string {
-	return fmt.Sprintf("%s@%s", strings.TrimSpace(taskID), dueAt.UTC().Format(time.RFC3339Nano))
 }

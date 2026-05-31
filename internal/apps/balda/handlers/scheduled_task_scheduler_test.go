@@ -62,7 +62,8 @@ func TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules(t *te
 	if got, want := command.SessionID, locator.SessionID; got != want {
 		t.Fatalf("session_id = %q, want %q", got, want)
 	}
-	if got, want := command.DedupeKey, dispatchAttemptKey(record.TaskID, dueAt); got != want {
+	wantKey := record.TaskID + "@" + dueAt.UTC().Format(time.RFC3339Nano)
+	if got, want := command.DedupeKey, wantKey; got != want {
 		t.Fatalf("dedupe_key = %q, want %q", got, want)
 	}
 
@@ -76,7 +77,6 @@ func TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules(t *te
 	if got, want := updated.NextRunAt, now.Add(2*time.Second); !got.Equal(want) {
 		t.Fatalf("NextRunAt = %s, want %s", got, want)
 	}
-	wantKey := dispatchAttemptKey(record.TaskID, dueAt)
 	if got := updated.LastDispatchKey; got != wantKey {
 		t.Fatalf("LastDispatchKey = %q, want %q", got, wantKey)
 	}
@@ -163,7 +163,8 @@ func TestScheduledTaskSchedulerDispatchTask_IdempotentForSameDueSlot(t *testing.
 	if !ok {
 		t.Fatal("GetByID() = not found, want found")
 	}
-	if got, want := updated.LastDispatchKey, dispatchAttemptKey(record.TaskID, dueAt); got != want {
+	wantKey := record.TaskID + "@" + dueAt.UTC().Format(time.RFC3339Nano)
+	if got, want := updated.LastDispatchKey, wantKey; got != want {
 		t.Fatalf("LastDispatchKey = %q, want %q", got, want)
 	}
 }
