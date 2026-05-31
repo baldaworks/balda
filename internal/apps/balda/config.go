@@ -117,7 +117,7 @@ type GoalConfig struct {
 	MaxIterations int `mapstructure:"max_iterations"`
 }
 
-// SwarmConfig controls the JetStream-backed actor runtime.
+// SwarmConfig controls Balda's durable actor runtime.
 type SwarmConfig struct {
 	Commands SwarmCommandConfig `mapstructure:"commands"`
 	Events   SwarmEventConfig   `mapstructure:"events"`

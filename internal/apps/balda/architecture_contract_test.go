@@ -140,6 +140,8 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 			"nats_jetstream",
 			"webhook_mode",
 			"scheduler_mode",
+			"JetStream-backed actor runtime",
+			"embedded JetStream defaults",
 		}
 		for _, needle := range forbidden {
 			t.Run(needle, func(t *testing.T) {

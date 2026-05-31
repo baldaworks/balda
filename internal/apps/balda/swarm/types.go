@@ -1,4 +1,4 @@
-// Package swarm contains Balda's JetStream-backed actor runtime primitives.
+// Package swarm contains Balda's durable actor runtime primitives.
 package swarm
 
 import (

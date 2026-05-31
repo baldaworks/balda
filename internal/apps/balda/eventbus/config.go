@@ -15,19 +15,19 @@ const (
 
 // Config controls Balda's required JetStream command/event bus.
 type Config struct {
-	Embedded         bool   `mapstructure:"embedded"`
+	Embedded         bool     `mapstructure:"embedded"`
 	URLs             []string `mapstructure:"urls"`
-	Host             string `mapstructure:"host"`
-	Port             int    `mapstructure:"port"`
-	JetStream        bool   `mapstructure:"jetstream"`
-	StoreDir         string `mapstructure:"store_dir"`
-	MaxMemory        string `mapstructure:"max_memory"`
-	MaxStore         string `mapstructure:"max_store"`
-	SyncAlways       bool   `mapstructure:"sync_always"`
-	ExposeMonitoring bool   `mapstructure:"expose_monitoring"`
+	Host             string   `mapstructure:"host"`
+	Port             int      `mapstructure:"port"`
+	JetStream        bool     `mapstructure:"jetstream"`
+	StoreDir         string   `mapstructure:"store_dir"`
+	MaxMemory        string   `mapstructure:"max_memory"`
+	MaxStore         string   `mapstructure:"max_store"`
+	SyncAlways       bool     `mapstructure:"sync_always"`
+	ExposeMonitoring bool     `mapstructure:"expose_monitoring"`
 }
 
-// Normalized applies safe localhost embedded JetStream defaults.
+// Normalized applies safe localhost built-in runtime defaults.
 func (c Config) Normalized() (Config, error) {
 	out := c
 	if !out.Embedded && len(out.URLs) == 0 {
