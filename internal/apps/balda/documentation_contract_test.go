@@ -266,6 +266,8 @@ func TestDocumentationContract(t *testing.T) {
 		for _, needle := range []string{
 			"make jetstream-state",
 			"embedded JetStream forced on",
+			"embedded JetStream",
+			"JetStream is mandatory for command/event transport",
 		} {
 			if strings.Contains(section, needle) {
 				t.Fatalf("%s onboarding section still exposes runtime-heavy detail %q", filepath.ToSlash(path), needle)

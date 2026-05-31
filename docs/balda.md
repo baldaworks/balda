@@ -22,10 +22,10 @@ Architecture contracts and migration execution documents are maintained in:
 
 ## User Onboarding Reference
 
-The primary onboarding path runs Balda as a single app with embedded JetStream
-and local SQLite state. JetStream is mandatory for command/event transport, but
-it is bundled inside the Balda process by default, so first-time setup still
-does not require operating an external queue service.
+The primary onboarding path runs Balda as a single app with its built-in
+command/event runtime and local SQLite state. The runtime is bundled inside the
+Balda process by default, so first-time setup does not require operating an
+external queue service.
 
 SQLite remains product/read-model state (owner/collaborator, session metadata,
 task views, memory state, scheduler metadata, delivery outbox), not a command
