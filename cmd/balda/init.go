@@ -140,7 +140,7 @@ func initCommand() *cobra.Command {
 			_, _ = fmt.Fprintf(baldaInitOutput, "telegram token stored in: %s\n", storageTarget)
 			_, _ = fmt.Fprintf(baldaInitOutput, "start command: balda start\n")
 			_, _ = fmt.Fprintf(baldaInitOutput, "auth command: %s\n", auth.BuildOwnerAuthCommand(ownerToken))
-			_, _ = fmt.Fprintf(baldaInitOutput, "auth url: %s\n", auth.BuildOwnerAuthURL(bot.username, ownerToken))
+			_, _ = fmt.Fprintf(baldaInitOutput, "auth url: %s\n", auth.BuildOwnerAuthLink(bot.username, ownerToken))
 
 			return nil
 		},

@@ -10,8 +10,8 @@ func BuildOwnerAuthCommand(ownerToken string) string {
 	return fmt.Sprintf("/start owner=%s", strings.TrimSpace(ownerToken))
 }
 
-// BuildOwnerAuthURL returns the Telegram deeplink for owner bootstrap.
-func BuildOwnerAuthURL(botUsername, ownerToken string) string {
+// BuildOwnerAuthLink returns the Telegram auth link for owner bootstrap.
+func BuildOwnerAuthLink(botUsername, ownerToken string) string {
 	username := strings.TrimSpace(botUsername)
 	if username == "" {
 		username = "<bot_username>"

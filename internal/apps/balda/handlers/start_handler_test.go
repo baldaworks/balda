@@ -202,7 +202,7 @@ func TestParseStartCommandArgs(t *testing.T) {
 			},
 		},
 		{
-			name: "owner deeplink payload",
+			name: "owner auth link payload",
 			raw:  "owner_abc123",
 			wantArgs: startCommandArgs{
 				mode:  startModeOwner,
@@ -218,7 +218,7 @@ func TestParseStartCommandArgs(t *testing.T) {
 			},
 		},
 		{
-			name: "invite deeplink payload",
+			name: "invite auth link payload",
 			raw:  "invite_abc123",
 			wantArgs: startCommandArgs{
 				mode:  startModeInvite,
@@ -256,7 +256,7 @@ func TestParseStartCommandArgs(t *testing.T) {
 			wantMalformed: true,
 		},
 		{
-			name:          "missing deeplink value rejected",
+			name:          "missing auth link value rejected",
 			raw:           "invite_",
 			wantMalformed: true,
 		},
@@ -306,7 +306,7 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 		assertLastSentNotContains(t, tgClient, "Balda mode is active.")
 	})
 
-	t.Run("accepts owner deeplink payload as owner bootstrap", func(t *testing.T) {
+	t.Run("accepts owner auth link payload as owner bootstrap", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 		balda := &fakeBaldaOwnerActivator{}
 		handler.setBaldaHandler(balda)

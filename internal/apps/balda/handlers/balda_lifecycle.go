@@ -202,7 +202,7 @@ func (h *BaldaHandler) logOwnerAuthIfNeeded() {
 
 	h.logger.Info().
 		Str("auth_command", auth.BuildOwnerAuthCommand(h.authToken)).
-		Str("auth_url", auth.BuildOwnerAuthURL(username, h.authToken)).
+		Str("auth_url", auth.BuildOwnerAuthLink(username, h.authToken)).
 		Msg("balda owner authentication required")
 }
 

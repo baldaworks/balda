@@ -10,20 +10,20 @@ func TestBuildOwnerAuthCommand(t *testing.T) {
 	}
 }
 
-func TestBuildOwnerAuthURL(t *testing.T) {
+func TestBuildOwnerAuthLink(t *testing.T) {
 	t.Run("with username", func(t *testing.T) {
-		got := BuildOwnerAuthURL("NormaBot", "token123")
+		got := BuildOwnerAuthLink("NormaBot", "token123")
 		want := "https://t.me/NormaBot?start=owner_token123"
 		if got != want {
-			t.Fatalf("BuildOwnerAuthURL() = %q, want %q", got, want)
+			t.Fatalf("BuildOwnerAuthLink() = %q, want %q", got, want)
 		}
 	})
 
 	t.Run("fallback username placeholder", func(t *testing.T) {
-		got := BuildOwnerAuthURL(" ", "token123")
+		got := BuildOwnerAuthLink(" ", "token123")
 		want := "https://t.me/<bot_username>?start=owner_token123"
 		if got != want {
-			t.Fatalf("BuildOwnerAuthURL() = %q, want %q", got, want)
+			t.Fatalf("BuildOwnerAuthLink() = %q, want %q", got, want)
 		}
 	})
 }
