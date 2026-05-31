@@ -302,10 +302,10 @@ func TestCommandHandlerOnCommand_TopicNoBaldaProvider_ShowsError(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Balda is not ready right now.")
 }
 
-func TestCommandHandlerOnCommand_NewIsIgnored(t *testing.T) {
+func TestCommandHandlerOnCommand_UnknownCommandIsIgnored(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
 
-	err := handler.onCommand(context.Background(), newCommandEvent("new", "alpha", 101, 9001, nil))
+	err := handler.onCommand(context.Background(), newCommandEvent("unknown", "alpha", 101, 9001, nil))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}
@@ -314,6 +314,9 @@ func TestCommandHandlerOnCommand_NewIsIgnored(t *testing.T) {
 	}
 	if len(turns.cancelCalls) != 0 {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published commands = %d, want 0", len(turns.commands))
 	}
 	if len(tgClient.messages) != 0 {
 		t.Fatalf("sent messages = %d, want 0", len(tgClient.messages))
@@ -386,18 +389,6 @@ func TestCommandHandlerOnCommand_GoalWithoutArgsShowsUsage(t *testing.T) {
 	}
 
 	assertLastSentContains(t, tgClient, "Usage: /goal <objective>")
-}
-
-func TestCommandHandlerOnCommand_CronIgnored(t *testing.T) {
-	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("cron", "add * * * * * check", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-	if len(tgClient.messages) != 0 {
-		t.Fatalf("sent messages = %d, want 0", len(tgClient.messages))
-	}
 }
 
 func TestCommandHandlerOnCommand_CancelClearsQueueAndInFlight(t *testing.T) {
