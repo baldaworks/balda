@@ -17,12 +17,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func internalMCPStarted(m *InternalMCPManager) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.started
-}
-
 type testSessionStore struct {
 	mu     sync.RWMutex
 	values map[string]any
@@ -265,7 +259,10 @@ func TestInternalMCPManagerEnsureStarted_IsIdempotent(t *testing.T) {
 	if got := len(manager.cleanups); got != firstCleanupCount {
 		t.Fatalf("EnsureStarted() cleanup count = %d, want %d", got, firstCleanupCount)
 	}
-	if !internalMCPStarted(manager) {
+	manager.mu.RLock()
+	started := manager.started
+	manager.mu.RUnlock()
+	if !started {
 		t.Fatal("started = false, want true")
 	}
 
