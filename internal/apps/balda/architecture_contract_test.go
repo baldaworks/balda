@@ -19,7 +19,7 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\.Enqueue\s*\(`))
 		assertOnlyAllowedFiles(t, matches, []string{"actors/swarm_session_actor.go"})
 		if len(matches) == 0 {
-			t.Fatal("no TurnDispatcher.Enqueue call found; expected SessionActor to remain the only actor allowed to enqueue TurnDispatcher work")
+			t.Fatal("no TurnDispatcher.Enqueue call found; expected the session-turn execution path to remain the only code path allowed to enqueue TurnDispatcher work")
 		}
 	})
 

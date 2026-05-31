@@ -25,7 +25,7 @@ Owner: Balda maintainers
 ## Key decisions
 
 - JetStream lifecycle events are visibility-first; command settlement remains transport-authoritative.
-- SessionActor is the only actor allowed to enqueue TurnDispatcher work.
+- The session-turn execution path is the only code path allowed to enqueue `TurnDispatcher` work.
 - Delivery outbox semantics are required for user-visible idempotency.
 
 ## Risks
