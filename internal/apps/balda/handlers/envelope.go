@@ -49,30 +49,26 @@ func resolveEnvelopeTarget(
 		if key != envelopeAliasOwner {
 			return resolvedEnvelopeTarget{}, fmt.Errorf("unsupported alias target %q", target.Key)
 		}
-		return resolveOwnerTarget(ownerStore)
+		if ownerStore == nil {
+			return resolvedEnvelopeTarget{}, fmt.Errorf("owner store is required")
+		}
+		owner := ownerStore.GetOwner()
+		if owner == nil {
+			return resolvedEnvelopeTarget{}, fmt.Errorf("owner is not registered")
+		}
+		if owner.UserID == 0 {
+			return resolvedEnvelopeTarget{}, fmt.Errorf("owner.user_id is required")
+		}
+		if owner.ChatID == 0 {
+			return resolvedEnvelopeTarget{}, fmt.Errorf("owner.chat_id is required")
+		}
+
+		return resolvedEnvelopeTarget{
+			Locator: baldatelegram.NewLocator(owner.ChatID, 0),
+			UserID:  baldatelegram.UserID(owner.UserID),
+			TopicID: 0,
+		}, nil
 	default:
 		return resolvedEnvelopeTarget{}, fmt.Errorf("unsupported envelope target %q", target.Target)
 	}
-}
-
-func resolveOwnerTarget(ownerStore *auth.OwnerStore) (resolvedEnvelopeTarget, error) {
-	if ownerStore == nil {
-		return resolvedEnvelopeTarget{}, fmt.Errorf("owner store is required")
-	}
-	owner := ownerStore.GetOwner()
-	if owner == nil {
-		return resolvedEnvelopeTarget{}, fmt.Errorf("owner is not registered")
-	}
-	if owner.UserID == 0 {
-		return resolvedEnvelopeTarget{}, fmt.Errorf("owner.user_id is required")
-	}
-	if owner.ChatID == 0 {
-		return resolvedEnvelopeTarget{}, fmt.Errorf("owner.chat_id is required")
-	}
-
-	return resolvedEnvelopeTarget{
-		Locator: baldatelegram.NewLocator(owner.ChatID, 0),
-		UserID:  baldatelegram.UserID(owner.UserID),
-		TopicID: 0,
-	}, nil
 }
