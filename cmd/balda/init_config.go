@@ -189,22 +189,6 @@ func setBaldaWorkspaceBaseBranch(baldaSection map[string]any, baseBranch string)
 	return nil
 }
 
-func baldaStateDirFromInitDocument(doc map[string]any) (string, error) {
-	baldaSection, ok := toStringAnyMap(doc["balda"])
-	if !ok {
-		return "", fmt.Errorf("balda section is missing from generated config")
-	}
-	stateDirRaw, ok := baldaSection["state_dir"]
-	if !ok {
-		return baldaRuntimeStatePath, nil
-	}
-	stateDir := strings.TrimSpace(fmt.Sprintf("%v", stateDirRaw))
-	if stateDir == "" {
-		return "", fmt.Errorf("balda.state_dir is required")
-	}
-	return stateDir, nil
-}
-
 func toStringAnyMap(raw any) (map[string]any, bool) {
 	switch v := raw.(type) {
 	case map[string]any:
@@ -225,18 +209,18 @@ func toStringAnyMap(raw any) (map[string]any, bool) {
 }
 
 var (
-	baldaInitInput           io.Reader = os.Stdin
-	baldaInitOutput          io.Writer = os.Stdout
-	baldaInitIsInteractive             = func() bool {
+	baldaInitInput         io.Reader = os.Stdin
+	baldaInitOutput        io.Writer = os.Stdout
+	baldaInitIsInteractive           = func() bool {
 		info, err := os.Stdin.Stat()
 		if err != nil {
 			return false
 		}
 		return (info.Mode() & os.ModeCharDevice) != 0
 	}
-	baldaInitLookPath                  = exec.LookPath
-	baldaInitCurrentBranch             = func(workingDir string) (string, error) {
+	baldaInitLookPath      = exec.LookPath
+	baldaInitCurrentBranch = func(workingDir string) (string, error) {
 		return git.CurrentBranch(context.Background(), workingDir)
 	}
-	baldaInitLoadBotIdentity           = loadBotIdentityFromToken
+	baldaInitLoadBotIdentity = loadBotIdentityFromToken
 )

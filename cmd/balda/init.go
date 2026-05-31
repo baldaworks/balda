@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
-	"os"
-	"path/filepath"
 )
 
 const (
@@ -107,9 +109,16 @@ func initCommand() *cobra.Command {
 				return err
 			}
 
-			stateDirRaw, err := baldaStateDirFromInitDocument(doc)
-			if err != nil {
-				return err
+			baldaSection, ok := toStringAnyMap(doc["balda"])
+			if !ok {
+				return fmt.Errorf("balda section is missing from generated config")
+			}
+			stateDirRaw := baldaRuntimeStatePath
+			if raw, exists := baldaSection["state_dir"]; exists {
+				stateDirRaw = strings.TrimSpace(fmt.Sprintf("%v", raw))
+				if stateDirRaw == "" {
+					return fmt.Errorf("balda.state_dir is required")
+				}
 			}
 			stateDir, err := paths.ResolveStateDir(workingDir, stateDirRaw)
 			if err != nil {
