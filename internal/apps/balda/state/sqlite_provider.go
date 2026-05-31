@@ -133,9 +133,19 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	if err := applySQLitePragmas(ctx, db); err != nil {
-		_ = db.Close()
-		return nil, err
+	for _, stmt := range []string{
+		"PRAGMA foreign_keys=ON;",
+		"PRAGMA journal_mode=WAL;",
+		"PRAGMA busy_timeout=5000;",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			// WAL can be unsupported in some environments. Ignore only this one.
+			if stmt == "PRAGMA journal_mode=WAL;" {
+				continue
+			}
+			_ = db.Close()
+			return nil, fmt.Errorf("apply balda state pragma %q: %w", stmt, err)
+		}
 	}
 	if err := migrate(ctx, db); err != nil {
 		_ = db.Close()
@@ -190,22 +200,4 @@ func (p *sqliteProvider) Collaborators() CollaboratorStore {
 
 func (p *sqliteProvider) Close() error {
 	return p.db.Close()
-}
-
-func applySQLitePragmas(ctx context.Context, db *sql.DB) error {
-	stmts := []string{
-		"PRAGMA foreign_keys=ON;",
-		"PRAGMA journal_mode=WAL;",
-		"PRAGMA busy_timeout=5000;",
-	}
-	for _, stmt := range stmts {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			// WAL can be unsupported in some environments. Ignore only this one.
-			if stmt == "PRAGMA journal_mode=WAL;" {
-				continue
-			}
-			return fmt.Errorf("apply balda state pragma %q: %w", stmt, err)
-		}
-	}
-	return nil
 }
