@@ -162,7 +162,7 @@ func (m *RuntimeManager) BuildGoalRuntime(
 	}
 	userID := strings.TrimSpace(cfg.UserID)
 	if userID == "" {
-		return nil, fmt.Errorf("goalkeeper user id is required")
+		return nil, fmt.Errorf("goal user id is required")
 	}
 	workspaceDir := base.workspaceDir(cfg.WorkspaceDir)
 	if _, err := base.builder.CreateRuntimeSession(
@@ -173,7 +173,7 @@ func (m *RuntimeManager) BuildGoalRuntime(
 		cfg.SessionID,
 		workspaceDir,
 	); err != nil {
-		return nil, fmt.Errorf("create goalkeeper runtime session: %w", err)
+		return nil, fmt.Errorf("create goal runtime session: %w", err)
 	}
 
 	workflow, err := base.builder.BuildGoalWorkflow(ctx, GoalBuildConfig{
@@ -187,7 +187,7 @@ func (m *RuntimeManager) BuildGoalRuntime(
 	if err != nil {
 		return nil, err
 	}
-	r, err := base.runner(workflow, "goalkeeper")
+	r, err := base.runner(workflow, "goal")
 	if err != nil {
 		_ = closeRuntimeAgent(workflow)
 		return nil, err

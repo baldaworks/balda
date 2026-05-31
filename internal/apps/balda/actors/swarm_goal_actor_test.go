@@ -17,7 +17,7 @@ import (
 	"google.golang.org/genai"
 )
 
-func TestGoalkeeperActorCompletesPassingRun(t *testing.T) {
+func TestGoalActorCompletesPassingRun(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -28,7 +28,7 @@ func TestGoalkeeperActorCompletesPassingRun(t *testing.T) {
 	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
-	actor := &goalkeeperActor{
+	actor := &goalActor{
 		tasks:          tasks,
 		dispatcher:     dispatcher,
 		sessions:       manager,
@@ -74,34 +74,34 @@ func (b *fakeGoalRuntimeBuilder) BuildGoalRuntime(ctx context.Context, cfg balda
 	}
 	svc := adksession.InMemoryService()
 	if _, err := svc.Create(ctx, &adksession.CreateRequest{
-		AppName:   "goalkeeper-test",
+		AppName:   "goal-test",
 		UserID:    cfg.UserID,
 		SessionID: cfg.SessionID,
 	}); err != nil {
 		return nil, err
 	}
 	ag, err := adkagent.New(adkagent.Config{
-		Name:        "Goalkeeper",
-		Description: "test goalkeeper",
+		Name:        "Goal",
+		Description: "test goal",
 		Run: func(inv adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
-				workerStarted := goalkeeperTestMetadataEvent(inv.InvocationID(), goalkeeperWorkerStep, goalkeeperStepStarted)
+				workerStarted := goalTestMetadataEvent(inv.InvocationID(), goalWorkerStep, goalStepStarted)
 				if !yield(workerStarted, nil) {
 					return
 				}
-				if !yield(goalkeeperTestTextEvent(inv.InvocationID(), "worker completed"), nil) {
+				if !yield(goalTestTextEvent(inv.InvocationID(), "worker completed"), nil) {
 					return
 				}
-				if !yield(goalkeeperTestMetadataEvent(inv.InvocationID(), goalkeeperWorkerStep, goalkeeperStepCompleted), nil) {
+				if !yield(goalTestMetadataEvent(inv.InvocationID(), goalWorkerStep, goalStepCompleted), nil) {
 					return
 				}
-				if !yield(goalkeeperTestMetadataEvent(inv.InvocationID(), goalkeeperValidatorStep, goalkeeperStepStarted), nil) {
+				if !yield(goalTestMetadataEvent(inv.InvocationID(), goalValidatorStep, goalStepStarted), nil) {
 					return
 				}
-				if !yield(goalkeeperTestTextEvent(inv.InvocationID(), b.finalValidatorText), nil) {
+				if !yield(goalTestTextEvent(inv.InvocationID(), b.finalValidatorText), nil) {
 					return
 				}
-				completed := goalkeeperTestMetadataEvent(inv.InvocationID(), goalkeeperValidatorStep, goalkeeperStepCompleted)
+				completed := goalTestMetadataEvent(inv.InvocationID(), goalValidatorStep, goalStepCompleted)
 				completed.TurnComplete = true
 				yield(completed, nil)
 			}
@@ -110,23 +110,23 @@ func (b *fakeGoalRuntimeBuilder) BuildGoalRuntime(ctx context.Context, cfg balda
 	if err != nil {
 		return nil, err
 	}
-	r, err := adkrunner.New(adkrunner.Config{AppName: "goalkeeper-test", Agent: ag, SessionService: svc})
+	r, err := adkrunner.New(adkrunner.Config{AppName: "goal-test", Agent: ag, SessionService: svc})
 	if err != nil {
 		return nil, err
 	}
 	return &baldaagent.GoalRuntime{Agent: ag, Runner: r}, nil
 }
 
-func goalkeeperTestMetadataEvent(invocationID string, step string, eventType string) *adksession.Event {
+func goalTestMetadataEvent(invocationID string, step string, eventType string) *adksession.Event {
 	ev := adksession.NewEvent(invocationID)
 	ev.CustomMetadata = map[string]any{
-		goalkeeperMetadataEventKey: eventType,
-		goalkeeperMetadataStepKey:  step,
+		goalMetadataEventKey: eventType,
+		goalMetadataStepKey:  step,
 	}
 	return ev
 }
 
-func goalkeeperTestTextEvent(invocationID string, text string) *adksession.Event {
+func goalTestTextEvent(invocationID string, text string) *adksession.Event {
 	ev := adksession.NewEvent(invocationID)
 	ev.Content = genai.NewContentFromText(text, genai.RoleModel)
 	return ev

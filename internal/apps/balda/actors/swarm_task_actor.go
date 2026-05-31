@@ -251,7 +251,7 @@ func (e *taskActorExecutor) Handle(ctx context.Context, envelope any) error {
 	}
 	switch strings.TrimSpace(payload.Kind) {
 	case taskPayloadKindGoal:
-		return swarm.PolicyError(fmt.Errorf("goal tasks are handled by %s actor", swarm.ActorTypeGoalkeeper))
+		return swarm.PolicyError(fmt.Errorf("goal tasks are handled by goal actor"))
 	case taskPayloadKindScheduledTask:
 		if payload.ScheduledTask == nil {
 			return swarm.PolicyError(fmt.Errorf("scheduled task payload is required"))

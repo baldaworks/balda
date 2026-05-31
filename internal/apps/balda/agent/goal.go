@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	goalWorkerName           = "GoalkeeperWorker"
-	goalValidatorName        = "GoalkeeperValidator"
-	goalWorkerOutputStateKey = "goalkeeper_worker_output"
+	goalWorkerName           = "GoalWorker"
+	goalValidatorName        = "GoalValidator"
+	goalWorkerOutputStateKey = "goal_worker_output"
 )
 
 // GoalBuildConfig configures Balda's /goal work-validation agent.
@@ -65,7 +65,7 @@ func (b *Builder) BuildGoalWorkflow(ctx context.Context, cfg GoalBuildConfig) (a
 	worker, err := b.buildGoalChildAgent(ctx, goalChildAgentConfig{
 		ProviderID:        providerID,
 		Name:              goalWorkerName,
-		Description:       "Goalkeeper worker agent",
+		Description:       "Goal worker agent",
 		SessionID:         sessionID,
 		SessionBranch:     sessionBranch,
 		WorkspaceDir:      workspaceDir,
@@ -81,7 +81,7 @@ func (b *Builder) BuildGoalWorkflow(ctx context.Context, cfg GoalBuildConfig) (a
 	rawValidator, err := b.buildGoalChildAgent(ctx, goalChildAgentConfig{
 		ProviderID:        providerID,
 		Name:              goalValidatorName,
-		Description:       "Goalkeeper validator agent",
+		Description:       "Goal validator agent",
 		SessionID:         sessionID,
 		SessionBranch:     sessionBranch,
 		WorkspaceDir:      workspaceDir,
@@ -171,7 +171,7 @@ func joinGoalInstructions(baseInstruction, roleInstruction string) string {
 
 func goalWorkerInstruction() string {
 	return strings.Join([]string{
-		"You are the Goalkeeper worker agent.",
+		"You are the goal worker agent.",
 		"You receive one user goal as plain text.",
 		"Use the available goal and context.",
 		"Do the requested work in the current working directory.",
@@ -184,8 +184,8 @@ func goalWorkerInstruction() string {
 
 func goalValidatorInstruction() string {
 	return strings.Join([]string{
-		"You are the Goalkeeper validator agent.",
-		"Validate the prior worker result against the original user goal using the shared ADK session context.",
+		"You are the goal validator agent.",
+		"Validate the prior worker result against the original user goal using the shared runtime session context.",
 		"Inspect the current working directory as needed.",
 		"Do not intentionally mutate files or continue the worker's implementation work.",
 		"Start with exactly `verdict: pass` or `verdict: fail`.",
@@ -208,7 +208,7 @@ func wrapGoalValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKe
 		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
 				prompt := buildGoalValidatorPrompt(ctx.UserContent(), sessionStateString(ctx, key))
-				wrappedCtx := goalkeeperUserContentContext{
+				wrappedCtx := goalUserContentContext{
 					InvocationContext: ctx,
 					userContent:       genai.NewContentFromText(prompt, genai.RoleUser),
 				}
@@ -291,12 +291,12 @@ func visibleContentText(content *genai.Content) string {
 	return strings.Join(parts, "\n\n")
 }
 
-type goalkeeperUserContentContext struct {
+type goalUserContentContext struct {
 	adkagent.InvocationContext
 	userContent *genai.Content
 }
 
-func (c goalkeeperUserContentContext) UserContent() *genai.Content {
+func (c goalUserContentContext) UserContent() *genai.Content {
 	return c.userContent
 }
 

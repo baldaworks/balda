@@ -21,23 +21,23 @@ import (
 )
 
 const (
-	goalkeeperActorName = "goalkeeper.actor"
+	goalActorName = "goal.actor"
 
-	goalkeeperMetadataEventKey = "norma.goalkeeper.event"
-	goalkeeperMetadataStepKey  = "norma.goalkeeper.step"
+	goalMetadataEventKey = "norma.goal.event"
+	goalMetadataStepKey  = "norma.goal.step"
 
-	goalkeeperStepStarted   = "step_started"
-	goalkeeperStepCompleted = "step_completed"
-	goalkeeperStepFailed    = "step_failed"
-	goalkeeperWorkerStep    = "worker"
-	goalkeeperValidatorStep = "validator"
+	goalStepStarted   = "step_started"
+	goalStepCompleted = "step_completed"
+	goalStepFailed    = "step_failed"
+	goalWorkerStep    = "worker"
+	goalValidatorStep = "validator"
 )
 
 type goalRuntimeBuilder interface {
 	BuildGoalRuntime(ctx context.Context, cfg baldaagent.GoalRuntimeConfig) (*baldaagent.GoalRuntime, error)
 }
 
-type goalkeeperActor struct {
+type goalActor struct {
 	tasks          *swarm.TaskService
 	dispatcher     swarm.ActorDispatcher
 	sessions       *baldasession.Manager
@@ -47,7 +47,7 @@ type goalkeeperActor struct {
 	logger         zerolog.Logger
 }
 
-type goalkeeperActorParams struct {
+type goalActorParams struct {
 	fx.In
 
 	TaskService    *swarm.TaskService
@@ -59,23 +59,23 @@ type goalkeeperActorParams struct {
 	Logger         zerolog.Logger
 }
 
-func newGoalkeeperActor(params goalkeeperActorParams) swarm.Actor {
-	return &goalkeeperActor{
+func newGoalActor(params goalActorParams) swarm.Actor {
+	return &goalActor{
 		tasks:          params.TaskService,
 		dispatcher:     params.Dispatcher,
 		sessions:       params.SessionManager,
 		runtimeBuilder: params.RuntimeManager,
 		taskRuns:       params.TaskRuns,
 		maxIters:       normalizeGoalMaxIterations(params.MaxIters),
-		logger:         params.Logger.With().Str("component", "balda.goalkeeper_actor").Logger(),
+		logger:         params.Logger.With().Str("component", "balda.goal_actor").Logger(),
 	}
 }
 
-func (a *goalkeeperActor) Address() string {
+func (a *goalActor) Address() string {
 	return swarm.WildcardAddress(swarm.ActorTypeGoalkeeper)
 }
 
-func (a *goalkeeperActor) Handle(ctx context.Context, envelope any) error {
+func (a *goalActor) Handle(ctx context.Context, envelope any) error {
 	env, err := swarm.AssertEnvelope(envelope)
 	if err != nil {
 		return err
@@ -85,7 +85,7 @@ func (a *goalkeeperActor) Handle(ctx context.Context, envelope any) error {
 	}
 	var payload taskEnvelopePayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		return swarm.PermanentError(fmt.Errorf("decode goalkeeper payload: %w", err))
+		return swarm.PermanentError(fmt.Errorf("decode goal payload: %w", err))
 	}
 	if strings.TrimSpace(payload.Kind) != taskPayloadKindGoal || payload.Goal == nil {
 		return swarm.PolicyError(fmt.Errorf("goal payload is required"))
@@ -127,7 +127,7 @@ func GoalTaskEnvelope(
 	}, nil
 }
 
-func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTaskPayload) error {
+func (a *goalActor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTaskPayload) error {
 	taskID := firstNonEmpty(payload.TaskID, env.TaskID, env.To.Key)
 	objective := strings.TrimSpace(payload.Objective)
 	if taskID == "" {
@@ -150,10 +150,10 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 	if err := a.ensureGoalTask(ctx, payload); err != nil {
 		return err
 	}
-	if err := a.tasks.SetPlan(ctx, taskID, goalkeeperActorName, map[string]any{
+	if err := a.tasks.SetPlan(ctx, taskID, goalActorName, map[string]any{
 		"objective":      objective,
 		"max_iterations": maxIterations,
-		"workflow":       "norma.goalkeeper",
+		"workflow":       "norma.goal",
 		"steps":          []string{"Run the worker agent.", "Run the validator agent.", "Repeat until validator passes or max iterations is reached."},
 	}); err != nil {
 		return swarm.TransientError(err)
@@ -162,7 +162,7 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 	if err != nil {
 		return swarm.TransientError(err)
 	}
-	if err := a.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, goalkeeperActorName, env.ID, "", map[string]any{
+	if err := a.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, goalActorName, env.ID, "", map[string]any{
 		"objective": objective,
 	}); err != nil {
 		return swarm.TransientError(err)
@@ -172,7 +172,7 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 	}
 
 	if a.runtimeBuilder == nil {
-		return swarm.TransientError(fmt.Errorf("goalkeeper runtime builder is required"))
+		return swarm.TransientError(fmt.Errorf("goal runtime builder is required"))
 	}
 	runtime, err := a.runtimeBuilder.BuildGoalRuntime(ctx, baldaagent.GoalRuntimeConfig{
 		SessionID:     ts.GetAgentSessionID(),
@@ -186,7 +186,7 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 	}
 	defer func() {
 		if err := runtime.Close(); err != nil {
-			a.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to close goalkeeper runtime")
+			a.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to close goal runtime")
 		}
 	}()
 
@@ -198,13 +198,13 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 	result, err := a.runWorkflow(runCtx, runtime, ts.GetUserID(), ts.GetAgentSessionID(), payload)
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) {
-			if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false), baldastate.SwarmTaskStatusCanceled, goalkeeperActorName, "goal run canceled"); setErr != nil {
+			if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false), baldastate.SwarmTaskStatusCanceled, goalActorName, "goal run canceled"); setErr != nil {
 				return swarm.TransientError(setErr)
 			}
 			return a.deliver(ctx, taskID, payload.Locator, "Goal run canceled.", "canceled")
 		}
 		reason := redactSecrets(err.Error())
-		if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false), baldastate.SwarmTaskStatusFailed, goalkeeperActorName, reason); setErr != nil {
+		if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false), baldastate.SwarmTaskStatusFailed, goalActorName, reason); setErr != nil {
 			return swarm.TransientError(setErr)
 		}
 		return a.deliver(ctx, taskID, payload.Locator, "Goal run failed: "+reason, "failed")
@@ -217,7 +217,7 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 		reason = "max iterations reached"
 	}
 	taskResult := result.toTaskResult(passed)
-	if err := a.tasks.SetResult(ctx, taskID, taskResult, status, goalkeeperActorName, reason); err != nil {
+	if err := a.tasks.SetResult(ctx, taskID, taskResult, status, goalActorName, reason); err != nil {
 		return swarm.TransientError(err)
 	}
 	if passed {
@@ -229,7 +229,7 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 	return a.deliver(ctx, taskID, payload.Locator, a.renderTaskOutcome(ctx, taskID, "Goal run reached max iterations without passing validation."), "max-iterations")
 }
 
-func (a *goalkeeperActor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) error {
+func (a *goalActor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) error {
 	if a.tasks == nil {
 		return swarm.TransientError(fmt.Errorf("task service is required"))
 	}
@@ -245,7 +245,7 @@ func (a *goalkeeperActor) ensureGoalTask(ctx context.Context, payload goalTaskPa
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
 		CreatedFrom:   "goal",
 	}
-	if _, err := a.tasks.Create(ctx, record, goalkeeperActorName, payload); err != nil {
+	if _, err := a.tasks.Create(ctx, record, goalActorName, payload); err != nil {
 		return swarm.TransientError(err)
 	}
 	task, ok, err := a.tasks.Get(ctx, payload.TaskID)
@@ -257,13 +257,13 @@ func (a *goalkeeperActor) ensureGoalTask(ctx context.Context, payload goalTaskPa
 	}
 	switch strings.TrimSpace(task.Status) {
 	case "", baldastate.SwarmTaskStatusCreated, baldastate.SwarmTaskStatusQueued:
-		return a.tasks.MarkStatus(ctx, payload.TaskID, baldastate.SwarmTaskStatusQueued, goalkeeperActorName, "", "", nil)
+		return a.tasks.MarkStatus(ctx, payload.TaskID, baldastate.SwarmTaskStatusQueued, goalActorName, "", "", nil)
 	default:
 		return nil
 	}
 }
 
-func (a *goalkeeperActor) resolveSession(ctx context.Context, payload goalTaskPayload) (*baldasession.TopicSession, error) {
+func (a *goalActor) resolveSession(ctx context.Context, payload goalTaskPayload) (*baldasession.TopicSession, error) {
 	if a.sessions == nil {
 		return nil, fmt.Errorf("session manager is required")
 	}
@@ -290,7 +290,7 @@ func (a *goalkeeperActor) resolveSession(ctx context.Context, payload goalTaskPa
 	return ts, nil
 }
 
-type goalkeeperRunResult struct {
+type goalRunResult struct {
 	payload         goalTaskPayload
 	iterations      int
 	workerOutput    string
@@ -298,43 +298,43 @@ type goalkeeperRunResult struct {
 	finalText       string
 }
 
-func (a *goalkeeperActor) runWorkflow(
+func (a *goalActor) runWorkflow(
 	ctx context.Context,
 	runtime *baldaagent.GoalRuntime,
 	userID string,
 	agentSessionID string,
 	payload goalTaskPayload,
-) (goalkeeperRunResult, error) {
-	result := goalkeeperRunResult{payload: payload}
+) (goalRunResult, error) {
+	result := goalRunResult{payload: payload}
 	if runtime == nil || runtime.Runner == nil {
-		return result, fmt.Errorf("goalkeeper runner is required")
+		return result, fmt.Errorf("goal runner is required")
 	}
 	userContent := genai.NewContentFromText("Goal:\n"+strings.TrimSpace(payload.Objective), genai.RoleUser)
 	currentStep := ""
 	sawTurnComplete := false
 	for ev, err := range runtime.Runner.Run(ctx, userID, agentSessionID, userContent, adkagent.RunConfig{}) {
 		if err != nil {
-			return result, fmt.Errorf("run goalkeeper workflow: %w", err)
+			return result, fmt.Errorf("run goal workflow: %w", err)
 		}
 		if ev == nil {
 			continue
 		}
-		if step, eventType, ok := goalkeeperStepMetadata(ev); ok {
+		if step, eventType, ok := goalStepMetadata(ev); ok {
 			switch eventType {
-			case goalkeeperStepStarted:
+			case goalStepStarted:
 				currentStep = step
 				if err := a.recordStepStarted(ctx, payload, step, result.iterations+1); err != nil {
 					return result, err
 				}
-			case goalkeeperStepCompleted:
-				if step == goalkeeperValidatorStep {
+			case goalStepCompleted:
+				if step == goalValidatorStep {
 					result.iterations++
 				}
 				if err := a.recordStepCompleted(ctx, payload, step, result.iterations); err != nil {
 					return result, err
 				}
 				currentStep = ""
-			case goalkeeperStepFailed:
+			case goalStepFailed:
 				return result, fmt.Errorf("%s step failed", step)
 			}
 		}
@@ -342,9 +342,9 @@ func (a *goalkeeperActor) runWorkflow(
 		if text != "" {
 			result.finalText = appendVisibleText(result.finalText, text)
 			switch currentStep {
-			case goalkeeperWorkerStep:
+			case goalWorkerStep:
 				result.workerOutput = appendVisibleText(result.workerOutput, text)
-			case goalkeeperValidatorStep:
+			case goalValidatorStep:
 				result.validatorOutput = appendVisibleText(result.validatorOutput, text)
 			}
 		}
@@ -356,17 +356,17 @@ func (a *goalkeeperActor) runWorkflow(
 		result.iterations = 1
 	}
 	if !sawTurnComplete {
-		return result, fmt.Errorf("goalkeeper workflow ended without completion")
+		return result, fmt.Errorf("goal workflow ended without completion")
 	}
 	return result, nil
 }
 
-func goalkeeperStepMetadata(ev *adksession.Event) (step string, eventType string, ok bool) {
+func goalStepMetadata(ev *adksession.Event) (step string, eventType string, ok bool) {
 	if ev == nil || len(ev.CustomMetadata) == 0 {
 		return "", "", false
 	}
-	eventType, _ = ev.CustomMetadata[goalkeeperMetadataEventKey].(string)
-	step, _ = ev.CustomMetadata[goalkeeperMetadataStepKey].(string)
+	eventType, _ = ev.CustomMetadata[goalMetadataEventKey].(string)
+	step, _ = ev.CustomMetadata[goalMetadataStepKey].(string)
 	if strings.TrimSpace(eventType) == "" || strings.TrimSpace(step) == "" {
 		return "", "", false
 	}
@@ -398,18 +398,18 @@ func appendVisibleText(existing string, next string) string {
 	return existing + "\n\n" + next
 }
 
-func (a *goalkeeperActor) recordStepStarted(ctx context.Context, payload goalTaskPayload, step string, iteration int) error {
+func (a *goalActor) recordStepStarted(ctx context.Context, payload goalTaskPayload, step string, iteration int) error {
 	status := baldastate.SwarmTaskStatusWaitingForAgent
-	if step == goalkeeperValidatorStep {
+	if step == goalValidatorStep {
 		status = baldastate.SwarmTaskStatusValidating
 	}
-	if err := a.tasks.MarkStatus(ctx, payload.TaskID, status, goalkeeperActorName, "", "", map[string]any{
+	if err := a.tasks.MarkStatus(ctx, payload.TaskID, status, goalActorName, "", "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
-	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentStarted, goalkeeperActorName, "", map[string]any{
+	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentStarted, goalActorName, "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
@@ -418,11 +418,11 @@ func (a *goalkeeperActor) recordStepStarted(ctx context.Context, payload goalTas
 	return a.deliver(ctx, payload.TaskID, payload.Locator, fmt.Sprintf("Goal iteration %d/%d: %s started.", iteration, normalizeGoalMaxIterations(payload.MaxIterations), step), "started:"+step+":"+strconv.Itoa(iteration))
 }
 
-func (a *goalkeeperActor) recordStepCompleted(ctx context.Context, payload goalTaskPayload, step string, iteration int) error {
+func (a *goalActor) recordStepCompleted(ctx context.Context, payload goalTaskPayload, step string, iteration int) error {
 	if iteration <= 0 {
 		iteration = 1
 	}
-	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentResult, goalkeeperActorName, "", map[string]any{
+	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentResult, goalActorName, "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
@@ -431,7 +431,7 @@ func (a *goalkeeperActor) recordStepCompleted(ctx context.Context, payload goalT
 	return nil
 }
 
-func (r goalkeeperRunResult) toTaskResult(goalReached bool) taskResultPayloadV1 {
+func (r goalRunResult) toTaskResult(goalReached bool) taskResultPayloadV1 {
 	workerOutput := redactSecrets(strings.TrimSpace(r.workerOutput))
 	validatorOutput := redactSecrets(strings.TrimSpace(r.validatorOutput))
 	finalText := redactSecrets(strings.TrimSpace(r.finalText))
@@ -465,7 +465,7 @@ func (r goalkeeperRunResult) toTaskResult(goalReached bool) taskResultPayloadV1 
 	}
 }
 
-func (a *goalkeeperActor) enqueueTaskCompletionMemorySync(ctx context.Context, payload goalTaskPayload, result taskResultPayloadV1) error {
+func (a *goalActor) enqueueTaskCompletionMemorySync(ctx context.Context, payload goalTaskPayload, result taskResultPayloadV1) error {
 	if a == nil || a.dispatcher == nil {
 		return swarm.TransientError(fmt.Errorf("actor dispatcher is required"))
 	}
@@ -535,7 +535,7 @@ func (a *goalkeeperActor) enqueueTaskCompletionMemorySync(ctx context.Context, p
 	return nil
 }
 
-func (a *goalkeeperActor) taskStatusIs(ctx context.Context, taskID string, statuses ...string) bool {
+func (a *goalActor) taskStatusIs(ctx context.Context, taskID string, statuses ...string) bool {
 	if a == nil || a.tasks == nil || strings.TrimSpace(taskID) == "" {
 		return false
 	}
@@ -551,7 +551,7 @@ func (a *goalkeeperActor) taskStatusIs(ctx context.Context, taskID string, statu
 	return false
 }
 
-func (a *goalkeeperActor) renderTaskOutcome(ctx context.Context, taskID string, fallback string) string {
+func (a *goalActor) renderTaskOutcome(ctx context.Context, taskID string, fallback string) string {
 	if a == nil || a.tasks == nil {
 		return fallback
 	}
@@ -562,7 +562,7 @@ func (a *goalkeeperActor) renderTaskOutcome(ctx context.Context, taskID string, 
 	return renderReviewableOutcome(task, taskArtifactsFromSessionProvider(ctx, a.sessions, task))
 }
 
-func (a *goalkeeperActor) deliver(
+func (a *goalActor) deliver(
 	ctx context.Context,
 	taskID string,
 	locator baldasession.SessionLocator,
