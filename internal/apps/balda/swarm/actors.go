@@ -103,22 +103,12 @@ func (a memoryActor) handleFactExtract(ctx context.Context, payload memorySyncPa
 	if a.memoryStore == nil || !a.memoryStore.MemoryEnabled() {
 		return nil
 	}
-	facts := extractMemoryFacts(payload.Content)
-	for _, fact := range facts {
-		if err := a.memoryStore.Remember(ctx, fact); err != nil {
-			return TransientError(fmt.Errorf("remember extracted fact: %w", err))
-		}
-	}
-	return nil
-}
-
-func extractMemoryFacts(content string) []string {
-	trimmed := strings.TrimSpace(content)
+	trimmed := strings.TrimSpace(payload.Content)
 	if trimmed == "" {
 		return nil
 	}
 	lines := strings.Split(trimmed, "\n")
-	out := make([]string, 0, len(lines))
+	facts := make([]string, 0, len(lines))
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
 		line = strings.TrimLeft(line, "-*• \t")
@@ -133,12 +123,17 @@ func extractMemoryFacts(content string) []string {
 		if line == "" {
 			continue
 		}
-		out = append(out, line)
+		facts = append(facts, line)
 	}
-	if len(out) == 0 {
-		return []string{trimmed}
+	if len(facts) == 0 {
+		facts = []string{trimmed}
 	}
-	return out
+	for _, fact := range facts {
+		if err := a.memoryStore.Remember(ctx, fact); err != nil {
+			return TransientError(fmt.Errorf("remember extracted fact: %w", err))
+		}
+	}
+	return nil
 }
 
 func normalizeMemoryOperation(op string, fallback string) string {
