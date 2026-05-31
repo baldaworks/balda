@@ -79,7 +79,7 @@ func TestOpenBaldaStateProviderUsesStateDB(t *testing.T) {
 		t.Fatalf("stat state db: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(stateDir, "balda.db")); !os.IsNotExist(err) {
-		t.Fatalf("legacy balda.db stat error = %v, want not exist", err)
+		t.Fatalf("removed balda.db stat error = %v, want not exist", err)
 	}
 }
 
