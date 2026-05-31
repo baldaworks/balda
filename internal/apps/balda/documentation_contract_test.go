@@ -239,6 +239,14 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("docs avoid stale legacy-runtime key wording", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "docs/balda.md")
+		body := readFile(t, path)
+		if strings.Contains(body, "legacy runtime keys are rejected") {
+			t.Fatalf("%s still uses stale legacy-runtime key wording", filepath.ToSlash(path))
+		}
+	})
+
 	t.Run("webhook docs keep public responses implementation-free", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "docs/balda.md")
 		section := markdownSection(readFile(t, path), "### Inbound webhook contract (internal)")

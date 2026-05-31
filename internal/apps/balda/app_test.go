@@ -251,6 +251,9 @@ func TestValidateLegacyRuntimeModes(t *testing.T) {
 			t.Fatalf("validateLegacyRuntimeModes() error = %q, want marker %q", err.Error(), marker)
 		}
 	}
+	if strings.Contains(err.Error(), "legacy mode configuration") {
+		t.Fatalf("validateLegacyRuntimeModes() error = %q, want removed-runtime wording", err.Error())
+	}
 }
 
 func TestValidateLegacyRuntimeModes_AllowsCurrentConfig(t *testing.T) {

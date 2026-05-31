@@ -611,7 +611,7 @@ func validateLegacyRuntimeModes(cfg BaldaConfig) error {
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("invalid legacy mode configuration: %s", strings.Join(errs, "; "))
+	return fmt.Errorf("invalid removed runtime configuration: %s", strings.Join(errs, "; "))
 }
 
 func validateRuntimeConfigLint(swarmCfg swarm.Config, webhookCfg handlers.InboundWebhookConfig) error {
