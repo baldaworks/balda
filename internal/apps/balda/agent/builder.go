@@ -355,22 +355,19 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 }
 
 func (b *Builder) buildAgentMCPServerIDs(agentName string, bundled, extra []string) []string {
+	base := []string{"balda"}
+	if bundled != nil {
+		base = append([]string(nil), bundled...)
+	}
 	agentCfg, ok := b.normaCfg.Providers[agentName]
 	if !ok {
-		return mergeMCPServerIDsWithBase(defaultBundledMCPServerIDs(bundled), nil, extra)
+		return mergeMCPServerIDsWithBase(base, nil, extra)
 	}
-	return mergeMCPServerIDsWithBase(defaultBundledMCPServerIDs(bundled), agentCfg.MCPServers, extra)
-}
-
-func defaultBundledMCPServerIDs(override []string) []string {
-	if override != nil {
-		return append([]string(nil), override...)
-	}
-	return []string{"balda"}
+	return mergeMCPServerIDsWithBase(base, agentCfg.MCPServers, extra)
 }
 
 func mergeMCPServerIDs(explicit, extra []string, workspaceEnabled bool) []string {
-	return mergeMCPServerIDsWithBase(defaultBundledMCPServerIDs(nil), explicit, extra)
+	return mergeMCPServerIDsWithBase([]string{"balda"}, explicit, extra)
 }
 
 func mergeMCPServerIDsWithBase(base, explicit, extra []string) []string {
