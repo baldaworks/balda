@@ -613,12 +613,16 @@ func fetchRuntimeEvents(ctx context.Context, q dbQueryer, key runtimeSessionKey,
 		args = append(args, after.UTC().Format(runtimeSessionTimeFormat))
 	}
 	if limit > 0 {
+		afterClause := ""
+		if !after.IsZero() {
+			afterClause = ` AND timestamp >= ?`
+		}
 		query = `
 			SELECT event_json
 			FROM (
 				SELECT event_json, timestamp, ordinal
 				FROM balda_runtime_events
-		WHERE app_name = ? AND user_id = ? AND session_id = ?` + runtimeEventAfterClause(after) + `
+				WHERE app_name = ? AND user_id = ? AND session_id = ?` + afterClause + `
 				ORDER BY timestamp DESC, ordinal DESC
 				LIMIT ?
 			)
@@ -654,13 +658,6 @@ func fetchRuntimeEvents(ctx context.Context, q dbQueryer, key runtimeSessionKey,
 		return nil, fmt.Errorf("iterate runtime events: %w", err)
 	}
 	return events, nil
-}
-
-func runtimeEventAfterClause(after time.Time) string {
-	if after.IsZero() {
-		return ""
-	}
-	return " AND timestamp >= ?"
 }
 
 func nextRuntimeEventOrdinal(ctx context.Context, q dbQueryer, key runtimeSessionKey) (int64, error) {
