@@ -45,7 +45,7 @@ func TestLoadOrCreateBaldaOwnerToken_GeneratesAndReuses(t *testing.T) {
 	}
 }
 
-func TestResolveBaldaStateDir(t *testing.T) {
+func TestResolveStateDir(t *testing.T) {
 	workingDir := t.TempDir()
 
 	resolved, err := paths.ResolveStateDir(workingDir, ".config/balda")
