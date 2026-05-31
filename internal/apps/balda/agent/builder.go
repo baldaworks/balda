@@ -186,10 +186,6 @@ func (b *Builder) Build(ctx context.Context, sessionID, userID string, chatID in
 	return b.BuildWithMCPServerIDs(ctx, sessionID, userID, chatID, topicID, agentName, workspaceDir, nil, nil)
 }
 
-func (b *Builder) BuildRuntime(ctx context.Context, agentName, workspaceDir string) (*BuiltRuntime, error) {
-	return b.BuildRuntimeWithMCPServerIDs(ctx, agentName, workspaceDir, nil, nil)
-}
-
 func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	ctx context.Context,
 	agentName, workspaceDir string,
