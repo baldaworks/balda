@@ -76,15 +76,13 @@ var Module = fx.Module("balda_handlers",
 		),
 	),
 	fx.Invoke(
-		wireHandlers,
+		func(start *StartHandler, balda *BaldaHandler) {
+			start.setBaldaHandler(balda)
+		},
 		func(*ScheduledTaskScheduler) {},
 		func(*InboundWebhookReceiver) {},
 	),
 )
-
-func wireHandlers(start *StartHandler, balda *BaldaHandler) {
-	start.setBaldaHandler(balda)
-}
 
 type sessionTurnRunnerAdapter struct {
 	handler *BaldaHandler
