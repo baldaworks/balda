@@ -307,9 +307,9 @@ func TestDocumentationContract(t *testing.T) {
 			sections []string
 		}{
 			{
-				path: filepath.Join(repoRoot, "docs/goalkeeper.md"),
+				path: filepath.Join(repoRoot, "docs/goal-workflow.md"),
 				sections: []string{
-					readFile(t, filepath.Join(repoRoot, "docs/goalkeeper.md")),
+					readFile(t, filepath.Join(repoRoot, "docs/goal-workflow.md")),
 				},
 			},
 			{
@@ -332,7 +332,7 @@ func TestDocumentationContract(t *testing.T) {
 	})
 
 	t.Run("goal docs avoid historical removed-system notes", func(t *testing.T) {
-		path := filepath.Join(repoRoot, "docs/goalkeeper.md")
+		path := filepath.Join(repoRoot, "docs/goal-workflow.md")
 		body := readFile(t, path)
 		forbidden := []string{
 			"## Not Used",
@@ -354,9 +354,9 @@ func TestDocumentationContract(t *testing.T) {
 			path    string
 			needles []string
 		}{
-			{path: filepath.Join(repoRoot, "docs/goalkeeper.md"), needles: []string{"# Goalkeeper"}},
-			{path: filepath.Join(repoRoot, "README.md"), needles: []string{"[`docs/goalkeeper.md`]"}},
-			{path: filepath.Join(repoRoot, "docs/balda.md"), needles: []string{"[`docs/goalkeeper.md`]"}},
+			{path: filepath.Join(repoRoot, "docs/goal-workflow.md"), needles: []string{"# Goalkeeper", "docs/goalkeeper.md"}},
+			{path: filepath.Join(repoRoot, "README.md"), needles: []string{"[`docs/goalkeeper.md`]", "docs/goalkeeper.md"}},
+			{path: filepath.Join(repoRoot, "docs/balda.md"), needles: []string{"[`docs/goalkeeper.md`]", "goalkeeper.md"}},
 		}
 		for _, check := range checks {
 			body := readFile(t, check.path)
