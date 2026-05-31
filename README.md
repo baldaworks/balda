@@ -301,7 +301,7 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 - Workspace import/export issues: check `balda.workspace.mode`, `balda.workspace.base_branch`, and that Balda is running in the expected git checkout.
 - Progress updates are too noisy: set `balda.telegram.plan_updates=false`.
 - Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify disk space.
-- Startup fails with command/event consumer creation errors: verify unique consumer names in `balda.swarm.commands.consumer` and that no external process is mutating the same embedded store concurrently.
+- Startup fails with command/event consumer creation errors: stop any other Balda process sharing the same embedded store and restart.
 - Runtime issues show up in structured logs; check recent command failures and retry pressure before increasing transport limits.
 
 ## Documentation

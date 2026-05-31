@@ -484,11 +484,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.nats.store_dir`: JetStream store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
 - `balda.nats.max_memory` / `max_store`: embedded JetStream resource caps (defaults `256mb` and `2gb`)
 - removed runtime keys are rejected on startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`)
-- `balda.swarm.commands.stream`: command stream name (default `BALDA_COMMANDS`)
-- `balda.swarm.commands.consumer`: durable worker consumer name (default `BALDA_WORKER_COMMANDS`)
-- `balda.swarm.commands.ack_wait`, `max_deliver`, `max_ack_pending`, `fetch_batch`, `fetch_wait`: pull-consumer and redelivery settings.
-- `balda.swarm.events.stream`: event stream name (default `BALDA_EVENTS`)
-- `balda.swarm.dlq.stream`: dead-letter stream name (default `BALDA_DLQ`)
+- `balda.swarm`: optional advanced runtime tuning for command handling, retries, backpressure, and failure retention. Most installs should leave it at defaults.
 - `/goal` runs the Goalkeeper workflow in the current session and workspace. The workflow runs a worker agent followed by a validator agent until the validator returns `verdict: pass` or `balda.goal.max_iterations` is reached.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `balda.memory.read` reads the file from MCP.

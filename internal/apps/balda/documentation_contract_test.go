@@ -399,10 +399,27 @@ func TestDocumentationContract(t *testing.T) {
 			"Actor-lane queue policy",
 			"Task records, projections, DLQ state, and runtime lanes",
 			"SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint",
+			"balda.swarm.commands.stream",
+			"balda.swarm.commands.consumer",
+			"balda.swarm.events.stream",
+			"balda.swarm.dlq.stream",
 		}
 		for _, needle := range forbidden {
 			if strings.Contains(section, needle) {
 				t.Fatalf("%s configuration section still exposes internal runtime detail %q", filepath.ToSlash(path), needle)
+			}
+		}
+	})
+
+	t.Run("readme troubleshooting avoids raw swarm tuning guidance", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "README.md")
+		section := markdownSection(readFile(t, path), "## Troubleshooting")
+		for _, needle := range []string{
+			"balda.swarm.commands.consumer",
+			"unique consumer names",
+		} {
+			if strings.Contains(section, needle) {
+				t.Fatalf("%s troubleshooting still exposes internal transport guidance %q", filepath.ToSlash(path), needle)
 			}
 		}
 	})
