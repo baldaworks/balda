@@ -533,7 +533,7 @@ func TestInitCommand_NonInteractiveUpsertsExistingDotEnvToken(t *testing.T) {
 
 	if err := os.WriteFile(
 		filepath.Join(workingDir, ".env"),
-		[]byte("EXTRA=1\nBALDA_TELEGRAM_TOKEN=old-token\nANOTHER=2\n"),
+		[]byte("EXTRA=1\nBALDA_TELEGRAM_TOKEN=previous-token\nANOTHER=2\n"),
 		0o600,
 	); err != nil {
 		t.Fatalf("write .env: %v", err)
