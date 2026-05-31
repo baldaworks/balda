@@ -319,9 +319,37 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 		return AgentMetadata{}
 	}
 
+	model := ""
+	switch strings.TrimSpace(agentCfg.Type) {
+	case agentconfig.AgentTypeGenericACP:
+		if agentCfg.GenericACP != nil {
+			model = strings.TrimSpace(agentCfg.GenericACP.Model)
+		}
+	case agentconfig.AgentTypeGeminiACP:
+		if agentCfg.GeminiACP != nil {
+			model = strings.TrimSpace(agentCfg.GeminiACP.Model)
+		}
+	case agentconfig.AgentTypeCodexACP:
+		if agentCfg.CodexACP != nil {
+			model = strings.TrimSpace(agentCfg.CodexACP.Model)
+		}
+	case agentconfig.AgentTypeOpenCodeACP:
+		if agentCfg.OpenCodeACP != nil {
+			model = strings.TrimSpace(agentCfg.OpenCodeACP.Model)
+		}
+	case agentconfig.AgentTypeCopilotACP:
+		if agentCfg.CopilotACP != nil {
+			model = strings.TrimSpace(agentCfg.CopilotACP.Model)
+		}
+	case agentconfig.AgentTypeClaudeCodeACP:
+		if agentCfg.ClaudeCodeACP != nil {
+			model = strings.TrimSpace(agentCfg.ClaudeCodeACP.Model)
+		}
+	}
+
 	return AgentMetadata{
 		Type:       strings.TrimSpace(agentCfg.Type),
-		Model:      modelFromAgentConfig(agentCfg),
+		Model:      model,
 		MCPServers: mergeMCPServerIDs(agentCfg.MCPServers, nil, b.workspaceEnabled),
 	}
 }
@@ -433,34 +461,4 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 	state[memory.MemoryStateKey] = strings.TrimSpace(memoryText)
 	state[memory.SoulStateKey] = strings.TrimSpace(soulText)
 	return state, nil
-}
-
-func modelFromAgentConfig(cfg agentconfig.Config) string {
-	switch strings.TrimSpace(cfg.Type) {
-	case agentconfig.AgentTypeGenericACP:
-		if cfg.GenericACP != nil {
-			return strings.TrimSpace(cfg.GenericACP.Model)
-		}
-	case agentconfig.AgentTypeGeminiACP:
-		if cfg.GeminiACP != nil {
-			return strings.TrimSpace(cfg.GeminiACP.Model)
-		}
-	case agentconfig.AgentTypeCodexACP:
-		if cfg.CodexACP != nil {
-			return strings.TrimSpace(cfg.CodexACP.Model)
-		}
-	case agentconfig.AgentTypeOpenCodeACP:
-		if cfg.OpenCodeACP != nil {
-			return strings.TrimSpace(cfg.OpenCodeACP.Model)
-		}
-	case agentconfig.AgentTypeCopilotACP:
-		if cfg.CopilotACP != nil {
-			return strings.TrimSpace(cfg.CopilotACP.Model)
-		}
-	case agentconfig.AgentTypeClaudeCodeACP:
-		if cfg.ClaudeCodeACP != nil {
-			return strings.TrimSpace(cfg.ClaudeCodeACP.Model)
-		}
-	}
-	return ""
 }
