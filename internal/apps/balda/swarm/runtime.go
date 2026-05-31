@@ -184,7 +184,10 @@ func (r *Runtime) Publish(ctx context.Context, event actorengine.Event) {
 	if r == nil || event.Type != actorengine.EventInProgress {
 		return
 	}
-	env, ok := envelopeFromContext(ctx)
+	if ctx == nil {
+		return
+	}
+	env, ok := ctx.Value(envelopeContextKey{}).(Envelope)
 	if !ok {
 		return
 	}
@@ -237,17 +240,6 @@ type runtimeDelivery struct {
 }
 
 type envelopeContextKey struct{}
-
-func envelopeFromContext(ctx context.Context) (Envelope, bool) {
-	if ctx == nil {
-		return Envelope{}, false
-	}
-	env, ok := ctx.Value(envelopeContextKey{}).(Envelope)
-	if !ok {
-		return Envelope{}, false
-	}
-	return env, true
-}
 
 func withEnvelopeContext(ctx context.Context, env Envelope) context.Context {
 	if ctx == nil {
