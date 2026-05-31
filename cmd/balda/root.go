@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	buildinfo "runtime/debug"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/normahq/balda/internal/logging"
@@ -17,6 +19,9 @@ var (
 	debug     bool
 	trace     bool
 	profile   string
+	version   = "dev"
+	commit    = "unknown"
+	date      = "unknown"
 )
 
 // Execute runs the balda root command.
@@ -70,4 +75,27 @@ func initDotEnv() {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Warn().Err(err).Msg("failed to load .env file")
 	}
+}
+
+func buildVersionString() string {
+	resolvedVersion := strings.TrimSpace(version)
+	if resolvedVersion == "" || resolvedVersion == "dev" {
+		if info, ok := buildinfo.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			resolvedVersion = info.Main.Version
+		}
+	}
+	if resolvedVersion == "" {
+		resolvedVersion = "dev"
+	}
+
+	resolvedCommit := strings.TrimSpace(commit)
+	if resolvedCommit == "" {
+		resolvedCommit = "unknown"
+	}
+	resolvedDate := strings.TrimSpace(date)
+	if resolvedDate == "" {
+		resolvedDate = "unknown"
+	}
+
+	return fmt.Sprintf("balda %s (commit %s, built %s)", resolvedVersion, resolvedCommit, resolvedDate)
 }
