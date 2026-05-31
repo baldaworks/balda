@@ -44,7 +44,7 @@ func evalFixturesCommand() *cobra.Command {
 				if err := validateFixtureFile(fixture.ScenarioPath); err != nil {
 					return err
 				}
-				if err := validateGoldenEvents(fixture.GoldenPath); err != nil {
+				if _, err := loadGoldenEvents(fixture.GoldenPath); err != nil {
 					return err
 				}
 			}
@@ -131,11 +131,6 @@ func validateFixtureFile(path string) error {
 		return fmt.Errorf("unsupported scenario extension for %s", path)
 	}
 	return nil
-}
-
-func validateGoldenEvents(path string) error {
-	_, err := loadGoldenEvents(path)
-	return err
 }
 
 func loadGoldenEvents(path string) ([]map[string]any, error) {
