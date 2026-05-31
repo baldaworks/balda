@@ -166,7 +166,20 @@ func (m *Messenger) sendMessageWithMode(ctx context.Context, chatID int64, text 
 	defer cancel()
 
 	resp, err := m.client.SendMessageWithResponse(sendCtx, req)
-	if shouldRetryWithoutParseMode(mode, resp, err) {
+	retryWithoutParseMode := false
+	if strings.TrimSpace(mode) != "" {
+		switch {
+		case err != nil:
+			retryWithoutParseMode = true
+		case resp != nil && resp.JSON400 != nil:
+			desc := strings.ToLower(strings.TrimSpace(resp.JSON400.Description))
+			retryWithoutParseMode = desc != "" &&
+				(strings.Contains(desc, "can't parse entities") ||
+					strings.Contains(desc, "cant parse entities") ||
+					(strings.Contains(desc, "parse entities") && strings.Contains(desc, "entity")))
+		}
+	}
+	if retryWithoutParseMode {
 		retryReason := "transport error"
 		if err == nil && resp != nil && resp.JSON400 != nil {
 			retryReason = "telegram parse error"
@@ -185,26 +198,6 @@ func (m *Messenger) sendMessageWithMode(ctx context.Context, chatID int64, text 
 		return 0, fmt.Errorf("%s to chat %d: no response body", logMsg, chatID)
 	}
 	return resp.JSON200.Result.MessageId, nil
-}
-
-func shouldRetryWithoutParseMode(mode string, resp *client.SendMessageResponse, err error) bool {
-	if strings.TrimSpace(mode) == "" {
-		return false
-	}
-	if err != nil {
-		return true
-	}
-	if resp == nil || resp.JSON400 == nil {
-		return false
-	}
-	desc := strings.ToLower(strings.TrimSpace(resp.JSON400.Description))
-	if desc == "" {
-		return false
-	}
-	if strings.Contains(desc, "can't parse entities") || strings.Contains(desc, "cant parse entities") {
-		return true
-	}
-	return strings.Contains(desc, "parse entities") && strings.Contains(desc, "entity")
 }
 
 // SendChatAction sends a chat action (e.g., "typing").
