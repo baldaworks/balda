@@ -291,9 +291,19 @@ func (s *sqliteRuntimeSessionService) AppendEvent(ctx context.Context, curSessio
 		maps.Copy(sessionState, sessionDelta)
 	}
 
-	ordinal, err := nextRuntimeEventOrdinal(ctx, tx, key)
+	var ordinal sql.NullInt64
+	err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(ordinal), 0) + 1
+		FROM balda_runtime_events
+		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
+		key.appName, key.userID, key.sessionID,
+	).Scan(&ordinal)
 	if err != nil {
-		return err
+		return fmt.Errorf("next runtime event ordinal: %w", err)
+	}
+	eventOrdinal := int64(1)
+	if ordinal.Valid {
+		eventOrdinal = ordinal.Int64
 	}
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
@@ -308,7 +318,7 @@ func (s *sqliteRuntimeSessionService) AppendEvent(ctx context.Context, curSessio
 		key.userID,
 		key.sessionID,
 		event.ID,
-		ordinal,
+		eventOrdinal,
 		event.Timestamp.Format(runtimeSessionTimeFormat),
 		string(eventJSON),
 	); err != nil {
@@ -658,23 +668,6 @@ func fetchRuntimeEvents(ctx context.Context, q dbQueryer, key runtimeSessionKey,
 		return nil, fmt.Errorf("iterate runtime events: %w", err)
 	}
 	return events, nil
-}
-
-func nextRuntimeEventOrdinal(ctx context.Context, q dbQueryer, key runtimeSessionKey) (int64, error) {
-	var next sql.NullInt64
-	err := q.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(ordinal), 0) + 1
-		FROM balda_runtime_events
-		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
-		key.appName, key.userID, key.sessionID,
-	).Scan(&next)
-	if err != nil {
-		return 0, fmt.Errorf("next runtime event ordinal: %w", err)
-	}
-	if !next.Valid {
-		return 1, nil
-	}
-	return next.Int64, nil
 }
 
 func splitRuntimeStateDeltas(delta map[string]any) (map[string]any, map[string]any, map[string]any) {
