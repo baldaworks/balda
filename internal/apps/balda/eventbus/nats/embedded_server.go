@@ -15,7 +15,6 @@ type EmbeddedNATS struct {
 	Server *server.Server
 	Conn   *gnats.Conn
 	JS     jetstream.JetStream
-	URL    string
 }
 
 func StartEmbeddedNATS(ctx context.Context, cfg resolvedConfig) (*EmbeddedNATS, error) {
@@ -60,7 +59,7 @@ func StartEmbeddedNATS(ctx context.Context, cfg resolvedConfig) (*EmbeddedNATS, 
 		srv.Shutdown()
 		return nil, fmt.Errorf("create runtime client: %w", err)
 	}
-	return &EmbeddedNATS{Server: srv, Conn: conn, JS: js, URL: srv.ClientURL()}, nil
+	return &EmbeddedNATS{Server: srv, Conn: conn, JS: js}, nil
 }
 
 func connectEmbeddedNATS(ctx context.Context, url string) (*gnats.Conn, error) {
