@@ -271,7 +271,7 @@ Common settings:
 - `balda.swarm.events.*`: JetStream event stream settings for command/task/delivery events.
 - `balda.swarm.dlq.*`: JetStream dead-letter stream settings for terminal command failures.
 - Actor-lane queue policy is not a public config surface yet; JetStream is the only durable command queue. Local in-process command fan-out is bounded to `fetch_batch`, and SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint.
-- Task records, projections, DLQ state, and runtime status are internal implementation details used by goals, scheduling, webhooks, retries, and cancellation.
+- Task records, projections, and DLQ state are internal implementation details used by goals, scheduling, webhooks, retries, and cancellation.
 - Command lifecycle events (`accepted|running|acked|retrying|deadlettered`) are best-effort visibility telemetry. Command settlement does not depend on lifecycle event publication.
 - `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set.
 - `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.

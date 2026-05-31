@@ -175,6 +175,22 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("agents command contract stays user-facing only", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "AGENTS.md")
+		body := readFile(t, path)
+		section := markdownSection(body, "## Bot Commands (Current Contract)")
+		forbidden := []*regexp.Regexp{
+			regexp.MustCompile(`(?i)recurring tasks`),
+			regexp.MustCompile(`balda\.scheduler\.tasks`),
+			regexp.MustCompile(`(?i)not a chat command surface`),
+		}
+		for _, pattern := range forbidden {
+			if pattern.FindStringIndex(section) != nil {
+				t.Fatalf("%s bot command contract still mixes in internal scheduling/runtime detail %q", filepath.ToSlash(path), pattern.String())
+			}
+		}
+	})
+
 	t.Run("agent docs use merge pull workflow", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "AGENTS.md")
 		body := readFile(t, path)
@@ -251,6 +267,18 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func markdownSection(body string, heading string) string {
+	start := strings.Index(body, heading)
+	if start < 0 {
+		return body
+	}
+	rest := body[start+len(heading):]
+	if next := regexp.MustCompile(`\n## `).FindStringIndex(rest); next != nil {
+		return rest[:next[0]]
+	}
+	return rest
 }
 
 func hasNestedConfigKey(body string, parent string, child string) bool {
