@@ -149,9 +149,9 @@ balda:
   provider: balda_agent
   scheduler:
     jobs:
-      - id: legacy
+      - id: unsupported-shape
         cron: "0 9 * * *"
-        prompt: old shape
+        prompt: unsupported jobs key fixture
 `); err != nil {
 		t.Fatalf("write balda config: %v", err)
 	}
