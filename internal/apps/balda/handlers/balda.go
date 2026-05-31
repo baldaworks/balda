@@ -616,22 +616,62 @@ func (h *BaldaHandler) runTurnWithDelivery(
 			responseEmitted := false
 			responseSource := "none"
 			handledEmptyTerminalReason := false
-			if !deliver {
+			switch {
+			case !deliver:
 				responseSource = "fire_and_forget"
-			} else if strings.TrimSpace(responseText) != "" {
+			case strings.TrimSpace(responseText) != "":
 				if sendErr := h.channel.SendAgentReply(ctx, locator, responseText); sendErr != nil {
 					log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda response")
 				} else {
 					responseEmitted = true
 					responseSource = "streamed_text"
 				}
-			} else if terminalMessage := emptyTerminalTurnMessage(terminalFinishReason, terminalErrorMessage); terminalMessage != "" {
-				if sendErr := h.channel.SendPlain(ctx, locator, terminalMessage); sendErr != nil {
-					log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda terminal finish reason message")
-				} else {
-					responseEmitted = true
-					responseSource = "finish_reason"
-					handledEmptyTerminalReason = true
+			default:
+				terminalMessage := ""
+				switch terminalFinishReason {
+				case genai.FinishReasonMaxTokens:
+					terminalMessage = "The provider hit the output limit before producing a visible reply. Ask for a shorter answer or split the request."
+				case genai.FinishReasonSafety:
+					terminalMessage = "The provider blocked this turn for safety reasons. Please rephrase and try again."
+				case genai.FinishReasonRecitation:
+					terminalMessage = "The provider blocked this turn because it may reproduce protected source material. Please rephrase and try again."
+				case genai.FinishReasonLanguage:
+					terminalMessage = "The provider could not answer because the request used an unsupported language. Please rephrase in a supported language and try again."
+				case genai.FinishReasonBlocklist:
+					terminalMessage = "The provider blocked this turn because it matched restricted terms. Please rephrase and try again."
+				case genai.FinishReasonProhibitedContent:
+					terminalMessage = "The provider rejected this turn as prohibited content. Please rephrase and try again."
+				case genai.FinishReasonSPII:
+					terminalMessage = "The provider blocked this turn because it may contain sensitive personal information. Please remove that information and try again."
+				case genai.FinishReasonMalformedFunctionCall:
+					terminalMessage = "The provider ended the turn with an invalid function call. Please try again."
+				case genai.FinishReasonUnexpectedToolCall:
+					terminalMessage = "The provider ended the turn with an unexpected tool call. Please try again."
+				case genai.FinishReasonImageSafety:
+					terminalMessage = "The provider blocked image generation for safety reasons. Please try a different request."
+				case genai.FinishReasonImageProhibitedContent:
+					terminalMessage = "The provider rejected image generation as prohibited content. Please try a different request."
+				case genai.FinishReasonNoImage:
+					terminalMessage = "The provider completed the turn without returning an image. Please try a different request."
+				case genai.FinishReasonImageRecitation:
+					terminalMessage = "The provider blocked image generation because it may reproduce protected source material. Please try a different request."
+				case genai.FinishReasonImageOther:
+					terminalMessage = "The provider ended image generation without a usable result. Please try again."
+				case genai.FinishReasonStop,
+					genai.FinishReasonOther,
+					genai.FinishReasonUnspecified:
+					terminalMessage = "The provider ended the turn without a usable reply. Please try again."
+				default:
+					terminalMessage = "The provider ended the turn without a usable reply. Please try again."
+				}
+				if terminalMessage != "" {
+					if sendErr := h.channel.SendPlain(ctx, locator, terminalMessage); sendErr != nil {
+						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda terminal finish reason message")
+					} else {
+						responseEmitted = true
+						responseSource = "finish_reason"
+						handledEmptyTerminalReason = true
+					}
 				}
 			}
 			zerolog.Ctx(runCtx).Debug().
@@ -652,43 +692,4 @@ func (h *BaldaHandler) runTurnWithDelivery(
 	}
 
 	return nil
-}
-
-func emptyTerminalTurnMessage(finishReason genai.FinishReason, _ string) string {
-	switch finishReason {
-	case genai.FinishReasonMaxTokens:
-		return "The provider hit the output limit before producing a visible reply. Ask for a shorter answer or split the request."
-	case genai.FinishReasonSafety:
-		return "The provider blocked this turn for safety reasons. Please rephrase and try again."
-	case genai.FinishReasonRecitation:
-		return "The provider blocked this turn because it may reproduce protected source material. Please rephrase and try again."
-	case genai.FinishReasonLanguage:
-		return "The provider could not answer because the request used an unsupported language. Please rephrase in a supported language and try again."
-	case genai.FinishReasonBlocklist:
-		return "The provider blocked this turn because it matched restricted terms. Please rephrase and try again."
-	case genai.FinishReasonProhibitedContent:
-		return "The provider rejected this turn as prohibited content. Please rephrase and try again."
-	case genai.FinishReasonSPII:
-		return "The provider blocked this turn because it may contain sensitive personal information. Please remove that information and try again."
-	case genai.FinishReasonMalformedFunctionCall:
-		return "The provider ended the turn with an invalid function call. Please try again."
-	case genai.FinishReasonUnexpectedToolCall:
-		return "The provider ended the turn with an unexpected tool call. Please try again."
-	case genai.FinishReasonImageSafety:
-		return "The provider blocked image generation for safety reasons. Please try a different request."
-	case genai.FinishReasonImageProhibitedContent:
-		return "The provider rejected image generation as prohibited content. Please try a different request."
-	case genai.FinishReasonNoImage:
-		return "The provider completed the turn without returning an image. Please try a different request."
-	case genai.FinishReasonImageRecitation:
-		return "The provider blocked image generation because it may reproduce protected source material. Please try a different request."
-	case genai.FinishReasonImageOther:
-		return "The provider ended image generation without a usable result. Please try again."
-	case genai.FinishReasonStop,
-		genai.FinishReasonOther,
-		genai.FinishReasonUnspecified:
-		return "The provider ended the turn without a usable reply. Please try again."
-	default:
-		return "The provider ended the turn without a usable reply. Please try again."
-	}
 }
