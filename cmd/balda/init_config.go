@@ -67,10 +67,28 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 			},
 		}
 	}
+	providers := make(map[string]any, len(detectedAgents)+1)
+	poolMembers := make([]any, 0, len(detectedAgents))
+	for _, agentTemplate := range detectedAgents {
+		agentBlock := map[string]any{"type": agentTemplate.Type}
+		typeConfig := map[string]any{}
+		if strings.TrimSpace(agentTemplate.Model) != "" {
+			typeConfig["model"] = agentTemplate.Model
+		}
+		agentBlock[agentTemplate.Type] = typeConfig
+		providers[agentTemplate.ID] = agentBlock
+		poolMembers = append(poolMembers, agentTemplate.ID)
+	}
+	providers["pool"] = map[string]any{
+		"type": "pool",
+		"pool": map[string]any{
+			"members": poolMembers,
+		},
+	}
 
 	doc := map[string]any{
 		"runtime": map[string]any{
-			"providers":   buildBaldaInitAgents(detectedAgents),
+			"providers":   providers,
 			"mcp_servers": map[string]any{},
 		},
 		"balda":    baldaSection,
@@ -78,31 +96,6 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 	}
 
 	return doc, agentIDs, nil
-}
-
-func buildBaldaInitAgents(detected []baldaInitAgentTemplate) map[string]any {
-	agents := make(map[string]any, len(detected)+1)
-	poolMembers := make([]any, 0, len(detected))
-
-	for _, agentTemplate := range detected {
-		agentBlock := map[string]any{"type": agentTemplate.Type}
-		typeConfig := map[string]any{}
-		if strings.TrimSpace(agentTemplate.Model) != "" {
-			typeConfig["model"] = agentTemplate.Model
-		}
-		agentBlock[agentTemplate.Type] = typeConfig
-		agents[agentTemplate.ID] = agentBlock
-		poolMembers = append(poolMembers, agentTemplate.ID)
-	}
-
-	agents["pool"] = map[string]any{
-		"type": "pool",
-		"pool": map[string]any{
-			"members": poolMembers,
-		},
-	}
-
-	return agents
 }
 
 func setBaldaTelegramToken(doc map[string]any, token string) error {
