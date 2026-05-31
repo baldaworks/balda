@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -69,7 +71,8 @@ func TestMemoryActorInvalidPayloadIsPermanent(t *testing.T) {
 func TestMemoryActorFactExtractWritesFacts(t *testing.T) {
 	t.Parallel()
 
-	store := memory.NewStore(t.TempDir(), true)
+	stateDir := t.TempDir()
+	store := memory.NewStore(stateDir, true)
 	actor := newMemoryActorWithStore(store)
 	payload := `{"operation":"fact_extract","scope":"default","task_id":"task-1","session_id":"session-1","content":"fact: Balda uses durable command runtime\n- actor lanes are serialized\n\nKeep docs updated"}`
 	if err := actor.Handle(context.Background(), memoryEnvelopeForTest(NamespaceMemorySync, memoryOpFactExtract, payload)); err != nil {
@@ -94,8 +97,8 @@ func TestMemoryActorFactExtractWritesFacts(t *testing.T) {
 	if !slices.Equal(lines, want) {
 		t.Fatalf("memory facts = %#v, want %#v", lines, want)
 	}
-	if path := store.MemoryPath(); !strings.HasSuffix(path, memory.MemoryFileName) {
-		t.Fatalf("MemoryPath() = %q, want suffix %q", path, memory.MemoryFileName)
+	if _, err := os.Stat(filepath.Join(stateDir, memory.MemoryFileName)); err != nil {
+		t.Fatalf("memory file missing after fact extract: %v", err)
 	}
 }
 

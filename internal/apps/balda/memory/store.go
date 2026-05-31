@@ -39,32 +39,18 @@ func (s *Store) MemoryEnabled() bool {
 	return s != nil && s.memoryEnabled
 }
 
-func (s *Store) MemoryPath() string {
-	if s == nil {
-		return ""
-	}
-	return filepath.Join(s.stateDir, MemoryFileName)
-}
-
-func (s *Store) SoulPath() string {
-	if s == nil {
-		return ""
-	}
-	return filepath.Join(s.stateDir, SoulFileName)
-}
-
 func (s *Store) ReadMemory(ctx context.Context) (string, error) {
 	if s == nil || !s.memoryEnabled {
 		return "", nil
 	}
-	return s.readFile(ctx, s.MemoryPath())
+	return s.readFile(ctx, filepath.Join(s.stateDir, MemoryFileName))
 }
 
 func (s *Store) ReadSoul(ctx context.Context) (string, error) {
 	if s == nil {
 		return "", nil
 	}
-	return s.readFile(ctx, s.SoulPath())
+	return s.readFile(ctx, filepath.Join(s.stateDir, SoulFileName))
 }
 
 func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
@@ -103,7 +89,7 @@ func (s *Store) Remember(ctx context.Context, fact string) error {
 	if err := os.MkdirAll(s.stateDir, 0o755); err != nil {
 		return fmt.Errorf("create memory state dir: %w", err)
 	}
-	file, err := os.OpenFile(s.MemoryPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(filepath.Join(s.stateDir, MemoryFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open memory file: %w", err)
 	}
