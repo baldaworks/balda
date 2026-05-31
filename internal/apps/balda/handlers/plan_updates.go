@@ -15,8 +15,26 @@ const (
 )
 
 func baldaPlanProgressText(ev *adksession.Event) (string, bool) {
-	snapshot, ok := baldaPlanSnapshotFromEvent(ev)
-	if !ok {
+	if ev == nil {
+		return "", false
+	}
+	var snapshot map[string]any
+	if len(ev.CustomMetadata) != 0 {
+		if rawKind, ok := ev.CustomMetadata[acpUpdateKindKey]; ok {
+			if kind := strings.TrimSpace(stringValue(rawKind)); kind != "" && kind != acpUpdateKindPlan {
+				return "", false
+			}
+		}
+		if candidate, ok := ev.CustomMetadata[acpPlanMetadataKey].(map[string]any); ok {
+			snapshot = candidate
+		}
+	}
+	if snapshot == nil && len(ev.Actions.StateDelta) != 0 {
+		if candidate, ok := ev.Actions.StateDelta[acpPlanMetadataKey].(map[string]any); ok {
+			snapshot = candidate
+		}
+	}
+	if snapshot == nil {
 		return "", false
 	}
 	entries, ok := baldaPlanEntries(snapshot)
@@ -39,46 +57,6 @@ func baldaPlanProgressText(ev *adksession.Event) (string, bool) {
 		lines = append(lines, fmt.Sprintf("- [%s] %s", status, content))
 	}
 	return strings.Join(lines, "\n"), true
-}
-
-func baldaPlanSnapshotFromEvent(ev *adksession.Event) (map[string]any, bool) {
-	if ev == nil {
-		return nil, false
-	}
-	if snapshot, ok := baldaPlanSnapshotFromMetadata(ev.CustomMetadata); ok {
-		return snapshot, true
-	}
-	return baldaPlanSnapshotFromStateDelta(ev.Actions.StateDelta)
-}
-
-func baldaPlanSnapshotFromMetadata(metadata map[string]any) (map[string]any, bool) {
-	if len(metadata) == 0 {
-		return nil, false
-	}
-	if rawKind, ok := metadata[acpUpdateKindKey]; ok {
-		if kind := strings.TrimSpace(stringValue(rawKind)); kind != "" && kind != acpUpdateKindPlan {
-			return nil, false
-		}
-	}
-	return baldaPlanSnapshotFromValue(metadata[acpPlanMetadataKey])
-}
-
-func baldaPlanSnapshotFromStateDelta(stateDelta map[string]any) (map[string]any, bool) {
-	if len(stateDelta) == 0 {
-		return nil, false
-	}
-	return baldaPlanSnapshotFromValue(stateDelta[acpPlanMetadataKey])
-}
-
-func baldaPlanSnapshotFromValue(raw any) (map[string]any, bool) {
-	snapshot, ok := raw.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	if _, ok := baldaPlanEntries(snapshot); !ok {
-		return nil, false
-	}
-	return snapshot, true
 }
 
 func baldaPlanEntries(snapshot map[string]any) ([]map[string]any, bool) {
