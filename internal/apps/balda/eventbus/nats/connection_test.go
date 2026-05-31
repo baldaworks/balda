@@ -44,7 +44,7 @@ func TestBus_DispatchAndConsumeBuiltInRuntime(t *testing.T) {
 
 	env := commandTestEnvelope("env-1")
 	ack := h.Dispatch(t, env)
-	if ack.Stream != swarm.DefaultCommandStream || ack.Subject != swarm.SubjectCommandGoalkeeper || ack.Sequence == 0 {
+	if ack.Stream != swarm.DefaultCommandStream || ack.Subject != swarm.SubjectCommandGoal || ack.Sequence == 0 {
 		t.Fatalf("Dispatch() ack = %+v", ack)
 	}
 
@@ -1023,8 +1023,8 @@ func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
 	if got := msg.Headers().Get("Balda-DLQ-Source-Consumer"); got != swarm.DefaultCommandConsumer {
 		t.Fatalf("Balda-DLQ-Source-Consumer = %q, want %q", got, swarm.DefaultCommandConsumer)
 	}
-	if got := msg.Headers().Get("Balda-DLQ-Source-Subject"); got != swarm.SubjectCommandGoalkeeper {
-		t.Fatalf("Balda-DLQ-Source-Subject = %q, want %q", got, swarm.SubjectCommandGoalkeeper)
+	if got := msg.Headers().Get("Balda-DLQ-Source-Subject"); got != swarm.SubjectCommandGoal {
+		t.Fatalf("Balda-DLQ-Source-Subject = %q, want %q", got, swarm.SubjectCommandGoal)
 	}
 	if got := msg.Headers().Get("Balda-DLQ-Num-Delivered"); got != "1" {
 		t.Fatalf("Balda-DLQ-Num-Delivered = %q, want %q", got, "1")
@@ -1262,7 +1262,7 @@ func commandTestEnvelope(id string) swarm.Envelope {
 		Namespace:   swarm.NamespaceGoalCommand,
 		Kind:        swarm.KindGoal,
 		From:        swarm.SystemAddress("test"),
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: "task-1"},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeGoal, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"ok":true}`,
 	}

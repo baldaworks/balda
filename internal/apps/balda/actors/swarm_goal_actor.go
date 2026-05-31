@@ -72,7 +72,7 @@ func newGoalActor(params goalActorParams) swarm.Actor {
 }
 
 func (a *goalActor) Address() string {
-	return swarm.WildcardAddress(swarm.ActorTypeGoalkeeper)
+	return swarm.WildcardAddress(swarm.ActorTypeGoal)
 }
 
 func (a *goalActor) Handle(ctx context.Context, envelope any) error {
@@ -119,7 +119,7 @@ func GoalTaskEnvelope(
 		Namespace:   swarm.NamespaceGoalCommand,
 		Kind:        swarm.KindGoal,
 		From:        swarm.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeGoal, Key: taskID},
 		SessionID:   locator.SessionID,
 		TaskID:      taskID,
 		Priority:    90,
@@ -239,8 +239,8 @@ func (a *goalActor) ensureGoalTask(ctx context.Context, payload goalTaskPayload)
 		Title:         goalTaskTitle(payload.Objective),
 		Objective:     strings.TrimSpace(payload.Objective),
 		Status:        baldastate.SwarmTaskStatusCreated,
-		OwnerActor:    swarm.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.TaskID),
-		AssignedActor: swarm.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.TaskID),
+		OwnerActor:    swarm.ActorTypeGoal + ":" + strings.TrimSpace(payload.TaskID),
+		AssignedActor: swarm.ActorTypeGoal + ":" + strings.TrimSpace(payload.TaskID),
 		Priority:      90,
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
 		CreatedFrom:   "goal",
@@ -519,7 +519,7 @@ func (a *goalActor) enqueueTaskCompletionMemorySync(ctx context.Context, payload
 			ID:            dedupeKey,
 			Namespace:     swarm.NamespaceMemorySync,
 			Kind:          command.Operation,
-			From:          swarm.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: strings.TrimSpace(payload.TaskID)},
+			From:          swarm.ActorAddress{Target: swarm.ActorTypeGoal, Key: strings.TrimSpace(payload.TaskID)},
 			To:            swarm.ActorAddress{Target: swarm.ActorTypeMemory, Key: taskMemoryActorKeyGlobal},
 			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
 			TaskID:        strings.TrimSpace(payload.TaskID),
@@ -600,7 +600,7 @@ func (a *goalActor) deliver(
 		ID:            dedupeKey,
 		Namespace:     swarm.NamespaceAgentResult,
 		Kind:          taskPayloadKindDelivery,
-		From:          swarm.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
+		From:          swarm.ActorAddress{Target: swarm.ActorTypeGoal, Key: taskID},
 		To:            swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: firstNonEmpty(locator.AddressKey, locator.SessionID, "telegram")},
 		SessionID:     locator.SessionID,
 		TaskID:        taskID,

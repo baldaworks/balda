@@ -9,12 +9,12 @@ import (
 )
 
 const (
-	ActorTypeSystem     = "system"
-	ActorTypeSession    = "session"
-	ActorTypeTask       = "task"
-	ActorTypeGoalkeeper = "goalkeeper"
-	ActorTypeDelivery   = "delivery"
-	ActorTypeMemory     = "memory"
+	ActorTypeSystem   = "system"
+	ActorTypeSession  = "session"
+	ActorTypeTask     = "task"
+	ActorTypeGoal     = "goal"
+	ActorTypeDelivery = "delivery"
+	ActorTypeMemory   = "memory"
 
 	NamespaceHumanInbound    = "human.inbound"
 	NamespaceWebhookInbound  = "webhook.inbound"
