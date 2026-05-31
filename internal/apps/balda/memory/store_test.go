@@ -4,10 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestStoreSnapshotReadsStateDirFiles(t *testing.T) {
+func TestStoreReadsStateDirFiles(t *testing.T) {
 	t.Parallel()
 
 	stateDir := t.TempDir()
@@ -18,15 +19,20 @@ func TestStoreSnapshotReadsStateDirFiles(t *testing.T) {
 		t.Fatalf("write soul: %v", err)
 	}
 
-	got, err := NewStore(stateDir, true).Snapshot(context.Background())
+	store := NewStore(stateDir, true)
+	gotMemory, err := store.ReadMemory(context.Background())
 	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
+		t.Fatalf("ReadMemory() error = %v", err)
 	}
-	if got.Memory != "fact" {
-		t.Fatalf("Snapshot().Memory = %q, want fact", got.Memory)
+	if strings.TrimSpace(gotMemory) != "fact" {
+		t.Fatalf("ReadMemory() = %q, want fact", gotMemory)
 	}
-	if got.Soul != "instruction" {
-		t.Fatalf("Snapshot().Soul = %q, want instruction", got.Soul)
+	gotSoul, err := store.ReadSoul(context.Background())
+	if err != nil {
+		t.Fatalf("ReadSoul() error = %v", err)
+	}
+	if strings.TrimSpace(gotSoul) != "instruction" {
+		t.Fatalf("ReadSoul() = %q, want instruction", gotSoul)
 	}
 }
 
@@ -59,12 +65,20 @@ func TestStoreMissingSoulIsEmpty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stateDir, MemoryFileName), []byte("fact\n"), 0o600); err != nil {
 		t.Fatalf("write memory: %v", err)
 	}
-	got, err := NewStore(stateDir, true).Snapshot(context.Background())
+	store := NewStore(stateDir, true)
+	gotMemory, err := store.ReadMemory(context.Background())
 	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
+		t.Fatalf("ReadMemory() error = %v", err)
 	}
-	if got.Memory != "fact" || got.Soul != "" {
-		t.Fatalf("Snapshot() = %#v, want memory fact and empty soul", got)
+	if strings.TrimSpace(gotMemory) != "fact" {
+		t.Fatalf("ReadMemory() = %q, want fact", gotMemory)
+	}
+	gotSoul, err := store.ReadSoul(context.Background())
+	if err != nil {
+		t.Fatalf("ReadSoul() error = %v", err)
+	}
+	if strings.TrimSpace(gotSoul) != "" {
+		t.Fatalf("ReadSoul() = %q, want empty soul", gotSoul)
 	}
 }
 
@@ -80,15 +94,19 @@ func TestStoreMemoryDisabledStillReadsSoul(t *testing.T) {
 	}
 
 	store := NewStore(stateDir, false)
-	got, err := store.Snapshot(context.Background())
+	gotMemory, err := store.ReadMemory(context.Background())
 	if err != nil {
-		t.Fatalf("Snapshot() error = %v", err)
+		t.Fatalf("ReadMemory() error = %v", err)
 	}
-	if got.Memory != "" {
-		t.Fatalf("Snapshot().Memory = %q, want empty when disabled", got.Memory)
+	if strings.TrimSpace(gotMemory) != "" {
+		t.Fatalf("ReadMemory() = %q, want empty when disabled", gotMemory)
 	}
-	if got.Soul != "instruction" {
-		t.Fatalf("Snapshot().Soul = %q, want instruction", got.Soul)
+	gotSoul, err := store.ReadSoul(context.Background())
+	if err != nil {
+		t.Fatalf("ReadSoul() error = %v", err)
+	}
+	if strings.TrimSpace(gotSoul) != "instruction" {
+		t.Fatalf("ReadSoul() = %q, want instruction", gotSoul)
 	}
 	if err := store.Remember(context.Background(), "new fact"); err == nil {
 		t.Fatal("Remember() error = nil, want disabled error")

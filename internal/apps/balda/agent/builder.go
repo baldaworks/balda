@@ -491,12 +491,16 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 	if b.memoryStore == nil {
 		return state, nil
 	}
-	snapshot, err := b.memoryStore.Snapshot(ctx)
+	memoryText, err := b.memoryStore.ReadMemory(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read balda memory snapshot: %w", err)
+		return nil, fmt.Errorf("read balda memory: %w", err)
 	}
-	state[memory.MemoryStateKey] = snapshot.Memory
-	state[memory.SoulStateKey] = snapshot.Soul
+	soulText, err := b.memoryStore.ReadSoul(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read balda soul: %w", err)
+	}
+	state[memory.MemoryStateKey] = strings.TrimSpace(memoryText)
+	state[memory.SoulStateKey] = strings.TrimSpace(soulText)
 	return state, nil
 }
 

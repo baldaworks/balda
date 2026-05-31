@@ -23,11 +23,6 @@ type Store struct {
 	mu            sync.Mutex
 }
 
-type Snapshot struct {
-	Memory string
-	Soul   string
-}
-
 func NewStore(stateDir string, memoryEnabled bool) *Store {
 	return &Store{
 		stateDir:      strings.TrimSpace(stateDir),
@@ -51,21 +46,6 @@ func (s *Store) ReadSoul(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	return s.readFile(ctx, filepath.Join(s.stateDir, SoulFileName))
-}
-
-func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
-	memoryText, err := s.ReadMemory(ctx)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	soulText, err := s.ReadSoul(ctx)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	return Snapshot{
-		Memory: strings.TrimSpace(memoryText),
-		Soul:   strings.TrimSpace(soulText),
-	}, nil
 }
 
 func (s *Store) Remember(ctx context.Context, fact string) error {
