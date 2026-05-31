@@ -176,12 +176,21 @@ func upsertBaldaTelegramTokenEnv(dotEnvPath string, token string) error {
 	out := make([]string, 0, len(lines))
 	replaced := false
 	for _, rawLine := range lines {
-		if isBaldaTelegramTokenEnvLine(rawLine) {
-			if !replaced {
-				out = append(out, line)
-				replaced = true
+		trimmed := strings.TrimSpace(rawLine)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			if strings.HasPrefix(trimmed, "export ") {
+				trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
 			}
-			continue
+			if idx := strings.Index(trimmed, "="); idx >= 0 {
+				key := strings.TrimSpace(trimmed[:idx])
+				if key == "BALDA_TELEGRAM_TOKEN" {
+					if !replaced {
+						out = append(out, line)
+						replaced = true
+					}
+					continue
+				}
+			}
 		}
 		out = append(out, rawLine)
 	}
@@ -202,22 +211,6 @@ func upsertBaldaTelegramTokenEnv(dotEnvPath string, token string) error {
 		return fmt.Errorf("write %s: %w", dotEnvPath, err)
 	}
 	return nil
-}
-
-func isBaldaTelegramTokenEnvLine(rawLine string) bool {
-	trimmed := strings.TrimSpace(rawLine)
-	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return false
-	}
-	if strings.HasPrefix(trimmed, "export ") {
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
-	}
-	idx := strings.Index(trimmed, "=")
-	if idx < 0 {
-		return false
-	}
-	key := strings.TrimSpace(trimmed[:idx])
-	return key == "BALDA_TELEGRAM_TOKEN"
 }
 
 func asBufferedReader(in io.Reader) *bufio.Reader {
