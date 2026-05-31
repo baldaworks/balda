@@ -349,6 +349,25 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("goal docs avoid stale Goalkeeper title/labels in user-facing references", func(t *testing.T) {
+		checks := []struct {
+			path    string
+			needles []string
+		}{
+			{path: filepath.Join(repoRoot, "docs/goalkeeper.md"), needles: []string{"# Goalkeeper"}},
+			{path: filepath.Join(repoRoot, "README.md"), needles: []string{"[`docs/goalkeeper.md`]"}},
+			{path: filepath.Join(repoRoot, "docs/balda.md"), needles: []string{"[`docs/goalkeeper.md`]"}},
+		}
+		for _, check := range checks {
+			body := readFile(t, check.path)
+			for _, needle := range check.needles {
+				if strings.Contains(body, needle) {
+					t.Fatalf("%s still contains stale goal-doc label %q", filepath.ToSlash(check.path), needle)
+				}
+			}
+		}
+	})
+
 	t.Run("agent docs use merge pull workflow", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "AGENTS.md")
 		body := readFile(t, path)

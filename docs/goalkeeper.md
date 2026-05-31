@@ -1,4 +1,4 @@
-# Goalkeeper
+# Goal Workflow
 
 Balda `/goal <objective>` starts goal work in the current session and workspace.
 
