@@ -543,23 +543,42 @@ func validateRuntimeConfigLint(swarmCfg swarm.Config, webhookCfg handlers.Inboun
 		errs = append(errs, "balda.swarm.commands.consumer must differ from balda.swarm.events.consumer")
 	}
 
-	if webhookCfg.Enabled && isPublicListenAddress(webhookCfg.ListenAddr) {
-		unsecuredRoutes := make([]string, 0)
-		for routeName, route := range webhookCfg.Routes {
-			authType := strings.ToLower(strings.TrimSpace(route.Auth.Type))
-			authValue := strings.TrimSpace(route.Auth.Value)
-			if authType == "header" && authValue != "" {
-				continue
+	if webhookCfg.Enabled {
+		host := strings.TrimSpace(webhookCfg.ListenAddr)
+		publicListenAddress := false
+		if host != "" {
+			if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+				host = strings.TrimSpace(parsedHost)
 			}
-			unsecuredRoutes = append(unsecuredRoutes, routeName)
+			host = strings.Trim(host, "[]")
+			switch {
+			case host == "", host == "0.0.0.0", host == "::":
+				publicListenAddress = true
+			case strings.EqualFold(host, "localhost"):
+				publicListenAddress = false
+			default:
+				ip := net.ParseIP(host)
+				publicListenAddress = ip == nil || !ip.IsLoopback()
+			}
 		}
-		if len(unsecuredRoutes) > 0 {
-			sort.Strings(unsecuredRoutes)
-			errs = append(errs, fmt.Sprintf(
-				"balda.webhooks.listen_addr %q is publicly reachable; routes %s must configure auth.type=header with a non-empty auth value",
-				webhookCfg.ListenAddr,
-				strings.Join(unsecuredRoutes, ", "),
-			))
+		if publicListenAddress {
+			unsecuredRoutes := make([]string, 0)
+			for routeName, route := range webhookCfg.Routes {
+				authType := strings.ToLower(strings.TrimSpace(route.Auth.Type))
+				authValue := strings.TrimSpace(route.Auth.Value)
+				if authType == "header" && authValue != "" {
+					continue
+				}
+				unsecuredRoutes = append(unsecuredRoutes, routeName)
+			}
+			if len(unsecuredRoutes) > 0 {
+				sort.Strings(unsecuredRoutes)
+				errs = append(errs, fmt.Sprintf(
+					"balda.webhooks.listen_addr %q is publicly reachable; routes %s must configure auth.type=header with a non-empty auth value",
+					webhookCfg.ListenAddr,
+					strings.Join(unsecuredRoutes, ", "),
+				))
+			}
 		}
 	}
 
@@ -578,28 +597,6 @@ func validateIdentifierValue(field, value string) error {
 		return fmt.Errorf("%s must match %q", field, configIdentifierPattern.String())
 	}
 	return nil
-}
-
-func isPublicListenAddress(raw string) bool {
-	host := strings.TrimSpace(raw)
-	if host == "" {
-		return false
-	}
-	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-		host = strings.TrimSpace(parsedHost)
-	}
-	host = strings.Trim(host, "[]")
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		return true
-	}
-	if strings.EqualFold(host, "localhost") {
-		return false
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return true
-	}
-	return !ip.IsLoopback()
 }
 
 func buildScheduledTaskSchedulerConfig(cfg BaldaConfig) handlers.ScheduledTaskSchedulerConfig {
