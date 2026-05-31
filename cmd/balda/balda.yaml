@@ -15,8 +15,8 @@ balda:
     # - html: model writes Telegram HTML; balda sends with Telegram HTML parse mode
     # - none: balda sends plain text without parse_mode
     formatting_mode: "markdownv2"
-    # Surface ACP plan updates in balda progress.
-    # - true: DM drafts show plan snapshots; public chats/topics receive plain-text plan messages
+    # Surface work-plan updates in balda progress.
+    # - true: DM thinking placeholders show plan snapshots; public chats/topics receive plain-text plan messages
     # - false: keep typing / Thinking... progress only
     plan_updates: true
 
@@ -91,7 +91,7 @@ balda:
   state_dir: ".config/balda"
 
   sessions:
-    # ADK conversation/session persistence:
+    # Conversation/session persistence:
     # - sqlite: persist runtime conversation state in state.db until the session is explicitly closed (default)
     # - memory: keep runtime conversation state in memory only
     persistence: "sqlite"

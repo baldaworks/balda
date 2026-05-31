@@ -39,7 +39,7 @@ balda start
 
 ## How Balda Works Today
 
-1. Pick an ACP provider.
+1. Pick a provider runtime.
 2. Connect a Telegram bot token.
 3. Chat, create topics, and let Balda persist session state, memory, and workspaces.
 
@@ -132,10 +132,10 @@ environment variables or provider login commands run through Compose.
 Polling mode is the default and does not require publishing a port. Webhook
 setup and image details are documented in [`docs/balda.md`](docs/balda.md).
 
-## Configure Any ACP Agent
+## Configure Any Provider Runtime
 
-Balda has built-in provider types for common CLIs and a generic ACP adapter for
-anything else that speaks ACP.
+Balda has built-in provider types for common CLIs and a generic provider
+adapter for anything else that speaks the same runtime protocol.
 
 ```yaml
 runtime:
@@ -240,7 +240,7 @@ Common settings:
 - `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
 - `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session ingress. Each route defines `path`, `prompt_template`, `envelope` (`target`, `key`, optional `mode=task|session`, optional `report_to`), `auth` (`type=none|header`, `header`, `value` or `secret_env`), and `dedupe` (`source=request_id|header|body_sha256`, optional `header` for header source).
 - `balda.webhooks.*` security: set route `auth` (for example shared-token header) and keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
-- `balda.sessions.persistence`: `sqlite` by default; keeps ADK conversation history across restarts until the session is explicitly closed.
+- `balda.sessions.persistence`: `sqlite` by default; keeps conversation history across restarts until the session is explicitly closed.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md` and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum `/goal` work-validation iterations; defaults to `25`.
 - `balda.nats.*`: built-in command/event runtime settings. Defaults bind to `127.0.0.1` on a random local port, keep monitoring disabled, and store runtime files under `.balda/nats`.
