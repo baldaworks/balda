@@ -27,7 +27,7 @@ func TestTaskControlActorCancelsSessionWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create task: %v", err)
 	}
-	turns := &fakeTurnDispatcher{cancelHadInFlight: true, cancelDropped: 2}
+	turns := &fakeTurnDispatcher{}
 	actor := &taskControlActor{
 		turnDispatcher: turns,
 		tasks:          tasks,

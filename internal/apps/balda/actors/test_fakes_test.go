@@ -24,12 +24,9 @@ type cancelSessionCall struct {
 }
 
 type fakeTurnDispatcher struct {
-	commands          []swarm.Envelope
-	cancelCalls       []cancelSessionCall
-	enqueueCalls      []TurnTask
-	cancelHadInFlight bool
-	cancelDropped     int
-	cancelErr         error
+	commands     []swarm.Envelope
+	cancelCalls  []cancelSessionCall
+	enqueueCalls []TurnTask
 }
 
 func (f *fakeTurnDispatcher) Enqueue(task TurnTask) (int, error) {
@@ -54,10 +51,7 @@ func (f *fakeTurnDispatcher) CancelSession(locator session.SessionLocator, clear
 		SessionID:   locator.SessionID,
 		ClearQueued: clearQueued,
 	})
-	if f.cancelErr != nil {
-		return false, 0, f.cancelErr
-	}
-	return f.cancelHadInFlight, f.cancelDropped, nil
+	return false, 0, nil
 }
 
 type recordingHandlerCommandBus struct {
