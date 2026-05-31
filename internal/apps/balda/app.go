@@ -204,7 +204,7 @@ func Module(
 					}
 					return adksession.InMemoryService()
 				},
-				fx.ResultTags(`name:"balda_adk_session_service"`),
+				fx.ResultTags(`name:"balda_runtime_session_service"`),
 			),
 		),
 		fx.Provide(

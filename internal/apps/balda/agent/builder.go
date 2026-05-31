@@ -143,7 +143,7 @@ type BuilderParams struct {
 	WorkspaceBaseBranch    string             `name:"balda_workspace_base_branch"`
 	BaldaGlobalInstruction string             `name:"balda_global_instruction"`
 	TelegramFormattingMode string             `name:"balda_telegram_formatting_mode"`
-	SessionService         adksession.Service `name:"balda_adk_session_service"`
+	SessionService         adksession.Service `name:"balda_runtime_session_service"`
 	MemoryStore            *memory.Store
 }
 
