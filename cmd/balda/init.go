@@ -101,10 +101,10 @@ func initCommand() *cobra.Command {
 				return fmt.Errorf("balda section is missing from generated config")
 			}
 			baldaSection["provider"] = selectedBaldaProvider
-			doc["balda"] = baldaSection
-			if err := setBaldaGlobalInstructionExample(doc); err != nil {
-				return err
+			if existing, exists := baldaSection["global_instruction"]; !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
+				baldaSection["global_instruction"] = baldaInitGlobalInstructionExample
 			}
+			doc["balda"] = baldaSection
 			telegramToken, bot, promptErr := promptBaldaTelegramToken(inputReader, baldaInitOutput, interactive)
 			if promptErr != nil {
 				return promptErr

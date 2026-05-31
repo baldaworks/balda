@@ -122,20 +122,6 @@ func setBaldaTelegramToken(doc map[string]any, token string) error {
 	return nil
 }
 
-func setBaldaGlobalInstructionExample(doc map[string]any) error {
-	baldaSection, ok := toStringAnyMap(doc["balda"])
-	if !ok {
-		return fmt.Errorf("balda section is missing from generated config")
-	}
-
-	if existing, exists := baldaSection["global_instruction"]; !exists || strings.TrimSpace(fmt.Sprintf("%v", existing)) == "" {
-		baldaSection["global_instruction"] = baldaInitGlobalInstructionExample
-	}
-
-	doc["balda"] = baldaSection
-	return nil
-}
-
 func setBaldaWorkspaceBaseBranch(baldaSection map[string]any, baseBranch string) error {
 	workspaceSection, ok := toStringAnyMap(baldaSection["workspace"])
 	if !ok {
