@@ -658,14 +658,14 @@ func TestRestoreSession_ForceRemountsCanonicalWorkspaceAfterCollision(t *testing
 	stateDir := t.TempDir()
 	locator := testTelegramLocator(23, 102)
 	branchName := "norma/relay/" + locator.SessionID
-	oldWorkspaceDir := filepath.Join(stateDir, "relay-sessions", locator.SessionID)
+	previousWorkspaceDir := filepath.Join(stateDir, "relay-sessions", locator.SessionID)
 	canonicalWorkspaceDir := filepath.Join(stateDir, "sessions", locator.SessionID)
 	conflictBranch := "feature/conflict-" + locator.SessionID
 
-	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, oldWorkspaceDir, "HEAD")
+	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, previousWorkspaceDir, "HEAD")
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", conflictBranch, canonicalWorkspaceDir, "HEAD")
 	t.Cleanup(func() {
-		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", oldWorkspaceDir)
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", previousWorkspaceDir)
 		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", canonicalWorkspaceDir)
 	})
 
@@ -677,7 +677,7 @@ func TestRestoreSession_ForceRemountsCanonicalWorkspaceAfterCollision(t *testing
 				AddressKey:   locator.AddressKey,
 				AddressJSON:  locator.AddressJSON,
 				AgentName:    "persisted",
-				WorkspaceDir: oldWorkspaceDir,
+				WorkspaceDir: previousWorkspaceDir,
 				BranchName:   branchName,
 				Status:       baldastate.SessionStatusActive,
 			},

@@ -61,11 +61,11 @@ func reconcileRuntimeSessionTables(ctx context.Context, db *sql.DB) error {
 	if runtimeExists {
 		return ensureRuntimeSessionIndexes(ctx, db)
 	}
-	oldExists, err := sqliteTableExists(ctx, db, "balda_adk_app_state")
+	previousSchemaExists, err := sqliteTableExists(ctx, db, "balda_adk_app_state")
 	if err != nil {
 		return fmt.Errorf("inspect pre-migration app state table: %w", err)
 	}
-	if !oldExists {
+	if !previousSchemaExists {
 		return fmt.Errorf("runtime session tables are missing")
 	}
 
