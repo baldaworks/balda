@@ -148,7 +148,7 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	}
 }
 
-func TestInitCommand_DoesNotDetectClaudecodeBinary(t *testing.T) {
+func TestInitCommand_DoesNotDetectClaudecodeBinaryName(t *testing.T) {
 	setDetectedBinaries(t, "claudecode")
 
 	if _, _, err := buildBaldaInitDocument(t.TempDir()); err == nil {
