@@ -172,11 +172,38 @@ func goalTestTextEvent(invocationID string, text string) *adksession.Event {
 	return ev
 }
 
-func TestBuildGoalValidatorPromptIncludesMissingWorkerResultMarker(t *testing.T) {
+func TestGoalValidatorWrapperIncludesMissingWorkerResultMarker(t *testing.T) {
 	t.Parallel()
 
-	prompt := buildGoalValidatorPrompt(genai.NewContentFromText("Goal:\ntest", genai.RoleUser), "")
-	if !strings.Contains(prompt, "Worker result:\n(none)") {
-		t.Fatalf("buildGoalValidatorPrompt() = %q, want explicit missing worker result marker", prompt)
+	inner := mustNewGoalTestAgent(t, "validator", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestTextEvent(ctx.InvocationID(), visibleContentText(ctx.UserContent())), nil)
+		}
+	})
+	wrapped, err := wrapGoalValidatorWithWorkerOutput(inner, goalWorkerOutputStateKey)
+	if err != nil {
+		t.Fatalf("wrapGoalValidatorWithWorkerOutput() error = %v", err)
+	}
+
+	sessionService := adksession.InMemoryService()
+	r, err := adkrunner.New(adkrunner.Config{
+		AppName:        "goal-wrapper-missing-output-test",
+		Agent:          wrapped,
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+	created, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
+		AppName: "goal-wrapper-missing-output-test",
+		UserID:  "tg-101",
+	})
+	if err != nil {
+		t.Fatalf("session.Create() error = %v", err)
+	}
+
+	got := runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
+	if !strings.Contains(got, "Worker result:\n(none)") {
+		t.Fatalf("validator wrapper output = %q, want explicit missing worker result marker", got)
 	}
 }

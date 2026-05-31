@@ -210,7 +210,15 @@ func wrapGoalValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKe
 		SubAgents:   inner.SubAgents(),
 		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
-				prompt := buildGoalValidatorPrompt(ctx.UserContent(), sessionStateString(ctx, key))
+				goal := visibleContentText(ctx.UserContent())
+				workerOutput := strings.TrimSpace(sessionStateString(ctx, key))
+				if goal == "" {
+					goal = "Goal:"
+				}
+				prompt := goal + "\n\nWorker result:\n" + workerOutput
+				if workerOutput == "" {
+					prompt = goal + "\n\nWorker result:\n(none)"
+				}
 				wrappedCtx := goalUserContentContext{
 					InvocationContext: ctx,
 					userContent:       genai.NewContentFromText(prompt, genai.RoleUser),
@@ -263,18 +271,6 @@ func sessionStateString(ctx adkagent.InvocationContext, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprintf("%v", value))
-}
-
-func buildGoalValidatorPrompt(userContent *genai.Content, workerOutput string) string {
-	goal := visibleContentText(userContent)
-	workerOutput = strings.TrimSpace(workerOutput)
-	if goal == "" {
-		goal = "Goal:"
-	}
-	if workerOutput == "" {
-		return goal + "\n\nWorker result:\n(none)"
-	}
-	return goal + "\n\nWorker result:\n" + workerOutput
 }
 
 func visibleContentText(content *genai.Content) string {
