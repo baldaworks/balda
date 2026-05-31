@@ -93,14 +93,6 @@ func NewUpdateSource(
 	if cfg.Webhook.Enabled {
 		return newWebhookUpdateSource(cfg, client, l)
 	}
-	return newPollingUpdateSource(client, persistedOffsetStore, l)
-}
-
-func newPollingUpdateSource(
-	client client.ClientWithResponsesInterface,
-	persistedOffsetStore updatepoller.OffsetStore,
-	l zerolog.Logger,
-) (runtime.UpdateSource, error) {
 	offsetStore := persistedOffsetStore
 	if offsetStore == nil {
 		offsetStore = offsetstore.NewInMemoryOffsetStore(0)
