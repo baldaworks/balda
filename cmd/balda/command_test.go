@@ -174,7 +174,7 @@ balda:
 	}
 }
 
-func TestDefaultBaldaConfig_AvoidsOldTransportHeavyTemplateWording(t *testing.T) {
+func TestDefaultBaldaConfig_AvoidsRemovedRuntimeTemplateWording(t *testing.T) {
 	body := string(defaultBaldaConfig)
 	for _, needle := range []string{
 		"legacy typing / Thinking... progress only",
@@ -182,7 +182,7 @@ func TestDefaultBaldaConfig_AvoidsOldTransportHeavyTemplateWording(t *testing.T)
 		"Required internal JetStream command/event bus.",
 	} {
 		if strings.Contains(body, needle) {
-			t.Fatalf("defaultBaldaConfig still contains old transport-heavy template wording %q", needle)
+			t.Fatalf("defaultBaldaConfig still contains removed runtime template wording %q", needle)
 		}
 	}
 }
