@@ -786,7 +786,7 @@ All events are published as the same envelope shape. For event envelopes,
 
 - Retry classification:
   - retryable failures are settled with `NakWithDelay` and emit `command.retrying`.
-  - permanent/policy/auth/decode terminal failures are settled with `TermWithReason` and emit/persist `command.deadlettered` or `command.decode_failed`.
+  - permanent/policy/decode terminal failures are settled with `TermWithReason` and emit/persist `command.deadlettered` or `command.decode_failed`.
 - Retry schedule:
   - backoff is exponential with bounded cap (base `1s`, max `1m`), constrained by consumer `max_deliver`.
   - long-running handlers send `InProgress` heartbeats to prevent premature redelivery.
