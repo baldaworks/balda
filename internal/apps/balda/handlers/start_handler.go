@@ -76,7 +76,53 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		Int64("chat_id", chatID).
 		Msg("Start command received")
 
-	args, malformed := parseStartCommandArgs(event.Args)
+	trimmedArgs := strings.TrimSpace(event.Args)
+	args := startCommandArgs{}
+	malformed := false
+	if trimmedArgs != "" {
+		fields := strings.Fields(trimmedArgs)
+		if len(fields) != 1 {
+			malformed = true
+		} else {
+			assignment := fields[0]
+			switch {
+			case strings.HasPrefix(assignment, "?"):
+				malformed = true
+			case strings.HasPrefix(assignment, startModeOwner+"_"):
+				value := strings.TrimSpace(strings.TrimPrefix(assignment, startModeOwner+"_"))
+				if value == "" {
+					malformed = true
+				} else {
+					args = startCommandArgs{mode: startModeOwner, token: value}
+				}
+			case strings.HasPrefix(assignment, startModeInvite+"_"):
+				value := strings.TrimSpace(strings.TrimPrefix(assignment, startModeInvite+"_"))
+				if value == "" {
+					malformed = true
+				} else {
+					args = startCommandArgs{mode: startModeInvite, token: value}
+				}
+			default:
+				if strings.Count(assignment, "=") != 1 {
+					malformed = true
+					break
+				}
+				key, value, _ := strings.Cut(assignment, "=")
+				key = strings.TrimSpace(key)
+				value = strings.TrimSpace(value)
+				if key == "" || value == "" {
+					malformed = true
+					break
+				}
+				switch key {
+				case startModeOwner, startModeInvite:
+					args = startCommandArgs{mode: key, token: value}
+				default:
+					malformed = true
+				}
+			}
+		}
+	}
 
 	if malformed {
 		log.Warn().
@@ -102,7 +148,11 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			if startErr == nil {
 				log.Info().Int64("user_id", userID).Msg("balda re-activated for existing owner")
 			}
-			if err := h.messenger.SendPlain(ctx, chatID, h.ownerAlreadyRegisteredMessage(startErr), 0); err != nil {
+			msg := "You are already registered as the bot owner."
+			if startErr != nil {
+				msg += "\n\n" + baldaStartFailureMessage()
+			}
+			if err := h.messenger.SendPlain(ctx, chatID, msg, 0); err != nil {
 				return err
 			}
 			return nil
@@ -114,7 +164,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 	}
 
 	if args.mode == "" {
-		if err := h.sendWelcomeMessage(ctx, chatID); err != nil {
+		if err := h.messenger.SendPlain(ctx, chatID, "Welcome to Norma Balda Bot!\n\nTo authenticate, send /start owner=<your_owner_token>", 0); err != nil {
 			return err
 		}
 		return nil
@@ -164,60 +214,19 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		Msg("Owner registered successfully")
 
 	startErr := h.activateBalda(ctx, userID, chatID)
-	if err := h.sendOwnerRegisteredMessage(ctx, chatID, info.firstName, startErr); err != nil {
+	name := info.firstName
+	if name == "" {
+		name = "Owner"
+	}
+
+	text := fmt.Sprintf("Congratulations, %s! You are now registered as the bot owner.", name)
+	if startErr != nil {
+		text += "\n\n" + baldaStartFailureMessage()
+	}
+	if err := h.messenger.SendPlain(ctx, chatID, text, 0); err != nil {
 		return err
 	}
 	return nil
-}
-
-func parseStartCommandArgs(raw string) (startCommandArgs, bool) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return startCommandArgs{}, false
-	}
-
-	fields := strings.Fields(trimmed)
-	if len(fields) != 1 {
-		return startCommandArgs{}, true
-	}
-
-	assignment := fields[0]
-	if strings.HasPrefix(assignment, "?") {
-		return startCommandArgs{}, true
-	}
-
-	if strings.HasPrefix(assignment, startModeOwner+"_") {
-		value := strings.TrimSpace(strings.TrimPrefix(assignment, startModeOwner+"_"))
-		if value == "" {
-			return startCommandArgs{}, true
-		}
-		return startCommandArgs{mode: startModeOwner, token: value}, false
-	}
-	if strings.HasPrefix(assignment, startModeInvite+"_") {
-		value := strings.TrimSpace(strings.TrimPrefix(assignment, startModeInvite+"_"))
-		if value == "" {
-			return startCommandArgs{}, true
-		}
-		return startCommandArgs{mode: startModeInvite, token: value}, false
-	}
-
-	if strings.Count(assignment, "=") != 1 {
-		return startCommandArgs{}, true
-	}
-
-	key, value, _ := strings.Cut(assignment, "=")
-	key = strings.TrimSpace(key)
-	value = strings.TrimSpace(value)
-	if key == "" || value == "" {
-		return startCommandArgs{}, true
-	}
-
-	switch key {
-	case startModeOwner, startModeInvite:
-		return startCommandArgs{mode: key, token: value}, false
-	default:
-		return startCommandArgs{}, true
-	}
 }
 
 type userInfo struct {
@@ -237,33 +246,6 @@ func extractUserInfo(from *client.User) userInfo {
 		info.lastName = *from.LastName
 	}
 	return info
-}
-
-func (h *StartHandler) sendWelcomeMessage(ctx context.Context, chatID int64) error {
-	return h.messenger.SendPlain(ctx, chatID, "Welcome to Norma Balda Bot!\n\nTo authenticate, send /start owner=<your_owner_token>", 0)
-}
-
-func (h *StartHandler) sendOwnerRegisteredMessage(ctx context.Context, chatID int64, firstName string, startErr error) error {
-	name := firstName
-	if name == "" {
-		name = "Owner"
-	}
-
-	text := fmt.Sprintf("Congratulations, %s! You are now registered as the bot owner.", name)
-	if startErr != nil {
-		text += "\n\n" + baldaStartFailureMessage()
-		return h.messenger.SendPlain(ctx, chatID, text, 0)
-	}
-	return h.messenger.SendPlain(ctx, chatID, text, 0)
-}
-
-func (h *StartHandler) ownerAlreadyRegisteredMessage(startErr error) string {
-	msg := "You are already registered as the bot owner."
-	if startErr != nil {
-		msg += "\n\n" + baldaStartFailureMessage()
-		return msg
-	}
-	return msg
 }
 
 func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64) error {
