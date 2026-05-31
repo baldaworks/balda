@@ -5,7 +5,7 @@ import (
 )
 
 // Store is the interface for session state storage drivers.
-// It wraps ADK's session.State with additional methods for MCP tools.
+// It wraps the underlying session.State with additional methods for MCP tools.
 type Store interface {
 	// Get retrieves a value by key. Returns empty string and false if not found.
 	Get(ctx context.Context, key string) (value string, ok bool, err error)
