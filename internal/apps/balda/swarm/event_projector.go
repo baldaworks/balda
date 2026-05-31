@@ -88,7 +88,42 @@ func (p *EventProjector) Project(ctx context.Context, subject string, env Envelo
 	if taskID == "" {
 		return nil
 	}
-	eventType := projectedEventType(subject, env)
+	eventType := ""
+	if env.Meta != nil {
+		if value := strings.TrimSpace(env.Meta["event_type"]); value != "" {
+			eventType = value
+		}
+	}
+	if eventType == "" {
+		switch strings.TrimSpace(subject) {
+		case SubjectEventCommandAccepted:
+			eventType = "command.accepted"
+		case SubjectEventCommandRunning:
+			eventType = "command.running"
+		case SubjectEventCommandInProgress:
+			eventType = "command.in_progress"
+		case SubjectEventCommandAcked:
+			eventType = "command.acked"
+		case SubjectEventCommandRetrying:
+			eventType = "command.retrying"
+		case SubjectEventCommandDeadLettered:
+			eventType = "command.deadlettered"
+		case SubjectEventCommandNoop:
+			eventType = "command.noop"
+		case SubjectEventCommandDecodeFailed:
+			eventType = "command.decode_failed"
+		case SubjectEventTaskCreated:
+			eventType = TaskEventTaskCreated
+		case SubjectEventTaskUpdated:
+			eventType = TaskEventTaskAssigned
+		case SubjectEventTaskCompleted:
+			eventType = TaskEventTaskCompleted
+		case SubjectEventDeliverySent:
+			eventType = TaskEventDeliverySent
+		case SubjectEventDeliveryFailed:
+			eventType = TaskEventDeliveryFailed
+		}
+	}
 	if eventType == "" {
 		return nil
 	}
@@ -110,42 +145,4 @@ func (p *EventProjector) Project(ctx context.Context, subject string, env Envelo
 		MessageID:   messageID,
 		PayloadJSON: strings.TrimSpace(env.PayloadJSON),
 	})
-}
-
-func projectedEventType(subject string, env Envelope) string {
-	if env.Meta != nil {
-		if eventType := strings.TrimSpace(env.Meta["event_type"]); eventType != "" {
-			return eventType
-		}
-	}
-	switch strings.TrimSpace(subject) {
-	case SubjectEventCommandAccepted:
-		return "command.accepted"
-	case SubjectEventCommandRunning:
-		return "command.running"
-	case SubjectEventCommandInProgress:
-		return "command.in_progress"
-	case SubjectEventCommandAcked:
-		return "command.acked"
-	case SubjectEventCommandRetrying:
-		return "command.retrying"
-	case SubjectEventCommandDeadLettered:
-		return "command.deadlettered"
-	case SubjectEventCommandNoop:
-		return "command.noop"
-	case SubjectEventCommandDecodeFailed:
-		return "command.decode_failed"
-	case SubjectEventTaskCreated:
-		return TaskEventTaskCreated
-	case SubjectEventTaskUpdated:
-		return TaskEventTaskAssigned
-	case SubjectEventTaskCompleted:
-		return TaskEventTaskCompleted
-	case SubjectEventDeliverySent:
-		return TaskEventDeliverySent
-	case SubjectEventDeliveryFailed:
-		return TaskEventDeliveryFailed
-	default:
-		return ""
-	}
 }
