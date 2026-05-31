@@ -136,7 +136,7 @@ balda:
 	}
 }
 
-func TestLoadConfigDocument_CapturesLegacySchedulerJobs(t *testing.T) {
+func TestLoadConfigDocument_CapturesRemovedSchedulerJobsKey(t *testing.T) {
 	workingDir := t.TempDir()
 
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
@@ -170,7 +170,7 @@ balda:
 		t.Fatalf("LoadConfigDocument: %v", err)
 	}
 	if doc.Balda.Scheduler.RemovedJobs == nil {
-		t.Fatal("legacy balda.scheduler.jobs was ignored; want captured for validation")
+		t.Fatal("removed balda.scheduler.jobs key was ignored; want captured for validation")
 	}
 }
 
