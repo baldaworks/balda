@@ -47,7 +47,7 @@ func TestWorkspaceImportDiscardsDirtyChangesAndSyncsToMaster(t *testing.T) {
 	}
 
 	if _, err := os.Stat(filepath.Join(workspaceDir, "scratch.txt")); !os.IsNotExist(err) {
-		t.Fatalf("expected scratch.txt to be removed, stat err=%v", err)
+		t.Fatalf("expected scratch.txt to be absent, stat err=%v", err)
 	}
 
 	if got := readFile(t, filepath.Join(workspaceDir, "base.txt")); got != "base\n" {
