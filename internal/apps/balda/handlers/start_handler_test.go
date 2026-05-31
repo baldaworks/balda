@@ -236,7 +236,7 @@ func TestParseStartCommandArgs(t *testing.T) {
 			wantMalformed: true,
 		},
 		{
-			name:          "legacy start assignment rejected",
+			name:          "unsupported start assignment rejected",
 			raw:           "start=abc123",
 			wantMalformed: true,
 		},
@@ -341,7 +341,7 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 		assertLastSentContains(t, tgClient, "https://t.me/<bot_username>?start=owner_<your_owner_token>")
 	})
 
-	t.Run("rejects legacy raw token", func(t *testing.T) {
+	t.Run("rejects unsupported raw token format", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 
 		err := handler.onCommand(context.Background(), newStartEvent("secret-token", 101, 9001))
@@ -356,7 +356,7 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 		assertLastSentContains(t, tgClient, "/start owner=<your_owner_token>")
 	})
 
-	t.Run("rejects legacy start assignment", func(t *testing.T) {
+	t.Run("rejects unsupported start assignment", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 
 		err := handler.onCommand(context.Background(), newStartEvent("start=secret-token", 101, 9001))

@@ -919,7 +919,7 @@ func TestRunTurn_UsesLegacyPlanStateDeltaFallback(t *testing.T) {
 		t.Fatalf("message calls = %d, want 2", len(tgClient.messages))
 	}
 	if got := tgClient.messages[0].Text; got != "Plan update\n- [pending] Run tests" {
-		t.Fatalf("messages[0].text = %q, want legacy plan update", got)
+		t.Fatalf("messages[0].text = %q, want current plan update text", got)
 	}
 }
 
