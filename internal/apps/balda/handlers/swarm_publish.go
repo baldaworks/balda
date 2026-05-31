@@ -13,7 +13,7 @@ import (
 
 func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
 	if h.actorDispatcher == nil {
-		return nil, fmt.Errorf("jetstream swarm runtime is unavailable")
+		return nil, fmt.Errorf("swarm runtime is unavailable")
 	}
 	env, err := actors.SessionTurnEnvelope(payload)
 	if err != nil {
@@ -24,7 +24,7 @@ func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.Ses
 
 func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.DispatchReceipt, string, error) {
 	if h.actorDispatcher == nil {
-		return nil, "", fmt.Errorf("jetstream swarm runtime is unavailable")
+		return nil, "", fmt.Errorf("swarm runtime is unavailable")
 	}
 	env, taskID, err := actors.WebhookTaskEnvelope(payload, routeName, requestID)
 	if err != nil {
@@ -99,7 +99,7 @@ func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasessio
 		return false, err
 	}
 	if h.actorDispatcher == nil {
-		return false, fmt.Errorf("jetstream swarm runtime is unavailable")
+		return false, fmt.Errorf("swarm runtime is unavailable")
 	}
 	_, err = h.actorDispatcher.Dispatch(ctx, env)
 	if err != nil {
