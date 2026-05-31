@@ -522,8 +522,14 @@ func validateRuntimeConfigLint(swarmCfg swarm.Config, webhookCfg handlers.Inboun
 			errs = append(errs, err.Error())
 		}
 	}
-	if duplicate := firstDuplicateValue(streamNames); duplicate != "" {
-		errs = append(errs, "balda.swarm.commands.stream, balda.swarm.events.stream, and balda.swarm.dlq.stream must be distinct")
+	seenStreamNames := make(map[string]struct{}, len(streamNames))
+	for _, value := range streamNames {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if _, ok := seenStreamNames[normalized]; ok {
+			errs = append(errs, "balda.swarm.commands.stream, balda.swarm.events.stream, and balda.swarm.dlq.stream must be distinct")
+			break
+		}
+		seenStreamNames[normalized] = struct{}{}
 	}
 
 	consumerNames := map[string]string{
@@ -574,18 +580,6 @@ func validateIdentifierValue(field, value string) error {
 		return fmt.Errorf("%s must match %q", field, configIdentifierPattern.String())
 	}
 	return nil
-}
-
-func firstDuplicateValue(values map[string]string) string {
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		normalized := strings.ToLower(strings.TrimSpace(value))
-		if _, ok := seen[normalized]; ok {
-			return normalized
-		}
-		seen[normalized] = struct{}{}
-	}
-	return ""
 }
 
 func isPublicListenAddress(raw string) bool {
