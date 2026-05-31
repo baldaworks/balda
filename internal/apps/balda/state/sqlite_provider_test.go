@@ -129,7 +129,7 @@ func TestSQLiteProvider_SessionStoreUpsert_AllowsMultipleTelegramSessions(t *tes
 	}
 }
 
-func TestSQLiteProvider_SessionStoreUpsert_PopulatesLegacyTelegramColumns(t *testing.T) {
+func TestSQLiteProvider_SessionStoreUpsert_PopulatesTelegramAddressColumns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
@@ -329,7 +329,7 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 
 	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 	assertSQLiteSchemaHasNoRelayLeftovers(t, ctx, db)
-	assertSessionMetadataHasNoLegacyChatTopicUnique(t, ctx, db)
+	assertSessionMetadataHasNoOldChatTopicUnique(t, ctx, db)
 }
 
 func TestSQLiteProvider_ADKSessionPersistsAcrossReopen(t *testing.T) {
@@ -510,7 +510,7 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 	assertTableExists(t, ctx, db, "balda_app_kv")
 	assertTableMissing(t, ctx, db, "relay_app_kv")
 	assertSQLiteSchemaHasNoRelayLeftovers(t, ctx, db)
-	assertSessionMetadataHasNoLegacyChatTopicUnique(t, ctx, db)
+	assertSessionMetadataHasNoOldChatTopicUnique(t, ctx, db)
 	assertKVNamespaceMissing(t, ctx, db, "relay.app")
 	assertKVNamespaceMissing(t, ctx, db, "relay.session_mcp")
 
@@ -538,7 +538,7 @@ func TestSQLiteProvider_RebrandsRelaySchemaAtVersion8(t *testing.T) {
 	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 }
 
-func TestSQLiteProvider_Migration11BackfillsBuggyLegacySessionColumns(t *testing.T) {
+func TestSQLiteProvider_Migration11BackfillsBuggyTelegramAddressColumns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
@@ -565,7 +565,7 @@ func TestSQLiteProvider_Migration11BackfillsBuggyLegacySessionColumns(t *testing
 	if chatID != -1002667079342 || topicID != 8939 {
 		t.Fatalf("migrated telegram address columns = %d/%d, want -1002667079342/8939", chatID, topicID)
 	}
-	assertSessionMetadataHasNoLegacyChatTopicUnique(t, ctx, db)
+	assertSessionMetadataHasNoOldChatTopicUnique(t, ctx, db)
 }
 
 func newTestProvider(t *testing.T) Provider {
@@ -947,7 +947,7 @@ func assertSQLiteSchemaHasNoRelayLeftovers(t *testing.T, ctx context.Context, db
 	}
 }
 
-func assertSessionMetadataHasNoLegacyChatTopicUnique(t *testing.T, ctx context.Context, db *sql.DB) {
+func assertSessionMetadataHasNoOldChatTopicUnique(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 
 	var createSQL string
@@ -960,7 +960,7 @@ func assertSessionMetadataHasNoLegacyChatTopicUnique(t *testing.T, ctx context.C
 	}
 	normalized := strings.ToLower(strings.Join(strings.Fields(createSQL), " "))
 	if strings.Contains(normalized, "unique (chat_id, topic_id)") {
-		t.Fatalf("balda_session_metadata still has legacy chat/topic uniqueness: %s", createSQL)
+		t.Fatalf("balda_session_metadata still has old chat/topic uniqueness: %s", createSQL)
 	}
 }
 
