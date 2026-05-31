@@ -21,7 +21,16 @@ func baldaPlanProgressText(ev *adksession.Event) (string, bool) {
 	var snapshot map[string]any
 	if len(ev.CustomMetadata) != 0 {
 		if rawKind, ok := ev.CustomMetadata[acpUpdateKindKey]; ok {
-			if kind := strings.TrimSpace(stringValue(rawKind)); kind != "" && kind != acpUpdateKindPlan {
+			var kind string
+			switch v := rawKind.(type) {
+			case string:
+				kind = v
+			case fmt.Stringer:
+				kind = v.String()
+			default:
+				kind = fmt.Sprintf("%v", rawKind)
+			}
+			if kind = strings.TrimSpace(kind); kind != "" && kind != acpUpdateKindPlan {
 				return "", false
 			}
 		}
@@ -67,11 +76,29 @@ func baldaPlanProgressText(ev *adksession.Event) (string, bool) {
 	lines := make([]string, 0, len(entries)+1)
 	lines = append(lines, "Plan update")
 	for _, entry := range entries {
-		content := strings.TrimSpace(stringValue(entry["content"]))
+		var content string
+		switch v := entry["content"].(type) {
+		case string:
+			content = v
+		case fmt.Stringer:
+			content = v.String()
+		default:
+			content = fmt.Sprintf("%v", entry["content"])
+		}
+		content = strings.TrimSpace(content)
 		if content == "" {
 			content = "(no description)"
 		}
-		status := strings.TrimSpace(stringValue(entry["status"]))
+		var status string
+		switch v := entry["status"].(type) {
+		case string:
+			status = v
+		case fmt.Stringer:
+			status = v.String()
+		default:
+			status = fmt.Sprintf("%v", entry["status"])
+		}
+		status = strings.TrimSpace(status)
 		if status == "" {
 			status = "unknown"
 		}
@@ -79,15 +106,4 @@ func baldaPlanProgressText(ev *adksession.Event) (string, bool) {
 		lines = append(lines, fmt.Sprintf("- [%s] %s", status, content))
 	}
 	return strings.Join(lines, "\n"), true
-}
-
-func stringValue(raw any) string {
-	switch v := raw.(type) {
-	case string:
-		return v
-	case fmt.Stringer:
-		return v.String()
-	default:
-		return fmt.Sprintf("%v", raw)
-	}
 }
