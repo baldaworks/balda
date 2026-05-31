@@ -227,7 +227,13 @@ func toStringAnyMap(raw any) (map[string]any, bool) {
 var (
 	baldaInitInput           io.Reader = os.Stdin
 	baldaInitOutput          io.Writer = os.Stdout
-	baldaInitIsInteractive             = defaultBaldaInitIsInteractive
+	baldaInitIsInteractive             = func() bool {
+		info, err := os.Stdin.Stat()
+		if err != nil {
+			return false
+		}
+		return (info.Mode() & os.ModeCharDevice) != 0
+	}
 	baldaInitLookPath                  = exec.LookPath
 	baldaInitCurrentBranch             = func(workingDir string) (string, error) {
 		return git.CurrentBranch(context.Background(), workingDir)

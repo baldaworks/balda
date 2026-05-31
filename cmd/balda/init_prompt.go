@@ -235,11 +235,3 @@ func contains(items []string, target string) bool {
 	}
 	return false
 }
-
-func defaultBaldaInitIsInteractive() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
-}
