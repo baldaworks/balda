@@ -59,15 +59,23 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (swarm.Envelope, error) {
 		source = sessionTurnSourceTelegram
 	}
 	priority := 90
-	if strings.EqualFold(source, sessionTurnSourceWebhook) {
+	namespace := swarm.NamespaceHumanInbound
+	kind := swarm.KindMessage
+	switch {
+	case strings.EqualFold(source, sessionTurnSourceWebhook):
 		priority = 80
-	} else if strings.EqualFold(source, sessionTurnSourceSchedule) {
+		namespace = swarm.NamespaceWebhookInbound
+		kind = swarm.KindWebhookEvent
+	case strings.EqualFold(source, sessionTurnSourceSchedule):
 		priority = 50
+		namespace = swarm.NamespaceScheduleInbound
+	case strings.EqualFold(source, "agent"):
+		namespace = swarm.NamespaceGoalCommand
 	}
 	return swarm.Envelope{
 		ID:          uuid.NewString(),
-		Namespace:   sessionTurnNamespace(source),
-		Kind:        sessionTurnKind(source),
+		Namespace:   namespace,
+		Kind:        kind,
 		From:        swarm.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
 		To:          swarm.ActorAddress{Target: swarm.ActorTypeSession, Key: payload.Locator.SessionID},
 		SessionID:   payload.Locator.SessionID,
@@ -218,26 +226,6 @@ func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env 
 		return fmt.Errorf("mark session task %q failed: %w", env.TaskID, err)
 	}
 	return nil
-}
-
-func sessionTurnNamespace(source string) string {
-	switch strings.ToLower(strings.TrimSpace(source)) {
-	case sessionTurnSourceWebhook:
-		return swarm.NamespaceWebhookInbound
-	case sessionTurnSourceSchedule:
-		return swarm.NamespaceScheduleInbound
-	case "agent":
-		return swarm.NamespaceGoalCommand
-	default:
-		return swarm.NamespaceHumanInbound
-	}
-}
-
-func sessionTurnKind(source string) string {
-	if strings.EqualFold(strings.TrimSpace(source), sessionTurnSourceWebhook) {
-		return swarm.KindWebhookEvent
-	}
-	return swarm.KindMessage
 }
 
 func firstNonEmpty(values ...string) string {

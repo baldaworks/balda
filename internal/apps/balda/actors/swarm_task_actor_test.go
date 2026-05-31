@@ -32,8 +32,15 @@ func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
 	if err := exec.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if got := lastPublishedCommandTo(t, bus, swarm.ActorTypeSession, locator.SessionID); got.TaskID != taskID {
-		t.Fatalf("published task id = %q, want %q", got.TaskID, taskID)
+	published := lastPublishedCommandTo(t, bus, swarm.ActorTypeSession, locator.SessionID)
+	if published.TaskID != taskID {
+		t.Fatalf("published task id = %q, want %q", published.TaskID, taskID)
+	}
+	if got, want := published.Namespace, swarm.NamespaceWebhookInbound; got != want {
+		t.Fatalf("published namespace = %q, want %q", got, want)
+	}
+	if got, want := published.Kind, swarm.KindWebhookEvent; got != want {
+		t.Fatalf("published kind = %q, want %q", got, want)
 	}
 	task, ok, err := tasks.Get(ctx, taskID)
 	if err != nil {
