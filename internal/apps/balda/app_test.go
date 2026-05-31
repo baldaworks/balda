@@ -231,14 +231,14 @@ func TestValidateSessionPersistence(t *testing.T) {
 func TestValidateUnsupportedRuntimeConfig(t *testing.T) {
 	t.Parallel()
 
-	err := validateRemovedRuntimeConfig(BaldaConfig{
+	err := validateUnsupportedRuntimeConfig(BaldaConfig{
 		RemovedEventBus: map[string]any{"mode": "sqlite"},
 		Swarm:           SwarmConfig{RemovedMode: "shadow"},
 		Webhooks:        WebhooksConfig{RemovedMode: "mailbox"},
 		Scheduler:       SchedulerConfig{RemovedMode: "mailbox"},
 	})
 	if err == nil {
-		t.Fatal("validateRemovedRuntimeConfig() error = nil, want unsupported-config error")
+		t.Fatal("validateUnsupportedRuntimeConfig() error = nil, want unsupported-config error")
 	}
 	want := []string{
 		"balda.event_bus is no longer supported",
@@ -248,31 +248,31 @@ func TestValidateUnsupportedRuntimeConfig(t *testing.T) {
 	}
 	for _, marker := range want {
 		if !strings.Contains(err.Error(), marker) {
-			t.Fatalf("validateRemovedRuntimeConfig() error = %q, want marker %q", err.Error(), marker)
+			t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want marker %q", err.Error(), marker)
 		}
 	}
 	if strings.Contains(err.Error(), "legacy mode configuration") {
-		t.Fatalf("validateRemovedRuntimeConfig() error = %q, want current unsupported-config wording", err.Error())
+		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want current unsupported-config wording", err.Error())
 	}
 	if strings.Contains(err.Error(), "invalid removed runtime configuration") {
-		t.Fatalf("validateRemovedRuntimeConfig() error = %q, still contains removed-runtime summary wording", err.Error())
+		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, still contains removed-runtime summary wording", err.Error())
 	}
 	if strings.Contains(err.Error(), "configure balda.nats for JetStream") {
-		t.Fatalf("validateRemovedRuntimeConfig() error = %q, still contains transport-specific event_bus guidance", err.Error())
+		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, still contains transport-specific event_bus guidance", err.Error())
 	}
 	if !strings.Contains(err.Error(), "invalid unsupported runtime configuration:") {
-		t.Fatalf("validateRemovedRuntimeConfig() error = %q, want unsupported-runtime summary wording", err.Error())
+		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want unsupported-runtime summary wording", err.Error())
 	}
 	if !strings.Contains(err.Error(), "balda.event_bus is no longer supported; use balda.nats built-in runtime settings") {
-		t.Fatalf("validateRemovedRuntimeConfig() error = %q, want simplified event_bus guidance", err.Error())
+		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want simplified event_bus guidance", err.Error())
 	}
 }
 
 func TestValidateUnsupportedRuntimeConfig_AllowsCurrentConfig(t *testing.T) {
 	t.Parallel()
 
-	if err := validateRemovedRuntimeConfig(BaldaConfig{}); err != nil {
-		t.Fatalf("validateRemovedRuntimeConfig() error = %v, want nil", err)
+	if err := validateUnsupportedRuntimeConfig(BaldaConfig{}); err != nil {
+		t.Fatalf("validateUnsupportedRuntimeConfig() error = %v, want nil", err)
 	}
 }
 
@@ -356,12 +356,12 @@ func TestValidateRuntimeConfigLint_AllowsAlwaysOnSwarmConfig(t *testing.T) {
 func TestValidateUnsupportedRuntimeConfig_AvoidsTransportSpecificModeGuidance(t *testing.T) {
 	t.Parallel()
 
-	err := validateRemovedRuntimeConfig(BaldaConfig{
+	err := validateUnsupportedRuntimeConfig(BaldaConfig{
 		Webhooks:  WebhooksConfig{RemovedMode: true},
 		Scheduler: SchedulerConfig{RemovedMode: true},
 	})
 	if err == nil {
-		t.Fatal("validateRemovedRuntimeConfig() error = nil, want unsupported mode guidance")
+		t.Fatal("validateUnsupportedRuntimeConfig() error = nil, want unsupported mode guidance")
 	}
 	got := err.Error()
 	for _, needle := range []string{
@@ -369,7 +369,7 @@ func TestValidateUnsupportedRuntimeConfig_AvoidsTransportSpecificModeGuidance(t 
 		"scheduler publishes JetStream commands only",
 	} {
 		if strings.Contains(got, needle) {
-			t.Fatalf("validateRemovedRuntimeConfig() error = %q, still contains transport-specific guidance %q", got, needle)
+			t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, still contains transport-specific guidance %q", got, needle)
 		}
 	}
 	for _, needle := range []string{
@@ -377,7 +377,7 @@ func TestValidateUnsupportedRuntimeConfig_AvoidsTransportSpecificModeGuidance(t 
 		"balda.scheduler.mode is no longer supported; scheduling uses the always-on runtime",
 	} {
 		if !strings.Contains(got, needle) {
-			t.Fatalf("validateRemovedRuntimeConfig() error = %q, want marker %q", got, needle)
+			t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want marker %q", got, needle)
 		}
 	}
 }

@@ -116,7 +116,7 @@ func Module(
 	if err := validateSchedulerConfig(cfg.Balda.Scheduler); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	if err := validateRemovedRuntimeConfig(cfg.Balda); err != nil {
+	if err := validateUnsupportedRuntimeConfig(cfg.Balda); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 	workspaceSessionsDir, err := resolveWorkspaceSessionsDir(cfg.Balda.Workspace.SessionsDir)
@@ -385,7 +385,7 @@ func Module(
 	)
 }
 
-var removedBuiltInBaldaMCPServerIDs = map[string]string{
+var unsupportedBuiltInBaldaMCPServerIDs = map[string]string{
 	"runtime.state":     bundledBaldaMCPServerID,
 	"runtime.workspace": bundledBaldaMCPServerID,
 	"runtime.balda":     bundledBaldaMCPServerID,
@@ -393,7 +393,7 @@ var removedBuiltInBaldaMCPServerIDs = map[string]string{
 	"balda.workspace":   bundledBaldaMCPServerID,
 }
 
-var removedConfigMCPServerIDs = map[string]struct{}{
+var unsupportedConfigMCPServerIDs = map[string]struct{}{
 	"runtime.config": {},
 	"balda.config":   {},
 }
@@ -406,9 +406,9 @@ func validateBaldaMCPConfiguration(cfg Config, normaCfg runtimeconfig.RuntimeCon
 		case bundledBaldaMCPServerID:
 			errs = append(errs, `runtime.mcp_servers.balda is reserved for the built-in balda MCP server`)
 		default:
-			if _, ok := removedConfigMCPServerIDs[id]; ok {
+			if _, ok := unsupportedConfigMCPServerIDs[id]; ok {
 				errs = append(errs, fmt.Sprintf("runtime.mcp_servers.%s conflicts with unsupported built-in config MCP server ID %q; edit the balda config file directly at %q", id, id, configPath))
-			} else if replacement, ok := removedBuiltInBaldaMCPServerIDs[id]; ok {
+			} else if replacement, ok := unsupportedBuiltInBaldaMCPServerIDs[id]; ok {
 				errs = append(errs, fmt.Sprintf("runtime.mcp_servers.%s conflicts with unsupported built-in MCP server ID %q; rename the custom server and use %q for the built-in balda MCP server", id, id, replacement))
 			}
 		}
@@ -416,9 +416,9 @@ func validateBaldaMCPConfiguration(cfg Config, normaCfg runtimeconfig.RuntimeCon
 
 	for i, id := range cfg.Balda.MCPServers {
 		trimmed := strings.TrimSpace(id)
-		if _, ok := removedConfigMCPServerIDs[trimmed]; ok {
+		if _, ok := unsupportedConfigMCPServerIDs[trimmed]; ok {
 			errs = append(errs, fmt.Sprintf("balda.mcp_servers[%d] references unsupported built-in config MCP server %q; edit the balda config file directly at %q", i, id, configPath))
-		} else if replacement, ok := removedBuiltInBaldaMCPServerIDs[trimmed]; ok {
+		} else if replacement, ok := unsupportedBuiltInBaldaMCPServerIDs[trimmed]; ok {
 			errs = append(errs, fmt.Sprintf("balda.mcp_servers[%d] references unsupported built-in MCP server %q; use %q", i, id, replacement))
 		}
 	}
@@ -426,9 +426,9 @@ func validateBaldaMCPConfiguration(cfg Config, normaCfg runtimeconfig.RuntimeCon
 	for agentName, agentCfg := range normaCfg.Providers {
 		for i, id := range agentCfg.MCPServers {
 			trimmed := strings.TrimSpace(id)
-			if _, ok := removedConfigMCPServerIDs[trimmed]; ok {
+			if _, ok := unsupportedConfigMCPServerIDs[trimmed]; ok {
 				errs = append(errs, fmt.Errorf("runtime.providers.%s.mcp_servers[%d] references unsupported built-in config MCP server %q; edit the balda config file directly at %q", agentName, i, id, configPath).Error())
-			} else if replacement, ok := removedBuiltInBaldaMCPServerIDs[trimmed]; ok {
+			} else if replacement, ok := unsupportedBuiltInBaldaMCPServerIDs[trimmed]; ok {
 				errs = append(errs, fmt.Errorf("runtime.providers.%s.mcp_servers[%d] references unsupported built-in MCP server %q; use %q", agentName, i, id, replacement).Error())
 			}
 		}
@@ -594,7 +594,7 @@ func validateSchedulerConfig(cfg SchedulerConfig) error {
 	return nil
 }
 
-func validateRemovedRuntimeConfig(cfg BaldaConfig) error {
+func validateUnsupportedRuntimeConfig(cfg BaldaConfig) error {
 	var errs []string
 	if cfg.RemovedEventBus != nil {
 		errs = append(errs, "balda.event_bus is no longer supported; use balda.nats built-in runtime settings")
