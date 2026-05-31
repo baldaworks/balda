@@ -126,7 +126,12 @@ func newTaskActorExecutor(params taskActorExecutorParams) swarm.Actor {
 }
 
 func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID string) (swarm.Envelope, string, error) {
-	dedupeBase := webhookDedupeBase(routeName, requestID, payload.DedupeKey)
+	dedupeBase := strings.TrimSpace(payload.DedupeKey)
+	dedupeBase = strings.TrimSuffix(dedupeBase, ":task")
+	dedupeBase = strings.TrimSuffix(dedupeBase, ":session")
+	if dedupeBase == "" {
+		dedupeBase = strings.Join([]string{"webhook", strings.TrimSpace(routeName), strings.TrimSpace(requestID)}, ":")
+	}
 	taskID := webhookTaskID(routeName, dedupeBase)
 	payload.DedupeKey = dedupeBase + ":session"
 	data, err := json.Marshal(taskEnvelopePayload{
@@ -186,16 +191,6 @@ func ScheduledTaskEnvelope(
 		DedupeKey:   strings.TrimSpace(dispatchKey),
 		PayloadJSON: string(data),
 	}, nil
-}
-
-func webhookDedupeBase(routeName string, requestID string, raw string) string {
-	base := strings.TrimSpace(raw)
-	base = strings.TrimSuffix(base, ":task")
-	base = strings.TrimSuffix(base, ":session")
-	if base != "" {
-		return base
-	}
-	return strings.Join([]string{"webhook", strings.TrimSpace(routeName), strings.TrimSpace(requestID)}, ":")
 }
 
 func webhookTaskID(routeName string, dedupeBase string) string {
