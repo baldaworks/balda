@@ -2,11 +2,9 @@
 
 `balda start` is a channel-aware background ACP service that currently binds Telegram chats/topics to ADK agents created by Norma's agent factory.
 
-Architecture contracts and migration execution documents are maintained in:
+Architecture contracts are maintained in:
 
 - `docs/architecture/index.md`
-- `docs/exec-plans/active/jetstream-hard-cutover.md`
-- `docs/tech-debt/jetstream-migration-debt.md`
 
 ## Summary
 

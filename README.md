@@ -301,8 +301,6 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 
 - Technical specification: [`docs/balda.md`](docs/balda.md)
 - Architecture map: [`docs/architecture/index.md`](docs/architecture/index.md)
-- Active execution plans: [`docs/exec-plans/active/`](docs/exec-plans/active/)
-- Migration debt register: [`docs/tech-debt/jetstream-migration-debt.md`](docs/tech-debt/jetstream-migration-debt.md)
 - Release notes: [`docs/release-notes.md`](docs/release-notes.md)
 - Telegram formatting guide: [`docs/telegram-formatting.md`](docs/telegram-formatting.md)
 - Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
