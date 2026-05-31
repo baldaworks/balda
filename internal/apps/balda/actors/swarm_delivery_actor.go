@@ -56,8 +56,16 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, envelope any) error {
 	if a.channel == nil {
 		return swarm.TransientError(fmt.Errorf("telegram channel adapter is required"))
 	}
-	deliveryKey := deliveryKeyForEnvelope(env)
-	payloadHash := hashDeliveryPayload(env.PayloadJSON)
+	deliveryKey := strings.TrimSpace(env.DedupeKey)
+	if deliveryKey == "" {
+		deliveryKey = strings.TrimSpace(env.ID)
+	}
+	if deliveryKey == "" {
+		deliveryKey = "delivery:" + shortTaskHash(env.PayloadJSON)
+	}
+
+	sum := sha256.Sum256([]byte(strings.TrimSpace(env.PayloadJSON)))
+	payloadHash := hex.EncodeToString(sum[:])
 	if a.tasks != nil {
 		record, created, err := a.tasks.ReserveDelivery(ctx, baldastate.SwarmDeliveryRecord{
 			ID:          uuid.NewString(),
@@ -138,19 +146,4 @@ func deliveryReadyForAttempt(record baldastate.SwarmDeliveryRecord) bool {
 	default:
 		return true
 	}
-}
-
-func deliveryKeyForEnvelope(env swarm.Envelope) string {
-	if key := strings.TrimSpace(env.DedupeKey); key != "" {
-		return key
-	}
-	if key := strings.TrimSpace(env.ID); key != "" {
-		return key
-	}
-	return "delivery:" + shortTaskHash(env.PayloadJSON)
-}
-
-func hashDeliveryPayload(payload string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(payload)))
-	return hex.EncodeToString(sum[:])
 }

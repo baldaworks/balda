@@ -2,8 +2,11 @@ package actors
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,16 +161,25 @@ func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text str
 }
 
 func deliveryRecordForTest(env swarm.Envelope, payload taskDeliveryPayload, status string) baldastate.SwarmDeliveryRecord {
+	deliveryKey := strings.TrimSpace(env.DedupeKey)
+	if deliveryKey == "" {
+		deliveryKey = strings.TrimSpace(env.ID)
+	}
+	if deliveryKey == "" {
+		deliveryKey = "delivery:" + shortTaskHash(env.PayloadJSON)
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSpace(env.PayloadJSON)))
+
 	return baldastate.SwarmDeliveryRecord{
 		ID:          "delivery-record-" + env.ID,
-		DeliveryKey: deliveryKeyForEnvelope(env),
+		DeliveryKey: deliveryKey,
 		TaskID:      payload.TaskID,
 		SessionID:   payload.Locator.SessionID,
 		Channel:     "telegram",
 		AddressKey:  payload.Locator.AddressKey,
 		Kind:        env.Kind,
 		PayloadJSON: env.PayloadJSON,
-		PayloadHash: hashDeliveryPayload(env.PayloadJSON),
+		PayloadHash: hex.EncodeToString(sum[:]),
 		Status:      status,
 	}
 }
