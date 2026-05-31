@@ -217,15 +217,6 @@ func (e *inboundWebhookHTTPError) Error() string {
 	return e.message
 }
 
-func newInboundWebhookHTTPError(status int, code, message string, cause error) *inboundWebhookHTTPError {
-	return &inboundWebhookHTTPError{
-		status:  status,
-		code:    code,
-		message: message,
-		cause:   cause,
-	}
-}
-
 type normalizedInboundWebhookConfig struct {
 	Enabled    bool
 	ListenAddr string
@@ -480,34 +471,32 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		requestID = fmt.Sprintf("inbound-%d", time.Now().UnixNano())
 	}
 	if req.Method != http.MethodPost {
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusMethodNotAllowed,
-			inboundWebhookCodeInvalidMethod,
-			inboundWebhookMessageCouldNotAccept,
-			nil,
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusMethodNotAllowed,
+			code:    inboundWebhookCodeInvalidMethod,
+			message: inboundWebhookMessageCouldNotAccept,
+		})
 		return
 	}
 
 	route, ok := r.routes[req.URL.Path]
 	if !ok {
 		r.metrics.notFound.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusNotFound,
-			inboundWebhookCodeRouteNotFound,
-			inboundWebhookMessageCouldNotAccept,
-			nil,
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusNotFound,
+			code:    inboundWebhookCodeRouteNotFound,
+			message: inboundWebhookMessageCouldNotAccept,
+		})
 		return
 	}
 	if authErr := authorizeInboundWebhookRequest(req, route.Auth); authErr != nil {
 		r.metrics.unauthorized.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusUnauthorized,
-			inboundWebhookCodeUnauthorized,
-			inboundWebhookMessageCouldNotAccept,
-			authErr,
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusUnauthorized,
+			code:    inboundWebhookCodeUnauthorized,
+			message: inboundWebhookMessageCouldNotAccept,
+			cause:   authErr,
+		})
 		return
 	}
 
@@ -515,22 +504,22 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	bodyBytes, readErr := io.ReadAll(io.LimitReader(req.Body, inboundWebhookMaxBodyBytes+1))
 	if readErr != nil {
 		r.metrics.invalid.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			inboundWebhookMessageCouldNotAccept,
-			readErr,
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusBadRequest,
+			code:    inboundWebhookCodeInvalidPayload,
+			message: inboundWebhookMessageCouldNotAccept,
+			cause:   readErr,
+		})
 		return
 	}
 	if len(bodyBytes) > inboundWebhookMaxBodyBytes {
 		r.metrics.invalid.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			inboundWebhookMessageCouldNotAccept,
-			fmt.Errorf("request body exceeds %d bytes", inboundWebhookMaxBodyBytes),
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusBadRequest,
+			code:    inboundWebhookCodeInvalidPayload,
+			message: inboundWebhookMessageCouldNotAccept,
+			cause:   fmt.Errorf("request body exceeds %d bytes", inboundWebhookMaxBodyBytes),
+		})
 		return
 	}
 	rawBody := string(bodyBytes)
@@ -554,34 +543,34 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	})
 	if renderErr != nil {
 		r.metrics.invalid.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			inboundWebhookMessageCouldNotAccept,
-			renderErr,
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusBadRequest,
+			code:    inboundWebhookCodeInvalidPayload,
+			message: inboundWebhookMessageCouldNotAccept,
+			cause:   renderErr,
+		})
 		return
 	}
 	prompt := strings.TrimSpace(promptBuf.String())
 	if prompt == "" {
 		r.metrics.invalid.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusBadRequest,
-			inboundWebhookCodeInvalidPayload,
-			inboundWebhookMessageCouldNotAccept,
-			fmt.Errorf("rendered prompt is empty"),
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusBadRequest,
+			code:    inboundWebhookCodeInvalidPayload,
+			message: inboundWebhookMessageCouldNotAccept,
+			cause:   fmt.Errorf("rendered prompt is empty"),
+		})
 		return
 	}
 	target, targetErr := resolveEnvelopeTarget(req.Context(), r.owner, route.Target)
 	if targetErr != nil {
 		r.metrics.notFound.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusNotFound,
-			inboundWebhookCodeSessionNotFound,
-			inboundWebhookMessageCouldNotAccept,
-			targetErr,
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusNotFound,
+			code:    inboundWebhookCodeSessionNotFound,
+			message: inboundWebhookMessageCouldNotAccept,
+			cause:   targetErr,
+		})
 		return
 	}
 	var reportTo *baldasession.SessionLocator
@@ -589,12 +578,12 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		resolved, err := resolveEnvelopeTarget(req.Context(), r.owner, *route.ReportTo)
 		if err != nil {
 			r.metrics.notFound.Add(1)
-			r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-				http.StatusNotFound,
-				inboundWebhookCodeSessionNotFound,
-				inboundWebhookMessageCouldNotAccept,
-				err,
-			))
+			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+				status:  http.StatusNotFound,
+				code:    inboundWebhookCodeSessionNotFound,
+				message: inboundWebhookMessageCouldNotAccept,
+				cause:   err,
+			})
 			return
 		}
 		reportTo = &resolved.Locator
@@ -637,22 +626,22 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	if enqueueErr != nil {
 		if swarm.IsCommandQueueFull(enqueueErr) {
 			r.metrics.queueFull.Add(1)
-			r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-				http.StatusTooManyRequests,
-				inboundWebhookCodeQueueFull,
-				inboundWebhookMessageTemporarilyBusy,
-				enqueueErr,
-			))
+			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+				status:  http.StatusTooManyRequests,
+				code:    inboundWebhookCodeQueueFull,
+				message: inboundWebhookMessageTemporarilyBusy,
+				cause:   enqueueErr,
+			})
 			return
 		}
 
 		r.metrics.dispatchErr.Add(1)
-		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
-			http.StatusServiceUnavailable,
-			inboundWebhookCodeDispatchFailed,
-			inboundWebhookMessageTemporarilyBusy,
-			enqueueErr,
-		))
+		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+			status:  http.StatusServiceUnavailable,
+			code:    inboundWebhookCodeDispatchFailed,
+			message: inboundWebhookMessageTemporarilyBusy,
+			cause:   enqueueErr,
+		})
 		return
 	}
 
@@ -702,12 +691,11 @@ func (r *InboundWebhookReceiver) writeInboundWebhookError(
 	handlerErr *inboundWebhookHTTPError,
 ) {
 	if handlerErr == nil {
-		handlerErr = newInboundWebhookHTTPError(
-			http.StatusInternalServerError,
-			inboundWebhookCodeDispatchFailed,
-			"internal error",
-			nil,
-		)
+		handlerErr = &inboundWebhookHTTPError{
+			status:  http.StatusInternalServerError,
+			code:    inboundWebhookCodeDispatchFailed,
+			message: "internal error",
+		}
 	}
 
 	evt := r.logger.Warn().
