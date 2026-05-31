@@ -34,7 +34,7 @@ Status: active
 
 - Actor key mapping changes.
 - Command heartbeat or settlement behavior changes.
-- Task/goalkeeper/delivery actor lifecycle changes.
+- Task/goal/delivery lifecycle changes.
 - Goalkeeper workflow, session, or task-result behavior changes.
 
 ## Norma actorlayer contract boundaries

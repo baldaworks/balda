@@ -419,7 +419,11 @@ func TestDocumentationContract(t *testing.T) {
 
 	t.Run("actor runtime invariants stay behavior-oriented at the top level", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "docs/architecture/actor-runtime.md")
-		section := markdownSection(readFile(t, path), "## Invariants")
+		body := readFile(t, path)
+		sections := []string{
+			markdownSection(body, "## Invariants"),
+			markdownSection(body, "## Update triggers"),
+		}
 		forbidden := []string{
 			"SessionActor handles turns",
 			"TaskActor routes webhook/scheduled work",
@@ -429,10 +433,13 @@ func TestDocumentationContract(t *testing.T) {
 			"MemoryActor syncs durable context",
 			"through GoalkeeperActor",
 			"planner/executor/reviewer role actors",
+			"Task/goalkeeper/delivery actor lifecycle changes",
 		}
-		for _, needle := range forbidden {
-			if strings.Contains(section, needle) {
-				t.Fatalf("%s invariants section still exposes concrete actor summary %q", filepath.ToSlash(path), needle)
+		for _, section := range sections {
+			for _, needle := range forbidden {
+				if strings.Contains(section, needle) {
+					t.Fatalf("%s top-level actor runtime summary still exposes concrete actor summary %q", filepath.ToSlash(path), needle)
+				}
 			}
 		}
 	})
