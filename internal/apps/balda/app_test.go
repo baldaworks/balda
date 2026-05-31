@@ -540,8 +540,8 @@ func TestResolveWorkspaceSessionsDir_AcceptsIdentifier(t *testing.T) {
 func initGitRepoForBalda(t *testing.T, ctx context.Context, dir string) {
 	t.Helper()
 	runGitForBalda(t, ctx, dir, "init")
-	runGitForBalda(t, ctx, dir, "config", "user.name", "Norma Test")
-	runGitForBalda(t, ctx, dir, "config", "user.email", "norma-test@example.com")
+	runGitForBalda(t, ctx, dir, "config", "user.name", "Balda Test")
+	runGitForBalda(t, ctx, dir, "config", "user.email", "balda-test@example.com")
 	if err := os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("seed\n"), 0o600); err != nil {
 		t.Fatalf("write seed file: %v", err)
 	}

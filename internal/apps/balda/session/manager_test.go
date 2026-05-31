@@ -727,8 +727,8 @@ func (f *fakeSessionStore) List(context.Context) ([]baldastate.SessionRecord, er
 func initGitRepo(t *testing.T, ctx context.Context, workingDir string) {
 	t.Helper()
 	runGit(t, ctx, workingDir, "init")
-	runGit(t, ctx, workingDir, "config", "user.name", "Norma Test")
-	runGit(t, ctx, workingDir, "config", "user.email", "norma-test@example.com")
+	runGit(t, ctx, workingDir, "config", "user.name", "Balda Test")
+	runGit(t, ctx, workingDir, "config", "user.email", "balda-test@example.com")
 }
 
 func writeFile(t *testing.T, path, content string) {

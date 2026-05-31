@@ -481,8 +481,8 @@ func (f *fakeBaldaRestoreRuntimeManager) ProviderID() string {
 func initBaldaRestoreGitRepo(t *testing.T, ctx context.Context, dir string) {
 	t.Helper()
 	runBaldaRestoreGit(t, ctx, dir, "init")
-	runBaldaRestoreGit(t, ctx, dir, "config", "user.name", "Norma Test")
-	runBaldaRestoreGit(t, ctx, dir, "config", "user.email", "norma-test@example.com")
+	runBaldaRestoreGit(t, ctx, dir, "config", "user.name", "Balda Test")
+	runBaldaRestoreGit(t, ctx, dir, "config", "user.email", "balda-test@example.com")
 }
 
 func writeBaldaRestoreFile(t *testing.T, path, content string) {

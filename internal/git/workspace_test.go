@@ -45,8 +45,8 @@ func TestMountWorktree_AllowsBranchAlreadyCheckedOutInMainWorktree(t *testing.T)
 func initGitRepo(t *testing.T, ctx context.Context, dir string) {
 	t.Helper()
 	runGit(t, ctx, dir, "init")
-	runGit(t, ctx, dir, "config", "user.name", "Norma Test")
-	runGit(t, ctx, dir, "config", "user.email", "norma-test@example.com")
+	runGit(t, ctx, dir, "config", "user.name", "Balda Test")
+	runGit(t, ctx, dir, "config", "user.email", "balda-test@example.com")
 }
 
 func writeFile(t *testing.T, path, content string) {
