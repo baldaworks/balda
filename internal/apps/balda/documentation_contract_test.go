@@ -260,6 +260,19 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("balda onboarding reference avoids operator-only runtime inspection commands", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "docs/balda.md")
+		section := markdownSection(readFile(t, path), "## User Onboarding Reference")
+		for _, needle := range []string{
+			"make jetstream-state",
+			"embedded JetStream forced on",
+		} {
+			if strings.Contains(section, needle) {
+				t.Fatalf("%s onboarding section still exposes runtime-heavy detail %q", filepath.ToSlash(path), needle)
+			}
+		}
+	})
+
 	t.Run("webhook docs keep public responses implementation-free", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "docs/balda.md")
 		section := markdownSection(readFile(t, path), "### Inbound webhook contract (internal)")

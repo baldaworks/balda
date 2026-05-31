@@ -39,7 +39,7 @@ balda init
 balda start
 ```
 
-For repo-local development with embedded JetStream forced on, run:
+For repo-local development, run:
 
 ```bash
 make dev
@@ -49,13 +49,6 @@ To exercise fake ingress scenarios (Telegram/webhook/scheduler paths), run:
 
 ```bash
 make scenarios
-```
-
-To dump JetStream stream/consumer state from a running local NATS endpoint
-(requires `nats` CLI), run:
-
-```bash
-make jetstream-state
 ```
 
 To replay projection events through the deterministic projector replay suite,
