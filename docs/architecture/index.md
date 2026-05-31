@@ -8,7 +8,7 @@ Use this map to find the authoritative runtime contracts.
 ## Documents
 
 - [Runtime contract](runtime-contract.md)
-- [JetStream actorlayer adapter](jetstream-command-bus.md)
+- [Command runtime adapter](jetstream-command-bus.md)
 - [Actor runtime](actor-runtime.md)
 - [Norma actorlayer contract boundary](actor-runtime.md#norma-actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)

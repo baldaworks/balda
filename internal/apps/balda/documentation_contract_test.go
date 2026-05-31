@@ -637,6 +637,34 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("architecture map avoids stale jetstream adapter labels", func(t *testing.T) {
+		checks := []struct {
+			path    string
+			needles []string
+		}{
+			{
+				path: filepath.Join(repoRoot, "docs/architecture/jetstream-command-bus.md"),
+				needles: []string{
+					"# JetStream Actorlayer Adapter",
+				},
+			},
+			{
+				path: filepath.Join(repoRoot, "docs/architecture/index.md"),
+				needles: []string{
+					"[JetStream actorlayer adapter](jetstream-command-bus.md)",
+				},
+			},
+		}
+		for _, check := range checks {
+			body := readFile(t, check.path)
+			for _, needle := range check.needles {
+				if strings.Contains(body, needle) {
+					t.Fatalf("%s still contains stale jetstream adapter label %q", filepath.ToSlash(check.path), needle)
+				}
+			}
+		}
+	})
+
 	t.Run("runtime architecture summaries avoid transport-heavy top-level wording", func(t *testing.T) {
 		checks := []struct {
 			path    string

@@ -1,4 +1,4 @@
-# JetStream Actorlayer Adapter
+# Command Runtime Adapter
 
 Owner: Balda maintainers  
 Status: active
