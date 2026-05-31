@@ -56,6 +56,14 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 	for _, detected := range detectedAgents {
 		agentIDs = append(agentIDs, detected.ID)
 	}
+	profiles := make(map[string]any, len(agentIDs))
+	for _, id := range agentIDs {
+		profiles[id] = map[string]any{
+			"balda": map[string]any{
+				"provider": id,
+			},
+		}
+	}
 
 	doc := map[string]any{
 		"runtime": map[string]any{
@@ -63,7 +71,7 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 			"mcp_servers": map[string]any{},
 		},
 		"balda":    baldaSection,
-		"profiles": buildBaldaInitProfiles(agentIDs),
+		"profiles": profiles,
 	}
 
 	return doc, agentIDs, nil
@@ -105,23 +113,6 @@ func buildBaldaInitAgents(detected []baldaInitAgentTemplate) map[string]any {
 	}
 
 	return agents
-}
-
-func buildBaldaInitProfiles(agentIDs []string) map[string]any {
-	profiles := make(map[string]any, len(agentIDs))
-	if len(agentIDs) == 0 {
-		return profiles
-	}
-
-	for _, id := range agentIDs {
-		profiles[id] = map[string]any{
-			"balda": map[string]any{
-				"provider": id,
-			},
-		}
-	}
-
-	return profiles
 }
 
 func ensureBaldaMCPServersDefault(baldaSection map[string]any) {
