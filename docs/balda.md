@@ -154,7 +154,7 @@ flowchart TB
 
 Balda treats `actorlayer` as a pure typed actor engine and never as product policy.
 
-- `balda.provider` selects one app-scoped ADK provider runtime for all Balda sessions and `/goal` work-validation runs in the process.
+- `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goal` work-validation runs in the process.
 - Actorlayer owns generic actor mechanics: registration, addressing, lane execution, lifecycle state, and delivery hooks.
 - Balda owns product actors and product behavior implemented as actors: session turns, task routing, goal execution, delivery, control, and memory.
 - Balda exposes JetStream to product/runtime code only as actorlayer source, delivery, and dispatch abstractions; the concrete transport stays inside the NATS adapter.
@@ -169,7 +169,7 @@ The boundary is intentionally explicit:
 
 - Keep Balda product actor definitions in `internal/apps/balda/actors`; keep ingress/Telegram command handling in `internal/apps/balda/handlers`.
 - Keep actor definitions and state types independent from provider IDs.
-- Ensure no ADK, provider, or queue API types enter the actor layer contract.
+- Ensure no provider or queue API types enter the actor layer contract.
 - Keep retry/dead-letter policy, projection writes, and reporting in Balda-owned modules.
 - Preserve command envelope metadata (`chat_id`, `topic_id`, `goal_id`) at the actorlayer boundary.
 - Verify task/actor scenarios through the configured `balda.provider` runtime and actorlayer dispatch path.
@@ -182,7 +182,7 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/actors`: defines Balda product actors for session, task, goal, delivery, control, and memory command contracts.
 - `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
 - `internal/apps/balda/eventbus/nats`: adapts JetStream publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
-- `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped ADK provider runtime selected by `balda.provider` and the per-session ADK state.
+- `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped provider runtime selected by `balda.provider` and the per-session state.
 - `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, tasks, projections, memory, and delivery outbox rows.
 
 Do not add Balda-local actor adapter packages such as `internal/apps/balda/norma`,
@@ -537,7 +537,7 @@ By default, Balda also persists session history and state in `state.db` until th
 2. Balda resolves session by `(chat_id, topic_id)`.
 3. If the session is missing in memory, balda attempts lazy restore from persisted metadata.
 4. Balda calls the configured provider runtime for that session.
-5. Balda streams non-terminal provider progress to Telegram via chat actions (and DM thinking draft updates).
+5. Balda streams non-terminal provider progress to Telegram via chat actions (and DM thinking placeholder updates).
 
 ## Telegram Messaging Behavior
 
@@ -558,7 +558,7 @@ Balda runs with a single provider per process (`balda.provider`).
 - The provider is initialized before message handling.
 - The owner session (`topic_id=0` in the owner DM) is bootstrapped for the owner chat during activation.
 - On restart, the owner session follows the same restore path as regular sessions: restore persisted metadata first, then fall back to fresh create only when no persisted record exists.
-- Every regular channel address maps to its own ADK session, including public main-chat `topic_id=0`, but all sessions in that balda instance use the same provider runtime.
+- Every regular channel address maps to its own session, including public main-chat `topic_id=0`, but all sessions in that balda instance use the same provider runtime.
 
 ### Manual session control
 

@@ -31,7 +31,7 @@ Status: active
   - Task/projector side effects in SQLite (`swarm_tasks`, `swarm_task_events`, command/task status state).
   - Internal command visibility backed by logs and tooling.
   - Mapping between policy metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`) and actor-level envelopes.
-  - The single app-scoped ADK provider runtime selected by `balda.provider`.
+  - The single app-scoped provider runtime selected by `balda.provider`.
 
 - Boundary obligations:
   - Actor definitions and actor state must not select or branch on provider IDs.
