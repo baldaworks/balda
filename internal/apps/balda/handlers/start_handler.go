@@ -49,10 +49,6 @@ type startCommandArgs struct {
 	token string
 }
 
-func (h *StartHandler) setBaldaHandler(rh baldaOwnerActivator) {
-	h.baldaHandler = rh
-}
-
 // Register registers the handler with the registry.
 func (h *StartHandler) Register(registry tgbotkit.Registry) {
 	registry.OnCommand(h.onCommand)

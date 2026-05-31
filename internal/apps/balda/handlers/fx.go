@@ -190,7 +190,7 @@ var Module = fx.Module("balda_handlers",
 	),
 	fx.Invoke(
 		func(start *StartHandler, balda *BaldaHandler) {
-			start.setBaldaHandler(balda)
+			start.baldaHandler = balda
 		},
 		func(*ScheduledTaskScheduler) {},
 		func(*InboundWebhookReceiver) {},

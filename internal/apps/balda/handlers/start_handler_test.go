@@ -186,7 +186,7 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 	t.Run("accepts owner command as owner bootstrap", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 		balda := &fakeBaldaOwnerActivator{}
-		handler.setBaldaHandler(balda)
+		handler.baldaHandler = balda
 
 		err := handler.onCommand(context.Background(), newStartEvent("owner=secret-token", 101, 9001))
 		if err != nil {
@@ -216,7 +216,7 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 	t.Run("accepts owner auth link payload as owner bootstrap", func(t *testing.T) {
 		handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 		balda := &fakeBaldaOwnerActivator{}
-		handler.setBaldaHandler(balda)
+		handler.baldaHandler = balda
 
 		err := handler.onCommand(context.Background(), newStartEvent("owner_secret-token", 101, 9001))
 		if err != nil {
@@ -309,7 +309,7 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 func TestStartHandlerOnCommand_ExistingOwner_StartsRootWhenMissing(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	balda := &fakeBaldaOwnerActivator{}
-	handler.setBaldaHandler(balda)
+	handler.baldaHandler = balda
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -334,7 +334,7 @@ func TestStartHandlerOnCommand_ExistingOwner_StartsRootWhenMissing(t *testing.T)
 func TestStartHandlerOnCommand_ExistingOwnerExplicitOwnerModeReactivates(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	balda := &fakeBaldaOwnerActivator{}
-	handler.setBaldaHandler(balda)
+	handler.baldaHandler = balda
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -359,7 +359,7 @@ func TestStartHandlerOnCommand_ExistingOwnerExplicitOwnerModeReactivates(t *test
 func TestStartHandlerOnCommand_ExistingOwnerInviteModeDoesNotReactivate(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	balda := &fakeBaldaOwnerActivator{}
-	handler.setBaldaHandler(balda)
+	handler.baldaHandler = balda
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -383,7 +383,7 @@ func TestStartHandlerOnCommand_ExistingOwnerInviteModeDoesNotReactivate(t *testi
 func TestStartHandlerOnCommand_ExistingOwnerOtherInviteDoesNotConsumeOrReactivate(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	balda := &fakeBaldaOwnerActivator{}
-	handler.setBaldaHandler(balda)
+	handler.baldaHandler = balda
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -441,7 +441,7 @@ func TestStartHandlerOnCommand_InviteModeRegistersCollaborator(t *testing.T) {
 func TestStartHandlerOnCommand_BaldaActivationFailure_DoesNotClaimBaldaActive(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	balda := &fakeBaldaOwnerActivator{err: errors.New("precreate failed")}
-	handler.setBaldaHandler(balda)
+	handler.baldaHandler = balda
 
 	err := handler.onCommand(context.Background(), newStartEvent("owner=secret-token", 101, 9001))
 	if err != nil {
@@ -459,7 +459,7 @@ func TestStartHandlerOnCommand_BaldaActivationFailure_DoesNotClaimBaldaActive(t 
 func TestStartHandlerOnCommand_ExistingOwnerActivationFailure_DoesNotClaimBaldaActive(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	balda := &fakeBaldaOwnerActivator{err: errors.New("precreate failed")}
-	handler.setBaldaHandler(balda)
+	handler.baldaHandler = balda
 
 	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 	if err != nil {
@@ -607,7 +607,7 @@ func newBaldaHandlerTestHarness(t *testing.T) (*StartHandler, *auth.OwnerStore, 
 		messenger:  msg,
 		authToken:  "",
 	}
-	startHandler.setBaldaHandler(baldaHandler)
+	startHandler.baldaHandler = baldaHandler
 
 	return startHandler, ownerStore, tgClient, baldaHandler
 }
