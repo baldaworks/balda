@@ -603,10 +603,10 @@ func validateRemovedRuntimeConfig(cfg BaldaConfig) error {
 		errs = append(errs, "balda.swarm.mode is no longer supported; actor runtime is always on")
 	}
 	if cfg.Webhooks.RemovedMode != nil {
-		errs = append(errs, "balda.webhooks.mode is no longer supported; webhooks publish JetStream commands only")
+		errs = append(errs, "balda.webhooks.mode is no longer supported; webhooks use the always-on runtime")
 	}
 	if cfg.Scheduler.RemovedMode != nil {
-		errs = append(errs, "balda.scheduler.mode is no longer supported; scheduler publishes JetStream commands only")
+		errs = append(errs, "balda.scheduler.mode is no longer supported; scheduling uses the always-on runtime")
 	}
 	if len(errs) == 0 {
 		return nil

@@ -341,6 +341,35 @@ func TestValidateRuntimeConfigLint_AllowsAlwaysOnSwarmConfig(t *testing.T) {
 	}
 }
 
+func TestValidateRemovedRuntimeConfig_AvoidsTransportSpecificModeGuidance(t *testing.T) {
+	t.Parallel()
+
+	err := validateRemovedRuntimeConfig(BaldaConfig{
+		Webhooks:  WebhooksConfig{RemovedMode: true},
+		Scheduler: SchedulerConfig{RemovedMode: true},
+	})
+	if err == nil {
+		t.Fatal("validateRemovedRuntimeConfig() error = nil, want removed mode guidance")
+	}
+	got := err.Error()
+	for _, needle := range []string{
+		"webhooks publish JetStream commands only",
+		"scheduler publishes JetStream commands only",
+	} {
+		if strings.Contains(got, needle) {
+			t.Fatalf("validateRemovedRuntimeConfig() error = %q, still contains transport-specific guidance %q", got, needle)
+		}
+	}
+	for _, needle := range []string{
+		"balda.webhooks.mode is no longer supported; webhooks use the always-on runtime",
+		"balda.scheduler.mode is no longer supported; scheduling uses the always-on runtime",
+	} {
+		if !strings.Contains(got, needle) {
+			t.Fatalf("validateRemovedRuntimeConfig() error = %q, want marker %q", got, needle)
+		}
+	}
+}
+
 func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateJetStreamNames(t *testing.T) {
 	t.Parallel()
 
