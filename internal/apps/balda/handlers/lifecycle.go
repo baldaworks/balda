@@ -151,7 +151,10 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	}
 
 	handlersByID := map[string]http.Handler{
-		bundledBaldaServerID: streamableHandlerForServer(server),
+		bundledBaldaServerID: mcp.NewStreamableHTTPHandler(
+			func(_ *http.Request) *mcp.Server { return server },
+			&mcp.StreamableHTTPOptions{},
+		),
 	}
 	routes := []string{"/mcp", "/mcp/" + bundledBaldaServerID}
 
@@ -173,10 +176,6 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		Msg("bundled MCP listener started")
 
 	return nil
-}
-
-func streamableHandlerForServer(server *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{})
 }
 
 type bundledHTTPServerResult struct {
