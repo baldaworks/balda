@@ -56,21 +56,17 @@ type turnDispatcherParams struct {
 }
 
 func NewTurnDispatcher(params turnDispatcherParams) *TurnDispatcher {
-	dispatcher := newTurnDispatcher(params.Logger.With().Str("component", "balda.turn_dispatcher").Logger())
+	dispatcher := &TurnDispatcher{
+		logger:   params.Logger.With().Str("component", "balda.turn_dispatcher").Logger(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
 	params.LC.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
 			return dispatcher.Shutdown(ctx)
 		},
 	})
 	return dispatcher
-}
-
-func newTurnDispatcher(logger zerolog.Logger) *TurnDispatcher {
-	return &TurnDispatcher{
-		logger:   logger,
-		sessions: make(map[string]*sessionTurnQueue),
-		stopCh:   make(chan struct{}),
-	}
 }
 
 func (d *TurnDispatcher) Enqueue(task TurnTask) (int, error) {

@@ -14,7 +14,11 @@ import (
 func TestTurnDispatcher_PerSessionFIFOQueue(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTurnDispatcher(zerolog.Nop())
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
 	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
 
 	firstStarted := make(chan struct{})
@@ -99,7 +103,11 @@ func TestTurnDispatcher_PerSessionFIFOQueue(t *testing.T) {
 func TestTurnDispatcher_QueueLimit(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTurnDispatcher(zerolog.Nop())
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
 	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
 
 	started := make(chan struct{})
@@ -148,7 +156,11 @@ func TestTurnDispatcher_QueueLimit(t *testing.T) {
 func TestTurnDispatcher_CancelSessionClearsPendingAndCancelsRunning(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTurnDispatcher(zerolog.Nop())
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
 	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
 
 	started := make(chan struct{})
@@ -198,7 +210,11 @@ func TestTurnDispatcher_CancelSessionClearsPendingAndCancelsRunning(t *testing.T
 func TestTurnDispatcher_TaskContextCancellationStopsRunningTask(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTurnDispatcher(zerolog.Nop())
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
 	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
 
 	taskCtx, cancelTask := context.WithCancel(context.Background())
@@ -229,7 +245,11 @@ func TestTurnDispatcher_TaskContextCancellationStopsRunningTask(t *testing.T) {
 func TestTurnDispatcher_SkipsTaskRunWhenTaskContextAlreadyCanceled(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTurnDispatcher(zerolog.Nop())
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
 	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
 
 	started := make(chan struct{})
@@ -270,7 +290,11 @@ func TestTurnDispatcher_SkipsTaskRunWhenTaskContextAlreadyCanceled(t *testing.T)
 func TestTurnDispatcher_AllowsConcurrentSessions(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTurnDispatcher(zerolog.Nop())
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
 	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
 
 	startedA := make(chan struct{})
