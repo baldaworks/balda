@@ -240,10 +240,23 @@ func TestDocumentationContract(t *testing.T) {
 	})
 
 	t.Run("docs avoid stale legacy-runtime key wording", func(t *testing.T) {
-		path := filepath.Join(repoRoot, "docs/balda.md")
+		paths := []string{
+			filepath.Join(repoRoot, "README.md"),
+			filepath.Join(repoRoot, "docs/balda.md"),
+		}
+		for _, path := range paths {
+			body := readFile(t, path)
+			if strings.Contains(body, "legacy runtime keys are rejected") {
+				t.Fatalf("%s still uses stale legacy-runtime key wording", filepath.ToSlash(path))
+			}
+		}
+	})
+
+	t.Run("readme getting-started surface avoids operator-only runtime inspection commands", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "README.md")
 		body := readFile(t, path)
-		if strings.Contains(body, "legacy runtime keys are rejected") {
-			t.Fatalf("%s still uses stale legacy-runtime key wording", filepath.ToSlash(path))
+		if strings.Contains(body, "make jetstream-state") {
+			t.Fatalf("%s still exposes operator-only runtime inspection command", filepath.ToSlash(path))
 		}
 	})
 

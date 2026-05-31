@@ -80,7 +80,7 @@ Start Balda:
 balda start
 ```
 
-Local repo development helper (forces embedded JetStream runtime):
+Local repo development helper:
 
 ```bash
 make dev
@@ -90,12 +90,6 @@ Run fake ingress scenarios (Telegram/webhook/scheduler command publish paths):
 
 ```bash
 make scenarios
-```
-
-Dump JetStream stream/consumer state (requires `nats` CLI and a running local NATS endpoint):
-
-```bash
-make jetstream-state
 ```
 
 Replay projection events through the deterministic projector replay suite:
@@ -265,7 +259,7 @@ Common settings:
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md` and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum Goalkeeper worker/validator iterations for `/goal`; defaults to `25`.
 - `balda.nats.*`: embedded JetStream is required by default, binds to `127.0.0.1` on a random local port, keeps monitoring disabled, and stores JetStream files under `.balda/nats`.
-- Legacy runtime keys are rejected at startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`).
+- Removed runtime keys are rejected at startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`).
 - `balda.swarm` configures command processing for goals, scheduled work, retries, and webhook delivery. The runtime is always on.
 - `balda.swarm.commands.*`: command-processing capacity and timing settings.
 - `balda.swarm.events.*`: internal event-stream settings.
