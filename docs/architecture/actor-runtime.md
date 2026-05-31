@@ -11,7 +11,7 @@ Status: active
 - Command settlement happens after actor side effects complete.
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: session turns, webhook/scheduled work routing, `/goal` execution, outbound delivery, cancellation, and durable memory sync.
-- `/goal` uses Norma's reusable ADK Goalkeeper workflow; it does not dispatch planner/executor/reviewer role actors.
+- `/goal` uses Norma's reusable ADK Goalkeeper workflow.
 - Task progress/results and projected task-event payload summaries redact common secret/token patterns before persistence and delivery.
 - The execution core does not depend on ADK, Balda, JetStream, Telegram, MCP, or provider SDK APIs.
 

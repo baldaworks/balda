@@ -428,6 +428,7 @@ func TestDocumentationContract(t *testing.T) {
 			"ControlActor cancels work",
 			"MemoryActor syncs durable context",
 			"through GoalkeeperActor",
+			"planner/executor/reviewer role actors",
 		}
 		for _, needle := range forbidden {
 			if strings.Contains(section, needle) {
