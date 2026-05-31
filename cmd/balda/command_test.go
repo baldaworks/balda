@@ -174,14 +174,15 @@ balda:
 	}
 }
 
-func TestDefaultBaldaConfig_AvoidsStaleTemplateWording(t *testing.T) {
+func TestDefaultBaldaConfig_AvoidsOldTransportHeavyTemplateWording(t *testing.T) {
 	body := string(defaultBaldaConfig)
 	for _, needle := range []string{
 		"legacy typing / Thinking... progress only",
 		"/goal Goalkeeper worker/validator iteration cap.",
+		"Required internal JetStream command/event bus.",
 	} {
 		if strings.Contains(body, needle) {
-			t.Fatalf("defaultBaldaConfig still contains stale template wording %q", needle)
+			t.Fatalf("defaultBaldaConfig still contains old transport-heavy template wording %q", needle)
 		}
 	}
 }

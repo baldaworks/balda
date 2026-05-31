@@ -451,10 +451,49 @@ func TestDocumentationContract(t *testing.T) {
 			"balda.swarm.dlq.stream",
 			"Goalkeeper worker/validator iterations",
 			"runs the Goalkeeper workflow",
+			"JetStream is required and forced on startup",
+			"JetStream store directory",
+			"embedded JetStream resource caps",
 		}
 		for _, needle := range forbidden {
 			if strings.Contains(section, needle) {
 				t.Fatalf("%s configuration section still exposes internal runtime detail %q", filepath.ToSlash(path), needle)
+			}
+		}
+	})
+
+	t.Run("public runtime config docs avoid transport-mandatory wording", func(t *testing.T) {
+		checks := []struct {
+			path    string
+			needles []string
+		}{
+			{
+				path: filepath.Join(repoRoot, "README.md"),
+				needles: []string{
+					"embedded JetStream is required by default",
+					"keep `balda.nats.jetstream=true`",
+				},
+			},
+			{
+				path: filepath.Join(repoRoot, "docs/balda.md"),
+				needles: []string{
+					"JetStream is required and forced on startup",
+					"keep `balda.nats.jetstream=true`",
+				},
+			},
+			{
+				path: filepath.Join(repoRoot, "cmd/balda/balda.yaml"),
+				needles: []string{
+					"Required internal JetStream command/event bus.",
+				},
+			},
+		}
+		for _, check := range checks {
+			body := readFile(t, check.path)
+			for _, needle := range check.needles {
+				if strings.Contains(body, needle) {
+					t.Fatalf("%s still contains transport-mandatory wording %q", filepath.ToSlash(check.path), needle)
+				}
 			}
 		}
 	})

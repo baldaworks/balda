@@ -108,7 +108,7 @@ balda:
     max_iterations: 25
 
   nats:
-    # Required internal JetStream command/event bus.
+    # Required built-in command/event runtime.
     embedded: true
     host: "127.0.0.1"
     port: -1

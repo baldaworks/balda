@@ -480,9 +480,9 @@ session-start snapshot. New or restored sessions read the latest file.
   - invalid values are clamped to `25`.
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
 - `balda.nats.host` / `port`: embedded listener address (default `127.0.0.1:-1`, random local port)
-- `balda.nats.jetstream`: JetStream is required and forced on startup.
-- `balda.nats.store_dir`: JetStream store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
-- `balda.nats.max_memory` / `max_store`: embedded JetStream resource caps (defaults `256mb` and `2gb`)
+- `balda.nats.jetstream`: built-in command/event runtime toggle; normal installs leave it at the default `true`.
+- `balda.nats.store_dir`: runtime store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
+- `balda.nats.max_memory` / `max_store`: embedded runtime resource caps (defaults `256mb` and `2gb`)
 - removed runtime keys are rejected on startup (`balda.event_bus.*`, `balda.swarm.mode`, `balda.webhooks.mode`, `balda.scheduler.mode`)
 - `balda.swarm`: optional advanced runtime tuning for command handling, retries, backpressure, and failure retention. Most installs should leave it at defaults.
 - `/goal` runs repeated work and validation passes in the current session and workspace until the goal passes validation or `balda.goal.max_iterations` is reached.
@@ -957,7 +957,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 
 ## Troubleshooting
 
-- Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify local disk limits.
+- Startup fails with `jetstream is required` or `create or update stream`: keep the default `balda.nats` settings unless you have a specific local runtime need, ensure `balda.nats.store_dir` is writable, and verify local disk limits.
 - Startup fails with `create jetstream command consumer`/`event projector consumer`: verify `balda.swarm.commands.consumer` uniqueness and avoid concurrent writers against the same embedded NATS store dir.
 - Rising command backlog or redelivery counts in JetStream metadata usually means retrying or deadlettering work; inspect lifecycle events, DLQ stream contents, and logs before increasing `max_ack_pending` or `fetch_batch`.
 - Webhook ingress returns `503 dispatch_failed`: confirm JetStream startup succeeded and command publish acknowledgements are being returned.
