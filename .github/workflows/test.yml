@@ -109,4 +109,4 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: Webhook, scheduler, and goal E2E tests
-        run: go test -race ./internal/apps/balda/handlers -run 'TestInboundWebhookReceiver_AcceptsAndPublishesCommand|TestInboundWebhookReceiver_SessionModePublishesSessionCommand|TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules|TestCommandHandlerSubmitGoalTask_PublishesJetStreamCommandOnly|TestTaskActorStartGoalRecordsProgressBeforePlannerDispatch'
+        run: go test -race ./internal/apps/balda/handlers -run 'TestInboundWebhookReceiver_AcceptsAndPublishesCommand|TestInboundWebhookReceiver_SessionModePublishesSessionCommand|TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules|TestCommandHandlerSubmitGoalTask_PublishesDurableCommandOnly|TestTaskActorStartGoalRecordsProgressBeforePlannerDispatch'
