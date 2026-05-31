@@ -1,6 +1,6 @@
 # Norma Balda (V1)
 
-`balda start` is a channel-aware background ACP service that binds Telegram chats/topics to Balda worker sessions.
+`balda start` is a channel-aware background worker service that binds Telegram chats/topics to Balda worker sessions.
 
 Architecture contracts are maintained in:
 
@@ -14,7 +14,7 @@ Architecture contracts are maintained in:
 - Subagents: one session per Telegram topic (`message_thread_id`) with dedicated git worktree.
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.
 - Output streaming:
-  - Progress updates: non-terminal ADK events emit channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders.
+  - Progress updates: non-terminal provider progress emits channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders.
   - Final assistant response uses `balda.telegram.formatting_mode` (`markdownv2|html|none`; default `markdownv2`).
 - Auth model: one-time owner authorization with startup-generated token.
 
@@ -429,8 +429,8 @@ session-start snapshot. New or restored sessions read the latest file.
   - `none` sends raw text with no formatting mode
   - invalid values fail startup
   - see [Telegram Message Formatting](telegram-formatting.md) for supported tags, unsupported tags, and escaping behavior
-- `balda.telegram.plan_updates`: surface ACP plan snapshots in balda progress (default: `true`)
-  - `true`: DM chats replace generic thinking drafts with plan snapshots when the provider emits plan updates
+- `balda.telegram.plan_updates`: surface work-plan snapshots in balda progress (default: `true`)
+  - `true`: DM chats replace generic thinking placeholders with plan snapshots when the provider emits plan updates
   - `true`: public chats/topics send a plain-text message for each distinct plan snapshot
   - `false`: balda uses `typing` plus DM `Thinking...` drafts instead of plan snapshots
 - `balda.telegram.webhook.enabled`: enable local HTTP webhook endpoint (`true` => webhook mode, `false` => polling mode; default: `false`)
@@ -460,7 +460,7 @@ session-start snapshot. New or restored sessions read the latest file.
 
 - `balda.working_dir`: optional balda working directory (defaults to process CWD)
 - `balda.state_dir`: balda state directory for persistent balda SQLite state (`state.db`).
-  - Stores owner/app KV, `balda.state` MCP KV, session metadata, task/read-model state, optional ADK session history, and Telegram polling offset.
+  - Stores owner/app KV, `balda.state` MCP KV, session metadata, task/read-model state, optional session history, and Telegram polling offset.
   - Schema is migration-versioned and auto-applied on startup.
   - Goose `goose_db_version` is the migration version authority. Legacy imported
     databases may still contain `schema_migrations`, but balda does not use it
@@ -468,8 +468,8 @@ session-start snapshot. New or restored sessions read the latest file.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
 - `balda.sessions.persistence`: `sqlite|memory` (default `sqlite`)
-  - `sqlite`: ADK session events and state are persisted in `state.db` and reused after restart until the session is explicitly closed.
-  - `memory`: ADK conversation/runtime state is process-local; only Balda metadata is persisted.
+  - `sqlite`: session history and state are persisted in `state.db` and reused after restart until the session is explicitly closed.
+  - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot `MEMORY.md` or register `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum `/goal` work-validation iterations (default `25`)
@@ -483,7 +483,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `balda.memory.read` reads the file from MCP.
   - `balda.memory.remember` appends facts to the file from MCP.
-  - memory is snapshotted into ADK session state when a session starts or restores; active sessions are not refreshed after writes.
+  - memory is snapshotted into session state when a session starts or restores; active sessions are not refreshed after writes.
 - optional session-start operator instructions use `${balda.state_dir}/SOUL.md`
   - Balda reads the file on session start/restore when it exists; this is independent from `balda.memory.enabled`.
   - Balda does not expose MCP mutation for `SOUL.md`; edit the file directly.
@@ -526,7 +526,7 @@ Session key:
 - The owner session is bootstrapped for the bound owner DM chat (`topic_id=0`) during activation/startup when an owner is already registered.
 
 Balda always persists session metadata in `state.db` for lazy restore.
-By default, Balda also persists ADK session events and state in `state.db` until the session is explicitly closed. Set `balda.sessions.persistence=memory` to keep ADK conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
+By default, Balda also persists session history and state in `state.db` until the session is explicitly closed. Set `balda.sessions.persistence=memory` to keep conversation/runtime state process-local while retaining Balda session metadata for lazy restore.
 
 ## Message Flow
 
@@ -536,15 +536,15 @@ By default, Balda also persists ADK session events and state in `state.db` until
    - In DM chats, Balda processes non-command text messages normally and preserves reply context for reply messages.
 2. Balda resolves session by `(chat_id, topic_id)`.
 3. If the session is missing in memory, balda attempts lazy restore from persisted metadata.
-4. Balda calls ADK runner for that session.
-5. Balda streams non-terminal ADK event progress to Telegram via chat actions (and DM thinking draft updates).
+4. Balda calls the configured provider runtime for that session.
+5. Balda streams non-terminal provider progress to Telegram via chat actions (and DM thinking draft updates).
 
 ## Telegram Messaging Behavior
 
 Per model turn:
 
-1. Non-terminal ADK events send throttled typing indicators for the same chat/topic; DM chats also emit throttled thinking placeholders.
-   When `balda.telegram.plan_updates=true`, ACP plan snapshots replace generic DM thinking drafts and are sent as plain-text progress messages in public chats/topics.
+1. Non-terminal provider progress sends throttled typing indicators for the same chat/topic; DM chats also emit throttled thinking placeholders.
+   When `balda.telegram.plan_updates=true`, work-plan snapshots replace generic DM thinking placeholders and are sent as plain-text progress messages in public chats/topics.
 2. Final assistant text uses `balda.telegram.formatting_mode`:
    - `markdownv2`: model writes Markdown/plain text; Balda converts it to Telegram MarkdownV2.
    - `html`: model writes Telegram HTML; Balda escapes unsafe raw text and preserves supported Telegram HTML tags.
@@ -922,7 +922,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 ### Session restore/create behavior
 
 - Balda restores persisted session metadata on first message after restart.
-- When `balda.sessions.persistence=sqlite`, restore reuses the stable ADK session ID and prior ADK event/state history.
+- When `balda.sessions.persistence=sqlite`, restore reuses the stable session ID and prior session history/state.
 - Persisted session label is reused as-is for restore; if missing, balda falls back to label `auto`.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
 - If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that `balda.workspace.import` can retry the sync later.
@@ -980,8 +980,8 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 6. `/topic` without name returns usage error.
 7. Restart clears active process sessions, but topic sessions are lazy-restored from persisted metadata.
 8. Polling mode resumes from persisted Telegram offset in balda state DB.
-9. Non-terminal ADK event progress sends throttled typing indicators in DM and public chats; thinking placeholders are DM-only.
+9. Non-terminal provider progress sends throttled typing indicators in DM and public chats; thinking placeholders are DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode` with fallback retry without formatting on transport or formatting-validation errors.
 11. `/close` in a topic resets history and closes that topic; `/close` in the owner DM main chat resets only the owner session.
-12. With `balda.sessions.persistence=sqlite`, restart restores ADK conversation history and explicit `/close` clears it for the current session.
+12. With `balda.sessions.persistence=sqlite`, restart restores conversation history and explicit `/close` clears it for the current session.
 13. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.
