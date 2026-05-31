@@ -150,7 +150,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			}
 			msg := "You are already registered as the bot owner."
 			if startErr != nil {
-				msg += "\n\n" + baldaStartFailureMessage()
+				msg += "\n\nCould not start balda provider session. Please try again."
 			}
 			if err := h.messenger.SendPlain(ctx, chatID, msg, 0); err != nil {
 				return err
@@ -185,14 +185,21 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		return nil
 	}
 
-	info := extractUserInfo(event.Message.From)
+	username := ""
+	if event.Message.From.Username != nil {
+		username = *event.Message.From.Username
+	}
+	lastName := ""
+	if event.Message.From.LastName != nil {
+		lastName = *event.Message.From.LastName
+	}
 
 	var hasTopicsEnabled bool
 	if event.Message.Chat.IsForum != nil {
 		hasTopicsEnabled = *event.Message.Chat.IsForum
 	}
 
-	registered, err := h.ownerStore.RegisterOwner(userID, chatID, info.username, info.firstName, info.lastName, hasTopicsEnabled)
+	registered, err := h.ownerStore.RegisterOwner(userID, chatID, username, event.Message.From.FirstName, lastName, hasTopicsEnabled)
 	if err != nil {
 		log.Error().Err(err).Int64("user_id", userID).Msg("Failed to register owner")
 		if sendErr := h.messenger.SendPlain(ctx, chatID, "Failed to register owner. Please try again.", 0); sendErr != nil {
@@ -210,42 +217,23 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 
 	log.Info().
 		Int64("user_id", userID).
-		Str("username", info.username).
+		Str("username", username).
 		Msg("Owner registered successfully")
 
 	startErr := h.activateBalda(ctx, userID, chatID)
-	name := info.firstName
+	name := event.Message.From.FirstName
 	if name == "" {
 		name = "Owner"
 	}
 
 	text := fmt.Sprintf("Congratulations, %s! You are now registered as the bot owner.", name)
 	if startErr != nil {
-		text += "\n\n" + baldaStartFailureMessage()
+		text += "\n\nCould not start balda provider session. Please try again."
 	}
 	if err := h.messenger.SendPlain(ctx, chatID, text, 0); err != nil {
 		return err
 	}
 	return nil
-}
-
-type userInfo struct {
-	username  string
-	firstName string
-	lastName  string
-}
-
-func extractUserInfo(from *client.User) userInfo {
-	info := userInfo{
-		firstName: from.FirstName,
-	}
-	if from.Username != nil {
-		info.username = *from.Username
-	}
-	if from.LastName != nil {
-		info.lastName = *from.LastName
-	}
-	return info
 }
 
 func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64) error {
@@ -262,10 +250,6 @@ func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64)
 		return err
 	}
 	return nil
-}
-
-func baldaStartFailureMessage() string {
-	return "Could not start balda provider session. Please try again."
 }
 
 func (h *StartHandler) handleInviteStart(ctx context.Context, chatID, userID int64, userIDStr, token string, from *client.User) error {
@@ -308,14 +292,15 @@ func (h *StartHandler) handleInviteStart(ctx context.Context, chatID, userID int
 		return nil
 	}
 
-	info := extractUserInfo(from)
 	collaborator := auth.Collaborator{
-		UserID:    userIDStr,
-		Username:  info.username,
-		FirstName: info.firstName,
-		AddedBy:   invite.CreatedBy,
-		AddedAt:   time.Now(),
+		UserID:  userIDStr,
+		AddedBy: invite.CreatedBy,
+		AddedAt: time.Now(),
 	}
+	if from.Username != nil {
+		collaborator.Username = *from.Username
+	}
+	collaborator.FirstName = from.FirstName
 	if err := h.collaboratorStore.AddCollaborator(ctx, collaborator); err != nil {
 		log.Error().Err(err).Msg("failed to add collaborator from invite")
 		if err := h.messenger.SendPlain(ctx, chatID, "Failed to complete registration. Please try again.", 0); err != nil {
