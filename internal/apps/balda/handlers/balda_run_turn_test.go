@@ -737,7 +737,7 @@ func TestRunTurn_SendsGenericMessageWhenOnlyNonFinalTextExistsOnTurnComplete(t *
 			Role: genai.RoleModel,
 			Parts: []*genai.Part{
 				{FunctionCall: &genai.FunctionCall{Name: "tool.one"}},
-				{Text: "old fallback"},
+				{Text: "previous fallback"},
 			},
 		}
 
