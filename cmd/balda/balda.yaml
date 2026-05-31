@@ -1,4 +1,4 @@
-# Norma Balda Bot Configuration
+# Balda Bot Configuration
 # Environment variables override these settings with BALDA_ prefix
 # Example: BALDA_TELEGRAM_TOKEN=my-token
 

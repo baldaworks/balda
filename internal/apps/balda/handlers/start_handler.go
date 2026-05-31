@@ -164,7 +164,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 	}
 
 	if args.mode == "" {
-		if err := h.messenger.SendPlain(ctx, chatID, "Welcome to Norma Balda Bot!\n\nTo authenticate, send /start owner=<your_owner_token>", 0); err != nil {
+		if err := h.messenger.SendPlain(ctx, chatID, "Welcome to Balda Bot!\n\nTo authenticate, send /start owner=<your_owner_token>", 0); err != nil {
 			return err
 		}
 		return nil

@@ -1,4 +1,4 @@
-# Norma Balda (V1)
+# Balda (V1)
 
 `balda start` is a channel-aware background worker service that binds Telegram chats/topics to Balda worker sessions.
 
