@@ -44,16 +44,6 @@ type taskControlActorParams struct {
 	Logger         zerolog.Logger
 }
 
-func newTaskControlActor(params taskControlActorParams) swarm.Actor {
-	return &taskControlActor{
-		turnDispatcher: params.TurnDispatcher,
-		tasks:          params.TaskService,
-		taskRuns:       params.TaskRuns,
-		channel:        params.Channel,
-		logger:         params.Logger.With().Str("component", "balda.task_control_actor").Logger(),
-	}
-}
-
 func (a *taskControlActor) Address() string {
 	return "system:control"
 }

@@ -33,12 +33,26 @@ var Module = fx.Module("balda_actors",
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			newTaskDeliveryActor,
+			func(params taskDeliveryActorParams) swarm.Actor {
+				return &taskDeliveryActor{
+					channel: params.Channel,
+					tasks:   params.TaskService,
+					logger:  params.Logger.With().Str("component", "balda.task_delivery_actor").Logger(),
+				}
+			},
 			fx.As(new(swarm.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			newTaskControlActor,
+			func(params taskControlActorParams) swarm.Actor {
+				return &taskControlActor{
+					turnDispatcher: params.TurnDispatcher,
+					tasks:          params.TaskService,
+					taskRuns:       params.TaskRuns,
+					channel:        params.Channel,
+					logger:         params.Logger.With().Str("component", "balda.task_control_actor").Logger(),
+				}
+			},
 			fx.As(new(swarm.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),

@@ -33,14 +33,6 @@ type taskDeliveryActorParams struct {
 	Logger      zerolog.Logger
 }
 
-func newTaskDeliveryActor(params taskDeliveryActorParams) swarm.Actor {
-	return &taskDeliveryActor{
-		channel: params.Channel,
-		tasks:   params.TaskService,
-		logger:  params.Logger.With().Str("component", "balda.task_delivery_actor").Logger(),
-	}
-}
-
 func (a *taskDeliveryActor) Address() string {
 	return swarm.WildcardAddress(swarm.ActorTypeDelivery)
 }
