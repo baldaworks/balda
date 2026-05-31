@@ -63,8 +63,8 @@ make projection-replay
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
 both an owner auth command and Telegram auth URL. The default token storage is
 CWD `.env` as `BALDA_TELEGRAM_TOKEN`.
-To preserve older state, rename `.config/balda/balda.db` to
-`.config/balda/state.db` or copy `.config/relay/relay.db` there.
+To preserve older Balda state, rename `.config/balda/balda.db` to
+`.config/balda/state.db` before starting.
 
 Owner onboarding is completed in a direct message with the bot by opening the
 printed auth URL or sending:

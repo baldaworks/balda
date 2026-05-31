@@ -71,8 +71,8 @@ balda init
 `balda init` detects provider CLIs, validates the Telegram token, writes
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
 the next commands. By default, the Telegram token is stored in `.env`.
-To preserve older state, rename `.config/balda/balda.db` to
-`.config/balda/state.db` or copy `.config/relay/relay.db` there.
+To preserve older Balda state, rename `.config/balda/balda.db` to
+`.config/balda/state.db` before starting.
 
 Start Balda:
 
