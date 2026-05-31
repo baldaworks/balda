@@ -47,7 +47,7 @@ Status: active
   - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
   - and lifecycle events suitable for external telemetry.
 - Provider runtime: `balda.provider` selects the single app-scoped ADK provider runtime used by all Balda sessions and `/goal` work-validation runs.
-- Delivery boundary: Balda maps JetStream messages inside `eventbus/nats` into actorlayer `Source`/`Delivery` contracts; runtime and product actors never consume NATS/JetStream APIs directly.
+- Delivery boundary: Balda maps transport messages inside `eventbus/nats` into actorlayer `Source`/`Delivery` contracts; runtime and product actors never consume transport APIs directly.
 
 ### Ownership split
 
@@ -75,7 +75,7 @@ Status: active
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
 - Telegram/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers inject `swarm.ActorDispatcher` directly, publish actor commands, and do not own actor behavior or actor registration.
 - ADK session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
-- JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and Balda `ActorDispatcher` contracts.
+- Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and Balda `ActorDispatcher` contracts.
 - The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: `ActorDispatcher`, `EventPublisher`, actorlayer `Source`, `EventConsumer`, and `BusDrainer`.
 - Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.
 - Balda must not grow a local `norma` or `adapters` package under `internal/apps/balda`, or actor-runtime selector packages. Future generic actor adapters belong to Norma-owned public packages such as `github.com/normahq/norma/pkg/actoradapter/...`.

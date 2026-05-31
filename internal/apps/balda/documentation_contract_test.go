@@ -608,6 +608,8 @@ func TestDocumentationContract(t *testing.T) {
 			"Goalkeeper worker/validator runs",
 			"Balda adapts JetStream commands into actorlayer deliveries",
 			"The execution core does not depend on ADK, Balda, JetStream, Telegram, MCP, or provider SDK APIs.",
+			"Balda maps JetStream messages inside `eventbus/nats` into actorlayer `Source`/`Delivery` contracts",
+			"JetStream command delivery and settlement live in `internal/apps/balda/eventbus/nats`",
 		}
 		for _, section := range sections {
 			for _, needle := range forbidden {
