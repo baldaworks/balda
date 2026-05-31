@@ -191,7 +191,15 @@ func (r *Runtime) Publish(ctx context.Context, event actorengine.Event) {
 	if r.events == nil {
 		return
 	}
-	if err := r.events.PublishEvent(ctx, SubjectEventCommandInProgress, commandNoopEvent(env)); err != nil {
+	inProgressEnv := env
+	inProgressEnv.ID = strings.TrimSpace(env.ID) + ":event:in_progress"
+	inProgressEnv.Namespace = NamespaceTelemetry
+	inProgressEnv.Kind = "command_event"
+	inProgressEnv.DedupeKey = inProgressEnv.ID
+	if strings.TrimSpace(inProgressEnv.PayloadJSON) == "" {
+		inProgressEnv.PayloadJSON = `{"ok":true}`
+	}
+	if err := r.events.PublishEvent(ctx, SubjectEventCommandInProgress, inProgressEnv); err != nil {
 		r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to publish command in-progress event")
 	}
 }
@@ -221,18 +229,6 @@ func retryExhaustedDelivery(delivery actorengine.Delivery) bool {
 		return false
 	}
 	return RetryExhausted(delivery.Attempt(), delivery.MaxAttempts())
-}
-
-func commandNoopEvent(env Envelope) Envelope {
-	out := env
-	out.ID = strings.TrimSpace(env.ID) + ":event:in_progress"
-	out.Namespace = NamespaceTelemetry
-	out.Kind = "command_event"
-	out.DedupeKey = out.ID
-	if strings.TrimSpace(out.PayloadJSON) == "" {
-		out.PayloadJSON = `{"ok":true}`
-	}
-	return out
 }
 
 type runtimeDelivery struct {
