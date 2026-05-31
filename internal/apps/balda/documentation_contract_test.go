@@ -218,6 +218,19 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("user-facing docs avoid stale legacy labels for current progress behavior", func(t *testing.T) {
+		paths := []string{
+			filepath.Join(repoRoot, "README.md"),
+			filepath.Join(repoRoot, "docs/balda.md"),
+		}
+		for _, path := range paths {
+			body := readFile(t, path)
+			if strings.Contains(body, "legacy progress behavior") {
+				t.Fatalf("%s still describes current progress behavior as legacy", filepath.ToSlash(path))
+			}
+		}
+	})
+
 	t.Run("agent docs use merge pull workflow", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "AGENTS.md")
 		body := readFile(t, path)

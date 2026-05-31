@@ -443,7 +443,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.telegram.plan_updates`: surface ACP plan snapshots in balda progress (default: `true`)
   - `true`: DM chats replace generic thinking drafts with plan snapshots when the provider emits plan updates
   - `true`: public chats/topics send a plain-text message for each distinct plan snapshot
-  - `false`: balda keeps legacy progress behavior (`typing` plus DM `Thinking...` drafts)
+  - `false`: balda uses `typing` plus DM `Thinking...` drafts instead of plan snapshots
 - `balda.telegram.webhook.enabled`: enable local HTTP webhook endpoint (`true` => webhook mode, `false` => polling mode; default: `false`)
 - `balda.telegram.webhook.url`: outgoing Telegram webhook URL (required when `balda.telegram.webhook.enabled=true`)
 - `balda.telegram.webhook.auth_token`: webhook auth token required when `balda.telegram.webhook.enabled=true`; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`
