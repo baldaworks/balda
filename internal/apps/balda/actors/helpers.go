@@ -136,7 +136,13 @@ func enrichGitArtifacts(ctx context.Context, artifacts taskArtifactSnapshot) tas
 func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArtifactSnapshot) string {
 	result := parseTaskResult(task.ResultJSON)
 	parsedOutcome, hasOutcome := reviewableOutcomeFromResult(result)
-	goalReached := boolFromResult(result, "goal_reached")
+	goalReached := false
+	switch typed := result["goal_reached"].(type) {
+	case bool:
+		goalReached = typed
+	case string:
+		goalReached = strings.EqualFold(strings.TrimSpace(typed), "true")
+	}
 	executorOutput := firstNonEmpty(stringFromResult(result, "executor_output"), stringFromResult(result, "final_text"))
 	reviewerOutput := firstNonEmpty(stringFromResult(result, "reviewer_output"), stringFromResult(result, "reviewer_feedback"))
 	executorOutput = redactSecrets(executorOutput)
@@ -242,21 +248,6 @@ func stringFromResult(result map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func boolFromResult(result map[string]any, key string) bool {
-	value, ok := result[key]
-	if !ok {
-		return false
-	}
-	switch typed := value.(type) {
-	case bool:
-		return typed
-	case string:
-		return strings.EqualFold(strings.TrimSpace(typed), "true")
-	default:
-		return false
-	}
 }
 
 func oneLine(raw string) string {
