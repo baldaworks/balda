@@ -187,10 +187,9 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped provider runtime selected by `balda.provider` and the per-session state.
 - `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, tasks, projections, memory, and delivery outbox rows.
 
-Do not add Balda-local actor adapter packages such as `internal/apps/balda/norma`,
-`internal/apps/balda/adapters`, or config selectors for execution/delivery
-providers. Generic actor adapter packages are Norma-owned. Balda consumes
-Norma actorlayer and keeps product policy in Balda.
+Do not add Balda-local actor adapter packages or execution/delivery selector
+layers. Generic actor adapter packages are Norma-owned. Balda consumes Norma
+actorlayer and keeps product policy in Balda.
 
 ## Startup Order (Required)
 
