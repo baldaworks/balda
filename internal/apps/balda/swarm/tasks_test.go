@@ -30,7 +30,7 @@ func (b *recordingTaskCommandBus) PublishEvent(_ context.Context, subject string
 	return nil
 }
 
-func TestTaskServiceAppendEventPublishesJetStreamEvent(t *testing.T) {
+func TestTaskServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {

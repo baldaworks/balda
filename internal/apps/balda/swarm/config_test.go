@@ -2,7 +2,7 @@ package swarm
 
 import "testing"
 
-func TestConfigNormalized_DefaultsToJetStreamRuntime(t *testing.T) {
+func TestConfigNormalized_DefaultsToDurableRuntime(t *testing.T) {
 	t.Parallel()
 
 	got, err := (Config{}).Normalized()

@@ -71,7 +71,7 @@ func TestMemoryActorFactExtractWritesFacts(t *testing.T) {
 
 	store := memory.NewStore(t.TempDir(), true)
 	actor := newMemoryActorWithStore(store)
-	payload := `{"operation":"fact_extract","scope":"default","task_id":"task-1","session_id":"session-1","content":"fact: Balda uses JetStream\n- actor lanes are serialized\n\nKeep docs updated"}`
+	payload := `{"operation":"fact_extract","scope":"default","task_id":"task-1","session_id":"session-1","content":"fact: Balda uses durable command runtime\n- actor lanes are serialized\n\nKeep docs updated"}`
 	if err := actor.Handle(context.Background(), memoryEnvelopeForTest(NamespaceMemorySync, memoryOpFactExtract, payload)); err != nil {
 		t.Fatalf("Handle(fact_extract) error = %v, want nil", err)
 	}
@@ -87,7 +87,7 @@ func TestMemoryActorFactExtractWritesFacts(t *testing.T) {
 		}
 	}
 	want := []string{
-		"Balda uses JetStream",
+		"Balda uses durable command runtime",
 		"actor lanes are serialized",
 		"Keep docs updated",
 	}
