@@ -83,7 +83,7 @@ func TestBus_DispatchSucceedsWhenAcceptedEventCannotPublish(t *testing.T) {
 func TestBus_CommandLifecycleEventsUseDistinctDedupeIDs(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{Commands: swarm.CommandConfig{FetchWait: "50ms"}},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -131,7 +131,7 @@ func TestBus_CommandLifecycleEventsUseDistinctDedupeIDs(t *testing.T) {
 func TestBus_CommandRunningEventFailureDoesNotBlockCommandHandling(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "1s",
 			FetchWait:  "50ms",
@@ -193,7 +193,7 @@ func TestBus_CommandRunningEventFailureDoesNotBlockCommandHandling(t *testing.T)
 func TestBus_CommandAckedEventFailureDoesNotRedeliverCompletedCommand(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "100ms",
 			FetchWait:  "50ms",
@@ -252,7 +252,7 @@ func TestBus_CommandAckedEventFailureDoesNotRedeliverCompletedCommand(t *testing
 func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "100ms",
 			FetchWait:  "50ms",
@@ -300,7 +300,7 @@ func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) 
 func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "100ms",
 			FetchWait:  "50ms",
@@ -383,7 +383,7 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "100ms",
 			FetchWait:  "50ms",
@@ -440,7 +440,7 @@ func TestRetryDelayAppliesExponentialDelayWithJitter(t *testing.T) {
 func TestBus_CommandSuccessSettlesWithCanceledParent(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "100ms",
 			FetchWait:  "50ms",
@@ -484,7 +484,7 @@ func TestBus_CommandSuccessSettlesWithCanceledParent(t *testing.T) {
 func TestBus_CommandDLQSettlesWithCanceledParent(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "100ms",
 			FetchWait:  "50ms",
@@ -523,7 +523,7 @@ func TestBus_CommandDLQSettlesWithCanceledParent(t *testing.T) {
 func TestBus_RunHandlesCommandsConcurrently(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			FetchBatch:    2,
 			MaxAckPending: 2,
@@ -577,7 +577,7 @@ func TestBus_RunHandlesCommandsConcurrently(t *testing.T) {
 func TestBus_RunLimitsInFlightToFetchBatch(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			FetchBatch:    2,
 			MaxAckPending: 8,
@@ -664,7 +664,7 @@ func TestBus_CommandWorkerLimitUsesFetchBatch(t *testing.T) {
 func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -743,7 +743,7 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 func TestBus_DispatchReportsDuplicate(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -823,7 +823,7 @@ func TestBus_DispatchReportsDuplicate(t *testing.T) {
 func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -855,7 +855,7 @@ func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
 func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -905,7 +905,7 @@ func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
 func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -962,7 +962,7 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:     fxtest.NewLifecycle(t),
-		Config: baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config: baldaeventbus.Config{Embedded: true},
 		Swarm: swarm.Config{Commands: swarm.CommandConfig{
 			AckWait:    "100ms",
 			FetchWait:  "50ms",
@@ -1037,7 +1037,7 @@ func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
 func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -1087,7 +1087,7 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{Commands: swarm.CommandConfig{MaxDeliver: 1, FetchWait: "50ms"}},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),
@@ -1143,7 +1143,7 @@ func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
 
 func TestBus_EnsureRuntimeRequiresTransport(t *testing.T) {
 	cfg, err := resolveConfig(
-		baldaeventbus.Config{Embedded: true, JetStream: true},
+		baldaeventbus.Config{Embedded: true},
 		swarm.Config{},
 		t.TempDir(),
 	)
@@ -1160,7 +1160,7 @@ func TestBus_EnsureRuntimeRequiresTransport(t *testing.T) {
 func TestBus_EnsureRuntimeCreatesRequiredStreamsAndConsumers(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarm.Config{},
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),

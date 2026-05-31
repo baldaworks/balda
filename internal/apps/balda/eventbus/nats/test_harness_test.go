@@ -21,7 +21,7 @@ func StartTestRuntime(t *testing.T, swarmCfg swarm.Config) *TestRuntimeHarness {
 	t.Helper()
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true, JetStream: true},
+		Config:     baldaeventbus.Config{Embedded: true},
 		Swarm:      swarmCfg,
 		WorkingDir: t.TempDir(),
 		Logger:     zerolog.Nop(),

@@ -13,20 +13,20 @@ func TestConfigNormalized_DefaultsToBuiltInRuntime(t *testing.T) {
 	if cfg.Host != "127.0.0.1" || cfg.Port != -1 {
 		t.Fatalf("address = %s:%d, want 127.0.0.1:-1", cfg.Host, cfg.Port)
 	}
-	if !cfg.JetStream {
-		t.Fatal("JetStream = false, want built-in runtime enabled")
-	}
 	if cfg.StoreDir != ".balda/nats" {
 		t.Fatalf("StoreDir = %q, want .balda/nats", cfg.StoreDir)
 	}
 }
 
-func TestConfigNormalized_ForcesBuiltInRuntimeOn(t *testing.T) {
-	cfg, err := (Config{Embedded: true, JetStream: false}).Normalized()
+func TestConfigNormalized_LeavesExternalRuntimeDisabledWhenURLsAreProvided(t *testing.T) {
+	cfg, err := (Config{Embedded: false, URLs: []string{"nats://example:4222"}}).Normalized()
 	if err != nil {
-		t.Fatalf("Normalized() error = %v", err)
+		t.Fatalf("Normalized() error = %v, want nil", err)
 	}
-	if !cfg.JetStream {
-		t.Fatal("JetStream = false, want forced built-in runtime")
+	if cfg.Embedded {
+		t.Fatal("Embedded = true, want false when URLs are provided")
+	}
+	if got, want := cfg.URLs, []string{"nats://example:4222"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("URLs = %#v, want %#v", got, want)
 	}
 }
