@@ -39,7 +39,7 @@ func TestIsJetStreamQueuePressure(t *testing.T) {
 }
 
 func TestBus_DispatchAndConsumeBuiltInRuntime(t *testing.T) {
-	h := StartTestJetStream(t, swarm.Config{})
+	h := StartTestRuntime(t, swarm.Config{})
 	bus := h.Bus
 
 	env := commandTestEnvelope("env-1")
@@ -68,7 +68,7 @@ func TestBus_DispatchAndConsumeBuiltInRuntime(t *testing.T) {
 }
 
 func TestBus_DispatchSucceedsWhenAcceptedEventCannotPublish(t *testing.T) {
-	h := StartTestJetStream(t, swarm.Config{})
+	h := StartTestRuntime(t, swarm.Config{})
 	bus := h.Bus
 	if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
 		t.Fatalf("DeleteStream(events) error = %v", err)

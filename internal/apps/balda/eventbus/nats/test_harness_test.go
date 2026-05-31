@@ -10,14 +10,14 @@ import (
 	"go.uber.org/fx/fxtest"
 )
 
-// TestJetStreamHarness provides a reusable built-in runtime command bus for tests.
-type TestJetStreamHarness struct {
+// TestRuntimeHarness provides a reusable built-in runtime command bus for tests.
+type TestRuntimeHarness struct {
 	Bus *Bus
 }
 
-// StartTestJetStream creates a built-in runtime bus backed by a temp store dir.
+// StartTestRuntime creates a built-in runtime bus backed by a temp store dir.
 // It ensures required streams/consumers are available through NewBus startup.
-func StartTestJetStream(t *testing.T, swarmCfg swarm.Config) *TestJetStreamHarness {
+func StartTestRuntime(t *testing.T, swarmCfg swarm.Config) *TestRuntimeHarness {
 	t.Helper()
 	bus, err := NewBus(Params{
 		LC:         fxtest.NewLifecycle(t),
@@ -27,14 +27,14 @@ func StartTestJetStream(t *testing.T, swarmCfg swarm.Config) *TestJetStreamHarne
 		Logger:     zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("StartTestJetStream() NewBus error = %v", err)
+		t.Fatalf("StartTestRuntime() NewBus error = %v", err)
 	}
 	t.Cleanup(func() { _ = bus.Drain(context.Background()) })
-	return &TestJetStreamHarness{Bus: bus}
+	return &TestRuntimeHarness{Bus: bus}
 }
 
 // Dispatch is a test command publisher helper for fixtures/scenarios.
-func (h *TestJetStreamHarness) Dispatch(t *testing.T, env swarm.Envelope) *swarm.DispatchReceipt {
+func (h *TestRuntimeHarness) Dispatch(t *testing.T, env swarm.Envelope) *swarm.DispatchReceipt {
 	t.Helper()
 	ack, err := h.Bus.Dispatch(context.Background(), env)
 	if err != nil {
