@@ -1,6 +1,6 @@
 # Norma Balda (V1)
 
-`balda start` is a channel-aware background ACP service that currently binds Telegram chats/topics to ADK agents created by Norma's agent factory.
+`balda start` is a channel-aware background ACP service that binds Telegram chats/topics to Balda worker sessions.
 
 Architecture contracts are maintained in:
 
@@ -8,14 +8,14 @@ Architecture contracts are maintained in:
 
 ## Summary
 
-- Runtime stack: `tgbotkit/runtime` + Google ADK runners.
+- Runtime stack: Telegram channel runtime plus the configured Balda provider runtime.
 - Telegram is the first supported Balda channel; future channels should be added as top-level config siblings such as `balda.whatsapp`.
 - Main agent: Balda app key `balda.provider` (profile overrides via `profiles.<profile>.balda.provider`).
 - Subagents: one session per Telegram topic (`message_thread_id`) with dedicated git worktree.
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.
 - Output streaming:
   - Progress updates: non-terminal ADK events emit channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders.
-  - Final assistant response: Telegram Bot API `sendMessage` with `balda.telegram.formatting_mode` (`markdownv2|html|none`; default `markdownv2`).
+  - Final assistant response uses `balda.telegram.formatting_mode` (`markdownv2|html|none`; default `markdownv2`).
 - Auth model: one-time owner authorization with startup-generated token.
 
 ## User Onboarding Reference
