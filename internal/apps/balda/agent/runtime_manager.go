@@ -39,8 +39,8 @@ type RuntimeManagerParams struct {
 	Logger            zerolog.Logger
 }
 
-// GoalkeeperRuntimeConfig configures a per-run /goal work-validation runtime.
-type GoalkeeperRuntimeConfig struct {
+// GoalRuntimeConfig configures a per-run /goal work-validation runtime.
+type GoalRuntimeConfig struct {
 	SessionID     string
 	UserID        string
 	BranchName    string
@@ -48,8 +48,8 @@ type GoalkeeperRuntimeConfig struct {
 	MaxIterations uint
 }
 
-// GoalkeeperRuntime owns the per-run /goal work-validation runner and agents.
-type GoalkeeperRuntime struct {
+// GoalRuntime owns the per-run /goal work-validation runner and agents.
+type GoalRuntime struct {
 	Agent  adkagent.Agent
 	Runner *runner.Runner
 }
@@ -63,7 +63,7 @@ type childRuntimeBase struct {
 }
 
 // Close releases child provider agents created for the workflow.
-func (r *GoalkeeperRuntime) Close() error {
+func (r *GoalRuntime) Close() error {
 	if r == nil {
 		return nil
 	}
@@ -150,12 +150,12 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	return runtime, nil
 }
 
-// BuildGoalkeeperRuntime creates a per-run /goal work-validation runtime using
+// BuildGoalRuntime creates a per-run /goal work-validation runtime using
 // the app-scoped session service so the workflow runs in the current Balda session.
-func (m *RuntimeManager) BuildGoalkeeperRuntime(
+func (m *RuntimeManager) BuildGoalRuntime(
 	ctx context.Context,
-	cfg GoalkeeperRuntimeConfig,
-) (*GoalkeeperRuntime, error) {
+	cfg GoalRuntimeConfig,
+) (*GoalRuntime, error) {
 	base, err := m.childRuntimeBase(ctx)
 	if err != nil {
 		return nil, err
@@ -176,7 +176,7 @@ func (m *RuntimeManager) BuildGoalkeeperRuntime(
 		return nil, fmt.Errorf("create goalkeeper runtime session: %w", err)
 	}
 
-	workflow, err := base.builder.BuildGoalkeeperWorkflow(ctx, GoalkeeperBuildConfig{
+	workflow, err := base.builder.BuildGoalWorkflow(ctx, GoalBuildConfig{
 		ProviderID:        base.providerID,
 		SessionID:         cfg.SessionID,
 		BranchName:        cfg.BranchName,
@@ -192,7 +192,7 @@ func (m *RuntimeManager) BuildGoalkeeperRuntime(
 		_ = closeRuntimeAgent(workflow)
 		return nil, err
 	}
-	return &GoalkeeperRuntime{
+	return &GoalRuntime{
 		Agent:  workflow,
 		Runner: r,
 	}, nil

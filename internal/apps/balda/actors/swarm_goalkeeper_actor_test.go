@@ -32,14 +32,14 @@ func TestGoalkeeperActorCompletesPassingRun(t *testing.T) {
 		tasks:          tasks,
 		dispatcher:     dispatcher,
 		sessions:       manager,
-		runtimeBuilder: &fakeGoalkeeperRuntimeBuilder{t: t, finalValidatorText: "verdict: pass\nvalidated"},
+		runtimeBuilder: &fakeGoalRuntimeBuilder{t: t, finalValidatorText: "verdict: pass\nvalidated"},
 		taskRuns:       NewTaskRunRegistry(),
 		maxIters:       3,
 		logger:         zerolog.Nop(),
 	}
-	env, err := GoalkeeperTaskEnvelope(locator, "ship release", "101", 3)
+	env, err := GoalTaskEnvelope(locator, "ship release", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalkeeperTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalTaskEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -62,15 +62,15 @@ func TestGoalkeeperActorCompletesPassingRun(t *testing.T) {
 	}
 }
 
-type fakeGoalkeeperRuntimeBuilder struct {
+type fakeGoalRuntimeBuilder struct {
 	t                  *testing.T
 	finalValidatorText string
 }
 
-func (b *fakeGoalkeeperRuntimeBuilder) BuildGoalkeeperRuntime(ctx context.Context, cfg baldaagent.GoalkeeperRuntimeConfig) (*baldaagent.GoalkeeperRuntime, error) {
+func (b *fakeGoalRuntimeBuilder) BuildGoalRuntime(ctx context.Context, cfg baldaagent.GoalRuntimeConfig) (*baldaagent.GoalRuntime, error) {
 	b.t.Helper()
 	if cfg.UserID == "" || cfg.SessionID == "" || cfg.WorkspaceDir == "" {
-		b.t.Fatalf("BuildGoalkeeperRuntime() cfg = %+v, want user/session/workspace", cfg)
+		b.t.Fatalf("BuildGoalRuntime() cfg = %+v, want user/session/workspace", cfg)
 	}
 	svc := adksession.InMemoryService()
 	if _, err := svc.Create(ctx, &adksession.CreateRequest{
@@ -114,7 +114,7 @@ func (b *fakeGoalkeeperRuntimeBuilder) BuildGoalkeeperRuntime(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	return &baldaagent.GoalkeeperRuntime{Agent: ag, Runner: r}, nil
+	return &baldaagent.GoalRuntime{Agent: ag, Runner: r}, nil
 }
 
 func goalkeeperTestMetadataEvent(invocationID string, step string, eventType string) *adksession.Event {

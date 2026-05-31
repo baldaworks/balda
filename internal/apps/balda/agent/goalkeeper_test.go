@@ -17,9 +17,9 @@ func TestGoalkeeperChildBuildRequest_SetsOutputKeyAndInstructions(t *testing.T) 
 	t.Parallel()
 
 	builder := &Builder{workingDir: "/repo"}
-	cfg := goalkeeperChildAgentConfig{
+	cfg := goalChildAgentConfig{
 		ProviderID:        "provider",
-		Name:              goalkeeperWorkerName,
+		Name:              goalWorkerName,
 		Description:       "Goalkeeper worker agent",
 		SessionID:         "tg-1-2",
 		SessionBranch:     "norma/balda/tg-1-2",
@@ -30,9 +30,9 @@ func TestGoalkeeperChildBuildRequest_SetsOutputKeyAndInstructions(t *testing.T) 
 		MCPServerIDs:      []string{"balda"},
 	}
 
-	req := builder.goalkeeperChildBuildRequest(cfg)
-	if req.OutputKey != goalkeeperWorkerOutputStateKey {
-		t.Fatalf("req.OutputKey = %q, want %q", req.OutputKey, goalkeeperWorkerOutputStateKey)
+	req := builder.goalChildBuildRequest(cfg)
+	if req.OutputKey != goalWorkerOutputStateKey {
+		t.Fatalf("req.OutputKey = %q, want %q", req.OutputKey, goalWorkerOutputStateKey)
 	}
 	if !strings.Contains(req.Instruction, "worker role instruction") {
 		t.Fatalf("req.Instruction = %q, want role instruction", req.Instruction)
@@ -45,12 +45,12 @@ func TestGoalkeeperChildBuildRequest_SetsOutputKeyAndInstructions(t *testing.T) 
 func TestGoalkeeperValidatorInstruction_DoesNotUseWorkerOutputPlaceholder(t *testing.T) {
 	t.Parallel()
 
-	got := goalkeeperValidatorInstruction()
+	got := goalValidatorInstruction()
 	if strings.Contains(got, "{goalkeeper_worker_output?}") {
-		t.Fatalf("goalkeeperValidatorInstruction() = %q, should not include worker output placeholder", got)
+		t.Fatalf("goalValidatorInstruction() = %q, should not include worker output placeholder", got)
 	}
 	if !strings.Contains(got, "shared ADK session context") {
-		t.Fatalf("goalkeeperValidatorInstruction() = %q, want shared session validation guidance", got)
+		t.Fatalf("goalValidatorInstruction() = %q, want shared session validation guidance", got)
 	}
 }
 
@@ -65,7 +65,7 @@ func TestGoalkeeperValidatorWrapperUsesLatestWorkerOutputEachInvocation(t *testi
 			if workerRuns == 2 {
 				workerOutput = "second output"
 			}
-			if err := ctx.Session().State().Set(goalkeeperWorkerOutputStateKey, workerOutput); err != nil {
+			if err := ctx.Session().State().Set(goalWorkerOutputStateKey, workerOutput); err != nil {
 				yield(nil, err)
 				return
 			}
@@ -83,9 +83,9 @@ func TestGoalkeeperValidatorWrapperUsesLatestWorkerOutputEachInvocation(t *testi
 			yield(goalkeeperTestTextEvent(ctx.InvocationID(), result), nil)
 		}
 	})
-	wrapped, err := wrapGoalkeeperValidatorWithWorkerOutput(inner, goalkeeperWorkerOutputStateKey)
+	wrapped, err := wrapGoalValidatorWithWorkerOutput(inner, goalWorkerOutputStateKey)
 	if err != nil {
-		t.Fatalf("wrapGoalkeeperValidatorWithWorkerOutput() error = %v", err)
+		t.Fatalf("wrapGoalValidatorWithWorkerOutput() error = %v", err)
 	}
 	workflow, err := goalkeeper.New(goalkeeper.NewOptions(worker, wrapped, goalkeeper.WithMaxIterations(2)))
 	if err != nil {
@@ -175,8 +175,8 @@ func goalkeeperTestTextEvent(invocationID string, text string) *adksession.Event
 func TestBuildGoalkeeperValidatorPromptIncludesMissingWorkerResultMarker(t *testing.T) {
 	t.Parallel()
 
-	prompt := buildGoalkeeperValidatorPrompt(genai.NewContentFromText("Goal:\ntest", genai.RoleUser), "")
+	prompt := buildGoalValidatorPrompt(genai.NewContentFromText("Goal:\ntest", genai.RoleUser), "")
 	if !strings.Contains(prompt, "Worker result:\n(none)") {
-		t.Fatalf("buildGoalkeeperValidatorPrompt() = %q, want explicit missing worker result marker", prompt)
+		t.Fatalf("buildGoalValidatorPrompt() = %q, want explicit missing worker result marker", prompt)
 	}
 }

@@ -17,13 +17,13 @@ import (
 )
 
 const (
-	goalkeeperWorkerName           = "GoalkeeperWorker"
-	goalkeeperValidatorName        = "GoalkeeperValidator"
-	goalkeeperWorkerOutputStateKey = "goalkeeper_worker_output"
+	goalWorkerName           = "GoalkeeperWorker"
+	goalValidatorName        = "GoalkeeperValidator"
+	goalWorkerOutputStateKey = "goalkeeper_worker_output"
 )
 
-// GoalkeeperBuildConfig configures Balda's /goal work-validation agent.
-type GoalkeeperBuildConfig struct {
+// GoalBuildConfig configures Balda's /goal work-validation agent.
+type GoalBuildConfig struct {
 	ProviderID          string
 	SessionID           string
 	BranchName          string
@@ -33,9 +33,9 @@ type GoalkeeperBuildConfig struct {
 	ExtraMCPServerIDs   []string
 }
 
-// BuildGoalkeeperWorkflow builds Norma's goal work-validation loop using
+// BuildGoalWorkflow builds Norma's goal work-validation loop using
 // Balda's configured provider for both child agents.
-func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBuildConfig) (adkagent.Agent, error) {
+func (b *Builder) BuildGoalWorkflow(ctx context.Context, cfg GoalBuildConfig) (adkagent.Agent, error) {
 	if b == nil || b.factory == nil {
 		return nil, fmt.Errorf("agent builder is required")
 	}
@@ -62,38 +62,38 @@ func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBui
 	}
 	mcpServerIDs := b.buildAgentMCPServerIDs(providerID, cfg.BundledMCPServerIDs, cfg.ExtraMCPServerIDs)
 
-	worker, err := b.buildGoalkeeperChildAgent(ctx, goalkeeperChildAgentConfig{
+	worker, err := b.buildGoalChildAgent(ctx, goalChildAgentConfig{
 		ProviderID:        providerID,
-		Name:              goalkeeperWorkerName,
+		Name:              goalWorkerName,
 		Description:       "Goalkeeper worker agent",
 		SessionID:         sessionID,
 		SessionBranch:     sessionBranch,
 		WorkspaceDir:      workspaceDir,
 		RepoBranchAtStart: repoBranchAtStart,
-		RoleInstruction:   goalkeeperWorkerInstruction(),
-		OutputKey:         goalkeeperWorkerOutputStateKey,
+		RoleInstruction:   goalWorkerInstruction(),
+		OutputKey:         goalWorkerOutputStateKey,
 		MCPServerIDs:      mcpServerIDs,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	rawValidator, err := b.buildGoalkeeperChildAgent(ctx, goalkeeperChildAgentConfig{
+	rawValidator, err := b.buildGoalChildAgent(ctx, goalChildAgentConfig{
 		ProviderID:        providerID,
-		Name:              goalkeeperValidatorName,
+		Name:              goalValidatorName,
 		Description:       "Goalkeeper validator agent",
 		SessionID:         sessionID,
 		SessionBranch:     sessionBranch,
 		WorkspaceDir:      workspaceDir,
 		RepoBranchAtStart: repoBranchAtStart,
-		RoleInstruction:   goalkeeperValidatorInstruction(),
+		RoleInstruction:   goalValidatorInstruction(),
 		MCPServerIDs:      mcpServerIDs,
 	})
 	if err != nil {
 		_ = closeRuntimeAgent(worker)
 		return nil, err
 	}
-	validator, err := wrapGoalkeeperValidatorWithWorkerOutput(rawValidator, goalkeeperWorkerOutputStateKey)
+	validator, err := wrapGoalValidatorWithWorkerOutput(rawValidator, goalWorkerOutputStateKey)
 	if err != nil {
 		_ = closeRuntimeAgent(worker)
 		_ = closeRuntimeAgent(rawValidator)
@@ -110,10 +110,10 @@ func (b *Builder) BuildGoalkeeperWorkflow(ctx context.Context, cfg GoalkeeperBui
 		_ = closeRuntimeAgent(validator)
 		return nil, err
 	}
-	return &closableGoalkeeperWorkflow{Agent: workflow, closers: goalkeeperChildClosers(worker, validator)}, nil
+	return &closableGoalWorkflow{Agent: workflow, closers: goalChildClosers(worker, validator)}, nil
 }
 
-type goalkeeperChildAgentConfig struct {
+type goalChildAgentConfig struct {
 	ProviderID        string
 	Name              string
 	Description       string
@@ -126,8 +126,8 @@ type goalkeeperChildAgentConfig struct {
 	MCPServerIDs      []string
 }
 
-func (b *Builder) buildGoalkeeperChildAgent(ctx context.Context, cfg goalkeeperChildAgentConfig) (adkagent.Agent, error) {
-	req := b.goalkeeperChildBuildRequest(cfg)
+func (b *Builder) buildGoalChildAgent(ctx context.Context, cfg goalChildAgentConfig) (adkagent.Agent, error) {
+	req := b.goalChildBuildRequest(cfg)
 	ag, err := b.factory.Build(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("creating %s from provider %q: %w", cfg.Name, cfg.ProviderID, err)
@@ -135,7 +135,7 @@ func (b *Builder) buildGoalkeeperChildAgent(ctx context.Context, cfg goalkeeperC
 	return ag, nil
 }
 
-func (b *Builder) goalkeeperChildBuildRequest(cfg goalkeeperChildAgentConfig) agentfactory.BuildRequest {
+func (b *Builder) goalChildBuildRequest(cfg goalChildAgentConfig) agentfactory.BuildRequest {
 	baseInstruction := b.buildBaldaInstruction(
 		cfg.SessionID,
 		"telegram",
@@ -149,13 +149,13 @@ func (b *Builder) goalkeeperChildBuildRequest(cfg goalkeeperChildAgentConfig) ag
 		Name:             cfg.Name,
 		Description:      cfg.Description,
 		WorkingDirectory: cfg.WorkspaceDir,
-		Instruction:      joinGoalkeeperInstructions(baseInstruction, cfg.RoleInstruction),
+		Instruction:      joinGoalInstructions(baseInstruction, cfg.RoleInstruction),
 		OutputKey:        strings.TrimSpace(cfg.OutputKey),
 		MCPServerIDs:     cfg.MCPServerIDs,
 	}
 }
 
-func joinGoalkeeperInstructions(baseInstruction, roleInstruction string) string {
+func joinGoalInstructions(baseInstruction, roleInstruction string) string {
 	parts := []string{
 		strings.TrimSpace(baseInstruction),
 		strings.TrimSpace(roleInstruction),
@@ -169,7 +169,7 @@ func joinGoalkeeperInstructions(baseInstruction, roleInstruction string) string 
 	return strings.Join(out, "\n\n")
 }
 
-func goalkeeperWorkerInstruction() string {
+func goalWorkerInstruction() string {
 	return strings.Join([]string{
 		"You are the Goalkeeper worker agent.",
 		"You receive one user goal as plain text.",
@@ -182,7 +182,7 @@ func goalkeeperWorkerInstruction() string {
 	}, "\n")
 }
 
-func goalkeeperValidatorInstruction() string {
+func goalValidatorInstruction() string {
 	return strings.Join([]string{
 		"You are the Goalkeeper validator agent.",
 		"Validate the prior worker result against the original user goal using the shared ADK session context.",
@@ -195,7 +195,7 @@ func goalkeeperValidatorInstruction() string {
 	}, "\n")
 }
 
-func wrapGoalkeeperValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKey string) (adkagent.Agent, error) {
+func wrapGoalValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKey string) (adkagent.Agent, error) {
 	key := strings.TrimSpace(workerOutputStateKey)
 	if key == "" {
 		return nil, fmt.Errorf("worker output state key is required")
@@ -207,7 +207,7 @@ func wrapGoalkeeperValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputS
 		SubAgents:   inner.SubAgents(),
 		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
-				prompt := buildGoalkeeperValidatorPrompt(ctx.UserContent(), sessionStateString(ctx, key))
+				prompt := buildGoalValidatorPrompt(ctx.UserContent(), sessionStateString(ctx, key))
 				wrappedCtx := goalkeeperUserContentContext{
 					InvocationContext: ctx,
 					userContent:       genai.NewContentFromText(prompt, genai.RoleUser),
@@ -230,15 +230,15 @@ func wrapGoalkeeperValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputS
 	if !ok {
 		return base, nil
 	}
-	return goalkeeperValidatorWrapper{Agent: base, closer: closer}, nil
+	return goalValidatorWrapper{Agent: base, closer: closer}, nil
 }
 
-type goalkeeperValidatorWrapper struct {
+type goalValidatorWrapper struct {
 	adkagent.Agent
 	closer io.Closer
 }
 
-func (w goalkeeperValidatorWrapper) Close() error {
+func (w goalValidatorWrapper) Close() error {
 	if w.closer == nil {
 		return nil
 	}
@@ -262,7 +262,7 @@ func sessionStateString(ctx adkagent.InvocationContext, key string) string {
 	return strings.TrimSpace(fmt.Sprintf("%v", value))
 }
 
-func buildGoalkeeperValidatorPrompt(userContent *genai.Content, workerOutput string) string {
+func buildGoalValidatorPrompt(userContent *genai.Content, workerOutput string) string {
 	goal := visibleContentText(userContent)
 	workerOutput = strings.TrimSpace(workerOutput)
 	if goal == "" {
@@ -300,14 +300,14 @@ func (c goalkeeperUserContentContext) UserContent() *genai.Content {
 	return c.userContent
 }
 
-type closableGoalkeeperWorkflow struct {
+type closableGoalWorkflow struct {
 	adkagent.Agent
 	closers []io.Closer
 	once    sync.Once
 	err     error
 }
 
-func (w *closableGoalkeeperWorkflow) Close() error {
+func (w *closableGoalWorkflow) Close() error {
 	if w == nil {
 		return nil
 	}
@@ -329,7 +329,7 @@ func (w *closableGoalkeeperWorkflow) Close() error {
 	return w.err
 }
 
-func goalkeeperChildClosers(agents ...adkagent.Agent) []io.Closer {
+func goalChildClosers(agents ...adkagent.Agent) []io.Closer {
 	closers := make([]io.Closer, 0, len(agents))
 	for _, ag := range agents {
 		closer, ok := ag.(io.Closer)

@@ -33,15 +33,15 @@ const (
 	goalkeeperValidatorStep = "validator"
 )
 
-type goalkeeperRuntimeBuilder interface {
-	BuildGoalkeeperRuntime(ctx context.Context, cfg baldaagent.GoalkeeperRuntimeConfig) (*baldaagent.GoalkeeperRuntime, error)
+type goalRuntimeBuilder interface {
+	BuildGoalRuntime(ctx context.Context, cfg baldaagent.GoalRuntimeConfig) (*baldaagent.GoalRuntime, error)
 }
 
 type goalkeeperActor struct {
 	tasks          *swarm.TaskService
 	dispatcher     swarm.ActorDispatcher
 	sessions       *baldasession.Manager
-	runtimeBuilder goalkeeperRuntimeBuilder
+	runtimeBuilder goalRuntimeBuilder
 	taskRuns       *TaskRunRegistry
 	maxIters       int
 	logger         zerolog.Logger
@@ -93,7 +93,7 @@ func (a *goalkeeperActor) Handle(ctx context.Context, envelope any) error {
 	return a.runGoal(ctx, env, *payload.Goal)
 }
 
-func GoalkeeperTaskEnvelope(
+func GoalTaskEnvelope(
 	locator baldasession.SessionLocator,
 	objective string,
 	transportUserID string,
@@ -174,7 +174,7 @@ func (a *goalkeeperActor) runGoal(ctx context.Context, env swarm.Envelope, paylo
 	if a.runtimeBuilder == nil {
 		return swarm.TransientError(fmt.Errorf("goalkeeper runtime builder is required"))
 	}
-	runtime, err := a.runtimeBuilder.BuildGoalkeeperRuntime(ctx, baldaagent.GoalkeeperRuntimeConfig{
+	runtime, err := a.runtimeBuilder.BuildGoalRuntime(ctx, baldaagent.GoalRuntimeConfig{
 		SessionID:     ts.GetAgentSessionID(),
 		UserID:        ts.GetUserID(),
 		BranchName:    ts.GetBranchName(),
@@ -300,7 +300,7 @@ type goalkeeperRunResult struct {
 
 func (a *goalkeeperActor) runWorkflow(
 	ctx context.Context,
-	runtime *baldaagent.GoalkeeperRuntime,
+	runtime *baldaagent.GoalRuntime,
 	userID string,
 	agentSessionID string,
 	payload goalTaskPayload,
