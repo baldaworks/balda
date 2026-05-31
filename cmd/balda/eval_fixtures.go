@@ -34,7 +34,11 @@ func evalFixturesCommand() *cobra.Command {
 				}
 				files = map[string]scenarioFixture{scenarioName: filtered}
 			}
-			names := sortedScenarioNames(files)
+			names := make([]string, 0, len(files))
+			for name := range files {
+				names = append(names, name)
+			}
+			slices.Sort(names)
 			for _, name := range names {
 				fixture := files[name]
 				if err := validateFixtureFile(fixture.ScenarioPath); err != nil {
@@ -106,15 +110,6 @@ func scenarioFixtureFiles(dir string) (map[string]scenarioFixture, error) {
 		return nil, fmt.Errorf("no scenario files found in %s", dir)
 	}
 	return fixtures, nil
-}
-
-func sortedScenarioNames(files map[string]scenarioFixture) []string {
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
 }
 
 func validateFixtureFile(path string) error {
