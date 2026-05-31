@@ -109,11 +109,6 @@ func TestOpenBaldaStateProviderIgnoresOldDBPath(t *testing.T) {
 }
 
 func TestValidateBaldaMCPConfiguration_AllowsCurrentBuiltInServerUsage(t *testing.T) {
-	cfg := Config{
-		Balda: BaldaConfig{
-			MCPServers: []string{"balda"},
-		},
-	}
 	normaCfg := runtimeconfig.RuntimeConfig{
 		Providers: map[string]agentconfig.Config{
 			"root": {MCPServers: []string{"balda"}},
@@ -123,7 +118,7 @@ func TestValidateBaldaMCPConfiguration_AllowsCurrentBuiltInServerUsage(t *testin
 		},
 	}
 
-	if err := validateBaldaMCPConfiguration(cfg, normaCfg, "/tmp/work/.config/balda/config.yaml"); err != nil {
+	if err := validateBaldaMCPConfiguration(normaCfg); err != nil {
 		t.Fatalf("validateBaldaMCPConfiguration() error = %v, want nil", err)
 	}
 }
@@ -138,7 +133,7 @@ func TestValidateBaldaMCPConfiguration_RejectsReservedCustomServerIDs(t *testing
 		},
 	}
 
-	err := validateBaldaMCPConfiguration(Config{}, normaCfg, "/tmp/work/.config/balda/config.yaml")
+	err := validateBaldaMCPConfiguration(normaCfg)
 	if err == nil {
 		t.Fatal("validateBaldaMCPConfiguration() error = nil, want non-nil")
 	}
