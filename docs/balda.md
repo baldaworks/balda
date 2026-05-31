@@ -588,7 +588,7 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/cancel` (owner/collaborator): requests cancellation of active session work, including active `/goal` runs.
 - `balda.memory.*` MCP tools are internal capabilities, not chat commands.
 
-### Task actor runtime semantics (internal)
+### Task runtime semantics (internal)
 
 Assignable work is persisted in `swarm_tasks`; task history is published to
 `BALDA_EVENTS` and projected into `swarm_task_events`. Ingress publishes a

@@ -360,7 +360,7 @@ func TestDocumentationContract(t *testing.T) {
 		path := filepath.Join(repoRoot, "docs/balda.md")
 		body := readFile(t, path)
 		sections := []string{
-			markdownSection(body, "### Task actor runtime semantics (internal)"),
+			markdownSection(body, "### Task runtime semantics (internal)"),
 			markdownSection(body, "### Scheduled task runtime semantics (internal)"),
 			markdownSection(body, "### Inbound webhook contract (internal)"),
 			markdownSection(body, "### Event contract"),
