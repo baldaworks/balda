@@ -868,7 +868,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 - Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable task command. Session restore and execution happen after command delivery.
 - Delivery: scheduled tasks are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <task_id>@<due_next_run_at_rfc3339nano>`.
-- Startup reconciliation: configured task IDs are upserted, and persisted tasks not present in config are removed.
+- Startup reconciliation: configured task IDs are upserted, and persisted tasks not present in config are deleted from the scheduler state.
 - Publish-before-mark: scheduler publishes the command first, then writes `last_dispatch_key` and advances `next_run_at`, so a failed publish does not mark work dispatched.
 - Success after actor execution: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and the task remains `active`.
 - Pre-publish failure: target resolution, invalid schedule, or JetStream publish failure increments `retry_count`, records `last_error`, and may pause the task after `max_retries`.
