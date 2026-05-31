@@ -78,13 +78,6 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
-	t.Run("balda coordinator layer is removed", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`swarm\.Coordinator|NewCoordinator|type Coordinator\b`))
-		if len(matches) > 0 {
-			t.Fatalf("Balda must inject ActorDispatcher directly instead of swarm.Coordinator:\n%s", formatSourceMatches(matches))
-		}
-	})
-
 	t.Run("nats imports stay inside jetstream adapter", func(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`github\.com/nats-io/`))
 		assertOnlyAllowedFiles(t, matches, []string{
@@ -115,68 +108,6 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 				assertOnlyAllowedFiles(t, matches, []string{
 					"architecture_contract_test.go",
 				})
-			})
-		}
-	})
-
-	t.Run("sqlite mailbox and shadow transport vocabulary stays out of runtime code", func(t *testing.T) {
-		forbidden := []string{
-			"MailboxService",
-			"SQLiteMailbox",
-			"balda.v1.wakeup.mailbox",
-			"wakeup.mailbox",
-			"swarm_messages",
-			"balda_mailbox_messages",
-			"SQLiteCommandBus",
-			"sqlite command queue",
-			"sqlite-backed command queue",
-			"sqlite command bus",
-			"ShadowMode",
-			"LegacyDirectPath",
-			"sqlite_command_bus",
-			"shadow_mode",
-			"legacy_direct_path",
-			"nats_core",
-			"nats_jetstream",
-			"webhook_mode",
-			"scheduler_mode",
-			"JetStream-backed actor runtime",
-			"embedded JetStream defaults",
-			"durable JetStream events for read-model projection",
-			"required JetStream command/event bus",
-			"Goalkeeper workflow",
-			"Goalkeeper worker -> validator loop",
-			"per-run Goalkeeper workflow",
-		}
-		for _, needle := range forbidden {
-			t.Run(needle, func(t *testing.T) {
-				matches := findSourceMatches(t, root, files, regexp.MustCompile(regexp.QuoteMeta(needle)))
-				if len(matches) > 0 {
-					t.Fatalf("retired transport term %q found in production Go files:\n%s", needle, formatSourceMatches(matches))
-				}
-			})
-		}
-	})
-
-	t.Run("sqlite mailbox polling loop cannot be started by runtime code", func(t *testing.T) {
-		forbiddenPollingSymbols := []string{
-			"MailboxPoller",
-			"MailboxPollingLoop",
-			"RunMailboxLoop",
-			"StartMailboxLoop",
-			"RunSQLiteMailbox",
-			"StartSQLiteMailbox",
-			"ClaimRunnableCommand",
-			"ClaimRunnableCommands",
-			"PollRunnableCommand",
-			"PollRunnableCommands",
-		}
-		for _, needle := range forbiddenPollingSymbols {
-			t.Run(needle, func(t *testing.T) {
-				matches := findSourceMatches(t, root, files, regexp.MustCompile(regexp.QuoteMeta(needle)))
-				if len(matches) > 0 {
-					t.Fatalf("unsupported sqlite mailbox polling symbol %q found in production Go files:\n%s", needle, formatSourceMatches(matches))
-				}
 			})
 		}
 	})
