@@ -61,7 +61,20 @@ func SubjectForEnvelope(env Envelope) string {
 	case ActorTypeMemory:
 		return SubjectCommandMemory
 	default:
-		return subjectForNamespace(env.Namespace)
+		switch strings.TrimSpace(env.Namespace) {
+		case NamespaceGoalCommand:
+			return SubjectCommandGoal
+		case NamespaceMemorySync:
+			return SubjectCommandMemory
+		case NamespaceTaskControl:
+			return SubjectCommandControl
+		case NamespaceWebhookInbound, NamespaceScheduleInbound:
+			return SubjectCommandTask
+		case NamespaceHumanInbound:
+			return SubjectCommandSession
+		default:
+			return SubjectCommandTask
+		}
 	}
 }
 
@@ -84,23 +97,6 @@ func DedupeKeyOrID(env Envelope) string {
 		return trimmed
 	}
 	return strings.TrimSpace(env.ID)
-}
-
-func subjectForNamespace(namespace string) string {
-	switch strings.TrimSpace(namespace) {
-	case NamespaceGoalCommand:
-		return SubjectCommandGoal
-	case NamespaceMemorySync:
-		return SubjectCommandMemory
-	case NamespaceTaskControl:
-		return SubjectCommandControl
-	case NamespaceWebhookInbound, NamespaceScheduleInbound:
-		return SubjectCommandTask
-	case NamespaceHumanInbound:
-		return SubjectCommandSession
-	default:
-		return SubjectCommandTask
-	}
 }
 
 func addHeader(out map[string]string, key string, value string) {
