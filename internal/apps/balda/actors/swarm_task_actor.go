@@ -90,19 +90,6 @@ type taskMemorySyncPayload struct {
 	Content   string `json:"content,omitempty"`
 }
 
-func goalTaskTitle(objective string) string {
-	const maxTitleRunes = 80
-	title := strings.TrimSpace(objective)
-	if title == "" {
-		return "Goal"
-	}
-	runes := []rune(title)
-	if len(runes) > maxTitleRunes {
-		title = strings.TrimSpace(string(runes[:maxTitleRunes])) + "..."
-	}
-	return "Goal: " + title
-}
-
 type taskActorExecutor struct {
 	tasks      *swarm.TaskService
 	dispatcher swarm.ActorDispatcher

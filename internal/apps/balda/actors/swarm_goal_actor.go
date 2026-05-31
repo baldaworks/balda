@@ -221,10 +221,21 @@ func (a *goalActor) ensureGoalTask(ctx context.Context, payload goalTaskPayload)
 	if a.tasks == nil {
 		return swarm.TransientError(fmt.Errorf("task service is required"))
 	}
+	title := strings.TrimSpace(payload.Objective)
+	if title != "" {
+		const maxTitleRunes = 80
+		runes := []rune(title)
+		if len(runes) > maxTitleRunes {
+			title = strings.TrimSpace(string(runes[:maxTitleRunes])) + "..."
+		}
+		title = "Goal: " + title
+	} else {
+		title = "Goal"
+	}
 	record := baldastate.SwarmTaskRecord{
 		ID:            strings.TrimSpace(payload.TaskID),
 		SessionID:     strings.TrimSpace(payload.Locator.SessionID),
-		Title:         goalTaskTitle(payload.Objective),
+		Title:         title,
 		Objective:     strings.TrimSpace(payload.Objective),
 		Status:        baldastate.SwarmTaskStatusCreated,
 		OwnerActor:    swarm.ActorTypeGoal + ":" + strings.TrimSpace(payload.TaskID),
