@@ -309,17 +309,17 @@ func TestBuildScheduledTaskSchedulerConfig(t *testing.T) {
 	}
 }
 
-func TestValidateSchedulerConfigRejectsLegacyJobs(t *testing.T) {
+func TestValidateSchedulerConfigRejectsRemovedJobsKey(t *testing.T) {
 	t.Parallel()
 
 	err := validateSchedulerConfig(SchedulerConfig{
 		RemovedJobs: []any{map[string]any{"id": "legacy"}},
 	})
 	if err == nil {
-		t.Fatal("validateSchedulerConfig() error = nil, want legacy jobs error")
+		t.Fatal("validateSchedulerConfig() error = nil, want removed jobs key error")
 	}
 	if !strings.Contains(err.Error(), "balda.scheduler.jobs is no longer supported") {
-		t.Fatalf("validateSchedulerConfig() error = %v, want legacy jobs guidance", err)
+		t.Fatalf("validateSchedulerConfig() error = %v, want removed jobs key guidance", err)
 	}
 }
 
