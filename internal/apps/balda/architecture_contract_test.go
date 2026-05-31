@@ -290,7 +290,7 @@ func TestJetStreamArchitectureContractStatic(t *testing.T) {
 
 		appConfigSource := readSource(t, filepath.Join(root, "config.go"))
 		if regexp.MustCompile(`type SwarmConfig struct \{\s*Enabled\b`).FindStringIndex(appConfigSource) != nil {
-			t.Fatal("BaldaConfig.SwarmConfig must not expose a legacy enabled field")
+			t.Fatal("BaldaConfig.SwarmConfig must not expose a removed enabled field")
 		}
 	})
 
