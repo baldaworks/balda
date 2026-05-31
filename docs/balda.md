@@ -592,8 +592,7 @@ Balda runs with a single provider per process (`balda.provider`).
 
 Assignable work is persisted in `swarm_tasks`; task history is published to
 `BALDA_EVENTS` and projected into `swarm_task_events`. Ingress publishes a
-JetStream command first; task records are product state created by TaskActor
-after command delivery.
+JetStream command first; task records are created after command delivery.
 
 - `/goal` starts goal work for the current session. Balda restores or creates the
   session, runs the Goalkeeper worker/validator workflow, records the task
@@ -883,7 +882,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 `content`, and optional `report_to`.
 
 - Eligibility: only `status=active` tasks with `next_run_at <= now` are polled.
-- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable JetStream task command. TaskActor/SessionActor perform session restore and execution after command delivery.
+- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable JetStream task command. Session restore and execution happen after command delivery.
 - Delivery: scheduled tasks are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <task_id>@<due_next_run_at_rfc3339nano>`.
 - Startup reconciliation: configured task IDs are upserted, and persisted tasks not present in config are removed.
@@ -906,7 +905,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - request path must match a configured route `path`
   - destination comes from route `envelope.target` + `envelope.key` (default `alias:owner`)
   - route `envelope.mode` decides publish target:
-    - `task` (default): publish webhook task command; TaskActor emits session command
+    - `task` (default): publish webhook task command; task execution later emits the session command
     - `session`: publish session command directly
 - Prompt generation:
   - request body is treated as opaque raw text
@@ -915,9 +914,9 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 - Session resolution:
   - ingress resolves route target locator and user id from owner store aliases
   - ingress publishes a durable JetStream command after prompt rendering
-  - task mode: TaskActor emits session command for execution
+  - task mode: the task command later emits the session command for execution
   - session mode: ingress command is already a session command
-  - SessionActor lazily restores the persisted session when inactive in memory and creates the owner session when no persisted session exists
+  - the runtime lazily restores the persisted session when inactive in memory and creates the owner session when no persisted session exists
   - webhook acceptance therefore depends on JetStream publish, not on synchronous session restore
   - uses `deliver=false` by default; route `envelope.report_to` enables progress/final delivery to that destination
 - Dedupe:

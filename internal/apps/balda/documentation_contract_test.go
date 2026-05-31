@@ -348,6 +348,28 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("balda spec behavior sections avoid unnecessary actor-name detail", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "docs/balda.md")
+		body := readFile(t, path)
+		sections := []string{
+			markdownSection(body, "### Task actor runtime semantics (internal)"),
+			markdownSection(body, "### Scheduled task runtime semantics (internal)"),
+			markdownSection(body, "### Inbound webhook contract (internal)"),
+		}
+		forbidden := []string{
+			"TaskActor emits session command",
+			"TaskActor/SessionActor",
+			"SessionActor lazily restores",
+		}
+		for _, section := range sections {
+			for _, needle := range forbidden {
+				if strings.Contains(section, needle) {
+					t.Fatalf("%s still exposes unnecessary actor-name detail %q", filepath.ToSlash(path), needle)
+				}
+			}
+		}
+	})
+
 	t.Run("readme troubleshooting avoids internal operator view wording", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "README.md")
 		section := markdownSection(readFile(t, path), "## Troubleshooting")
