@@ -40,9 +40,12 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 	if err != nil {
 		baldaBaseBranch = ""
 	}
-	if err := setBaldaWorkspaceBaseBranch(baldaSection, baldaBaseBranch); err != nil {
-		return nil, nil, err
+	workspaceSection, ok := toStringAnyMap(baldaSection["workspace"])
+	if !ok {
+		return nil, nil, fmt.Errorf("balda.workspace section is missing from generated config")
 	}
+	workspaceSection["base_branch"] = strings.TrimSpace(baldaBaseBranch)
+	baldaSection["workspace"] = workspaceSection
 
 	agentIDs := make([]string, 0, len(detectedAgents))
 	for _, detected := range detectedAgents {
@@ -119,16 +122,6 @@ func setBaldaTelegramToken(doc map[string]any, token string) error {
 	telegramSection["token"] = token
 	baldaSection["telegram"] = telegramSection
 	doc["balda"] = baldaSection
-	return nil
-}
-
-func setBaldaWorkspaceBaseBranch(baldaSection map[string]any, baseBranch string) error {
-	workspaceSection, ok := toStringAnyMap(baldaSection["workspace"])
-	if !ok {
-		return fmt.Errorf("balda.workspace section is missing from generated config")
-	}
-	workspaceSection["base_branch"] = strings.TrimSpace(baseBranch)
-	baldaSection["workspace"] = workspaceSection
 	return nil
 }
 
