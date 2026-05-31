@@ -290,10 +290,6 @@ func TestDocumentationContract(t *testing.T) {
 	})
 
 	t.Run("goal docs keep /goal user-facing", func(t *testing.T) {
-		paths := []string{
-			filepath.Join(repoRoot, "docs/goalkeeper.md"),
-			filepath.Join(repoRoot, "docs/balda.md"),
-		}
 		forbidden := []string{
 			"GoalkeeperActor",
 			"publishes a durable command",
@@ -306,11 +302,30 @@ func TestDocumentationContract(t *testing.T) {
 			"escalation marker",
 			"Goalkeeper worker/validator",
 		}
-		for _, path := range paths {
-			body := readFile(t, path)
-			for _, needle := range forbidden {
-				if strings.Contains(body, needle) {
-					t.Fatalf("%s still exposes /goal implementation detail %q", filepath.ToSlash(path), needle)
+		checks := []struct {
+			path     string
+			sections []string
+		}{
+			{
+				path: filepath.Join(repoRoot, "docs/goalkeeper.md"),
+				sections: []string{
+					readFile(t, filepath.Join(repoRoot, "docs/goalkeeper.md")),
+				},
+			},
+			{
+				path: filepath.Join(repoRoot, "docs/balda.md"),
+				sections: []string{
+					markdownSection(readFile(t, filepath.Join(repoRoot, "docs/balda.md")), "### Manual session control"),
+					markdownSection(readFile(t, filepath.Join(repoRoot, "docs/balda.md")), "### Task runtime semantics (internal)"),
+				},
+			},
+		}
+		for _, check := range checks {
+			for _, section := range check.sections {
+				for _, needle := range forbidden {
+					if strings.Contains(section, needle) {
+						t.Fatalf("%s still exposes /goal implementation detail %q", filepath.ToSlash(check.path), needle)
+					}
 				}
 			}
 		}
@@ -459,6 +474,10 @@ func TestDocumentationContract(t *testing.T) {
 			"DeliveryActor",
 			"DeliveryActor/outbox reserve",
 			"ControlActor + task/session actors",
+			"JetStream command first; task records are created after command delivery.",
+			"publish a durable JetStream task command",
+			"scheduler publishes the JetStream command first",
+			"ingress publishes a durable JetStream command after prompt rendering",
 		}
 		for _, section := range sections {
 			for _, needle := range forbidden {

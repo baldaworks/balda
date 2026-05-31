@@ -581,7 +581,7 @@ Balda runs with a single provider per process (`balda.provider`).
 
 Assignable work is persisted in `swarm_tasks`; task history is published to
 `BALDA_EVENTS` and projected into `swarm_task_events`. Ingress publishes a
-JetStream command first; task records are created after command delivery.
+durable command first; task records are created after command delivery.
 
 - `/goal` starts goal work for the current session. Balda restores or creates the
   session, runs repeated work and validation passes, records the task result,
@@ -871,11 +871,11 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 `content`, and optional `report_to`.
 
 - Eligibility: only `status=active` tasks with `next_run_at <= now` are polled.
-- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable JetStream task command. Session restore and execution happen after command delivery.
+- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable task command. Session restore and execution happen after command delivery.
 - Delivery: scheduled tasks are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <task_id>@<due_next_run_at_rfc3339nano>`.
 - Startup reconciliation: configured task IDs are upserted, and persisted tasks not present in config are removed.
-- Publish-before-mark: scheduler publishes the JetStream command first, then writes `last_dispatch_key` and advances `next_run_at`, so a failed publish does not mark work dispatched.
+- Publish-before-mark: scheduler publishes the command first, then writes `last_dispatch_key` and advances `next_run_at`, so a failed publish does not mark work dispatched.
 - Success after actor execution: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and the task remains `active`.
 - Pre-publish failure: target resolution, invalid schedule, or JetStream publish failure increments `retry_count`, records `last_error`, and may pause the task after `max_retries`.
 - Execution failure after JetStream delivery: `last_run_at` and `last_error` are recorded for visibility, but scheduler retry fields and `next_run_at` are not changed. JetStream owns command retry, redelivery, and DLQ after publish.
@@ -902,7 +902,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - rendered prompt must be non-empty
 - Session resolution:
   - ingress resolves route target locator and user id from owner store aliases
-  - ingress publishes a durable JetStream command after prompt rendering
+  - ingress publishes a durable command after prompt rendering
   - task mode: the task command later emits the session command for execution
   - session mode: ingress command is already a session command
   - the runtime lazily restores the persisted session when inactive in memory and creates the owner session when no persisted session exists
