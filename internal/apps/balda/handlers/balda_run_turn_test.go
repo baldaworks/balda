@@ -892,7 +892,7 @@ func TestRunTurn_SendsFinalTextFromTurnCompleteEvent(t *testing.T) {
 	}
 }
 
-func TestRunTurn_UsesLegacyPlanStateDeltaFallback(t *testing.T) {
+func TestRunTurn_UsesPlanStateDeltaFallback(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, true)
@@ -961,7 +961,7 @@ func TestRunTurn_DeduplicatesRepeatedPlanUpdates(t *testing.T) {
 	}
 }
 
-func TestRunTurn_PlanUpdatesDisabledKeepsLegacyThinkingBehavior(t *testing.T) {
+func TestRunTurn_PlanUpdatesDisabledKeepsThinkingPlaceholderBehavior(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, true)
