@@ -636,6 +636,37 @@ func TestDocumentationContract(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("runtime architecture summaries avoid transport-heavy top-level wording", func(t *testing.T) {
+		checks := []struct {
+			path    string
+			section string
+			needles []string
+		}{
+			{
+				path:    filepath.Join(repoRoot, "docs/architecture/runtime-contract.md"),
+				section: "## Invariants",
+				needles: []string{
+					"JetStream must be available before ingress accepts work.",
+				},
+			},
+			{
+				path:    filepath.Join(repoRoot, "docs/architecture/testing-and-evals.md"),
+				section: "## Invariants",
+				needles: []string{
+					"Embedded JetStream integration coverage remains first-class.",
+				},
+			},
+		}
+		for _, check := range checks {
+			section := markdownSection(readFile(t, check.path), check.section)
+			for _, needle := range check.needles {
+				if strings.Contains(section, needle) {
+					t.Fatalf("%s still contains transport-heavy top-level wording %q", filepath.ToSlash(check.path), needle)
+				}
+			}
+		}
+	})
 }
 
 func repositoryRoot(t *testing.T) string {

@@ -6,7 +6,7 @@ Status: active
 ## Invariants
 
 - Architecture contracts are enforced by repository tests.
-- Embedded JetStream integration coverage remains first-class.
+- Built-in runtime integration coverage remains first-class.
 - Reliability scenarios cover redelivery, retry, and terminal failure flows.
 - Projection and runtime behavior are testable without external infra.
 

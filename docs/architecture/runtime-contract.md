@@ -6,7 +6,7 @@ Status: active
 ## Invariants
 
 - Startup order stays strict: config -> bundled MCP lifecycle -> balda provider -> channel runtime.
-- JetStream must be available before ingress accepts work.
+- The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
 - The session-turn execution path is the only code path that can enqueue `TurnDispatcher` work.
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
