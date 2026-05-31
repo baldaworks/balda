@@ -18,7 +18,6 @@ func TestClassifyErrorKinds(t *testing.T) {
 	}{
 		{name: "transient", err: TransientError(errors.New("retry")), want: ErrorKindTransient},
 		{name: "permanent", err: PermanentError(errors.New("perm")), want: ErrorKindPermanent},
-		{name: "canceled", err: CanceledError(errors.New("cancel")), want: ErrorKindCanceled},
 		{name: "decode", err: DecodeError(errors.New("decode")), want: ErrorKindDecode},
 		{name: "external delivery", err: ExternalDeliveryError(errors.New("send failed")), want: ErrorKindExternalDelivery},
 		{name: "fallback transient", err: errors.New("plain error"), want: ErrorKindTransient},

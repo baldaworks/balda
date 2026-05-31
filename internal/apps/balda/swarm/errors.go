@@ -13,7 +13,6 @@ const (
 	ErrorKindTransient        ErrorKind = "transient"
 	ErrorKindPolicy           ErrorKind = "policy"
 	ErrorKindPermanent        ErrorKind = "permanent"
-	ErrorKindCanceled         ErrorKind = "canceled"
 	ErrorKindDecode           ErrorKind = "decode"
 	ErrorKindExternalDelivery ErrorKind = "external_delivery"
 )
@@ -40,7 +39,6 @@ func (e *ActorError) Unwrap() error {
 func TransientError(err error) error { return actorError(ErrorKindTransient, err) }
 func PolicyError(err error) error    { return actorError(ErrorKindPolicy, err) }
 func PermanentError(err error) error { return actorError(ErrorKindPermanent, err) }
-func CanceledError(err error) error  { return actorError(ErrorKindCanceled, err) }
 func DecodeError(err error) error    { return actorError(ErrorKindDecode, err) }
 
 func ExternalDeliveryError(err error) error {
@@ -78,7 +76,7 @@ func IsRetryableError(err error) bool {
 		return false
 	}
 	switch ClassifyError(err) {
-	case ErrorKindPolicy, ErrorKindPermanent, ErrorKindDecode, ErrorKindCanceled:
+	case ErrorKindPolicy, ErrorKindPermanent, ErrorKindDecode:
 		return false
 	default:
 		return true
