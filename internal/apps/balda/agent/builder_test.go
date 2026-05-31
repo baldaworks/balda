@@ -17,33 +17,6 @@ import (
 	adksession "google.golang.org/adk/session"
 )
 
-func TestBundledMCPServerIDs(t *testing.T) {
-	tests := []struct {
-		name             string
-		workspaceEnabled bool
-		want             []string
-	}{
-		{
-			name:             "workspace_disabled",
-			workspaceEnabled: false,
-			want:             []string{"balda"},
-		},
-		{
-			name:             "workspace_enabled",
-			workspaceEnabled: true,
-			want:             []string{"balda"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := bundledMCPServerIDs(tt.workspaceEnabled); !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("bundledMCPServerIDs(%v) = %#v, want %#v", tt.workspaceEnabled, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestMergeMCPServerIDs(t *testing.T) {
 	explicit := []string{" custom.one ", "balda", "", "custom.one", "custom.two"}
 	extra := []string{"balda.extra", "custom.two", " "}
