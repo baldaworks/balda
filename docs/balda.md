@@ -160,7 +160,7 @@ Balda treats `actorlayer` as a pure typed actor engine and never as product poli
 
 - `balda.provider` selects one app-scoped ADK provider runtime for all Balda sessions and `/goal` work-validation runs in the process.
 - Actorlayer owns generic actor mechanics: registration, addressing, lane execution, lifecycle state, and delivery hooks.
-- Balda owns product actors and product behavior implemented as actors: session, task, goalkeeper, delivery, control, and memory.
+- Balda owns product actors and product behavior implemented as actors: session turns, task routing, goal execution, delivery, control, and memory.
 - Balda exposes JetStream to product/runtime code only as actorlayer source, delivery, and dispatch abstractions; the concrete transport stays inside the NATS adapter.
 
 The boundary is intentionally explicit:
@@ -183,7 +183,7 @@ The boundary is intentionally explicit:
 Balda's actorlayer integration is intentionally direct:
 
 - `internal/apps/balda/swarm/runtime.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
-- `internal/apps/balda/actors`: defines Balda product actors for sessions, tasks, goalkeeper, delivery, control, and memory command contracts.
+- `internal/apps/balda/actors`: defines Balda product actors for session, task, goal, delivery, control, and memory command contracts.
 - `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
 - `internal/apps/balda/eventbus/nats`: adapts JetStream publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped ADK provider runtime selected by `balda.provider` and the per-session ADK state.
@@ -643,8 +643,8 @@ balda.v1.dlq.>"]
         SRC["actorengine.Source/Delivery adapter"]
         RT["ActorRuntime"]
         LNS["Actorlayer engine lanes
-session/task/goalkeeper/delivery/memory"]
-        ACT["Session/Task/Goalkeeper/Delivery/Memory actors"]
+session/task/goal/delivery/memory"]
+        ACT["Session/Task/Goal/Delivery/Memory actors"]
     end
 
     subgraph State["SQLite product/read-model state"]

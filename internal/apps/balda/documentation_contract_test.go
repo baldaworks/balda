@@ -457,6 +457,7 @@ func TestDocumentationContract(t *testing.T) {
 		path := filepath.Join(repoRoot, "docs/balda.md")
 		body := readFile(t, path)
 		sections := []string{
+			markdownSection(body, "## Actorlayer Boundary"),
 			markdownSection(body, "### Task runtime semantics (internal)"),
 			markdownSection(body, "### Scheduled task runtime semantics (internal)"),
 			markdownSection(body, "### Inbound webhook contract (internal)"),
@@ -478,6 +479,9 @@ func TestDocumentationContract(t *testing.T) {
 			"publish a durable JetStream task command",
 			"scheduler publishes the JetStream command first",
 			"ingress publishes a durable JetStream command after prompt rendering",
+			"sessions, tasks, goalkeeper, delivery, control, and memory",
+			"Session/Task/Goalkeeper/Delivery/Memory actors",
+			"session/task/goalkeeper/delivery/memory",
 		}
 		for _, section := range sections {
 			for _, needle := range forbidden {
