@@ -162,13 +162,6 @@ func NewBuilder(params BuilderParams) *Builder {
 	}
 }
 
-type BuiltAgent struct {
-	Agent      agent.Agent
-	Runner     *runner.Runner
-	SessionSvc adksession.Service
-	Session    adksession.Session
-}
-
 type BuiltRuntime struct {
 	Agent      agent.Agent
 	Runner     *runner.Runner
@@ -180,10 +173,6 @@ type AgentMetadata struct {
 	Type       string
 	Model      string
 	MCPServers []string
-}
-
-func (b *Builder) Build(ctx context.Context, sessionID, userID string, chatID int64, topicID int, agentName, workspaceDir string) (*BuiltAgent, error) {
-	return b.BuildWithMCPServerIDs(ctx, sessionID, userID, chatID, topicID, agentName, workspaceDir, nil, nil)
 }
 
 func (b *Builder) BuildRuntimeWithMCPServerIDs(
@@ -294,74 +283,6 @@ func (b *Builder) CreateRuntimeSession(
 	}
 
 	return sess.Session, nil
-}
-
-func (b *Builder) BuildWithMCPServerIDs(
-	ctx context.Context,
-	sessionID string,
-	userID string,
-	chatID int64,
-	topicID int,
-	agentName, workspaceDir string,
-	bundledMCPServerIDs []string,
-	extraMCPServerIDs []string,
-) (*BuiltAgent, error) {
-	if strings.TrimSpace(userID) == "" {
-		return nil, fmt.Errorf("user id is required")
-	}
-	sessionBranch := fmt.Sprintf("norma/balda/%s", sessionID)
-	repoBranchAtStart := b.currentRepoBranch(ctx)
-	state, err := b.buildSessionState(ctx, agentName, workspaceDir)
-	if err != nil {
-		return nil, err
-	}
-	req := agentfactory.BuildRequest{
-		AgentID:          agentName,
-		Name:             agentName,
-		Description:      b.buildAgentDescription(agentName),
-		WorkingDirectory: workspaceDir,
-		Instruction:      b.buildBaldaInstruction(sessionID, "telegram", agentName, sessionBranch, workspaceDir, repoBranchAtStart),
-		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
-		SessionID:        sessionID,
-	}
-
-	ag, err := b.factory.Build(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("creating agent %q: %w", agentName, err)
-	}
-
-	sessionSvc := adksession.InMemoryService()
-	sess, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
-		AppName:   fmt.Sprintf("norma-balda-topic-%d", topicID),
-		UserID:    strings.TrimSpace(userID),
-		SessionID: sessionID,
-		State:     state,
-	})
-	if err != nil {
-		if closer, ok := ag.(io.Closer); ok {
-			_ = closer.Close()
-		}
-		return nil, fmt.Errorf("creating session: %w", err)
-	}
-
-	r, err := runner.New(runner.Config{
-		AppName:        fmt.Sprintf("norma-balda-topic-%d", topicID),
-		Agent:          ag,
-		SessionService: sessionSvc,
-	})
-	if err != nil {
-		if closer, ok := ag.(io.Closer); ok {
-			_ = closer.Close()
-		}
-		return nil, fmt.Errorf("creating runner: %w", err)
-	}
-
-	return &BuiltAgent{
-		Agent:      ag,
-		Runner:     r,
-		SessionSvc: sessionSvc,
-		Session:    sess.Session,
-	}, nil
 }
 
 func (b *Builder) currentRepoBranch(ctx context.Context) string {
