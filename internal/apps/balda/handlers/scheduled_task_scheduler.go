@@ -397,7 +397,15 @@ func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, taskID string,
 		task.Status = baldastate.ScheduledTaskStatusPaused
 	} else {
 		task.Status = baldastate.ScheduledTaskStatusActive
-		task.NextRunAt = now.Add(retryDelay(task.RetryCount))
+		retryCount := task.RetryCount
+		if retryCount < 1 {
+			retryCount = 1
+		}
+		delay := time.Duration(retryCount) * time.Second
+		if delay > 60*time.Second {
+			delay = 60 * time.Second
+		}
+		task.NextRunAt = now.Add(delay)
 	}
 	if err := s.taskStore.Upsert(ctx, task); err != nil {
 		return fmt.Errorf("upsert scheduled task %q: %w", taskID, err)
@@ -512,17 +520,6 @@ func parseScheduleSpec(spec string) (cron.Schedule, error) {
 		return nil, fmt.Errorf("unsupported schedule spec %q", spec)
 	}
 	return schedule, nil
-}
-
-func retryDelay(retryCount int) time.Duration {
-	if retryCount < 1 {
-		retryCount = 1
-	}
-	delay := time.Duration(retryCount) * time.Second
-	if delay > 60*time.Second {
-		return 60 * time.Second
-	}
-	return delay
 }
 
 func dispatchAttemptKey(taskID string, dueAt time.Time) string {
