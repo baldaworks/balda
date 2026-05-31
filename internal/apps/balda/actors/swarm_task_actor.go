@@ -117,14 +117,6 @@ type taskActorExecutorParams struct {
 	Sessions    *baldasession.Manager `optional:"true"`
 }
 
-func newTaskActorExecutor(params taskActorExecutorParams) swarm.Actor {
-	return &taskActorExecutor{
-		tasks:      params.TaskService,
-		dispatcher: params.Dispatcher,
-		sessions:   params.Sessions,
-	}
-}
-
 func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID string) (swarm.Envelope, string, error) {
 	dedupeBase := strings.TrimSpace(payload.DedupeKey)
 	dedupeBase = strings.TrimSuffix(dedupeBase, ":task")

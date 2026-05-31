@@ -93,10 +93,6 @@ type sessionActorExecutorParams struct {
 	Scheduler ScheduledTaskRecorder `optional:"true"`
 }
 
-func newSessionActorExecutor(params sessionActorExecutorParams) swarm.Actor {
-	return &sessionActorExecutor{turns: params.Turns, runner: params.Runner, tasks: params.Tasks, scheduler: params.Scheduler}
-}
-
 func (e *sessionActorExecutor) Address() string {
 	return swarm.WildcardAddress(swarm.ActorTypeSession)
 }
