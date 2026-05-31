@@ -478,7 +478,6 @@ session-start snapshot. New or restored sessions read the latest file.
   - invalid values are clamped to `25`.
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
 - `balda.nats.host` / `port`: embedded listener address (default `127.0.0.1:-1`, random local port)
-- `balda.nats.jetstream`: built-in command/event runtime toggle; normal installs leave it at the default `true`.
 - `balda.nats.store_dir`: runtime store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
 - `balda.nats.max_memory` / `max_store`: embedded runtime resource caps (defaults `256mb` and `2gb`)
 - `balda.swarm`: optional advanced runtime tuning for command handling, retries, backpressure, and failure retention. Most installs should leave it at defaults.

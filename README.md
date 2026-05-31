@@ -217,7 +217,6 @@ balda:
     embedded: true
     host: "127.0.0.1"
     port: -1
-    jetstream: true
     store_dir: ".balda/nats"
     max_memory: "256mb"
     max_store: "2gb"
