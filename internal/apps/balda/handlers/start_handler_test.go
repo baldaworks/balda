@@ -683,14 +683,6 @@ func (f *fakeBaldaHandler) activateOwner(_ context.Context, ownerID, chatID int6
 	return nil
 }
 
-func (f *fakeBaldaHandler) SetAuthToken(token string) {
-	f.authToken = token
-}
-
-func (f *fakeBaldaHandler) GetAuthToken() string {
-	return f.authToken
-}
-
 func newBaldaHandlerTestHarness(t *testing.T) (*StartHandler, *auth.OwnerStore, *fakeTelegramClient, *fakeBaldaHandler) {
 	t.Helper()
 
@@ -716,7 +708,7 @@ func newBaldaHandlerTestHarness(t *testing.T) (*StartHandler, *auth.OwnerStore, 
 func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 	t.Run("calls ActivateOwner and bootstraps session", func(t *testing.T) {
 		handler, store, _, baldaHandler := newBaldaHandlerTestHarness(t)
-		baldaHandler.SetAuthToken("secret-token")
+		baldaHandler.authToken = "secret-token"
 
 		registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
 		if err != nil {
@@ -745,7 +737,7 @@ func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 
 	t.Run("bootstrap failure results in failure message", func(t *testing.T) {
 		handler, store, tgClient, baldaHandler := newBaldaHandlerTestHarness(t)
-		baldaHandler.SetAuthToken("secret-token")
+		baldaHandler.authToken = "secret-token"
 		baldaHandler.bootstrapErr = errors.New("config reload failed")
 
 		registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "", true)
