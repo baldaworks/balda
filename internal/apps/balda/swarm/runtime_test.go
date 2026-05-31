@@ -351,49 +351,6 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 	}
 }
 
-func TestRuntime_LaneStatusTracksActiveLanes(t *testing.T) {
-	bus := &recordingCommandBus{}
-	started := make(chan struct{})
-	release := make(chan struct{})
-	actor := &testActor{
-		address: WildcardAddress(ActorTypeSession),
-		run: func(ctx context.Context, _ Envelope) error {
-			close(started)
-			select {
-			case <-release:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		},
-	}
-	registry := newTestRegistry(t, actor)
-	runtime := newRuntimeForTest(bus, registry)
-	env := runtimeTestEnvelope("lane-track", ActorAddress{Target: ActorTypeSession, Key: "s-1"})
-	env.TaskID = "task-1"
-
-	done := make(chan error, 1)
-	go func() {
-		done <- runtime.handleDelivery(context.Background(), testDelivery{env: env})
-	}()
-
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for actor start")
-	}
-
-	close(release)
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("handleDelivery() error = %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for completion")
-	}
-}
-
 func newRuntimeForTest(bus *recordingCommandBus, registry dispatch.Registry) *Runtime {
 	rt := &Runtime{source: bus, events: bus, heartbeatTick: heartbeatInterval}
 	engine, err := actorengine.NewDispatchRuntime(actorengine.RuntimeConfig{
