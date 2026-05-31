@@ -486,8 +486,6 @@ func TestCommandHandlerOnCommand_CancelCollaboratorAllowed(t *testing.T) {
 }
 
 func TestCommandHandlerOnCommand_RemovedCommandsAreSilent(t *testing.T) {
-	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-
 	removed := []struct {
 		name string
 		args string
@@ -506,12 +504,26 @@ func TestCommandHandlerOnCommand_RemovedCommandsAreSilent(t *testing.T) {
 
 	for _, tt := range removed {
 		t.Run(tt.name, func(t *testing.T) {
-			before := len(tgClient.messages)
+			handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
 			if err := handler.onCommand(context.Background(), newCommandEvent(tt.name, tt.args, 101, 9001, nil)); err != nil {
 				t.Fatalf("onCommand(%s) error = %v", tt.name, err)
 			}
-			if got := len(tgClient.messages); got != before {
-				t.Fatalf("messages = %d, want %d for removed command %q", got, before, tt.name)
+
+			if len(tgClient.messages) != 0 {
+				t.Fatalf("messages = %d, want 0 for removed command %q", len(tgClient.messages), tt.name)
+			}
+			if len(sm.createCalls) != 0 {
+				t.Fatalf("create calls = %d, want 0 for removed command %q", len(sm.createCalls), tt.name)
+			}
+			if len(sm.resetCalls) != 0 {
+				t.Fatalf("reset calls = %d, want 0 for removed command %q", len(sm.resetCalls), tt.name)
+			}
+			if len(turns.commands) != 0 {
+				t.Fatalf("published commands = %d, want 0 for removed command %q", len(turns.commands), tt.name)
+			}
+			if len(turns.cancelCalls) != 0 {
+				t.Fatalf("cancel calls = %d, want 0 for removed command %q", len(turns.cancelCalls), tt.name)
 			}
 		})
 	}
