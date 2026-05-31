@@ -31,6 +31,7 @@ go tool golangci-lint run
 - Keep workspace mode behavior stable (`on|off|auto`) with safe defaults and explicit failures.
 - Keep Balda MCP/server contracts stable (`balda.workspace.*`).
 - Keep config loading via app-specific `.config/balda/config.yaml` with `BALDA_*` env overrides.
+- Do not add or maintain tests whose primary purpose is checking deprecated, legacy, removed, or unsupported surfaces by name; prefer positive tests of the current contract and behavior.
 
 ## Bot Commands (Current Contract)
 
