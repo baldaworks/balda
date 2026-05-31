@@ -608,9 +608,9 @@ after command delivery.
   `task.completed`, `task.failed`, `task.canceled`, `delivery.sent`, and
   `delivery.failed`.
 - Runtime deadletters mark the owning task `deadlettered`. Session cancel
-  commands and internal control envelopes publish durable control work;
-  ControlActor applies the cancellation, marks matching task records
-  `canceled`, and cancels any currently running task agent turn.
+  commands and internal control envelopes publish durable control work.
+  Cancellation marks matching task records `canceled` and stops any currently
+  running task agent turn.
 - Terminal task delivery stores and, when applicable, sends reviewable
   outcomes with:
   Result, Artifacts, Confidence, and Next action. Artifacts are best-effort
