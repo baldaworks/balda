@@ -180,8 +180,6 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	if m.workspaceEnabled {
 		branchName = m.sessionBranchName(sessionID)
 		canonicalPath := m.workspaces.CanonicalWorkspaceDir(sessionID)
-		existingPath := canonicalPath
-		persistedWorkspacePath := ""
 		if persisted != nil {
 			if persistedBranch := strings.TrimSpace(persisted.BranchName); persistedBranch != "" {
 				branchName = persistedBranch
@@ -189,26 +187,14 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 					return fmt.Errorf("persisted workspace branch %q not found", branchName)
 				}
 			}
-			persistedWorkspacePath = strings.TrimSpace(persisted.WorkspaceDir)
-			if persistedWorkspacePath != "" && m.workspaces.IsCanonicalWorkspacePath(sessionID, persistedWorkspacePath) {
-				existingPath = persistedWorkspacePath
-			} else if persistedWorkspacePath != "" {
-				m.logger.Warn().
-					Str("session_id", sessionID).
-					Str("persisted_workspace", persistedWorkspacePath).
-					Str("canonical_workspace", canonicalPath).
-					Str("branch", branchName).
-					Msg("persisted workspace path is non-canonical; using canonical workspace path")
-			}
 		}
 
-		workspace, err := m.workspaces.EnsureWorkspace(ctx, sessionID, branchName, existingPath)
+		workspace, err := m.workspaces.EnsureWorkspace(ctx, sessionID, branchName, canonicalPath)
 		if err != nil {
 			if errors.Is(err, baldaagent.ErrWorkspaceCollision) {
 				m.logger.Warn().
 					Err(err).
 					Str("session_id", sessionID).
-					Str("persisted_workspace", persistedWorkspacePath).
 					Str("canonical_workspace", canonicalPath).
 					Str("branch", branchName).
 					Msg("workspace collision detected; force-remounting canonical workspace path")

@@ -54,13 +54,6 @@ func (m *WorkspaceManager) CanonicalWorkspaceDir(key string) string {
 	return filepath.Join(m.workspacesDir, key)
 }
 
-// IsCanonicalWorkspacePath reports whether a path matches the canonical workspace directory for a key.
-func (m *WorkspaceManager) IsCanonicalWorkspacePath(key, path string) bool {
-	expected := filepath.Clean(m.CanonicalWorkspaceDir(key))
-	actual := filepath.Clean(strings.TrimSpace(path))
-	return actual != "" && actual == expected
-}
-
 // ForceRemountCanonicalWorkspace forcefully clears the canonical workspace path and remounts it.
 func (m *WorkspaceManager) ForceRemountCanonicalWorkspace(ctx context.Context, key, branchName string) (EnsureWorkspaceResult, error) {
 	workspaceDir := m.CanonicalWorkspaceDir(key)
