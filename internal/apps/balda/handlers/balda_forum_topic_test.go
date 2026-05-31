@@ -48,19 +48,6 @@ func (f *fakeBaldaRegistry) OnCommand(rtHandlers.CommandHandler) eventemitter.Un
 	return func() {}
 }
 
-type fakeBaldaAuthorizer struct {
-	ownerID        int64
-	isCollaborator bool
-}
-
-func (f *fakeBaldaAuthorizer) IsOwner(userID int64) bool {
-	return userID == f.ownerID
-}
-
-func (f *fakeBaldaAuthorizer) IsCollaborator(userID int64) bool {
-	return f.isCollaborator
-}
-
 func TestBaldaHandlerRegister_RegistersForumTopicMessageTypes(t *testing.T) {
 	registry := &fakeBaldaRegistry{}
 	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
@@ -560,7 +547,6 @@ func newBaldaMessageHandlerHarness(t *testing.T, topicID int) (*BaldaHandler, *f
 		turnDispatcher:  turnDispatcher,
 		actorDispatcher: turnDispatcher,
 		logger:          zerolog.Nop(),
-		authorizer:      &fakeBaldaAuthorizer{ownerID: 101},
 	}
 	handler.setOwner(101, 9001)
 	setUnexportedField(t, handler, "baldaProviderName", "alpha")

@@ -29,29 +29,11 @@ import (
 	"google.golang.org/genai"
 )
 
-// baldaAuthorizer wraps OwnerStore and CollaboratorStore for auth.CanAccess.
-type baldaAuthorizer struct {
-	ownerStore        *auth.OwnerStore
-	collaboratorStore *auth.CollaboratorStore
-}
-
 const (
 	ownerSessionLabel                = "balda"
 	autoSessionLabel                 = "auto"
 	telegramProgressThrottleInterval = 4 * time.Second
 )
-
-func (a *baldaAuthorizer) IsOwner(userID int64) bool {
-	return a.ownerStore.IsOwner(userID)
-}
-
-func (a *baldaAuthorizer) IsCollaborator(userID int64) bool {
-	collab, found, err := a.collaboratorStore.GetCollaborator(context.Background(), fmt.Sprintf("%d", userID))
-	if err != nil || !found {
-		return false
-	}
-	return collab != nil
-}
 
 // BaldaHandler handles bidirectional messages between the owner and agent.
 type BaldaHandler struct {
@@ -67,7 +49,6 @@ type BaldaHandler struct {
 	baldaProviderName  string
 	planUpdatesEnabled bool
 	logger             zerolog.Logger
-	authorizer         auth.Authorizer
 
 	mu          sync.RWMutex
 	ownerID     int64
@@ -111,7 +92,6 @@ func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
 		planUpdatesEnabled: deps.PlanUpdatesEnabled,
 		logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
 	}
-	h.authorizer = &baldaAuthorizer{ownerStore: deps.OwnerStore, collaboratorStore: deps.CollaboratorStore}
 
 	deps.LC.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
@@ -150,7 +130,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	}
 
 	// RBAC check: owner or collaborator
-	if auth.CanAccess(h.authorizer, messageCtx.UserID, auth.ScopeCollaborator) != auth.Allow {
+	if !h.canAccessCollaboratorScope(ctx, messageCtx.UserID) {
 		return nil // Silent drop for unknown users
 	}
 
@@ -406,6 +386,18 @@ func (h *BaldaHandler) onForumTopicLifecycle(ctx context.Context, event *events.
 	}
 
 	return nil
+}
+
+func (h *BaldaHandler) canAccessCollaboratorScope(ctx context.Context, userID int64) bool {
+	if h.ownerStore.IsOwner(userID) {
+		return true
+	}
+
+	collab, found, err := h.collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
+	if err != nil || !found {
+		return false
+	}
+	return collab != nil
 }
 
 func (h *BaldaHandler) runTurn(

@@ -256,7 +256,6 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 		turnDispatcher:  turnDispatcher,
 		actorDispatcher: turnDispatcher,
 		logger:          zerolog.Nop(),
-		authorizer:      &fakeBaldaAuthorizer{ownerID: 101},
 	}
 	handler.setOwner(101, 9001)
 	setUnexportedField(t, handler, "baldaProviderName", "balda-provider")
@@ -325,7 +324,6 @@ func newBaldaRestoreHandlerHarness(t *testing.T, store *fakeBaldaRestoreSessionS
 		turnDispatcher:  turnDispatcher,
 		actorDispatcher: turnDispatcher,
 		logger:          zerolog.Nop(),
-		authorizer:      &fakeBaldaAuthorizer{ownerID: 101},
 	}
 	handler.setOwner(101, 9001)
 	setUnexportedField(t, handler, "baldaProviderName", "balda-provider")
