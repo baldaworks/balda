@@ -31,7 +31,7 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
-		return botIdentity{username: "NormaBot", name: "Norma Balda"}, nil
+		return botIdentity{username: "NormaBot", name: "Balda"}, nil
 	})
 	setBaldaOwnerTokenGenerator(t, "owner-token-init")
 
@@ -321,7 +321,7 @@ func TestInitCommand_PreservesExistingConfigGitignore(t *testing.T) {
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
-		return botIdentity{username: "NormaBot", name: "Norma Balda"}, nil
+		return botIdentity{username: "NormaBot", name: "Balda"}, nil
 	})
 
 	customGitignore := "# keep local state files for this repo\n*\n!.gitignore\n"

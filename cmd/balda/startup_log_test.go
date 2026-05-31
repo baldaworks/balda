@@ -37,7 +37,7 @@ func TestLoadBotIdentity(t *testing.T) {
 				}{
 					Ok: true,
 					Result: client.User{
-						FirstName: "Norma Balda",
+						FirstName: "Balda",
 						Username:  &username,
 					},
 				},
@@ -49,8 +49,8 @@ func TestLoadBotIdentity(t *testing.T) {
 		if got.username != "NormaBot" {
 			t.Fatalf("username = %q, want %q", got.username, "NormaBot")
 		}
-		if got.name != "Norma Balda" {
-			t.Fatalf("name = %q, want %q", got.name, "Norma Balda")
+		if got.name != "Balda" {
+			t.Fatalf("name = %q, want %q", got.name, "Balda")
 		}
 	})
 
@@ -82,7 +82,7 @@ func TestLoadBotIdentity(t *testing.T) {
 				}{
 					Ok: true,
 					Result: client.User{
-						FirstName: "Norma Balda",
+						FirstName: "Balda",
 					},
 				},
 			},
