@@ -78,8 +78,24 @@ func (m *WorkspaceManager) EnsureWorkspace(ctx context.Context, key, branchName,
 	branchExists := branchName != "" && git.BranchExists(ctx, m.workingDir, branchName)
 
 	if fi, err := os.Stat(workspaceDir); err == nil && fi.IsDir() {
-		if err := validateWorkspaceBranch(ctx, workspaceDir, branchName); err != nil {
-			return result, err
+		if branchName != "" {
+			if !git.Available(ctx, workspaceDir) {
+				return result, fmt.Errorf("%w: %q exists but is not a git repository", ErrWorkspaceCollision, workspaceDir)
+			}
+			currentBranch, err := git.CurrentBranch(ctx, workspaceDir)
+			if err != nil {
+				return result, fmt.Errorf("%w: resolve branch for %q: %w", ErrWorkspaceCollision, workspaceDir, err)
+			}
+			currentBranch = strings.TrimSpace(currentBranch)
+			if currentBranch != "" && currentBranch != branchName {
+				return result, fmt.Errorf(
+					"%w: %q is already mounted for branch %q; expected %q",
+					ErrWorkspaceCollision,
+					workspaceDir,
+					currentBranch,
+					branchName,
+				)
+			}
 		}
 		if branchExists {
 			// Workspace already exists — import latest base when we are resuming an existing branch.
@@ -291,29 +307,4 @@ func (m *WorkspaceManager) forceCleanupWorkspacePath(ctx context.Context, worksp
 		return fmt.Errorf("remove workspace dir %q: %w", trimmedDir, err)
 	}
 	return nil
-}
-
-func validateWorkspaceBranch(ctx context.Context, workspaceDir, expectedBranch string) error {
-	branch := strings.TrimSpace(expectedBranch)
-	if branch == "" {
-		return nil
-	}
-	if !git.Available(ctx, workspaceDir) {
-		return fmt.Errorf("%w: %q exists but is not a git repository", ErrWorkspaceCollision, workspaceDir)
-	}
-	currentBranch, err := git.CurrentBranch(ctx, workspaceDir)
-	if err != nil {
-		return fmt.Errorf("%w: resolve branch for %q: %w", ErrWorkspaceCollision, workspaceDir, err)
-	}
-	currentBranch = strings.TrimSpace(currentBranch)
-	if currentBranch == "" || currentBranch == branch {
-		return nil
-	}
-	return fmt.Errorf(
-		"%w: %q is already mounted for branch %q; expected %q",
-		ErrWorkspaceCollision,
-		workspaceDir,
-		currentBranch,
-		branch,
-	)
 }
