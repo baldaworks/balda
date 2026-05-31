@@ -64,9 +64,10 @@ func (s *TaskService) Create(ctx context.Context, record baldastate.SwarmTaskRec
 	if err != nil {
 		return false, err
 	}
+	taskID := strings.TrimSpace(record.ID)
 	s.publishEventRecordBestEffort(ctx, baldastate.SwarmTaskEventRecord{
-		ID:          taskCreatedEventID(record.ID),
-		TaskID:      strings.TrimSpace(record.ID),
+		ID:          "task:" + taskID + ":event:created",
+		TaskID:      taskID,
 		EventType:   TaskEventTaskCreated,
 		Actor:       strings.TrimSpace(actor),
 		PayloadJSON: payloadJSON,
@@ -308,10 +309,6 @@ func (s *TaskService) publishEventRecordBestEffort(ctx context.Context, event ba
 			Str("event_id", event.ID).
 			Msg("failed to publish task event")
 	}
-}
-
-func taskCreatedEventID(taskID string) string {
-	return "task:" + strings.TrimSpace(taskID) + ":event:created"
 }
 
 func taskEventID(taskID string, eventType string, actor string, messageID string, payloadJSON string) string {
