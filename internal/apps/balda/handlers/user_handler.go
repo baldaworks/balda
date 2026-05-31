@@ -179,7 +179,7 @@ func (h *userHandler) onRemove(ctx context.Context, commandCtx baldatelegram.Com
 		return nil
 	}
 
-	message := fmt.Sprintf("Removed collaborator: %s", userID)
+	message := fmt.Sprintf("Collaborator removed: %s", userID)
 	if err := h.channel.SendPlain(ctx, commandCtx.Locator, message); err != nil {
 		return err
 	}
