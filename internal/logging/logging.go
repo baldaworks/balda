@@ -26,9 +26,29 @@ func Init(setters ...OptOptionsSetter) error {
 	if err := opts.Validate(); err != nil {
 		return fmt.Errorf("validate logging options: %w", err)
 	}
-	levelName, zlLevel, slogLevel, err := resolveLevels(opts.level)
-	if err != nil {
-		return fmt.Errorf("resolve logging level: %w", err)
+	levelName := LevelInfo
+	zlLevel := zerolog.InfoLevel
+	slogLevel := slog.LevelInfo
+	switch strings.ToLower(strings.TrimSpace(opts.level)) {
+	case "", LevelInfo:
+	case LevelTrace:
+		levelName = LevelTrace
+		zlLevel = zerolog.TraceLevel
+		slogLevel = slog.LevelDebug - 4
+	case LevelDebug:
+		levelName = LevelDebug
+		zlLevel = zerolog.DebugLevel
+		slogLevel = slog.LevelDebug
+	case LevelWarn, "warning":
+		levelName = LevelWarn
+		zlLevel = zerolog.WarnLevel
+		slogLevel = slog.LevelWarn
+	case LevelError:
+		levelName = LevelError
+		zlLevel = zerolog.ErrorLevel
+		slogLevel = slog.LevelError
+	default:
+		return fmt.Errorf("resolve logging level: unsupported level %q (allowed: trace, debug, info, warn, error)", opts.level)
 	}
 	opts.level = levelName
 
@@ -65,21 +85,4 @@ func Init(setters ...OptOptionsSetter) error {
 	slog.SetDefault(slog.New(slogHandler))
 
 	return nil
-}
-
-func resolveLevels(levelRaw string) (string, zerolog.Level, slog.Level, error) {
-	switch strings.ToLower(strings.TrimSpace(levelRaw)) {
-	case "", LevelInfo:
-		return LevelInfo, zerolog.InfoLevel, slog.LevelInfo, nil
-	case LevelTrace:
-		return LevelTrace, zerolog.TraceLevel, slog.LevelDebug - 4, nil
-	case LevelDebug:
-		return LevelDebug, zerolog.DebugLevel, slog.LevelDebug, nil
-	case LevelWarn, "warning":
-		return LevelWarn, zerolog.WarnLevel, slog.LevelWarn, nil
-	case LevelError:
-		return LevelError, zerolog.ErrorLevel, slog.LevelError, nil
-	default:
-		return "", zerolog.NoLevel, slog.LevelInfo, fmt.Errorf("unsupported level %q (allowed: trace, debug, info, warn, error)", levelRaw)
-	}
 }
