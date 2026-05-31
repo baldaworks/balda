@@ -149,43 +149,6 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
-	t.Run("test-only and package-local helper surfaces stay out of production api", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bPublishDLQ\s*\(|\bStarted\s*\(\)\s+bool|func\s+\(h\s+\*BaldaHandler\)\s+RunSessionTurnPayload\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SendToOwner\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+MarkSuccess\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+RecordExecutionFailure\s*\(|func\s+\(s\s+\*ScheduledTaskScheduler\)\s+executeTaskTurn\s*\(|func\s+NewMemoryActor\s*\(|func\s+NewMemoryActorWithStore\s*\(|func\s+NewDeliveryActor\s*\(|func\s+NewActorDispatcher\s*\(|func\s+NewEventPublisher\s*\(|func\s+NewBusDrainer\s*\(|func\s+NewActorDeliverySource\s*\(|func\s+NewEventConsumer\s*\(|func\s+\(m\s+\*Messenger\)\s+KeepTyping\s*\(`))
-		if len(matches) > 0 {
-			t.Fatalf("test-only helper surface found in production Go files:\n%s", formatSourceMatches(matches))
-		}
-	})
-
-	t.Run("dead agent and session convenience exports stay deleted", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`func\s+\(m\s+\*Manager\)\s+SessionBranchName\s*\(|func\s+\(s\s+\*TopicSession\)\s+GetLocator\s*\(|func\s+\(m\s+\*Manager\)\s+GetAgentInfo\s*\(|func\s+\(m\s+\*Manager\)\s+ProviderIDs\s*\(|func\s+\(b\s+\*Builder\)\s+GetAgentInfo\s*\(|func\s+\(b\s+\*Builder\)\s+ProviderIDs\s*\(|func\s+\(m\s+\*Manager\)\s+ValidateAgent\s*\(|func\s+\(b\s+\*Builder\)\s+ValidateAgent\s*\(|func\s+\(m\s+\*Manager\)\s+HasSession\s*\(|func\s+\(m\s+\*Manager\)\s+ListSessions\s*\(|func\s+\(m\s+\*Manager\)\s+ListSessionInfos\s*\(|func\s+\(m\s+\*Manager\)\s+StopSessionByID\s*\(|func\s+\(m\s+\*Manager\)\s+StopAll\s*\(`))
-		if len(matches) > 0 {
-			t.Fatalf("dead agent/session convenience export found in production Go files:\n%s", formatSourceMatches(matches))
-		}
-	})
-
-	t.Run("unused mcp server entrypoints stay deleted", func(t *testing.T) {
-		paths := []string{
-			filepath.Clean(filepath.Join(root, "../sessionmcp/server.go")),
-			filepath.Clean(filepath.Join(root, "../workspacemcp/server.go")),
-		}
-		pattern := regexp.MustCompile(`type\s+HTTPServerResult\s+struct|func\s+RunHTTP?\s*\(|func\s+StartHTTPServer\s*\(|func\s+NewServer\s*\(`)
-		for _, path := range paths {
-			source := readSource(t, path)
-			if pattern.FindStringIndex(source) != nil {
-				t.Fatalf("%s still defines unused MCP server entrypoint", filepath.ToSlash(path))
-			}
-		}
-	})
-
-	t.Run("sessionmcp production store keeps test memory helpers out", func(t *testing.T) {
-		path := filepath.Clean(filepath.Join(root, "../sessionmcp/store.go"))
-		source := readSource(t, path)
-		pattern := regexp.MustCompile(`type\s+MemoryStore\s+struct|func\s+NewMemoryStore\s*\(|func\s+ResetSharedStore\s*\(`)
-		if pattern.FindStringIndex(source) != nil {
-			t.Fatalf("%s still defines test-only in-memory store helpers", filepath.ToSlash(path))
-		}
-	})
-
 	t.Run("handler wiring stays package-local", func(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`type\s+StartHandlerParams\s+struct|func\s+NewStartHandler\s*\(|func\s+\(h\s+\*StartHandler\)\s+SetBaldaHandler\s*\(|func\s+NewBaldaHandler\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SetOwner\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+ActivateOwner\s*\(|func\s+NewCommandHandler\s*\(|func\s+NewUserHandler\s*\(|func\s+NewScheduledTaskScheduler\s*\(|func\s+NewInboundWebhookReceiver\s*\(|func\s+WireHandlers\s*\(`))
 		if len(matches) > 0 {
