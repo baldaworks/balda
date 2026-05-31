@@ -710,6 +710,19 @@ func TestDocumentationContract(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("runtime contract boundary wording stays transport-oriented", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "docs/architecture/runtime-contract.md")
+		section := markdownSection(readFile(t, path), "## Boundary contract")
+		for _, needle := range []string{
+			"Concrete JetStream adapter semantics:",
+			"JetStream settlement is hidden behind actorlayer delivery methods",
+		} {
+			if strings.Contains(section, needle) {
+				t.Fatalf("%s still contains transport-specific boundary wording %q", filepath.ToSlash(path), needle)
+			}
+		}
+	})
 }
 
 func repositoryRoot(t *testing.T) string {

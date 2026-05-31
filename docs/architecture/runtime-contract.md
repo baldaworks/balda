@@ -26,7 +26,7 @@ Status: active
 - Balda integration layer (policy owner):
   - Product actor implementations and command contracts in `internal/apps/balda/actors`.
   - Telegram, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
-  - Concrete JetStream adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
+  - Concrete transport adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
   - Task/projector side effects in SQLite (`swarm_tasks`, `swarm_task_events`, command/task status state).
   - Internal command visibility backed by logs and tooling.
@@ -36,7 +36,7 @@ Status: active
 - Boundary obligations:
   - Actor definitions and actor state must not select or branch on provider IDs.
   - Provider-specific types stay outside actorlayer-facing contracts.
-  - JetStream settlement is hidden behind actorlayer delivery methods and exposes the same lifecycle outcomes regardless of command kind.
+  - Transport settlement is hidden behind actorlayer delivery methods and exposes the same lifecycle outcomes regardless of command kind.
 
 ## Related tests
 
