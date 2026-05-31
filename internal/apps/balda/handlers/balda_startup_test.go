@@ -163,7 +163,7 @@ func TestBaldaHandlerOnStart_LogsOwnerAuthWhenOwnerUnknown(t *testing.T) {
 		t.Fatalf("startup log missing auth command, output=%q", output)
 	}
 	if !strings.Contains(output, "https://t.me/"+testBaldaStartupBotUsername+"?start=owner_owner-token") {
-		t.Fatalf("startup log missing auth url, output=%q", output)
+		t.Fatalf("startup log missing auth link, output=%q", output)
 	}
 }
 
@@ -204,7 +204,7 @@ func TestBaldaHandlerOnStart_DoesNotLogOwnerAuthWhenOwnerRegistered(t *testing.T
 		t.Fatalf("startup log unexpectedly included auth command, output=%q", output)
 	}
 	if strings.Contains(output, "https://t.me/"+testBaldaStartupBotUsername+"?start=owner_owner-token") {
-		t.Fatalf("startup log unexpectedly included auth url, output=%q", output)
+		t.Fatalf("startup log unexpectedly included auth link, output=%q", output)
 	}
 }
 
