@@ -69,10 +69,6 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 	return doc, agentIDs, nil
 }
 
-func detectBaldaInitCurrentBranch(workingDir string) (string, error) {
-	return git.CurrentBranch(context.Background(), workingDir)
-}
-
 func detectBaldaInitAgents() []baldaInitAgentTemplate {
 	detected := make([]baldaInitAgentTemplate, 0, len(baldaInitAgentTemplates))
 	for _, template := range baldaInitAgentTemplates {
@@ -233,6 +229,8 @@ var (
 	baldaInitOutput          io.Writer = os.Stdout
 	baldaInitIsInteractive             = defaultBaldaInitIsInteractive
 	baldaInitLookPath                  = exec.LookPath
-	baldaInitCurrentBranch             = detectBaldaInitCurrentBranch
+	baldaInitCurrentBranch             = func(workingDir string) (string, error) {
+		return git.CurrentBranch(context.Background(), workingDir)
+	}
 	baldaInitLoadBotIdentity           = loadBotIdentityFromToken
 )
