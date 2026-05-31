@@ -306,8 +306,8 @@ func TestScheduledTaskSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *tes
 	now := time.Date(2026, time.May, 14, 16, 0, 0, 0, time.UTC)
 	locator := baldatelegram.NewLocator(9001, 222)
 
-	stale := baldastate.ScheduledTaskRecord{
-		TaskID:       "stale-task",
+	orphaned := baldastate.ScheduledTaskRecord{
+		TaskID:       "orphaned-task",
 		SessionID:    locator.SessionID,
 		ChannelType:  locator.ChannelType,
 		AddressKey:   locator.AddressKey,
@@ -318,8 +318,8 @@ func TestScheduledTaskSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *tes
 		MaxRetries:   3,
 		NextRunAt:    now.Add(10 * time.Second),
 	}
-	if err := store.Upsert(ctx, stale); err != nil {
-		t.Fatalf("Upsert(stale) error = %v", err)
+	if err := store.Upsert(ctx, orphaned); err != nil {
+		t.Fatalf("Upsert(orphaned) error = %v", err)
 	}
 
 	scheduler := &ScheduledTaskScheduler{
@@ -377,12 +377,12 @@ func TestScheduledTaskSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *tes
 		t.Fatalf("NextRunAt = %s, want %s", got, want)
 	}
 
-	_, staleExists, err := store.GetByID(ctx, stale.TaskID)
+	_, orphanedExists, err := store.GetByID(ctx, orphaned.TaskID)
 	if err != nil {
-		t.Fatalf("GetByID(stale) error = %v", err)
+		t.Fatalf("GetByID(orphaned) error = %v", err)
 	}
-	if staleExists {
-		t.Fatal("stale task still exists after reconcile")
+	if orphanedExists {
+		t.Fatal("orphaned task still exists after reconcile")
 	}
 }
 
