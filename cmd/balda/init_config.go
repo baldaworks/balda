@@ -107,17 +107,6 @@ func buildBaldaInitAgents(detected []baldaInitAgentTemplate) map[string]any {
 	return agents
 }
 
-func setBaldaProvider(doc map[string]any, providerID string) error {
-	baldaSection, ok := toStringAnyMap(doc["balda"])
-	if !ok {
-		return fmt.Errorf("balda section is missing from generated config")
-	}
-	baldaSection["provider"] = providerID
-	doc["balda"] = baldaSection
-
-	return nil
-}
-
 func setBaldaTelegramToken(doc map[string]any, token string) error {
 	baldaSection, ok := toStringAnyMap(doc["balda"])
 	if !ok {

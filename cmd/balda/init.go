@@ -96,9 +96,12 @@ func initCommand() *cobra.Command {
 				return err
 			}
 
-			if err := setBaldaProvider(doc, selectedBaldaProvider); err != nil {
-				return err
+			baldaSection, ok := toStringAnyMap(doc["balda"])
+			if !ok {
+				return fmt.Errorf("balda section is missing from generated config")
 			}
+			baldaSection["provider"] = selectedBaldaProvider
+			doc["balda"] = baldaSection
 			if err := setBaldaGlobalInstructionExample(doc); err != nil {
 				return err
 			}
@@ -115,10 +118,6 @@ func initCommand() *cobra.Command {
 				return err
 			}
 
-			baldaSection, ok := toStringAnyMap(doc["balda"])
-			if !ok {
-				return fmt.Errorf("balda section is missing from generated config")
-			}
 			stateDirRaw := baldaRuntimeStatePath
 			if raw, exists := baldaSection["state_dir"]; exists {
 				stateDirRaw = strings.TrimSpace(fmt.Sprintf("%v", raw))
