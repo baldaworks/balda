@@ -112,6 +112,16 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		}
 	}
 
+	hasCommand := false
+	if event.Message.Entities != nil {
+		for _, entity := range *event.Message.Entities {
+			if entity.Type == "bot_command" {
+				hasCommand = true
+				break
+			}
+		}
+	}
+
 	return MessageContext{
 		Locator:       NewLocator(event.Message.Chat.Id, topicID),
 		ChatID:        event.Message.Chat.Id,
@@ -124,7 +134,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		ReplyToIsBot:  replyToIsBot,
 		ReplyContent:  replyContent,
 		Text:          text,
-		HasCommand:    hasCommandEntity(event.Message),
+		HasCommand:    hasCommand,
 		ProgressPolicy: baldachannel.ProgressPolicy{
 			Typing:   true,
 			Thinking: event.Message.Chat.Type == chatTypePrivate,
@@ -290,18 +300,6 @@ func telegramTuple(locator baldasession.SessionLocator) (int64, int, error) {
 		return 0, 0, fmt.Errorf("unsupported channel type %q", locator.ChannelType)
 	}
 	return address.ChatID, address.TopicID, nil
-}
-
-func hasCommandEntity(msg *client.Message) bool {
-	if msg == nil || msg.Entities == nil {
-		return false
-	}
-	for _, entity := range *msg.Entities {
-		if entity.Type == "bot_command" {
-			return true
-		}
-	}
-	return false
 }
 
 func (a *Adapter) topicIDFromMessage(msg *client.Message) int {
