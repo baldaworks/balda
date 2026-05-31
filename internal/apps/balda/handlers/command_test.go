@@ -391,10 +391,8 @@ func TestCommandHandlerOnCommand_GoalWithoutArgsShowsUsage(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Usage: /goal <objective>")
 }
 
-func TestCommandHandlerOnCommand_CancelClearsQueueAndInFlight(t *testing.T) {
+func TestCommandHandlerOnCommand_CancelPublishesControlCommand(t *testing.T) {
 	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
-	turns.cancelHadInFlight = true
-	turns.cancelDropped = 2
 
 	topicID := 88
 	err := handler.onCommand(context.Background(), newCommandEvent("cancel", "", 101, 9001, &topicID))
@@ -525,7 +523,6 @@ type fakeCommandSessionManager struct {
 	createCalls   []createSessionCall
 	baldaProvider string
 	metadata      session.AgentMetadata
-	sessionInfos  map[string]session.TopicSessionInfo
 	resetErr      error
 }
 
@@ -566,26 +563,12 @@ func (f *fakeCommandSessionManager) ResetSession(_ context.Context, locator sess
 	return f.resetErr
 }
 
-func (f *fakeCommandSessionManager) GetSessionInfo(_ context.Context, sessionID string) (session.TopicSessionInfo, error) {
-	if f.sessionInfos != nil {
-		if info, ok := f.sessionInfos[sessionID]; ok {
-			return info, nil
-		}
-	}
-	return session.TopicSessionInfo{SessionID: sessionID}, nil
-}
-
 type fakeTurnDispatcher struct {
-	commands          []swarm.Envelope
-	cancelCalls       []cancelSessionCall
-	enqueueCalls      []actors.TurnTask
-	cancelHadInFlight bool
-	cancelDropped     int
-	cancelErr         error
+	commands    []swarm.Envelope
+	cancelCalls []cancelSessionCall
 }
 
-func (f *fakeTurnDispatcher) Enqueue(task actors.TurnTask) (int, error) {
-	f.enqueueCalls = append(f.enqueueCalls, task)
+func (*fakeTurnDispatcher) Enqueue(actors.TurnTask) (int, error) {
 	return 0, nil
 }
 
@@ -606,10 +589,7 @@ func (f *fakeTurnDispatcher) CancelSession(locator session.SessionLocator, clear
 		SessionID:   locator.SessionID,
 		ClearQueued: clearQueued,
 	})
-	if f.cancelErr != nil {
-		return false, 0, f.cancelErr
-	}
-	return f.cancelHadInFlight, f.cancelDropped, nil
+	return false, 0, nil
 }
 
 func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSessionManager, *fakeTurnDispatcher, *fakeTelegramClient) {
