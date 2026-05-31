@@ -497,7 +497,7 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.swarm.events.stream`: event stream name (default `BALDA_EVENTS`)
 - `balda.swarm.dlq.stream`: dead-letter stream name (default `BALDA_DLQ`)
 - Actor-lane queue policy is not a public config surface yet; JetStream is the only command queue. SessionActor currently honors only the internal per-envelope `queue_mode=interrupt` control hint.
-- `/goal` uses the Balda GoalkeeperActor, which wraps Norma's reusable ADK Goalkeeper workflow. The workflow runs a worker agent followed by a validator agent in the same ADK session until the validator returns `verdict: pass` or `balda.goal.max_iterations` is reached.
+- `/goal` runs the Goalkeeper workflow in the current session and workspace. The workflow runs a worker agent followed by a validator agent until the validator returns `verdict: pass` or `balda.goal.max_iterations` is reached.
 - Task records, projections, DLQ state, and runtime lanes are internal implementation details; they are not chat commands.
 - internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
   - `balda.memory.read` reads the file from MCP.
@@ -597,9 +597,9 @@ Assignable work is persisted in `swarm_tasks`; task history is published to
 JetStream command first; task records are product state created by TaskActor
 after command delivery.
 
-- `/goal` publishes a durable goalkeeper envelope. GoalkeeperActor restores or creates
-  the session, runs the Norma Goalkeeper worker/validator workflow, records the task
-  result, and sends progress/final messages through DeliveryActor.
+- `/goal` starts goal work for the current session. Balda restores or creates the
+  session, runs the Goalkeeper worker/validator workflow, records the task
+  result, and sends progress/final messages.
 - Task statuses are `created`, `queued`, `running`, `waiting_for_agent`,
   `waiting_for_user`, `validating`, `completed`, `failed`, `canceled`, and
   `deadlettered`.
@@ -967,7 +967,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - users can retry sync later with `balda.workspace.import`
 - Source of truth:
   - persisted metadata (`workspace_dir`, `branch_name`) is stored in `state.db` session records
-  - TaskActor and GoalkeeperActor resolve workspace metadata from session info when dispatching/handling task and goal commands
+  - task and goal work resolve workspace metadata from session info when commands are dispatched and handled
 
 ## Troubleshooting
 

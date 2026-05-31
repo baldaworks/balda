@@ -1,14 +1,14 @@
 # Goalkeeper
 
-Balda `/goal <objective>` publishes a durable command to GoalkeeperActor, which runs Norma's reusable ADK Goalkeeper workflow in the current Balda session and workspace.
+Balda `/goal <objective>` starts the Goalkeeper workflow in the current session and workspace.
 
-The workflow boots:
+The workflow uses:
 
 - one ADK `LoopAgent` workflow agent named `Goalkeeper`
 - one worker child agent named `GoalkeeperWorker`
 - one validator child agent named `GoalkeeperValidator`
 
-Both child agents are built from the configured `balda.provider`. They use the same resolved workspace directory, Balda MCP server set, and ADK session as the current chat session.
+Both child agents are built from the configured `balda.provider`. They use the same workspace, Balda MCP server set, and ADK session as the current chat session.
 
 ## Workflow
 

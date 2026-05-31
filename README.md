@@ -320,7 +320,7 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 - Progress updates are too noisy: set `balda.telegram.plan_updates=false`.
 - Startup fails with `jetstream is required` or `create or update stream`: keep `balda.nats.jetstream=true`, ensure `balda.nats.store_dir` is writable, and verify disk space.
 - Startup fails with command/event consumer creation errors: verify unique consumer names in `balda.swarm.commands.consumer` and that no external process is mutating the same embedded store concurrently.
-- Runtime status issues show up in logs and internal operator views; check actor failures, retry pressure, and DLQ handling before increasing transport limits.
+- Runtime issues show up in structured logs; check recent command failures and retry pressure before increasing transport limits.
 
 ## Documentation
 

@@ -255,6 +255,25 @@ func TestDocumentationContract(t *testing.T) {
 		}
 	})
 
+	t.Run("goal docs keep /goal user-facing", func(t *testing.T) {
+		paths := []string{
+			filepath.Join(repoRoot, "docs/goalkeeper.md"),
+			filepath.Join(repoRoot, "docs/balda.md"),
+		}
+		forbidden := []string{
+			"GoalkeeperActor",
+			"publishes a durable command",
+		}
+		for _, path := range paths {
+			body := readFile(t, path)
+			for _, needle := range forbidden {
+				if strings.Contains(body, needle) {
+					t.Fatalf("%s still exposes /goal implementation detail %q", filepath.ToSlash(path), needle)
+				}
+			}
+		}
+	})
+
 	t.Run("agent docs use merge pull workflow", func(t *testing.T) {
 		path := filepath.Join(repoRoot, "AGENTS.md")
 		body := readFile(t, path)
@@ -293,6 +312,14 @@ func TestDocumentationContract(t *testing.T) {
 			if strings.Contains(section, needle) {
 				t.Fatalf("%s configuration section still exposes internal runtime detail %q", filepath.ToSlash(path), needle)
 			}
+		}
+	})
+
+	t.Run("readme troubleshooting avoids internal operator view wording", func(t *testing.T) {
+		path := filepath.Join(repoRoot, "README.md")
+		section := markdownSection(readFile(t, path), "## Troubleshooting")
+		if strings.Contains(section, "internal operator views") {
+			t.Fatalf("%s troubleshooting section still exposes internal operator view wording", filepath.ToSlash(path))
 		}
 	})
 
