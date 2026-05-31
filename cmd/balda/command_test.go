@@ -179,7 +179,7 @@ func TestDefaultBaldaConfig_DocumentsCurrentTemplateWording(t *testing.T) {
 	for _, want := range []string{
 		"# /goal work-validation iteration cap.",
 		"# Required built-in command/event runtime.",
-		"# Unsupported built-in IDs such as runtime.state, balda.state, and runtime.balda are rejected.",
+		"# Use the built-in `balda` server ID for Balda workspace/state tools.",
 		"swarm: {}",
 	} {
 		if !strings.Contains(body, want) {

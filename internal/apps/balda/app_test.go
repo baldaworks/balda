@@ -108,27 +108,23 @@ func TestOpenBaldaStateProviderIgnoresOldDBPath(t *testing.T) {
 	}
 }
 
-func TestValidateBaldaMCPConfiguration_RejectsUnsupportedBuiltInServerReferences(t *testing.T) {
+func TestValidateBaldaMCPConfiguration_AllowsCurrentBuiltInServerUsage(t *testing.T) {
 	cfg := Config{
 		Balda: BaldaConfig{
-			MCPServers: []string{"balda.config"},
+			MCPServers: []string{"balda"},
 		},
 	}
 	normaCfg := runtimeconfig.RuntimeConfig{
 		Providers: map[string]agentconfig.Config{
-			"root": {MCPServers: []string{"balda.workspace"}},
+			"root": {MCPServers: []string{"balda"}},
+		},
+		MCPServers: map[string]agentconfig.MCPServerConfig{
+			"custom": {Type: agentconfig.MCPServerTypeHTTP, URL: "http://example.com/mcp"},
 		},
 	}
 
-	err := validateBaldaMCPConfiguration(cfg, normaCfg, "/tmp/work/.config/balda/config.yaml")
-	if err == nil {
-		t.Fatal("validateBaldaMCPConfiguration() error = nil, want non-nil")
-	}
-	if !strings.Contains(err.Error(), `balda.mcp_servers[0] references unsupported built-in config MCP server "balda.config"; edit the balda config file directly at "/tmp/work/.config/balda/config.yaml"`) {
-		t.Fatalf("unexpected balda.mcp_servers validation error: %v", err)
-	}
-	if !strings.Contains(err.Error(), `runtime.providers.root.mcp_servers[0] references unsupported built-in MCP server "balda.workspace"; use "balda"`) {
-		t.Fatalf("unexpected runtime.providers validation error: %v", err)
+	if err := validateBaldaMCPConfiguration(cfg, normaCfg, "/tmp/work/.config/balda/config.yaml"); err != nil {
+		t.Fatalf("validateBaldaMCPConfiguration() error = %v, want nil", err)
 	}
 }
 
@@ -138,8 +134,7 @@ func TestValidateBaldaMCPConfiguration_RejectsReservedCustomServerIDs(t *testing
 			"root": {},
 		},
 		MCPServers: map[string]agentconfig.MCPServerConfig{
-			"balda":          {Type: agentconfig.MCPServerTypeHTTP, URL: "http://example.com/mcp"},
-			"runtime.config": {Type: agentconfig.MCPServerTypeHTTP, URL: "http://example.com/state"},
+			"balda": {Type: agentconfig.MCPServerTypeHTTP, URL: "http://example.com/mcp"},
 		},
 	}
 
@@ -149,9 +144,6 @@ func TestValidateBaldaMCPConfiguration_RejectsReservedCustomServerIDs(t *testing
 	}
 	if !strings.Contains(err.Error(), "runtime.mcp_servers.balda is reserved for the built-in balda MCP server") {
 		t.Fatalf("missing reserved balda error: %v", err)
-	}
-	if !strings.Contains(err.Error(), `runtime.mcp_servers.runtime.config conflicts with unsupported built-in config MCP server ID "runtime.config"; edit the balda config file directly at "/tmp/work/.config/balda/config.yaml"`) {
-		t.Fatalf("missing unsupported built-in server conflict error: %v", err)
 	}
 }
 
