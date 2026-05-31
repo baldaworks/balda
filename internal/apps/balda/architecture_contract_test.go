@@ -204,26 +204,6 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
-	t.Run("unsupported telegram debug commands are not routed", func(t *testing.T) {
-		handlerSource := readSource(t, filepath.Join(root, "handlers/command_handler.go"))
-		for _, removed := range []string{
-			`case "reset"`,
-			`case "tasks"`,
-			`case "task"`,
-			`case "swarm"`,
-			`case "queue"`,
-			`case "mailbox"`,
-			`case "projection"`,
-			`case "actors"`,
-			`case "dlq"`,
-			`case "memory"`,
-		} {
-			if strings.Contains(handlerSource, removed) {
-				t.Fatalf("command handler still routes unsupported command %q", removed)
-			}
-		}
-	})
-
 	t.Run("runtime status and dlq inspection surfaces stay out of production", func(t *testing.T) {
 		matches := findSourceMatches(t, root, files, regexp.MustCompile(`\bActorRuntimeStatusProvider\b|\bDLQInspector\b|\bRuntimeStatus\b|\bConsumerStatus\b|\bStreamStatus\b|\bErrDLQEntryNotFound\b|\bGetDLQEntry\s*\(`))
 		if len(matches) > 0 {

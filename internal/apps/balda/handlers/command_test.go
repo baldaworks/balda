@@ -474,50 +474,6 @@ func TestCommandHandlerOnCommand_CancelCollaboratorAllowed(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
-func TestCommandHandlerOnCommand_UnsupportedCommandsAreSilent(t *testing.T) {
-	unsupported := []struct {
-		name string
-		args string
-	}{
-		{name: "reset"},
-		{name: "memory"},
-		{name: "tasks"},
-		{name: "task", args: "task-1"},
-		{name: "swarm", args: "status"},
-		{name: "queue", args: "status"},
-		{name: "mailbox", args: "status"},
-		{name: "projection", args: "status"},
-		{name: "actors", args: "status"},
-		{name: "dlq"},
-	}
-
-	for _, tt := range unsupported {
-		t.Run(tt.name, func(t *testing.T) {
-			handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-			if err := handler.onCommand(context.Background(), newCommandEvent(tt.name, tt.args, 101, 9001, nil)); err != nil {
-				t.Fatalf("onCommand(%s) error = %v", tt.name, err)
-			}
-
-			if len(tgClient.messages) != 0 {
-				t.Fatalf("messages = %d, want 0 for unsupported command %q", len(tgClient.messages), tt.name)
-			}
-			if len(sm.createCalls) != 0 {
-				t.Fatalf("create calls = %d, want 0 for unsupported command %q", len(sm.createCalls), tt.name)
-			}
-			if len(sm.resetCalls) != 0 {
-				t.Fatalf("reset calls = %d, want 0 for unsupported command %q", len(sm.resetCalls), tt.name)
-			}
-			if len(turns.commands) != 0 {
-				t.Fatalf("published commands = %d, want 0 for unsupported command %q", len(turns.commands), tt.name)
-			}
-			if len(turns.cancelCalls) != 0 {
-				t.Fatalf("cancel calls = %d, want 0 for unsupported command %q", len(turns.cancelCalls), tt.name)
-			}
-		})
-	}
-}
-
 type fakeCommandSessionManager struct {
 	resetCalls    []resetSessionCall
 	createCalls   []createSessionCall

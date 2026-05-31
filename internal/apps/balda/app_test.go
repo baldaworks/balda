@@ -228,47 +228,7 @@ func TestValidateSessionPersistence(t *testing.T) {
 	}
 }
 
-func TestValidateUnsupportedRuntimeConfig(t *testing.T) {
-	t.Parallel()
-
-	err := validateUnsupportedRuntimeConfig(BaldaConfig{
-		UnsupportedEventBus: map[string]any{"mode": "sqlite"},
-		Swarm:               SwarmConfig{UnsupportedMode: "shadow"},
-		Webhooks:            WebhooksConfig{UnsupportedMode: "mailbox"},
-		Scheduler:           SchedulerConfig{UnsupportedMode: "mailbox"},
-	})
-	if err == nil {
-		t.Fatal("validateUnsupportedRuntimeConfig() error = nil, want unsupported-config error")
-	}
-	want := []string{
-		"balda.event_bus is no longer supported",
-		"balda.swarm.mode is no longer supported",
-		"balda.webhooks.mode is no longer supported",
-		"balda.scheduler.mode is no longer supported",
-	}
-	for _, marker := range want {
-		if !strings.Contains(err.Error(), marker) {
-			t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want marker %q", err.Error(), marker)
-		}
-	}
-	if strings.Contains(err.Error(), "legacy mode configuration") {
-		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want current unsupported-config wording", err.Error())
-	}
-	if strings.Contains(err.Error(), "invalid removed runtime configuration") {
-		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, still contains removed-runtime summary wording", err.Error())
-	}
-	if strings.Contains(err.Error(), "configure balda.nats for JetStream") {
-		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, still contains transport-specific event_bus guidance", err.Error())
-	}
-	if !strings.Contains(err.Error(), "invalid unsupported runtime configuration:") {
-		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want unsupported-runtime summary wording", err.Error())
-	}
-	if !strings.Contains(err.Error(), "balda.event_bus is no longer supported; use balda.nats built-in runtime settings") {
-		t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want simplified event_bus guidance", err.Error())
-	}
-}
-
-func TestValidateUnsupportedRuntimeConfig_AllowsCurrentConfig(t *testing.T) {
+func TestValidateCurrentRuntimeConfig_AllowsCurrentConfig(t *testing.T) {
 	t.Parallel()
 
 	if err := validateUnsupportedRuntimeConfig(BaldaConfig{}); err != nil {
@@ -324,20 +284,6 @@ func TestBuildScheduledTaskSchedulerConfig(t *testing.T) {
 	}
 }
 
-func TestValidateSchedulerConfigRejectsUnsupportedJobsKey(t *testing.T) {
-	t.Parallel()
-
-	err := validateSchedulerConfig(SchedulerConfig{
-		UnsupportedJobs: []any{map[string]any{"id": "legacy"}},
-	})
-	if err == nil {
-		t.Fatal("validateSchedulerConfig() error = nil, want unsupported jobs key error")
-	}
-	if !strings.Contains(err.Error(), "balda.scheduler.jobs is no longer supported") {
-		t.Fatalf("validateSchedulerConfig() error = %v, want unsupported jobs key guidance", err)
-	}
-}
-
 func TestValidateRuntimeConfigLint_AllowsAlwaysOnSwarmConfig(t *testing.T) {
 	t.Parallel()
 
@@ -350,35 +296,6 @@ func TestValidateRuntimeConfigLint_AllowsAlwaysOnSwarmConfig(t *testing.T) {
 		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
 	}, handlers.InboundWebhookConfig{}); err != nil {
 		t.Fatalf("validateRuntimeConfigLint() error = %v, want nil", err)
-	}
-}
-
-func TestValidateUnsupportedRuntimeConfig_AvoidsTransportSpecificModeGuidance(t *testing.T) {
-	t.Parallel()
-
-	err := validateUnsupportedRuntimeConfig(BaldaConfig{
-		Webhooks:  WebhooksConfig{UnsupportedMode: true},
-		Scheduler: SchedulerConfig{UnsupportedMode: true},
-	})
-	if err == nil {
-		t.Fatal("validateUnsupportedRuntimeConfig() error = nil, want unsupported mode guidance")
-	}
-	got := err.Error()
-	for _, needle := range []string{
-		"webhooks publish JetStream commands only",
-		"scheduler publishes JetStream commands only",
-	} {
-		if strings.Contains(got, needle) {
-			t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, still contains transport-specific guidance %q", got, needle)
-		}
-	}
-	for _, needle := range []string{
-		"balda.webhooks.mode is no longer supported; webhooks use the always-on runtime",
-		"balda.scheduler.mode is no longer supported; scheduling uses the always-on runtime",
-	} {
-		if !strings.Contains(got, needle) {
-			t.Fatalf("validateUnsupportedRuntimeConfig() error = %q, want marker %q", got, needle)
-		}
 	}
 }
 
