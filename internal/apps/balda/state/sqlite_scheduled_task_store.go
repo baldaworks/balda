@@ -113,7 +113,12 @@ func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledT
 		retryCount,
 		strings.TrimSpace(record.LastDispatchKey),
 		record.NextRunAt.UTC().Format(time.RFC3339),
-		formatOptionalRFC3339(record.LastRunAt),
+		func() string {
+			if record.LastRunAt.IsZero() {
+				return ""
+			}
+			return record.LastRunAt.UTC().Format(time.RFC3339)
+		}(),
 		strings.TrimSpace(record.LastError),
 		createdAt.Format(time.RFC3339),
 		updatedAt.Format(time.RFC3339),
@@ -327,11 +332,4 @@ func parseOptionalRFC3339(raw string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return parsed.UTC(), nil
-}
-
-func formatOptionalRFC3339(ts time.Time) string {
-	if ts.IsZero() {
-		return ""
-	}
-	return ts.UTC().Format(time.RFC3339)
 }
