@@ -512,7 +512,10 @@ func (r *InboundWebhookReceiver) routePaths() []string {
 }
 
 func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req *http.Request) {
-	requestID := requestIDFromInboundWebhookRequest(req)
+	requestID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
+	if requestID == "" {
+		requestID = fmt.Sprintf("inbound-%d", time.Now().UnixNano())
+	}
 	if req.Method != http.MethodPost {
 		r.writeInboundWebhookError(w, requestID, newInboundWebhookHTTPError(
 			http.StatusMethodNotAllowed,
@@ -666,14 +669,6 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		MessageID: result.MsgID,
 		Duplicate: result.Duplicate,
 	})
-}
-
-func requestIDFromInboundWebhookRequest(req *http.Request) string {
-	requestID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
-	if requestID != "" {
-		return requestID
-	}
-	return fmt.Sprintf("inbound-%d", time.Now().UnixNano())
 }
 
 func authorizeInboundWebhookRequest(req *http.Request, policy inboundWebhookAuthPolicy) error {
