@@ -226,43 +226,6 @@ func newInboundWebhookHTTPError(status int, code, message string, cause error) *
 	}
 }
 
-func newInboundWebhookReceiver(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
-	normalized, err := normalizeInboundWebhookConfig(params.Config)
-	if err != nil {
-		return nil, err
-	}
-
-	receiver := &InboundWebhookReceiver{
-		enabled:    normalized.Enabled,
-		listenAddr: normalized.ListenAddr,
-		routes:     normalized.Routes,
-		balda:      params.Balda,
-		owner:      params.OwnerStore,
-		logger:     params.Logger.With().Str("component", "balda.inbound_webhook").Logger(),
-	}
-
-	if !receiver.enabled {
-		return receiver, nil
-	}
-	if receiver.balda == nil {
-		return nil, fmt.Errorf("balda handler is required for inbound webhooks")
-	}
-	if receiver.owner == nil {
-		return nil, fmt.Errorf("balda owner store is required for inbound webhooks")
-	}
-
-	params.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			return receiver.start(ctx)
-		},
-		OnStop: func(ctx context.Context) error {
-			return receiver.stop(ctx)
-		},
-	})
-
-	return receiver, nil
-}
-
 type normalizedInboundWebhookConfig struct {
 	Enabled    bool
 	ListenAddr string

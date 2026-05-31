@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/agent"
@@ -33,8 +36,83 @@ var Module = fx.Module("balda_handlers",
 			fx.ParamTags(``, ``, `name:"balda_telegram_formatting_mode"`),
 		),
 		baldatelegram.NewAdapter,
-		newScheduledTaskScheduler,
-		newInboundWebhookReceiver,
+		func(params scheduledTaskSchedulerParams) (*ScheduledTaskScheduler, error) {
+			if params.StateProvider == nil {
+				return nil, fmt.Errorf("balda state provider is required")
+			}
+			if params.Dispatcher == nil {
+				return nil, fmt.Errorf("balda actor dispatcher is required for scheduler")
+			}
+			config, err := normalizeScheduledTaskSchedulerConfig(params.Config)
+			if err != nil {
+				return nil, err
+			}
+			if len(config.Tasks) > 0 && params.OwnerStore == nil {
+				return nil, fmt.Errorf("balda owner store is required for scheduler tasks")
+			}
+
+			scheduler := &ScheduledTaskScheduler{
+				taskStore:    params.StateProvider.ScheduledTasks(),
+				dispatcher:   params.Dispatcher,
+				owner:        params.OwnerStore,
+				logger:       params.Logger.With().Str("component", "balda.scheduled_task_scheduler").Logger(),
+				config:       config,
+				pollInterval: defaultSchedulerPollInterval,
+				dueBatchSize: defaultSchedulerDueBatchSize,
+				now:          time.Now,
+			}
+
+			params.LC.Append(fx.Hook{
+				OnStart: func(ctx context.Context) error {
+					if err := scheduler.reconcileConfiguredTasks(ctx); err != nil {
+						return err
+					}
+					scheduler.start()
+					return nil
+				},
+				OnStop: func(ctx context.Context) error {
+					return scheduler.stop(ctx)
+				},
+			})
+
+			return scheduler, nil
+		},
+		func(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
+			normalized, err := normalizeInboundWebhookConfig(params.Config)
+			if err != nil {
+				return nil, err
+			}
+
+			receiver := &InboundWebhookReceiver{
+				enabled:    normalized.Enabled,
+				listenAddr: normalized.ListenAddr,
+				routes:     normalized.Routes,
+				balda:      params.Balda,
+				owner:      params.OwnerStore,
+				logger:     params.Logger.With().Str("component", "balda.inbound_webhook").Logger(),
+			}
+
+			if !receiver.enabled {
+				return receiver, nil
+			}
+			if receiver.balda == nil {
+				return nil, fmt.Errorf("balda handler is required for inbound webhooks")
+			}
+			if receiver.owner == nil {
+				return nil, fmt.Errorf("balda owner store is required for inbound webhooks")
+			}
+
+			params.LC.Append(fx.Hook{
+				OnStart: func(ctx context.Context) error {
+					return receiver.start(ctx)
+				},
+				OnStop: func(ctx context.Context) error {
+					return receiver.stop(ctx)
+				},
+			})
+
+			return receiver, nil
+		},
 		func(params startHandlerParams) *StartHandler {
 			return &StartHandler{
 				ownerStore:        params.OwnerStore,
@@ -44,7 +122,30 @@ var Module = fx.Module("balda_handlers",
 				authToken:         params.AuthToken,
 			}
 		},
-		newBaldaHandler,
+		func(deps baldaHandlerDeps) (*BaldaHandler, error) {
+			h := &BaldaHandler{
+				ownerStore:         deps.OwnerStore,
+				collaboratorStore:  deps.CollaboratorStore,
+				channel:            deps.Channel,
+				sessionManager:     deps.SessionManager,
+				turnDispatcher:     deps.TurnDispatcher,
+				actorDispatcher:    deps.ActorDispatcher,
+				messenger:          deps.Messenger,
+				tgClient:           deps.TGClient,
+				authToken:          strings.TrimSpace(deps.AuthToken),
+				baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
+				planUpdatesEnabled: deps.PlanUpdatesEnabled,
+				logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
+			}
+
+			deps.LC.Append(fx.Hook{
+				OnStart: func(ctx context.Context) error {
+					return h.onStart(ctx)
+				},
+			})
+
+			return h, nil
+		},
 		provideSessionTurnRunner,
 		provideScheduledTaskRecorder,
 		func(params commandHandlerParams) *CommandHandler {

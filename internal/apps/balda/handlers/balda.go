@@ -77,31 +77,6 @@ type baldaHandlerDeps struct {
 	InternalMCPManager *InternalMCPManager `optional:"true"`
 }
 
-func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
-	h := &BaldaHandler{
-		ownerStore:         deps.OwnerStore,
-		collaboratorStore:  deps.CollaboratorStore,
-		channel:            deps.Channel,
-		sessionManager:     deps.SessionManager,
-		turnDispatcher:     deps.TurnDispatcher,
-		actorDispatcher:    deps.ActorDispatcher,
-		messenger:          deps.Messenger,
-		tgClient:           deps.TGClient,
-		authToken:          strings.TrimSpace(deps.AuthToken),
-		baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
-		planUpdatesEnabled: deps.PlanUpdatesEnabled,
-		logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
-	}
-
-	deps.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			return h.onStart(ctx)
-		},
-	})
-
-	return h, nil
-}
-
 // Register registers the handler with the registry.
 func (h *BaldaHandler) Register(registry tgbotkit.Registry) {
 	registry.OnMessage(h.onMessage)

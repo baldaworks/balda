@@ -73,48 +73,6 @@ type ScheduledTaskScheduler struct {
 	wg     sync.WaitGroup
 }
 
-func newScheduledTaskScheduler(params scheduledTaskSchedulerParams) (*ScheduledTaskScheduler, error) {
-	if params.StateProvider == nil {
-		return nil, fmt.Errorf("balda state provider is required")
-	}
-	if params.Dispatcher == nil {
-		return nil, fmt.Errorf("balda actor dispatcher is required for scheduler")
-	}
-	config, err := normalizeScheduledTaskSchedulerConfig(params.Config)
-	if err != nil {
-		return nil, err
-	}
-	if len(config.Tasks) > 0 && params.OwnerStore == nil {
-		return nil, fmt.Errorf("balda owner store is required for scheduler tasks")
-	}
-
-	scheduler := &ScheduledTaskScheduler{
-		taskStore:    params.StateProvider.ScheduledTasks(),
-		dispatcher:   params.Dispatcher,
-		owner:        params.OwnerStore,
-		logger:       params.Logger.With().Str("component", "balda.scheduled_task_scheduler").Logger(),
-		config:       config,
-		pollInterval: defaultSchedulerPollInterval,
-		dueBatchSize: defaultSchedulerDueBatchSize,
-		now:          time.Now,
-	}
-
-	params.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			if err := scheduler.reconcileConfiguredTasks(ctx); err != nil {
-				return err
-			}
-			scheduler.start()
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			return scheduler.stop(ctx)
-		},
-	})
-
-	return scheduler, nil
-}
-
 func (s *ScheduledTaskScheduler) start() {
 	if s.cancel != nil {
 		return
