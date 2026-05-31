@@ -15,18 +15,13 @@ const (
 	StateDBFileName = "state.db"
 )
 
-// ConfigDir returns the balda config directory path for the given working dir.
-func ConfigDir(workingDir string) string {
-	trimmed := strings.TrimSpace(workingDir)
-	if trimmed == "" {
-		return configDirName
-	}
-	return filepath.Join(trimmed, ".config", "balda")
-}
-
 // ConfigPath returns the balda config file path for the given working dir.
 func ConfigPath(workingDir string) string {
-	return filepath.Join(ConfigDir(workingDir), configFileName)
+	trimmed := strings.TrimSpace(workingDir)
+	if trimmed == "" {
+		return filepath.Join(configDirName, configFileName)
+	}
+	return filepath.Join(trimmed, ".config", "balda", configFileName)
 }
 
 // StateDBPath returns the canonical Balda SQLite state database path.
