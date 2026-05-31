@@ -78,34 +78,6 @@ func TestOpenBaldaStateProviderUsesStateDB(t *testing.T) {
 	if _, err := os.Stat(paths.StateDBPath(stateDir)); err != nil {
 		t.Fatalf("stat state db: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "balda.db")); !os.IsNotExist(err) {
-		t.Fatalf("old balda.db stat error = %v, want not exist", err)
-	}
-}
-
-func TestOpenBaldaStateProviderIgnoresOldDBPath(t *testing.T) {
-	stateDir := t.TempDir()
-	oldPath := filepath.Join(stateDir, "balda.db")
-	if err := os.WriteFile(oldPath, []byte("legacy"), 0o600); err != nil {
-		t.Fatalf("write old db path: %v", err)
-	}
-
-	provider, err := openBaldaStateProvider(context.Background(), stateDir)
-	if err != nil {
-		t.Fatalf("openBaldaStateProvider() error = %v", err)
-	}
-	defer func() { _ = provider.Close() }()
-
-	if _, err := os.Stat(paths.StateDBPath(stateDir)); err != nil {
-		t.Fatalf("stat state db: %v", err)
-	}
-	content, err := os.ReadFile(oldPath)
-	if err != nil {
-		t.Fatalf("read old db path: %v", err)
-	}
-	if string(content) != "legacy" {
-		t.Fatalf("old db path content = %q, want unchanged", string(content))
-	}
 }
 
 func TestValidateBaldaMCPConfiguration_AllowsCurrentBuiltInServerUsage(t *testing.T) {

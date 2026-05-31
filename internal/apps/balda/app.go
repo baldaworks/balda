@@ -29,7 +29,6 @@ import (
 	"github.com/normahq/norma/pkg/runtime/agentfactory"
 	runtimeconfig "github.com/normahq/norma/pkg/runtime/appconfig"
 	"github.com/normahq/norma/pkg/runtime/mcpregistry"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime"
 	"github.com/tgbotkit/runtime/updatepoller"
@@ -229,7 +228,6 @@ func Module(
 					if err != nil {
 						return false, err
 					}
-					warnOldWorkspaceDir(logger, workingDir, stateDir, workspaceSessionsDir, enabled)
 					logger.Info().
 						Str("workspace_mode", string(mode)).
 						Bool("workspace_enabled", enabled).
@@ -413,35 +411,6 @@ func openBaldaStateProvider(ctx context.Context, stateDir string) (baldastate.Pr
 		return nil, fmt.Errorf("open balda state provider: %w", err)
 	}
 	return provider, nil
-}
-
-func warnOldWorkspaceDir(logger zerolog.Logger, workingDir, stateDir, sessionsDir string, workspaceEnabled bool) {
-	if !workspaceEnabled {
-		return
-	}
-	dirName := strings.TrimSpace(sessionsDir)
-	if dirName == "" {
-		dirName = defaultWorkspaceSessionsDirName
-	}
-
-	oldWorkspaceDir := filepath.Join(workingDir, ".norma", "balda-sessions")
-	newDir := filepath.Join(stateDir, dirName)
-	if filepath.Clean(oldWorkspaceDir) == filepath.Clean(newDir) {
-		return
-	}
-
-	fi, err := os.Stat(oldWorkspaceDir)
-	if err != nil {
-		return
-	}
-	if !fi.IsDir() {
-		return
-	}
-
-	logger.Warn().
-		Str("old_workspace_dir", oldWorkspaceDir).
-		Str("workspace_dir", newDir).
-		Msg("old balda workspace directory detected and ignored")
 }
 
 func resolveWorkspaceSessionsDir(raw string) (string, error) {
