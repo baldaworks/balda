@@ -11,7 +11,7 @@ Status: active
 - Command and event processing use explicit settlement.
 - Command subjects stay under `balda.v1.cmd.*`; events under `balda.v1.evt.*`.
 - Product/runtime packages consume actorlayer `Source`/`Delivery` and Balda
-  `ActorDispatcher` abstractions, not NATS/JetStream APIs.
+  `ActorDispatcher` abstractions, not transport APIs directly.
 
 ## Related tests
 

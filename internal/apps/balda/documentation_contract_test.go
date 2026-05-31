@@ -632,6 +632,7 @@ func TestDocumentationContract(t *testing.T) {
 			"`BALDA_DLQ` stores terminal command failures.",
 			"Worker and projector use durable pull consumers with explicit settlement.",
 			"Stream or consumer config changes.",
+			"`ActorDispatcher` abstractions, not NATS/JetStream APIs.",
 		}
 		for _, section := range sections {
 			for _, needle := range forbidden {
