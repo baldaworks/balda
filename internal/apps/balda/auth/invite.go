@@ -134,8 +134,3 @@ func (s *InviteStore) getInviteWithoutConsume(ctx context.Context, token string)
 
 	return &invite, nil
 }
-
-func (s *InviteStore) RevokeInvite(ctx context.Context, token string) error {
-	key := inviteKey(token)
-	return s.store.Delete(ctx, key)
-}
