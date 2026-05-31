@@ -16,7 +16,6 @@ import (
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/agent"
-	adksession "google.golang.org/adk/session"
 	"google.golang.org/genai"
 )
 
@@ -318,26 +317,41 @@ func (a *goalActor) runWorkflow(
 		if ev == nil {
 			continue
 		}
-		if step, eventType, ok := goalStepMetadata(ev); ok {
-			switch eventType {
-			case goalStepStarted:
-				currentStep = step
-				if err := a.recordStepStarted(ctx, payload, step, result.iterations+1); err != nil {
-					return result, err
+		if len(ev.CustomMetadata) != 0 {
+			eventType, _ := ev.CustomMetadata[goalMetadataEventKey].(string)
+			step, _ := ev.CustomMetadata[goalMetadataStepKey].(string)
+			eventType = strings.TrimSpace(eventType)
+			step = strings.TrimSpace(step)
+			if eventType != "" && step != "" {
+				switch eventType {
+				case goalStepStarted:
+					currentStep = step
+					if err := a.recordStepStarted(ctx, payload, step, result.iterations+1); err != nil {
+						return result, err
+					}
+				case goalStepCompleted:
+					if step == goalValidatorStep {
+						result.iterations++
+					}
+					if err := a.recordStepCompleted(ctx, payload, step, result.iterations); err != nil {
+						return result, err
+					}
+					currentStep = ""
+				case goalStepFailed:
+					return result, fmt.Errorf("%s step failed", step)
 				}
-			case goalStepCompleted:
-				if step == goalValidatorStep {
-					result.iterations++
-				}
-				if err := a.recordStepCompleted(ctx, payload, step, result.iterations); err != nil {
-					return result, err
-				}
-				currentStep = ""
-			case goalStepFailed:
-				return result, fmt.Errorf("%s step failed", step)
 			}
 		}
-		text := visibleEventText(ev)
+		text := ""
+		if ev.Content != nil {
+			var parts []string
+			for _, part := range ev.Content.Parts {
+				if part != nil && !part.Thought && strings.TrimSpace(part.Text) != "" {
+					parts = append(parts, part.Text)
+				}
+			}
+			text = strings.TrimSpace(strings.Join(parts, "\n\n"))
+		}
 		if text != "" {
 			result.finalText = appendVisibleText(result.finalText, text)
 			switch currentStep {
@@ -358,31 +372,6 @@ func (a *goalActor) runWorkflow(
 		return result, fmt.Errorf("goal workflow ended without completion")
 	}
 	return result, nil
-}
-
-func goalStepMetadata(ev *adksession.Event) (step string, eventType string, ok bool) {
-	if ev == nil || len(ev.CustomMetadata) == 0 {
-		return "", "", false
-	}
-	eventType, _ = ev.CustomMetadata[goalMetadataEventKey].(string)
-	step, _ = ev.CustomMetadata[goalMetadataStepKey].(string)
-	if strings.TrimSpace(eventType) == "" || strings.TrimSpace(step) == "" {
-		return "", "", false
-	}
-	return strings.TrimSpace(step), strings.TrimSpace(eventType), true
-}
-
-func visibleEventText(ev *adksession.Event) string {
-	if ev == nil || ev.Content == nil {
-		return ""
-	}
-	var parts []string
-	for _, part := range ev.Content.Parts {
-		if part != nil && !part.Thought && strings.TrimSpace(part.Text) != "" {
-			parts = append(parts, part.Text)
-		}
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
 func appendVisibleText(existing string, next string) string {
