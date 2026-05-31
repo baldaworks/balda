@@ -43,7 +43,13 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 	if !ok {
 		return nil, nil, fmt.Errorf("default balda template is missing balda section")
 	}
-	ensureBaldaMCPServersDefault(baldaSection)
+	if raw, exists := baldaSection["mcp_servers"]; !exists || raw == nil {
+		baldaSection["mcp_servers"] = []any{}
+	} else if _, ok := raw.([]any); !ok {
+		if _, ok := raw.([]string); !ok {
+			baldaSection["mcp_servers"] = []any{}
+		}
+	}
 	baldaBaseBranch, err := baldaInitCurrentBranch(workingDir)
 	if err != nil {
 		baldaBaseBranch = ""
@@ -113,21 +119,6 @@ func buildBaldaInitAgents(detected []baldaInitAgentTemplate) map[string]any {
 	}
 
 	return agents
-}
-
-func ensureBaldaMCPServersDefault(baldaSection map[string]any) {
-	raw, exists := baldaSection["mcp_servers"]
-	if !exists || raw == nil {
-		baldaSection["mcp_servers"] = []any{}
-		return
-	}
-	if _, ok := raw.([]any); ok {
-		return
-	}
-	if _, ok := raw.([]string); ok {
-		return
-	}
-	baldaSection["mcp_servers"] = []any{}
 }
 
 func setBaldaProvider(doc map[string]any, providerID string) error {
