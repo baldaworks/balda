@@ -31,7 +31,7 @@ func TestNormalizePublicText_MentionEntityAnywhereBuildsStructuredInputWithReply
 		t.Fatalf("normalized text = %q, want user message block without mention", normalized)
 	}
 	if strings.Contains(normalized, "@testbot") {
-		t.Fatalf("normalized text = %q, want bot mention removed", normalized)
+		t.Fatalf("normalized text = %q, want bot mention stripped", normalized)
 	}
 }
 
