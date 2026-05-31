@@ -106,7 +106,6 @@ flowchart TB
     telegram["github.com/normahq/balda/internal/apps/balda/channel/telegram"]
     handlers["github.com/normahq/balda/internal/apps/balda/handlers"]
     messenger["github.com/normahq/balda/internal/apps/balda/messenger"]
-    middleware["github.com/normahq/balda/internal/apps/balda/middleware"]
     session["github.com/normahq/balda/internal/apps/balda/session"]
     state["github.com/normahq/balda/internal/apps/balda/state"]
     tgbotkit["github.com/normahq/balda/internal/apps/balda/tgbotkit"]
@@ -133,8 +132,6 @@ flowchart TB
     handlers --> session
     handlers --> welcome
 
-    middleware --> auth
-
     session --> agent
     session --> state
 ```
@@ -150,7 +147,6 @@ flowchart TB
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram message adapter | messenger, session |
 | `handlers` | `internal/apps/balda/handlers` | Telegram/webhook/scheduler ingress and command publishing | actors, auth, channel/telegram, messenger, session, welcome |
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
-| `middleware` | `internal/apps/balda/middleware` | Auth middleware | auth |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite`, `updatepoller` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
