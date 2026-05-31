@@ -160,7 +160,42 @@ func taskEventRecord(taskID string, eventType string, actor string, messageID st
 	if err != nil {
 		return baldastate.SwarmTaskEventRecord{}, err
 	}
-	eventID := taskEventID(taskID, eventType, actor, messageID, data)
+	eventID := ""
+	if strings.TrimSpace(eventType) == TaskEventAgentProgress {
+		eventID = uuid.NewString()
+	} else {
+		parts := []string{
+			strings.TrimSpace(taskID),
+			strings.TrimSpace(eventType),
+			strings.TrimSpace(actor),
+			strings.TrimSpace(messageID),
+			strings.TrimSpace(data),
+		}
+		sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+		eventTypePart := strings.ToLower(strings.TrimSpace(eventType))
+		var eventTypeID strings.Builder
+		lastDash := false
+		for _, r := range eventTypePart {
+			switch {
+			case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+				eventTypeID.WriteRune(r)
+				lastDash = false
+			default:
+				if eventTypeID.Len() > 0 && !lastDash {
+					eventTypeID.WriteByte('-')
+					lastDash = true
+				}
+			}
+			if eventTypeID.Len() >= 48 {
+				break
+			}
+		}
+		eventTypePart = strings.Trim(eventTypeID.String(), "-")
+		if eventTypePart == "" {
+			eventTypePart = "event"
+		}
+		eventID = "task:" + strings.TrimSpace(taskID) + ":event:" + eventTypePart + ":" + hex.EncodeToString(sum[:])[:16]
+	}
 	return baldastate.SwarmTaskEventRecord{
 		ID:          eventID,
 		TaskID:      strings.TrimSpace(taskID),
@@ -320,47 +355,6 @@ func (s *TaskService) publishEventRecordBestEffort(ctx context.Context, event ba
 			Str("event_id", event.ID).
 			Msg("failed to publish task event")
 	}
-}
-
-func taskEventID(taskID string, eventType string, actor string, messageID string, payloadJSON string) string {
-	if strings.TrimSpace(eventType) == TaskEventAgentProgress {
-		return uuid.NewString()
-	}
-	parts := []string{
-		strings.TrimSpace(taskID),
-		strings.TrimSpace(eventType),
-		strings.TrimSpace(actor),
-		strings.TrimSpace(messageID),
-		strings.TrimSpace(payloadJSON),
-	}
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	return "task:" + strings.TrimSpace(taskID) + ":event:" + safeEventIDPart(eventType) + ":" + hex.EncodeToString(sum[:])[:16]
-}
-
-func safeEventIDPart(raw string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(raw))
-	var out strings.Builder
-	lastDash := false
-	for _, r := range trimmed {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			out.WriteRune(r)
-			lastDash = false
-		default:
-			if out.Len() > 0 && !lastDash {
-				out.WriteByte('-')
-				lastDash = true
-			}
-		}
-		if out.Len() >= 48 {
-			break
-		}
-	}
-	part := strings.Trim(out.String(), "-")
-	if part == "" {
-		return "event"
-	}
-	return part
 }
 
 func marshalPayload(payload any) (string, error) {
