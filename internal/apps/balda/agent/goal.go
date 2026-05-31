@@ -144,29 +144,25 @@ func (b *Builder) goalChildBuildRequest(cfg goalChildAgentConfig) agentfactory.B
 		cfg.WorkspaceDir,
 		cfg.RepoBranchAtStart,
 	)
+	parts := []string{
+		strings.TrimSpace(baseInstruction),
+		strings.TrimSpace(cfg.RoleInstruction),
+	}
+	var instructionParts []string
+	for _, part := range parts {
+		if part != "" {
+			instructionParts = append(instructionParts, part)
+		}
+	}
 	return agentfactory.BuildRequest{
 		AgentID:          cfg.ProviderID,
 		Name:             cfg.Name,
 		Description:      cfg.Description,
 		WorkingDirectory: cfg.WorkspaceDir,
-		Instruction:      joinGoalInstructions(baseInstruction, cfg.RoleInstruction),
+		Instruction:      strings.Join(instructionParts, "\n\n"),
 		OutputKey:        strings.TrimSpace(cfg.OutputKey),
 		MCPServerIDs:     cfg.MCPServerIDs,
 	}
-}
-
-func joinGoalInstructions(baseInstruction, roleInstruction string) string {
-	parts := []string{
-		strings.TrimSpace(baseInstruction),
-		strings.TrimSpace(roleInstruction),
-	}
-	var out []string
-	for _, part := range parts {
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return strings.Join(out, "\n\n")
 }
 
 func goalWorkerInstruction() string {
