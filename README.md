@@ -170,11 +170,11 @@ Built-in provider types:
 
 - `/start owner=<owner_token>`: authenticate the owner in direct messages.
 - `/start invite=<invite_token>`: onboard a collaborator in direct messages.
-- `/topic <name>`: create a named topic session.
-- `/goal <objective>`: start goal work in the current session context/workspace. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See the [goal workflow doc](docs/goal-workflow.md).
-- `/close`: direct messages only; reset the current session history. In a topic, it also closes that topic.
-- `/cancel`: request cancellation of in-flight work in the current session, including active `/goal` runs.
-- `/user add|list|remove`: manage collaborators; owner only.
+- `/topic <name>`: owner/collaborator, direct messages only; create a named topic session.
+- `/goal <objective>`: owner/collaborator; start goal work in the current session context/workspace. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See the [goal workflow doc](docs/goal-workflow.md).
+- `/close`: owner/collaborator, direct messages only; reset the current session history. In a topic, it also closes that topic.
+- `/cancel`: owner/collaborator; request cancellation of in-flight work in the current session, including active `/goal` runs.
+- `/user add|list|remove`: owner only; manage collaborators.
 
 ## Configuration
 
