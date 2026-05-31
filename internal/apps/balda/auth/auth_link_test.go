@@ -12,8 +12,8 @@ func TestBuildOwnerAuthCommand(t *testing.T) {
 
 func TestBuildOwnerAuthLink(t *testing.T) {
 	t.Run("with username", func(t *testing.T) {
-		got := BuildOwnerAuthLink("NormaBot", "token123")
-		want := "https://t.me/NormaBot?start=owner_token123"
+		got := BuildOwnerAuthLink("BaldaBot", "token123")
+		want := "https://t.me/BaldaBot?start=owner_token123"
 		if got != want {
 			t.Fatalf("BuildOwnerAuthLink() = %q, want %q", got, want)
 		}

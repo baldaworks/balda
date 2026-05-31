@@ -31,7 +31,7 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
-		return botIdentity{username: "NormaBot", name: "Balda"}, nil
+		return botIdentity{username: "BaldaBot", name: "Balda"}, nil
 	})
 	setBaldaOwnerTokenGenerator(t, "owner-token-init")
 
@@ -140,7 +140,7 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	if !strings.Contains(out, "auth command: /start owner=owner-token-init") {
 		t.Fatalf("init output missing auth command: %q", out)
 	}
-	if !strings.Contains(out, "auth link: https://t.me/NormaBot?start=owner_owner-token-init") {
+	if !strings.Contains(out, "auth link: https://t.me/BaldaBot?start=owner_owner-token-init") {
 		t.Fatalf("init output missing auth link: %q", out)
 	}
 	if !strings.Contains(out, "telegram token stored in: "+filepath.Join(workingDir, ".env")) {
@@ -166,7 +166,7 @@ func TestInitCommand_InteractiveSelectionAndToken(t *testing.T) {
 		if token != testBaldaTokenMyToken {
 			return botIdentity{}, fmt.Errorf("invalid token")
 		}
-		return botIdentity{username: "NormaBot"}, nil
+		return botIdentity{username: "BaldaBot"}, nil
 	})
 	setBaldaOwnerTokenGenerator(t, "owner-token-interactive")
 
@@ -216,7 +216,7 @@ func TestInitCommand_InteractiveDefaultPrioritizesCopilotBeforeGemini(t *testing
 		if token != testBaldaTokenMyToken {
 			return botIdentity{}, fmt.Errorf("invalid token")
 		}
-		return botIdentity{username: "NormaBot"}, nil
+		return botIdentity{username: "BaldaBot"}, nil
 	})
 
 	prevInput := baldaInitInput
@@ -321,7 +321,7 @@ func TestInitCommand_PreservesExistingConfigGitignore(t *testing.T) {
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
-		return botIdentity{username: "NormaBot", name: "Balda"}, nil
+		return botIdentity{username: "BaldaBot", name: "Balda"}, nil
 	})
 
 	customGitignore := "# keep local state files for this repo\n*\n!.gitignore\n"
@@ -411,7 +411,7 @@ func TestInitCommand_GeneratedConfigLoadableByBaldaLoader(t *testing.T) {
 		if strings.TrimSpace(token) == "" {
 			return botIdentity{}, fmt.Errorf("missing token")
 		}
-		return botIdentity{username: "NormaBot"}, nil
+		return botIdentity{username: "BaldaBot"}, nil
 	})
 
 	prevInput := baldaInitInput
@@ -461,7 +461,7 @@ func TestInitCommand_FailsWhenTelegramTokenMissing(t *testing.T) {
 	setDetectedBinaries(t, "codex")
 	setDetectedBaseBranch(t, "main", nil)
 	setBaldaInitBotIdentityLoader(t, func(_ context.Context, _ string) (botIdentity, error) {
-		return botIdentity{username: "NormaBot"}, nil
+		return botIdentity{username: "BaldaBot"}, nil
 	})
 
 	prevInput := baldaInitInput
@@ -528,7 +528,7 @@ func TestInitCommand_NonInteractiveUpsertsExistingDotEnvToken(t *testing.T) {
 		if token != "fresh-token" {
 			return botIdentity{}, fmt.Errorf("invalid token")
 		}
-		return botIdentity{username: "NormaBot"}, nil
+		return botIdentity{username: "BaldaBot"}, nil
 	})
 
 	if err := os.WriteFile(

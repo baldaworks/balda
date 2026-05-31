@@ -27,7 +27,7 @@ func (f fakeTelegramMeClient) GetMeWithResponse(_ context.Context, _ ...client.R
 
 func TestLoadBotIdentity(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		username := "NormaBot"
+		username := "BaldaBot"
 		got, err := loadBotIdentity(context.Background(), fakeTelegramMeClient{
 			resp: &client.GetMeResponse{
 				HTTPResponse: &http.Response{StatusCode: http.StatusOK},
@@ -46,8 +46,8 @@ func TestLoadBotIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("loadBotIdentity(): %v", err)
 		}
-		if got.username != "NormaBot" {
-			t.Fatalf("username = %q, want %q", got.username, "NormaBot")
+		if got.username != "BaldaBot" {
+			t.Fatalf("username = %q, want %q", got.username, "BaldaBot")
 		}
 		if got.name != "Balda" {
 			t.Fatalf("name = %q, want %q", got.name, "Balda")
