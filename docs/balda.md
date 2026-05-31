@@ -777,11 +777,11 @@ All events are published as the same envelope shape. For event envelopes,
 | `balda.v1.evt.command.deadlettered` | `command.deadlettered` | same as above | `envelope_id`, `status=deadlettered`, `reason` | command consumer/DLQ publisher |
 | `balda.v1.evt.command.noop` | `command.noop` | same as above | `envelope_id`, `status=noop`, `reason` | command publish dedupe path |
 | `balda.v1.evt.command.decode_failed` | `command.decode_failed` | `id`, `namespace`, `kind=decode_failed` | `subject`, `reason`, `payload` | command consumer poison-message path |
-| `balda.v1.evt.task.created` | `task.created` | `id`, `task_id`, `namespace`, `kind=task_event` | task lifecycle details | TaskActor/TaskService |
-| `balda.v1.evt.task.updated` | `task.updated` | `id`, `task_id`, `namespace`, `kind=task_event` | task lifecycle details | TaskActor/TaskService |
-| `balda.v1.evt.task.completed` | `task.completed` | `id`, `task_id`, `namespace`, `kind=task_event` | terminal task outcome details | TaskActor/TaskService |
-| `balda.v1.evt.delivery.sent` | `delivery.sent` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery metadata (`delivery_key`, channel/provider ids when available) | DeliveryActor |
-| `balda.v1.evt.delivery.failed` | `delivery.failed` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery failure details (`reason`, delivery metadata when available) | DeliveryActor |
+| `balda.v1.evt.task.created` | `task.created` | `id`, `task_id`, `namespace`, `kind=task_event` | task lifecycle details | task lifecycle handling |
+| `balda.v1.evt.task.updated` | `task.updated` | `id`, `task_id`, `namespace`, `kind=task_event` | task lifecycle details | task lifecycle handling |
+| `balda.v1.evt.task.completed` | `task.completed` | `id`, `task_id`, `namespace`, `kind=task_event` | terminal task outcome details | task lifecycle handling |
+| `balda.v1.evt.delivery.sent` | `delivery.sent` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery metadata (`delivery_key`, channel/provider ids when available) | delivery handling |
+| `balda.v1.evt.delivery.failed` | `delivery.failed` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery failure details (`reason`, delivery metadata when available) | delivery handling |
 
 #### Idempotency rules
 

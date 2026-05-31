@@ -355,6 +355,7 @@ func TestDocumentationContract(t *testing.T) {
 			markdownSection(body, "### Task actor runtime semantics (internal)"),
 			markdownSection(body, "### Scheduled task runtime semantics (internal)"),
 			markdownSection(body, "### Inbound webhook contract (internal)"),
+			markdownSection(body, "### Event contract"),
 			markdownSection(body, "#### Idempotency rules"),
 			markdownSection(body, "#### Failure-mode matrix"),
 		}
@@ -362,6 +363,8 @@ func TestDocumentationContract(t *testing.T) {
 			"TaskActor emits session command",
 			"TaskActor/SessionActor",
 			"SessionActor lazily restores",
+			"TaskActor/TaskService",
+			"DeliveryActor",
 			"DeliveryActor/outbox reserve",
 			"ControlActor + task/session actors",
 		}
