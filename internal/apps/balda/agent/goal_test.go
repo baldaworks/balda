@@ -13,6 +13,23 @@ import (
 	"google.golang.org/genai"
 )
 
+func visibleContentText(content *genai.Content) string {
+	if content == nil {
+		return ""
+	}
+	var parts []string
+	for _, part := range content.Parts {
+		if part == nil || part.Thought {
+			continue
+		}
+		text := strings.TrimSpace(part.Text)
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 func TestGoalChildBuildRequest_SetsOutputKeyAndInstructions(t *testing.T) {
 	t.Parallel()
 

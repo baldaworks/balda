@@ -210,7 +210,20 @@ func wrapGoalValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKe
 		SubAgents:   inner.SubAgents(),
 		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
-				goal := visibleContentText(ctx.UserContent())
+				goal := ""
+				if content := ctx.UserContent(); content != nil {
+					var parts []string
+					for _, part := range content.Parts {
+						if part == nil || part.Thought {
+							continue
+						}
+						text := strings.TrimSpace(part.Text)
+						if text != "" {
+							parts = append(parts, text)
+						}
+					}
+					goal = strings.Join(parts, "\n\n")
+				}
 				workerOutput := ""
 				if ctx != nil && ctx.Session() != nil {
 					value, err := ctx.Session().State().Get(key)
@@ -260,23 +273,6 @@ func (w goalValidatorWrapper) Close() error {
 		return nil
 	}
 	return w.closer.Close()
-}
-
-func visibleContentText(content *genai.Content) string {
-	if content == nil {
-		return ""
-	}
-	var parts []string
-	for _, part := range content.Parts {
-		if part == nil || part.Thought {
-			continue
-		}
-		text := strings.TrimSpace(part.Text)
-		if text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, "\n\n")
 }
 
 type goalUserContentContext struct {
