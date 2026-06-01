@@ -91,3 +91,28 @@ func TestInviteStoreGetInvite_ConsumesInvite(t *testing.T) {
 		t.Fatal("invite key still present after GetInvite consume")
 	}
 }
+
+func TestInviteStoreGetInvite_RejectsExpiredInvite(t *testing.T) {
+	now := time.Now()
+	store := &fakeInviteKVStore{
+		values: map[string]any{
+			"invite:expired": Invite{
+				CreatedBy: "101",
+				CreatedAt: now.Add(-2 * time.Hour),
+				ExpiresAt: now.Add(-time.Minute),
+			},
+		},
+	}
+	inviteStore := &InviteStore{store: store}
+
+	invite, err := inviteStore.GetInvite(context.Background(), "expired")
+	if err != nil {
+		t.Fatalf("GetInvite() error = %v", err)
+	}
+	if invite != nil {
+		t.Fatalf("GetInvite() = %#v, want nil for expired invite", invite)
+	}
+	if _, ok := store.values["invite:expired"]; ok {
+		t.Fatal("expired invite key still present after GetInvite cleanup")
+	}
+}

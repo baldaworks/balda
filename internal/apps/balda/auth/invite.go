@@ -80,6 +80,11 @@ func (s *InviteStore) GetInvite(ctx context.Context, token string) (*Invite, err
 	if err := json.Unmarshal(data, &invite); err != nil {
 		return nil, fmt.Errorf("unmarshal invite: %w", err)
 	}
+	if !invite.ExpiresAt.IsZero() && !invite.ExpiresAt.After(time.Now()) {
+		// Best-effort cleanup for stores that have not evicted expired entries yet.
+		_ = s.store.Delete(ctx, key)
+		return nil, nil
+	}
 
 	// Consume: delete the invite (one-time use)
 	if err := s.store.Delete(ctx, key); err != nil {
