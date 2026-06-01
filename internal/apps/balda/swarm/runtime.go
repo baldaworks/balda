@@ -122,15 +122,6 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	return stopErr
 }
 
-func (r *Runtime) handleDelivery(ctx context.Context, delivery actorengine.Delivery) error {
-	executionCtx, stop, prepared := r.prepareDelivery(ctx, delivery)
-	defer stop()
-	if r.engine == nil {
-		return nil
-	}
-	return r.engine.Handle(executionCtx, prepared)
-}
-
 func (r *Runtime) prepareDelivery(ctx context.Context, delivery actorengine.Delivery) (context.Context, func(), actorengine.Delivery) {
 	if r == nil || delivery == nil {
 		return ctx, func() {}, delivery

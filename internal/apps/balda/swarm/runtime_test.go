@@ -131,7 +131,7 @@ func TestRuntime_HandleCommandDispatchesActor(t *testing.T) {
 	actor := &testActor{address: WildcardAddress(ActorTypeSession)}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(bus, registry)
-	if err := runtime.handleDelivery(context.Background(), testDelivery{env: runtimeTestEnvelope("ok", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
+	if err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{env: runtimeTestEnvelope("ok", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
 		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if actor.calls != 1 {
@@ -144,7 +144,7 @@ func TestRuntime_HandleCommandDispatchesActorWithNormalizedAddress(t *testing.T)
 	actor := &testActor{address: "  SESSION:S-1  "}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(bus, registry)
-	if err := runtime.handleDelivery(context.Background(), testDelivery{env: runtimeTestEnvelope("normalized", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
+	if err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{env: runtimeTestEnvelope("normalized", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
 		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if actor.calls != 1 {
@@ -203,7 +203,7 @@ func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	var deadletterReason string
 	var retried bool
-	err := runtime.handleDelivery(context.Background(), testDelivery{
+	err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{
 		env: runtimeTestEnvelope("unknown", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		deadletter: func(_ context.Context, reason string) error {
 			deadletterReason = reason
@@ -233,7 +233,7 @@ func TestRuntime_ActorErrorRequestsRetry(t *testing.T) {
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	var called bool
-	err := runtime.handleDelivery(context.Background(), testDelivery{
+	err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{
 		env: runtimeTestEnvelope("retry", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		retry: func(_ context.Context, _ time.Duration, _ string) error {
 			called = true
@@ -275,7 +275,7 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 	env := runtimeTestEnvelope("retry-exhausted", ActorAddress{Target: ActorTypeSession, Key: "s-1"})
 	env.TaskID = "task-retry"
 	var deadletterCalled bool
-	err = runtime.handleDelivery(ctx, testDelivery{
+	err = handleRuntimeDelivery(runtime, ctx, testDelivery{
 		env:           env,
 		numDelivered:  5,
 		maxDeliveries: 5,
@@ -321,7 +321,7 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 	var inProgressCalls atomic.Int32
 	done := make(chan error, 1)
 	go func() {
-		done <- runtime.handleDelivery(context.Background(), testDelivery{
+		done <- handleRuntimeDelivery(runtime, context.Background(), testDelivery{
 			env: runtimeTestEnvelope("long-running", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 			inProgress: func(context.Context) error {
 				inProgressCalls.Add(1)
@@ -371,6 +371,15 @@ func newRuntimeForTest(bus *recordingCommandBus, registry dispatch.Registry) *Ru
 	}
 	rt.engine = engine
 	return rt
+}
+
+func handleRuntimeDelivery(runtime *Runtime, ctx context.Context, delivery actorengine.Delivery) error {
+	executionCtx, stop, prepared := runtime.prepareDelivery(ctx, delivery)
+	defer stop()
+	if runtime.engine == nil {
+		return nil
+	}
+	return runtime.engine.Handle(executionCtx, prepared)
 }
 
 func runtimeTestEnvelope(id string, to ActorAddress) Envelope {
