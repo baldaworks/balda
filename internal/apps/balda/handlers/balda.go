@@ -375,20 +375,6 @@ func (h *BaldaHandler) canAccessCollaboratorScope(ctx context.Context, userID in
 	return collab != nil
 }
 
-func (h *BaldaHandler) runTurn(
-	ctx context.Context,
-	text string,
-	r *runner.Runner,
-	userID string,
-	sessionID string,
-	agentSessionID string,
-	locator baldasession.SessionLocator,
-	messageID int,
-	progressPolicy baldachannel.ProgressPolicy,
-) error {
-	return h.runTurnWithDelivery(ctx, text, r, userID, sessionID, agentSessionID, locator, messageID, progressPolicy, true)
-}
-
 func (h *BaldaHandler) runTurnWithDelivery(
 	ctx context.Context,
 	text string,

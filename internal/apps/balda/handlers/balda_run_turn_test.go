@@ -11,6 +11,7 @@ import (
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	adkagent "google.golang.org/adk/agent"
@@ -31,6 +32,20 @@ type baldaRunTurnTelegramClient struct {
 	drafts      []client.SendMessageDraftJSONRequestBody
 	messages    []client.SendMessageJSONRequestBody
 	chatActions []client.SendChatActionJSONRequestBody
+}
+
+func (h *BaldaHandler) runTurn(
+	ctx context.Context,
+	text string,
+	r *runner.Runner,
+	userID string,
+	sessionID string,
+	agentSessionID string,
+	locator baldasession.SessionLocator,
+	messageID int,
+	progressPolicy baldachannel.ProgressPolicy,
+) error {
+	return h.runTurnWithDelivery(ctx, text, r, userID, sessionID, agentSessionID, locator, messageID, progressPolicy, true)
 }
 
 func (c *baldaRunTurnTelegramClient) SendMessageWithResponse(
