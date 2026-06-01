@@ -200,12 +200,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		lastName = *event.Message.From.LastName
 	}
 
-	var hasTopicsEnabled bool
-	if event.Message.Chat.IsForum != nil {
-		hasTopicsEnabled = *event.Message.Chat.IsForum
-	}
-
-	registered, err := h.ownerStore.RegisterOwner(userID, chatID, username, event.Message.From.FirstName, lastName, hasTopicsEnabled)
+	registered, err := h.ownerStore.RegisterOwner(userID, chatID, username, event.Message.From.FirstName, lastName)
 	if err != nil {
 		log.Error().Err(err).Int64("user_id", userID).Msg("Failed to register owner")
 		if sendErr := h.messenger.SendPlain(ctx, chatID, "Failed to register owner. Please try again.", 0); sendErr != nil {

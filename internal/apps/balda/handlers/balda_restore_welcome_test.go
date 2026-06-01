@@ -180,7 +180,7 @@ func TestBaldaHandlerOnMessage_CollaboratorDMCreateFailureUsesGenericSessionMess
 	if err != nil {
 		t.Fatalf("NewOwnerStore(): %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "", true); err != nil {
+	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", ""); err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
 	collaboratorStore := auth.NewCollaboratorStore(&fakeCollaboratorBackingStore{
@@ -300,7 +300,7 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 	if err != nil {
 		t.Fatalf("NewOwnerStore(): %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "", true); err != nil {
+	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", ""); err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
 
@@ -376,7 +376,7 @@ func newBaldaRestoreHandlerHarness(t *testing.T, store *fakeBaldaRestoreSessionS
 	if err != nil {
 		t.Fatalf("NewOwnerStore(): %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "", true); err != nil {
+	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", ""); err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
 
@@ -529,7 +529,7 @@ func (f *fakeBaldaRestoreSessionStore) List(context.Context) ([]baldastate.Sessi
 }
 
 type fakeBaldaRestoreAgentBuilder struct {
-	metadata baldaagent.AgentMetadata
+	metadata  baldaagent.AgentMetadata
 	createErr error
 }
 

@@ -187,7 +187,7 @@ func TestBaldaHandlerOnStart_DoesNotLogOwnerAuthWhenOwnerRegistered(t *testing.T
 
 	var buf bytes.Buffer
 	handler := newBaldaStartupHandlerForTest(t, tgClient, "owner-token", zerolog.New(&buf))
-	if _, err := handler.ownerStore.RegisterOwner(42, 0, "owner", "Balda", "Owner", false); err != nil {
+	if _, err := handler.ownerStore.RegisterOwner(42, 0, "owner", "Balda", "Owner"); err != nil {
 		t.Fatalf("RegisterOwner() error = %v", err)
 	}
 
@@ -368,7 +368,7 @@ func newRegisteredOwnerStartupHandler(t *testing.T) (*BaldaHandler, *fakeBaldaSt
 	}
 
 	handler := newBaldaStartupHandlerForTest(t, tgClient, "owner-token", zerolog.Nop())
-	if _, err := handler.ownerStore.RegisterOwner(42, 9001, "owner", "Balda", "Owner", false); err != nil {
+	if _, err := handler.ownerStore.RegisterOwner(42, 9001, "owner", "Balda", "Owner"); err != nil {
 		t.Fatalf("RegisterOwner() error = %v", err)
 	}
 
