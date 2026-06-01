@@ -15,8 +15,6 @@ type Invite struct {
 	CreatedBy string    `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
-	UsedBy    string    `json:"used_by,omitempty"`
-	UsedAt    time.Time `json:"used_at,omitempty"`
 }
 
 type InviteStore struct {
