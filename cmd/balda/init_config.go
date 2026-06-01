@@ -98,21 +98,6 @@ func buildBaldaInitDocument(workingDir string) (map[string]any, []string, error)
 	return doc, agentIDs, nil
 }
 
-func setBaldaTelegramToken(doc map[string]any, token string) error {
-	baldaSection, ok := toStringAnyMap(doc["balda"])
-	if !ok {
-		return fmt.Errorf("balda section is missing from generated config")
-	}
-	telegramSection, ok := toStringAnyMap(baldaSection["telegram"])
-	if !ok {
-		return fmt.Errorf("balda.telegram section is missing from generated config")
-	}
-	telegramSection["token"] = token
-	baldaSection["telegram"] = telegramSection
-	doc["balda"] = baldaSection
-	return nil
-}
-
 func toStringAnyMap(raw any) (map[string]any, bool) {
 	switch v := raw.(type) {
 	case map[string]any:

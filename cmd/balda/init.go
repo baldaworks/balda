@@ -113,25 +113,27 @@ func initCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			telegramSection, ok := toStringAnyMap(baldaSection["telegram"])
+			if !ok {
+				return fmt.Errorf("balda.telegram section is missing from generated config")
+			}
 			var storageTarget string
 			switch tokenStorageMode {
 			case baldaTokenStorageEnv:
-				if err := setBaldaTelegramToken(doc, ""); err != nil {
-					return err
-				}
+				telegramSection["token"] = ""
 				dotEnvPath := filepath.Join(workingDir, baldaDotEnvFileName)
 				if err := upsertBaldaTelegramTokenEnv(dotEnvPath, telegramToken); err != nil {
 					return err
 				}
 				storageTarget = dotEnvPath
 			case baldaTokenStorageConfig:
-				if err := setBaldaTelegramToken(doc, telegramToken); err != nil {
-					return err
-				}
+				telegramSection["token"] = telegramToken
 				storageTarget = filepath.Join(workingDir, baldaConfigRelDir, baldaConfigFileName)
 			default:
 				return fmt.Errorf("unsupported telegram token storage mode %q", tokenStorageMode)
 			}
+			baldaSection["telegram"] = telegramSection
+			doc["balda"] = baldaSection
 
 			stateDirRaw := baldaRuntimeStatePath
 			if raw, exists := baldaSection["state_dir"]; exists {
