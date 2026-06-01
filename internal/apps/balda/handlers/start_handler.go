@@ -153,6 +153,16 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			}
 			return nil
 		}
+		if h.collaboratorStore != nil {
+			if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, userIDStr); err != nil {
+				log.Warn().Err(err).Str("user_id", userIDStr).Msg("failed to check collaborator during /start")
+			} else if ok {
+				if err := h.messenger.SendPlain(ctx, chatID, "You are already a bot collaborator.", 0); err != nil {
+					return err
+				}
+				return nil
+			}
+		}
 		if err := h.messenger.SendPlain(ctx, chatID, "Bot owner is already registered. Only the owner can use this bot.", 0); err != nil {
 			return err
 		}

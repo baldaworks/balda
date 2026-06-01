@@ -439,6 +439,35 @@ func TestStartHandlerOnCommand_InviteModeRegistersCollaborator(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Welcome! You are now a bot collaborator.")
 }
 
+func TestStartHandlerOnCommand_ExistingCollaboratorIsNotTreatedAsUnauthorized(t *testing.T) {
+	handler, ownerStore, _, collaboratorStore, tgClient := newStartHandlerFullTestHarness(t, "secret-token")
+
+	registered, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "", true)
+	if err != nil {
+		t.Fatalf("RegisterOwner(): %v", err)
+	}
+	if !registered {
+		t.Fatal("owner should be newly registered")
+	}
+
+	if err := collaboratorStore.AddCollaborator(context.Background(), auth.Collaborator{
+		UserID:    "202",
+		Username:  "collab",
+		FirstName: "Collab",
+		AddedBy:   "101",
+	}); err != nil {
+		t.Fatalf("AddCollaborator(): %v", err)
+	}
+
+	err = handler.onCommand(context.Background(), newStartEvent("", 202, 9002))
+	if err != nil {
+		t.Fatalf("onCommand(): %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "You are already a bot collaborator.")
+	assertLastSentNotContains(t, tgClient, "Only the owner can use this bot.")
+}
+
 func TestStartHandlerOnCommand_BaldaActivationFailure_DoesNotClaimBaldaActive(t *testing.T) {
 	handler, store, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	balda := &fakeBaldaOwnerActivator{err: errors.New("precreate failed")}
