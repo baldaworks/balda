@@ -97,36 +97,23 @@ func (s *InviteStore) ListInvites(ctx context.Context) ([]Invite, error) {
 
 	invites := make([]Invite, 0, len(keys))
 	for _, key := range keys {
-		token := key[len("invite:"):]
-		invite, err := s.getInviteWithoutConsume(ctx, token)
-		if err != nil || invite == nil {
+		raw, ok, err := s.store.GetJSON(ctx, key)
+		if err != nil || !ok || raw == nil {
 			continue
 		}
-		invites = append(invites, *invite)
+
+		data, err := json.Marshal(raw)
+		if err != nil {
+			continue
+		}
+
+		var invite Invite
+		if err := json.Unmarshal(data, &invite); err != nil {
+			continue
+		}
+
+		invites = append(invites, invite)
 	}
 
 	return invites, nil
-}
-
-func (s *InviteStore) getInviteWithoutConsume(ctx context.Context, token string) (*Invite, error) {
-	key := fmt.Sprintf("%s%s", inviteListPrefix, token)
-	raw, ok, err := s.store.GetJSON(ctx, key)
-	if err != nil {
-		return nil, fmt.Errorf("get invite: %w", err)
-	}
-	if !ok || raw == nil {
-		return nil, nil
-	}
-
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return nil, fmt.Errorf("marshal invite: %w", err)
-	}
-
-	var invite Invite
-	if err := json.Unmarshal(data, &invite); err != nil {
-		return nil, fmt.Errorf("unmarshal invite: %w", err)
-	}
-
-	return &invite, nil
 }
