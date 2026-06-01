@@ -138,8 +138,10 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	m.mu.Lock()
 	if existing := m.runtime; existing != nil {
 		m.mu.Unlock()
-		if closeErr := closeBuiltRuntime(runtime); closeErr != nil {
-			m.logger.Warn().Err(closeErr).Str("agent", providerID).Msg("failed to close duplicate balda provider runtime")
+		if runtime != nil {
+			if closeErr := closeRuntimeAgent(runtime.Agent); closeErr != nil {
+				m.logger.Warn().Err(closeErr).Str("agent", providerID).Msg("failed to close duplicate balda provider runtime")
+			}
 		}
 		return existing, nil
 	}
@@ -247,10 +249,6 @@ func (m *RuntimeManager) close() error {
 	runtime := m.runtime
 	m.runtime = nil
 	m.mu.Unlock()
-	return closeBuiltRuntime(runtime)
-}
-
-func closeBuiltRuntime(runtime *BuiltRuntime) error {
 	if runtime == nil {
 		return nil
 	}
