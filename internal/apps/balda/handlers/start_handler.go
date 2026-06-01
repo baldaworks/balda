@@ -146,7 +146,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			}
 			msg := "You are already registered as the bot owner."
 			if startErr != nil {
-				msg += "\n\nCould not start balda provider session. Please try again."
+				msg += "\n\nCould not start owner session. Please try again."
 			}
 			if err := h.messenger.SendPlain(ctx, chatID, msg, 0); err != nil {
 				return err
@@ -224,7 +224,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 
 	text := fmt.Sprintf("Congratulations, %s! You are now registered as the bot owner.", name)
 	if startErr != nil {
-		text += "\n\nCould not start balda provider session. Please try again."
+		text += "\n\nCould not start owner session. Please try again."
 	}
 	if err := h.messenger.SendPlain(ctx, chatID, text, 0); err != nil {
 		return err

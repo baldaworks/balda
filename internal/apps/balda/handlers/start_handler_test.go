@@ -452,7 +452,7 @@ func TestStartHandlerOnCommand_BaldaActivationFailure_DoesNotClaimBaldaActive(t 
 		t.Fatal("owner not registered")
 	}
 	assertLastSentContains(t, tgClient, "Congratulations")
-	assertLastSentContains(t, tgClient, "Could not start balda provider session. Please try again.")
+	assertLastSentContains(t, tgClient, "Could not start owner session. Please try again.")
 	assertLastSentNotContains(t, tgClient, "Balda mode is active.")
 }
 
@@ -478,7 +478,7 @@ func TestStartHandlerOnCommand_ExistingOwnerActivationFailure_DoesNotClaimBaldaA
 		t.Fatalf("ActivateOwner calls = %d, want 1", len(balda.calls))
 	}
 	assertLastSentContains(t, tgClient, "You are already registered as the bot owner.")
-	assertLastSentContains(t, tgClient, "Could not start balda provider session. Please try again.")
+	assertLastSentContains(t, tgClient, "Could not start owner session. Please try again.")
 	assertLastSentNotContains(t, tgClient, "Balda mode is active.")
 }
 
@@ -660,7 +660,7 @@ func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 			t.Fatalf("onCommand(): %v", err)
 		}
 
-		assertLastSentContains(t, tgClient, "Could not start balda provider session. Please try again.")
+		assertLastSentContains(t, tgClient, "Could not start owner session. Please try again.")
 		assertLastSentNotContains(t, tgClient, "Balda mode is active.")
 	})
 }
