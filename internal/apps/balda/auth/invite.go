@@ -30,10 +30,6 @@ type inviteKVStore interface {
 	List(ctx context.Context, prefix string) ([]string, error)
 }
 
-func inviteKey(token string) string {
-	return fmt.Sprintf("invite:%s", token)
-}
-
 const inviteListPrefix = "invite:"
 
 func NewInviteStore(store inviteKVStore) (*InviteStore, error) {
@@ -57,7 +53,7 @@ func (s *InviteStore) CreateInvite(ctx context.Context, createdBy string) (strin
 		ExpiresAt: now.Add(inviteTTL),
 	}
 
-	key := inviteKey(token)
+	key := fmt.Sprintf("%s%s", inviteListPrefix, token)
 	if err := s.store.SetWithTTL(ctx, key, invite, inviteTTL); err != nil {
 		return "", nil, fmt.Errorf("store invite: %w", err)
 	}
@@ -66,7 +62,7 @@ func (s *InviteStore) CreateInvite(ctx context.Context, createdBy string) (strin
 }
 
 func (s *InviteStore) GetInvite(ctx context.Context, token string) (*Invite, error) {
-	key := inviteKey(token)
+	key := fmt.Sprintf("%s%s", inviteListPrefix, token)
 	raw, ok, err := s.store.GetJSON(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("get invite: %w", err)
@@ -113,7 +109,7 @@ func (s *InviteStore) ListInvites(ctx context.Context) ([]Invite, error) {
 }
 
 func (s *InviteStore) getInviteWithoutConsume(ctx context.Context, token string) (*Invite, error) {
-	key := inviteKey(token)
+	key := fmt.Sprintf("%s%s", inviteListPrefix, token)
 	raw, ok, err := s.store.GetJSON(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("get invite: %w", err)
