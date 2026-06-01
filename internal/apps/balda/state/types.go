@@ -171,7 +171,6 @@ type SwarmTaskRecord struct {
 	Priority      int
 	CreatedBy     string
 	CreatedFrom   string
-	PlanJSON      string
 	ResultJSON    string
 	Error         string
 	CreatedAt     time.Time
@@ -234,7 +233,6 @@ type SwarmStore interface {
 	GetTask(ctx context.Context, taskID string) (SwarmTaskRecord, bool, error)
 	ListActiveTasksBySession(ctx context.Context, sessionID string) ([]SwarmTaskRecord, error)
 	UpdateTaskStatus(ctx context.Context, taskID string, status string, reason string) error
-	SetTaskPlan(ctx context.Context, taskID string, planJSON string) error
 	SetTaskResult(ctx context.Context, taskID string, resultJSON string, status string, reason string) error
 	AppendTaskEvent(ctx context.Context, record SwarmTaskEventRecord) error
 	ListTaskEvents(ctx context.Context, taskID string) ([]SwarmTaskEventRecord, error)

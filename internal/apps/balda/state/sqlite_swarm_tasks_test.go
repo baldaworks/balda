@@ -43,9 +43,6 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 	if err := store.UpdateTaskStatus(ctx, "task-1", SwarmTaskStatusWaitingForAgent, "waiting"); err != nil {
 		t.Fatalf("UpdateTaskStatus(waiting) error = %v", err)
 	}
-	if err := store.SetTaskPlan(ctx, "task-1", `{"steps":["run"]}`); err != nil {
-		t.Fatalf("SetTaskPlan() error = %v", err)
-	}
 	if err := store.AppendTaskEvent(ctx, SwarmTaskEventRecord{
 		ID:          "event-1",
 		TaskID:      "task-1",
@@ -71,8 +68,8 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask() error = %v", err)
 	}
-	if !ok || got.Status != SwarmTaskStatusCompleted || got.PlanJSON == "" || got.ResultJSON == "" || got.StartedAt.IsZero() || got.CompletedAt.IsZero() {
-		t.Fatalf("task = %+v, found=%v, want completed with plan/result/timestamps", got, ok)
+	if !ok || got.Status != SwarmTaskStatusCompleted || got.ResultJSON == "" || got.StartedAt.IsZero() || got.CompletedAt.IsZero() {
+		t.Fatalf("task = %+v, found=%v, want completed with result/timestamps", got, ok)
 	}
 
 	active, err = store.ListActiveTasksBySession(ctx, "session-1")

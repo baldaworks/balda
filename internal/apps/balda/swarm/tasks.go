@@ -114,20 +114,6 @@ func (s *TaskService) MarkStatus(ctx context.Context, taskID string, status stri
 	}))
 }
 
-func (s *TaskService) SetPlan(ctx context.Context, taskID string, actor string, plan any) error {
-	if s == nil {
-		return nil
-	}
-	data, err := marshalPayload(plan)
-	if err != nil {
-		return err
-	}
-	if err := s.store.SetTaskPlan(ctx, taskID, data); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (s *TaskService) SetResult(ctx context.Context, taskID string, result any, status string, actor string, reason string) error {
 	if s == nil {
 		return nil

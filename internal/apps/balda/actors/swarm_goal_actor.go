@@ -138,14 +138,6 @@ func (a *goalActor) runGoal(ctx context.Context, env swarm.Envelope, payload goa
 	if err := a.ensureGoalTask(ctx, payload); err != nil {
 		return err
 	}
-	if err := a.tasks.SetPlan(ctx, taskID, goalActorName, map[string]any{
-		"objective":      objective,
-		"max_iterations": maxIterations,
-		"workflow":       "norma.goal",
-		"steps":          []string{"Run the worker agent.", "Run the validator agent.", "Repeat until validator passes or max iterations is reached."},
-	}); err != nil {
-		return swarm.TransientError(err)
-	}
 	ts, err := a.resolveSession(ctx, payload)
 	if err != nil {
 		return swarm.TransientError(err)

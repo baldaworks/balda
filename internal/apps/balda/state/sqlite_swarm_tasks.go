@@ -21,10 +21,10 @@ func (s *sqliteSwarmStore) CreateTask(ctx context.Context, record SwarmTaskRecor
 	res, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO swarm_tasks (
 			id, session_id, parent_task_id, title, objective, status, owner_actor, assigned_actor,
-			priority, created_by, created_from, plan_json, result_json, error,
+			priority, created_by, created_from, result_json, error,
 			created_at, updated_at, started_at, completed_at, canceled_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		normalized.ID,
 		nullIfEmpty(normalized.SessionID),
 		nullIfEmpty(normalized.ParentTaskID),
@@ -36,7 +36,6 @@ func (s *sqliteSwarmStore) CreateTask(ctx context.Context, record SwarmTaskRecor
 		normalized.Priority,
 		nullIfEmpty(normalized.CreatedBy),
 		nullIfEmpty(normalized.CreatedFrom),
-		nullIfEmpty(normalized.PlanJSON),
 		nullIfEmpty(normalized.ResultJSON),
 		nullIfEmpty(normalized.Error),
 		normalized.CreatedAt.Format(time.RFC3339),
@@ -136,25 +135,6 @@ func (s *sqliteSwarmStore) UpdateTaskStatus(ctx context.Context, taskID string, 
 	)
 	if err != nil {
 		return fmt.Errorf("update swarm task %q status: %w", trimmedTaskID, err)
-	}
-	return nil
-}
-
-func (s *sqliteSwarmStore) SetTaskPlan(ctx context.Context, taskID string, planJSON string) error {
-	trimmedTaskID := strings.TrimSpace(taskID)
-	if trimmedTaskID == "" {
-		return fmt.Errorf("task id is required")
-	}
-	now := time.Now().UTC()
-	if _, err := s.db.ExecContext(ctx, `
-		UPDATE swarm_tasks
-		SET plan_json = ?, updated_at = ?
-		WHERE id = ?`,
-		nullIfEmpty(planJSON),
-		now.Format(time.RFC3339),
-		trimmedTaskID,
-	); err != nil {
-		return fmt.Errorf("set swarm task %q plan: %w", trimmedTaskID, err)
 	}
 	return nil
 }
@@ -465,7 +445,7 @@ func (s *sqliteSwarmStore) getAgentStepByKey(ctx context.Context, stepKey string
 const swarmTaskSelectSQL = `
 	SELECT id, COALESCE(session_id, ''), COALESCE(parent_task_id, ''), COALESCE(title, ''), objective,
 	       status, COALESCE(owner_actor, ''), COALESCE(assigned_actor, ''), priority,
-	       COALESCE(created_by, ''), COALESCE(created_from, ''), COALESCE(plan_json, ''),
+	       COALESCE(created_by, ''), COALESCE(created_from, ''),
 	       COALESCE(result_json, ''), COALESCE(error, ''),
 	       created_at, updated_at, COALESCE(started_at, ''), COALESCE(completed_at, ''), COALESCE(canceled_at, '')
 	FROM swarm_tasks`
@@ -506,7 +486,6 @@ func scanSwarmTask(scan func(dest ...any) error) (SwarmTaskRecord, bool, error) 
 		&record.Priority,
 		&record.CreatedBy,
 		&record.CreatedFrom,
-		&record.PlanJSON,
 		&record.ResultJSON,
 		&record.Error,
 		&createdAtRaw,
@@ -691,7 +670,6 @@ func normalizeSwarmTask(record SwarmTaskRecord, now time.Time) (SwarmTaskRecord,
 	record.AssignedActor = strings.TrimSpace(record.AssignedActor)
 	record.CreatedBy = strings.TrimSpace(record.CreatedBy)
 	record.CreatedFrom = strings.TrimSpace(record.CreatedFrom)
-	record.PlanJSON = strings.TrimSpace(record.PlanJSON)
 	record.ResultJSON = strings.TrimSpace(record.ResultJSON)
 	record.Error = strings.TrimSpace(record.Error)
 	return record, nil
