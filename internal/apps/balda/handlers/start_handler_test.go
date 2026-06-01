@@ -312,7 +312,7 @@ func TestStartHandlerOnCommand_ExistingOwner_StartsRootWhenMissing(t *testing.T)
 	balda := &fakeBaldaOwnerActivator{}
 	handler.baldaHandler = balda
 
-	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "")
+	registered, err := store.RegisterOwner(101, 0)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
@@ -337,7 +337,7 @@ func TestStartHandlerOnCommand_ExistingOwnerExplicitOwnerModeReactivates(t *test
 	balda := &fakeBaldaOwnerActivator{}
 	handler.baldaHandler = balda
 
-	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "")
+	registered, err := store.RegisterOwner(101, 0)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
@@ -362,7 +362,7 @@ func TestStartHandlerOnCommand_ExistingOwnerInviteModeDoesNotReactivate(t *testi
 	balda := &fakeBaldaOwnerActivator{}
 	handler.baldaHandler = balda
 
-	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "")
+	registered, err := store.RegisterOwner(101, 0)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
@@ -386,7 +386,7 @@ func TestStartHandlerOnCommand_ExistingOwnerOtherInviteDoesNotConsumeOrReactivat
 	balda := &fakeBaldaOwnerActivator{}
 	handler.baldaHandler = balda
 
-	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "")
+	registered, err := store.RegisterOwner(101, 0)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
@@ -408,7 +408,7 @@ func TestStartHandlerOnCommand_ExistingOwnerOtherInviteDoesNotConsumeOrReactivat
 func TestStartHandlerOnCommand_InviteModeRegistersCollaborator(t *testing.T) {
 	handler, ownerStore, inviteStore, collaboratorStore, tgClient := newStartHandlerFullTestHarness(t, "secret-token")
 
-	registered, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "")
+	registered, err := ownerStore.RegisterOwner(101, 9001)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
@@ -442,7 +442,7 @@ func TestStartHandlerOnCommand_InviteModeRegistersCollaborator(t *testing.T) {
 func TestStartHandlerOnCommand_ExistingCollaboratorIsNotTreatedAsUnauthorized(t *testing.T) {
 	handler, ownerStore, _, collaboratorStore, tgClient := newStartHandlerFullTestHarness(t, "secret-token")
 
-	registered, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "")
+	registered, err := ownerStore.RegisterOwner(101, 9001)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
@@ -491,7 +491,7 @@ func TestStartHandlerOnCommand_ExistingOwnerActivationFailure_DoesNotClaimBaldaA
 	balda := &fakeBaldaOwnerActivator{err: errors.New("precreate failed")}
 	handler.baldaHandler = balda
 
-	registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "")
+	registered, err := store.RegisterOwner(101, 0)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
@@ -647,7 +647,7 @@ func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 		handler, store, _, baldaHandler := newBaldaHandlerTestHarness(t)
 		baldaHandler.authToken = "secret-token"
 
-		registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "")
+		registered, err := store.RegisterOwner(101, 0)
 		if err != nil {
 			t.Fatalf("RegisterOwner(): %v", err)
 		}
@@ -677,7 +677,7 @@ func TestActivateOwner_BootstrapsOwnerSession(t *testing.T) {
 		baldaHandler.authToken = "secret-token"
 		baldaHandler.bootstrapErr = errors.New("config reload failed")
 
-		registered, err := store.RegisterOwner(101, 0, "owner", "Owner", "")
+		registered, err := store.RegisterOwner(101, 0)
 		if err != nil {
 			t.Fatalf("RegisterOwner(): %v", err)
 		}

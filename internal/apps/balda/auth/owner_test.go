@@ -12,7 +12,7 @@ func TestOwnerStore_PersistsInKV(t *testing.T) {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
 
-	ok, err := store.RegisterOwner(42, 100, "boss", "Big", "Boss")
+	ok, err := store.RegisterOwner(42, 100)
 	if err != nil {
 		t.Fatalf("RegisterOwner() error = %v", err)
 	}

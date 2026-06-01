@@ -533,7 +533,7 @@ func newBaldaMessageHandlerHarness(t *testing.T, topicID int) (*BaldaHandler, *f
 	if err != nil {
 		t.Fatalf("NewOwnerStore(): %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", ""); err != nil {
+	if _, err := ownerStore.RegisterOwner(101, 9001); err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
 

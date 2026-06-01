@@ -11,9 +11,6 @@ import (
 type Owner struct {
 	UserID       int64     `json:"user_id"`
 	ChatID       int64     `json:"chat_id,omitempty"`
-	Username     string    `json:"username,omitempty"`
-	FirstName    string    `json:"first_name,omitempty"`
-	LastName     string    `json:"last_name,omitempty"`
 	RegisteredAt time.Time `json:"registered_at"`
 }
 
@@ -49,7 +46,7 @@ func NewOwnerStore(stateStore ownerKVStore) (*OwnerStore, error) {
 
 // RegisterOwner registers a new owner if none exists.
 // Returns true if registered, false if already exists.
-func (s *OwnerStore) RegisterOwner(userID, chatID int64, username, firstName, lastName string) (bool, error) {
+func (s *OwnerStore) RegisterOwner(userID, chatID int64) (bool, error) {
 	if s.owner != nil {
 		return false, nil
 	}
@@ -57,9 +54,6 @@ func (s *OwnerStore) RegisterOwner(userID, chatID int64, username, firstName, la
 	s.owner = &Owner{
 		UserID:       userID,
 		ChatID:       chatID,
-		Username:     username,
-		FirstName:    firstName,
-		LastName:     lastName,
 		RegisteredAt: time.Now(),
 	}
 

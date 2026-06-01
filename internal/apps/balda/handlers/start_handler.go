@@ -191,16 +191,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		return nil
 	}
 
-	username := ""
-	if event.Message.From.Username != nil {
-		username = *event.Message.From.Username
-	}
-	lastName := ""
-	if event.Message.From.LastName != nil {
-		lastName = *event.Message.From.LastName
-	}
-
-	registered, err := h.ownerStore.RegisterOwner(userID, chatID, username, event.Message.From.FirstName, lastName)
+	registered, err := h.ownerStore.RegisterOwner(userID, chatID)
 	if err != nil {
 		log.Error().Err(err).Int64("user_id", userID).Msg("Failed to register owner")
 		if sendErr := h.messenger.SendPlain(ctx, chatID, "Failed to register owner. Please try again.", 0); sendErr != nil {
@@ -218,7 +209,6 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 
 	log.Info().
 		Int64("user_id", userID).
-		Str("username", username).
 		Msg("Owner registered successfully")
 
 	startErr := h.activateBalda(ctx, userID, chatID)

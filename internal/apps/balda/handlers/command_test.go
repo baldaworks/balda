@@ -480,7 +480,7 @@ func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOwnerStore(): %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", ""); err != nil {
+	if _, err := ownerStore.RegisterOwner(101, 9001); err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}
 	inviteStore, err := auth.NewInviteStore(&fakeInviteKVStore{})
@@ -598,7 +598,7 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 	if err != nil {
 		t.Fatalf("NewOwnerStore(): %v", err)
 	}
-	_, err = ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "")
+	_, err = ownerStore.RegisterOwner(101, 9001)
 	if err != nil {
 		t.Fatalf("RegisterOwner(): %v", err)
 	}

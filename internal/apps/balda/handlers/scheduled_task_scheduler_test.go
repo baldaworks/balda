@@ -490,7 +490,7 @@ func newOwnerStoreForTest(t *testing.T, userID int64, chatID int64) *auth.OwnerS
 	if err != nil {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
-	if _, err := store.RegisterOwner(userID, chatID, "owner", "Owner", ""); err != nil {
+	if _, err := store.RegisterOwner(userID, chatID); err != nil {
 		t.Fatalf("RegisterOwner() error = %v", err)
 	}
 	return store
