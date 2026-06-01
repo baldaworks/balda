@@ -170,7 +170,6 @@ type SwarmTaskRecord struct {
 	AssignedActor string
 	Priority      int
 	CreatedBy     string
-	CreatedFrom   string
 	ResultJSON    string
 	Error         string
 	CreatedAt     time.Time

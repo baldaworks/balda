@@ -234,7 +234,6 @@ func (a *goalActor) ensureGoalTask(ctx context.Context, payload goalTaskPayload)
 		AssignedActor: swarm.ActorTypeGoal + ":" + strings.TrimSpace(payload.TaskID),
 		Priority:      90,
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
-		CreatedFrom:   "goal",
 	}
 	if _, err := a.tasks.Create(ctx, record, goalActorName, payload); err != nil {
 		return swarm.TransientError(err)

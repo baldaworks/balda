@@ -252,7 +252,6 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 			AssignedActor: swarm.ActorTypeSession + ":" + payload.Locator.SessionID,
 			Priority:      80,
 			CreatedBy:     strings.TrimSpace(payload.UserID),
-			CreatedFrom:   strings.TrimSpace(payload.Source),
 		}, "task.actor", payload)
 		if err != nil {
 			return swarm.TransientError(err)
@@ -311,7 +310,6 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 			AssignedActor: swarm.ActorTypeSession + ":" + payload.Locator.SessionID,
 			Priority:      50,
 			CreatedBy:     strings.TrimSpace(payload.UserID),
-			CreatedFrom:   sessionTurnSourceSchedule,
 		}, "task.actor", payload)
 		if err != nil {
 			return swarm.TransientError(err)

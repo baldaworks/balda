@@ -21,7 +21,6 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 		Status:        SwarmTaskStatusCreated,
 		AssignedActor: "agent:executor",
 		CreatedBy:     "tg-101",
-		CreatedFrom:   "goal",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)

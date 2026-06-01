@@ -21,10 +21,10 @@ func (s *sqliteSwarmStore) CreateTask(ctx context.Context, record SwarmTaskRecor
 	res, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO swarm_tasks (
 			id, session_id, parent_task_id, title, objective, status, owner_actor, assigned_actor,
-			priority, created_by, created_from, result_json, error,
+			priority, created_by, result_json, error,
 			created_at, updated_at, started_at, completed_at, canceled_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		normalized.ID,
 		nullIfEmpty(normalized.SessionID),
 		nullIfEmpty(normalized.ParentTaskID),
@@ -35,7 +35,6 @@ func (s *sqliteSwarmStore) CreateTask(ctx context.Context, record SwarmTaskRecor
 		nullIfEmpty(normalized.AssignedActor),
 		normalized.Priority,
 		nullIfEmpty(normalized.CreatedBy),
-		nullIfEmpty(normalized.CreatedFrom),
 		nullIfEmpty(normalized.ResultJSON),
 		nullIfEmpty(normalized.Error),
 		normalized.CreatedAt.Format(time.RFC3339),
@@ -445,8 +444,7 @@ func (s *sqliteSwarmStore) getAgentStepByKey(ctx context.Context, stepKey string
 const swarmTaskSelectSQL = `
 	SELECT id, COALESCE(session_id, ''), COALESCE(parent_task_id, ''), COALESCE(title, ''), objective,
 	       status, COALESCE(owner_actor, ''), COALESCE(assigned_actor, ''), priority,
-	       COALESCE(created_by, ''), COALESCE(created_from, ''),
-	       COALESCE(result_json, ''), COALESCE(error, ''),
+	       COALESCE(created_by, ''), COALESCE(result_json, ''), COALESCE(error, ''),
 	       created_at, updated_at, COALESCE(started_at, ''), COALESCE(completed_at, ''), COALESCE(canceled_at, '')
 	FROM swarm_tasks`
 
@@ -485,7 +483,6 @@ func scanSwarmTask(scan func(dest ...any) error) (SwarmTaskRecord, bool, error) 
 		&record.AssignedActor,
 		&record.Priority,
 		&record.CreatedBy,
-		&record.CreatedFrom,
 		&record.ResultJSON,
 		&record.Error,
 		&createdAtRaw,
@@ -669,7 +666,6 @@ func normalizeSwarmTask(record SwarmTaskRecord, now time.Time) (SwarmTaskRecord,
 	record.OwnerActor = strings.TrimSpace(record.OwnerActor)
 	record.AssignedActor = strings.TrimSpace(record.AssignedActor)
 	record.CreatedBy = strings.TrimSpace(record.CreatedBy)
-	record.CreatedFrom = strings.TrimSpace(record.CreatedFrom)
 	record.ResultJSON = strings.TrimSpace(record.ResultJSON)
 	record.Error = strings.TrimSpace(record.Error)
 	return record, nil
