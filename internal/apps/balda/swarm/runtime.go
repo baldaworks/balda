@@ -18,16 +18,6 @@ const heartbeatInterval = 30 * time.Second
 
 type Actor = dispatch.Actor
 
-func registerActors(actors []Actor) (dispatch.Registry, error) {
-	registry := dispatch.NewMemoryRegistry()
-	for _, actor := range actors {
-		if err := registry.Register(actor); err != nil {
-			return nil, err
-		}
-	}
-	return registry, nil
-}
-
 type Runtime struct {
 	source actorengine.Source
 	events EventPublisher
@@ -57,9 +47,11 @@ func NewRuntime(params runtimeParams) (*Runtime, error) {
 	if params.Source == nil {
 		return nil, fmt.Errorf("actor delivery source is required")
 	}
-	registry, err := registerActors(params.Actors)
-	if err != nil {
-		return nil, err
+	registry := dispatch.NewMemoryRegistry()
+	for _, actor := range params.Actors {
+		if err := registry.Register(actor); err != nil {
+			return nil, err
+		}
 	}
 	r := &Runtime{
 		source:        params.Source,

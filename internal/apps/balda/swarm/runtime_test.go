@@ -117,9 +117,11 @@ func (b *recordingCommandBus) eventsSnapshot() []string {
 
 func newTestRegistry(t *testing.T, actors ...Actor) dispatch.Registry {
 	t.Helper()
-	registry, err := registerActors(actors)
-	if err != nil {
-		t.Fatalf("register actors error = %v", err)
+	registry := dispatch.NewMemoryRegistry()
+	for _, actor := range actors {
+		if err := registry.Register(actor); err != nil {
+			t.Fatalf("register actors error = %v", err)
+		}
 	}
 	return registry
 }
