@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
@@ -25,7 +26,7 @@ type commandSessionManager interface {
 }
 
 // CommandHandler handles Balda chat commands such as /topic, /goal, /close,
-// /cancel, and /user.
+// /cancel, /restart, and /user.
 type CommandHandler struct {
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore
@@ -34,6 +35,7 @@ type CommandHandler struct {
 	actorDispatcher   swarm.ActorDispatcher
 	goalMaxIterations int
 	userHandler       *userHandler
+	requestRestart    func() error
 }
 
 type commandHandlerParams struct {
@@ -68,6 +70,8 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		return h.onCancelCommand(ctx, commandCtx)
 	case "goal":
 		return h.onGoalCommand(ctx, commandCtx)
+	case "restart":
+		return h.onRestartCommand(ctx, commandCtx)
 	case "user":
 		// Route to UserHandler
 		return h.userHandler.HandleUserCommand(ctx, commandCtx)
@@ -276,8 +280,43 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 	return nil
 }
 
+func (h *CommandHandler) onRestartCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+	if !h.isOwner(commandCtx.UserID) {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Only the bot owner can use this command."); err != nil {
+			return err
+		}
+		return nil
+	}
+	if !commandCtx.IsDM {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "This command is only available in direct messages."); err != nil {
+			return err
+		}
+		return nil
+	}
+	if strings.TrimSpace(commandCtx.Args) != "" {
+		if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Usage: /restart"); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := h.channel.SendPlain(ctx, commandCtx.Locator, "Restart requested. Shutting down now."); err != nil {
+		return err
+	}
+	restart := h.requestRestart
+	if restart == nil {
+		restart = requestSelfRestart
+	}
+	if err := restart(); err != nil {
+		log.Warn().Err(err).Msg("failed to trigger self restart")
+		if sendErr := h.channel.SendPlain(ctx, commandCtx.Locator, "Could not trigger restart."); sendErr != nil {
+			return sendErr
+		}
+	}
+	return nil
+}
+
 func (h *CommandHandler) canUseSessionCommand(ctx context.Context, userID int64) bool {
-	if h.ownerStore != nil && h.ownerStore.IsOwner(userID) {
+	if h.isOwner(userID) {
 		return true
 	}
 	if h.collaboratorStore == nil {
@@ -289,4 +328,19 @@ func (h *CommandHandler) canUseSessionCommand(ctx context.Context, userID int64)
 		return false
 	}
 	return found
+}
+
+func (h *CommandHandler) isOwner(userID int64) bool {
+	return h.ownerStore != nil && h.ownerStore.IsOwner(userID)
+}
+
+func requestSelfRestart() error {
+	self, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		return fmt.Errorf("find current process: %w", err)
+	}
+	if err := self.Signal(os.Interrupt); err != nil {
+		return fmt.Errorf("signal current process: %w", err)
+	}
+	return nil
 }

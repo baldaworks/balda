@@ -43,6 +43,7 @@ go tool golangci-lint run
 - `/goal <objective>`: owner/collaborator; starts goal work in the current session context/workspace with started/validation/final updates and terminal Result/Artifacts/Confidence/Next action outcome.
 - `/close`: owner/collaborator, direct message only; resets the current session history and closes the topic when used from a topic session.
 - `/cancel`: owner/collaborator; requests cancellation of in-flight work in the current session, including active `/goal` runs.
+- `/restart`: owner only, direct message only; requests graceful process shutdown so the supervisor can restart the bot.
 - `/user add`: owner only; generate a collaborator invite link.
 - `/user list`: owner only; list collaborators and active invites.
 - `/user remove <user_id>`: owner only; remove a collaborator by user ID.

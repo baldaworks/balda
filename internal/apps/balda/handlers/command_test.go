@@ -474,6 +474,116 @@ func TestCommandHandlerOnCommand_CancelCollaboratorAllowed(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
+func TestCommandHandlerOnCommand_RestartOwnerRequestsSelfRestart(t *testing.T) {
+	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
+	restartCalls := 0
+	handler.requestRestart = func() error {
+		restartCalls++
+		return nil
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("restart", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if restartCalls != 1 {
+		t.Fatalf("restart calls = %d, want 1", restartCalls)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published commands = %d, want 0", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Restart requested. Shutting down now.")
+}
+
+func TestCommandHandlerOnCommand_RestartCollaboratorRejected(t *testing.T) {
+	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
+	restartCalls := 0
+	handler.requestRestart = func() error {
+		restartCalls++
+		return nil
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("restart", "", 202, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if restartCalls != 0 {
+		t.Fatalf("restart calls = %d, want 0", restartCalls)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published commands = %d, want 0", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Only the bot owner can use this command.")
+}
+
+func TestCommandHandlerOnCommand_RestartInGroupChatRejected(t *testing.T) {
+	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
+	restartCalls := 0
+	handler.requestRestart = func() error {
+		restartCalls++
+		return nil
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEventWithChatType("restart", "", 101, 9001, nil, "supergroup"))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if restartCalls != 0 {
+		t.Fatalf("restart calls = %d, want 0", restartCalls)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published commands = %d, want 0", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "This command is only available in direct messages.")
+}
+
+func TestCommandHandlerOnCommand_RestartWithArgsShowsUsage(t *testing.T) {
+	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
+	restartCalls := 0
+	handler.requestRestart = func() error {
+		restartCalls++
+		return nil
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("restart", "now", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if restartCalls != 0 {
+		t.Fatalf("restart calls = %d, want 0", restartCalls)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published commands = %d, want 0", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Usage: /restart")
+}
+
+func TestCommandHandlerOnCommand_RestartTriggerFailure(t *testing.T) {
+	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
+	restartCalls := 0
+	handler.requestRestart = func() error {
+		restartCalls++
+		return errors.New("restart failed")
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("restart", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if restartCalls != 1 {
+		t.Fatalf("restart calls = %d, want 1", restartCalls)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published commands = %d, want 0", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Could not trigger restart.")
+}
+
 func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 	stateStore := &fakeOwnerKVStore{}
 	ownerStore, err := auth.NewOwnerStore(stateStore)
