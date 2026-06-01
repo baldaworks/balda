@@ -238,6 +238,31 @@ func TestBuildBaldaInstruction_IncludesFormattingGuidance_DefaultMarkdownV2(t *t
 	}
 }
 
+func TestBuildBaldaInstruction_IncludesDirectConversationPolicyWithoutGoalSteering(t *testing.T) {
+	t.Parallel()
+
+	builder := &Builder{}
+	got := builder.buildBaldaInstruction(
+		"tg-1-2",
+		"telegram",
+		"alpha",
+		"norma/balda/tg-1-2",
+		"/tmp/work",
+		"main",
+	)
+
+	wantSnippets := []string{
+		"Treat ordinary user messages as ordinary conversation and reply to their actual content.",
+		"Use the user's language by default unless they clearly ask for another language.",
+		"Do not redirect the user to a command when a direct answer is appropriate.",
+	}
+	for _, snippet := range wantSnippets {
+		if !strings.Contains(got, snippet) {
+			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
+		}
+	}
+}
+
 func TestBuildBaldaInstruction_IncludesFormattingGuidance_HTML(t *testing.T) {
 	t.Parallel()
 
