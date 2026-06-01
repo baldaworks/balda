@@ -511,7 +511,9 @@ session-start snapshot. New or restored sessions read the latest file.
   - `balda.workspace.export` requires main repo to be on this branch
 - `balda.workspace.sessions_dir`: directory name under `balda.state_dir` used for per-session worktrees
   - defaults to `sessions`
-- Balda is Beads-independent by default and does not auto-start bundled `norma.tasks` MCP.
+- Balda auto-starts only its built-in `balda` MCP server. Any additional MCP
+  servers must be declared explicitly through `runtime.mcp_servers`,
+  provider-level `mcp_servers`, or `balda.mcp_servers`.
 
 ## Session Model
 
