@@ -474,6 +474,48 @@ func TestCommandHandlerOnCommand_CancelCollaboratorAllowed(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Cancel requested.")
 }
 
+func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
+	stateStore := &fakeOwnerKVStore{}
+	ownerStore, err := auth.NewOwnerStore(stateStore)
+	if err != nil {
+		t.Fatalf("NewOwnerStore(): %v", err)
+	}
+	if _, err := ownerStore.RegisterOwner(101, 9001, "owner", "Owner", "", true); err != nil {
+		t.Fatalf("RegisterOwner(): %v", err)
+	}
+	inviteStore, err := auth.NewInviteStore(&fakeInviteKVStore{})
+	if err != nil {
+		t.Fatalf("NewInviteStore(): %v", err)
+	}
+	collaboratorStore := auth.NewCollaboratorStore(&fakeCollaboratorBackend{})
+	tgClient := &fakeTelegramClient{}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("none")
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+		Messenger: msg,
+		TGClient:  tgClient,
+		Logger:    zerolog.Nop(),
+	})
+	handler := &CommandHandler{
+		ownerStore:        ownerStore,
+		collaboratorStore: collaboratorStore,
+		channel:           channel,
+		userHandler: &userHandler{
+			ownerStore:        ownerStore,
+			inviteStore:       inviteStore,
+			collaboratorStore: collaboratorStore,
+			channel:           channel,
+			tgClient:          tgClient,
+		},
+	}
+
+	if err := handler.onCommand(context.Background(), newCommandEvent("user", "", 101, 9001, nil)); err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "/user remove <user_id>")
+}
+
 type fakeCommandSessionManager struct {
 	resetCalls    []resetSessionCall
 	createCalls   []createSessionCall

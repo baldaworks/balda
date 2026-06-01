@@ -78,7 +78,7 @@ func (h *userHandler) sendUsage(ctx context.Context, locator baldasession.Sessio
 	usage := "Usage:\n" +
 		"• /user add - Generate invite link\n" +
 		"• /user list - Show collaborators and active invites\n" +
-		"• /user remove <id> - Remove collaborator by ID\n"
+		"• /user remove <user_id> - Remove collaborator by ID\n"
 	return h.channel.SendPlain(ctx, locator, usage)
 }
 
