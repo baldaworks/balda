@@ -568,6 +568,9 @@ Balda runs with a single provider per process (`balda.provider`).
   - concurrent `/goal` runs in the same session are rejected.
 - `/close` (DM only, owner/collaborator): resets the current session history. In topic contexts, it also closes that topic.
 - `/cancel` (owner/collaborator): requests cancellation of active session work, including active `/goal` runs.
+- `/user add` (owner only): generates a collaborator invite link for this bot.
+- `/user list` (owner only): lists collaborators and active invites.
+- `/user remove <user_id>` (owner only): removes a collaborator by ID.
 - `balda.memory.*` MCP tools are internal capabilities, not chat commands.
 
 ### Task runtime semantics (internal)

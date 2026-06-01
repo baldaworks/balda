@@ -174,7 +174,9 @@ Built-in provider types:
 - `/goal <objective>`: owner/collaborator; start goal work in the current session context/workspace. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See the [goal workflow doc](docs/goal-workflow.md).
 - `/close`: owner/collaborator, direct messages only; reset the current session history. In a topic, it also closes that topic.
 - `/cancel`: owner/collaborator; request cancellation of in-flight work in the current session, including active `/goal` runs.
-- `/user add|list|remove`: owner only; manage collaborators.
+- `/user add`: owner only; generate a collaborator invite link.
+- `/user list`: owner only; list collaborators and active invites.
+- `/user remove <user_id>`: owner only; remove a collaborator by user ID.
 
 ## Configuration
 
