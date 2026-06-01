@@ -97,16 +97,26 @@ func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArti
 	case string:
 		goalReached = strings.EqualFold(strings.TrimSpace(typed), "true")
 	}
-	executorOutput := firstNonEmpty(stringFromResult(result, "executor_output"), stringFromResult(result, "final_text"))
-	reviewerOutput := firstNonEmpty(stringFromResult(result, "reviewer_output"), stringFromResult(result, "reviewer_feedback"))
+	resultText := func(key string) string {
+		if len(result) == 0 {
+			return ""
+		}
+		value, ok := result[key]
+		if !ok || value == nil {
+			return ""
+		}
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+	executorOutput := firstNonEmpty(resultText("executor_output"), resultText("final_text"))
+	reviewerOutput := firstNonEmpty(resultText("reviewer_output"), resultText("reviewer_feedback"))
 	executorOutput = redactSecrets(executorOutput)
 	reviewerOutput = redactSecrets(reviewerOutput)
 	whatWasDone := firstNonEmpty(executorOutput, task.Objective)
 	if hasOutcome {
 		whatWasDone = firstNonEmpty(parsedOutcome.WhatWasDone, whatWasDone)
 	}
-	if !goalReached && task.Status != baldastate.SwarmTaskStatusCompleted && stringFromResult(result, "final_text") != "" {
-		whatWasDone = redactSecrets(stringFromResult(result, "final_text"))
+	if !goalReached && task.Status != baldastate.SwarmTaskStatusCompleted && resultText("final_text") != "" {
+		whatWasDone = redactSecrets(resultText("final_text"))
 	}
 
 	var out strings.Builder
@@ -157,17 +167,6 @@ func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArti
 	}
 	out.WriteString(limitRunes(oneLine(nextAction), maxTaskOutcomeTextRunes))
 	return out.String()
-}
-
-func stringFromResult(result map[string]any, key string) string {
-	if len(result) == 0 {
-		return ""
-	}
-	value, ok := result[key]
-	if !ok || value == nil {
-		return ""
-	}
-	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func oneLine(raw string) string {
