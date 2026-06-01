@@ -17,13 +17,13 @@ import (
 	adksession "google.golang.org/adk/session"
 )
 
-func TestMergeMCPServerIDs(t *testing.T) {
+func TestMergeMCPServerIDsWithBase(t *testing.T) {
 	explicit := []string{" custom.one ", "balda", "", "custom.one", "custom.two"}
 	extra := []string{"balda.extra", "custom.two", " "}
-	got := mergeMCPServerIDs(explicit, extra)
+	got := mergeMCPServerIDsWithBase([]string{"balda"}, explicit, extra)
 	want := []string{"balda", "custom.one", "custom.two", "balda.extra"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("mergeMCPServerIDs(%#v, %#v) = %#v, want %#v", explicit, extra, got, want)
+		t.Fatalf("mergeMCPServerIDsWithBase(%#v, %#v, %#v) = %#v, want %#v", []string{"balda"}, explicit, extra, got, want)
 	}
 }
 

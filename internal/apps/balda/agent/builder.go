@@ -350,7 +350,7 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 	return AgentMetadata{
 		Type:       strings.TrimSpace(agentCfg.Type),
 		Model:      model,
-		MCPServers: mergeMCPServerIDs(agentCfg.MCPServers, nil),
+		MCPServers: mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
 	}
 }
 
@@ -364,10 +364,6 @@ func (b *Builder) buildAgentMCPServerIDs(agentName string, bundled, extra []stri
 		return mergeMCPServerIDsWithBase(base, nil, extra)
 	}
 	return mergeMCPServerIDsWithBase(base, agentCfg.MCPServers, extra)
-}
-
-func mergeMCPServerIDs(explicit, extra []string) []string {
-	return mergeMCPServerIDsWithBase([]string{"balda"}, explicit, extra)
 }
 
 func mergeMCPServerIDsWithBase(base, explicit, extra []string) []string {
