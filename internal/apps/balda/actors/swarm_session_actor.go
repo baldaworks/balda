@@ -132,7 +132,7 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 	if e.turns == nil {
 		return swarm.TransientError(fmt.Errorf("turn dispatcher is required"))
 	}
-	if swarm.QueueModeOf(env) == swarm.QueueModeInterrupt {
+	if env.Meta != nil && strings.TrimSpace(env.Meta["queue_mode"]) == swarm.QueueModeInterrupt {
 		_, _, err := e.turns.CancelSession(payload.Locator, true)
 		if err != nil {
 			return swarm.TransientError(fmt.Errorf("interrupt session turn: %w", err))
