@@ -156,7 +156,7 @@ flowchart TB
 
 Balda treats `actorlayer` as a pure typed actor engine and never as product policy.
 
-- `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goal` work-validation runs in the process.
+- `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goal` worker-validator runs in the process.
 - Actorlayer owns generic actor mechanics: registration, addressing, lane execution, lifecycle state, and delivery hooks.
 - Balda owns product actors and product behavior implemented as actors: session turns, task routing, goal execution, delivery, control, and memory.
 - Balda exposes its durable transport to product/runtime code only as actorlayer source, delivery, and dispatch abstractions; the concrete transport stays inside the NATS adapter.
@@ -470,7 +470,7 @@ session-start snapshot. New or restored sessions read the latest file.
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot `MEMORY.md` or register `balda.memory.*` MCP tools.
-- `balda.goal.max_iterations`: maximum `/goal` work-validation iterations (default `25`)
+- `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations (default `25`)
   - invalid values are clamped to `25`.
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
 - `balda.nats.host` / `port`: embedded listener address (default `127.0.0.1:-1`, random local port)

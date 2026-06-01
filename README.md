@@ -248,7 +248,7 @@ Common settings:
 - `balda.webhooks.*` security: set route `auth` (for example shared-token header) and keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
 - `balda.sessions.persistence`: `sqlite` by default; keeps conversation history across restarts until the session is explicitly closed.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md` and `balda.memory.*` MCP tools.
-- `balda.goal.max_iterations`: maximum `/goal` work-validation iterations; defaults to `25`.
+- `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations; defaults to `25`.
 - `balda.nats.*`: built-in command/event runtime settings. Defaults bind to `127.0.0.1` on a random local port, keep monitoring disabled, and store runtime files under `.balda/nats`.
 - `balda.swarm`: optional advanced runtime tuning for goals, scheduled work, retries, and webhook delivery. Most installs should leave it at defaults.
 - `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set.

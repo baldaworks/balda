@@ -46,7 +46,7 @@ Status: active
   - typed envelope handling,
   - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
   - and lifecycle events suitable for external telemetry.
-- Provider runtime: `balda.provider` selects the single app-scoped provider runtime used by all Balda sessions and `/goal` work-validation runs.
+- Provider runtime: `balda.provider` selects the single app-scoped provider runtime used by all Balda sessions and `/goal` worker-validator runs.
 - Delivery boundary: Balda maps transport messages inside `eventbus/nats` into actorlayer `Source`/`Delivery` contracts; runtime and product actors never consume transport APIs directly.
 
 ### Ownership split

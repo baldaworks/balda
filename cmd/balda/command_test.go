@@ -139,7 +139,7 @@ balda:
 func TestDefaultBaldaConfig_DocumentsCurrentTemplateWording(t *testing.T) {
 	body := string(defaultBaldaConfig)
 	for _, want := range []string{
-		"# /goal work-validation iteration cap.",
+		"# /goal worker-validator loop iteration cap.",
 		"# Required built-in command/event runtime.",
 		"# Use the built-in `balda` server ID for Balda workspace/state tools.",
 		"# Tasks are upserted by id on boot; missing ids are deleted from state.db.",

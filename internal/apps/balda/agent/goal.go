@@ -22,7 +22,7 @@ const (
 	goalWorkerOutputStateKey = "goal_worker_output"
 )
 
-// GoalBuildConfig configures Balda's /goal work-validation agent.
+// GoalBuildConfig configures Balda's /goal worker-validator workflow.
 type GoalBuildConfig struct {
 	ProviderID          string
 	SessionID           string
