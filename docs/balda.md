@@ -994,7 +994,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 1. Startup order enforces internal MCP -> Balda provider -> bot runtime.
 2. Polling mode starts by default when `balda.telegram.webhook.enabled=false`.
 3. Webhook mode (`balda.telegram.webhook.enabled=true`) fails fast without `balda.telegram.webhook.url` or `balda.telegram.webhook.auth_token`.
-4. `/start owner=<token>` registers owner once; `/start invite=<token>` onboards collaborators; non-owner traffic is otherwise rejected.
+4. `/start owner=<token>` registers owner once; `/start invite=<token>` onboards collaborators; users who are neither owner nor collaborator are otherwise rejected.
 5. `/topic <name>` creates topic + Balda session and persists session metadata.
 6. `/topic` without name returns usage error.
 7. Restart clears active process sessions, but topic sessions are lazy-restored from persisted metadata.
