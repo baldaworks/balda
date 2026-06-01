@@ -246,6 +246,7 @@ func TestStartHandlerOnCommand_StrictAuthFlow(t *testing.T) {
 		}
 		assertLastSentContains(t, tgClient, "Invalid /start format")
 		assertLastSentContains(t, tgClient, "https://t.me/<bot_username>?start=owner_<your_owner_token>")
+		assertLastSentContains(t, tgClient, "https://t.me/<bot_username>?start=invite_<your_invite_token>")
 	})
 
 	t.Run("rejects unsupported raw token format", func(t *testing.T) {
