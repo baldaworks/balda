@@ -39,11 +39,7 @@ Git workspace guidance:
 - If export reports a base-branch mismatch, ask the user to switch the main repository back to the configured base branch.
 {{else}}
 - Git workspace tooling: disabled (`balda.workspace` MCP namespace is unavailable in this session).
-{{end}}
-
-SOUL.md session-start instructions:
-{balda_soul?}
-{{if .MemoryEnabled}}
+{{end}}{{if .MemoryEnabled}}
 
 Memory guidance:
 - If the user explicitly asks you to remember/save a durable fact or preference, call `balda.memory.remember`.

@@ -90,7 +90,6 @@ func TestBuildBaldaInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.
 	)
 
 	for _, snippet := range []string{
-		"SOUL.md session-start instructions:\n{balda_soul?}",
 		"Memory guidance:",
 		"balda.memory.remember",
 		"explicitly asks you to remember/save",
@@ -118,9 +117,6 @@ func TestBuildBaldaInstruction_ExcludesMemoryWhenDisabled(t *testing.T) {
 		"main",
 	)
 
-	if !strings.Contains(got, "SOUL.md session-start instructions:\n{balda_soul?}") {
-		t.Fatalf("buildBaldaInstruction() missing SOUL placeholder in output:\n%s", got)
-	}
 	for _, forbidden := range []string{
 		"Memory guidance:",
 		"balda.memory.remember",
@@ -328,16 +324,9 @@ func TestCreateRuntimeSession_IncludesMemorySnapshotState(t *testing.T) {
 	if gotMemory != "remember this" {
 		t.Fatalf("session state %q = %v, want remember this", memory.MemoryStateKey, gotMemory)
 	}
-	gotSoul, err := sess.State().Get(memory.SoulStateKey)
-	if err != nil {
-		t.Fatalf("session state get %q error = %v", memory.SoulStateKey, err)
-	}
-	if gotSoul != "be precise" {
-		t.Fatalf("session state %q = %v, want be precise", memory.SoulStateKey, gotSoul)
-	}
 }
 
-func TestCreateRuntimeSession_MemoryDisabledStillIncludesSoul(t *testing.T) {
+func TestCreateRuntimeSession_MemoryDisabledLeavesSnapshotEmpty(t *testing.T) {
 	t.Parallel()
 
 	sess := createRuntimeSessionWithMemory(t, false)
@@ -348,13 +337,6 @@ func TestCreateRuntimeSession_MemoryDisabledStillIncludesSoul(t *testing.T) {
 	if gotMemory != "" {
 		t.Fatalf("session state %q = %v, want empty", memory.MemoryStateKey, gotMemory)
 	}
-	gotSoul, err := sess.State().Get(memory.SoulStateKey)
-	if err != nil {
-		t.Fatalf("session state get %q error = %v", memory.SoulStateKey, err)
-	}
-	if gotSoul != "be precise" {
-		t.Fatalf("session state %q = %v, want be precise", memory.SoulStateKey, gotSoul)
-	}
 }
 
 func createRuntimeSessionWithMemory(t *testing.T, memoryEnabled bool) adksession.Session {
@@ -363,9 +345,6 @@ func createRuntimeSessionWithMemory(t *testing.T, memoryEnabled bool) adksession
 	stateDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(stateDir, memory.MemoryFileName), []byte("remember this\n"), 0o600); err != nil {
 		t.Fatalf("write memory: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stateDir, memory.SoulFileName), []byte("be precise\n"), 0o600); err != nil {
-		t.Fatalf("write soul: %v", err)
 	}
 	providers := map[string]agentconfig.Config{
 		"alpha": {Type: "llm"},

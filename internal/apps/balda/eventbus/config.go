@@ -8,7 +8,6 @@ import (
 const (
 	defaultNATSHost      = "127.0.0.1"
 	defaultNATSPort      = -1
-	defaultNATSStoreDir  = ".balda/nats"
 	defaultNATSMaxMemory = "256mb"
 	defaultNATSMaxStore  = "2gb"
 )
@@ -19,7 +18,6 @@ type Config struct {
 	URLs             []string `mapstructure:"urls"`
 	Host             string   `mapstructure:"host"`
 	Port             int      `mapstructure:"port"`
-	StoreDir         string   `mapstructure:"store_dir"`
 	MaxMemory        string   `mapstructure:"max_memory"`
 	MaxStore         string   `mapstructure:"max_store"`
 	SyncAlways       bool     `mapstructure:"sync_always"`
@@ -37,9 +35,6 @@ func (c Config) Normalized() (Config, error) {
 	}
 	if out.Port == 0 {
 		out.Port = defaultNATSPort
-	}
-	if strings.TrimSpace(out.StoreDir) == "" {
-		out.StoreDir = defaultNATSStoreDir
 	}
 	if strings.TrimSpace(out.MaxMemory) == "" {
 		out.MaxMemory = defaultNATSMaxMemory

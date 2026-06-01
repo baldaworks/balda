@@ -15,9 +15,6 @@ func TestStoreReadsStateDirFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stateDir, MemoryFileName), []byte("fact\n"), 0o600); err != nil {
 		t.Fatalf("write memory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(stateDir, SoulFileName), []byte("instruction\n"), 0o600); err != nil {
-		t.Fatalf("write soul: %v", err)
-	}
 
 	store := NewStore(stateDir, true)
 	gotMemory, err := store.ReadMemory(context.Background())
@@ -26,13 +23,6 @@ func TestStoreReadsStateDirFiles(t *testing.T) {
 	}
 	if strings.TrimSpace(gotMemory) != "fact" {
 		t.Fatalf("ReadMemory() = %q, want fact", gotMemory)
-	}
-	gotSoul, err := store.ReadSoul(context.Background())
-	if err != nil {
-		t.Fatalf("ReadSoul() error = %v", err)
-	}
-	if strings.TrimSpace(gotSoul) != "instruction" {
-		t.Fatalf("ReadSoul() = %q, want instruction", gotSoul)
 	}
 }
 
@@ -58,7 +48,7 @@ func TestStoreRememberAppendsMemory(t *testing.T) {
 	}
 }
 
-func TestStoreMissingSoulIsEmpty(t *testing.T) {
+func TestStoreMemoryDisabledIsEmpty(t *testing.T) {
 	t.Parallel()
 
 	stateDir := t.TempDir()
@@ -73,24 +63,14 @@ func TestStoreMissingSoulIsEmpty(t *testing.T) {
 	if strings.TrimSpace(gotMemory) != "fact" {
 		t.Fatalf("ReadMemory() = %q, want fact", gotMemory)
 	}
-	gotSoul, err := store.ReadSoul(context.Background())
-	if err != nil {
-		t.Fatalf("ReadSoul() error = %v", err)
-	}
-	if strings.TrimSpace(gotSoul) != "" {
-		t.Fatalf("ReadSoul() = %q, want empty soul", gotSoul)
-	}
 }
 
-func TestStoreMemoryDisabledStillReadsSoul(t *testing.T) {
+func TestStoreMemoryDisabledDoesNotReadMemory(t *testing.T) {
 	t.Parallel()
 
 	stateDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(stateDir, MemoryFileName), []byte("fact\n"), 0o600); err != nil {
 		t.Fatalf("write memory: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stateDir, SoulFileName), []byte("instruction\n"), 0o600); err != nil {
-		t.Fatalf("write soul: %v", err)
 	}
 
 	store := NewStore(stateDir, false)
@@ -100,13 +80,6 @@ func TestStoreMemoryDisabledStillReadsSoul(t *testing.T) {
 	}
 	if strings.TrimSpace(gotMemory) != "" {
 		t.Fatalf("ReadMemory() = %q, want empty when disabled", gotMemory)
-	}
-	gotSoul, err := store.ReadSoul(context.Background())
-	if err != nil {
-		t.Fatalf("ReadSoul() error = %v", err)
-	}
-	if strings.TrimSpace(gotSoul) != "instruction" {
-		t.Fatalf("ReadSoul() = %q, want instruction", gotSoul)
 	}
 	if err := store.Remember(context.Background(), "new fact"); err == nil {
 		t.Fatal("Remember() error = nil, want disabled error")

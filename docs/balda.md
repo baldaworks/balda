@@ -326,9 +326,7 @@ project:
 - `.config/balda/config.yaml` remains the selected app config.
 - `.config/balda/state.db` persists owner auth, session metadata, task
   read-model state, MCP KV, and Telegram polling offsets on the host.
-- `.config/balda/MEMORY.md` and optional `.config/balda/SOUL.md` stay on the
-  host. `MEMORY.md` is used when `balda.memory.enabled=true`; `SOUL.md` is
-  always read when present.
+- `.config/balda/MEMORY.md` stays on the host when `balda.memory.enabled=true`.
 - `.git` stays visible to `balda.workspace.mode=auto|on`, so workspace mode sees
   the same repository as host execution.
 - `balda-home` persists provider CLI auth/config written under `/home/node`.
@@ -491,7 +489,7 @@ session-start snapshot. New or restored sessions read the latest file.
   - invalid values are clamped to `25`.
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
 - `balda.nats.host` / `port`: embedded listener address (default `127.0.0.1:-1`, random local port)
-- `balda.nats.store_dir`: runtime store directory, relative to `balda.working_dir` when not absolute (default `.balda/nats`)
+- embedded NATS transport files live under `${balda.state_dir}/nats`
 - `balda.nats.max_memory` / `max_store`: embedded runtime resource caps (defaults `256mb` and `2gb`)
 - `balda.swarm`: optional advanced runtime tuning for command handling, retries, backpressure, and failure retention. Most installs should leave it at defaults.
 - `/goal` runs repeated work and validation passes in the current session and workspace until the goal passes validation or `balda.goal.max_iterations` is reached.
@@ -499,9 +497,6 @@ session-start snapshot. New or restored sessions read the latest file.
   - `balda.memory.read` reads the file from MCP.
   - `balda.memory.remember` appends facts to the file from MCP.
   - memory is snapshotted into session state when a session starts or restores; active sessions are not refreshed after writes.
-- optional session-start operator instructions use `${balda.state_dir}/SOUL.md`
-  - Balda reads the file on session start/restore when it exists; this is independent from `balda.memory.enabled`.
-  - Balda does not expose MCP mutation for `SOUL.md`; edit the file directly.
 - owner auth token is generated during `balda init`, persisted in `state.db`, and reused by `balda start`
   - if token is missing in existing state, `balda start` backfills one-time and persists it
   - if no owner is registered yet, `balda start` logs the owner bootstrap command and auth link again to help finish first-time onboarding
@@ -838,7 +833,7 @@ All events are published as the same envelope shape. For event envelopes,
   `Balda-Causation-ID`, `Balda-Dedupe-Key`, `Balda-Actor-Key`,
   `Balda-Priority`, and `Balda-Namespace`.
 - Embedded NATS binds to `127.0.0.1` by default and is not exposed externally.
-  NATS transport files live under `.balda/nats`, which is runtime state and should
+  NATS transport files live under `${balda.state_dir}/nats`, which is runtime state and should
   not be committed.
 - Poison command/event messages that cannot decode as Balda envelopes are
   terminated and copied to `BALDA_DLQ` with the raw subject, headers, payload,
@@ -970,7 +965,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 
 ## Troubleshooting
 
-- Startup fails while initializing built-in runtime streams: keep the default `balda.nats` settings unless you have a specific local runtime need, ensure `balda.nats.store_dir` is writable, and verify local disk limits.
+- Startup fails while initializing built-in runtime streams: keep the default `balda.nats` settings unless you have a specific local runtime need, ensure `${balda.state_dir}/nats` is writable, and verify local disk limits.
 - Startup fails while initializing built-in runtime consumers: verify `balda.swarm.commands.consumer` uniqueness and avoid concurrent writers against the same embedded NATS store dir.
 - Rising command backlog or redelivery counts in transport metadata usually means retrying or deadlettering work; inspect lifecycle events, DLQ stream contents, and logs before increasing `max_ack_pending` or `fetch_batch`.
 - Webhook ingress returns `503 dispatch_failed`: confirm transport startup succeeded and command publish acknowledgements are being returned.

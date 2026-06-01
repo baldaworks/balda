@@ -12,17 +12,19 @@ import (
 )
 
 type resolvedConfig struct {
-	NATS       baldaeventbus.Config
-	Swarm      swarm.Config
-	StoreDir   string
-	MaxMemory  int64
-	MaxStore   int64
-	Commands   streamSpec
-	Events     streamSpec
-	DLQ        streamSpec
-	AckWait    time.Duration
-	FetchWait  time.Duration
+	NATS      baldaeventbus.Config
+	Swarm     swarm.Config
+	StoreDir  string
+	MaxMemory int64
+	MaxStore  int64
+	Commands  streamSpec
+	Events    streamSpec
+	DLQ       streamSpec
+	AckWait   time.Duration
+	FetchWait time.Duration
 }
+
+const embeddedNATSStateDirName = "nats"
 
 type streamSpec struct {
 	MaxAge     time.Duration
@@ -31,7 +33,7 @@ type streamSpec struct {
 	Discard    string
 }
 
-func resolveConfig(natsCfg baldaeventbus.Config, swarmCfg swarm.Config, workingDir string) (resolvedConfig, error) {
+func resolveConfig(natsCfg baldaeventbus.Config, swarmCfg swarm.Config, stateDir string) (resolvedConfig, error) {
 	normalizedNATS, err := natsCfg.Normalized()
 	if err != nil {
 		return resolvedConfig{}, err
@@ -41,10 +43,11 @@ func resolveConfig(natsCfg baldaeventbus.Config, swarmCfg swarm.Config, workingD
 		return resolvedConfig{}, err
 	}
 	out := resolvedConfig{NATS: normalizedNATS, Swarm: normalizedSwarm}
-	out.StoreDir = strings.TrimSpace(normalizedNATS.StoreDir)
-	if out.StoreDir != "" && !filepath.IsAbs(out.StoreDir) {
-		out.StoreDir = filepath.Join(workingDir, out.StoreDir)
+	trimmedStateDir := strings.TrimSpace(stateDir)
+	if trimmedStateDir == "" {
+		return resolvedConfig{}, fmt.Errorf("balda.state_dir is required")
 	}
+	out.StoreDir = filepath.Join(trimmedStateDir, embeddedNATSStateDirName)
 	out.MaxMemory, err = parseBytes(normalizedNATS.MaxMemory)
 	if err != nil {
 		return resolvedConfig{}, fmt.Errorf("balda.nats.max_memory: %w", err)

@@ -13,9 +13,6 @@ func TestConfigNormalized_DefaultsToBuiltInRuntime(t *testing.T) {
 	if cfg.Host != "127.0.0.1" || cfg.Port != -1 {
 		t.Fatalf("address = %s:%d, want 127.0.0.1:-1", cfg.Host, cfg.Port)
 	}
-	if cfg.StoreDir != ".balda/nats" {
-		t.Fatalf("StoreDir = %q, want .balda/nats", cfg.StoreDir)
-	}
 }
 
 func TestConfigNormalized_LeavesExternalRuntimeDisabledWhenURLsAreProvided(t *testing.T) {

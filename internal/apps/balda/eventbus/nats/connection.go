@@ -29,15 +29,15 @@ type Bus struct {
 type Params struct {
 	fx.In
 
-	LC         fx.Lifecycle
-	Config     baldaeventbus.Config
-	Swarm      swarm.Config
-	WorkingDir string
-	Logger     zerolog.Logger
+	LC       fx.Lifecycle
+	Config   baldaeventbus.Config
+	Swarm    swarm.Config
+	StateDir string `name:"balda_state_dir"`
+	Logger   zerolog.Logger
 }
 
 func NewBus(params Params) (*Bus, error) {
-	cfg, err := resolveConfig(params.Config, params.Swarm, params.WorkingDir)
+	cfg, err := resolveConfig(params.Config, params.Swarm, params.StateDir)
 	if err != nil {
 		return nil, err
 	}

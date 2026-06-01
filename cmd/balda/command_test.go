@@ -125,9 +125,6 @@ balda:
 	if !doc.Balda.NATS.Embedded {
 		t.Fatal("nats.embedded = false, want true from defaults")
 	}
-	if doc.Balda.NATS.StoreDir != ".balda/nats" {
-		t.Fatalf("nats.store_dir = %q, want .balda/nats", doc.Balda.NATS.StoreDir)
-	}
 	if doc.Balda.Swarm.Commands.Stream != "" {
 		t.Fatalf("swarm.commands.stream = %q, want omitted from defaults YAML", doc.Balda.Swarm.Commands.Stream)
 	}

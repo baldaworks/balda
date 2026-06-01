@@ -99,7 +99,6 @@ balda:
   memory:
     # Internal durable memory backed by ${balda.state_dir}/MEMORY.md.
     # If false, balda.memory.* MCP tools are disabled.
-    # SOUL.md remains active independently when present.
     enabled: true
 
   goal:
@@ -112,7 +111,6 @@ balda:
     embedded: true
     host: "127.0.0.1"
     port: -1
-    store_dir: ".balda/nats"
     max_memory: "256mb"
     max_store: "2gb"
     sync_always: false

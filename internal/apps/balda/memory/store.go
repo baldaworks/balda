@@ -11,10 +11,8 @@ import (
 
 const (
 	MemoryFileName = "MEMORY.md"
-	SoulFileName   = "SOUL.md"
 
 	MemoryStateKey = "balda_memory"
-	SoulStateKey   = "balda_soul"
 )
 
 type Store struct {
@@ -39,13 +37,6 @@ func (s *Store) ReadMemory(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	return s.readFile(ctx, filepath.Join(s.stateDir, MemoryFileName))
-}
-
-func (s *Store) ReadSoul(ctx context.Context) (string, error) {
-	if s == nil {
-		return "", nil
-	}
-	return s.readFile(ctx, filepath.Join(s.stateDir, SoulFileName))
 }
 
 func (s *Store) Remember(ctx context.Context, fact string) error {

@@ -435,7 +435,6 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 		state = make(map[string]any)
 	}
 	state[memory.MemoryStateKey] = ""
-	state[memory.SoulStateKey] = ""
 	if b.memoryStore == nil {
 		return state, nil
 	}
@@ -443,11 +442,6 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 	if err != nil {
 		return nil, fmt.Errorf("read balda memory: %w", err)
 	}
-	soulText, err := b.memoryStore.ReadSoul(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("read balda soul: %w", err)
-	}
 	state[memory.MemoryStateKey] = strings.TrimSpace(memoryText)
-	state[memory.SoulStateKey] = strings.TrimSpace(soulText)
 	return state, nil
 }

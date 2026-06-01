@@ -226,7 +226,6 @@ balda:
     embedded: true
     host: "127.0.0.1"
     port: -1
-    store_dir: ".balda/nats"
     max_memory: "256mb"
     max_store: "2gb"
     sync_always: false
@@ -252,10 +251,9 @@ Common settings:
 - `balda.sessions.persistence`: `sqlite` by default; keeps conversation history across restarts until the session is explicitly closed.
 - `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md` and `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations; defaults to `25`.
-- `balda.nats.*`: built-in command/event runtime settings. Defaults bind to `127.0.0.1` on a random local port, keep monitoring disabled, and store runtime files under `.balda/nats`.
+- `balda.nats.*`: built-in command/event runtime settings. Defaults bind to `127.0.0.1` on a random local port, keep monitoring disabled, and store runtime files under `${balda.state_dir}/nats`.
 - `balda.swarm`: optional advanced runtime tuning for goals, scheduled work, retries, and webhook delivery. Most installs should leave it at defaults.
 - `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set.
-- `${balda.state_dir}/SOUL.md`: optional operator instructions read at session start/restore when the file exists.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
 - `balda.workspace.sessions_dir`: directory name under `balda.state_dir` used for per-session worktrees (defaults to `sessions`).
 - `balda.mcp_servers`: extra MCP server IDs added to every Balda-started session.
@@ -302,7 +300,7 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 - Memory facts are not visible in an active session: memory is snapshotted when a session starts or restores; close and reopen the session to refresh it.
 - Workspace import/export issues: check `balda.workspace.mode`, `balda.workspace.base_branch`, and that Balda is running in the expected git checkout.
 - Progress updates are too noisy: set `balda.telegram.plan_updates=false`.
-- Startup fails while initializing the built-in runtime streams: keep the default `balda.nats` settings unless you have a specific local runtime need, ensure `balda.nats.store_dir` is writable, and verify disk space.
+- Startup fails while initializing the built-in runtime streams: keep the default `balda.nats` settings unless you have a specific local runtime need, ensure `${balda.state_dir}/nats` is writable, and verify disk space.
 - Startup fails while initializing built-in runtime consumers: stop any other Balda process sharing the same embedded store and restart.
 - Runtime issues show up in structured logs; check recent command failures and retry pressure before increasing transport limits.
 

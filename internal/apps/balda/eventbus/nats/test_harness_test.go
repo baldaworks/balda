@@ -20,11 +20,11 @@ type TestRuntimeHarness struct {
 func StartTestRuntime(t *testing.T, swarmCfg swarm.Config) *TestRuntimeHarness {
 	t.Helper()
 	bus, err := NewBus(Params{
-		LC:         fxtest.NewLifecycle(t),
-		Config:     baldaeventbus.Config{Embedded: true},
-		Swarm:      swarmCfg,
-		WorkingDir: t.TempDir(),
-		Logger:     zerolog.Nop(),
+		LC:       fxtest.NewLifecycle(t),
+		Config:   baldaeventbus.Config{Embedded: true},
+		Swarm:    swarmCfg,
+		StateDir: t.TempDir(),
+		Logger:   zerolog.Nop(),
 	})
 	if err != nil {
 		t.Fatalf("StartTestRuntime() NewBus error = %v", err)
