@@ -805,7 +805,7 @@ func (a *Actor) deliver(
 		Namespace:     swarm.NamespaceAgentResult,
 		Kind:          taskPayloadKindDelivery,
 		From:          swarm.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
-		To:            swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: firstNonEmpty(locator.AddressKey, locator.SessionID, "telegram")},
+		To:            swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: locator.DeliveryActorKey()},
 		SessionID:     locator.SessionID,
 		TaskID:        taskID,
 		CorrelationID: taskID,

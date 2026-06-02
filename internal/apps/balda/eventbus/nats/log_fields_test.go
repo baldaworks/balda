@@ -12,15 +12,15 @@ import (
 func TestWithDeliveryKeyAddsFieldForDeliveryActor(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
-	env := swarm.Envelope{To: swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "delivery:user-1"}}
+	env := swarm.Envelope{To: swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "telegram:user-1"}}
 	withDeliveryKey(logger.Info(), env).Msg("test")
 
 	var payload map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal log: %v", err)
 	}
-	if payload["delivery_key"] != "delivery:user-1" {
-		t.Fatalf("delivery_key = %v, want delivery:user-1", payload["delivery_key"])
+	if payload["delivery_key"] != "telegram:user-1" {
+		t.Fatalf("delivery_key = %v, want telegram:user-1", payload["delivery_key"])
 	}
 }
 

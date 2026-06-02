@@ -152,7 +152,7 @@ func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text str
 		Namespace:   swarm.NamespaceAgentResult,
 		Kind:        taskPayloadKindDelivery,
 		From:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "9001:99"},
+		To:          swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: locator.DeliveryActorKey()},
 		SessionID:   locator.SessionID,
 		TaskID:      "task-1",
 		DedupeKey:   dedupeKey,

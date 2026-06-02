@@ -45,7 +45,7 @@ func DeliveryEnvelope(
 		Namespace:     swarm.NamespaceAgentResult,
 		Kind:          taskPayloadKindDelivery,
 		From:          from,
-		To:            swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: firstNonEmpty(locator.AddressKey, locator.SessionID, "telegram")},
+		To:            swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: locator.DeliveryActorKey()},
 		SessionID:     locator.SessionID,
 		TaskID:        strings.TrimSpace(taskID),
 		CorrelationID: strings.TrimSpace(taskID),

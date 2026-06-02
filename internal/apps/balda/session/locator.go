@@ -43,3 +43,20 @@ func NewSessionLocator(channelType, addressKey, addressJSON, sessionID string) (
 func LocatorFromRecord(record baldastate.SessionRecord) (SessionLocator, error) {
 	return NewSessionLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
 }
+
+// DeliveryActorKey returns the canonical actor key for channel delivery work.
+// The normal form is "<channel_type>:<address_key>" so runtime lanes, logs,
+// and command telemetry stay namespaced by transport.
+func (locator SessionLocator) DeliveryActorKey() string {
+	channelType := strings.ToLower(strings.TrimSpace(locator.ChannelType))
+	addressKey := strings.TrimSpace(locator.AddressKey)
+	if channelType != "" && addressKey != "" {
+		return channelType + ":" + addressKey
+	}
+	for _, candidate := range []string{addressKey, strings.TrimSpace(locator.SessionID), channelType, "telegram"} {
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}

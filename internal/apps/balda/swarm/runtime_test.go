@@ -198,6 +198,18 @@ func TestRuntimeAddressOf(t *testing.T) {
 	}
 }
 
+func TestActorLaneKeyFromEnvelopeUsesQualifiedDeliveryKey(t *testing.T) {
+	env := Envelope{
+		Namespace: NamespaceAgentResult,
+		TaskID:    "task-1",
+		To:        ActorAddress{Target: ActorTypeDelivery, Key: "telegram:9001:77"},
+	}
+
+	if got := actorLaneKeyFromEnvelope(env); got != "delivery:telegram:9001:77" {
+		t.Fatalf("actorLaneKeyFromEnvelope() = %q, want %q", got, "delivery:telegram:9001:77")
+	}
+}
+
 func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 	registry := newTestRegistry(t)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)

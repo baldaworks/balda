@@ -68,7 +68,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 	if runtimeBuilder.cleanupCalls != 1 {
 		t.Fatalf("cleanupCalls = %d, want 1", runtimeBuilder.cleanupCalls)
 	}
-	if got := lastPublishedCommandTo(t, bus, swarm.ActorTypeDelivery, locator.AddressKey); got.Kind != taskPayloadKindDelivery {
+	if got := lastPublishedCommandTo(t, bus, swarm.ActorTypeDelivery, locator.DeliveryActorKey()); got.Kind != taskPayloadKindDelivery {
 		t.Fatalf("last delivery = %+v, want delivery command", got)
 	}
 }
