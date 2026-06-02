@@ -159,7 +159,7 @@ func (m *WorkspaceManager) Import(ctx context.Context, workspaceDir string) erro
 		return err
 	}
 
-	if err := git.GitRunCmdErr(ctx, workspaceDir, "git", "rebase", baseRef); err != nil {
+	if err := git.GitRunCmdErr(ctx, workspaceDir, "git", "rebase", "-X", "theirs", baseRef); err != nil {
 		// Abort rebase on failure so workspace stays clean
 		_ = git.GitRunCmdErr(ctx, workspaceDir, "git", "rebase", "--abort")
 		return fmt.Errorf("rebase workspace onto %s: %w", baseRef, err)

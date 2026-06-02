@@ -266,9 +266,8 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 	workspaceDir := filepath.Join(stateDir, "sessions", locator.SessionID)
 	runBaldaRestoreGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 
-	writeBaldaRestoreFile(t, filepath.Join(workspaceDir, "conflict.txt"), testBaldaBranchContent)
-	runBaldaRestoreGit(t, ctx, workspaceDir, "add", "conflict.txt")
-	runBaldaRestoreGit(t, ctx, workspaceDir, "commit", "-m", "feat: branch conflict")
+	runBaldaRestoreGit(t, ctx, workspaceDir, "rm", "conflict.txt")
+	runBaldaRestoreGit(t, ctx, workspaceDir, "commit", "-m", "feat: remove conflict file")
 
 	if err := runBaldaRestoreGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir); err != nil {
 		t.Fatalf("remove worktree: %v", err)

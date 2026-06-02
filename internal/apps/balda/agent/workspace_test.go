@@ -102,6 +102,50 @@ func TestWorkspaceImportRebasesCleanBranch(t *testing.T) {
 	}
 }
 
+func TestWorkspaceImportPrefersSessionBranchOnTextConflict(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	initGitRepo(t, ctx, workingDir)
+
+	writeFile(t, filepath.Join(workingDir, "conflict.txt"), "base\n")
+	runGit(t, ctx, workingDir, "add", "conflict.txt")
+	runGit(t, ctx, workingDir, "commit", "-m", "chore: seed")
+
+	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
+	branchName := "norma/balda/tg-1-3"
+	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
+	t.Cleanup(func() {
+		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
+	})
+
+	writeFile(t, filepath.Join(workspaceDir, "conflict.txt"), testWorkspaceBranchContent)
+	runGit(t, ctx, workspaceDir, "add", "conflict.txt")
+	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: branch conflict")
+
+	writeFile(t, filepath.Join(workingDir, "conflict.txt"), "main\n")
+	writeFile(t, filepath.Join(workingDir, "base-branch.txt"), "base-branch\n")
+	runGit(t, ctx, workingDir, "add", "conflict.txt", "base-branch.txt")
+	runGit(t, ctx, workingDir, "commit", "-m", "chore: main conflict")
+
+	m := NewWorkspaceManagerWithSessionsDir(workingDir, t.TempDir(), currentBranch(t, ctx, workingDir), "")
+	if err := m.Import(ctx, workspaceDir); err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+
+	status := runGit(t, ctx, workspaceDir, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("expected clean workspace after import, got:\n%s", status)
+	}
+	if got := readFile(t, filepath.Join(workspaceDir, "conflict.txt")); got != testWorkspaceBranchContent {
+		t.Fatalf("conflict.txt mismatch after import: got %q", got)
+	}
+	if got := readFile(t, filepath.Join(workspaceDir, "base-branch.txt")); got != "base-branch\n" {
+		t.Fatalf("base-branch.txt mismatch after import: got %q", got)
+	}
+}
+
 func TestWorkspaceImportUsesCurrentHeadBranchNotHardcodedMaster(t *testing.T) {
 	t.Parallel()
 
@@ -188,9 +232,8 @@ func TestEnsureWorkspace_RemountsExistingBranchWithoutSyncWhenImportConflicts(t 
 		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
 	})
 
-	writeFile(t, filepath.Join(workspaceDir, "conflict.txt"), testWorkspaceBranchContent)
-	runGit(t, ctx, workspaceDir, "add", "conflict.txt")
-	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: branch conflict")
+	runGit(t, ctx, workspaceDir, "rm", "conflict.txt")
+	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: remove conflict file")
 
 	writeFile(t, filepath.Join(workingDir, "conflict.txt"), "main\n")
 	runGit(t, ctx, workingDir, "add", "conflict.txt")
@@ -212,8 +255,8 @@ func TestEnsureWorkspace_RemountsExistingBranchWithoutSyncWhenImportConflicts(t 
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("expected clean workspace after fallback remount, got:\n%s", status)
 	}
-	if got := readFile(t, filepath.Join(workspaceDir, "conflict.txt")); got != testWorkspaceBranchContent {
-		t.Fatalf("conflict.txt mismatch after fallback remount: got %q", got)
+	if _, err := os.Stat(filepath.Join(workspaceDir, "conflict.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected conflict.txt to stay deleted after fallback remount, stat err=%v", err)
 	}
 }
 
@@ -233,9 +276,8 @@ func TestEnsureWorkspace_RemountsCleanBranchWithoutSyncWhenFreshMountConflicts(t
 	workspaceDir := filepath.Join(t.TempDir(), "balda-workspace")
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", branchName, workspaceDir, "HEAD")
 
-	writeFile(t, filepath.Join(workspaceDir, "conflict.txt"), testWorkspaceBranchContent)
-	runGit(t, ctx, workspaceDir, "add", "conflict.txt")
-	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: branch conflict")
+	runGit(t, ctx, workspaceDir, "rm", "conflict.txt")
+	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: remove conflict file")
 
 	if err := runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir); err != nil {
 		t.Fatalf("remove worktree: %v", err)
@@ -261,8 +303,8 @@ func TestEnsureWorkspace_RemountsCleanBranchWithoutSyncWhenFreshMountConflicts(t
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("expected clean workspace after fallback remount, got:\n%s", status)
 	}
-	if got := readFile(t, filepath.Join(workspaceDir, "conflict.txt")); got != testWorkspaceBranchContent {
-		t.Fatalf("conflict.txt mismatch after fallback remount: got %q", got)
+	if _, err := os.Stat(filepath.Join(workspaceDir, "conflict.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected conflict.txt to stay deleted after fallback remount, stat err=%v", err)
 	}
 }
 
@@ -284,9 +326,8 @@ func TestWorkspaceImportAbortsRebaseOnConflict(t *testing.T) {
 		_ = runGitAllowError(ctx, workingDir, "worktree", "remove", "--force", workspaceDir)
 	})
 
-	writeFile(t, filepath.Join(workspaceDir, "conflict.txt"), testWorkspaceBranchContent)
-	runGit(t, ctx, workspaceDir, "add", "conflict.txt")
-	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: branch conflict")
+	runGit(t, ctx, workspaceDir, "rm", "conflict.txt")
+	runGit(t, ctx, workspaceDir, "commit", "-m", "feat: remove conflict file")
 
 	writeFile(t, filepath.Join(workingDir, "conflict.txt"), "base-branch\n")
 	runGit(t, ctx, workingDir, "add", "conflict.txt")
@@ -315,8 +356,8 @@ func TestWorkspaceImportAbortsRebaseOnConflict(t *testing.T) {
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("expected clean workspace after abort, got:\n%s", status)
 	}
-	if got := readFile(t, filepath.Join(workspaceDir, "conflict.txt")); got != testWorkspaceBranchContent {
-		t.Fatalf("conflict.txt mismatch after abort: got %q", got)
+	if _, err := os.Stat(filepath.Join(workspaceDir, "conflict.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected conflict.txt to remain deleted after abort, stat err=%v", err)
 	}
 }
 
