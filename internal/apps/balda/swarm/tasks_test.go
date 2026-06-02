@@ -229,3 +229,79 @@ func TestTaskServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *tes
 		t.Fatalf("published events = %+v, want one task.completed visibility attempt", bus.envs)
 	}
 }
+
+func TestTaskServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
+	ctx := context.Background()
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	if _, err := provider.Swarm().CreateTask(ctx, baldastate.SwarmTaskRecord{
+		ID:        "task-deadlettered",
+		SessionID: "s-1",
+		Objective: "deadlettered task",
+		Status:    baldastate.SwarmTaskStatusDeadLettered,
+	}); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	bus := &recordingTaskCommandBus{}
+	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	if err != nil {
+		t.Fatalf("NewTaskService() error = %v", err)
+	}
+
+	if err := service.MarkStatus(ctx, "task-deadlettered", baldastate.SwarmTaskStatusFailed, "task.actor", "msg-1", "runner failed", nil); err != nil {
+		t.Fatalf("MarkStatus() error = %v, want nil for stale terminal finalization", err)
+	}
+	task, ok, err := service.Get(ctx, "task-deadlettered")
+	if err != nil || !ok {
+		t.Fatalf("Get() task = %+v found=%v err=%v", task, ok, err)
+	}
+	if task.Status != baldastate.SwarmTaskStatusDeadLettered {
+		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusDeadLettered)
+	}
+	if len(bus.envs) != 0 {
+		t.Fatalf("published events = %+v, want no visibility event for stale terminal finalization", bus.envs)
+	}
+}
+
+func TestTaskServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
+	ctx := context.Background()
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	if _, err := provider.Swarm().CreateTask(ctx, baldastate.SwarmTaskRecord{
+		ID:         "task-deadlettered-result",
+		SessionID:  "s-1",
+		Objective:  "deadlettered task",
+		Status:     baldastate.SwarmTaskStatusDeadLettered,
+		ResultJSON: `{"status":"deadlettered"}`,
+	}); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	bus := &recordingTaskCommandBus{}
+	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	if err != nil {
+		t.Fatalf("NewTaskService() error = %v", err)
+	}
+
+	if err := service.SetResult(ctx, "task-deadlettered-result", map[string]any{"status": "failed"}, baldastate.SwarmTaskStatusFailed, "task.actor", "runner failed"); err != nil {
+		t.Fatalf("SetResult() error = %v, want nil for stale terminal finalization", err)
+	}
+	task, ok, err := service.Get(ctx, "task-deadlettered-result")
+	if err != nil || !ok {
+		t.Fatalf("Get() task = %+v found=%v err=%v", task, ok, err)
+	}
+	if task.Status != baldastate.SwarmTaskStatusDeadLettered {
+		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusDeadLettered)
+	}
+	if task.ResultJSON != `{"status":"deadlettered"}` {
+		t.Fatalf("task result = %q, want original deadlettered result preserved", task.ResultJSON)
+	}
+	if len(bus.envs) != 0 {
+		t.Fatalf("published events = %+v, want no visibility event for stale terminal finalization", bus.envs)
+	}
+}

@@ -113,7 +113,7 @@ func (s *TaskService) MarkStatus(ctx context.Context, taskID string, status stri
 	}
 	// Contract: persist lifecycle transition first, then best-effort event emission.
 	if err := s.store.UpdateTaskStatus(ctx, taskID, status, reason); err != nil {
-		return err
+		return s.suppressStaleTerminalTransition(ctx, taskID, status, err)
 	}
 	eventType := ""
 	switch strings.TrimSpace(status) {
@@ -149,7 +149,7 @@ func (s *TaskService) SetResult(ctx context.Context, taskID string, result any, 
 	}
 	// Contract: result/state write is authoritative; event emission is best-effort visibility.
 	if err := s.store.SetTaskResult(ctx, taskID, data, status, reason); err != nil {
-		return err
+		return s.suppressStaleTerminalTransition(ctx, taskID, status, err)
 	}
 	eventType := ""
 	switch strings.TrimSpace(status) {
@@ -170,6 +170,38 @@ func (s *TaskService) SetResult(ctx context.Context, taskID string, result any, 
 		"status": status,
 		"reason": reason,
 	}))
+}
+
+func (s *TaskService) suppressStaleTerminalTransition(ctx context.Context, taskID string, status string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(err.Error(), "invalid swarm task transition") {
+		return err
+	}
+	if !isTerminalTaskStatus(status) {
+		return err
+	}
+	task, ok, getErr := s.Get(ctx, taskID)
+	if getErr != nil || !ok {
+		return err
+	}
+	if !isTerminalTaskStatus(task.Status) {
+		return err
+	}
+	return nil
+}
+
+func isTerminalTaskStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case baldastate.SwarmTaskStatusCompleted,
+		baldastate.SwarmTaskStatusFailed,
+		baldastate.SwarmTaskStatusCanceled,
+		baldastate.SwarmTaskStatusDeadLettered:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *TaskService) AppendEvent(ctx context.Context, taskID string, eventType string, actor string, messageID string, payload any) error {
