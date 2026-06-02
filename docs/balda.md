@@ -165,7 +165,7 @@ flowchart TB
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite`, `updatepoller` |
-| `swarm` | `internal/apps/balda/swarm` | Durable actor runtime, task services, and projections | memory, state, Norma actorlayer |
+| `swarm` | `internal/apps/balda/swarm` | Durable actor runtime, task services, and projections | memory, state, `pkg/actorlayer` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
 | `welcome` | `internal/apps/balda/welcome` | Welcome message builder | (standalone) |
 
@@ -204,9 +204,9 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped provider runtime selected by `balda.provider` and the per-session state.
 - `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, tasks, projections, memory, and delivery outbox rows.
 
-Do not add Balda-local actor adapter packages or execution/delivery selector
-layers. Generic actor adapter packages are Norma-owned. Balda consumes Norma
-actorlayer and keeps product policy in Balda.
+Do not add extra Balda-local actor adapter packages or execution/delivery selector
+layers around the runtime. The generic actor runtime lives in `pkg/actorlayer`,
+and Balda keeps product policy in Balda.
 
 ## Startup Order (Required)
 

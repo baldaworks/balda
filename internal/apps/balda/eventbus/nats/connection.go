@@ -11,7 +11,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
-	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
+	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

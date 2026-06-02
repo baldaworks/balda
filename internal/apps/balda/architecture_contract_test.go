@@ -88,6 +88,13 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 		})
 	})
 
+	t.Run("production code uses local actorlayer package", func(t *testing.T) {
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`github\.com/normahq/norma/pkg/actorlayer`))
+		if len(matches) > 0 {
+			t.Fatalf("production Go files must not import Norma actorlayer directly:\n%s", formatSourceMatches(matches))
+		}
+	})
+
 	t.Run("product code does not use direct transport contracts", func(t *testing.T) {
 		forbidden := []string{
 			"CommandMessage",

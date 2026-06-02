@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
-	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
+	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 	"github.com/rs/zerolog"
 )
 
@@ -39,7 +39,7 @@ type commandMessage struct {
 	settled bool
 }
 
-func (m *commandMessage) Envelope() any { return m.env }
+func (m *commandMessage) Envelope() actorengine.Envelope { return m.env }
 func (m *commandMessage) InProgress(context.Context) error {
 	return m.msg.InProgress()
 }

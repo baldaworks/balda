@@ -7,7 +7,7 @@ Status: active
 
 - ActorRuntime consumes durable command deliveries.
 - Actorlayer engine lanes serialize mutable state by actor key.
-- Runtime execution uses Norma `actorlayer/engine.DispatchRuntime`; Balda adapts durable command transport into actorlayer deliveries and supplies only Balda-specific delivery wrapping.
+- Runtime execution uses Balda's local `pkg/actorlayer/engine.DispatchRuntime`; Balda adapts durable command transport into actorlayer deliveries and supplies only Balda-specific delivery wrapping.
 - Command settlement happens after actor side effects complete.
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: session turns, webhook/scheduled work routing, `/goal` execution, outbound delivery, and cancellation.
@@ -37,11 +37,11 @@ Status: active
 - Task/goal/delivery lifecycle changes.
 - Goal workflow, session, or task-result behavior changes.
 
-## Norma actorlayer contract boundaries
+## Local actorlayer contract boundaries
 
 ### Contract shape
 
-- Engine contract: Norma actorlayer is the fixed typed dispatch+state model Balda uses for actors through `actorengine.NewDispatchRuntime`. It exposes:
+- Engine contract: Balda's local `pkg/actorlayer` is the fixed typed dispatch+state model Balda uses for actors through `actorengine.NewDispatchRuntime`. It exposes:
   - actor keying and deterministic lane routing,
   - typed envelope handling,
   - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
@@ -67,14 +67,14 @@ Status: active
 
 - All actor sessions in one Balda process use the configured `balda.provider`; actor contracts do not choose providers.
 - Balda can own product semantics (queue policy, telemetry, task projection, and workspace/task metadata) while still reusing the same execution kernel.
-- Future transport/provider integration code must preserve the actorlayer engine contract and keep product policy in Balda.
+- Future transport/provider integration code must preserve the local actorlayer engine contract and keep product policy in Balda.
 
 ### Balda implementation map
 
-- Actor dispatch and lane execution live in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/norma/pkg/actorlayer/engine.DispatchRuntime`.
+- Actor dispatch and lane execution live in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`.
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
 - Telegram/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers inject `swarm.ActorDispatcher` directly, publish actor commands, and do not own actor behavior or actor registration.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and Balda `ActorDispatcher` contracts.
 - The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: `ActorDispatcher`, `EventPublisher`, actorlayer `Source`, `EventConsumer`, and `BusDrainer`.
-- Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`swarm`, `handlers`, and `state`), not in Norma actorlayer.
+- Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`swarm`, `handlers`, and `state`), not in `pkg/actorlayer`.

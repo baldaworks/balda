@@ -10,7 +10,7 @@ Use this map to find the authoritative runtime contracts.
 - [Runtime contract](runtime-contract.md)
 - [Command runtime adapter](command-runtime-adapter.md)
 - [Actor runtime](actor-runtime.md)
-- [Norma actorlayer contract boundary](actor-runtime.md#norma-actorlayer-contract-boundaries)
+- [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)
 - [Reliability](reliability.md)
 - [Testing and evals](testing-and-evals.md)
@@ -24,7 +24,7 @@ Use this map to find the authoritative runtime contracts.
 
 ## Runtime Flow
 
-Telegram/webhook/scheduler ingress -> `ActorDispatcher` -> NATS adapter -> actorlayer `Source`/`Delivery` -> Norma dispatch runtime -> Balda product actor -> event projection/read-model updates.
+Telegram/webhook/scheduler ingress -> `ActorDispatcher` -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
 
 ## Related tests
 

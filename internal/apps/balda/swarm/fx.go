@@ -6,8 +6,8 @@ var Module = fx.Module("balda_swarm",
 	fx.Provide(
 		NewTaskService,
 		NewEventProjector,
-		NewRuntime,
+		NewActorHost,
 	),
 	fx.Invoke(func(*EventProjector) {}),
-	fx.Invoke(func(*Runtime) {}),
+	fx.Invoke(func(*ActorHost) {}),
 )

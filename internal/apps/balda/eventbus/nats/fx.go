@@ -2,7 +2,7 @@ package natsbus
 
 import (
 	"github.com/normahq/balda/internal/apps/balda/swarm"
-	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
+	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 	"go.uber.org/fx"
 )
 

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/norma/pkg/actorlayer/dispatch"
-	actorengine "github.com/normahq/norma/pkg/actorlayer/engine"
+	"github.com/normahq/balda/pkg/actorlayer/dispatch"
+	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 )
 
 type testActor struct {
@@ -45,7 +45,7 @@ type testDelivery struct {
 	deadletter    func(context.Context, string) error
 }
 
-func (m testDelivery) Envelope() any { return m.env }
+func (m testDelivery) Envelope() actorengine.Envelope { return m.env }
 func (m testDelivery) InProgress(ctx context.Context) error {
 	if m.inProgress != nil {
 		return m.inProgress(ctx)
@@ -155,15 +155,10 @@ func TestRuntime_HandleCommandDispatchesActorWithNormalizedAddress(t *testing.T)
 func TestRuntimeAddressOf(t *testing.T) {
 	tests := []struct {
 		name     string
-		env      any
+		env      Envelope
 		haveAddr string
 		wantErr  string
 	}{
-		{
-			name:    "type error",
-			env:     struct{ v string }{v: "not-an-envelope"},
-			wantErr: "unexpected actor envelope type",
-		},
 		{
 			name:    "empty address",
 			env:     runtimeTestEnvelope("empty-address", ActorAddress{}),
@@ -175,6 +170,12 @@ func TestRuntimeAddressOf(t *testing.T) {
 			haveAddr: "session:s-1",
 		},
 	}
+
+	t.Run("type error", func(t *testing.T) {
+		if _, err := AssertEnvelope(struct{ v string }{v: "not-an-envelope"}); err == nil || !strings.Contains(err.Error(), "unexpected actor envelope type") {
+			t.Fatalf("AssertEnvelope() error = %v, want unexpected actor envelope type", err)
+		}
+	})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -365,8 +366,8 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 	}
 }
 
-func newRuntimeForTest(bus *recordingCommandBus, registry dispatch.Registry) *Runtime {
-	rt := &Runtime{source: bus, events: bus, heartbeatTick: heartbeatInterval}
+func newRuntimeForTest(bus *recordingCommandBus, registry dispatch.Registry) *ActorHost {
+	rt := &ActorHost{source: bus, events: bus, heartbeatTick: heartbeatInterval}
 	engine, err := actorengine.NewDispatchRuntime(actorengine.RuntimeConfig{
 		Registry:  registry,
 		AddressOf: runtimeAddressOf,
@@ -385,7 +386,7 @@ func newRuntimeForTest(bus *recordingCommandBus, registry dispatch.Registry) *Ru
 	return rt
 }
 
-func handleRuntimeDelivery(runtime *Runtime, ctx context.Context, delivery actorengine.Delivery) error {
+func handleRuntimeDelivery(runtime *ActorHost, ctx context.Context, delivery actorengine.Delivery) error {
 	executionCtx, stop, prepared := runtime.prepareDelivery(ctx, delivery)
 	defer stop()
 	if runtime.engine == nil {
