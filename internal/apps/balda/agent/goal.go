@@ -119,10 +119,24 @@ func wrapGoalPromptAgent(base adkagent.Agent, cfg goalPromptAgentConfig) (adkage
 					InvocationContext: ctx,
 					userContent:       genai.NewContentFromText(prompt, genai.RoleUser),
 				}
-				finalOutput := ""
+				latestVisibleOutput := ""
+				persistedOutput := ""
 				for ev, err := range base.Run(wrappedCtx) {
 					if text := visibleGoalEventText(ev); text != "" {
-						finalOutput = text
+						latestVisibleOutput = strings.TrimSpace(text)
+					}
+					if outputKey != "" && latestVisibleOutput != "" && persistedOutput != latestVisibleOutput && ev != nil && !ev.Partial {
+						if ev.Actions.StateDelta == nil {
+							ev.Actions.StateDelta = make(map[string]any)
+						}
+						ev.Actions.StateDelta[outputKey] = latestVisibleOutput
+						if ctx != nil && ctx.Session() != nil {
+							if err := ctx.Session().State().Set(outputKey, latestVisibleOutput); err != nil {
+								yield(nil, fmt.Errorf("set goal session output %q: %w", outputKey, err))
+								return
+							}
+						}
+						persistedOutput = latestVisibleOutput
 					}
 					if !yield(ev, err) {
 						return
@@ -130,12 +144,6 @@ func wrapGoalPromptAgent(base adkagent.Agent, cfg goalPromptAgentConfig) (adkage
 					if err != nil {
 						return
 					}
-				}
-				if outputKey == "" || ctx == nil || ctx.Session() == nil {
-					return
-				}
-				if err := ctx.Session().State().Set(outputKey, strings.TrimSpace(finalOutput)); err != nil {
-					yield(nil, fmt.Errorf("set goal session output %q: %w", outputKey, err))
 				}
 			}
 		},
