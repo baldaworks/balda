@@ -1394,6 +1394,33 @@ func TestRunTurn_AppendsProviderMessageExcerptForEmptyTurnComplete(t *testing.T)
 	}
 }
 
+func TestRunTurn_PrefersProviderErrorMessageOnEmptyTurnComplete(t *testing.T) {
+	t.Parallel()
+
+	h, tgClient := newBaldaRunTurnTestHandler(t, false)
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+		done := adksession.NewEvent(invocationID)
+		done.ErrorCode = "provider_error"
+		done.ErrorMessage = "model gpt-5.3-codex is not available for this account"
+		done.FinishReason = genai.FinishReasonProhibitedContent
+		done.TurnComplete = true
+
+		return []*adksession.Event{done}
+	})
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
+		t.Fatalf("runTurn() error = %v", err)
+	}
+
+	if len(tgClient.messages) != 1 {
+		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
+	}
+	want := "Provider error: model gpt-5.3-codex is not available for this account"
+	if got := tgClient.messages[0].Text; got != want {
+		t.Fatalf("message text = %q, want %q", got, want)
+	}
+}
+
 func TestRunTurn_DoesNotAppendFinishReasonMessageWhenFinalTextExists(t *testing.T) {
 	t.Parallel()
 

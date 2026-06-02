@@ -24,7 +24,7 @@ const (
 const baldaConfigGitignoreContent = "*\n!.gitignore\n"
 
 const (
-	baldaInitCodexModel      = "gpt-5.3-codex"
+	baldaInitCodexModel      = "gpt-5-codex"
 	baldaInitClaudeCodeModel = "claude-sonnet-4-6"
 )
 

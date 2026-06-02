@@ -214,7 +214,7 @@ func TestBaldaHandlerOnStart_FailsWhenOwnerBootstrapFails(t *testing.T) {
 	setUnexportedField(t, sessionManager, "agentBuilder", &fakeBaldaStartupFailBuilder{
 		metadata: baldaagent.AgentMetadata{
 			Type:       "codex_acp",
-			Model:      "gpt-5.3-codex",
+			Model:      "gpt-5-codex",
 			MCPServers: []string{"balda"},
 		},
 		err: errors.New("runtime session creation failed"),
@@ -282,7 +282,7 @@ func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testin
 	builder := &fakeBaldaRestoreAgentBuilder{
 		metadata: baldaagent.AgentMetadata{
 			Type:       "codex_acp",
-			Model:      "gpt-5.3-codex",
+			Model:      "gpt-5-codex",
 			MCPServers: []string{"balda"},
 		},
 	}
@@ -375,7 +375,7 @@ func newRegisteredOwnerStartupHandler(t *testing.T) (*BaldaHandler, *fakeBaldaSt
 	builder := &fakeBaldaRestoreAgentBuilder{
 		metadata: baldaagent.AgentMetadata{
 			Type:       "codex_acp",
-			Model:      "gpt-5.3-codex",
+			Model:      "gpt-5-codex",
 			MCPServers: []string{"balda"},
 		},
 	}

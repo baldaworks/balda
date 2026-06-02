@@ -666,7 +666,10 @@ func (h *BaldaHandler) runTurnWithDelivery(
 					responseSource = "streamed_text"
 				}
 			default:
-				terminalMessage := terminalTurnMessage(terminalFinishReason)
+				terminalMessage := terminalErrorTurnMessage(terminalErrorMessage)
+				if terminalMessage == "" {
+					terminalMessage = terminalTurnMessage(terminalFinishReason)
+				}
 				if terminalMessage != "" {
 					if taskBackedDelivery {
 						if err := flushTaskOutputProgress(); err != nil {
@@ -711,6 +714,14 @@ func (h *BaldaHandler) runTurnWithDelivery(
 	}
 
 	return nil
+}
+
+func terminalErrorTurnMessage(errorMessage string) string {
+	errorMessage = strings.TrimSpace(errorMessage)
+	if errorMessage == "" {
+		return ""
+	}
+	return "Provider error: " + errorMessage
 }
 
 func terminalTurnMessage(reason genai.FinishReason) string {
