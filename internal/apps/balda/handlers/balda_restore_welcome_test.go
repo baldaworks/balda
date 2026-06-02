@@ -354,13 +354,18 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 
 	var sawWarning bool
 	for _, msg := range tgClient.messages {
-		if strings.Contains(msg.Text, "balda.workspace.import") {
+		if strings.Contains(msg.Text, "Balda reset the workspace to the last saved session-branch state") {
 			sawWarning = true
 			break
 		}
 	}
 	if !sawWarning {
 		t.Fatalf("sent messages did not include workspace warning: %#v", tgClient.messages)
+	}
+	for _, msg := range tgClient.messages {
+		if strings.Contains(msg.Text, "balda.workspace.import") {
+			t.Fatalf("workspace warning must not mention MCP tool name directly: %q", msg.Text)
+		}
 	}
 	for _, msg := range tgClient.messages {
 		if strings.Contains(msg.Text, "Could not restore this session") {

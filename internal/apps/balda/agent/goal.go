@@ -117,7 +117,7 @@ func (b *Builder) BuildGoalWorkflow(ctx context.Context, cfg GoalBuildConfig) (a
 	if closer, ok := validator.(io.Closer); ok {
 		closers = append(closers, closer)
 	}
-	return &closableGoalWorkflow{Agent: workflow, closers: closers}, nil
+	return &closableGoalWorkflow{Agent: workflow, base: workflow, closers: closers}, nil
 }
 
 type goalChildAgentConfig struct {
@@ -355,12 +355,55 @@ func wrapGoalValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKe
 	if !ok {
 		return base, nil
 	}
-	return goalValidatorWrapper{Agent: base, closer: closer}, nil
+	return goalValidatorWrapper{Agent: base, base: base, closer: closer}, nil
 }
 
 type goalValidatorWrapper struct {
 	adkagent.Agent
+	base   adkagent.Agent
 	closer io.Closer
+}
+
+func (w goalValidatorWrapper) Name() string {
+	if w.base == nil {
+		return ""
+	}
+	return w.base.Name()
+}
+
+func (w goalValidatorWrapper) Description() string {
+	if w.base == nil {
+		return ""
+	}
+	return w.base.Description()
+}
+
+func (w goalValidatorWrapper) SubAgents() []adkagent.Agent {
+	if w.base == nil {
+		return nil
+	}
+	return w.base.SubAgents()
+}
+
+func (w goalValidatorWrapper) Run(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+	if w.base == nil {
+		return func(func(*adksession.Event, error) bool) {}
+	}
+	return w.base.Run(ctx)
+}
+
+func (w goalValidatorWrapper) FindAgent(name string) adkagent.Agent {
+	if w.base == nil {
+		return nil
+	}
+	return w.base.FindAgent(name)
+}
+
+func (w goalValidatorWrapper) FindSubAgent(name string) adkagent.Agent {
+	if w.base == nil {
+		return nil
+	}
+	return w.base.FindSubAgent(name)
 }
 
 func (w goalValidatorWrapper) Close() error {
@@ -381,9 +424,52 @@ func (c goalUserContentContext) UserContent() *genai.Content {
 
 type closableGoalWorkflow struct {
 	adkagent.Agent
+	base    adkagent.Agent
 	closers []io.Closer
 	once    sync.Once
 	err     error
+}
+
+func (w *closableGoalWorkflow) Name() string {
+	if w == nil || w.base == nil {
+		return ""
+	}
+	return w.base.Name()
+}
+
+func (w *closableGoalWorkflow) Description() string {
+	if w == nil || w.base == nil {
+		return ""
+	}
+	return w.base.Description()
+}
+
+func (w *closableGoalWorkflow) SubAgents() []adkagent.Agent {
+	if w == nil || w.base == nil {
+		return nil
+	}
+	return w.base.SubAgents()
+}
+
+func (w *closableGoalWorkflow) Run(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+	if w == nil || w.base == nil {
+		return func(func(*adksession.Event, error) bool) {}
+	}
+	return w.base.Run(ctx)
+}
+
+func (w *closableGoalWorkflow) FindAgent(name string) adkagent.Agent {
+	if w == nil || w.base == nil {
+		return nil
+	}
+	return w.base.FindAgent(name)
+}
+
+func (w *closableGoalWorkflow) FindSubAgent(name string) adkagent.Agent {
+	if w == nil || w.base == nil {
+		return nil
+	}
+	return w.base.FindSubAgent(name)
 }
 
 func (w *closableGoalWorkflow) Close() error {
@@ -392,7 +478,7 @@ func (w *closableGoalWorkflow) Close() error {
 	}
 	w.once.Do(func() {
 		errs := make([]error, 0, len(w.closers)+1)
-		if err := closeRuntimeAgent(w.Agent); err != nil {
+		if err := closeRuntimeAgent(w.base); err != nil {
 			errs = append(errs, err)
 		}
 		for _, closer := range w.closers {

@@ -943,7 +943,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 - When `balda.sessions.persistence=sqlite`, restore reuses the stable session ID and prior session history/state.
 - Persisted session label is reused as-is for restore; if missing, balda falls back to label `auto`.
 - In workspace mode, restore first tries to sync the session branch with the configured base branch.
-- If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that `balda.workspace.import` can retry the sync later.
+- If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that the workspace was reset to the saved session-branch state and Balda can retry the sync later.
 - If no persisted session metadata exists, balda creates a new regular session using label `auto`.
 - Public-channel welcome banners always display `Name: balda` to keep app identity stable, even when the internal persisted session label differs.
 - Welcome message uses a user-friendly MarkdownV2 format:
@@ -962,7 +962,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 - Restore and sync behavior:
   - Balda first tries to import/rebase the session branch onto `balda.workspace.base_branch`
   - on conflict, Balda remounts a clean worktree on the same session branch and marks sync skipped
-  - users can retry sync later with `balda.workspace.import`
+  - the agent/runtime can retry sync later with `balda.workspace.import`; the chat-facing warning does not expose MCP tool names directly
 - Source of truth:
   - persisted metadata (`workspace_dir`, `branch_name`) is stored in `state.db` session records
   - task and goal work resolve workspace metadata from session info when commands are dispatched and handled

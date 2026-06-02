@@ -23,7 +23,7 @@ const sessionStatusPersisted = "persisted"
 
 const baldaRuntimeAppName = "norma-balda"
 
-const workspaceSyncSkippedNotice = "Workspace was restored without syncing the latest base changes because auto-sync conflicted. Use balda.workspace.import to retry later."
+const workspaceSyncSkippedNotice = "Workspace restore hit a sync conflict, so Balda reset the workspace to the last saved session-branch state without applying the latest base changes. Ask Balda to retry the sync later."
 
 var ErrNoPersistedSession = errors.New("no persisted session")
 

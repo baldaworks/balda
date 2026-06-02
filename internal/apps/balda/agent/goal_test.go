@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"iter"
+	"log"
 	"strings"
 	"testing"
 
@@ -157,6 +159,92 @@ func TestBuildGoalWorkflow_UsesGoalKeeperRootName(t *testing.T) {
 	}
 	if got := workflow.Name(); got != goalkeeperworkflow.RootAgentName {
 		t.Fatalf("workflow.Name() = %q, want %q", got, goalkeeperworkflow.RootAgentName)
+	}
+}
+
+func TestClosableGoalWorkflowPreservesGoalSubAgents(t *testing.T) {
+	t.Parallel()
+
+	worker := mustNewGoalTestAgent(t, goalWorkerName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestTextEvent(ctx.InvocationID(), "worker"), nil)
+		}
+	})
+	validator := mustNewGoalTestAgent(t, goalValidatorName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestTextEvent(ctx.InvocationID(), "verdict: pass\nok"), nil)
+		}
+	})
+
+	workflow, err := goalkeeperworkflow.New(worker, validator, 1)
+	if err != nil {
+		t.Fatalf("goalkeeperworkflow.New() error = %v", err)
+	}
+
+	wrapped := &closableGoalWorkflow{Agent: workflow, base: workflow}
+	subAgents := wrapped.SubAgents()
+	if len(subAgents) != 2 {
+		t.Fatalf("len(SubAgents()) = %d, want 2", len(subAgents))
+	}
+	if got := subAgents[0].Name(); got != goalWorkerName {
+		t.Fatalf("SubAgents()[0].Name() = %q, want %q", got, goalWorkerName)
+	}
+	if got := subAgents[1].Name(); got != goalValidatorName {
+		t.Fatalf("SubAgents()[1].Name() = %q, want %q", got, goalValidatorName)
+	}
+}
+
+func TestClosableGoalWorkflowRunnerDoesNotLogUnknownGoalAgents(t *testing.T) {
+	t.Parallel()
+
+	var logBuf bytes.Buffer
+	oldWriter := log.Writer()
+	oldFlags := log.Flags()
+	log.SetOutput(&logBuf)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(oldWriter)
+		log.SetFlags(oldFlags)
+	})
+
+	worker := mustNewGoalTestAgent(t, goalWorkerName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestTextEvent(ctx.InvocationID(), "worker"), nil)
+		}
+	})
+	validator := mustNewGoalTestAgent(t, goalValidatorName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestTextEvent(ctx.InvocationID(), "verdict: pass\nok"), nil)
+		}
+	})
+
+	workflow, err := goalkeeperworkflow.New(worker, validator, 1)
+	if err != nil {
+		t.Fatalf("goalkeeperworkflow.New() error = %v", err)
+	}
+
+	sessionService := adksession.InMemoryService()
+	r, err := adkrunner.New(adkrunner.Config{
+		AppName:        "goal-wrapper-runner-tree-test",
+		Agent:          &closableGoalWorkflow{Agent: workflow, base: workflow},
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+	created, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
+		AppName: "goal-wrapper-runner-tree-test",
+		UserID:  "tg-101",
+	})
+	if err != nil {
+		t.Fatalf("session.Create() error = %v", err)
+	}
+
+	runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
+	runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest again")
+
+	if got := logBuf.String(); strings.Contains(got, "unknown agent") {
+		t.Fatalf("runner log = %q, want no unknown-agent messages", got)
 	}
 }
 
