@@ -18,6 +18,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/normahq/balda/internal/throttle"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
@@ -43,7 +45,7 @@ type BaldaHandler struct {
 	channel            *baldatelegram.Adapter
 	sessionManager     *baldasession.Manager
 	turnDispatcher     actors.TurnQueue
-	actorDispatcher    swarm.ActorDispatcher
+	actorDispatcher    actortransport.Dispatcher
 	taskService        *swarm.TaskService
 	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
@@ -69,7 +71,7 @@ type baldaHandlerDeps struct {
 	Channel            *baldatelegram.Adapter
 	SessionManager     *baldasession.Manager
 	TurnDispatcher     *actors.TurnDispatcher
-	ActorDispatcher    swarm.ActorDispatcher
+	ActorDispatcher    actortransport.Dispatcher
 	TaskService        *swarm.TaskService `optional:"true"`
 	Messenger          *messenger.Messenger
 	TGClient           client.ClientWithResponsesInterface
@@ -725,7 +727,7 @@ func (h *BaldaHandler) dispatchTaskDelivery(
 	if h == nil || h.actorDispatcher == nil {
 		return fmt.Errorf("swarm runtime is unavailable")
 	}
-	env, err := actors.DeliveryEnvelope(taskID, swarm.ActorAddress{Target: swarm.ActorTypeSession, Key: sessionID}, locator, text, dedupeSuffix)
+	env, err := actors.DeliveryEnvelope(taskID, actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: sessionID}, locator, text, dedupeSuffix)
 	if err != nil {
 		return err
 	}

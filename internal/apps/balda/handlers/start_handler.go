@@ -8,8 +8,8 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -21,7 +21,7 @@ type StartHandler struct {
 	ownerStore        *auth.OwnerStore
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
-	actorDispatcher   swarm.ActorDispatcher
+	actorDispatcher   actortransport.Dispatcher
 	authToken         string
 	baldaHandler      baldaOwnerActivator
 }
@@ -36,7 +36,7 @@ type startHandlerParams struct {
 	OwnerStore        *auth.OwnerStore
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
-	ActorDispatcher   swarm.ActorDispatcher
+	ActorDispatcher   actortransport.Dispatcher
 	AuthToken         string `name:"balda_auth_token"`
 }
 

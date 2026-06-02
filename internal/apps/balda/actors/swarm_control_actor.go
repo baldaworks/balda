@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -31,7 +33,7 @@ type taskControlPayload struct {
 
 type taskControlActor struct {
 	turnDispatcher TurnQueue
-	dispatcher     swarm.ActorDispatcher
+	dispatcher     actortransport.Dispatcher
 	tasks          *swarm.TaskService
 	taskRuns       *TaskRunRegistry
 	logger         zerolog.Logger
@@ -41,7 +43,7 @@ type taskControlActorParams struct {
 	fx.In
 
 	TurnDispatcher *TurnDispatcher
-	Dispatcher     swarm.ActorDispatcher
+	Dispatcher     actortransport.Dispatcher
 	TaskService    *swarm.TaskService
 	TaskRuns       *TaskRunRegistry
 	Logger         zerolog.Logger
@@ -52,16 +54,16 @@ func (a *taskControlActor) Address() string {
 }
 
 func (a *taskControlActor) Handle(ctx context.Context, envelope any) error {
-	env, err := swarm.AssertEnvelope(envelope)
+	env, err := actorlayer.AssertEnvelope(envelope)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(env.Namespace) != swarm.NamespaceTaskControl {
-		return swarm.PolicyError(fmt.Errorf("unsupported control namespace %q", env.Namespace))
+		return actorlayer.PolicyError(fmt.Errorf("unsupported control namespace %q", env.Namespace))
 	}
 	var payload taskControlPayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		return swarm.PermanentError(fmt.Errorf("decode control payload: %w", err))
+		return actorlayer.PermanentError(fmt.Errorf("decode control payload: %w", err))
 	}
 	switch strings.TrimSpace(payload.Action) {
 	case taskControlActionCancel:
@@ -74,21 +76,21 @@ func (a *taskControlActor) Handle(ctx context.Context, envelope any) error {
 	case taskControlActionClearGoal:
 		return a.clearGoal(ctx, payload)
 	default:
-		return swarm.PolicyError(fmt.Errorf("unsupported control action %q", payload.Action))
+		return actorlayer.PolicyError(fmt.Errorf("unsupported control action %q", payload.Action))
 	}
 }
 
-func (a *taskControlActor) cancelTask(ctx context.Context, env swarm.Envelope, payload taskControlPayload) error {
+func (a *taskControlActor) cancelTask(ctx context.Context, env actorlayer.Envelope, payload taskControlPayload) error {
 	taskID := firstNonEmpty(payload.TaskID, env.TaskID)
 	if taskID == "" {
-		return swarm.PolicyError(fmt.Errorf("task id is required"))
+		return actorlayer.PolicyError(fmt.Errorf("task id is required"))
 	}
 	if a.tasks == nil {
-		return swarm.TransientError(fmt.Errorf("task service is required"))
+		return actorlayer.TransientError(fmt.Errorf("task service is required"))
 	}
 	task, ok, err := a.tasks.Get(ctx, taskID)
 	if err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if !ok {
 		if payload.Notify {
@@ -109,13 +111,13 @@ func (a *taskControlActor) cancelTask(ctx context.Context, env swarm.Envelope, p
 	if !runCanceled && a.turnDispatcher != nil && strings.TrimSpace(payload.Locator.SessionID) != "" {
 		hadInFlight, dropped, err := a.turnDispatcher.CancelSession(payload.Locator, true)
 		if err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 		runCanceled = hadInFlight || dropped > 0
 	}
 	reason := firstNonEmpty(payload.Reason, "task canceled by user")
 	if err := a.tasks.CancelTask(ctx, task.ID, "command.task", reason); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if payload.Notify {
 		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Canceled task %s. Active run canceled: %t.", task.ID, runCanceled))
@@ -125,7 +127,7 @@ func (a *taskControlActor) cancelTask(ctx context.Context, env swarm.Envelope, p
 
 func (a *taskControlActor) cancelSession(ctx context.Context, payload taskControlPayload) error {
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return swarm.PolicyError(fmt.Errorf("session id is required"))
+		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
 	}
 	hadInFlight := false
 	dropped := 0
@@ -133,14 +135,14 @@ func (a *taskControlActor) cancelSession(ctx context.Context, payload taskContro
 		var err error
 		hadInFlight, dropped, err = a.turnDispatcher.CancelSession(payload.Locator, true)
 		if err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 	}
 	taskCanceled := 0
 	if a.tasks != nil {
 		taskIDs, err := a.tasks.CancelBySession(ctx, payload.Locator.SessionID, "command.cancel", firstNonEmpty(payload.Reason, "session canceled by user"))
 		if err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 		for _, taskID := range taskIDs {
 			if a.taskRuns != nil && a.taskRuns.Cancel(taskID) {
@@ -168,7 +170,7 @@ func (a *taskControlActor) cancelSession(ctx context.Context, payload taskContro
 
 func (a *taskControlActor) cancelSessionTurn(ctx context.Context, payload taskControlPayload) error {
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return swarm.PolicyError(fmt.Errorf("session id is required"))
+		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
 	}
 	hadInFlight := false
 	dropped := 0
@@ -176,7 +178,7 @@ func (a *taskControlActor) cancelSessionTurn(ctx context.Context, payload taskCo
 		var err error
 		hadInFlight, dropped, err = a.turnDispatcher.CancelSession(payload.Locator, true)
 		if err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 	}
 	if payload.Notify {
@@ -196,19 +198,19 @@ func (a *taskControlActor) cancelSessionTurn(ctx context.Context, payload taskCo
 
 func (a *taskControlActor) clearGoal(ctx context.Context, payload taskControlPayload) error {
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return swarm.PolicyError(fmt.Errorf("session id is required"))
+		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
 	}
 	if a.tasks == nil {
-		return swarm.TransientError(fmt.Errorf("task service is required"))
+		return actorlayer.TransientError(fmt.Errorf("task service is required"))
 	}
 	tasks, err := a.tasks.ListActiveGoalTasksBySession(ctx, payload.Locator.SessionID)
 	if err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	cleared := 0
 	for _, task := range tasks {
 		if err := a.tasks.CancelTask(ctx, task.ID, "command.goal", firstNonEmpty(payload.Reason, "goal cleared by user")); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 		if a.taskRuns != nil {
 			a.taskRuns.Cancel(task.ID)
@@ -232,7 +234,7 @@ func (a *taskControlActor) sendControlMessage(ctx context.Context, locator balda
 	if a == nil || a.dispatcher == nil || strings.TrimSpace(text) == "" {
 		return
 	}
-	env, err := PlainDeliveryEnvelope("", swarm.SystemAddress("control"), locator, text, "")
+	env, err := PlainDeliveryEnvelope("", actorlayer.SystemAddress("control"), locator, text, "")
 	if err != nil {
 		a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to build control response")
 		return
@@ -242,23 +244,23 @@ func (a *taskControlActor) sendControlMessage(ctx context.Context, locator balda
 	}
 }
 
-func ControlCancelEnvelope(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string) (swarm.Envelope, error) {
+func ControlCancelEnvelope(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string) (actorlayer.Envelope, error) {
 	return ControlCancelEnvelopeWithNotify(locator, taskID, requestedBy, reason, true)
 }
 
-func ControlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string, notify bool) (swarm.Envelope, error) {
+func ControlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	return controlEnvelope(locator, taskControlActionCancel, taskID, requestedBy, reason, notify)
 }
 
-func ControlCancelTurnEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (swarm.Envelope, error) {
+func ControlCancelTurnEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	return controlEnvelope(locator, taskControlActionCancelTurn, "", requestedBy, reason, notify)
 }
 
-func ControlClearGoalEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (swarm.Envelope, error) {
+func ControlClearGoalEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	return controlEnvelope(locator, taskControlActionClearGoal, "", requestedBy, reason, notify)
 }
 
-func controlEnvelope(locator baldasession.SessionLocator, action string, taskID string, requestedBy string, reason string, notify bool) (swarm.Envelope, error) {
+func controlEnvelope(locator baldasession.SessionLocator, action string, taskID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	payload := taskControlPayload{
 		Action:      strings.TrimSpace(action),
 		TaskID:      strings.TrimSpace(taskID),
@@ -270,14 +272,14 @@ func controlEnvelope(locator baldasession.SessionLocator, action string, taskID 
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return swarm.Envelope{}, fmt.Errorf("encode control payload: %w", err)
+		return actorlayer.Envelope{}, fmt.Errorf("encode control payload: %w", err)
 	}
 	id := uuid.NewString()
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          id,
 		Namespace:   swarm.NamespaceTaskControl,
 		Kind:        swarm.KindCancel,
-		From:        swarm.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
+		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
 		To:          swarm.SystemAddress("control"),
 		SessionID:   locator.SessionID,
 		TaskID:      strings.TrimSpace(taskID),

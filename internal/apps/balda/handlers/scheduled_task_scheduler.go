@@ -13,7 +13,7 @@ import (
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -51,7 +51,7 @@ type scheduledTaskSchedulerParams struct {
 
 	LC            fx.Lifecycle
 	StateProvider baldastate.Provider
-	Dispatcher    swarm.ActorDispatcher
+	Dispatcher    actortransport.Dispatcher
 	OwnerStore    *auth.OwnerStore
 	Logger        zerolog.Logger
 	Config        ScheduledTaskSchedulerConfig
@@ -60,7 +60,7 @@ type scheduledTaskSchedulerParams struct {
 // ScheduledTaskScheduler publishes due locator-bound recurring tasks as durable task commands.
 type ScheduledTaskScheduler struct {
 	taskStore  baldastate.ScheduledTaskStore
-	dispatcher swarm.ActorDispatcher
+	dispatcher actortransport.Dispatcher
 	owner      *auth.OwnerStore
 	logger     zerolog.Logger
 	config     ScheduledTaskSchedulerConfig

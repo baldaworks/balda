@@ -8,7 +8,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
 )
@@ -18,7 +18,7 @@ type userHandler struct {
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
 	channel           *baldatelegram.Adapter
-	actorDispatcher   swarm.ActorDispatcher
+	actorDispatcher   actortransport.Dispatcher
 	tgClient          client.ClientWithResponsesInterface
 	botUsername       string
 }
@@ -30,7 +30,7 @@ type userHandlerParams struct {
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
-	ActorDispatcher   swarm.ActorDispatcher
+	ActorDispatcher   actortransport.Dispatcher
 	TGClient          client.ClientWithResponsesInterface `optional:"true"`
 }
 

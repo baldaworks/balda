@@ -23,6 +23,7 @@ import (
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -133,8 +134,8 @@ type inboundWebhookDedupePolicy struct {
 }
 
 type inboundTurnExecutor interface {
-	submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.DispatchReceipt, string, error)
-	submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error)
+	submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error)
+	submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error)
 }
 
 type inboundWebhookParams struct {
@@ -578,7 +579,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		DedupeKey: dedupeKey,
 	}
 	var (
-		result     *swarm.DispatchReceipt
+		result     *actortransport.DispatchReceipt
 		taskID     string
 		enqueueErr error
 	)

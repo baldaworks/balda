@@ -12,6 +12,7 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"go.uber.org/fx"
 )
 
@@ -47,13 +48,13 @@ type ScheduledTaskRecorder interface {
 	RecordExecutionFailure(ctx context.Context, taskID string, cause error) error
 }
 
-func SessionTurnEnvelope(payload SessionTurnPayload) (swarm.Envelope, error) {
+func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error) {
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return swarm.Envelope{}, fmt.Errorf("session id is required")
+		return actorlayer.Envelope{}, fmt.Errorf("session id is required")
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return swarm.Envelope{}, fmt.Errorf("encode session turn payload: %w", err)
+		return actorlayer.Envelope{}, fmt.Errorf("encode session turn payload: %w", err)
 	}
 	source := strings.TrimSpace(payload.Source)
 	if source == "" {
@@ -73,12 +74,12 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (swarm.Envelope, error) {
 	case strings.EqualFold(source, "agent"):
 		namespace = swarm.NamespaceGoalkeeperCommand
 	}
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
 		Namespace:   namespace,
 		Kind:        kind,
-		From:        swarm.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeSession, Key: payload.Locator.SessionID},
+		From:        actorlayer.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: payload.Locator.SessionID},
 		SessionID:   payload.Locator.SessionID,
 		TaskID:      strings.TrimSpace(payload.TaskID),
 		Priority:    priority,
@@ -108,7 +109,7 @@ func (e *sessionActorExecutor) Address() string {
 }
 
 func (e *sessionActorExecutor) Handle(ctx context.Context, envelope any) error {
-	env, err := swarm.AssertEnvelope(envelope)
+	env, err := actorlayer.AssertEnvelope(envelope)
 	if err != nil {
 		return err
 	}
@@ -116,14 +117,14 @@ func (e *sessionActorExecutor) Handle(ctx context.Context, envelope any) error {
 	case swarm.NamespaceHumanInbound, swarm.NamespaceWebhookInbound, swarm.NamespaceScheduleInbound, swarm.NamespaceGoalkeeperCommand, swarm.NamespaceTaskControl:
 		return e.enqueueTurn(ctx, env)
 	default:
-		return swarm.PolicyError(fmt.Errorf("unsupported session namespace %q", env.Namespace))
+		return actorlayer.PolicyError(fmt.Errorf("unsupported session namespace %q", env.Namespace))
 	}
 }
 
-func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelope) error {
+func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.Envelope) error {
 	var payload SessionTurnPayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		return swarm.PermanentError(fmt.Errorf("decode session turn payload: %w", err))
+		return actorlayer.PermanentError(fmt.Errorf("decode session turn payload: %w", err))
 	}
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
 		payload.Locator.SessionID = strings.TrimSpace(env.To.Key)
@@ -132,16 +133,16 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 		return nil
 	}
 	if e.turns == nil {
-		return swarm.TransientError(fmt.Errorf("turn dispatcher is required"))
+		return actorlayer.TransientError(fmt.Errorf("turn dispatcher is required"))
 	}
 	if env.Meta != nil && strings.TrimSpace(env.Meta["queue_mode"]) == swarm.QueueModeInterrupt {
 		_, _, err := e.turns.CancelSession(payload.Locator, true)
 		if err != nil {
-			return swarm.TransientError(fmt.Errorf("interrupt session turn: %w", err))
+			return actorlayer.TransientError(fmt.Errorf("interrupt session turn: %w", err))
 		}
 	}
 	if e.runner == nil {
-		return swarm.TransientError(fmt.Errorf("session turn runner is required"))
+		return actorlayer.TransientError(fmt.Errorf("session turn runner is required"))
 	}
 
 	done := make(chan error, 1)
@@ -156,22 +157,22 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env swarm.Envelo
 	})
 	if err != nil {
 		if errors.Is(err, ErrTurnQueueFull) {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
-		return swarm.TransientError(fmt.Errorf("enqueue session actor turn: %w", err))
+		return actorlayer.TransientError(fmt.Errorf("enqueue session actor turn: %w", err))
 	}
 
 	select {
 	case err := <-done:
 		return e.settleSessionTurnResult(ctx, env, payload, err)
 	case <-ctx.Done():
-		return swarm.TransientError(ctx.Err())
+		return actorlayer.TransientError(ctx.Err())
 	}
 }
 
-func (e *sessionActorExecutor) settleSessionTurnResult(ctx context.Context, env swarm.Envelope, payload SessionTurnPayload, runErr error) error {
+func (e *sessionActorExecutor) settleSessionTurnResult(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {
 	if recordErr := e.recordSessionTaskResult(ctx, env, payload, runErr); recordErr != nil {
-		return swarm.TransientError(recordErr)
+		return actorlayer.TransientError(recordErr)
 	}
 	if errors.Is(runErr, context.Canceled) {
 		return nil
@@ -197,7 +198,7 @@ func (e *sessionActorExecutor) sessionTaskAlreadyDone(ctx context.Context, taskI
 	return isTerminalTaskStatus(task.Status)
 }
 
-func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env swarm.Envelope, payload SessionTurnPayload, runErr error) error {
+func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {
 	if e == nil {
 		return nil
 	}

@@ -9,10 +9,10 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
-func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
+func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
 	if h.actorDispatcher == nil {
 		return nil, fmt.Errorf("swarm runtime is unavailable")
 	}
@@ -23,7 +23,7 @@ func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.Ses
 	return h.actorDispatcher.Dispatch(ctx, env)
 }
 
-func (h *BaldaHandler) submitPromptTurnTask(ctx context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
+func (h *BaldaHandler) submitPromptTurnTask(ctx context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
 	if !payload.Deliver {
 		return h.submitSessionTurn(ctx, payload)
 	}
@@ -38,7 +38,7 @@ func (h *BaldaHandler) submitPromptTurnTask(ctx context.Context, payload actors.
 	return h.actorDispatcher.Dispatch(ctx, env)
 }
 
-func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*swarm.DispatchReceipt, string, error) {
+func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
 	if h.actorDispatcher == nil {
 		return nil, "", fmt.Errorf("swarm runtime is unavailable")
 	}

@@ -5,6 +5,7 @@ import (
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -36,7 +37,7 @@ var Module = fx.Module("balda_actors",
 				fx.In
 
 				TaskService        *swarm.TaskService
-				Dispatcher         swarm.ActorDispatcher
+				Dispatcher         actortransport.Dispatcher
 				SessionManager     *baldasession.Manager
 				RuntimeManager     *baldaagent.RuntimeManager
 				TaskRuns           *TaskRunRegistry

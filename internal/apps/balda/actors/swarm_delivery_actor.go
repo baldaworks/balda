@@ -13,6 +13,7 @@ import (
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -38,22 +39,22 @@ func (a *taskDeliveryActor) Address() string {
 }
 
 func (a *taskDeliveryActor) Handle(ctx context.Context, envelope any) error {
-	env, err := swarm.AssertEnvelope(envelope)
+	env, err := actorlayer.AssertEnvelope(envelope)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(env.Kind) != taskPayloadKindDelivery {
-		return swarm.PolicyError(fmt.Errorf("unsupported delivery kind %q", env.Kind))
+		return actorlayer.PolicyError(fmt.Errorf("unsupported delivery kind %q", env.Kind))
 	}
 	var payload DeliveryPayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		return swarm.PermanentError(fmt.Errorf("decode task delivery payload: %w", err))
+		return actorlayer.PermanentError(fmt.Errorf("decode task delivery payload: %w", err))
 	}
 	if a.channel == nil {
-		return swarm.TransientError(fmt.Errorf("telegram channel adapter is required"))
+		return actorlayer.TransientError(fmt.Errorf("telegram channel adapter is required"))
 	}
 	if err := validateDeliveryPayload(payload); err != nil {
-		return swarm.PermanentError(err)
+		return actorlayer.PermanentError(err)
 	}
 	durable := deliveryModeIsDurable(payload.Mode)
 	deliveryKey := strings.TrimSpace(env.DedupeKey)
@@ -80,22 +81,22 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, envelope any) error {
 			Status:      baldastate.SwarmDeliveryStatusPending,
 		})
 		if err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 		if record.PayloadHash != "" && record.PayloadHash != payloadHash {
-			return swarm.PermanentError(fmt.Errorf("delivery key %q already reserved for different payload", deliveryKey))
+			return actorlayer.PermanentError(fmt.Errorf("delivery key %q already reserved for different payload", deliveryKey))
 		}
 		if record.Status == baldastate.SwarmDeliveryStatusSent {
 			return nil
 		}
 		if !created && !deliveryReadyForAttempt(record) {
 			if record.Status == baldastate.SwarmDeliveryStatusSending {
-				return swarm.TransientError(fmt.Errorf("delivery %q has ambiguous sending status; automatic resend is disabled; last updated at %s", deliveryKey, record.UpdatedAt.Format(time.RFC3339)))
+				return actorlayer.TransientError(fmt.Errorf("delivery %q has ambiguous sending status; automatic resend is disabled; last updated at %s", deliveryKey, record.UpdatedAt.Format(time.RFC3339)))
 			}
-			return swarm.TransientError(fmt.Errorf("delivery %q is already %s; last updated at %s", deliveryKey, record.Status, record.UpdatedAt.Format(time.RFC3339)))
+			return actorlayer.TransientError(fmt.Errorf("delivery %q is already %s; last updated at %s", deliveryKey, record.Status, record.UpdatedAt.Format(time.RFC3339)))
 		}
 		if err := a.tasks.MarkDeliverySending(ctx, deliveryKey); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 	}
 	providerMessageID, err := a.dispatchDelivery(ctx, payload)
@@ -113,11 +114,11 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, envelope any) error {
 				}
 			}
 		}
-		return swarm.ExternalDeliveryError(err)
+		return actorlayer.ExternalDeliveryError(err)
 	}
 	if durable && a.tasks != nil {
 		if err := a.tasks.MarkDeliverySent(ctx, deliveryKey, providerMessageID); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 	}
 	if durable && a.tasks != nil && strings.TrimSpace(payload.TaskID) != "" {

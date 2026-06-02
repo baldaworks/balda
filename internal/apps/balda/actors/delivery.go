@@ -8,25 +8,26 @@ import (
 	"github.com/google/uuid"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 func DeliveryEnvelope(
 	taskID string,
-	from swarm.ActorAddress,
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	text string,
 	dedupeSuffix string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	return AgentReplyDeliveryEnvelope(taskID, from, locator, text, dedupeSuffix)
 }
 
 func AgentReplyDeliveryEnvelope(
 	taskID string,
-	from swarm.ActorAddress,
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	text string,
 	dedupeSuffix string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	return deliveryEnvelope(taskID, from, DeliveryPayload{
 		TaskID:  strings.TrimSpace(taskID),
 		Locator: locator,
@@ -37,11 +38,11 @@ func AgentReplyDeliveryEnvelope(
 
 func PlainDeliveryEnvelope(
 	taskID string,
-	from swarm.ActorAddress,
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	text string,
 	dedupeSuffix string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	return deliveryEnvelope(taskID, from, DeliveryPayload{
 		TaskID:  strings.TrimSpace(taskID),
 		Locator: locator,
@@ -52,11 +53,11 @@ func PlainDeliveryEnvelope(
 
 func MarkdownDeliveryEnvelope(
 	taskID string,
-	from swarm.ActorAddress,
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	text string,
 	dedupeSuffix string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	return deliveryEnvelope(taskID, from, DeliveryPayload{
 		TaskID:  strings.TrimSpace(taskID),
 		Locator: locator,
@@ -67,11 +68,11 @@ func MarkdownDeliveryEnvelope(
 
 func DraftPlainDeliveryEnvelope(
 	taskID string,
-	from swarm.ActorAddress,
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	draftID int,
 	text string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	return deliveryEnvelope(taskID, from, DeliveryPayload{
 		TaskID:  strings.TrimSpace(taskID),
 		Locator: locator,
@@ -83,10 +84,10 @@ func DraftPlainDeliveryEnvelope(
 
 func ChatActionDeliveryEnvelope(
 	taskID string,
-	from swarm.ActorAddress,
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	action string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	return deliveryEnvelope(taskID, from, DeliveryPayload{
 		TaskID:  strings.TrimSpace(taskID),
 		Locator: locator,
@@ -97,28 +98,28 @@ func ChatActionDeliveryEnvelope(
 
 func deliveryEnvelope(
 	taskID string,
-	from swarm.ActorAddress,
+	from actorlayer.ActorAddress,
 	payload DeliveryPayload,
 	dedupeSuffix string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	if strings.TrimSpace(payload.Locator.ChannelType) == "" || strings.TrimSpace(payload.Locator.AddressKey) == "" || strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return swarm.Envelope{}, fmt.Errorf("delivery locator is required")
+		return actorlayer.Envelope{}, fmt.Errorf("delivery locator is required")
 	}
 	if err := validateDeliveryPayload(payload); err != nil {
-		return swarm.Envelope{}, err
+		return actorlayer.Envelope{}, err
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return swarm.Envelope{}, fmt.Errorf("encode delivery payload: %w", err)
+		return actorlayer.Envelope{}, fmt.Errorf("encode delivery payload: %w", err)
 	}
 
 	dedupeKey := deliveryDedupeKey(taskID, payload.Mode, dedupeSuffix)
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:            dedupeKey,
 		Namespace:     swarm.NamespaceAgentResult,
 		Kind:          taskPayloadKindDelivery,
 		From:          from,
-		To:            swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: payload.Locator.DeliveryActorKey()},
+		To:            actorlayer.ActorAddress{Target: swarm.ActorTypeDelivery, Key: payload.Locator.DeliveryActorKey()},
 		SessionID:     payload.Locator.SessionID,
 		TaskID:        strings.TrimSpace(taskID),
 		CorrelationID: strings.TrimSpace(taskID),

@@ -12,6 +12,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
 	"go.uber.org/fx"
@@ -35,7 +36,7 @@ type CommandHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	channel           *baldatelegram.Adapter
 	sessionManager    commandSessionManager
-	actorDispatcher   swarm.ActorDispatcher
+	actorDispatcher   actortransport.Dispatcher
 	taskService       goalTaskService
 	goalMaxIterations int
 	userHandler       *userHandler
@@ -48,7 +49,7 @@ type commandHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
 	SessionManager    *session.Manager
-	ActorDispatcher   swarm.ActorDispatcher
+	ActorDispatcher   actortransport.Dispatcher
 	TaskService       *swarm.TaskService `optional:"true"`
 	MaxIterations     int                `name:"balda_goal_max_iterations"`
 	UserHandler       *userHandler

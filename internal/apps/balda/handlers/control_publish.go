@@ -6,12 +6,12 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
 func submitSessionCancelControl(
 	ctx context.Context,
-	dispatcher swarm.ActorDispatcher,
+	dispatcher actortransport.Dispatcher,
 	locator baldasession.SessionLocator,
 	requestedBy string,
 	reason string,
@@ -32,7 +32,7 @@ func submitSessionCancelControl(
 
 func submitSessionTurnCancelControl(
 	ctx context.Context,
-	dispatcher swarm.ActorDispatcher,
+	dispatcher actortransport.Dispatcher,
 	locator baldasession.SessionLocator,
 	requestedBy string,
 	reason string,
@@ -53,7 +53,7 @@ func submitSessionTurnCancelControl(
 
 func submitGoalClearControl(
 	ctx context.Context,
-	dispatcher swarm.ActorDispatcher,
+	dispatcher actortransport.Dispatcher,
 	locator baldasession.SessionLocator,
 	requestedBy string,
 	reason string,
