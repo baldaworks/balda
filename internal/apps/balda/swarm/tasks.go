@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
 )
@@ -31,14 +32,14 @@ const (
 
 type TaskService struct {
 	store baldastate.SwarmStore
-	bus   EventPublisher
+	bus   actortransport.EventPublisher
 }
 
 type taskServiceParams struct {
 	fx.In
 
 	StateProvider baldastate.Provider
-	Bus           EventPublisher `optional:"true"`
+	Bus           actortransport.EventPublisher `optional:"true"`
 }
 
 func NewTaskService(params taskServiceParams) (*TaskService, error) {

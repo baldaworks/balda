@@ -8,12 +8,14 @@ import (
 	"sync"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
 
 type EventProjector struct {
-	consumer EventConsumer
+	consumer actortransport.EventConsumer
 	store    baldastate.SwarmStore
 	logger   zerolog.Logger
 
@@ -25,7 +27,7 @@ type eventProjectorParams struct {
 	fx.In
 
 	LC            fx.Lifecycle
-	Consumer      EventConsumer
+	Consumer      actortransport.EventConsumer
 	StateProvider baldastate.Provider
 	Logger        zerolog.Logger
 }
@@ -80,7 +82,7 @@ func (p *EventProjector) Stop(ctx context.Context) error {
 	}
 }
 
-func (p *EventProjector) Project(ctx context.Context, subject string, env Envelope) error {
+func (p *EventProjector) Project(ctx context.Context, subject string, env actorlayer.Envelope) error {
 	if p == nil || p.store == nil {
 		return nil
 	}

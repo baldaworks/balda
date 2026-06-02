@@ -3,10 +3,11 @@ package natsbus
 import (
 	gnats "github.com/nats-io/nats.go"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 )
 
-func messageFromEnvelope(subject string, env swarm.Envelope) (*gnats.Msg, error) {
-	data, err := swarm.EncodeEnvelope(env)
+func messageFromEnvelope(subject string, env actorlayer.Envelope) (*gnats.Msg, error) {
+	data, err := actorlayer.EncodeEnvelope(env)
 	if err != nil {
 		return nil, err
 	}

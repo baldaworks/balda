@@ -1,5 +1,6 @@
-// Package actorlayer contains Balda's local actor runtime primitives.
+// Package actorlayer contains reusable actor runtime primitives.
 //
-// This package is intentionally generic and independent of Balda product
-// packages so it can later be published separately.
+// The package is intentionally transport-agnostic and independent of Balda
+// product packages so it can serve as the library boundary for generic actor
+// envelopes, errors, retry helpers, and runtime contracts.
 package actorlayer

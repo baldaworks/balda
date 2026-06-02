@@ -3,6 +3,8 @@ package swarm
 import (
 	"strconv"
 	"strings"
+
+	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 const (
@@ -45,7 +47,7 @@ const (
 	HeaderPriority      = "Balda-Priority"
 )
 
-func SubjectForEnvelope(env Envelope) string {
+func SubjectForEnvelope(env actorlayer.Envelope) string {
 	if strings.TrimSpace(env.Namespace) == NamespaceTaskControl {
 		return SubjectCommandControl
 	}
@@ -74,7 +76,7 @@ func SubjectForEnvelope(env Envelope) string {
 	}
 }
 
-func EnvelopeHeaders(env Envelope) map[string]string {
+func EnvelopeHeaders(env actorlayer.Envelope) map[string]string {
 	out := make(map[string]string, 8)
 	addHeader(out, HeaderEnvelopeID, env.ID)
 	addHeader(out, HeaderSessionID, env.SessionID)
@@ -88,11 +90,8 @@ func EnvelopeHeaders(env Envelope) map[string]string {
 	return out
 }
 
-func DedupeKeyOrID(env Envelope) string {
-	if trimmed := strings.TrimSpace(env.DedupeKey); trimmed != "" {
-		return trimmed
-	}
-	return strings.TrimSpace(env.ID)
+func DedupeKeyOrID(env actorlayer.Envelope) string {
+	return actorlayer.DedupeKeyOrID(env)
 }
 
 func addHeader(out map[string]string, key string, value string) {

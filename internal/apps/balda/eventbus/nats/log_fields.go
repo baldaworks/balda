@@ -4,10 +4,11 @@ import (
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 )
 
-func withDeliveryKey(evt *zerolog.Event, env swarm.Envelope) *zerolog.Event {
+func withDeliveryKey(evt *zerolog.Event, env actorlayer.Envelope) *zerolog.Event {
 	if evt == nil {
 		return nil
 	}

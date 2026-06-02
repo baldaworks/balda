@@ -19,12 +19,12 @@ Use this map to find the authoritative runtime contracts.
 
 - Durable command/event transport is exposed to Balda runtime code through actorlayer abstractions.
 - SQLite is product/read-model state, not a command queue.
-- Ingress handlers dispatch actor envelopes through `swarm.ActorDispatcher`; actors execute commands.
+- Ingress handlers dispatch actor envelopes through actorlayer transport dispatcher contracts; actors execute commands.
 - Actor execution contract is split: core actor mechanics in Norma; Balda owns product actors, the configured provider runtime, command runtime adapter policy, and all queue/retry/dead-letter policy.
 
 ## Runtime Flow
 
-Telegram/webhook/scheduler ingress -> `ActorDispatcher` -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
+Telegram/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
 
 ## Related tests
 

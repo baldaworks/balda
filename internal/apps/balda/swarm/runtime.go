@@ -8,19 +8,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/normahq/balda/pkg/actorlayer/dispatch"
 	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
 
 const heartbeatInterval = 30 * time.Second
 
-type Actor = dispatch.Actor
-
 type ActorHost struct {
 	source actorengine.Source
-	events EventPublisher
+	events actortransport.EventPublisher
 	tasks  *TaskService
 	engine *actorengine.DispatchRuntime
 	logger zerolog.Logger
@@ -37,10 +37,10 @@ type runtimeParams struct {
 
 	LC     fx.Lifecycle
 	Source actorengine.Source
-	Events EventPublisher `optional:"true"`
+	Events actortransport.EventPublisher `optional:"true"`
 	Tasks  *TaskService
 	Logger zerolog.Logger
-	Actors []Actor `group:"balda_swarm_actors"`
+	Actors []dispatch.Actor `group:"balda_swarm_actors"`
 }
 
 func NewActorHost(params runtimeParams) (*ActorHost, error) {
@@ -66,8 +66,8 @@ func NewActorHost(params runtimeParams) (*ActorHost, error) {
 		LaneKey:   actorLaneKeyFromEnvelope,
 		Sink:      r,
 		Retry: actorengine.RetryPolicy{
-			IsRetryable:    IsRetryableError,
-			Backoff:        RetryDelay,
+			IsRetryable:    actorlayer.IsRetryableError,
+			Backoff:        actorlayer.RetryDelay,
 			RetryExhausted: retryExhaustedDelivery,
 		},
 	})
@@ -137,7 +137,7 @@ func (r *ActorHost) prepareDelivery(ctx context.Context, delivery actorengine.De
 	return heartbeatCtx, stop, wrapped
 }
 
-func (r *ActorHost) startHeartbeat(ctx context.Context, env Envelope, delivery actorengine.Delivery) (context.Context, func()) {
+func (r *ActorHost) startHeartbeat(ctx context.Context, env actorlayer.Envelope, delivery actorengine.Delivery) (context.Context, func()) {
 	if r == nil || r.engine == nil || delivery == nil {
 		return ctx, func() {}
 	}
@@ -197,7 +197,7 @@ func (r *ActorHost) heartbeatTickInterval() time.Duration {
 	return r.heartbeatTick
 }
 
-func (r *ActorHost) deadletterTask(ctx context.Context, env Envelope, reason string) {
+func (r *ActorHost) deadletterTask(ctx context.Context, env actorlayer.Envelope, reason string) {
 	if r == nil || r.tasks == nil {
 		return
 	}
@@ -214,7 +214,7 @@ func retryExhaustedDelivery(delivery actorengine.Delivery) bool {
 	if delivery == nil {
 		return false
 	}
-	return RetryExhausted(delivery.Attempt(), delivery.MaxAttempts())
+	return actorlayer.RetryExhausted(delivery.Attempt(), delivery.MaxAttempts())
 }
 
 type runtimeDelivery struct {
@@ -256,30 +256,18 @@ func (s runtimeSource) Run(ctx context.Context, handler actorengine.Handler) err
 	})
 }
 
-func assertEnvelope(envelope any) (Envelope, error) {
-	env, ok := envelope.(Envelope)
-	if !ok {
-		return Envelope{}, DecodeError(fmt.Errorf("unexpected actor envelope type %T", envelope))
-	}
-	return env, nil
-}
-
-func AssertEnvelope(envelope any) (Envelope, error) {
-	return assertEnvelope(envelope)
-}
-
-func runtimeAddressOf(env Envelope) (string, error) {
+func runtimeAddressOf(env actorlayer.Envelope) (string, error) {
 	to, err := env.To.String()
 	if err != nil {
-		return "", DecodeError(err)
+		return "", actorlayer.DecodeError(err)
 	}
 	if strings.TrimSpace(to) == "" {
-		return "", DecodeError(fmt.Errorf("empty actor address"))
+		return "", actorlayer.DecodeError(fmt.Errorf("empty actor address"))
 	}
 	return to, nil
 }
 
-func actorLaneKeyFromEnvelope(env Envelope) string {
+func actorLaneKeyFromEnvelope(env actorlayer.Envelope) string {
 	namespace := strings.TrimSpace(env.Namespace)
 	taskID := strings.TrimSpace(env.TaskID)
 	if taskID != "" {

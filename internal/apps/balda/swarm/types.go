@@ -2,7 +2,8 @@
 package swarm
 
 import (
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
+	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/normahq/balda/pkg/actorlayer/dispatch"
 )
 
 const (
@@ -29,21 +30,30 @@ const (
 	KindCancel        = "cancel"
 )
 
-type ActorAddress = actorengine.ActorAddress
-type Envelope = actorengine.Envelope
+type ActorAddress = actorlayer.ActorAddress
+type Envelope = actorlayer.Envelope
+type Actor = dispatch.Actor
 
 func SystemAddress(key string) ActorAddress {
-	return actorengine.SystemAddress(key)
+	return actorlayer.SystemAddress(key)
 }
 
 func WildcardAddress(target string) string {
-	return actorengine.WildcardAddress(target)
+	return actorlayer.WildcardAddress(target)
 }
 
 func EncodeEnvelope(e Envelope) (string, error) {
-	return actorengine.EncodeEnvelope(e)
+	return actorlayer.EncodeEnvelope(e)
 }
 
 func DecodeEnvelope(raw string) (Envelope, error) {
-	return actorengine.DecodeEnvelope(raw)
+	return actorlayer.DecodeEnvelope(raw)
+}
+
+func AssertEnvelope(envelope any) (Envelope, error) {
+	return actorlayer.AssertEnvelope(envelope)
+}
+
+func assertEnvelope(envelope any) (Envelope, error) {
+	return actorlayer.AssertEnvelope(envelope)
 }

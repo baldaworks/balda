@@ -45,7 +45,8 @@ Status: active
   - actor keying and deterministic lane routing,
   - typed envelope handling,
   - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
-  - and lifecycle events suitable for external telemetry.
+  - lifecycle events suitable for external telemetry,
+  - and generic transport-facing contracts for dispatch and event flow.
 - Provider runtime: `balda.provider` selects the single app-scoped provider runtime used by all Balda sessions and `/goal` worker-validator runs.
 - Delivery boundary: Balda maps transport messages inside `eventbus/nats` into actorlayer `Source`/`Delivery` contracts; runtime and product actors never consume transport APIs directly.
 
@@ -73,8 +74,8 @@ Status: active
 
 - Actor dispatch and lane execution live in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`.
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
-- Telegram/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers inject `swarm.ActorDispatcher` directly, publish actor commands, and do not own actor behavior or actor registration.
+- Telegram/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers publish actor commands through actorlayer transport contracts and do not own actor behavior or actor registration.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
-- Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and Balda `ActorDispatcher` contracts.
-- The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: `ActorDispatcher`, `EventPublisher`, actorlayer `Source`, `EventConsumer`, and `BusDrainer`.
+- Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and actorlayer transport contracts.
+- The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: actorlayer transport `Dispatcher`, `EventPublisher`, `EventConsumer`, `Drainer`, plus actorlayer `Source`.
 - Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`swarm`, `handlers`, and `state`), not in `pkg/actorlayer`.

@@ -1,10 +1,11 @@
 package swarm
 
 import (
-	"context"
 	"errors"
-	"math/rand/v2"
 	"time"
+
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
 // ErrCommandQueueFull means the durable command stream rejected new work due to pressure.
@@ -16,61 +17,29 @@ func IsCommandQueueFull(err error) bool {
 }
 
 // DispatchReceipt is the durable acceptance receipt for a dispatched actor envelope.
-type DispatchReceipt struct {
-	Stream    string
-	Sequence  uint64
-	Subject   string
-	MsgID     string
-	Duplicate bool
-}
+type DispatchReceipt = actortransport.DispatchReceipt
 
 // ActorDispatcher dispatches durable actor envelopes into the actorlayer runtime.
-type ActorDispatcher interface {
-	Dispatch(ctx context.Context, env Envelope) (*DispatchReceipt, error)
-}
+type ActorDispatcher = actortransport.Dispatcher
 
 // EventPublisher publishes durable telemetry events.
-type EventPublisher interface {
-	PublishEvent(ctx context.Context, subject string, env Envelope) error
-}
+type EventPublisher = actortransport.EventPublisher
 
 // BusDrainer drains transport resources.
-type BusDrainer interface {
-	Drain(ctx context.Context) error
-}
+type BusDrainer = actortransport.Drainer
 
 // EventHandler is kept for event projector code that consumes decoded events.
-type EventHandler func(ctx context.Context, subject string, env Envelope) error
+type EventHandler = actortransport.EventHandler
 
 // EventConsumer consumes durable runtime events for read-model projection.
-type EventConsumer interface {
-	RunEventConsumer(ctx context.Context, handler EventHandler) error
-}
+type EventConsumer = actortransport.EventConsumer
 
 // RetryDelay computes the first retry delay for simple bus adapters.
 func RetryDelay(attempt int) time.Duration {
-	if attempt < 0 {
-		attempt = 0
-	}
-	delay := retryBaseDelay
-	for range attempt {
-		delay *= 2
-		if delay >= retryMaxDelay {
-			delay = retryMaxDelay
-			break
-		}
-	}
-	jitterCap := max(delay/4, time.Millisecond)
-	jitter := time.Duration(rand.Int64N(int64(jitterCap)))
-	return delay + jitter
+	return actorlayer.RetryDelay(attempt)
 }
 
 // RetryExhausted reports whether an attempt has reached terminal retry limit.
 func RetryExhausted(attempt int, maxAttempts int) bool {
-	return maxAttempts > 0 && attempt >= maxAttempts
+	return actorlayer.RetryExhausted(attempt, maxAttempts)
 }
-
-const (
-	retryBaseDelay = time.Second
-	retryMaxDelay  = time.Minute
-)

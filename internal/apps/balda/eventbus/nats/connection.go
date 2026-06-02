@@ -11,7 +11,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -79,7 +81,7 @@ func NewBus(params Params) (*Bus, error) {
 	return bus, nil
 }
 
-func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.DispatchReceipt, error) {
+func (b *Bus) Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	if err := env.Validate(); err != nil {
 		return nil, err
 	}
@@ -88,7 +90,7 @@ func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.Dispatch
 	if err != nil {
 		return nil, err
 	}
-	msgID := swarm.DedupeKeyOrID(env)
+	msgID := actorlayer.DedupeKeyOrID(env)
 	ack, err := b.js.PublishMsg(ctx, msg, jetstream.WithMsgID(msgID), jetstream.WithExpectStream(b.cfg.Swarm.Commands.Stream))
 	if err != nil {
 		if isRuntimeQueuePressure(err) {
@@ -96,7 +98,7 @@ func (b *Bus) Dispatch(ctx context.Context, env swarm.Envelope) (*swarm.Dispatch
 		}
 		return nil, fmt.Errorf("publish command %q: %w", subject, err)
 	}
-	result := &swarm.DispatchReceipt{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
+	result := &actortransport.DispatchReceipt{Stream: ack.Stream, Sequence: ack.Sequence, Subject: subject, MsgID: msgID, Duplicate: ack.Duplicate}
 	logEvt := b.logger.Debug().
 		Str("subject", subject).
 		Str("envelope_id", strings.TrimSpace(env.ID)).
@@ -174,7 +176,7 @@ func isRuntimeQueuePressure(err error) bool {
 	return matchesQueuePressure(err.Error())
 }
 
-func (b *Bus) PublishEvent(ctx context.Context, subject string, env swarm.Envelope) error {
+func (b *Bus) PublishEvent(ctx context.Context, subject string, env actorlayer.Envelope) error {
 	if err := env.Validate(); err != nil {
 		return err
 	}
@@ -182,14 +184,14 @@ func (b *Bus) PublishEvent(ctx context.Context, subject string, env swarm.Envelo
 	if err != nil {
 		return err
 	}
-	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Swarm.Events.Stream), jetstream.WithMsgID(swarm.DedupeKeyOrID(env)))
+	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Swarm.Events.Stream), jetstream.WithMsgID(actorlayer.DedupeKeyOrID(env)))
 	if err != nil {
 		return fmt.Errorf("publish event %q: %w", subject, err)
 	}
 	return nil
 }
 
-func (b *Bus) publishDLQ(ctx context.Context, env swarm.Envelope, reason string, emitEvent bool) error {
+func (b *Bus) publishDLQ(ctx context.Context, env actorlayer.Envelope, reason string, emitEvent bool) error {
 	msg, err := messageFromEnvelope(swarm.SubjectDLQCommand, env)
 	if err != nil {
 		return err
@@ -212,7 +214,7 @@ func (b *Bus) publishDLQ(ctx context.Context, env swarm.Envelope, reason string,
 			msg.Header.Set("Balda-DLQ-Num-Delivered", value)
 		}
 	}
-	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Swarm.DLQ.Stream), jetstream.WithMsgID(swarm.DedupeKeyOrID(env)+":dlq"))
+	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Swarm.DLQ.Stream), jetstream.WithMsgID(actorlayer.DedupeKeyOrID(env)+":dlq"))
 	if err != nil {
 		return fmt.Errorf("publish dlq: %w", err)
 	}

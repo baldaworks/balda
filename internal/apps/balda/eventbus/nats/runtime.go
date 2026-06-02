@@ -12,7 +12,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -29,7 +31,7 @@ const (
 
 type commandMessage struct {
 	subject       string
-	env           swarm.Envelope
+	env           actorlayer.Envelope
 	msg           jetstream.Msg
 	numDelivered  int
 	maxDeliveries int
@@ -193,7 +195,7 @@ func (b *Bus) commandWorkerLimit() int {
 }
 
 func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler actorengine.Handler) error {
-	env, err := swarm.DecodeEnvelope(string(msg.Data()))
+	env, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		id := strings.TrimSpace(msg.Headers().Get(swarm.HeaderEnvelopeID))
 		if id == "" {
@@ -216,12 +218,12 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler acto
 			"reason":  "decode failed: " + err.Error(),
 			"payload": string(msg.Data()),
 		})
-		decodeFailureEnv := swarm.Envelope{
+		decodeFailureEnv := actorlayer.Envelope{
 			ID:          id,
 			Namespace:   namespace,
 			Kind:        "decode_failed",
-			From:        swarm.SystemAddress("transport"),
-			To:          swarm.ActorAddress{Target: toTarget, Key: toKey},
+			From:        actorlayer.SystemAddress("transport"),
+			To:          actorlayer.ActorAddress{Target: toTarget, Key: toKey},
 			SessionID:   strings.TrimSpace(msg.Headers().Get(swarm.HeaderSessionID)),
 			TaskID:      strings.TrimSpace(msg.Headers().Get(swarm.HeaderTaskID)),
 			PayloadJSON: string(payload),
@@ -255,16 +257,16 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler acto
 	if err == nil {
 		return cmd.Ack(settleCtx)
 	}
-	if swarm.IsRetryableError(err) {
-		if swarm.RetryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
+	if actorlayer.IsRetryableError(err) {
+		if actorlayer.RetryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
 			reason := "retry exhausted: " + err.Error()
-			cmd.env = decorateDLQEnvelope(cmd.env, reason, swarm.ClassifyError(err), b.cfg.Swarm.Commands.Stream, b.cfg.Swarm.Commands.Consumer, msg.Subject(), numDelivered)
+			cmd.env = decorateDLQEnvelope(cmd.env, reason, actorlayer.ClassifyError(err), b.cfg.Swarm.Commands.Stream, b.cfg.Swarm.Commands.Consumer, msg.Subject(), numDelivered)
 			return cmd.DeadLetter(settleCtx, reason)
 		}
-		delay := swarm.RetryDelay(env.Attempt)
+		delay := actorlayer.RetryDelay(env.Attempt)
 		return cmd.Retry(settleCtx, delay, err.Error())
 	}
-	cmd.env = decorateDLQEnvelope(cmd.env, err.Error(), swarm.ClassifyError(err), b.cfg.Swarm.Commands.Stream, b.cfg.Swarm.Commands.Consumer, msg.Subject(), numDelivered)
+	cmd.env = decorateDLQEnvelope(cmd.env, err.Error(), actorlayer.ClassifyError(err), b.cfg.Swarm.Commands.Stream, b.cfg.Swarm.Commands.Consumer, msg.Subject(), numDelivered)
 	return cmd.DeadLetter(settleCtx, err.Error())
 }
 
@@ -272,7 +274,7 @@ func settlementContext(parent context.Context) (context.Context, context.CancelF
 	return context.WithTimeout(context.WithoutCancel(parent), commandSettlementTimeout)
 }
 
-func (b *Bus) publishCommandEventBestEffort(ctx context.Context, subject string, env swarm.Envelope, status string, reason string) {
+func (b *Bus) publishCommandEventBestEffort(ctx context.Context, subject string, env actorlayer.Envelope, status string, reason string) {
 	if err := b.PublishEvent(ctx, subject, commandEventEnvelope(env, nil, status, reason, nil)); err != nil {
 		b.logger.Warn().
 			Err(err).
@@ -282,7 +284,7 @@ func (b *Bus) publishCommandEventBestEffort(ctx context.Context, subject string,
 	}
 }
 
-func (b *Bus) RunEventConsumer(ctx context.Context, handler swarm.EventHandler) error {
+func (b *Bus) RunEventConsumer(ctx context.Context, handler actortransport.EventHandler) error {
 	if b == nil || b.eventConsumer == nil {
 		return fmt.Errorf("event projector consumer is required")
 	}
@@ -312,7 +314,7 @@ func (b *Bus) RunEventConsumer(ctx context.Context, handler swarm.EventHandler) 
 }
 
 func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler swarm.EventHandler) error {
-	env, err := swarm.DecodeEnvelope(string(msg.Data()))
+	env, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		_ = b.publishRawDLQ(ctx, msg, "decode failed: "+err.Error())
 		_ = msg.TermWithReason("decode failed: " + err.Error())
@@ -320,11 +322,11 @@ func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler
 	}
 	if err := handler(ctx, msg.Subject(), env); err != nil {
 		numDelivered := messageDeliveryAttempt(msg)
-		if swarm.IsRetryableError(err) && !swarm.RetryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
-			return msg.NakWithDelay(swarm.RetryDelay(numDelivered - 1))
+		if actorlayer.IsRetryableError(err) && !actorlayer.RetryExhausted(numDelivered, b.cfg.Swarm.Commands.MaxDeliver) {
+			return msg.NakWithDelay(actorlayer.RetryDelay(numDelivered - 1))
 		}
 		reason := "event projection failed: " + err.Error()
-		dlqEnv := decorateDLQEnvelope(env, reason, swarm.ClassifyError(err), b.cfg.Swarm.Events.Stream, swarm.DefaultEventProjectorConsumer, msg.Subject(), numDelivered)
+		dlqEnv := decorateDLQEnvelope(env, reason, actorlayer.ClassifyError(err), b.cfg.Swarm.Events.Stream, swarm.DefaultEventProjectorConsumer, msg.Subject(), numDelivered)
 		_ = b.publishDLQ(ctx, dlqEnv, reason, false)
 		return msg.TermWithReason(reason)
 	}
@@ -383,7 +385,7 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 		"reason":      reason,
 		"headers":     headers,
 		"payload":     string(source.Data()),
-		"error_class": swarm.ErrorKindDecode,
+		"error_class": actorlayer.ErrorKindDecode,
 	}
 	if md, err := source.Metadata(); err == nil {
 		payload["source_stream"] = strings.TrimSpace(md.Stream)
@@ -394,12 +396,12 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 	if err != nil {
 		return err
 	}
-	env := swarm.Envelope{
+	env := actorlayer.Envelope{
 		ID:          "poison-" + uuid.NewString(),
 		Namespace:   swarm.NamespaceTelemetry,
 		Kind:        "poison_message",
-		From:        swarm.SystemAddress("transport"),
-		To:          swarm.SystemAddress("dlq"),
+		From:        actorlayer.SystemAddress("transport"),
+		To:          actorlayer.SystemAddress("dlq"),
 		PayloadJSON: string(data),
 	}
 	msg, err := messageFromEnvelope(swarm.SubjectDLQCommand, env)
@@ -414,7 +416,7 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 	return nil
 }
 
-func commandEventEnvelope(env swarm.Envelope, result *swarm.DispatchReceipt, status string, reason string, extra map[string]any) swarm.Envelope {
+func commandEventEnvelope(env actorlayer.Envelope, result *actortransport.DispatchReceipt, status string, reason string, extra map[string]any) actorlayer.Envelope {
 	payload := map[string]any{
 		"envelope_id":    env.ID,
 		"task_id":        env.TaskID,
@@ -456,15 +458,15 @@ func commandEventEnvelope(env swarm.Envelope, result *swarm.DispatchReceipt, sta
 	}
 	out.Meta["event_type"] = "command." + strings.TrimSpace(status)
 	if out.From.Target == "" {
-		out.From = swarm.SystemAddress("transport")
+		out.From = actorlayer.SystemAddress("transport")
 	}
 	if out.To.Target == "" {
-		out.To = swarm.SystemAddress("transport")
+		out.To = actorlayer.SystemAddress("transport")
 	}
 	return out
 }
 
-func decorateDLQEnvelope(env swarm.Envelope, reason string, class swarm.ErrorKind, stream string, consumer string, subject string, numDelivered int) swarm.Envelope {
+func decorateDLQEnvelope(env actorlayer.Envelope, reason string, class actorlayer.ErrorKind, stream string, consumer string, subject string, numDelivered int) actorlayer.Envelope {
 	out := env
 	if out.Meta == nil {
 		out.Meta = map[string]string{}
@@ -503,7 +505,7 @@ func commandLogEvent(evt *zerolog.Event, msg jetstream.Msg) *zerolog.Event {
 	return evt
 }
 
-func commandLogEnvelope(evt *zerolog.Event, env swarm.Envelope) *zerolog.Event {
+func commandLogEnvelope(evt *zerolog.Event, env actorlayer.Envelope) *zerolog.Event {
 	to, _ := env.To.String()
 	evt = evt.
 		Str("envelope_id", strings.TrimSpace(env.ID)).
