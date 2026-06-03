@@ -472,49 +472,31 @@ func TestCreateRuntimeSession_RequiresBaldaSessionIDState(t *testing.T) {
 }
 
 func TestCurrentRepoBranch_Fallbacks(t *testing.T) {
-	t.Parallel()
+	t.Run("workspace_disabled", func(t *testing.T) {
+		t.Parallel()
 
-	tests := []struct {
-		name    string
-		builder Builder
-		want    string
-	}{
-		{
-			name:    "workspace_disabled",
-			builder: Builder{workspaceEnabled: false},
-			want:    "n/a",
-		},
-		{
-			name:    "missing_working_dir",
-			builder: Builder{workspaceEnabled: true},
-			want:    "unknown",
-		},
-		{
-			name:    "non_git_working_dir",
-			builder: Builder{workspaceEnabled: true, workingDir: mustMakeExternalTempDirForAgentTest(t)},
-			want:    "unknown",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := tt.builder.currentRepoBranch(context.Background()); got != tt.want {
-				t.Fatalf("currentRepoBranch() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func mustMakeExternalTempDirForAgentTest(t *testing.T) string {
-	t.Helper()
-
-	dir, err := os.MkdirTemp("", "balda-agent-test-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp() error = %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
+		builder := Builder{workspaceEnabled: false}
+		if got := builder.currentRepoBranch(context.Background()); got != "n/a" {
+			t.Fatalf("currentRepoBranch() = %q, want %q", got, "n/a")
+		}
 	})
-	return dir
+
+	t.Run("missing_working_dir", func(t *testing.T) {
+		t.Parallel()
+
+		builder := Builder{workspaceEnabled: true}
+		if got := builder.currentRepoBranch(context.Background()); got != "unknown" {
+			t.Fatalf("currentRepoBranch() = %q, want %q", got, "unknown")
+		}
+	})
+
+	t.Run("non_git_working_dir", func(t *testing.T) {
+		workingDir := t.TempDir()
+		t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(workingDir))
+
+		builder := Builder{workspaceEnabled: true, workingDir: workingDir}
+		if got := builder.currentRepoBranch(context.Background()); got != "unknown" {
+			t.Fatalf("currentRepoBranch() = %q, want %q", got, "unknown")
+		}
+	})
 }
