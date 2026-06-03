@@ -94,6 +94,11 @@ func TestCommandHandlerOnCommand_ResetRootRestartsSessionHistory(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Session restarted.")
 }
 
+func TestCommandHandlerOnCommand_RestartRootRestartsSessionHistory(t *testing.T) {
+	tgClient := assertCommandResetsRootSession(t, "restart")
+	assertLastSentContains(t, tgClient, "Session restarted.")
+}
+
 func TestCommandHandlerOnCommand_ResetWithArgsShowsUsage(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
 
@@ -110,6 +115,24 @@ func TestCommandHandlerOnCommand_ResetWithArgsShowsUsage(t *testing.T) {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
 	}
 	assertLastSentContains(t, tgClient, "Usage: /reset")
+}
+
+func TestCommandHandlerOnCommand_RestartWithArgsShowsUsage(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
+	topicID := 11
+	err := handler.onCommand(context.Background(), newCommandEvent("restart", "now", 101, 9001, &topicID))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 0 {
+		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
+	}
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
+	}
+	assertLastSentContains(t, tgClient, "Usage: /restart")
 }
 
 func TestCommandHandlerOnCommand_ResetUnauthorized(t *testing.T) {

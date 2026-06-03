@@ -307,7 +307,7 @@ func (h *BaldaHandler) runTurnTaskWithDelivery(
 	}
 
 	log.Error().Err(err).Int("topic_id", topicID).Msg("agent execution failed")
-	errText := "Agent execution failed. Use /reset to restart this session."
+	errText := "Agent execution failed. Use /reset or /restart to restart this session."
 	if sendErr := sendPlain(context.Background(), h.actorDispatcher, baldaHandlerActorAddress, locator, errText); sendErr != nil {
 		log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda error message")
 	}

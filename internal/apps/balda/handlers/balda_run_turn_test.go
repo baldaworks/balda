@@ -1450,7 +1450,7 @@ func TestRunTurnTaskWithDelivery_HardFailureSuggestsReset(t *testing.T) {
 	if len(tgClient.messages) == 0 {
 		t.Fatal("expected error message delivery")
 	}
-	want := "Agent execution failed. Use /reset to restart this session."
+	want := "Agent execution failed. Use /reset or /restart to restart this session."
 	if got := tgClient.messages[len(tgClient.messages)-1].Text; got != want {
 		t.Fatalf("message text = %q, want %q", got, want)
 	}
