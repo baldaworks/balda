@@ -635,6 +635,7 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/goal <objective>` (owner/collaborator): starts goal work from the current session context in an isolated GoalKeeper workspace/state. The goal workspace is created from `balda.workspace.base_branch`, exported back automatically on success, and preserved for recovery when export fails. `/goal` requires `balda.workspace.mode` to resolve to an enabled git-worktree mode. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See the [goal workflow doc](goal-workflow.md).
   - concurrent `/goal` runs in the same session are rejected.
   - `/goal clear` stops active goal work for the current session only.
+- `/reset` (owner/collaborator): restarts the current session history without closing the chat/topic. Works in the current DM, public-chat, or thread-scoped session.
 - `/close` (DM only, owner/collaborator): resets the current session history. In topic contexts, it also closes that topic.
 - `/cancel` (owner/collaborator): cancels the current session turn and drops queued turns for that session. It does not stop active `/goal` work.
 - `/user add` (owner only): generates a collaborator invite link for this bot.
@@ -1054,6 +1055,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 8. Polling mode resumes from persisted Telegram offset in balda state DB.
 9. Non-terminal provider progress sends throttled typing indicators in DM and public chats; thinking placeholders are DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode` with fallback retry without formatting on transport or formatting-validation errors.
-11. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.
-12. With `balda.sessions.persistence=sqlite`, restart restores conversation history and explicit `/close` clears it for the current session.
-13. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.
+11. `/reset` restarts the current session in any supported chat/thread context without closing the underlying chat/topic.
+12. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.
+13. With `balda.sessions.persistence=sqlite`, restart restores conversation history and explicit `/reset` or `/close` clears it for the current session.
+14. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.

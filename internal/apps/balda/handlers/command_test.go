@@ -23,6 +23,7 @@ const (
 	testProviderAlpha     = "alpha"
 	testTelegramUserID101 = "tg-101"
 	testParseModeMarkdown = "MarkdownV2"
+	testRootSessionID     = "tg-9001-0"
 )
 
 func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
@@ -58,10 +59,11 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Closing this topic and resetting session history.")
 }
 
-func TestCommandHandlerOnCommand_CloseRootResetsSessionHistory(t *testing.T) {
+func TestCommandHandlerOnCommand_ResetTopicRestartsSessionWithoutClosingTopic(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
 
-	err := handler.onCommand(context.Background(), newCommandEvent("close", "", 101, 9001, nil))
+	topicID := 123
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, &topicID))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}
@@ -81,9 +83,104 @@ func TestCommandHandlerOnCommand_CloseRootResetsSessionHistory(t *testing.T) {
 	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
 		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
 	}
-	if sm.resetCalls[0].SessionID != "tg-9001-0" {
-		t.Fatalf("ResetSession call = %+v, want session=tg-9001-0", sm.resetCalls[0])
+	if sm.resetCalls[0].SessionID != "tg-9001-123" {
+		t.Fatalf("ResetSession call = %+v, want session=tg-9001-123", sm.resetCalls[0])
 	}
+	assertLastSentContains(t, tgClient, "Session restarted.")
+}
+
+func TestCommandHandlerOnCommand_ResetRootRestartsSessionHistory(t *testing.T) {
+	tgClient := assertCommandResetsRootSession(t, "reset")
+	assertLastSentContains(t, tgClient, "Session restarted.")
+}
+
+func TestCommandHandlerOnCommand_ResetWithArgsShowsUsage(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
+	topicID := 11
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "now", 101, 9001, &topicID))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 0 {
+		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
+	}
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
+	}
+	assertLastSentContains(t, tgClient, "Usage: /reset")
+}
+
+func TestCommandHandlerOnCommand_ResetUnauthorized(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
+	topicID := 33
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 999, 9001, &topicID))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 0 {
+		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
+	}
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
+	}
+	assertLastSentContains(t, tgClient, "Only the bot owner or collaborators can use this command.")
+}
+
+func TestCommandHandlerOnCommand_ResetInGroupChatAllowed(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
+	topicID := 33
+	err := handler.onCommand(context.Background(), newCommandEventWithChatType("reset", "", 101, 9001, &topicID, "supergroup"))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(tgClient.closedTopicIDs) != 0 {
+		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
+	}
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
+	}
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if sm.resetCalls[0].SessionID != "tg-9001-33" {
+		t.Fatalf("ResetSession call = %+v, want session=tg-9001-33", sm.resetCalls[0])
+	}
+	assertLastSentContains(t, tgClient, "Session restarted.")
+}
+
+func TestCommandHandlerOnCommand_ResetFailureReportsError(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	sm.resetErr = errors.New("reset failed")
+
+	topicID := 44
+	err := handler.onCommand(context.Background(), newCommandEventWithChatType("reset", "", 101, 9001, &topicID, "supergroup"))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if len(tgClient.closedTopicIDs) != 0 {
+		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
+	}
+	assertLastSentContains(t, tgClient, "Could not reset this session.")
+}
+
+func TestCommandHandlerOnCommand_CloseRootResetsSessionHistory(t *testing.T) {
+	tgClient := assertCommandResetsRootSession(t, "close")
 	assertLastSentContains(t, tgClient, "Session history reset.")
 }
 
@@ -620,6 +717,37 @@ func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 	}
 
 	assertLastSentContains(t, tgClient, "/user remove <user_id>")
+}
+
+func assertCommandResetsRootSession(t *testing.T, command string) *fakeTelegramClient {
+	t.Helper()
+
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent(command, "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(tgClient.closedTopicIDs) != 0 {
+		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
+	}
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
+	}
+	if len(turns.cancelCalls) != 0 {
+		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	}
+	if sm.resetCalls[0].SessionID != testRootSessionID {
+		t.Fatalf("ResetSession call = %+v, want session=%s", sm.resetCalls[0], testRootSessionID)
+	}
+	return tgClient
 }
 
 type fakeCommandSessionManager struct {

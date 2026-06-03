@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"iter"
 	"net/http"
 	"path/filepath"
@@ -1395,6 +1396,62 @@ func TestRunTurn_PrefersProviderErrorMessageOnEmptyTurnComplete(t *testing.T) {
 	}
 	want := "Provider error: model gpt-5.3-codex is not available for this account"
 	if got := tgClient.messages[0].Text; got != want {
+		t.Fatalf("message text = %q, want %q", got, want)
+	}
+}
+
+func TestRunTurnTaskWithDelivery_HardFailureSuggestsReset(t *testing.T) {
+	t.Parallel()
+
+	h, tgClient := newBaldaRunTurnTestHandler(t, false)
+	locator := baldatelegram.NewLocator(9001, 77)
+	h.sessionManager = newBaldaSessionManagerWithSession(t, locator, newBaldaTopicSession(t, locator.SessionID))
+
+	baldaAgent, err := adkagent.New(adkagent.Config{
+		Name:        "BaldaRunTurnErrorAgent",
+		Description: "Returns a terminal runner error",
+		Run: func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+			return func(yield func(*adksession.Event, error) bool) {
+				_ = yield(nil, errors.New("agent run failed"))
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("agent.New() error = %v", err)
+	}
+
+	sessionService := adksession.InMemoryService()
+	adkRunner, err := runner.New(runner.Config{
+		AppName:        "balda-run-turn-error-test",
+		Agent:          baldaAgent,
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+
+	if err := h.runTurnTaskWithDelivery(
+		context.Background(),
+		"hello",
+		adkRunner,
+		"tg-101",
+		locator.SessionID,
+		"",
+		locator.SessionID,
+		locator,
+		41,
+		77,
+		baldachannel.ProgressPolicy{},
+		true,
+	); err == nil {
+		t.Fatal("runTurnTaskWithDelivery() error = nil, want error")
+	}
+
+	if len(tgClient.messages) == 0 {
+		t.Fatal("expected error message delivery")
+	}
+	want := "Agent execution failed. Use /reset to restart this session."
+	if got := tgClient.messages[len(tgClient.messages)-1].Text; got != want {
 		t.Fatalf("message text = %q, want %q", got, want)
 	}
 }

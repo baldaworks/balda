@@ -215,6 +215,7 @@ Built-in provider types:
 - `/topic <name>`: owner/collaborator, direct messages only; create a named topic session.
 - `/goal <objective>`: owner/collaborator; start goal work from the current session context in an isolated GoalKeeper workspace/state. The goal workspace is created from `balda.workspace.base_branch`, exported back automatically on success, and preserved for recovery if export fails. `/goal` requires `balda.workspace.mode` to resolve to an enabled git-worktree mode. Goal updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. Only one `/goal` run can be active per session. See the [goal workflow doc](docs/goal-workflow.md).
 - `/goal clear`: owner/collaborator; stop active `/goal` work for the current session only.
+- `/reset`: owner/collaborator; restart the current session history without closing the chat or topic. Works in any current session context.
 - `/close`: owner/collaborator, direct messages only; reset the current session history. In a topic, it also closes that topic.
 - `/cancel`: owner/collaborator; cancel the current session turn and drop queued turns for that session. It does not stop active `/goal` work.
 - `/user add`: owner only; generate a collaborator invite link.

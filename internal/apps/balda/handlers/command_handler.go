@@ -29,8 +29,8 @@ type goalTaskService interface {
 	ListActiveGoalTasksBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error)
 }
 
-// CommandHandler handles Balda chat commands such as /topic, /goal, /close,
-// /cancel, and /user.
+// CommandHandler handles Balda chat commands such as /topic, /goal, /reset,
+// /close, /cancel, and /user.
 type CommandHandler struct {
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore
@@ -69,6 +69,8 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 	switch commandCtx.Command {
 	case "topic":
 		return h.onTopicCommand(ctx, commandCtx)
+	case "reset":
+		return h.onResetCommand(ctx, commandCtx)
 	case "close":
 		return h.onCloseCommand(ctx, commandCtx)
 	case "cancel":
@@ -129,6 +131,37 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatele
 		return nil
 	}
 
+	return nil
+}
+
+func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
+		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if strings.TrimSpace(commandCtx.Args) != "" {
+		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage: /reset"); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "session canceled by reset command", false); err != nil {
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish /reset cancel control command")
+	}
+	if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset session during /reset")
+		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not reset this session."); sendErr != nil {
+			return sendErr
+		}
+		return nil
+	}
+	if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Session restarted."); err != nil {
+		log.Warn().Err(err).Int64("chat_id", commandCtx.ChatID).Int("topic_id", commandCtx.TopicID).Msg("failed to send /reset confirmation")
+	}
 	return nil
 }
 
