@@ -120,31 +120,52 @@ func wrapGoalPromptAgent(base adkagent.Agent, cfg goalPromptAgentConfig) (adkage
 					userContent:       genai.NewContentFromText(prompt, genai.RoleUser),
 				}
 				latestVisibleOutput := ""
-				persistedOutput := ""
+				var bufferedEvent *adksession.Event
 				for ev, err := range base.Run(wrappedCtx) {
 					if text := visibleGoalEventText(ev); text != "" {
 						latestVisibleOutput = strings.TrimSpace(text)
 					}
-					if outputKey != "" && latestVisibleOutput != "" && persistedOutput != latestVisibleOutput && ev != nil && !ev.Partial {
-						if ev.Actions.StateDelta == nil {
-							ev.Actions.StateDelta = make(map[string]any)
-						}
-						ev.Actions.StateDelta[outputKey] = latestVisibleOutput
-						if ctx != nil && ctx.Session() != nil {
-							if err := ctx.Session().State().Set(outputKey, latestVisibleOutput); err != nil {
-								yield(nil, fmt.Errorf("set goal session output %q: %w", outputKey, err))
+					if err != nil {
+						if bufferedEvent != nil {
+							if !yield(bufferedEvent, nil) {
 								return
 							}
 						}
-						persistedOutput = latestVisibleOutput
-					}
-					if !yield(ev, err) {
+						yield(ev, err)
 						return
 					}
-					if err != nil {
-						return
+					if ev == nil {
+						continue
+					}
+					if ev.Partial {
+						if !yield(ev, nil) {
+							return
+						}
+						continue
+					}
+					if bufferedEvent != nil {
+						if !yield(bufferedEvent, nil) {
+							return
+						}
+					}
+					bufferedEvent = ev
+				}
+				if bufferedEvent == nil {
+					return
+				}
+				if outputKey != "" && latestVisibleOutput != "" {
+					if bufferedEvent.Actions.StateDelta == nil {
+						bufferedEvent.Actions.StateDelta = make(map[string]any)
+					}
+					bufferedEvent.Actions.StateDelta[outputKey] = latestVisibleOutput
+					if ctx != nil && ctx.Session() != nil {
+						if err := ctx.Session().State().Set(outputKey, latestVisibleOutput); err != nil {
+							yield(nil, fmt.Errorf("set goal session output %q: %w", outputKey, err))
+							return
+						}
 					}
 				}
+				yield(bufferedEvent, nil)
 			}
 		},
 	})

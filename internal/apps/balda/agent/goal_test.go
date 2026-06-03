@@ -18,6 +18,8 @@ import (
 	"google.golang.org/genai"
 )
 
+const goalTestSecondOutput = "second output"
+
 func visibleContentText(content *genai.Content) string {
 	return extractGoalPromptText(content)
 }
@@ -97,7 +99,7 @@ func TestGoalValidatorWrapperUsesLatestWorkerOutputEachInvocation(t *testing.T) 
 			workerRuns++
 			workerOutput := "first output"
 			if workerRuns == 2 {
-				workerOutput = "second output"
+				workerOutput = goalTestSecondOutput
 			}
 			yield(goalTestTextEvent(ctx.InvocationID(), workerOutput), nil)
 		}
@@ -150,7 +152,7 @@ func TestGoalValidatorWrapperUsesLatestWorkerOutputEachInvocation(t *testing.T) 
 		t.Fatalf("session.Create() error = %v", err)
 	}
 	got := runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
-	if !strings.Contains(got, "Worker result:\nsecond output") {
+	if !strings.Contains(got, "Worker result:\n"+goalTestSecondOutput) {
 		t.Fatalf("final validator text = %q, want latest worker output", got)
 	}
 	if strings.Contains(got, "Worker result:\nfirst output") {
@@ -158,6 +160,134 @@ func TestGoalValidatorWrapperUsesLatestWorkerOutputEachInvocation(t *testing.T) 
 	}
 	if workerRuns != 2 || validatorRuns != 2 {
 		t.Fatalf("workerRuns, validatorRuns = %d, %d; want 2, 2", workerRuns, validatorRuns)
+	}
+}
+
+func TestWrapGoalPromptAgentSavesLatestOutputOnlyOnFinalNonPartialEvent(t *testing.T) {
+	t.Parallel()
+
+	base := mustNewGoalTestAgent(t, "worker", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestTextEvent(ctx.InvocationID(), "first output"), nil)
+			yield(goalTestTextEvent(ctx.InvocationID(), "second output"), nil)
+		}
+	})
+	wrapped, err := wrapGoalPromptAgent(base, goalPromptAgentConfig{
+		Name:        goalWorkerName,
+		Description: "Goal worker agent",
+		OutputKey:   goalWorkerOutputStateKey,
+		BuildPrompt: func(ctx adkagent.InvocationContext) (string, error) {
+			return extractGoalPromptText(ctx.UserContent()), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("wrapGoalPromptAgent() error = %v", err)
+	}
+
+	sessionService := newGoalSQLiteSessionService(t)
+	r, err := adkrunner.New(adkrunner.Config{
+		AppName:        "goal-wrapper-terminal-output-test",
+		Agent:          wrapped,
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+	created, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
+		AppName: "goal-wrapper-terminal-output-test",
+		UserID:  "tg-101",
+	})
+	if err != nil {
+		t.Fatalf("session.Create() error = %v", err)
+	}
+
+	events := runGoalAgentEvents(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if got := visibleContentText(events[0].Content); got != "first output" {
+		t.Fatalf("events[0] text = %q, want %q", got, "first output")
+	}
+	if _, ok := events[0].Actions.StateDelta[goalWorkerOutputStateKey]; ok {
+		t.Fatalf("events[0] StateDelta unexpectedly contains %q", goalWorkerOutputStateKey)
+	}
+	if got := visibleContentText(events[1].Content); got != goalTestSecondOutput {
+		t.Fatalf("events[1] text = %q, want %q", got, goalTestSecondOutput)
+	}
+	if got := events[1].Actions.StateDelta[goalWorkerOutputStateKey]; got != goalTestSecondOutput {
+		t.Fatalf("events[1] StateDelta[%q] = %#v, want %q", goalWorkerOutputStateKey, got, goalTestSecondOutput)
+	}
+
+	saved, err := sessionService.Get(context.Background(), &adksession.GetRequest{
+		AppName:   "goal-wrapper-terminal-output-test",
+		UserID:    "tg-101",
+		SessionID: created.Session.ID(),
+	})
+	if err != nil {
+		t.Fatalf("session.Get() error = %v", err)
+	}
+	gotState, err := saved.Session.State().Get(goalWorkerOutputStateKey)
+	if err != nil {
+		t.Fatalf("session.State().Get(%q) error = %v", goalWorkerOutputStateKey, err)
+	}
+	if gotState != goalTestSecondOutput {
+		t.Fatalf("session state %q = %#v, want %q", goalWorkerOutputStateKey, gotState, goalTestSecondOutput)
+	}
+}
+
+func TestWrapGoalPromptAgentCarriesPartialVisibleOutputIntoFinalNonPartialEvent(t *testing.T) {
+	t.Parallel()
+
+	base := mustNewGoalTestAgent(t, "worker", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestPartialTextEvent(ctx.InvocationID(), "worker summary"), nil)
+			yield(goalTestEmptyEvent(ctx.InvocationID()), nil)
+		}
+	})
+	wrapped, err := wrapGoalPromptAgent(base, goalPromptAgentConfig{
+		Name:        goalWorkerName,
+		Description: "Goal worker agent",
+		OutputKey:   goalWorkerOutputStateKey,
+		BuildPrompt: func(ctx adkagent.InvocationContext) (string, error) {
+			return extractGoalPromptText(ctx.UserContent()), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("wrapGoalPromptAgent() error = %v", err)
+	}
+
+	sessionService := newGoalSQLiteSessionService(t)
+	r, err := adkrunner.New(adkrunner.Config{
+		AppName:        "goal-wrapper-partial-output-test",
+		Agent:          wrapped,
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+	created, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
+		AppName: "goal-wrapper-partial-output-test",
+		UserID:  "tg-101",
+	})
+	if err != nil {
+		t.Fatalf("session.Create() error = %v", err)
+	}
+
+	events := runGoalAgentEvents(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if !events[0].Partial {
+		t.Fatalf("events[0].Partial = false, want true")
+	}
+	if _, ok := events[0].Actions.StateDelta[goalWorkerOutputStateKey]; ok {
+		t.Fatalf("events[0] StateDelta unexpectedly contains %q", goalWorkerOutputStateKey)
+	}
+	if events[1].Partial {
+		t.Fatalf("events[1].Partial = true, want false")
+	}
+	if got := events[1].Actions.StateDelta[goalWorkerOutputStateKey]; got != "worker summary" {
+		t.Fatalf("events[1] StateDelta[%q] = %#v, want %q", goalWorkerOutputStateKey, got, "worker summary")
 	}
 }
 
@@ -481,6 +611,33 @@ func runGoalAgentOnce(
 		}
 	}
 	return out
+}
+
+func runGoalAgentEvents(
+	t *testing.T,
+	r *adkrunner.Runner,
+	userID string,
+	sessionID string,
+	prompt string,
+) []*adksession.Event {
+	t.Helper()
+
+	var events []*adksession.Event
+	for ev, err := range r.Run(
+		context.Background(),
+		userID,
+		sessionID,
+		genai.NewContentFromText(prompt, genai.RoleUser),
+		adkagent.RunConfig{},
+	) {
+		if err != nil {
+			t.Fatalf("runner.Run() error = %v", err)
+		}
+		if ev != nil {
+			events = append(events, ev)
+		}
+	}
+	return events
 }
 
 func goalTestTextEvent(invocationID string, text string) *adksession.Event {
