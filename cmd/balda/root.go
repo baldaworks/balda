@@ -23,6 +23,7 @@ var (
 	version   = "dev"
 	commit    = "unknown"
 	date      = "unknown"
+	executeFn = Execute
 )
 
 // Execute runs the balda root command.
