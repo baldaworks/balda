@@ -136,6 +136,45 @@ balda:
 	}
 }
 
+func TestLoadConfigDocument_LoadsCodexReasoningEffort(t *testing.T) {
+	workingDir := t.TempDir()
+
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    codex:
+      type: codex_acp
+      reasoning_effort: high
+      codex_acp:
+        model: gpt-5-codex
+balda:
+  provider: codex
+`); err != nil {
+		t.Fatalf("write balda config: %v", err)
+	}
+
+	var doc baldaTestConfigDocument
+	_, err := appconfig.LoadConfigDocument(
+		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
+		appconfig.AppLoadOptions{
+			AppName:            "balda",
+			DefaultsYAML:       defaultBaldaConfig,
+			UseDotConfigAppDir: true,
+		},
+		&doc,
+	)
+	if err != nil {
+		t.Fatalf("LoadConfigDocument: %v", err)
+	}
+
+	providerCfg, ok := doc.Runtime.Providers["codex"]
+	if !ok {
+		t.Fatal("runtime.providers.codex missing after config load")
+	}
+	if providerCfg.ReasoningEffort != "high" {
+		t.Fatalf("runtime.providers.codex.reasoning_effort = %q, want high", providerCfg.ReasoningEffort)
+	}
+}
+
 func TestDefaultBaldaConfig_DocumentsCurrentTemplateWording(t *testing.T) {
 	body := string(defaultBaldaConfig)
 	for _, want := range []string{

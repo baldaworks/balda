@@ -463,6 +463,7 @@ runtime:
   providers:
     codex:
       type: codex_acp
+      reasoning_effort: high
       mcp_servers:
         - python-tools
 
@@ -543,6 +544,10 @@ session-start snapshot. New or restored sessions read the latest file.
   - when disabled, Balda does not snapshot `MEMORY.md` or register `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations (default `25`)
   - invalid values are clamped to `25`.
+- `runtime.providers.<provider_id>.reasoning_effort`: optional provider reasoning effort.
+  - v1 support is `codex_acp` only
+  - allowed values: `minimal`, `low`, `medium`, `high`, `xhigh`
+  - Balda passes the value through to Norma, which maps it to Codex ACP session startup/recovery metadata
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
 - `balda.nats.host` / `port`: embedded listener address (default `127.0.0.1:-1`, random local port)
 - embedded NATS transport files live under `${balda.state_dir}/nats`
