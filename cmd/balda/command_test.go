@@ -143,9 +143,9 @@ func TestLoadConfigDocument_LoadsCodexReasoningEffort(t *testing.T) {
   providers:
     codex:
       type: codex_acp
-      reasoning_effort: high
       codex_acp:
         model: gpt-5-codex
+        reasoning_effort: high
 balda:
   provider: codex
 `); err != nil {
@@ -170,8 +170,11 @@ balda:
 	if !ok {
 		t.Fatal("runtime.providers.codex missing after config load")
 	}
-	if providerCfg.ReasoningEffort != "high" {
-		t.Fatalf("runtime.providers.codex.reasoning_effort = %q, want high", providerCfg.ReasoningEffort)
+	if providerCfg.CodexACP == nil {
+		t.Fatal("runtime.providers.codex.codex_acp missing after config load")
+	}
+	if providerCfg.CodexACP.ReasoningEffort != "high" {
+		t.Fatalf("runtime.providers.codex.codex_acp.reasoning_effort = %q, want high", providerCfg.CodexACP.ReasoningEffort)
 	}
 }
 

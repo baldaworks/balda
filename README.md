@@ -237,8 +237,9 @@ runtime:
     <provider_id>:
       # generic_acp | gemini_acp | codex_acp | opencode_acp | copilot_acp | claude_code_acp | pool
       type: <provider_type>
-      # Optional provider reasoning effort. In v1 this is supported only for codex_acp.
-      reasoning_effort: <minimal|low|medium|high|xhigh>
+      codex_acp:
+        # Optional Codex reasoning effort.
+        reasoning_effort: <minimal|low|medium|high|xhigh>
   mcp_servers: {}
 
 balda:
@@ -303,7 +304,7 @@ Common settings:
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
 - `balda.workspace.sessions_dir`: directory name under `balda.state_dir` used for per-session worktrees (defaults to `sessions`).
 - `balda.mcp_servers`: extra MCP server IDs added to every Balda-started session.
-- `runtime.providers.<id>.reasoning_effort`: optional provider reasoning effort. In v1 Balda passes this through only for `codex_acp`, which maps it to Codex ACP session startup/resume config.
+- `runtime.providers.<id>.codex_acp.reasoning_effort`: optional Codex reasoning effort. Balda passes this through to Norma, which maps it to Codex ACP session startup/resume config.
 
 ## MCP Servers
 
@@ -326,7 +327,8 @@ runtime:
   providers:
     codex:
       type: codex_acp
-      reasoning_effort: high
+      codex_acp:
+        reasoning_effort: high
       mcp_servers:
         - local-tools
 
