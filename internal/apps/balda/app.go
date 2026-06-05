@@ -385,6 +385,12 @@ func Module(
 				fx.ResultTags(`name:"balda_zulip_webhook_token"`),
 			),
 		),
+		fx.Provide(
+			fx.Annotate(
+				func() []string { return cfg.Balda.Zulip.AllowedOwners },
+				fx.ResultTags(`name:"balda_zulip_allowed_owners"`),
+			),
+		),
 		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
 			return auth.NewOwnerStore(provider.AppKV())
 		}),

@@ -46,11 +46,12 @@ type WebhookConfig struct {
 
 // ZulipConfig holds the Zulip bot configuration.
 type ZulipConfig struct {
-	BotEmail     string            `mapstructure:"bot_email"`
-	APIKey       string            `mapstructure:"api_key"`
-	ServerURL    string            `mapstructure:"server_url"`
-	WebhookToken string            `mapstructure:"webhook_token"`
-	Webhook      ZulipWebhookConfig `mapstructure:"webhook"`
+	BotEmail      string             `mapstructure:"bot_email"`
+	APIKey        string             `mapstructure:"api_key"`
+	ServerURL     string             `mapstructure:"server_url"`
+	WebhookToken  string             `mapstructure:"webhook_token"`
+	AllowedOwners []string           `mapstructure:"allowed_owners"`
+	Webhook       ZulipWebhookConfig `mapstructure:"webhook"`
 }
 
 // ZulipWebhookConfig holds Zulip webhook receiver settings.
