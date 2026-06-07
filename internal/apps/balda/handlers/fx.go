@@ -147,6 +147,7 @@ var Module = fx.Module("balda_handlers",
 				authToken:          strings.TrimSpace(deps.AuthToken),
 				baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
 				planUpdatesEnabled: deps.PlanUpdatesEnabled,
+				telegramEnabled:    deps.TelegramEnabled,
 				logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
 			}
 

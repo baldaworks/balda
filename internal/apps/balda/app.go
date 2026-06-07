@@ -333,6 +333,14 @@ func Module(
 		),
 		fx.Provide(
 			fx.Annotate(
+				func() bool {
+					return strings.TrimSpace(cfg.Balda.Telegram.Token) != ""
+				},
+				fx.ResultTags(`name:"balda_telegram_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
 				func() int {
 					return cfg.Balda.Goal.MaxIterations
 				},
@@ -419,6 +427,7 @@ func Module(
 		),
 		// Start Balda provider runtime and bot runtime only after bundled internal MCP is started.
 		fx.Invoke(func(lc fx.Lifecycle, bot *runtime.Bot, runtimeManager *baldaagent.RuntimeManager, mcpManager *handlers.InternalMCPManager) {
+			telegramEnabled := strings.TrimSpace(cfg.Balda.Telegram.Token) != ""
 			runCtx, cancel := context.WithCancel(context.Background())
 			lc.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
@@ -428,15 +437,17 @@ func Module(
 					if err := runtimeManager.EnsureRuntime(ctx); err != nil {
 						return fmt.Errorf("start Balda provider runtime: %w", err)
 					}
-					go func() {
-						if err := bot.Run(runCtx); err != nil {
-							if shutdown.IsExpected(err) {
-								bot.Logger().Debugf("bot run stopped during shutdown: %v", err)
-								return
+					if telegramEnabled {
+						go func() {
+							if err := bot.Run(runCtx); err != nil {
+								if shutdown.IsExpected(err) {
+									bot.Logger().Debugf("bot run stopped during shutdown: %v", err)
+									return
+								}
+								bot.Logger().Errorf("bot run failed: %v", err)
 							}
-							bot.Logger().Errorf("bot run failed: %v", err)
-						}
-					}()
+						}()
+					}
 					return nil
 				},
 				OnStop: func(ctx context.Context) error {

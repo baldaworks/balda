@@ -233,7 +233,7 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"response_not_required": true}`))
 
-	go h.processMessage(r.Context(), payload)
+	go h.processMessage(context.WithoutCancel(r.Context()), payload)
 }
 
 func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWebhookPayload) {
