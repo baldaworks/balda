@@ -52,7 +52,7 @@ session boundaries.
 
 You need:
 
-- a Telegram bot token from BotFather
+- a Telegram bot token from BotFather **or** a Zulip outgoing webhook bot
 - at least one provider CLI for host installs: `codex`, `opencode`, `copilot`,
   `gemini`, or `claude`
 - Node.js/npm, unless you use the Docker Compose flow
@@ -304,7 +304,8 @@ Common settings:
 - `balda.telegram.token`: Telegram bot token, usually supplied by `.env` as `BALDA_TELEGRAM_TOKEN`.
 - `balda.zulip.bot_email`, `balda.zulip.api_key`, `balda.zulip.server_url`: Zulip outgoing webhook bot credentials. See [`docs/zulip-webhook.md`](docs/zulip-webhook.md) for setup steps.
 - `balda.zulip.webhook_token`: verification token from the Zulip outgoing webhook bot settings.
-- `balda.zulip.webhook.enabled`: set `true` to start the Zulip webhook receiver on `listen_addr`.
+- `balda.zulip.webhook.enabled`: set `true` to start the Zulip webhook receiver on `listen_addr`. When this is `true`, a Telegram token is not required — Balda can run Zulip-only.
+- `balda.zulip.allowed_owners`: list of Zulip user emails trusted to auto-claim any topic by @-mentioning Balda, without needing `/start owner=<token>` first.
 - `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
 - `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session ingress. Each route defines `path`, `prompt_template`, `envelope` (`target`, `key`, optional `mode=task|session`, optional `report_to`), `auth` (`type=none|header`, `header`, `value` or `secret_env`), and `dedupe` (`source=request_id|header|body_sha256`, optional `header` for header source). Use `target: locator` with a `/locator` value in `key` to route directly to a specific session context.
 - `balda.webhooks.*` security: set route `auth` (for example shared-token header) and keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.

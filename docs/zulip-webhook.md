@@ -62,7 +62,25 @@ balda:
       path: "/zulip/webhook"
 ```
 
-### 3. Authenticate as owner
+### 3. (Optional) Allow trusted owners to auto-claim topics
+
+By default, a user must send `/start owner=<token>` in a DM to register as
+owner before they can assign Balda to a topic. If you trust a set of Zulip
+users unconditionally, you can list their emails in `allowed_owners`:
+
+```yaml
+balda:
+  zulip:
+    allowed_owners:
+      - alice@example.com
+      - bob@example.com
+```
+
+Any listed user who @-mentions Balda in a stream topic will be automatically
+registered as the topic owner (or added as a collaborator if the topic already
+has one). A bare @-mention with no message text sends a welcome reply.
+
+### 4. Authenticate as owner
 
 Send a direct message to the bot in Zulip:
 
@@ -71,6 +89,8 @@ Send a direct message to the bot in Zulip:
 ```
 
 The `owner_token` is printed by `balda init` or logged at startup.
+
+This step is not required for users listed in `allowed_owners`.
 
 ## Streams and Topics
 
@@ -135,3 +155,6 @@ Set `balda.zulip.webhook.listen_addr` to change the bind address.
 - **Bot responds to all messages, not just mentions**: outgoing webhook bots in
   Zulip fire on every message unless scoped by stream subscription; consider
   restricting the bot's stream access.
+- **Bot ignores first message in a new topic**: this was a bug where the HTTP
+  request context was cancelled before the goroutine finished processing.
+  Fixed in `zulip_handler.go` by using `context.WithoutCancel`.
