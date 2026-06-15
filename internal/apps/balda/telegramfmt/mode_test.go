@@ -102,29 +102,31 @@ func TestPromptRuleAndExample(t *testing.T) {
 			name: "rich_markdown",
 			mode: ModeRichMarkdown,
 			wantRuleParts: []string{
-				"Write rich-message Markdown or plain text",
+				"Use Telegram Rich Markdown",
 				"Balda sends it through Telegram rich messages",
+				RichMessagesDocsURL,
 				"Do not pre-escape Telegram MarkdownV2 reserved characters",
 			},
 			denyRuleParts: []string{
 				"Balda converts it to Telegram MarkdownV2",
 				"Use Telegram HTML parse mode",
 			},
-			wantExample: "## Build\n\n**Status:** success\n\nRun `balda start`.",
+			wantExample: richMarkdownExample,
 		},
 		{
 			name: "rich_html",
 			mode: ModeRichHTML,
 			wantRuleParts: []string{
-				"Use Telegram rich-message HTML",
-				"headings h1-h6",
-				"details/summary",
-				"lists, tables",
+				"Use Telegram Rich HTML",
+				RichMessagesDocsURL,
 				"Balda escapes unsafe raw <, >, &",
 			},
 			denyRuleParts: []string{
 				"Telegram HTML parse mode",
 				"Balda converts it to Telegram MarkdownV2",
+				"headings h1-h6",
+				"details/summary",
+				"lists, tables",
 			},
 			wantExample: "<h2>Build</h2><p><b>Status:</b> success</p><p>Run <code>balda start</code>.</p>",
 		},
@@ -171,12 +173,13 @@ func TestPromptRuleAndExample(t *testing.T) {
 			name: "unknown defaults to rich_markdown",
 			mode: "md",
 			wantRuleParts: []string{
-				"Write rich-message Markdown or plain text",
+				"Use Telegram Rich Markdown",
 				"Balda sends it through Telegram rich messages",
+				RichMessagesDocsURL,
 				"Do not pre-escape Telegram MarkdownV2 reserved characters",
 			},
 			denyRuleParts: []string{"Use Telegram HTML parse mode"},
-			wantExample:   "## Build\n\n**Status:** success\n\nRun `balda start`.",
+			wantExample:   richMarkdownExample,
 		},
 	}
 
@@ -198,5 +201,36 @@ func TestPromptRuleAndExample(t *testing.T) {
 				t.Fatalf("PromptRuleAndExample(%q) example = %q, want %q", tt.mode, gotExample, tt.wantExample)
 			}
 		})
+	}
+}
+
+func TestRichMarkdownPromptExampleCoversOfficialRichConstructs(t *testing.T) {
+	t.Parallel()
+
+	_, got := PromptRuleAndExample(ModeRichMarkdown)
+	for _, want := range []string{
+		"# Release notes",
+		"**Status:**",
+		"_verified_",
+		"~~obsolete path removed~~",
+		"==highlighted==",
+		"||internal note hidden||",
+		"[the runbook](https://example.com/runbook)",
+		"@owner",
+		"```bash\n",
+		"- [x] Update dependencies",
+		"1. Deploy",
+		"> Keep this summary short.",
+		"| Area | Result |",
+		"[^1]",
+		"$p95 < 250ms$",
+		"<details>",
+		"<summary>More context</summary>",
+		"![diagram](https://example.com/diagram.png)",
+		"\n---\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rich markdown example missing %q in:\n%s", want, got)
+		}
 	}
 }

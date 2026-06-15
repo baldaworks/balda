@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/memory"
+	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/norma/pkg/runtime/agentconfig"
 	"github.com/normahq/norma/pkg/runtime/agentfactory"
 	runtimeconfig "github.com/normahq/norma/pkg/runtime/appconfig"
@@ -222,8 +223,14 @@ func TestBuildBaldaInstruction_IncludesFormattingGuidance_DefaultRichMarkdown(t 
 
 	wantSnippets := []string{
 		"Telegram formatting mode: `rich_markdown`.",
-		"Write rich-message Markdown or plain text. Balda sends it through Telegram rich messages; use Markdown headings, blank lines, lists, links, blockquotes, fenced code, and tables when they make the answer easier to scan. Do not pre-escape Telegram MarkdownV2 reserved characters.",
-		"Example output: ## Build\n\n**Status:** success\n\nRun `balda start`.",
+		"Use Telegram Rich Markdown",
+		telegramfmt.RichMessagesDocsURL,
+		"Do not write Telegram MarkdownV2 syntax. Do not pre-escape Telegram MarkdownV2 reserved characters.",
+		"Example output: # Release notes",
+		"- [x] Update dependencies",
+		"| Area | Result |",
+		"<summary>More context</summary>",
+		"![diagram](https://example.com/diagram.png)",
 	}
 	for _, snippet := range wantSnippets {
 		if !strings.Contains(got, snippet) {

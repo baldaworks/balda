@@ -11,6 +11,40 @@ const (
 	ModeMarkdownV2   = "markdownv2"
 	ModeHTML         = "html"
 	ModeNone         = "none"
+
+	RichMessagesDocsURL = "https://core.telegram.org/bots/api#rich-messages"
+)
+
+const (
+	richMarkdownPromptRule = "Use Telegram Rich Markdown, following " + RichMessagesDocsURL + ". Balda sends it through Telegram rich messages. Do not write Telegram MarkdownV2 syntax. Do not pre-escape Telegram MarkdownV2 reserved characters."
+	richHTMLPromptRule     = "Use Telegram Rich HTML, following " + RichMessagesDocsURL + ". Balda sends it through Telegram rich messages. Balda escapes unsafe raw <, >, & while preserving supported rich HTML tags."
+	richMarkdownExample    = "" +
+		"# Release notes\n\n" +
+		"**Status:** shipped, _verified_, ~~obsolete path removed~~, ==highlighted==, ||internal note hidden||.\n\n" +
+		"Read [the runbook](https://example.com/runbook) or contact @owner.\n\n" +
+		"```bash\n" +
+		"go test ./...\n" +
+		"go tool golangci-lint run\n" +
+		"```\n\n" +
+		"- [x] Update dependencies\n" +
+		"- [ ] Watch production\n" +
+		"1. Deploy\n" +
+		"2. Verify\n\n" +
+		"> Keep this summary short.\n" +
+		"> Quote blocks can span lines.\n\n" +
+		"| Area | Result |\n" +
+		"| --- | --- |\n" +
+		"| API | OK |\n" +
+		"| Bot | OK |\n\n" +
+		"Use footnotes for details.[^1]\n\n" +
+		"Inline math: $p95 < 250ms$.\n\n" +
+		"<details>\n" +
+		"<summary>More context</summary>\n\n" +
+		"The retry path stayed enabled.\n\n" +
+		"</details>\n\n" +
+		"![diagram](https://example.com/diagram.png)\n\n" +
+		"---\n\n" +
+		"[^1]: Include only details that help the operator."
 )
 
 // NormalizeMode normalizes balda.telegram.formatting_mode.
@@ -59,9 +93,9 @@ func TelegramParseMode(mode string) string {
 func PromptRuleAndExample(mode string) (rule string, example string) {
 	switch NormalizeMode(mode) {
 	case ModeRichMarkdown:
-		return "Write rich-message Markdown or plain text. Balda sends it through Telegram rich messages; use Markdown headings, blank lines, lists, links, blockquotes, fenced code, and tables when they make the answer easier to scan. Do not pre-escape Telegram MarkdownV2 reserved characters.", "## Build\n\n**Status:** success\n\nRun `balda start`."
+		return richMarkdownPromptRule, richMarkdownExample
 	case ModeRichHTML:
-		return "Use Telegram rich-message HTML. Supported rich blocks include paragraphs, headings h1-h6, pre/code, blockquote, aside, details/summary, lists, tables, footer, hr, and rich inline tags such as b/strong, i/em, u/ins, s/strike/del, code, a href, tg-spoiler, sub, sup, mark, tg-math, tg-emoji, and tg-time. Balda escapes unsafe raw <, >, & while preserving supported rich HTML tags.", "<h2>Build</h2><p><b>Status:</b> success</p><p>Run <code>balda start</code>.</p>"
+		return richHTMLPromptRule, "<h2>Build</h2><p><b>Status:</b> success</p><p>Run <code>balda start</code>.</p>"
 	case ModeMarkdownV2:
 		return "Write normal Markdown or plain text. Balda converts it to Telegram MarkdownV2; use Markdown blank lines or lists for structure, and do not pre-escape Telegram MarkdownV2 reserved characters.", "**Build:** success. Run `balda start`."
 	case ModeHTML:
@@ -69,6 +103,6 @@ func PromptRuleAndExample(mode string) (rule string, example string) {
 	case ModeNone:
 		return "Use plain text only. Do not use Markdown or HTML markup.", "Build: success. Run balda start."
 	default:
-		return "Write rich-message Markdown or plain text. Balda sends it through Telegram rich messages; use Markdown headings, blank lines, lists, links, blockquotes, fenced code, and tables when they make the answer easier to scan. Do not pre-escape Telegram MarkdownV2 reserved characters.", "## Build\n\n**Status:** success\n\nRun `balda start`."
+		return richMarkdownPromptRule, richMarkdownExample
 	}
 }
