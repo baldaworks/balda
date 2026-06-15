@@ -39,6 +39,15 @@ type taskControlActor struct {
 	logger         zerolog.Logger
 }
 
+// SessionWorkCanceller synchronously stops queued, running, and task-backed
+// work for a session without going through the async control actor path.
+type SessionWorkCanceller struct {
+	turnDispatcher TurnQueue
+	tasks          *swarm.TaskService
+	taskRuns       *TaskRunRegistry
+	logger         zerolog.Logger
+}
+
 type taskControlActorParams struct {
 	fx.In
 
@@ -47,6 +56,53 @@ type taskControlActorParams struct {
 	TaskService    *swarm.TaskService
 	TaskRuns       *TaskRunRegistry
 	Logger         zerolog.Logger
+}
+
+type sessionWorkCancellerParams struct {
+	fx.In
+
+	TurnDispatcher *TurnDispatcher
+	TaskService    *swarm.TaskService
+	TaskRuns       *TaskRunRegistry
+	Logger         zerolog.Logger
+}
+
+func NewSessionWorkCanceller(params sessionWorkCancellerParams) *SessionWorkCanceller {
+	return &SessionWorkCanceller{
+		turnDispatcher: params.TurnDispatcher,
+		tasks:          params.TaskService,
+		taskRuns:       params.TaskRuns,
+		logger:         params.Logger.With().Str("component", "balda.session_work_canceller").Logger(),
+	}
+}
+
+func (c *SessionWorkCanceller) CancelWork(ctx context.Context, locator baldasession.SessionLocator, actor string, reason string) error {
+	if c == nil {
+		return nil
+	}
+	sessionID := strings.TrimSpace(locator.SessionID)
+	if sessionID == "" {
+		return fmt.Errorf("session id is required")
+	}
+	if c.turnDispatcher != nil {
+		if _, _, err := c.turnDispatcher.CancelSession(locator, true); err != nil {
+			return fmt.Errorf("cancel session turn queue: %w", err)
+		}
+	}
+	if c.tasks == nil {
+		return nil
+	}
+	taskIDs, err := c.tasks.CancelBySession(ctx, sessionID, actor, reason)
+	if err != nil {
+		return fmt.Errorf("cancel session tasks: %w", err)
+	}
+	if c.taskRuns == nil {
+		return nil
+	}
+	for _, taskID := range taskIDs {
+		c.taskRuns.Cancel(taskID)
+	}
+	return nil
 }
 
 func (a *taskControlActor) Address() string {

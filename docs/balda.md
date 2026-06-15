@@ -645,7 +645,7 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/goal <objective>` (owner/collaborator): starts goal work from the current session context in an isolated GoalKeeper workspace/state. The goal workspace is created from `balda.workspace.base_branch`, exported back automatically on success, and preserved for recovery when export fails. `/goal` requires `balda.workspace.mode` to resolve to an enabled git-worktree mode. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See the [goal workflow doc](goal-workflow.md).
   - concurrent `/goal` runs in the same session are rejected.
   - `/goal clear` stops active goal work for the current session only.
-- `/reset`, `/restart` (owner/collaborator): restart the current session history without closing the chat/topic. Both commands work in the current DM, public-chat, or thread-scoped session.
+- `/reset`, `/restart` (owner/collaborator): cancel current session work, clear the current session history, and immediately start a fresh runtime session without closing the chat/topic. Both commands work in the current DM, public-chat, or thread-scoped session.
 - `/locator` (owner/collaborator): replies with the current transport type and locator ref in the public config form `<channel_type>:<address_key>`. Use that value with `target: locator` in scheduler/webhook config.
 - `/close` (DM only, owner/collaborator): resets the current session history. In topic contexts, it also closes that topic.
 - `/cancel` (owner/collaborator): cancels the current session turn and drops queued turns for that session. It does not stop active `/goal` work.
@@ -1068,7 +1068,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 8. Polling mode resumes from persisted Telegram offset in balda state DB.
 9. Non-terminal provider progress sends throttled typing indicators in DM and public chats; thinking placeholders are DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode`; rich modes retry once through the corresponding legacy path on transport or formatting-validation errors.
-11. `/reset` and `/restart` restart the current session in any supported chat/thread context without closing the underlying chat/topic.
+11. `/reset` and `/restart` cancel current session work, clear history, and immediately start a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
 12. `/locator` returns the current session locator in the config form `<channel_type>:<address_key>`.
 13. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.
 14. With `balda.sessions.persistence=sqlite`, restart restores conversation history and explicit `/reset`, `/restart`, or `/close` clears it for the current session.

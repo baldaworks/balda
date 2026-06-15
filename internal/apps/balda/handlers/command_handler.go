@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
@@ -22,12 +23,18 @@ import (
 type commandSessionManager interface {
 	CreateSession(ctx context.Context, sessionCtx session.SessionContext, agentName string) error
 	GetAgentMetadata(agentName string) session.AgentMetadata
+	GetSessionInfo(ctx context.Context, sessionID string) (session.TopicSessionInfo, error)
 	BaldaProviderID() string
 	ResetSession(ctx context.Context, locator session.SessionLocator) error
+	TakeStartupNotice(sessionID string) string
 }
 
 type goalTaskService interface {
 	ListActiveGoalTasksBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error)
+}
+
+type sessionWorkCanceller interface {
+	CancelWork(ctx context.Context, locator session.SessionLocator, actor string, reason string) error
 }
 
 // CommandHandler handles Balda chat commands such as /topic, /goal, /reset,
@@ -37,6 +44,7 @@ type CommandHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	channel           *baldatelegram.Adapter
 	sessionManager    commandSessionManager
+	workCanceller     sessionWorkCanceller
 	actorDispatcher   actortransport.Dispatcher
 	taskService       goalTaskService
 	goalMaxIterations int
@@ -50,6 +58,7 @@ type commandHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
 	SessionManager    *session.Manager
+	WorkCanceller     *actors.SessionWorkCanceller `optional:"true"`
 	ActorDispatcher   actortransport.Dispatcher
 	TaskService       *swarm.TaskService `optional:"true"`
 	MaxIterations     int                `name:"balda_goal_max_iterations"`
@@ -157,9 +166,11 @@ func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx baldatel
 		return nil
 	}
 
-	if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), fmt.Sprintf("session canceled by %s command", commandName), false); err != nil {
-		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Str("command", commandName).Msg("failed to publish session cancel control command")
+	info, infoErr := h.sessionManager.GetSessionInfo(ctx, commandCtx.Locator.SessionID)
+	if infoErr != nil {
+		log.Debug().Err(infoErr).Str("session_id", commandCtx.Locator.SessionID).Str("command", commandName).Msg("session info unavailable before restart")
 	}
+	h.cancelSessionWork(ctx, commandCtx.Locator, fmt.Sprintf("session canceled by %s command", commandName), commandName)
 	if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Str("command", commandName).Msg("failed to reset session during session restart command")
 		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not reset this session."); sendErr != nil {
@@ -167,10 +178,74 @@ func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx baldatel
 		}
 		return nil
 	}
-	if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Session restarted."); err != nil {
-		log.Warn().Err(err).Int64("chat_id", commandCtx.ChatID).Int("topic_id", commandCtx.TopicID).Str("command", commandName).Msg("failed to send restart confirmation")
+	label := restartSessionLabel(commandCtx, info)
+	userID := restartSessionUserID(commandCtx, info)
+	if err := h.sessionManager.CreateSession(ctx, session.SessionContext{
+		Locator: commandCtx.Locator,
+		UserID:  userID,
+	}, label); err != nil {
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Str("command", commandName).Msg("failed to recreate session during session restart command")
+		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not restart this session."); sendErr != nil {
+			return sendErr
+		}
+		return nil
 	}
+
+	baldaProviderID := strings.TrimSpace(h.sessionManager.BaldaProviderID())
+	metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
+	welcomeName := restartWelcomeDisplayName(commandCtx, label)
+	welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, commandCtx.Locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	if err := sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, welcomeMsg); err != nil {
+		log.Warn().Err(err).Int64("chat_id", commandCtx.ChatID).Int("topic_id", commandCtx.TopicID).Str("command", commandName).Msg("failed to send restart welcome")
+	}
+	h.sendSessionStartupNotice(ctx, commandCtx.Locator, commandCtx.Locator.SessionID)
 	return nil
+}
+
+func (h *CommandHandler) cancelSessionWork(ctx context.Context, locator session.SessionLocator, reason string, commandName string) {
+	if h.workCanceller == nil {
+		return
+	}
+	if err := h.workCanceller.CancelWork(ctx, locator, "command."+commandName, reason); err != nil {
+		log.Warn().Err(err).Str("session_id", locator.SessionID).Str("command", commandName).Msg("failed to synchronously cancel session work")
+	}
+}
+
+func (h *CommandHandler) sendSessionStartupNotice(ctx context.Context, locator session.SessionLocator, sessionID string) {
+	if h.sessionManager == nil {
+		return
+	}
+	notice := strings.TrimSpace(h.sessionManager.TakeStartupNotice(sessionID))
+	if notice == "" {
+		return
+	}
+	if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, locator, notice); err != nil {
+		log.Warn().Err(err).Str("session_id", sessionID).Msg("failed to send restart startup notice")
+	}
+}
+
+func restartSessionLabel(commandCtx baldatelegram.CommandContext, info session.TopicSessionInfo) string {
+	if label := strings.TrimSpace(info.AgentName); label != "" {
+		return label
+	}
+	if commandCtx.IsDM && commandCtx.TopicID == 0 {
+		return ownerSessionLabel
+	}
+	return autoSessionLabel
+}
+
+func restartSessionUserID(commandCtx baldatelegram.CommandContext, info session.TopicSessionInfo) string {
+	if userID := strings.TrimSpace(info.UserID); userID != "" {
+		return userID
+	}
+	return baldatelegram.UserID(commandCtx.UserID)
+}
+
+func restartWelcomeDisplayName(commandCtx baldatelegram.CommandContext, label string) string {
+	if !commandCtx.IsDM {
+		return ownerSessionLabel
+	}
+	return label
 }
 
 func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {

@@ -24,6 +24,7 @@ const (
 	testTelegramUserID101 = "tg-101"
 	testParseModeMarkdown = "MarkdownV2"
 	testRootSessionID     = "tg-9001-0"
+	testTopicSessionID    = "tg-9001-123"
 )
 
 func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
@@ -53,7 +54,7 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	if tgClient.closedTopicIDs[0] != topicID {
 		t.Fatalf("CloseTopic call = %d, want topic=%d", tgClient.closedTopicIDs[0], topicID)
 	}
-	if sm.resetCalls[0].SessionID != "tg-9001-123" {
+	if sm.resetCalls[0].SessionID != testTopicSessionID {
 		t.Fatalf("ResetSession call = %+v, want session=tg-9001-123", sm.resetCalls[0])
 	}
 	assertLastSentContains(t, tgClient, "Closing this topic and resetting session history.")
@@ -61,6 +62,11 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 
 func TestCommandHandlerOnCommand_ResetTopicRestartsSessionWithoutClosingTopic(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	sm.sessionInfo[testTopicSessionID] = session.TopicSessionInfo{
+		SessionID: testTopicSessionID,
+		UserID:    "tg-202",
+		AgentName: "topic-alpha",
+	}
 
 	topicID := 123
 	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, &topicID))
@@ -74,29 +80,38 @@ func TestCommandHandlerOnCommand_ResetTopicRestartsSessionWithoutClosingTopic(t 
 	if len(sm.resetCalls) != 1 {
 		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
 	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
+	if len(sm.createCalls) != 1 {
+		t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
 	}
-	if len(turns.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	if sm.createCalls[0].SessionID != testTopicSessionID || sm.createCalls[0].UserID != "tg-202" || sm.createCalls[0].AgentName != "topic-alpha" {
+		t.Fatalf("CreateSession call = %+v, want preserved topic session", sm.createCalls[0])
 	}
-	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	if len(turns.cancelCalls) != 1 {
+		t.Fatalf("CancelSession calls = %d, want 1 synchronous call", len(turns.cancelCalls))
 	}
-	if sm.resetCalls[0].SessionID != "tg-9001-123" {
+	if got := turns.cancelCalls[0]; got.SessionID != testTopicSessionID || !got.ClearQueued {
+		t.Fatalf("CancelSession call = %+v, want session=tg-9001-123 clear queued", got)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
+	}
+	if sm.resetCalls[0].SessionID != testTopicSessionID {
 		t.Fatalf("ResetSession call = %+v, want session=tg-9001-123", sm.resetCalls[0])
 	}
-	assertLastSentContains(t, tgClient, "Session restarted.")
+	assertLastSentContains(t, tgClient, "Session Started")
+	assertLastSentContains(t, tgClient, "`topic\\-alpha`")
 }
 
 func TestCommandHandlerOnCommand_ResetRootRestartsSessionHistory(t *testing.T) {
 	tgClient := assertCommandResetsRootSession(t, "reset")
-	assertLastSentContains(t, tgClient, "Session restarted.")
+	assertLastSentContains(t, tgClient, "Session Started")
+	assertLastSentContains(t, tgClient, "`balda`")
 }
 
 func TestCommandHandlerOnCommand_RestartRootRestartsSessionHistory(t *testing.T) {
 	tgClient := assertCommandResetsRootSession(t, "restart")
-	assertLastSentContains(t, tgClient, "Session restarted.")
+	assertLastSentContains(t, tgClient, "Session Started")
+	assertLastSentContains(t, tgClient, "`balda`")
 }
 
 func TestCommandHandlerOnCommand_ResetWithArgsShowsUsage(t *testing.T) {
@@ -223,16 +238,23 @@ func TestCommandHandlerOnCommand_ResetInGroupChatAllowed(t *testing.T) {
 	if len(sm.resetCalls) != 1 {
 		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
 	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
+	if len(sm.createCalls) != 1 {
+		t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
 	}
-	if len(turns.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	if sm.createCalls[0].AgentName != autoSessionLabel {
+		t.Fatalf("CreateSession agent = %q, want %q", sm.createCalls[0].AgentName, autoSessionLabel)
+	}
+	if len(turns.cancelCalls) != 1 {
+		t.Fatalf("CancelSession calls = %d, want 1 synchronous call", len(turns.cancelCalls))
 	}
 	if sm.resetCalls[0].SessionID != "tg-9001-33" {
 		t.Fatalf("ResetSession call = %+v, want session=tg-9001-33", sm.resetCalls[0])
 	}
-	assertLastSentContains(t, tgClient, "Session restarted.")
+	if len(turns.commands) != 0 {
+		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Session Started")
+	assertLastSentContains(t, tgClient, "`balda`")
 }
 
 func TestCommandHandlerOnCommand_ResetFailureReportsError(t *testing.T) {
@@ -248,13 +270,74 @@ func TestCommandHandlerOnCommand_ResetFailureReportsError(t *testing.T) {
 	if len(sm.resetCalls) != 1 {
 		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
 	}
-	if len(turns.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	if len(sm.createCalls) != 0 {
+		t.Fatalf("CreateSession calls = %d, want 0 after reset failure", len(sm.createCalls))
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
 	}
 	if len(tgClient.closedTopicIDs) != 0 {
 		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
 	}
 	assertLastSentContains(t, tgClient, "Could not reset this session.")
+}
+
+func TestCommandHandlerOnCommand_ResetCreateFailureReportsRestartError(t *testing.T) {
+	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	sm.createErr = errors.New("create failed")
+
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(sm.resetCalls) != 1 {
+		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
+	}
+	if len(sm.createCalls) != 1 {
+		t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
+	}
+	assertLastSentContains(t, tgClient, "Could not restart this session.")
+}
+
+func TestCommandHandlerOnCommand_ResetSendsStartupNoticeAfterWelcome(t *testing.T) {
+	handler, sm, _, tgClient := newCommandHandlerTestHarness(t)
+	sm.startupNotices[testRootSessionID] = "workspace sync skipped"
+
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(tgClient.messages) < 2 {
+		t.Fatalf("sent messages = %d, want welcome and startup notice", len(tgClient.messages))
+	}
+	if got := tgClient.messages[len(tgClient.messages)-2].Text; !strings.Contains(got, "Session Started") {
+		t.Fatalf("penultimate message = %q, want welcome", got)
+	}
+	assertLastSentContains(t, tgClient, "workspace sync skipped")
+}
+
+func TestCommandHandlerOnCommand_ResetCancelsWorkSynchronously(t *testing.T) {
+	handler, _, turns, _ := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	if len(turns.cancelCalls) != 1 {
+		t.Fatalf("CancelWork calls = %d, want 1", len(turns.cancelCalls))
+	}
+	if got := turns.cancelCalls[0]; got.SessionID != testRootSessionID || got.Actor != "command.reset" || !strings.Contains(got.Reason, "reset") {
+		t.Fatalf("CancelWork call = %+v, want root command.reset", got)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
+	}
 }
 
 func TestCommandHandlerOnCommand_CloseRootResetsSessionHistory(t *testing.T) {
@@ -616,7 +699,7 @@ func TestCommandHandlerOnCommand_GoalClearExtraStartsGoal(t *testing.T) {
 
 func TestCommandHandlerOnCommand_GoalRejectsWhenActiveGoalExists(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.taskService = fakeGoalTaskService{
+	handler.taskService = &fakeGoalTaskService{
 		active: []baldastate.SwarmTaskRecord{{
 			ID:        "goal-1",
 			SessionID: "tg-9001-0",
@@ -644,7 +727,7 @@ func TestCommandHandlerSubmitGoalTask_RejectsWhenActiveGoalExists(t *testing.T) 
 	handler := &CommandHandler{
 		actorDispatcher:   bus,
 		goalMaxIterations: 7,
-		taskService: fakeGoalTaskService{
+		taskService: &fakeGoalTaskService{
 			active: []baldastate.SwarmTaskRecord{{
 				ID:        "goal-active",
 				SessionID: locator.SessionID,
@@ -813,14 +896,35 @@ func assertCommandResetsRootSession(t *testing.T, command string) *fakeTelegramC
 	if len(sm.resetCalls) != 1 {
 		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
 	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
-	}
-	if len(turns.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(turns.commands))
-	}
-	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	if command == "close" {
+		if len(sm.createCalls) != 0 {
+			t.Fatalf("CreateSession calls = %d, want 0 for /close", len(sm.createCalls))
+		}
+		if len(turns.cancelCalls) != 0 {
+			t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
+		}
+		if len(turns.commands) != 1 {
+			t.Fatalf("published commands = %d, want 1", len(turns.commands))
+		}
+		if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+			t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+		}
+	} else {
+		if len(sm.createCalls) != 1 {
+			t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
+		}
+		if sm.createCalls[0].SessionID != testRootSessionID || sm.createCalls[0].UserID != testTelegramUserID101 || sm.createCalls[0].AgentName != ownerSessionLabel {
+			t.Fatalf("CreateSession call = %+v, want root restart session", sm.createCalls[0])
+		}
+		if len(turns.cancelCalls) != 1 {
+			t.Fatalf("CancelSession calls = %d, want 1 synchronous call", len(turns.cancelCalls))
+		}
+		if got := turns.cancelCalls[0]; got.SessionID != testRootSessionID || !got.ClearQueued {
+			t.Fatalf("CancelSession call = %+v, want root clear queued", got)
+		}
+		if len(turns.commands) != 0 {
+			t.Fatalf("published control commands = %d, want 0", len(turns.commands))
+		}
 	}
 	if sm.resetCalls[0].SessionID != testRootSessionID {
 		t.Fatalf("ResetSession call = %+v, want session=%s", sm.resetCalls[0], testRootSessionID)
@@ -829,11 +933,14 @@ func assertCommandResetsRootSession(t *testing.T, command string) *fakeTelegramC
 }
 
 type fakeCommandSessionManager struct {
-	resetCalls    []resetSessionCall
-	createCalls   []createSessionCall
-	baldaProvider string
-	metadata      session.AgentMetadata
-	resetErr      error
+	resetCalls     []resetSessionCall
+	createCalls    []createSessionCall
+	baldaProvider  string
+	metadata       session.AgentMetadata
+	sessionInfo    map[string]session.TopicSessionInfo
+	startupNotices map[string]string
+	resetErr       error
+	createErr      error
 }
 
 type createSessionCall struct {
@@ -849,14 +956,42 @@ type resetSessionCall struct {
 type cancelSessionCall struct {
 	SessionID   string
 	ClearQueued bool
+	Actor       string
+	Reason      string
 }
 
 type fakeGoalTaskService struct {
-	active []baldastate.SwarmTaskRecord
-	err    error
+	active      []baldastate.SwarmTaskRecord
+	err         error
+	cancelCalls []cancelTasksCall
+	cancelErr   error
 }
 
-func (f fakeGoalTaskService) ListActiveGoalTasksBySession(_ context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
+type cancelTasksCall struct {
+	SessionID string
+	Actor     string
+	Reason    string
+}
+
+func (f *fakeGoalTaskService) CancelBySession(_ context.Context, sessionID string, actor string, reason string) ([]string, error) {
+	f.cancelCalls = append(f.cancelCalls, cancelTasksCall{
+		SessionID: sessionID,
+		Actor:     actor,
+		Reason:    reason,
+	})
+	if f.cancelErr != nil {
+		return nil, f.cancelErr
+	}
+	taskIDs := make([]string, 0, len(f.active))
+	for _, task := range f.active {
+		if task.SessionID == sessionID {
+			taskIDs = append(taskIDs, task.ID)
+		}
+	}
+	return taskIDs, nil
+}
+
+func (f *fakeGoalTaskService) ListActiveGoalTasksBySession(_ context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -875,7 +1010,7 @@ func (f *fakeCommandSessionManager) CreateSession(_ context.Context, sessionCtx 
 		UserID:    sessionCtx.UserID,
 		AgentName: agentName,
 	})
-	return nil
+	return f.createErr
 }
 
 func (f *fakeCommandSessionManager) GetAgentMetadata(string) session.AgentMetadata {
@@ -889,6 +1024,26 @@ func (f *fakeCommandSessionManager) BaldaProviderID() string {
 func (f *fakeCommandSessionManager) ResetSession(_ context.Context, locator session.SessionLocator) error {
 	f.resetCalls = append(f.resetCalls, resetSessionCall{SessionID: locator.SessionID})
 	return f.resetErr
+}
+
+func (f *fakeCommandSessionManager) GetSessionInfo(_ context.Context, sessionID string) (session.TopicSessionInfo, error) {
+	if f.sessionInfo == nil {
+		return session.TopicSessionInfo{}, errors.New("not found")
+	}
+	info, ok := f.sessionInfo[sessionID]
+	if !ok {
+		return session.TopicSessionInfo{}, errors.New("not found")
+	}
+	return info, nil
+}
+
+func (f *fakeCommandSessionManager) TakeStartupNotice(sessionID string) string {
+	if f.startupNotices == nil {
+		return ""
+	}
+	notice := f.startupNotices[sessionID]
+	delete(f.startupNotices, sessionID)
+	return notice
 }
 
 type fakeTurnDispatcher struct {
@@ -934,6 +1089,16 @@ func (f *fakeTurnDispatcher) CancelSession(locator session.SessionLocator, clear
 	return false, 0, nil
 }
 
+func (f *fakeTurnDispatcher) CancelWork(_ context.Context, locator session.SessionLocator, actor string, reason string) error {
+	f.cancelCalls = append(f.cancelCalls, cancelSessionCall{
+		SessionID:   locator.SessionID,
+		ClearQueued: true,
+		Actor:       actor,
+		Reason:      reason,
+	})
+	return nil
+}
+
 func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSessionManager, *fakeTurnDispatcher, *fakeTelegramClient) {
 	t.Helper()
 
@@ -961,6 +1126,14 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 	sessionManager := &fakeCommandSessionManager{}
 	turnDispatcher := &fakeTurnDispatcher{deliveryAdapter: adapter}
 	sessionManager.baldaProvider = testProviderAlpha
+	sessionManager.sessionInfo = map[string]session.TopicSessionInfo{
+		testRootSessionID: {
+			SessionID: testRootSessionID,
+			UserID:    testTelegramUserID101,
+			AgentName: ownerSessionLabel,
+		},
+	}
+	sessionManager.startupNotices = make(map[string]string)
 	sessionManager.metadata = session.AgentMetadata{
 		Type:       "opencode_acp",
 		Model:      "gpt-5",
@@ -971,7 +1144,9 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 		collaboratorStore: collaboratorStore,
 		channel:           adapter,
 		sessionManager:    sessionManager,
+		workCanceller:     turnDispatcher,
 		actorDispatcher:   turnDispatcher,
+		taskService:       &fakeGoalTaskService{},
 		goalMaxIterations: normalizeGoalMaxIterations(0),
 		userHandler: &userHandler{
 			ownerStore:        ownerStore,
