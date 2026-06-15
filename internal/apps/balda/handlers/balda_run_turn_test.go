@@ -37,9 +37,11 @@ const (
 
 type baldaRunTurnTelegramClient struct {
 	client.ClientWithResponsesInterface
-	drafts      []client.SendMessageDraftJSONRequestBody
-	messages    []client.SendMessageJSONRequestBody
-	chatActions []client.SendChatActionJSONRequestBody
+	drafts       []client.SendMessageDraftJSONRequestBody
+	richDrafts   []client.SendRichMessageDraftJSONRequestBody
+	messages     []client.SendMessageJSONRequestBody
+	richMessages []client.SendRichMessageJSONRequestBody
+	chatActions  []client.SendChatActionJSONRequestBody
 }
 
 func (h *BaldaHandler) runTurn(
@@ -74,6 +76,24 @@ func (c *baldaRunTurnTelegramClient) SendMessageWithResponse(
 	}, nil
 }
 
+func (c *baldaRunTurnTelegramClient) SendRichMessageWithResponse(
+	_ context.Context,
+	body client.SendRichMessageJSONRequestBody,
+	_ ...client.RequestEditorFn,
+) (*client.SendRichMessageResponse, error) {
+	c.richMessages = append(c.richMessages, body)
+	return &client.SendRichMessageResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
+		JSON200: &struct {
+			Ok     client.SendRichMessage200Ok `json:"ok"`
+			Result client.Message              `json:"result"`
+		}{
+			Ok:     true,
+			Result: client.Message{MessageId: len(c.richMessages)},
+		},
+	}, nil
+}
+
 func (c *baldaRunTurnTelegramClient) SendMessageDraftWithResponse(
 	_ context.Context,
 	body client.SendMessageDraftJSONRequestBody,
@@ -85,6 +105,24 @@ func (c *baldaRunTurnTelegramClient) SendMessageDraftWithResponse(
 		JSON200: &struct {
 			Ok     client.SendMessageDraft200Ok `json:"ok"`
 			Result bool                         `json:"result"`
+		}{
+			Ok:     true,
+			Result: true,
+		},
+	}, nil
+}
+
+func (c *baldaRunTurnTelegramClient) SendRichMessageDraftWithResponse(
+	_ context.Context,
+	body client.SendRichMessageDraftJSONRequestBody,
+	_ ...client.RequestEditorFn,
+) (*client.SendRichMessageDraftResponse, error) {
+	c.richDrafts = append(c.richDrafts, body)
+	return &client.SendRichMessageDraftResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
+		JSON200: &struct {
+			Ok     client.SendRichMessageDraft200Ok `json:"ok"`
+			Result bool                             `json:"result"`
 		}{
 			Ok:     true,
 			Result: true,
@@ -172,6 +210,7 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 
 	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("markdownv2")
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
@@ -229,6 +268,7 @@ func TestRunTurn_SkipsTypingAndDraftWhenAllProgressDisabled(t *testing.T) {
 
 	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("markdownv2")
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
@@ -261,6 +301,7 @@ func TestRunTurn_SendsTypingWithoutThinkingDraftInPublicChat(t *testing.T) {
 
 	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("markdownv2")
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
@@ -556,6 +597,7 @@ func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 
 	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("markdownv2")
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
@@ -597,6 +639,7 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 
 	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("none")
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
@@ -644,6 +687,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 
 	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("none")
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
@@ -768,11 +812,15 @@ func TestRunTurn_SkipsExactDuplicateFinalAfterStreamedText(t *testing.T) {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.messages) != 1 {
-		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
+	if len(tgClient.richMessages) != 1 {
+		t.Fatalf("rich message calls = %d, want 1", len(tgClient.richMessages))
 	}
-	if got := strings.TrimSpace(tgClient.messages[0].Text); got != baldaRunTurnFinalAnswerText {
-		t.Fatalf("message text = %q, want final answer", tgClient.messages[0].Text)
+	gotMarkdown := tgClient.richMessages[0].RichMessage.Markdown
+	if gotMarkdown == nil {
+		t.Fatal("rich message markdown = nil, want final answer")
+	}
+	if got := strings.TrimSpace(*gotMarkdown); got != baldaRunTurnFinalAnswerText {
+		t.Fatalf("rich markdown = %q, want final answer", *gotMarkdown)
 	}
 }
 
@@ -900,11 +948,18 @@ func TestRunTurn_SendsGenericMessageWhenOnlyNonFinalTextExistsOnTurnComplete(t *
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.messages) != 1 {
-		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
+	if len(tgClient.richMessages) != 1 {
+		t.Fatalf("rich message calls = %d, want 1", len(tgClient.richMessages))
 	}
-	if got := tgClient.messages[0].Text; got != baldaRunTurnGenericEmptyTerminalMessage {
-		t.Fatalf("message text = %q, want %q", got, baldaRunTurnGenericEmptyTerminalMessage)
+	gotHTML := tgClient.richMessages[0].RichMessage.Html
+	if gotHTML == nil {
+		t.Fatal("rich message html = nil, want generic terminal message")
+	}
+	if got := *gotHTML; got != baldaRunTurnGenericEmptyTerminalMessage {
+		t.Fatalf("rich html = %q, want %q", got, baldaRunTurnGenericEmptyTerminalMessage)
+	}
+	if tgClient.richMessages[0].RichMessage.SkipEntityDetection == nil || !*tgClient.richMessages[0].RichMessage.SkipEntityDetection {
+		t.Fatalf("skip_entity_detection = %v, want true", tgClient.richMessages[0].RichMessage.SkipEntityDetection)
 	}
 }
 
@@ -1548,6 +1603,8 @@ func newBaldaRunTurnTestHandler(t *testing.T, agentReplyFormattingNone bool) (*B
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	if agentReplyFormattingNone {
 		msg.SetAgentReplyFormattingMode("none")
+	} else {
+		msg.SetAgentReplyFormattingMode("markdownv2")
 	}
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,

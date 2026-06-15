@@ -246,7 +246,7 @@ balda:
   provider: <provider_id>
   telegram:
     token: ""
-    formatting_mode: "markdownv2"
+    formatting_mode: "rich_markdown"
     plan_updates: true
     webhook:
       enabled: false

@@ -207,10 +207,38 @@ func TestBuildBaldaInstruction_IncludesDirectModeSettingsWhenWorkspaceDisabled(t
 	}
 }
 
-func TestBuildBaldaInstruction_IncludesFormattingGuidance_DefaultMarkdownV2(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesFormattingGuidance_DefaultRichMarkdown(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{}
+	got := builder.buildBaldaInstruction(
+		"tg-1-2",
+		"telegram",
+		"alpha",
+		"norma/balda/tg-1-2",
+		"/tmp/work",
+		"main",
+	)
+
+	wantSnippets := []string{
+		"Telegram formatting mode: `rich_markdown`.",
+		"Write rich-message Markdown or plain text. Balda sends it through Telegram rich messages; use Markdown headings, blank lines, lists, links, blockquotes, fenced code, and tables when they make the answer easier to scan. Do not pre-escape Telegram MarkdownV2 reserved characters.",
+		"Example output: ## Build\n\n**Status:** success\n\nRun `balda start`.",
+	}
+	for _, snippet := range wantSnippets {
+		if !strings.Contains(got, snippet) {
+			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
+		}
+	}
+	if strings.Contains(got, "core.telegram.org/bots/api#formatting-options") {
+		t.Fatalf("buildBaldaInstruction() unexpectedly contains docs URL:\n%s", got)
+	}
+}
+
+func TestBuildBaldaInstruction_IncludesFormattingGuidance_MarkdownV2(t *testing.T) {
+	t.Parallel()
+
+	builder := &Builder{telegramFormattingMode: "markdownv2"}
 	got := builder.buildBaldaInstruction(
 		"tg-1-2",
 		"telegram",
@@ -229,9 +257,6 @@ func TestBuildBaldaInstruction_IncludesFormattingGuidance_DefaultMarkdownV2(t *t
 		if !strings.Contains(got, snippet) {
 			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
 		}
-	}
-	if strings.Contains(got, "core.telegram.org/bots/api#formatting-options") {
-		t.Fatalf("buildBaldaInstruction() unexpectedly contains docs URL:\n%s", got)
 	}
 }
 

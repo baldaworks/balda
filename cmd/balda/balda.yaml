@@ -10,11 +10,13 @@ balda:
     # Telegram bot token (required)
     # Set via BALDA_TELEGRAM_TOKEN env var
     token: ""
-    # Formatting mode for final agent replies:
-    # - markdownv2: model writes Markdown/plain text; balda converts to Telegram MarkdownV2 (default)
-    # - html: model writes Telegram HTML; balda sends with Telegram HTML parse mode
-    # - none: balda sends plain text without parse_mode
-    formatting_mode: "markdownv2"
+    # Formatting mode for outbound Telegram text:
+    # - rich_markdown: model writes Markdown/plain text; balda sends Telegram rich Markdown (default)
+    # - rich_html: model writes rich-message HTML; balda sends Telegram rich HTML
+    # - markdownv2: legacy parse_mode=MarkdownV2 conversion
+    # - html: legacy parse_mode=HTML delivery
+    # - none: legacy plain text without parse_mode
+    formatting_mode: "rich_markdown"
     # Surface work-plan updates in balda progress.
     # - true: DM thinking placeholders show plan snapshots; public chats/topics receive plain-text plan messages
     # - false: keep typing / Thinking... progress only

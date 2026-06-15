@@ -28,8 +28,8 @@ func TestTaskDeliveryActorDeduplicatesSentDelivery(t *testing.T) {
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() duplicate error = %v", err)
 	}
-	if got := len(tgClient.messages); got != 1 {
-		t.Fatalf("sent telegram messages = %d, want 1", got)
+	if got := len(tgClient.richMessages); got != 1 {
+		t.Fatalf("sent rich telegram messages = %d, want 1", got)
 	}
 }
 
@@ -43,8 +43,8 @@ func TestTaskDeliveryActorDefersDuplicatePendingDelivery(t *testing.T) {
 	if err := actor.Handle(ctx, env); swarm.ClassifyError(err) != swarm.ErrorKindTransient {
 		t.Fatalf("Handle() error kind = %s, want transient: %v", swarm.ClassifyError(err), err)
 	}
-	if got := len(tgClient.messages); got != 0 {
-		t.Fatalf("sent telegram messages = %d, want 0 while duplicate is pending", got)
+	if got := len(tgClient.richMessages); got != 0 {
+		t.Fatalf("sent rich telegram messages = %d, want 0 while duplicate is pending", got)
 	}
 }
 
@@ -58,8 +58,8 @@ func TestTaskDeliveryActorDoesNotRetryAmbiguousSendingDelivery(t *testing.T) {
 	if err := actor.Handle(ctx, env); swarm.ClassifyError(err) != swarm.ErrorKindTransient {
 		t.Fatalf("Handle() error kind = %s, want transient: %v", swarm.ClassifyError(err), err)
 	}
-	if got := len(tgClient.messages); got != 0 {
-		t.Fatalf("sent telegram messages = %d, want 0 for ambiguous sending delivery", got)
+	if got := len(tgClient.richMessages); got != 0 {
+		t.Fatalf("sent rich telegram messages = %d, want 0 for ambiguous sending delivery", got)
 	}
 }
 
@@ -131,8 +131,8 @@ func TestTaskDeliveryActorSendsDraftWithoutPersistingDelivery(t *testing.T) {
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if got := len(tgClient.drafts); got != 1 {
-		t.Fatalf("sent telegram drafts = %d, want 1", got)
+	if got := len(tgClient.richDrafts); got != 1 {
+		t.Fatalf("sent rich telegram drafts = %d, want 1", got)
 	}
 	payload := DeliveryPayload{TaskID: "task-1", Locator: locator, Mode: DeliveryModeDraftPlain, Text: "draft text", DraftID: 7}
 	record, created, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusPending))

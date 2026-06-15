@@ -6,9 +6,11 @@ import (
 )
 
 const (
-	ModeMarkdownV2 = "markdownv2"
-	ModeHTML       = "html"
-	ModeNone       = "none"
+	ModeRichMarkdown = "rich_markdown"
+	ModeRichHTML     = "rich_html"
+	ModeMarkdownV2   = "markdownv2"
+	ModeHTML         = "html"
+	ModeNone         = "none"
 )
 
 // NormalizeMode normalizes balda.telegram.formatting_mode.
@@ -16,7 +18,7 @@ const (
 func NormalizeMode(raw string) string {
 	trimmed := strings.ToLower(strings.TrimSpace(raw))
 	if trimmed == "" {
-		return ModeMarkdownV2
+		return ModeRichMarkdown
 	}
 	return trimmed
 }
@@ -25,12 +27,14 @@ func NormalizeMode(raw string) string {
 func ValidateMode(raw string) (string, error) {
 	mode := NormalizeMode(raw)
 	switch mode {
-	case ModeMarkdownV2, ModeHTML, ModeNone:
+	case ModeRichMarkdown, ModeRichHTML, ModeMarkdownV2, ModeHTML, ModeNone:
 		return mode, nil
 	default:
 		return "", fmt.Errorf(
-			"invalid balda.telegram.formatting_mode %q: allowed values are %q, %q, %q",
+			"invalid balda.telegram.formatting_mode %q: allowed values are %q, %q, %q, %q, %q",
 			strings.TrimSpace(raw),
+			ModeRichMarkdown,
+			ModeRichHTML,
 			ModeMarkdownV2,
 			ModeHTML,
 			ModeNone,
@@ -44,7 +48,7 @@ func TelegramParseMode(mode string) string {
 	switch NormalizeMode(mode) {
 	case ModeHTML:
 		return "HTML"
-	case ModeNone:
+	case ModeNone, ModeRichMarkdown, ModeRichHTML:
 		return ""
 	default:
 		return "MarkdownV2"
@@ -54,11 +58,17 @@ func TelegramParseMode(mode string) string {
 // PromptRuleAndExample returns concise mode-specific instruction text.
 func PromptRuleAndExample(mode string) (rule string, example string) {
 	switch NormalizeMode(mode) {
+	case ModeRichMarkdown:
+		return "Write rich-message Markdown or plain text. Balda sends it through Telegram rich messages; use Markdown headings, blank lines, lists, links, blockquotes, fenced code, and tables when they make the answer easier to scan. Do not pre-escape Telegram MarkdownV2 reserved characters.", "## Build\n\n**Status:** success\n\nRun `balda start`."
+	case ModeRichHTML:
+		return "Use Telegram rich-message HTML. Supported rich blocks include paragraphs, headings h1-h6, pre/code, blockquote, aside, details/summary, lists, tables, footer, hr, and rich inline tags such as b/strong, i/em, u/ins, s/strike/del, code, a href, tg-spoiler, sub, sup, mark, tg-math, tg-emoji, and tg-time. Balda escapes unsafe raw <, >, & while preserving supported rich HTML tags.", "<h2>Build</h2><p><b>Status:</b> success</p><p>Run <code>balda start</code>.</p>"
+	case ModeMarkdownV2:
+		return "Write normal Markdown or plain text. Balda converts it to Telegram MarkdownV2; use Markdown blank lines or lists for structure, and do not pre-escape Telegram MarkdownV2 reserved characters.", "**Build:** success. Run `balda start`."
 	case ModeHTML:
 		return "Use Telegram HTML parse mode. Supported tags: b/strong, i/em, u/ins, s/strike/del, tg-spoiler or span class=\"tg-spoiler\", a href, code, pre with nested code class=\"language-...\", blockquote expandable, tg-emoji emoji-id, tg-time unix/format. Balda escapes unsafe raw <, >, & while preserving supported Telegram HTML tags.", "<b>Build:</b> success. Run <code>balda start</code>."
 	case ModeNone:
 		return "Use plain text only. Do not use Markdown or HTML markup.", "Build: success. Run balda start."
 	default:
-		return "Write normal Markdown or plain text. Balda converts it to Telegram MarkdownV2; use Markdown blank lines or lists for structure, and do not pre-escape Telegram MarkdownV2 reserved characters.", "**Build:** success. Run `balda start`."
+		return "Write rich-message Markdown or plain text. Balda sends it through Telegram rich messages; use Markdown headings, blank lines, lists, links, blockquotes, fenced code, and tables when they make the answer easier to scan. Do not pre-escape Telegram MarkdownV2 reserved characters.", "## Build\n\n**Status:** success\n\nRun `balda start`."
 	}
 }

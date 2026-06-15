@@ -17,10 +17,10 @@ const telegramSendTimeout = 30 * time.Second
 
 // Messenger handles all Telegram message sending for Balda.
 type Messenger struct {
-	client                   client.ClientWithResponsesInterface
-	responder                *respond.Responder
-	logger                   zerolog.Logger
-	agentReplyFormattingMode string
+	client                 client.ClientWithResponsesInterface
+	responder              *respond.Responder
+	logger                 zerolog.Logger
+	telegramFormattingMode string
 }
 
 // AgentReplyResult carries provider delivery metadata for a final agent reply.
@@ -33,20 +33,32 @@ type AgentReplyResult struct {
 // NewMessenger creates a new Messenger.
 func NewMessenger(client client.ClientWithResponsesInterface, logger zerolog.Logger) *Messenger {
 	return &Messenger{
-		client:                   client,
-		responder:                respond.New(client),
-		logger:                   logger.With().Str("component", "balda.messenger").Logger(),
-		agentReplyFormattingMode: telegramfmt.ModeMarkdownV2,
+		client:                 client,
+		responder:              respond.New(client),
+		logger:                 logger.With().Str("component", "balda.messenger").Logger(),
+		telegramFormattingMode: telegramfmt.ModeRichMarkdown,
 	}
 }
 
-// SetAgentReplyFormattingMode sets balda.telegram.formatting_mode for final agent responses.
+// SetAgentReplyFormattingMode sets balda.telegram.formatting_mode.
 func (m *Messenger) SetAgentReplyFormattingMode(mode string) {
-	m.agentReplyFormattingMode = telegramfmt.NormalizeMode(mode)
+	m.SetTelegramFormattingMode(mode)
+}
+
+// SetTelegramFormattingMode sets balda.telegram.formatting_mode for outbound Telegram text.
+func (m *Messenger) SetTelegramFormattingMode(mode string) {
+	m.telegramFormattingMode = telegramfmt.NormalizeMode(mode)
 }
 
 // SendDraftPlain sends a plain-text draft (no parse_mode).
 func (m *Messenger) SendDraftPlain(ctx context.Context, chatID int64, draftID int, text string, topicID int) error {
+	if m.richMessagesEnabled() {
+		return m.sendRichDraftWithFallback(ctx, chatID, draftID, richPlain(text), topicID, text)
+	}
+	return m.sendDraftPlainLegacy(ctx, chatID, draftID, text, topicID)
+}
+
+func (m *Messenger) sendDraftPlainLegacy(ctx context.Context, chatID int64, draftID int, text string, topicID int) error {
 	m.logger.Debug().
 		Int64("chat_id", chatID).
 		Int("draft_id", draftID).
@@ -79,6 +91,17 @@ func (m *Messenger) SendDraftPlain(ctx context.Context, chatID int64, draftID in
 
 // SendPlain sends a plain-text message.
 func (m *Messenger) SendPlain(ctx context.Context, chatID int64, text string, topicID int) error {
+	if m.richMessagesEnabled() {
+		_, err := m.sendRichMessageWithFallback(ctx, chatID, richPlain(text), topicID, func(ctx context.Context) (int, error) {
+			return m.sendPlainLegacy(ctx, chatID, text, topicID)
+		})
+		return err
+	}
+	_, err := m.sendPlainLegacy(ctx, chatID, text, topicID)
+	return err
+}
+
+func (m *Messenger) sendPlainLegacy(ctx context.Context, chatID int64, text string, topicID int) (int, error) {
 	target := respond.ChatTarget{ChatID: chatID}
 	if topicID != 0 {
 		target.MessageThreadID = &topicID
@@ -86,20 +109,33 @@ func (m *Messenger) SendPlain(ctx context.Context, chatID int64, text string, to
 	sendCtx, cancel := telegramSendContext(ctx)
 	defer cancel()
 
-	_, err := m.responder.SendText(sendCtx, target, text)
+	msg, err := m.responder.SendText(sendCtx, target, text)
 	if err != nil {
-		return fmt.Errorf("sending message to chat %d: %w", chatID, err)
+		return 0, fmt.Errorf("sending message to chat %d: %w", chatID, err)
 	}
-	return nil
+	if msg == nil {
+		return 0, nil
+	}
+	return msg.MessageId, nil
 }
 
 // SendMarkdown converts standard Markdown to Telegram MarkdownV2 and sends.
 func (m *Messenger) SendMarkdown(ctx context.Context, chatID int64, text string, topicID int) error {
+	if m.richMessagesEnabled() {
+		_, err := m.sendRichMessageWithFallback(ctx, chatID, richMarkdown(text), topicID, func(ctx context.Context) (int, error) {
+			return m.sendMarkdownLegacy(ctx, chatID, text, topicID)
+		})
+		return err
+	}
 	_, err := m.sendMarkdown(ctx, chatID, text, topicID)
 	return err
 }
 
 func (m *Messenger) sendMarkdown(ctx context.Context, chatID int64, text string, topicID int) (int, error) {
+	return m.sendMarkdownLegacy(ctx, chatID, text, topicID)
+}
+
+func (m *Messenger) sendMarkdownLegacy(ctx context.Context, chatID int64, text string, topicID int) (int, error) {
 	payload, err := telegramfmt.MarkdownV2(text)
 	if err != nil {
 		m.logger.Warn().Err(err).Msg("failed to convert markdown to telegram format, falling back to escaped literal")
@@ -117,7 +153,30 @@ func (m *Messenger) SendAgentReply(ctx context.Context, chatID int64, text strin
 // SendAgentReplyWithResult sends final model output and returns provider message metadata.
 func (m *Messenger) SendAgentReplyWithResult(ctx context.Context, chatID int64, text string, topicID int) (AgentReplyResult, error) {
 	var result AgentReplyResult
-	switch telegramfmt.NormalizeMode(m.agentReplyFormattingMode) {
+	switch telegramfmt.NormalizeMode(m.telegramFormattingMode) {
+	case telegramfmt.ModeRichHTML:
+		messageID, err := m.sendRichMessageWithFallback(ctx, chatID, richHTML(telegramfmt.HTML(text)), topicID, func(ctx context.Context) (int, error) {
+			return m.sendMessageWithMode(ctx, chatID, telegramfmt.HTML(text), topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeHTML), "send message with HTML")
+		})
+		if err != nil {
+			return AgentReplyResult{}, err
+		}
+		return AgentReplyResult{FirstMessageID: messageID, LastMessageID: messageID, MessageCount: 1}, nil
+	case telegramfmt.ModeRichMarkdown:
+		for _, chunk := range telegramfmt.SplitMarkdownMessageChunks(text) {
+			messageID, err := m.sendRichMessageWithFallback(ctx, chatID, richMarkdown(chunk), topicID, func(ctx context.Context) (int, error) {
+				return m.sendMarkdownLegacy(ctx, chatID, chunk, topicID)
+			})
+			if err != nil {
+				return AgentReplyResult{}, err
+			}
+			if result.MessageCount == 0 {
+				result.FirstMessageID = messageID
+			}
+			result.LastMessageID = messageID
+			result.MessageCount++
+		}
+		return result, nil
 	case telegramfmt.ModeHTML:
 		messageID, err := m.sendMessageWithMode(ctx, chatID, telegramfmt.HTML(text), topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeHTML), "send message with HTML")
 		if err != nil {
@@ -144,6 +203,159 @@ func (m *Messenger) SendAgentReplyWithResult(ctx context.Context, chatID int64, 
 		}
 		return result, nil
 	}
+}
+
+func (m *Messenger) richMessagesEnabled() bool {
+	switch telegramfmt.NormalizeMode(m.telegramFormattingMode) {
+	case telegramfmt.ModeRichMarkdown, telegramfmt.ModeRichHTML:
+		return true
+	default:
+		return false
+	}
+}
+
+func richPlain(text string) client.InputRichMessage {
+	skipEntityDetection := true
+	return client.InputRichMessage{
+		Html:                stringPtr(telegramfmt.HTML(text)),
+		SkipEntityDetection: &skipEntityDetection,
+	}
+}
+
+func richMarkdown(text string) client.InputRichMessage {
+	return client.InputRichMessage{Markdown: stringPtr(text)}
+}
+
+func richHTML(text string) client.InputRichMessage {
+	return client.InputRichMessage{Html: stringPtr(text)}
+}
+
+func stringPtr(v string) *string {
+	return &v
+}
+
+func (m *Messenger) sendRichDraftWithFallback(
+	ctx context.Context,
+	chatID int64,
+	draftID int,
+	rich client.InputRichMessage,
+	topicID int,
+	legacyText string,
+) error {
+	err := m.sendRichDraft(ctx, chatID, draftID, rich, topicID)
+	if err == nil {
+		return nil
+	}
+	if !shouldFallbackRichSend(ctx, err) {
+		return err
+	}
+	m.logger.Warn().Err(err).Int64("chat_id", chatID).Msg("send rich draft failed, retrying with legacy draft")
+	return m.sendDraftPlainLegacy(ctx, chatID, draftID, legacyText, topicID)
+}
+
+func (m *Messenger) sendRichDraft(ctx context.Context, chatID int64, draftID int, rich client.InputRichMessage, topicID int) error {
+	m.logger.Debug().
+		Int64("chat_id", chatID).
+		Int("draft_id", draftID).
+		Int("rich_payload_bytes", richPayloadBytes(rich)).
+		Msg("sending rich draft")
+	req := client.SendRichMessageDraftJSONRequestBody{
+		ChatId:      chatID,
+		DraftId:     draftID,
+		RichMessage: rich,
+	}
+	if topicID != 0 {
+		req.MessageThreadId = &topicID
+	}
+
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+
+	resp, err := m.client.SendRichMessageDraftWithResponse(sendCtx, req)
+	if err != nil {
+		return fmt.Errorf("sending rich draft to chat %d: %w", chatID, err)
+	}
+	if resp == nil {
+		return fmt.Errorf("sending rich draft to chat %d: no response body", chatID)
+	}
+	if resp.JSON400 != nil {
+		return fmt.Errorf("sending rich draft to chat %d: %s", chatID, resp.JSON400.Description)
+	}
+	if resp.JSON200 == nil {
+		return fmt.Errorf("sending rich draft to chat %d: no response body", chatID)
+	}
+	return nil
+}
+
+func (m *Messenger) sendRichMessageWithFallback(
+	ctx context.Context,
+	chatID int64,
+	rich client.InputRichMessage,
+	topicID int,
+	fallback func(context.Context) (int, error),
+) (int, error) {
+	messageID, err := m.sendRichMessage(ctx, chatID, rich, topicID)
+	if err == nil {
+		return messageID, nil
+	}
+	if !shouldFallbackRichSend(ctx, err) {
+		return 0, err
+	}
+	m.logger.Warn().Err(err).Int64("chat_id", chatID).Msg("send rich message failed, retrying with legacy message")
+	return fallback(ctx)
+}
+
+func (m *Messenger) sendRichMessage(ctx context.Context, chatID int64, rich client.InputRichMessage, topicID int) (int, error) {
+	m.logger.Debug().
+		Int64("chat_id", chatID).
+		Str("mode", telegramfmt.NormalizeMode(m.telegramFormattingMode)).
+		Int("rich_payload_bytes", richPayloadBytes(rich)).
+		Msg("sending rich telegram message")
+	req := client.SendRichMessageJSONRequestBody{
+		ChatId:      chatID,
+		RichMessage: rich,
+	}
+	if topicID != 0 {
+		req.MessageThreadId = &topicID
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+
+	resp, err := m.client.SendRichMessageWithResponse(sendCtx, req)
+	if err != nil {
+		return 0, fmt.Errorf("send rich message to chat %d: %w", chatID, err)
+	}
+	if resp == nil {
+		return 0, fmt.Errorf("send rich message to chat %d: no response body", chatID)
+	}
+	if resp.JSON400 != nil {
+		return 0, fmt.Errorf("send rich message to chat %d: %s", chatID, resp.JSON400.Description)
+	}
+	if resp.JSON200 == nil {
+		return 0, fmt.Errorf("send rich message to chat %d: no response body", chatID)
+	}
+	return resp.JSON200.Result.MessageId, nil
+}
+
+func richPayloadBytes(rich client.InputRichMessage) int {
+	switch {
+	case rich.Markdown != nil:
+		return len(*rich.Markdown)
+	case rich.Html != nil:
+		return len(*rich.Html)
+	default:
+		return 0
+	}
+}
+
+func shouldFallbackRichSend(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
+	return true
 }
 
 func (m *Messenger) sendMessageWithMode(ctx context.Context, chatID int64, text string, topicID int, mode, logMsg string) (int, error) {

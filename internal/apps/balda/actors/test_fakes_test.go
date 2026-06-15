@@ -84,10 +84,12 @@ func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject str
 
 type fakeTelegramClient struct {
 	client.ClientWithResponsesInterface
-	sendErr     error
-	messages    []client.SendMessageJSONRequestBody
-	drafts      []client.SendMessageDraftJSONRequestBody
-	chatActions []client.SendChatActionJSONRequestBody
+	sendErr      error
+	messages     []client.SendMessageJSONRequestBody
+	richMessages []client.SendRichMessageJSONRequestBody
+	drafts       []client.SendMessageDraftJSONRequestBody
+	richDrafts   []client.SendRichMessageDraftJSONRequestBody
+	chatActions  []client.SendChatActionJSONRequestBody
 }
 
 func (c *fakeTelegramClient) SendMessageWithResponse(_ context.Context, body client.SendMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendMessageResponse, error) {
@@ -107,6 +109,23 @@ func (c *fakeTelegramClient) SendMessageWithResponse(_ context.Context, body cli
 	}, nil
 }
 
+func (c *fakeTelegramClient) SendRichMessageWithResponse(_ context.Context, body client.SendRichMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendRichMessageResponse, error) {
+	c.richMessages = append(c.richMessages, body)
+	if c.sendErr != nil {
+		return nil, c.sendErr
+	}
+	return &client.SendRichMessageResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
+		JSON200: &struct {
+			Ok     client.SendRichMessage200Ok `json:"ok"`
+			Result client.Message              `json:"result"`
+		}{
+			Ok:     true,
+			Result: client.Message{MessageId: len(c.richMessages)},
+		},
+	}, nil
+}
+
 func (c *fakeTelegramClient) SendMessageDraftWithResponse(_ context.Context, body client.SendMessageDraftJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendMessageDraftResponse, error) {
 	c.drafts = append(c.drafts, body)
 	if c.sendErr != nil {
@@ -117,6 +136,23 @@ func (c *fakeTelegramClient) SendMessageDraftWithResponse(_ context.Context, bod
 		JSON200: &struct {
 			Ok     client.SendMessageDraft200Ok `json:"ok"`
 			Result bool                         `json:"result"`
+		}{
+			Ok:     true,
+			Result: true,
+		},
+	}, nil
+}
+
+func (c *fakeTelegramClient) SendRichMessageDraftWithResponse(_ context.Context, body client.SendRichMessageDraftJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendRichMessageDraftResponse, error) {
+	c.richDrafts = append(c.richDrafts, body)
+	if c.sendErr != nil {
+		return nil, c.sendErr
+	}
+	return &client.SendRichMessageDraftResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
+		JSON200: &struct {
+			Ok     client.SendRichMessageDraft200Ok `json:"ok"`
+			Result bool                             `json:"result"`
 		}{
 			Ok:     true,
 			Result: true,
