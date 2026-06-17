@@ -182,8 +182,23 @@ func (c *Client) postMessage(ctx context.Context, form url.Values) (int, error) 
 }
 
 func (c *Client) postTyping(ctx context.Context, form url.Values) error {
-	_, err := c.post(ctx, "/api/v1/typing", form)
-	return err
+	body, err := c.post(ctx, "/api/v1/typing", form)
+	if err != nil {
+		return err
+	}
+	var result sendMessageResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("decode zulip typing response: %w", err)
+	}
+	if result.Result != "success" {
+		return &APIError{
+			Path:       "/api/v1/typing",
+			StatusCode: http.StatusOK,
+			Code:       result.Code,
+			Message:    result.Msg,
+		}
+	}
+	return nil
 }
 
 func (c *Client) post(

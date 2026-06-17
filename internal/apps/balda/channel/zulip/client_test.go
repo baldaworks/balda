@@ -88,6 +88,38 @@ func TestClientSendStreamMessagePostsExpectedForm(t *testing.T) {
 	}
 }
 
+func TestClientSendStreamTypingPostsExpectedForm(t *testing.T) {
+	var sawRequest bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawRequest = true
+		if r.URL.Path != "/api/v1/typing" {
+			t.Fatalf("request path = %q, want /api/v1/typing", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm() error = %v", err)
+		}
+		if got := r.Form.Get("op"); got != "start" {
+			t.Fatalf("op form value = %q, want start", got)
+		}
+		if got := r.Form.Get("type"); got != addressTypeStream {
+			t.Fatalf("type form value = %q, want stream", got)
+		}
+		if got := r.Form.Get("to"); got != `[{"stream_id":42,"topic":"ops"}]` {
+			t.Fatalf("to form value = %q, want stream target JSON", got)
+		}
+		_ = json.NewEncoder(w).Encode(sendMessageResult{Result: "success"})
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "bot@example.com", "api-key")
+	if err := client.SendStreamTyping(context.Background(), 42, "ops"); err != nil {
+		t.Fatalf("SendStreamTyping() error = %v", err)
+	}
+	if !sawRequest {
+		t.Fatal("test server did not receive request")
+	}
+}
+
 func TestClientRejectsInvalidOutboundRequestsBeforeHTTP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("unexpected HTTP request for invalid Zulip outbound input")
@@ -226,5 +258,29 @@ func TestClientSendStreamMessageParsesStructuredHTTPError(t *testing.T) {
 	}
 	if got := err.Error(); !strings.Contains(got, "HTTP 400 (BAD_REQUEST): invalid image URL") {
 		t.Fatalf("SendStreamMessage() error = %q, want structured error text", got)
+	}
+}
+
+func TestClientSendStreamTypingParsesStructuredOKError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(sendMessageResult{
+			Result: "error",
+			Code:   "BAD_REQUEST",
+			Msg:    "invalid typing target",
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "bot@example.com", "api-key")
+	err := client.SendStreamTyping(context.Background(), 42, "ops")
+	if err == nil {
+		t.Fatal("SendStreamTyping() error = nil, want structured API error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("SendStreamTyping() error = %T, want APIError", err)
+	}
+	if apiErr.StatusCode != http.StatusOK || apiErr.Code != "BAD_REQUEST" || apiErr.Message != "invalid typing target" {
+		t.Fatalf("APIError = %+v, want parsed status/code/message", apiErr)
 	}
 }
