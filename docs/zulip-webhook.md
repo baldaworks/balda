@@ -105,15 +105,17 @@ This matches the Telegram model where each forum topic is a separate session.
 
 ## Bot Commands
 
-All commands available in Telegram are available in Zulip:
+Balda supports these commands in Zulip:
 
 | Command | Description |
 |---------|-------------|
 | `/start owner=<token>` | Register as bot owner (DM only) |
 | `/start invite=<token>` | Onboard as collaborator (DM only) |
 | `/topic <name>` | Create a session in the current stream's native Zulip topic |
+| `/goal <objective>` | Start goal work from the current session context |
+| `/goal clear` | Stop active goal work for the current session |
 | `/reset`, `/restart` | Restart current session history |
-| `/cancel` | Cancel current session turn |
+| `/cancel` | Cancel current session turn; active goal runs continue |
 | `/locator` | Show current locator ref |
 | `/close` | Reset DM session history (DM only) |
 | `/user add` | Generate collaborator invite token |
