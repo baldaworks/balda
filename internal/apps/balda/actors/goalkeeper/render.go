@@ -43,12 +43,12 @@ var goalMessageTemplates = map[goalMessageStyle]map[goalMessageTemplate]*templat
 		goalTemplateStatus:  "{{.Text}}",
 	}),
 	goalMessageStyleMarkdown: mustGoalMessageTemplates(goalMessageStyleMarkdown, map[goalMessageTemplate]string{
-		goalTemplateStarted: "**Goal run started**\n\n**Max iterations:** {{.MaxIterations}}\n**Objective:** {{.Objective}}",
+		goalTemplateStarted: "**Goal run started**\n\n- **Max iterations:** {{.MaxIterations}}\n- **Objective:** {{.Objective}}",
 		goalTemplateStep:    "**Goal iteration {{.Iteration}}/{{.MaxIterations}}:** {{.Step}} {{.Action}}.{{if .Body}}\n\n{{.Body}}{{end}}",
 		goalTemplateStatus:  "**{{.Text}}**",
 	}),
 	goalMessageStyleHTML: mustGoalMessageTemplates(goalMessageStyleHTML, map[goalMessageTemplate]string{
-		goalTemplateStarted: "<b>Goal run started</b>\n\n<b>Max iterations:</b> {{.MaxIterations}}\n<b>Objective:</b> {{.Objective}}",
+		goalTemplateStarted: "<b>Goal run started</b>\n\n<b>Max iterations:</b> {{.MaxIterations}}\n\n<b>Objective:</b> {{.Objective}}",
 		goalTemplateStep:    "<b>Goal iteration {{.Iteration}}/{{.MaxIterations}}:</b> {{.Step}} {{.Action}}.{{if .Body}}\n\n{{.Body}}{{end}}",
 		goalTemplateStatus:  "<b>{{.Text}}</b>",
 	}),

@@ -47,6 +47,9 @@ const (
 	progressKindPlan              = "plan"
 	progressKindOutput            = "output"
 	progressKindCompleted         = "completed"
+	defaultNotVerifiedText        = "manual review still required"
+	defaultInspectNextAction      = "Inspect events and decide whether to continue, cancel, or ask a human."
+	defaultExportedNextAction     = "Review the exported result and continue with follow-up work if needed."
 )
 
 var (
@@ -679,9 +682,9 @@ func (r goalRunResult) toTaskResult(goalReached bool, artifacts taskArtifactSnap
 	if reviewerPassed(validatorOutput) {
 		verified = "validator returned pass"
 	}
-	nextAction := "Inspect events and decide whether to continue, cancel, or ask a human."
+	nextAction := defaultInspectNextAction
 	if goalReached {
-		nextAction = "Review the exported result and continue with follow-up work if needed."
+		nextAction = defaultExportedNextAction
 		if export != nil {
 			switch strings.TrimSpace(export.Status) {
 			case goalExportStatusFailed:
@@ -714,7 +717,7 @@ func (r goalRunResult) toTaskResult(goalReached bool, artifacts taskArtifactSnap
 			WhatWasDone:   whatWasDone,
 			Validation:    validation,
 			Verified:      verified,
-			NotVerified:   "manual review still required",
+			NotVerified:   defaultNotVerifiedText,
 			NextAction:    nextAction,
 		},
 	}
@@ -967,8 +970,10 @@ func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldas
 		validation = firstNonEmpty(parsedOutcome.Validation, validation)
 	}
 	verified := firstNonEmpty(parsedOutcome.Verified, "validator returned feedback")
-	notVerified := firstNonEmpty(parsedOutcome.NotVerified, "manual review still required")
-	nextAction := firstNonEmpty(parsedOutcome.NextAction, "Inspect events and decide whether to continue, cancel, or ask a human.")
+	notVerified := firstNonEmpty(parsedOutcome.NotVerified, defaultNotVerifiedText)
+	nextAction := firstNonEmpty(parsedOutcome.NextAction, defaultInspectNextAction)
+	renderNotVerified := shouldRenderNotVerified(parsedOutcome.NotVerified)
+	renderNextAction := shouldRenderNextAction(parsedOutcome.NextAction, goalReached, exportStatus)
 
 	var parts []string
 	if goalReached {
@@ -1001,13 +1006,37 @@ func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldas
 	if verified != "" {
 		parts = append(parts, goalOutcomeLine(profile, "Verified", verified))
 	}
-	if notVerified != "" {
+	if renderNotVerified && notVerified != "" {
 		parts = append(parts, goalOutcomeLine(profile, "Not verified", notVerified))
 	}
-	if nextAction != "" {
+	if renderNextAction && nextAction != "" {
 		parts = append(parts, goalOutcomeLine(profile, "Next action", nextAction))
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+func shouldRenderNotVerified(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	return trimmed != "" && !strings.EqualFold(trimmed, defaultNotVerifiedText)
+}
+
+func shouldRenderNextAction(value string, goalReached bool, exportStatus string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	if !goalReached {
+		return true
+	}
+	if !strings.EqualFold(trimmed, defaultExportedNextAction) {
+		return true
+	}
+	switch strings.TrimSpace(exportStatus) {
+	case goalExportStatusFailed, goalExportStatusNotExported:
+		return true
+	default:
+		return false
+	}
 }
 
 func valueOrZero(value *int) int {

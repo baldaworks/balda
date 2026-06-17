@@ -651,7 +651,7 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/topic <name>` (DM only, owner/collaborator): creates a new Telegram topic and a topic-bound session.
   - `<name>` is required.
   - `<name>` is a session label, not a provider selector.
-- `/goal <objective>` (owner/collaborator): starts goal work from the current session context in isolated GoalKeeper worker/validator ADK sessions. With workspace mode enabled, Balda creates a goal workspace from `balda.workspace.base_branch`, exports it back automatically on success, and preserves it for recovery when export fails. With workspace mode disabled, GoalKeeper works directly in `balda.working_dir` and records `not_exported` on success. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include Result, Artifacts, Confidence, and Next action sections. See the [goal workflow doc](goal-workflow.md).
+- `/goal <objective>` (owner/collaborator): starts goal work from the current session context in isolated GoalKeeper worker/validator ADK sessions. With workspace mode enabled, Balda creates a goal workspace from `balda.workspace.base_branch`, exports it back automatically on success, and preserves it for recovery when export fails. With workspace mode disabled, GoalKeeper works directly in `balda.working_dir` and records `not_exported` on success. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include concise result, export, work, validation, and actionable next-step sections when needed. See the [goal workflow doc](goal-workflow.md).
   - concurrent `/goal` runs in the same session are rejected.
   - `/goal clear` stops active goal work for the current session only.
 - `/reset`, `/restart` (owner/collaborator): cancel current session work, clear the current session history, and immediately start a fresh runtime session without closing the chat/topic. Both commands work in the current DM, public-chat, or thread-scoped session.
@@ -689,9 +689,9 @@ durable command first; task records are created after command delivery.
   `/cancel` stops the current session turn and clears queued turns for that
   session. `/goal clear` marks active goal tasks `canceled` and stops any
   currently running GoalKeeper task for that session.
-- Terminal task delivery stores and, when applicable, sends reviewable
-  outcomes with:
-  Result, Artifacts, Confidence, and Next action. Artifacts are best-effort
+- Terminal task delivery stores reviewable outcomes and, when applicable,
+  sends concise result, export, work, validation, and actionable next-step
+  sections. Artifacts are best-effort
   workspace data from the bound session: changed files, branch, current commit,
   workspace export hint, and validation output.
 - Task progress/results and projected event payload summaries redact common
