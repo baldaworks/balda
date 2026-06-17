@@ -11,7 +11,11 @@ import (
 	"time"
 )
 
-const defaultHTTPTimeout = 15 * time.Second
+const (
+	defaultHTTPTimeout       = 15 * time.Second
+	maxResponseBodyBytes     = 1 << 20
+	maxErrorResponseBodyText = 4096
+)
 
 // Client is a low-level Zulip REST client.
 type Client struct {
@@ -40,8 +44,18 @@ func NewClient(baseURL, botEmail, apiKey string) *Client {
 
 // ValidateConfig validates the REST credentials needed to send Zulip replies.
 func ValidateConfig(baseURL, botEmail, apiKey string) error {
-	if strings.TrimSpace(baseURL) == "" {
+	trimmedBaseURL := strings.TrimSpace(baseURL)
+	if trimmedBaseURL == "" {
 		return fmt.Errorf("balda.zulip.server_url is required when Zulip webhook is enabled")
+	}
+	parsedBaseURL, err := url.Parse(trimmedBaseURL)
+	if err != nil || parsedBaseURL.Scheme == "" || parsedBaseURL.Host == "" {
+		return fmt.Errorf("balda.zulip.server_url must be an absolute http(s) URL")
+	}
+	switch parsedBaseURL.Scheme {
+	case "http", "https":
+	default:
+		return fmt.Errorf("balda.zulip.server_url must use http or https")
 	}
 	if strings.TrimSpace(botEmail) == "" {
 		return fmt.Errorf("balda.zulip.bot_email is required when Zulip webhook is enabled")
@@ -154,15 +168,34 @@ func (c *Client) post(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read zulip response body: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf(
 			"zulip %s returned HTTP %d: %s",
-			path, resp.StatusCode, string(body),
+			path, resp.StatusCode, responseBodySnippet(body),
 		)
 	}
 	return body, nil
+}
+
+func readLimitedResponseBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, maxResponseBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxResponseBodyBytes {
+		return nil, fmt.Errorf("zulip response body too large: limit %d bytes", maxResponseBodyBytes)
+	}
+	return data, nil
+}
+
+func responseBodySnippet(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if len(text) <= maxErrorResponseBodyText {
+		return text
+	}
+	return text[:maxErrorResponseBodyText] + "...(truncated)"
 }

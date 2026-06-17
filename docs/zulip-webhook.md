@@ -47,6 +47,8 @@ BALDA_ZULIP_WEBHOOK_TOKEN=<token from step 1>
 BALDA_ZULIP_WEBHOOK_ENABLED=true
 ```
 
+`BALDA_ZULIP_SERVER_URL` must be an absolute `http://` or `https://` URL.
+
 Or in `config.yaml`:
 
 ```yaml

@@ -18,6 +18,8 @@ func TestValidateConfigRequiresReplyCredentials(t *testing.T) {
 		wantError string
 	}{
 		{name: "base url", botEmail: "bot@example.com", apiKey: "key", wantError: "server_url"},
+		{name: "relative url", baseURL: "zulip.example.com", botEmail: "bot@example.com", apiKey: "key", wantError: "absolute"},
+		{name: "unsupported scheme", baseURL: "ftp://zulip.example.com", botEmail: "bot@example.com", apiKey: "key", wantError: "http or https"},
 		{name: "bot email", baseURL: "https://zulip.example.com", apiKey: "key", wantError: "bot_email"},
 		{name: "api key", baseURL: "https://zulip.example.com", botEmail: "bot@example.com", wantError: "api_key"},
 		{name: "valid", baseURL: "https://zulip.example.com", botEmail: "bot@example.com", apiKey: "key"},
@@ -82,5 +84,45 @@ func TestClientSendStreamMessagePostsExpectedForm(t *testing.T) {
 	}
 	if !sawRequest {
 		t.Fatal("test server did not receive request")
+	}
+}
+
+func TestClientSendStreamMessageRejectsOversizedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", maxResponseBodyBytes+1)))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "bot@example.com", "api-key")
+	_, err := client.SendStreamMessage(context.Background(), 42, "ops", "hello")
+	if err == nil {
+		t.Fatal("SendStreamMessage() error = nil, want response body size error")
+	}
+	if got := err.Error(); !strings.Contains(got, "response body too large") {
+		t.Fatalf("SendStreamMessage() error = %q, want body size marker", got)
+	}
+}
+
+func TestClientSendStreamMessageTruncatesHTTPErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(strings.Repeat("x", maxErrorResponseBodyText+100)))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "bot@example.com", "api-key")
+	_, err := client.SendStreamMessage(context.Background(), 42, "ops", "hello")
+	if err == nil {
+		t.Fatal("SendStreamMessage() error = nil, want HTTP error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "HTTP 502") {
+		t.Fatalf("SendStreamMessage() error = %q, want HTTP status", got)
+	}
+	if !strings.Contains(got, "(truncated)") {
+		t.Fatalf("SendStreamMessage() error = %q, want truncated marker", got)
+	}
+	if len(got) > maxErrorResponseBodyText+200 {
+		t.Fatalf("SendStreamMessage() error length = %d, want bounded diagnostic", len(got))
 	}
 }

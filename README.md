@@ -302,7 +302,7 @@ Common settings:
 
 - `balda.provider`: provider ID selected during `balda init`.
 - `balda.telegram.token`: Telegram bot token, usually supplied by `.env` as `BALDA_TELEGRAM_TOKEN`.
-- `balda.zulip.bot_email`, `balda.zulip.api_key`, `balda.zulip.server_url`: Zulip outgoing webhook bot credentials. See [`docs/zulip-webhook.md`](docs/zulip-webhook.md) for setup steps.
+- `balda.zulip.bot_email`, `balda.zulip.api_key`, `balda.zulip.server_url`: Zulip outgoing webhook bot credentials. `server_url` must be an absolute `http://` or `https://` URL. See [`docs/zulip-webhook.md`](docs/zulip-webhook.md) for setup steps.
 - `balda.zulip.webhook_token`: verification token from the Zulip outgoing webhook bot settings.
 - `balda.zulip.webhook.enabled`: set `true` to start the Zulip webhook receiver on `listen_addr`. When this is `true`, a Telegram token is not required — Balda can run Zulip-only.
 - `balda.zulip.allowed_owners`: list of Zulip user emails trusted to auto-claim any topic by @-mentioning Balda, without needing `/start owner=<token>` first.
