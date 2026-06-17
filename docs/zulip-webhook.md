@@ -173,6 +173,9 @@ starting with `/`, for example `/zulip/webhook`.
 - **Webhook shutdown fails**: Balda returns Zulip webhook shutdown errors from
   the application lifecycle hook after logging them, so process supervisors can
   report an unhealthy stop instead of a clean shutdown.
+- **Webhook worker panics**: Balda recovers panics inside asynchronous Zulip
+  webhook processing, logs sender/session context, and releases the processing
+  slot so one bad payload path does not crash the process.
 - **Invalid locator in scheduler/webhook config**: Zulip stream and DM locators
   reject nonpositive `stream_id` or `user_id` values before calling Zulip's REST
   API.

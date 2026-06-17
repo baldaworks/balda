@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
@@ -221,6 +222,33 @@ func TestZulipBaldaHandlerIgnoresBotEchoBeforeProcessingQueue(t *testing.T) {
 	if got := len(handler.processSem); got != 1 {
 		t.Fatalf("process slot count = %d, want unchanged full queue", got)
 	}
+}
+
+func TestZulipBaldaHandlerRecoversProcessingPanicAndReleasesSlot(t *testing.T) {
+	handler := &ZulipBaldaHandler{
+		webhookToken: "expected-token",
+		processSem:   make(chan struct{}, 1),
+		logger:       zerolog.Nop(),
+		ownerID:      101,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(`{
+		"token":"expected-token",
+		"message":{"sender_id":101,"sender_email":"owner@example.com","type":"stream","stream_id":42,"subject":"ops","content":"/topic release"}
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.handleWebhook(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	for range 1000 {
+		if len(handler.processSem) == 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("process slot count = %d, want released after recovered panic", len(handler.processSem))
 }
 
 func TestZulipBaldaHandlerRejectsInvalidAuthenticatedPayload(t *testing.T) {

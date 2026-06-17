@@ -303,10 +303,23 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 
 	go func() {
 		defer release()
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), zulipWebhookProcessingTimeout)
-		defer cancel()
-		h.processMessage(ctx, payload)
+		h.processWebhookPayload(r.Context(), payload)
 	}()
+}
+
+func (h *ZulipBaldaHandler) processWebhookPayload(requestCtx context.Context, payload zulipWebhookPayload) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			h.logger.Error().
+				Interface("panic", recovered).
+				Int("sender_id", payload.Message.SenderID).
+				Str("session_id", h.locatorFromPayload(payload).SessionID).
+				Msg("zulip webhook processing panic recovered")
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(requestCtx), zulipWebhookProcessingTimeout)
+	defer cancel()
+	h.processMessage(ctx, payload)
 }
 
 func writeZulipWebhookNoResponse(w http.ResponseWriter) {
