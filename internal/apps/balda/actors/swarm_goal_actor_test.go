@@ -143,8 +143,8 @@ func TestGoalKeeperActorCompletesPassingRunWithoutWorkspaceExport(t *testing.T) 
 		t.Fatalf("exportedMessage = %q, want empty when export is skipped", runtimeBuilder.exportedMessage)
 	}
 	texts := deliveryTextsForTask(t, bus, env.TaskID)
-	if got := countContains(texts, "Export: skipped (workspace mode disabled)."); got != 1 {
-		t.Fatalf("skipped export deliveries = %d, want 1\n%v", got, texts)
+	if got := countContains(texts, "Export: skipped (workspace mode disabled)."); got != 0 {
+		t.Fatalf("skipped export deliveries = %d, want 0\n%v", got, texts)
 	}
 }
 

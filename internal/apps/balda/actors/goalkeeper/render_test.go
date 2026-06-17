@@ -128,8 +128,8 @@ func TestRenderReviewableOutcomeMarkdownSuccessfulExportIsConciseAndConsistent(t
 	t.Parallel()
 
 	task := taskRecordWithOutcome(t, true, goalExportStatusExported, map[string]string{
-		"what_was_done":         "Total lines in all *.go files: 50,414.\nEvidence: find . -name '*.go' -type f -print0 | xargs -0 wc -l over the current workspace.",
-		"validation_output":     "verdict: pass\nEvidence: the workspace check returned 50414 total.\nSummary: the goal was reached.",
+		"what_was_done":         "Result: 50,528 total lines across 218 *.go files.\nEvidence: find . -name '*.go' -type f -print0 | xargs -0 wc -l over the current workspace.",
+		"validation_output":     "verdict: pass",
 		"what_was_verified":     "validator returned pass",
 		"what_was_not_verified": defaultNotVerifiedText,
 		"next_action":           defaultExportedNextAction,
@@ -138,20 +138,53 @@ func TestRenderReviewableOutcomeMarkdownSuccessfulExportIsConciseAndConsistent(t
 	got := renderReviewableOutcomeWithProfile(deliverycmd.Profile{FormattingMode: "rich_markdown"}, task, taskArtifactSnapshot{})
 	for _, want := range []string{
 		"**Result:** Goal completed.",
-		"**Export:** exported.",
-		"**What was done:**\nTotal lines in all *.go files: 50,414.",
-		"**Validation:**\nverdict: pass",
+		"Result: 50,528 total lines across 218 *.go files.",
+		"Evidence: find . -name '*.go' -type f -print0 | xargs -0 wc -l over the current workspace.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("renderReviewableOutcomeWithProfile() = %q, want %q", got, want)
 		}
 	}
 	for _, notWant := range []string{
-		"Evidence:",
-		"Summary:",
+		"**Export:** exported.",
+		"**What was done:**",
+		"**Validation:**\nverdict: pass",
 		"**Verified:** validator returned pass",
 		"**Not verified:**",
 		"**Next action:**",
+	} {
+		if strings.Contains(got, notWant) {
+			t.Fatalf("renderReviewableOutcomeWithProfile() = %q, did not want %q", got, notWant)
+		}
+	}
+}
+
+func TestRenderReviewableOutcomeNotExportedSuccessHidesExportNoise(t *testing.T) {
+	t.Parallel()
+
+	task := taskRecordWithOutcome(t, true, goalExportStatusNotExported, map[string]string{
+		"what_was_done":         "Result: direct workspace complete.",
+		"validation_output":     "verdict pass",
+		"what_was_verified":     "validator returned pass",
+		"what_was_not_verified": defaultNotVerifiedText,
+		"next_action":           defaultNotExportedNextAction,
+		"export_reason":         goalExportReasonDisabled,
+	})
+
+	got := renderReviewableOutcomeWithProfile(deliverycmd.Profile{}, task, taskArtifactSnapshot{})
+	for _, want := range []string{
+		"Result: Goal completed.",
+		"Result: direct workspace complete.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderReviewableOutcomeWithProfile() = %q, want %q", got, want)
+		}
+	}
+	for _, notWant := range []string{
+		"Export:",
+		"workspace mode disabled",
+		"Validation: verdict pass",
+		"Next action:",
 	} {
 		if strings.Contains(got, notWant) {
 			t.Fatalf("renderReviewableOutcomeWithProfile() = %q, did not want %q", got, notWant)
@@ -197,12 +230,6 @@ func TestRenderReviewableOutcomeKeepsActionableNextActions(t *testing.T) {
 			goalReached:  true,
 			exportStatus: goalExportStatusFailed,
 			nextAction:   "Inspect the preserved goal workspace and retry export after resolving the base-branch issue.",
-		},
-		{
-			name:         "not exported",
-			goalReached:  true,
-			exportStatus: goalExportStatusNotExported,
-			nextAction:   "Review the direct working directory changes and commit or follow up manually if needed.",
 		},
 		{
 			name:        "not reached",

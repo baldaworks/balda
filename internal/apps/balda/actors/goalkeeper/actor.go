@@ -50,6 +50,7 @@ const (
 	defaultNotVerifiedText        = "manual review still required"
 	defaultInspectNextAction      = "Inspect events and decide whether to continue, cancel, or ask a human."
 	defaultExportedNextAction     = "Review the exported result and continue with follow-up work if needed."
+	defaultNotExportedNextAction  = "Review the direct working directory changes and commit or follow up manually if needed."
 )
 
 var (
@@ -969,17 +970,14 @@ func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldas
 	if hasOutcome {
 		validation = firstNonEmpty(parsedOutcome.Validation, validation)
 	}
-	conciseTerminalOutcome := goalReached && strings.TrimSpace(exportStatus) == goalExportStatusExported
-	if conciseTerminalOutcome {
-		whatWasDone = conciseSuccessfulOutcomeText(whatWasDone)
-		validation = conciseSuccessfulOutcomeText(validation)
-	}
+	routineSuccessfulOutcome := goalReached && exportStatusIsRoutineSuccess(exportStatus)
 	verified := firstNonEmpty(parsedOutcome.Verified, "validator returned feedback")
 	notVerified := firstNonEmpty(parsedOutcome.NotVerified, defaultNotVerifiedText)
 	nextAction := firstNonEmpty(parsedOutcome.NextAction, defaultInspectNextAction)
 	renderNotVerified := shouldRenderNotVerified(parsedOutcome.NotVerified)
 	renderNextAction := shouldRenderNextAction(parsedOutcome.NextAction, goalReached, exportStatus)
-	renderVerified := shouldRenderVerified(verified, conciseTerminalOutcome)
+	renderVerified := shouldRenderVerified(verified, routineSuccessfulOutcome)
+	renderValidation := shouldRenderValidation(validation, goalReached)
 
 	var parts []string
 	if goalReached {
@@ -990,13 +988,9 @@ func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldas
 	if goalReached && exportStatus != "" {
 		switch exportStatus {
 		case goalExportStatusExported:
-			parts = append(parts, goalOutcomeLine(profile, "Export", "exported."))
+			// Routine success; do not add export noise to chat output.
 		case goalExportStatusNotExported:
-			reason := exportReason
-			if reason == goalExportReasonDisabled || reason == "" {
-				reason = "workspace mode disabled"
-			}
-			parts = append(parts, goalOutcomeLine(profile, "Export", "skipped ("+goalSystemText(goalMessageStyleForProfile(profile), reason)+")."))
+			// Workspace-disabled/direct mode is expected; keep it out of final chat output.
 		case goalExportStatusFailed:
 			parts = append(parts, goalOutcomeLine(profile, "Export", "failed: "+goalSystemText(goalMessageStyleForProfile(profile), firstNonEmpty(exportError, exportReason, "unknown error"))))
 		default:
@@ -1004,9 +998,13 @@ func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldas
 		}
 	}
 	if whatWasDone != "" {
-		parts = append(parts, goalOutcomeBlock(profile, "What was done", whatWasDone))
+		if routineSuccessfulOutcome {
+			parts = append(parts, strings.TrimSpace(whatWasDone))
+		} else {
+			parts = append(parts, goalOutcomeBlock(profile, "What was done", whatWasDone))
+		}
 	}
-	if validation != "" {
+	if renderValidation && validation != "" {
 		parts = append(parts, goalOutcomeBlock(profile, "Validation", validation))
 	}
 	if renderVerified && verified != "" {
@@ -1026,15 +1024,36 @@ func shouldRenderNotVerified(value string) bool {
 	return trimmed != "" && !strings.EqualFold(trimmed, defaultNotVerifiedText)
 }
 
-func shouldRenderVerified(value string, conciseTerminalOutcome bool) bool {
+func shouldRenderVerified(value string, routineSuccessfulOutcome bool) bool {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return false
 	}
-	if !conciseTerminalOutcome {
+	if !routineSuccessfulOutcome {
 		return true
 	}
 	return !strings.EqualFold(trimmed, "validator returned pass")
+}
+
+func shouldRenderValidation(value string, goalReached bool) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	if !goalReached {
+		return true
+	}
+	return !validationIsRoutinePass(trimmed)
+}
+
+func validationIsRoutinePass(value string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(value))
+	if strings.Contains(lowered, "evidence:") || strings.Contains(lowered, "verdict: fail") || strings.Contains(lowered, "verdict fail") {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, ":", " ")))
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return strings.Contains(normalized, "verdict pass")
 }
 
 func shouldRenderNextAction(value string, goalReached bool, exportStatus string) bool {
@@ -1046,6 +1065,9 @@ func shouldRenderNextAction(value string, goalReached bool, exportStatus string)
 		return true
 	}
 	if !strings.EqualFold(trimmed, defaultExportedNextAction) {
+		if goalReached && strings.TrimSpace(exportStatus) == goalExportStatusNotExported && strings.EqualFold(trimmed, defaultNotExportedNextAction) {
+			return false
+		}
 		return true
 	}
 	switch strings.TrimSpace(exportStatus) {
@@ -1056,25 +1078,9 @@ func shouldRenderNextAction(value string, goalReached bool, exportStatus string)
 	}
 }
 
-func conciseSuccessfulOutcomeText(text string) string {
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || successfulOutcomeLineIsNoise(trimmed) {
-			continue
-		}
-		return trimmed
-	}
-	return strings.TrimSpace(text)
-}
-
-func successfulOutcomeLineIsNoise(line string) bool {
-	label, _, ok := strings.Cut(line, ":")
-	if !ok {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(label)) {
-	case "evidence", "summary":
+func exportStatusIsRoutineSuccess(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "", goalExportStatusExported, goalExportStatusNotExported:
 		return true
 	default:
 		return false
