@@ -108,17 +108,15 @@ All commands available in Telegram are available in Zulip:
 | Command | Description |
 |---------|-------------|
 | `/start owner=<token>` | Register as bot owner (DM only) |
-| `/start invite=<token>` | Onboard as collaborator |
+| `/start invite=<token>` | Onboard as collaborator (DM only) |
+| `/topic <name>` | Create a session in the current stream's native Zulip topic |
 | `/reset`, `/restart` | Restart current session history |
 | `/cancel` | Cancel current session turn |
 | `/locator` | Show current locator ref |
-| `/close` | Reset session history |
-| `/user invite` | Generate collaborator invite token |
+| `/close` | Reset DM session history (DM only) |
+| `/user add` | Generate collaborator invite token |
 | `/user list` | List collaborators |
 | `/user remove <id>` | Remove a collaborator |
-
-The `/topic <name>` command creates a session in the current stream's native
-Zulip topic named `<name>`.
 
 ## Network Access
 

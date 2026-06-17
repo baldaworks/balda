@@ -37,6 +37,23 @@ func TestZulipBaldaHandlerRejectsInvalidWebhookToken(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerRejectsMissingWebhookTokenConfiguration(t *testing.T) {
+	handler := &ZulipBaldaHandler{
+		logger: zerolog.Nop(),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(`{
+		"token":"provided-token",
+		"message":{"sender_email":"user@example.com"}
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.handleWebhook(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
 func TestZulipBaldaHandlerOnStartFailsWhenListenAddressInUse(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -205,6 +222,58 @@ func TestZulipBaldaHandlerAutoClaimBareMentionSendsOneWelcome(t *testing.T) {
 	}
 	if len(manager.ensureCalls) != 1 {
 		t.Fatalf("ensureCalls = %d, want 1", len(manager.ensureCalls))
+	}
+}
+
+func TestZulipBaldaHandlerStartIsDirectMessageOnly(t *testing.T) {
+	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	locator := baldazulip.NewStreamLocator(42, "ops")
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		ownerStore:      ownerStore,
+		authToken:       "owner-token",
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleStartCommand(context.Background(), locator, 101, "owner=owner-token", false)
+
+	if ownerStore.HasOwner() {
+		t.Fatal("owner registered from stream /start, want DM-only rejection")
+	}
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want 1", len(payloads))
+	}
+	if payloads[0].Text != "This command is only available in direct messages." {
+		t.Fatalf("reply = %q, want DM-only rejection", payloads[0].Text)
+	}
+}
+
+func TestZulipBaldaHandlerCloseIsDirectMessageOnly(t *testing.T) {
+	locator := baldazulip.NewStreamLocator(42, "ops")
+	manager := &fakeZulipSessionManager{baldaProvider: "balda"}
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		sessionManager:  manager,
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleCloseCommand(context.Background(), locator, 101, "", false)
+
+	if len(manager.resetCalls) != 0 {
+		t.Fatalf("resetCalls = %+v, want none for stream /close", manager.resetCalls)
+	}
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want 1", len(payloads))
+	}
+	if payloads[0].Text != "This command is only available in direct messages." {
+		t.Fatalf("reply = %q, want DM-only rejection", payloads[0].Text)
 	}
 }
 

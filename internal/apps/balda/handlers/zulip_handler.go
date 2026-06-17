@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -267,7 +268,12 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if h.webhookToken != "" && payload.Token != h.webhookToken {
+	if h.webhookToken == "" {
+		h.logger.Error().Msg("zulip webhook token is not configured")
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(payload.Token), []byte(h.webhookToken)) != 1 {
 		h.logger.Warn().Str("sender", payload.Message.SenderEmail).Msg("zulip webhook token mismatch")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -355,7 +361,7 @@ func (h *ZulipBaldaHandler) handleCommand(
 
 	switch cmd {
 	case commandStart:
-		h.handleStartCommand(ctx, locator, senderID, args)
+		h.handleStartCommand(ctx, locator, senderID, args, isDM)
 	case commandReset, commandRestart:
 		h.handleResetCommand(ctx, locator, senderID, cmd, args, isDM)
 	case "cancel":
@@ -367,7 +373,7 @@ func (h *ZulipBaldaHandler) handleCommand(
 	case "goal":
 		h.handleGoalCommand(ctx, locator, senderID, args)
 	case commandClose:
-		h.handleCloseCommand(ctx, locator, senderID)
+		h.handleCloseCommand(ctx, locator, senderID, args, isDM)
 	case "user":
 		h.handleUserCommand(ctx, locator, senderID, args)
 	default:
@@ -380,7 +386,12 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 	locator baldasession.SessionLocator,
 	senderID int,
 	args string,
+	isDM bool,
 ) {
+	if !isDM {
+		_ = h.sendPlain(ctx, locator, "This command is only available in direct messages.")
+		return
+	}
 	if args == "" {
 		ownerID := h.getOwnerID()
 		if ownerID != 0 {
@@ -610,7 +621,17 @@ func (h *ZulipBaldaHandler) handleCloseCommand(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
 	senderID int,
+	args string,
+	isDM bool,
 ) {
+	if !isDM {
+		_ = h.sendPlain(ctx, locator, "This command is only available in direct messages.")
+		return
+	}
+	if strings.TrimSpace(args) != "" {
+		_ = h.sendPlain(ctx, locator, "Usage: /close")
+		return
+	}
 	transportUserID := baldazulip.UserID(senderID)
 	if submitErr := submitSessionCancelControl(
 		ctx, h.actorDispatcher, locator, transportUserID, "session canceled by close command", false,
