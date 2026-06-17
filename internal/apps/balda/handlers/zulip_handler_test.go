@@ -112,6 +112,55 @@ func TestZulipBaldaHandlerOnStartConfiguresHTTPTimeouts(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerOnStopReturnsShutdownError(t *testing.T) {
+	block := make(chan struct{})
+	entered := make(chan struct{})
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			close(entered)
+			<-block
+		}),
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	go func() { _ = server.Serve(ln) }()
+	t.Cleanup(func() {
+		close(block)
+		_ = server.Close()
+		_ = ln.Close()
+	})
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+ln.Addr().String(), nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	go func() {
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	<-entered
+
+	handler := &ZulipBaldaHandler{
+		server: server,
+		logger: zerolog.Nop(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = handler.onStop(ctx)
+
+	if err == nil {
+		t.Fatal("onStop() error = nil, want shutdown error")
+	}
+	if !strings.Contains(err.Error(), "shutdown zulip webhook server") {
+		t.Fatalf("onStop() error = %v, want shutdown context", err)
+	}
+}
+
 func TestZulipBaldaHandlerRejectsOversizedWebhookBody(t *testing.T) {
 	handler := &ZulipBaldaHandler{
 		webhookToken: "expected-token",

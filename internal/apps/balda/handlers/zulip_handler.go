@@ -213,6 +213,7 @@ func (h *ZulipBaldaHandler) onStop(ctx context.Context) error {
 	}
 	if err := h.server.Shutdown(ctx); err != nil {
 		h.logger.Warn().Err(err).Msg("zulip webhook server shutdown error")
+		return fmt.Errorf("shutdown zulip webhook server: %w", err)
 	}
 	h.ln = nil
 	return nil
