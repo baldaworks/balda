@@ -250,6 +250,10 @@ func (h *ZulipBaldaHandler) waitForWebhookProcessing(ctx context.Context) error 
 }
 
 func (h *ZulipBaldaHandler) initOwnerFromStore() {
+	if h.ownerStore == nil {
+		h.logger.Warn().Msg("zulip handler owner store is unavailable")
+		return
+	}
 	if !h.ownerStore.HasOwner() {
 		return
 	}
@@ -668,6 +672,10 @@ func (h *ZulipBaldaHandler) handleResetCommand(
 		_ = h.sendPlain(ctx, locator, fmt.Sprintf("Usage: /%s", cmd))
 		return
 	}
+	if h.sessionManager == nil {
+		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
+		return
+	}
 	info, infoErr := h.sessionManager.GetSessionInfo(ctx, locator.SessionID)
 	if infoErr != nil {
 		h.logger.Debug().Err(infoErr).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: session info unavailable before restart")
@@ -784,6 +792,10 @@ func (h *ZulipBaldaHandler) handleCloseCommand(
 	}
 	if strings.TrimSpace(args) != "" {
 		_ = h.sendPlain(ctx, locator, "Usage: /close")
+		return
+	}
+	if h.sessionManager == nil {
+		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
 		return
 	}
 	transportUserID := baldazulip.UserID(senderID)

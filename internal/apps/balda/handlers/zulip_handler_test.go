@@ -21,6 +21,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const zulipNotReadyReply = "Balda is not ready right now. Please try again."
+
 func TestZulipBaldaHandlerRejectsInvalidWebhookToken(t *testing.T) {
 	handler := &ZulipBaldaHandler{
 		webhookToken: "expected-token",
@@ -130,6 +132,19 @@ func TestZulipBaldaHandlerOnStartConfiguresHTTPTimeouts(t *testing.T) {
 	if handler.server.IdleTimeout != zulipWebhookIdleTimeout {
 		t.Fatalf("IdleTimeout = %v, want %v", handler.server.IdleTimeout, zulipWebhookIdleTimeout)
 	}
+}
+
+func TestZulipBaldaHandlerOnStartHandlesMissingOwnerStore(t *testing.T) {
+	handler := &ZulipBaldaHandler{
+		enabled:    true,
+		listenAddr: "127.0.0.1:0",
+		logger:     zerolog.Nop(),
+	}
+
+	if err := handler.onStart(context.Background()); err != nil {
+		t.Fatalf("onStart() error = %v", err)
+	}
+	t.Cleanup(func() { _ = handler.onStop(context.Background()) })
 }
 
 func TestZulipBaldaHandlerOnStartRejectsInvalidWebhookPath(t *testing.T) {
@@ -466,6 +481,25 @@ func TestZulipBaldaHandlerResetRecreatesSessionAndSendsWelcome(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerResetHandlesMissingSessionManager(t *testing.T) {
+	locator := baldazulip.NewDMLocator(101)
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleResetCommand(context.Background(), locator, 101, commandRestart, "", true)
+
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want not-ready reply", len(payloads))
+	}
+	if payloads[0].Text != zulipNotReadyReply {
+		t.Fatalf("reply = %q, want not-ready reply", payloads[0].Text)
+	}
+}
+
 func TestZulipBaldaHandlerAutoClaimBareMentionSendsOneWelcome(t *testing.T) {
 	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
 	if err != nil {
@@ -740,6 +774,25 @@ func TestZulipBaldaHandlerCloseIsDirectMessageOnly(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerCloseHandlesMissingSessionManager(t *testing.T) {
+	locator := baldazulip.NewDMLocator(101)
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleCloseCommand(context.Background(), locator, 101, "", true)
+
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want not-ready reply", len(payloads))
+	}
+	if payloads[0].Text != zulipNotReadyReply {
+		t.Fatalf("reply = %q, want not-ready reply", payloads[0].Text)
+	}
+}
+
 func TestZulipBaldaHandlerCancelRejectsArgsWithoutPublishingControl(t *testing.T) {
 	locator := baldazulip.NewStreamLocator(42, "ops")
 	dispatcher := &recordingZulipDispatcher{}
@@ -881,7 +934,7 @@ func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 	if len(payloads) != 1 {
 		t.Fatalf("delivery payloads = %d, want not-ready reply", len(payloads))
 	}
-	if payloads[0].Text != "Balda is not ready right now. Please try again." {
+	if payloads[0].Text != zulipNotReadyReply {
 		t.Fatalf("reply = %q, want not-ready reply", payloads[0].Text)
 	}
 }
