@@ -136,7 +136,7 @@ func TestZulipBaldaHandlerReturnsBusyWhenProcessingSlotsFull(t *testing.T) {
 	handler.processSem <- struct{}{}
 	req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(`{
 		"token":"expected-token",
-		"message":{"sender_email":"user@example.com"}
+		"message":{"sender_id":101,"sender_email":"user@example.com","type":"stream","stream_id":42,"subject":"ops"}
 	}`))
 	rec := httptest.NewRecorder()
 
@@ -144,6 +144,63 @@ func TestZulipBaldaHandlerReturnsBusyWhenProcessingSlotsFull(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestZulipBaldaHandlerRejectsInvalidAuthenticatedPayload(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "missing sender id",
+			body: `{
+				"token":"expected-token",
+				"message":{"sender_email":"user@example.com","type":"stream","stream_id":42,"subject":"ops"}
+			}`,
+		},
+		{
+			name: "missing sender email",
+			body: `{
+				"token":"expected-token",
+				"message":{"sender_id":101,"type":"stream","stream_id":42,"subject":"ops"}
+			}`,
+		},
+		{
+			name: "unsupported message type",
+			body: `{
+				"token":"expected-token",
+				"message":{"sender_id":101,"sender_email":"user@example.com","type":"unknown","stream_id":42,"subject":"ops"}
+			}`,
+		},
+		{
+			name: "missing stream id",
+			body: `{
+				"token":"expected-token",
+				"message":{"sender_id":101,"sender_email":"user@example.com","type":"stream","subject":"ops"}
+			}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &ZulipBaldaHandler{
+				webhookToken: "expected-token",
+				processSem:   make(chan struct{}, 1),
+				logger:       zerolog.Nop(),
+			}
+			req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+
+			handler.handleWebhook(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+			}
+			if got := len(handler.processSem); got != 0 {
+				t.Fatalf("process slot count = %d, want 0 for rejected payload", got)
+			}
+		})
 	}
 }
 

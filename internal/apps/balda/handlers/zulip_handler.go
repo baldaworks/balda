@@ -41,6 +41,7 @@ const (
 	zulipWebhookIdleTimeout        = 30 * time.Second
 	zulipWebhookProcessingTimeout  = 5 * time.Minute
 	zulipWebhookMaxConcurrentTasks = 16
+	zulipMessageTypeStream         = "stream"
 )
 
 // zulipWebhookPayload is the payload Zulip sends to the webhook endpoint.
@@ -278,6 +279,11 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if err := validateZulipWebhookPayload(payload); err != nil {
+		h.logger.Warn().Err(err).Msg("invalid zulip webhook payload")
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	release, ok := h.acquireWebhookProcessSlot()
 	if !ok {
 		h.logger.Warn().Msg("zulip webhook processing queue full")
@@ -308,6 +314,25 @@ func (h *ZulipBaldaHandler) acquireWebhookProcessSlot() (func(), bool) {
 	default:
 		return nil, false
 	}
+}
+
+func validateZulipWebhookPayload(payload zulipWebhookPayload) error {
+	if payload.Message.SenderID <= 0 {
+		return fmt.Errorf("message.sender_id is required")
+	}
+	if strings.TrimSpace(payload.Message.SenderEmail) == "" {
+		return fmt.Errorf("message.sender_email is required")
+	}
+	switch strings.TrimSpace(payload.Message.Type) {
+	case zulipMessageTypeStream:
+		if payload.Message.StreamID <= 0 {
+			return fmt.Errorf("message.stream_id is required for stream messages")
+		}
+	case chatTypePrivate:
+	default:
+		return fmt.Errorf("unsupported message.type %q", payload.Message.Type)
+	}
+	return nil
 }
 
 func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWebhookPayload) {
