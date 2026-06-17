@@ -539,6 +539,38 @@ func TestZulipBaldaHandlerLocatorRejectsArgs(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerUserCommandsHandleMissingCollaboratorStore(t *testing.T) {
+	locator := baldazulip.NewDMLocator(101)
+	tests := []struct {
+		name string
+		args string
+	}{
+		{name: "list", args: "list"},
+		{name: "remove", args: "remove 202"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dispatcher := &recordingZulipDispatcher{}
+			handler := &ZulipBaldaHandler{
+				actorDispatcher: dispatcher,
+				logger:          zerolog.Nop(),
+				ownerID:         101,
+			}
+
+			handler.handleUserCommand(context.Background(), locator, 101, tt.args)
+
+			payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+			if len(payloads) != 1 {
+				t.Fatalf("delivery payloads = %d, want missing store reply", len(payloads))
+			}
+			if payloads[0].Text != "Collaborator store is unavailable." {
+				t.Fatalf("reply = %q, want missing collaborator store reply", payloads[0].Text)
+			}
+		})
+	}
+}
+
 func TestZulipBaldaHandlerReturnsDeliveryError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

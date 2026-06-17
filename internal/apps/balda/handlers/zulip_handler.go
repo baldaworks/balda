@@ -807,6 +807,10 @@ func (h *ZulipBaldaHandler) handleUserList(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
 ) {
+	if h.collaboratorStore == nil {
+		_ = h.sendPlain(ctx, locator, "Collaborator store is unavailable.")
+		return
+	}
 	var lines []string
 
 	collaborators, err := h.collaboratorStore.ListCollaborators(ctx)
@@ -852,6 +856,10 @@ func (h *ZulipBaldaHandler) handleUserRemove(
 	locator baldasession.SessionLocator,
 	userID string,
 ) {
+	if h.collaboratorStore == nil {
+		_ = h.sendPlain(ctx, locator, "Collaborator store is unavailable.")
+		return
+	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		_ = h.sendPlain(ctx, locator, "User ID required.")

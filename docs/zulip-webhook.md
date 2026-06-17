@@ -176,6 +176,9 @@ starting with `/`, for example `/zulip/webhook`.
 - **Invalid locator in scheduler/webhook config**: Zulip stream and DM locators
   reject nonpositive `stream_id` or `user_id` values before calling Zulip's REST
   API.
+- **`/user` commands report store unavailable**: owner-only collaborator
+  commands return a service-unavailable chat reply if collaborator storage is not
+  wired, instead of crashing the webhook worker.
 - **Bot ignores first message in a new topic**: this was a bug where the HTTP
   request context was cancelled before the goroutine finished processing.
   Fixed in `zulip_handler.go` by using `context.WithoutCancel`.
