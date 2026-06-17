@@ -310,7 +310,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
-	if err := a.deliver(ctx, taskID, payload, fmt.Sprintf("Goal run started. Max iterations: %d.\n\nObjective: %s", maxIterations, objective), "started"); err != nil {
+	if err := a.deliver(ctx, taskID, payload, renderGoalStartedMessage(payload.DeliveryProfile, maxIterations, objective), "started"); err != nil {
 		return err
 	}
 
@@ -350,7 +350,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 			if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false, artifacts, &taskExportResultV1{Status: "canceled"}), baldastate.SwarmTaskStatusCanceled, actorName, "goal run canceled"); setErr != nil {
 				return swarm.TransientError(setErr)
 			}
-			return a.deliver(ctx, taskID, payload, "Goal run canceled.", "canceled")
+			return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "Goal run canceled."), "canceled")
 		}
 		reason := redactSecrets(err.Error())
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
@@ -359,7 +359,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 		if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false, artifacts, &taskExportResultV1{Status: "failed", Error: reason}), baldastate.SwarmTaskStatusFailed, actorName, reason); setErr != nil {
 			return swarm.TransientError(setErr)
 		}
-		return a.deliver(ctx, taskID, payload, "Goal run failed: "+reason, "failed")
+		return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "Goal run failed: "+reason), "failed")
 	}
 	if reviewerPassed(result.validatorOutput) {
 		finalization, exportErr := goalRun.Finalize(ctx, payload.Objective, result.workerOutput, result.validatorOutput)
@@ -375,7 +375,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 			if setErr := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.SwarmTaskStatusFailed, actorName, exportSummary.Error); setErr != nil {
 				return swarm.TransientError(setErr)
 			}
-			return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, "Goal validation passed, but export failed."), "export-failed")
+			return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal validation passed, but export failed."), "export-failed")
 		}
 		taskResult := result.toTaskResult(true, artifacts, exportSummary)
 		if err := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.SwarmTaskStatusCompleted, actorName, ""); err != nil {
@@ -384,7 +384,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 			a.logger.Warn().Err(cleanupErr).Str("task_id", taskID).Msg("failed to cleanup completed goal run")
 		}
-		return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, "Goal run completed."), "completed")
+		return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal run completed."), "completed")
 	}
 	if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 		a.logger.Warn().Err(cleanupErr).Str("task_id", taskID).Msg("failed to cleanup max-iteration goal run")
@@ -393,7 +393,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 	if err := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.SwarmTaskStatusFailed, actorName, "max iterations reached"); err != nil {
 		return swarm.TransientError(err)
 	}
-	return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, "Goal run reached max iterations without passing validation."), "max-iterations")
+	return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal run reached max iterations without passing validation."), "max-iterations")
 }
 
 func (a *Actor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) error {
@@ -459,7 +459,7 @@ func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, taskID string, payl
 		}), baldastate.SwarmTaskStatusCanceled, actorName, reason); setErr != nil {
 			return false, swarm.TransientError(setErr)
 		}
-		if err := a.deliver(ctx, taskID, payload, "A goal run is already active for this session.", "already-active"); err != nil {
+		if err := a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "A goal run is already active for this session."), "already-active"); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -560,7 +560,7 @@ func (a *Actor) runWorkflow(
 		if a.planUpdatesEnabled {
 			if planText, ok := progress.PlanUpdateText(ev); ok && planText != "" && planText != state.lastPlanText {
 				state.lastPlanText = planText
-				message := fmt.Sprintf("Goal iteration %d/%d: %s plan update.\n\n%s", iteration, normalizeGoalMaxIterations(payload.MaxIterations), currentStep, planText)
+				message := renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), currentStep, "plan update", planText)
 				if err := a.recordStepProgress(ctx, payload, currentStep, iteration, progressKindPlan, message, &deliverySeq); err != nil {
 					return result, err
 				}
@@ -576,7 +576,7 @@ func (a *Actor) runWorkflow(
 			case ValidatorStep:
 				result.validatorOutput = appendVisibleText(result.validatorOutput, text)
 			}
-			message := fmt.Sprintf("Goal iteration %d/%d: %s update.\n\n%s", iteration, normalizeGoalMaxIterations(payload.MaxIterations), currentStep, text)
+			message := renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), currentStep, "update", text)
 			if err := a.recordStepProgress(ctx, payload, currentStep, iteration, progressKindOutput, message, &deliverySeq); err != nil {
 				return result, err
 			}
@@ -612,7 +612,7 @@ func (a *Actor) recordStepStarted(ctx context.Context, payload goalTaskPayload, 
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
-	return a.deliver(ctx, payload.TaskID, payload, fmt.Sprintf("Goal iteration %d/%d: %s started.", iteration, normalizeGoalMaxIterations(payload.MaxIterations), step), "started:"+step+":"+strconv.Itoa(iteration))
+	return a.deliver(ctx, payload.TaskID, payload, renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "started", ""), "started:"+step+":"+strconv.Itoa(iteration))
 }
 
 func (a *Actor) recordStepCompleted(
@@ -626,9 +626,9 @@ func (a *Actor) recordStepCompleted(
 	if iteration <= 0 {
 		iteration = 1
 	}
-	message := fmt.Sprintf("Goal iteration %d/%d: %s completed.", iteration, normalizeGoalMaxIterations(payload.MaxIterations), step)
+	message := renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "completed", "")
 	if state != nil && !state.deliveredOutput && state.lastVisibleText != "" {
-		message += "\n\n" + state.lastVisibleText
+		message = renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "completed", state.lastVisibleText)
 	}
 	if err := a.recordStepProgress(ctx, payload, step, iteration, progressKindCompleted, message, deliverySeq); err != nil {
 		return err
@@ -785,15 +785,15 @@ func (a *Actor) taskStatusIs(ctx context.Context, taskID string, statuses ...str
 	return false
 }
 
-func (a *Actor) renderTaskOutcome(ctx context.Context, taskID string, fallback string) string {
+func (a *Actor) renderTaskOutcome(ctx context.Context, taskID string, profile deliverycmd.Profile, fallback string) string {
 	if a == nil || a.tasks == nil {
-		return fallback
+		return renderGoalStatusMessage(profile, fallback)
 	}
 	task, ok, err := a.tasks.Get(ctx, taskID)
 	if err != nil || !ok {
-		return fallback
+		return renderGoalStatusMessage(profile, fallback)
 	}
-	return renderReviewableOutcome(task, taskArtifactSnapshot{})
+	return renderReviewableOutcomeWithProfile(profile, task, taskArtifactSnapshot{})
 }
 
 func (a *Actor) deliver(
@@ -898,7 +898,7 @@ func redactSecrets(raw string) string {
 	return text
 }
 
-func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArtifactSnapshot) string {
+func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldastate.SwarmTaskRecord, artifacts taskArtifactSnapshot) string {
 	_ = artifacts
 	var result map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(task.ResultJSON)), &result); err != nil {
@@ -972,40 +972,40 @@ func renderReviewableOutcome(task baldastate.SwarmTaskRecord, artifacts taskArti
 
 	var parts []string
 	if goalReached {
-		parts = append(parts, "Result: Goal completed.")
+		parts = append(parts, goalOutcomeLine(profile, "Result", "Goal completed."))
 	} else {
-		parts = append(parts, "Result: Goal not completed.")
+		parts = append(parts, goalOutcomeLine(profile, "Result", "Goal not completed."))
 	}
 	if goalReached && exportStatus != "" {
 		switch exportStatus {
 		case goalExportStatusExported:
-			parts = append(parts, "Export: exported.")
+			parts = append(parts, goalOutcomeLine(profile, "Export", "exported."))
 		case goalExportStatusNotExported:
 			reason := exportReason
 			if reason == goalExportReasonDisabled || reason == "" {
 				reason = "workspace mode disabled"
 			}
-			parts = append(parts, "Export: skipped ("+reason+").")
+			parts = append(parts, goalOutcomeLine(profile, "Export", "skipped ("+goalSystemText(goalMessageStyleForProfile(profile), reason)+")."))
 		case goalExportStatusFailed:
-			parts = append(parts, "Export: failed: "+firstNonEmpty(exportError, exportReason, "unknown error"))
+			parts = append(parts, goalOutcomeLine(profile, "Export", "failed: "+goalSystemText(goalMessageStyleForProfile(profile), firstNonEmpty(exportError, exportReason, "unknown error"))))
 		default:
-			parts = append(parts, "Export: "+exportStatus+".")
+			parts = append(parts, goalOutcomeLine(profile, "Export", goalSystemText(goalMessageStyleForProfile(profile), exportStatus)+"."))
 		}
 	}
 	if whatWasDone != "" {
-		parts = append(parts, "What was done:\n"+whatWasDone)
+		parts = append(parts, goalOutcomeBlock(profile, "What was done", whatWasDone))
 	}
 	if validation != "" {
-		parts = append(parts, "Validation:\n"+validation)
+		parts = append(parts, goalOutcomeBlock(profile, "Validation", validation))
 	}
 	if verified != "" {
-		parts = append(parts, "Verified: "+verified)
+		parts = append(parts, goalOutcomeLine(profile, "Verified", verified))
 	}
 	if notVerified != "" {
-		parts = append(parts, "Not verified: "+notVerified)
+		parts = append(parts, goalOutcomeLine(profile, "Not verified", notVerified))
 	}
 	if nextAction != "" {
-		parts = append(parts, "Next action: "+nextAction)
+		parts = append(parts, goalOutcomeLine(profile, "Next action", nextAction))
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }

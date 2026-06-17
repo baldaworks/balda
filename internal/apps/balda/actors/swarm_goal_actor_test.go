@@ -77,7 +77,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 	if len(payloads) == 0 {
 		t.Fatalf("delivery payloads = %v, want at least one", payloads)
 	}
-	if !strings.Contains(payloads[0].Text, "Objective: ship release") {
+	if !strings.Contains(payloads[0].Text, "**Objective:** ship release") {
 		t.Fatalf("start delivery text = %q, want objective label", payloads[0].Text)
 	}
 	for _, payload := range payloads {
