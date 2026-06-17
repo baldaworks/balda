@@ -55,6 +55,24 @@ func TestZulipBaldaHandlerRejectsMissingWebhookTokenConfiguration(t *testing.T) 
 	}
 }
 
+func TestZulipBaldaHandlerRejectsUnsupportedWebhookMethod(t *testing.T) {
+	handler := &ZulipBaldaHandler{
+		webhookToken: "expected-token",
+		logger:       zerolog.Nop(),
+	}
+	req := httptest.NewRequest(http.MethodGet, "/zulip/webhook", nil)
+	rec := httptest.NewRecorder()
+
+	handler.handleWebhook(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rec.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("Allow header = %q, want %q", got, http.MethodPost)
+	}
+}
+
 func TestZulipBaldaHandlerOnStartFailsWhenListenAddressInUse(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
