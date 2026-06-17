@@ -152,6 +152,9 @@ starting with `/`, for example `/zulip/webhook`.
   `balda.zulip.webhook.enabled=true` or `BALDA_ZULIP_WEBHOOK_ENABLED=true`.
 - **Webhook token mismatch**: verify `balda.zulip.webhook_token` matches the
   token shown in the Zulip bot's outgoing webhook settings.
+- **Webhook returns 405 Method Not Allowed**: Zulip must send `POST` requests
+  to the configured webhook path. Balda replies with `Allow: POST` for other
+  methods so proxies and probes can diagnose the mismatch.
 - **401 Unauthorized from Zulip API**: check `balda.zulip.bot_email` and
   `balda.zulip.api_key`.
 - **Bot not responding**: ensure Balda's `:8090` is reachable from the Zulip
@@ -174,10 +177,15 @@ starting with `/`, for example `/zulip/webhook`.
   in Balda diagnostics.
 - **Webhook shutdown fails**: Balda returns Zulip webhook shutdown errors from
   the application lifecycle hook after logging them, so process supervisors can
-  report an unhealthy stop instead of a clean shutdown.
+  report an unhealthy stop instead of a clean shutdown. Already accepted
+  webhook work is drained during shutdown until the lifecycle context expires;
+  if it does not drain, Balda returns a `wait for zulip webhook processing`
+  error.
 - **Webhook worker panics**: Balda recovers panics inside asynchronous Zulip
   webhook processing, logs sender/session context, and releases the processing
   slot so one bad payload path does not crash the process.
+- **Invite processing fails**: Balda reports the failure in chat and logs the
+  affected Zulip user ID without logging raw invite tokens.
 - **Invalid locator in scheduler/webhook config**: Zulip stream and DM locators
   reject nonpositive `stream_id` or `user_id` values before calling Zulip's REST
   API.
