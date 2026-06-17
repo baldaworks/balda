@@ -162,6 +162,8 @@ starting with `/`, for example `/zulip/webhook`.
 - **Bot posts trigger new webhook events**: Balda ignores webhook payloads where
   `message.sender_email` matches Zulip's `bot_email`, so API replies do not
   recurse into new turns.
+- **Webhook payload text field differs**: Balda prefers Zulip's top-level
+  `data` field, and falls back to `message.content` when `data` is empty.
 - **Zulip rejects rendered content**: Balda retries agent/Markdown replies once
   as plain text when Zulip returns a client-side content rejection. Transient
   Zulip API failures are left to the durable delivery retry path.

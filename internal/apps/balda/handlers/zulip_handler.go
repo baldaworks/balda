@@ -380,11 +380,21 @@ func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWeb
 }
 
 func normalizeZulipMessageText(payload zulipWebhookPayload) string {
-	text := strings.TrimSpace(payload.Data)
+	text := firstNonEmptyText(payload.Data, payload.Message.Content)
 	if strings.TrimSpace(payload.Trigger) != zulipTriggerMention {
 		return text
 	}
 	return stripLeadingZulipMentions(text)
+}
+
+func firstNonEmptyText(values ...string) string {
+	for _, value := range values {
+		text := strings.TrimSpace(value)
+		if text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func stripLeadingZulipMentions(text string) string {
