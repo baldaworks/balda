@@ -834,6 +834,30 @@ func TestZulipBaldaHandlerTopicHandlesMissingSessionManager(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerTopicFallsBackWhenAdapterMissing(t *testing.T) {
+	locator := baldazulip.NewStreamLocator(42, "ops")
+	manager := &fakeZulipSessionManager{baldaProvider: "balda"}
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		sessionManager:  manager,
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleTopicCommand(context.Background(), locator, 101, "support", false)
+
+	if len(manager.createCalls) != 1 {
+		t.Fatalf("createCalls = %d, want topic session created", len(manager.createCalls))
+	}
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want fallback reply", len(payloads))
+	}
+	if payloads[0].Text != "Session created for topic 'support'." {
+		t.Fatalf("reply = %q, want fallback creation reply", payloads[0].Text)
+	}
+}
+
 func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
 	if err != nil {
@@ -889,6 +913,27 @@ func TestZulipBaldaHandlerReturnsDeliveryError(t *testing.T) {
 	}
 	if got := err.Error(); !strings.Contains(got, "deliver zulip response") || !strings.Contains(got, "HTTP 502") {
 		t.Fatalf("deliverZulipAgentReply() error = %q, want wrapped HTTP 502 delivery error", got)
+	}
+}
+
+func TestZulipBaldaHandlerReturnsDeliveryErrorWhenAdapterMissing(t *testing.T) {
+	handler := &ZulipBaldaHandler{
+		logger: zerolog.Nop(),
+	}
+
+	err := handler.deliverZulipAgentReply(
+		context.Background(),
+		baldazulip.NewStreamLocator(42, "ops"),
+		"zu-s-42-test",
+		"final answer",
+	)
+
+	if err == nil {
+		t.Fatal("deliverZulipAgentReply() error = nil, want missing adapter error")
+	}
+	if got := err.Error(); !strings.Contains(got, "deliver zulip response") ||
+		!strings.Contains(got, "zulip adapter is unavailable") {
+		t.Fatalf("deliverZulipAgentReply() error = %q, want wrapped missing adapter error", got)
 	}
 }
 

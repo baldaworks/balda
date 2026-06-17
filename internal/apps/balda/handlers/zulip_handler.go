@@ -1044,7 +1044,7 @@ func (h *ZulipBaldaHandler) handleTopicCommand(
 	welcomeMsg := welcome.BuildAgentWelcomeMessage(
 		topicName, topicLocator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers,
 	)
-	if err := h.zulipAdapter.SendAgentReply(ctx, topicLocator, welcomeMsg); err != nil {
+	if err := h.sendZulipAgentReply(ctx, topicLocator, welcomeMsg); err != nil {
 		h.logger.Warn().Err(err).Str("topic_name", topicName).Msg("failed to send welcome to new topic")
 		_ = h.sendPlain(ctx, locator, fmt.Sprintf("Session created for topic '%s'.", topicName))
 		return
@@ -1290,7 +1290,7 @@ func (h *ZulipBaldaHandler) deliverZulipAgentReply(
 	sessionID string,
 	text string,
 ) error {
-	if err := h.zulipAdapter.SendAgentReply(ctx, locator, text); err != nil {
+	if err := h.sendZulipAgentReply(ctx, locator, text); err != nil {
 		h.logger.Warn().
 			Err(err).
 			Str("session_id", sessionID).
@@ -1298,6 +1298,17 @@ func (h *ZulipBaldaHandler) deliverZulipAgentReply(
 		return fmt.Errorf("deliver zulip response for session %s: %w", sessionID, err)
 	}
 	return nil
+}
+
+func (h *ZulipBaldaHandler) sendZulipAgentReply(
+	ctx context.Context,
+	locator baldasession.SessionLocator,
+	text string,
+) error {
+	if h.zulipAdapter == nil {
+		return fmt.Errorf("zulip adapter is unavailable")
+	}
+	return h.zulipAdapter.SendAgentReply(ctx, locator, text)
 }
 
 // isAllowedOwner reports whether the given Zulip email is in the allowed_owners list.
