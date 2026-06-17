@@ -397,9 +397,6 @@ func validateZulipWebhookPayload(payload zulipWebhookPayload) error {
 		if payload.Message.StreamID <= 0 {
 			return fmt.Errorf("message.stream_id is required for stream messages")
 		}
-		if strings.TrimSpace(payload.Message.Subject) == "" {
-			return fmt.Errorf("message.subject is required for stream messages")
-		}
 	case chatTypePrivate:
 	default:
 		return fmt.Errorf("unsupported message.type %q", payload.Message.Type)

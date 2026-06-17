@@ -88,6 +88,32 @@ func TestClientSendStreamMessagePostsExpectedForm(t *testing.T) {
 	}
 }
 
+func TestClientSendStreamMessageAllowsEmptyTopic(t *testing.T) {
+	var sawRequest bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawRequest = true
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm() error = %v", err)
+		}
+		if got := r.Form.Get("topic"); got != "" {
+			t.Fatalf("topic form value = %q, want empty topic", got)
+		}
+		if _, ok := r.Form["topic"]; !ok {
+			t.Fatal("topic form value missing, want explicit empty topic")
+		}
+		_ = json.NewEncoder(w).Encode(sendMessageResult{Result: "success", ID: 123})
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "bot@example.com", "api-key")
+	if _, err := client.SendStreamMessage(context.Background(), 42, "", "hello"); err != nil {
+		t.Fatalf("SendStreamMessage() error = %v", err)
+	}
+	if !sawRequest {
+		t.Fatal("test server did not receive request")
+	}
+}
+
 func TestClientSendStreamTypingPostsExpectedForm(t *testing.T) {
 	var sawRequest bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -149,14 +175,6 @@ func TestClientRejectsInvalidOutboundRequestsBeforeHTTP(t *testing.T) {
 			want: "content",
 		},
 		{
-			name: "stream message topic",
-			run: func() error {
-				_, err := client.SendStreamMessage(context.Background(), 42, " ", "hello")
-				return err
-			},
-			want: "topic",
-		},
-		{
 			name: "direct message user id",
 			run: func() error {
 				_, err := client.SendDirectMessage(context.Background(), 0, "hello")
@@ -178,13 +196,6 @@ func TestClientRejectsInvalidOutboundRequestsBeforeHTTP(t *testing.T) {
 				return client.SendStreamTyping(context.Background(), 0, "ops")
 			},
 			want: "stream_id",
-		},
-		{
-			name: "stream typing topic",
-			run: func() error {
-				return client.SendStreamTyping(context.Background(), 42, "")
-			},
-			want: "topic",
 		},
 		{
 			name: "direct typing user id",

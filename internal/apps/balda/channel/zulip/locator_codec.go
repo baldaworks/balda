@@ -25,7 +25,7 @@ const (
 type LocatorAddress struct {
 	Type     string `json:"type"`
 	StreamID int    `json:"stream_id,omitempty"`
-	Topic    string `json:"topic,omitempty"`
+	Topic    string `json:"topic"`
 	UserID   int    `json:"user_id,omitempty"`
 }
 
@@ -143,9 +143,6 @@ func streamLocatorFromAddressKey(addressKey string) (baldasession.SessionLocator
 			addressKey, err,
 		)
 	}
-	if strings.TrimSpace(topic) == "" {
-		return baldasession.SessionLocator{}, fmt.Errorf("zulip topic from %q is required", addressKey)
-	}
 	return NewStreamLocator(streamID, topic), nil
 }
 
@@ -169,9 +166,6 @@ func validateLocatorAddress(address LocatorAddress) error {
 	case addressTypeStream:
 		if address.StreamID <= 0 {
 			return fmt.Errorf("zulip stream locator requires positive stream_id")
-		}
-		if strings.TrimSpace(address.Topic) == "" {
-			return fmt.Errorf("zulip stream locator requires topic")
 		}
 	case addressTypeDM:
 		if address.UserID <= 0 {

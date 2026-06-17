@@ -31,6 +31,29 @@ func TestLocatorFromAddressKey_RoundTripsStreamLocator(t *testing.T) {
 	}
 }
 
+func TestLocatorFromAddressKey_RoundTripsEmptyTopicStreamLocator(t *testing.T) {
+	locator := NewStreamLocator(42, "")
+
+	got, err := LocatorFromAddressKey(locator.AddressKey)
+	if err != nil {
+		t.Fatalf("LocatorFromAddressKey() error = %v", err)
+	}
+	if got != locator {
+		t.Fatalf("LocatorFromAddressKey() = %#v, want %#v", got, locator)
+	}
+
+	address, ok, err := DecodeLocator(got)
+	if err != nil {
+		t.Fatalf("DecodeLocator() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("DecodeLocator() ok = false, want true")
+	}
+	if address.Type != addressTypeStream || address.StreamID != 42 || address.Topic != "" {
+		t.Fatalf("decoded address = %#v, want stream 42 empty topic", address)
+	}
+}
+
 func TestLocatorFromAddressKey_RoundTripsDMLocator(t *testing.T) {
 	locator := NewDMLocator(101)
 
@@ -62,7 +85,6 @@ func TestLocatorFromAddressKeyRejectsNonPositiveIDs(t *testing.T) {
 	}{
 		{name: "zero stream", addressKey: "s:0:ops", wantMarker: "stream_id"},
 		{name: "negative stream", addressKey: "s:-1:ops", wantMarker: "stream_id"},
-		{name: "empty stream topic", addressKey: "s:42:", wantMarker: "topic"},
 		{name: "zero dm", addressKey: "dm:0", wantMarker: "user_id"},
 		{name: "negative dm", addressKey: "dm:-1", wantMarker: "user_id"},
 	}
@@ -87,7 +109,6 @@ func TestDecodeLocatorRejectsInvalidAddress(t *testing.T) {
 		wantMarker  string
 	}{
 		{name: "zero stream", addressJSON: `{"type":"stream","stream_id":0,"topic":"ops"}`, wantMarker: "stream_id"},
-		{name: "empty stream topic", addressJSON: `{"type":"stream","stream_id":42}`, wantMarker: "topic"},
 		{name: "zero dm", addressJSON: `{"type":"dm","user_id":0}`, wantMarker: "user_id"},
 		{name: "unknown type", addressJSON: `{"type":"unknown"}`, wantMarker: "unsupported"},
 	}

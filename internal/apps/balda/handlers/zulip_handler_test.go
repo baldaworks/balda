@@ -413,13 +413,6 @@ func TestZulipBaldaHandlerRejectsInvalidAuthenticatedPayload(t *testing.T) {
 				"message":{"sender_id":101,"sender_email":"user@example.com","type":"stream","subject":"ops"}
 			}`,
 		},
-		{
-			name: "missing stream subject",
-			body: `{
-				"token":"expected-token",
-				"message":{"sender_id":101,"sender_email":"user@example.com","type":"stream","stream_id":42}
-			}`,
-		},
 	}
 
 	for _, tt := range tests {
@@ -441,6 +434,20 @@ func TestZulipBaldaHandlerRejectsInvalidAuthenticatedPayload(t *testing.T) {
 				t.Fatalf("process slot count = %d, want 0 for rejected payload", got)
 			}
 		})
+	}
+}
+
+func TestValidateZulipWebhookPayloadAllowsEmptyStreamSubject(t *testing.T) {
+	err := validateZulipWebhookPayload(zulipWebhookPayload{
+		Message: zulipMessage{
+			SenderID:    101,
+			SenderEmail: "user@example.com",
+			Type:        zulipMessageTypeStream,
+			StreamID:    42,
+		},
+	})
+	if err != nil {
+		t.Fatalf("validateZulipWebhookPayload() error = %v, want nil for empty Zulip topic", err)
 	}
 }
 
