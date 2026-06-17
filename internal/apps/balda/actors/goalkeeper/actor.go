@@ -969,11 +969,17 @@ func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldas
 	if hasOutcome {
 		validation = firstNonEmpty(parsedOutcome.Validation, validation)
 	}
+	conciseTerminalOutcome := goalReached && strings.TrimSpace(exportStatus) == goalExportStatusExported
+	if conciseTerminalOutcome {
+		whatWasDone = conciseSuccessfulOutcomeText(whatWasDone)
+		validation = conciseSuccessfulOutcomeText(validation)
+	}
 	verified := firstNonEmpty(parsedOutcome.Verified, "validator returned feedback")
 	notVerified := firstNonEmpty(parsedOutcome.NotVerified, defaultNotVerifiedText)
 	nextAction := firstNonEmpty(parsedOutcome.NextAction, defaultInspectNextAction)
 	renderNotVerified := shouldRenderNotVerified(parsedOutcome.NotVerified)
 	renderNextAction := shouldRenderNextAction(parsedOutcome.NextAction, goalReached, exportStatus)
+	renderVerified := shouldRenderVerified(verified, conciseTerminalOutcome)
 
 	var parts []string
 	if goalReached {
@@ -1003,7 +1009,7 @@ func renderReviewableOutcomeWithProfile(profile deliverycmd.Profile, task baldas
 	if validation != "" {
 		parts = append(parts, goalOutcomeBlock(profile, "Validation", validation))
 	}
-	if verified != "" {
+	if renderVerified && verified != "" {
 		parts = append(parts, goalOutcomeLine(profile, "Verified", verified))
 	}
 	if renderNotVerified && notVerified != "" {
@@ -1020,6 +1026,17 @@ func shouldRenderNotVerified(value string) bool {
 	return trimmed != "" && !strings.EqualFold(trimmed, defaultNotVerifiedText)
 }
 
+func shouldRenderVerified(value string, conciseTerminalOutcome bool) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	if !conciseTerminalOutcome {
+		return true
+	}
+	return !strings.EqualFold(trimmed, "validator returned pass")
+}
+
 func shouldRenderNextAction(value string, goalReached bool, exportStatus string) bool {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -1033,6 +1050,31 @@ func shouldRenderNextAction(value string, goalReached bool, exportStatus string)
 	}
 	switch strings.TrimSpace(exportStatus) {
 	case goalExportStatusFailed, goalExportStatusNotExported:
+		return true
+	default:
+		return false
+	}
+}
+
+func conciseSuccessfulOutcomeText(text string) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || successfulOutcomeLineIsNoise(trimmed) {
+			continue
+		}
+		return trimmed
+	}
+	return strings.TrimSpace(text)
+}
+
+func successfulOutcomeLineIsNoise(line string) bool {
+	label, _, ok := strings.Cut(line, ":")
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(label)) {
+	case "evidence", "summary":
 		return true
 	default:
 		return false

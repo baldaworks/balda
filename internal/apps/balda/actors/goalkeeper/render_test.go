@@ -124,6 +124,65 @@ func TestRenderReviewableOutcomeOmitsSuccessfulExportDefaults(t *testing.T) {
 	}
 }
 
+func TestRenderReviewableOutcomeMarkdownSuccessfulExportIsConciseAndConsistent(t *testing.T) {
+	t.Parallel()
+
+	task := taskRecordWithOutcome(t, true, goalExportStatusExported, map[string]string{
+		"what_was_done":         "Total lines in all *.go files: 50,414.\nEvidence: find . -name '*.go' -type f -print0 | xargs -0 wc -l over the current workspace.",
+		"validation_output":     "verdict: pass\nEvidence: the workspace check returned 50414 total.\nSummary: the goal was reached.",
+		"what_was_verified":     "validator returned pass",
+		"what_was_not_verified": defaultNotVerifiedText,
+		"next_action":           defaultExportedNextAction,
+	})
+
+	got := renderReviewableOutcomeWithProfile(deliverycmd.Profile{FormattingMode: "rich_markdown"}, task, taskArtifactSnapshot{})
+	for _, want := range []string{
+		"**Result:** Goal completed.",
+		"**Export:** exported.",
+		"**What was done:**\nTotal lines in all *.go files: 50,414.",
+		"**Validation:**\nverdict: pass",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderReviewableOutcomeWithProfile() = %q, want %q", got, want)
+		}
+	}
+	for _, notWant := range []string{
+		"Evidence:",
+		"Summary:",
+		"**Verified:** validator returned pass",
+		"**Not verified:**",
+		"**Next action:**",
+	} {
+		if strings.Contains(got, notWant) {
+			t.Fatalf("renderReviewableOutcomeWithProfile() = %q, did not want %q", got, notWant)
+		}
+	}
+}
+
+func TestRenderReviewableOutcomeFailureKeepsEvidence(t *testing.T) {
+	t.Parallel()
+
+	task := taskRecordWithOutcome(t, false, "", map[string]string{
+		"what_was_done":         "worker tried\nEvidence: worker command output",
+		"validation_output":     "verdict: fail\nEvidence: mismatch found",
+		"what_was_verified":     "validator returned feedback",
+		"what_was_not_verified": defaultNotVerifiedText,
+		"next_action":           "Review failure evidence and rerun /goal or assign a narrower follow-up task.",
+	})
+
+	got := renderReviewableOutcomeWithProfile(deliverycmd.Profile{FormattingMode: "rich_markdown"}, task, taskArtifactSnapshot{})
+	for _, want := range []string{
+		"Evidence: worker command output",
+		"Evidence: mismatch found",
+		"**Verified:** validator returned feedback",
+		"**Next action:** Review failure evidence and rerun /goal or assign a narrower follow-up task.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderReviewableOutcomeWithProfile() = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestRenderReviewableOutcomeKeepsActionableNextActions(t *testing.T) {
 	t.Parallel()
 
@@ -176,20 +235,33 @@ func TestRenderReviewableOutcomeKeepsExplicitNotVerified(t *testing.T) {
 func taskRecordWithResult(t *testing.T, goalReached bool, exportStatus string, notVerified string, exportReason string, outcomeNotVerified string, nextAction string) baldastate.SwarmTaskRecord {
 	t.Helper()
 
+	return taskRecordWithOutcome(t, goalReached, exportStatus, map[string]string{
+		"what_was_done":         "work completed",
+		"validation_output":     "verdict: pass",
+		"what_was_verified":     "validator returned pass",
+		"what_was_not_verified": firstNonEmpty(outcomeNotVerified, notVerified),
+		"next_action":           nextAction,
+		"export_reason":         exportReason,
+	})
+}
+
+func taskRecordWithOutcome(t *testing.T, goalReached bool, exportStatus string, outcome map[string]string) baldastate.SwarmTaskRecord {
+	t.Helper()
+
 	result := map[string]any{
 		"goal_reached": goalReached,
 		"reviewable_outcome": map[string]any{
-			"what_was_done":         "work completed",
-			"validation_output":     "verdict: pass",
-			"what_was_verified":     "validator returned pass",
-			"what_was_not_verified": firstNonEmpty(outcomeNotVerified, notVerified),
-			"next_action":           nextAction,
+			"what_was_done":         outcome["what_was_done"],
+			"validation_output":     outcome["validation_output"],
+			"what_was_verified":     outcome["what_was_verified"],
+			"what_was_not_verified": outcome["what_was_not_verified"],
+			"next_action":           outcome["next_action"],
 		},
 	}
 	if exportStatus != "" {
 		result["export"] = map[string]any{
 			"status": exportStatus,
-			"reason": exportReason,
+			"reason": outcome["export_reason"],
 		}
 	}
 	data, err := json.Marshal(result)
