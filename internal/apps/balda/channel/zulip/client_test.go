@@ -149,6 +149,14 @@ func TestClientRejectsInvalidOutboundRequestsBeforeHTTP(t *testing.T) {
 			want: "content",
 		},
 		{
+			name: "stream message topic",
+			run: func() error {
+				_, err := client.SendStreamMessage(context.Background(), 42, " ", "hello")
+				return err
+			},
+			want: "topic",
+		},
+		{
 			name: "direct message user id",
 			run: func() error {
 				_, err := client.SendDirectMessage(context.Background(), 0, "hello")
@@ -170,6 +178,13 @@ func TestClientRejectsInvalidOutboundRequestsBeforeHTTP(t *testing.T) {
 				return client.SendStreamTyping(context.Background(), 0, "ops")
 			},
 			want: "stream_id",
+		},
+		{
+			name: "stream typing topic",
+			run: func() error {
+				return client.SendStreamTyping(context.Background(), 42, "")
+			},
+			want: "topic",
 		},
 		{
 			name: "direct typing user id",

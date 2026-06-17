@@ -94,6 +94,9 @@ func (c *Client) SendStreamMessage(
 	if streamID <= 0 {
 		return 0, fmt.Errorf("zulip stream message stream_id must be positive")
 	}
+	if strings.TrimSpace(topic) == "" {
+		return 0, fmt.Errorf("zulip stream message topic is required")
+	}
 	if strings.TrimSpace(content) == "" {
 		return 0, fmt.Errorf("zulip stream message content is required")
 	}
@@ -135,6 +138,9 @@ func (c *Client) SendStreamTyping(
 ) error {
 	if streamID <= 0 {
 		return fmt.Errorf("zulip stream typing stream_id must be positive")
+	}
+	if strings.TrimSpace(topic) == "" {
+		return fmt.Errorf("zulip stream typing topic is required")
 	}
 	type streamTarget struct {
 		StreamID int    `json:"stream_id"`
