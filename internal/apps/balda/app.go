@@ -655,6 +655,9 @@ func validateZulipConfig(cfg ZulipConfig) error {
 	if strings.TrimSpace(cfg.WebhookToken) == "" {
 		return fmt.Errorf("balda.zulip.webhook_token is required when Zulip webhook is enabled")
 	}
+	if path := strings.TrimSpace(cfg.Webhook.Path); path != "" && !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("balda.zulip.webhook.path must start with /")
+	}
 	if err := baldazulip.ValidateConfig(cfg.ServerURL, cfg.BotEmail, cfg.APIKey); err != nil {
 		return err
 	}

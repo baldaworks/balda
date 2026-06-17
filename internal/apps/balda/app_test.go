@@ -236,6 +236,20 @@ func TestValidateZulipConfigRequiresWebhookAuthAndReplyCredentials(t *testing.T)
 			wantError: "server_url",
 		},
 		{
+			name: "invalid webhook path",
+			cfg: ZulipConfig{
+				ServerURL:    "https://zulip.example.com",
+				BotEmail:     "bot@example.com",
+				APIKey:       "key",
+				WebhookToken: "token",
+				Webhook: ZulipWebhookConfig{
+					Enabled: true,
+					Path:    "zulip/webhook",
+				},
+			},
+			wantError: "webhook.path",
+		},
+		{
 			name: "valid",
 			cfg: ZulipConfig{
 				ServerURL:    "https://zulip.example.com",

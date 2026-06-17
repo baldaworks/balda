@@ -132,6 +132,8 @@ to reach this address. Options:
 - **Tunnel**: use a tunnel service for development
 
 Set `balda.zulip.webhook.listen_addr` to change the bind address.
+If you customize `balda.zulip.webhook.path`, set it to an absolute HTTP path
+starting with `/`, for example `/zulip/webhook`.
 
 ## Differences from Telegram
 
