@@ -187,10 +187,17 @@ starting with `/`, for example `/zulip/webhook`.
 - **Invite processing fails**: Balda reports the failure in chat and logs the
   affected Zulip user ID without logging raw invite tokens.
 - **Invalid locator in scheduler/webhook config**: Zulip stream and DM locators
-  reject nonpositive `stream_id` or `user_id` values before calling Zulip's REST
-  API.
+  reject nonpositive `stream_id` or `user_id` values, and stream locators also
+  require a non-empty topic, before calling Zulip's REST API.
+- **Invalid webhook stream payload**: stream webhook payloads must include both
+  `message.stream_id` and `message.subject`; malformed payloads are rejected
+  before any session work is accepted.
 - **Invalid outbound target/content**: Zulip REST sends reject nonpositive
-  stream/user IDs and empty message content locally before making HTTP requests.
+  stream/user IDs, empty stream topics, and empty message content locally before
+  making HTTP requests.
+- **Plain-text fallback also fails**: when Zulip rejects rendered Markdown and
+  the plain-text retry also fails, Balda returns an error that preserves both
+  the original content rejection and the fallback delivery failure.
 - **`/user` commands report store unavailable**: owner-only collaborator
   commands return a service-unavailable chat reply if collaborator storage is not
   wired, instead of crashing the webhook worker.
