@@ -651,6 +651,45 @@ func TestZulipBaldaHandlerStartIsDirectMessageOnly(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerStartOwnerHandlesMissingOwnerStore(t *testing.T) {
+	locator := baldazulip.NewDMLocator(101)
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		authToken:       "owner-token",
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleStartCommand(context.Background(), locator, 101, "owner=owner-token", true)
+
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want 1", len(payloads))
+	}
+	if !strings.Contains(payloads[0].Text, "storage configuration") {
+		t.Fatalf("reply = %q, want storage configuration guidance", payloads[0].Text)
+	}
+}
+
+func TestZulipBaldaHandlerInviteStartHandlesMissingOwnerStore(t *testing.T) {
+	locator := baldazulip.NewDMLocator(202)
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleInviteStart(context.Background(), locator, 202, "invite-token")
+
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want 1", len(payloads))
+	}
+	if !strings.Contains(payloads[0].Text, "storage configuration") {
+		t.Fatalf("reply = %q, want storage configuration guidance", payloads[0].Text)
+	}
+}
+
 func TestZulipBaldaHandlerInviteLookupErrorDoesNotLogToken(t *testing.T) {
 	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
 	if err != nil {

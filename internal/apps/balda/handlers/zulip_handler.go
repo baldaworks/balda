@@ -583,6 +583,11 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 		_ = h.sendPlain(ctx, locator, "Invalid authentication token. Please try again.")
 		return
 	}
+	if h.ownerStore == nil {
+		h.logger.Error().Int("sender_id", senderID).Msg("zulip: owner store is unavailable during owner registration")
+		_ = h.sendPlain(ctx, locator, "Could not register owner. Ask the operator to check Balda storage configuration.")
+		return
+	}
 	newOwnerID := int64(senderID)
 	registered, err := h.ownerStore.RegisterOwner(newOwnerID, 0)
 	if err != nil {
@@ -606,6 +611,11 @@ func (h *ZulipBaldaHandler) handleInviteStart(
 	token string,
 ) {
 	userIDStr := fmt.Sprintf("%d", senderID)
+	if h.ownerStore == nil {
+		h.logger.Error().Str("user_id", userIDStr).Msg("zulip: owner store is unavailable during invite registration")
+		_ = h.sendPlain(ctx, locator, "Failed to process invite. Ask the operator to check Balda storage configuration.")
+		return
+	}
 	if h.ownerStore.IsOwner(int64(senderID)) {
 		_ = h.sendPlain(ctx, locator, "You are already the bot owner.")
 		return
