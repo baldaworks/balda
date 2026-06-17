@@ -32,6 +32,16 @@ import (
 
 var zulipHandlerActorAddress = actorlayer.ActorAddress{Target: "handler", Key: "zulip"}
 
+const (
+	zulipWebhookMaxBodyBytes       = 1 << 20
+	zulipWebhookReadHeaderTimeout  = 5 * time.Second
+	zulipWebhookReadTimeout        = 10 * time.Second
+	zulipWebhookWriteTimeout       = 10 * time.Second
+	zulipWebhookIdleTimeout        = 30 * time.Second
+	zulipWebhookProcessingTimeout  = 5 * time.Minute
+	zulipWebhookMaxConcurrentTasks = 16
+)
+
 // zulipWebhookPayload is the payload Zulip sends to the webhook endpoint.
 type zulipWebhookPayload struct {
 	BotEmail string       `json:"bot_email"`
@@ -58,7 +68,7 @@ type ZulipBaldaHandler struct {
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
 	zulipAdapter      *baldazulip.Adapter
-	sessionManager    *baldasession.Manager
+	sessionManager    zulipSessionManager
 	turnDispatcher    actors.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
 	taskService       *swarm.TaskService
@@ -72,10 +82,23 @@ type ZulipBaldaHandler struct {
 	allowedOwners     []string
 	logger            zerolog.Logger
 
-	mu      sync.RWMutex
-	ownerID int64
-	server  *http.Server
-	ln      net.Listener
+	mu         sync.RWMutex
+	ownerID    int64
+	server     *http.Server
+	ln         net.Listener
+	processSem chan struct{}
+}
+
+type zulipSessionManager interface {
+	CreateSession(ctx context.Context, sessionCtx baldasession.SessionContext, agentName string) error
+	EnsureSession(ctx context.Context, sessionCtx baldasession.SessionContext, agentName string) (*baldasession.TopicSession, error)
+	GetAgentMetadata(agentName string) baldasession.AgentMetadata
+	GetSession(locator baldasession.SessionLocator) (*baldasession.TopicSession, error)
+	GetSessionInfo(ctx context.Context, sessionID string) (baldasession.TopicSessionInfo, error)
+	RestoreSession(ctx context.Context, sessionCtx baldasession.SessionContext) (*baldasession.TopicSession, error)
+	BaldaProviderID() string
+	ResetSession(ctx context.Context, locator baldasession.SessionLocator) error
+	TakeStartupNotice(sessionID string) string
 }
 
 type zulipBaldaHandlerParams struct {
@@ -121,6 +144,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
 		allowedOwners:     params.ZulipAllowedOwners,
 		logger:            params.Logger.With().Str("component", "balda.handler.zulip").Logger(),
+		processSem:        make(chan struct{}, zulipWebhookMaxConcurrentTasks),
 	}
 
 	params.LC.Append(fx.Hook{
@@ -140,6 +164,9 @@ func (h *ZulipBaldaHandler) onStart(_ context.Context) error {
 		h.logger.Info().Msg("zulip webhook disabled; skipping server start")
 		return nil
 	}
+	if h.processSem == nil {
+		h.processSem = make(chan struct{}, zulipWebhookMaxConcurrentTasks)
+	}
 	h.initOwnerFromStore()
 
 	path := h.webhookPath
@@ -154,8 +181,12 @@ func (h *ZulipBaldaHandler) onStart(_ context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc(path, h.handleWebhook)
 	h.server = &http.Server{
-		Addr:    listenAddr,
-		Handler: mux,
+		Addr:              listenAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: zulipWebhookReadHeaderTimeout,
+		ReadTimeout:       zulipWebhookReadTimeout,
+		WriteTimeout:      zulipWebhookWriteTimeout,
+		IdleTimeout:       zulipWebhookIdleTimeout,
 	}
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -216,10 +247,16 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	defer func() { _ = r.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(r.Body, zulipWebhookMaxBodyBytes+1))
 	if err != nil {
 		h.logger.Warn().Err(err).Msg("failed to read zulip webhook body")
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if len(body) > zulipWebhookMaxBodyBytes {
+		h.logger.Warn().Int("bytes", len(body)).Msg("zulip webhook body too large")
+		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -235,13 +272,36 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	release, ok := h.acquireWebhookProcessSlot()
+	if !ok {
+		h.logger.Warn().Msg("zulip webhook processing queue full")
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+		return
+	}
 
 	// Respond immediately; process asynchronously.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"response_not_required": true}`))
 
-	go h.processMessage(context.WithoutCancel(r.Context()), payload)
+	go func() {
+		defer release()
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), zulipWebhookProcessingTimeout)
+		defer cancel()
+		h.processMessage(ctx, payload)
+	}()
+}
+
+func (h *ZulipBaldaHandler) acquireWebhookProcessSlot() (func(), bool) {
+	if h.processSem == nil {
+		return func() {}, true
+	}
+	select {
+	case h.processSem <- struct{}{}:
+		return func() { <-h.processSem }, true
+	default:
+		return nil, false
+	}
 }
 
 func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWebhookPayload) {
@@ -297,7 +357,7 @@ func (h *ZulipBaldaHandler) handleCommand(
 	case commandStart:
 		h.handleStartCommand(ctx, locator, senderID, args)
 	case commandReset, commandRestart:
-		h.handleResetCommand(ctx, locator, senderID, cmd)
+		h.handleResetCommand(ctx, locator, senderID, cmd, args, isDM)
 	case "cancel":
 		h.handleCancelCommand(ctx, locator, senderID)
 	case "locator":
@@ -446,7 +506,17 @@ func (h *ZulipBaldaHandler) handleResetCommand(
 	locator baldasession.SessionLocator,
 	senderID int,
 	cmd string,
+	args string,
+	isDM bool,
 ) {
+	if strings.TrimSpace(args) != "" {
+		_ = h.sendPlain(ctx, locator, fmt.Sprintf("Usage: /%s", cmd))
+		return
+	}
+	info, infoErr := h.sessionManager.GetSessionInfo(ctx, locator.SessionID)
+	if infoErr != nil {
+		h.logger.Debug().Err(infoErr).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: session info unavailable before restart")
+	}
 	transportUserID := baldazulip.UserID(senderID)
 	reason := fmt.Sprintf("session canceled by %s command", cmd)
 	if submitErr := submitSessionCancelControl(
@@ -459,7 +529,49 @@ func (h *ZulipBaldaHandler) handleResetCommand(
 		_ = h.sendPlain(ctx, locator, "Could not reset this session.")
 		return
 	}
-	_ = h.sendPlain(ctx, locator, "Session restarted.")
+	label := zulipRestartSessionLabel(isDM, info)
+	userID := zulipRestartSessionUserID(senderID, info)
+	if err := h.sessionManager.CreateSession(ctx, baldasession.SessionContext{
+		Locator: locator,
+		UserID:  userID,
+	}, label); err != nil {
+		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: failed to recreate session during restart command")
+		_ = h.sendPlain(ctx, locator, "Could not restart this session.")
+		return
+	}
+
+	providerName := strings.TrimSpace(h.sessionManager.BaldaProviderID())
+	metadata := h.sessionManager.GetAgentMetadata(providerName)
+	welcomeName := zulipRestartWelcomeDisplayName(isDM, label)
+	welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	if err := h.sendMarkdown(ctx, locator, welcomeMsg); err != nil {
+		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: failed to send restart welcome")
+	}
+	h.sendSessionStartupNotice(ctx, locator, locator.SessionID)
+}
+
+func zulipRestartSessionLabel(isDM bool, info baldasession.TopicSessionInfo) string {
+	if label := strings.TrimSpace(info.AgentName); label != "" {
+		return label
+	}
+	if isDM {
+		return ownerSessionLabel
+	}
+	return autoSessionLabel
+}
+
+func zulipRestartSessionUserID(senderID int, info baldasession.TopicSessionInfo) string {
+	if userID := strings.TrimSpace(info.UserID); userID != "" {
+		return userID
+	}
+	return baldazulip.UserID(senderID)
+}
+
+func zulipRestartWelcomeDisplayName(isDM bool, label string) string {
+	if !isDM {
+		return ownerSessionLabel
+	}
+	return label
 }
 
 func (h *ZulipBaldaHandler) handleCancelCommand(
@@ -1037,18 +1149,7 @@ func (h *ZulipBaldaHandler) handleAutoClaimMention(
 
 	if strings.TrimSpace(text) == "" {
 		providerName := h.getProviderName()
-		metadata := h.sessionManager.GetAgentMetadata(providerName)
-		label := autoSessionLabel
-		if isDM {
-			label = ownerSessionLabel
-		}
-		ts, err := h.getOrCreateSession(ctx, locator, baldazulip.UserID(senderID), providerName, isDM)
-		if err != nil {
-			return
-		}
-		_ = ts
-		welcomeMsg := welcome.BuildAgentWelcomeMessage(label, locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
-		_ = h.sendPlain(ctx, locator, welcomeMsg)
+		_, _ = h.getOrCreateSession(ctx, locator, baldazulip.UserID(senderID), providerName, isDM)
 		return
 	}
 
@@ -1083,6 +1184,27 @@ func (h *ZulipBaldaHandler) sendPlain(
 	text string,
 ) error {
 	return sendPlain(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
+}
+
+func (h *ZulipBaldaHandler) sendMarkdown(
+	ctx context.Context,
+	locator baldasession.SessionLocator,
+	text string,
+) error {
+	return sendMarkdown(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
+}
+
+func (h *ZulipBaldaHandler) sendSessionStartupNotice(ctx context.Context, locator baldasession.SessionLocator, sessionID string) {
+	if h.sessionManager == nil {
+		return
+	}
+	notice := strings.TrimSpace(h.sessionManager.TakeStartupNotice(sessionID))
+	if notice == "" {
+		return
+	}
+	if err := h.sendPlain(ctx, locator, notice); err != nil {
+		h.logger.Warn().Err(err).Str("session_id", sessionID).Msg("zulip: failed to send restart startup notice")
+	}
 }
 
 func (h *ZulipBaldaHandler) locatorFromPayload(payload zulipWebhookPayload) baldasession.SessionLocator {

@@ -117,8 +117,8 @@ All commands available in Telegram are available in Zulip:
 | `/user list` | List collaborators |
 | `/user remove <id>` | Remove a collaborator |
 
-The `/topic` command is a no-op in Zulip — use Zulip's native topics to
-organize conversations into separate sessions.
+The `/topic <name>` command creates a session in the current stream's native
+Zulip topic named `<name>`.
 
 ## Network Access
 
