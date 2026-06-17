@@ -453,6 +453,36 @@ func TestZulipBaldaHandlerLocatorRejectsArgs(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerReturnsDeliveryError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("temporary zulip failure"))
+	}))
+	t.Cleanup(server.Close)
+
+	handler := &ZulipBaldaHandler{
+		zulipAdapter: baldazulip.NewAdapter(
+			baldazulip.NewClient(server.URL, "bot@example.com", "api-key"),
+			zerolog.Nop(),
+		),
+		logger: zerolog.Nop(),
+	}
+
+	err := handler.deliverZulipAgentReply(
+		context.Background(),
+		baldazulip.NewStreamLocator(42, "ops"),
+		"zu-s-42-test",
+		"final answer",
+	)
+
+	if err == nil {
+		t.Fatal("deliverZulipAgentReply() error = nil, want Zulip delivery error")
+	}
+	if got := err.Error(); !strings.Contains(got, "deliver zulip response") || !strings.Contains(got, "HTTP 502") {
+		t.Fatalf("deliverZulipAgentReply() error = %q, want wrapped HTTP 502 delivery error", got)
+	}
+}
+
 type fakeZulipSessionManager struct {
 	createCalls    []createSessionCall
 	ensureCalls    []createSessionCall

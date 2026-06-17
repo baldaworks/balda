@@ -1198,11 +1198,21 @@ func (h *ZulipBaldaHandler) RunSessionTurnPayload(
 		return nil
 	}
 
-	if err := h.zulipAdapter.SendAgentReply(ctx, deliveryLocator, text); err != nil {
+	return h.deliverZulipAgentReply(ctx, deliveryLocator, payload.Locator.SessionID, text)
+}
+
+func (h *ZulipBaldaHandler) deliverZulipAgentReply(
+	ctx context.Context,
+	locator baldasession.SessionLocator,
+	sessionID string,
+	text string,
+) error {
+	if err := h.zulipAdapter.SendAgentReply(ctx, locator, text); err != nil {
 		h.logger.Warn().
 			Err(err).
-			Str("session_id", payload.Locator.SessionID).
+			Str("session_id", sessionID).
 			Msg("zulip: failed to deliver response")
+		return fmt.Errorf("deliver zulip response for session %s: %w", sessionID, err)
 	}
 	return nil
 }

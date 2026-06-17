@@ -165,6 +165,9 @@ starting with `/`, for example `/zulip/webhook`.
 - **Zulip rejects rendered content**: Balda retries agent/Markdown replies once
   as plain text when Zulip returns a client-side content rejection. Transient
   Zulip API failures are left to the durable delivery retry path.
+- **Zulip API delivery fails**: queued turns return delivery errors to the actor
+  runtime, so transient failures can be retried and persistent failures surface
+  through the runtime's failure handling instead of being silently acknowledged.
 - **Bot ignores first message in a new topic**: this was a bug where the HTTP
   request context was cancelled before the goroutine finished processing.
   Fixed in `zulip_handler.go` by using `context.WithoutCancel`.
