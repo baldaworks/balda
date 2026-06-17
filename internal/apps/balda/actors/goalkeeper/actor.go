@@ -298,7 +298,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 	}); err != nil {
 		return swarm.TransientError(err)
 	}
-	if err := a.deliver(ctx, taskID, payload.Locator, fmt.Sprintf("Goal run started. Max iterations: %d.\n\nGoal: %s", maxIterations, objective), "started"); err != nil {
+	if err := a.deliver(ctx, taskID, payload.Locator, fmt.Sprintf("Goal run started. Max iterations: %d.\n\nObjective: %s", maxIterations, objective), "started"); err != nil {
 		return err
 	}
 
