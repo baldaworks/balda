@@ -182,11 +182,13 @@ type taskArtifactSnapshot struct {
 }
 
 type goalRunResult struct {
-	payload         goalTaskPayload
-	iterations      int
-	workerOutput    string
-	validatorOutput string
-	finalText       string
+	payload               goalTaskPayload
+	iterations            int
+	workerOutput          string
+	validatorOutput       string
+	latestWorkerOutput    string
+	latestValidatorOutput string
+	finalText             string
 }
 
 type stepProgressState struct {
@@ -365,8 +367,8 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 		}
 		return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "Goal run failed: "+reason), "failed")
 	}
-	if reviewerPassed(result.validatorOutput) {
-		finalization, exportErr := goalRun.Finalize(ctx, payload.Objective, result.workerOutput, result.validatorOutput)
+	if reviewerPassed(result.latestValidatorOutput) {
+		finalization, exportErr := goalRun.Finalize(ctx, payload.Objective, result.latestWorkerOutput, result.latestValidatorOutput)
 		exportSummary := finalization.toTaskExportResult()
 		if exportErr != nil || strings.TrimSpace(exportSummary.Status) == goalExportStatusFailed {
 			if exportSummary.Status == "" {
@@ -534,6 +536,7 @@ func (a *Actor) runWorkflow(
 				switch eventType {
 				case StepStarted:
 					currentStep = step
+					resetLatestStepOutput(&result, step)
 					if err := a.recordStepStarted(ctx, payload, step, iteration); err != nil {
 						return result, err
 					}
@@ -577,8 +580,10 @@ func (a *Actor) runWorkflow(
 			switch currentStep {
 			case WorkerStep:
 				result.workerOutput = appendVisibleText(result.workerOutput, text)
+				result.latestWorkerOutput = appendVisibleText(result.latestWorkerOutput, text)
 			case ValidatorStep:
 				result.validatorOutput = appendVisibleText(result.validatorOutput, text)
+				result.latestValidatorOutput = appendVisibleText(result.latestValidatorOutput, text)
 			}
 			message := renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), currentStep, "update", text)
 			if err := a.recordStepProgress(ctx, payload, currentStep, iteration, progressKindOutput, message, &deliverySeq); err != nil {
@@ -676,11 +681,13 @@ func (a *Actor) recordStepProgress(
 func (r goalRunResult) toTaskResult(goalReached bool, artifacts taskArtifactSnapshot, export *taskExportResultV1) taskResultPayloadV1 {
 	workerOutput := redactSecrets(strings.TrimSpace(r.workerOutput))
 	validatorOutput := redactSecrets(strings.TrimSpace(r.validatorOutput))
+	latestWorkerOutput := redactSecrets(strings.TrimSpace(r.latestWorkerOutput))
+	latestValidatorOutput := redactSecrets(strings.TrimSpace(r.latestValidatorOutput))
 	finalText := redactSecrets(strings.TrimSpace(r.finalText))
-	whatWasDone := firstNonEmpty(workerOutput, finalText, strings.TrimSpace(r.payload.Objective))
-	validation := firstNonEmpty(validatorOutput, finalText)
+	whatWasDone := firstNonEmpty(latestWorkerOutput, workerOutput, finalText, strings.TrimSpace(r.payload.Objective))
+	validation := firstNonEmpty(latestValidatorOutput, validatorOutput, finalText)
 	verified := "validator returned feedback"
-	if reviewerPassed(validatorOutput) {
+	if reviewerPassed(latestValidatorOutput) {
 		verified = "validator returned pass"
 	}
 	nextAction := defaultInspectNextAction
@@ -869,6 +876,18 @@ func appendVisibleText(existing string, next string) string {
 		return existing
 	}
 	return existing + "\n\n" + next
+}
+
+func resetLatestStepOutput(result *goalRunResult, step string) {
+	if result == nil {
+		return
+	}
+	switch strings.TrimSpace(step) {
+	case WorkerStep:
+		result.latestWorkerOutput = ""
+	case ValidatorStep:
+		result.latestValidatorOutput = ""
+	}
 }
 
 func visibleText(ev *adksession.Event) string {
