@@ -2,6 +2,7 @@ package zulip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -163,7 +164,10 @@ func (a *Adapter) sendWithPlainFallback(
 	a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("zulip rejected markdown content, retrying as plain text")
 	msgID, fallbackErr := a.send(ctx, locator, fallback)
 	if fallbackErr != nil {
-		return 0, fmt.Errorf("send zulip plain text fallback after content rejection: %w", fallbackErr)
+		return 0, errors.Join(
+			fmt.Errorf("zulip content rejected before plain text fallback: %w", err),
+			fmt.Errorf("send zulip plain text fallback after content rejection: %w", fallbackErr),
+		)
 	}
 	return msgID, nil
 }

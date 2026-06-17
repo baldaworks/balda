@@ -50,6 +50,50 @@ func TestAdapterSendAgentReplyFallsBackToPlainTextOnContentRejection(t *testing.
 	}
 }
 
+func TestAdapterSendAgentReplyReportsOriginalAndFallbackErrors(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(sendMessageResult{
+				Result: "error",
+				Code:   "BAD_REQUEST",
+				Msg:    "invalid image URL",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("zulip unavailable"))
+	}))
+	t.Cleanup(server.Close)
+
+	adapter := NewAdapter(NewClient(server.URL, "bot@example.com", "api-key"), zerolog.Nop())
+	err := adapter.SendAgentReply(
+		context.Background(),
+		NewStreamLocator(42, "ops"),
+		"Screenshot: ![broken](https://example.invalid/missing.png)",
+	)
+	if err == nil {
+		t.Fatal("SendAgentReply() error = nil, want fallback failure")
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count = %d, want initial send and fallback", requestCount)
+	}
+	got := err.Error()
+	for _, want := range []string{
+		"content rejected before plain text fallback",
+		"invalid image URL",
+		"send zulip plain text fallback",
+		"HTTP 502",
+		"zulip unavailable",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("SendAgentReply() error = %q, want marker %q", got, want)
+		}
+	}
+}
+
 func TestAdapterSendAgentReplyDoesNotFallbackOnServerError(t *testing.T) {
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
