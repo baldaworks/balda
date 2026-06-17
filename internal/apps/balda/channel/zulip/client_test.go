@@ -88,6 +88,79 @@ func TestClientSendStreamMessagePostsExpectedForm(t *testing.T) {
 	}
 }
 
+func TestClientRejectsInvalidOutboundRequestsBeforeHTTP(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("unexpected HTTP request for invalid Zulip outbound input")
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "bot@example.com", "api-key")
+	tests := []struct {
+		name string
+		run  func() error
+		want string
+	}{
+		{
+			name: "stream message stream id",
+			run: func() error {
+				_, err := client.SendStreamMessage(context.Background(), 0, "ops", "hello")
+				return err
+			},
+			want: "stream_id",
+		},
+		{
+			name: "stream message content",
+			run: func() error {
+				_, err := client.SendStreamMessage(context.Background(), 42, "ops", " ")
+				return err
+			},
+			want: "content",
+		},
+		{
+			name: "direct message user id",
+			run: func() error {
+				_, err := client.SendDirectMessage(context.Background(), 0, "hello")
+				return err
+			},
+			want: "user_id",
+		},
+		{
+			name: "direct message content",
+			run: func() error {
+				_, err := client.SendDirectMessage(context.Background(), 101, "")
+				return err
+			},
+			want: "content",
+		},
+		{
+			name: "stream typing stream id",
+			run: func() error {
+				return client.SendStreamTyping(context.Background(), 0, "ops")
+			},
+			want: "stream_id",
+		},
+		{
+			name: "direct typing user id",
+			run: func() error {
+				return client.SendDirectTyping(context.Background(), 0)
+			},
+			want: "user_id",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if err == nil {
+				t.Fatal("request error = nil, want validation error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("request error = %q, want marker %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestClientSendStreamMessageRejectsOversizedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(strings.Repeat("x", maxResponseBodyBytes+1)))

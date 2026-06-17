@@ -91,6 +91,12 @@ func (c *Client) SendStreamMessage(
 	topic string,
 	content string,
 ) (int, error) {
+	if streamID <= 0 {
+		return 0, fmt.Errorf("zulip stream message stream_id must be positive")
+	}
+	if strings.TrimSpace(content) == "" {
+		return 0, fmt.Errorf("zulip stream message content is required")
+	}
 	toJSON, _ := json.Marshal(streamID)
 	form := url.Values{}
 	form.Set("type", "stream")
@@ -107,6 +113,12 @@ func (c *Client) SendDirectMessage(
 	userID int,
 	content string,
 ) (int, error) {
+	if userID <= 0 {
+		return 0, fmt.Errorf("zulip direct message user_id must be positive")
+	}
+	if strings.TrimSpace(content) == "" {
+		return 0, fmt.Errorf("zulip direct message content is required")
+	}
 	toJSON, _ := json.Marshal([]int{userID})
 	form := url.Values{}
 	form.Set("type", "direct")
@@ -121,6 +133,9 @@ func (c *Client) SendStreamTyping(
 	streamID int,
 	topic string,
 ) error {
+	if streamID <= 0 {
+		return fmt.Errorf("zulip stream typing stream_id must be positive")
+	}
 	type streamTarget struct {
 		StreamID int    `json:"stream_id"`
 		Topic    string `json:"topic"`
@@ -135,6 +150,9 @@ func (c *Client) SendStreamTyping(
 
 // SendDirectTyping sends a typing indicator to a direct message conversation.
 func (c *Client) SendDirectTyping(ctx context.Context, userID int) error {
+	if userID <= 0 {
+		return fmt.Errorf("zulip direct typing user_id must be positive")
+	}
 	toJSON, _ := json.Marshal([]int{userID})
 	form := url.Values{}
 	form.Set("op", "start")

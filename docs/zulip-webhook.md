@@ -181,6 +181,8 @@ starting with `/`, for example `/zulip/webhook`.
 - **Invalid locator in scheduler/webhook config**: Zulip stream and DM locators
   reject nonpositive `stream_id` or `user_id` values before calling Zulip's REST
   API.
+- **Invalid outbound target/content**: Zulip REST sends reject nonpositive
+  stream/user IDs and empty message content locally before making HTTP requests.
 - **`/user` commands report store unavailable**: owner-only collaborator
   commands return a service-unavailable chat reply if collaborator storage is not
   wired, instead of crashing the webhook worker.
