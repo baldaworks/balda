@@ -334,6 +334,49 @@ func TestZulipBaldaHandlerCloseIsDirectMessageOnly(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerCancelRejectsArgsWithoutPublishingControl(t *testing.T) {
+	locator := baldazulip.NewStreamLocator(42, "ops")
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleCancelCommand(context.Background(), locator, 101, "extra")
+
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("commands = %d, want only usage reply", len(dispatcher.commands))
+	}
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 || payloads[0].Text != "Usage: /cancel" {
+		t.Fatalf("payloads = %+v, want cancel usage reply", payloads)
+	}
+	for _, env := range dispatcher.commands {
+		if env.Namespace == swarm.NamespaceTaskControl {
+			t.Fatalf("published task control command for invalid /cancel: %+v", env)
+		}
+	}
+}
+
+func TestZulipBaldaHandlerLocatorRejectsArgs(t *testing.T) {
+	locator := baldazulip.NewStreamLocator(42, "ops")
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	handler.handleLocatorCommand(context.Background(), locator, "extra")
+
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 || payloads[0].Text != "Usage: /locator" {
+		t.Fatalf("payloads = %+v, want locator usage reply", payloads)
+	}
+	if strings.Contains(payloads[0].Text, "Transport:") {
+		t.Fatalf("locator details returned for invalid usage: %q", payloads[0].Text)
+	}
+}
+
 type fakeZulipSessionManager struct {
 	createCalls    []createSessionCall
 	ensureCalls    []createSessionCall

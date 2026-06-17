@@ -390,9 +390,9 @@ func (h *ZulipBaldaHandler) handleCommand(
 	case commandReset, commandRestart:
 		h.handleResetCommand(ctx, locator, senderID, cmd, args, isDM)
 	case "cancel":
-		h.handleCancelCommand(ctx, locator, senderID)
+		h.handleCancelCommand(ctx, locator, senderID, args)
 	case "locator":
-		h.handleLocatorCommand(ctx, locator)
+		h.handleLocatorCommand(ctx, locator, args)
 	case "topic":
 		h.handleTopicCommand(ctx, locator, senderID, args, isDM)
 	case "goal":
@@ -614,7 +614,12 @@ func (h *ZulipBaldaHandler) handleCancelCommand(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
 	senderID int,
+	args string,
 ) {
+	if strings.TrimSpace(args) != "" {
+		_ = h.sendPlain(ctx, locator, "Usage: /cancel")
+		return
+	}
 	if h.actorDispatcher == nil {
 		_ = h.sendPlain(ctx, locator, "Cancel is unavailable right now. Please try again.")
 		return
@@ -633,7 +638,12 @@ func (h *ZulipBaldaHandler) handleCancelCommand(
 func (h *ZulipBaldaHandler) handleLocatorCommand(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
+	args string,
 ) {
+	if strings.TrimSpace(args) != "" {
+		_ = h.sendPlain(ctx, locator, "Usage: /locator")
+		return
+	}
 	ref := locatorref.Format(locator)
 	msg := fmt.Sprintf(
 		"Transport: %s\nLocator: %s\n\nUse in scheduler/webhook config:\ntarget: locator\nkey: %s",
