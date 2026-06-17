@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
@@ -21,7 +21,7 @@ import (
 const deliveryPendingRetryAfter = 30 * time.Second
 
 type taskDeliveryActor struct {
-	channel *baldatelegram.Adapter
+	channel *baldachannel.Router
 	tasks   *swarm.TaskService
 	logger  zerolog.Logger
 }
@@ -29,7 +29,7 @@ type taskDeliveryActor struct {
 type taskDeliveryActorParams struct {
 	fx.In
 
-	Channel     *baldatelegram.Adapter
+	Channel     *baldachannel.Router
 	TaskService *swarm.TaskService
 	Logger      zerolog.Logger
 }
@@ -51,7 +51,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, envelope any) error {
 		return actorlayer.PermanentError(fmt.Errorf("decode task delivery payload: %w", err))
 	}
 	if a.channel == nil {
-		return actorlayer.TransientError(fmt.Errorf("telegram channel adapter is required"))
+		return actorlayer.TransientError(fmt.Errorf("channel router is required"))
 	}
 	if err := validateDeliveryPayload(payload); err != nil {
 		return actorlayer.PermanentError(err)

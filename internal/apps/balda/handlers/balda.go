@@ -52,6 +52,7 @@ type BaldaHandler struct {
 	authToken          string
 	baldaProviderName  string
 	planUpdatesEnabled bool
+	telegramEnabled    bool
 	logger             zerolog.Logger
 
 	mu          sync.RWMutex
@@ -78,6 +79,7 @@ type baldaHandlerDeps struct {
 	AuthToken          string `name:"balda_auth_token"`
 	BaldaProviderID    string `name:"balda_provider"`
 	PlanUpdatesEnabled bool   `name:"balda_telegram_plan_updates"`
+	TelegramEnabled    bool   `name:"balda_telegram_enabled"`
 	Logger             zerolog.Logger
 	InternalMCPManager *InternalMCPManager `optional:"true"`
 }

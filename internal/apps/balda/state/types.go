@@ -21,6 +21,9 @@ const (
 	// ChannelTypeTelegram is the current balda channel type backed by Telegram.
 	ChannelTypeTelegram = "telegram"
 
+	// ChannelTypeZulip is the balda channel type backed by Zulip.
+	ChannelTypeZulip = "zulip"
+
 	// ScheduledTaskStatusActive means the task is eligible for scheduler dispatch.
 	ScheduledTaskStatusActive = "active"
 	// ScheduledTaskStatusPaused means the task is persisted but not dispatched.

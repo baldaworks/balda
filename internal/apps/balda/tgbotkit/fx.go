@@ -68,14 +68,16 @@ func NewBot(
 	updateSource runtime.UpdateSource,
 	l zerolog.Logger,
 ) (*runtime.Bot, error) {
-	bot, err := runtime.New(
-		runtime.NewOptions(
-			cfg.Token,
-			runtime.WithUpdateSource(updateSource),
-			runtime.WithClient(client),
-			runtime.WithLogger(logger.NewZerolog(l)),
-		),
-	)
+	opts := []runtime.OptOptionsSetter{
+		runtime.WithUpdateSource(updateSource),
+		runtime.WithClient(client),
+		runtime.WithLogger(logger.NewZerolog(l)),
+	}
+	if strings.TrimSpace(cfg.Token) == "" {
+		// Skip GetMe API call when Telegram is not configured.
+		opts = append(opts, runtime.WithDefaultListenersEnabled(false))
+	}
+	bot, err := runtime.New(runtime.NewOptions(cfg.Token, opts...))
 	if err != nil {
 		return nil, err
 	}

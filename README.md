@@ -40,18 +40,19 @@ balda start
 ## How Balda Works Today
 
 1. Pick a provider runtime.
-2. Connect a Telegram bot token.
+2. Connect a Telegram bot token **or** a Zulip outgoing webhook bot.
 3. Chat, create topics, and let Balda persist session state, memory, and workspaces.
 
-Balda runs one provider runtime per process and maps Telegram chats/topics to
-separate agent sessions. That keeps the bot simple to operate while preserving
+Balda runs one provider runtime per process and maps chat conversations to
+separate agent sessions. Each Telegram topic or Zulip stream+topic pair becomes
+an isolated session. That keeps the bot simple to operate while preserving
 session boundaries.
 
 ## Quickstart
 
 You need:
 
-- a Telegram bot token from BotFather
+- a Telegram bot token from BotFather **or** a Zulip outgoing webhook bot
 - at least one provider CLI for host installs: `codex`, `opencode`, `copilot`,
   `gemini`, or `claude`
 - Node.js/npm, unless you use the Docker Compose flow
@@ -254,6 +255,15 @@ balda:
       path: "/telegram/webhook"
       url: ""
       auth_token: ""
+  zulip:
+    bot_email: ""
+    api_key: ""
+    server_url: ""
+    webhook_token: ""
+    webhook:
+      enabled: false
+      listen_addr: "0.0.0.0:8090"
+      path: "/zulip/webhook"
   webhooks:
     enabled: false
     listen_addr: "127.0.0.1:8090"
@@ -292,6 +302,10 @@ Common settings:
 
 - `balda.provider`: provider ID selected during `balda init`.
 - `balda.telegram.token`: Telegram bot token, usually supplied by `.env` as `BALDA_TELEGRAM_TOKEN`.
+- `balda.zulip.bot_email`, `balda.zulip.api_key`, `balda.zulip.server_url`: Zulip outgoing webhook bot credentials. See [`docs/zulip-webhook.md`](docs/zulip-webhook.md) for setup steps.
+- `balda.zulip.webhook_token`: verification token from the Zulip outgoing webhook bot settings.
+- `balda.zulip.webhook.enabled`: set `true` to start the Zulip webhook receiver on `listen_addr`. When this is `true`, a Telegram token is not required — Balda can run Zulip-only.
+- `balda.zulip.allowed_owners`: list of Zulip user emails trusted to auto-claim any topic by @-mentioning Balda, without needing `/start owner=<token>` first.
 - `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
 - `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session ingress. Each route defines `path`, `prompt_template`, `envelope` (`target`, `key`, optional `mode=task|session`, optional `report_to`), `auth` (`type=none|header`, `header`, `value` or `secret_env`), and `dedupe` (`source=request_id|header|body_sha256`, optional `header` for header source). Use `target: locator` with a `/locator` value in `key` to route directly to a specific session context.
 - `balda.webhooks.*` security: set route `auth` (for example shared-token header) and keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
@@ -353,12 +367,16 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 - Startup fails while initializing the built-in runtime streams: keep the default `balda.nats` settings unless you have a specific local runtime need, ensure `${balda.state_dir}/nats` is writable, and verify disk space.
 - Startup fails while initializing built-in runtime consumers: stop any other Balda process sharing the same embedded store and restart.
 - Runtime issues show up in structured logs; check recent command failures and retry pressure before increasing transport limits.
+- `zulip webhook disabled; skipping server start`: set `balda.zulip.webhook.enabled=true` or `BALDA_ZULIP_WEBHOOK_ENABLED=true`.
+- Zulip webhook token mismatch: verify `balda.zulip.webhook_token` matches the token shown in the Zulip outgoing webhook bot settings.
+- Zulip 401 Unauthorized: check `balda.zulip.bot_email` and `balda.zulip.api_key`.
 
 ## Documentation
 
 - Technical specification: [`docs/balda.md`](docs/balda.md)
 - Architecture map: [`docs/architecture/index.md`](docs/architecture/index.md)
 - Telegram formatting guide: [`docs/telegram-formatting.md`](docs/telegram-formatting.md)
+- Zulip webhook integration: [`docs/zulip-webhook.md`](docs/zulip-webhook.md)
 - Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Agent workflow/policies: [`AGENTS.md`](AGENTS.md)
 

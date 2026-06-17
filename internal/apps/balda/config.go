@@ -11,6 +11,7 @@ type Config struct {
 type BaldaConfig struct {
 	Provider          string               `mapstructure:"provider"`
 	Telegram          TelegramConfig       `mapstructure:"telegram"`
+	Zulip             ZulipConfig          `mapstructure:"zulip"`
 	Webhooks          WebhooksConfig       `mapstructure:"webhooks"`
 	Logger            LoggerConfig         `mapstructure:"logger"`
 	WorkingDir        string               `mapstructure:"working_dir"`
@@ -41,6 +42,23 @@ type WebhookConfig struct {
 	Path       string `mapstructure:"path"`
 	URL        string `mapstructure:"url"`
 	AuthToken  string `mapstructure:"auth_token"`
+}
+
+// ZulipConfig holds the Zulip bot configuration.
+type ZulipConfig struct {
+	BotEmail      string             `mapstructure:"bot_email"`
+	APIKey        string             `mapstructure:"api_key"`
+	ServerURL     string             `mapstructure:"server_url"`
+	WebhookToken  string             `mapstructure:"webhook_token"`
+	AllowedOwners []string           `mapstructure:"allowed_owners"`
+	Webhook       ZulipWebhookConfig `mapstructure:"webhook"`
+}
+
+// ZulipWebhookConfig holds Zulip webhook receiver settings.
+type ZulipWebhookConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	ListenAddr string `mapstructure:"listen_addr"`
+	Path       string `mapstructure:"path"`
 }
 
 // WebhooksConfig controls Balda-owned external webhook ingestion.

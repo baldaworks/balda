@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
@@ -43,6 +44,12 @@ func Parse(ref string) (baldasession.SessionLocator, error) {
 	switch channelType {
 	case baldastate.ChannelTypeTelegram:
 		locator, err := baldatelegram.LocatorFromAddressKey(addressKey)
+		if err != nil {
+			return baldasession.SessionLocator{}, err
+		}
+		return locator, nil
+	case baldastate.ChannelTypeZulip:
+		locator, err := baldazulip.LocatorFromAddressKey(addressKey)
 		if err != nil {
 			return baldasession.SessionLocator{}, err
 		}

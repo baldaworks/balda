@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -178,14 +179,18 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*taskDelive
 	_ = allocator
 	tgClient := &fakeTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	tgAdapter := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+		Messenger: msg,
+		TGClient:  tgClient,
+		Logger:    zerolog.Nop(),
+	})
+	router := baldachannel.NewRouter(map[string]baldachannel.ChannelAdapter{
+		baldatelegram.ChannelType: tgAdapter,
+	})
 	return &taskDeliveryActor{
-		channel: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
-			Messenger: msg,
-			TGClient:  tgClient,
-			Logger:    zerolog.Nop(),
-		}),
-		tasks:  tasks,
-		logger: zerolog.Nop(),
+		channel: router,
+		tasks:   tasks,
+		logger:  zerolog.Nop(),
 	}, tasks, tgClient, bus
 }
 

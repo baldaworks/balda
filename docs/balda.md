@@ -8,8 +8,8 @@ Architecture contracts are maintained in:
 
 ## Summary
 
-- Runtime stack: Telegram channel runtime plus the configured Balda provider runtime.
-- Telegram is the first supported Balda channel; future channels should be added as top-level config siblings such as `balda.whatsapp`.
+- Runtime stack: one or more channel runtimes (Telegram, Zulip) plus the configured Balda provider runtime.
+- Supported channels: Telegram (polling or webhook) and Zulip (outgoing webhook). Additional channels should be added as top-level config siblings such as `balda.whatsapp`.
 - Main agent: Balda app key `balda.provider` (profile overrides via `profiles.<profile>.balda.provider`).
 - Subagents: one session per Telegram topic (`message_thread_id`) with dedicated git worktree.
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.

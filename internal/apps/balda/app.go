@@ -14,6 +14,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/auth"
+	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -332,6 +333,14 @@ func Module(
 		),
 		fx.Provide(
 			fx.Annotate(
+				func() bool {
+					return strings.TrimSpace(cfg.Balda.Telegram.Token) != ""
+				},
+				fx.ResultTags(`name:"balda_telegram_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
 				func() int {
 					return cfg.Balda.Goal.MaxIterations
 				},
@@ -350,6 +359,44 @@ func Module(
 					return cfg.Balda.Provider
 				},
 				fx.ResultTags(`name:"balda_provider"`),
+			),
+		),
+		// Zulip transport
+		fx.Provide(func() *baldazulip.Client {
+			return baldazulip.NewClient(
+				cfg.Balda.Zulip.ServerURL,
+				cfg.Balda.Zulip.BotEmail,
+				cfg.Balda.Zulip.APIKey,
+			)
+		}),
+		fx.Provide(
+			fx.Annotate(
+				func() bool { return cfg.Balda.Zulip.Webhook.Enabled },
+				fx.ResultTags(`name:"balda_zulip_webhook_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Zulip.Webhook.ListenAddr) },
+				fx.ResultTags(`name:"balda_zulip_listen_addr"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Zulip.Webhook.Path) },
+				fx.ResultTags(`name:"balda_zulip_webhook_path"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Zulip.WebhookToken) },
+				fx.ResultTags(`name:"balda_zulip_webhook_token"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() []string { return cfg.Balda.Zulip.AllowedOwners },
+				fx.ResultTags(`name:"balda_zulip_allowed_owners"`),
 			),
 		),
 		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
@@ -380,6 +427,7 @@ func Module(
 		),
 		// Start Balda provider runtime and bot runtime only after bundled internal MCP is started.
 		fx.Invoke(func(lc fx.Lifecycle, bot *runtime.Bot, runtimeManager *baldaagent.RuntimeManager, mcpManager *handlers.InternalMCPManager) {
+			telegramEnabled := strings.TrimSpace(cfg.Balda.Telegram.Token) != ""
 			runCtx, cancel := context.WithCancel(context.Background())
 			lc.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
@@ -389,15 +437,17 @@ func Module(
 					if err := runtimeManager.EnsureRuntime(ctx); err != nil {
 						return fmt.Errorf("start Balda provider runtime: %w", err)
 					}
-					go func() {
-						if err := bot.Run(runCtx); err != nil {
-							if shutdown.IsExpected(err) {
-								bot.Logger().Debugf("bot run stopped during shutdown: %v", err)
-								return
+					if telegramEnabled {
+						go func() {
+							if err := bot.Run(runCtx); err != nil {
+								if shutdown.IsExpected(err) {
+									bot.Logger().Debugf("bot run stopped during shutdown: %v", err)
+									return
+								}
+								bot.Logger().Errorf("bot run failed: %v", err)
 							}
-							bot.Logger().Errorf("bot run failed: %v", err)
-						}
-					}()
+						}()
+					}
 					return nil
 				},
 				OnStop: func(ctx context.Context) error {
