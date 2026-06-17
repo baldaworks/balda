@@ -92,6 +92,9 @@ func (a *Adapter) SendTyping(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
 ) error {
+	if err := a.validateReady(); err != nil {
+		return err
+	}
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {
 		return fmt.Errorf("decode zulip locator for typing: %w", err)
@@ -114,6 +117,9 @@ func (a *Adapter) send(
 	locator baldasession.SessionLocator,
 	text string,
 ) (int, error) {
+	if err := a.validateReady(); err != nil {
+		return 0, err
+	}
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {
 		return 0, fmt.Errorf("decode zulip locator: %w", err)
@@ -129,6 +135,13 @@ func (a *Adapter) send(
 	default:
 		return 0, fmt.Errorf("unsupported zulip address type %q", address.Type)
 	}
+}
+
+func (a *Adapter) validateReady() error {
+	if a == nil || a.client == nil {
+		return fmt.Errorf("zulip adapter client is required")
+	}
+	return nil
 }
 
 func (a *Adapter) sendWithPlainFallback(

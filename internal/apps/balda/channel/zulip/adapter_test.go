@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -69,5 +70,29 @@ func TestAdapterSendAgentReplyDoesNotFallbackOnServerError(t *testing.T) {
 	}
 	if requestCount != 1 {
 		t.Fatalf("request count = %d, want no immediate fallback on server error", requestCount)
+	}
+}
+
+func TestAdapterSendAgentReplyRequiresClient(t *testing.T) {
+	adapter := NewAdapter(nil, zerolog.Nop())
+
+	err := adapter.SendAgentReply(context.Background(), NewStreamLocator(42, "ops"), "hello")
+	if err == nil {
+		t.Fatal("SendAgentReply() error = nil, want missing client error")
+	}
+	if !strings.Contains(err.Error(), "client is required") {
+		t.Fatalf("SendAgentReply() error = %q, want client context", err)
+	}
+}
+
+func TestAdapterSendTypingRequiresClient(t *testing.T) {
+	adapter := NewAdapter(nil, zerolog.Nop())
+
+	err := adapter.SendTyping(context.Background(), NewStreamLocator(42, "ops"))
+	if err == nil {
+		t.Fatal("SendTyping() error = nil, want missing client error")
+	}
+	if !strings.Contains(err.Error(), "client is required") {
+		t.Fatalf("SendTyping() error = %q, want client context", err)
 	}
 }
