@@ -901,7 +901,7 @@ func TestZulipBaldaHandlerTopicHandlesMissingSessionManager(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerTopicFallsBackWhenAdapterMissing(t *testing.T) {
+func TestZulipBaldaHandlerTopicPublishesWelcomeAndConfirmation(t *testing.T) {
 	locator := baldazulip.NewStreamLocator(42, "ops")
 	manager := &fakeZulipSessionManager{baldaProvider: "balda"}
 	dispatcher := &recordingZulipDispatcher{}
@@ -917,11 +917,14 @@ func TestZulipBaldaHandlerTopicFallsBackWhenAdapterMissing(t *testing.T) {
 		t.Fatalf("createCalls = %d, want topic session created", len(manager.createCalls))
 	}
 	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
-	if len(payloads) != 1 {
-		t.Fatalf("delivery payloads = %d, want fallback reply", len(payloads))
+	if len(payloads) != 2 {
+		t.Fatalf("delivery payloads = %d, want welcome and confirmation", len(payloads))
 	}
-	if payloads[0].Text != "Session created for topic 'support'." {
-		t.Fatalf("reply = %q, want fallback creation reply", payloads[0].Text)
+	if payloads[0].Mode != actors.DeliveryModeAgentReply || !strings.Contains(payloads[0].Text, "support") {
+		t.Fatalf("welcome payload = %+v, want agent reply welcome", payloads[0])
+	}
+	if payloads[1].Text != "Session created. Post in topic 'support' to continue." {
+		t.Fatalf("confirmation reply = %q, want topic creation confirmation", payloads[1].Text)
 	}
 }
 
@@ -953,19 +956,47 @@ func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerReturnsDeliveryError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte("temporary zulip failure"))
-	}))
-	t.Cleanup(server.Close)
-
+func TestZulipBaldaHandlerDispatchesDeliveryActorReply(t *testing.T) {
+	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
-		zulipAdapter: baldazulip.NewAdapter(
-			baldazulip.NewClient(server.URL, "bot@example.com", "api-key"),
-			zerolog.Nop(),
-		),
-		logger: zerolog.Nop(),
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+	locator := baldazulip.NewStreamLocator(42, "ops")
+
+	err := handler.deliverZulipAgentReply(
+		context.Background(),
+		locator,
+		"zu-s-42-test",
+		"final answer",
+	)
+
+	if err != nil {
+		t.Fatalf("deliverZulipAgentReply() error = %v", err)
+	}
+	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
+	if len(payloads) != 1 {
+		t.Fatalf("delivery payloads = %d, want 1", len(payloads))
+	}
+	if payloads[0].Mode != actors.DeliveryModeAgentReply {
+		t.Fatalf("delivery mode = %q, want %q", payloads[0].Mode, actors.DeliveryModeAgentReply)
+	}
+	if payloads[0].Text != "final answer" {
+		t.Fatalf("delivery text = %q, want final answer", payloads[0].Text)
+	}
+	if payloads[0].Locator != locator {
+		t.Fatalf("delivery locator = %+v, want %+v", payloads[0].Locator, locator)
+	}
+	if got := dispatcher.commands[0].From; got != zulipHandlerActorAddress {
+		t.Fatalf("delivery from = %+v, want %+v", got, zulipHandlerActorAddress)
+	}
+}
+
+func TestZulipBaldaHandlerReturnsDeliveryError(t *testing.T) {
+	dispatchErr := errors.New("dispatch unavailable")
+	handler := &ZulipBaldaHandler{
+		actorDispatcher: &recordingZulipDispatcher{err: dispatchErr},
+		logger:          zerolog.Nop(),
 	}
 
 	err := handler.deliverZulipAgentReply(
@@ -978,12 +1009,12 @@ func TestZulipBaldaHandlerReturnsDeliveryError(t *testing.T) {
 	if err == nil {
 		t.Fatal("deliverZulipAgentReply() error = nil, want Zulip delivery error")
 	}
-	if got := err.Error(); !strings.Contains(got, "deliver zulip response") || !strings.Contains(got, "HTTP 502") {
-		t.Fatalf("deliverZulipAgentReply() error = %q, want wrapped HTTP 502 delivery error", got)
+	if got := err.Error(); !strings.Contains(got, "deliver zulip response") || !strings.Contains(got, dispatchErr.Error()) {
+		t.Fatalf("deliverZulipAgentReply() error = %q, want wrapped dispatch error", got)
 	}
 }
 
-func TestZulipBaldaHandlerReturnsDeliveryErrorWhenAdapterMissing(t *testing.T) {
+func TestZulipBaldaHandlerReturnsDeliveryErrorWhenRuntimeMissing(t *testing.T) {
 	handler := &ZulipBaldaHandler{
 		logger: zerolog.Nop(),
 	}
@@ -996,11 +1027,11 @@ func TestZulipBaldaHandlerReturnsDeliveryErrorWhenAdapterMissing(t *testing.T) {
 	)
 
 	if err == nil {
-		t.Fatal("deliverZulipAgentReply() error = nil, want missing adapter error")
+		t.Fatal("deliverZulipAgentReply() error = nil, want missing runtime error")
 	}
 	if got := err.Error(); !strings.Contains(got, "deliver zulip response") ||
-		!strings.Contains(got, "zulip adapter is unavailable") {
-		t.Fatalf("deliverZulipAgentReply() error = %q, want wrapped missing adapter error", got)
+		!strings.Contains(got, "swarm runtime is unavailable") {
+		t.Fatalf("deliverZulipAgentReply() error = %q, want wrapped missing runtime error", got)
 	}
 }
 
@@ -1203,10 +1234,14 @@ var errFakeZulipSessionNotFound = errors.New("zulip session not found")
 
 type recordingZulipDispatcher struct {
 	commands []swarm.Envelope
+	err      error
 }
 
 func (d *recordingZulipDispatcher) Dispatch(_ context.Context, env swarm.Envelope) (*actortransport.DispatchReceipt, error) {
 	d.commands = append(d.commands, env)
+	if d.err != nil {
+		return nil, d.err
+	}
 	return &actortransport.DispatchReceipt{
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: uint64(len(d.commands)),

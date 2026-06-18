@@ -71,7 +71,6 @@ type ZulipBaldaHandler struct {
 	ownerStore        *auth.OwnerStore
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
-	zulipAdapter      *baldazulip.Adapter
 	sessionManager    zulipSessionManager
 	turnDispatcher    actors.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
@@ -113,7 +112,6 @@ type zulipBaldaHandlerParams struct {
 	OwnerStore         *auth.OwnerStore
 	InviteStore        *auth.InviteStore
 	CollaboratorStore  *auth.CollaboratorStore
-	ZulipAdapter       *baldazulip.Adapter
 	SessionManager     *baldasession.Manager
 	TurnDispatcher     *actors.TurnDispatcher
 	ActorDispatcher    actortransport.Dispatcher
@@ -135,7 +133,6 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		ownerStore:        params.OwnerStore,
 		inviteStore:       params.InviteStore,
 		collaboratorStore: params.CollaboratorStore,
-		zulipAdapter:      params.ZulipAdapter,
 		sessionManager:    params.SessionManager,
 		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.ActorDispatcher,
@@ -1324,10 +1321,15 @@ func (h *ZulipBaldaHandler) sendZulipAgentReply(
 	locator baldasession.SessionLocator,
 	text string,
 ) error {
-	if h.zulipAdapter == nil {
-		return fmt.Errorf("zulip adapter is unavailable")
+	if h == nil || h.actorDispatcher == nil {
+		return fmt.Errorf("swarm runtime is unavailable")
 	}
-	return h.zulipAdapter.SendAgentReply(ctx, locator, text)
+	env, err := actors.AgentReplyDeliveryEnvelope("", zulipHandlerActorAddress, locator, text, "")
+	if err != nil {
+		return err
+	}
+	_, err = h.actorDispatcher.Dispatch(ctx, env)
+	return err
 }
 
 // isAllowedOwner reports whether the given Zulip email is in the allowed_owners list.

@@ -119,6 +119,15 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
+	t.Run("handlers publish outbound delivery through delivery actor", func(t *testing.T) {
+		handlersRoot := filepath.Join(root, "handlers")
+		handlerFiles := productionGoFiles(t, handlersRoot)
+		matches := findSourceMatches(t, handlersRoot, handlerFiles, regexp.MustCompile(`\.\s*Send(?:Plain|Markdown|MarkdownWithProfile|AgentReply|AgentReplyWithProviderMessageID|AgentReplyWithProviderMessageIDAndProfile|DraftPlain|Typing)\s*\(`))
+		if len(matches) > 0 {
+			t.Fatalf("handlers must dispatch delivery envelopes instead of calling channel adapters directly:\n%s", formatSourceMatches(matches))
+		}
+	})
+
 	t.Run("ingress publishes commands before local state is advanced", func(t *testing.T) {
 		schedulerSource := readSource(t, filepath.Join(root, "handlers/scheduled_task_scheduler.go"))
 		if !strings.Contains(schedulerSource, "s.dispatcher.Dispatch(ctx, env)") {
