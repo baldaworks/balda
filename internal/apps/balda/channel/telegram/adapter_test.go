@@ -248,6 +248,205 @@ func TestMessageContextFromEvent_UsesReplyCaptionWhenReplyTextMissing(t *testing
 	}
 }
 
+func TestMessageContextFromEvent_UsesSelectedQuoteBeforeFullReplyContent(t *testing.T) {
+	replyText := "full replied message"
+	quote := client.TextQuote{Text: "selected quote", Position: 0}
+
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 45,
+			Chat: client.Chat{
+				Id:   -1009001,
+				Type: "supergroup",
+			},
+			From:  &client.User{Id: 101},
+			Text:  textPtr(testMessageText),
+			Quote: &quote,
+			ReplyToMessage: &client.Message{
+				MessageId: 10,
+				Text:      &replyText,
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if !got.IsReply {
+		t.Fatalf("is_reply = %v, want true for quote", got.IsReply)
+	}
+	if got.ReplyContent != quote.Text {
+		t.Fatalf("reply_content = %q, want quote %q", got.ReplyContent, quote.Text)
+	}
+}
+
+func TestMessageContextFromEvent_QuoteOnlyMarksReplyAndPopulatesContext(t *testing.T) {
+	quote := client.TextQuote{Text: "external quoted text", Position: 0}
+
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 46,
+			Chat: client.Chat{
+				Id:   2317500,
+				Type: "private",
+			},
+			From:  &client.User{Id: 101},
+			Text:  textPtr(testMessageText),
+			Quote: &quote,
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if !got.IsReply {
+		t.Fatalf("is_reply = %v, want true for quote-only message", got.IsReply)
+	}
+	if got.ReplyContent != quote.Text {
+		t.Fatalf("reply_content = %q, want %q", got.ReplyContent, quote.Text)
+	}
+}
+
+func TestMessageContextFromEvent_ExtractsReplyContentFromRichMessage(t *testing.T) {
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 47,
+			Chat: client.Chat{
+				Id:   -1009001,
+				Type: "supergroup",
+			},
+			From: &client.User{Id: 101},
+			Text: textPtr(testMessageText),
+			ReplyToMessage: &client.Message{
+				MessageId: 11,
+				RichMessage: &client.RichMessage{Blocks: []client.RichBlock{
+					{
+						"type": "heading",
+						"text": "Release notes",
+					},
+					{
+						"type": "paragraph",
+						"text": []interface{}{
+							"Ship ",
+							map[string]interface{}{"type": "bold", "text": "quote support"},
+							".",
+						},
+					},
+					{
+						"type": "details",
+						"summary": map[string]interface{}{
+							"type": "marked",
+							"text": "Fallbacks",
+						},
+						"blocks": []interface{}{
+							map[string]interface{}{
+								"type": "blockquote",
+								"blocks": []interface{}{
+									map[string]interface{}{"type": "paragraph", "text": "Nested quote"},
+								},
+							},
+						},
+					},
+				}},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	want := "Release notes\nShip quote support.\nFallbacks\nNested quote"
+	if got.ReplyContent != want {
+		t.Fatalf("reply_content = %q, want %q", got.ReplyContent, want)
+	}
+}
+
+func TestMessageContextFromEvent_ExtractsReplyContentFromRichMessageListsTablesAndCaptions(t *testing.T) {
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 48,
+			Chat: client.Chat{
+				Id:   -1009001,
+				Type: "supergroup",
+			},
+			From: &client.User{Id: 101},
+			Text: textPtr(testMessageText),
+			ReplyToMessage: &client.Message{
+				MessageId: 12,
+				RichMessage: &client.RichMessage{Blocks: []client.RichBlock{
+					{
+						"type": "list",
+						"items": []interface{}{
+							map[string]interface{}{
+								"label": "1.",
+								"blocks": []interface{}{
+									map[string]interface{}{"type": "paragraph", "text": "First item"},
+								},
+							},
+							map[string]interface{}{
+								"label": "-",
+								"blocks": []interface{}{
+									map[string]interface{}{"type": "paragraph", "text": "Second item"},
+								},
+							},
+						},
+					},
+					{
+						"type": "table",
+						"cells": []interface{}{
+							[]interface{}{
+								map[string]interface{}{"text": "Name"},
+								map[string]interface{}{"text": "Status"},
+							},
+							[]interface{}{
+								map[string]interface{}{"text": "quote"},
+								map[string]interface{}{"text": "covered"},
+							},
+						},
+					},
+					{
+						"type": "photo",
+						"caption": map[string]interface{}{
+							"text":   "Screenshot caption",
+							"credit": "QA",
+						},
+					},
+				}},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	want := "1. First item\n- Second item\nName | Status\nquote | covered\nScreenshot caption\nQA"
+	if got.ReplyContent != want {
+		t.Fatalf("reply_content = %q, want %q", got.ReplyContent, want)
+	}
+}
+
+func TestMessageContextFromEvent_NonTextOnlyReplyKeepsEmptyContext(t *testing.T) {
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 49,
+			Chat: client.Chat{
+				Id:   -1009001,
+				Type: "supergroup",
+			},
+			From: &client.User{Id: 101},
+			Text: textPtr(testMessageText),
+			ReplyToMessage: &client.Message{
+				MessageId: 13,
+				RichMessage: &client.RichMessage{Blocks: []client.RichBlock{
+					{"type": "divider"},
+				}},
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if got.ReplyContent != "" {
+		t.Fatalf("reply_content = %q, want empty", got.ReplyContent)
+	}
+}
+
 func TestMessageContextFromEvent_CopiesEntities(t *testing.T) {
 	entities := []client.MessageEntity{
 		{Type: "mention", Offset: 6, Length: 8},

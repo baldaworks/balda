@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -101,21 +102,14 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	if event.Message.Entities != nil {
 		entities = append(entities, (*event.Message.Entities)...)
 	}
-	isReply := event.Message.ReplyToMessage != nil
+	isReply := event.Message.ReplyToMessage != nil || event.Message.Quote != nil || event.Message.ExternalReply != nil
 	replyToUserID := int64(0)
 	replyToIsBot := false
-	replyContent := ""
 	if event.Message.ReplyToMessage != nil && event.Message.ReplyToMessage.From != nil {
 		replyToUserID = event.Message.ReplyToMessage.From.Id
 		replyToIsBot = event.Message.ReplyToMessage.From.IsBot
 	}
-	if event.Message.ReplyToMessage != nil {
-		if event.Message.ReplyToMessage.Text != nil {
-			replyContent = *event.Message.ReplyToMessage.Text
-		} else if event.Message.ReplyToMessage.Caption != nil {
-			replyContent = *event.Message.ReplyToMessage.Caption
-		}
-	}
+	replyContent := replyContentFromMessage(event.Message)
 
 	hasCommand := false
 	if event.Message.Entities != nil {
@@ -146,6 +140,214 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		},
 		IsDM: event.Message.Chat.Type == chatTypePrivate,
 	}, true
+}
+
+func replyContentFromMessage(message *client.Message) string {
+	if message == nil {
+		return ""
+	}
+	if message.Quote != nil && strings.TrimSpace(message.Quote.Text) != "" {
+		return message.Quote.Text
+	}
+	if message.ReplyToMessage == nil {
+		return ""
+	}
+	if message.ReplyToMessage.Text != nil && strings.TrimSpace(*message.ReplyToMessage.Text) != "" {
+		return *message.ReplyToMessage.Text
+	}
+	if message.ReplyToMessage.Caption != nil && strings.TrimSpace(*message.ReplyToMessage.Caption) != "" {
+		return *message.ReplyToMessage.Caption
+	}
+	return richMessagePlainText(message.ReplyToMessage.RichMessage)
+}
+
+func richMessagePlainText(rich *client.RichMessage) string {
+	if rich == nil || len(rich.Blocks) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(nonEmptyRichParts(richBlocksPlainText(rich.Blocks)), "\n"))
+}
+
+func richBlocksPlainText(blocks []client.RichBlock) []string {
+	parts := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		parts = append(parts, richBlockPlainText(block)...)
+	}
+	return nonEmptyRichParts(parts)
+}
+
+func richBlockPlainText(block client.RichBlock) []string {
+	if len(block) == 0 {
+		return nil
+	}
+	blockType, _ := block["type"].(string)
+	switch blockType {
+	case "paragraph", "heading", "footer", "pre", "pullquote", "thinking":
+		return richTextAndCreditPlainText(block["text"], block["credit"])
+	case "mathematical_expression":
+		return richTextParts(block["expression"])
+	case "blockquote":
+		parts := richBlockArrayPlainText(block["blocks"])
+		parts = append(parts, richTextParts(block["credit"])...)
+		return nonEmptyRichParts(parts)
+	case "collage", "slideshow":
+		parts := richBlockArrayPlainText(block["blocks"])
+		parts = append(parts, richCaptionPlainText(block["caption"])...)
+		return nonEmptyRichParts(parts)
+	case "details":
+		parts := richTextParts(block["summary"])
+		parts = append(parts, richBlockArrayPlainText(block["blocks"])...)
+		return nonEmptyRichParts(parts)
+	case "list":
+		return richListPlainText(block["items"])
+	case "table":
+		parts := richTablePlainText(block["cells"])
+		parts = append(parts, richTextParts(block["caption"])...)
+		return nonEmptyRichParts(parts)
+	case "animation", "audio", "map", "photo", "video", "voice_note":
+		return richCaptionPlainText(block["caption"])
+	default:
+		return fallbackRichBlockPlainText(block)
+	}
+}
+
+func richTextAndCreditPlainText(text, credit interface{}) []string {
+	parts := richTextParts(text)
+	parts = append(parts, richTextParts(credit)...)
+	return nonEmptyRichParts(parts)
+}
+
+func richCaptionPlainText(value interface{}) []string {
+	caption, ok := value.(map[string]interface{})
+	if !ok {
+		return richTextParts(value)
+	}
+	parts := richTextParts(caption["text"])
+	parts = append(parts, richTextParts(caption["credit"])...)
+	return nonEmptyRichParts(parts)
+}
+
+func richBlockArrayPlainText(value interface{}) []string {
+	switch blocks := value.(type) {
+	case []client.RichBlock:
+		return richBlocksPlainText(blocks)
+	case []interface{}:
+		parts := make([]string, 0, len(blocks))
+		for _, item := range blocks {
+			parts = append(parts, richBlockValuePlainText(item)...)
+		}
+		return nonEmptyRichParts(parts)
+	default:
+		return richBlockValuePlainText(value)
+	}
+}
+
+func richBlockValuePlainText(value interface{}) []string {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return richBlockPlainText(v)
+	default:
+		return richTextParts(v)
+	}
+}
+
+func richListPlainText(value interface{}) []string {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	parts := make([]string, 0, len(items))
+	for _, itemValue := range items {
+		item, ok := itemValue.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		itemParts := richBlockArrayPlainText(item["blocks"])
+		if label, ok := item["label"].(string); ok && strings.TrimSpace(label) != "" && len(itemParts) > 0 {
+			itemParts[0] = strings.TrimSpace(label) + " " + itemParts[0]
+		}
+		parts = append(parts, itemParts...)
+	}
+	return nonEmptyRichParts(parts)
+}
+
+func richTablePlainText(value interface{}) []string {
+	rows, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	parts := make([]string, 0, len(rows))
+	for _, rowValue := range rows {
+		cells, ok := rowValue.([]interface{})
+		if !ok {
+			continue
+		}
+		rowParts := make([]string, 0, len(cells))
+		for _, cellValue := range cells {
+			cell, ok := cellValue.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			rowParts = append(rowParts, richTextParts(cell["text"])...)
+		}
+		if row := strings.Join(nonEmptyRichParts(rowParts), " | "); row != "" {
+			parts = append(parts, row)
+		}
+	}
+	return nonEmptyRichParts(parts)
+}
+
+func richTextParts(value interface{}) []string {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil
+		}
+		return []string{v}
+	case []interface{}:
+		var out strings.Builder
+		for _, item := range v {
+			out.WriteString(strings.Join(richTextParts(item), ""))
+		}
+		if text := strings.TrimSpace(out.String()); text != "" {
+			return []string{text}
+		}
+		return nil
+	case map[string]interface{}:
+		if text := strings.Join(richTextParts(v["text"]), ""); text != "" {
+			return []string{text}
+		}
+		if text := strings.Join(richTextParts(v["alternative_text"]), ""); text != "" {
+			return []string{text}
+		}
+		if text := strings.Join(richTextParts(v["expression"]), ""); text != "" {
+			return []string{text}
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func fallbackRichBlockPlainText(block client.RichBlock) []string {
+	keys := []string{"text", "summary", "blocks", "items", "cells", "caption", "credit", "alternative_text", "expression"}
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, richBlockValuePlainText(block[key])...)
+	}
+	return nonEmptyRichParts(parts)
+}
+
+func nonEmptyRichParts(parts []string) []string {
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // CommandContextFromEvent converts a Telegram command event into balda channel context.

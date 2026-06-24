@@ -565,8 +565,6 @@ func TestBuildGoalWorkflowCarriesWorkerOutputFromPartialEventIntoValidator(t *te
 }
 
 func TestClosableGoalWorkflowRunnerDoesNotLogUnknownGoalAgents(t *testing.T) {
-	t.Parallel()
-
 	var logBuf bytes.Buffer
 	oldWriter := log.Writer()
 	oldFlags := log.Flags()
