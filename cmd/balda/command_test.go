@@ -87,7 +87,6 @@ func TestLoadConfigDocument_AppliesZulipEnvOverrides(t *testing.T) {
 	t.Setenv("BALDA_ZULIP_API_KEY", "zulip-api-key")
 	t.Setenv("BALDA_ZULIP_SERVER_URL", "https://zulip.example.com")
 	t.Setenv("BALDA_ZULIP_WEBHOOK_TOKEN", "zulip-webhook-token")
-	t.Setenv("BALDA_ZULIP_ALLOWED_OWNERS", "owner@example.com,second@example.com")
 	t.Setenv("BALDA_ZULIP_WEBHOOK_ENABLED", "true")
 	t.Setenv("BALDA_ZULIP_WEBHOOK_LISTEN_ADDR", "127.0.0.1:19090")
 	t.Setenv("BALDA_ZULIP_WEBHOOK_PATH", "/custom/zulip")
@@ -129,10 +128,6 @@ balda:
 	}
 	if doc.Balda.Zulip.WebhookToken != "zulip-webhook-token" {
 		t.Fatalf("zulip.webhook_token = %q, want zulip-webhook-token", doc.Balda.Zulip.WebhookToken)
-	}
-	wantOwners := []string{"owner@example.com", "second@example.com"}
-	if got := doc.Balda.Zulip.AllowedOwners; strings.Join(got, ",") != strings.Join(wantOwners, ",") {
-		t.Fatalf("zulip.allowed_owners = %#v, want %#v", got, wantOwners)
 	}
 	if !doc.Balda.Zulip.Webhook.Enabled {
 		t.Fatal("zulip.webhook.enabled = false, want true")

@@ -400,12 +400,6 @@ func Module(
 				fx.ResultTags(`name:"balda_zulip_webhook_token"`),
 			),
 		),
-		fx.Provide(
-			fx.Annotate(
-				func() []string { return normalizedZulipAllowedOwners(cfg.Balda.Zulip.AllowedOwners) },
-				fx.ResultTags(`name:"balda_zulip_allowed_owners"`),
-			),
-		),
 		// Slack transport
 		fx.Provide(func() *baldaslack.Client {
 			return baldaslack.NewClient(cfg.Balda.Slack.BotToken)
@@ -418,7 +412,6 @@ func Module(
 				ListenAddr:             strings.TrimSpace(cfg.Balda.Slack.ListenAddr),
 				EventsPath:             strings.TrimSpace(cfg.Balda.Slack.EventsPath),
 				CommandsPath:           strings.TrimSpace(cfg.Balda.Slack.CommandsPath),
-				AllowedOwners:          normalizedSlackAllowedOwners(cfg.Balda.Slack.AllowedOwners),
 				IncludePrivateChannels: cfg.Balda.Slack.IncludePrivateChannels,
 			}
 		}),
@@ -428,6 +421,10 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
 		}),
+		fx.Provide(func(provider baldastate.Provider) (*auth.ChannelTokenStore, error) {
+			return auth.NewChannelTokenStore(provider.AppKV())
+		}),
+		fx.Provide(auth.NewChannelAuthService),
 		fx.Provide(func(provider baldastate.Provider) *auth.CollaboratorStore {
 			// Wrap the state.CollaboratorStore interface in *auth.CollaboratorStore
 			// The wrapper delegates to the underlying store implementation
@@ -480,30 +477,6 @@ func Module(
 			})
 		}),
 	)
-}
-
-func normalizedZulipAllowedOwners(owners []string) []string {
-	out := make([]string, 0, len(owners))
-	for _, owner := range owners {
-		trimmed := strings.TrimSpace(owner)
-		if trimmed == "" {
-			continue
-		}
-		out = append(out, trimmed)
-	}
-	return out
-}
-
-func normalizedSlackAllowedOwners(owners []string) []string {
-	out := make([]string, 0, len(owners))
-	for _, owner := range owners {
-		trimmed := strings.TrimSpace(owner)
-		if trimmed == "" {
-			continue
-		}
-		out = append(out, trimmed)
-	}
-	return out
 }
 
 func validateBaldaMCPConfiguration(normaCfg runtimeconfig.RuntimeConfig) error {

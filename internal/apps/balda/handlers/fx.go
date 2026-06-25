@@ -134,6 +134,7 @@ var Module = fx.Module("balda_handlers",
 				ownerStore:        params.OwnerStore,
 				inviteStore:       params.InviteStore,
 				collaboratorStore: params.CollaboratorStore,
+				channelAuth:       params.ChannelAuth,
 				actorDispatcher:   params.ActorDispatcher,
 				authToken:         params.AuthToken,
 			}

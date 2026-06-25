@@ -514,59 +514,6 @@ func TestZulipBaldaHandlerResetHandlesMissingSessionManager(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerAutoClaimBareMentionSendsOneWelcome(t *testing.T) {
-	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
-	if err != nil {
-		t.Fatalf("NewOwnerStore() error = %v", err)
-	}
-	if _, err := ownerStore.RegisterOwner(101, 0); err != nil {
-		t.Fatalf("RegisterOwner() error = %v", err)
-	}
-	locator := baldazulip.NewStreamLocator(42, "ops")
-	manager := &fakeZulipSessionManager{baldaProvider: "balda"}
-	dispatcher := &recordingZulipDispatcher{}
-	handler := &ZulipBaldaHandler{
-		ownerStore:        ownerStore,
-		sessionManager:    manager,
-		actorDispatcher:   dispatcher,
-		baldaProviderName: "balda",
-		logger:            zerolog.Nop(),
-		ownerID:           101,
-	}
-
-	handler.handleAutoClaimMention(context.Background(), locator, 101, "owner@example.com", "", false)
-
-	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
-	if len(payloads) != 1 {
-		t.Fatalf("delivery payloads = %d, want exactly one welcome", len(payloads))
-	}
-	if !strings.Contains(payloads[0].Text, "auto") {
-		t.Fatalf("welcome text = %q, want auto session welcome", payloads[0].Text)
-	}
-	if len(manager.ensureCalls) != 1 {
-		t.Fatalf("ensureCalls = %d, want 1", len(manager.ensureCalls))
-	}
-}
-
-func TestZulipBaldaHandlerAutoClaimHandlesMissingOwnerStore(t *testing.T) {
-	locator := baldazulip.NewStreamLocator(42, "ops")
-	dispatcher := &recordingZulipDispatcher{}
-	handler := &ZulipBaldaHandler{
-		actorDispatcher: dispatcher,
-		logger:          zerolog.Nop(),
-	}
-
-	handler.handleAutoClaimMention(context.Background(), locator, 101, "owner@example.com", "", false)
-
-	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
-	if len(payloads) != 1 {
-		t.Fatalf("delivery payloads = %d, want configuration error reply", len(payloads))
-	}
-	if !strings.Contains(payloads[0].Text, "storage configuration") {
-		t.Fatalf("reply = %q, want storage configuration guidance", payloads[0].Text)
-	}
-}
-
 func TestZulipBaldaHandlerCommandAccessHandlesMissingOwnerStore(t *testing.T) {
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
@@ -590,8 +537,8 @@ func TestZulipBaldaHandlerMentionCommandUsesCommandText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 0); err != nil {
-		t.Fatalf("RegisterOwner() error = %v", err)
+	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
+		t.Fatalf("RegisterOwnerSubject() error = %v", err)
 	}
 
 	tests := []struct {
@@ -639,8 +586,8 @@ func TestZulipBaldaHandlerUsesMessageContentWhenDataEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 0); err != nil {
-		t.Fatalf("RegisterOwner() error = %v", err)
+	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
+		t.Fatalf("RegisterOwnerSubject() error = %v", err)
 	}
 
 	dispatcher := &recordingZulipDispatcher{}
@@ -933,8 +880,8 @@ func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
-	if _, err := ownerStore.RegisterOwner(101, 0); err != nil {
-		t.Fatalf("RegisterOwner() error = %v", err)
+	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
+		t.Fatalf("RegisterOwnerSubject() error = %v", err)
 	}
 	locator := baldazulip.NewDMLocator(101)
 	dispatcher := &recordingZulipDispatcher{}

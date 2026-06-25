@@ -71,6 +71,7 @@ type ZulipBaldaHandler struct {
 	ownerStore        *auth.OwnerStore
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
+	channelAuth       *auth.ChannelAuthService
 	sessionManager    zulipSessionManager
 	turnDispatcher    actors.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
@@ -82,7 +83,6 @@ type ZulipBaldaHandler struct {
 	webhookPath       string
 	enabled           bool
 	goalMaxIterations int
-	allowedOwners     []string
 	logger            zerolog.Logger
 
 	mu         sync.RWMutex
@@ -108,23 +108,23 @@ type zulipSessionManager interface {
 type zulipBaldaHandlerParams struct {
 	fx.In
 
-	LC                 fx.Lifecycle
-	OwnerStore         *auth.OwnerStore
-	InviteStore        *auth.InviteStore
-	CollaboratorStore  *auth.CollaboratorStore
-	SessionManager     *baldasession.Manager
-	TurnDispatcher     *actors.TurnDispatcher
-	ActorDispatcher    actortransport.Dispatcher
-	TaskService        *swarm.TaskService `optional:"true"`
-	AuthToken          string             `name:"balda_auth_token"`
-	BaldaProviderID    string             `name:"balda_provider"`
-	ZulipWebhookToken  string             `name:"balda_zulip_webhook_token"`
-	ZulipListenAddr    string             `name:"balda_zulip_listen_addr"`
-	ZulipWebhookPath   string             `name:"balda_zulip_webhook_path"`
-	ZulipEnabled       bool               `name:"balda_zulip_webhook_enabled"`
-	ZulipAllowedOwners []string           `name:"balda_zulip_allowed_owners"`
-	MaxIterations      int                `name:"balda_goal_max_iterations"`
-	Logger             zerolog.Logger
+	LC                fx.Lifecycle
+	OwnerStore        *auth.OwnerStore
+	InviteStore       *auth.InviteStore
+	CollaboratorStore *auth.CollaboratorStore
+	ChannelAuth       *auth.ChannelAuthService
+	SessionManager    *baldasession.Manager
+	TurnDispatcher    *actors.TurnDispatcher
+	ActorDispatcher   actortransport.Dispatcher
+	TaskService       *swarm.TaskService `optional:"true"`
+	AuthToken         string             `name:"balda_auth_token"`
+	BaldaProviderID   string             `name:"balda_provider"`
+	ZulipWebhookToken string             `name:"balda_zulip_webhook_token"`
+	ZulipListenAddr   string             `name:"balda_zulip_listen_addr"`
+	ZulipWebhookPath  string             `name:"balda_zulip_webhook_path"`
+	ZulipEnabled      bool               `name:"balda_zulip_webhook_enabled"`
+	MaxIterations     int                `name:"balda_goal_max_iterations"`
+	Logger            zerolog.Logger
 }
 
 // NewZulipBaldaHandler creates a ZulipBaldaHandler and registers lifecycle hooks.
@@ -133,6 +133,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		ownerStore:        params.OwnerStore,
 		inviteStore:       params.InviteStore,
 		collaboratorStore: params.CollaboratorStore,
+		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.ActorDispatcher,
@@ -144,7 +145,6 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		webhookPath:       strings.TrimSpace(params.ZulipWebhookPath),
 		enabled:           params.ZulipEnabled,
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
-		allowedOwners:     params.ZulipAllowedOwners,
 		logger:            params.Logger.With().Str("component", "balda.handler.zulip").Logger(),
 		processSem:        make(chan struct{}, zulipWebhookMaxConcurrentTasks),
 	}
@@ -258,6 +258,20 @@ func (h *ZulipBaldaHandler) initOwnerFromStore() {
 	owner := h.ownerStore.GetOwner()
 	if owner == nil {
 		return
+	}
+	for _, subject := range h.ownerStore.OwnerSubjects() {
+		value := strings.TrimPrefix(strings.TrimSpace(subject), auth.ChannelZulip+":")
+		if value == subject || value == "" {
+			continue
+		}
+		var id int
+		if _, err := fmt.Sscanf(value, "%d", &id); err == nil && id > 0 {
+			h.mu.Lock()
+			h.ownerID = int64(id)
+			h.mu.Unlock()
+			h.logger.Info().Int("owner_id", id).Msg("zulip handler owner initialized")
+			return
+		}
 	}
 	h.mu.Lock()
 	h.ownerID = owner.UserID
@@ -418,11 +432,11 @@ func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWeb
 		h.handleCommand(ctx, locator, senderID, text, isDM)
 		return
 	}
-
-	// Auto-claim: @mention from an allowed owner takes over the topic without /start.
-	if payload.Trigger == zulipTriggerMention && h.isAllowedOwner(payload.Message.SenderEmail) {
-		h.handleAutoClaimMention(ctx, locator, senderID, payload.Message.SenderEmail, text, isDM)
-		return
+	if isDM {
+		if token, ok := firstFieldToken(text); ok {
+			h.handleOwnerBindToken(ctx, locator, senderID, token)
+			return
+		}
 	}
 
 	h.handleMessage(ctx, locator, senderID, text, isDM)
@@ -531,7 +545,15 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 	if args == "" {
 		ownerID := h.getOwnerID()
 		if ownerID != 0 {
-			_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
+			if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(senderID)) {
+				msg := ownerAlreadyRegisteredMessage
+				if bundle, ok := ownerBindTokenBundleMessage(ctx, h.channelAuth, auth.ZulipSubject(senderID)); ok {
+					msg += "\n\n" + bundle
+				}
+				_ = h.sendPlain(ctx, locator, msg)
+			} else {
+				_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
+			}
 			return
 		}
 		_ = h.sendPlain(
@@ -540,6 +562,10 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 				"• /start owner=<your_owner_token>\n"+
 				"• /start invite=<your_invite_token>",
 		)
+		return
+	}
+	if token, ok := firstFieldToken(args); ok {
+		h.handleOwnerBindToken(ctx, locator, senderID, token)
 		return
 	}
 
@@ -574,7 +600,7 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 	ownerID := h.getOwnerID()
 	if ownerID != 0 {
 		if ownerID == int64(senderID) {
-			_ = h.sendPlain(ctx, locator, "You are already registered as the bot owner.")
+			_ = h.sendPlain(ctx, locator, ownerAlreadyRegisteredMessage)
 		} else {
 			_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
 		}
@@ -591,7 +617,7 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 		return
 	}
 	newOwnerID := int64(senderID)
-	registered, err := h.ownerStore.RegisterOwner(newOwnerID, 0)
+	registered, err := h.ownerStore.RegisterOwnerSubject(auth.ZulipSubject(senderID))
 	if err != nil {
 		log.Error().Err(err).Int("sender_id", senderID).Msg("zulip: failed to register owner")
 		_ = h.sendPlain(ctx, locator, "Failed to register owner. Please try again.")
@@ -606,6 +632,26 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 	_ = h.sendPlain(ctx, locator, "You are now registered as the bot owner.")
 }
 
+func (h *ZulipBaldaHandler) handleOwnerBindToken(ctx context.Context, locator baldasession.SessionLocator, senderID int, token string) {
+	if h.channelAuth == nil {
+		_ = h.sendPlain(ctx, locator, "Token authentication is unavailable right now.")
+		return
+	}
+	subject := auth.ZulipSubject(senderID)
+	consumed, err := h.channelAuth.ConsumeOwnerBind(ctx, auth.ChannelZulip, subject, token)
+	if err != nil {
+		h.logger.Warn().Err(err).Int("sender_id", senderID).Msg("zulip: failed to consume owner bind token")
+		_ = h.sendPlain(ctx, locator, "Failed to process token. Please try again.")
+		return
+	}
+	if !consumed {
+		_ = h.sendPlain(ctx, locator, "This token is invalid or has expired.")
+		return
+	}
+	h.setOwnerID(int64(senderID))
+	_ = h.sendPlain(ctx, locator, "This Zulip account is now connected to the Balda owner.")
+}
+
 func (h *ZulipBaldaHandler) handleInviteStart(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
@@ -618,7 +664,7 @@ func (h *ZulipBaldaHandler) handleInviteStart(
 		_ = h.sendPlain(ctx, locator, "Failed to process invite. Ask the operator to check Balda storage configuration.")
 		return
 	}
-	if h.ownerStore.IsOwner(int64(senderID)) {
+	if h.ownerStore.IsOwnerSubject(auth.ZulipSubject(senderID)) {
 		_ = h.sendPlain(ctx, locator, "You are already the bot owner.")
 		return
 	}
@@ -1332,70 +1378,8 @@ func (h *ZulipBaldaHandler) sendZulipAgentReply(
 	return err
 }
 
-// isAllowedOwner reports whether the given Zulip email is in the allowed_owners list.
-func (h *ZulipBaldaHandler) isAllowedOwner(email string) bool {
-	email = strings.ToLower(strings.TrimSpace(email))
-	for _, allowed := range h.allowedOwners {
-		if strings.ToLower(strings.TrimSpace(allowed)) == email {
-			return true
-		}
-	}
-	return false
-}
-
-// handleAutoClaimMention takes over a topic when an allowed owner @mentions the bot.
-// It auto-registers the owner (or adds a collaborator) and starts a session.
-func (h *ZulipBaldaHandler) handleAutoClaimMention(
-	ctx context.Context,
-	locator baldasession.SessionLocator,
-	senderID int,
-	senderEmail string,
-	text string,
-	isDM bool,
-) {
-	transportUserID := int64(senderID)
-
-	if h.getOwnerID() == 0 {
-		if h.ownerStore == nil {
-			h.logger.Error().Str("email", senderEmail).Msg("zulip: auto-claim owner store is unavailable")
-			_ = h.sendPlain(ctx, locator, "Could not auto-register. Ask the operator to check Balda storage configuration.")
-			return
-		}
-		registered, err := h.ownerStore.RegisterOwner(transportUserID, 0)
-		if err != nil {
-			h.logger.Error().Err(err).Str("email", senderEmail).Msg("zulip: auto-claim failed to register owner")
-			_ = h.sendPlain(ctx, locator, "Could not auto-register. Use `/start owner=<token>` to register manually.")
-			return
-		}
-		if registered {
-			h.setOwnerID(transportUserID)
-			h.logger.Info().Int64("owner_id", transportUserID).Str("email", senderEmail).Msg("zulip: owner auto-registered via mention")
-		}
-	} else if !h.canAccessCollaboratorScope(ctx, transportUserID) && h.collaboratorStore != nil {
-		collaborator := auth.Collaborator{
-			UserID:  fmt.Sprintf("%d", senderID),
-			AddedBy: "auto-claim",
-			AddedAt: time.Now(),
-		}
-		if err := h.collaboratorStore.AddCollaborator(ctx, collaborator); err != nil {
-			h.logger.Error().Err(err).Str("email", senderEmail).Msg("zulip: auto-claim failed to add collaborator")
-			_ = h.sendPlain(ctx, locator, "Could not auto-register. Ask the owner to run `/user add`.")
-			return
-		}
-		h.logger.Info().Str("email", senderEmail).Msg("zulip: allowed owner auto-added as collaborator")
-	}
-
-	if strings.TrimSpace(text) == "" {
-		providerName := h.getProviderName()
-		_, _ = h.getOrCreateSession(ctx, locator, baldazulip.UserID(senderID), providerName, isDM)
-		return
-	}
-
-	h.handleMessage(ctx, locator, senderID, text, isDM)
-}
-
 func (h *ZulipBaldaHandler) canAccessCollaboratorScope(ctx context.Context, userID int64) bool {
-	if h.ownerStore != nil && h.ownerStore.IsOwner(userID) {
+	if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(int(userID))) {
 		return true
 	}
 	if h.collaboratorStore == nil {

@@ -52,15 +52,6 @@ balda:
     # Copy it from the bot's outgoing webhook configuration in Zulip.
     # Set via BALDA_ZULIP_WEBHOOK_TOKEN env var
     webhook_token: ""
-    # Zulip user emails that can take over any topic via @mention without /start.
-    # On first mention, the user is auto-registered as owner (if none exists) or
-    # auto-added as a collaborator. Bare @mention (no message text) sends a welcome.
-    # Set via BALDA_ZULIP_ALLOWED_OWNERS as a comma-separated list.
-    allowed_owners: []
-    # Example:
-    # allowed_owners:
-    #   - alex@example.com
-
     webhook:
       # Enable inbound Zulip webhook receiver.
       # Zulip outgoing webhook bot must target: http://<host>:8090/zulip/webhook
@@ -90,9 +81,6 @@ balda:
     events_path: "/slack/events"
     # Local HTTP path for Slack slash command requests.
     commands_path: "/slack/commands"
-    # Slack owner subjects allowed to auto-claim ownership on first message.
-    # Format: slack:<team_id>:<user_id>
-    allowed_owners: []
     # If true, process private channel message events when the Slack app has
     # groups:history. Public channel and DM support does not require this.
     include_private_channels: false

@@ -47,12 +47,11 @@ type WebhookConfig struct {
 
 // ZulipConfig holds the Zulip bot configuration.
 type ZulipConfig struct {
-	BotEmail      string             `mapstructure:"bot_email"`
-	APIKey        string             `mapstructure:"api_key"`
-	ServerURL     string             `mapstructure:"server_url"`
-	WebhookToken  string             `mapstructure:"webhook_token"`
-	AllowedOwners []string           `mapstructure:"allowed_owners"`
-	Webhook       ZulipWebhookConfig `mapstructure:"webhook"`
+	BotEmail     string             `mapstructure:"bot_email"`
+	APIKey       string             `mapstructure:"api_key"`
+	ServerURL    string             `mapstructure:"server_url"`
+	WebhookToken string             `mapstructure:"webhook_token"`
+	Webhook      ZulipWebhookConfig `mapstructure:"webhook"`
 }
 
 // ZulipWebhookConfig holds Zulip webhook receiver settings.
@@ -64,14 +63,13 @@ type ZulipWebhookConfig struct {
 
 // SlackConfig holds Slack app configuration.
 type SlackConfig struct {
-	Enabled                bool     `mapstructure:"enabled"`
-	BotToken               string   `mapstructure:"bot_token"`
-	SigningSecret          string   `mapstructure:"signing_secret"`
-	ListenAddr             string   `mapstructure:"listen_addr"`
-	EventsPath             string   `mapstructure:"events_path"`
-	CommandsPath           string   `mapstructure:"commands_path"`
-	AllowedOwners          []string `mapstructure:"allowed_owners"`
-	IncludePrivateChannels bool     `mapstructure:"include_private_channels"`
+	Enabled                bool   `mapstructure:"enabled"`
+	BotToken               string `mapstructure:"bot_token"`
+	SigningSecret          string `mapstructure:"signing_secret"`
+	ListenAddr             string `mapstructure:"listen_addr"`
+	EventsPath             string `mapstructure:"events_path"`
+	CommandsPath           string `mapstructure:"commands_path"`
+	IncludePrivateChannels bool   `mapstructure:"include_private_channels"`
 }
 
 // WebhooksConfig controls Balda-owned external webhook ingestion.

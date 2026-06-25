@@ -21,6 +21,7 @@ type StartHandler struct {
 	ownerStore        *auth.OwnerStore
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
+	channelAuth       *auth.ChannelAuthService
 	actorDispatcher   actortransport.Dispatcher
 	authToken         string
 	baldaHandler      baldaOwnerActivator
@@ -36,6 +37,7 @@ type startHandlerParams struct {
 	OwnerStore        *auth.OwnerStore
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
+	ChannelAuth       *auth.ChannelAuthService
 	ActorDispatcher   actortransport.Dispatcher
 	AuthToken         string `name:"balda_auth_token"`
 }
@@ -89,6 +91,8 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			switch {
 			case strings.HasPrefix(assignment, "?"):
 				malformed = true
+			case auth.LooksLikeChannelToken(assignment):
+				args = startCommandArgs{mode: "channel_token", token: strings.TrimSpace(assignment)}
 			case strings.HasPrefix(assignment, startModeOwner+"_"):
 				value := strings.TrimSpace(strings.TrimPrefix(assignment, startModeOwner+"_"))
 				if value == "" {
@@ -136,20 +140,53 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		return nil
 	}
 
+	if args.mode == "channel_token" {
+		if h.channelAuth == nil {
+			if err := h.sendPlain(ctx, chatID, "Token authentication is unavailable right now."); err != nil {
+				return err
+			}
+			return nil
+		}
+		consumed, err := h.channelAuth.ConsumeOwnerBind(ctx, auth.ChannelTelegram, auth.TelegramSubject(userID), args.token)
+		if err != nil {
+			log.Warn().Err(err).Int64("user_id", userID).Msg("failed to consume telegram owner bind token")
+			if err := h.sendPlain(ctx, chatID, "Failed to process token. Please try again."); err != nil {
+				return err
+			}
+			return nil
+		}
+		if consumed {
+			if err := h.ownerStore.BindOwnerTelegram(userID, chatID); err != nil {
+				log.Warn().Err(err).Int64("user_id", userID).Msg("failed to bind telegram owner")
+			}
+			if err := h.sendPlain(ctx, chatID, "This Telegram account is now connected to the Balda owner."); err != nil {
+				return err
+			}
+			return nil
+		}
+		if err := h.sendPlain(ctx, chatID, "This token is invalid or has expired."); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	if h.ownerStore.HasOwner() {
 		if args.mode == startModeInvite {
 			return h.handleInviteStart(ctx, chatID, userID, userIDStr, args.token, event.Message.From)
 		}
 		if h.ownerStore.IsOwner(userID) {
 			// Persist chatID for existing owner
-			if err := h.ownerStore.UpdateChatID(chatID); err != nil {
+			if err := h.ownerStore.BindOwnerTelegram(userID, chatID); err != nil {
 				log.Warn().Err(err).Msg("failed to update owner chatID")
 			}
 			startErr := h.activateBalda(ctx, userID, chatID)
 			if startErr == nil {
 				log.Info().Int64("user_id", userID).Msg("balda re-activated for existing owner")
 			}
-			msg := "You are already registered as the bot owner."
+			msg := ownerAlreadyRegisteredMessage
+			if bundle, ok := ownerBindTokenBundleMessage(ctx, h.channelAuth, auth.TelegramSubject(userID)); ok {
+				msg += "\n\n" + bundle
+			}
 			if startErr != nil {
 				msg += "\n\nCould not start owner session. Please try again."
 			}

@@ -523,7 +523,6 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.zulip.api_key`: Zulip bot API key used for REST replies (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_API_KEY`)
 - `balda.zulip.server_url`: Zulip server base URL, absolute `http://` or `https://` (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_SERVER_URL`)
 - `balda.zulip.webhook_token`: Zulip outgoing webhook token that must match the incoming payload token (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_WEBHOOK_TOKEN`)
-- `balda.zulip.allowed_owners`: Zulip user emails trusted to auto-claim topics by mentioning the bot; `BALDA_ZULIP_ALLOWED_OWNERS` accepts a comma-separated list
 - `balda.zulip.webhook.enabled`: enable local Zulip outgoing webhook receiver (`true` => Zulip channel enabled; default: `false`; env: `BALDA_ZULIP_WEBHOOK_ENABLED`)
 - `balda.zulip.webhook.listen_addr`: local Zulip webhook listen address (default: `0.0.0.0:8090`; env: `BALDA_ZULIP_WEBHOOK_LISTEN_ADDR`)
 - `balda.zulip.webhook.path`: local Zulip webhook path, which must start with `/` (default: `/zulip/webhook`; env: `BALDA_ZULIP_WEBHOOK_PATH`)
@@ -533,7 +532,6 @@ session-start snapshot. New or restored sessions read the latest file.
 - `balda.slack.listen_addr`: local Slack HTTP listen address (default: `0.0.0.0:8091`; env: `BALDA_SLACK_LISTEN_ADDR`)
 - `balda.slack.events_path`: local Slack Events API path, must start with `/` (default: `/slack/events`; env: `BALDA_SLACK_EVENTS_PATH`)
 - `balda.slack.commands_path`: local Slack slash command path, must start with `/` (default: `/slack/commands`; env: `BALDA_SLACK_COMMANDS_PATH`)
-- `balda.slack.allowed_owners`: Slack subjects trusted to auto-claim ownership, formatted `slack:<team_id>:<user_id>`
 - `balda.slack.include_private_channels`: process private channel events when the app has `groups:history` (default: `false`)
 - `balda.webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
 - `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
@@ -1096,7 +1094,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 1. Startup order enforces internal MCP -> Balda provider -> bot runtime.
 2. Polling mode starts by default when `balda.telegram.webhook.enabled=false`.
 3. Webhook mode (`balda.telegram.webhook.enabled=true`) fails fast without `balda.telegram.webhook.url` or `balda.telegram.webhook.auth_token`.
-4. `/start owner=<token>` registers owner once; `/start invite=<token>` onboards collaborators; users who are neither owner nor collaborator are otherwise rejected.
+4. `/start owner=<token>` registers owner once; `/start invite=<token>` onboards collaborators; `/start <balda_token>` binds a generated channel token to the existing owner; users who are neither owner nor collaborator are otherwise rejected.
 5. `/topic <name>` creates topic + Balda session and persists session metadata.
 6. `/topic` without name returns usage error.
 7. Restart clears active process sessions; persisted non-owner sessions are lazy-restored from metadata when addressed again, while the owner main-DM session is bootstrapped during startup.

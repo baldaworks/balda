@@ -54,7 +54,6 @@ type SlackConfig struct {
 	ListenAddr             string
 	EventsPath             string
 	CommandsPath           string
-	AllowedOwners          []string
 	IncludePrivateChannels bool
 }
 
@@ -93,6 +92,7 @@ type SlackHandler struct {
 	ownerStore        *auth.OwnerStore
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
+	channelAuth       *auth.ChannelAuthService
 	sessionManager    *baldasession.Manager
 	actorDispatcher   actortransport.Dispatcher
 	taskService       *swarm.TaskService
@@ -119,6 +119,7 @@ type slackHandlerParams struct {
 	OwnerStore        *auth.OwnerStore
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
+	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
 	ActorDispatcher   actortransport.Dispatcher
 	TaskService       *swarm.TaskService `optional:"true"`
@@ -136,6 +137,7 @@ func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 		ownerStore:        params.OwnerStore,
 		inviteStore:       params.InviteStore,
 		collaboratorStore: params.CollaboratorStore,
+		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		actorDispatcher:   params.ActorDispatcher,
 		taskService:       params.TaskService,
@@ -476,10 +478,22 @@ func (h *SlackHandler) handleStartCommand(ctx context.Context, locator baldasess
 	}
 	if args == "" {
 		if h.ownerStore != nil && h.ownerStore.HasOwner() {
-			_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
+			if h.ownerStore.IsOwnerSubject(subject) {
+				msg := ownerAlreadyRegisteredMessage
+				if bundle, ok := ownerBindTokenBundleMessage(ctx, h.channelAuth, subject); ok {
+					msg += "\n\n" + bundle
+				}
+				_ = h.sendPlain(ctx, locator, msg)
+			} else {
+				_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
+			}
 			return
 		}
-		_ = h.sendPlain(ctx, locator, "Welcome to Balda Bot!\n\nTo authenticate:\n/balda start owner=<your_owner_token>\n/balda start invite=<your_invite_token>")
+		_ = h.sendPlain(ctx, locator, "Welcome to Balda Bot!\n\nTo authenticate:\n/balda start owner=<your_owner_token>\n/balda start invite=<your_invite_token>\n\nYou can also DM Balda a channel token.")
+		return
+	}
+	if token, ok := firstFieldToken(args); ok {
+		h.handleOwnerBindToken(ctx, locator, subject, token)
 		return
 	}
 	key, value, ok := strings.Cut(args, "=")
@@ -503,7 +517,7 @@ func (h *SlackHandler) handleStartCommand(ctx context.Context, locator baldasess
 	}
 	if h.ownerStore.HasOwner() {
 		if h.ownerStore.IsOwnerSubject(subject) {
-			_ = h.sendPlain(ctx, locator, "You are already registered as the bot owner.")
+			_ = h.sendPlain(ctx, locator, ownerAlreadyRegisteredMessage)
 		} else {
 			_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
 		}
@@ -551,6 +565,24 @@ func (h *SlackHandler) handleInviteStart(ctx context.Context, locator baldasessi
 		return
 	}
 	_ = h.sendPlain(ctx, locator, "Welcome! You are now a bot collaborator.")
+}
+
+func (h *SlackHandler) handleOwnerBindToken(ctx context.Context, locator baldasession.SessionLocator, subject, token string) {
+	if h.channelAuth == nil {
+		_ = h.sendPlain(ctx, locator, "Token authentication is unavailable right now.")
+		return
+	}
+	consumed, err := h.channelAuth.ConsumeOwnerBind(ctx, auth.ChannelSlack, subject, token)
+	if err != nil {
+		h.logger.Warn().Err(err).Str("user", subject).Msg("slack: failed to consume owner bind token")
+		_ = h.sendPlain(ctx, locator, "Failed to process token. Please try again.")
+		return
+	}
+	if !consumed {
+		_ = h.sendPlain(ctx, locator, "This token is invalid or has expired.")
+		return
+	}
+	_ = h.sendPlain(ctx, locator, "This Slack account is now connected to the Balda owner.")
 }
 
 func (h *SlackHandler) handleResetCommand(ctx context.Context, locator baldasession.SessionLocator, subject, cmd, args string, isDM bool) {
@@ -763,9 +795,11 @@ func (h *SlackHandler) handleUserCommand(ctx context.Context, locator baldasessi
 func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, messageID, text string, isDM bool, createIfMissing bool) {
 	subject := baldaslack.UserID(teamID, userID)
 	if h.ownerStore == nil || !h.ownerStore.HasOwner() {
-		if h.ownerStore != nil && h.isAllowedOwner(subject) {
-			_, _ = h.ownerStore.RegisterOwnerSubject(subject)
-		} else {
+		return
+	}
+	if isDM {
+		if token, ok := firstFieldToken(text); ok {
+			h.handleOwnerBindToken(ctx, locator, subject, token)
 			return
 		}
 	}
@@ -853,15 +887,6 @@ func (h *SlackHandler) canAccessSubject(ctx context.Context, subject string) boo
 	}
 	_, found, err := h.collaboratorStore.GetCollaborator(ctx, subject)
 	return err == nil && found
-}
-
-func (h *SlackHandler) isAllowedOwner(subject string) bool {
-	for _, owner := range h.config.AllowedOwners {
-		if strings.EqualFold(strings.TrimSpace(owner), strings.TrimSpace(subject)) {
-			return true
-		}
-	}
-	return false
 }
 
 func (h *SlackHandler) getProviderName() string {

@@ -64,25 +64,7 @@ balda:
       path: "/zulip/webhook"
 ```
 
-### 3. (Optional) Allow trusted owners to auto-claim topics
-
-By default, a user must send `/start owner=<token>` in a DM to register as
-owner before they can assign Balda to a topic. If you trust a set of Zulip
-users unconditionally, you can list their emails in `allowed_owners`:
-
-```yaml
-balda:
-  zulip:
-    allowed_owners:
-      - alice@example.com
-      - bob@example.com
-```
-
-Any listed user who @-mentions Balda in a stream topic will be automatically
-registered as the topic owner (or added as a collaborator if the topic already
-has one). A bare @-mention with no message text sends a welcome reply.
-
-### 4. Authenticate as owner
+### 3. Authenticate as owner
 
 Send a direct message to the bot in Zulip:
 
@@ -92,7 +74,9 @@ Send a direct message to the bot in Zulip:
 
 The `owner_token` is printed by `balda init` or logged at startup.
 
-This step is not required for users listed in `allowed_owners`.
+To connect Zulip to an owner that was already registered in another channel,
+send the generated `balda_...` channel token in a DM, or send
+`/start <balda_token>`.
 
 ## Streams and Topics
 
@@ -111,6 +95,7 @@ Balda supports these commands in Zulip:
 |---------|-------------|
 | `/start owner=<token>` | Register as bot owner (DM only) |
 | `/start invite=<token>` | Onboard as collaborator (DM only) |
+| `/start <balda_token>` | Connect this Zulip account to the existing owner (DM only) |
 | `/topic <name>` | Create a session in the current stream's native Zulip topic |
 | `/goal <objective>` | Start goal work from the current session context |
 | `/goal clear` | Stop active goal work for the current session |

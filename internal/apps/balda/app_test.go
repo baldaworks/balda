@@ -76,26 +76,6 @@ func TestValidateBaldaMCPConfiguration_RejectsReservedCustomServerIDs(t *testing
 	}
 }
 
-func TestNormalizedZulipAllowedOwnersTrimsEmptyEntries(t *testing.T) {
-	t.Parallel()
-
-	got := normalizedZulipAllowedOwners([]string{" owner@example.com ", "", " second@example.com"})
-	want := []string{"owner@example.com", "second@example.com"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("normalizedZulipAllowedOwners() = %#v, want %#v", got, want)
-	}
-}
-
-func TestNormalizedSlackAllowedOwnersTrimsEmptyEntries(t *testing.T) {
-	t.Parallel()
-
-	got := normalizedSlackAllowedOwners([]string{" slack:T123:U1 ", "", " slack:T123:U2 "})
-	want := []string{"slack:T123:U1", "slack:T123:U2"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("normalizedSlackAllowedOwners() = %#v, want %#v", got, want)
-	}
-}
-
 func TestValidateSessionPersistence(t *testing.T) {
 	t.Parallel()
 

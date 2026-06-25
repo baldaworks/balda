@@ -62,12 +62,11 @@ balda:
     listen_addr: "0.0.0.0:8091"
     events_path: "/slack/events"
     commands_path: "/slack/commands"
-    allowed_owners:
-      - "slack:T123:U456"
     include_private_channels: false
 ```
 
-`allowed_owners` entries use `slack:<team_id>:<user_id>`.
+Owner channel-bind tokens can be consumed in a direct message by sending the
+exact `balda_...` token, or with `/balda start <balda_token>`.
 
 ## Commands
 
@@ -77,6 +76,7 @@ Slack uses `/balda` instead of Telegram/Zulip slash commands:
 | --- | --- |
 | `/balda start owner=<token>` | Register owner in a DM |
 | `/balda start invite=<token>` | Register collaborator in a DM |
+| `/balda start <balda_token>` | Connect this Slack account to the existing owner |
 | `/balda topic <name>` | Create a Slack thread-backed Balda session |
 | `/balda goal <objective>` | Start goal work in the current session |
 | `/balda goal clear` | Stop active goal work for the current session |

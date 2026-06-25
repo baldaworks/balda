@@ -213,6 +213,7 @@ Built-in provider types:
 
 - `/start owner=<owner_token>`: authenticate the owner in direct messages.
 - `/start invite=<invite_token>`: onboard a collaborator in direct messages.
+- `/start <balda_token>`: connect this Telegram account to the existing owner when using a generated channel token.
 - `/topic <name>`: owner/collaborator, direct messages only; create a named topic session.
 - `/goal <objective>`: owner/collaborator; start goal work from the current session context in isolated GoalKeeper worker/validator ADK sessions. With workspace mode enabled, Balda creates a goal workspace from `balda.workspace.base_branch`, exports it back automatically on success, and preserves it for recovery if export fails. With workspace mode disabled, GoalKeeper works directly in `balda.working_dir` and records `not_exported` on success. Goal updates use `balda.telegram.formatting_mode`; terminal updates include concise result, export, work, validation, and actionable next-step sections when needed. Only one `/goal` run can be active per session. See the [goal workflow doc](docs/goal-workflow.md).
 - `/goal clear`: owner/collaborator; stop active `/goal` work for the current session only.
@@ -268,11 +269,10 @@ balda:
     enabled: false
     bot_token: ""
     signing_secret: ""
-    listen_addr: "0.0.0.0:8091"
-    events_path: "/slack/events"
-    commands_path: "/slack/commands"
-    allowed_owners: []
-    include_private_channels: false
+	    listen_addr: "0.0.0.0:8091"
+	    events_path: "/slack/events"
+	    commands_path: "/slack/commands"
+	    include_private_channels: false
   webhooks:
     enabled: false
     listen_addr: "127.0.0.1:8090"
@@ -314,11 +314,9 @@ Common settings:
 - `balda.zulip.bot_email`, `balda.zulip.api_key`, `balda.zulip.server_url`: Zulip outgoing webhook bot credentials. `server_url` must be an absolute `http://` or `https://` URL. See [`docs/zulip-webhook.md`](docs/zulip-webhook.md) for setup steps.
 - `balda.zulip.webhook_token`: verification token from the Zulip outgoing webhook bot settings.
 - `balda.zulip.webhook.enabled`: set `true` to start the Zulip webhook receiver on `listen_addr`. When this is `true`, a Telegram token is not required — Balda can run Zulip-only.
-- `balda.zulip.allowed_owners`: list of Zulip user emails trusted to auto-claim any topic by @-mentioning Balda, without needing `/start owner=<token>` first.
 - `balda.slack.enabled`: set `true` to start the Slack HTTP receiver. Balda serves plain HTTP only; HTTPS termination and public Request URL routing are external deployment concerns. See [`docs/slack.md`](docs/slack.md).
 - `balda.slack.bot_token`: Slack bot token (`xoxb-...`), usually supplied as `BALDA_SLACK_BOT_TOKEN`.
 - `balda.slack.signing_secret`: Slack signing secret used to verify Events API and slash command requests, usually supplied as `BALDA_SLACK_SIGNING_SECRET`.
-- `balda.slack.allowed_owners`: Slack subjects trusted to auto-claim owner on first message, formatted as `slack:<team_id>:<user_id>`.
 - `balda.telegram.webhook.auth_token`: required when Telegram webhook mode is enabled; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`.
 - `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session ingress. Each route defines `path`, `prompt_template`, `envelope` (`target`, `key`, optional `mode=task|session`, optional `report_to`), `auth` (`type=none|header`, `header`, `value` or `secret_env`), and `dedupe` (`source=request_id|header|body_sha256`, optional `header` for header source). Use `target: locator` with a `/locator` value in `key` to route directly to a specific session context.
 - `balda.webhooks.*` security: set route `auth` (for example shared-token header) and keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
