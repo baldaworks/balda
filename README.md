@@ -82,25 +82,25 @@ balda start
 Local repo development helper:
 
 ```bash
-make dev
+task dev
 ```
 
 Run fake ingress scenarios (Telegram/webhook/scheduler command publish paths):
 
 ```bash
-make scenarios
+task scenarios
 ```
 
 Inspect the runtime streams and consumers:
 
 ```bash
-make runtime-state
+task runtime-state
 ```
 
 Replay projection events through the deterministic projector replay suite:
 
 ```bash
-make projection-replay
+task projection-replay
 ```
 
 Authenticate in Telegram with the printed auth link, or send the printed command

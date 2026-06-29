@@ -40,26 +40,26 @@ balda start
 For repo-local development, run:
 
 ```bash
-make dev
+task dev
 ```
 
 To exercise fake ingress scenarios (Telegram/webhook/scheduler paths), run:
 
 ```bash
-make scenarios
+task scenarios
 ```
 
 To inspect the runtime streams and consumers, run:
 
 ```bash
-make runtime-state
+task runtime-state
 ```
 
 To replay projection events through the deterministic projector replay suite,
 run:
 
 ```bash
-make projection-replay
+task projection-replay
 ```
 
 `balda init` requires a Telegram bot token, detects supported provider CLIs

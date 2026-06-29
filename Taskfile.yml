@@ -1,0 +1,22 @@
+version: "3"
+
+tasks:
+  dev:
+    desc: Run Balda with the embedded local runtime
+    cmds:
+      - ./scripts/dev/run-balda-embedded-runtime.sh
+
+  scenarios:
+    desc: Run fake ingress scenarios
+    cmds:
+      - ./scripts/dev/run-fake-ingress-scenarios.sh
+
+  runtime-state:
+    desc: Dump runtime stream and consumer state
+    cmds:
+      - ./scripts/dev/dump-runtime-state.sh
+
+  projection-replay:
+    desc: Replay events through the projection replay suite
+    cmds:
+      - ./scripts/dev/replay-events-into-projections.sh
