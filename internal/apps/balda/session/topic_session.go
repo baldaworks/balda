@@ -55,3 +55,14 @@ func (s *TopicSession) GetBranchName() string {
 func (s *TopicSession) GetAgentName() string {
 	return s.agentName
 }
+
+func (s *TopicSession) RuntimeStateValue(key string) (any, bool) {
+	if s == nil || s.sess == nil || s.sess.State() == nil {
+		return nil, false
+	}
+	value, err := s.sess.State().Get(strings.TrimSpace(key))
+	if err != nil {
+		return nil, false
+	}
+	return value, true
+}

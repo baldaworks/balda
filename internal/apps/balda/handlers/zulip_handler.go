@@ -20,6 +20,7 @@ import (
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
+	"github.com/normahq/balda/internal/apps/balda/memory"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
@@ -76,6 +77,7 @@ type ZulipBaldaHandler struct {
 	turnDispatcher    actors.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
 	taskService       *swarm.TaskService
+	memoryStore       *memory.Store
 	authToken         string
 	baldaProviderName string
 	webhookToken      string
@@ -117,13 +119,14 @@ type zulipBaldaHandlerParams struct {
 	TurnDispatcher    *actors.TurnDispatcher
 	ActorDispatcher   actortransport.Dispatcher
 	TaskService       *swarm.TaskService `optional:"true"`
-	AuthToken         string             `name:"balda_auth_token"`
-	BaldaProviderID   string             `name:"balda_provider"`
-	ZulipWebhookToken string             `name:"balda_zulip_webhook_token"`
-	ZulipListenAddr   string             `name:"balda_zulip_listen_addr"`
-	ZulipWebhookPath  string             `name:"balda_zulip_webhook_path"`
-	ZulipEnabled      bool               `name:"balda_zulip_webhook_enabled"`
-	MaxIterations     int                `name:"balda_goal_max_iterations"`
+	MemoryStore       *memory.Store
+	AuthToken         string `name:"balda_auth_token"`
+	BaldaProviderID   string `name:"balda_provider"`
+	ZulipWebhookToken string `name:"balda_zulip_webhook_token"`
+	ZulipListenAddr   string `name:"balda_zulip_listen_addr"`
+	ZulipWebhookPath  string `name:"balda_zulip_webhook_path"`
+	ZulipEnabled      bool   `name:"balda_zulip_webhook_enabled"`
+	MaxIterations     int    `name:"balda_goal_max_iterations"`
 	Logger            zerolog.Logger
 }
 
@@ -138,6 +141,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.ActorDispatcher,
 		taskService:       params.TaskService,
+		memoryStore:       params.MemoryStore,
 		authToken:         strings.TrimSpace(params.AuthToken),
 		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
 		webhookToken:      strings.TrimSpace(params.ZulipWebhookToken),
@@ -1304,10 +1308,14 @@ func (h *ZulipBaldaHandler) RunSessionTurnPayload(
 	}
 
 	userContent := genai.NewContentFromText(strings.TrimSpace(payload.Text), genai.RoleUser)
+	runOpts, err := prepareMemoryRunOptions(ctx, h.memoryStore, ts)
+	if err != nil {
+		return err
+	}
 
 	var responseText strings.Builder
 	sawTurnComplete := false
-	for ev, err := range r.Run(ctx, userID, agentSessionID, userContent, agent.RunConfig{}) {
+	for ev, err := range r.Run(ctx, userID, agentSessionID, userContent, agent.RunConfig{}, runOpts...) {
 		if err != nil {
 			return fmt.Errorf("zulip agent run: %w", err)
 		}

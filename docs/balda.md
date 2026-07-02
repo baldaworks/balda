@@ -331,8 +331,9 @@ project:
 - `.env` is loaded from `/workspace/.env`.
 - `.config/balda/config.yaml` remains the selected app config.
 - `.config/balda/state.db` persists owner auth, session metadata, task
-  read-model state, MCP KV, and Telegram polling offsets on the host.
-- `.config/balda/MEMORY.md` stays on the host when `balda.memory.enabled=true`.
+  read-model state, MCP KV, durable memory, and Telegram polling offsets on the host.
+- Existing `.config/balda/MEMORY.md` content is imported into state DB memory once
+  when `balda.memory.enabled=true` and KV memory is empty.
 - `.git` stays visible to `balda.workspace.mode=auto|on`, so workspace mode sees
   the same repository as host execution.
 - `balda-home` persists provider CLI auth/config written under `/home/node`.
@@ -484,14 +485,14 @@ balda:
 The balda MCP server (`balda`) is automatically included in all sessions. It provides:
 
 - `balda.state` - persistent key-value storage
-- `balda.memory.read` - read `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
-- `balda.memory.remember` - append a durable fact to `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
+- `balda.memory.read` - read durable memory from `state.db` when `balda.memory.enabled=true`
+- `balda.memory.remember` - append a durable fact to `state.db` memory when `balda.memory.enabled=true`
 - `balda.workspace.import` - import workspace from base branch
 - `balda.workspace.export` - export workspace to base branch
 
 `balda.memory.remember` is for explicit user requests such as "remember this".
-It updates the file immediately, but running agent sessions keep their existing
-session-start snapshot. New or restored sessions read the latest file.
+It updates durable memory immediately. Active sessions refresh memory state on
+their next turn, and new or restored sessions start with the latest memory.
 
 ### Telegram settings
 
@@ -564,7 +565,7 @@ session-start snapshot. New or restored sessions read the latest file.
   - `sqlite`: session history and state are persisted in `state.db` and reused after restart until the session is explicitly closed.
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
-  - when disabled, Balda does not snapshot `MEMORY.md` or register `balda.memory.*` MCP tools.
+  - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
 - `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations (default `25`)
   - invalid values are clamped to `25`.
 - `runtime.providers.<provider_id>.codex_acp.reasoning_effort`: optional Codex reasoning effort.
@@ -578,10 +579,11 @@ session-start snapshot. New or restored sessions read the latest file.
 - `/goal` runs repeated work and validation passes in isolated GoalKeeper worker/validator ADK sessions until the goal passes validation or `balda.goal.max_iterations` is reached.
   - with workspace mode enabled, `/goal` uses a separate goal worktree and exports passing work to `balda.workspace.base_branch`.
   - with workspace mode disabled, `/goal` works directly in `balda.working_dir` and records `not_exported` on passing runs.
-- internal durable memory uses `${balda.state_dir}/MEMORY.md` when `balda.memory.enabled=true`
-  - `balda.memory.read` reads the file from MCP.
-  - `balda.memory.remember` appends facts to the file from MCP.
-  - memory is snapshotted into session state when a session starts or restores; active sessions are not refreshed after writes.
+- internal durable memory uses app KV in `${balda.state_dir}/state.db` when `balda.memory.enabled=true`
+  - `balda.memory.read` reads memory from MCP.
+  - `balda.memory.remember` appends facts from MCP.
+  - active sessions refresh memory state on the next turn after a write.
+  - existing `${balda.state_dir}/MEMORY.md` content is imported once when KV memory is empty.
 - owner auth token is generated during `balda init`, persisted in `state.db`, and reused by `balda start`
   - if token is missing in existing state, `balda start` backfills one-time and persists it
   - if no owner is registered yet, `balda start` logs the owner bootstrap command and auth link again to help finish first-time onboarding

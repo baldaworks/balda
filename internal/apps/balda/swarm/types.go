@@ -13,6 +13,7 @@ const (
 	ActorTypeGoalkeeper = "goalkeeper"
 	ActorTypeGoal       = ActorTypeGoalkeeper
 	ActorTypeDelivery   = "delivery"
+	ActorTypeMemory     = "memory"
 
 	NamespaceHumanInbound      = "human.inbound"
 	NamespaceWebhookInbound    = "webhook.inbound"
@@ -21,13 +22,15 @@ const (
 	NamespaceGoalkeeperCommand = "goalkeeper.command"
 	NamespaceGoalCommand       = NamespaceGoalkeeperCommand
 	NamespaceTaskControl       = "task.control"
+	NamespaceMemoryCommand     = "memory.command"
 	NamespaceTelemetry         = "telemetry"
 
-	KindMessage       = "message"
-	KindWebhookEvent  = "webhook_event"
-	KindScheduledTask = "scheduled_task"
-	KindGoal          = "goal"
-	KindCancel        = "cancel"
+	KindMessage        = "message"
+	KindWebhookEvent   = "webhook_event"
+	KindScheduledTask  = "scheduled_task"
+	KindGoal           = "goal"
+	KindCancel         = "cancel"
+	KindMemoryRemember = "memory_remember"
 )
 
 type ActorAddress = actorlayer.ActorAddress

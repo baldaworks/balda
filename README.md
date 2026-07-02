@@ -321,7 +321,7 @@ Common settings:
 - `balda.webhooks.*`: optional local inbound webhook receiver for external event-to-session ingress. Each route defines `path`, `prompt_template`, `envelope` (`target`, `key`, optional `mode=task|session`, optional `report_to`), `auth` (`type=none|header`, `header`, `value` or `secret_env`), and `dedupe` (`source=request_id|header|body_sha256`, optional `header` for header source). Use `target: locator` with a `/locator` value in `key` to route directly to a specific session context.
 - `balda.webhooks.*` security: set route `auth` (for example shared-token header) and keep `listen_addr` private (localhost/private network) or front it with trusted gateway auth.
 - `balda.sessions.persistence`: `sqlite` by default; keeps conversation history across restarts until the session is explicitly closed.
-- `balda.memory.enabled`: `true` by default; controls `${balda.state_dir}/MEMORY.md` and `balda.memory.*` MCP tools.
+- `balda.memory.enabled`: `true` by default; controls durable memory stored in `${balda.state_dir}/state.db` and the `balda.memory.*` MCP tools. Existing `${balda.state_dir}/MEMORY.md` content is imported once when KV memory is empty.
 - `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations; defaults to `25`.
 - `balda.nats.*`: built-in command/event runtime settings. Defaults bind to `127.0.0.1` on a random local port, keep monitoring disabled, and store runtime files under `${balda.state_dir}/nats`.
 - `balda.swarm`: optional advanced runtime tuning for goals, scheduled work, retries, and webhook delivery. Most installs should leave it at defaults.
@@ -372,7 +372,7 @@ Do not define `runtime.mcp_servers.balda`; Balda owns that bundled server.
 - `no supported agent CLI detected`: install or expose one of `codex`, `opencode`, `copilot`, `gemini`, or `claude`.
 - `balda.provider is required`: rerun `balda init` or set `balda.provider` to a configured provider ID.
 - Session history should not survive restarts: set `balda.sessions.persistence=memory` or `BALDA_SESSIONS_PERSISTENCE=memory`.
-- Memory facts are not visible in an active session: memory is snapshotted when a session starts or restores; close and reopen the session to refresh it.
+- Memory facts are visible on the next active session turn. If they are missing, confirm `balda.memory.enabled=true` and check the bundled `balda.memory.*` MCP tools in the provider logs.
 - Workspace import/export issues: check `balda.workspace.mode`, `balda.workspace.base_branch`, and that Balda is running in the expected git checkout.
 - Progress updates are too noisy: set `balda.telegram.plan_updates=false`.
 - Startup fails while initializing the built-in runtime streams: keep the default `balda.nats` settings unless you have a specific local runtime need, ensure `${balda.state_dir}/nats` is writable, and verify disk space.

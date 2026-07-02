@@ -138,7 +138,7 @@ func TestBundledBaldaServerInstructionsReflectWorkspaceMode(t *testing.T) {
 - balda.state stores persistent Balda session and app state in state.db.
 - balda config editing is not exposed through MCP; edit the balda config file directly.`
 		if memoryEnabled {
-			instructions += "\n- balda.memory stores durable facts in MEMORY.md; only call balda.memory.remember when the user explicitly asks you to remember or save a fact."
+			instructions += "\n- balda.memory stores durable facts in Balda state; only call balda.memory.remember when the user explicitly asks you to remember or save a fact."
 		}
 		if workspaceEnabled {
 			instructions += "\n- balda.workspace is available and should be used for workspace import/export instead of manual branch landing."

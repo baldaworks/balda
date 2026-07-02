@@ -94,6 +94,10 @@ func (h *BaldaHandler) RunSessionTurnPayload(ctx context.Context, payload actors
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo
 	}
+	runOpts, err := prepareMemoryRunOptions(ctx, h.memoryStore, ts)
+	if err != nil {
+		return err
+	}
 	return h.runTurnTaskWithDeliveryOptions(
 		ctx,
 		payload.Text,
@@ -107,6 +111,7 @@ func (h *BaldaHandler) RunSessionTurnPayload(ctx context.Context, payload actors
 		payload.TopicID,
 		actors.NormalizeSessionDeliveryOptions(payload),
 		payload.Deliver,
+		runOpts...,
 	)
 }
 

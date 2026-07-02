@@ -490,13 +490,15 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 		state = make(map[string]any)
 	}
 	state[memory.MemoryStateKey] = ""
+	state[memory.MemoryVersionStateKey] = ""
 	if b.memoryStore == nil {
 		return state, nil
 	}
-	memoryText, err := b.memoryStore.ReadMemory(ctx)
+	snapshot, err := b.memoryStore.Snapshot(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read balda memory: %w", err)
 	}
-	state[memory.MemoryStateKey] = strings.TrimSpace(memoryText)
+	state[memory.MemoryStateKey] = strings.TrimSpace(snapshot.Content)
+	state[memory.MemoryVersionStateKey] = memory.VersionStateValue(snapshot.Version)
 	return state, nil
 }

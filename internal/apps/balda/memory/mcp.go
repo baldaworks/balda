@@ -25,7 +25,7 @@ type ToolOutcome struct {
 }
 
 type rememberInput struct {
-	Fact string `json:"fact" jsonschema:"durable fact to append to MEMORY.md; call only after the user explicitly asks to remember or save it"`
+	Fact string `json:"fact" jsonschema:"durable fact to store in Balda memory; call only after the user explicitly asks to remember or save it"`
 }
 
 type rememberOutput struct {
@@ -35,8 +35,8 @@ type rememberOutput struct {
 
 type readOutput struct {
 	ToolOutcome
-	Content string `json:"content" jsonschema:"current MEMORY.md content"`
-	Found   bool   `json:"found" jsonschema:"true when MEMORY.md contains non-empty content"`
+	Content string `json:"content" jsonschema:"current durable Balda memory content"`
+	Found   bool   `json:"found" jsonschema:"true when durable Balda memory contains non-empty content"`
 }
 
 type service struct {
@@ -50,11 +50,11 @@ func RegisterTools(server *mcp.Server, store *Store) {
 	svc := &service{store: store}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "balda.memory.remember",
-		Description: "Append a durable fact to MEMORY.md. Use only when the user explicitly asks you to remember or save a fact. The new fact applies to future Balda sessions.",
+		Description: "Append a durable fact to Balda memory. Use only when the user explicitly asks you to remember or save a fact. The new fact is available to active sessions on their next turn.",
 	}, svc.remember)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "balda.memory.read",
-		Description: "Read the current MEMORY.md durable facts.",
+		Description: "Read the current durable Balda memory facts.",
 	}, svc.read)
 }
 
@@ -64,13 +64,13 @@ func (s *service) remember(ctx context.Context, _ *mcp.CallToolRequest, in remem
 		result, out := validationFailure("balda.memory.remember", "fact is required")
 		return result, rememberOutput{ToolOutcome: out}, nil
 	}
-	if err := s.store.Remember(ctx, fact); err != nil {
+	if _, err := s.store.Remember(ctx, fact); err != nil {
 		result, out := backendFailure("balda.memory.remember", err)
 		return result, rememberOutput{ToolOutcome: out}, nil
 	}
 	return nil, rememberOutput{
 		ToolOutcome: okOutcome(),
-		Message:     "Saved to MEMORY.md. The fact will be injected into future sessions after they start or restore.",
+		Message:     "Saved to durable Balda memory. Active sessions will see it on their next turn.",
 	}, nil
 }
 

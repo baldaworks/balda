@@ -11,7 +11,7 @@ import (
 func TestRegisterToolsSkipsDisabledMemory(t *testing.T) {
 	t.Parallel()
 
-	ctx, cleanup, session := newMemoryMCPTestSession(t, NewStore(t.TempDir(), false))
+	ctx, cleanup, session := newMemoryMCPTestSession(t, NewStore(newTestKV(), t.TempDir(), false))
 	defer cleanup()
 
 	tools, err := session.ListTools(ctx, nil)
@@ -26,7 +26,7 @@ func TestRegisterToolsSkipsDisabledMemory(t *testing.T) {
 func TestRegisterToolsAddsMemoryToolsWhenEnabled(t *testing.T) {
 	t.Parallel()
 
-	ctx, cleanup, session := newMemoryMCPTestSession(t, NewStore(t.TempDir(), true))
+	ctx, cleanup, session := newMemoryMCPTestSession(t, NewStore(newTestKV(), t.TempDir(), true))
 	defer cleanup()
 
 	tools, err := session.ListTools(ctx, nil)

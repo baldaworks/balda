@@ -193,9 +193,6 @@ func Module(
 				func() string { return stateDir },
 				fx.ResultTags(`name:"balda_state_dir"`),
 			),
-			func() *memory.Store {
-				return memory.NewStore(stateDir, cfg.Balda.Memory.Enabled)
-			},
 		),
 		fx.Provide(
 			func(lc fx.Lifecycle) (baldastate.Provider, error) {
@@ -215,6 +212,9 @@ func Module(
 			},
 			func(provider baldastate.Provider) sessionmcp.Store {
 				return provider.SessionMCPKV()
+			},
+			func(provider baldastate.Provider) *memory.Store {
+				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
 			},
 		),
 		fx.Provide(

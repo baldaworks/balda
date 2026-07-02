@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -86,7 +87,7 @@ func TestBuildBaldaInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.
 	t.Parallel()
 
 	builder := &Builder{
-		memoryStore: memory.NewStore(t.TempDir(), true),
+		memoryStore: memory.NewStore(newBuilderMemoryKV(), t.TempDir(), true),
 	}
 	got := builder.buildBaldaInstruction(
 		"tg-1-2",
@@ -101,8 +102,8 @@ func TestBuildBaldaInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.
 		"Memory guidance:",
 		"balda.memory.remember",
 		"explicitly asks you to remember/save",
-		"future sessions after start/restore",
-		"MEMORY.md session-start facts:\n{balda_memory?}",
+		"refreshed for active sessions on their next turn",
+		"Durable Balda memory facts:\n{balda_memory?}",
 	} {
 		if !strings.Contains(got, snippet) {
 			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
@@ -114,7 +115,7 @@ func TestBuildBaldaInstruction_ExcludesMemoryWhenDisabled(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{
-		memoryStore: memory.NewStore(t.TempDir(), false),
+		memoryStore: memory.NewStore(newBuilderMemoryKV(), t.TempDir(), false),
 	}
 	got := builder.buildBaldaInstruction(
 		"tg-1-2",
@@ -128,7 +129,7 @@ func TestBuildBaldaInstruction_ExcludesMemoryWhenDisabled(t *testing.T) {
 	for _, forbidden := range []string{
 		"Memory guidance:",
 		"balda.memory.remember",
-		"MEMORY.md session-start facts:",
+		"Durable Balda memory facts:",
 		"{balda_memory?}",
 	} {
 		if strings.Contains(got, forbidden) {
@@ -444,7 +445,7 @@ func createRuntimeSessionWithMemory(t *testing.T, memoryEnabled bool) adksession
 	builder := &Builder{
 		factory:     agentfactory.New(providers, mcpregistry.New(nil)),
 		normaCfg:    runtimeconfig.RuntimeConfig{Providers: providers},
-		memoryStore: memory.NewStore(stateDir, memoryEnabled),
+		memoryStore: memory.NewStore(newBuilderMemoryKV(), stateDir, memoryEnabled),
 	}
 	runtime := &BuiltRuntime{
 		SessionSvc: adksession.InMemoryService(),
@@ -458,6 +459,29 @@ func createRuntimeSessionWithMemory(t *testing.T, memoryEnabled bool) adksession
 		t.Fatalf("CreateRuntimeSession() error = %v", err)
 	}
 	return sess
+}
+
+type builderMemoryKV struct {
+	mu     sync.Mutex
+	values map[string]any
+}
+
+func newBuilderMemoryKV() *builderMemoryKV {
+	return &builderMemoryKV{values: make(map[string]any)}
+}
+
+func (s *builderMemoryKV) GetJSON(_ context.Context, key string) (any, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, ok := s.values[strings.TrimSpace(key)]
+	return value, ok, nil
+}
+
+func (s *builderMemoryKV) SetJSON(_ context.Context, key string, value any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[strings.TrimSpace(key)] = value
+	return nil
 }
 
 func TestCreateRuntimeSession_InvalidCWD_FailsBeforeCreate(t *testing.T) {

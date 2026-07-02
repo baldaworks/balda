@@ -13,6 +13,7 @@ import (
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
@@ -48,6 +49,7 @@ type BaldaHandler struct {
 	turnDispatcher     actors.TurnQueue
 	actorDispatcher    actortransport.Dispatcher
 	taskService        *swarm.TaskService
+	memoryStore        *memory.Store
 	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
 	authToken          string
@@ -76,6 +78,7 @@ type baldaHandlerDeps struct {
 	TurnDispatcher     *actors.TurnDispatcher
 	ActorDispatcher    actortransport.Dispatcher
 	TaskService        *swarm.TaskService `optional:"true"`
+	MemoryStore        *memory.Store
 	Messenger          *messenger.Messenger
 	TGClient           client.ClientWithResponsesInterface
 	AuthToken          string `name:"balda_auth_token"`
@@ -302,11 +305,12 @@ func (h *BaldaHandler) runTurnTaskWithDeliveryOptions(
 	topicID int,
 	deliveryOptions deliveryfmt.Options,
 	deliver bool,
+	runOpts ...runner.RunOption,
 ) error {
 	if !deliver {
 		deliveryOptions.ProgressPolicy = deliveryfmt.ProgressPolicy{}
 	}
-	err := h.runTurnWithDeliveryOptions(ctx, text, r, userID, sessionID, taskID, agentSessionID, locator, messageID, deliveryOptions, deliver)
+	err := h.runTurnWithDeliveryOptions(ctx, text, r, userID, sessionID, taskID, agentSessionID, locator, messageID, deliveryOptions, deliver, runOpts...)
 	if err == nil {
 		return nil
 	}
@@ -433,6 +437,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 	messageID int,
 	deliveryOptions deliveryfmt.Options,
 	deliver bool,
+	runOpts ...runner.RunOption,
 ) error {
 	if r == nil {
 		return fmt.Errorf("session turn: no runner in session %s", sessionID)
@@ -477,7 +482,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 	planDraftActive := false
 	deliverySeq := 0
 
-	for ev, err := range r.Run(runCtx, userID, agentSessionID, userContent, agent.RunConfig{}) {
+	for ev, err := range r.Run(runCtx, userID, agentSessionID, userContent, agent.RunConfig{}, runOpts...) {
 		if err != nil {
 			return fmt.Errorf("agent run: %w", err)
 		}

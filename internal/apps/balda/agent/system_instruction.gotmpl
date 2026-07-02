@@ -46,9 +46,9 @@ Git workspace guidance:
 Memory guidance:
 - If the user explicitly asks you to remember/save a durable fact or preference, call `balda.memory.remember`.
 - Save concise standalone facts only; do not save transient task state, raw chat logs, inferred assumptions, or secrets unless explicitly requested.
-- Remembered facts are stored in MEMORY.md and apply to future sessions after start/restore.
+- Remembered facts are stored in durable Balda memory and are refreshed for active sessions on their next turn.
 
-MEMORY.md session-start facts:
+Durable Balda memory facts:
 {balda_memory?}
 {{end}}{{if .GlobalInstruction}}
 

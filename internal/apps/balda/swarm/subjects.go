@@ -13,6 +13,7 @@ const (
 	SubjectCommandGoalkeeper = "balda.v1.cmd.goalkeeper"
 	SubjectCommandGoal       = SubjectCommandGoalkeeper
 	SubjectCommandDelivery   = "balda.v1.cmd.delivery"
+	SubjectCommandMemory     = "balda.v1.cmd.memory"
 	SubjectCommandControl    = "balda.v1.cmd.control"
 	SubjectCommandAll        = "balda.v1.cmd.>"
 
@@ -29,6 +30,7 @@ const (
 	SubjectEventTaskCompleted       = "balda.v1.evt.task.completed"
 	SubjectEventDeliverySent        = "balda.v1.evt.delivery.sent"
 	SubjectEventDeliveryFailed      = "balda.v1.evt.delivery.failed"
+	SubjectEventMemoryUpdated       = "balda.v1.evt.memory.updated"
 	SubjectEventAll                 = "balda.v1.evt.>"
 
 	SubjectDLQCommand = "balda.v1.dlq.command"
@@ -60,12 +62,16 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 		return SubjectCommandGoal
 	case ActorTypeDelivery:
 		return SubjectCommandDelivery
+	case ActorTypeMemory:
+		return SubjectCommandMemory
 	default:
 		switch strings.TrimSpace(env.Namespace) {
 		case NamespaceGoalkeeperCommand:
 			return SubjectCommandGoal
 		case NamespaceTaskControl:
 			return SubjectCommandControl
+		case NamespaceMemoryCommand:
+			return SubjectCommandMemory
 		case NamespaceWebhookInbound, NamespaceScheduleInbound:
 			return SubjectCommandTask
 		case NamespaceHumanInbound:

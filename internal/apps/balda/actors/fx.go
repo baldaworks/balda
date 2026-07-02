@@ -61,6 +61,16 @@ var Module = fx.Module("balda_actors",
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
+			func(params memoryActorExecutorParams) swarm.Actor {
+				return &memoryActorExecutor{
+					store:  params.Store,
+					events: params.Events,
+				}
+			},
+			fx.As(new(swarm.Actor)),
+			fx.ResultTags(`group:"balda_swarm_actors"`),
+		),
+		fx.Annotate(
 			func(params taskDeliveryActorParams) swarm.Actor {
 				return &taskDeliveryActor{
 					channel: params.Channel,

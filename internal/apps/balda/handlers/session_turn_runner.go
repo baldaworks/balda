@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
+	"github.com/normahq/balda/internal/apps/balda/memory"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -21,6 +22,7 @@ type BaldaSessionTurnRunner struct {
 	sessionManager     *baldasession.Manager
 	actorDispatcher    actortransport.Dispatcher
 	taskService        *swarm.TaskService
+	memoryStore        *memory.Store
 	planUpdatesEnabled bool
 	logger             zerolog.Logger
 	now                func() time.Time
@@ -32,7 +34,8 @@ type sessionTurnRunnerParams struct {
 	SessionManager     *baldasession.Manager
 	ActorDispatcher    actortransport.Dispatcher
 	TaskService        *swarm.TaskService `optional:"true"`
-	PlanUpdatesEnabled bool               `name:"balda_telegram_plan_updates"`
+	MemoryStore        *memory.Store
+	PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
 	Logger             zerolog.Logger
 }
 
@@ -41,6 +44,7 @@ func NewBaldaSessionTurnRunner(params sessionTurnRunnerParams) *BaldaSessionTurn
 		sessionManager:     params.SessionManager,
 		actorDispatcher:    params.ActorDispatcher,
 		taskService:        params.TaskService,
+		memoryStore:        params.MemoryStore,
 		planUpdatesEnabled: params.PlanUpdatesEnabled,
 		logger:             params.Logger.With().Str("component", "balda.session_turn_runner").Logger(),
 	}
@@ -98,9 +102,14 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 		sessionManager:     r.sessionManager,
 		actorDispatcher:    r.actorDispatcher,
 		taskService:        r.taskService,
+		memoryStore:        r.memoryStore,
 		planUpdatesEnabled: r.planUpdatesEnabled,
 		logger:             r.logger,
 		now:                r.now,
+	}
+	runOpts, err := prepareMemoryRunOptions(ctx, r.memoryStore, ts)
+	if err != nil {
+		return err
 	}
 	return handler.runTurnWithDeliveryOptions(
 		ctx,
@@ -114,5 +123,6 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 		payload.MessageID,
 		actors.NormalizeSessionDeliveryOptions(payload),
 		payload.Deliver,
+		runOpts...,
 	)
 }
