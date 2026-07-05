@@ -14,6 +14,7 @@ import (
 	"go.uber.org/fx"
 )
 
+// MemoryRememberPayload carries a fact that should be appended to memory.
 type MemoryRememberPayload struct {
 	Fact            string `json:"fact"`
 	SourceSessionID string `json:"source_session_id,omitempty"`
@@ -31,6 +32,7 @@ type memoryActorExecutorParams struct {
 	Events actortransport.EventPublisher `optional:"true"`
 }
 
+// MemoryRememberEnvelope builds a command envelope for appending memory.
 func MemoryRememberEnvelope(payload MemoryRememberPayload) (actorlayer.Envelope, error) {
 	if strings.TrimSpace(payload.Fact) == "" {
 		return actorlayer.Envelope{}, fmt.Errorf("fact is required")

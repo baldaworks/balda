@@ -61,32 +61,6 @@ func TestStoreRememberAppendsMemoryInKV(t *testing.T) {
 	}
 }
 
-func TestStoreUpdatesSinceReturnsNewEntries(t *testing.T) {
-	t.Parallel()
-
-	store := NewStore(newTestKV(), "", true)
-	if _, err := store.Remember(context.Background(), "first fact"); err != nil {
-		t.Fatalf("Remember(first) error = %v", err)
-	}
-	if _, err := store.Remember(context.Background(), "second fact"); err != nil {
-		t.Fatalf("Remember(second) error = %v", err)
-	}
-
-	update, err := store.UpdatesSince(context.Background(), 1)
-	if err != nil {
-		t.Fatalf("UpdatesSince() error = %v", err)
-	}
-	if !update.Found {
-		t.Fatal("UpdatesSince() found = false, want true")
-	}
-	if update.Version != 2 {
-		t.Fatalf("UpdatesSince() version = %d, want 2", update.Version)
-	}
-	if update.Content != "second fact" {
-		t.Fatalf("UpdatesSince() content = %q, want second fact", update.Content)
-	}
-}
-
 func TestStoreMemoryDisabledDoesNotReadMemory(t *testing.T) {
 	t.Parallel()
 

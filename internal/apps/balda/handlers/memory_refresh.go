@@ -19,7 +19,11 @@ func prepareMemoryRunOptions(ctx context.Context, store *memory.Store, ts *balda
 		return nil, fmt.Errorf("snapshot balda memory: %w", err)
 	}
 	seenVersion := int64(0)
-	if value, ok := ts.RuntimeStateValue(memory.MemoryVersionStateKey); ok {
+	value, ok, err := ts.RuntimeStateValue(ctx, memory.MemoryVersionStateKey)
+	if err != nil {
+		return nil, fmt.Errorf("read balda memory version: %w", err)
+	}
+	if ok {
 		seenVersion = memory.VersionFromState(value)
 	}
 	if snapshot.Version <= seenVersion {

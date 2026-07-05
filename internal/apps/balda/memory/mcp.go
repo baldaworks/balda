@@ -13,12 +13,14 @@ const (
 	codeBackendError    = "backend_error"
 )
 
+// ToolError describes a memory tool failure in a stable JSON shape.
 type ToolError struct {
 	Operation string `json:"operation" jsonschema:"tool name that produced the error"`
 	Code      string `json:"code" jsonschema:"stable machine-readable error code"`
 	Message   string `json:"message" jsonschema:"human-readable error message"`
 }
 
+// ToolOutcome reports whether a memory tool succeeded.
 type ToolOutcome struct {
 	OK    bool       `json:"ok" jsonschema:"true when the tool completed successfully"`
 	Error *ToolError `json:"error,omitempty" jsonschema:"error details when ok is false"`
@@ -43,6 +45,7 @@ type service struct {
 	store *Store
 }
 
+// RegisterTools registers Balda memory MCP tools when memory is enabled.
 func RegisterTools(server *mcp.Server, store *Store) {
 	if server == nil || store == nil || !store.MemoryEnabled() {
 		return

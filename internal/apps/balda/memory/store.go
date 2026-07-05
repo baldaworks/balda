@@ -13,31 +13,34 @@ import (
 )
 
 const (
+	// MemoryFileName is the legacy workspace memory filename.
 	MemoryFileName = "MEMORY.md"
 
-	MemoryStateKey        = "balda_memory"
+	// MemoryStateKey stores the rendered memory text in ADK session state.
+	MemoryStateKey = "balda_memory"
+	// MemoryVersionStateKey stores the memory snapshot version in ADK session state.
 	MemoryVersionStateKey = "balda_memory_version"
 
 	kvMemoryKey = "memory/global"
 )
 
+// KVStore persists JSON-compatible values by key.
 type KVStore interface {
 	GetJSON(ctx context.Context, key string) (value any, ok bool, err error)
 	SetJSON(ctx context.Context, key string, value any) error
 }
 
+// Snapshot is a rendered view of the persisted memory state.
 type Snapshot struct {
 	Content string
 	Version int64
 	Found   bool
 }
 
-type Update struct {
-	Content string
-	Version int64
-	Found   bool
-}
-
+// Store manages Balda memory persistence.
+//
+// Writes are serialized inside this process. Balda assumes one active process
+// per state database; the KV store does not provide cross-process compare-and-swap.
 type Store struct {
 	kv             KVStore
 	legacyStateDir string
@@ -57,6 +60,7 @@ type entry struct {
 	Fact      string `json:"fact"`
 }
 
+// NewStore creates a memory store backed by kv.
 func NewStore(kv KVStore, legacyStateDir string, memoryEnabled bool) *Store {
 	return &Store{
 		kv:             kv,
@@ -65,10 +69,12 @@ func NewStore(kv KVStore, legacyStateDir string, memoryEnabled bool) *Store {
 	}
 }
 
+// MemoryEnabled reports whether memory operations should read and write data.
 func (s *Store) MemoryEnabled() bool {
 	return s != nil && s.memoryEnabled
 }
 
+// ReadMemory returns the rendered memory content.
 func (s *Store) ReadMemory(ctx context.Context) (string, error) {
 	snapshot, err := s.Snapshot(ctx)
 	if err != nil {
@@ -77,6 +83,7 @@ func (s *Store) ReadMemory(ctx context.Context) (string, error) {
 	return snapshot.Content, nil
 }
 
+// Snapshot returns the complete rendered memory and its version.
 func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
 	if s == nil || !s.memoryEnabled {
 		return Snapshot{}, nil
@@ -95,40 +102,7 @@ func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
 	return snapshotFromRecord(rec), nil
 }
 
-func (s *Store) UpdatesSince(ctx context.Context, seenVersion int64) (Update, error) {
-	if s == nil || !s.memoryEnabled {
-		return Update{}, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return Update{}, err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	rec, err := s.loadRecordLocked(ctx)
-	if err != nil {
-		return Update{}, err
-	}
-	if rec.Version <= seenVersion {
-		return Update{Version: rec.Version}, nil
-	}
-
-	facts := make([]string, 0, len(rec.Entries))
-	for _, item := range rec.Entries {
-		if item.Version > seenVersion {
-			if fact := strings.TrimSpace(item.Fact); fact != "" {
-				facts = append(facts, fact)
-			}
-		}
-	}
-	return Update{
-		Content: strings.Join(facts, "\n\n"),
-		Version: rec.Version,
-		Found:   len(facts) > 0,
-	}, nil
-}
-
+// Remember appends fact to memory and returns the updated snapshot.
 func (s *Store) Remember(ctx context.Context, fact string) (Snapshot, error) {
 	if s == nil {
 		return Snapshot{}, fmt.Errorf("memory store is required")
@@ -169,6 +143,7 @@ func (s *Store) Remember(ctx context.Context, fact string) (Snapshot, error) {
 	return snapshotFromRecord(rec), nil
 }
 
+// VersionStateValue formats version for ADK session state.
 func VersionStateValue(version int64) string {
 	if version <= 0 {
 		return ""
@@ -176,6 +151,7 @@ func VersionStateValue(version int64) string {
 	return strconv.FormatInt(version, 10)
 }
 
+// VersionFromState parses a memory version from ADK session state.
 func VersionFromState(value any) int64 {
 	switch v := value.(type) {
 	case int:

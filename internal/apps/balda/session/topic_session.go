@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"google.golang.org/adk/agent"
@@ -56,13 +58,25 @@ func (s *TopicSession) GetAgentName() string {
 	return s.agentName
 }
 
-func (s *TopicSession) RuntimeStateValue(key string) (any, bool) {
-	if s == nil || s.sess == nil || s.sess.State() == nil {
-		return nil, false
+// RuntimeStateValue returns a value from the current persisted runtime session.
+func (s *TopicSession) RuntimeStateValue(ctx context.Context, key string) (any, bool, error) {
+	if s == nil || s.sess == nil || s.sessionSvc == nil {
+		return nil, false, nil
 	}
-	value, err := s.sess.State().Get(strings.TrimSpace(key))
+	current, err := s.sessionSvc.Get(ctx, &session.GetRequest{
+		AppName:   s.sess.AppName(),
+		UserID:    s.sess.UserID(),
+		SessionID: s.GetAgentSessionID(),
+	})
 	if err != nil {
-		return nil, false
+		return nil, false, fmt.Errorf("get runtime session: %w", err)
 	}
-	return value, true
+	if current == nil || current.Session == nil || current.Session.State() == nil {
+		return nil, false, nil
+	}
+	value, err := current.Session.State().Get(strings.TrimSpace(key))
+	if err != nil {
+		return nil, false, nil
+	}
+	return value, true, nil
 }
