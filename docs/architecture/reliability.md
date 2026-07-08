@@ -8,7 +8,7 @@ Status: active
 - Delivery is at-least-once at transport level and idempotent at side-effect level.
 - Retry policy and max deliver behavior are explicit and observable.
 - DLQ entries include enough context for diagnosis and replay planning.
-- User-visible delivery paths use dedupe keys/outbox guards.
+- User-visible delivery paths remain transport-durable; provider-side dedupe/outbox policy depends on the ingress/runtime path.
 
 ## Related tests
 

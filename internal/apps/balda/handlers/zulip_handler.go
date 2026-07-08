@@ -443,7 +443,7 @@ func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWeb
 		}
 	}
 
-	h.handleMessage(ctx, locator, senderID, text, isDM)
+	h.handleMessage(ctx, locator, senderID, payload.Message.ID, text, isDM)
 }
 
 func normalizeZulipMessageText(payload zulipWebhookPayload) string {
@@ -1116,6 +1116,7 @@ func (h *ZulipBaldaHandler) handleMessage(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
 	senderID int,
+	messageID int,
 	text string,
 	isDM bool,
 ) {
@@ -1137,7 +1138,7 @@ func (h *ZulipBaldaHandler) handleMessage(
 		return
 	}
 
-	if err := h.enqueueTurn(ctx, text, ts, locator, isDM); err != nil {
+	if err := h.enqueueTurn(ctx, text, ts, locator, messageID, isDM); err != nil {
 		if swarm.IsCommandQueueFull(err) {
 			_ = h.sendPlain(ctx, locator, "Session command queue is full. Please wait or use /cancel.")
 			return
@@ -1220,6 +1221,7 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 	text string,
 	ts *baldasession.TopicSession,
 	locator baldasession.SessionLocator,
+	messageID int,
 	isDM bool,
 ) error {
 	if ts == nil {
@@ -1234,6 +1236,7 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 		Locator:        locator,
 		UserID:         ts.GetUserID(),
 		AgentSessionID: ts.GetAgentSessionID(),
+		MessageID:      messageID,
 		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
 			ProgressPolicy: progressPolicy,
@@ -1242,11 +1245,13 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 		Deliver:        true,
 		Source:         "zulip",
 	}
-	env, taskID, err := actors.PromptTurnTaskEnvelope(payload)
+	if messageID > 0 {
+		payload.DedupeKey = fmt.Sprintf("zulip:%d", messageID)
+	}
+	env, err := actors.SessionTurnEnvelope(payload)
 	if err != nil {
 		return err
 	}
-	_ = taskID
 	_, err = h.actorDispatcher.Dispatch(ctx, env)
 	return err
 }

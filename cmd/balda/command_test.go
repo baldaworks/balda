@@ -306,6 +306,12 @@ func TestNewRootCommand_RegistersCommandsAndFlags(t *testing.T) {
 	if _, _, err := cmd.Find([]string{"init"}); err != nil {
 		t.Fatalf("init command missing: %v", err)
 	}
+	if _, _, err := cmd.Find([]string{"validate"}); err != nil {
+		t.Fatalf("validate command missing: %v", err)
+	}
+	if _, _, err := cmd.Find([]string{"preflight"}); err != nil {
+		t.Fatalf("preflight command missing: %v", err)
+	}
 
 	for _, name := range []string{"config-dir", "profile", "debug", "trace"} {
 		if cmd.PersistentFlags().Lookup(name) == nil {
@@ -339,13 +345,24 @@ func TestNewRootCommand_VersionFlag(t *testing.T) {
 	}
 }
 
-func TestStartCommandSilencesRuntimeErrors(t *testing.T) {
-	cmd := startCommand()
-	if !cmd.SilenceUsage {
-		t.Fatal("startCommand().SilenceUsage = false, want true")
+func TestRuntimeCommandsSilenceErrors(t *testing.T) {
+	commands := []struct {
+		name string
+		cmd  *cobra.Command
+	}{
+		{name: "start", cmd: startCommand()},
+		{name: "validate", cmd: validateCommand()},
+		{name: "preflight", cmd: preflightCommand()},
 	}
-	if !cmd.SilenceErrors {
-		t.Fatal("startCommand().SilenceErrors = false, want true")
+	for _, tc := range commands {
+		t.Run(tc.name, func(t *testing.T) {
+			if !tc.cmd.SilenceUsage {
+				t.Fatalf("%s command SilenceUsage = false, want true", tc.name)
+			}
+			if !tc.cmd.SilenceErrors {
+				t.Fatalf("%s command SilenceErrors = false, want true", tc.name)
+			}
+		})
 	}
 }
 
@@ -383,7 +400,31 @@ func TestNormalizeExecuteError(t *testing.T) {
 		}
 	})
 
-	t.Run("non-start command keeps error", func(t *testing.T) {
+	t.Run("validate command unexpected error", func(t *testing.T) {
+		input := errors.New("boom")
+		err := normalizeExecuteError(&cobra.Command{Use: "validate"}, input)
+		var got *unprintedCLIError
+		if !errors.As(err, &got) {
+			t.Fatalf("normalizeExecuteError(validate, boom) = %T, want *unprintedCLIError", err)
+		}
+		if !errors.Is(err, input) {
+			t.Fatalf("normalizeExecuteError(validate, boom) = %v, want wrapped %v", err, input)
+		}
+	})
+
+	t.Run("preflight command unexpected error", func(t *testing.T) {
+		input := errors.New("boom")
+		err := normalizeExecuteError(&cobra.Command{Use: "preflight"}, input)
+		var got *unprintedCLIError
+		if !errors.As(err, &got) {
+			t.Fatalf("normalizeExecuteError(preflight, boom) = %T, want *unprintedCLIError", err)
+		}
+		if !errors.Is(err, input) {
+			t.Fatalf("normalizeExecuteError(preflight, boom) = %v, want wrapped %v", err, input)
+		}
+	})
+
+	t.Run("non-runtime command keeps error", func(t *testing.T) {
 		input := errors.New("boom")
 		err := normalizeExecuteError(&cobra.Command{Use: "init"}, input)
 		if !errors.Is(err, input) {
@@ -401,4 +442,128 @@ func writeFile(path, content string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+func TestValidateCommandRunsValidation(t *testing.T) {
+	workingDir := t.TempDir()
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+  telegram:
+    token: test-token
+`); err != nil {
+		t.Fatalf("write balda config: %v", err)
+	}
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(workingDir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalWD) })
+
+	originalValidate := validateBaldaApplicationFn
+	originalPreflight := preflightBaldaRuntimeFn
+	t.Cleanup(func() {
+		validateBaldaApplicationFn = originalValidate
+		preflightBaldaRuntimeFn = originalPreflight
+	})
+
+	validated := false
+	validateBaldaApplicationFn = func(prepared preparedBaldaCommand) error {
+		validated = prepared.baldaCfg.Balda.Provider == "balda_agent"
+		return nil
+	}
+	preflightBaldaRuntimeFn = func(_ context.Context, _ preparedBaldaCommand) error {
+		t.Fatal("preflight must not run during validate")
+		return nil
+	}
+
+	cmd, err := newRootCommand()
+	if err != nil {
+		t.Fatalf("newRootCommand: %v", err)
+	}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"validate"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute(validate): %v", err)
+	}
+	if !validated {
+		t.Fatal("validate command did not invoke validation hook")
+	}
+	if got := out.String(); !strings.Contains(got, "balda validate: ok") {
+		t.Fatalf("validate output = %q, want success message", got)
+	}
+}
+
+func TestPreflightCommandRunsRuntimeCheck(t *testing.T) {
+	workingDir := t.TempDir()
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+  telegram:
+    token: test-token
+`); err != nil {
+		t.Fatalf("write balda config: %v", err)
+	}
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(workingDir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalWD) })
+
+	originalValidate := validateBaldaApplicationFn
+	originalPreflight := preflightBaldaRuntimeFn
+	t.Cleanup(func() {
+		validateBaldaApplicationFn = originalValidate
+		preflightBaldaRuntimeFn = originalPreflight
+	})
+
+	validated := false
+	preflighted := false
+	validateBaldaApplicationFn = func(prepared preparedBaldaCommand) error {
+		validated = prepared.baldaCfg.Balda.Provider == "balda_agent"
+		return nil
+	}
+	preflightBaldaRuntimeFn = func(_ context.Context, prepared preparedBaldaCommand) error {
+		preflighted = prepared.baldaCfg.Balda.Provider == "balda_agent"
+		return nil
+	}
+
+	cmd, err := newRootCommand()
+	if err != nil {
+		t.Fatalf("newRootCommand: %v", err)
+	}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"preflight"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute(preflight): %v", err)
+	}
+	if !validated {
+		t.Fatal("preflight command did not validate the app first")
+	}
+	if !preflighted {
+		t.Fatal("preflight command did not invoke runtime preflight hook")
+	}
+	if got := out.String(); !strings.Contains(got, "balda preflight: ok") {
+		t.Fatalf("preflight output = %q, want success message", got)
+	}
 }

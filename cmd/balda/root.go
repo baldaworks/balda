@@ -71,7 +71,12 @@ func isStartCommand(cmd *cobra.Command) bool {
 	if cmd == nil {
 		return false
 	}
-	return strings.TrimSpace(cmd.Name()) == "start"
+	switch strings.TrimSpace(cmd.Name()) {
+	case "start", "validate", "preflight":
+		return true
+	default:
+		return false
+	}
 }
 
 func newRootCommand() (*cobra.Command, error) {
@@ -126,6 +131,8 @@ func newRootCommand() (*cobra.Command, error) {
 	}
 
 	cmd.AddCommand(startCommand())
+	cmd.AddCommand(validateCommand())
+	cmd.AddCommand(preflightCommand())
 	cmd.AddCommand(initCommand())
 	cmd.AddCommand(evalFixturesCommand())
 	return cmd, nil

@@ -121,6 +121,31 @@ func TestTaskDeliveryActorStoresProviderMessageIDOnSuccess(t *testing.T) {
 	}
 }
 
+func TestTaskDeliveryActorSendsSessionReplyWithoutPersistingDelivery(t *testing.T) {
+	ctx := context.Background()
+	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
+	locator := baldatelegram.NewLocator(9001, 99)
+	env, err := AgentReplyDeliveryEnvelope("task-1", actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: locator.SessionID}, locator, "session reply", "final")
+	if err != nil {
+		t.Fatalf("AgentReplyDeliveryEnvelope() error = %v", err)
+	}
+
+	if err := actor.Handle(ctx, env); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if got := len(tgClient.richMessages); got != 1 {
+		t.Fatalf("sent rich telegram messages = %d, want 1", got)
+	}
+	payload := DeliveryPayload{TaskID: "task-1", Locator: locator, Mode: DeliveryModeAgentReply, Text: "session reply"}
+	record, created, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusPending))
+	if err != nil {
+		t.Fatalf("ReserveDelivery() lookup error = %v", err)
+	}
+	if !created || record.Status != baldastate.SwarmDeliveryStatusPending {
+		t.Fatalf("delivery record = %+v created=%t, want no persisted session delivery", record, created)
+	}
+}
+
 func TestTaskDeliveryActorSendsDraftWithoutPersistingDelivery(t *testing.T) {
 	ctx := context.Background()
 	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)

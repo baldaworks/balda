@@ -333,6 +333,70 @@ func TestRunTurn_SendsTypingWithoutThinkingDraftInPublicChat(t *testing.T) {
 	}
 }
 
+func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *testing.T) {
+	t.Parallel()
+
+	h, tgClient := newBaldaRunTurnTestHandler(t, false)
+	bus, ok := h.actorDispatcher.(*recordingHandlerCommandBus)
+	if !ok || bus == nil {
+		t.Fatal("actorDispatcher is not a recording handler bus")
+	}
+	h.planUpdatesEnabled = true
+
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+		plan := adksession.NewEvent(context.Background(), invocationID)
+		plan.Partial = true
+		plan.CustomMetadata = map[string]any{
+			"acp_update_kind": "plan",
+			"acp_plan":        newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "in_progress"}),
+		}
+
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
+		done.TurnComplete = true
+
+		return []*adksession.Event{plan, done}
+	})
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
+		t.Fatalf("runTurn() error = %v", err)
+	}
+
+	if len(bus.eventEnvs) != 0 {
+		t.Fatalf("task events = %d, want 0", len(bus.eventEnvs))
+	}
+	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeChatAction); got != 1 {
+		t.Fatalf("chat action delivery commands = %d, want 1", got)
+	}
+	gotTexts := deliveryTextsFromCommands(t, bus.commands)
+	wantTexts := []string{
+		"Plan update\n- [in progress] Run tests",
+		baldaRunTurnFinalAnswerText,
+	}
+	if strings.Join(gotTexts, "\n---\n") != strings.Join(wantTexts, "\n---\n") {
+		t.Fatalf("delivery texts = %#v, want %#v", gotTexts, wantTexts)
+	}
+	for _, env := range bus.commands {
+		if env.To.Target != swarm.ActorTypeDelivery {
+			continue
+		}
+		if strings.TrimSpace(env.TaskID) != "" {
+			t.Fatalf("delivery env task_id = %q, want empty for direct telegram path", env.TaskID)
+		}
+		var payload actors.DeliveryPayload
+		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+			t.Fatalf("decode delivery payload: %v", err)
+		}
+		if strings.TrimSpace(payload.TaskID) != "" {
+			t.Fatalf("delivery payload task_id = %q, want empty for direct telegram path", payload.TaskID)
+		}
+	}
+	if len(tgClient.drafts) != 1 || len(tgClient.messages) != 1 || len(tgClient.chatActions) != 1 {
+		t.Fatalf("telegram sends = drafts:%d messages:%d chat_actions:%d, want 1/1/1", len(tgClient.drafts), len(tgClient.messages), len(tgClient.chatActions))
+	}
+}
+
 func TestRunTurn_SendsPlanUpdateMessagesInPublicChat(t *testing.T) {
 	t.Parallel()
 

@@ -26,10 +26,10 @@ Status: active
 
 - Balda integration layer (policy owner):
   - Product actor implementations and command contracts in `internal/apps/balda/actors`.
-  - Telegram, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
+  - Telegram, Slack, Zulip, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
   - Concrete transport adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
-  - Task/projector side effects in SQLite (`swarm_tasks`, `swarm_task_events`, command/task status state).
+  - Task/projector side effects in SQLite (`swarm_tasks`, `swarm_task_events`, command/task status state) for job-style orchestration and read models.
   - Internal command visibility backed by logs and tooling.
   - Mapping between policy metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`) and actor-level envelopes.
   - The single app-scoped provider runtime selected by `balda.provider`.

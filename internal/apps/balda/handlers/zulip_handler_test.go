@@ -876,6 +876,57 @@ func TestZulipBaldaHandlerTopicPublishesWelcomeAndConfirmation(t *testing.T) {
 	}
 }
 
+func TestZulipBaldaHandlerMessagePublishesDirectSessionTurn(t *testing.T) {
+	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
+		t.Fatalf("RegisterOwnerSubject() error = %v", err)
+	}
+	locator := baldazulip.NewDMLocator(101)
+	dispatcher := &recordingZulipDispatcher{}
+	handler := &ZulipBaldaHandler{
+		ownerStore:      ownerStore,
+		actorDispatcher: dispatcher,
+		sessionManager:  &fakeZulipSessionManager{baldaProvider: "alpha"},
+		logger:          zerolog.Nop(),
+		ownerID:         101,
+	}
+
+	handler.handleMessage(context.Background(), locator, 101, 42, "hello", true)
+
+	var env actorlayer.Envelope
+	found := false
+	for _, candidate := range dispatcher.commands {
+		if candidate.To.Target != swarm.ActorTypeSession {
+			continue
+		}
+		env = candidate
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("session command not found in published commands: %+v", dispatcher.commands)
+	}
+	if got, want := env.DedupeKey, "zulip:42"; got != want {
+		t.Fatalf("dedupe_key = %q, want %q", got, want)
+	}
+	var payload actors.SessionTurnPayload
+	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if payload.Source != "zulip" || !payload.Deliver {
+		t.Fatalf("session turn payload = %+v, want zulip deliver=true", payload)
+	}
+	if got, want := payload.MessageID, 42; got != want {
+		t.Fatalf("payload message_id = %d, want %d", got, want)
+	}
+	if got, want := payload.DedupeKey, "zulip:42"; got != want {
+		t.Fatalf("payload dedupe_key = %q, want %q", got, want)
+	}
+}
+
 func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
 	if err != nil {
@@ -893,7 +944,7 @@ func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 		ownerID:         101,
 	}
 
-	handler.handleMessage(context.Background(), locator, 101, "hello", true)
+	handler.handleMessage(context.Background(), locator, 101, 0, "hello", true)
 
 	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
 	if len(payloads) != 1 {

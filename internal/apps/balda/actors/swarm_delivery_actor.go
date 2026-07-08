@@ -52,7 +52,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 	if err := validateDeliveryPayload(payload); err != nil {
 		return actorlayer.PermanentError(err)
 	}
-	durable := deliveryModeIsDurable(payload.Mode)
+	durable := deliveryModeIsDurable(payload.Mode) && !deliveryBypassesOutbox(env)
 	deliveryKey := strings.TrimSpace(env.DedupeKey)
 	if deliveryKey == "" {
 		deliveryKey = strings.TrimSpace(env.ID)
@@ -171,5 +171,16 @@ func deliveryReadyForAttempt(record baldastate.SwarmDeliveryRecord) bool {
 		return time.Since(record.UpdatedAt) >= deliveryPendingRetryAfter
 	default:
 		return true
+	}
+}
+
+
+func deliveryBypassesOutbox(env actorlayer.Envelope) bool {
+	target := strings.TrimSpace(env.From.Target)
+	switch target {
+	case swarm.ActorTypeSession, "handler":
+		return true
+	default:
+		return false
 	}
 }

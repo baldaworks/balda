@@ -15,6 +15,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
+	"go.uber.org/fx"
 )
 
 type testSessionStore struct {
@@ -136,7 +137,8 @@ func TestBundledBaldaServerInstructionsReflectWorkspaceMode(t *testing.T) {
 		instructions := `Use this bundled balda server for session-local balda tools.
 
 - balda.state stores persistent Balda session and app state in state.db.
-- balda config editing is not exposed through MCP; edit the balda config file directly.`
+- balda config editing is not exposed through MCP; edit the balda config file directly.
+- balda.control.shutdown gracefully stops the whole Balda process; use it only when the user explicitly asks for restart or shutdown.`
 		if memoryEnabled {
 			instructions += "\n- balda.memory stores durable facts in Balda state; only call balda.memory.remember when the user explicitly asks you to remember or save a fact."
 		}
@@ -219,6 +221,7 @@ func TestEnsureBundledServers_RegistersSharedListenerURLs(t *testing.T) {
 		registry:         mcpregistry.New(nil),
 		sessionManager:   &session.Manager{},
 		stateStore:       newTestSessionStore(),
+		shutdowner:       noopShutdowner{},
 	}
 
 	if err := manager.ensureBundledServers(ctx); err != nil {
@@ -259,6 +262,7 @@ func TestInternalMCPManagerEnsureStarted_IsIdempotent(t *testing.T) {
 		registry:         mcpregistry.New(nil),
 		sessionManager:   &session.Manager{},
 		stateStore:       newTestSessionStore(),
+		shutdowner:       noopShutdowner{},
 	}
 
 	if err := manager.EnsureStarted(ctx); err != nil {
@@ -287,4 +291,10 @@ func TestInternalMCPManagerEnsureStarted_IsIdempotent(t *testing.T) {
 			_ = manager.cleanups[i]()
 		}
 	})
+}
+
+type noopShutdowner struct{}
+
+func (noopShutdowner) Shutdown(...fx.ShutdownOption) error {
+	return nil
 }

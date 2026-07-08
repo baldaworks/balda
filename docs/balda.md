@@ -643,14 +643,19 @@ By default, Balda also persists session history and state in `state.db` until th
 
 ## Message Flow
 
-1. User sends Telegram message.
-   - In non-DM chats (groups/supergroups/topics), Balda processes a message when it contains a mention entity for `@<bot_username>` or is a reply to this bot's message.
-   - For processed replies, balda forwards selected Telegram quote text first, then replied message `text`, `caption`, or readable rich-message text/captions as model context, plus the new user message when present.
-   - In DM chats, Balda processes non-command text messages normally and preserves reply context for reply messages.
-2. Balda resolves session by `(chat_id, topic_id)`.
-3. If the session is missing in memory, balda attempts lazy restore from persisted metadata.
-4. Balda calls the configured provider runtime for that session.
-5. Balda streams non-terminal provider progress to Telegram via chat actions (and DM thinking placeholder updates).
+Ordinary conversational chat transports follow the same runtime model.
+
+1. User sends a chat message through Telegram, Slack, or Zulip.
+2. The channel handler resolves the Balda session locator for that chat/thread/topic.
+3. If the session is missing in memory, Balda attempts lazy restore from persisted metadata.
+4. Conversational ingress publishes a durable `balda.v1.cmd.session` envelope directly to the session actor lane.
+5. The session actor runs the configured provider runtime for that session and emits separate delivery envelopes for progress/final replies.
+
+Telegram-specific message selection rules:
+
+- In non-DM chats (groups/supergroups/topics), Balda processes a message when it contains a mention entity for `@<bot_username>` or is a reply to this bot's message.
+- For processed replies, balda forwards selected Telegram quote text first, then replied message `text`, `caption`, or readable rich-message text/captions as model context, plus the new user message when present.
+- In DM chats, Balda processes non-command text messages normally and preserves reply context for reply messages.
 
 ## Telegram Messaging Behavior
 
@@ -673,8 +678,9 @@ See [Slack Integration](slack.md) for setup details.
 1. Slack DMs map to Balda DM sessions.
 2. Slack `app_mention` events map to thread sessions. If the mention is not already in a thread, Balda uses that message timestamp as the thread root.
 3. Ambient channel messages are ignored unless they belong to an already-active Balda thread session.
-4. `/balda topic <name>` posts a seed message and creates a Balda session from that seed thread.
-5. Slack typing and draft progress are no-ops in v1; final replies are posted with Slack `mrkdwn`.
+4. Ordinary Slack conversational ingress publishes direct `balda.v1.cmd.session` work with Slack message-based dedupe.
+5. `/balda topic <name>` posts a seed message and creates a Balda session from that seed thread.
+6. Slack typing and draft progress are no-ops in v1; final replies are posted with Slack `mrkdwn`.
 
 ## Topic Sessions
 
@@ -704,9 +710,11 @@ Balda runs with a single provider per process (`balda.provider`).
 
 ### Task runtime semantics (internal)
 
-Assignable work is persisted in `swarm_tasks`; task history is published to
+Assignable job work is persisted in `swarm_tasks`; task history is published to
 `BALDA_EVENTS` and projected into `swarm_task_events`. Ingress publishes a
 durable command first; task records are created after command delivery.
+Ordinary conversational turns from Telegram, Slack, and Zulip do not create
+`swarm_tasks` rows; they run directly on the session actor path.
 
 - `/goal` starts goal work for the current session context. Balda restores or creates the
   chat session, allocates separate GoalKeeper worker/validator ADK sessions for the
@@ -912,8 +920,9 @@ All events are published as the same envelope shape. For event envelopes,
   - projector writes use stable event IDs and `INSERT OR IGNORE` semantics in SQLite.
   - replaying the same event stream must not duplicate projected task events.
 - Delivery idempotency:
-  - delivery work reserves `delivery_key` in `swarm_delivery_outbox` before provider send.
-  - duplicate delivery reservations become noop, preventing duplicate user-visible messages.
+  - task-owned or otherwise durable delivery paths may reserve `delivery_key` in `swarm_delivery_outbox` before provider send.
+  - duplicate delivery reservations become noop, preventing duplicate user-visible messages when that path uses the outbox.
+  - Conversational session replies from Telegram, Slack, and Zulip may bypass the SQLite outbox and rely on actorlayer transport durability plus provider-side idempotent delivery handling.
 - Task lifecycle idempotency:
   - task status transitions are guarded and terminal states are immutable.
   - repeated terminal lifecycle commands/events keep task state unchanged.

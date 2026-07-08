@@ -254,7 +254,7 @@ func (h *BaldaHandler) enqueueTurn(
 		return fmt.Errorf("topic session is required")
 	}
 
-	_, err := h.submitPromptTurnTask(ctx, actors.SessionTurnPayload{
+	_, err := h.submitSessionTurn(ctx, actors.SessionTurnPayload{
 		Text:           text,
 		Locator:        locator,
 		UserID:         ts.GetUserID(),
@@ -464,6 +464,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 		Int("topic_id", topicID).
 		Str("session_id", sessionID).
 		Str("task_id", strings.TrimSpace(taskID)).
+		Bool("task_backed_delivery", taskBackedDelivery).
 		Str("agent_session_id", agentSessionID).
 		Str("transport_user_id", userID).
 		Logger().

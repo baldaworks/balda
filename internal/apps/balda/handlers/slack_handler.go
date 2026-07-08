@@ -829,7 +829,7 @@ func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.S
 		Source:         "slack",
 		DedupeKey:      "slack:" + strings.TrimSpace(messageID),
 	}
-	env, _, err := actors.PromptTurnTaskEnvelope(payload)
+	env, err := actors.SessionTurnEnvelope(payload)
 	if err != nil {
 		_ = h.sendPlain(ctx, locator, "Failed to publish your message for processing. Please try again.")
 		return

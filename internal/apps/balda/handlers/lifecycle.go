@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/normahq/balda/internal/apps/balda/controlmcp"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
@@ -29,6 +30,7 @@ type InternalMCPManager struct {
 	startMu          sync.Mutex
 	logger           zerolog.Logger
 	registry         mcpregistry.Registry
+	shutdowner       fx.Shutdowner
 	sessionManager   *session.Manager
 	stateStore       sessionmcp.Store
 	memoryStore      *memory.Store
@@ -49,6 +51,7 @@ type internalMCPParams struct {
 	WorkspaceEnabled bool `name:"balda_workspace_enabled"`
 	Logger           zerolog.Logger
 	Registry         *mcpregistry.MapRegistry
+	Shutdowner       fx.Shutdowner
 	SessionManager   *session.Manager
 	StateStore       sessionmcp.Store
 	MemoryStore      *memory.Store
@@ -60,6 +63,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		workspaceEnabled: params.WorkspaceEnabled,
 		logger:           params.Logger.With().Str("component", "balda.internal_mcp").Logger(),
 		registry:         params.Registry,
+		shutdowner:       params.Shutdowner,
 		sessionManager:   params.SessionManager,
 		stateStore:       params.StateStore,
 		memoryStore:      params.MemoryStore,
@@ -118,7 +122,8 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	instructions := `Use this bundled balda server for session-local balda tools.
 
 - balda.state stores persistent Balda session and app state in state.db.
-- balda config editing is not exposed through MCP; edit the balda config file directly.`
+- balda config editing is not exposed through MCP; edit the balda config file directly.
+- balda.control.shutdown gracefully stops the whole Balda process; use it only when the user explicitly asks for restart or shutdown.`
 	if m.memoryStore.MemoryEnabled() {
 		instructions += "\n- balda.memory stores durable facts in Balda state; only call balda.memory.remember when the user explicitly asks you to remember or save a fact."
 	}
@@ -138,6 +143,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 
 	sessionmcp.RegisterTools(server, m.stateStore)
 	memory.RegisterTools(server, m.memoryStore)
+	controlmcp.RegisterTools(server, m.shutdowner)
 
 	if m.workspaceEnabled {
 		workspaceSvc := session.NewWorkspaceMCPServer(m.sessionManager)
