@@ -38,6 +38,9 @@ func (r *MemoryRegistry) Register(actor Actor) error {
 		return fmt.Errorf("actor address is required")
 	}
 	r.mu.Lock()
+	if r.actors == nil {
+		r.actors = make(map[string]Actor)
+	}
 	r.actors[address] = actor
 	r.mu.Unlock()
 	return nil

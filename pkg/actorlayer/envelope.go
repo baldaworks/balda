@@ -73,6 +73,14 @@ func (e Envelope) Validate() error {
 	if strings.TrimSpace(e.PayloadJSON) == "" {
 		return fmt.Errorf("envelope payload_json is required")
 	}
+	if !json.Valid([]byte(strings.TrimSpace(e.PayloadJSON))) {
+		return fmt.Errorf("envelope payload_json must be valid json")
+	}
+	if e.ReportTo != nil {
+		if _, err := e.ReportTo.String(); err != nil {
+			return fmt.Errorf("envelope report_to: %w", err)
+		}
+	}
 	return nil
 }
 

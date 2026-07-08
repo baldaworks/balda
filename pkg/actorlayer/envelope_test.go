@@ -59,3 +59,34 @@ func TestAssertEnvelope(t *testing.T) {
 		t.Fatalf("AssertEnvelope(struct{}{}) error = %v, want unexpected type error", err)
 	}
 }
+
+func TestEnvelopeValidateRejectsInvalidPayloadJSON(t *testing.T) {
+	t.Parallel()
+
+	env := validEnvelopeForTest()
+	env.PayloadJSON = `{not-json`
+	if err := env.Validate(); err == nil || !strings.Contains(err.Error(), "payload_json must be valid json") {
+		t.Fatalf("Validate() error = %v, want invalid payload_json error", err)
+	}
+}
+
+func TestEnvelopeValidateRejectsInvalidReportTo(t *testing.T) {
+	t.Parallel()
+
+	env := validEnvelopeForTest()
+	env.ReportTo = &actorlayer.ActorAddress{Target: "session"}
+	if err := env.Validate(); err == nil || !strings.Contains(err.Error(), "envelope report_to") {
+		t.Fatalf("Validate() error = %v, want invalid report_to error", err)
+	}
+}
+
+func validEnvelopeForTest() actorlayer.Envelope {
+	return actorlayer.Envelope{
+		ID:          "env-1",
+		Namespace:   "test.command",
+		Kind:        "message",
+		From:        actorlayer.ActorAddress{Target: "system", Key: "source"},
+		To:          actorlayer.ActorAddress{Target: "session", Key: "1"},
+		PayloadJSON: `{"ok":true}`,
+	}
+}
