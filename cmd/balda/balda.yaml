@@ -147,7 +147,8 @@ balda:
     persistence: "sqlite"
 
   memory:
-    # Internal durable memory backed by ${balda.state_dir}/MEMORY.md.
+    # Internal durable memory backed by ${balda.state_dir}/state.db.
+    # Existing ${balda.state_dir}/MEMORY.md content is imported once when KV memory is empty.
     # If false, balda.memory.* MCP tools are disabled.
     enabled: true
 
