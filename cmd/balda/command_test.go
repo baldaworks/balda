@@ -20,6 +20,7 @@ type baldaTestConfigDocument struct {
 }
 
 const testBaldaDefaultProfile = "default"
+const testBaldaProvider = "balda_agent"
 
 func TestLoadConfigDocument_AppliesProfileBaldaOverrides(t *testing.T) {
 	workingDir := t.TempDir()
@@ -64,8 +65,8 @@ balda:
 
 	baldaCfg := baldaapp.Config{Balda: doc.Balda}
 
-	if baldaCfg.Balda.Provider != "balda_agent" {
-		t.Fatalf("provider = %q, want balda_agent", baldaCfg.Balda.Provider)
+	if baldaCfg.Balda.Provider != testBaldaProvider {
+		t.Fatalf("provider = %q, want %s", baldaCfg.Balda.Provider, testBaldaProvider)
 	}
 	if baldaCfg.Balda.GlobalInstruction != "from profile" {
 		t.Fatalf("global_instruction = %q, want from profile", baldaCfg.Balda.GlobalInstruction)
@@ -175,8 +176,8 @@ balda:
 	if selectedProfile != testBaldaDefaultProfile {
 		t.Fatalf("profile = %q, want %s", selectedProfile, testBaldaDefaultProfile)
 	}
-	if doc.Balda.Provider != "balda_agent" {
-		t.Fatalf("provider = %q, want balda_agent", doc.Balda.Provider)
+	if doc.Balda.Provider != testBaldaProvider {
+		t.Fatalf("provider = %q, want %s", doc.Balda.Provider, testBaldaProvider)
 	}
 	if !doc.Balda.Memory.Enabled {
 		t.Fatal("memory.enabled = false, want true from defaults")
@@ -477,7 +478,7 @@ balda:
 
 	validated := false
 	validateBaldaApplicationFn = func(prepared preparedBaldaCommand) error {
-		validated = prepared.baldaCfg.Balda.Provider == "balda_agent"
+		validated = prepared.baldaCfg.Balda.Provider == testBaldaProvider
 		return nil
 	}
 	preflightBaldaRuntimeFn = func(_ context.Context, _ preparedBaldaCommand) error {
@@ -538,11 +539,11 @@ balda:
 	validated := false
 	preflighted := false
 	validateBaldaApplicationFn = func(prepared preparedBaldaCommand) error {
-		validated = prepared.baldaCfg.Balda.Provider == "balda_agent"
+		validated = prepared.baldaCfg.Balda.Provider == testBaldaProvider
 		return nil
 	}
 	preflightBaldaRuntimeFn = func(_ context.Context, prepared preparedBaldaCommand) error {
-		preflighted = prepared.baldaCfg.Balda.Provider == "balda_agent"
+		preflighted = prepared.baldaCfg.Balda.Provider == testBaldaProvider
 		return nil
 	}
 

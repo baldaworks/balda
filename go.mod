@@ -1,6 +1,6 @@
 module github.com/normahq/balda
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/Mad-Pixels/goldmark-tgmd v0.0.10
