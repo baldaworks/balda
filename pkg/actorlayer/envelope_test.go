@@ -80,6 +80,53 @@ func TestEnvelopeValidateRejectsInvalidReportTo(t *testing.T) {
 	}
 }
 
+func TestEncodeEnvelopeRejectsInvalidEnvelope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		env  actorlayer.Envelope
+		want string
+	}{
+		{
+			name: "missing id",
+			env: func() actorlayer.Envelope {
+				env := validEnvelopeForTest()
+				env.ID = ""
+				return env
+			}(),
+			want: "envelope id is required",
+		},
+		{
+			name: "invalid payload json",
+			env: func() actorlayer.Envelope {
+				env := validEnvelopeForTest()
+				env.PayloadJSON = "{not-json"
+				return env
+			}(),
+			want: "payload_json must be valid json",
+		},
+		{
+			name: "invalid report to",
+			env: func() actorlayer.Envelope {
+				env := validEnvelopeForTest()
+				env.ReportTo = &actorlayer.ActorAddress{Target: "session"}
+				return env
+			}(),
+			want: "envelope report_to",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := actorlayer.EncodeEnvelope(tt.env); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("EncodeEnvelope() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func validEnvelopeForTest() actorlayer.Envelope {
 	return actorlayer.Envelope{
 		ID:          "env-1",

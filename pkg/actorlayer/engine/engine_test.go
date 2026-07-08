@@ -21,6 +21,9 @@ type testDelivery struct {
 
 	mu               sync.Mutex
 	acked            bool
+	ackErr           error
+	retryErr         error
+	deadLetterErr    error
 	retryDelay       time.Duration
 	retryReason      string
 	deadLetterReason string
@@ -42,6 +45,9 @@ func (*testDelivery) InProgress(context.Context) error { return nil }
 func (d *testDelivery) Ack(context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.ackErr != nil {
+		return d.ackErr
+	}
 	d.acked = true
 	return nil
 }
@@ -49,6 +55,9 @@ func (d *testDelivery) Ack(context.Context) error {
 func (d *testDelivery) Retry(_ context.Context, delay time.Duration, reason string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.retryErr != nil {
+		return d.retryErr
+	}
 	d.retryDelay = delay
 	d.retryReason = reason
 	return nil
@@ -57,6 +66,9 @@ func (d *testDelivery) Retry(_ context.Context, delay time.Duration, reason stri
 func (d *testDelivery) DeadLetter(_ context.Context, reason string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.deadLetterErr != nil {
+		return d.deadLetterErr
+	}
 	d.deadLetterReason = reason
 	return nil
 }
@@ -110,6 +122,25 @@ func TestRuntimeHandleAcksSuccessfulDelivery(t *testing.T) {
 	}
 }
 
+func TestRuntimeHandleAckFailureDoesNotEmitAcked(t *testing.T) {
+	t.Parallel()
+
+	sink := &recordingSink{}
+	runtime := newRuntimeForTest(t, sink)
+	errAck := errors.New("ack failed")
+	delivery := newDelivery("ack-failure", "lane-1")
+	delivery.ackErr = errAck
+	err := runtime.Handle(context.Background(), delivery, func(context.Context, engine.Delivery) error {
+		return nil
+	})
+	if !errors.Is(err, errAck) {
+		t.Fatalf("Handle() error = %v, want %v", err, errAck)
+	}
+	if got, want := sink.types(), []engine.EventType{engine.EventRunning}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %v, want %v", got, want)
+	}
+}
+
 func TestRuntimeHandleRetriesRetryableDelivery(t *testing.T) {
 	t.Parallel()
 
@@ -133,6 +164,25 @@ func TestRuntimeHandleRetriesRetryableDelivery(t *testing.T) {
 	}
 }
 
+func TestRuntimeHandleRetryFailureDoesNotEmitRetrying(t *testing.T) {
+	t.Parallel()
+
+	sink := &recordingSink{}
+	runtime := newRuntimeForTest(t, sink)
+	errRetry := errors.New("retry failed")
+	delivery := newDelivery("retry-failure", "lane-1")
+	delivery.retryErr = errRetry
+	err := runtime.Handle(context.Background(), delivery, func(context.Context, engine.Delivery) error {
+		return errors.New("temporary")
+	})
+	if !errors.Is(err, errRetry) {
+		t.Fatalf("Handle() error = %v, want %v", err, errRetry)
+	}
+	if got, want := sink.types(), []engine.EventType{engine.EventRunning}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %v, want %v", got, want)
+	}
+}
+
 func TestRuntimeHandleDeadLettersNonRetryableDelivery(t *testing.T) {
 	t.Parallel()
 
@@ -149,6 +199,25 @@ func TestRuntimeHandleDeadLettersNonRetryableDelivery(t *testing.T) {
 		t.Fatalf("deadletter reason = %q, want %q", delivery.deadLetterReason, "not allowed")
 	}
 	if got, want := sink.types(), []engine.EventType{engine.EventRunning, engine.EventDeadLettered}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %v, want %v", got, want)
+	}
+}
+
+func TestRuntimeHandleDeadLetterFailureDoesNotEmitDeadLettered(t *testing.T) {
+	t.Parallel()
+
+	sink := &recordingSink{}
+	runtime := newRuntimeForTest(t, sink)
+	errDeadLetter := errors.New("deadletter failed")
+	delivery := newDelivery("deadletter-failure", "lane-1")
+	delivery.deadLetterErr = errDeadLetter
+	err := runtime.Handle(context.Background(), delivery, func(context.Context, engine.Delivery) error {
+		return actorlayer.PolicyError(errors.New("not allowed"))
+	})
+	if !errors.Is(err, errDeadLetter) {
+		t.Fatalf("Handle() error = %v, want %v", err, errDeadLetter)
+	}
+	if got, want := sink.types(), []engine.EventType{engine.EventRunning}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
 }
@@ -289,6 +358,43 @@ func TestDispatchRuntimeResolvesActors(t *testing.T) {
 	}
 	if actor.calls != 1 {
 		t.Fatalf("actor calls = %d, want 1", actor.calls)
+	}
+}
+
+func TestDispatchRuntimeRejectsInvalidEnvelopeBeforeActor(t *testing.T) {
+	t.Parallel()
+
+	registry := dispatch.NewMemoryRegistry()
+	actor := &recordingActor{address: "session:*"}
+	if err := registry.Register(actor); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	runtime, err := engine.NewDispatchRuntime(engine.RuntimeConfig{
+		Registry:  registry,
+		AddressOf: func(env engine.Envelope) (string, error) { return env.To.String() },
+		Retry: engine.RetryPolicy{
+			IsRetryable: actorlayer.IsRetryableError,
+			Backoff:     func(int) time.Duration { return time.Millisecond },
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDispatchRuntime() error = %v", err)
+	}
+	delivery := newDelivery("invalid-dispatch", "one")
+	delivery.env.PayloadJSON = "{not-json"
+	err = runtime.Handle(context.Background(), delivery)
+	if err == nil {
+		t.Fatal("Handle() error = nil, want invalid envelope error")
+	}
+	var actorErr *actorlayer.ActorError
+	if !errors.As(err, &actorErr) || actorErr.Kind != actorlayer.ErrorKindDecode {
+		t.Fatalf("Handle() error = %v, want decode actor error", err)
+	}
+	if actor.calls != 0 {
+		t.Fatalf("actor calls = %d, want 0", actor.calls)
+	}
+	if delivery.acked {
+		t.Fatal("delivery was acked, want unsettled invalid envelope")
 	}
 }
 

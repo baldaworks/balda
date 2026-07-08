@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/normahq/balda/pkg/actorlayer/dispatch"
 )
 
@@ -117,6 +118,9 @@ func (r *DispatchRuntime) Handle(ctx context.Context, delivery Delivery) error {
 	if r == nil || r.runtime == nil {
 		return fmt.Errorf("runtime engine is required")
 	}
+	if err := validateDeliveryEnvelope(delivery); err != nil {
+		return err
+	}
 	return r.runtime.Handle(ctx, delivery, r.handleDelivery)
 }
 
@@ -124,7 +128,15 @@ func (r *DispatchRuntime) Run(ctx context.Context, source Source) error {
 	if r == nil || r.runtime == nil {
 		return fmt.Errorf("runtime engine is required")
 	}
-	return r.runtime.Run(ctx, source, r.handleDelivery)
+	if source == nil {
+		return fmt.Errorf("engine source is required")
+	}
+	return source.Run(ctx, func(ctx context.Context, delivery Delivery) error {
+		if err := validateDeliveryEnvelope(delivery); err != nil {
+			return err
+		}
+		return r.runtime.Handle(ctx, delivery, r.handleDelivery)
+	})
 }
 
 func (r *DispatchRuntime) LaneStatus() LaneStatus {
@@ -135,7 +147,8 @@ func (r *DispatchRuntime) LaneStatus() LaneStatus {
 }
 
 func (r *DispatchRuntime) handleDelivery(ctx context.Context, delivery Delivery) error {
-	address, err := r.addressOf(delivery.Envelope())
+	envelope := delivery.Envelope()
+	address, err := r.addressOf(envelope)
 	if err != nil {
 		return err
 	}
@@ -147,7 +160,17 @@ func (r *DispatchRuntime) handleDelivery(ctx context.Context, delivery Delivery)
 	if !found {
 		return &ResolveError{Address: address}
 	}
-	return actor.Handle(ctx, delivery.Envelope())
+	return actor.Handle(ctx, envelope)
+}
+
+func validateDeliveryEnvelope(delivery Delivery) error {
+	if delivery == nil {
+		return nil
+	}
+	if err := delivery.Envelope().Validate(); err != nil {
+		return actorlayer.DecodeError(err)
+	}
+	return nil
 }
 
 type dispatchRuntimeResolver struct {
@@ -256,22 +279,34 @@ func (r *Runtime) Handle(ctx context.Context, delivery Delivery, handler Handler
 
 	err := handler(ctx, delivery)
 	if err == nil {
+		if err := delivery.Ack(ctx); err != nil {
+			return err
+		}
 		r.emit(ctx, Event{Type: EventAcked, Attempt: delivery.Attempt(), MaxAttempts: delivery.MaxAttempts()})
-		return delivery.Ack(ctx)
+		return nil
 	}
 	if !r.cfg.Retry.IsRetryable(err) {
 		reason := err.Error()
+		if err := delivery.DeadLetter(ctx, reason); err != nil {
+			return err
+		}
 		r.emit(ctx, Event{Type: EventDeadLettered, Reason: reason, Attempt: delivery.Attempt(), MaxAttempts: delivery.MaxAttempts()})
-		return delivery.DeadLetter(ctx, reason)
+		return nil
 	}
 	if r.cfg.Retry.RetryExhausted(delivery) {
 		reason := "retry exhausted: " + err.Error()
+		if err := delivery.DeadLetter(ctx, reason); err != nil {
+			return err
+		}
 		r.emit(ctx, Event{Type: EventDeadLettered, Reason: reason, Attempt: delivery.Attempt(), MaxAttempts: delivery.MaxAttempts()})
-		return delivery.DeadLetter(ctx, reason)
+		return nil
 	}
 	delay := r.cfg.Retry.Backoff(max(delivery.Attempt()-1, 0))
+	if settleErr := delivery.Retry(ctx, delay, err.Error()); settleErr != nil {
+		return settleErr
+	}
 	r.emit(ctx, Event{Type: EventRetrying, Reason: err.Error(), RetryDelay: delay, Attempt: delivery.Attempt(), MaxAttempts: delivery.MaxAttempts()})
-	return delivery.Retry(ctx, delay, err.Error())
+	return nil
 }
 
 func (r *Runtime) LaneStatus() LaneStatus {

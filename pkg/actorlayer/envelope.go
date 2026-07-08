@@ -85,6 +85,9 @@ func (e Envelope) Validate() error {
 }
 
 func EncodeEnvelope(e Envelope) (string, error) {
+	if err := e.Validate(); err != nil {
+		return "", fmt.Errorf("encode envelope: %w", err)
+	}
 	data, err := json.Marshal(e)
 	if err != nil {
 		return "", fmt.Errorf("encode envelope: %w", err)
