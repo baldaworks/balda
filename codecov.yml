@@ -1,1 +1,7 @@
 github_checks: false
+
+coverage:
+  status:
+    patch:
+      default:
+        informational: true
