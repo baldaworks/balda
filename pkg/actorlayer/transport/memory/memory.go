@@ -14,6 +14,9 @@ import (
 
 const defaultBuffer = 16
 
+// Transport is an in-memory actorlayer command and event transport.
+//
+// It is safe for concurrent dispatch, event publication, and settlement.
 type Transport struct {
 	mu           sync.Mutex
 	drained      bool
@@ -30,6 +33,7 @@ type eventMessage struct {
 	env     actorlayer.Envelope
 }
 
+// New creates an in-memory transport with the requested channel buffer.
 func New(buffer int) *Transport {
 	if buffer <= 0 {
 		buffer = defaultBuffer
@@ -41,6 +45,7 @@ func New(buffer int) *Transport {
 	}
 }
 
+// Dispatch enqueues an actor envelope for command consumption.
 func (t *Transport) Dispatch(ctx context.Context, env actorlayer.Envelope) (*transport.DispatchReceipt, error) {
 	if t == nil {
 		return nil, fmt.Errorf("memory transport is required")
@@ -66,6 +71,7 @@ func (t *Transport) Dispatch(ctx context.Context, env actorlayer.Envelope) (*tra
 	}, nil
 }
 
+// Run consumes command deliveries until ctx is canceled or the transport drains.
 func (t *Transport) Run(ctx context.Context, handler engine.Handler) error {
 	if t == nil {
 		return fmt.Errorf("memory transport is required")
@@ -90,6 +96,7 @@ func (t *Transport) Run(ctx context.Context, handler engine.Handler) error {
 	}
 }
 
+// PublishEvent enqueues an event envelope on subject.
 func (t *Transport) PublishEvent(ctx context.Context, subject string, env actorlayer.Envelope) error {
 	if t == nil {
 		return fmt.Errorf("memory transport is required")
@@ -114,6 +121,8 @@ func (t *Transport) PublishEvent(ctx context.Context, subject string, env actorl
 	}
 }
 
+// RunEventConsumer consumes event envelopes until ctx is canceled or the
+// transport drains.
 func (t *Transport) RunEventConsumer(ctx context.Context, handler transport.EventHandler) error {
 	if t == nil {
 		return fmt.Errorf("memory transport is required")
@@ -135,6 +144,7 @@ func (t *Transport) RunEventConsumer(ctx context.Context, handler transport.Even
 	}
 }
 
+// Drain prevents new work and lets command and event consumers exit.
 func (t *Transport) Drain(context.Context) error {
 	if t == nil {
 		return nil
@@ -148,6 +158,7 @@ func (t *Transport) Drain(context.Context) error {
 	return nil
 }
 
+// DeadLetters returns a snapshot of envelopes dead-lettered by this transport.
 func (t *Transport) DeadLetters() []actorlayer.Envelope {
 	if t == nil {
 		return nil

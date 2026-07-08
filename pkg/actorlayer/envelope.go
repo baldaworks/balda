@@ -7,19 +7,28 @@ import (
 	"time"
 )
 
+// ActorAddress identifies an actor target and concrete key.
+//
+// String renders addresses as lowercase target plus the original trimmed key,
+// separated by a colon. Both fields are required for concrete delivery
+// addresses.
 type ActorAddress struct {
 	Target string `json:"target"`
 	Key    string `json:"key"`
 }
 
+// SystemAddress returns an address in the reserved "system" target.
 func SystemAddress(key string) ActorAddress {
 	return ActorAddress{Target: "system", Key: key}
 }
 
+// WildcardAddress returns the normalized registry address for all keys in a
+// target, such as "session:*".
 func WildcardAddress(target string) string {
 	return strings.ToLower(strings.TrimSpace(target)) + ":*"
 }
 
+// String returns the normalized full actor address.
 func (a ActorAddress) String() (string, error) {
 	target := strings.ToLower(strings.TrimSpace(a.Target))
 	key := strings.TrimSpace(a.Key)
@@ -33,6 +42,10 @@ func (a ActorAddress) String() (string, error) {
 }
 
 // Envelope is the durable actor transport unit.
+//
+// Attempt is zero-based delivery state persisted in the envelope. Runtime
+// Delivery.Attempt reports the current delivery attempt as a one-based value
+// for retry policy and event metadata.
 type Envelope struct {
 	ID            string            `json:"id"`
 	Namespace     string            `json:"namespace"`
@@ -54,6 +67,8 @@ type Envelope struct {
 	ReportTo      *ActorAddress     `json:"report_to,omitempty"`
 }
 
+// Validate verifies the envelope fields required by actorlayer runtimes and
+// transports.
 func (e Envelope) Validate() error {
 	if strings.TrimSpace(e.ID) == "" {
 		return fmt.Errorf("envelope id is required")
@@ -84,6 +99,7 @@ func (e Envelope) Validate() error {
 	return nil
 }
 
+// EncodeEnvelope validates and marshals an envelope as JSON.
 func EncodeEnvelope(e Envelope) (string, error) {
 	if err := e.Validate(); err != nil {
 		return "", fmt.Errorf("encode envelope: %w", err)
@@ -95,6 +111,10 @@ func EncodeEnvelope(e Envelope) (string, error) {
 	return string(data), nil
 }
 
+// DecodeEnvelope unmarshals and validates an envelope JSON string.
+//
+// JSON and envelope validation errors are wrapped as DecodeError so runtimes can
+// classify malformed deliveries as non-retryable.
 func DecodeEnvelope(raw string) (Envelope, error) {
 	var env Envelope
 	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &env); err != nil {
@@ -106,6 +126,7 @@ func DecodeEnvelope(raw string) (Envelope, error) {
 	return env, nil
 }
 
+// MarshalPayload marshals a typed actor payload for Envelope.PayloadJSON.
 func MarshalPayload(payload any) (string, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -114,6 +135,9 @@ func MarshalPayload(payload any) (string, error) {
 	return string(data), nil
 }
 
+// UnmarshalPayload unmarshals Envelope.PayloadJSON into dst.
+//
+// Invalid payloads and nil destinations are wrapped as DecodeError.
 func UnmarshalPayload(raw string, dst any) error {
 	if dst == nil {
 		return DecodeError(fmt.Errorf("payload destination is required"))
@@ -124,6 +148,8 @@ func UnmarshalPayload(raw string, dst any) error {
 	return nil
 }
 
+// DedupeKeyOrID returns the explicit dedupe key, or the envelope ID when no
+// dedupe key is set.
 func DedupeKeyOrID(env Envelope) string {
 	if trimmed := strings.TrimSpace(env.DedupeKey); trimmed != "" {
 		return trimmed

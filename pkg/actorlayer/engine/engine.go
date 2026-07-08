@@ -12,6 +12,11 @@ import (
 	"github.com/normahq/balda/pkg/actorlayer/dispatch"
 )
 
+// Delivery is a single transport-owned actor message delivery.
+//
+// Attempt is one-based and MaxAttempts is zero when the transport has no retry
+// limit. Settlement methods should be idempotent because runtimes surface
+// settlement errors to callers.
 type Delivery interface {
 	Envelope() Envelope
 	Attempt() int
@@ -22,26 +27,37 @@ type Delivery interface {
 	DeadLetter(ctx context.Context, reason string) error
 }
 
+// Handler processes a delivery.
 type Handler func(ctx context.Context, delivery Delivery) error
 
+// Source streams deliveries into an engine handler.
 type Source interface {
 	Run(ctx context.Context, handler Handler) error
 }
 
+// Resolver chooses the concurrency lane for a delivery.
 type Resolver interface {
 	LaneKey(delivery Delivery) string
 }
 
+// EventType identifies a runtime lifecycle event.
 type EventType string
 
 const (
-	EventRunning      EventType = "running"
-	EventInProgress   EventType = "in_progress"
-	EventAcked        EventType = "acked"
-	EventRetrying     EventType = "retrying"
+	// EventRunning is emitted after the delivery enters its lane and before the
+	// handler is called.
+	EventRunning EventType = "running"
+	// EventInProgress is emitted by explicit heartbeat/progress calls.
+	EventInProgress EventType = "in_progress"
+	// EventAcked is emitted after Ack succeeds.
+	EventAcked EventType = "acked"
+	// EventRetrying is emitted after Retry succeeds.
+	EventRetrying EventType = "retrying"
+	// EventDeadLettered is emitted after DeadLetter succeeds.
 	EventDeadLettered EventType = "deadlettered"
 )
 
+// Event describes runtime lifecycle progress for one delivery.
 type Event struct {
 	Type        EventType
 	EnvelopeID  string
@@ -56,16 +72,19 @@ type Event struct {
 	MaxAttempts int
 }
 
+// EventSink consumes runtime lifecycle events.
 type EventSink interface {
 	Publish(ctx context.Context, event Event)
 }
 
+// RetryPolicy configures runtime retry classification and backoff.
 type RetryPolicy struct {
 	IsRetryable    func(error) bool
 	Backoff        func(attempt int) time.Duration
 	RetryExhausted func(delivery Delivery) bool
 }
 
+// Config configures a transport-agnostic Runtime.
 type Config struct {
 	Resolver    Resolver
 	Retry       RetryPolicy
@@ -73,6 +92,7 @@ type Config struct {
 	LaneIdleTTL time.Duration
 }
 
+// LaneStatus reports currently active runtime lanes.
 type LaneStatus struct {
 	Active int
 	Keys   []string
@@ -80,9 +100,13 @@ type LaneStatus struct {
 
 const unknownLaneKey = "unknown"
 
+// AddressResolver maps an envelope to an actor registry address.
 type AddressResolver func(envelope Envelope) (string, error)
+
+// LaneKeyResolver maps an envelope to a runtime concurrency lane.
 type LaneKeyResolver func(envelope Envelope) string
 
+// RuntimeConfig configures a DispatchRuntime.
 type RuntimeConfig struct {
 	Registry    dispatch.Registry
 	AddressOf   AddressResolver
@@ -92,12 +116,14 @@ type RuntimeConfig struct {
 	LaneIdleTTL time.Duration
 }
 
+// DispatchRuntime resolves typed actors and executes them through Runtime.
 type DispatchRuntime struct {
 	runtime   *Runtime
 	registry  dispatch.Registry
 	addressOf AddressResolver
 }
 
+// NewDispatchRuntime creates a dispatching runtime around an actor registry.
 func NewDispatchRuntime(cfg RuntimeConfig) (*DispatchRuntime, error) {
 	if cfg.Registry == nil {
 		return nil, fmt.Errorf("runtime registry is required")
@@ -117,6 +143,7 @@ func NewDispatchRuntime(cfg RuntimeConfig) (*DispatchRuntime, error) {
 	return &DispatchRuntime{runtime: runtime, registry: cfg.Registry, addressOf: cfg.AddressOf}, nil
 }
 
+// Handle dispatches a single delivery to its resolved actor.
 func (r *DispatchRuntime) Handle(ctx context.Context, delivery Delivery) error {
 	if delivery == nil {
 		return nil
@@ -127,6 +154,7 @@ func (r *DispatchRuntime) Handle(ctx context.Context, delivery Delivery) error {
 	return r.runtime.Handle(ctx, delivery, r.handleDelivery)
 }
 
+// Run streams source deliveries through Handle.
 func (r *DispatchRuntime) Run(ctx context.Context, source Source) error {
 	if r == nil || r.runtime == nil {
 		return fmt.Errorf("runtime engine is required")
@@ -139,6 +167,7 @@ func (r *DispatchRuntime) Run(ctx context.Context, source Source) error {
 	})
 }
 
+// LaneStatus reports active lanes in the underlying runtime.
 func (r *DispatchRuntime) LaneStatus() LaneStatus {
 	if r == nil || r.runtime == nil {
 		return LaneStatus{}
@@ -201,6 +230,7 @@ func (r dispatchRuntimeResolver) LaneKey(delivery Delivery) string {
 	return unknownLaneKey
 }
 
+// Runtime executes transport deliveries with lane serialization and settlement.
 type Runtime struct {
 	cfg Config
 
@@ -218,6 +248,7 @@ type noopSink struct{}
 
 func (noopSink) Publish(context.Context, Event) {}
 
+// New creates a Runtime.
 func New(cfg Config) (*Runtime, error) {
 	if cfg.Resolver == nil {
 		return nil, fmt.Errorf("engine resolver is required")
@@ -246,6 +277,7 @@ func New(cfg Config) (*Runtime, error) {
 	return &Runtime{cfg: cfg, lanes: make(map[string]*lane)}, nil
 }
 
+// Run streams source deliveries through Handle.
 func (r *Runtime) Run(ctx context.Context, src Source, handler Handler) error {
 	if r == nil {
 		return fmt.Errorf("runtime engine is required")
@@ -261,6 +293,7 @@ func (r *Runtime) Run(ctx context.Context, src Source, handler Handler) error {
 	})
 }
 
+// Handle executes one delivery and settles it through Ack, Retry, or DeadLetter.
 func (r *Runtime) Handle(ctx context.Context, delivery Delivery, handler Handler) error {
 	if delivery == nil {
 		return nil
@@ -325,6 +358,7 @@ func (r *Runtime) Handle(ctx context.Context, delivery Delivery, handler Handler
 	return nil
 }
 
+// LaneStatus reports active lanes.
 func (r *Runtime) LaneStatus() LaneStatus {
 	if r == nil {
 		return LaneStatus{}
@@ -343,6 +377,7 @@ func (r *Runtime) LaneStatus() LaneStatus {
 	return LaneStatus{Active: len(keys), Keys: keys}
 }
 
+// EmitInProgress publishes an in-progress event for delivery.
 func (r *Runtime) EmitInProgress(ctx context.Context, delivery Delivery) {
 	if delivery == nil {
 		return

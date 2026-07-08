@@ -31,6 +31,10 @@ func NewMemoryRegistry() *MemoryRegistry {
 	return &MemoryRegistry{actors: make(map[string]Actor)}
 }
 
+// Register adds actor under its normalized address.
+//
+// A nil actor is ignored so optional actor lists can be registered without
+// pre-filtering.
 func (r *MemoryRegistry) Register(actor Actor) error {
 	if actor == nil {
 		return nil
@@ -48,6 +52,7 @@ func (r *MemoryRegistry) Register(actor Actor) error {
 	return nil
 }
 
+// Resolve returns the actor registered for address or for the target wildcard.
 func (r *MemoryRegistry) Resolve(address string) (Actor, bool) {
 	normalized := normalizeAddress(address)
 	if normalized == "" {
