@@ -96,10 +96,6 @@ func EnvelopeHeaders(env actorlayer.Envelope) map[string]string {
 	return out
 }
 
-func DedupeKeyOrID(env actorlayer.Envelope) string {
-	return actorlayer.DedupeKeyOrID(env)
-}
-
 func addHeader(out map[string]string, key string, value string) {
 	if trimmed := strings.TrimSpace(value); trimmed != "" {
 		out[key] = trimmed

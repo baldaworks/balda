@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
 )
@@ -28,12 +29,12 @@ func TestEventProjectorProjectsTaskEventIdempotently(t *testing.T) {
 	ctx := context.Background()
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
-	env := Envelope{
+	env := actorlayer.Envelope{
 		ID:          "event-1",
 		Namespace:   NamespaceTelemetry,
 		Kind:        "task_event",
-		From:        SystemAddress("task-events"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		From:        actorlayer.SystemAddress("task-events"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"text":"working"}`,
 		Meta:        map[string]string{"event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "msg-1"},
@@ -57,12 +58,12 @@ func TestEventProjectorProjectsCommandEventForTask(t *testing.T) {
 	ctx := context.Background()
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
-	env := Envelope{
+	env := actorlayer.Envelope{
 		ID:          "cmd-1:event:deadlettered",
 		Namespace:   NamespaceTelemetry,
 		Kind:        "command_event",
-		From:        SystemAddress("transport"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		From:        actorlayer.SystemAddress("transport"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"retry exhausted"}`,
 	}
@@ -82,12 +83,12 @@ func TestEventProjectorProjectsCommandDecodeFailedEventForTask(t *testing.T) {
 	ctx := context.Background()
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
-	env := Envelope{
+	env := actorlayer.Envelope{
 		ID:          "cmd-1:event:decode_failed",
 		Namespace:   NamespaceTelemetry,
 		Kind:        "command_event",
-		From:        SystemAddress("transport"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		From:        actorlayer.SystemAddress("transport"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"decode failed: invalid json"}`,
 	}
@@ -107,12 +108,12 @@ func TestEventProjectorProjectsDeliveryFailedEventForTask(t *testing.T) {
 	ctx := context.Background()
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
-	env := Envelope{
+	env := actorlayer.Envelope{
 		ID:          "delivery-1:event:failed",
 		Namespace:   NamespaceTelemetry,
 		Kind:        "task_event",
-		From:        SystemAddress("task-events"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		From:        actorlayer.SystemAddress("task-events"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"telegram send failed"}`,
 	}
@@ -134,22 +135,22 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 
 	providerA := newEventProjectorStateProviderAtPath(t, ctx, dbPath)
 	projectorA := &EventProjector{store: providerA.Swarm(), logger: zerolog.Nop()}
-	eventCreated := Envelope{
+	eventCreated := actorlayer.Envelope{
 		ID:          "evt-task-created",
 		Namespace:   NamespaceTelemetry,
 		Kind:        "task_event",
-		From:        SystemAddress("task-events"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		From:        actorlayer.SystemAddress("task-events"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"created"}`,
 		Meta:        map[string]string{"event_type": TaskEventTaskCreated, "actor": "task:actor", "message_id": "m-1"},
 	}
-	eventProgress := Envelope{
+	eventProgress := actorlayer.Envelope{
 		ID:          "evt-task-progress",
 		Namespace:   NamespaceTelemetry,
 		Kind:        "task_event",
-		From:        SystemAddress("task-events"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		From:        actorlayer.SystemAddress("task-events"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"running"}`,
 		Meta:        map[string]string{"event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
@@ -166,12 +167,12 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 
 	providerB := newEventProjectorStateProviderAtPath(t, ctx, dbPath)
 	projectorB := &EventProjector{store: providerB.Swarm(), logger: zerolog.Nop()}
-	eventCompleted := Envelope{
+	eventCompleted := actorlayer.Envelope{
 		ID:          "evt-task-completed",
 		Namespace:   NamespaceTelemetry,
 		Kind:        "task_event",
-		From:        SystemAddress("task-events"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		From:        actorlayer.SystemAddress("task-events"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"completed"}`,
 		Meta:        map[string]string{"event_type": TaskEventTaskCompleted, "actor": "task:actor", "message_id": "m-3"},

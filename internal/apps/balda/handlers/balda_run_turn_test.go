@@ -20,6 +20,8 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -1688,8 +1690,8 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 		fx.Supply(
 			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
 		),
-		fx.Provide(func() swarm.ActorDispatcher { return bus }),
-		fx.Provide(func() swarm.EventPublisher { return bus }),
+		fx.Provide(func() actortransport.Dispatcher { return bus }),
+		fx.Provide(func() actortransport.EventPublisher { return bus }),
 		fx.Provide(swarm.NewTaskService),
 		fx.Populate(&tasks),
 	)
@@ -1712,7 +1714,7 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 	}, tgClient, bus, tasks
 }
 
-func deliveryTextsFromCommands(t *testing.T, commands []swarm.Envelope) []string {
+func deliveryTextsFromCommands(t *testing.T, commands []actorlayer.Envelope) []string {
 	t.Helper()
 
 	texts := make([]string, 0, len(commands))
@@ -1732,8 +1734,8 @@ func deliveryTextsFromCommands(t *testing.T, commands []swarm.Envelope) []string
 	return texts
 }
 
-func taskEventsOfType(events []swarm.Envelope, types ...string) []swarm.Envelope {
-	out := make([]swarm.Envelope, 0, len(events))
+func taskEventsOfType(events []actorlayer.Envelope, types ...string) []actorlayer.Envelope {
+	out := make([]actorlayer.Envelope, 0, len(events))
 	for _, env := range events {
 		eventType := env.Meta["event_type"]
 		for _, want := range types {
@@ -1746,7 +1748,7 @@ func taskEventsOfType(events []swarm.Envelope, types ...string) []swarm.Envelope
 	return out
 }
 
-func taskEventPayload(t *testing.T, env swarm.Envelope) map[string]any {
+func taskEventPayload(t *testing.T, env actorlayer.Envelope) map[string]any {
 	t.Helper()
 
 	var payload map[string]any
@@ -1756,7 +1758,7 @@ func taskEventPayload(t *testing.T, env swarm.Envelope) map[string]any {
 	return payload
 }
 
-func deliveryModeCount(t *testing.T, commands []swarm.Envelope, mode actors.DeliveryMode) int {
+func deliveryModeCount(t *testing.T, commands []actorlayer.Envelope, mode actors.DeliveryMode) int {
 	t.Helper()
 
 	count := 0

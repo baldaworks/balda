@@ -15,6 +15,8 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"go.uber.org/fx"
 )
 
@@ -54,7 +56,7 @@ const (
 
 type taskActorExecutor struct {
 	tasks      *swarm.TaskService
-	dispatcher swarm.ActorDispatcher
+	dispatcher actortransport.Dispatcher
 	sessions   *baldasession.Manager
 }
 
@@ -62,11 +64,11 @@ type taskActorExecutorParams struct {
 	fx.In
 
 	TaskService *swarm.TaskService
-	Dispatcher  swarm.ActorDispatcher
+	Dispatcher  actortransport.Dispatcher
 	Sessions    *baldasession.Manager `optional:"true"`
 }
 
-func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID string) (swarm.Envelope, string, error) {
+func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID string) (actorlayer.Envelope, string, error) {
 	dedupeBase := strings.TrimSpace(payload.DedupeKey)
 	dedupeBase = strings.TrimSuffix(dedupeBase, ":task")
 	dedupeBase = strings.TrimSuffix(dedupeBase, ":session")
@@ -105,14 +107,14 @@ func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID
 		SessionTurn: &payload,
 	})
 	if err != nil {
-		return swarm.Envelope{}, "", fmt.Errorf("encode webhook task payload: %w", err)
+		return actorlayer.Envelope{}, "", fmt.Errorf("encode webhook task payload: %w", err)
 	}
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
 		Namespace:   swarm.NamespaceWebhookInbound,
 		Kind:        swarm.KindWebhookEvent,
-		From:        swarm.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		From:        actorlayer.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
 		SessionID:   payload.Locator.SessionID,
 		TaskID:      taskID,
 		Priority:    80,
@@ -121,10 +123,10 @@ func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID
 	}, taskID, nil
 }
 
-func PromptTurnTaskEnvelope(payload SessionTurnPayload) (swarm.Envelope, string, error) {
+func PromptTurnTaskEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, string, error) {
 	dedupeBase := promptTurnDedupeBase(payload)
 	if dedupeBase == "" {
-		return swarm.Envelope{}, "", fmt.Errorf("prompt turn dedupe key is required")
+		return actorlayer.Envelope{}, "", fmt.Errorf("prompt turn dedupe key is required")
 	}
 	taskID := "turn-" + shortTaskHash(dedupeBase)
 	payload.DedupeKey = dedupeBase + ":session"
@@ -133,14 +135,14 @@ func PromptTurnTaskEnvelope(payload SessionTurnPayload) (swarm.Envelope, string,
 		SessionTurn: &payload,
 	})
 	if err != nil {
-		return swarm.Envelope{}, "", fmt.Errorf("encode prompt turn task payload: %w", err)
+		return actorlayer.Envelope{}, "", fmt.Errorf("encode prompt turn task payload: %w", err)
 	}
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
 		Namespace:   swarm.NamespaceHumanInbound,
 		Kind:        swarm.KindMessage,
-		From:        swarm.ActorAddress{Target: firstNonEmpty(payload.Source, sessionTurnSourceTelegram), Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		From:        actorlayer.ActorAddress{Target: firstNonEmpty(payload.Source, sessionTurnSourceTelegram), Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
 		SessionID:   payload.Locator.SessionID,
 		TaskID:      taskID,
 		Priority:    90,
@@ -157,7 +159,7 @@ func ScheduledTaskEnvelope(
 	userID string,
 	topicID int,
 	dispatchKey string,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	payload := taskEnvelopePayload{
 		Kind: taskPayloadKindScheduledTask,
 		ScheduledTask: &scheduledTaskPayload{
@@ -171,15 +173,15 @@ func ScheduledTaskEnvelope(
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return swarm.Envelope{}, fmt.Errorf("encode scheduled task task: %w", err)
+		return actorlayer.Envelope{}, fmt.Errorf("encode scheduled task task: %w", err)
 	}
 	taskID := "scheduled-" + strings.TrimSpace(scheduledTaskID) + "-" + strings.TrimSpace(dispatchKey)
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
 		Namespace:   swarm.NamespaceScheduleInbound,
 		Kind:        swarm.KindScheduledTask,
-		From:        swarm.ActorAddress{Target: "schedule", Key: strings.TrimSpace(scheduledTaskID)},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		From:        actorlayer.ActorAddress{Target: "schedule", Key: strings.TrimSpace(scheduledTaskID)},
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
 		SessionID:   locator.SessionID,
 		TaskID:      taskID,
 		DedupeKey:   strings.TrimSpace(dispatchKey),
@@ -209,41 +211,41 @@ func promptTurnDedupeBase(payload SessionTurnPayload) string {
 }
 
 func (e *taskActorExecutor) Address() string {
-	return swarm.WildcardAddress(swarm.ActorTypeTask)
+	return actorlayer.WildcardAddress(swarm.ActorTypeTask)
 }
 
 func (e *taskActorExecutor) Handle(ctx context.Context, envelope any) error {
-	env, err := swarm.AssertEnvelope(envelope)
+	env, err := actorlayer.AssertEnvelope(envelope)
 	if err != nil {
 		return err
 	}
 	var payload taskEnvelopePayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		return swarm.PermanentError(fmt.Errorf("decode task payload: %w", err))
+		return actorlayer.PermanentError(fmt.Errorf("decode task payload: %w", err))
 	}
 	switch strings.TrimSpace(payload.Kind) {
 	case "goal":
-		return swarm.PolicyError(fmt.Errorf("goal tasks are handled by goal actor"))
+		return actorlayer.PolicyError(fmt.Errorf("goal tasks are handled by goal actor"))
 	case taskPayloadKindScheduledTask:
 		if payload.ScheduledTask == nil {
-			return swarm.PolicyError(fmt.Errorf("scheduled task payload is required"))
+			return actorlayer.PolicyError(fmt.Errorf("scheduled task payload is required"))
 		}
 		return e.startScheduledTaskTask(ctx, env, *payload.ScheduledTask)
 	case taskPayloadKindSessionTurn:
 		if payload.SessionTurn == nil {
-			return swarm.PolicyError(fmt.Errorf("session turn task payload is required"))
+			return actorlayer.PolicyError(fmt.Errorf("session turn task payload is required"))
 		}
 		return e.dispatchSessionTurn(ctx, env, *payload.SessionTurn)
 	default:
-		return swarm.PolicyError(fmt.Errorf("unsupported task payload kind %q", payload.Kind))
+		return actorlayer.PolicyError(fmt.Errorf("unsupported task payload kind %q", payload.Kind))
 	}
 }
 
-func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.Envelope, payload SessionTurnPayload) error {
+func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) error {
 	taskID := firstNonEmpty(env.TaskID, env.To.Key)
 	if taskID != "" && e.tasks != nil {
 		if _, ok, err := e.tasks.Get(ctx, taskID); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		} else if ok {
 			return nil
 		}
@@ -260,7 +262,7 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 			CreatedBy:     strings.TrimSpace(payload.UserID),
 		}, "task.actor", payload)
 		if err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 		if !created {
 			return nil
@@ -269,7 +271,7 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 	payload.TaskID = taskID
 	sessionEnv, err := SessionTurnEnvelope(payload)
 	if err != nil {
-		return swarm.PermanentError(err)
+		return actorlayer.PermanentError(err)
 	}
 	sessionEnv.TaskID = taskID
 	sessionEnv.CorrelationID = firstNonEmpty(env.CorrelationID, taskID)
@@ -278,11 +280,11 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env swarm.E
 		sessionEnv.ID = sessionEnv.DedupeKey
 	}
 	if _, err := e.dispatcher.Dispatch(ctx, sessionEnv); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if taskID != "" && e.tasks != nil {
 		if err := e.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, "task.actor", env.ID, "", nil); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 	}
 	return nil
@@ -312,21 +314,21 @@ func sessionTurnTaskPriority(payload SessionTurnPayload) int {
 	}
 }
 
-func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swarm.Envelope, payload scheduledTaskPayload) error {
+func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env actorlayer.Envelope, payload scheduledTaskPayload) error {
 	taskID := firstNonEmpty(env.TaskID, env.To.Key)
 	content := strings.TrimSpace(payload.Content)
 	if taskID == "" {
-		return swarm.PolicyError(fmt.Errorf("task id is required"))
+		return actorlayer.PolicyError(fmt.Errorf("task id is required"))
 	}
 	if strings.TrimSpace(payload.TaskID) == "" {
-		return swarm.PolicyError(fmt.Errorf("scheduled task id is required"))
+		return actorlayer.PolicyError(fmt.Errorf("scheduled task id is required"))
 	}
 	if content == "" {
-		return swarm.PolicyError(fmt.Errorf("scheduled task content is required"))
+		return actorlayer.PolicyError(fmt.Errorf("scheduled task content is required"))
 	}
 	if e.tasks != nil {
 		if _, ok, err := e.tasks.Get(ctx, taskID); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		} else if ok {
 			return nil
 		}
@@ -343,7 +345,7 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 			CreatedBy:     strings.TrimSpace(payload.UserID),
 		}, "task.actor", payload)
 		if err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 		if !created {
 			return nil
@@ -366,7 +368,7 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 	}
 	sessionEnv, err := SessionTurnEnvelope(sessionPayload)
 	if err != nil {
-		return swarm.PermanentError(err)
+		return actorlayer.PermanentError(err)
 	}
 	sessionEnv.TaskID = taskID
 	sessionEnv.CorrelationID = firstNonEmpty(env.CorrelationID, taskID)
@@ -375,11 +377,11 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env swar
 		sessionEnv.ID = sessionEnv.DedupeKey
 	}
 	if _, err := e.dispatcher.Dispatch(ctx, sessionEnv); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if e.tasks != nil {
 		if err := e.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, "task.actor", env.ID, "", nil); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 	}
 	return nil

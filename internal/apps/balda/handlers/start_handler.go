@@ -38,7 +38,7 @@ type startHandlerParams struct {
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
 	ChannelAuth       *auth.ChannelAuthService
-	ActorDispatcher   actortransport.Dispatcher
+	Dispatcher        actortransport.Dispatcher
 	AuthToken         string `name:"balda_auth_token"`
 }
 

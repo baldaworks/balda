@@ -117,7 +117,7 @@ type zulipBaldaHandlerParams struct {
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
 	TurnDispatcher    *actors.TurnDispatcher
-	ActorDispatcher   actortransport.Dispatcher
+	Dispatcher        actortransport.Dispatcher
 	TaskService       *swarm.TaskService `optional:"true"`
 	MemoryStore       *memory.Store
 	AuthToken         string `name:"balda_auth_token"`
@@ -139,7 +139,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		turnDispatcher:    params.TurnDispatcher,
-		actorDispatcher:   params.ActorDispatcher,
+		actorDispatcher:   params.Dispatcher,
 		taskService:       params.TaskService,
 		memoryStore:       params.MemoryStore,
 		authToken:         strings.TrimSpace(params.AuthToken),

@@ -107,7 +107,7 @@ type sessionActorExecutorParams struct {
 }
 
 func (e *sessionActorExecutor) Address() string {
-	return swarm.WildcardAddress(swarm.ActorTypeSession)
+	return actorlayer.WildcardAddress(swarm.ActorTypeSession)
 }
 
 func (e *sessionActorExecutor) Handle(ctx context.Context, envelope any) error {

@@ -145,7 +145,7 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 	t.Run("ingress publishes commands before local state is advanced", func(t *testing.T) {
 		schedulerSource := readSource(t, filepath.Join(root, "handlers/scheduled_task_scheduler.go"))
 		if !strings.Contains(schedulerSource, "s.dispatcher.Dispatch(ctx, env)") {
-			t.Fatal("scheduler ingress must dispatch durable actor work through ActorDispatcher")
+			t.Fatal("scheduler ingress must dispatch durable actor work through actorlayer transport dispatcher")
 		}
 		if !strings.Contains(schedulerSource, "Mark the slot only after durable command dispatch succeeds.") {
 			t.Fatal("scheduler must document and preserve publish-before-dispatch-state ordering")

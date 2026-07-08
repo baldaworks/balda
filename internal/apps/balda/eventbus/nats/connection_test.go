@@ -14,6 +14,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
@@ -50,7 +51,7 @@ func TestBus_DispatchAndConsumeBuiltInRuntime(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	seen := make(chan swarm.Envelope, 1)
+	seen := make(chan actorlayer.Envelope, 1)
 	go func() {
 		_ = bus.Run(ctx, func(_ context.Context, msg actorengine.Delivery) error {
 			seen <- testDeliveryEnvelope(t, msg)
@@ -280,7 +281,7 @@ func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) 
 				if err := bus.js.DeleteStream(context.Background(), swarm.DefaultEventStream); err != nil {
 					t.Errorf("DeleteStream(events) error = %v", err)
 				}
-				return swarm.TransientError(errors.New("retry please"))
+				return actorlayer.TransientError(errors.New("retry please"))
 			}
 			done <- struct{}{}
 			return nil
@@ -324,7 +325,7 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 	go func() {
 		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			if calls.Add(1) == 1 {
-				return swarm.TransientError(errors.New("retry please"))
+				return actorlayer.TransientError(errors.New("retry please"))
 			}
 			done <- struct{}{}
 			return nil
@@ -356,7 +357,7 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 	if !ok {
 		t.Fatal("command.retrying event message not found")
 	}
-	got, err := swarm.DecodeEnvelope(string(msg.Data()))
+	got, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		t.Fatalf("DecodeEnvelope(command.retrying) error = %v", err)
 	}
@@ -409,7 +410,7 @@ func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
 				t.Errorf("DeleteStream(events) error = %v", err)
 			}
 			handled <- struct{}{}
-			return swarm.PermanentError(errors.New("permanent failure"))
+			return actorlayer.PermanentError(errors.New("permanent failure"))
 		})
 	}()
 	select {
@@ -424,13 +425,13 @@ func TestBus_CommandDeadletteredEventFailureStillSettlesDLQ(t *testing.T) {
 func TestRetryDelayAppliesExponentialDelayWithJitter(t *testing.T) {
 	t.Parallel()
 
-	low := swarm.RetryDelay(0)
+	low := actorlayer.RetryDelay(0)
 	baseDelay := time.Second
 	if low < baseDelay || low > baseDelay+(baseDelay/4) {
 		t.Fatalf("RetryDelay(0) = %s, want in [%s, %s]", low, baseDelay, baseDelay+(baseDelay/4))
 	}
 
-	high := swarm.RetryDelay(16)
+	high := actorlayer.RetryDelay(16)
 	maxDelay := time.Minute
 	if high < maxDelay || high > maxDelay+(maxDelay/4) {
 		t.Fatalf("RetryDelay(16) = %s, want in [%s, %s]", high, maxDelay, maxDelay+(maxDelay/4))
@@ -510,7 +511,7 @@ func TestBus_CommandDLQSettlesWithCanceledParent(t *testing.T) {
 			cancelRun()
 			<-ctx.Done()
 			handled <- struct{}{}
-			return swarm.PermanentError(errors.New("permanent failure"))
+			return actorlayer.PermanentError(errors.New("permanent failure"))
 		})
 	}()
 
@@ -540,7 +541,7 @@ func TestBus_RunHandlesCommandsConcurrently(t *testing.T) {
 	for _, id := range []string{"concurrent-a", "concurrent-b"} {
 		env := commandTestEnvelope(id)
 		env.TaskID = id
-		env.To = swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: id}
+		env.To = actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: id}
 		if _, err := bus.Dispatch(context.Background(), env); err != nil {
 			t.Fatalf("Dispatch(%s) error = %v", id, err)
 		}
@@ -595,7 +596,7 @@ func TestBus_RunLimitsInFlightToFetchBatch(t *testing.T) {
 		id := fmt.Sprintf("bounded-%d", i)
 		env := commandTestEnvelope(id)
 		env.TaskID = id
-		env.To = swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: id}
+		env.To = actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: id}
 		if _, err := bus.Dispatch(context.Background(), env); err != nil {
 			t.Fatalf("Dispatch(%d) error = %v", i, err)
 		}
@@ -726,7 +727,7 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	if !ok {
 		t.Fatal("decode_failed event message not found")
 	}
-	got, err := swarm.DecodeEnvelope(string(msg.Data()))
+	got, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		t.Fatalf("DecodeEnvelope(decode_failed event) error = %v", err)
 	}
@@ -792,7 +793,7 @@ func TestBus_DispatchReportsDuplicate(t *testing.T) {
 	if !ok {
 		t.Fatal("command.noop event message = nil, want duplicate noop lifecycle event")
 	}
-	got, err := swarm.DecodeEnvelope(string(msg.Data()))
+	got, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		t.Fatalf("DecodeEnvelope(command.noop) error = %v", err)
 	}
@@ -878,7 +879,7 @@ func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
 			if msg.Attempt() != 1 || msg.MaxAttempts() != 1 {
 				t.Errorf("delivery metadata = %d/%d, want 1/1", msg.Attempt(), msg.MaxAttempts())
 			}
-			return swarm.TransientError(context.DeadlineExceeded)
+			return actorlayer.TransientError(context.DeadlineExceeded)
 		})
 	}()
 	select {
@@ -938,7 +939,7 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 	if !ok {
 		t.Fatal("dlq message not found")
 	}
-	got, err := swarm.DecodeEnvelope(string(msg.Data()))
+	got, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		t.Fatalf("DecodeEnvelope(dlq message) error = %v", err)
 	}
@@ -987,7 +988,7 @@ func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
 	go func() {
 		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			done <- struct{}{}
-			return swarm.PermanentError(errors.New("policy denied"))
+			return actorlayer.PermanentError(errors.New("policy denied"))
 		})
 	}()
 	select {
@@ -1014,8 +1015,8 @@ func TestBus_DLQIncludesErrorClassAndSourceMetadata(t *testing.T) {
 	if !ok {
 		t.Fatal("dlq metadata message not found")
 	}
-	if got := msg.Headers().Get("Balda-DLQ-Error-Class"); got != string(swarm.ErrorKindPermanent) {
-		t.Fatalf("Balda-DLQ-Error-Class = %q, want %q", got, swarm.ErrorKindPermanent)
+	if got := msg.Headers().Get("Balda-DLQ-Error-Class"); got != string(actorlayer.ErrorKindPermanent) {
+		t.Fatalf("Balda-DLQ-Error-Class = %q, want %q", got, actorlayer.ErrorKindPermanent)
 	}
 	if got := msg.Headers().Get("Balda-DLQ-Source-Stream"); got != swarm.DefaultCommandStream {
 		t.Fatalf("Balda-DLQ-Source-Stream = %q, want %q", got, swarm.DefaultCommandStream)
@@ -1058,9 +1059,9 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 	defer cancel()
 	handled := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunEventConsumer(ctx, func(context.Context, string, swarm.Envelope) error {
+		_ = bus.RunEventConsumer(ctx, func(context.Context, string, actorlayer.Envelope) error {
 			handled <- struct{}{}
-			return swarm.PermanentError(context.Canceled)
+			return actorlayer.PermanentError(context.Canceled)
 		})
 	}()
 	select {
@@ -1101,12 +1102,12 @@ func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
 	defer projectionCancel()
 	projectionHandled := make(chan struct{}, 1)
 	go func() {
-		_ = bus.RunEventConsumer(projectionCtx, func(context.Context, string, swarm.Envelope) error {
+		_ = bus.RunEventConsumer(projectionCtx, func(context.Context, string, actorlayer.Envelope) error {
 			select {
 			case projectionHandled <- struct{}{}:
 			default:
 			}
-			return swarm.PermanentError(errors.New("projection failed"))
+			return actorlayer.PermanentError(errors.New("projection failed"))
 		})
 	}()
 	eventEnv := commandTestEnvelope("projection-failure-does-not-block")
@@ -1256,19 +1257,19 @@ func (e fakeJetStreamAPIError) APIError() *jetstream.APIError {
 	return &jetstream.APIError{Code: 503, Description: e.description}
 }
 
-func commandTestEnvelope(id string) swarm.Envelope {
-	return swarm.Envelope{
+func commandTestEnvelope(id string) actorlayer.Envelope {
+	return actorlayer.Envelope{
 		ID:          id,
 		Namespace:   swarm.NamespaceGoalCommand,
 		Kind:        swarm.KindGoal,
-		From:        swarm.SystemAddress("test"),
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeGoal, Key: "task-1"},
+		From:        actorlayer.SystemAddress("test"),
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeGoal, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"ok":true}`,
 	}
 }
 
-func testDeliveryEnvelope(t *testing.T, delivery actorengine.Delivery) swarm.Envelope {
+func testDeliveryEnvelope(t *testing.T, delivery actorengine.Delivery) actorlayer.Envelope {
 	t.Helper()
 	return delivery.Envelope()
 }

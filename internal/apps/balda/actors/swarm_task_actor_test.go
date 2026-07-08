@@ -9,6 +9,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -121,7 +123,7 @@ func TestScheduledTaskEnvelopeDispatchesSessionTurn(t *testing.T) {
 	}
 }
 
-func lastPublishedCommandTo(t *testing.T, bus *recordingHandlerCommandBus, target string, key string) swarm.Envelope {
+func lastPublishedCommandTo(t *testing.T, bus *recordingHandlerCommandBus, target string, key string) actorlayer.Envelope {
 	t.Helper()
 	for i := len(bus.commands) - 1; i >= 0; i-- {
 		env := bus.commands[i]
@@ -131,10 +133,10 @@ func lastPublishedCommandTo(t *testing.T, bus *recordingHandlerCommandBus, targe
 	}
 	data, _ := json.MarshalIndent(bus.commands, "", "  ")
 	t.Fatalf("no published command to %s:%s; published=%s", target, key, string(data))
-	return swarm.Envelope{}
+	return actorlayer.Envelope{}
 }
 
-func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, swarm.ActorDispatcher, *swarm.TaskService, any) {
+func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, actortransport.Dispatcher, *swarm.TaskService, any) {
 	t.Helper()
 	provider, err := baldastate.NewSQLiteProvider(ctx, ":memory:")
 	if err != nil {
@@ -144,7 +146,7 @@ func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Pr
 		_ = provider.Close()
 	})
 	bus := &recordingHandlerCommandBus{}
-	var dispatcher swarm.ActorDispatcher
+	var dispatcher actortransport.Dispatcher
 	var tasks *swarm.TaskService
 	app := fxtest.New(t,
 		fx.Supply(
@@ -152,8 +154,8 @@ func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Pr
 			zerolog.Nop(),
 			swarm.Config{},
 		),
-		fx.Provide(func() swarm.ActorDispatcher { return bus }),
-		fx.Provide(func() swarm.EventPublisher { return bus }),
+		fx.Provide(func() actortransport.Dispatcher { return bus }),
+		fx.Provide(func() actortransport.EventPublisher { return bus }),
 		fx.Provide(swarm.NewTaskService),
 		fx.Populate(&dispatcher, &tasks),
 	)

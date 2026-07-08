@@ -55,7 +55,7 @@ func MemoryRememberEnvelope(payload MemoryRememberPayload) (actorlayer.Envelope,
 }
 
 func (e *memoryActorExecutor) Address() string {
-	return swarm.WildcardAddress(swarm.ActorTypeMemory)
+	return actorlayer.WildcardAddress(swarm.ActorTypeMemory)
 }
 
 func (e *memoryActorExecutor) Handle(ctx context.Context, envelope any) error {

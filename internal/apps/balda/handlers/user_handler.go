@@ -30,7 +30,7 @@ type userHandlerParams struct {
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
-	ActorDispatcher   actortransport.Dispatcher
+	Dispatcher        actortransport.Dispatcher
 	TGClient          client.ClientWithResponsesInterface `optional:"true"`
 }
 

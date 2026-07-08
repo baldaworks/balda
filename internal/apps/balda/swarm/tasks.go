@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
@@ -386,12 +387,12 @@ func (s *TaskService) publishTaskEvent(ctx context.Context, event baldastate.Swa
 	case TaskEventTaskCompleted:
 		subject = SubjectEventTaskCompleted
 	}
-	env := Envelope{
+	env := actorlayer.Envelope{
 		ID:          event.ID,
 		Namespace:   NamespaceTelemetry,
 		Kind:        "task_event",
-		From:        SystemAddress("task-events"),
-		To:          ActorAddress{Target: ActorTypeTask, Key: event.TaskID},
+		From:        actorlayer.SystemAddress("task-events"),
+		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: event.TaskID},
 		TaskID:      event.TaskID,
 		PayloadJSON: payload,
 		Meta: map[string]string{

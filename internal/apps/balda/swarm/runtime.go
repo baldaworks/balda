@@ -170,7 +170,7 @@ func (r *ActorHost) Publish(ctx context.Context, event actorengine.Event) {
 	if ctx == nil {
 		return
 	}
-	env, ok := ctx.Value(envelopeContextKey{}).(Envelope)
+	env, ok := ctx.Value(envelopeContextKey{}).(actorlayer.Envelope)
 	if !ok {
 		return
 	}
@@ -224,7 +224,7 @@ type runtimeDelivery struct {
 
 type envelopeContextKey struct{}
 
-func withEnvelopeContext(ctx context.Context, env Envelope) context.Context {
+func withEnvelopeContext(ctx context.Context, env actorlayer.Envelope) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}

@@ -9,6 +9,7 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 func TestSessionActorInterruptQueueModeCancelsSessionBeforeEnqueue(t *testing.T) {
@@ -223,7 +224,7 @@ func TestSessionActorEnqueueTurnSkipsDeadLetteredTask(t *testing.T) {
 	}
 }
 
-func testSessionTurnEnvelope(t *testing.T, meta map[string]string) swarm.Envelope {
+func testSessionTurnEnvelope(t *testing.T, meta map[string]string) actorlayer.Envelope {
 	t.Helper()
 
 	locator := baldasession.SessionLocator{
@@ -241,12 +242,12 @@ func testSessionTurnEnvelope(t *testing.T, meta map[string]string) swarm.Envelop
 	if err != nil {
 		t.Fatalf("Marshal(SessionTurnPayload) error = %v", err)
 	}
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          "session-command-1",
 		Namespace:   swarm.NamespaceHumanInbound,
 		Kind:        swarm.KindMessage,
-		From:        swarm.ActorAddress{Target: "telegram", Key: "101"},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeSession, Key: locator.SessionID},
+		From:        actorlayer.ActorAddress{Target: "telegram", Key: "101"},
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: locator.SessionID},
 		SessionID:   locator.SessionID,
 		PayloadJSON: string(payload),
 		Meta:        meta,

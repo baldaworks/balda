@@ -11,6 +11,7 @@ import (
 	"time"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/normahq/balda/pkg/actorlayer/dispatch"
 	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 )
@@ -19,12 +20,12 @@ type testActor struct {
 	address string
 	err     error
 	calls   int
-	run     func(context.Context, Envelope) error
+	run     func(context.Context, actorlayer.Envelope) error
 }
 
 func (a *testActor) Address() string { return a.address }
 func (a *testActor) Handle(ctx context.Context, envelope any) error {
-	env, err := assertEnvelope(envelope)
+	env, err := actorlayer.AssertEnvelope(envelope)
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,7 @@ func (a *testActor) Handle(ctx context.Context, envelope any) error {
 }
 
 type testDelivery struct {
-	env           Envelope
+	env           actorlayer.Envelope
 	numDelivered  int
 	maxDeliveries int
 	inProgress    func(context.Context) error
@@ -86,7 +87,7 @@ type recordingCommandBus struct {
 	mu       sync.Mutex
 }
 
-func (b *recordingCommandBus) PublishEvent(_ context.Context, subject string, _ Envelope) error {
+func (b *recordingCommandBus) PublishEvent(_ context.Context, subject string, _ actorlayer.Envelope) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.events = append(b.events, subject)
@@ -115,7 +116,7 @@ func (b *recordingCommandBus) eventsSnapshot() []string {
 	return append([]string(nil), b.events...)
 }
 
-func newTestRegistry(t *testing.T, actors ...Actor) dispatch.Registry {
+func newTestRegistry(t *testing.T, actors ...dispatch.Actor) dispatch.Registry {
 	t.Helper()
 	registry := dispatch.NewMemoryRegistry()
 	for _, actor := range actors {
@@ -128,10 +129,10 @@ func newTestRegistry(t *testing.T, actors ...Actor) dispatch.Registry {
 
 func TestRuntime_HandleCommandDispatchesActor(t *testing.T) {
 	bus := &recordingCommandBus{}
-	actor := &testActor{address: WildcardAddress(ActorTypeSession)}
+	actor := &testActor{address: actorlayer.WildcardAddress(ActorTypeSession)}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(bus, registry)
-	if err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{env: runtimeTestEnvelope("ok", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
+	if err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{env: runtimeTestEnvelope("ok", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
 		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if actor.calls != 1 {
@@ -144,7 +145,7 @@ func TestRuntime_HandleCommandDispatchesActorWithNormalizedAddress(t *testing.T)
 	actor := &testActor{address: "  SESSION:S-1  "}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(bus, registry)
-	if err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{env: runtimeTestEnvelope("normalized", ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
+	if err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{env: runtimeTestEnvelope("normalized", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"})}); err != nil {
 		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if actor.calls != 1 {
@@ -155,25 +156,25 @@ func TestRuntime_HandleCommandDispatchesActorWithNormalizedAddress(t *testing.T)
 func TestRuntimeAddressOf(t *testing.T) {
 	tests := []struct {
 		name     string
-		env      Envelope
+		env      actorlayer.Envelope
 		haveAddr string
 		wantErr  string
 	}{
 		{
 			name:    "empty address",
-			env:     runtimeTestEnvelope("empty-address", ActorAddress{}),
+			env:     runtimeTestEnvelope("empty-address", actorlayer.ActorAddress{}),
 			wantErr: "actor target is required",
 		},
 		{
 			name:     "known actor",
-			env:      runtimeTestEnvelope("known", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
+			env:      runtimeTestEnvelope("known", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 			haveAddr: "session:s-1",
 		},
 	}
 
 	t.Run("type error", func(t *testing.T) {
-		if _, err := AssertEnvelope(struct{ v string }{v: "not-an-envelope"}); err == nil || !strings.Contains(err.Error(), "unexpected actor envelope type") {
-			t.Fatalf("AssertEnvelope() error = %v, want unexpected actor envelope type", err)
+		if _, err := actorlayer.AssertEnvelope(struct{ v string }{v: "not-an-envelope"}); err == nil || !strings.Contains(err.Error(), "unexpected actor envelope type") {
+			t.Fatalf("actorlayer.AssertEnvelope() error = %v, want unexpected actor envelope type", err)
 		}
 	})
 
@@ -200,10 +201,10 @@ func TestRuntimeAddressOf(t *testing.T) {
 }
 
 func TestActorLaneKeyFromEnvelopeUsesQualifiedDeliveryKey(t *testing.T) {
-	env := Envelope{
+	env := actorlayer.Envelope{
 		Namespace: NamespaceAgentResult,
 		TaskID:    "task-1",
-		To:        ActorAddress{Target: ActorTypeDelivery, Key: "telegram:9001:77"},
+		To:        actorlayer.ActorAddress{Target: ActorTypeDelivery, Key: "telegram:9001:77"},
 	}
 
 	if got := actorLaneKeyFromEnvelope(env); got != "delivery:telegram:9001:77" {
@@ -217,7 +218,7 @@ func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 	var deadletterReason string
 	var retried bool
 	err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{
-		env: runtimeTestEnvelope("unknown", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
+		env: runtimeTestEnvelope("unknown", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		deadletter: func(_ context.Context, reason string) error {
 			deadletterReason = reason
 			return nil
@@ -242,12 +243,12 @@ func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 }
 
 func TestRuntime_ActorErrorRequestsRetry(t *testing.T) {
-	actor := &testActor{address: WildcardAddress(ActorTypeSession), err: TransientError(fmt.Errorf("temporary"))}
+	actor := &testActor{address: actorlayer.WildcardAddress(ActorTypeSession), err: actorlayer.TransientError(fmt.Errorf("temporary"))}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	var called bool
 	err := handleRuntimeDelivery(runtime, context.Background(), testDelivery{
-		env: runtimeTestEnvelope("retry", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
+		env: runtimeTestEnvelope("retry", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 		retry: func(_ context.Context, _ time.Duration, _ string) error {
 			called = true
 			return nil
@@ -281,11 +282,11 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create task: %v", err)
 	}
-	actor := &testActor{address: WildcardAddress(ActorTypeSession), err: TransientError(fmt.Errorf("temporary"))}
+	actor := &testActor{address: actorlayer.WildcardAddress(ActorTypeSession), err: actorlayer.TransientError(fmt.Errorf("temporary"))}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
 	runtime.tasks = tasks
-	env := runtimeTestEnvelope("retry-exhausted", ActorAddress{Target: ActorTypeSession, Key: "s-1"})
+	env := runtimeTestEnvelope("retry-exhausted", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"})
 	env.TaskID = "task-retry"
 	var deadletterCalled bool
 	err = handleRuntimeDelivery(runtime, ctx, testDelivery{
@@ -317,8 +318,8 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	actor := &testActor{
-		address: WildcardAddress(ActorTypeSession),
-		run: func(ctx context.Context, _ Envelope) error {
+		address: actorlayer.WildcardAddress(ActorTypeSession),
+		run: func(ctx context.Context, _ actorlayer.Envelope) error {
 			close(started)
 			select {
 			case <-release:
@@ -335,7 +336,7 @@ func TestRuntime_LongRunningCommandSendsInProgressHeartbeat(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- handleRuntimeDelivery(runtime, context.Background(), testDelivery{
-			env: runtimeTestEnvelope("long-running", ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
+			env: runtimeTestEnvelope("long-running", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"}),
 			inProgress: func(context.Context) error {
 				inProgressCalls.Add(1)
 				return nil
@@ -374,8 +375,8 @@ func newRuntimeForTest(bus *recordingCommandBus, registry dispatch.Registry) *Ac
 		LaneKey:   actorLaneKeyFromEnvelope,
 		Sink:      rt,
 		Retry: actorengine.RetryPolicy{
-			IsRetryable:    IsRetryableError,
-			Backoff:        RetryDelay,
+			IsRetryable:    actorlayer.IsRetryableError,
+			Backoff:        actorlayer.RetryDelay,
 			RetryExhausted: retryExhaustedDelivery,
 		},
 	})
@@ -395,6 +396,6 @@ func handleRuntimeDelivery(runtime *ActorHost, ctx context.Context, delivery act
 	return runtime.engine.Handle(executionCtx, prepared)
 }
 
-func runtimeTestEnvelope(id string, to ActorAddress) Envelope {
-	return Envelope{ID: id, Namespace: NamespaceHumanInbound, Kind: KindMessage, From: ActorAddress{Target: "test", Key: "source"}, To: to, SessionID: to.Key, PayloadJSON: `{"ok":true}`}
+func runtimeTestEnvelope(id string, to actorlayer.ActorAddress) actorlayer.Envelope {
+	return actorlayer.Envelope{ID: id, Namespace: NamespaceHumanInbound, Kind: KindMessage, From: actorlayer.ActorAddress{Target: "test", Key: "source"}, To: to, SessionID: to.Key, PayloadJSON: `{"ok":true}`}
 }

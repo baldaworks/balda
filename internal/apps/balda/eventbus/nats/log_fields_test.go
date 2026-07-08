@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 )
 
 func TestWithDeliveryKeyAddsFieldForDeliveryActor(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
-	env := swarm.Envelope{To: swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "telegram:user-1"}}
+	env := actorlayer.Envelope{To: actorlayer.ActorAddress{Target: swarm.ActorTypeDelivery, Key: "telegram:user-1"}}
 	withDeliveryKey(logger.Info(), env).Msg("test")
 
 	var payload map[string]any
@@ -27,7 +28,7 @@ func TestWithDeliveryKeyAddsFieldForDeliveryActor(t *testing.T) {
 func TestWithDeliveryKeySkipsNonDeliveryActor(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
-	env := swarm.Envelope{To: swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task:123"}}
+	env := actorlayer.Envelope{To: actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: "task:123"}}
 	withDeliveryKey(logger.Info(), env).Msg("test")
 
 	var payload map[string]any

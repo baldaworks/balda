@@ -9,6 +9,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/tgbotkit/client"
 	"testing"
 )
@@ -21,7 +23,7 @@ type cancelSessionCall struct {
 }
 
 type fakeTurnDispatcher struct {
-	commands     []swarm.Envelope
+	commands     []actorlayer.Envelope
 	cancelCalls  []cancelSessionCall
 	enqueueCalls []TurnTask
 }
@@ -31,17 +33,19 @@ func (f *fakeTurnDispatcher) Enqueue(task TurnTask) (int, error) {
 	return 0, nil
 }
 
-func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env swarm.Envelope) (*swarm.DispatchReceipt, error) {
+func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	f.commands = append(f.commands, env)
-	return &swarm.DispatchReceipt{
+	return &actortransport.DispatchReceipt{
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: uint64(len(f.commands)),
 		Subject:  swarm.SubjectForEnvelope(env),
-		MsgID:    swarm.DedupeKeyOrID(env),
+		MsgID:    actorlayer.DedupeKeyOrID(env),
 	}, nil
 }
 
-func (*fakeTurnDispatcher) PublishEvent(context.Context, string, swarm.Envelope) error { return nil }
+func (*fakeTurnDispatcher) PublishEvent(context.Context, string, actorlayer.Envelope) error {
+	return nil
+}
 
 func (f *fakeTurnDispatcher) CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error) {
 	f.cancelCalls = append(f.cancelCalls, cancelSessionCall{
@@ -52,14 +56,14 @@ func (f *fakeTurnDispatcher) CancelSession(locator session.SessionLocator, clear
 }
 
 type recordingHandlerCommandBus struct {
-	commands      []swarm.Envelope
+	commands      []actorlayer.Envelope
 	commandErrs   []error
 	eventSubjects []string
-	eventEnvs     []swarm.Envelope
+	eventEnvs     []actorlayer.Envelope
 	eventErrs     []error
 }
 
-func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env swarm.Envelope) (*swarm.DispatchReceipt, error) {
+func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	if len(b.commandErrs) > 0 {
 		err := b.commandErrs[0]
 		b.commandErrs = b.commandErrs[1:]
@@ -68,10 +72,10 @@ func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env swarm.Envel
 		}
 	}
 	b.commands = append(b.commands, env)
-	return &swarm.DispatchReceipt{Stream: swarm.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: swarm.SubjectForEnvelope(env), MsgID: swarm.DedupeKeyOrID(env)}, nil
+	return &actortransport.DispatchReceipt{Stream: swarm.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: swarm.SubjectForEnvelope(env), MsgID: actorlayer.DedupeKeyOrID(env)}, nil
 }
 
-func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject string, env swarm.Envelope) error {
+func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject string, env actorlayer.Envelope) error {
 	b.eventSubjects = append(b.eventSubjects, subject)
 	b.eventEnvs = append(b.eventEnvs, env)
 	if len(b.eventErrs) > 0 {

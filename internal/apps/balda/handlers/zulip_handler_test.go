@@ -17,6 +17,7 @@ import (
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 )
@@ -1180,11 +1181,11 @@ func (f *nilEnsureZulipSessionManager) EnsureSession(
 var errFakeZulipSessionNotFound = errors.New("zulip session not found")
 
 type recordingZulipDispatcher struct {
-	commands []swarm.Envelope
+	commands []actorlayer.Envelope
 	err      error
 }
 
-func (d *recordingZulipDispatcher) Dispatch(_ context.Context, env swarm.Envelope) (*actortransport.DispatchReceipt, error) {
+func (d *recordingZulipDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	d.commands = append(d.commands, env)
 	if d.err != nil {
 		return nil, d.err
@@ -1193,11 +1194,11 @@ func (d *recordingZulipDispatcher) Dispatch(_ context.Context, env swarm.Envelop
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: uint64(len(d.commands)),
 		Subject:  swarm.SubjectForEnvelope(env),
-		MsgID:    swarm.DedupeKeyOrID(env),
+		MsgID:    actorlayer.DedupeKeyOrID(env),
 	}, nil
 }
 
-func zulipDeliveryPayloads(t *testing.T, envs []swarm.Envelope) []actors.DeliveryPayload {
+func zulipDeliveryPayloads(t *testing.T, envs []actorlayer.Envelope) []actors.DeliveryPayload {
 	t.Helper()
 	payloads := make([]actors.DeliveryPayload, 0, len(envs))
 	for _, env := range envs {

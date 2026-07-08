@@ -8,16 +8,17 @@ import (
 	"testing"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 type recordingTaskCommandBus struct {
 	mu       sync.Mutex
 	subjects []string
-	envs     []Envelope
+	envs     []actorlayer.Envelope
 	errs     []error
 }
 
-func (b *recordingTaskCommandBus) PublishEvent(_ context.Context, subject string, env Envelope) error {
+func (b *recordingTaskCommandBus) PublishEvent(_ context.Context, subject string, env actorlayer.Envelope) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.subjects = append(b.subjects, subject)

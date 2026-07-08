@@ -313,7 +313,7 @@ func (b *Bus) RunEventConsumer(ctx context.Context, handler actortransport.Event
 	}
 }
 
-func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler swarm.EventHandler) error {
+func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler actortransport.EventHandler) error {
 	env, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
 		_ = b.publishRawDLQ(ctx, msg, "decode failed: "+err.Error())

@@ -15,6 +15,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 )
 
@@ -41,8 +42,8 @@ func TestTaskDeliveryActorDefersDuplicatePendingDelivery(t *testing.T) {
 	if _, _, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusPending)); err != nil {
 		t.Fatalf("ReserveDelivery() error = %v", err)
 	}
-	if err := actor.Handle(ctx, env); swarm.ClassifyError(err) != swarm.ErrorKindTransient {
-		t.Fatalf("Handle() error kind = %s, want transient: %v", swarm.ClassifyError(err), err)
+	if err := actor.Handle(ctx, env); actorlayer.ClassifyError(err) != actorlayer.ErrorKindTransient {
+		t.Fatalf("Handle() error kind = %s, want transient: %v", actorlayer.ClassifyError(err), err)
 	}
 	if got := len(tgClient.richMessages); got != 0 {
 		t.Fatalf("sent rich telegram messages = %d, want 0 while duplicate is pending", got)
@@ -56,8 +57,8 @@ func TestTaskDeliveryActorDoesNotRetryAmbiguousSendingDelivery(t *testing.T) {
 	if _, _, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.SwarmDeliveryStatusSending)); err != nil {
 		t.Fatalf("ReserveDelivery() error = %v", err)
 	}
-	if err := actor.Handle(ctx, env); swarm.ClassifyError(err) != swarm.ErrorKindTransient {
-		t.Fatalf("Handle() error kind = %s, want transient: %v", swarm.ClassifyError(err), err)
+	if err := actor.Handle(ctx, env); actorlayer.ClassifyError(err) != actorlayer.ErrorKindTransient {
+		t.Fatalf("Handle() error kind = %s, want transient: %v", actorlayer.ClassifyError(err), err)
 	}
 	if got := len(tgClient.richMessages); got != 0 {
 		t.Fatalf("sent rich telegram messages = %d, want 0 for ambiguous sending delivery", got)
@@ -81,8 +82,8 @@ func TestTaskDeliveryActorPublishesFailedEventOnSendError(t *testing.T) {
 	env, _ := deliveryEnvelopeForTest(t, "delivery-command-failed", "task-1:delivery:failed", "Goal failed")
 
 	err := actor.Handle(ctx, env)
-	if swarm.ClassifyError(err) != swarm.ErrorKindExternalDelivery {
-		t.Fatalf("Handle() error kind = %s, want external_delivery: %v", swarm.ClassifyError(err), err)
+	if actorlayer.ClassifyError(err) != actorlayer.ErrorKindExternalDelivery {
+		t.Fatalf("Handle() error kind = %s, want external_delivery: %v", actorlayer.ClassifyError(err), err)
 	}
 
 	if len(bus.eventSubjects) != 1 {
@@ -124,7 +125,7 @@ func TestTaskDeliveryActorSendsDraftWithoutPersistingDelivery(t *testing.T) {
 	ctx := context.Background()
 	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	locator := baldatelegram.NewLocator(9001, 99)
-	env, err := DraftPlainDeliveryEnvelope("task-1", swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"}, locator, 7, "draft text")
+	env, err := DraftPlainDeliveryEnvelope("task-1", actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"}, locator, 7, "draft text")
 	if err != nil {
 		t.Fatalf("DraftPlainDeliveryEnvelope() error = %v", err)
 	}
@@ -149,7 +150,7 @@ func TestTaskDeliveryActorSendsChatActionWithoutPersistingDelivery(t *testing.T)
 	ctx := context.Background()
 	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	locator := baldatelegram.NewLocator(9001, 99)
-	env, err := ChatActionDeliveryEnvelope("task-1", swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"}, locator, "typing")
+	env, err := ChatActionDeliveryEnvelope("task-1", actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"}, locator, "typing")
 	if err != nil {
 		t.Fatalf("ChatActionDeliveryEnvelope() error = %v", err)
 	}
@@ -194,7 +195,7 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*taskDelive
 	}, tasks, tgClient, bus
 }
 
-func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text string) (swarm.Envelope, DeliveryPayload) {
+func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text string) (actorlayer.Envelope, DeliveryPayload) {
 	t.Helper()
 	locator := baldatelegram.NewLocator(9001, 99)
 	payload := DeliveryPayload{TaskID: "task-1", Locator: locator, Mode: DeliveryModeAgentReply, Text: text}
@@ -202,12 +203,12 @@ func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text str
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          id,
 		Namespace:   swarm.NamespaceAgentResult,
 		Kind:        taskPayloadKindDelivery,
-		From:        swarm.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeDelivery, Key: locator.DeliveryActorKey()},
+		From:        actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: "task-1"},
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeDelivery, Key: locator.DeliveryActorKey()},
 		SessionID:   locator.SessionID,
 		TaskID:      "task-1",
 		DedupeKey:   dedupeKey,
@@ -215,7 +216,7 @@ func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text str
 	}, payload
 }
 
-func deliveryRecordForTest(env swarm.Envelope, payload DeliveryPayload, status string) baldastate.SwarmDeliveryRecord {
+func deliveryRecordForTest(env actorlayer.Envelope, payload DeliveryPayload, status string) baldastate.SwarmDeliveryRecord {
 	deliveryKey := strings.TrimSpace(env.DedupeKey)
 	if deliveryKey == "" {
 		deliveryKey = strings.TrimSpace(env.ID)

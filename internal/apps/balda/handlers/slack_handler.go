@@ -121,7 +121,7 @@ type slackHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
-	ActorDispatcher   actortransport.Dispatcher
+	Dispatcher        actortransport.Dispatcher
 	TaskService       *swarm.TaskService `optional:"true"`
 	SlackClient       *baldaslack.Client
 	SlackConfig       SlackConfig
@@ -139,7 +139,7 @@ func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 		collaboratorStore: params.CollaboratorStore,
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
-		actorDispatcher:   params.ActorDispatcher,
+		actorDispatcher:   params.Dispatcher,
 		taskService:       params.TaskService,
 		client:            params.SlackClient,
 		config:            params.SlackConfig,

@@ -6,6 +6,8 @@ import (
 
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
 )
@@ -34,7 +36,7 @@ func StartTestRuntime(t *testing.T, swarmCfg swarm.Config) *TestRuntimeHarness {
 }
 
 // Dispatch is a test command publisher helper for fixtures/scenarios.
-func (h *TestRuntimeHarness) Dispatch(t *testing.T, env swarm.Envelope) *swarm.DispatchReceipt {
+func (h *TestRuntimeHarness) Dispatch(t *testing.T, env actorlayer.Envelope) *actortransport.DispatchReceipt {
 	t.Helper()
 	ack, err := h.Bus.Dispatch(context.Background(), env)
 	if err != nil {

@@ -336,7 +336,7 @@ func controlEnvelope(locator baldasession.SessionLocator, action string, taskID 
 		Namespace:   swarm.NamespaceTaskControl,
 		Kind:        swarm.KindCancel,
 		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
-		To:          swarm.SystemAddress("control"),
+		To:          actorlayer.SystemAddress("control"),
 		SessionID:   locator.SessionID,
 		TaskID:      strings.TrimSpace(taskID),
 		Priority:    100,

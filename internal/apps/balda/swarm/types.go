@@ -1,10 +1,5 @@
-// Package swarm contains Balda's durable actor runtime primitives.
+// Package swarm contains Balda's durable actor runtime policy.
 package swarm
-
-import (
-	"github.com/normahq/balda/pkg/actorlayer"
-	"github.com/normahq/balda/pkg/actorlayer/dispatch"
-)
 
 const (
 	ActorTypeSystem     = "system"
@@ -32,31 +27,3 @@ const (
 	KindCancel         = "cancel"
 	KindMemoryRemember = "memory_remember"
 )
-
-type ActorAddress = actorlayer.ActorAddress
-type Envelope = actorlayer.Envelope
-type Actor = dispatch.Actor
-
-func SystemAddress(key string) ActorAddress {
-	return actorlayer.SystemAddress(key)
-}
-
-func WildcardAddress(target string) string {
-	return actorlayer.WildcardAddress(target)
-}
-
-func EncodeEnvelope(e Envelope) (string, error) {
-	return actorlayer.EncodeEnvelope(e)
-}
-
-func DecodeEnvelope(raw string) (Envelope, error) {
-	return actorlayer.DecodeEnvelope(raw)
-}
-
-func AssertEnvelope(envelope any) (Envelope, error) {
-	return actorlayer.AssertEnvelope(envelope)
-}
-
-func assertEnvelope(envelope any) (Envelope, error) {
-	return actorlayer.AssertEnvelope(envelope)
-}

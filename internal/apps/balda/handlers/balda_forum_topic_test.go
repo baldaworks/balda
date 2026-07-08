@@ -15,6 +15,7 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/eventemitter"
@@ -615,7 +616,7 @@ func replyToMessageWithTextFrom(userID int64, isBot bool, text string) *client.M
 	return msg
 }
 
-func assertPublishedTurnIncludesReplyContext(t *testing.T, commands []swarm.Envelope, text, replyText string) {
+func assertPublishedTurnIncludesReplyContext(t *testing.T, commands []actorlayer.Envelope, text, replyText string) {
 	t.Helper()
 	if len(commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(commands))

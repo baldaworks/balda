@@ -76,7 +76,7 @@ type baldaHandlerDeps struct {
 	Channel            *baldatelegram.Adapter
 	SessionManager     *baldasession.Manager
 	TurnDispatcher     *actors.TurnDispatcher
-	ActorDispatcher    actortransport.Dispatcher
+	Dispatcher         actortransport.Dispatcher
 	TaskService        *swarm.TaskService `optional:"true"`
 	MemoryStore        *memory.Store
 	Messenger          *messenger.Messenger

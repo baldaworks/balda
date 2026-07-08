@@ -77,7 +77,7 @@ type commandHandlerParams struct {
 	Channel           *baldatelegram.Adapter
 	SessionManager    *session.Manager
 	WorkCanceller     *actors.SessionWorkCanceller `optional:"true"`
-	ActorDispatcher   actortransport.Dispatcher
+	Dispatcher        actortransport.Dispatcher
 	TaskService       *swarm.TaskService `optional:"true"`
 	MaxIterations     int                `name:"balda_goal_max_iterations"`
 	UserHandler       *userHandler

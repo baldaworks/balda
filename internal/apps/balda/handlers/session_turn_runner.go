@@ -32,7 +32,7 @@ type sessionTurnRunnerParams struct {
 	fx.In
 
 	SessionManager     *baldasession.Manager
-	ActorDispatcher    actortransport.Dispatcher
+	Dispatcher         actortransport.Dispatcher
 	TaskService        *swarm.TaskService `optional:"true"`
 	MemoryStore        *memory.Store
 	PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
@@ -42,7 +42,7 @@ type sessionTurnRunnerParams struct {
 func NewBaldaSessionTurnRunner(params sessionTurnRunnerParams) *BaldaSessionTurnRunner {
 	return &BaldaSessionTurnRunner{
 		sessionManager:     params.SessionManager,
-		actorDispatcher:    params.ActorDispatcher,
+		actorDispatcher:    params.Dispatcher,
 		taskService:        params.TaskService,
 		memoryStore:        params.MemoryStore,
 		planUpdatesEnabled: params.PlanUpdatesEnabled,

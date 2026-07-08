@@ -35,7 +35,7 @@ type taskDeliveryActorParams struct {
 }
 
 func (a *taskDeliveryActor) Address() string {
-	return swarm.WildcardAddress(swarm.ActorTypeDelivery)
+	return actorlayer.WildcardAddress(swarm.ActorTypeDelivery)
 }
 
 func (a *taskDeliveryActor) Handle(ctx context.Context, envelope any) error {

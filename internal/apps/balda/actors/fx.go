@@ -5,6 +5,7 @@ import (
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer/dispatch"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -16,21 +17,21 @@ var Module = fx.Module("balda_actors",
 		NewTaskRunRegistry,
 		NewSessionWorkCanceller,
 		fx.Annotate(
-			func(params sessionActorExecutorParams) swarm.Actor {
+			func(params sessionActorExecutorParams) dispatch.Actor {
 				return &sessionActorExecutor{turns: params.Turns, runner: params.Runner, tasks: params.Tasks, scheduler: params.Scheduler}
 			},
-			fx.As(new(swarm.Actor)),
+			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			func(params taskActorExecutorParams) swarm.Actor {
+			func(params taskActorExecutorParams) dispatch.Actor {
 				return &taskActorExecutor{
 					tasks:      params.TaskService,
 					dispatcher: params.Dispatcher,
 					sessions:   params.Sessions,
 				}
 			},
-			fx.As(new(swarm.Actor)),
+			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
@@ -45,7 +46,7 @@ var Module = fx.Module("balda_actors",
 				MaxIterations      int  `name:"balda_goal_max_iterations"`
 				PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
 				Logger             zerolog.Logger
-			}) swarm.Actor {
+			}) dispatch.Actor {
 				return goalkeeper.NewActor(goalkeeper.ActorParams{
 					TaskService:        params.TaskService,
 					Dispatcher:         params.Dispatcher,
@@ -57,32 +58,32 @@ var Module = fx.Module("balda_actors",
 					Logger:             params.Logger,
 				})
 			},
-			fx.As(new(swarm.Actor)),
+			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			func(params memoryActorExecutorParams) swarm.Actor {
+			func(params memoryActorExecutorParams) dispatch.Actor {
 				return &memoryActorExecutor{
 					store:  params.Store,
 					events: params.Events,
 				}
 			},
-			fx.As(new(swarm.Actor)),
+			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			func(params taskDeliveryActorParams) swarm.Actor {
+			func(params taskDeliveryActorParams) dispatch.Actor {
 				return &taskDeliveryActor{
 					channel: params.Channel,
 					tasks:   params.TaskService,
 					logger:  params.Logger.With().Str("component", "balda.task_delivery_actor").Logger(),
 				}
 			},
-			fx.As(new(swarm.Actor)),
+			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			func(params taskControlActorParams) swarm.Actor {
+			func(params taskControlActorParams) dispatch.Actor {
 				return &taskControlActor{
 					turnDispatcher: params.TurnDispatcher,
 					dispatcher:     params.Dispatcher,
@@ -91,7 +92,7 @@ var Module = fx.Module("balda_actors",
 					logger:         params.Logger.With().Str("component", "balda.task_control_actor").Logger(),
 				}
 			},
-			fx.As(new(swarm.Actor)),
+			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 	),

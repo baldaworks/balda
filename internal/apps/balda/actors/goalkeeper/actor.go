@@ -18,6 +18,8 @@ import (
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/git"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -103,7 +105,7 @@ type ActorParams struct {
 	fx.In
 
 	TaskService        *swarm.TaskService
-	Dispatcher         swarm.ActorDispatcher
+	Dispatcher         actortransport.Dispatcher
 	SessionManager     *baldasession.Manager
 	GoalRunPreparer    GoalRunPreparer
 	TaskRuns           TaskRuns
@@ -114,7 +116,7 @@ type ActorParams struct {
 
 type Actor struct {
 	tasks              *swarm.TaskService
-	dispatcher         swarm.ActorDispatcher
+	dispatcher         actortransport.Dispatcher
 	sessions           *baldasession.Manager
 	goalRunPreparer    GoalRunPreparer
 	taskRuns           TaskRuns
@@ -212,23 +214,23 @@ func NewActor(params ActorParams) *Actor {
 }
 
 func (a *Actor) Address() string {
-	return swarm.WildcardAddress(swarm.ActorTypeGoalkeeper)
+	return actorlayer.WildcardAddress(swarm.ActorTypeGoalkeeper)
 }
 
 func (a *Actor) Handle(ctx context.Context, envelope any) error {
-	env, err := swarm.AssertEnvelope(envelope)
+	env, err := actorlayer.AssertEnvelope(envelope)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(env.Namespace) != swarm.NamespaceGoalkeeperCommand {
-		return swarm.PolicyError(fmt.Errorf("unsupported goal namespace %q", env.Namespace))
+		return actorlayer.PolicyError(fmt.Errorf("unsupported goal namespace %q", env.Namespace))
 	}
 	var payload taskEnvelopePayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		return swarm.PermanentError(fmt.Errorf("decode goal payload: %w", err))
+		return actorlayer.PermanentError(fmt.Errorf("decode goal payload: %w", err))
 	}
 	if strings.TrimSpace(payload.Kind) != taskPayloadKindGoal || payload.Goal == nil {
-		return swarm.PolicyError(fmt.Errorf("goal payload is required"))
+		return actorlayer.PolicyError(fmt.Errorf("goal payload is required"))
 	}
 	return a.runGoal(ctx, env, *payload.Goal)
 }
@@ -238,7 +240,7 @@ func GoalTaskEnvelope(
 	objective string,
 	transportUserID string,
 	maxIterations int,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	return GoalTaskEnvelopeWithProfile(locator, deliverycmd.Profile{}, objective, transportUserID, maxIterations)
 }
 
@@ -248,7 +250,7 @@ func GoalTaskEnvelopeWithProfile(
 	objective string,
 	transportUserID string,
 	maxIterations int,
-) (swarm.Envelope, error) {
+) (actorlayer.Envelope, error) {
 	taskID := "goal-" + locator.SessionID + "-" + uuid.NewString()
 	payload := taskEnvelopePayload{
 		Kind: taskPayloadKindGoal,
@@ -263,14 +265,14 @@ func GoalTaskEnvelopeWithProfile(
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return swarm.Envelope{}, fmt.Errorf("encode goal task payload: %w", err)
+		return actorlayer.Envelope{}, fmt.Errorf("encode goal task payload: %w", err)
 	}
-	return swarm.Envelope{
+	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
 		Namespace:   swarm.NamespaceGoalkeeperCommand,
 		Kind:        swarm.KindGoal,
-		From:        swarm.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
-		To:          swarm.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
+		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
+		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
 		SessionID:   locator.SessionID,
 		TaskID:      taskID,
 		Priority:    90,
@@ -278,14 +280,14 @@ func GoalTaskEnvelopeWithProfile(
 	}, nil
 }
 
-func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTaskPayload) error {
+func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload goalTaskPayload) error {
 	taskID := firstNonEmpty(payload.TaskID, env.TaskID, env.To.Key)
 	objective := strings.TrimSpace(payload.Objective)
 	if taskID == "" {
-		return swarm.PolicyError(fmt.Errorf("task id is required"))
+		return actorlayer.PolicyError(fmt.Errorf("task id is required"))
 	}
 	if objective == "" {
-		return swarm.PolicyError(fmt.Errorf("goal objective is required"))
+		return actorlayer.PolicyError(fmt.Errorf("goal objective is required"))
 	}
 	if a.taskStatusIs(ctx, taskID, baldastate.SwarmTaskStatusCompleted, baldastate.SwarmTaskStatusFailed, baldastate.SwarmTaskStatusCanceled, baldastate.SwarmTaskStatusDeadLettered) {
 		return nil
@@ -310,19 +312,19 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 	}
 	ts, err := a.resolveSession(ctx, payload)
 	if err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if err := a.tasks.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusRunning, actorName, env.ID, "", map[string]any{
 		"objective": objective,
 	}); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if err := a.deliver(ctx, taskID, payload, renderGoalStartedMessage(payload.DeliveryProfile, maxIterations, objective), "started"); err != nil {
 		return err
 	}
 
 	if a.goalRunPreparer == nil {
-		return swarm.TransientError(fmt.Errorf("goal run preparer is required"))
+		return actorlayer.TransientError(fmt.Errorf("goal run preparer is required"))
 	}
 	goalRun, err := a.goalRunPreparer.PrepareGoalRun(ctx, GoalRunConfig{
 		SourceSessionID: payload.Locator.SessionID,
@@ -331,7 +333,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 		MaxIterations:   uint(maxIterations),
 	})
 	if err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	defer func() {
 		if err := goalRun.Close(); err != nil {
@@ -355,7 +357,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 				a.logger.Warn().Err(cleanupErr).Str("task_id", taskID).Msg("failed to cleanup canceled goal run")
 			}
 			if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false, artifacts, &taskExportResultV1{Status: "canceled"}), baldastate.SwarmTaskStatusCanceled, actorName, "goal run canceled"); setErr != nil {
-				return swarm.TransientError(setErr)
+				return actorlayer.TransientError(setErr)
 			}
 			return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "Goal run canceled."), "canceled")
 		}
@@ -364,7 +366,7 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 			a.logger.Warn().Err(cleanupErr).Str("task_id", taskID).Msg("failed to cleanup failed goal run")
 		}
 		if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false, artifacts, &taskExportResultV1{Status: "failed", Error: reason}), baldastate.SwarmTaskStatusFailed, actorName, reason); setErr != nil {
-			return swarm.TransientError(setErr)
+			return actorlayer.TransientError(setErr)
 		}
 		return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "Goal run failed: "+reason), "failed")
 	}
@@ -380,13 +382,13 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 			}
 			taskResult := result.toTaskResult(true, artifacts, exportSummary)
 			if setErr := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.SwarmTaskStatusFailed, actorName, exportSummary.Error); setErr != nil {
-				return swarm.TransientError(setErr)
+				return actorlayer.TransientError(setErr)
 			}
 			return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal validation passed, but export failed."), "export-failed")
 		}
 		taskResult := result.toTaskResult(true, artifacts, exportSummary)
 		if err := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.SwarmTaskStatusCompleted, actorName, ""); err != nil {
-			return swarm.TransientError(err)
+			return actorlayer.TransientError(err)
 		}
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 			a.logger.Warn().Err(cleanupErr).Str("task_id", taskID).Msg("failed to cleanup completed goal run")
@@ -398,14 +400,14 @@ func (a *Actor) runGoal(ctx context.Context, env swarm.Envelope, payload goalTas
 	}
 	taskResult := result.toTaskResult(false, artifacts, &taskExportResultV1{Status: goalExportStatusNotExported})
 	if err := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.SwarmTaskStatusFailed, actorName, "max iterations reached"); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal run reached max iterations without passing validation."), "max-iterations")
 }
 
 func (a *Actor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) error {
 	if a.tasks == nil {
-		return swarm.TransientError(fmt.Errorf("task service is required"))
+		return actorlayer.TransientError(fmt.Errorf("task service is required"))
 	}
 	title := strings.TrimSpace(payload.Objective)
 	if title != "" {
@@ -430,14 +432,14 @@ func (a *Actor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) err
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
 	}
 	if _, err := a.tasks.Create(ctx, record, actorName, payload); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	task, ok, err := a.tasks.Get(ctx, payload.TaskID)
 	if err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if !ok {
-		return swarm.TransientError(fmt.Errorf("goal task %q was not persisted", payload.TaskID))
+		return actorlayer.TransientError(fmt.Errorf("goal task %q was not persisted", payload.TaskID))
 	}
 	switch strings.TrimSpace(task.Status) {
 	case "", baldastate.SwarmTaskStatusCreated, baldastate.SwarmTaskStatusQueued:
@@ -449,11 +451,11 @@ func (a *Actor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) err
 
 func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, taskID string, payload goalTaskPayload) (bool, error) {
 	if a == nil || a.tasks == nil {
-		return false, swarm.TransientError(fmt.Errorf("task service is required"))
+		return false, actorlayer.TransientError(fmt.Errorf("task service is required"))
 	}
 	activeGoals, err := a.tasks.ListActiveGoalTasksBySession(ctx, payload.Locator.SessionID)
 	if err != nil {
-		return false, swarm.TransientError(fmt.Errorf("list active goal tasks: %w", err))
+		return false, actorlayer.TransientError(fmt.Errorf("list active goal tasks: %w", err))
 	}
 	for _, task := range activeGoals {
 		if strings.TrimSpace(task.ID) == strings.TrimSpace(taskID) {
@@ -464,7 +466,7 @@ func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, taskID string, payl
 			Status: "canceled",
 			Error:  reason,
 		}), baldastate.SwarmTaskStatusCanceled, actorName, reason); setErr != nil {
-			return false, swarm.TransientError(setErr)
+			return false, actorlayer.TransientError(setErr)
 		}
 		if err := a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "A goal run is already active for this session."), "already-active"); err != nil {
 			return false, err
@@ -614,13 +616,13 @@ func (a *Actor) recordStepStarted(ctx context.Context, payload goalTaskPayload, 
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentStarted, actorName, "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	return a.deliver(ctx, payload.TaskID, payload, renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "started", ""), "started:"+step+":"+strconv.Itoa(iteration))
 }
@@ -647,7 +649,7 @@ func (a *Actor) recordStepCompleted(
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	return nil
 }
@@ -674,7 +676,7 @@ func (a *Actor) recordStepProgress(
 		"kind":      kind,
 		"text":      redactSecrets(strings.TrimSpace(text)),
 	}); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	return nil
 }
@@ -816,7 +818,7 @@ func (a *Actor) deliver(
 	dedupeSuffix string,
 ) error {
 	if a.dispatcher == nil {
-		return swarm.TransientError(fmt.Errorf("actor dispatcher is required"))
+		return actorlayer.TransientError(fmt.Errorf("actor dispatcher is required"))
 	}
 	message := redactSecrets(strings.TrimSpace(text))
 	if message == "" {
@@ -825,17 +827,17 @@ func (a *Actor) deliver(
 	locator := normalizeGoalDeliveryLocator(payload.Locator)
 	env, err := deliverycmd.AgentReplyEnvelopeWithProfile(
 		strings.TrimSpace(taskID),
-		swarm.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
+		actorlayer.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
 		locator,
 		normalizeGoalDeliveryProfile(payload.DeliveryProfile),
 		message,
 		dedupeSuffix,
 	)
 	if err != nil {
-		return swarm.PermanentError(fmt.Errorf("build goal delivery envelope: %w", err))
+		return actorlayer.PermanentError(fmt.Errorf("build goal delivery envelope: %w", err))
 	}
 	if _, err := a.dispatcher.Dispatch(ctx, env); err != nil {
-		return swarm.TransientError(err)
+		return actorlayer.TransientError(err)
 	}
 	return nil
 }

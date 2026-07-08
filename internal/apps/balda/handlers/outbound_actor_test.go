@@ -9,7 +9,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 )
@@ -26,7 +26,7 @@ func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, format
 	})
 }
 
-func handleDeliveryCommandForTest(ctx context.Context, adapter *baldatelegram.Adapter, env swarm.Envelope) error {
+func handleDeliveryCommandForTest(ctx context.Context, adapter *baldatelegram.Adapter, env actorlayer.Envelope) error {
 	if adapter == nil {
 		return fmt.Errorf("delivery adapter is required")
 	}

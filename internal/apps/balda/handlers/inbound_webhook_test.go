@@ -12,6 +12,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -497,7 +498,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	payload actors.SessionTurnPayload,
 	routeName string,
 	requestID string,
-) (*swarm.DispatchReceipt, string, error) {
+) (*actortransport.DispatchReceipt, string, error) {
 	if f.submitErr != nil {
 		return nil, "", f.submitErr
 	}
@@ -509,7 +510,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	f.lastRouteName = routeName
 	f.lastRequestID = requestID
 	taskID := "webhook-" + routeName + "-test"
-	return &swarm.DispatchReceipt{
+	return &actortransport.DispatchReceipt{
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: 1,
 		Subject:  swarm.SubjectCommandTask,
@@ -517,7 +518,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	}, taskID, nil
 }
 
-func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload actors.SessionTurnPayload) (*swarm.DispatchReceipt, error) {
+func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
 	if f.submitErr != nil {
 		return nil, f.submitErr
 	}
@@ -526,7 +527,7 @@ func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload a
 	f.prompt = payload.Text
 	f.deliver = payload.Deliver
 	f.payload = payload
-	return &swarm.DispatchReceipt{
+	return &actortransport.DispatchReceipt{
 		Stream:   swarm.DefaultCommandStream,
 		Sequence: 1,
 		Subject:  swarm.SubjectCommandSession,
