@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSQLiteJobStore_TaskLifecycle(t *testing.T) {
+func TestSQLiteJobStore_JobLifecycle(t *testing.T) {
 	provider := newTestProvider(t)
 	defer closeProvider(t, provider)
 
@@ -68,7 +68,7 @@ func TestSQLiteJobStore_TaskLifecycle(t *testing.T) {
 		t.Fatalf("GetJob() error = %v", err)
 	}
 	if !ok || got.Status != JobStatusCompleted || got.ResultJSON == "" || got.StartedAt.IsZero() || got.CompletedAt.IsZero() {
-		t.Fatalf("task = %+v, found=%v, want completed with result/timestamps", got, ok)
+		t.Fatalf("job = %+v, found=%v, want completed with result/timestamps", got, ok)
 	}
 
 	active, err = store.ListActiveJobsBySession(ctx, "session-1")
@@ -87,7 +87,7 @@ func TestSQLiteJobStore_TaskLifecycle(t *testing.T) {
 	}
 }
 
-func TestSQLiteJobStore_TaskStatusTransitionsAreGuarded(t *testing.T) {
+func TestSQLiteJobStore_JobStatusTransitionsAreGuarded(t *testing.T) {
 	provider := newTestProvider(t)
 	defer closeProvider(t, provider)
 
@@ -116,7 +116,7 @@ func TestSQLiteJobStore_TaskStatusTransitionsAreGuarded(t *testing.T) {
 		t.Fatalf("GetJob() error = %v", err)
 	}
 	if !ok || got.Status != JobStatusCompleted {
-		t.Fatalf("task = %+v found=%v, want status completed", got, ok)
+		t.Fatalf("job = %+v found=%v, want status completed", got, ok)
 	}
 
 	if err := store.UpdateJobStatus(ctx, "task-guarded", JobStatusCompleted, "idempotent"); err != nil {
@@ -124,7 +124,7 @@ func TestSQLiteJobStore_TaskStatusTransitionsAreGuarded(t *testing.T) {
 	}
 }
 
-func TestSQLiteJobStore_SetTaskResultTransitionGuarded(t *testing.T) {
+func TestSQLiteJobStore_SetJobResultTransitionGuarded(t *testing.T) {
 	provider := newTestProvider(t)
 	defer closeProvider(t, provider)
 
@@ -150,7 +150,7 @@ func TestSQLiteJobStore_SetTaskResultTransitionGuarded(t *testing.T) {
 		t.Fatalf("GetJob() error = %v", err)
 	}
 	if !ok || got.Status != JobStatusCanceled {
-		t.Fatalf("task = %+v found=%v, want status canceled", got, ok)
+		t.Fatalf("job = %+v found=%v, want status canceled", got, ok)
 	}
 }
 

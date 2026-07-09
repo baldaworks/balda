@@ -26,7 +26,7 @@ func TestNewEventProjectorRequiresConsumer(t *testing.T) {
 	}
 }
 
-func TestEventProjectorProjectsTaskEventIdempotently(t *testing.T) {
+func TestEventProjectorProjectsJobEventIdempotently(t *testing.T) {
 	ctx := context.Background()
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Jobs(), logger: zerolog.Nop()}
@@ -37,7 +37,7 @@ func TestEventProjectorProjectsTaskEventIdempotently(t *testing.T) {
 		From:        actorlayer.SystemAddress("job-events"),
 		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
 		PayloadJSON: `{"text":"working"}`,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-1", "event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "msg-1"},
+		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-1", "event_type": JobEventAgentProgress, "actor": "agent:executor", "message_id": "msg-1"},
 	}
 	if err := projector.Project(ctx, baldaexecution.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
@@ -49,7 +49,7 @@ func TestEventProjectorProjectsTaskEventIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListJobEvents() error = %v", err)
 	}
-	if len(events) != 1 || events[0].EventType != TaskEventAgentProgress || events[0].Actor != "agent:executor" {
+	if len(events) != 1 || events[0].EventType != JobEventAgentProgress || events[0].Actor != "agent:executor" {
 		t.Fatalf("events = %+v, want one projected job event", events)
 	}
 }
@@ -124,7 +124,7 @@ func TestEventProjectorProjectsDeliveryFailedEventForTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListJobEvents() error = %v", err)
 	}
-	if len(events) != 1 || events[0].EventType != TaskEventDeliveryFailed {
+	if len(events) != 1 || events[0].EventType != JobEventDeliveryFailed {
 		t.Fatalf("events = %+v, want delivery.failed projection", events)
 	}
 }
@@ -151,7 +151,7 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 		From:        actorlayer.SystemAddress("job-events"),
 		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-replay"},
 		PayloadJSON: `{"status":"running"}`,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
+		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": JobEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
 	}
 	if err := projectorA.Project(ctx, baldaexecution.SubjectEventJobCreated, eventCreated); err != nil {
 		t.Fatalf("Project(created) error = %v", err)
@@ -194,8 +194,8 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	if events[0].ID != eventCreated.ID || events[1].ID != eventProgress.ID || events[2].ID != eventCompleted.ID {
 		t.Fatalf("projected replay event IDs = [%s %s %s], want [%s %s %s]", events[0].ID, events[1].ID, events[2].ID, eventCreated.ID, eventProgress.ID, eventCompleted.ID)
 	}
-	if events[0].EventType != JobEventCreated || events[1].EventType != TaskEventAgentProgress || events[2].EventType != JobEventCompleted {
-		t.Fatalf("projected replay event types = [%s %s %s], want [%s %s %s]", events[0].EventType, events[1].EventType, events[2].EventType, JobEventCreated, TaskEventAgentProgress, JobEventCompleted)
+	if events[0].EventType != JobEventCreated || events[1].EventType != JobEventAgentProgress || events[2].EventType != JobEventCompleted {
+		t.Fatalf("projected replay event types = [%s %s %s], want [%s %s %s]", events[0].EventType, events[1].EventType, events[2].EventType, JobEventCreated, JobEventAgentProgress, JobEventCompleted)
 	}
 }
 

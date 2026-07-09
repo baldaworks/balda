@@ -836,7 +836,7 @@ func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
 	env := commandTestEnvelope("event-dedupe")
 	env.Namespace = baldaexecution.NamespaceTelemetry
 	env.Kind = testEventKindTask
-	env.Meta = map[string]string{"event_type": baldajobs.TaskEventAgentStarted}
+	env.Meta = map[string]string{"event_type": baldajobs.JobEventAgentStarted}
 	if err := bus.PublishEvent(context.Background(), baldaexecution.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("PublishEvent(first) error = %v", err)
 	}
@@ -1050,7 +1050,7 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 	env := commandTestEnvelope("event-projection-failed")
 	env.Namespace = baldaexecution.NamespaceTelemetry
 	env.Kind = testEventKindTask
-	env.Meta = map[string]string{"event_type": baldajobs.TaskEventAgentProgress}
+	env.Meta = map[string]string{"event_type": baldajobs.JobEventAgentProgress}
 	if err := bus.PublishEvent(context.Background(), baldaexecution.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("PublishEvent() error = %v", err)
 	}
@@ -1112,7 +1112,7 @@ func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
 	eventEnv := commandTestEnvelope("projection-failure-does-not-block")
 	eventEnv.Namespace = baldaexecution.NamespaceTelemetry
 	eventEnv.Kind = testEventKindTask
-	eventEnv.Meta = map[string]string{"event_type": baldajobs.TaskEventAgentProgress}
+	eventEnv.Meta = map[string]string{"event_type": baldajobs.JobEventAgentProgress}
 	if err := bus.PublishEvent(context.Background(), baldaexecution.SubjectEventJobUpdated, eventEnv); err != nil {
 		t.Fatalf("PublishEvent() error = %v", err)
 	}

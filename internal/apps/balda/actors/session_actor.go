@@ -202,7 +202,7 @@ func (e *sessionActorExecutor) sessionTaskAlreadyDone(ctx context.Context, env a
 	if err != nil || !ok {
 		return false
 	}
-	return isTerminalTaskStatus(task.Status)
+	return isTerminalJobStatus(task.Status)
 }
 
 func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload, runErr error) error {

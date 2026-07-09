@@ -30,19 +30,6 @@ const (
 	JobEventCanceled       = "job.canceled"
 	JobEventDeliverySent   = "delivery.sent"
 	JobEventDeliveryFailed = "delivery.failed"
-
-	TaskEventTaskCreated    = JobEventCreated
-	TaskEventTaskAssigned   = JobEventAssigned
-	TaskEventTaskStarted    = JobEventStarted
-	TaskEventAgentStarted   = JobEventAgentStarted
-	TaskEventAgentProgress  = JobEventAgentProgress
-	TaskEventAgentResult    = JobEventAgentResult
-	TaskEventTaskValidating = JobEventValidating
-	TaskEventTaskCompleted  = JobEventCompleted
-	TaskEventTaskFailed     = JobEventFailed
-	TaskEventTaskCanceled   = JobEventCanceled
-	TaskEventDeliverySent   = JobEventDeliverySent
-	TaskEventDeliveryFailed = JobEventDeliveryFailed
 )
 
 type JobService struct {
@@ -194,20 +181,20 @@ func (s *JobService) suppressStaleTerminalTransition(ctx context.Context, jobID 
 	if !strings.Contains(err.Error(), "invalid runtime job transition") {
 		return err
 	}
-	if !isTerminalTaskStatus(status) {
+	if !isTerminalJobStatus(status) {
 		return err
 	}
 	job, ok, getErr := s.Get(ctx, jobID)
 	if getErr != nil || !ok {
 		return err
 	}
-	if !isTerminalTaskStatus(job.Status) {
+	if !isTerminalJobStatus(job.Status) {
 		return err
 	}
 	return nil
 }
 
-func isTerminalTaskStatus(status string) bool {
+func isTerminalJobStatus(status string) bool {
 	switch strings.TrimSpace(status) {
 	case baldastate.JobStatusCompleted,
 		baldastate.JobStatusFailed,

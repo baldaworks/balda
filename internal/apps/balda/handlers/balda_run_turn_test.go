@@ -347,7 +347,7 @@ func TestRunTurn_SendsTypingWithoutThinkingDraftInPublicChat(t *testing.T) {
 	}
 }
 
-func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *testing.T) {
+func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutJobEvents(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, false)
@@ -590,18 +590,18 @@ func TestRunTurn_TaskBackedProgressUsesDeliveryActor(t *testing.T) {
 	if strings.Join(gotTexts, "\n---\n") != strings.Join(wantTexts, "\n---\n") {
 		t.Fatalf("delivery texts = %#v, want %#v", gotTexts, wantTexts)
 	}
-	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.TaskEventAgentProgress, baldajobs.TaskEventAgentResult)
+	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.JobEventAgentProgress, baldajobs.JobEventAgentResult)
 	if len(agentEvents) != 2 {
 		t.Fatalf("agent job events = %d, want 2", len(agentEvents))
 	}
-	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.TaskEventAgentProgress {
-		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.TaskEventAgentProgress)
+	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.JobEventAgentProgress {
+		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.JobEventAgentProgress)
 	}
 	if got := taskEventPayload(t, agentEvents[0])["kind"]; got != "plan" {
 		t.Fatalf("event[0] kind = %v, want plan", got)
 	}
-	if got := agentEvents[1].Meta["event_type"]; got != baldajobs.TaskEventAgentResult {
-		t.Fatalf("event[1] type = %q, want %q", got, baldajobs.TaskEventAgentResult)
+	if got := agentEvents[1].Meta["event_type"]; got != baldajobs.JobEventAgentResult {
+		t.Fatalf("event[1] type = %q, want %q", got, baldajobs.JobEventAgentResult)
 	}
 	if got := taskEventPayload(t, agentEvents[1])["kind"]; got != nil {
 		t.Fatalf("event[1] kind = %v, want nil", got)
@@ -651,12 +651,12 @@ func TestRunTurn_TaskBackedVisibleOutputOnlySendsFinalReply(t *testing.T) {
 	if strings.Join(gotTexts, "\n---\n") != strings.Join(wantTexts, "\n---\n") {
 		t.Fatalf("delivery texts = %#v, want %#v", gotTexts, wantTexts)
 	}
-	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.TaskEventAgentProgress, baldajobs.TaskEventAgentResult)
+	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.JobEventAgentProgress, baldajobs.JobEventAgentResult)
 	if len(agentEvents) != 1 {
 		t.Fatalf("agent job events = %d, want 1", len(agentEvents))
 	}
-	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.TaskEventAgentResult {
-		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.TaskEventAgentResult)
+	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.JobEventAgentResult {
+		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.JobEventAgentResult)
 	}
 	var payload actors.DeliveryPayload
 	if err := json.Unmarshal([]byte(bus.commands[len(bus.commands)-1].PayloadJSON), &payload); err != nil {

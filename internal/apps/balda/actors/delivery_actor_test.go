@@ -97,8 +97,8 @@ func TestTaskDeliveryActorPublishesFailedEventOnSendError(t *testing.T) {
 	if len(bus.eventEnvs) != 1 {
 		t.Fatalf("published event envelopes len = %d, want 1", len(bus.eventEnvs))
 	}
-	if got := bus.eventEnvs[0].Meta["event_type"]; got != baldajobs.TaskEventDeliveryFailed {
-		t.Fatalf("event type = %q, want %q", got, baldajobs.TaskEventDeliveryFailed)
+	if got := bus.eventEnvs[0].Meta["event_type"]; got != baldajobs.JobEventDeliveryFailed {
+		t.Fatalf("event type = %q, want %q", got, baldajobs.JobEventDeliveryFailed)
 	}
 }
 

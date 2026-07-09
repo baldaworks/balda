@@ -152,7 +152,7 @@ func (a *jobControlActor) cancelTask(ctx context.Context, env actorlayer.Envelop
 		}
 		return nil
 	}
-	if isTerminalTaskStatus(job.Status) {
+	if isTerminalJobStatus(job.Status) {
 		if payload.Notify {
 			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Task %s is already %s.", job.ID, job.Status))
 		}

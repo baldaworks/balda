@@ -456,7 +456,7 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 	}
 	var progressKinds []string
 	for _, event := range bus.eventEnvs {
-		if event.Meta["event_type"] != baldajobs.TaskEventAgentProgress || baldaexecution.EnvelopeJobID(event) != baldaexecution.EnvelopeJobID(env) {
+		if event.Meta["event_type"] != baldajobs.JobEventAgentProgress || baldaexecution.EnvelopeJobID(event) != baldaexecution.EnvelopeJobID(env) {
 			continue
 		}
 		var payload map[string]any

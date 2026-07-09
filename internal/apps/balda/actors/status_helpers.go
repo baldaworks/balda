@@ -6,7 +6,7 @@ import (
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
-func isTerminalTaskStatus(status string) bool {
+func isTerminalJobStatus(status string) bool {
 	switch strings.TrimSpace(status) {
 	case baldastate.JobStatusCompleted,
 		baldastate.JobStatusFailed,
