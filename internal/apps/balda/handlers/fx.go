@@ -71,8 +71,8 @@ var Module = fx.Module("balda_handlers",
 			if err != nil {
 				return nil, err
 			}
-			if len(config.Tasks) > 0 && params.OwnerStore == nil {
-				return nil, fmt.Errorf("balda owner store is required for scheduler tasks")
+			if len(config.Jobs) > 0 && params.OwnerStore == nil {
+				return nil, fmt.Errorf("balda owner store is required for scheduler jobs")
 			}
 
 			scheduler := &ScheduledTaskScheduler{

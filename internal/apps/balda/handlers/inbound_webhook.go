@@ -53,7 +53,7 @@ const (
 )
 
 const (
-	inboundWebhookRouteModeTask    = "task"
+	inboundWebhookRouteModeJob     = "job"
 	inboundWebhookRouteModeSession = "session"
 )
 
@@ -150,7 +150,7 @@ type inboundWebhookParams struct {
 }
 
 // InboundWebhookReceiver receives inbound webhook events and dispatches them
-// into either direct session turns or durable webhook task commands.
+// into either direct session turns or durable webhook job commands.
 type InboundWebhookReceiver struct {
 	enabled    bool
 	listenAddr string
@@ -299,10 +299,10 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 		}
 		mode := strings.ToLower(strings.TrimSpace(rawRoute.Envelope.Mode))
 		if mode == "" {
-			mode = inboundWebhookRouteModeTask
+			mode = inboundWebhookRouteModeJob
 		}
 		switch mode {
-		case inboundWebhookRouteModeTask, inboundWebhookRouteModeSession:
+		case inboundWebhookRouteModeJob, inboundWebhookRouteModeSession:
 		default:
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.mode: unsupported mode %q", routeName, rawRoute.Envelope.Mode)
 		}
@@ -630,7 +630,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		Str("dedupe_key", dedupeKey).
 		Str("stream", result.Stream).
 		Uint64("sequence", result.Sequence).
-		Str("task_id", taskID).
+		Str("job_id", taskID).
 		Msg("inbound webhook accepted")
 
 	writeInboundWebhookJSON(w, http.StatusAccepted, inboundWebhookAcceptedResponse{

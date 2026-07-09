@@ -28,7 +28,7 @@ func TestWithDeliveryKeyAddsFieldForDeliveryActor(t *testing.T) {
 func TestWithDeliveryKeySkipsNonDeliveryActor(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
-	env := actorlayer.Envelope{To: actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task:123"}}
+	env := actorlayer.Envelope{To: actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task:123"}}
 	withDeliveryKey(logger.Info(), env).Msg("test")
 
 	var payload map[string]any

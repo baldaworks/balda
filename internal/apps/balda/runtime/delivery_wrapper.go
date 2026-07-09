@@ -30,7 +30,7 @@ func (r *ActorHost) prepareDelivery(ctx context.Context, delivery actorengine.De
 	wrapped := &runtimeDelivery{
 		delivery: delivery,
 		onDeadLetter: func(reason string) {
-			r.deadletterTask(ctx, env, reason)
+			r.deadletterJob(ctx, env, reason)
 		},
 	}
 	heartbeatCtx, stop := r.startHeartbeat(ctx, env, wrapped)

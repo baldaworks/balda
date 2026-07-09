@@ -14,7 +14,7 @@ type goalRunPreparerAdapter struct {
 func (a goalRunPreparerAdapter) PrepareGoalRun(ctx context.Context, cfg goalkeeper.GoalRunConfig) (goalkeeper.GoalRun, error) {
 	runtime, err := a.manager.PrepareGoalRun(ctx, baldaagent.GoalRunConfig{
 		SourceSessionID: cfg.SourceSessionID,
-		TaskID:          cfg.TaskID,
+		JobID:           cfg.JobID,
 		UserID:          cfg.UserID,
 		MaxIterations:   cfg.MaxIterations,
 	})

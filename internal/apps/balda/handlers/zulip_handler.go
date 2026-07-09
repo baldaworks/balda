@@ -103,6 +103,7 @@ type zulipSessionManager interface {
 	GetAgentMetadata(agentName string) baldasession.AgentMetadata
 	GetSession(locator baldasession.SessionLocator) (*baldasession.TopicSession, error)
 	GetSessionInfo(ctx context.Context, sessionID string) (baldasession.TopicSessionInfo, error)
+	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
 	RestoreSession(ctx context.Context, sessionCtx baldasession.SessionContext) (*baldasession.TopicSession, error)
 	BaldaProviderID() string
 	ResetSession(ctx context.Context, locator baldasession.SessionLocator) error
@@ -528,6 +529,8 @@ func (h *ZulipBaldaHandler) handleCommand(
 		h.handleTopicCommand(ctx, locator, senderID, args, isDM)
 	case commandGoal:
 		h.handleGoalCommand(ctx, locator, senderID, args)
+	case commandUsage:
+		h.handleUsageCommand(ctx, locator, args)
 	case commandClose:
 		h.handleCloseCommand(ctx, locator, senderID, args, isDM)
 	case commandUser:
@@ -829,6 +832,26 @@ func (h *ZulipBaldaHandler) handleLocatorCommand(
 	_ = h.sendPlain(ctx, locator, msg)
 }
 
+func (h *ZulipBaldaHandler) handleUsageCommand(
+	ctx context.Context,
+	locator baldasession.SessionLocator,
+	args string,
+) {
+	if strings.TrimSpace(args) != "" {
+		_ = h.sendPlain(ctx, locator, "Usage: /usage")
+		return
+	}
+	snapshot, ok, err := loadUsageSnapshot(ctx, h.sessionManager, locator)
+	if err != nil {
+		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to load usage snapshot")
+	}
+	if err != nil || !ok {
+		_ = h.sendPlain(ctx, locator, "No provider usage has been recorded for this session yet.")
+		return
+	}
+	_ = h.sendPlain(ctx, locator, renderUsageSnapshot(snapshot))
+}
+
 func (h *ZulipBaldaHandler) handleCloseCommand(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
@@ -1034,7 +1057,7 @@ func (h *ZulipBaldaHandler) submitGoalTask(
 	if h.taskService != nil {
 		activeGoals, err := h.taskService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
-			return false, fmt.Errorf("list active goal tasks: %w", err)
+			return false, fmt.Errorf("list active goal jobs: %w", err)
 		}
 		if len(activeGoals) > 0 {
 			return false, nil

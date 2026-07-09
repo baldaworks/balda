@@ -10,7 +10,7 @@
     }
   },
   "expected": {
-    "command_subject": "balda.v1.cmd.task",
+    "command_subject": "balda.v1.cmd.job",
     "namespace": "webhook.inbound"
   }
 }

@@ -14,7 +14,7 @@ import (
 var Module = fx.Module("balda_actors",
 	fx.Provide(
 		NewTurnDispatcher,
-		NewTaskRunRegistry,
+		NewJobRunRegistry,
 		NewSessionWorkCanceller,
 		fx.Annotate(
 			func(params sessionActorExecutorParams) dispatch.Actor {
@@ -24,8 +24,8 @@ var Module = fx.Module("balda_actors",
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			func(params taskActorExecutorParams) dispatch.Actor {
-				return &taskActorExecutor{
+			func(params jobActorExecutorParams) dispatch.Actor {
+				return &jobActorExecutor{
 					tasks:      params.JobService,
 					dispatcher: params.Dispatcher,
 					sessions:   params.Sessions,
@@ -42,7 +42,7 @@ var Module = fx.Module("balda_actors",
 				Dispatcher         actortransport.Dispatcher
 				SessionManager     *baldasession.Manager
 				RuntimeManager     *baldaagent.RuntimeManager
-				TaskRuns           *TaskRunRegistry
+				JobRuns            *JobRunRegistry
 				MaxIterations      int  `name:"balda_goal_max_iterations"`
 				PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
 				Logger             zerolog.Logger
@@ -52,7 +52,7 @@ var Module = fx.Module("balda_actors",
 					Dispatcher:         params.Dispatcher,
 					SessionManager:     params.SessionManager,
 					GoalRunPreparer:    goalRunPreparerAdapter{manager: params.RuntimeManager},
-					TaskRuns:           params.TaskRuns,
+					JobRuns:            params.JobRuns,
 					MaxIterations:      params.MaxIterations,
 					PlanUpdatesEnabled: params.PlanUpdatesEnabled,
 					Logger:             params.Logger,
@@ -72,24 +72,24 @@ var Module = fx.Module("balda_actors",
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			func(params taskDeliveryActorParams) dispatch.Actor {
-				return &taskDeliveryActor{
+			func(params jobDeliveryActorParams) dispatch.Actor {
+				return &jobDeliveryActor{
 					channel: params.Channel,
 					tasks:   params.JobService,
-					logger:  params.Logger.With().Str("component", "balda.task_delivery_actor").Logger(),
+					logger:  params.Logger.With().Str("component", "balda.job_delivery_actor").Logger(),
 				}
 			},
 			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_swarm_actors"`),
 		),
 		fx.Annotate(
-			func(params taskControlActorParams) dispatch.Actor {
-				return &taskControlActor{
+			func(params jobControlActorParams) dispatch.Actor {
+				return &jobControlActor{
 					turnDispatcher: params.TurnDispatcher,
 					dispatcher:     params.Dispatcher,
 					tasks:          params.JobService,
-					taskRuns:       params.TaskRuns,
-					logger:         params.Logger.With().Str("component", "balda.task_control_actor").Logger(),
+					taskRuns:       params.JobRuns,
+					logger:         params.Logger.With().Str("component", "balda.job_control_actor").Logger(),
 				}
 			},
 			fx.As(new(dispatch.Actor)),

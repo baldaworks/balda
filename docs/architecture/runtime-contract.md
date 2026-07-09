@@ -23,14 +23,14 @@ Status: active
   - Delivery lifecycle hooks (accept/running/in_progress/acked/retry/deadletter/noop).
   - Actor dispatch and state transition primitives, including the dispatch runtime that owns address resolution and lane execution.
   - Transport-facing interfaces for dispatch, event publication/consumption, and draining.
-  - No Balda provider selection, queue runtime, Telegram, MCP, or task projection policy.
+  - No Balda provider selection, queue runtime, Telegram, MCP, or job projection policy.
 
 - Balda integration layer (policy owner):
   - Product actor implementations and command contracts in `internal/apps/balda/actors`.
   - Telegram, Slack, Zulip, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
   - Concrete transport adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
-  - Task/projector side effects in SQLite (`swarm_tasks`, `swarm_task_events`, command/task status state) for job-style orchestration and read models.
+  - Job/projector side effects in SQLite (`swarm_tasks`, `swarm_job_events`, command/job status state) for job-style orchestration and read models.
   - Internal command visibility backed by logs and tooling.
   - Mapping between policy metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`) and actor-level envelopes.
   - The single app-scoped provider runtime selected by `balda.provider`.
@@ -39,7 +39,7 @@ Status: active
   - `runtime.go`: host loop and dispatch-runtime wiring.
   - `runtime_lane_policy.go`: Balda actor addressing and lane-key policy.
   - `runtime_heartbeat.go`: Balda heartbeat cadence and in-progress visibility publication.
-  - `runtime_deadletter.go`: Balda retry-exhaustion and task dead-letter side effects.
+  - `runtime_deadletter.go`: Balda retry-exhaustion and job dead-letter side effects.
   - `runtime_delivery.go`: Balda delivery wrapping and envelope-context attachment.
 
 - Boundary obligations:

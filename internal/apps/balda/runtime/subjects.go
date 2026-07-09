@@ -8,14 +8,13 @@ import (
 )
 
 const (
-	SubjectCommandSession    = "balda.v1.cmd.session"
-	SubjectCommandTask       = "balda.v1.cmd.task"
-	SubjectCommandGoalkeeper = "balda.v1.cmd.goalkeeper"
-	SubjectCommandGoal       = SubjectCommandGoalkeeper
-	SubjectCommandDelivery   = "balda.v1.cmd.delivery"
-	SubjectCommandMemory     = "balda.v1.cmd.memory"
-	SubjectCommandControl    = "balda.v1.cmd.control"
-	SubjectCommandAll        = "balda.v1.cmd.>"
+	SubjectCommandSession  = "balda.v1.cmd.session"
+	SubjectCommandJob      = "balda.v1.cmd.job"
+	SubjectCommandGoal     = "balda.v1.cmd.goal"
+	SubjectCommandDelivery = "balda.v1.cmd.delivery"
+	SubjectCommandMemory   = "balda.v1.cmd.memory"
+	SubjectCommandControl  = "balda.v1.cmd.control"
+	SubjectCommandAll      = "balda.v1.cmd.>"
 
 	SubjectEventCommandAccepted     = "balda.v1.evt.command.accepted"
 	SubjectEventCommandRunning      = "balda.v1.evt.command.running"
@@ -25,9 +24,9 @@ const (
 	SubjectEventCommandDeadLettered = "balda.v1.evt.command.deadlettered"
 	SubjectEventCommandNoop         = "balda.v1.evt.command.noop"
 	SubjectEventCommandDecodeFailed = "balda.v1.evt.command.decode_failed"
-	SubjectEventTaskCreated         = "balda.v1.evt.task.created"
-	SubjectEventTaskUpdated         = "balda.v1.evt.task.updated"
-	SubjectEventTaskCompleted       = "balda.v1.evt.task.completed"
+	SubjectEventJobCreated          = "balda.v1.evt.job.created"
+	SubjectEventJobUpdated          = "balda.v1.evt.job.updated"
+	SubjectEventJobCompleted        = "balda.v1.evt.job.completed"
 	SubjectEventDeliverySent        = "balda.v1.evt.delivery.sent"
 	SubjectEventDeliveryFailed      = "balda.v1.evt.delivery.failed"
 	SubjectEventMemoryUpdated       = "balda.v1.evt.memory.updated"
@@ -50,14 +49,16 @@ const (
 )
 
 func SubjectForEnvelope(env actorlayer.Envelope) string {
-	if strings.TrimSpace(env.Namespace) == NamespaceTaskControl {
+	namespace := canonicalNamespace(env.Namespace)
+	target := canonicalActorTarget(env.To.Target)
+	if namespace == NamespaceJobControl {
 		return SubjectCommandControl
 	}
-	switch strings.ToLower(strings.TrimSpace(env.To.Target)) {
+	switch target {
 	case ActorTypeSession:
 		return SubjectCommandSession
-	case ActorTypeTask:
-		return SubjectCommandTask
+	case ActorTypeJob:
+		return SubjectCommandJob
 	case ActorTypeGoalkeeper:
 		return SubjectCommandGoal
 	case ActorTypeDelivery:
@@ -65,19 +66,19 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 	case ActorTypeMemory:
 		return SubjectCommandMemory
 	default:
-		switch strings.TrimSpace(env.Namespace) {
+		switch namespace {
 		case NamespaceGoalkeeperCommand:
 			return SubjectCommandGoal
-		case NamespaceTaskControl:
+		case NamespaceJobControl:
 			return SubjectCommandControl
 		case NamespaceMemoryCommand:
 			return SubjectCommandMemory
 		case NamespaceWebhookInbound, NamespaceScheduleInbound:
-			return SubjectCommandTask
+			return SubjectCommandJob
 		case NamespaceHumanInbound:
 			return SubjectCommandSession
 		default:
-			return SubjectCommandTask
+			return SubjectCommandJob
 		}
 	}
 }

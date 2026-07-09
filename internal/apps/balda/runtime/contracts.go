@@ -4,7 +4,7 @@ package runtime
 const (
 	ActorTypeSystem     = "system"
 	ActorTypeSession    = "session"
-	ActorTypeTask       = "task"
+	ActorTypeJob        = "job"
 	ActorTypeGoalkeeper = "goalkeeper"
 	ActorTypeGoal       = ActorTypeGoalkeeper
 	ActorTypeDelivery   = "delivery"
@@ -16,13 +16,13 @@ const (
 	NamespaceAgentResult       = "agent.result"
 	NamespaceGoalkeeperCommand = "goalkeeper.command"
 	NamespaceGoalCommand       = NamespaceGoalkeeperCommand
-	NamespaceTaskControl       = "task.control"
+	NamespaceJobControl        = "job.control"
 	NamespaceMemoryCommand     = "memory.command"
 	NamespaceTelemetry         = "telemetry"
 
 	KindMessage        = "message"
 	KindWebhookEvent   = "webhook_event"
-	KindScheduledTask  = "scheduled_task"
+	KindScheduledJob   = "scheduled_job"
 	KindGoal           = "goal"
 	KindCancel         = "cancel"
 	KindMemoryRemember = "memory_remember"

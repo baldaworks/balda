@@ -13,10 +13,10 @@ import (
 	"github.com/normahq/balda/pkg/actorlayer"
 )
 
-const taskPayloadKindDelivery = "delivery"
+const jobPayloadKindDelivery = "delivery"
 
 type Payload struct {
-	TaskID     string                      `json:"task_id,omitempty"`
+	JobID      string                      `json:"job_id,omitempty"`
 	Locator    baldasession.SessionLocator `json:"locator"`
 	Profile    Profile                     `json:"profile,omitempty,omitzero"`
 	Mode       Mode                        `json:"mode"`
@@ -80,7 +80,7 @@ func AgentReplyEnvelopeWithProfile(taskID string, from actorlayer.ActorAddress, 
 
 func AgentReplyEnvelopeWithProfileAndSettlement(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:     strings.TrimSpace(taskID),
+		JobID:      strings.TrimSpace(taskID),
 		Locator:    locator,
 		Profile:    normalizeProfile(profile),
 		Mode:       ModeAgentReply,
@@ -95,7 +95,7 @@ func PlainEnvelope(taskID string, from actorlayer.ActorAddress, locator baldases
 
 func PlainEnvelopeWithSettlement(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:     strings.TrimSpace(taskID),
+		JobID:      strings.TrimSpace(taskID),
 		Locator:    locator,
 		Mode:       ModePlain,
 		Settlement: normalizeSettlementPolicy(settlement),
@@ -117,7 +117,7 @@ func MarkdownEnvelopeWithProfile(taskID string, from actorlayer.ActorAddress, lo
 
 func MarkdownEnvelopeWithProfileAndSettlement(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:     strings.TrimSpace(taskID),
+		JobID:      strings.TrimSpace(taskID),
 		Locator:    locator,
 		Profile:    normalizeProfile(profile),
 		Mode:       ModeMarkdown,
@@ -128,7 +128,7 @@ func MarkdownEnvelopeWithProfileAndSettlement(taskID string, from actorlayer.Act
 
 func DraftPlainEnvelope(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, draftID int, text string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:  strings.TrimSpace(taskID),
+		JobID:   strings.TrimSpace(taskID),
 		Locator: locator,
 		Mode:    ModeDraftPlain,
 		Text:    strings.TrimSpace(text),
@@ -138,7 +138,7 @@ func DraftPlainEnvelope(taskID string, from actorlayer.ActorAddress, locator bal
 
 func ChatActionEnvelope(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, action string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:  strings.TrimSpace(taskID),
+		JobID:   strings.TrimSpace(taskID),
 		Locator: locator,
 		Mode:    ModeChatAction,
 		Action:  strings.TrimSpace(action),
@@ -147,7 +147,7 @@ func ChatActionEnvelope(taskID string, from actorlayer.ActorAddress, locator bal
 
 func ProgressActivityEnvelope(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:  strings.TrimSpace(taskID),
+		JobID:   strings.TrimSpace(taskID),
 		Locator: locator,
 		Mode:    ModeProgress,
 		Progress: &Progress{
@@ -161,7 +161,7 @@ func ProgressActivityEnvelope(taskID string, from actorlayer.ActorAddress, locat
 
 func ProgressThinkingEnvelope(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:  strings.TrimSpace(taskID),
+		JobID:   strings.TrimSpace(taskID),
 		Locator: locator,
 		Mode:    ModeProgress,
 		Progress: &Progress{
@@ -177,7 +177,7 @@ func ProgressThinkingEnvelope(taskID string, from actorlayer.ActorAddress, locat
 
 func ProgressPlanUpdateEnvelope(taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, plan *progress.PlanSnapshot, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(taskID, from, Payload{
-		TaskID:  strings.TrimSpace(taskID),
+		JobID:   strings.TrimSpace(taskID),
 		Locator: locator,
 		Mode:    ModeProgress,
 		Progress: &Progress{
@@ -263,7 +263,7 @@ func envelope(taskID string, from actorlayer.ActorAddress, payload Payload, dedu
 	return actorlayer.Envelope{
 		ID:            dedupeKey,
 		Namespace:     baldaruntime.NamespaceAgentResult,
-		Kind:          taskPayloadKindDelivery,
+		Kind:          jobPayloadKindDelivery,
 		From:          from,
 		To:            actorlayer.ActorAddress{Target: baldaruntime.ActorTypeDelivery, Key: payload.Locator.DeliveryActorKey()},
 		SessionID:     payload.Locator.SessionID,
@@ -276,8 +276,8 @@ func envelope(taskID string, from actorlayer.ActorAddress, payload Payload, dedu
 }
 
 func deliveryDedupeKey(taskID string, mode Mode, dedupeSuffix string) string {
-	trimmedTaskID := strings.TrimSpace(taskID)
-	if trimmedTaskID == "" {
+	trimmedJobID := strings.TrimSpace(taskID)
+	if trimmedJobID == "" {
 		id := "delivery:" + strings.ToLower(string(mode)) + ":" + uuid.NewString()
 		if suffix := strings.TrimSpace(dedupeSuffix); suffix != "" {
 			return id + ":" + suffix
@@ -285,7 +285,7 @@ func deliveryDedupeKey(taskID string, mode Mode, dedupeSuffix string) string {
 		return id
 	}
 	if suffix := strings.TrimSpace(dedupeSuffix); suffix != "" {
-		return trimmedTaskID + ":delivery:" + suffix
+		return trimmedJobID + ":delivery:" + suffix
 	}
-	return trimmedTaskID + ":delivery:" + strings.ToLower(string(mode)) + ":" + uuid.NewString()
+	return trimmedJobID + ":delivery:" + strings.ToLower(string(mode)) + ":" + uuid.NewString()
 }

@@ -22,16 +22,16 @@ func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
 
 	ctx := context.Background()
 	_, bus, dispatcher, tasks, _ := newTaskActorSwarmServices(t, ctx)
-	exec := &taskActorExecutor{tasks: tasks, dispatcher: dispatcher}
+	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
-	env, taskID, err := WebhookTaskEnvelope(SessionTurnPayload{
+	env, taskID, err := WebhookJobEnvelope(SessionTurnPayload{
 		Text:    "handle webhook",
 		Locator: locator,
 		UserID:  "101",
 		Source:  sessionTurnSourceWebhook,
 	}, "github", "delivery-1")
 	if err != nil {
-		t.Fatalf("WebhookTaskEnvelope() error = %v", err)
+		t.Fatalf("WebhookJobEnvelope() error = %v", err)
 	}
 	if !strings.HasPrefix(taskID, "webhook-github-") {
 		t.Fatalf("task id = %q, want webhook-github-*", taskID)
@@ -66,10 +66,10 @@ func TestTaskActorRejectsNonWebhookSessionTurnTask(t *testing.T) {
 
 	ctx := context.Background()
 	_, _, dispatcher, tasks, _ := newTaskActorSwarmServices(t, ctx)
-	exec := &taskActorExecutor{tasks: tasks, dispatcher: dispatcher}
+	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
-	data, err := json.Marshal(taskEnvelopePayload{
-		Kind: taskPayloadKindWebhookSessionTurn,
+	data, err := json.Marshal(jobEnvelopePayload{
+		Kind: jobPayloadKindWebhookSessionTurn,
 		SessionTurn: &SessionTurnPayload{
 			Text:    "repeat the review",
 			Locator: locator,
@@ -78,14 +78,14 @@ func TestTaskActorRejectsNonWebhookSessionTurnTask(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("Marshal(taskEnvelopePayload) error = %v", err)
+		t.Fatalf("Marshal(jobEnvelopePayload) error = %v", err)
 	}
 
 	err = exec.Handle(ctx, actorlayer.Envelope{
 		ID:          "task-1",
 		Namespace:   baldaruntime.NamespaceHumanInbound,
 		Kind:        baldaruntime.KindMessage,
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "turn-1"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "turn-1"},
 		SessionID:   locator.SessionID,
 		TaskID:      "turn-1",
 		PayloadJSON: string(data),
@@ -98,16 +98,16 @@ func TestTaskActorRejectsNonWebhookSessionTurnTask(t *testing.T) {
 	}
 }
 
-func TestScheduledTaskEnvelopeDispatchesSessionTurn(t *testing.T) {
+func TestScheduledJobEnvelopeDispatchesSessionTurn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	_, bus, dispatcher, tasks, _ := newTaskActorSwarmServices(t, ctx)
-	exec := &taskActorExecutor{tasks: tasks, dispatcher: dispatcher}
+	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
-	env, err := ScheduledTaskEnvelope("daily", "summarize", locator, nil, "101", 0, "tick-1")
+	env, err := ScheduledJobEnvelope("daily", "summarize", locator, nil, "101", 0, "tick-1")
 	if err != nil {
-		t.Fatalf("ScheduledTaskEnvelope() error = %v", err)
+		t.Fatalf("ScheduledJobEnvelope() error = %v", err)
 	}
 	if err := exec.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)

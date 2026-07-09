@@ -167,7 +167,7 @@ flowchart TB
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite`, `updatepoller` |
 | `runtime` | `internal/apps/balda/runtime` | Actor runtime host, lane policy, subjects, and delivery wrapping | state, `pkg/actorlayer` |
-| `jobs` | `internal/apps/balda/jobs` | Durable job/task services and read-model projection | runtime, state, `pkg/actorlayer` |
+| `jobs` | `internal/apps/balda/jobs` | Durable job/job services and read-model projection | runtime, state, `pkg/actorlayer` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
 | `welcome` | `internal/apps/balda/welcome` | Welcome message builder | (standalone) |
 
@@ -177,12 +177,12 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 
 - `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goal` worker-validator runs in the process. `/goal` still creates isolated worker/validator ADK sessions and workspace state, but it reuses the same provider runtime/client ownership as normal session turns.
 - Actorlayer owns generic actor mechanics: registration, addressing, envelopes, retry/error helpers, lane execution, lifecycle state, and transport-facing contracts.
-- Balda owns product actors and product behavior implemented as actors: session turns, task routing, goal execution, delivery, control, and memory.
+- Balda owns product actors and product behavior implemented as actors: session turns, job routing, goal execution, delivery, control, and memory.
 - Balda exposes its durable transport to product/runtime code only as actorlayer source, delivery, and dispatch abstractions; the concrete transport stays inside the NATS adapter.
 
 The boundary is intentionally explicit:
 
-- Balda owns retry, dead-letter, queue visibility, and task projection policy.
+- Balda owns retry, dead-letter, queue visibility, and job projection policy.
 - Actor command contracts expose only actor-level contracts and metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`).
 - Runtime command flow and projectors are preserved by keeping queue/provider details outside actor definitions.
 
@@ -193,14 +193,14 @@ The boundary is intentionally explicit:
 - Ensure no provider or queue API types enter the actor layer contract.
 - Keep retry/dead-letter policy, projection writes, and reporting in Balda-owned modules.
 - Preserve command envelope metadata (`chat_id`, `topic_id`, `goal_id`) at the actorlayer boundary.
-- Verify task/actor scenarios through the configured `balda.provider` runtime and actorlayer dispatch path.
+- Verify job/actor scenarios through the configured `balda.provider` runtime and actorlayer dispatch path.
 
 ### Implementation Map
 
 Balda's actorlayer integration is intentionally direct:
 
 - `internal/apps/balda/runtime/host.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
-- `internal/apps/balda/actors`: defines Balda product actors for session, task, goal, delivery, control, and memory command contracts.
+- `internal/apps/balda/actors`: defines Balda product actors for session, job, goal, delivery, control, and memory command contracts.
 - `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped provider runtime selected by `balda.provider` and the per-session state.
@@ -559,7 +559,7 @@ their next turn, and new or restored sessions start with the latest memory.
 
 - `balda.working_dir`: optional balda working directory (defaults to process CWD)
 - `balda.state_dir`: balda state directory for persistent balda SQLite state (`state.db`).
-  - Stores owner/app KV, `balda.state` MCP KV, session metadata, task/read-model state, optional session history, and Telegram polling offset.
+  - Stores owner/app KV, `balda.state` MCP KV, session metadata, job/read-model state, optional session history, and Telegram polling offset.
   - Schema is migration-versioned and auto-applied on startup.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
@@ -619,7 +619,7 @@ their next turn, and new or restored sessions start with the latest memory.
 ### Delivery formatting
 
 Balda actor commands carry a request-scoped delivery format so session, goal,
-and task-result replies render consistently across transports.
+and job-result replies render consistently across transports.
 
 | Delivery format | Meaning | Telegram | Slack | Zulip |
 | --- | --- | --- | --- | --- |
@@ -709,44 +709,44 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/user remove <user_id>` (owner only): removes a collaborator by ID.
 - `balda.memory.*` MCP tools are internal capabilities, not chat commands.
 
-### Task runtime semantics (internal)
+### Job runtime semantics (internal)
 
-Assignable job work is persisted in `swarm_tasks`; task history is published to
-`BALDA_EVENTS` and projected into `swarm_task_events`. Ingress publishes a
-durable command first; task records are created after command delivery.
+Assignable job work is persisted in `swarm_tasks`; job history is published to
+`BALDA_EVENTS` and projected into `swarm_job_events`. Ingress publishes a
+durable command first; job records are created after command delivery.
 Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 `swarm_tasks` rows; they run directly on the session actor path.
 
 - `/goal` starts goal work for the current session context. Balda restores or creates the
   chat session, allocates separate GoalKeeper worker/validator ADK sessions for the
-  task, runs repeated work and validation passes, passes only the latest worker and
+  job, runs repeated work and validation passes, passes only the latest worker and
   validator results across those role sessions, exports successful work back to the
   base branch when workspace mode is enabled, records `not_exported` when workspace
-  mode is disabled, records the task result, and sends progress/final messages.
-- Task statuses are `created`, `queued`, `running`, `waiting_for_agent`,
+  mode is disabled, records the job result, and sends progress/final messages.
+- Job statuses are `created`, `queued`, `running`, `waiting_for_agent`,
   `waiting_for_user`, `validating`, `completed`, `failed`, `canceled`, and
   `deadlettered`.
-- Task events are append-only durable transport events projected into SQLite read
+- Job events are append-only durable transport events projected into SQLite read
   models. Event projection failure never decides command success. Semantic
-  event types include `task.created`, `task.assigned`, `task.started`,
-  `agent.started`, `agent.progress`, `agent.result`, `task.validating`,
-  `task.completed`, `task.failed`, `task.canceled`, `delivery.sent`, and
+  event types include `job.created`, `job.assigned`, `job.started`,
+  `agent.started`, `agent.progress`, `agent.result`, `job.validating`,
+  `job.completed`, `job.failed`, `job.canceled`, `delivery.sent`, and
   `delivery.failed`.
-- Runtime deadletters mark the owning task `deadlettered`. Session control
+- Runtime deadletters mark the owning job `deadlettered`. Session control
   commands and internal control envelopes publish durable control work.
   `/cancel` stops the current session turn and clears queued turns for that
-  session. `/goal clear` marks active goal tasks `canceled` and stops any
-  currently running GoalKeeper task for that session.
-- Terminal task delivery stores reviewable outcomes and, when applicable,
+  session. `/goal clear` marks active goal jobs `canceled` and stops any
+  currently running GoalKeeper job for that session.
+- Terminal job delivery stores reviewable outcomes and, when applicable,
   sends concise result, export, work, validation, and actionable next-step
   sections. Artifacts are best-effort
   workspace data from the bound session: changed files, branch, current commit,
   workspace export hint, and validation output.
-- Task progress/results and projected event payload summaries redact common
+- Job progress/results and projected event payload summaries redact common
   secret patterns (for example bearer tokens, `token=...`, `password=...`,
   Telegram bot tokens, and PEM private keys) before persistence and delivery.
-- Task records and projected task events remain internal runtime/operator data.
-  Telegram does not expose direct task inspection or per-task control commands.
+- Job records and projected job events remain internal runtime/operator data.
+  Telegram does not expose direct job inspection or per-job control commands.
 
 ### Command runtime semantics (internal)
 
@@ -781,12 +781,12 @@ balda.v1.dlq.>"]
         SRC["actorengine.Source/Delivery adapter"]
         RT["ActorRuntime"]
         LNS["Actorlayer engine lanes
-session/task/goal/delivery/memory"]
-        ACT["Session/Task/Goal/Delivery/Memory actors"]
+session/job/goal/delivery/memory"]
+        ACT["Session/Job/Goal/Delivery/Memory actors"]
     end
 
     subgraph State["SQLite product/read-model state"]
-        TASKS["swarm_tasks + swarm_task_events"]
+        TASKS["swarm_tasks + swarm_job_events"]
         OUTBOX["swarm_delivery_outbox"]
         META["owner/session/scheduler/memory metadata"]
     end
@@ -809,7 +809,7 @@ session/task/goal/delivery/memory"]
   - Actorlayer `Source`/`Delivery`/dispatch contracts are the boundary consumed
     by runtime, handlers, and product actors.
   - SQLite owns product state/read models (`swarm_tasks`, projected
-    `swarm_task_events`, delivery outbox records, session metadata, memory
+    `swarm_job_events`, delivery outbox records, session metadata, memory
     state, scheduler metadata).
   - Projections are derived views; projection lag/failure never blocks command
     settlement.
@@ -856,7 +856,7 @@ session/task/goal/delivery/memory"]
 | `BALDA_EVENT_PROJECTOR` | event projector consumer (on `BALDA_EVENTS`) | `balda.v1.evt.>` | deliver-all + explicit ack | same retry/backpressure knobs as command consumer; projector applies idempotent read-model updates |
 
 - Stable subjects:
-  - Commands: `balda.v1.cmd.session`, `balda.v1.cmd.task`,
+  - Commands: `balda.v1.cmd.session`, `balda.v1.cmd.job`,
     `balda.v1.cmd.goal`, `balda.v1.cmd.delivery`,
     `balda.v1.cmd.control`.
   - Events: `balda.v1.evt.command.accepted`,
@@ -864,8 +864,8 @@ session/task/goal/delivery/memory"]
     `balda.v1.evt.command.acked`, `balda.v1.evt.command.retrying`,
     `balda.v1.evt.command.deadlettered`, `balda.v1.evt.command.noop`,
     `balda.v1.evt.command.decode_failed`,
-    `balda.v1.evt.task.created`,
-    `balda.v1.evt.task.updated`, `balda.v1.evt.task.completed`,
+    `balda.v1.evt.job.created`,
+    `balda.v1.evt.job.updated`, `balda.v1.evt.job.completed`,
     `balda.v1.evt.delivery.sent`, `balda.v1.evt.delivery.failed`.
   - DLQ: `balda.v1.dlq.command`.
 
@@ -873,16 +873,16 @@ session/task/goal/delivery/memory"]
 
 All commands use the common envelope schema:
 `id`, `namespace`, `kind`, `from`, `to`, `payload_json` are required.
-`session_id`, `task_id`, `correlation_id`, `causation_id`, `dedupe_key`,
+`session_id`, `job_id`, `correlation_id`, `causation_id`, `dedupe_key`,
 `priority`, `meta`, and `report_to` are optional context fields.
 
 | Subject | Primary routing rule | Typical namespaces | Required contextual fields | Payload contract |
 |---|---|---|---|---|
 | `balda.v1.cmd.session` | `to.target=session` or namespace fallback | `human.inbound` | `session_id` for existing sessions | session-turn payload (prompt/content + locator/user metadata) |
-| `balda.v1.cmd.task` | `to.target=task` or namespace fallback | `webhook.inbound`, `schedule.inbound` | `task_id` for existing task mutations; optional on task creation commands | webhook task or scheduled task payload |
-| `balda.v1.cmd.goal` | `to.target=goal` | `goal.command` | `task_id` for goal runs | goal objective/session payload |
-| `balda.v1.cmd.delivery` | `to.target=delivery` | `agent.result` / delivery work namespaces | channel-qualified delivery address in `to.key` (`<channel_type>:<address_key>`); `task_id` when task-owned | outbound delivery payload (channel message/terminal update) |
-| `balda.v1.cmd.control` | `namespace=task.control` (forced) | `task.control` | `task_id` and/or `session_id` | cancel/control payload (`reason`, actor/user origin) |
+| `balda.v1.cmd.job` | `to.target=job` or namespace fallback | `webhook.inbound`, `schedule.inbound` | `job_id` for existing job mutations; optional on job creation commands | webhook job or scheduled job payload |
+| `balda.v1.cmd.goal` | `to.target=goal` | `goal.command` | `job_id` for goal runs | goal objective/session payload |
+| `balda.v1.cmd.delivery` | `to.target=delivery` | `agent.result` / delivery work namespaces | channel-qualified delivery address in `to.key` (`<channel_type>:<address_key>`); `job_id` when task-owned | outbound delivery payload (channel message/terminal update) |
+| `balda.v1.cmd.control` | `namespace=job.control` (forced) | `job.control` | `job_id` and/or `session_id` | cancel/control payload (`reason`, actor/user origin) |
 
 Deduplication policy for all command subjects: transport message ID uses
 `dedupe_key` when present, otherwise `id`.
@@ -891,11 +891,11 @@ Deduplication policy for all command subjects: transport message ID uses
 
 All events are published as the same envelope shape. For event envelopes,
 `namespace=telemetry` is standard, `kind` is typically `command_event` or
-`task_event`, and `meta.event_type` carries the semantic type.
+`job_event`, and `meta.event_type` carries the semantic type.
 
 | Subject | Semantic event type | Required envelope fields | Required payload fields | Producer |
 |---|---|---|---|---|
-| `balda.v1.evt.command.accepted` | `command.accepted` | `id`, `task_id` (when task-scoped), `namespace`, `kind=command_event` | `envelope_id`, `status=accepted`, `namespace` | command publish path |
+| `balda.v1.evt.command.accepted` | `command.accepted` | `id`, `job_id` (when task-scoped), `namespace`, `kind=command_event` | `envelope_id`, `status=accepted`, `namespace` | command publish path |
 | `balda.v1.evt.command.running` | `command.running` | same as above | `envelope_id`, `status=running` | command consumer before actor dispatch |
 | `balda.v1.evt.command.in_progress` | `command.in_progress` | same as above | `envelope_id`, `status=in_progress` | runtime heartbeat during long work |
 | `balda.v1.evt.command.acked` | `command.acked` | same as above | `envelope_id`, `status=acked` | command consumer after successful ack |
@@ -903,11 +903,11 @@ All events are published as the same envelope shape. For event envelopes,
 | `balda.v1.evt.command.deadlettered` | `command.deadlettered` | same as above | `envelope_id`, `status=deadlettered`, `reason` | command consumer/DLQ publisher |
 | `balda.v1.evt.command.noop` | `command.noop` | same as above | `envelope_id`, `status=noop`, `reason` | command publish dedupe path |
 | `balda.v1.evt.command.decode_failed` | `command.decode_failed` | `id`, `namespace`, `kind=decode_failed` | `subject`, `reason`, `payload` | command consumer poison-message path |
-| `balda.v1.evt.task.created` | `task.created` | `id`, `task_id`, `namespace`, `kind=task_event` | task lifecycle details | task lifecycle handling |
-| `balda.v1.evt.task.updated` | `task.updated` | `id`, `task_id`, `namespace`, `kind=task_event` | task lifecycle details | task lifecycle handling |
-| `balda.v1.evt.task.completed` | `task.completed` | `id`, `task_id`, `namespace`, `kind=task_event` | terminal task outcome details | task lifecycle handling |
-| `balda.v1.evt.delivery.sent` | `delivery.sent` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery metadata (`delivery_key`, channel/provider ids when available) | delivery handling |
-| `balda.v1.evt.delivery.failed` | `delivery.failed` | `id`, `task_id` (when task-scoped), `namespace`, `kind=task_event` | delivery failure details (`reason`, delivery metadata when available) | delivery handling |
+| `balda.v1.evt.job.created` | `job.created` | `id`, `job_id`, `namespace`, `kind=job_event` | job lifecycle details | job lifecycle handling |
+| `balda.v1.evt.job.updated` | `job.updated` | `id`, `job_id`, `namespace`, `kind=job_event` | job lifecycle details | job lifecycle handling |
+| `balda.v1.evt.job.completed` | `job.completed` | `id`, `job_id`, `namespace`, `kind=job_event` | terminal job outcome details | job lifecycle handling |
+| `balda.v1.evt.delivery.sent` | `delivery.sent` | `id`, `job_id` (when task-scoped), `namespace`, `kind=job_event` | delivery metadata (`delivery_key`, channel/provider ids when available) | delivery handling |
+| `balda.v1.evt.delivery.failed` | `delivery.failed` | `id`, `job_id` (when task-scoped), `namespace`, `kind=job_event` | delivery failure details (`reason`, delivery metadata when available) | delivery handling |
 
 #### Idempotency rules
 
@@ -916,17 +916,17 @@ All events are published as the same envelope shape. For event envelopes,
   - duplicate publishes emit `command.noop` and do not create duplicate command work.
 - Command consumption idempotency:
   - all handlers must tolerate redelivery (`at-least-once`).
-  - terminal/canceled task commands settle as ack/noop instead of repeating side effects.
+  - terminal/canceled job commands settle as ack/noop instead of repeating side effects.
 - Projection idempotency:
   - projector writes use stable event IDs and `INSERT OR IGNORE` semantics in SQLite.
-  - replaying the same event stream must not duplicate projected task events.
+  - replaying the same event stream must not duplicate projected job events.
 - Delivery idempotency:
-  - task-owned or otherwise durable delivery paths may reserve `delivery_key` in `swarm_delivery_outbox` before provider send.
+  - job-owned or otherwise durable delivery paths may reserve `delivery_key` in `swarm_delivery_outbox` before provider send.
   - duplicate delivery reservations become noop, preventing duplicate user-visible messages when that path uses the outbox.
   - Conversational session replies from Telegram, Slack, and Zulip may bypass the SQLite outbox and rely on actorlayer transport durability plus provider-side idempotent delivery handling.
-- Task lifecycle idempotency:
-  - task status transitions are guarded and terminal states are immutable.
-  - repeated terminal lifecycle commands/events keep task state unchanged.
+- Job lifecycle idempotency:
+  - job status transitions are guarded and terminal states are immutable.
+  - repeated terminal lifecycle commands/events keep job state unchanged.
 
 #### Retry and DLQ rules
 
@@ -939,7 +939,7 @@ All events are published as the same envelope shape. For event envelopes,
 - Retry exhaustion:
   - when delivery attempts reach `max_deliver`, command is moved to `BALDA_DLQ` with reason `retry exhausted: <error>`.
 - DLQ payload contract:
-  - keeps original envelope identity/routing/payload (`id`, namespace, from/to, task/session scope).
+  - keeps original envelope identity/routing/payload (`id`, namespace, from/to, job/session scope).
   - includes failure reason and transport origin metadata (subject/headers for poison decode cases).
 - Operational inspection:
   - inspect DLQ stream contents, transport metadata, and structured logs when command failures need replay or triage.
@@ -949,17 +949,17 @@ All events are published as the same envelope shape. For event envelopes,
 | Failure mode | Where detected | Settlement/result | User-visible impact | Operator action |
 |---|---|---|---|---|
 | Transport unavailable at startup | app startup/runtime bootstrap | startup fails fast | ingress not started; no work accepted | restore NATS transport and restart |
-| Command publish rejected (queue pressure/transport) | ingress publish path | request rejected (`queue_full`/`dispatch_failed`) | command not accepted; no task created | inspect stream limits/backpressure, retry ingress |
+| Command publish rejected (queue pressure/transport) | ingress publish path | request rejected (`queue_full`/`dispatch_failed`) | command not accepted; no job created | inspect stream limits/backpressure, retry ingress |
 | Envelope decode failure (command consumer) | command consumer decode | `TermWithReason`, publish poison record to `BALDA_DLQ`, emit `command.decode_failed` | affected message skipped; no handler side effects | inspect DLQ payload, fix producer/schema, replay if needed |
 | Retryable actor/runtime error | command handler/runtime | `NakWithDelay`, emit `command.retrying` | delayed completion | inspect retries, root-cause transient dependency failures |
-| Retry exhaustion (`max_deliver` reached) | command consumer | publish `BALDA_DLQ`, `TermWithReason`, emit `command.deadlettered` | task may end `deadlettered`; no further retries | inspect DLQ entries and logs, replay/fix or cancel |
-| Permanent actor/runtime error | handler/runtime classification | publish `BALDA_DLQ`, `TermWithReason` | task fails/deadletters without retry loop | inspect reason, patch code/config, replay if safe |
+| Retry exhaustion (`max_deliver` reached) | command consumer | publish `BALDA_DLQ`, `TermWithReason`, emit `command.deadlettered` | job may end `deadlettered`; no further retries | inspect DLQ entries and logs, replay/fix or cancel |
+| Permanent actor/runtime error | handler/runtime classification | publish `BALDA_DLQ`, `TermWithReason` | job fails/deadletters without retry loop | inspect reason, patch code/config, replay if safe |
 | Projection apply/decode failure | event projector consumer | retry for transient; terminal to DLQ for permanent | command flow continues; read models may lag until replay or repair | inspect projector logs and replay state, fix the bug, replay events |
 | Delivery redelivery after partial send | delivery outbox reserve | duplicate suppressed by delivery key (noop path) | final user message not duplicated | inspect outbox row/status if delivery appears missing |
-| Cancellation races with queued/running work | control command handling | control command applied; canceled/terminal commands settle noop/ack | task/session stops promptly, later duplicates ignored | verify task state/events; no queue surgery needed |
+| Cancellation races with queued/running work | control command handling | control command applied; canceled/terminal commands settle noop/ack | job/session stops promptly, later duplicates ignored | verify job state/events; no queue surgery needed |
 
 - NATS identity is carried in headers: `Balda-Envelope-ID`,
-  `Balda-Session-ID`, `Balda-Task-ID`, `Balda-Correlation-ID`,
+  `Balda-Session-ID`, `Balda-Job-ID`, `Balda-Correlation-ID`,
   `Balda-Causation-ID`, `Balda-Dedupe-Key`, `Balda-Actor-Key`,
   `Balda-Priority`, and `Balda-Namespace`.
 - Embedded NATS binds to `127.0.0.1` by default and is not exposed externally.
@@ -968,9 +968,9 @@ All events are published as the same envelope shape. For event envelopes,
 - Poison command/event messages that cannot decode as Balda envelopes are
   terminated and copied to `BALDA_DLQ` with the raw subject, headers, payload,
   and decode reason.
-- Task-mutating envelopes are serialized on a single task lane
-  (`task:<task_id>`) across task control, goal command/result, and task-bound
-  human/webhook/schedule ingress. Different task IDs still run concurrently.
+- Job-mutating envelopes are serialized on a single job lane
+  (`job:<job_id>`) across job control, goal command/result, and job-bound
+  human/webhook/schedule ingress. Different job IDs still run concurrently.
 - Command consumer backpressure boundary:
   - Command worker consumer (`BALDA_WORKER_COMMANDS`) is the transport queue.
   - Local in-process worker fan-out is capped to `fetch_batch` (not `max_ack_pending`) to avoid creating a second deep in-memory queue ahead of actor lanes.
@@ -994,28 +994,28 @@ All events are published as the same envelope shape. For event envelopes,
   - behavior: no persistence, no retry policy; settlement remains transport-owned
 - Actor lanes:
   - owner: process-local actorlayer runtime engine
-  - capacity: 1 active handler per actor key (`task:<id>`, session/goal fallbacks)
-  - behavior: serializes mutable task/session state transitions
+  - capacity: 1 active handler per actor key (`job:<id>`, session/goal fallbacks)
+  - behavior: serializes mutable job/session state transitions
 - Session turn queue:
   - owner: process-local session turn dispatcher
   - capacity: bounded by turn-dispatcher queue size
   - behavior: per-session ordering/cancel semantics for provider turn execution
 
-### Scheduled task runtime semantics (internal)
+### Scheduled job runtime semantics (internal)
 
 Balda includes an internal scheduler backed by `balda_scheduled_tasks`.
-Tasks are managed from config on startup using `balda.scheduler.tasks`.
-Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
+Scheduled jobs are managed from config on startup using `balda.scheduler.tasks`.
+Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 `content`, and optional `report_to`.
 
 - Eligibility: only `status=active` tasks with `next_run_at <= now` are polled.
-- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable task command. Session restore and execution happen after command delivery.
+- Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable job command. Session restore and execution happen after command delivery.
 - Locator target form: `target=locator`, `key=<channel_type>:<address_key>`; `/locator` prints a paste-ready value for the current session.
-- Delivery: scheduled tasks are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
-- Idempotency key: each due slot uses deterministic `last_dispatch_key = <task_id>@<due_next_run_at_rfc3339nano>`.
-- Startup reconciliation: configured task IDs are upserted, and persisted tasks not present in config are deleted from the scheduler state.
+- Delivery: scheduled jobs are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
+- Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
+- Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are deleted from the scheduler state.
 - Publish-before-mark: scheduler publishes the command first, then writes `last_dispatch_key` and advances `next_run_at`, so a failed publish does not mark work dispatched.
-- Success after actor execution: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and the task remains `active`.
+- Success after actor execution: `last_run_at` is updated, `last_error` is cleared, `retry_count` is reset to `0`, and the job remains `active`.
 - Pre-publish failure: target resolution, invalid schedule, or transport publish failure increments `retry_count`, records `last_error`, and may pause the task after `max_retries`.
 - Execution failure after transport delivery: `last_run_at` and `last_error` are recorded for visibility, but scheduler retry fields and `next_run_at` are not changed. Transport owns command retry, redelivery, and DLQ after publish.
 - Pre-publish retry delay policy: linear backoff in seconds (`1s`, `2s`, `3s`, ...) capped at `60s`.
@@ -1034,7 +1034,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - destination comes from route `envelope.target` + `envelope.key` (default `alias:owner`)
   - `target=locator` accepts `<channel_type>:<address_key>` in `key`; `/locator` prints the current session value
   - route `envelope.mode` decides publish target:
-    - `task` (default): publish webhook task command; task execution later emits the session command
+    - `task` (default): publish webhook job command; job execution later emits the session command
     - `session`: publish session command directly
 - Prompt generation:
   - request body is treated as opaque raw text
@@ -1043,7 +1043,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 - Session resolution:
   - ingress resolves route target locator and user id from owner store aliases
   - ingress publishes a durable command after prompt rendering
-  - task mode: the task command later emits the session command for execution
+  - job mode: the job command later emits the session command for execution
   - session mode: ingress command is already a session command
   - the runtime lazily restores the persisted session when inactive in memory and creates the owner session when no persisted session exists
   - webhook acceptance therefore depends on transport publish, not on synchronous session restore
@@ -1093,7 +1093,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
   - the agent/runtime can retry sync later with `balda.workspace.import`; the chat-facing warning does not expose MCP tool names directly
 - Source of truth:
   - persisted metadata (`workspace_dir`, `branch_name`) is stored in `state.db` session records
-  - task and goal work resolve workspace metadata from session info when commands are dispatched and handled
+  - job and goal work resolve workspace metadata from session info when commands are dispatched and handled
 
 ## Troubleshooting
 

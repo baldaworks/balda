@@ -167,28 +167,28 @@ type SwarmDLQConfig struct {
 	Stream string `mapstructure:"stream"`
 }
 
-// SchedulerConfig controls startup-managed recurring tasks.
+// SchedulerConfig controls startup-managed recurring jobs.
 type SchedulerConfig struct {
-	Tasks []ScheduledTaskConfig `mapstructure:"tasks"`
+	Jobs []ScheduledJobConfig `mapstructure:"jobs"`
 }
 
-// ScheduledTaskConfig defines a config-managed recurring task.
-type ScheduledTaskConfig struct {
-	ID       string                      `mapstructure:"id"`
-	Cron     string                      `mapstructure:"cron"`
-	Envelope ScheduledTaskEnvelopeConfig `mapstructure:"envelope"`
+// ScheduledJobConfig defines a config-managed recurring job.
+type ScheduledJobConfig struct {
+	ID       string                     `mapstructure:"id"`
+	Cron     string                     `mapstructure:"cron"`
+	Envelope ScheduledJobEnvelopeConfig `mapstructure:"envelope"`
 }
 
-// ScheduledTaskEnvelopeConfig defines the task envelope produced by a schedule.
-type ScheduledTaskEnvelopeConfig struct {
-	Target   string                             `mapstructure:"target"`
-	Key      string                             `mapstructure:"key"`
-	Content  string                             `mapstructure:"content"`
-	ReportTo *ScheduledTaskEnvelopeTargetConfig `mapstructure:"report_to"`
+// ScheduledJobEnvelopeConfig defines the job envelope produced by a schedule.
+type ScheduledJobEnvelopeConfig struct {
+	Target   string                            `mapstructure:"target"`
+	Key      string                            `mapstructure:"key"`
+	Content  string                            `mapstructure:"content"`
+	ReportTo *ScheduledJobEnvelopeTargetConfig `mapstructure:"report_to"`
 }
 
-// ScheduledTaskEnvelopeTargetConfig defines a scheduler envelope address.
-type ScheduledTaskEnvelopeTargetConfig struct {
+// ScheduledJobEnvelopeTargetConfig defines a scheduler envelope address.
+type ScheduledJobEnvelopeTargetConfig struct {
 	Target string `mapstructure:"target"`
 	Key    string `mapstructure:"key"`
 }

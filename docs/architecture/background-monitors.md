@@ -87,11 +87,11 @@ A monitor start command should carry:
 
 - No implementation in this ADR.
 - No commitment yet to exact persistence schema.
-- No commitment yet to whether monitors reuse existing task projections or get a dedicated projection model.
+- No commitment yet to whether monitors reuse existing job projections or get a dedicated projection model.
 
 ## Open questions
 
-- Should monitors be modeled as a dedicated actor family or as a typed job on top of existing task orchestration?
+- Should monitors be modeled as a dedicated actor family or as a typed job on top of existing job orchestration?
 - What operator-facing commands should expose list/status/cancel?
 - Which monitor types are worth supporting first beyond GitHub checks?
 - Should monitor updates edit prior transport messages or always emit new ones?

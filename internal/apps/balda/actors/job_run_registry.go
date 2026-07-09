@@ -7,17 +7,17 @@ import (
 	"sync"
 )
 
-type TaskRunRegistry struct {
+type JobRunRegistry struct {
 	mu      sync.Mutex
 	nextID  uint64
 	cancels map[string]map[string]context.CancelFunc
 }
 
-func NewTaskRunRegistry() *TaskRunRegistry {
-	return &TaskRunRegistry{cancels: make(map[string]map[string]context.CancelFunc)}
+func NewJobRunRegistry() *JobRunRegistry {
+	return &JobRunRegistry{cancels: make(map[string]map[string]context.CancelFunc)}
 }
 
-func (r *TaskRunRegistry) Register(taskID string, cancel context.CancelFunc) string {
+func (r *JobRunRegistry) Register(taskID string, cancel context.CancelFunc) string {
 	if r == nil || cancel == nil {
 		return ""
 	}
@@ -38,28 +38,28 @@ func (r *TaskRunRegistry) Register(taskID string, cancel context.CancelFunc) str
 	return runID
 }
 
-func (r *TaskRunRegistry) Unregister(taskID string, runID string) {
+func (r *JobRunRegistry) Unregister(taskID string, runID string) {
 	if r == nil {
 		return
 	}
-	trimmedTaskID := strings.TrimSpace(taskID)
+	trimmedJobID := strings.TrimSpace(taskID)
 	trimmedRunID := strings.TrimSpace(runID)
-	if trimmedTaskID == "" || trimmedRunID == "" {
+	if trimmedJobID == "" || trimmedRunID == "" {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	runs := r.cancels[trimmedTaskID]
+	runs := r.cancels[trimmedJobID]
 	if runs == nil {
 		return
 	}
 	delete(runs, trimmedRunID)
 	if len(runs) == 0 {
-		delete(r.cancels, trimmedTaskID)
+		delete(r.cancels, trimmedJobID)
 	}
 }
 
-func (r *TaskRunRegistry) Cancel(taskID string) bool {
+func (r *JobRunRegistry) Cancel(taskID string) bool {
 	if r == nil {
 		return false
 	}

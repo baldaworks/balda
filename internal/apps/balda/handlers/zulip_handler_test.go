@@ -773,8 +773,8 @@ func TestZulipBaldaHandlerCancelRejectsArgsWithoutPublishingControl(t *testing.T
 		t.Fatalf("payloads = %+v, want cancel usage reply", payloads)
 	}
 	for _, env := range dispatcher.commands {
-		if env.Namespace == baldaruntime.NamespaceTaskControl {
-			t.Fatalf("published task control command for invalid /cancel: %+v", env)
+		if env.Namespace == baldaruntime.NamespaceJobControl {
+			t.Fatalf("published job control command for invalid /cancel: %+v", env)
 		}
 	}
 }
@@ -1196,6 +1196,10 @@ func (f *fakeZulipSessionManager) BaldaProviderID() string {
 func (f *fakeZulipSessionManager) ResetSession(_ context.Context, locator session.SessionLocator) error {
 	f.resetCalls = append(f.resetCalls, locator.SessionID)
 	return nil
+}
+
+func (*fakeZulipSessionManager) RuntimeStateValue(context.Context, session.SessionLocator, string) (any, bool, error) {
+	return nil, false, nil
 }
 
 func (f *fakeZulipSessionManager) TakeStartupNotice(sessionID string) string {

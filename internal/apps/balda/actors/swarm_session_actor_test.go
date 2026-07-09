@@ -162,7 +162,7 @@ func TestSessionActorSettleSessionTurnResultKeepsNonTaskErrorsRetryable(t *testi
 	}
 }
 
-func TestSessionActorSettleSessionTurnResultKeepsHumanTurnErrorsRetryableEvenWithTaskID(t *testing.T) {
+func TestSessionActorSettleSessionTurnResultKeepsHumanTurnErrorsRetryableEvenWithJobID(t *testing.T) {
 	t.Parallel()
 
 	exec := &sessionActorExecutor{}
@@ -181,7 +181,7 @@ func TestSessionActorSettleSessionTurnResultRecordsScheduledTaskOutcome(t *testi
 
 	recorder := &fakeScheduledTaskRecorder{}
 	exec := &sessionActorExecutor{scheduler: recorder}
-	payload := SessionTurnPayload{ScheduledTaskID: "scheduled-1"}
+	payload := SessionTurnPayload{ScheduledJobID: "scheduled-1"}
 	env := testSessionTurnEnvelope(t, nil)
 	env.TaskID = "runtime-task-1"
 

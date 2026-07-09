@@ -24,6 +24,7 @@ type commandSessionManager interface {
 	CreateSession(ctx context.Context, sessionCtx session.SessionContext, agentName string) error
 	GetAgentMetadata(agentName string) session.AgentMetadata
 	GetSessionInfo(ctx context.Context, sessionID string) (session.TopicSessionInfo, error)
+	RuntimeStateValue(ctx context.Context, locator session.SessionLocator, key string) (any, bool, error)
 	BaldaProviderID() string
 	ResetSession(ctx context.Context, locator session.SessionLocator) error
 	TakeStartupNotice(sessionID string) string
@@ -44,6 +45,7 @@ const (
 	commandCancel   = "cancel"
 	commandGoal     = "goal"
 	commandUser     = "user"
+	commandUsage    = "usage"
 	commandReset    = "reset"
 	commandRestart  = "restart"
 	commandClose    = "close"
@@ -107,12 +109,40 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		return h.onCancelCommand(ctx, commandCtx)
 	case commandGoal:
 		return h.onGoalCommand(ctx, commandCtx)
+	case commandUsage:
+		return h.onUsageCommand(ctx, commandCtx)
 	case commandUser:
 		// Route to UserHandler
 		return h.userHandler.HandleUserCommand(ctx, commandCtx)
 	default:
 		return nil
 	}
+}
+
+func (h *CommandHandler) onUsageCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
+		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
+			return err
+		}
+		return nil
+	}
+	if strings.TrimSpace(commandCtx.Args) != "" {
+		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage: /usage"); err != nil {
+			return err
+		}
+		return nil
+	}
+	snapshot, ok, err := loadUsageSnapshot(ctx, h.sessionManager, commandCtx.Locator)
+	if err != nil {
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to load usage snapshot")
+	}
+	if err != nil || !ok {
+		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "No provider usage has been recorded for this session yet."); sendErr != nil {
+			return sendErr
+		}
+		return nil
+	}
+	return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, renderUsageSnapshot(snapshot))
 }
 
 func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {

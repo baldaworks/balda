@@ -115,12 +115,12 @@ func (p *EventProjector) Project(ctx context.Context, subject string, env actorl
 			eventType = "command.noop"
 		case baldaruntime.SubjectEventCommandDecodeFailed:
 			eventType = "command.decode_failed"
-		case baldaruntime.SubjectEventTaskCreated:
-			eventType = TaskEventTaskCreated
-		case baldaruntime.SubjectEventTaskUpdated:
-			eventType = TaskEventTaskAssigned
-		case baldaruntime.SubjectEventTaskCompleted:
-			eventType = TaskEventTaskCompleted
+		case baldaruntime.SubjectEventJobCreated:
+			eventType = JobEventCreated
+		case baldaruntime.SubjectEventJobUpdated:
+			eventType = JobEventAssigned
+		case baldaruntime.SubjectEventJobCompleted:
+			eventType = JobEventCompleted
 		case baldaruntime.SubjectEventDeliverySent:
 			eventType = TaskEventDeliverySent
 		case baldaruntime.SubjectEventDeliveryFailed:

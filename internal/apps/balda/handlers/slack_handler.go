@@ -437,7 +437,7 @@ func slackCommandIsDM(cmd slackSlashCommand) bool {
 func (h *SlackHandler) handleCommandText(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, text string, isDM bool) {
 	fields := strings.Fields(text)
 	if len(fields) == 0 {
-		_ = h.sendPlain(ctx, locator, "Usage: /balda <start|topic|goal|cancel|locator|close|user>")
+		_ = h.sendPlain(ctx, locator, "Usage: /balda <start|topic|goal|cancel|locator|usage|close|user>")
 		return
 	}
 	cmd := strings.ToLower(strings.TrimPrefix(fields[0], "/"))
@@ -463,6 +463,8 @@ func (h *SlackHandler) handleCommandText(ctx context.Context, locator baldasessi
 		h.handleTopicCommand(ctx, locator, subject, args, isDM)
 	case commandGoal:
 		h.handleGoalCommand(ctx, locator, subject, args)
+	case commandUsage:
+		h.handleUsageCommand(ctx, locator, args)
 	case commandClose:
 		h.handleCloseCommand(ctx, locator, subject, args, isDM)
 	case commandUser:
@@ -715,6 +717,22 @@ func (h *SlackHandler) handleGoalCommand(ctx context.Context, locator baldasessi
 	if _, err := h.actorDispatcher.Dispatch(ctx, env); err != nil {
 		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 	}
+}
+
+func (h *SlackHandler) handleUsageCommand(ctx context.Context, locator baldasession.SessionLocator, args string) {
+	if strings.TrimSpace(args) != "" {
+		_ = h.sendPlain(ctx, locator, "Usage: /balda usage")
+		return
+	}
+	snapshot, ok, err := loadUsageSnapshot(ctx, h.sessionManager, locator)
+	if err != nil {
+		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to load usage snapshot")
+	}
+	if err != nil || !ok {
+		_ = h.sendPlain(ctx, locator, "No provider usage has been recorded for this session yet.")
+		return
+	}
+	_ = h.sendPlain(ctx, locator, renderUsageSnapshot(snapshot))
 }
 
 func (h *SlackHandler) handleCloseCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {

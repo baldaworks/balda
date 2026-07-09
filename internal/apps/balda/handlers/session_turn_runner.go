@@ -130,7 +130,7 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 		ts.GetRunner(),
 		userID,
 		ts.GetSessionID(),
-		payload.TaskID,
+		payload.JobID,
 		agentSessionID,
 		deliveryLocator,
 		payload.MessageID,

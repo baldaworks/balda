@@ -16,7 +16,7 @@ func TestSubjectForEnvelope_UsesStableCommandSubjects(t *testing.T) {
 		want string
 	}{
 		{name: "session", env: subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeSession, Key: "tg-1.2"}), want: SubjectCommandSession},
-		{name: "task", env: subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeTask, Key: subjectTestTaskID}), want: SubjectCommandTask},
+		{name: "task", env: subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeJob, Key: subjectTestTaskID}), want: SubjectCommandJob},
 		{name: "goal", env: subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeGoal, Key: "goal-1"}), want: SubjectCommandGoal},
 		{name: "delivery", env: subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeDelivery, Key: "tg-1"}), want: SubjectCommandDelivery},
 		{name: "control", env: controlTestEnvelope(), want: SubjectCommandControl},
@@ -35,7 +35,7 @@ func TestCommandSubjects_UseCommandNamespacePrefix(t *testing.T) {
 
 	commandSubjects := []string{
 		SubjectCommandSession,
-		SubjectCommandTask,
+		SubjectCommandJob,
 		SubjectCommandGoal,
 		SubjectCommandDelivery,
 		SubjectCommandControl,
@@ -49,7 +49,7 @@ func TestCommandSubjects_UseCommandNamespacePrefix(t *testing.T) {
 }
 
 func TestEnvelopeHeaders_UseEnvelopeIdentityHeaders(t *testing.T) {
-	env := subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeTask, Key: subjectTestTaskID})
+	env := subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeJob, Key: subjectTestTaskID})
 	env.TaskID = subjectTestTaskID
 	env.CorrelationID = "corr-1"
 	env.Priority = 80
@@ -81,7 +81,7 @@ func subjectTestEnvelope(to actorlayer.ActorAddress) actorlayer.Envelope {
 }
 
 func controlTestEnvelope() actorlayer.Envelope {
-	env := subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeTask, Key: subjectTestTaskID})
-	env.Namespace = NamespaceTaskControl
+	env := subjectTestEnvelope(actorlayer.ActorAddress{Target: ActorTypeJob, Key: subjectTestTaskID})
+	env.Namespace = NamespaceJobControl
 	return env
 }

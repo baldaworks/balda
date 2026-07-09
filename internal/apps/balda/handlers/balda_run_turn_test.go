@@ -379,7 +379,7 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *tes
 	}
 
 	if len(bus.eventEnvs) != 0 {
-		t.Fatalf("task events = %d, want 0", len(bus.eventEnvs))
+		t.Fatalf("job events = %d, want 0", len(bus.eventEnvs))
 	}
 	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeChatAction); got != 0 {
 		t.Fatalf("chat action delivery commands = %d, want 0", got)
@@ -400,14 +400,14 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *tes
 			continue
 		}
 		if strings.TrimSpace(env.TaskID) != "" {
-			t.Fatalf("delivery env task_id = %q, want empty for direct telegram path", env.TaskID)
+			t.Fatalf("delivery env job_id = %q, want empty for direct telegram path", env.TaskID)
 		}
 		var payload actors.DeliveryPayload
 		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
 			t.Fatalf("decode delivery payload: %v", err)
 		}
-		if strings.TrimSpace(payload.TaskID) != "" {
-			t.Fatalf("delivery payload task_id = %q, want empty for direct telegram path", payload.TaskID)
+		if strings.TrimSpace(payload.JobID) != "" {
+			t.Fatalf("delivery payload job_id = %q, want empty for direct telegram path", payload.JobID)
 		}
 	}
 	if len(tgClient.drafts) != 1 || len(tgClient.messages) != 1 || len(tgClient.chatActions) != 1 {
@@ -597,7 +597,7 @@ func TestRunTurn_TaskBackedProgressUsesDeliveryActor(t *testing.T) {
 	}
 	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.TaskEventAgentProgress, baldajobs.TaskEventAgentResult)
 	if len(agentEvents) != 2 {
-		t.Fatalf("agent task events = %d, want 2", len(agentEvents))
+		t.Fatalf("agent job events = %d, want 2", len(agentEvents))
 	}
 	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.TaskEventAgentProgress {
 		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.TaskEventAgentProgress)
@@ -658,7 +658,7 @@ func TestRunTurn_TaskBackedVisibleOutputOnlySendsFinalReply(t *testing.T) {
 	}
 	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.TaskEventAgentProgress, baldajobs.TaskEventAgentResult)
 	if len(agentEvents) != 1 {
-		t.Fatalf("agent task events = %d, want 1", len(agentEvents))
+		t.Fatalf("agent job events = %d, want 1", len(agentEvents))
 	}
 	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.TaskEventAgentResult {
 		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.TaskEventAgentResult)
@@ -1798,7 +1798,7 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateDraftInDM(t *testing.T) {
 		plan.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
 			"acp_plan": newBaldaPlanSnapshot(
-				map[string]any{"content": "Check task_id handling", "status": "completed"},
+				map[string]any{"content": "Check job_id handling", "status": "completed"},
 				map[string]any{"content": "Fix Telegram retry path", "status": "in_progress"},
 				map[string]any{"content": "Run actor tests", "status": "pending"},
 			),
@@ -1819,7 +1819,7 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateDraftInDM(t *testing.T) {
 	if len(tgClient.richDrafts) != 1 {
 		t.Fatalf("rich draft calls = %d, want 1", len(tgClient.richDrafts))
 	}
-	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[0]); got != "# Plan update\n\n- [x] Check task_id handling\n- [ ] _In progress:_ Fix Telegram retry path\n- [ ] Run actor tests" {
+	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[0]); got != "# Plan update\n\n- [x] Check job_id handling\n- [ ] _In progress:_ Fix Telegram retry path\n- [ ] Run actor tests" {
 		t.Fatalf("rich draft markdown = %q, want checklist payload", got)
 	}
 }
@@ -1844,7 +1844,7 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateMessageInPublicChat(t *testing.T) {
 		plan.CustomMetadata = map[string]any{
 			"acp_update_kind": "plan",
 			"acp_plan": newBaldaPlanSnapshot(
-				map[string]any{"content": "Check task_id handling", "status": "completed"},
+				map[string]any{"content": "Check job_id handling", "status": "completed"},
 				map[string]any{"content": "Run actor tests", "status": "pending"},
 			),
 		}
@@ -1864,7 +1864,7 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateMessageInPublicChat(t *testing.T) {
 	if len(tgClient.richMessages) < 1 {
 		t.Fatalf("rich message calls = %d, want at least 1", len(tgClient.richMessages))
 	}
-	if got := baldaRunTurnRichMessageMarkdown(t, tgClient.richMessages[0]); got != "# Plan update\n\n- [x] Check task_id handling\n- [ ] Run actor tests" {
+	if got := baldaRunTurnRichMessageMarkdown(t, tgClient.richMessages[0]); got != "# Plan update\n\n- [x] Check job_id handling\n- [ ] Run actor tests" {
 		t.Fatalf("rich message markdown = %q, want checklist payload", got)
 	}
 }
@@ -1983,7 +1983,7 @@ func taskEventPayload(t *testing.T, env actorlayer.Envelope) map[string]any {
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		t.Fatalf("decode task event payload: %v", err)
+		t.Fatalf("decode job event payload: %v", err)
 	}
 	return payload
 }

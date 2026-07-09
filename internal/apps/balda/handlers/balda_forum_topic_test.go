@@ -145,8 +145,8 @@ func TestBaldaHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T)
 	if len(turnDispatcher.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turnDispatcher.commands))
 	}
-	if turnDispatcher.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turnDispatcher.commands[0].Kind != baldaruntime.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turnDispatcher.commands[0])
+	if turnDispatcher.commands[0].Namespace != baldaruntime.NamespaceJobControl || turnDispatcher.commands[0].Kind != baldaruntime.KindCancel {
+		t.Fatalf("published command = %+v, want job control cancel", turnDispatcher.commands[0])
 	}
 	if _, err := sessionManager.GetSession(locator); err == nil {
 		t.Fatal("GetSession() error = nil, want stopped session")

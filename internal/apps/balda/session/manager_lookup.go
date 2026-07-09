@@ -101,6 +101,14 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 	return m.GetSession(recordLocator)
 }
 
+func (m *Manager) RuntimeStateValue(ctx context.Context, locator SessionLocator, key string) (any, bool, error) {
+	ts, err := m.GetSession(locator)
+	if err != nil || ts == nil {
+		return nil, false, err
+	}
+	return ts.RuntimeStateValue(ctx, key)
+}
+
 type TopicSessionInfo struct {
 	SessionID    string
 	UserID       string

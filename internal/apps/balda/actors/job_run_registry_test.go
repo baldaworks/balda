@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-func TestTaskRunRegistryCancelCancelsAllRunsForTask(t *testing.T) {
+func TestJobRunRegistryCancelCancelsAllRunsForTask(t *testing.T) {
 	t.Parallel()
 
-	registry := NewTaskRunRegistry()
+	registry := NewJobRunRegistry()
 
 	ctxOne, cancelOne := context.WithCancel(context.Background())
 	defer cancelOne()
@@ -33,10 +33,10 @@ func TestTaskRunRegistryCancelCancelsAllRunsForTask(t *testing.T) {
 	}
 }
 
-func TestTaskRunRegistryUnregisterRemovesSingleRunOnly(t *testing.T) {
+func TestJobRunRegistryUnregisterRemovesSingleRunOnly(t *testing.T) {
 	t.Parallel()
 
-	registry := NewTaskRunRegistry()
+	registry := NewJobRunRegistry()
 
 	ctxOne, cancelOne := context.WithCancel(context.Background())
 	defer cancelOne()

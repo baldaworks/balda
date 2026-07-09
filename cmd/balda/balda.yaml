@@ -97,7 +97,7 @@ balda:
     # - prompt_template: Go text/template rendered with request data
     # - envelope: explicit destination and mode
     #   - target/key: destination address (default alias/owner)
-    #   - mode: task|session (default task)
+    #   - mode: job|session (default job)
     #   - report_to: optional destination for progress/final replies
     # - auth: route auth policy
     #   - type: none|header

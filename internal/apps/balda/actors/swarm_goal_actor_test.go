@@ -39,7 +39,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      3,
 		PlanUpdatesEnabled: false,
 		Logger:             zerolog.Nop(),
@@ -63,7 +63,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusCompleted)
 	}
 	if !strings.Contains(task.ResultJSON, `"goal_reached":true`) {
-		t.Fatalf("task result = %s, want goal_reached true", task.ResultJSON)
+		t.Fatalf("job result = %s, want goal_reached true", task.ResultJSON)
 	}
 	if runtimeBuilder.exportedMessage == "" {
 		t.Fatal("exportedMessage = empty, want generated commit message")
@@ -71,7 +71,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 	if runtimeBuilder.cleanupCalls != 1 {
 		t.Fatalf("cleanupCalls = %d, want 1", runtimeBuilder.cleanupCalls)
 	}
-	if got := lastPublishedCommandTo(t, bus, baldaruntime.ActorTypeDelivery, locator.DeliveryActorKey()); got.Kind != taskPayloadKindDelivery {
+	if got := lastPublishedCommandTo(t, bus, baldaruntime.ActorTypeDelivery, locator.DeliveryActorKey()); got.Kind != jobPayloadKindDelivery {
 		t.Fatalf("last delivery = %+v, want delivery command", got)
 	}
 	payloads := deliveryPayloadsForTask(t, bus, env.TaskID)
@@ -113,7 +113,7 @@ func TestGoalKeeperActorCompletesPassingRunWithoutWorkspaceExport(t *testing.T) 
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      3,
 		PlanUpdatesEnabled: false,
 		Logger:             zerolog.Nop(),
@@ -137,7 +137,7 @@ func TestGoalKeeperActorCompletesPassingRunWithoutWorkspaceExport(t *testing.T) 
 	}
 	for _, want := range []string{`"status":"not_exported"`, `"reason":"workspace_disabled"`} {
 		if !strings.Contains(task.ResultJSON, want) {
-			t.Fatalf("task result = %s, want %s", task.ResultJSON, want)
+			t.Fatalf("job result = %s, want %s", task.ResultJSON, want)
 		}
 	}
 	if runtimeBuilder.exportedMessage != "" {
@@ -169,7 +169,7 @@ func TestGoalKeeperActorUsesLatestValidatorVerdictForCompletion(t *testing.T) {
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      3,
 		PlanUpdatesEnabled: false,
 		Logger:             zerolog.Nop(),
@@ -207,7 +207,7 @@ func TestGoalKeeperActorUsesLatestValidatorVerdictForCompletion(t *testing.T) {
 		} `json:"reviewable_outcome"`
 	}
 	if err := json.Unmarshal([]byte(task.ResultJSON), &result); err != nil {
-		t.Fatalf("decode task result: %v\n%s", err, task.ResultJSON)
+		t.Fatalf("decode job result: %v\n%s", err, task.ResultJSON)
 	}
 	if !result.GoalReached {
 		t.Fatalf("goal_reached = false, want true\n%s", task.ResultJSON)
@@ -254,7 +254,7 @@ func TestGoalKeeperActorFinalFailureUsesLatestValidatorOutput(t *testing.T) {
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      2,
 		PlanUpdatesEnabled: false,
 		Logger:             zerolog.Nop(),
@@ -285,7 +285,7 @@ func TestGoalKeeperActorFinalFailureUsesLatestValidatorOutput(t *testing.T) {
 		} `json:"reviewable_outcome"`
 	}
 	if err := json.Unmarshal([]byte(task.ResultJSON), &result); err != nil {
-		t.Fatalf("decode task result: %v\n%s", err, task.ResultJSON)
+		t.Fatalf("decode job result: %v\n%s", err, task.ResultJSON)
 	}
 	if result.GoalReached {
 		t.Fatalf("goal_reached = true, want false\n%s", task.ResultJSON)
@@ -336,7 +336,7 @@ func TestGoalKeeperActorRejectsSecondActiveGoalInSession(t *testing.T) {
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      3,
 		PlanUpdatesEnabled: false,
 		Logger:             zerolog.Nop(),
@@ -396,7 +396,7 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      3,
 		PlanUpdatesEnabled: false,
 		Logger:             zerolog.Nop(),
@@ -471,7 +471,7 @@ func TestGoalKeeperActorDeliversPlanUpdatesWhenEnabled(t *testing.T) {
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      3,
 		PlanUpdatesEnabled: true,
 		Logger:             zerolog.Nop(),
@@ -526,7 +526,7 @@ type fakeGoalRunPreparer struct {
 func (b *fakeGoalRunPreparer) PrepareGoalRun(ctx context.Context, cfg goalkeeper.GoalRunConfig) (goalkeeper.GoalRun, error) {
 	b.t.Helper()
 	b.buildCalls++
-	if cfg.UserID == "" || cfg.SourceSessionID == "" || cfg.TaskID == "" {
+	if cfg.UserID == "" || cfg.SourceSessionID == "" || cfg.JobID == "" {
 		b.t.Fatalf("PrepareGoalRun() cfg = %+v, want user/source session/task", cfg)
 	}
 	workspaceDir := b.t.TempDir()
@@ -534,7 +534,7 @@ func (b *fakeGoalRunPreparer) PrepareGoalRun(ctx context.Context, cfg goalkeeper
 	if _, err := svc.Create(ctx, &adksession.CreateRequest{
 		AppName:   "goal-test",
 		UserID:    cfg.UserID,
-		SessionID: cfg.TaskID,
+		SessionID: cfg.JobID,
 	}); err != nil {
 		return nil, err
 	}
@@ -572,9 +572,9 @@ func (b *fakeGoalRunPreparer) PrepareGoalRun(ctx context.Context, cfg goalkeeper
 	}
 	return fakeGoalRun{
 		runner:       r,
-		sessionID:    cfg.TaskID,
+		sessionID:    cfg.JobID,
 		workspaceDir: workspaceDir,
-		branchName:   "norma/balda/goal/" + cfg.TaskID,
+		branchName:   "norma/balda/goal/" + cfg.JobID,
 		finalizeFn: func(_ context.Context, _ string, workerOutput string, validatorOutput string) (goalkeeper.GoalFinalizationResult, error) {
 			b.finalizeWorkerOutput = workerOutput
 			b.finalizeValidatorOutput = validatorOutput
@@ -631,7 +631,7 @@ func TestGoalKeeperActorPreservesWorkspaceOnExportFailure(t *testing.T) {
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
-		TaskRuns:           NewTaskRunRegistry(),
+		JobRuns:            NewJobRunRegistry(),
 		MaxIterations:      3,
 		PlanUpdatesEnabled: false,
 		Logger:             zerolog.Nop(),
@@ -654,7 +654,7 @@ func TestGoalKeeperActorPreservesWorkspaceOnExportFailure(t *testing.T) {
 		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusFailed)
 	}
 	if !strings.Contains(task.ResultJSON, `"status":"export_failed"`) {
-		t.Fatalf("task result = %s, want export_failed status", task.ResultJSON)
+		t.Fatalf("job result = %s, want export_failed status", task.ResultJSON)
 	}
 	if runtimeBuilder.cleanupCalls != 0 {
 		t.Fatalf("cleanupCalls = %d, want 0 when export fails", runtimeBuilder.cleanupCalls)

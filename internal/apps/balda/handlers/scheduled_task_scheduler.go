@@ -41,9 +41,9 @@ type ConfiguredScheduledTaskTarget struct {
 	Key    string
 }
 
-// ScheduledTaskSchedulerConfig controls startup task reconciliation.
+// ScheduledTaskSchedulerConfig controls startup job reconciliation.
 type ScheduledTaskSchedulerConfig struct {
-	Tasks []ConfiguredScheduledTask
+	Jobs []ConfiguredScheduledTask
 }
 
 type scheduledTaskSchedulerParams struct {
@@ -57,7 +57,7 @@ type scheduledTaskSchedulerParams struct {
 	Config        ScheduledTaskSchedulerConfig
 }
 
-// ScheduledTaskScheduler publishes due locator-bound recurring tasks as durable task commands.
+// ScheduledTaskScheduler publishes due locator-bound recurring tasks as durable job commands.
 type ScheduledTaskScheduler struct {
 	taskStore  baldastate.ScheduledTaskStore
 	dispatcher actortransport.Dispatcher
@@ -120,10 +120,10 @@ func (s *ScheduledTaskScheduler) stop(ctx context.Context) error {
 }
 
 func (s *ScheduledTaskScheduler) reconcileConfiguredTasks(ctx context.Context) error {
-	desired := make(map[string]struct{}, len(s.config.Tasks))
+	desired := make(map[string]struct{}, len(s.config.Jobs))
 	now := s.now().UTC()
 
-	for _, task := range s.config.Tasks {
+	for _, task := range s.config.Jobs {
 		target, err := resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: task.Target, Key: task.Key})
 		if err != nil {
 			return fmt.Errorf("resolve scheduler task %q target: %w", task.ID, err)
@@ -169,7 +169,7 @@ func (s *ScheduledTaskScheduler) reconcileConfiguredTasks(ctx context.Context) e
 
 	currentTasks, err := s.taskStore.List(ctx)
 	if err != nil {
-		return fmt.Errorf("list persisted scheduler tasks: %w", err)
+		return fmt.Errorf("list persisted scheduler jobs: %w", err)
 	}
 	for _, existing := range currentTasks {
 		taskID := strings.TrimSpace(existing.TaskID)
@@ -192,7 +192,7 @@ func (s *ScheduledTaskScheduler) dispatchDue(ctx context.Context, now time.Time)
 
 	for _, task := range due {
 		if err := s.dispatchTask(ctx, task, now); err != nil {
-			s.logger.Warn().Err(err).Str("task_id", task.TaskID).Msg("failed to dispatch task")
+			s.logger.Warn().Err(err).Str("job_id", task.TaskID).Msg("failed to dispatch job")
 		}
 	}
 	return nil
@@ -201,15 +201,15 @@ func (s *ScheduledTaskScheduler) dispatchDue(ctx context.Context, now time.Time)
 func (s *ScheduledTaskScheduler) dispatchTask(ctx context.Context, task baldastate.ScheduledTaskRecord, now time.Time) error {
 	taskID := strings.TrimSpace(task.TaskID)
 	if taskID == "" {
-		return fmt.Errorf("task id is required")
+		return fmt.Errorf("job id is required")
 	}
 
 	current, ok, err := s.taskStore.GetByID(ctx, taskID)
 	if err != nil {
-		return fmt.Errorf("load scheduled task %q: %w", taskID, err)
+		return fmt.Errorf("load scheduled job %q: %w", taskID, err)
 	}
 	if !ok {
-		return fmt.Errorf("scheduled task %q not found", taskID)
+		return fmt.Errorf("scheduled job %q not found", taskID)
 	}
 	if strings.TrimSpace(current.Status) != baldastate.ScheduledTaskStatusActive {
 		return nil
@@ -249,7 +249,7 @@ func (s *ScheduledTaskScheduler) dispatchTask(ctx context.Context, task baldasta
 	current.AddressKey = locator.AddressKey
 	current.AddressJSON = locator.AddressJSON
 	if err := s.taskStore.Upsert(ctx, current); err != nil {
-		return fmt.Errorf("update scheduled task %q after publish: %w", taskID, err)
+		return fmt.Errorf("update scheduled job %q after publish: %w", taskID, err)
 	}
 
 	return nil
@@ -289,12 +289,12 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 		}
 		reportTo = &locator
 	}
-	env, err := actors.ScheduledTaskEnvelope(task.TaskID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
+	env, err := actors.ScheduledJobEnvelope(task.TaskID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
 	if err != nil {
 		return s.markFailure(ctx, task.TaskID, err)
 	}
 	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
-		return s.markFailure(ctx, task.TaskID, fmt.Errorf("publish scheduled task command: %w", err))
+		return s.markFailure(ctx, task.TaskID, fmt.Errorf("publish scheduled job command: %w", err))
 	}
 	return nil
 }
@@ -302,17 +302,17 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 func (s *ScheduledTaskScheduler) MarkSuccess(ctx context.Context, taskID string) error {
 	task, ok, err := s.taskStore.GetByID(ctx, taskID)
 	if err != nil {
-		return fmt.Errorf("load scheduled task %q: %w", taskID, err)
+		return fmt.Errorf("load scheduled job %q: %w", taskID, err)
 	}
 	if !ok {
-		return fmt.Errorf("scheduled task %q not found", taskID)
+		return fmt.Errorf("scheduled job %q not found", taskID)
 	}
 	task.LastRunAt = s.now().UTC()
 	task.LastError = ""
 	task.RetryCount = 0
 	task.Status = baldastate.ScheduledTaskStatusActive
 	if err := s.taskStore.Upsert(ctx, task); err != nil {
-		return fmt.Errorf("upsert scheduled task %q: %w", taskID, err)
+		return fmt.Errorf("upsert scheduled job %q: %w", taskID, err)
 	}
 	return nil
 }
@@ -320,10 +320,10 @@ func (s *ScheduledTaskScheduler) MarkSuccess(ctx context.Context, taskID string)
 func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, taskID string, cause error) error {
 	task, ok, err := s.taskStore.GetByID(ctx, taskID)
 	if err != nil {
-		return fmt.Errorf("load scheduled task %q: %w", taskID, err)
+		return fmt.Errorf("load scheduled job %q: %w", taskID, err)
 	}
 	if !ok {
-		return fmt.Errorf("scheduled task %q not found", taskID)
+		return fmt.Errorf("scheduled job %q not found", taskID)
 	}
 	now := s.now().UTC()
 	task.RetryCount++
@@ -349,7 +349,7 @@ func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, taskID string,
 		task.NextRunAt = now.Add(delay)
 	}
 	if err := s.taskStore.Upsert(ctx, task); err != nil {
-		return fmt.Errorf("upsert scheduled task %q: %w", taskID, err)
+		return fmt.Errorf("upsert scheduled job %q: %w", taskID, err)
 	}
 	return cause
 }
@@ -357,36 +357,36 @@ func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, taskID string,
 func (s *ScheduledTaskScheduler) RecordExecutionFailure(ctx context.Context, taskID string, cause error) error {
 	task, ok, err := s.taskStore.GetByID(ctx, taskID)
 	if err != nil {
-		return fmt.Errorf("load scheduled task %q: %w", taskID, err)
+		return fmt.Errorf("load scheduled job %q: %w", taskID, err)
 	}
 	if !ok {
-		return fmt.Errorf("scheduled task %q not found", taskID)
+		return fmt.Errorf("scheduled job %q not found", taskID)
 	}
 	now := s.now().UTC()
 	task.LastError = strings.TrimSpace(cause.Error())
 	task.LastRunAt = now
 	task.Status = baldastate.ScheduledTaskStatusActive
 	if err := s.taskStore.Upsert(ctx, task); err != nil {
-		return fmt.Errorf("upsert scheduled task %q execution failure: %w", taskID, err)
+		return fmt.Errorf("upsert scheduled job %q execution failure: %w", taskID, err)
 	}
 	return cause
 }
 
 func normalizeScheduledTaskSchedulerConfig(raw ScheduledTaskSchedulerConfig) (ScheduledTaskSchedulerConfig, error) {
 	cfg := ScheduledTaskSchedulerConfig{
-		Tasks: make([]ConfiguredScheduledTask, 0, len(raw.Tasks)),
+		Jobs: make([]ConfiguredScheduledTask, 0, len(raw.Jobs)),
 	}
 
-	seenTaskIDs := make(map[string]struct{}, len(raw.Tasks))
-	for idx, rawTask := range raw.Tasks {
+	seenJobIDs := make(map[string]struct{}, len(raw.Jobs))
+	for idx, rawTask := range raw.Jobs {
 		taskID := strings.TrimSpace(rawTask.ID)
 		if taskID == "" {
 			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].id is required", idx)
 		}
-		if _, exists := seenTaskIDs[taskID]; exists {
+		if _, exists := seenJobIDs[taskID]; exists {
 			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("duplicate balda.scheduler.tasks id %q", taskID)
 		}
-		seenTaskIDs[taskID] = struct{}{}
+		seenJobIDs[taskID] = struct{}{}
 
 		cronSpec := strings.TrimSpace(rawTask.Cron)
 		if cronSpec == "" {
@@ -422,7 +422,7 @@ func normalizeScheduledTaskSchedulerConfig(raw ScheduledTaskSchedulerConfig) (Sc
 			}
 		}
 
-		cfg.Tasks = append(cfg.Tasks, ConfiguredScheduledTask{
+		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledTask{
 			ID:       taskID,
 			Cron:     cronSpec,
 			Target:   target,
@@ -432,8 +432,8 @@ func normalizeScheduledTaskSchedulerConfig(raw ScheduledTaskSchedulerConfig) (Sc
 		})
 	}
 
-	sort.Slice(cfg.Tasks, func(i, j int) bool {
-		return cfg.Tasks[i].ID < cfg.Tasks[j].ID
+	sort.Slice(cfg.Jobs, func(i, j int) bool {
+		return cfg.Jobs[i].ID < cfg.Jobs[j].ID
 	})
 	return cfg, nil
 }

@@ -473,7 +473,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 		Str("address_key", locator.AddressKey).
 		Int("topic_id", topicID).
 		Str("session_id", sessionID).
-		Str("task_id", strings.TrimSpace(taskID)).
+		Str("job_id", strings.TrimSpace(taskID)).
 		Bool("task_backed_delivery", taskBackedDelivery).
 		Str("agent_session_id", agentSessionID).
 		Str("transport_user_id", userID).
@@ -507,6 +507,20 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 		}
 		if errorMessage := strings.TrimSpace(ev.ErrorMessage); errorMessage != "" {
 			terminalErrorMessage = errorMessage
+		}
+		if snapshot, ok := usageSnapshotFromMetadata(ev.UsageMetadata); ok {
+			if ev.Actions.StateDelta == nil {
+				ev.Actions.StateDelta = make(map[string]any)
+			}
+			ev.Actions.StateDelta[usageStateKey] = map[string]any{
+				"prompt_token_count":          snapshot.PromptTokenCount,
+				"cached_content_token_count":  snapshot.CachedContentTokenCount,
+				"response_token_count":        snapshot.ResponseTokenCount,
+				"tool_use_prompt_token_count": snapshot.ToolUsePromptTokenCount,
+				"thoughts_token_count":        snapshot.ThoughtsTokenCount,
+				"total_token_count":           snapshot.TotalTokenCount,
+				"traffic_type":                snapshot.TrafficType,
+			}
 		}
 		planProgress, planProgressText, hasPlanUpdate := baldaPlanProgress(ev)
 		reasoningText, hasThoughtUpdate := progress.ReasoningText(ev)

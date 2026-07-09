@@ -56,7 +56,7 @@ const (
 // GoalRunConfig configures a per-run /goal worker-validator execution context.
 type GoalRunConfig struct {
 	SourceSessionID string
-	TaskID          string
+	JobID           string
 	UserID          string
 	MaxIterations   uint
 }
@@ -218,9 +218,9 @@ func (m *RuntimeManager) PrepareGoalRun(
 	if userID == "" {
 		return nil, fmt.Errorf("goal user id is required")
 	}
-	taskID := strings.TrimSpace(cfg.TaskID)
+	taskID := strings.TrimSpace(cfg.JobID)
 	if taskID == "" {
-		return nil, fmt.Errorf("goal task id is required")
+		return nil, fmt.Errorf("goal job id is required")
 	}
 	sourceSessionID := strings.TrimSpace(cfg.SourceSessionID)
 	if sourceSessionID == "" {
@@ -272,7 +272,7 @@ func (m *RuntimeManager) PrepareGoalRun(
 				validatorOutput,
 			)
 			if commitErr != nil {
-				m.logger.Warn().Err(commitErr).Str("task_id", taskID).Msg("failed to generate goal export commit message; using fallback")
+				m.logger.Warn().Err(commitErr).Str("job_id", taskID).Msg("failed to generate goal export commit message; using fallback")
 			}
 			commitMessage = normalizeGoalCommitMessage(objective, commitMessage)
 			if err := m.goalWorkspaces.Export(ctx, workspaceDir, branchName, commitMessage); err != nil {

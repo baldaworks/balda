@@ -119,9 +119,9 @@ func Module(
 		return fx.Module("balda", fx.Error(err))
 	}
 	scheduledTaskSchedulerConfig := handlers.ScheduledTaskSchedulerConfig{
-		Tasks: make([]handlers.ConfiguredScheduledTask, 0, len(cfg.Balda.Scheduler.Tasks)),
+		Jobs: make([]handlers.ConfiguredScheduledTask, 0, len(cfg.Balda.Scheduler.Jobs)),
 	}
-	for _, task := range cfg.Balda.Scheduler.Tasks {
+	for _, task := range cfg.Balda.Scheduler.Jobs {
 		var reportTo *handlers.ConfiguredScheduledTaskTarget
 		if task.Envelope.ReportTo != nil {
 			reportTo = &handlers.ConfiguredScheduledTaskTarget{
@@ -129,7 +129,7 @@ func Module(
 				Key:    strings.TrimSpace(task.Envelope.ReportTo.Key),
 			}
 		}
-		scheduledTaskSchedulerConfig.Tasks = append(scheduledTaskSchedulerConfig.Tasks, handlers.ConfiguredScheduledTask{
+		scheduledTaskSchedulerConfig.Jobs = append(scheduledTaskSchedulerConfig.Jobs, handlers.ConfiguredScheduledTask{
 			ID:       strings.TrimSpace(task.ID),
 			Cron:     strings.TrimSpace(task.Cron),
 			Target:   strings.TrimSpace(task.Envelope.Target),

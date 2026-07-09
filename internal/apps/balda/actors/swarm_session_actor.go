@@ -25,14 +25,14 @@ const (
 )
 
 type SessionTurnPayload struct {
-	TaskID          string                       `json:"task_id,omitempty"`
+	JobID           string                       `json:"job_id,omitempty"`
 	Text            string                       `json:"text"`
 	Locator         baldasession.SessionLocator  `json:"locator"`
 	ReportTo        *baldasession.SessionLocator `json:"report_to,omitempty"`
-	ParentTaskID    string                       `json:"parent_task_id,omitempty"`
+	ParentJobID     string                       `json:"parent_job_id,omitempty"`
 	UserID          string                       `json:"user_id,omitempty"`
 	AgentSessionID  string                       `json:"agent_session_id,omitempty"`
-	ScheduledTaskID string                       `json:"scheduled_task_id,omitempty"`
+	ScheduledJobID  string                       `json:"scheduled_job_id,omitempty"`
 	MessageID       int                          `json:"message_id,omitempty"`
 	TopicID         int                          `json:"topic_id,omitempty"`
 	DeliveryOptions deliveryfmt.Options          `json:"delivery_options,omitempty,omitzero"`
@@ -84,7 +84,7 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 		From:        actorlayer.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
 		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeSession, Key: payload.Locator.SessionID},
 		SessionID:   payload.Locator.SessionID,
-		TaskID:      strings.TrimSpace(payload.TaskID),
+		TaskID:      strings.TrimSpace(payload.JobID),
 		Priority:    priority,
 		DedupeKey:   strings.TrimSpace(payload.DedupeKey),
 		PayloadJSON: string(data),
@@ -113,7 +113,7 @@ func (e *sessionActorExecutor) Address() string {
 
 func (e *sessionActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	switch strings.TrimSpace(env.Namespace) {
-	case baldaruntime.NamespaceHumanInbound, baldaruntime.NamespaceWebhookInbound, baldaruntime.NamespaceScheduleInbound, baldaruntime.NamespaceGoalkeeperCommand, baldaruntime.NamespaceTaskControl:
+	case baldaruntime.NamespaceHumanInbound, baldaruntime.NamespaceWebhookInbound, baldaruntime.NamespaceScheduleInbound, baldaruntime.NamespaceGoalkeeperCommand, baldaruntime.NamespaceJobControl:
 		return e.enqueueTurn(ctx, env)
 	default:
 		return actorlayer.PolicyError(fmt.Errorf("unsupported session namespace %q", env.Namespace))
@@ -201,14 +201,14 @@ func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env 
 	if e == nil {
 		return nil
 	}
-	if e.scheduler != nil && strings.TrimSpace(payload.ScheduledTaskID) != "" {
+	if e.scheduler != nil && strings.TrimSpace(payload.ScheduledJobID) != "" {
 		if runErr == nil {
-			if err := e.scheduler.MarkSuccess(ctx, payload.ScheduledTaskID); err != nil {
-				return fmt.Errorf("mark scheduled task %q success: %w", payload.ScheduledTaskID, err)
+			if err := e.scheduler.MarkSuccess(ctx, payload.ScheduledJobID); err != nil {
+				return fmt.Errorf("mark scheduled task %q success: %w", payload.ScheduledJobID, err)
 			}
 		} else {
-			if err := e.scheduler.RecordExecutionFailure(ctx, payload.ScheduledTaskID, runErr); err != nil {
-				return fmt.Errorf("record scheduled task %q failure: %w", payload.ScheduledTaskID, err)
+			if err := e.scheduler.RecordExecutionFailure(ctx, payload.ScheduledJobID, runErr); err != nil {
+				return fmt.Errorf("record scheduled task %q failure: %w", payload.ScheduledJobID, err)
 			}
 		}
 	}
@@ -246,7 +246,7 @@ func sessionTurnUsesJobLifecycle(env actorlayer.Envelope, payload SessionTurnPay
 	if strings.TrimSpace(env.TaskID) == "" {
 		return false
 	}
-	if strings.TrimSpace(payload.ScheduledTaskID) != "" {
+	if strings.TrimSpace(payload.ScheduledJobID) != "" {
 		return true
 	}
 	switch {

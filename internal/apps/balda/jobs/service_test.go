@@ -47,11 +47,11 @@ func TestJobServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	if err := service.AppendEvent(ctx, "task-1", TaskEventAgentProgress, "agent:executor", "msg-1", map[string]any{"text": "working"}); err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
 	}
-	if len(bus.subjects) != 1 || bus.subjects[0] != baldaruntime.SubjectEventTaskUpdated {
-		t.Fatalf("subjects = %+v, want %q", bus.subjects, baldaruntime.SubjectEventTaskUpdated)
+	if len(bus.subjects) != 1 || bus.subjects[0] != baldaruntime.SubjectEventJobUpdated {
+		t.Fatalf("subjects = %+v, want %q", bus.subjects, baldaruntime.SubjectEventJobUpdated)
 	}
 	if len(bus.envs) != 1 || bus.envs[0].TaskID != "task-1" || bus.envs[0].Meta["event_type"] != TaskEventAgentProgress {
-		t.Fatalf("envs = %+v, want task event envelope", bus.envs)
+		t.Fatalf("envs = %+v, want job event envelope", bus.envs)
 	}
 	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
 	if err != nil {
@@ -132,7 +132,7 @@ func TestJobServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing
 	record := baldastate.SwarmTaskRecord{ID: "task-created", SessionID: "s-1", Objective: "create task"}
 	created, err := service.Create(ctx, record, "task.actor", map[string]any{"objective": record.Objective})
 	if err != nil {
-		t.Fatalf("Create(first) error = %v, want nil because task event publication is visibility-only", err)
+		t.Fatalf("Create(first) error = %v, want nil because job event publication is visibility-only", err)
 	}
 	if !created {
 		t.Fatal("Create(first) created = false, want new task")
@@ -178,7 +178,7 @@ func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *tes
 	}
 
 	if err := service.MarkStatus(ctx, "task-running", baldastate.SwarmTaskStatusRunning, "task.actor", "msg-1", "", map[string]any{"step": "start"}); err != nil {
-		t.Fatalf("MarkStatus() error = %v, want nil because task event publication is visibility-only", err)
+		t.Fatalf("MarkStatus() error = %v, want nil because job event publication is visibility-only", err)
 	}
 	task, ok, err := service.Get(ctx, "task-running")
 	if err != nil || !ok {
@@ -187,8 +187,8 @@ func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *tes
 	if task.Status != baldastate.SwarmTaskStatusRunning {
 		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusRunning)
 	}
-	if len(bus.envs) != 1 || bus.envs[0].Meta["event_type"] != TaskEventTaskStarted {
-		t.Fatalf("published events = %+v, want one task.started visibility attempt", bus.envs)
+	if len(bus.envs) != 1 || bus.envs[0].Meta["event_type"] != JobEventStarted {
+		t.Fatalf("published events = %+v, want one job.started visibility attempt", bus.envs)
 	}
 }
 
@@ -215,7 +215,7 @@ func TestJobServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *test
 
 	result := map[string]any{"summary": "done"}
 	if err := service.SetResult(ctx, "task-completed", result, baldastate.SwarmTaskStatusCompleted, "task.actor", ""); err != nil {
-		t.Fatalf("SetResult() error = %v, want nil because task event publication is visibility-only", err)
+		t.Fatalf("SetResult() error = %v, want nil because job event publication is visibility-only", err)
 	}
 	task, ok, err := service.Get(ctx, "task-completed")
 	if err != nil || !ok {
@@ -225,10 +225,10 @@ func TestJobServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *test
 		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusCompleted)
 	}
 	if task.ResultJSON == "" {
-		t.Fatal("task result json is empty, want persisted result despite event publish failure")
+		t.Fatal("job result json is empty, want persisted result despite event publish failure")
 	}
-	if len(bus.envs) != 1 || bus.envs[0].Meta["event_type"] != TaskEventTaskCompleted {
-		t.Fatalf("published events = %+v, want one task.completed visibility attempt", bus.envs)
+	if len(bus.envs) != 1 || bus.envs[0].Meta["event_type"] != JobEventCompleted {
+		t.Fatalf("published events = %+v, want one job.completed visibility attempt", bus.envs)
 	}
 }
 
@@ -301,7 +301,7 @@ func TestJobServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
 		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusDeadLettered)
 	}
 	if task.ResultJSON != `{"status":"deadlettered"}` {
-		t.Fatalf("task result = %q, want original deadlettered result preserved", task.ResultJSON)
+		t.Fatalf("job result = %q, want original deadlettered result preserved", task.ResultJSON)
 	}
 	if len(bus.envs) != 0 {
 		t.Fatalf("published events = %+v, want no visibility event for stale terminal finalization", bus.envs)

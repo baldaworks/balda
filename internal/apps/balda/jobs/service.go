@@ -18,18 +18,31 @@ import (
 )
 
 const (
-	TaskEventTaskCreated    = "task.created"
-	TaskEventTaskAssigned   = "task.assigned"
-	TaskEventTaskStarted    = "task.started"
-	TaskEventAgentStarted   = "agent.started"
-	TaskEventAgentProgress  = "agent.progress"
-	TaskEventAgentResult    = "agent.result"
-	TaskEventTaskValidating = "task.validating"
-	TaskEventTaskCompleted  = "task.completed"
-	TaskEventTaskFailed     = "task.failed"
-	TaskEventTaskCanceled   = "task.canceled"
-	TaskEventDeliverySent   = "delivery.sent"
-	TaskEventDeliveryFailed = "delivery.failed"
+	JobEventCreated        = "job.created"
+	JobEventAssigned       = "job.assigned"
+	JobEventStarted        = "job.started"
+	JobEventAgentStarted   = "agent.started"
+	JobEventAgentProgress  = "agent.progress"
+	JobEventAgentResult    = "agent.result"
+	JobEventValidating     = "job.validating"
+	JobEventCompleted      = "job.completed"
+	JobEventFailed         = "job.failed"
+	JobEventCanceled       = "job.canceled"
+	JobEventDeliverySent   = "delivery.sent"
+	JobEventDeliveryFailed = "delivery.failed"
+
+	TaskEventTaskCreated    = JobEventCreated
+	TaskEventTaskAssigned   = JobEventAssigned
+	TaskEventTaskStarted    = JobEventStarted
+	TaskEventAgentStarted   = JobEventAgentStarted
+	TaskEventAgentProgress  = JobEventAgentProgress
+	TaskEventAgentResult    = JobEventAgentResult
+	TaskEventTaskValidating = JobEventValidating
+	TaskEventTaskCompleted  = JobEventCompleted
+	TaskEventTaskFailed     = JobEventFailed
+	TaskEventTaskCanceled   = JobEventCanceled
+	TaskEventDeliverySent   = JobEventDeliverySent
+	TaskEventDeliveryFailed = JobEventDeliveryFailed
 )
 
 type JobService struct {
@@ -71,7 +84,7 @@ func (s *JobService) Create(ctx context.Context, record baldastate.SwarmTaskReco
 	s.publishEventRecordBestEffort(ctx, baldastate.SwarmTaskEventRecord{
 		ID:          "task:" + taskID + ":event:created",
 		TaskID:      taskID,
-		EventType:   TaskEventTaskCreated,
+		EventType:   JobEventCreated,
 		Actor:       strings.TrimSpace(actor),
 		PayloadJSON: payloadJSON,
 	})
@@ -120,17 +133,17 @@ func (s *JobService) MarkStatus(ctx context.Context, taskID string, status strin
 	eventType := ""
 	switch strings.TrimSpace(status) {
 	case baldastate.SwarmTaskStatusQueued, baldastate.SwarmTaskStatusWaitingForAgent, baldastate.SwarmTaskStatusWaitingForUser:
-		eventType = TaskEventTaskAssigned
+		eventType = JobEventAssigned
 	case baldastate.SwarmTaskStatusRunning:
-		eventType = TaskEventTaskStarted
+		eventType = JobEventStarted
 	case baldastate.SwarmTaskStatusValidating:
-		eventType = TaskEventTaskValidating
+		eventType = JobEventValidating
 	case baldastate.SwarmTaskStatusCompleted:
-		eventType = TaskEventTaskCompleted
+		eventType = JobEventCompleted
 	case baldastate.SwarmTaskStatusFailed, baldastate.SwarmTaskStatusDeadLettered:
-		eventType = TaskEventTaskFailed
+		eventType = JobEventFailed
 	case baldastate.SwarmTaskStatusCanceled:
-		eventType = TaskEventTaskCanceled
+		eventType = JobEventCanceled
 	}
 	if eventType == "" {
 		return nil
@@ -156,17 +169,17 @@ func (s *JobService) SetResult(ctx context.Context, taskID string, result any, s
 	eventType := ""
 	switch strings.TrimSpace(status) {
 	case baldastate.SwarmTaskStatusQueued, baldastate.SwarmTaskStatusWaitingForAgent, baldastate.SwarmTaskStatusWaitingForUser:
-		eventType = TaskEventTaskAssigned
+		eventType = JobEventAssigned
 	case baldastate.SwarmTaskStatusRunning:
-		eventType = TaskEventTaskStarted
+		eventType = JobEventStarted
 	case baldastate.SwarmTaskStatusValidating:
-		eventType = TaskEventTaskValidating
+		eventType = JobEventValidating
 	case baldastate.SwarmTaskStatusCompleted:
-		eventType = TaskEventTaskCompleted
+		eventType = JobEventCompleted
 	case baldastate.SwarmTaskStatusFailed, baldastate.SwarmTaskStatusDeadLettered:
-		eventType = TaskEventTaskFailed
+		eventType = JobEventFailed
 	case baldastate.SwarmTaskStatusCanceled:
-		eventType = TaskEventTaskCanceled
+		eventType = JobEventCanceled
 	}
 	return s.appendEventBestEffort(ctx, taskID, eventType, actor, "", mergePayload(result, map[string]any{
 		"status": status,
@@ -377,23 +390,23 @@ func (s *JobService) publishTaskEvent(ctx context.Context, event baldastate.Swar
 	if payload == "" {
 		payload = "{}"
 	}
-	subject := baldaruntime.SubjectEventTaskUpdated
+	subject := baldaruntime.SubjectEventJobUpdated
 	switch strings.TrimSpace(event.EventType) {
-	case TaskEventDeliverySent:
+	case JobEventDeliverySent:
 		subject = baldaruntime.SubjectEventDeliverySent
-	case TaskEventDeliveryFailed:
+	case JobEventDeliveryFailed:
 		subject = baldaruntime.SubjectEventDeliveryFailed
-	case TaskEventTaskCreated:
-		subject = baldaruntime.SubjectEventTaskCreated
-	case TaskEventTaskCompleted:
-		subject = baldaruntime.SubjectEventTaskCompleted
+	case JobEventCreated:
+		subject = baldaruntime.SubjectEventJobCreated
+	case JobEventCompleted:
+		subject = baldaruntime.SubjectEventJobCompleted
 	}
 	env := actorlayer.Envelope{
 		ID:          event.ID,
 		Namespace:   baldaruntime.NamespaceTelemetry,
-		Kind:        "task_event",
-		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: event.TaskID},
+		Kind:        "job_event",
+		From:        actorlayer.SystemAddress("job-events"),
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: event.TaskID},
 		TaskID:      event.TaskID,
 		PayloadJSON: payload,
 		Meta: map[string]string{
@@ -416,10 +429,10 @@ func (s *JobService) publishEventRecordBestEffort(ctx context.Context, event bal
 	if err := s.publishEventRecord(ctx, event); err != nil {
 		log.Ctx(ctx).Warn().
 			Err(err).
-			Str("task_id", event.TaskID).
+			Str("job_id", event.TaskID).
 			Str("event_type", event.EventType).
 			Str("event_id", event.ID).
-			Msg("failed to publish task event")
+			Msg("failed to publish job event")
 	}
 }
 
@@ -429,7 +442,7 @@ func marshalPayload(payload any) (string, error) {
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("encode task payload: %w", err)
+		return "", fmt.Errorf("encode job payload: %w", err)
 	}
 	return string(data), nil
 }

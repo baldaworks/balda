@@ -52,8 +52,8 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	if turns.commands[0].Namespace != baldaruntime.NamespaceJobControl || turns.commands[0].Kind != baldaruntime.KindCancel {
+		t.Fatalf("published command = %+v, want job control cancel", turns.commands[0])
 	}
 	if tgClient.closedTopicIDs[0] != topicID {
 		t.Fatalf("CloseTopic call = %d, want topic=%d", tgClient.closedTopicIDs[0], topicID)
@@ -173,6 +173,51 @@ func TestCommandHandlerOnCommand_LocatorShowsCurrentTransportAndRef(t *testing.T
 	assertLastSentContains(t, tgClient, "Locator: telegram:9001:123")
 	assertLastSentContains(t, tgClient, "target: locator")
 	assertLastSentContains(t, tgClient, "key: telegram:9001:123")
+}
+
+func TestCommandHandlerOnCommand_UsageShowsLastProviderUsage(t *testing.T) {
+	handler, sm, _, tgClient := newCommandHandlerTestHarness(t)
+	sm.runtimeState = map[string]map[string]any{
+		testRootSessionID: {
+			usageStateKey: map[string]any{
+				"prompt_token_count":          float64(120),
+				"cached_content_token_count":  float64(30),
+				"response_token_count":        float64(45),
+				"tool_use_prompt_token_count": float64(7),
+				"thoughts_token_count":        float64(15),
+				"total_token_count":           float64(172),
+				"traffic_type":                "ON_DEMAND",
+			},
+		},
+	}
+
+	err := handler.onCommand(context.Background(), newCommandEvent("usage", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+	assertLastSentContains(t, tgClient, "Last provider usage:")
+	assertLastSentContains(t, tgClient, "Prompt tokens: 120")
+	assertLastSentContains(t, tgClient, "Traffic type: ON_DEMAND")
+}
+
+func TestCommandHandlerOnCommand_UsageWithoutSnapshot(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("usage", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+	assertLastSentContains(t, tgClient, "No provider usage has been recorded for this session yet.")
+}
+
+func TestCommandHandlerOnCommand_UsageWithArgsShowsUsage(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("usage", "now", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+	assertLastSentContains(t, tgClient, "Usage: /usage")
 }
 
 func TestCommandHandlerOnCommand_LocatorWithArgsShowsUsage(t *testing.T) {
@@ -412,8 +457,8 @@ func TestCommandHandlerOnCommand_CloseCollaboratorAllowed(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	if turns.commands[0].Namespace != baldaruntime.NamespaceJobControl || turns.commands[0].Kind != baldaruntime.KindCancel {
+		t.Fatalf("published command = %+v, want job control cancel", turns.commands[0])
 	}
 }
 
@@ -436,8 +481,8 @@ func TestCommandHandlerOnCommand_CloseResetFailureDoesNotCloseTopic(t *testing.T
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	if turns.commands[0].Namespace != baldaruntime.NamespaceJobControl || turns.commands[0].Kind != baldaruntime.KindCancel {
+		t.Fatalf("published command = %+v, want job control cancel", turns.commands[0])
 	}
 	if len(tgClient.closedTopicIDs) != 0 {
 		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
@@ -673,8 +718,8 @@ func TestCommandHandlerOnCommand_GoalClearPublishesControlCommand(t *testing.T) 
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
 	cmd := turns.commands[0]
-	if cmd.Namespace != baldaruntime.NamespaceTaskControl || cmd.Kind != baldaruntime.KindCancel {
-		t.Fatalf("published command = %+v, want task control command", cmd)
+	if cmd.Namespace != baldaruntime.NamespaceJobControl || cmd.Kind != baldaruntime.KindCancel {
+		t.Fatalf("published command = %+v, want job control command", cmd)
 	}
 	payload := decodeControlPayload(t, cmd.PayloadJSON)
 	if payload.Action != "clear_goal" {
@@ -772,8 +817,8 @@ func TestCommandHandlerOnCommand_CancelPublishesControlCommand(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
-		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+	if turns.commands[0].Namespace != baldaruntime.NamespaceJobControl || turns.commands[0].Kind != baldaruntime.KindCancel {
+		t.Fatalf("published command = %+v, want job control cancel", turns.commands[0])
 	}
 	payload := decodeControlPayload(t, turns.commands[0].PayloadJSON)
 	if payload.Action != "cancel_turn" {
@@ -915,8 +960,8 @@ func assertCommandResetsRootSession(t *testing.T, command string) *fakeTelegramC
 		if len(turns.commands) != 1 {
 			t.Fatalf("published commands = %d, want 1", len(turns.commands))
 		}
-		if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
-			t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
+		if turns.commands[0].Namespace != baldaruntime.NamespaceJobControl || turns.commands[0].Kind != baldaruntime.KindCancel {
+			t.Fatalf("published command = %+v, want job control cancel", turns.commands[0])
 		}
 	} else {
 		if len(sm.createCalls) != 1 {
@@ -948,6 +993,7 @@ type fakeCommandSessionManager struct {
 	metadata       session.AgentMetadata
 	sessionInfo    map[string]session.TopicSessionInfo
 	startupNotices map[string]string
+	runtimeState   map[string]map[string]any
 	resetErr       error
 	createErr      error
 }
@@ -1044,6 +1090,18 @@ func (f *fakeCommandSessionManager) GetSessionInfo(_ context.Context, sessionID 
 		return session.TopicSessionInfo{}, errors.New("not found")
 	}
 	return info, nil
+}
+
+func (f *fakeCommandSessionManager) RuntimeStateValue(_ context.Context, locator session.SessionLocator, key string) (any, bool, error) {
+	if f.runtimeState == nil {
+		return nil, false, nil
+	}
+	state := f.runtimeState[locator.SessionID]
+	if state == nil {
+		return nil, false, nil
+	}
+	value, ok := state[key]
+	return value, ok, nil
 }
 
 func (f *fakeCommandSessionManager) TakeStartupNotice(sessionID string) string {

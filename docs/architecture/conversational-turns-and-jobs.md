@@ -5,19 +5,19 @@ Status: active
 
 ## Problem
 
-Balda currently mixes two different execution shapes under the same task-backed ingress path:
+Balda currently mixes two different execution shapes under the same job-backed ingress path:
 
 - ordinary conversational turns from interactive chat sessions;
 - durable job-like work such as goals, scheduled jobs, and inbound webhooks.
 
-That coupling makes the runtime harder to reason about. It also encourages transport concerns such as delivery outbox policy and task persistence to bleed into the common chat path, even though session actors already support direct durable dispatch through actorlayer.
+That coupling makes the runtime harder to reason about. It also encourages transport concerns such as delivery outbox policy and job persistence to bleed into the common chat path, even though session actors already support direct durable dispatch through actorlayer.
 
 ## Decision
 
 Balda keeps `actorlayer` as the single transport and execution boundary, but splits runtime intent into two distinct paths:
 
 - Ordinary conversational turns dispatch directly from ingress to the session actor through `balda.v1.cmd.session` envelopes.
-- Durable job-like work continues to use task-backed orchestration through the task actor and `swarm_tasks`.
+- Durable job-like work continues to use job-backed orchestration through the job actor and `swarm_tasks`.
 
 `swarm_tasks` stays as the durable orchestration/read-model layer for true jobs, not as a mandatory wrapper for every user message.
 
@@ -47,9 +47,9 @@ Properties:
 
 ### Durable jobs
 
-Keep the task-backed path for work that needs explicit lifecycle, result state, or operational controls beyond a single conversational turn:
+Keep the job-backed path for work that needs explicit lifecycle, result state, or operational controls beyond a single conversational turn:
 
-`ingress -> task actor -> product actor -> delivery actor(s)`
+`ingress -> job actor -> product actor -> delivery actor(s)`
 
 Current examples:
 
@@ -77,12 +77,12 @@ Delivery is no longer modeled as one universal persistence rule for every user-v
 ## Migration plan
 
 1. Keep ordinary Telegram, Slack, and Zulip conversational turns on direct `SessionTurnEnvelope` dispatch.
-2. Keep webhook, schedule, and goal flows task-backed until their job semantics change.
+2. Keep webhook, schedule, and goal flows job-backed until their job semantics change.
 3. Update runtime and reliability docs to describe the split model.
 4. Remove obsolete task assumptions from chat-path tests and telemetry over time.
 
 ## Update triggers
 
-- Any new ingress path deciding between direct session dispatch and task-backed orchestration.
+- Any new ingress path deciding between direct session dispatch and job-backed orchestration.
 - Changes to delivery durability policy.
-- Changes to task lifecycle ownership or operator controls.
+- Changes to job lifecycle ownership or operator controls.

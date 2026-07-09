@@ -8,16 +8,16 @@ import (
 	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 )
 
-func (r *ActorHost) deadletterTask(ctx context.Context, env actorlayer.Envelope, reason string) {
-	if r == nil || r.tasks == nil {
+func (r *ActorHost) deadletterJob(ctx context.Context, env actorlayer.Envelope, reason string) {
+	if r == nil || r.jobs == nil {
 		return
 	}
-	taskID := strings.TrimSpace(env.TaskID)
-	if taskID == "" {
+	jobID := strings.TrimSpace(env.TaskID)
+	if jobID == "" {
 		return
 	}
-	if err := r.tasks.DeadLetter(ctx, taskID, "runtime.host", env.ID, reason); err != nil {
-		r.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to mark job deadlettered")
+	if err := r.jobs.DeadLetter(ctx, jobID, "runtime.host", env.ID, reason); err != nil {
+		r.logger.Warn().Err(err).Str("task_id", jobID).Msg("failed to mark job deadlettered")
 	}
 }
 

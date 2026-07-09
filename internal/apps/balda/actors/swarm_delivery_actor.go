@@ -22,13 +22,13 @@ import (
 
 const deliveryPendingRetryAfter = 30 * time.Second
 
-type taskDeliveryActor struct {
+type jobDeliveryActor struct {
 	channel *baldachannel.Router
 	tasks   *baldajobs.JobService
 	logger  zerolog.Logger
 }
 
-type taskDeliveryActorParams struct {
+type jobDeliveryActorParams struct {
 	fx.In
 
 	Channel    *baldachannel.Router
@@ -36,17 +36,17 @@ type taskDeliveryActorParams struct {
 	Logger     zerolog.Logger
 }
 
-func (a *taskDeliveryActor) Address() string {
+func (a *jobDeliveryActor) Address() string {
 	return actorlayer.WildcardAddress(baldaruntime.ActorTypeDelivery)
 }
 
-func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
-	if strings.TrimSpace(env.Kind) != taskPayloadKindDelivery {
+func (a *jobDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
+	if strings.TrimSpace(env.Kind) != jobPayloadKindDelivery {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported delivery kind %q", env.Kind))
 	}
 	var payload DeliveryPayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
-		return actorlayer.PermanentError(fmt.Errorf("decode task delivery payload: %w", err))
+		return actorlayer.PermanentError(fmt.Errorf("decode job delivery payload: %w", err))
 	}
 	if a.channel == nil {
 		return actorlayer.TransientError(fmt.Errorf("channel router is required"))
@@ -60,7 +60,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 		deliveryKey = strings.TrimSpace(env.ID)
 	}
 	if deliveryKey == "" {
-		deliveryKey = "delivery:" + shortTaskHash(env.PayloadJSON)
+		deliveryKey = "delivery:" + shortJobHash(env.PayloadJSON)
 	}
 
 	sum := sha256.Sum256([]byte(strings.TrimSpace(env.PayloadJSON)))
@@ -69,7 +69,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 		record, created, err := a.tasks.ReserveDelivery(ctx, baldastate.SwarmDeliveryRecord{
 			ID:          uuid.NewString(),
 			DeliveryKey: deliveryKey,
-			TaskID:      payload.TaskID,
+			TaskID:      payload.JobID,
 			SessionID:   payload.Locator.SessionID,
 			Channel:     firstNonEmpty(payload.Locator.ChannelType, "telegram"),
 			AddressKey:  firstNonEmpty(payload.Locator.AddressKey, payload.Locator.SessionID),
@@ -101,14 +101,14 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 	if err != nil {
 		if durable && a.tasks != nil {
 			_ = a.tasks.MarkDeliveryFailed(ctx, deliveryKey, err.Error())
-			if strings.TrimSpace(payload.TaskID) != "" {
-				if appendErr := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
+			if strings.TrimSpace(payload.JobID) != "" {
+				if appendErr := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.TaskEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
 					"text":   strings.TrimSpace(payload.Text),
 					"action": strings.TrimSpace(payload.Action),
 					"mode":   payload.Mode,
 					"reason": err.Error(),
 				}); appendErr != nil {
-					a.logger.Warn().Err(appendErr).Str("task_id", payload.TaskID).Msg("failed to record task delivery failure event")
+					a.logger.Warn().Err(appendErr).Str("job_id", payload.JobID).Msg("failed to record job delivery failure event")
 				}
 			}
 		}
@@ -119,18 +119,18 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 			return actorlayer.TransientError(err)
 		}
 	}
-	if durable && a.tasks != nil && strings.TrimSpace(payload.TaskID) != "" {
-		if err := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventDeliverySent, "delivery.actor", env.ID, map[string]any{
+	if durable && a.tasks != nil && strings.TrimSpace(payload.JobID) != "" {
+		if err := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.TaskEventDeliverySent, "delivery.actor", env.ID, map[string]any{
 			"text": strings.TrimSpace(payload.Text),
 			"mode": payload.Mode,
 		}); err != nil {
-			a.logger.Warn().Err(err).Str("task_id", payload.TaskID).Msg("failed to record task delivery event")
+			a.logger.Warn().Err(err).Str("job_id", payload.JobID).Msg("failed to record job delivery event")
 		}
 	}
 	return nil
 }
 
-func (a *taskDeliveryActor) dispatchDelivery(ctx context.Context, payload DeliveryPayload) (string, error) {
+func (a *jobDeliveryActor) dispatchDelivery(ctx context.Context, payload DeliveryPayload) (string, error) {
 	switch payload.Mode {
 	case DeliveryModeAgentReply:
 		return a.channel.SendAgentReplyWithProviderMessageIDAndProfile(ctx, payload.Locator, payload.Profile, payload.Text)
@@ -191,8 +191,8 @@ func deliveryRequiresOutbox(payload DeliveryPayload) bool {
 	case deliverycmd.SettlementOutbox:
 		return true
 	case "", deliverycmd.SettlementAuto:
-		return strings.TrimSpace(payload.TaskID) != ""
+		return strings.TrimSpace(payload.JobID) != ""
 	default:
-		return strings.TrimSpace(payload.TaskID) != ""
+		return strings.TrimSpace(payload.JobID) != ""
 	}
 }

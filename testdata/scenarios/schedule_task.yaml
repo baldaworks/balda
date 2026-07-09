@@ -4,5 +4,5 @@ schedule:
   job_id: nightly-summary
   due_slot: "2026-05-27T00:00:00Z"
 expected:
-  command_subject: balda.v1.cmd.task
+  command_subject: balda.v1.cmd.job
   dedupe_key: schedule:nightly-summary:2026-05-27T00:00:00Z

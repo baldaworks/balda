@@ -8,34 +8,36 @@ import (
 )
 
 func runtimeAddressOf(env actorlayer.Envelope) (string, error) {
-	to, err := env.To.String()
+	to := env.To
+	to.Target = canonicalActorTarget(to.Target)
+	addr, err := to.String()
 	if err != nil {
 		return "", actorlayer.DecodeError(err)
 	}
-	if strings.TrimSpace(to) == "" {
+	if strings.TrimSpace(addr) == "" {
 		return "", actorlayer.DecodeError(fmt.Errorf("empty actor address"))
 	}
-	return to, nil
+	return addr, nil
 }
 
 func actorLaneKeyFromEnvelope(env actorlayer.Envelope) string {
-	namespace := strings.TrimSpace(env.Namespace)
+	namespace := canonicalNamespace(env.Namespace)
 	taskID := strings.TrimSpace(env.TaskID)
 	if taskID != "" {
 		switch namespace {
-		case NamespaceTaskControl,
+		case NamespaceJobControl,
 			NamespaceGoalkeeperCommand,
 			NamespaceHumanInbound,
 			NamespaceWebhookInbound,
 			NamespaceScheduleInbound:
-			return "task:" + taskID
+			return "job:" + taskID
 		case NamespaceAgentResult:
 			if strings.EqualFold(strings.TrimSpace(env.To.Target), ActorTypeDelivery) {
 				if address := strings.TrimSpace(env.To.Key); address != "" {
 					return "delivery:" + address
 				}
 			}
-			return "task:" + taskID
+			return "job:" + taskID
 		}
 	}
 	switch namespace {
@@ -48,8 +50,24 @@ func actorLaneKeyFromEnvelope(env actorlayer.Envelope) string {
 			return "session:" + sessionID
 		}
 	}
-	if to, err := env.To.String(); err == nil {
+	if to, err := runtimeAddressOf(env); err == nil {
 		return to
 	}
 	return strings.TrimSpace(env.ID)
+}
+
+func canonicalActorTarget(target string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(target))
+	if trimmed == ActorTypeJob {
+		return ActorTypeJob
+	}
+	return trimmed
+}
+
+func canonicalNamespace(namespace string) string {
+	trimmed := strings.TrimSpace(namespace)
+	if trimmed == NamespaceJobControl {
+		return NamespaceJobControl
+	}
+	return trimmed
 }

@@ -277,7 +277,7 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 	actor := &testActor{address: actorlayer.WildcardAddress(ActorTypeSession), err: actorlayer.TransientError(fmt.Errorf("temporary"))}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
-	runtime.tasks = deadLetterRecorderFunc(func(ctx context.Context, taskID string, actor string, messageID string, reason string) error {
+	runtime.jobs = deadLetterRecorderFunc(func(ctx context.Context, taskID string, actor string, messageID string, reason string) error {
 		return provider.Swarm().UpdateTaskStatus(ctx, taskID, baldastate.SwarmTaskStatusDeadLettered, reason)
 	})
 	env := runtimeTestEnvelope("retry-exhausted", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"})

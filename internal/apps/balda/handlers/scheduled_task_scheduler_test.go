@@ -53,7 +53,7 @@ func TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules(t *te
 	if got, want := command.Namespace, baldaruntime.NamespaceScheduleInbound; got != want {
 		t.Fatalf("namespace = %q, want %q", got, want)
 	}
-	if got, want := command.Kind, baldaruntime.KindScheduledTask; got != want {
+	if got, want := command.Kind, baldaruntime.KindScheduledJob; got != want {
 		t.Fatalf("kind = %q, want %q", got, want)
 	}
 	if command.ID == "" {
@@ -132,7 +132,7 @@ func TestScheduledTaskSchedulerReconcileConfiguredTasks_LocatorTarget(t *testing
 		logger:    zerolog.Nop(),
 		now:       func() time.Time { return now },
 		config: ScheduledTaskSchedulerConfig{
-			Tasks: []ConfiguredScheduledTask{
+			Jobs: []ConfiguredScheduledTask{
 				{
 					ID:      "managed-task",
 					Cron:    "@every 2s",
@@ -383,7 +383,7 @@ func TestScheduledTaskSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *tes
 		logger:    zerolog.Nop(),
 		now:       func() time.Time { return now },
 		config: ScheduledTaskSchedulerConfig{
-			Tasks: []ConfiguredScheduledTask{
+			Jobs: []ConfiguredScheduledTask{
 				{
 					ID:      "managed-task",
 					Cron:    "@every 2s",
@@ -459,7 +459,7 @@ func TestNormalizeScheduledTaskSchedulerConfig_RequiresEnvelopeTarget(t *testing
 	t.Parallel()
 
 	_, err := normalizeScheduledTaskSchedulerConfig(ScheduledTaskSchedulerConfig{
-		Tasks: []ConfiguredScheduledTask{
+		Jobs: []ConfiguredScheduledTask{
 			{
 				ID:      "task-1",
 				Cron:    "@every 1m",
@@ -479,7 +479,7 @@ func TestNormalizeScheduledTaskSchedulerConfig_TrimsEnvelope(t *testing.T) {
 	t.Parallel()
 
 	got, err := normalizeScheduledTaskSchedulerConfig(ScheduledTaskSchedulerConfig{
-		Tasks: []ConfiguredScheduledTask{
+		Jobs: []ConfiguredScheduledTask{
 			{
 				ID:      " task-1 ",
 				Cron:    " @every 1m ",
@@ -496,10 +496,10 @@ func TestNormalizeScheduledTaskSchedulerConfig_TrimsEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalizeScheduledTaskSchedulerConfig() error = %v", err)
 	}
-	if len(got.Tasks) != 1 {
-		t.Fatalf("tasks = %d, want 1", len(got.Tasks))
+	if len(got.Jobs) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(got.Jobs))
 	}
-	task := got.Tasks[0]
+	task := got.Jobs[0]
 	if task.ID != "task-1" || task.Target != "alias" || task.Key != "owner" || task.Content != "check" {
 		t.Fatalf("task = %+v, want trimmed envelope", task)
 	}

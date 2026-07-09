@@ -22,7 +22,7 @@ type DeadLetterRecorder interface {
 type ActorHost struct {
 	source        actorengine.Source
 	events        actortransport.EventPublisher
-	tasks         DeadLetterRecorder
+	jobs          DeadLetterRecorder
 	engine        *actorengine.DispatchRuntime
 	logger        zerolog.Logger
 	heartbeatTick time.Duration
@@ -37,7 +37,7 @@ type runtimeParams struct {
 	LC     fx.Lifecycle
 	Source actorengine.Source
 	Events actortransport.EventPublisher `optional:"true"`
-	Tasks  DeadLetterRecorder            `optional:"true"`
+	Jobs   DeadLetterRecorder            `optional:"true"`
 	Logger zerolog.Logger
 	Actors []dispatch.Actor `group:"balda_swarm_actors"`
 }
@@ -55,7 +55,7 @@ func NewActorHost(params runtimeParams) (*ActorHost, error) {
 	r := &ActorHost{
 		source:        params.Source,
 		events:        params.Events,
-		tasks:         params.Tasks,
+		jobs:          params.Jobs,
 		logger:        params.Logger.With().Str("component", "balda.runtime.host").Logger(),
 		heartbeatTick: heartbeatInterval,
 	}

@@ -28,7 +28,7 @@ func TestSessionWorkCancellerCancelsQueueTasksAndRuns(t *testing.T) {
 	}
 
 	turns := &fakeTurnDispatcher{}
-	registry := NewTaskRunRegistry()
+	registry := NewJobRunRegistry()
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	registry.Register("task-session", cancel)

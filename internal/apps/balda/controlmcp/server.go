@@ -116,7 +116,6 @@ func (s *service) shutdown(_ context.Context, _ *mcp.CallToolRequest, in shutdow
 	}, shutdownOutput{ToolOutcome: okOutcome(), Requested: true, Message: message}, nil
 }
 
-
 func terminateCurrentProcess() error {
 	process, err := os.FindProcess(os.Getpid())
 	if err != nil {

@@ -61,17 +61,17 @@ func TestValidateFixtureFile(t *testing.T) {
 func TestCompareEventTypes(t *testing.T) {
 	golden := []map[string]any{
 		{"type": "command.accepted"},
-		{"type": "task.created"},
+		{"type": "job.created"},
 	}
 	actual := []map[string]any{
 		{"type": "command.accepted"},
-		{"type": "task.created"},
+		{"type": "job.created"},
 	}
 	if err := compareEventTypes(golden, actual); err != nil {
 		t.Fatalf("compareEventTypes() error = %v", err)
 	}
 
-	actual[1]["type"] = "task.failed"
+	actual[1]["type"] = "job.failed"
 	err := compareEventTypes(golden, actual)
 	if err == nil {
 		t.Fatal("compareEventTypes() error = nil, want non-nil")

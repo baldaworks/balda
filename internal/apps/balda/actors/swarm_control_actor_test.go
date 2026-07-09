@@ -28,11 +28,11 @@ func TestTaskControlActorCancelsSessionWork(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 	turns := &fakeTurnDispatcher{}
-	actor := &taskControlActor{
+	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
 		tasks:          tasks,
-		taskRuns:       NewTaskRunRegistry(),
+		taskRuns:       NewJobRunRegistry(),
 	}
 	env, err := ControlCancelEnvelope(locator, "", testTelegramUserID101, "session canceled by user")
 	if err != nil {
@@ -73,11 +73,11 @@ func TestTaskControlActorCancelsSessionTurnOnly(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 	turns := &fakeTurnDispatcher{}
-	actor := &taskControlActor{
+	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
 		tasks:          tasks,
-		taskRuns:       NewTaskRunRegistry(),
+		taskRuns:       NewJobRunRegistry(),
 	}
 	env, err := ControlCancelTurnEnvelopeWithNotify(locator, testTelegramUserID101, "session turn canceled by user", true)
 	if err != nil {
@@ -115,18 +115,18 @@ func TestTaskControlActorCancelsTaskWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create task: %v", err)
 	}
-	actor := &taskControlActor{
+	actor := &jobControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		dispatcher:     dispatcher,
 		tasks:          tasks,
-		taskRuns:       NewTaskRunRegistry(),
+		taskRuns:       NewJobRunRegistry(),
 	}
 	env, err := ControlCancelEnvelope(locator, "task-one", testTelegramUserID101, "task canceled by user")
 	if err != nil {
 		t.Fatalf("ControlCancelEnvelope() error = %v", err)
 	}
-	if env.Namespace != baldaruntime.NamespaceTaskControl || env.TaskID != "task-one" {
-		t.Fatalf("control env = %+v, want task control for task-one", env)
+	if env.Namespace != baldaruntime.NamespaceJobControl || env.TaskID != "task-one" {
+		t.Fatalf("control env = %+v, want job control for task-one", env)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -159,7 +159,7 @@ func TestTaskControlActorCancelsAllRegisteredTaskRuns(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 
-	registry := NewTaskRunRegistry()
+	registry := NewJobRunRegistry()
 	runCtxOne, cancelOne := context.WithCancel(context.Background())
 	defer cancelOne()
 	runCtxTwo, cancelTwo := context.WithCancel(context.Background())
@@ -167,7 +167,7 @@ func TestTaskControlActorCancelsAllRegisteredTaskRuns(t *testing.T) {
 	registry.Register("task-multi-run", cancelOne)
 	registry.Register("task-multi-run", cancelTwo)
 
-	actor := &taskControlActor{
+	actor := &jobControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		dispatcher:     dispatcher,
 		tasks:          tasks,
@@ -227,11 +227,11 @@ func TestTaskControlActorClearsGoalTasksOnly(t *testing.T) {
 	}
 
 	turns := &fakeTurnDispatcher{}
-	actor := &taskControlActor{
+	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
 		tasks:          tasks,
-		taskRuns:       NewTaskRunRegistry(),
+		taskRuns:       NewJobRunRegistry(),
 	}
 	env, err := ControlClearGoalEnvelopeWithNotify(locator, testTelegramUserID101, "goal cleared by user", true)
 	if err != nil {

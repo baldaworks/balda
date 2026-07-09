@@ -21,7 +21,7 @@ import (
 	"go.uber.org/fx/fxtest"
 )
 
-const testEventKindTask = "task_event"
+const testEventKindTask = "job_event"
 
 func TestIsRuntimeQueuePressure(t *testing.T) {
 	t.Parallel()
@@ -542,7 +542,7 @@ func TestBus_RunHandlesCommandsConcurrently(t *testing.T) {
 	for _, id := range []string{"concurrent-a", "concurrent-b"} {
 		env := commandTestEnvelope(id)
 		env.TaskID = id
-		env.To = actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: id}
+		env.To = actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: id}
 		if _, err := bus.Dispatch(context.Background(), env); err != nil {
 			t.Fatalf("Dispatch(%s) error = %v", id, err)
 		}
@@ -597,7 +597,7 @@ func TestBus_RunLimitsInFlightToFetchBatch(t *testing.T) {
 		id := fmt.Sprintf("bounded-%d", i)
 		env := commandTestEnvelope(id)
 		env.TaskID = id
-		env.To = actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: id}
+		env.To = actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: id}
 		if _, err := bus.Dispatch(context.Background(), env); err != nil {
 			t.Fatalf("Dispatch(%d) error = %v", i, err)
 		}
@@ -676,7 +676,7 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	}
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if err := bus.conn.Publish(baldaruntime.SubjectCommandTask, []byte("{not-json")); err != nil {
+	if err := bus.conn.Publish(baldaruntime.SubjectCommandJob, []byte("{not-json")); err != nil {
 		t.Fatalf("raw publish command: %v", err)
 	}
 	if err := bus.conn.Flush(); err != nil {
@@ -839,10 +839,10 @@ func TestBus_PublishEventDeduplicatesByEnvelopeID(t *testing.T) {
 	env.Namespace = baldaruntime.NamespaceTelemetry
 	env.Kind = testEventKindTask
 	env.Meta = map[string]string{"event_type": baldajobs.TaskEventAgentStarted}
-	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventTaskUpdated, env); err != nil {
+	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("PublishEvent(first) error = %v", err)
 	}
-	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventTaskUpdated, env); err != nil {
+	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("PublishEvent(second) error = %v", err)
 	}
 	status, err := bus.streamStatus(context.Background(), baldaruntime.DefaultEventStream)
@@ -1053,7 +1053,7 @@ func TestBus_EventProjectionPermanentFailurePublishesDLQ(t *testing.T) {
 	env.Namespace = baldaruntime.NamespaceTelemetry
 	env.Kind = testEventKindTask
 	env.Meta = map[string]string{"event_type": baldajobs.TaskEventAgentProgress}
-	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventTaskUpdated, env); err != nil {
+	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("PublishEvent() error = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1115,7 +1115,7 @@ func TestBus_EventProjectionFailureDoesNotBlockCommandExecution(t *testing.T) {
 	eventEnv.Namespace = baldaruntime.NamespaceTelemetry
 	eventEnv.Kind = testEventKindTask
 	eventEnv.Meta = map[string]string{"event_type": baldajobs.TaskEventAgentProgress}
-	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventTaskUpdated, eventEnv); err != nil {
+	if err := bus.PublishEvent(context.Background(), baldaruntime.SubjectEventJobUpdated, eventEnv); err != nil {
 		t.Fatalf("PublishEvent() error = %v", err)
 	}
 	select {

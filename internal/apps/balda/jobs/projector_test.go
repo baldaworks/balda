@@ -33,17 +33,17 @@ func TestEventProjectorProjectsTaskEventIdempotently(t *testing.T) {
 	env := actorlayer.Envelope{
 		ID:          "event-1",
 		Namespace:   baldaruntime.NamespaceTelemetry,
-		Kind:        "task_event",
-		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
+		Kind:        "job_event",
+		From:        actorlayer.SystemAddress("job-events"),
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"text":"working"}`,
 		Meta:        map[string]string{"event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "msg-1"},
 	}
-	if err := projector.Project(ctx, baldaruntime.SubjectEventTaskUpdated, env); err != nil {
+	if err := projector.Project(ctx, baldaruntime.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
 	}
-	if err := projector.Project(ctx, baldaruntime.SubjectEventTaskUpdated, env); err != nil {
+	if err := projector.Project(ctx, baldaruntime.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("Project(duplicate) error = %v", err)
 	}
 	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
@@ -51,7 +51,7 @@ func TestEventProjectorProjectsTaskEventIdempotently(t *testing.T) {
 		t.Fatalf("ListTaskEvents() error = %v", err)
 	}
 	if len(events) != 1 || events[0].EventType != TaskEventAgentProgress || events[0].Actor != "agent:executor" {
-		t.Fatalf("events = %+v, want one projected task event", events)
+		t.Fatalf("events = %+v, want one projected job event", events)
 	}
 }
 
@@ -64,7 +64,7 @@ func TestEventProjectorProjectsCommandEventForTask(t *testing.T) {
 		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "command_event",
 		From:        actorlayer.SystemAddress("transport"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"retry exhausted"}`,
 	}
@@ -89,7 +89,7 @@ func TestEventProjectorProjectsCommandDecodeFailedEventForTask(t *testing.T) {
 		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "command_event",
 		From:        actorlayer.SystemAddress("transport"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"decode failed: invalid json"}`,
 	}
@@ -112,9 +112,9 @@ func TestEventProjectorProjectsDeliveryFailedEventForTask(t *testing.T) {
 	env := actorlayer.Envelope{
 		ID:          "delivery-1:event:failed",
 		Namespace:   baldaruntime.NamespaceTelemetry,
-		Kind:        "task_event",
-		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
+		Kind:        "job_event",
+		From:        actorlayer.SystemAddress("job-events"),
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"telegram send failed"}`,
 	}
@@ -139,27 +139,27 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	eventCreated := actorlayer.Envelope{
 		ID:          "evt-task-created",
 		Namespace:   baldaruntime.NamespaceTelemetry,
-		Kind:        "task_event",
-		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-replay"},
+		Kind:        "job_event",
+		From:        actorlayer.SystemAddress("job-events"),
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"created"}`,
-		Meta:        map[string]string{"event_type": TaskEventTaskCreated, "actor": "task:actor", "message_id": "m-1"},
+		Meta:        map[string]string{"event_type": JobEventCreated, "actor": "task:actor", "message_id": "m-1"},
 	}
 	eventProgress := actorlayer.Envelope{
 		ID:          "evt-task-progress",
 		Namespace:   baldaruntime.NamespaceTelemetry,
-		Kind:        "task_event",
-		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-replay"},
+		Kind:        "job_event",
+		From:        actorlayer.SystemAddress("job-events"),
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"running"}`,
 		Meta:        map[string]string{"event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
 	}
-	if err := projectorA.Project(ctx, baldaruntime.SubjectEventTaskCreated, eventCreated); err != nil {
+	if err := projectorA.Project(ctx, baldaruntime.SubjectEventJobCreated, eventCreated); err != nil {
 		t.Fatalf("Project(created) error = %v", err)
 	}
-	if err := projectorA.Project(ctx, baldaruntime.SubjectEventTaskUpdated, eventProgress); err != nil {
+	if err := projectorA.Project(ctx, baldaruntime.SubjectEventJobUpdated, eventProgress); err != nil {
 		t.Fatalf("Project(progress) error = %v", err)
 	}
 	if err := providerA.Close(); err != nil {
@@ -171,20 +171,20 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	eventCompleted := actorlayer.Envelope{
 		ID:          "evt-task-completed",
 		Namespace:   baldaruntime.NamespaceTelemetry,
-		Kind:        "task_event",
-		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-replay"},
+		Kind:        "job_event",
+		From:        actorlayer.SystemAddress("job-events"),
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeJob, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"completed"}`,
-		Meta:        map[string]string{"event_type": TaskEventTaskCompleted, "actor": "task:actor", "message_id": "m-3"},
+		Meta:        map[string]string{"event_type": JobEventCompleted, "actor": "task:actor", "message_id": "m-3"},
 	}
-	if err := projectorB.Project(ctx, baldaruntime.SubjectEventTaskCreated, eventCreated); err != nil {
+	if err := projectorB.Project(ctx, baldaruntime.SubjectEventJobCreated, eventCreated); err != nil {
 		t.Fatalf("Project(replay created) error = %v", err)
 	}
-	if err := projectorB.Project(ctx, baldaruntime.SubjectEventTaskUpdated, eventProgress); err != nil {
+	if err := projectorB.Project(ctx, baldaruntime.SubjectEventJobUpdated, eventProgress); err != nil {
 		t.Fatalf("Project(replay progress) error = %v", err)
 	}
-	if err := projectorB.Project(ctx, baldaruntime.SubjectEventTaskCompleted, eventCompleted); err != nil {
+	if err := projectorB.Project(ctx, baldaruntime.SubjectEventJobCompleted, eventCompleted); err != nil {
 		t.Fatalf("Project(completed) error = %v", err)
 	}
 
@@ -198,8 +198,8 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	if events[0].ID != eventCreated.ID || events[1].ID != eventProgress.ID || events[2].ID != eventCompleted.ID {
 		t.Fatalf("projected replay event IDs = [%s %s %s], want [%s %s %s]", events[0].ID, events[1].ID, events[2].ID, eventCreated.ID, eventProgress.ID, eventCompleted.ID)
 	}
-	if events[0].EventType != TaskEventTaskCreated || events[1].EventType != TaskEventAgentProgress || events[2].EventType != TaskEventTaskCompleted {
-		t.Fatalf("projected replay event types = [%s %s %s], want [%s %s %s]", events[0].EventType, events[1].EventType, events[2].EventType, TaskEventTaskCreated, TaskEventAgentProgress, TaskEventTaskCompleted)
+	if events[0].EventType != JobEventCreated || events[1].EventType != TaskEventAgentProgress || events[2].EventType != JobEventCompleted {
+		t.Fatalf("projected replay event types = [%s %s %s], want [%s %s %s]", events[0].EventType, events[1].EventType, events[2].EventType, JobEventCreated, TaskEventAgentProgress, JobEventCompleted)
 	}
 }
 

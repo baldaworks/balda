@@ -28,7 +28,7 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.Ses
 	if h.actorDispatcher == nil {
 		return nil, "", fmt.Errorf("swarm runtime is unavailable")
 	}
-	env, taskID, err := actors.WebhookTaskEnvelope(payload, routeName, requestID)
+	env, taskID, err := actors.WebhookJobEnvelope(payload, routeName, requestID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -89,7 +89,7 @@ func (h *BaldaHandler) RunSessionTurnPayload(ctx context.Context, payload actors
 		ts.GetRunner(),
 		userID,
 		ts.GetSessionID(),
-		payload.TaskID,
+		payload.JobID,
 		agentSessionID,
 		deliveryLocator,
 		payload.MessageID,
@@ -108,7 +108,7 @@ func (h *CommandHandler) submitGoalTaskWithProfile(ctx context.Context, locator 
 	if h.taskService != nil {
 		activeGoals, err := h.taskService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
-			return false, fmt.Errorf("list active goal tasks: %w", err)
+			return false, fmt.Errorf("list active goal jobs: %w", err)
 		}
 		if len(activeGoals) > 0 {
 			return false, nil

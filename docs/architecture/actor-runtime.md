@@ -35,8 +35,8 @@ Status: active
 
 - Actor key mapping changes.
 - Command heartbeat or settlement behavior changes.
-- Task/goal/delivery lifecycle changes.
-- Goal workflow, session, or task-result behavior changes.
+- Job/goal/delivery lifecycle changes.
+- Goal workflow, session, or job-result behavior changes.
 
 ## Local actorlayer contract boundaries
 
@@ -56,10 +56,10 @@ Status: active
 - Actorlayer owns:
   - generic actor mechanics: registration, addressing, deterministic lane execution, lifecycle state transitions, and delivery hooks.
 - Balda product actor code owns:
-  - product actor implementations in `internal/apps/balda/actors` for session, task, goal, delivery, and control behavior,
+  - product actor implementations in `internal/apps/balda/actors` for session, job, goal, delivery, and control behavior,
   - product command payloads/envelope builders consumed by ingress,
   - provider runtime invocation details (session execution, tools, model/runtime context),
-  - task/session/delivery state transitions and user-visible outcomes.
+  - job/session/delivery state transitions and user-visible outcomes.
 - Balda transport/runtime code owns:
   - transport protocol and transport-level acknowledgements,
   - queue policy integration (retry/dead-letter thresholds, heartbeats, and backoff tuning),
@@ -68,7 +68,7 @@ Status: active
 ### Why this split exists
 
 - All actor sessions in one Balda process use the configured `balda.provider`; actor contracts do not choose providers.
-- Balda can own product semantics (queue policy, telemetry, task projection, and workspace/task metadata) while still reusing the same execution kernel.
+- Balda can own product semantics (queue policy, telemetry, job projection, and workspace/job metadata) while still reusing the same execution kernel.
 - Future transport/provider integration code must preserve the local actorlayer engine contract and keep product policy in Balda.
 
 ### Balda implementation map
@@ -79,4 +79,4 @@ Status: active
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and actorlayer transport contracts.
 - The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: actorlayer transport `Dispatcher`, `EventPublisher`, `EventConsumer`, `Drainer`, plus actorlayer `Source`.
-- Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`runtime`, `jobs`, `handlers`, and `state`), not in `pkg/actorlayer`.
+- Job projection, retry classification, DLQ reporting, and job/read-model persistence live in Balda packages (`runtime`, `jobs`, `handlers`, and `state`), not in `pkg/actorlayer`.
