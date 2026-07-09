@@ -80,16 +80,16 @@ func sendProgressActivity(ctx context.Context, dispatcher actortransport.Dispatc
 	return dispatchOutbound(ctx, dispatcher, env)
 }
 
-func sendProgressThinking(ctx context.Context, dispatcher actortransport.Dispatcher, jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, text string, sequence int, dedupeSuffix string) error {
-	env, err := actors.ProgressThinkingDeliveryEnvelope(jobID, from, locator, policy, visible, draftID, text, sequence, dedupeSuffix)
+func sendProgressThinking(ctx context.Context, dispatcher actortransport.Dispatcher, jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) error {
+	env, err := actors.ProgressThinkingDeliveryEnvelope(jobID, from, locator, policy, visible, text, sequence, dedupeSuffix)
 	if err != nil {
 		return err
 	}
 	return dispatchOutbound(ctx, dispatcher, env)
 }
 
-func sendProgressPlanUpdate(ctx context.Context, dispatcher actortransport.Dispatcher, jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, plan *progress.PlanSnapshot, text string, dedupeSuffix string) error {
-	env, err := actors.ProgressPlanUpdateDeliveryEnvelope(jobID, from, locator, policy, visible, draftID, plan, text, dedupeSuffix)
+func sendProgressPlanUpdate(ctx context.Context, dispatcher actortransport.Dispatcher, jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, plan *progress.PlanSnapshot, text string, dedupeSuffix string) error {
+	env, err := actors.ProgressPlanUpdateDeliveryEnvelope(jobID, from, locator, policy, visible, plan, text, dedupeSuffix)
 	if err != nil {
 		return err
 	}

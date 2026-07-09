@@ -857,14 +857,17 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.drafts) != 2 {
-		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
+	if len(tgClient.drafts) != 3 {
+		t.Fatalf("draft calls = %d, want 3", len(tgClient.drafts))
 	}
 	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnReasoningOne {
 		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnReasoningOne)
 	}
 	if got := baldaRunTurnDraftText(t, tgClient.drafts[1]); got != "Plan update\n- [in progress] Run tests" {
 		t.Fatalf("draft[1].text = %q, want plan update text", got)
+	}
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[2]); got != baldaRunTurnReasoningTwo {
+		t.Fatalf("draft[2].text = %q, want %s", got, baldaRunTurnReasoningTwo)
 	}
 }
 
@@ -1761,11 +1764,11 @@ func TestRunTurn_SendsRichMarkdownReasoningDraftsInDM(t *testing.T) {
 	if len(tgClient.richDrafts) != 2 {
 		t.Fatalf("rich draft calls = %d, want 2", len(tgClient.richDrafts))
 	}
-	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[0]); got != "> "+baldaRunTurnReasoningOne {
-		t.Fatalf("rich draft[0] markdown = %q, want quoted reasoning", got)
+	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[0]); got != "<tg-thinking>"+baldaRunTurnReasoningOne+"</tg-thinking>" {
+		t.Fatalf("rich draft[0] markdown = %q, want tg-thinking reasoning payload", got)
 	}
-	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[1]); got != "> "+baldaRunTurnReasoningTwo {
-		t.Fatalf("rich draft[1] markdown = %q, want quoted reasoning", got)
+	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[1]); got != "<tg-thinking>"+baldaRunTurnReasoningTwo+"</tg-thinking>" {
+		t.Fatalf("rich draft[1] markdown = %q, want tg-thinking reasoning payload", got)
 	}
 }
 

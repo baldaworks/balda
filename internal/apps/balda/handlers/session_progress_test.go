@@ -30,7 +30,6 @@ func TestSessionProgressDispatcherPlanThinkingActivityFlow(t *testing.T) {
 		actorlayer.ActorAddress{Target: "session", Key: "s1"},
 		baldasession.SessionLocator{ChannelType: "telegram", SessionID: "sess", AddressKey: "chat/topic"},
 		"job-1",
-		101,
 		42,
 		deliveryfmt.ProgressPolicy{Thinking: true, PlanUpdates: true},
 		false,
@@ -60,7 +59,7 @@ func TestSessionProgressDispatcherPlanThinkingActivityFlow(t *testing.T) {
 	if !result.SentProgress {
 		t.Fatalf("expected hidden thinking progress to count as sent")
 	}
-	assertProgressKind(t, dispatcher.envs, 1, deliverycmd.ProgressThinking, false, 0)
+	assertProgressKind(t, dispatcher.envs, 1, deliverycmd.ProgressThinking, true, 2)
 
 	result, err = emitter.HandleNonTerminal(context.Background(), sessionProgressUpdate{})
 	if err != nil {
@@ -72,14 +71,13 @@ func TestSessionProgressDispatcherPlanThinkingActivityFlow(t *testing.T) {
 	assertProgressKind(t, dispatcher.envs, 2, deliverycmd.ProgressActivity, false, 3)
 }
 
-func TestSessionProgressDispatcherVisibleThinkingIncrementsDraftSequence(t *testing.T) {
+func TestSessionProgressDispatcherVisibleThinkingTracksDeliverySequence(t *testing.T) {
 	dispatcher := &captureDispatcher{}
 	emitter := newSessionProgressDispatcher(
 		dispatcher,
 		actorlayer.ActorAddress{Target: "session", Key: "s1"},
 		baldasession.SessionLocator{ChannelType: "telegram", SessionID: "sess", AddressKey: "chat/topic"},
 		"",
-		101,
 		42,
 		deliveryfmt.ProgressPolicy{Thinking: true},
 		false,
@@ -100,8 +98,8 @@ func TestSessionProgressDispatcherVisibleThinkingIncrementsDraftSequence(t *test
 	if err != nil {
 		t.Fatalf("second visible thinking: %v", err)
 	}
-	assertProgressKind(t, dispatcher.envs, 0, deliverycmd.ProgressThinking, true, 0)
-	assertProgressKind(t, dispatcher.envs, 1, deliverycmd.ProgressThinking, true, 1)
+	assertProgressKind(t, dispatcher.envs, 0, deliverycmd.ProgressThinking, true, 1)
+	assertProgressKind(t, dispatcher.envs, 1, deliverycmd.ProgressThinking, true, 2)
 }
 
 func assertProgressKind(t *testing.T, envs []actorlayer.Envelope, idx int, wantKind deliverycmd.ProgressKind, wantVisible bool, wantSequence int) {

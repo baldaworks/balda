@@ -460,7 +460,6 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 	}
 
 	userContent := genai.NewContentFromText(text, genai.RoleUser)
-	draftID := messageID + 1
 	jobBackedDelivery := deliver && strings.TrimSpace(jobID) != "" && h.actorDispatcher != nil
 	deliveryOptions = deliveryfmt.NormalizeOptions(deliveryOptions)
 	progressPolicy := deliveryOptions.ProgressPolicy
@@ -492,7 +491,6 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 			outboundFrom,
 			locator,
 			jobID,
-			draftID,
 			topicID,
 			progressPolicy,
 			jobBackedDelivery,
@@ -543,6 +541,13 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 					break
 				}
 			}
+		}
+		if hasThoughtUpdate || (reasoningText != "" && !hasThoughtUpdate) {
+			zerolog.Ctx(runCtx).Debug().
+				Bool("has_thought_update", hasThoughtUpdate).
+				Int("reasoning_text_char_count", len(reasoningText)).
+				Bool("has_visible_response_text", hasVisibleResponseText).
+				Msg("provider reasoning candidate")
 		}
 		if !ev.TurnComplete && progressEmitter != nil {
 			result, err := progressEmitter.HandleNonTerminal(ctx, sessionProgressUpdate{
@@ -654,6 +659,9 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 			Str("transfer_to_agent", strings.TrimSpace(ev.Actions.TransferToAgent)).
 			Bool("escalate", ev.Actions.Escalate).
 			Bool("final_response", ev.IsFinalResponse()).
+			Bool("has_thought_update", hasThoughtUpdate).
+			Int("reasoning_text_char_count", len(reasoningText)).
+			Bool("has_visible_response_text", hasVisibleResponseText).
 			Int("streamed_text_char_count", streamedText.Len()).
 			Msg("received provider event")
 		if ev.TurnComplete {

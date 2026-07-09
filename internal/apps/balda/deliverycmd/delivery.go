@@ -41,7 +41,6 @@ type Progress struct {
 	Plan     *progress.PlanSnapshot     `json:"plan,omitempty"`
 	Visible  bool                       `json:"visible,omitempty"`
 	Policy   deliveryfmt.ProgressPolicy `json:"policy,omitempty,omitzero"`
-	DraftID  int                        `json:"draft_id,omitempty"`
 	Sequence int                        `json:"sequence,omitempty"`
 }
 
@@ -159,7 +158,7 @@ func ProgressActivityEnvelope(jobID string, from actorlayer.ActorAddress, locato
 	}, dedupeSuffix)
 }
 
-func ProgressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
+func ProgressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
 		Locator: locator,
@@ -169,13 +168,12 @@ func ProgressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locato
 			Text:     strings.TrimSpace(text),
 			Visible:  visible,
 			Policy:   policy,
-			DraftID:  draftID,
 			Sequence: sequence,
 		},
 	}, dedupeSuffix)
 }
 
-func ProgressPlanUpdateEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, plan *progress.PlanSnapshot, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func ProgressPlanUpdateEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, plan *progress.PlanSnapshot, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
 		Locator: locator,
@@ -186,7 +184,6 @@ func ProgressPlanUpdateEnvelope(jobID string, from actorlayer.ActorAddress, loca
 			Plan:    plan,
 			Visible: visible,
 			Policy:  policy,
-			DraftID: draftID,
 		},
 	}, dedupeSuffix)
 }
@@ -224,9 +221,6 @@ func Validate(payload Payload) error {
 		case ProgressActivity:
 			return nil
 		case ProgressThinking:
-			if payload.Progress.Visible && payload.Progress.DraftID <= 0 && payload.Progress.Policy.Thinking {
-				return fmt.Errorf("thinking progress draft id is required when draft placeholders are enabled")
-			}
 		case ProgressPlanUpdate:
 			if strings.TrimSpace(payload.Progress.Text) == "" && (payload.Progress.Plan == nil || len(payload.Progress.Plan.Entries) == 0) {
 				return fmt.Errorf("plan update progress text or plan snapshot is required")

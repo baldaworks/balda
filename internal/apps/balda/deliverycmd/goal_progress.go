@@ -22,7 +22,6 @@ func GoalProgressEnvelope(update baldaexecution.GoalProgressUpdate) (actorlayer.
 			update.Locator,
 			update.Policy,
 			update.Policy.PlanUpdates,
-			0,
 			update.Plan,
 			message,
 			goalProgressDedupeSuffix(update),

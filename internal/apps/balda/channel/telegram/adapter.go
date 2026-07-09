@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	gohtml "html"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,10 @@ type Adapter struct {
 	typingThrottleInterval time.Duration
 	typingLastSentAt       map[string]time.Time
 	now                    func() time.Time
+
+	progressMu          sync.Mutex
+	progressDrafts      map[string]int
+	nextProgressDraftID int
 }
 
 // MessageContext is the balda-facing Telegram message shape.
@@ -95,11 +100,14 @@ type AdapterParams struct {
 // NewAdapter creates the Telegram balda adapter.
 func NewAdapter(params AdapterParams) *Adapter {
 	return &Adapter{
-		messenger:        params.Messenger,
-		tgClient:         params.TGClient,
-		logger:           params.Logger.With().Str("component", "balda.channel.telegram").Logger(),
-		typingLastSentAt: make(map[string]time.Time),
-		now:              time.Now,
+		messenger:           params.Messenger,
+		tgClient:            params.TGClient,
+		logger:              params.Logger.With().Str("component", "balda.channel.telegram").Logger(),
+		planUpdatesEnabled:  params.PlanUpdatesEnabled,
+		typingLastSentAt:    make(map[string]time.Time),
+		now:                 time.Now,
+		progressDrafts:      make(map[string]int),
+		nextProgressDraftID: 1,
 	}
 }
 
@@ -131,6 +139,25 @@ func (a *Adapter) shouldSendTyping(locator baldasession.SessionLocator) bool {
 	}
 	a.typingLastSentAt[key] = now
 	return true
+}
+
+func (a *Adapter) progressDraftID(locator baldasession.SessionLocator) int {
+	if a == nil {
+		return 0
+	}
+	a.progressMu.Lock()
+	defer a.progressMu.Unlock()
+	key := locator.SessionID
+	if draftID := a.progressDrafts[key]; draftID > 0 {
+		return draftID
+	}
+	if a.nextProgressDraftID <= 0 {
+		a.nextProgressDraftID = 1
+	}
+	draftID := a.nextProgressDraftID
+	a.nextProgressDraftID++
+	a.progressDrafts[key] = draftID
+	return draftID
 }
 
 // MessageContextFromEvent converts a Telegram message event into balda channel context.
@@ -473,16 +500,7 @@ func telegramReasoningMarkdown(text string) string {
 	if text == "" {
 		return ""
 	}
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			lines[i] = ">"
-			continue
-		}
-		lines[i] = "> " + trimmed
-	}
-	return strings.Join(lines, "\n")
+	return "<tg-thinking>" + gohtml.EscapeString(text) + "</tg-thinking>"
 }
 
 func telegramRichMarkdownEnabled(mode string) bool {
@@ -615,6 +633,13 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 	}
 	switch progress.Kind {
 	case deliverycmd.ProgressThinking:
+		a.logger.Debug().
+			Str("session_id", locator.SessionID).
+			Bool("visible", progress.Visible).
+			Bool("policy_thinking", progress.Policy.Thinking).
+			Int("text_char_count", len(strings.TrimSpace(progress.Text))).
+			Int("sequence", progress.Sequence).
+			Msg("telegram thinking progress received")
 		if !progress.Policy.Thinking {
 			return nil
 		}
@@ -625,10 +650,16 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 		if err != nil {
 			return err
 		}
+		draftID := a.progressDraftID(locator)
+		a.logger.Debug().
+			Str("session_id", locator.SessionID).
+			Int("draft_id", draftID).
+			Bool("rich_markdown", telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode())).
+			Msg("telegram rendering thinking progress")
 		if telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode()) {
-			return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, progress.DraftID, telegramReasoningMarkdown(progress.Text), topicID, telegramfmt.ModeRichMarkdown)
+			return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, draftID, telegramReasoningMarkdown(progress.Text), topicID, telegramfmt.ModeRichMarkdown)
 		}
-		return a.messenger.SendDraftPlain(ctx, chatID, progress.DraftID, progress.Text, topicID)
+		return a.messenger.SendDraftPlain(ctx, chatID, draftID, progress.Text, topicID)
 	case deliverycmd.ProgressPlanUpdate:
 		chatID, topicID, err := telegramTuple(locator)
 		if err != nil {
@@ -637,12 +668,12 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 		if telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode()) {
 			markdown := telegramPlanUpdateMarkdown(progress)
 			if progress.Policy.Thinking {
-				return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, progress.DraftID, markdown, topicID, telegramfmt.ModeRichMarkdown)
+				return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, a.progressDraftID(locator), markdown, topicID, telegramfmt.ModeRichMarkdown)
 			}
 			return a.messenger.SendMarkdownWithMode(ctx, chatID, markdown, topicID, telegramfmt.ModeRichMarkdown)
 		}
 		if progress.Policy.Thinking {
-			return a.messenger.SendDraftPlain(ctx, chatID, progress.DraftID, progress.Text, topicID)
+			return a.messenger.SendDraftPlain(ctx, chatID, a.progressDraftID(locator), progress.Text, topicID)
 		}
 		return a.messenger.SendPlain(ctx, chatID, progress.Text, topicID)
 	default:

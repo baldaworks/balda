@@ -22,16 +22,13 @@ type sessionProgressDispatcher struct {
 	from       actorlayer.ActorAddress
 	locator    baldasession.SessionLocator
 	jobID      string
-	draftID    int
 	topicID    int
 	policy     deliveryfmt.ProgressPolicy
 	logger     zerolog.Logger
 	failHard   bool
 
-	thinkingIdx     int
-	lastPlanText    string
-	planDraftActive bool
-	deliverySeq     int
+	lastPlanText string
+	deliverySeq  int
 }
 
 type sessionProgressUpdate struct {
@@ -53,7 +50,6 @@ func newSessionProgressDispatcher(
 	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	jobID string,
-	draftID int,
 	topicID int,
 	policy deliveryfmt.ProgressPolicy,
 	failHard bool,
@@ -64,7 +60,6 @@ func newSessionProgressDispatcher(
 		from:       from,
 		locator:    locator,
 		jobID:      jobID,
-		draftID:    draftID,
 		topicID:    topicID,
 		policy:     policy,
 		logger:     logger,
@@ -81,31 +76,32 @@ func (d *sessionProgressDispatcher) HandleNonTerminal(ctx context.Context, updat
 		visiblePlanUpdate := d.policy.PlanUpdates
 		d.deliverySeq++
 		dedupeSuffix := fmt.Sprintf("progress:plan:%03d", d.deliverySeq)
-		if err := sendProgressPlanUpdate(ctx, d.dispatcher, d.jobID, d.from, d.locator, d.policy, visiblePlanUpdate, d.draftID, &update.Plan, update.PlanProgressText, dedupeSuffix); err != nil {
+		if err := sendProgressPlanUpdate(ctx, d.dispatcher, d.jobID, d.from, d.locator, d.policy, visiblePlanUpdate, &update.Plan, update.PlanProgressText, dedupeSuffix); err != nil {
 			if dispatchErr := d.handleDispatchError(err, "failed to dispatch plan progress delivery"); dispatchErr != nil {
 				return result, dispatchErr
 			}
 		} else {
 			d.lastPlanText = update.PlanProgressText
 			result.DispatchedPlanText = strings.TrimSpace(update.PlanProgressText)
-			if visiblePlanUpdate {
-				d.planDraftActive = true
-			}
 			result.SentProgress = true
 		}
 	}
 	if update.HasThoughtUpdate {
-		visibleThinking := d.policy.Thinking && strings.TrimSpace(update.ReasoningText) != "" && !d.planDraftActive && !update.HasVisibleResponseText
+		visibleThinking := d.policy.Thinking && strings.TrimSpace(update.ReasoningText) != "" && !update.HasVisibleResponseText
+		d.logger.Debug().
+			Str("session_id", d.locator.SessionID).
+			Bool("policy_thinking", d.policy.Thinking).
+			Bool("has_visible_response_text", update.HasVisibleResponseText).
+			Int("reasoning_text_char_count", len(strings.TrimSpace(update.ReasoningText))).
+			Bool("visible_thinking", visibleThinking).
+			Msg("session progress thinking decision")
 		d.deliverySeq++
 		dedupeSuffix := fmt.Sprintf("progress:thinking:%03d", d.deliverySeq)
-		if err := sendProgressThinking(ctx, d.dispatcher, d.jobID, d.from, d.locator, d.policy, visibleThinking, d.draftID, update.ReasoningText, d.thinkingIdx, dedupeSuffix); err != nil {
+		if err := sendProgressThinking(ctx, d.dispatcher, d.jobID, d.from, d.locator, d.policy, visibleThinking, update.ReasoningText, d.deliverySeq, dedupeSuffix); err != nil {
 			if dispatchErr := d.handleDispatchError(err, "failed to dispatch thinking progress delivery"); dispatchErr != nil {
 				return result, dispatchErr
 			}
 		} else {
-			if visibleThinking {
-				d.thinkingIdx++
-			}
 			result.SentProgress = true
 		}
 	}

@@ -157,6 +157,15 @@ func (a *jobDeliveryActor) dispatchDelivery(ctx context.Context, payload Deliver
 		if payload.Progress == nil {
 			return "", fmt.Errorf("progress payload is required")
 		}
+		if payload.Progress.Kind == DeliveryProgressThinking {
+			a.logger.Debug().
+				Str("session_id", payload.Locator.SessionID).
+				Bool("visible", payload.Progress.Visible).
+				Bool("policy_thinking", payload.Progress.Policy.Thinking).
+				Int("text_char_count", len(strings.TrimSpace(payload.Progress.Text))).
+				Int("sequence", payload.Progress.Sequence).
+				Msg("dispatching thinking progress delivery")
+		}
 		return "", a.channel.SendProgress(ctx, payload.Locator, *payload.Progress)
 	default:
 		return "", fmt.Errorf("unsupported delivery mode %q", payload.Mode)

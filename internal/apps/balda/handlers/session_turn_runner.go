@@ -112,7 +112,6 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 		outboundFrom,
 		deliveryLocator,
 		payload.JobID,
-		payload.MessageID+1,
 		payload.TopicID,
 		actors.NormalizeSessionDeliveryOptions(payload).ProgressPolicy,
 		strings.TrimSpace(payload.JobID) != "",

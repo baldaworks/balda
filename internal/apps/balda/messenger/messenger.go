@@ -472,10 +472,20 @@ func (m *Messenger) SendChatAction(ctx context.Context, chatID int64, topicID in
 	}
 	if resp.JSON200 == nil {
 		if resp.HTTPResponse != nil && resp.HTTPResponse.StatusCode >= http.StatusOK && resp.HTTPResponse.StatusCode < http.StatusMultipleChoices {
+			m.logger.Debug().
+				Int64("chat_id", chatID).
+				Int("topic_id", topicID).
+				Str("action", action).
+				Msg("sending chat action succeeded")
 			return nil
 		}
 		return fmt.Errorf("sending chat action %q to chat %d: no response body", action, chatID)
 	}
+	m.logger.Debug().
+		Int64("chat_id", chatID).
+		Int("topic_id", topicID).
+		Str("action", action).
+		Msg("sending chat action succeeded")
 	return nil
 }
 

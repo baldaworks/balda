@@ -64,12 +64,12 @@ func ProgressActivityDeliveryEnvelope(jobID string, from actorlayer.ActorAddress
 	return deliverycmd.ProgressActivityEnvelope(jobID, from, locator, policy, sequence, dedupeSuffix)
 }
 
-func ProgressThinkingDeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return deliverycmd.ProgressThinkingEnvelope(jobID, from, locator, policy, visible, draftID, text, sequence, dedupeSuffix)
+func ProgressThinkingDeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return deliverycmd.ProgressThinkingEnvelope(jobID, from, locator, policy, visible, text, sequence, dedupeSuffix)
 }
 
-func ProgressPlanUpdateDeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, plan *progress.PlanSnapshot, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return deliverycmd.ProgressPlanUpdateEnvelope(jobID, from, locator, policy, visible, draftID, plan, text, dedupeSuffix)
+func ProgressPlanUpdateDeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, plan *progress.PlanSnapshot, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return deliverycmd.ProgressPlanUpdateEnvelope(jobID, from, locator, policy, visible, plan, text, dedupeSuffix)
 }
 
 func validateDeliveryPayload(payload DeliveryPayload) error { return deliverycmd.Validate(payload) }
