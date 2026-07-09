@@ -88,7 +88,7 @@ var Module = fx.Module("balda_handlers",
 
 			params.LC.Append(fx.Hook{
 				OnStart: func(ctx context.Context) error {
-					if err := scheduler.reconcileConfiguredTasks(ctx); err != nil {
+					if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
 						return err
 					}
 					scheduler.start()

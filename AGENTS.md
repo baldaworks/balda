@@ -54,7 +54,7 @@ go tool golangci-lint run
 
 ## Scheduling
 
-Recurring scheduling is config-managed via `balda.scheduler.tasks`. It is not a chat command surface.
+Recurring scheduling is config-managed via `balda.scheduler.jobs`. It is not a chat command surface.
 
 ## Documentation
 

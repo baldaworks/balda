@@ -15,7 +15,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func TestScheduledJobSchedulerDispatchTask_PublishesCommandAndReschedules(t *testing.T) {
+func TestScheduledJobSchedulerDispatchJob_PublishesCommandAndReschedules(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -43,8 +43,8 @@ func TestScheduledJobSchedulerDispatchTask_PublishesCommandAndReschedules(t *tes
 	bus := &recordingHandlerCommandBus{}
 	scheduler := newSchedulerForTest(t, store, bus, now)
 
-	if err := scheduler.dispatchTask(ctx, record, now); err != nil {
-		t.Fatalf("dispatchTask() error = %v", err)
+	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
+		t.Fatalf("dispatchJob() error = %v", err)
 	}
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("published commands = %d, want 1", got)
@@ -85,7 +85,7 @@ func TestScheduledJobSchedulerDispatchTask_PublishesCommandAndReschedules(t *tes
 	}
 }
 
-func TestScheduledJobSchedulerDispatchTask_PublishesWithoutRestoringSession(t *testing.T) {
+func TestScheduledJobSchedulerDispatchJob_PublishesWithoutRestoringSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -111,8 +111,8 @@ func TestScheduledJobSchedulerDispatchTask_PublishesWithoutRestoringSession(t *t
 	bus := &recordingHandlerCommandBus{}
 	scheduler := newSchedulerForTest(t, store, bus, now)
 
-	if err := scheduler.dispatchTask(ctx, record, now); err != nil {
-		t.Fatalf("dispatchTask() error = %v", err)
+	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
+		t.Fatalf("dispatchJob() error = %v", err)
 	}
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("published commands = %d, want 1", got)
@@ -148,8 +148,8 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_LocatorTarget(t *testing.
 		},
 	}
 
-	if err := scheduler.reconcileConfiguredTasks(ctx); err != nil {
-		t.Fatalf("reconcileConfiguredTasks() error = %v", err)
+	if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+		t.Fatalf("reconcileConfiguredJobs() error = %v", err)
 	}
 
 	managed, ok, err := store.GetByID(ctx, "managed-task")
@@ -173,7 +173,7 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_LocatorTarget(t *testing.
 	}
 }
 
-func TestScheduledJobSchedulerDispatchTask_IdempotentForSameDueSlot(t *testing.T) {
+func TestScheduledJobSchedulerDispatchJob_IdempotentForSameDueSlot(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -200,11 +200,11 @@ func TestScheduledJobSchedulerDispatchTask_IdempotentForSameDueSlot(t *testing.T
 	bus := &recordingHandlerCommandBus{}
 	scheduler := newSchedulerForTest(t, store, bus, now)
 
-	if err := scheduler.dispatchTask(ctx, record, now); err != nil {
-		t.Fatalf("dispatchTask() first call error = %v", err)
+	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
+		t.Fatalf("dispatchJob() first call error = %v", err)
 	}
-	if err := scheduler.dispatchTask(ctx, record, now); err != nil {
-		t.Fatalf("dispatchTask() second call error = %v", err)
+	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
+		t.Fatalf("dispatchJob() second call error = %v", err)
 	}
 	if got := len(bus.commands); got != 1 {
 		t.Fatalf("published commands after duplicate dispatch = %d, want 1", got)
@@ -399,8 +399,8 @@ func TestScheduledJobSchedulerReconcileConfiguredTasks_UpsertsAndDeletes(t *test
 		},
 	}
 
-	if err := scheduler.reconcileConfiguredTasks(ctx); err != nil {
-		t.Fatalf("reconcileConfiguredTasks() error = %v", err)
+	if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
+		t.Fatalf("reconcileConfiguredJobs() error = %v", err)
 	}
 
 	managed, ok, err := store.GetByID(ctx, "managed-task")

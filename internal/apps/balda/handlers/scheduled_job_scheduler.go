@@ -25,7 +25,7 @@ const (
 	defaultSchedulerMaxRetries   = 3
 )
 
-// ConfiguredScheduledJob defines a startup-managed recurring task.
+// ConfiguredScheduledJob defines a startup-managed recurring job.
 type ConfiguredScheduledJob struct {
 	ID       string
 	Cron     string
@@ -57,7 +57,7 @@ type scheduledJobSchedulerParams struct {
 	Config        ScheduledJobSchedulerConfig
 }
 
-// ScheduledJobScheduler publishes due locator-bound recurring tasks as durable job commands.
+// ScheduledJobScheduler publishes due locator-bound recurring jobs as durable job commands.
 type ScheduledJobScheduler struct {
 	jobStore   baldastate.ScheduledJobStore
 	dispatcher actortransport.Dispatcher
@@ -89,7 +89,7 @@ func (s *ScheduledJobScheduler) start() {
 
 		for {
 			if err := s.dispatchDue(runCtx, s.now().UTC()); err != nil {
-				s.logger.Warn().Err(err).Msg("failed to dispatch due tasks")
+				s.logger.Warn().Err(err).Msg("failed to dispatch due jobs")
 			}
 
 			select {
@@ -119,35 +119,35 @@ func (s *ScheduledJobScheduler) stop(ctx context.Context) error {
 	}
 }
 
-func (s *ScheduledJobScheduler) reconcileConfiguredTasks(ctx context.Context) error {
+func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) error {
 	desired := make(map[string]struct{}, len(s.config.Jobs))
 	now := s.now().UTC()
 
-	for _, task := range s.config.Jobs {
-		target, err := resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: task.Target, Key: task.Key})
+	for _, job := range s.config.Jobs {
+		target, err := resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: job.Target, Key: job.Key})
 		if err != nil {
-			return fmt.Errorf("resolve scheduler job %q target: %w", task.ID, err)
+			return fmt.Errorf("resolve scheduler job %q target: %w", job.ID, err)
 		}
 		var reportTo *resolvedEnvelopeTarget
-		if task.ReportTo != nil {
-			resolved, err := resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: task.ReportTo.Target, Key: task.ReportTo.Key})
+		if job.ReportTo != nil {
+			resolved, err := resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: job.ReportTo.Target, Key: job.ReportTo.Key})
 			if err != nil {
-				return fmt.Errorf("resolve scheduler job %q report_to: %w", task.ID, err)
+				return fmt.Errorf("resolve scheduler job %q report_to: %w", job.ID, err)
 			}
 			reportTo = &resolved
 		}
-		nextRunAt, err := nextRunAtFromSpec(task.Cron, now)
+		nextRunAt, err := nextRunAtFromSpec(job.Cron, now)
 		if err != nil {
-			return fmt.Errorf("compute next run for scheduler job %q: %w", task.ID, err)
+			return fmt.Errorf("compute next run for scheduler job %q: %w", job.ID, err)
 		}
 		record := baldastate.ScheduledJobRecord{
-			JobID:        task.ID,
+			JobID:        job.ID,
 			SessionID:    target.Locator.SessionID,
 			ChannelType:  target.Locator.ChannelType,
 			AddressKey:   target.Locator.AddressKey,
 			AddressJSON:  target.Locator.AddressJSON,
-			Content:      task.Content,
-			ScheduleSpec: task.Cron,
+			Content:      job.Content,
+			ScheduleSpec: job.Cron,
 			Timezone:     "UTC",
 			Status:       baldastate.ScheduledJobStatusActive,
 			MaxRetries:   defaultSchedulerMaxRetries,
@@ -162,16 +162,16 @@ func (s *ScheduledJobScheduler) reconcileConfiguredTasks(ctx context.Context) er
 			record.ReportToAddressJSON = reportTo.Locator.AddressJSON
 		}
 		if err := s.jobStore.Upsert(ctx, record); err != nil {
-			return fmt.Errorf("upsert scheduler job %q: %w", task.ID, err)
+			return fmt.Errorf("upsert scheduler job %q: %w", job.ID, err)
 		}
-		desired[task.ID] = struct{}{}
+		desired[job.ID] = struct{}{}
 	}
 
-	currentTasks, err := s.jobStore.List(ctx)
+	currentJobs, err := s.jobStore.List(ctx)
 	if err != nil {
 		return fmt.Errorf("list persisted scheduler jobs: %w", err)
 	}
-	for _, existing := range currentTasks {
+	for _, existing := range currentJobs {
 		jobID := strings.TrimSpace(existing.JobID)
 		if _, ok := desired[jobID]; ok {
 			continue
@@ -190,16 +190,16 @@ func (s *ScheduledJobScheduler) dispatchDue(ctx context.Context, now time.Time) 
 		return fmt.Errorf("list due jobs: %w", err)
 	}
 
-	for _, task := range due {
-		if err := s.dispatchTask(ctx, task, now); err != nil {
-			s.logger.Warn().Err(err).Str("job_id", task.JobID).Msg("failed to dispatch job")
+	for _, job := range due {
+		if err := s.dispatchJob(ctx, job, now); err != nil {
+			s.logger.Warn().Err(err).Str("job_id", job.JobID).Msg("failed to dispatch job")
 		}
 	}
 	return nil
 }
 
-func (s *ScheduledJobScheduler) dispatchTask(ctx context.Context, task baldastate.ScheduledJobRecord, now time.Time) error {
-	jobID := strings.TrimSpace(task.JobID)
+func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.ScheduledJobRecord, now time.Time) error {
+	jobID := strings.TrimSpace(job.JobID)
 	if jobID == "" {
 		return fmt.Errorf("job id is required")
 	}
@@ -255,8 +255,8 @@ func (s *ScheduledJobScheduler) dispatchTask(ctx context.Context, task baldastat
 	return nil
 }
 
-func (s *ScheduledJobScheduler) resolveScheduledJobTarget(ctx context.Context, task baldastate.ScheduledJobRecord) (resolvedEnvelopeTarget, error) {
-	locator, err := baldasession.NewSessionLocator(task.ChannelType, task.AddressKey, task.AddressJSON, task.SessionID)
+func (s *ScheduledJobScheduler) resolveScheduledJobTarget(ctx context.Context, job baldastate.ScheduledJobRecord) (resolvedEnvelopeTarget, error) {
+	locator, err := baldasession.NewSessionLocator(job.ChannelType, job.AddressKey, job.AddressJSON, job.SessionID)
 	if err != nil {
 		return resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner})
 	}
@@ -276,25 +276,25 @@ func (s *ScheduledJobScheduler) resolveScheduledJobTarget(ctx context.Context, t
 
 func (s *ScheduledJobScheduler) dispatchScheduledJob(
 	ctx context.Context,
-	task baldastate.ScheduledJobRecord,
+	job baldastate.ScheduledJobRecord,
 	target resolvedEnvelopeTarget,
 	content string,
 	dispatchKey string,
 ) error {
 	var reportTo *baldasession.SessionLocator
-	if task.ReportToEnabled {
-		locator, err := baldasession.NewSessionLocator(task.ReportToChannelType, task.ReportToAddressKey, task.ReportToAddressJSON, task.ReportToSessionID)
+	if job.ReportToEnabled {
+		locator, err := baldasession.NewSessionLocator(job.ReportToChannelType, job.ReportToAddressKey, job.ReportToAddressJSON, job.ReportToSessionID)
 		if err != nil {
-			return s.markFailure(ctx, task.JobID, fmt.Errorf("resolve report_to locator: %w", err))
+			return s.markFailure(ctx, job.JobID, fmt.Errorf("resolve report_to locator: %w", err))
 		}
 		reportTo = &locator
 	}
-	env, err := actors.ScheduledJobEnvelope(task.JobID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
+	env, err := actors.ScheduledJobEnvelope(job.JobID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
 	if err != nil {
-		return s.markFailure(ctx, task.JobID, err)
+		return s.markFailure(ctx, job.JobID, err)
 	}
 	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
-		return s.markFailure(ctx, task.JobID, fmt.Errorf("publish scheduled job command: %w", err))
+		return s.markFailure(ctx, job.JobID, fmt.Errorf("publish scheduled job command: %w", err))
 	}
 	return nil
 }
@@ -378,47 +378,47 @@ func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (Sche
 	}
 
 	seenJobIDs := make(map[string]struct{}, len(raw.Jobs))
-	for idx, rawTask := range raw.Jobs {
-		jobID := strings.TrimSpace(rawTask.ID)
+	for idx, rawJob := range raw.Jobs {
+		jobID := strings.TrimSpace(rawJob.ID)
 		if jobID == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].id is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].id is required", idx)
 		}
 		if _, exists := seenJobIDs[jobID]; exists {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("duplicate balda.scheduler.tasks id %q", jobID)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("duplicate balda.scheduler.jobs id %q", jobID)
 		}
 		seenJobIDs[jobID] = struct{}{}
 
-		cronSpec := strings.TrimSpace(rawTask.Cron)
+		cronSpec := strings.TrimSpace(rawJob.Cron)
 		if cronSpec == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].cron is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].cron is required", idx)
 		}
 		if _, err := parseScheduleSpec(cronSpec); err != nil {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("invalid balda.scheduler.tasks[%d].cron: %w", idx, err)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("invalid balda.scheduler.jobs[%d].cron: %w", idx, err)
 		}
 
-		target := strings.TrimSpace(rawTask.Target)
+		target := strings.TrimSpace(rawJob.Target)
 		if target == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.target is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.target is required", idx)
 		}
-		key := strings.TrimSpace(rawTask.Key)
+		key := strings.TrimSpace(rawJob.Key)
 		if key == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.key is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.key is required", idx)
 		}
-		content := strings.TrimSpace(rawTask.Content)
+		content := strings.TrimSpace(rawJob.Content)
 		if content == "" {
-			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.content is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.content is required", idx)
 		}
 		var reportTo *ConfiguredScheduledJobTarget
-		if rawTask.ReportTo != nil {
+		if rawJob.ReportTo != nil {
 			reportTo = &ConfiguredScheduledJobTarget{
-				Target: strings.TrimSpace(rawTask.ReportTo.Target),
-				Key:    strings.TrimSpace(rawTask.ReportTo.Key),
+				Target: strings.TrimSpace(rawJob.ReportTo.Target),
+				Key:    strings.TrimSpace(rawJob.ReportTo.Key),
 			}
 			if reportTo.Target == "" {
-				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.report_to.target is required", idx)
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.target is required", idx)
 			}
 			if reportTo.Key == "" {
-				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.report_to.key is required", idx)
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.jobs[%d].envelope.report_to.key is required", idx)
 			}
 		}
 

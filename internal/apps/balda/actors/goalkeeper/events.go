@@ -14,7 +14,7 @@ import (
 )
 
 func newGoalProgressUpdate(
-	payload goalTaskPayload,
+	payload goalJobPayload,
 	step string,
 	iteration int,
 	kind baldaexecution.GoalProgressKind,

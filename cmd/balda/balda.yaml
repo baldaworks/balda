@@ -170,12 +170,12 @@ balda:
   swarm: {}
 
   scheduler:
-    # Startup-reconciled recurring tasks.
-    # Tasks are upserted by id on boot; missing ids are deleted from state.db.
-    # Tasks use cron syntax (5 fields) or cron descriptors like @every 10m.
+    # Startup-reconciled recurring jobs.
+    # Jobs are upserted by id on boot; missing ids are deleted from state.db.
+    # Jobs use cron syntax (5 fields) or cron descriptors like @every 10m.
     # By default, scheduled turns are fire-and-forget. Set envelope.report_to to send progress/final replies.
     # Example:
-    # tasks:
+    # jobs:
     #   - id: "owner-daily-summary"
     #     cron: "0 9 * * *"
     #     envelope:
@@ -185,7 +185,7 @@ balda:
     #       report_to:
     #         target: "alias"
     #         key: "owner"
-    tasks: []
+    jobs: []
 
   workspace:
     # Workspace mode:

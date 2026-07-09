@@ -1004,7 +1004,7 @@ All events are published as the same envelope shape. For event envelopes,
 ### Scheduled job runtime semantics (internal)
 
 Balda includes an internal scheduler backed by `balda_scheduled_tasks`.
-Scheduled jobs are managed from config on startup using `balda.scheduler.tasks`.
+Scheduled jobs are managed from config on startup using `balda.scheduler.jobs`.
 Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 `content`, and optional `report_to`.
 

@@ -325,7 +325,7 @@ Common settings:
 - `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations; defaults to `25`.
 - `balda.nats.*`: built-in command/event runtime settings. Defaults bind to `127.0.0.1` on a random local port, keep monitoring disabled, and store runtime files under `${balda.state_dir}/nats`.
 - `balda.swarm`: optional advanced runtime tuning for goals, scheduled work, retries, and webhook delivery. Most installs should leave it at defaults.
-- `balda.scheduler.tasks`: startup-reconciled recurring tasks. Each task has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class task commands; replies are fire-and-forget unless `report_to` is set. Use `target: locator` with a `/locator` value in `key` to target a specific session.
+- `balda.scheduler.jobs`: startup-reconciled recurring jobs. Each job has `id`, `cron`, and `envelope` with `target`, `key`, `content`, and optional `report_to`. Scheduled work publishes first-class job commands; replies are fire-and-forget unless `report_to` is set. Use `target: locator` with a `/locator` value in `key` to target a specific session.
 - `balda.workspace.mode`: `auto` by default; uses git worktrees when Balda runs in a git repository.
 - `balda.workspace.sessions_dir`: directory name under `balda.state_dir` used for per-session worktrees (defaults to `sessions`).
 - `balda.mcp_servers`: extra MCP server IDs added to every Balda-started session.

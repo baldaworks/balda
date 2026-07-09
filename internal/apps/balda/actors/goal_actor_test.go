@@ -43,9 +43,9 @@ func TestGoalKeeperActorRejectsMismatchedEnvelopeAndPayloadJobID(t *testing.T) {
 		MaxIterations:   1,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "ship release", "101", 1)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "ship release", "101", 1)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	env.Meta = baldaexecution.WithJobIDMeta(nil, "other-job")
 
@@ -80,9 +80,9 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 		Logger:          zerolog.Nop(),
 	})
 	profile := deliveryfmt.Profile{Format: deliveryfmt.FormatAuto, TelegramMode: "rich_markdown"}
-	env, err := goalkeeper.GoalTaskEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: profile}, "ship release", "101", 3)
+	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: profile}, "ship release", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -152,9 +152,9 @@ func TestGoalKeeperActorCompletesPassingRunWithoutWorkspaceExport(t *testing.T) 
 		MaxIterations:   3,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "ship release", "101", 3)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "ship release", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -207,9 +207,9 @@ func TestGoalKeeperActorUsesLatestValidatorVerdictForCompletion(t *testing.T) {
 		MaxIterations:   3,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "count lines", "101", 3)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "count lines", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -291,9 +291,9 @@ func TestGoalKeeperActorFinalFailureUsesLatestValidatorOutput(t *testing.T) {
 		MaxIterations:   2,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "count lines", "101", 2)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "count lines", "101", 2)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -360,7 +360,7 @@ func TestGoalKeeperActorRejectsSecondActiveGoalInSession(t *testing.T) {
 		OwnerActor:    baldaexecution.ActorTypeGoalkeeper + ":goal-existing",
 		AssignedActor: baldaexecution.ActorTypeGoalkeeper + ":goal-existing",
 	}, "test", nil); err != nil {
-		t.Fatalf("Create existing goal task: %v", err)
+		t.Fatalf("Create existing goal job: %v", err)
 	}
 	runtimeBuilder := &fakeGoalRunPreparer{t: t}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
@@ -372,9 +372,9 @@ func TestGoalKeeperActorRejectsSecondActiveGoalInSession(t *testing.T) {
 		MaxIterations:   3,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "run tests", "101", 3)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "run tests", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -431,9 +431,9 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 		MaxIterations:   3,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "run tests", "101", 3)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "run tests", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -505,9 +505,9 @@ func TestGoalKeeperActorDeliversPlanUpdatesWhenEnabled(t *testing.T) {
 		MaxIterations:   3,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "run tests", "101", 3)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "run tests", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -664,9 +664,9 @@ func TestGoalKeeperActorPreservesWorkspaceOnExportFailure(t *testing.T) {
 		MaxIterations:   3,
 		Logger:          zerolog.Nop(),
 	})
-	env, err := goalkeeper.GoalTaskEnvelope(locator, "ship release", "101", 3)
+	env, err := goalkeeper.GoalJobEnvelope(locator, "ship release", "101", 3)
 	if err != nil {
-		t.Fatalf("GoalTaskEnvelope() error = %v", err)
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)

@@ -100,11 +100,11 @@ func (h *BaldaHandler) RunSessionTurnPayload(ctx context.Context, payload actors
 	)
 }
 
-func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error) {
-	return h.submitGoalTaskWithOptions(ctx, locator, deliveryfmt.Options{}, objective, transportUserID)
+func (h *CommandHandler) submitGoalJob(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error) {
+	return h.submitGoalJobWithOptions(ctx, locator, deliveryfmt.Options{}, objective, transportUserID)
 }
 
-func (h *CommandHandler) submitGoalTaskWithOptions(ctx context.Context, locator baldasession.SessionLocator, deliveryOptions deliveryfmt.Options, objective string, transportUserID string) (bool, error) {
+func (h *CommandHandler) submitGoalJobWithOptions(ctx context.Context, locator baldasession.SessionLocator, deliveryOptions deliveryfmt.Options, objective string, transportUserID string) (bool, error) {
 	if h.jobService != nil {
 		activeGoals, err := h.jobService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
@@ -115,7 +115,7 @@ func (h *CommandHandler) submitGoalTaskWithOptions(ctx context.Context, locator 
 		}
 	}
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalkeeper.GoalTaskEnvelopeWithOptions(locator, deliveryfmt.NormalizeOptions(deliveryOptions), objective, transportUserID, maxIterations)
+	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.NormalizeOptions(deliveryOptions), objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
 	}

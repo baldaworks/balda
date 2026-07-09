@@ -194,7 +194,7 @@ func TestTaskControlActorCancelsAllRegisteredTaskRuns(t *testing.T) {
 	}
 }
 
-func TestTaskControlActorClearsGoalTasksOnly(t *testing.T) {
+func TestTaskControlActorClearsGoalJobsOnly(t *testing.T) {
 	ctx := context.Background()
 	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
 	_ = provider
@@ -244,19 +244,19 @@ func TestTaskControlActorClearsGoalTasksOnly(t *testing.T) {
 		t.Fatalf("CancelSession calls = %+v, want 0", turns.cancelCalls)
 	}
 
-	goalTask, ok, err := tasks.Get(ctx, "goal-task")
+	goalJob, ok, err := tasks.Get(ctx, "goal-task")
 	if err != nil {
-		t.Fatalf("Get goal task: %v", err)
+		t.Fatalf("Get goal job: %v", err)
 	}
-	if !ok || goalTask.Status != baldastate.JobStatusCanceled {
-		t.Fatalf("goal task = %+v found=%v, want canceled", goalTask, ok)
+	if !ok || goalJob.Status != baldastate.JobStatusCanceled {
+		t.Fatalf("goal job = %+v found=%v, want canceled", goalJob, ok)
 	}
-	nonGoalTask, ok, err := tasks.Get(ctx, "non-goal-task")
+	nonGoalJob, ok, err := tasks.Get(ctx, "non-goal-task")
 	if err != nil {
-		t.Fatalf("Get non-goal task: %v", err)
+		t.Fatalf("Get non-goal job: %v", err)
 	}
-	if !ok || nonGoalTask.Status != baldastate.JobStatusRunning {
-		t.Fatalf("non-goal task = %+v found=%v, want still running", nonGoalTask, ok)
+	if !ok || nonGoalJob.Status != baldastate.JobStatusRunning {
+		t.Fatalf("non-goal job = %+v found=%v, want still running", nonGoalJob, ok)
 	}
 }
 

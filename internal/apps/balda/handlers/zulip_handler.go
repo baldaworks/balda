@@ -1037,7 +1037,7 @@ func (h *ZulipBaldaHandler) handleGoalCommand(
 		}
 		return
 	}
-	started, err := h.submitGoalTask(ctx, locator, objective, baldazulip.UserID(senderID))
+	started, err := h.submitGoalJob(ctx, locator, objective, baldazulip.UserID(senderID))
 	if err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to start /goal run")
 		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
@@ -1048,7 +1048,7 @@ func (h *ZulipBaldaHandler) handleGoalCommand(
 	}
 }
 
-func (h *ZulipBaldaHandler) submitGoalTask(
+func (h *ZulipBaldaHandler) submitGoalJob(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
 	objective string,
@@ -1064,7 +1064,7 @@ func (h *ZulipBaldaHandler) submitGoalTask(
 		}
 	}
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalkeeper.GoalTaskEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}}, objective, transportUserID, maxIterations)
+	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}}, objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
 	}

@@ -653,7 +653,7 @@ func TestCommandHandlerOnCommand_GoalStartsRun(t *testing.T) {
 	}
 }
 
-func TestCommandHandlerSubmitGoalTask_PublishesDurableCommandOnly(t *testing.T) {
+func TestCommandHandlerSubmitGoalJob_PublishesDurableCommandOnly(t *testing.T) {
 	ctx := context.Background()
 	locator := session.SessionLocator{
 		SessionID:   "tg-9001-99",
@@ -665,12 +665,12 @@ func TestCommandHandlerSubmitGoalTask_PublishesDurableCommandOnly(t *testing.T) 
 	handler := &CommandHandler{actorDispatcher: bus, goalMaxIterations: 7}
 
 	profile := deliveryfmt.Profile{Format: deliveryfmt.FormatAuto, TelegramMode: "rich_markdown"}
-	started, err := handler.submitGoalTaskWithOptions(ctx, locator, deliveryfmt.Options{Profile: profile}, "deploy release", testTelegramUserID101)
+	started, err := handler.submitGoalJobWithOptions(ctx, locator, deliveryfmt.Options{Profile: profile}, "deploy release", testTelegramUserID101)
 	if err != nil {
-		t.Fatalf("submitGoalTask() error = %v", err)
+		t.Fatalf("submitGoalJob() error = %v", err)
 	}
 	if !started {
-		t.Fatal("submitGoalTask() started = false, want true")
+		t.Fatal("submitGoalJob() started = false, want true")
 	}
 	if len(bus.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(bus.commands))
@@ -768,7 +768,7 @@ func TestCommandHandlerOnCommand_GoalRejectsWhenActiveGoalExists(t *testing.T) {
 	assertLastSentContains(t, tgClient, "A goal run is already active for this session.")
 }
 
-func TestCommandHandlerSubmitGoalTask_RejectsWhenActiveGoalExists(t *testing.T) {
+func TestCommandHandlerSubmitGoalJob_RejectsWhenActiveGoalExists(t *testing.T) {
 	ctx := context.Background()
 	locator := session.SessionLocator{
 		SessionID:   "tg-9001-99",
@@ -789,12 +789,12 @@ func TestCommandHandlerSubmitGoalTask_RejectsWhenActiveGoalExists(t *testing.T) 
 		},
 	}
 
-	started, err := handler.submitGoalTask(ctx, locator, "deploy release", testTelegramUserID101)
+	started, err := handler.submitGoalJob(ctx, locator, "deploy release", testTelegramUserID101)
 	if err != nil {
-		t.Fatalf("submitGoalTask() error = %v", err)
+		t.Fatalf("submitGoalJob() error = %v", err)
 	}
 	if started {
-		t.Fatal("submitGoalTask() started = true, want false")
+		t.Fatal("submitGoalJob() started = true, want false")
 	}
 	if len(bus.commands) != 0 {
 		t.Fatalf("published commands = %d, want 0", len(bus.commands))
