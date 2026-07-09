@@ -595,6 +595,8 @@ github.com/normahq/go-adk-acpagent/v2 v2.1.1 h1:XA4ntkGNw3r0bXPC5mQ5XP+sAJGxL9AZ
 github.com/normahq/go-adk-acpagent/v2 v2.1.1/go.mod h1:ag4yVa30T38pyQsZ9w7j/f0OS0ST+VGHmrxduTrbHhY=
 github.com/normahq/runtime/v2 v2.0.2 h1:tiquE1AW8NgDyTMd8wkQQ+cW4SrtVglkmKiuawXo/3I=
 github.com/normahq/runtime/v2 v2.0.2/go.mod h1:tpqXbrArHIiikKddH0UQGN5uuexuG10HqCE8t6AeHpA=
+github.com/normahq/runtime/v2 v2.0.3 h1:goOWdLmBJO6El8njF66ZfimRj/JRXSn734WvxWl5Ovs=
+github.com/normahq/runtime/v2 v2.0.3/go.mod h1:tpqXbrArHIiikKddH0UQGN5uuexuG10HqCE8t6AeHpA=
 github.com/nunnatsa/ginkgolinter v0.23.0 h1:x3o4DGYOWbBMP/VdNQKgSj+25aJKx2Pe6lHr8gBcgf8=
 github.com/nunnatsa/ginkgolinter v0.23.0/go.mod h1:9qN1+0akwXEccwV1CAcCDfcoBlWXHB+ML9884pL4SZ4=
 github.com/oapi-codegen/runtime v1.1.2 h1:P2+CubHq8fO4Q6fV1tqDBZHCwpVpvPg7oKiYzQgXIyI=
