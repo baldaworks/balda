@@ -58,6 +58,8 @@ type BaldaHandler struct {
 	telegramEnabled    bool
 	telegramConfigured bool
 	logger             zerolog.Logger
+	outboundFrom       actorlayer.ActorAddress
+	progressEmitter    sessionProgressEmitter
 
 	mu          sync.RWMutex
 	ownerID     int64
@@ -275,6 +277,13 @@ func (h *BaldaHandler) enqueueTurn(
 	return nil
 }
 
+func (h *BaldaHandler) outboundActorAddress(sessionID string) actorlayer.ActorAddress {
+	if h != nil && strings.TrimSpace(h.outboundFrom.Target) != "" {
+		return h.outboundFrom
+	}
+	return baldaHandlerActorAddress
+}
+
 func (h *BaldaHandler) runTurnTaskWithDelivery(
 	ctx context.Context,
 	text string,
@@ -470,6 +479,8 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 		Logger().
 		WithContext(ctx)
 
+	outboundFrom := h.outboundActorAddress(sessionID)
+
 	var streamedText strings.Builder
 	sawTurnComplete := false
 	var terminalFinishReason genai.FinishReason
@@ -505,14 +516,14 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 			planProgressText, hasPlanUpdate = baldaPlanProgressText(ev)
 		}
 		if !ev.TurnComplete {
-			if progressPolicy.Typing {
-				typingThrottle.Do(func() {
-					if sendErr := sendTyping(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator); sendErr != nil {
-						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send typing chat action")
-					}
-				})
-			}
 			if taskBackedDelivery {
+				if progressPolicy.Typing {
+					typingThrottle.Do(func() {
+						if sendErr := sendTyping(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator); sendErr != nil {
+							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send typing chat action")
+						}
+					})
+				}
 				if hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
 					deliverySeq++
 					if err := h.dispatchTaskDelivery(ctx, taskID, locator, sessionID, deliveryProfile, planProgressText, fmt.Sprintf("progress:plan:%03d", deliverySeq)); err != nil {
@@ -526,31 +537,41 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 					}
 					lastPlanProgressText = planProgressText
 				}
-			}
-			if !taskBackedDelivery && hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
-				switch {
-				case progressPolicy.Thinking:
-					if sendErr := sendDraftPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, draftID, planProgressText); sendErr != nil {
-						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send plan update placeholder")
-					} else {
-						lastPlanProgressText = planProgressText
-						planDraftActive = true
-					}
-				default:
-					if sendErr := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, planProgressText); sendErr != nil {
-						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send plan update message")
-					} else {
-						lastPlanProgressText = planProgressText
+			} else if h.progressEmitter != nil {
+				h.progressEmitter.HandleNonTerminal(ctx, planProgressText, hasPlanUpdate)
+			} else {
+				if progressPolicy.Typing {
+					typingThrottle.Do(func() {
+						if sendErr := sendTyping(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator); sendErr != nil {
+							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send typing chat action")
+						}
+					})
+				}
+				if hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
+					switch {
+					case progressPolicy.Thinking:
+						if sendErr := sendDraftPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, draftID, planProgressText); sendErr != nil {
+							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send plan update placeholder")
+						} else {
+							lastPlanProgressText = planProgressText
+							planDraftActive = true
+						}
+					default:
+						if sendErr := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, planProgressText); sendErr != nil {
+							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send plan update message")
+						} else {
+							lastPlanProgressText = planProgressText
+						}
 					}
 				}
-			}
-			if !taskBackedDelivery && progressPolicy.Thinking && !planDraftActive {
-				thinkingThrottle.Do(func() {
-					if sendErr := sendDraftPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, draftID, thinkingStages[thinkingIdx%len(thinkingStages)]); sendErr != nil {
-						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send thinking placeholder")
-					}
-					thinkingIdx++
-				})
+				if progressPolicy.Thinking && !planDraftActive {
+					thinkingThrottle.Do(func() {
+						if sendErr := sendDraftPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, draftID, thinkingStages[thinkingIdx%len(thinkingStages)]); sendErr != nil {
+							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send thinking placeholder")
+						}
+						thinkingIdx++
+					})
+				}
 			}
 		}
 		contentRole := ""
@@ -665,7 +686,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 					}
 					responseEmitted = true
 					responseSource = "streamed_text"
-				} else if sendErr := sendAgentReplyWithProfile(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, deliveryProfile, responseText); sendErr != nil {
+				} else if sendErr := sendAgentReplyWithProfile(ctx, h.actorDispatcher, outboundFrom, locator, deliveryProfile, responseText); sendErr != nil {
 					log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda response")
 				} else {
 					responseEmitted = true
@@ -690,7 +711,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 						responseEmitted = true
 						responseSource = "finish_reason"
 						handledEmptyTerminalReason = true
-					} else if sendErr := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, terminalMessage); sendErr != nil {
+					} else if sendErr := sendPlain(ctx, h.actorDispatcher, outboundFrom, locator, terminalMessage); sendErr != nil {
 						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda terminal finish reason message")
 					} else {
 						responseEmitted = true

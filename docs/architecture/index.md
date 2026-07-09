@@ -10,6 +10,7 @@ Use this map to find the authoritative runtime contracts.
 - [Runtime contract](runtime-contract.md)
 - [Command runtime adapter](command-runtime-adapter.md)
 - [Conversational turns and jobs](conversational-turns-and-jobs.md)
+- [Background monitors](background-monitors.md)
 - [Actor runtime](actor-runtime.md)
 - [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)

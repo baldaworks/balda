@@ -41,6 +41,8 @@ Properties:
 - durable dispatch acceptance still happens before work executes;
 - session serialization remains owned by the session actor lane;
 - intermediate and final replies are separate delivery envelopes;
+- semantic progress such as thinking or plan snapshots must be emitted as separate session-owned deliveries, not sent inline from ingress/handler code;
+- transport-specific UX signals such as Telegram `typing` are derived delivery behavior, not first-class runtime progress semantics;
 - no `swarm_tasks` row is required for a normal interactive turn.
 
 ### Durable jobs
@@ -63,6 +65,7 @@ Delivery is no longer modeled as one universal persistence rule for every user-v
 - Transport durability stays in actorlayer and JetStream.
 - Delivery actors still own provider-side idempotency and any outbox-backed settlement that is needed for a given source/path.
 - Conversational session replies may bypass the SQLite delivery outbox when the source path already has sufficient transport durability and the product requirement is immediate fan-out rather than outbox replay.
+- Conversational progress delivery is session-owned at the semantic level. Channel-specific affordances such as Telegram `typing` are transport-side embellishments derived from semantic progress deliveries like thinking, not independent domain events.
 
 ## Consequences
 

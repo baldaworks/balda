@@ -11,6 +11,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/swarm"
+	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -98,6 +99,7 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo
 	}
+	outboundFrom := actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: ts.GetSessionID()}
 	handler := &BaldaHandler{
 		sessionManager:     r.sessionManager,
 		actorDispatcher:    r.actorDispatcher,
@@ -106,7 +108,18 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 		planUpdatesEnabled: r.planUpdatesEnabled,
 		logger:             r.logger,
 		now:                r.now,
+		outboundFrom:       outboundFrom,
 	}
+	handler.progressEmitter = newSessionProgressDispatcher(
+		r.actorDispatcher,
+		outboundFrom,
+		deliveryLocator,
+		payload.MessageID+1,
+		payload.TopicID,
+		actors.NormalizeSessionDeliveryOptions(payload).ProgressPolicy,
+		r.logger,
+		handler.currentTime,
+	)
 	runOpts, err := prepareMemoryRunOptions(ctx, r.memoryStore, ts)
 	if err != nil {
 		return err

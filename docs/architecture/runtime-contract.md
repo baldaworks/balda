@@ -12,6 +12,7 @@ Status: active
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through Balda's local actorlayer contracts, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
+- Balda keeps that ownership inside `internal/apps/balda/swarm` through internal runtime decomposition: host loop, lane policy, heartbeat policy, dead-letter policy, and delivery wrapping remain Balda runtime code even when they use generic actorlayer contracts.
 - The local `pkg/actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 
 ## Boundary contract
@@ -33,6 +34,13 @@ Status: active
   - Internal command visibility backed by logs and tooling.
   - Mapping between policy metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`) and actor-level envelopes.
   - The single app-scoped provider runtime selected by `balda.provider`.
+
+- Internal Balda runtime decomposition:
+  - `runtime.go`: host loop and dispatch-runtime wiring.
+  - `runtime_lane_policy.go`: Balda actor addressing and lane-key policy.
+  - `runtime_heartbeat.go`: Balda heartbeat cadence and in-progress visibility publication.
+  - `runtime_deadletter.go`: Balda retry-exhaustion and task dead-letter side effects.
+  - `runtime_delivery.go`: Balda delivery wrapping and envelope-context attachment.
 
 - Boundary obligations:
   - Actor definitions and actor state must not select or branch on provider IDs.

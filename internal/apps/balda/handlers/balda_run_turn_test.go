@@ -397,6 +397,76 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *tes
 	}
 }
 
+func TestBaldaSessionTurnRunner_DirectTelegramProgressDeliveriesComeFromSessionActor(t *testing.T) {
+	t.Parallel()
+
+	h, tgClient := newBaldaRunTurnTestHandler(t, false)
+	bus, ok := h.actorDispatcher.(*recordingHandlerCommandBus)
+	if !ok || bus == nil {
+		t.Fatal("actorDispatcher is not a recording handler bus")
+	}
+
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+		plan := adksession.NewEvent(context.Background(), invocationID)
+		plan.Partial = true
+		plan.CustomMetadata = map[string]any{
+			"acp_update_kind": "plan",
+			"acp_plan":        newBaldaPlanSnapshot(map[string]any{"content": "Run tests", "status": "in_progress"}),
+		}
+
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
+		done.TurnComplete = true
+
+		return []*adksession.Event{plan, done}
+	})
+	locator := baldatelegram.NewLocator(9001, 77)
+	ts := newBaldaTopicSession(t, sessionID)
+	setUnexportedField(t, ts, "runner", adkRunner)
+	setUnexportedField(t, ts, "locator", locator)
+	setUnexportedField(t, ts, "userID", "tg-101")
+	manager := newBaldaSessionManagerWithSession(t, locator, ts)
+	sessionRunner := &BaldaSessionTurnRunner{
+		sessionManager:     manager,
+		actorDispatcher:    bus,
+		planUpdatesEnabled: true,
+		logger:             zerolog.Nop(),
+	}
+
+	err := sessionRunner.RunSessionTurnPayload(context.Background(), actors.SessionTurnPayload{
+		Text:           "hello",
+		Locator:        locator,
+		UserID:         "tg-101",
+		AgentSessionID: sessionID,
+		MessageID:      41,
+		TopicID:        77,
+		DeliveryOptions: deliveryfmt.Options{
+			ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true},
+		},
+		ProgressPolicy: baldachannel.ProgressPolicy{Typing: true, Thinking: true},
+		Deliver:        true,
+		Source:         "telegram",
+	})
+	if err != nil {
+		t.Fatalf("RunSessionTurnPayload() error = %v", err)
+	}
+
+	for _, env := range bus.commands {
+		if env.To.Target != swarm.ActorTypeDelivery {
+			continue
+		}
+		if env.From.Target != swarm.ActorTypeSession {
+			t.Fatalf("delivery from target = %q, want %q", env.From.Target, swarm.ActorTypeSession)
+		}
+		if env.From.Key != sessionID {
+			t.Fatalf("delivery from key = %q, want %q", env.From.Key, sessionID)
+		}
+	}
+	if len(tgClient.drafts) != 1 || len(tgClient.messages) != 1 || len(tgClient.chatActions) != 1 {
+		t.Fatalf("telegram sends = drafts:%d messages:%d chat_actions:%d, want 1/1/1", len(tgClient.drafts), len(tgClient.messages), len(tgClient.chatActions))
+	}
+}
+
 func TestRunTurn_SendsPlanUpdateMessagesInPublicChat(t *testing.T) {
 	t.Parallel()
 

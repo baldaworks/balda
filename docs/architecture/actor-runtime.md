@@ -72,7 +72,7 @@ Status: active
 
 ### Balda implementation map
 
-- Actor dispatch and lane execution live in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`.
+- Actor dispatch and lane execution are composed in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `swarm` through focused files for the host loop (`runtime.go`), lane/address policy (`runtime_lane_policy.go`), heartbeat visibility policy (`runtime_heartbeat.go`), dead-letter side effects (`runtime_deadletter.go`), and delivery wrapping/context (`runtime_delivery.go`).
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
 - Telegram/Zulip/Slack/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers publish actor commands through actorlayer transport contracts and do not own actor behavior or actor registration.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.

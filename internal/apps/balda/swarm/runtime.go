@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,8 +14,6 @@ import (
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
-
-const heartbeatInterval = 30 * time.Second
 
 type ActorHost struct {
 	source actorengine.Source
@@ -122,115 +119,6 @@ func (r *ActorHost) Stop(ctx context.Context) error {
 	return stopErr
 }
 
-func (r *ActorHost) prepareDelivery(ctx context.Context, delivery actorengine.Delivery) (context.Context, func(), actorengine.Delivery) {
-	if r == nil || delivery == nil {
-		return ctx, func() {}, delivery
-	}
-	env := delivery.Envelope()
-	wrapped := &runtimeDelivery{
-		delivery: delivery,
-		onDeadLetter: func(reason string) {
-			r.deadletterTask(ctx, env, reason)
-		},
-	}
-	heartbeatCtx, stop := r.startHeartbeat(ctx, env, wrapped)
-	return heartbeatCtx, stop, wrapped
-}
-
-func (r *ActorHost) startHeartbeat(ctx context.Context, env actorlayer.Envelope, delivery actorengine.Delivery) (context.Context, func()) {
-	if r == nil || r.engine == nil || delivery == nil {
-		return ctx, func() {}
-	}
-	heartbeatCtx := withEnvelopeContext(ctx, env)
-	child, cancel := context.WithCancel(heartbeatCtx)
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
-		ticker := time.NewTicker(r.heartbeatTickInterval())
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if err := delivery.InProgress(child); err != nil {
-					r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to send actor delivery in-progress")
-				}
-				r.Publish(child, actorengine.Event{Type: actorengine.EventInProgress, Attempt: delivery.Attempt(), MaxAttempts: delivery.MaxAttempts()})
-			case <-child.Done():
-				return
-			}
-		}
-	}()
-	return child, cancel
-}
-
-func (r *ActorHost) Publish(ctx context.Context, event actorengine.Event) {
-	if r == nil || event.Type != actorengine.EventInProgress {
-		return
-	}
-	if ctx == nil {
-		return
-	}
-	env, ok := ctx.Value(envelopeContextKey{}).(actorlayer.Envelope)
-	if !ok {
-		return
-	}
-	if r.events == nil {
-		return
-	}
-	inProgressEnv := env
-	inProgressEnv.ID = strings.TrimSpace(env.ID) + ":event:in_progress"
-	inProgressEnv.Namespace = NamespaceTelemetry
-	inProgressEnv.Kind = "command_event"
-	inProgressEnv.DedupeKey = inProgressEnv.ID
-	if strings.TrimSpace(inProgressEnv.PayloadJSON) == "" {
-		inProgressEnv.PayloadJSON = `{"ok":true}`
-	}
-	if err := r.events.PublishEvent(ctx, SubjectEventCommandInProgress, inProgressEnv); err != nil {
-		r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to publish command in-progress event")
-	}
-}
-
-func (r *ActorHost) heartbeatTickInterval() time.Duration {
-	if r == nil || r.heartbeatTick <= 0 {
-		return heartbeatInterval
-	}
-	return r.heartbeatTick
-}
-
-func (r *ActorHost) deadletterTask(ctx context.Context, env actorlayer.Envelope, reason string) {
-	if r == nil || r.tasks == nil {
-		return
-	}
-	taskID := strings.TrimSpace(env.TaskID)
-	if taskID == "" {
-		return
-	}
-	if err := r.tasks.DeadLetter(ctx, taskID, "swarm.runtime", env.ID, reason); err != nil {
-		r.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to mark swarm task deadlettered")
-	}
-}
-
-func retryExhaustedDelivery(delivery actorengine.Delivery) bool {
-	if delivery == nil {
-		return false
-	}
-	return actorlayer.RetryExhausted(delivery.Attempt(), delivery.MaxAttempts())
-}
-
-type runtimeDelivery struct {
-	delivery     actorengine.Delivery
-	onDeadLetter func(reason string)
-}
-
-type envelopeContextKey struct{}
-
-func withEnvelopeContext(ctx context.Context, env actorlayer.Envelope) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, envelopeContextKey{}, env)
-}
-
 type runtimeSource struct {
 	source    actorengine.Source
 	prepareFn func(context.Context, actorengine.Delivery) (context.Context, func(), actorengine.Delivery)
@@ -254,72 +142,4 @@ func (s runtimeSource) Run(ctx context.Context, handler actorengine.Handler) err
 		defer stop()
 		return handler(executionCtx, prepared)
 	})
-}
-
-func runtimeAddressOf(env actorlayer.Envelope) (string, error) {
-	to, err := env.To.String()
-	if err != nil {
-		return "", actorlayer.DecodeError(err)
-	}
-	if strings.TrimSpace(to) == "" {
-		return "", actorlayer.DecodeError(fmt.Errorf("empty actor address"))
-	}
-	return to, nil
-}
-
-func actorLaneKeyFromEnvelope(env actorlayer.Envelope) string {
-	namespace := strings.TrimSpace(env.Namespace)
-	taskID := strings.TrimSpace(env.TaskID)
-	if taskID != "" {
-		switch namespace {
-		case NamespaceTaskControl,
-			NamespaceGoalkeeperCommand,
-			NamespaceHumanInbound,
-			NamespaceWebhookInbound,
-			NamespaceScheduleInbound:
-			return "task:" + taskID
-		case NamespaceAgentResult:
-			if strings.EqualFold(strings.TrimSpace(env.To.Target), ActorTypeDelivery) {
-				if address := strings.TrimSpace(env.To.Key); address != "" {
-					return "delivery:" + address
-				}
-			}
-			return "task:" + taskID
-		}
-	}
-	switch namespace {
-	case NamespaceGoalkeeperCommand:
-		if key := strings.TrimSpace(env.To.Key); key != "" {
-			return "goalkeeper:" + key
-		}
-	case NamespaceHumanInbound, NamespaceWebhookInbound, NamespaceScheduleInbound:
-		if sessionID := strings.TrimSpace(env.SessionID); sessionID != "" {
-			return "session:" + sessionID
-		}
-	}
-	if to, err := env.To.String(); err == nil {
-		return to
-	}
-	return strings.TrimSpace(env.ID)
-}
-
-func (d *runtimeDelivery) Envelope() actorengine.Envelope { return d.delivery.Envelope() }
-func (d *runtimeDelivery) Attempt() int                   { return d.delivery.Attempt() }
-func (d *runtimeDelivery) MaxAttempts() int {
-	return d.delivery.MaxAttempts()
-}
-func (d *runtimeDelivery) InProgress(ctx context.Context) error {
-	return d.delivery.InProgress(ctx)
-}
-func (d *runtimeDelivery) Ack(ctx context.Context) error {
-	return d.delivery.Ack(ctx)
-}
-func (d *runtimeDelivery) Retry(ctx context.Context, delay time.Duration, reason string) error {
-	return d.delivery.Retry(ctx, delay, reason)
-}
-func (d *runtimeDelivery) DeadLetter(ctx context.Context, reason string) error {
-	if d.onDeadLetter != nil {
-		d.onDeadLetter(reason)
-	}
-	return d.delivery.DeadLetter(ctx, reason)
 }
