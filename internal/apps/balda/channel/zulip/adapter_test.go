@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
@@ -192,5 +193,58 @@ func TestAdapterSendTypingRequiresClient(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "client is required") {
 		t.Fatalf("SendTyping() error = %q, want client context", err)
+	}
+}
+
+func TestAdapterSendTyping_ThrottlesRepeatedStreamTyping(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		_ = json.NewEncoder(w).Encode(sendMessageResult{Result: "success", Msg: ""})
+	}))
+	t.Cleanup(server.Close)
+
+	adapter := NewAdapter(NewClient(server.URL, "bot@example.com", "api-key"), zerolog.Nop())
+	adapter.SetTypingThrottleInterval(4 * time.Second)
+	now := time.Unix(100, 0)
+	adapter.now = func() time.Time { return now }
+
+	locator := NewStreamLocator(42, "ops")
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(first) error = %v", err)
+	}
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(second) error = %v", err)
+	}
+
+	if requestCount != 1 {
+		t.Fatalf("typing request count = %d, want 1", requestCount)
+	}
+}
+
+func TestAdapterSendTyping_AllowsTypingAfterThrottleInterval(t *testing.T) {
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		_ = json.NewEncoder(w).Encode(sendMessageResult{Result: "success", Msg: ""})
+	}))
+	t.Cleanup(server.Close)
+
+	adapter := NewAdapter(NewClient(server.URL, "bot@example.com", "api-key"), zerolog.Nop())
+	adapter.SetTypingThrottleInterval(4 * time.Second)
+	now := time.Unix(100, 0)
+	adapter.now = func() time.Time { return now }
+
+	locator := NewStreamLocator(42, "ops")
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(first) error = %v", err)
+	}
+	now = now.Add(4 * time.Second)
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(second) error = %v", err)
+	}
+
+	if requestCount != 2 {
+		t.Fatalf("typing request count = %d, want 2", requestCount)
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
@@ -23,14 +25,51 @@ var (
 type Adapter struct {
 	client *Client
 	logger zerolog.Logger
+
+	typingMu               sync.Mutex
+	typingThrottleInterval time.Duration
+	typingLastSentAt       map[string]time.Time
+	now                    func() time.Time
 }
 
 // NewAdapter creates a new Zulip channel adapter.
 func NewAdapter(client *Client, logger zerolog.Logger) *Adapter {
 	return &Adapter{
-		client: client,
-		logger: logger.With().Str("component", "balda.channel.zulip").Logger(),
+		client:           client,
+		logger:           logger.With().Str("component", "balda.channel.zulip").Logger(),
+		typingLastSentAt: make(map[string]time.Time),
+		now:              time.Now,
 	}
+}
+
+func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
+	if a == nil {
+		return
+	}
+	a.typingMu.Lock()
+	defer a.typingMu.Unlock()
+	a.typingThrottleInterval = interval
+}
+
+func (a *Adapter) shouldSendTyping(locator baldasession.SessionLocator) bool {
+	if a == nil {
+		return false
+	}
+	a.typingMu.Lock()
+	defer a.typingMu.Unlock()
+	if a.typingThrottleInterval <= 0 {
+		return true
+	}
+	now := time.Now()
+	if a.now != nil {
+		now = a.now()
+	}
+	key := locator.SessionID
+	if last, ok := a.typingLastSentAt[key]; ok && now.Sub(last) < a.typingThrottleInterval {
+		return false
+	}
+	a.typingLastSentAt[key] = now
+	return true
 }
 
 // SendPlain sends a plain text message to the locator.
@@ -138,6 +177,9 @@ func (a *Adapter) SendTyping(
 ) error {
 	if err := a.validateReady(); err != nil {
 		return err
+	}
+	if !a.shouldSendTyping(locator) {
+		return nil
 	}
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {

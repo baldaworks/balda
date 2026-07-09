@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -22,13 +24,21 @@ import (
 // Compile-time check: *Adapter must implement channel.ChannelAdapter.
 var _ baldachannel.ChannelAdapter = (*Adapter)(nil)
 
-const chatTypePrivate = "private"
+const (
+	chatTypePrivate     = "private"
+	defaultTypingAction = "typing"
+)
 
 // Adapter maps Telegram runtime events and operations to balda session locators.
 type Adapter struct {
 	messenger *messenger.Messenger
 	tgClient  client.ClientWithResponsesInterface
 	logger    zerolog.Logger
+
+	typingMu               sync.Mutex
+	typingThrottleInterval time.Duration
+	typingLastSentAt       map[string]time.Time
+	now                    func() time.Time
 }
 
 // MessageContext is the balda-facing Telegram message shape.
@@ -83,10 +93,42 @@ type AdapterParams struct {
 // NewAdapter creates the Telegram balda adapter.
 func NewAdapter(params AdapterParams) *Adapter {
 	return &Adapter{
-		messenger: params.Messenger,
-		tgClient:  params.TGClient,
-		logger:    params.Logger.With().Str("component", "balda.channel.telegram").Logger(),
+		messenger:        params.Messenger,
+		tgClient:         params.TGClient,
+		logger:           params.Logger.With().Str("component", "balda.channel.telegram").Logger(),
+		typingLastSentAt: make(map[string]time.Time),
+		now:              time.Now,
 	}
+}
+
+func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
+	if a == nil {
+		return
+	}
+	a.typingMu.Lock()
+	defer a.typingMu.Unlock()
+	a.typingThrottleInterval = interval
+}
+
+func (a *Adapter) shouldSendTyping(locator baldasession.SessionLocator) bool {
+	if a == nil {
+		return false
+	}
+	a.typingMu.Lock()
+	defer a.typingMu.Unlock()
+	if a.typingThrottleInterval <= 0 {
+		return true
+	}
+	now := time.Now()
+	if a.now != nil {
+		now = a.now()
+	}
+	key := locator.SessionID
+	if last, ok := a.typingLastSentAt[key]; ok && now.Sub(last) < a.typingThrottleInterval {
+		return false
+	}
+	a.typingLastSentAt[key] = now
+	return true
 }
 
 // MessageContextFromEvent converts a Telegram message event into balda channel context.
@@ -544,7 +586,10 @@ func (a *Adapter) SendTyping(ctx context.Context, locator baldasession.SessionLo
 	if err != nil {
 		return err
 	}
-	return a.messenger.SendChatAction(ctx, chatID, topicID, "typing")
+	if !a.shouldSendTyping(locator) {
+		return nil
+	}
+	return a.messenger.SendChatAction(ctx, chatID, topicID, defaultTypingAction)
 }
 
 // SendProgress renders a semantic conversational progress update for Telegram.

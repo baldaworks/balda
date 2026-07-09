@@ -1,7 +1,10 @@
 package telegram
 
 import (
+	"context"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
@@ -642,4 +645,70 @@ func TestTopicLifecycleFromEvent_AcceptsPrivateTopic(t *testing.T) {
 
 func textPtr(s string) *string {
 	return &s
+}
+
+type fakeTelegramChatActionClient struct {
+	client.ClientWithResponsesInterface
+	chatActions []client.SendChatActionJSONRequestBody
+}
+
+func (f *fakeTelegramChatActionClient) SendChatActionWithResponse(
+	_ context.Context,
+	body client.SendChatActionJSONRequestBody,
+	_ ...client.RequestEditorFn,
+) (*client.SendChatActionResponse, error) {
+	f.chatActions = append(f.chatActions, body)
+	return &client.SendChatActionResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
+		JSON200: &struct {
+			Ok     client.SendChatAction200Ok `json:"ok"`
+			Result bool                       `json:"result"`
+		}{
+			Ok:     true,
+			Result: true,
+		},
+	}, nil
+}
+
+func TestSendTyping_ThrottlesRepeatedChatActionsPerSession(t *testing.T) {
+	tgClient := &fakeTelegramChatActionClient{}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	adapter := NewAdapter(AdapterParams{Messenger: msg, TGClient: tgClient, Logger: zerolog.Nop()})
+	adapter.SetTypingThrottleInterval(4 * time.Second)
+	now := time.Unix(100, 0)
+	adapter.now = func() time.Time { return now }
+
+	locator := NewLocator(9001, 77)
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(first) error = %v", err)
+	}
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(second) error = %v", err)
+	}
+
+	if len(tgClient.chatActions) != 1 {
+		t.Fatalf("chat action calls = %d, want 1", len(tgClient.chatActions))
+	}
+}
+
+func TestSendTyping_AllowsChatActionAfterThrottleInterval(t *testing.T) {
+	tgClient := &fakeTelegramChatActionClient{}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	adapter := NewAdapter(AdapterParams{Messenger: msg, TGClient: tgClient, Logger: zerolog.Nop()})
+	adapter.SetTypingThrottleInterval(4 * time.Second)
+	now := time.Unix(100, 0)
+	adapter.now = func() time.Time { return now }
+
+	locator := NewLocator(9001, 77)
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(first) error = %v", err)
+	}
+	now = now.Add(4 * time.Second)
+	if err := adapter.SendTyping(context.Background(), locator); err != nil {
+		t.Fatalf("SendTyping(second) error = %v", err)
+	}
+
+	if len(tgClient.chatActions) != 2 {
+		t.Fatalf("chat action calls = %d, want 2", len(tgClient.chatActions))
+	}
 }

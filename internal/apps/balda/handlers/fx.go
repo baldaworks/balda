@@ -39,8 +39,16 @@ var Module = fx.Module("balda_handlers",
 			},
 			fx.ParamTags(``, ``, `name:"balda_telegram_formatting_mode"`),
 		),
-		baldatelegram.NewAdapter,
-		baldazulip.NewAdapter,
+		func(params baldatelegram.AdapterParams) *baldatelegram.Adapter {
+			adapter := baldatelegram.NewAdapter(params)
+			adapter.SetTypingThrottleInterval(4 * time.Second)
+			return adapter
+		},
+		func(client *baldazulip.Client, logger zerolog.Logger) *baldazulip.Adapter {
+			adapter := baldazulip.NewAdapter(client, logger)
+			adapter.SetTypingThrottleInterval(4 * time.Second)
+			return adapter
+		},
 		baldaslack.NewAdapter,
 		NewBaldaSessionTurnRunner,
 		func(tg *baldatelegram.Adapter, zu *baldazulip.Adapter, sl *baldaslack.Adapter) *baldachannel.Router {
