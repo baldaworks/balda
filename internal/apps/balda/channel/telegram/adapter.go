@@ -64,6 +64,7 @@ type MessageContext struct {
 // CommandContext is the balda-facing Telegram command shape.
 type CommandContext struct {
 	Locator         baldasession.SessionLocator
+	DeliveryOptions deliveryfmt.Options
 	DeliveryProfile deliverycmd.Profile
 	ChatID          int64
 	TopicID         int
@@ -419,6 +420,17 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 
 	return CommandContext{
 		Locator: NewLocator(event.Message.Chat.Id, topicID),
+		DeliveryOptions: deliveryfmt.Options{
+			Profile: deliverycmd.Profile{
+				Format:       deliveryfmt.FormatAuto,
+				TelegramMode: a.messenger.TelegramFormattingMode(),
+			},
+			ProgressPolicy: deliveryfmt.ProgressPolicy{
+				Typing:      true,
+				Thinking:    event.Message.Chat.Type == chatTypePrivate,
+				PlanUpdates: a.planUpdatesEnabled,
+			},
+		},
 		DeliveryProfile: deliverycmd.Profile{
 			Format:       deliveryfmt.FormatAuto,
 			TelegramMode: a.messenger.TelegramFormattingMode(),

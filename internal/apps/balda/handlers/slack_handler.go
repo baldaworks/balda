@@ -709,7 +709,7 @@ func (h *SlackHandler) handleGoalCommand(ctx context.Context, locator baldasessi
 			return
 		}
 	}
-	env, err := goalkeeper.GoalTaskEnvelopeWithProfile(locator, deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, objective, subject, h.goalMaxIterations)
+	env, err := goalkeeper.GoalTaskEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}}, objective, subject, h.goalMaxIterations)
 	if err != nil {
 		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 		return

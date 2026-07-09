@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/pkg/actorlayer"
 )
@@ -21,8 +20,8 @@ func GoalProgressEnvelope(update baldaexecution.GoalProgressUpdate) (actorlayer.
 			strings.TrimSpace(update.JobID),
 			from,
 			update.Locator,
-			deliveryfmt.ProgressPolicy{},
-			true,
+			update.Policy,
+			update.Policy.PlanUpdates,
 			0,
 			update.Plan,
 			message,

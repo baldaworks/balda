@@ -24,7 +24,8 @@ func newGoalProgressUpdate(
 	return baldaexecution.GoalProgressUpdate{
 		JobID:         strings.TrimSpace(payload.JobID),
 		Locator:       normalizeGoalDeliveryLocator(payload.Locator),
-		Profile:       normalizeGoalDeliveryProfile(payload.DeliveryProfile),
+		Profile:       goalDeliveryProfile(payload),
+		Policy:        goalProgressPolicy(payload),
 		Step:          strings.TrimSpace(step),
 		Iteration:     normalizeGoalIteration(iteration),
 		MaxIterations: normalizeGoalMaxIterations(payload.MaxIterations),

@@ -18,6 +18,7 @@ type GoalProgressUpdate struct {
 	JobID         string
 	Locator       baldasession.SessionLocator
 	Profile       deliveryfmt.Profile
+	Policy        deliveryfmt.ProgressPolicy
 	Step          string
 	Iteration     int
 	MaxIterations int

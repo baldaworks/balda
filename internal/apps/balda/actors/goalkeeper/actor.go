@@ -132,6 +132,7 @@ type taskEnvelopePayload struct {
 type goalTaskPayload struct {
 	JobID           string                      `json:"job_id,omitempty"`
 	Locator         baldasession.SessionLocator `json:"locator"`
+	DeliveryOptions deliveryfmt.Options         `json:"delivery_options,omitempty,omitzero"`
 	DeliveryProfile deliverycmd.Profile         `json:"delivery_profile,omitempty,omitzero"`
 	Objective       string                      `json:"objective"`
 	TransportUserID string                      `json:"transport_user_id"`
@@ -235,12 +236,22 @@ func GoalTaskEnvelope(
 	transportUserID string,
 	maxIterations int,
 ) (actorlayer.Envelope, error) {
-	return GoalTaskEnvelopeWithProfile(locator, deliverycmd.Profile{}, objective, transportUserID, maxIterations)
+	return GoalTaskEnvelopeWithOptions(locator, deliveryfmt.Options{}, objective, transportUserID, maxIterations)
 }
 
 func GoalTaskEnvelopeWithProfile(
 	locator baldasession.SessionLocator,
 	deliveryProfile deliverycmd.Profile,
+	objective string,
+	transportUserID string,
+	maxIterations int,
+) (actorlayer.Envelope, error) {
+	return GoalTaskEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: normalizeGoalDeliveryProfile(deliveryProfile)}, objective, transportUserID, maxIterations)
+}
+
+func GoalTaskEnvelopeWithOptions(
+	locator baldasession.SessionLocator,
+	deliveryOptions deliveryfmt.Options,
 	objective string,
 	transportUserID string,
 	maxIterations int,
@@ -251,7 +262,7 @@ func GoalTaskEnvelopeWithProfile(
 		Goal: &goalTaskPayload{
 			JobID:           taskID,
 			Locator:         locator,
-			DeliveryProfile: normalizeGoalDeliveryProfile(deliveryProfile),
+			DeliveryOptions: normalizeGoalDeliveryOptions(deliveryOptions, deliverycmd.Profile{}),
 			Objective:       strings.TrimSpace(objective),
 			TransportUserID: strings.TrimSpace(transportUserID),
 			MaxIterations:   normalizeGoalMaxIterations(maxIterations),
@@ -317,7 +328,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	if err := a.deliver(ctx, taskID, payload, renderGoalStartedMessage(payload.DeliveryProfile, maxIterations, objective), "started"); err != nil {
+	if err := a.deliver(ctx, taskID, payload, renderGoalStartedMessage(goalDeliveryProfile(payload), maxIterations, objective), "started"); err != nil {
 		return err
 	}
 
@@ -357,7 +368,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 			if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false, artifacts, &taskExportResultV1{Status: "canceled"}), baldastate.JobStatusCanceled, actorName, "goal run canceled"); setErr != nil {
 				return actorlayer.TransientError(setErr)
 			}
-			return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "Goal run canceled."), "canceled")
+			return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(goalDeliveryProfile(payload), "Goal run canceled."), "canceled")
 		}
 		reason := redactSecrets(err.Error())
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
@@ -366,7 +377,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 		if setErr := a.tasks.SetResult(ctx, taskID, result.toTaskResult(false, artifacts, &taskExportResultV1{Status: "failed", Error: reason}), baldastate.JobStatusFailed, actorName, reason); setErr != nil {
 			return actorlayer.TransientError(setErr)
 		}
-		return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "Goal run failed: "+reason), "failed")
+		return a.deliver(ctx, taskID, payload, renderGoalStatusMessage(goalDeliveryProfile(payload), "Goal run failed: "+reason), "failed")
 	}
 	if reviewerPassed(result.latestValidatorOutput) {
 		finalization, exportErr := goalRun.Finalize(ctx, payload.Objective, result.latestWorkerOutput, result.latestValidatorOutput)
@@ -382,7 +393,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 			if setErr := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.JobStatusFailed, actorName, exportSummary.Error); setErr != nil {
 				return actorlayer.TransientError(setErr)
 			}
-			return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal validation passed, but export failed."), "export-failed")
+			return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, goalDeliveryProfile(payload), "Goal validation passed, but export failed."), "export-failed")
 		}
 		taskResult := result.toTaskResult(true, artifacts, exportSummary)
 		if err := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.JobStatusCompleted, actorName, ""); err != nil {
@@ -391,7 +402,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 			a.logger.Warn().Err(cleanupErr).Str("job_id", taskID).Msg("failed to cleanup completed goal run")
 		}
-		return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal run completed."), "completed")
+		return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, goalDeliveryProfile(payload), "Goal run completed."), "completed")
 	}
 	if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 		a.logger.Warn().Err(cleanupErr).Str("job_id", taskID).Msg("failed to cleanup max-iteration goal run")
@@ -400,7 +411,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 	if err := a.tasks.SetResult(ctx, taskID, taskResult, baldastate.JobStatusFailed, actorName, "max iterations reached"); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, payload.DeliveryProfile, "Goal run reached max iterations without passing validation."), "max-iterations")
+	return a.deliver(ctx, taskID, payload, a.renderTaskOutcome(ctx, taskID, goalDeliveryProfile(payload), "Goal run reached max iterations without passing validation."), "max-iterations")
 }
 
 func (a *Actor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) error {
@@ -466,7 +477,7 @@ func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, taskID string, payl
 		}), baldastate.JobStatusCanceled, actorName, reason); setErr != nil {
 			return false, actorlayer.TransientError(setErr)
 		}
-		if err := a.deliver(ctx, taskID, payload, renderGoalStatusMessage(payload.DeliveryProfile, "A goal run is already active for this session."), "already-active"); err != nil {
+		if err := a.deliver(ctx, taskID, payload, renderGoalStatusMessage(goalDeliveryProfile(payload), "A goal run is already active for this session."), "already-active"); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -621,7 +632,7 @@ func (a *Actor) recordStepStarted(ctx context.Context, payload goalTaskPayload, 
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	return a.deliver(ctx, payload.JobID, payload, renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "started", ""), "started:"+step+":"+strconv.Itoa(iteration))
+	return a.deliver(ctx, payload.JobID, payload, renderGoalStepMessage(goalDeliveryProfile(payload), iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "started", ""), "started:"+step+":"+strconv.Itoa(iteration))
 }
 
 func (a *Actor) recordStepCompleted(
@@ -858,7 +869,7 @@ func (a *Actor) deliver(
 		strings.TrimSpace(taskID),
 		actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: taskID},
 		locator,
-		normalizeGoalDeliveryProfile(payload.DeliveryProfile),
+		normalizeGoalDeliveryProfile(goalDeliveryProfile(payload)),
 		message,
 		dedupeSuffix,
 	)
@@ -880,6 +891,29 @@ func normalizeGoalDeliveryLocator(locator baldasession.SessionLocator) baldasess
 
 func normalizeGoalDeliveryProfile(profile deliverycmd.Profile) deliverycmd.Profile {
 	return deliveryfmt.NormalizeProfile(profile)
+}
+
+func normalizeGoalDeliveryOptions(options deliveryfmt.Options, legacyProfile deliverycmd.Profile) deliveryfmt.Options {
+	if goalDeliveryProfileIsZero(options.Profile) && !goalDeliveryProfileIsZero(legacyProfile) {
+		options.Profile = legacyProfile
+	}
+	return deliveryfmt.NormalizeOptions(options)
+}
+
+func goalDeliveryOptions(payload goalTaskPayload) deliveryfmt.Options {
+	return normalizeGoalDeliveryOptions(payload.DeliveryOptions, payload.DeliveryProfile)
+}
+
+func goalDeliveryProfile(payload goalTaskPayload) deliveryfmt.Profile {
+	return goalDeliveryOptions(payload).Profile
+}
+
+func goalProgressPolicy(payload goalTaskPayload) deliveryfmt.ProgressPolicy {
+	return goalDeliveryOptions(payload).ProgressPolicy
+}
+
+func goalDeliveryProfileIsZero(profile deliveryfmt.Profile) bool {
+	return strings.TrimSpace(string(profile.Format)) == "" && strings.TrimSpace(profile.TelegramMode) == "" && strings.TrimSpace(profile.FormattingMode) == ""
 }
 
 func normalizeGoalMaxIterations(v int) int {

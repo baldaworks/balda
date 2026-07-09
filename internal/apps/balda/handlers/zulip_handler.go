@@ -1064,7 +1064,7 @@ func (h *ZulipBaldaHandler) submitGoalTask(
 		}
 	}
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalkeeper.GoalTaskEnvelopeWithProfile(locator, deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, objective, transportUserID, maxIterations)
+	env, err := goalkeeper.GoalTaskEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}}, objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
 	}
@@ -1255,7 +1255,7 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 	if h.actorDispatcher == nil {
 		return fmt.Errorf("runtime runtime is unavailable")
 	}
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: isDM, PlanUpdates: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}
 	payload := actors.SessionTurnPayload{
 		Text:           text,
 		Locator:        locator,
