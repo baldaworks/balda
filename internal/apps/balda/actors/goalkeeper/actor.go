@@ -133,7 +133,6 @@ type goalTaskPayload struct {
 	JobID           string                      `json:"job_id,omitempty"`
 	Locator         baldasession.SessionLocator `json:"locator"`
 	DeliveryOptions deliveryfmt.Options         `json:"delivery_options,omitempty,omitzero"`
-	DeliveryProfile deliverycmd.Profile         `json:"delivery_profile,omitempty,omitzero"`
 	Objective       string                      `json:"objective"`
 	TransportUserID string                      `json:"transport_user_id"`
 	MaxIterations   int                         `json:"max_iterations,omitempty"`
@@ -262,7 +261,7 @@ func GoalTaskEnvelopeWithOptions(
 		Goal: &goalTaskPayload{
 			JobID:           taskID,
 			Locator:         locator,
-			DeliveryOptions: normalizeGoalDeliveryOptions(deliveryOptions, deliverycmd.Profile{}),
+			DeliveryOptions: normalizeGoalDeliveryOptions(deliveryOptions),
 			Objective:       strings.TrimSpace(objective),
 			TransportUserID: strings.TrimSpace(transportUserID),
 			MaxIterations:   normalizeGoalMaxIterations(maxIterations),
@@ -893,15 +892,12 @@ func normalizeGoalDeliveryProfile(profile deliverycmd.Profile) deliverycmd.Profi
 	return deliveryfmt.NormalizeProfile(profile)
 }
 
-func normalizeGoalDeliveryOptions(options deliveryfmt.Options, legacyProfile deliverycmd.Profile) deliveryfmt.Options {
-	if goalDeliveryProfileIsZero(options.Profile) && !goalDeliveryProfileIsZero(legacyProfile) {
-		options.Profile = legacyProfile
-	}
+func normalizeGoalDeliveryOptions(options deliveryfmt.Options) deliveryfmt.Options {
 	return deliveryfmt.NormalizeOptions(options)
 }
 
 func goalDeliveryOptions(payload goalTaskPayload) deliveryfmt.Options {
-	return normalizeGoalDeliveryOptions(payload.DeliveryOptions, payload.DeliveryProfile)
+	return normalizeGoalDeliveryOptions(payload.DeliveryOptions)
 }
 
 func goalDeliveryProfile(payload goalTaskPayload) deliveryfmt.Profile {
@@ -910,10 +906,6 @@ func goalDeliveryProfile(payload goalTaskPayload) deliveryfmt.Profile {
 
 func goalProgressPolicy(payload goalTaskPayload) deliveryfmt.ProgressPolicy {
 	return goalDeliveryOptions(payload).ProgressPolicy
-}
-
-func goalDeliveryProfileIsZero(profile deliveryfmt.Profile) bool {
-	return strings.TrimSpace(string(profile.Format)) == "" && strings.TrimSpace(profile.TelegramMode) == "" && strings.TrimSpace(profile.FormattingMode) == ""
 }
 
 func normalizeGoalMaxIterations(v int) int {
