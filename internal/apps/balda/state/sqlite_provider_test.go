@@ -14,7 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 21
+const expectedSQLiteMigrationVersion = 22
 
 func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
@@ -592,16 +592,16 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 		t.Fatalf("app_name after migration = %q, want norma-balda", appName)
 	}
 
-	var taskID, content string
+	var jobID, content string
 	if err := db.QueryRowContext(ctx, `
-		SELECT task_id, content
+		SELECT job_id, content
 		FROM balda_scheduled_tasks
-		WHERE task_id = 'previous-daily-review'`,
-	).Scan(&taskID, &content); err != nil {
+		WHERE job_id = 'previous-daily-review'`,
+	).Scan(&jobID, &content); err != nil {
 		t.Fatalf("query migrated scheduled task: %v", err)
 	}
-	if taskID != "previous-daily-review" || content != "Review previous queue" {
-		t.Fatalf("migrated scheduled task = %q/%q, want previous-daily-review/Review previous queue", taskID, content)
+	if jobID != "previous-daily-review" || content != "Review previous queue" {
+		t.Fatalf("migrated scheduled job = %q/%q, want previous-daily-review/Review previous queue", jobID, content)
 	}
 
 	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)

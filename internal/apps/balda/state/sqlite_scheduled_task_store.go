@@ -67,13 +67,13 @@ func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledT
 
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO balda_scheduled_tasks (
-			task_id, session_id, channel_type, address_key, address_json,
+			job_id, session_id, channel_type, address_key, address_json,
 			report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 			content, schedule_spec, timezone, status,
 			max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(task_id) DO UPDATE SET
+		ON CONFLICT(job_id) DO UPDATE SET
 			session_id = excluded.session_id,
 			channel_type = excluded.channel_type,
 			address_key = excluded.address_key,
@@ -131,12 +131,12 @@ func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledT
 
 func (s *sqliteScheduledTaskStore) GetByID(ctx context.Context, jobID string) (ScheduledTaskRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT task_id, session_id, channel_type, address_key, address_json,
+		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
 		FROM balda_scheduled_tasks
-		WHERE task_id = ?`,
+		WHERE job_id = ?`,
 		strings.TrimSpace(jobID),
 	)
 
@@ -149,12 +149,12 @@ func (s *sqliteScheduledTaskStore) GetByID(ctx context.Context, jobID string) (S
 
 func (s *sqliteScheduledTaskStore) List(ctx context.Context) ([]ScheduledTaskRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT task_id, session_id, channel_type, address_key, address_json,
+		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
 		FROM balda_scheduled_tasks
-		ORDER BY task_id ASC`)
+		ORDER BY job_id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list scheduled jobs: %w", err)
 	}
@@ -169,7 +169,7 @@ func (s *sqliteScheduledTaskStore) ListByAddress(
 	addressKey string,
 ) ([]ScheduledTaskRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT task_id, session_id, channel_type, address_key, address_json,
+		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
@@ -192,7 +192,7 @@ func (s *sqliteScheduledTaskStore) ListDue(ctx context.Context, now time.Time, l
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT task_id, session_id, channel_type, address_key, address_json,
+		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
@@ -220,7 +220,7 @@ func (s *sqliteScheduledTaskStore) Delete(ctx context.Context, jobID string) err
 
 	if _, err := s.db.ExecContext(ctx, `
 		DELETE FROM balda_scheduled_tasks
-		WHERE task_id = ?`,
+		WHERE job_id = ?`,
 		trimmed,
 	); err != nil {
 		return fmt.Errorf("delete scheduled job %q: %w", trimmed, err)

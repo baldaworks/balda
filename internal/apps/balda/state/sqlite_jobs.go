@@ -19,8 +19,8 @@ func (s *sqliteJobStore) CreateJob(ctx context.Context, record JobRecord) (bool,
 		return false, err
 	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO execution_tasks (
-			id, session_id, parent_task_id, title, objective, status, owner_actor, assigned_actor,
+		INSERT OR IGNORE INTO execution_jobs (
+			id, session_id, parent_job_id, title, objective, status, owner_actor, assigned_actor,
 			priority, created_by, result_json, error,
 			created_at, updated_at, started_at, completed_at, canceled_at
 		)
@@ -116,7 +116,7 @@ func (s *sqliteJobStore) UpdateJobStatus(ctx context.Context, jobID string, stat
 	now := time.Now().UTC()
 	startedAt, completedAt, canceledAt := statusTimestamps(normalizedStatus, now)
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE execution_tasks
+		UPDATE execution_jobs
 		SET status = ?,
 		    error = ?,
 		    updated_at = ?,
@@ -157,7 +157,7 @@ func (s *sqliteJobStore) SetJobResult(ctx context.Context, jobID string, resultJ
 	now := time.Now().UTC()
 	startedAt, completedAt, canceledAt := statusTimestamps(normalizedStatus, now)
 	if _, err := s.db.ExecContext(ctx, `
-		UPDATE execution_tasks
+		UPDATE execution_jobs
 		SET status = ?,
 		    result_json = ?,
 		    error = ?,
@@ -187,7 +187,7 @@ func (s *sqliteJobStore) AppendJobEvent(ctx context.Context, record JobEventReco
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO execution_task_events (id, task_id, event_type, actor, message_id, payload_json, created_at)
+			INSERT OR IGNORE INTO execution_job_events (id, job_id, event_type, actor, message_id, payload_json, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		normalized.ID,
 		normalized.JobID,
@@ -208,7 +208,7 @@ func (s *sqliteJobStore) ListJobEvents(ctx context.Context, jobID string) ([]Job
 		return nil, fmt.Errorf("job id is required")
 	}
 	rows, err := s.db.QueryContext(ctx, executionJobEventSelectSQL+`
-		WHERE task_id = ?
+		WHERE job_id = ?
 		ORDER BY created_at ASC`,
 		trimmed,
 	)
@@ -239,7 +239,7 @@ func (s *sqliteJobStore) ReserveDelivery(ctx context.Context, record DeliveryRec
 	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO execution_delivery_outbox (
-			id, delivery_key, task_id, session_id, channel, address_key, kind, payload_json,
+			id, delivery_key, job_id, session_id, channel, address_key, kind, payload_json,
 			payload_hash, status, provider_message_id, sent_at, error, created_at, updated_at
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -352,7 +352,7 @@ func (s *sqliteJobStore) ReserveAgentStep(ctx context.Context, record AgentStepR
 	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO execution_agent_steps (
-			id, step_key, task_id, agent_name, role, iteration, payload_hash, status,
+			id, step_key, job_id, agent_name, role, iteration, payload_hash, status,
 			result_json, error, created_at, updated_at, completed_at
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -442,24 +442,24 @@ func (s *sqliteJobStore) getAgentStepByKey(ctx context.Context, stepKey string) 
 }
 
 const executionJobSelectSQL = `
-	SELECT id, COALESCE(session_id, ''), COALESCE(parent_task_id, ''), COALESCE(title, ''), objective,
+	SELECT id, COALESCE(session_id, ''), COALESCE(parent_job_id, ''), COALESCE(title, ''), objective,
 	       status, COALESCE(owner_actor, ''), COALESCE(assigned_actor, ''), priority,
 	       COALESCE(created_by, ''), COALESCE(result_json, ''), COALESCE(error, ''),
 	       created_at, updated_at, COALESCE(started_at, ''), COALESCE(completed_at, ''), COALESCE(canceled_at, '')
-	FROM execution_tasks`
+	FROM execution_jobs`
 
 const executionJobEventSelectSQL = `
-	SELECT id, task_id, event_type, COALESCE(actor, ''), COALESCE(message_id, ''), COALESCE(payload_json, ''), created_at
-	FROM execution_task_events`
+	SELECT id, job_id, event_type, COALESCE(actor, ''), COALESCE(message_id, ''), COALESCE(payload_json, ''), created_at
+	FROM execution_job_events`
 
 const executionDeliverySelectSQL = `
-	SELECT id, delivery_key, COALESCE(task_id, ''), COALESCE(session_id, ''), channel, address_key, kind,
+	SELECT id, delivery_key, COALESCE(job_id, ''), COALESCE(session_id, ''), channel, address_key, kind,
 	       payload_json, payload_hash, status, COALESCE(provider_message_id, ''), COALESCE(sent_at, ''),
 	       COALESCE(error, ''), created_at, updated_at
 	FROM execution_delivery_outbox`
 
 const executionAgentStepSelectSQL = `
-	SELECT id, step_key, task_id, agent_name, role, iteration, payload_hash, status,
+	SELECT id, step_key, job_id, agent_name, role, iteration, payload_hash, status,
 	       COALESCE(result_json, ''), COALESCE(error, ''), created_at, updated_at, COALESCE(completed_at, '')
 	FROM execution_agent_steps`
 
@@ -865,7 +865,7 @@ func optionalTimeValue(value time.Time) any {
 }
 
 func (s *sqliteJobStore) currentJobStatus(ctx context.Context, jobID string) (string, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT status FROM execution_tasks WHERE id = ?`, jobID)
+	row := s.db.QueryRowContext(ctx, `SELECT status FROM execution_jobs WHERE id = ?`, jobID)
 	var status string
 	if err := row.Scan(&status); err != nil {
 		if err == sql.ErrNoRows {

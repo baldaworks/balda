@@ -12,7 +12,7 @@ func up00021ExecutionJobTables(ctx context.Context, tx *sql.Tx) error {
 		return fmt.Errorf("inspect execution task table: %w", err)
 	}
 	if executionExists {
-		return ensureExecutionJobIndexesTx(ctx, tx)
+		return ensureLegacyExecutionTaskIndexesTx(ctx, tx)
 	}
 	runtimeExists, err := sqliteTxTableExists(ctx, tx, "runtime_tasks")
 	if err != nil {
@@ -30,7 +30,7 @@ func up00021ExecutionJobTables(ctx context.Context, tx *sql.Tx) error {
 				return fmt.Errorf("rename execution job tables: %w", err)
 			}
 		}
-		return ensureExecutionJobIndexesTx(ctx, tx)
+		return ensureLegacyExecutionTaskIndexesTx(ctx, tx)
 	}
 	legacyExists, err := sqliteTxTableExists(ctx, tx, "swarm_tasks")
 	if err != nil {
@@ -50,7 +50,7 @@ func up00021ExecutionJobTables(ctx context.Context, tx *sql.Tx) error {
 			return fmt.Errorf("rename execution job tables: %w", err)
 		}
 	}
-	return ensureExecutionJobIndexesTx(ctx, tx)
+	return ensureLegacyExecutionTaskIndexesTx(ctx, tx)
 }
 
 func down00021ExecutionJobTables(ctx context.Context, tx *sql.Tx) error {
@@ -99,7 +99,7 @@ func down00021ExecutionJobTables(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func ensureExecutionJobIndexesTx(ctx context.Context, tx *sql.Tx) error {
+func ensureLegacyExecutionTaskIndexesTx(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		"DROP INDEX IF EXISTS idx_swarm_tasks_session_status",
 		"DROP INDEX IF EXISTS idx_swarm_tasks_status_updated",
