@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -38,14 +39,14 @@ func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
 	if err := exec.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	published := lastPublishedCommandTo(t, bus, swarm.ActorTypeSession, locator.SessionID)
+	published := lastPublishedCommandTo(t, bus, baldaruntime.ActorTypeSession, locator.SessionID)
 	if published.TaskID != taskID {
 		t.Fatalf("published task id = %q, want %q", published.TaskID, taskID)
 	}
-	if got, want := published.Namespace, swarm.NamespaceWebhookInbound; got != want {
+	if got, want := published.Namespace, baldaruntime.NamespaceWebhookInbound; got != want {
 		t.Fatalf("published namespace = %q, want %q", got, want)
 	}
-	if got, want := published.Kind, swarm.KindWebhookEvent; got != want {
+	if got, want := published.Kind, baldaruntime.KindWebhookEvent; got != want {
 		t.Fatalf("published kind = %q, want %q", got, want)
 	}
 	task, ok, err := tasks.Get(ctx, taskID)
@@ -60,46 +61,40 @@ func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
 	}
 }
 
-func TestTaskActorDispatchesPromptSessionTurn(t *testing.T) {
+func TestTaskActorRejectsNonWebhookSessionTurnTask(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	_, bus, dispatcher, tasks, _ := newTaskActorSwarmServices(t, ctx)
+	_, _, dispatcher, tasks, _ := newTaskActorSwarmServices(t, ctx)
 	exec := &taskActorExecutor{tasks: tasks, dispatcher: dispatcher}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
-	env, taskID, err := PromptTurnTaskEnvelope(SessionTurnPayload{
-		Text:      "repeat the review",
-		Locator:   locator,
-		UserID:    "101",
-		MessageID: 42,
-		Deliver:   true,
-		Source:    sessionTurnSourceTelegram,
+	data, err := json.Marshal(taskEnvelopePayload{
+		Kind: taskPayloadKindWebhookSessionTurn,
+		SessionTurn: &SessionTurnPayload{
+			Text:    "repeat the review",
+			Locator: locator,
+			UserID:  "101",
+			Source:  sessionTurnSourceTelegram,
+		},
 	})
 	if err != nil {
-		t.Fatalf("PromptTurnTaskEnvelope() error = %v", err)
+		t.Fatalf("Marshal(taskEnvelopePayload) error = %v", err)
 	}
-	if err := exec.Handle(ctx, env); err != nil {
-		t.Fatalf("Handle() error = %v", err)
+
+	err = exec.Handle(ctx, actorlayer.Envelope{
+		ID:          "task-1",
+		Namespace:   baldaruntime.NamespaceHumanInbound,
+		Kind:        baldaruntime.KindMessage,
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "turn-1"},
+		SessionID:   locator.SessionID,
+		TaskID:      "turn-1",
+		PayloadJSON: string(data),
+	})
+	if err == nil {
+		t.Fatal("Handle() error = nil, want policy error")
 	}
-	published := lastPublishedCommandTo(t, bus, swarm.ActorTypeSession, locator.SessionID)
-	if published.TaskID != taskID {
-		t.Fatalf("published task id = %q, want %q", published.TaskID, taskID)
-	}
-	if got, want := published.Namespace, swarm.NamespaceHumanInbound; got != want {
-		t.Fatalf("published namespace = %q, want %q", got, want)
-	}
-	task, ok, err := tasks.Get(ctx, taskID)
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-	if !ok {
-		t.Fatalf("task %q not found", taskID)
-	}
-	if task.Title != "Prompt turn" {
-		t.Fatalf("task title = %q, want Prompt turn", task.Title)
-	}
-	if task.Status != baldastate.SwarmTaskStatusRunning {
-		t.Fatalf("task status = %q, want %q", task.Status, baldastate.SwarmTaskStatusRunning)
+	if got, want := actorlayer.ClassifyError(err), actorlayer.ErrorKindPolicy; got != want {
+		t.Fatalf("Handle() error kind = %q, want %q (err=%v)", got, want, err)
 	}
 }
 
@@ -117,9 +112,9 @@ func TestScheduledTaskEnvelopeDispatchesSessionTurn(t *testing.T) {
 	if err := exec.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	published := lastPublishedCommandTo(t, bus, swarm.ActorTypeSession, locator.SessionID)
-	if published.Namespace != swarm.NamespaceScheduleInbound {
-		t.Fatalf("published namespace = %q, want %q", published.Namespace, swarm.NamespaceScheduleInbound)
+	published := lastPublishedCommandTo(t, bus, baldaruntime.ActorTypeSession, locator.SessionID)
+	if published.Namespace != baldaruntime.NamespaceScheduleInbound {
+		t.Fatalf("published namespace = %q, want %q", published.Namespace, baldaruntime.NamespaceScheduleInbound)
 	}
 }
 
@@ -136,7 +131,7 @@ func lastPublishedCommandTo(t *testing.T, bus *recordingHandlerCommandBus, targe
 	return actorlayer.Envelope{}
 }
 
-func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, actortransport.Dispatcher, *swarm.TaskService, any) {
+func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, actortransport.Dispatcher, *baldajobs.JobService, any) {
 	t.Helper()
 	provider, err := baldastate.NewSQLiteProvider(ctx, ":memory:")
 	if err != nil {
@@ -147,16 +142,16 @@ func newTaskActorSwarmServices(t *testing.T, ctx context.Context) (baldastate.Pr
 	})
 	bus := &recordingHandlerCommandBus{}
 	var dispatcher actortransport.Dispatcher
-	var tasks *swarm.TaskService
+	var tasks *baldajobs.JobService
 	app := fxtest.New(t,
 		fx.Supply(
 			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
 			zerolog.Nop(),
-			swarm.Config{},
+			baldaruntime.Config{},
 		),
 		fx.Provide(func() actortransport.Dispatcher { return bus }),
 		fx.Provide(func() actortransport.EventPublisher { return bus }),
-		fx.Provide(swarm.NewTaskService),
+		fx.Provide(baldajobs.NewJobService),
 		fx.Populate(&dispatcher, &tasks),
 	)
 	app.RequireStart()

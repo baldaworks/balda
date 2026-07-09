@@ -10,19 +10,19 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/sessionmcp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
+	"github.com/normahq/balda/internal/apps/sessionmcp"
 	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog/log"
-	adksession "google.golang.org/adk/v2/session"
 	"go.uber.org/fx"
+	adksession "google.golang.org/adk/v2/session"
 )
 
 // PreflightRuntime validates Balda app wiring and verifies that the configured
@@ -205,9 +205,9 @@ func PreflightRuntime(
 	return nil
 }
 
-func swarmConfigFromBalda(cfg BaldaConfig) swarm.Config {
-	swarmConfig := swarm.Config{
-		Commands: swarm.CommandConfig{
+func swarmConfigFromBalda(cfg BaldaConfig) baldaruntime.Config {
+	swarmConfig := baldaruntime.Config{
+		Commands: baldaruntime.CommandConfig{
 			Stream:        strings.TrimSpace(cfg.Swarm.Commands.Stream),
 			Consumer:      strings.TrimSpace(cfg.Swarm.Commands.Consumer),
 			AckWait:       strings.TrimSpace(cfg.Swarm.Commands.AckWait),
@@ -216,8 +216,8 @@ func swarmConfigFromBalda(cfg BaldaConfig) swarm.Config {
 			FetchBatch:    cfg.Swarm.Commands.FetchBatch,
 			FetchWait:     strings.TrimSpace(cfg.Swarm.Commands.FetchWait),
 		},
-		Events: swarm.EventStreamConfig{Stream: strings.TrimSpace(cfg.Swarm.Events.Stream)},
-		DLQ:    swarm.DLQConfig{Stream: strings.TrimSpace(cfg.Swarm.DLQ.Stream)},
+		Events: baldaruntime.EventStreamConfig{Stream: strings.TrimSpace(cfg.Swarm.Events.Stream)},
+		DLQ:    baldaruntime.DLQConfig{Stream: strings.TrimSpace(cfg.Swarm.DLQ.Stream)},
 	}
 	normalized, err := swarmConfig.Normalized()
 	if err != nil {
@@ -225,4 +225,3 @@ func swarmConfigFromBalda(cfg BaldaConfig) swarm.Config {
 	}
 	return normalized
 }
-

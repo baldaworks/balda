@@ -5,7 +5,9 @@ import (
 	"fmt"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/progress"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -27,7 +29,7 @@ func dispatchOutbound(ctx context.Context, dispatcher actortransport.Dispatcher,
 }
 
 func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
-	env, err := actors.PlainDeliveryEnvelope("", from, locator, text, "")
+	env, err := actors.PlainDeliveryEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}
@@ -35,7 +37,7 @@ func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from a
 }
 
 func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
-	env, err := actors.MarkdownDeliveryEnvelope("", from, locator, text, "")
+	env, err := actors.MarkdownDeliveryEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}
@@ -47,7 +49,7 @@ func sendAgentReply(ctx context.Context, dispatcher actortransport.Dispatcher, f
 }
 
 func sendAgentReplyWithProfile(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, text string) error {
-	env, err := actors.AgentReplyDeliveryEnvelopeWithProfile("", from, locator, profile, text, "")
+	env, err := actors.AgentReplyDeliveryEnvelopeWithProfileAndSettlement("", from, locator, profile, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}
@@ -64,6 +66,30 @@ func sendDraftPlain(ctx context.Context, dispatcher actortransport.Dispatcher, f
 
 func sendTyping(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator) error {
 	env, err := actors.ChatActionDeliveryEnvelope("", from, locator, "typing")
+	if err != nil {
+		return err
+	}
+	return dispatchOutbound(ctx, dispatcher, env)
+}
+
+func sendProgressActivity(ctx context.Context, dispatcher actortransport.Dispatcher, taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, sequence int, dedupeSuffix string) error {
+	env, err := actors.ProgressActivityDeliveryEnvelope(taskID, from, locator, policy, sequence, dedupeSuffix)
+	if err != nil {
+		return err
+	}
+	return dispatchOutbound(ctx, dispatcher, env)
+}
+
+func sendProgressThinking(ctx context.Context, dispatcher actortransport.Dispatcher, taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, text string, sequence int, dedupeSuffix string) error {
+	env, err := actors.ProgressThinkingDeliveryEnvelope(taskID, from, locator, policy, visible, draftID, text, sequence, dedupeSuffix)
+	if err != nil {
+		return err
+	}
+	return dispatchOutbound(ctx, dispatcher, env)
+}
+
+func sendProgressPlanUpdate(ctx context.Context, dispatcher actortransport.Dispatcher, taskID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, draftID int, plan *progress.PlanSnapshot, text string, dedupeSuffix string) error {
+	env, err := actors.ProgressPlanUpdateDeliveryEnvelope(taskID, from, locator, policy, visible, draftID, plan, text, dedupeSuffix)
 	if err != nil {
 		return err
 	}

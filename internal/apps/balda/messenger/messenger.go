@@ -97,6 +97,23 @@ func (m *Messenger) sendDraftPlainLegacy(ctx context.Context, chatID int64, draf
 	return nil
 }
 
+// SendDraftMarkdown sends a Markdown draft using the supplied Telegram formatting mode.
+func (m *Messenger) SendDraftMarkdown(ctx context.Context, chatID int64, draftID int, text string, topicID int) error {
+	return m.SendDraftMarkdownWithMode(ctx, chatID, draftID, text, topicID, m.TelegramFormattingMode())
+}
+
+// SendDraftMarkdownWithMode sends a Markdown draft using the supplied formatting mode without mutating messenger state.
+func (m *Messenger) SendDraftMarkdownWithMode(ctx context.Context, chatID int64, draftID int, text string, topicID int, mode string) error {
+	switch telegramfmt.NormalizeMode(mode) {
+	case telegramfmt.ModeRichMarkdown:
+		return m.sendRichDraftWithFallback(ctx, chatID, draftID, richMarkdown(text), topicID, text)
+	case telegramfmt.ModeRichHTML:
+		return m.sendRichDraftWithFallback(ctx, chatID, draftID, richHTML(telegramfmt.HTML(text)), topicID, text)
+	default:
+		return m.sendDraftPlainLegacy(ctx, chatID, draftID, text, topicID)
+	}
+}
+
 // SendPlain sends a plain-text message.
 func (m *Messenger) SendPlain(ctx context.Context, chatID int64, text string, topicID int) error {
 	if m.richMessagesEnabled() {

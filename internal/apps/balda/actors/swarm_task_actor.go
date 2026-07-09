@@ -6,15 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"go.uber.org/fx"
@@ -22,14 +22,16 @@ import (
 
 const (
 	taskPayloadKindScheduledTask = "scheduled_task"
-	taskPayloadKindSessionTurn   = "session_turn"
-	taskPayloadKindDelivery      = "delivery"
+	// Retain the legacy wire kind for durable webhook envelopes already in flight.
+	taskPayloadKindWebhookSessionTurn = "session_turn"
+	taskPayloadKindDelivery           = "delivery"
 )
 
 type taskEnvelopePayload struct {
 	Kind          string                `json:"kind"`
 	ScheduledTask *scheduledTaskPayload `json:"scheduled_task,omitempty"`
-	SessionTurn   *SessionTurnPayload   `json:"session_turn,omitempty"`
+	// Retain the legacy wire field for durable webhook envelopes already in flight.
+	SessionTurn *SessionTurnPayload `json:"session_turn,omitempty"`
 }
 
 type scheduledTaskPayload struct {
@@ -45,6 +47,8 @@ type scheduledTaskPayload struct {
 type DeliveryPayload = deliverycmd.Payload
 
 type DeliveryMode = deliverycmd.Mode
+type DeliveryProgress = deliverycmd.Progress
+type DeliveryProgressKind = deliverycmd.ProgressKind
 
 const (
 	DeliveryModeAgentReply DeliveryMode = deliverycmd.ModeAgentReply
@@ -52,10 +56,16 @@ const (
 	DeliveryModeMarkdown   DeliveryMode = deliverycmd.ModeMarkdown
 	DeliveryModeDraftPlain DeliveryMode = deliverycmd.ModeDraftPlain
 	DeliveryModeChatAction DeliveryMode = deliverycmd.ModeChatAction
+	DeliveryModeProgress   DeliveryMode = deliverycmd.ModeProgress
+)
+
+const (
+	DeliveryProgressThinking   DeliveryProgressKind = deliverycmd.ProgressThinking
+	DeliveryProgressPlanUpdate DeliveryProgressKind = deliverycmd.ProgressPlanUpdate
 )
 
 type taskActorExecutor struct {
-	tasks      *swarm.TaskService
+	tasks      *baldajobs.JobService
 	dispatcher actortransport.Dispatcher
 	sessions   *baldasession.Manager
 }
@@ -63,9 +73,9 @@ type taskActorExecutor struct {
 type taskActorExecutorParams struct {
 	fx.In
 
-	TaskService *swarm.TaskService
-	Dispatcher  actortransport.Dispatcher
-	Sessions    *baldasession.Manager `optional:"true"`
+	JobService *baldajobs.JobService
+	Dispatcher actortransport.Dispatcher
+	Sessions   *baldasession.Manager `optional:"true"`
 }
 
 func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID string) (actorlayer.Envelope, string, error) {
@@ -103,7 +113,7 @@ func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID
 	taskID := "webhook-" + part + "-" + shortTaskHash(dedupeBase)
 	payload.DedupeKey = dedupeBase + ":session"
 	data, err := json.Marshal(taskEnvelopePayload{
-		Kind:        taskPayloadKindSessionTurn,
+		Kind:        taskPayloadKindWebhookSessionTurn,
 		SessionTurn: &payload,
 	})
 	if err != nil {
@@ -111,41 +121,13 @@ func WebhookTaskEnvelope(payload SessionTurnPayload, routeName string, requestID
 	}
 	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
-		Namespace:   swarm.NamespaceWebhookInbound,
-		Kind:        swarm.KindWebhookEvent,
+		Namespace:   baldaruntime.NamespaceWebhookInbound,
+		Kind:        baldaruntime.KindWebhookEvent,
 		From:        actorlayer.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},
-		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: taskID},
 		SessionID:   payload.Locator.SessionID,
 		TaskID:      taskID,
 		Priority:    80,
-		DedupeKey:   dedupeBase + ":task",
-		PayloadJSON: string(data),
-	}, taskID, nil
-}
-
-func PromptTurnTaskEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, string, error) {
-	dedupeBase := promptTurnDedupeBase(payload)
-	if dedupeBase == "" {
-		return actorlayer.Envelope{}, "", fmt.Errorf("prompt turn dedupe key is required")
-	}
-	taskID := "turn-" + shortTaskHash(dedupeBase)
-	payload.DedupeKey = dedupeBase + ":session"
-	data, err := json.Marshal(taskEnvelopePayload{
-		Kind:        taskPayloadKindSessionTurn,
-		SessionTurn: &payload,
-	})
-	if err != nil {
-		return actorlayer.Envelope{}, "", fmt.Errorf("encode prompt turn task payload: %w", err)
-	}
-	return actorlayer.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   swarm.NamespaceHumanInbound,
-		Kind:        swarm.KindMessage,
-		From:        actorlayer.ActorAddress{Target: firstNonEmpty(payload.Source, sessionTurnSourceTelegram), Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
-		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
-		SessionID:   payload.Locator.SessionID,
-		TaskID:      taskID,
-		Priority:    90,
 		DedupeKey:   dedupeBase + ":task",
 		PayloadJSON: string(data),
 	}, taskID, nil
@@ -178,10 +160,10 @@ func ScheduledTaskEnvelope(
 	taskID := "scheduled-" + strings.TrimSpace(scheduledTaskID) + "-" + strings.TrimSpace(dispatchKey)
 	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
-		Namespace:   swarm.NamespaceScheduleInbound,
-		Kind:        swarm.KindScheduledTask,
+		Namespace:   baldaruntime.NamespaceScheduleInbound,
+		Kind:        baldaruntime.KindScheduledTask,
 		From:        actorlayer.ActorAddress{Target: "schedule", Key: strings.TrimSpace(scheduledTaskID)},
-		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeTask, Key: taskID},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: taskID},
 		SessionID:   locator.SessionID,
 		TaskID:      taskID,
 		DedupeKey:   strings.TrimSpace(dispatchKey),
@@ -194,24 +176,8 @@ func shortTaskHash(value string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-func promptTurnDedupeBase(payload SessionTurnPayload) string {
-	base := strings.TrimSpace(payload.DedupeKey)
-	base = strings.TrimSuffix(base, ":task")
-	base = strings.TrimSuffix(base, ":session")
-	if base != "" {
-		return base
-	}
-	parts := []string{
-		firstNonEmpty(payload.Source, sessionTurnSourceTelegram),
-		strings.TrimSpace(payload.Locator.SessionID),
-		strconv.Itoa(payload.MessageID),
-		strings.TrimSpace(payload.Text),
-	}
-	return shortTaskHash(strings.Join(parts, "\x00"))
-}
-
 func (e *taskActorExecutor) Address() string {
-	return actorlayer.WildcardAddress(swarm.ActorTypeTask)
+	return actorlayer.WildcardAddress(baldaruntime.ActorTypeTask)
 }
 
 func (e *taskActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
@@ -227,17 +193,20 @@ func (e *taskActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope)
 			return actorlayer.PolicyError(fmt.Errorf("scheduled task payload is required"))
 		}
 		return e.startScheduledTaskTask(ctx, env, *payload.ScheduledTask)
-	case taskPayloadKindSessionTurn:
+	case taskPayloadKindWebhookSessionTurn:
 		if payload.SessionTurn == nil {
 			return actorlayer.PolicyError(fmt.Errorf("session turn task payload is required"))
 		}
-		return e.dispatchSessionTurn(ctx, env, *payload.SessionTurn)
+		if !strings.EqualFold(env.Namespace, baldaruntime.NamespaceWebhookInbound) {
+			return actorlayer.PolicyError(fmt.Errorf("session turn tasks are reserved for durable webhook delivery"))
+		}
+		return e.dispatchWebhookSessionTurn(ctx, env, *payload.SessionTurn)
 	default:
 		return actorlayer.PolicyError(fmt.Errorf("unsupported task payload kind %q", payload.Kind))
 	}
 }
 
-func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) error {
+func (e *taskActorExecutor) dispatchWebhookSessionTurn(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) error {
 	taskID := firstNonEmpty(env.TaskID, env.To.Key)
 	if taskID != "" && e.tasks != nil {
 		if _, ok, err := e.tasks.Get(ctx, taskID); err != nil {
@@ -249,12 +218,12 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env actorla
 			ID:            taskID,
 			SessionID:     strings.TrimSpace(payload.Locator.SessionID),
 			ParentTaskID:  strings.TrimSpace(payload.ParentTaskID),
-			Title:         sessionTurnTaskTitle(payload),
+			Title:         webhookTaskTitle(),
 			Objective:     strings.TrimSpace(payload.Text),
 			Status:        baldastate.SwarmTaskStatusCreated,
-			OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
-			AssignedActor: swarm.ActorTypeSession + ":" + payload.Locator.SessionID,
-			Priority:      sessionTurnTaskPriority(payload),
+			OwnerActor:    baldaruntime.ActorTypeTask + ":" + taskID,
+			AssignedActor: baldaruntime.ActorTypeSession + ":" + payload.Locator.SessionID,
+			Priority:      webhookTaskPriority(),
 			CreatedBy:     strings.TrimSpace(payload.UserID),
 		}, "task.actor", payload)
 		if err != nil {
@@ -286,28 +255,12 @@ func (e *taskActorExecutor) dispatchSessionTurn(ctx context.Context, env actorla
 	return nil
 }
 
-func sessionTurnTaskTitle(payload SessionTurnPayload) string {
-	switch strings.ToLower(strings.TrimSpace(payload.Source)) {
-	case sessionTurnSourceWebhook:
-		return "Webhook task"
-	case sessionTurnSourceSchedule:
-		return "Scheduled task"
-	case "agent":
-		return "Agent task"
-	default:
-		return "Prompt turn"
-	}
+func webhookTaskTitle() string {
+	return "Webhook task"
 }
 
-func sessionTurnTaskPriority(payload SessionTurnPayload) int {
-	switch strings.ToLower(strings.TrimSpace(payload.Source)) {
-	case sessionTurnSourceWebhook:
-		return 80
-	case sessionTurnSourceSchedule:
-		return 50
-	default:
-		return 90
-	}
+func webhookTaskPriority() int {
+	return 80
 }
 
 func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env actorlayer.Envelope, payload scheduledTaskPayload) error {
@@ -335,8 +288,8 @@ func (e *taskActorExecutor) startScheduledTaskTask(ctx context.Context, env acto
 			Title:         "Scheduled task: " + strings.TrimSpace(payload.TaskID),
 			Objective:     content,
 			Status:        baldastate.SwarmTaskStatusCreated,
-			OwnerActor:    swarm.ActorTypeTask + ":" + taskID,
-			AssignedActor: swarm.ActorTypeSession + ":" + payload.Locator.SessionID,
+			OwnerActor:    baldaruntime.ActorTypeTask + ":" + taskID,
+			AssignedActor: baldaruntime.ActorTypeSession + ":" + payload.Locator.SessionID,
 			Priority:      50,
 			CreatedBy:     strings.TrimSpace(payload.UserID),
 		}, "task.actor", payload)

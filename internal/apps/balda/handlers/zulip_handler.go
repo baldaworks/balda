@@ -18,11 +18,13 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	"github.com/normahq/balda/internal/apps/balda/memory"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -76,7 +78,7 @@ type ZulipBaldaHandler struct {
 	sessionManager    zulipSessionManager
 	turnDispatcher    actors.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
-	taskService       *swarm.TaskService
+	taskService       *baldajobs.JobService
 	memoryStore       *memory.Store
 	authToken         string
 	baldaProviderName string
@@ -118,7 +120,7 @@ type zulipBaldaHandlerParams struct {
 	SessionManager    *baldasession.Manager
 	TurnDispatcher    *actors.TurnDispatcher
 	Dispatcher        actortransport.Dispatcher
-	TaskService       *swarm.TaskService `optional:"true"`
+	JobService        *baldajobs.JobService `optional:"true"`
 	MemoryStore       *memory.Store
 	AuthToken         string `name:"balda_auth_token"`
 	BaldaProviderID   string `name:"balda_provider"`
@@ -140,7 +142,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		sessionManager:    params.SessionManager,
 		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.Dispatcher,
-		taskService:       params.TaskService,
+		taskService:       params.JobService,
 		memoryStore:       params.MemoryStore,
 		authToken:         strings.TrimSpace(params.AuthToken),
 		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
@@ -1030,7 +1032,7 @@ func (h *ZulipBaldaHandler) submitGoalTask(
 	transportUserID string,
 ) (bool, error) {
 	if h.taskService != nil {
-		activeGoals, err := h.taskService.ListActiveGoalTasksBySession(ctx, locator.SessionID)
+		activeGoals, err := h.taskService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
 			return false, fmt.Errorf("list active goal tasks: %w", err)
 		}
@@ -1139,7 +1141,7 @@ func (h *ZulipBaldaHandler) handleMessage(
 	}
 
 	if err := h.enqueueTurn(ctx, text, ts, locator, messageID, isDM); err != nil {
-		if swarm.IsCommandQueueFull(err) {
+		if baldaruntime.IsCommandQueueFull(err) {
 			_ = h.sendPlain(ctx, locator, "Session command queue is full. Please wait or use /cancel.")
 			return
 		}
@@ -1387,7 +1389,7 @@ func (h *ZulipBaldaHandler) sendZulipAgentReply(
 	if h == nil || h.actorDispatcher == nil {
 		return fmt.Errorf("swarm runtime is unavailable")
 	}
-	env, err := actors.AgentReplyDeliveryEnvelope("", zulipHandlerActorAddress, locator, text, "")
+	env, err := actors.AgentReplyDeliveryEnvelopeWithSettlement("", zulipHandlerActorAddress, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}

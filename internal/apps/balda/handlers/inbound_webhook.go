@@ -22,8 +22,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -597,7 +597,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		result, taskID, enqueueErr = r.balda.submitWebhookTask(req.Context(), payload, route.Name, requestID)
 	}
 	if enqueueErr != nil {
-		if swarm.IsCommandQueueFull(enqueueErr) {
+		if baldaruntime.IsCommandQueueFull(enqueueErr) {
 			r.metrics.queueFull.Add(1)
 			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
 				status:  http.StatusTooManyRequests,

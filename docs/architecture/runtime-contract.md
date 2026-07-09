@@ -12,7 +12,7 @@ Status: active
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through Balda's local actorlayer contracts, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
-- Balda keeps that ownership inside `internal/apps/balda/swarm` through internal runtime decomposition: host loop, lane policy, heartbeat policy, dead-letter policy, and delivery wrapping remain Balda runtime code even when they use generic actorlayer contracts.
+- Balda keeps that ownership inside `internal/apps/balda/runtime` and `internal/apps/balda/jobs` through internal runtime decomposition: host loop, lane policy, heartbeat policy, dead-letter policy, and delivery wrapping remain Balda runtime code even when they use generic actorlayer contracts.
 - The local `pkg/actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 
 ## Boundary contract
@@ -49,7 +49,7 @@ Status: active
 
 ## Related tests
 
-- `internal/apps/balda/swarm/config_test.go`
+- `internal/apps/balda/runtime/config_test.go`
 - `internal/apps/balda/eventbus/config_test.go`
 - `internal/apps/balda/architecture_contract_test.go`
 
@@ -58,7 +58,8 @@ Status: active
 - `internal/apps/balda`
 - `internal/apps/balda/actors`
 - `internal/apps/balda/handlers`
-- `internal/apps/balda/swarm`
+- `internal/apps/balda/runtime`
+- `internal/apps/balda/jobs`
 - `internal/apps/balda/eventbus`
 
 ## Update triggers

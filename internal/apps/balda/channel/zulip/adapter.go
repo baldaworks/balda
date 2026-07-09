@@ -156,6 +156,26 @@ func (a *Adapter) SendTyping(
 	}
 }
 
+// SendProgress renders semantic progress updates for Zulip.
+func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error {
+	if progress.Policy.Typing {
+		if err := a.SendTyping(ctx, locator); err != nil {
+			a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("zulip typing progress sugar failed")
+		}
+	}
+	if !progress.Visible {
+		return nil
+	}
+	switch progress.Kind {
+	case deliverycmd.ProgressThinking:
+		return nil
+	case deliverycmd.ProgressPlanUpdate:
+		return a.SendPlain(ctx, locator, progress.Text)
+	default:
+		return fmt.Errorf("unsupported zulip progress kind %q", progress.Kind)
+	}
+}
+
 func (a *Adapter) send(
 	ctx context.Context,
 	locator baldasession.SessionLocator,

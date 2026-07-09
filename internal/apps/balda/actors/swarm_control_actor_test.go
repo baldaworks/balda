@@ -6,8 +6,8 @@ import (
 	"time"
 
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 )
 
 func TestTaskControlActorCancelsSessionWork(t *testing.T) {
@@ -66,8 +66,8 @@ func TestTaskControlActorCancelsSessionTurnOnly(t *testing.T) {
 		SessionID:     locator.SessionID,
 		Objective:     "active goal",
 		Status:        baldastate.SwarmTaskStatusRunning,
-		OwnerActor:    swarm.ActorTypeGoalkeeper + ":goal-task",
-		AssignedActor: swarm.ActorTypeGoalkeeper + ":goal-task",
+		OwnerActor:    baldaruntime.ActorTypeGoalkeeper + ":goal-task",
+		AssignedActor: baldaruntime.ActorTypeGoalkeeper + ":goal-task",
 	}, "test", nil)
 	if err != nil {
 		t.Fatalf("Create task: %v", err)
@@ -125,7 +125,7 @@ func TestTaskControlActorCancelsTaskWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ControlCancelEnvelope() error = %v", err)
 	}
-	if env.Namespace != swarm.NamespaceTaskControl || env.TaskID != "task-one" {
+	if env.Namespace != baldaruntime.NamespaceTaskControl || env.TaskID != "task-one" {
 		t.Fatalf("control env = %+v, want task control for task-one", env)
 	}
 	if err := actor.Handle(ctx, env); err != nil {
@@ -209,16 +209,16 @@ func TestTaskControlActorClearsGoalTasksOnly(t *testing.T) {
 			SessionID:     locator.SessionID,
 			Objective:     "goal",
 			Status:        baldastate.SwarmTaskStatusRunning,
-			OwnerActor:    swarm.ActorTypeGoalkeeper + ":goal-task",
-			AssignedActor: swarm.ActorTypeGoalkeeper + ":goal-task",
+			OwnerActor:    baldaruntime.ActorTypeGoalkeeper + ":goal-task",
+			AssignedActor: baldaruntime.ActorTypeGoalkeeper + ":goal-task",
 		},
 		{
 			ID:            "non-goal-task",
 			SessionID:     locator.SessionID,
 			Objective:     "turn",
 			Status:        baldastate.SwarmTaskStatusRunning,
-			OwnerActor:    swarm.ActorTypeSession + ":non-goal-task",
-			AssignedActor: swarm.ActorTypeSession + ":non-goal-task",
+			OwnerActor:    baldaruntime.ActorTypeSession + ":non-goal-task",
+			AssignedActor: baldaruntime.ActorTypeSession + ":non-goal-task",
 		},
 	} {
 		if _, err := tasks.Create(ctx, task, "test", nil); err != nil {

@@ -8,10 +8,10 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -29,8 +29,8 @@ type commandSessionManager interface {
 	TakeStartupNotice(sessionID string) string
 }
 
-type goalTaskService interface {
-	ListActiveGoalTasksBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error)
+type goalJobService interface {
+	ListActiveGoalJobsBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error)
 }
 
 type sessionWorkCanceller interface {
@@ -64,7 +64,7 @@ type CommandHandler struct {
 	sessionManager    commandSessionManager
 	workCanceller     sessionWorkCanceller
 	actorDispatcher   actortransport.Dispatcher
-	taskService       goalTaskService
+	taskService       goalJobService
 	goalMaxIterations int
 	userHandler       *userHandler
 }
@@ -78,8 +78,8 @@ type commandHandlerParams struct {
 	SessionManager    *session.Manager
 	WorkCanceller     *actors.SessionWorkCanceller `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
-	TaskService       *swarm.TaskService `optional:"true"`
-	MaxIterations     int                `name:"balda_goal_max_iterations"`
+	JobService        *baldajobs.JobService `optional:"true"`
+	MaxIterations     int                   `name:"balda_goal_max_iterations"`
 	UserHandler       *userHandler
 }
 

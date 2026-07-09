@@ -12,13 +12,13 @@ Status: active
 
 ## Related tests
 
-- `internal/apps/balda/swarm/tasks_test.go`
+- `internal/apps/balda/jobs/service_test.go`
 - `internal/apps/balda/handlers/command_test.go`
 - `internal/apps/balda/memory/store_test.go`
 
 ## Related packages
 
-- `internal/apps/balda/swarm`
+- `internal/apps/balda/jobs`
 - `internal/apps/balda/state`
 - `internal/apps/balda/handlers`
 

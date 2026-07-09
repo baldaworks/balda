@@ -61,7 +61,7 @@ func (s *sqliteSwarmStore) GetTask(ctx context.Context, taskID string) (SwarmTas
 	return record, ok, nil
 }
 
-func (s *sqliteSwarmStore) ListActiveTasksBySession(ctx context.Context, sessionID string) ([]SwarmTaskRecord, error) {
+func (s *sqliteSwarmStore) ListActiveJobsBySession(ctx context.Context, sessionID string) ([]SwarmTaskRecord, error) {
 	trimmed := strings.TrimSpace(sessionID)
 	if trimmed == "" {
 		return nil, fmt.Errorf("session id is required")

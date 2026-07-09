@@ -10,8 +10,8 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 )
 
@@ -50,10 +50,10 @@ func TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules(t *te
 		t.Fatalf("published commands = %d, want 1", got)
 	}
 	command := bus.commands[0]
-	if got, want := command.Namespace, swarm.NamespaceScheduleInbound; got != want {
+	if got, want := command.Namespace, baldaruntime.NamespaceScheduleInbound; got != want {
 		t.Fatalf("namespace = %q, want %q", got, want)
 	}
-	if got, want := command.Kind, swarm.KindScheduledTask; got != want {
+	if got, want := command.Kind, baldaruntime.KindScheduledTask; got != want {
 		t.Fatalf("kind = %q, want %q", got, want)
 	}
 	if command.ID == "" {

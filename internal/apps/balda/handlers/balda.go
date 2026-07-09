@@ -12,14 +12,16 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
+	"github.com/normahq/balda/internal/apps/balda/progress"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
-	"github.com/normahq/balda/internal/throttle"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -34,9 +36,8 @@ import (
 )
 
 const (
-	ownerSessionLabel                = "balda"
-	autoSessionLabel                 = "auto"
-	telegramProgressThrottleInterval = 4 * time.Second
+	ownerSessionLabel = "balda"
+	autoSessionLabel  = "auto"
 )
 
 // BaldaHandler handles bidirectional session messages for the owner and
@@ -48,7 +49,7 @@ type BaldaHandler struct {
 	sessionManager     *baldasession.Manager
 	turnDispatcher     actors.TurnQueue
 	actorDispatcher    actortransport.Dispatcher
-	taskService        *swarm.TaskService
+	taskService        *baldajobs.JobService
 	memoryStore        *memory.Store
 	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
@@ -79,7 +80,7 @@ type baldaHandlerDeps struct {
 	SessionManager     *baldasession.Manager
 	TurnDispatcher     *actors.TurnDispatcher
 	Dispatcher         actortransport.Dispatcher
-	TaskService        *swarm.TaskService `optional:"true"`
+	JobService         *baldajobs.JobService `optional:"true"`
 	MemoryStore        *memory.Store
 	Messenger          *messenger.Messenger
 	TGClient           client.ClientWithResponsesInterface
@@ -230,7 +231,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		messageCtx.DeliveryOptions,
 		messageCtx.ProgressPolicy,
 	); err != nil {
-		if swarm.IsCommandQueueFull(err) {
+		if baldaruntime.IsCommandQueueFull(err) {
 			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Session command queue is full. Please wait or use /cancel.")
 			return nil
 		}
@@ -486,10 +487,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 	var terminalFinishReason genai.FinishReason
 	terminalErrorCode := ""
 	terminalErrorMessage := ""
-	thinkingStages := []string{"Thinking.", "Thinking..", "Thinking..."}
 	thinkingIdx := 0
-	typingThrottle := throttle.New(telegramProgressThrottleInterval, throttle.WithClock(h.currentTime))
-	thinkingThrottle := throttle.New(telegramProgressThrottleInterval, throttle.WithClock(h.currentTime))
 	lastPlanProgressText := ""
 	planDraftActive := false
 	deliverySeq := 0
@@ -510,67 +508,68 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 		if errorMessage := strings.TrimSpace(ev.ErrorMessage); errorMessage != "" {
 			terminalErrorMessage = errorMessage
 		}
-		planProgressText := ""
-		hasPlanUpdate := false
-		if h.planUpdatesEnabled {
-			planProgressText, hasPlanUpdate = baldaPlanProgressText(ev)
-		}
-		if !ev.TurnComplete {
-			if taskBackedDelivery {
-				if progressPolicy.Typing {
-					typingThrottle.Do(func() {
-						if sendErr := sendTyping(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator); sendErr != nil {
-							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send typing chat action")
-						}
-					})
+		planProgress, planProgressText, hasPlanUpdate := baldaPlanProgress(ev)
+		reasoningText, hasThoughtUpdate := progress.ReasoningText(ev)
+		hasVisibleResponseText := false
+		if ev.Content != nil {
+			for _, part := range ev.Content.Parts {
+				if part == nil || part.Thought {
+					continue
 				}
-				if hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
-					deliverySeq++
-					if err := h.dispatchTaskDelivery(ctx, taskID, locator, sessionID, deliveryProfile, planProgressText, fmt.Sprintf("progress:plan:%03d", deliverySeq)); err != nil {
+				if strings.TrimSpace(part.Text) != "" {
+					hasVisibleResponseText = true
+					break
+				}
+			}
+		}
+		if !ev.TurnComplete && h.actorDispatcher != nil {
+			sentProgress := false
+			if hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
+				visiblePlanUpdate := h.planUpdatesEnabled
+				deliverySeq++
+				if err := sendProgressPlanUpdate(ctx, h.actorDispatcher, taskID, outboundFrom, locator, progressPolicy, visiblePlanUpdate, draftID, &planProgress, planProgressText, fmt.Sprintf("progress:plan:%03d", deliverySeq)); err != nil {
+					if taskBackedDelivery {
 						return err
 					}
-					if err := h.appendTaskEvent(ctx, taskID, swarm.TaskEventAgentProgress, "session.actor", "", map[string]any{
-						"kind": "plan",
-						"text": strings.TrimSpace(planProgressText),
-					}); err != nil {
-						return err
+					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to dispatch plan progress delivery")
+				} else {
+					if taskBackedDelivery {
+						if err := h.appendTaskEvent(ctx, taskID, baldajobs.TaskEventAgentProgress, "session.actor", "", map[string]any{
+							"kind": "plan",
+							"text": strings.TrimSpace(planProgressText),
+						}); err != nil {
+							return err
+						}
 					}
 					lastPlanProgressText = planProgressText
-				}
-			} else if h.progressEmitter != nil {
-				h.progressEmitter.HandleNonTerminal(ctx, planProgressText, hasPlanUpdate)
-			} else {
-				if progressPolicy.Typing {
-					typingThrottle.Do(func() {
-						if sendErr := sendTyping(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator); sendErr != nil {
-							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send typing chat action")
-						}
-					})
-				}
-				if hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
-					switch {
-					case progressPolicy.Thinking:
-						if sendErr := sendDraftPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, draftID, planProgressText); sendErr != nil {
-							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send plan update placeholder")
-						} else {
-							lastPlanProgressText = planProgressText
-							planDraftActive = true
-						}
-					default:
-						if sendErr := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, planProgressText); sendErr != nil {
-							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send plan update message")
-						} else {
-							lastPlanProgressText = planProgressText
-						}
+					if visiblePlanUpdate {
+						planDraftActive = true
 					}
+					sentProgress = true
 				}
-				if progressPolicy.Thinking && !planDraftActive {
-					thinkingThrottle.Do(func() {
-						if sendErr := sendDraftPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, draftID, thinkingStages[thinkingIdx%len(thinkingStages)]); sendErr != nil {
-							log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send thinking placeholder")
-						}
+			}
+			if hasThoughtUpdate {
+				visibleThinking := progressPolicy.Thinking && strings.TrimSpace(reasoningText) != "" && !planDraftActive && !hasVisibleResponseText
+				deliverySeq++
+				if err := sendProgressThinking(ctx, h.actorDispatcher, taskID, outboundFrom, locator, progressPolicy, visibleThinking, draftID, reasoningText, thinkingIdx, fmt.Sprintf("progress:thinking:%03d", deliverySeq)); err != nil {
+					if taskBackedDelivery {
+						return err
+					}
+					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to dispatch thinking progress delivery")
+				} else {
+					if visibleThinking {
 						thinkingIdx++
-					})
+					}
+					sentProgress = true
+				}
+			}
+			if !sentProgress {
+				deliverySeq++
+				if err := sendProgressActivity(ctx, h.actorDispatcher, taskID, outboundFrom, locator, progressPolicy, deliverySeq, fmt.Sprintf("progress:activity:%03d", deliverySeq)); err != nil {
+					if taskBackedDelivery {
+						return err
+					}
+					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to dispatch activity progress delivery")
 				}
 			}
 		}
@@ -679,7 +678,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 					if err := h.dispatchTaskDelivery(ctx, taskID, locator, sessionID, deliveryProfile, responseText, "final"); err != nil {
 						return err
 					}
-					if err := h.appendTaskEvent(ctx, taskID, swarm.TaskEventAgentResult, "session.actor", "", map[string]any{
+					if err := h.appendTaskEvent(ctx, taskID, baldajobs.TaskEventAgentResult, "session.actor", "", map[string]any{
 						"text": strings.TrimSpace(responseText),
 					}); err != nil {
 						return err
@@ -702,7 +701,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 						if err := h.dispatchTaskDelivery(ctx, taskID, locator, sessionID, deliveryProfile, terminalMessage, "terminal"); err != nil {
 							return err
 						}
-						if err := h.appendTaskEvent(ctx, taskID, swarm.TaskEventAgentResult, "session.actor", "", map[string]any{
+						if err := h.appendTaskEvent(ctx, taskID, baldajobs.TaskEventAgentResult, "session.actor", "", map[string]any{
 							"text":          strings.TrimSpace(terminalMessage),
 							"finish_reason": strings.TrimSpace(string(terminalFinishReason)),
 						}); err != nil {
@@ -797,7 +796,7 @@ func (h *BaldaHandler) dispatchTaskDelivery(
 	if h == nil || h.actorDispatcher == nil {
 		return fmt.Errorf("swarm runtime is unavailable")
 	}
-	env, err := actors.AgentReplyDeliveryEnvelopeWithProfile(taskID, actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: sessionID}, locator, profile, text, dedupeSuffix)
+	env, err := actors.AgentReplyDeliveryEnvelopeWithProfileAndSettlement(taskID, actorlayer.ActorAddress{Target: baldaruntime.ActorTypeSession, Key: sessionID}, locator, profile, deliverycmd.SettlementOutbox, text, dedupeSuffix)
 	if err != nil {
 		return err
 	}

@@ -20,7 +20,7 @@ balda:
     formatting_mode: "rich_markdown"
     # Surface work-plan updates in balda progress.
     # - true: DM thinking placeholders show plan snapshots; public chats/topics receive plain-text plan messages
-    # - false: keep typing / Thinking... progress only
+    # - false: plan progress stays hidden; balda still emits progress activity and keeps typing / Thinking... behavior
     plan_updates: true
 
     # Optional webhook configuration

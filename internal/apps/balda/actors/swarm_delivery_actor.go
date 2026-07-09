@@ -11,8 +11,10 @@ import (
 
 	"github.com/google/uuid"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -22,20 +24,20 @@ const deliveryPendingRetryAfter = 30 * time.Second
 
 type taskDeliveryActor struct {
 	channel *baldachannel.Router
-	tasks   *swarm.TaskService
+	tasks   *baldajobs.JobService
 	logger  zerolog.Logger
 }
 
 type taskDeliveryActorParams struct {
 	fx.In
 
-	Channel     *baldachannel.Router
-	TaskService *swarm.TaskService
-	Logger      zerolog.Logger
+	Channel    *baldachannel.Router
+	JobService *baldajobs.JobService
+	Logger     zerolog.Logger
 }
 
 func (a *taskDeliveryActor) Address() string {
-	return actorlayer.WildcardAddress(swarm.ActorTypeDelivery)
+	return actorlayer.WildcardAddress(baldaruntime.ActorTypeDelivery)
 }
 
 func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
@@ -52,7 +54,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 	if err := validateDeliveryPayload(payload); err != nil {
 		return actorlayer.PermanentError(err)
 	}
-	durable := deliveryModeIsDurable(payload.Mode) && !deliveryBypassesOutbox(env)
+	durable := deliveryRequiresOutbox(payload)
 	deliveryKey := strings.TrimSpace(env.DedupeKey)
 	if deliveryKey == "" {
 		deliveryKey = strings.TrimSpace(env.ID)
@@ -100,7 +102,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 		if durable && a.tasks != nil {
 			_ = a.tasks.MarkDeliveryFailed(ctx, deliveryKey, err.Error())
 			if strings.TrimSpace(payload.TaskID) != "" {
-				if appendErr := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
+				if appendErr := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
 					"text":   strings.TrimSpace(payload.Text),
 					"action": strings.TrimSpace(payload.Action),
 					"mode":   payload.Mode,
@@ -118,7 +120,7 @@ func (a *taskDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope)
 		}
 	}
 	if durable && a.tasks != nil && strings.TrimSpace(payload.TaskID) != "" {
-		if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventDeliverySent, "delivery.actor", env.ID, map[string]any{
+		if err := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventDeliverySent, "delivery.actor", env.ID, map[string]any{
 			"text": strings.TrimSpace(payload.Text),
 			"mode": payload.Mode,
 		}); err != nil {
@@ -140,6 +142,11 @@ func (a *taskDeliveryActor) dispatchDelivery(ctx context.Context, payload Delive
 		return "", a.channel.SendDraftPlain(ctx, payload.Locator, payload.DraftID, payload.Text)
 	case DeliveryModeChatAction:
 		return "", a.channel.SendTyping(ctx, payload.Locator)
+	case DeliveryModeProgress:
+		if payload.Progress == nil {
+			return "", fmt.Errorf("progress payload is required")
+		}
+		return "", a.channel.SendProgress(ctx, payload.Locator, *payload.Progress)
 	default:
 		return "", fmt.Errorf("unsupported delivery mode %q", payload.Mode)
 	}
@@ -174,13 +181,18 @@ func deliveryReadyForAttempt(record baldastate.SwarmDeliveryRecord) bool {
 	}
 }
 
-
-func deliveryBypassesOutbox(env actorlayer.Envelope) bool {
-	target := strings.TrimSpace(env.From.Target)
-	switch target {
-	case swarm.ActorTypeSession, "handler":
-		return true
-	default:
+func deliveryRequiresOutbox(payload DeliveryPayload) bool {
+	if !deliveryModeIsDurable(payload.Mode) {
 		return false
+	}
+	switch payload.Settlement {
+	case deliverycmd.SettlementBypass:
+		return false
+	case deliverycmd.SettlementOutbox:
+		return true
+	case "", deliverycmd.SettlementAuto:
+		return strings.TrimSpace(payload.TaskID) != ""
+	default:
+		return strings.TrimSpace(payload.TaskID) != ""
 	}
 }

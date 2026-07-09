@@ -3,8 +3,8 @@ package actors
 import (
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer/dispatch"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -26,7 +26,7 @@ var Module = fx.Module("balda_actors",
 		fx.Annotate(
 			func(params taskActorExecutorParams) dispatch.Actor {
 				return &taskActorExecutor{
-					tasks:      params.TaskService,
+					tasks:      params.JobService,
 					dispatcher: params.Dispatcher,
 					sessions:   params.Sessions,
 				}
@@ -38,7 +38,7 @@ var Module = fx.Module("balda_actors",
 			func(params struct {
 				fx.In
 
-				TaskService        *swarm.TaskService
+				JobService         *baldajobs.JobService
 				Dispatcher         actortransport.Dispatcher
 				SessionManager     *baldasession.Manager
 				RuntimeManager     *baldaagent.RuntimeManager
@@ -48,7 +48,7 @@ var Module = fx.Module("balda_actors",
 				Logger             zerolog.Logger
 			}) dispatch.Actor {
 				return goalkeeper.NewActor(goalkeeper.ActorParams{
-					TaskService:        params.TaskService,
+					JobService:         params.JobService,
 					Dispatcher:         params.Dispatcher,
 					SessionManager:     params.SessionManager,
 					GoalRunPreparer:    goalRunPreparerAdapter{manager: params.RuntimeManager},
@@ -75,7 +75,7 @@ var Module = fx.Module("balda_actors",
 			func(params taskDeliveryActorParams) dispatch.Actor {
 				return &taskDeliveryActor{
 					channel: params.Channel,
-					tasks:   params.TaskService,
+					tasks:   params.JobService,
 					logger:  params.Logger.With().Str("component", "balda.task_delivery_actor").Logger(),
 				}
 			},
@@ -87,7 +87,7 @@ var Module = fx.Module("balda_actors",
 				return &taskControlActor{
 					turnDispatcher: params.TurnDispatcher,
 					dispatcher:     params.Dispatcher,
-					tasks:          params.TaskService,
+					tasks:          params.JobService,
 					taskRuns:       params.TaskRuns,
 					logger:         params.Logger.With().Str("component", "balda.task_control_actor").Logger(),
 				}

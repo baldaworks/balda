@@ -11,6 +11,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -414,6 +415,64 @@ func (a *Adapter) TopicLifecycleFromEvent(event *events.MessageEvent) (TopicLife
 	}, true
 }
 
+func telegramReasoningMarkdown(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			lines[i] = ">"
+			continue
+		}
+		lines[i] = "> " + trimmed
+	}
+	return strings.Join(lines, "\n")
+}
+
+func telegramRichMarkdownEnabled(mode string) bool {
+	return telegramfmt.NormalizeMode(mode) == telegramfmt.ModeRichMarkdown
+}
+
+func telegramPlanUpdateMarkdown(progress deliverycmd.Progress) string {
+	if progress.Plan == nil || len(progress.Plan.Entries) == 0 {
+		return strings.TrimSpace(progress.Text)
+	}
+	lines := make([]string, 0, len(progress.Plan.Entries)+2)
+	lines = append(lines, "# Plan update", "")
+	for _, entry := range progress.Plan.Entries {
+		lines = append(lines, telegramPlanChecklistItem(entry.Content, entry.Status))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func telegramPlanChecklistItem(content string, status string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		content = "(no description)"
+	}
+	switch strings.TrimSpace(status) {
+	case "completed":
+		return "- [x] " + content
+	case "in progress":
+		return "- [ ] _In progress:_ " + content
+	case "pending":
+		return "- [ ] " + content
+	case "blocked":
+		return "- [ ] _Blocked:_ " + content
+	case "failed":
+		return "- [ ] _Failed:_ " + content
+	case "cancelled":
+		return "- [ ] ~~" + content + "~~"
+	case "unknown", "":
+		return "- [ ] " + content
+	default:
+		return "- [ ] _" + status + ":_ " + content
+	}
+}
+
 // SendPlain sends a plain text reply to the locator.
 func (a *Adapter) SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
@@ -486,6 +545,53 @@ func (a *Adapter) SendTyping(ctx context.Context, locator baldasession.SessionLo
 		return err
 	}
 	return a.messenger.SendChatAction(ctx, chatID, topicID, "typing")
+}
+
+// SendProgress renders a semantic conversational progress update for Telegram.
+func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error {
+	if progress.Policy.Typing {
+		if err := a.SendTyping(ctx, locator); err != nil {
+			a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("telegram typing progress sugar failed")
+		}
+	}
+	if !progress.Visible {
+		return nil
+	}
+	switch progress.Kind {
+	case deliverycmd.ProgressThinking:
+		if !progress.Policy.Thinking {
+			return nil
+		}
+		if strings.TrimSpace(progress.Text) == "" {
+			return nil
+		}
+		chatID, topicID, err := telegramTuple(locator)
+		if err != nil {
+			return err
+		}
+		if telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode()) {
+			return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, progress.DraftID, telegramReasoningMarkdown(progress.Text), topicID, telegramfmt.ModeRichMarkdown)
+		}
+		return a.messenger.SendDraftPlain(ctx, chatID, progress.DraftID, progress.Text, topicID)
+	case deliverycmd.ProgressPlanUpdate:
+		chatID, topicID, err := telegramTuple(locator)
+		if err != nil {
+			return err
+		}
+		if telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode()) {
+			markdown := telegramPlanUpdateMarkdown(progress)
+			if progress.Policy.Thinking {
+				return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, progress.DraftID, markdown, topicID, telegramfmt.ModeRichMarkdown)
+			}
+			return a.messenger.SendMarkdownWithMode(ctx, chatID, markdown, topicID, telegramfmt.ModeRichMarkdown)
+		}
+		if progress.Policy.Thinking {
+			return a.messenger.SendDraftPlain(ctx, chatID, progress.DraftID, progress.Text, topicID)
+		}
+		return a.messenger.SendPlain(ctx, chatID, progress.Text, topicID)
+	default:
+		return fmt.Errorf("unsupported telegram progress kind %q", progress.Kind)
+	}
 }
 
 // CreateTopicLocator creates a Telegram forum topic and returns the balda locator for it.

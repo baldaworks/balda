@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/memory"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"go.uber.org/fx"
@@ -43,10 +43,10 @@ func MemoryRememberEnvelope(payload MemoryRememberPayload) (actorlayer.Envelope,
 	}
 	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
-		Namespace:   swarm.NamespaceMemoryCommand,
-		Kind:        swarm.KindMemoryRemember,
+		Namespace:   baldaruntime.NamespaceMemoryCommand,
+		Kind:        baldaruntime.KindMemoryRemember,
 		From:        actorlayer.SystemAddress("memory"),
-		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeMemory, Key: "global"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeMemory, Key: "global"},
 		SessionID:   strings.TrimSpace(payload.SourceSessionID),
 		Priority:    70,
 		DedupeKey:   uuid.NewString(),
@@ -55,15 +55,15 @@ func MemoryRememberEnvelope(payload MemoryRememberPayload) (actorlayer.Envelope,
 }
 
 func (e *memoryActorExecutor) Address() string {
-	return actorlayer.WildcardAddress(swarm.ActorTypeMemory)
+	return actorlayer.WildcardAddress(baldaruntime.ActorTypeMemory)
 }
 
 func (e *memoryActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
-	if strings.TrimSpace(env.Namespace) != swarm.NamespaceMemoryCommand {
+	if strings.TrimSpace(env.Namespace) != baldaruntime.NamespaceMemoryCommand {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported memory namespace %q", env.Namespace))
 	}
 	switch strings.TrimSpace(env.Kind) {
-	case swarm.KindMemoryRemember:
+	case baldaruntime.KindMemoryRemember:
 		return e.remember(ctx, env)
 	default:
 		return actorlayer.PolicyError(fmt.Errorf("unsupported memory kind %q", env.Kind))
@@ -103,11 +103,11 @@ func (e *memoryActorExecutor) publishUpdated(ctx context.Context, env actorlayer
 	}
 	eventEnv := env
 	eventEnv.ID = strings.TrimSpace(env.ID) + ":event:memory_updated"
-	eventEnv.Namespace = swarm.NamespaceTelemetry
+	eventEnv.Namespace = baldaruntime.NamespaceTelemetry
 	eventEnv.Kind = "memory_updated"
 	eventEnv.DedupeKey = eventEnv.ID
 	eventEnv.PayloadJSON = string(data)
-	if err := e.events.PublishEvent(ctx, swarm.SubjectEventMemoryUpdated, eventEnv); err != nil {
+	if err := e.events.PublishEvent(ctx, baldaruntime.SubjectEventMemoryUpdated, eventEnv); err != nil {
 		return
 	}
 }

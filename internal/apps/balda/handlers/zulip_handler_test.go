@@ -15,8 +15,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -773,7 +773,7 @@ func TestZulipBaldaHandlerCancelRejectsArgsWithoutPublishingControl(t *testing.T
 		t.Fatalf("payloads = %+v, want cancel usage reply", payloads)
 	}
 	for _, env := range dispatcher.commands {
-		if env.Namespace == swarm.NamespaceTaskControl {
+		if env.Namespace == baldaruntime.NamespaceTaskControl {
 			t.Fatalf("published task control command for invalid /cancel: %+v", env)
 		}
 	}
@@ -899,7 +899,7 @@ func TestZulipBaldaHandlerMessagePublishesDirectSessionTurn(t *testing.T) {
 	var env actorlayer.Envelope
 	found := false
 	for _, candidate := range dispatcher.commands {
-		if candidate.To.Target != swarm.ActorTypeSession {
+		if candidate.To.Target != baldaruntime.ActorTypeSession {
 			continue
 		}
 		env = candidate
@@ -1242,9 +1242,9 @@ func (d *recordingZulipDispatcher) Dispatch(_ context.Context, env actorlayer.En
 		return nil, d.err
 	}
 	return &actortransport.DispatchReceipt{
-		Stream:   swarm.DefaultCommandStream,
+		Stream:   baldaruntime.DefaultCommandStream,
 		Sequence: uint64(len(d.commands)),
-		Subject:  swarm.SubjectForEnvelope(env),
+		Subject:  baldaruntime.SubjectForEnvelope(env),
 		MsgID:    actorlayer.DedupeKeyOrID(env),
 	}, nil
 }
@@ -1253,7 +1253,7 @@ func zulipDeliveryPayloads(t *testing.T, envs []actorlayer.Envelope) []actors.De
 	t.Helper()
 	payloads := make([]actors.DeliveryPayload, 0, len(envs))
 	for _, env := range envs {
-		if env.To.Target != swarm.ActorTypeDelivery {
+		if env.To.Target != baldaruntime.ActorTypeDelivery {
 			continue
 		}
 		var payload actors.DeliveryPayload

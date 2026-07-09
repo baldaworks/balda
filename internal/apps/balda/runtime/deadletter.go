@@ -1,4 +1,4 @@
-package swarm
+package runtime
 
 import (
 	"context"
@@ -16,8 +16,8 @@ func (r *ActorHost) deadletterTask(ctx context.Context, env actorlayer.Envelope,
 	if taskID == "" {
 		return
 	}
-	if err := r.tasks.DeadLetter(ctx, taskID, "swarm.runtime", env.ID, reason); err != nil {
-		r.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to mark swarm task deadlettered")
+	if err := r.tasks.DeadLetter(ctx, taskID, "runtime.host", env.ID, reason); err != nil {
+		r.logger.Warn().Err(err).Str("task_id", taskID).Msg("failed to mark job deadlettered")
 	}
 }
 

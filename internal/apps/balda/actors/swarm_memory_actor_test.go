@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/memory"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 )
 
 func TestMemoryRememberEnvelopeRoutesToMemorySubject(t *testing.T) {
@@ -17,11 +17,11 @@ func TestMemoryRememberEnvelopeRoutesToMemorySubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MemoryRememberEnvelope() error = %v", err)
 	}
-	if got := swarm.SubjectForEnvelope(env); got != swarm.SubjectCommandMemory {
-		t.Fatalf("SubjectForEnvelope() = %q, want %q", got, swarm.SubjectCommandMemory)
+	if got := baldaruntime.SubjectForEnvelope(env); got != baldaruntime.SubjectCommandMemory {
+		t.Fatalf("SubjectForEnvelope() = %q, want %q", got, baldaruntime.SubjectCommandMemory)
 	}
-	if env.To.Target != swarm.ActorTypeMemory {
-		t.Fatalf("env.To.Target = %q, want %q", env.To.Target, swarm.ActorTypeMemory)
+	if env.To.Target != baldaruntime.ActorTypeMemory {
+		t.Fatalf("env.To.Target = %q, want %q", env.To.Target, baldaruntime.ActorTypeMemory)
 	}
 }
 
@@ -49,8 +49,8 @@ func TestMemoryActorRememberWritesMemoryAndPublishesVersionEvent(t *testing.T) {
 	if len(bus.eventSubjects) != 1 {
 		t.Fatalf("published events = %d, want 1", len(bus.eventSubjects))
 	}
-	if bus.eventSubjects[0] != swarm.SubjectEventMemoryUpdated {
-		t.Fatalf("event subject = %q, want %q", bus.eventSubjects[0], swarm.SubjectEventMemoryUpdated)
+	if bus.eventSubjects[0] != baldaruntime.SubjectEventMemoryUpdated {
+		t.Fatalf("event subject = %q, want %q", bus.eventSubjects[0], baldaruntime.SubjectEventMemoryUpdated)
 	}
 	if strings.Contains(bus.eventEnvs[0].PayloadJSON, "remember actor fact") {
 		t.Fatalf("memory updated event leaked fact payload: %s", bus.eventEnvs[0].PayloadJSON)

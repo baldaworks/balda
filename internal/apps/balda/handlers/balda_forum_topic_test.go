@@ -12,8 +12,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
@@ -145,7 +145,7 @@ func TestBaldaHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T)
 	if len(turnDispatcher.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turnDispatcher.commands))
 	}
-	if turnDispatcher.commands[0].Namespace != swarm.NamespaceTaskControl || turnDispatcher.commands[0].Kind != swarm.KindCancel {
+	if turnDispatcher.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turnDispatcher.commands[0].Kind != baldaruntime.KindCancel {
 		t.Fatalf("published command = %+v, want task control cancel", turnDispatcher.commands[0])
 	}
 	if _, err := sessionManager.GetSession(locator); err == nil {
@@ -512,8 +512,8 @@ func TestBaldaHandlerOnMessage_PublishesDirectSessionTurn(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].To.Target != swarm.ActorTypeSession {
-		t.Fatalf("command target = %q, want %q", turns.commands[0].To.Target, swarm.ActorTypeSession)
+	if turns.commands[0].To.Target != baldaruntime.ActorTypeSession {
+		t.Fatalf("command target = %q, want %q", turns.commands[0].To.Target, baldaruntime.ActorTypeSession)
 	}
 	if turns.commands[0].SessionID != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", turns.commands[0].SessionID, locator.SessionID)

@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"unsafe"
 
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/tgbotkit/client"
@@ -36,9 +36,9 @@ func (f *fakeTurnDispatcher) Enqueue(task TurnTask) (int, error) {
 func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	f.commands = append(f.commands, env)
 	return &actortransport.DispatchReceipt{
-		Stream:   swarm.DefaultCommandStream,
+		Stream:   baldaruntime.DefaultCommandStream,
 		Sequence: uint64(len(f.commands)),
-		Subject:  swarm.SubjectForEnvelope(env),
+		Subject:  baldaruntime.SubjectForEnvelope(env),
 		MsgID:    actorlayer.DedupeKeyOrID(env),
 	}, nil
 }
@@ -72,7 +72,7 @@ func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env actorlayer.
 		}
 	}
 	b.commands = append(b.commands, env)
-	return &actortransport.DispatchReceipt{Stream: swarm.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: swarm.SubjectForEnvelope(env), MsgID: actorlayer.DedupeKeyOrID(env)}, nil
+	return &actortransport.DispatchReceipt{Stream: baldaruntime.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: baldaruntime.SubjectForEnvelope(env), MsgID: actorlayer.DedupeKeyOrID(env)}, nil
 }
 
 func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject string, env actorlayer.Envelope) error {

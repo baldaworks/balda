@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -34,7 +36,7 @@ type taskControlPayload struct {
 type taskControlActor struct {
 	turnDispatcher TurnQueue
 	dispatcher     actortransport.Dispatcher
-	tasks          *swarm.TaskService
+	tasks          *baldajobs.JobService
 	taskRuns       *TaskRunRegistry
 	logger         zerolog.Logger
 }
@@ -43,7 +45,7 @@ type taskControlActor struct {
 // work for a session without going through the async control actor path.
 type SessionWorkCanceller struct {
 	turnDispatcher TurnQueue
-	tasks          *swarm.TaskService
+	tasks          *baldajobs.JobService
 	taskRuns       *TaskRunRegistry
 	logger         zerolog.Logger
 }
@@ -53,7 +55,7 @@ type taskControlActorParams struct {
 
 	TurnDispatcher *TurnDispatcher
 	Dispatcher     actortransport.Dispatcher
-	TaskService    *swarm.TaskService
+	JobService     *baldajobs.JobService
 	TaskRuns       *TaskRunRegistry
 	Logger         zerolog.Logger
 }
@@ -62,7 +64,7 @@ type sessionWorkCancellerParams struct {
 	fx.In
 
 	TurnDispatcher *TurnDispatcher
-	TaskService    *swarm.TaskService
+	JobService     *baldajobs.JobService
 	TaskRuns       *TaskRunRegistry
 	Logger         zerolog.Logger
 }
@@ -70,7 +72,7 @@ type sessionWorkCancellerParams struct {
 func NewSessionWorkCanceller(params sessionWorkCancellerParams) *SessionWorkCanceller {
 	return &SessionWorkCanceller{
 		turnDispatcher: params.TurnDispatcher,
-		tasks:          params.TaskService,
+		tasks:          params.JobService,
 		taskRuns:       params.TaskRuns,
 		logger:         params.Logger.With().Str("component", "balda.session_work_canceller").Logger(),
 	}
@@ -110,7 +112,7 @@ func (a *taskControlActor) Address() string {
 }
 
 func (a *taskControlActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
-	if strings.TrimSpace(env.Namespace) != swarm.NamespaceTaskControl {
+	if strings.TrimSpace(env.Namespace) != baldaruntime.NamespaceTaskControl {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported control namespace %q", env.Namespace))
 	}
 	var payload taskControlPayload
@@ -168,7 +170,7 @@ func (a *taskControlActor) cancelTask(ctx context.Context, env actorlayer.Envelo
 		runCanceled = hadInFlight || dropped > 0
 	}
 	reason := firstNonEmpty(payload.Reason, "task canceled by user")
-	if err := a.tasks.CancelTask(ctx, task.ID, "command.task", reason); err != nil {
+	if err := a.tasks.CancelJob(ctx, task.ID, "command.task", reason); err != nil {
 		return actorlayer.TransientError(err)
 	}
 	if payload.Notify {
@@ -255,13 +257,13 @@ func (a *taskControlActor) clearGoal(ctx context.Context, payload taskControlPay
 	if a.tasks == nil {
 		return actorlayer.TransientError(fmt.Errorf("task service is required"))
 	}
-	tasks, err := a.tasks.ListActiveGoalTasksBySession(ctx, payload.Locator.SessionID)
+	tasks, err := a.tasks.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
 	if err != nil {
 		return actorlayer.TransientError(err)
 	}
 	cleared := 0
 	for _, task := range tasks {
-		if err := a.tasks.CancelTask(ctx, task.ID, "command.goal", firstNonEmpty(payload.Reason, "goal cleared by user")); err != nil {
+		if err := a.tasks.CancelJob(ctx, task.ID, "command.goal", firstNonEmpty(payload.Reason, "goal cleared by user")); err != nil {
 			return actorlayer.TransientError(err)
 		}
 		if a.taskRuns != nil {
@@ -286,7 +288,7 @@ func (a *taskControlActor) sendControlMessage(ctx context.Context, locator balda
 	if a == nil || a.dispatcher == nil || strings.TrimSpace(text) == "" {
 		return
 	}
-	env, err := PlainDeliveryEnvelope("", actorlayer.SystemAddress("control"), locator, text, "")
+	env, err := PlainDeliveryEnvelopeWithSettlement("", actorlayer.SystemAddress("control"), locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to build control response")
 		return
@@ -329,8 +331,8 @@ func controlEnvelope(locator baldasession.SessionLocator, action string, taskID 
 	id := uuid.NewString()
 	return actorlayer.Envelope{
 		ID:          id,
-		Namespace:   swarm.NamespaceTaskControl,
-		Kind:        swarm.KindCancel,
+		Namespace:   baldaruntime.NamespaceTaskControl,
+		Kind:        baldaruntime.KindCancel,
 		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
 		To:          actorlayer.SystemAddress("control"),
 		SessionID:   locator.SessionID,

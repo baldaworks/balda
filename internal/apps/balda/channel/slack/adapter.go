@@ -78,6 +78,21 @@ func (a *Adapter) SendTyping(_ context.Context, _ baldasession.SessionLocator) e
 	return nil
 }
 
+// SendProgress renders semantic progress updates for Slack.
+func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error {
+	if !progress.Visible {
+		return nil
+	}
+	switch progress.Kind {
+	case deliverycmd.ProgressThinking:
+		return nil
+	case deliverycmd.ProgressPlanUpdate:
+		return a.SendPlain(ctx, locator, progress.Text)
+	default:
+		return fmt.Errorf("unsupported slack progress kind %q", progress.Kind)
+	}
+}
+
 func (a *Adapter) send(ctx context.Context, locator baldasession.SessionLocator, text string, mrkdwn bool) (string, error) {
 	if a == nil || a.client == nil {
 		return "", fmt.Errorf("slack adapter client is required")

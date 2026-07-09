@@ -1,4 +1,4 @@
-package swarm
+package runtime
 
 import (
 	"go/parser"
@@ -28,7 +28,7 @@ func TestRuntimeCoreNoProviderImports(t *testing.T) {
 	}
 	root := filepath.Dir(testFile)
 	fset := token.NewFileSet()
-	for _, file := range []string{"runtime.go"} {
+	for _, file := range []string{"host.go"} {
 		path := filepath.Join(root, file)
 		src, err := os.ReadFile(path)
 		if err != nil {

@@ -1,4 +1,4 @@
-package swarm
+package jobs
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -31,26 +32,26 @@ const (
 	TaskEventDeliveryFailed = "delivery.failed"
 )
 
-type TaskService struct {
+type JobService struct {
 	store baldastate.SwarmStore
 	bus   actortransport.EventPublisher
 }
 
-type taskServiceParams struct {
+type jobServiceParams struct {
 	fx.In
 
 	StateProvider baldastate.Provider
 	Bus           actortransport.EventPublisher `optional:"true"`
 }
 
-func NewTaskService(params taskServiceParams) (*TaskService, error) {
+func NewJobService(params jobServiceParams) (*JobService, error) {
 	if params.StateProvider == nil {
 		return nil, fmt.Errorf("balda state provider is required")
 	}
-	return &TaskService{store: params.StateProvider.Swarm(), bus: params.Bus}, nil
+	return &JobService{store: params.StateProvider.Swarm(), bus: params.Bus}, nil
 }
 
-func (s *TaskService) Create(ctx context.Context, record baldastate.SwarmTaskRecord, actor string, payload any) (bool, error) {
+func (s *JobService) Create(ctx context.Context, record baldastate.SwarmTaskRecord, actor string, payload any) (bool, error) {
 	if s == nil {
 		return false, nil
 	}
@@ -77,38 +78,38 @@ func (s *TaskService) Create(ctx context.Context, record baldastate.SwarmTaskRec
 	return created, nil
 }
 
-func (s *TaskService) Get(ctx context.Context, taskID string) (baldastate.SwarmTaskRecord, bool, error) {
+func (s *JobService) Get(ctx context.Context, taskID string) (baldastate.SwarmTaskRecord, bool, error) {
 	if s == nil {
 		return baldastate.SwarmTaskRecord{}, false, nil
 	}
 	return s.store.GetTask(ctx, taskID)
 }
 
-func (s *TaskService) ListActiveTasksBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
+func (s *JobService) ListActiveJobsBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
 	if s == nil {
 		return nil, nil
 	}
-	return s.store.ListActiveTasksBySession(ctx, sessionID)
+	return s.store.ListActiveJobsBySession(ctx, sessionID)
 }
 
-func (s *TaskService) ListActiveGoalTasksBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
+func (s *JobService) ListActiveGoalJobsBySession(ctx context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
 	if s == nil {
 		return nil, nil
 	}
-	tasks, err := s.store.ListActiveTasksBySession(ctx, sessionID)
+	tasks, err := s.store.ListActiveJobsBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]baldastate.SwarmTaskRecord, 0, len(tasks))
 	for _, task := range tasks {
-		if IsGoalTask(task) {
+		if IsGoalJob(task) {
 			out = append(out, task)
 		}
 	}
 	return out, nil
 }
 
-func (s *TaskService) MarkStatus(ctx context.Context, taskID string, status string, actor string, messageID string, reason string, payload any) error {
+func (s *JobService) MarkStatus(ctx context.Context, taskID string, status string, actor string, messageID string, reason string, payload any) error {
 	if s == nil {
 		return nil
 	}
@@ -140,7 +141,7 @@ func (s *TaskService) MarkStatus(ctx context.Context, taskID string, status stri
 	}))
 }
 
-func (s *TaskService) SetResult(ctx context.Context, taskID string, result any, status string, actor string, reason string) error {
+func (s *JobService) SetResult(ctx context.Context, taskID string, result any, status string, actor string, reason string) error {
 	if s == nil {
 		return nil
 	}
@@ -173,7 +174,7 @@ func (s *TaskService) SetResult(ctx context.Context, taskID string, result any, 
 	}))
 }
 
-func (s *TaskService) suppressStaleTerminalTransition(ctx context.Context, taskID string, status string, err error) error {
+func (s *JobService) suppressStaleTerminalTransition(ctx context.Context, taskID string, status string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -205,7 +206,7 @@ func isTerminalTaskStatus(status string) bool {
 	}
 }
 
-func (s *TaskService) AppendEvent(ctx context.Context, taskID string, eventType string, actor string, messageID string, payload any) error {
+func (s *JobService) AppendEvent(ctx context.Context, taskID string, eventType string, actor string, messageID string, payload any) error {
 	if s == nil {
 		return nil
 	}
@@ -216,7 +217,7 @@ func (s *TaskService) AppendEvent(ctx context.Context, taskID string, eventType 
 	return s.publishEventRecord(ctx, event)
 }
 
-func (s *TaskService) appendEventBestEffort(ctx context.Context, taskID string, eventType string, actor string, messageID string, payload any) error {
+func (s *JobService) appendEventBestEffort(ctx context.Context, taskID string, eventType string, actor string, messageID string, payload any) error {
 	if s == nil {
 		return nil
 	}
@@ -279,11 +280,11 @@ func taskEventRecord(taskID string, eventType string, actor string, messageID st
 	}, nil
 }
 
-func (s *TaskService) CancelBySession(ctx context.Context, sessionID string, actor string, reason string) ([]string, error) {
+func (s *JobService) CancelBySession(ctx context.Context, sessionID string, actor string, reason string) ([]string, error) {
 	if s == nil {
 		return nil, nil
 	}
-	tasks, err := s.store.ListActiveTasksBySession(ctx, sessionID)
+	tasks, err := s.store.ListActiveJobsBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -297,67 +298,67 @@ func (s *TaskService) CancelBySession(ctx context.Context, sessionID string, act
 	return ids, nil
 }
 
-func (s *TaskService) CancelTask(ctx context.Context, taskID string, actor string, reason string) error {
+func (s *JobService) CancelJob(ctx context.Context, taskID string, actor string, reason string) error {
 	if s == nil {
 		return nil
 	}
 	return s.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusCanceled, actor, "", reason, nil)
 }
 
-func (s *TaskService) DeadLetter(ctx context.Context, taskID string, actor string, messageID string, reason string) error {
+func (s *JobService) DeadLetter(ctx context.Context, taskID string, actor string, messageID string, reason string) error {
 	return s.MarkStatus(ctx, taskID, baldastate.SwarmTaskStatusDeadLettered, actor, messageID, reason, nil)
 }
 
-func (s *TaskService) ReserveDelivery(ctx context.Context, record baldastate.SwarmDeliveryRecord) (baldastate.SwarmDeliveryRecord, bool, error) {
+func (s *JobService) ReserveDelivery(ctx context.Context, record baldastate.SwarmDeliveryRecord) (baldastate.SwarmDeliveryRecord, bool, error) {
 	if s == nil {
 		return baldastate.SwarmDeliveryRecord{}, false, nil
 	}
 	return s.store.ReserveDelivery(ctx, record)
 }
 
-func (s *TaskService) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
+func (s *JobService) MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error {
 	if s == nil {
 		return nil
 	}
 	return s.store.MarkDeliverySent(ctx, deliveryKey, providerMessageID)
 }
 
-func (s *TaskService) MarkDeliverySending(ctx context.Context, deliveryKey string) error {
+func (s *JobService) MarkDeliverySending(ctx context.Context, deliveryKey string) error {
 	if s == nil {
 		return nil
 	}
 	return s.store.MarkDeliverySending(ctx, deliveryKey)
 }
 
-func (s *TaskService) MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error {
+func (s *JobService) MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error {
 	if s == nil {
 		return nil
 	}
 	return s.store.MarkDeliveryFailed(ctx, deliveryKey, reason)
 }
 
-func (s *TaskService) ReserveAgentStep(ctx context.Context, record baldastate.SwarmAgentStepRecord) (baldastate.SwarmAgentStepRecord, bool, error) {
+func (s *JobService) ReserveAgentStep(ctx context.Context, record baldastate.SwarmAgentStepRecord) (baldastate.SwarmAgentStepRecord, bool, error) {
 	if s == nil {
 		return baldastate.SwarmAgentStepRecord{}, false, nil
 	}
 	return s.store.ReserveAgentStep(ctx, record)
 }
 
-func (s *TaskService) CompleteAgentStep(ctx context.Context, stepKey string, resultJSON string) error {
+func (s *JobService) CompleteAgentStep(ctx context.Context, stepKey string, resultJSON string) error {
 	if s == nil {
 		return nil
 	}
 	return s.store.CompleteAgentStep(ctx, stepKey, resultJSON)
 }
 
-func (s *TaskService) FailAgentStep(ctx context.Context, stepKey string, resultJSON string, reason string) error {
+func (s *JobService) FailAgentStep(ctx context.Context, stepKey string, resultJSON string, reason string) error {
 	if s == nil {
 		return nil
 	}
 	return s.store.FailAgentStep(ctx, stepKey, resultJSON, reason)
 }
 
-func IsGoalTask(task baldastate.SwarmTaskRecord) bool {
+func IsGoalJob(task baldastate.SwarmTaskRecord) bool {
 	owner := strings.TrimSpace(task.OwnerActor)
 	assigned := strings.TrimSpace(task.AssignedActor)
 	for _, prefix := range []string{"goalkeeper:", "goal:"} {
@@ -368,7 +369,7 @@ func IsGoalTask(task baldastate.SwarmTaskRecord) bool {
 	return false
 }
 
-func (s *TaskService) publishTaskEvent(ctx context.Context, event baldastate.SwarmTaskEventRecord) error {
+func (s *JobService) publishTaskEvent(ctx context.Context, event baldastate.SwarmTaskEventRecord) error {
 	if s == nil || s.bus == nil {
 		return fmt.Errorf("event bus is required")
 	}
@@ -376,23 +377,23 @@ func (s *TaskService) publishTaskEvent(ctx context.Context, event baldastate.Swa
 	if payload == "" {
 		payload = "{}"
 	}
-	subject := SubjectEventTaskUpdated
+	subject := baldaruntime.SubjectEventTaskUpdated
 	switch strings.TrimSpace(event.EventType) {
 	case TaskEventDeliverySent:
-		subject = SubjectEventDeliverySent
+		subject = baldaruntime.SubjectEventDeliverySent
 	case TaskEventDeliveryFailed:
-		subject = SubjectEventDeliveryFailed
+		subject = baldaruntime.SubjectEventDeliveryFailed
 	case TaskEventTaskCreated:
-		subject = SubjectEventTaskCreated
+		subject = baldaruntime.SubjectEventTaskCreated
 	case TaskEventTaskCompleted:
-		subject = SubjectEventTaskCompleted
+		subject = baldaruntime.SubjectEventTaskCompleted
 	}
 	env := actorlayer.Envelope{
 		ID:          event.ID,
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "task_event",
 		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: event.TaskID},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: event.TaskID},
 		TaskID:      event.TaskID,
 		PayloadJSON: payload,
 		Meta: map[string]string{
@@ -404,14 +405,14 @@ func (s *TaskService) publishTaskEvent(ctx context.Context, event baldastate.Swa
 	return s.bus.PublishEvent(ctx, subject, env)
 }
 
-func (s *TaskService) publishEventRecord(ctx context.Context, event baldastate.SwarmTaskEventRecord) error {
+func (s *JobService) publishEventRecord(ctx context.Context, event baldastate.SwarmTaskEventRecord) error {
 	if s == nil {
 		return nil
 	}
 	return s.publishTaskEvent(ctx, event)
 }
 
-func (s *TaskService) publishEventRecordBestEffort(ctx context.Context, event baldastate.SwarmTaskEventRecord) {
+func (s *JobService) publishEventRecordBestEffort(ctx context.Context, event baldastate.SwarmTaskEventRecord) {
 	if err := s.publishEventRecord(ctx, event); err != nil {
 		log.Ctx(ctx).Warn().
 			Err(err).

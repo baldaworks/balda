@@ -11,7 +11,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/paths"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -115,13 +115,13 @@ func TestValidateSessionPersistence(t *testing.T) {
 func TestValidateRuntimeConfigLint_AllowsAlwaysOnSwarmConfig(t *testing.T) {
 	t.Parallel()
 
-	if err := validateRuntimeConfigLint(swarm.Config{
-		Commands: swarm.CommandConfig{
+	if err := validateRuntimeConfigLint(baldaruntime.Config{
+		Commands: baldaruntime.CommandConfig{
 			Stream:   "BALDA_COMMANDS",
 			Consumer: "BALDA_WORKER_COMMANDS",
 		},
-		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
-		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
+		Events: baldaruntime.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    baldaruntime.DLQConfig{Stream: "BALDA_DLQ"},
 	}, handlers.InboundWebhookConfig{}); err != nil {
 		t.Fatalf("validateRuntimeConfigLint() error = %v, want nil", err)
 	}
@@ -130,21 +130,21 @@ func TestValidateRuntimeConfigLint_AllowsAlwaysOnSwarmConfig(t *testing.T) {
 func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateRuntimeNames(t *testing.T) {
 	t.Parallel()
 
-	err := validateRuntimeConfigLint(swarm.Config{
-		Commands: swarm.CommandConfig{
+	err := validateRuntimeConfigLint(baldaruntime.Config{
+		Commands: baldaruntime.CommandConfig{
 			Stream:   "BALDA COMMANDS",
 			Consumer: "BALDA_EVENT_PROJECTOR",
 		},
-		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
-		DLQ:    swarm.DLQConfig{Stream: "BALDA_EVENTS"},
+		Events: baldaruntime.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    baldaruntime.DLQConfig{Stream: "BALDA_EVENTS"},
 	}, handlers.InboundWebhookConfig{})
 	if err == nil {
 		t.Fatal("validateRuntimeConfigLint() error = nil, want non-nil")
 	}
 	markers := []string{
-		`balda.swarm.commands.stream must match "^[A-Za-z0-9_-]+$"`,
-		"balda.swarm.commands.stream, balda.swarm.events.stream, and balda.swarm.dlq.stream must be distinct",
-		"balda.swarm.commands.consumer must differ from balda.swarm.events.consumer",
+		`balda.baldaruntime.commands.stream must match "^[A-Za-z0-9_-]+$"`,
+		"balda.baldaruntime.commands.stream, balda.baldaruntime.events.stream, and balda.baldaruntime.dlq.stream must be distinct",
+		"balda.baldaruntime.commands.consumer must differ from balda.baldaruntime.events.consumer",
 	}
 	for _, marker := range markers {
 		if !strings.Contains(err.Error(), marker) {
@@ -156,13 +156,13 @@ func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateRuntimeNames(t *tes
 func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testing.T) {
 	t.Parallel()
 
-	err := validateRuntimeConfigLint(swarm.Config{
-		Commands: swarm.CommandConfig{
+	err := validateRuntimeConfigLint(baldaruntime.Config{
+		Commands: baldaruntime.CommandConfig{
 			Stream:   "BALDA_COMMANDS",
 			Consumer: "BALDA_WORKER_COMMANDS",
 		},
-		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
-		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
+		Events: baldaruntime.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    baldaruntime.DLQConfig{Stream: "BALDA_DLQ"},
 	}, handlers.InboundWebhookConfig{
 		Enabled:    true,
 		ListenAddr: "0.0.0.0:8090",
@@ -183,13 +183,13 @@ func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testi
 func TestValidateRuntimeConfigLint_AllowsLoopbackWebhookWithoutRouteAuth(t *testing.T) {
 	t.Parallel()
 
-	err := validateRuntimeConfigLint(swarm.Config{
-		Commands: swarm.CommandConfig{
+	err := validateRuntimeConfigLint(baldaruntime.Config{
+		Commands: baldaruntime.CommandConfig{
 			Stream:   "BALDA_COMMANDS",
 			Consumer: "BALDA_WORKER_COMMANDS",
 		},
-		Events: swarm.EventStreamConfig{Stream: "BALDA_EVENTS"},
-		DLQ:    swarm.DLQConfig{Stream: "BALDA_DLQ"},
+		Events: baldaruntime.EventStreamConfig{Stream: "BALDA_EVENTS"},
+		DLQ:    baldaruntime.DLQConfig{Stream: "BALDA_DLQ"},
 	}, handlers.InboundWebhookConfig{
 		Enabled:    true,
 		ListenAddr: "127.0.0.1:8090",

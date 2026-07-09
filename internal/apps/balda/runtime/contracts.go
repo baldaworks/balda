@@ -1,5 +1,5 @@
-// Package swarm contains Balda's durable actor runtime policy.
-package swarm
+// Package runtime contains Balda's actor runtime host and transport-facing contracts.
+package runtime
 
 const (
 	ActorTypeSystem     = "system"

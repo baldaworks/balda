@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -22,7 +23,7 @@ import (
 type BaldaSessionTurnRunner struct {
 	sessionManager     *baldasession.Manager
 	actorDispatcher    actortransport.Dispatcher
-	taskService        *swarm.TaskService
+	taskService        *baldajobs.JobService
 	memoryStore        *memory.Store
 	planUpdatesEnabled bool
 	logger             zerolog.Logger
@@ -34,7 +35,7 @@ type sessionTurnRunnerParams struct {
 
 	SessionManager     *baldasession.Manager
 	Dispatcher         actortransport.Dispatcher
-	TaskService        *swarm.TaskService `optional:"true"`
+	JobService         *baldajobs.JobService `optional:"true"`
 	MemoryStore        *memory.Store
 	PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
 	Logger             zerolog.Logger
@@ -44,7 +45,7 @@ func NewBaldaSessionTurnRunner(params sessionTurnRunnerParams) *BaldaSessionTurn
 	return &BaldaSessionTurnRunner{
 		sessionManager:     params.SessionManager,
 		actorDispatcher:    params.Dispatcher,
-		taskService:        params.TaskService,
+		taskService:        params.JobService,
 		memoryStore:        params.MemoryStore,
 		planUpdatesEnabled: params.PlanUpdatesEnabled,
 		logger:             params.Logger.With().Str("component", "balda.session_turn_runner").Logger(),
@@ -99,7 +100,7 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo
 	}
-	outboundFrom := actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: ts.GetSessionID()}
+	outboundFrom := actorlayer.ActorAddress{Target: baldaruntime.ActorTypeSession, Key: ts.GetSessionID()}
 	handler := &BaldaHandler{
 		sessionManager:     r.sessionManager,
 		actorDispatcher:    r.actorDispatcher,
@@ -118,7 +119,6 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 		payload.TopicID,
 		actors.NormalizeSessionDeliveryOptions(payload).ProgressPolicy,
 		r.logger,
-		handler.currentTime,
 	)
 	runOpts, err := prepareMemoryRunOptions(ctx, r.memoryStore, ts)
 	if err != nil {

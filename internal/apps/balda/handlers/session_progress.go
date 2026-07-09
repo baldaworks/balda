@@ -2,18 +2,17 @@ package handlers
 
 import (
 	"context"
-	"time"
 
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/progress"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/throttle"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
 type sessionProgressEmitter interface {
-	HandleNonTerminal(ctx context.Context, planProgressText string, hasPlanUpdate bool)
+	HandleNonTerminal(ctx context.Context, plan progress.PlanSnapshot, planProgressText string, hasPlanUpdate bool, reasoningText string, hasThoughtUpdate bool, hasVisibleResponseText bool)
 }
 
 type sessionProgressDispatcher struct {
@@ -22,14 +21,12 @@ type sessionProgressDispatcher struct {
 	locator    baldasession.SessionLocator
 	draftID    int
 	topicID    int
-	policy     baldachannel.ProgressPolicy
+	policy     deliveryfmt.ProgressPolicy
 	logger     zerolog.Logger
 
-	typingThrottle   *throttle.Throttler
-	thinkingThrottle *throttle.Throttler
-	thinkingIdx      int
-	lastPlanText     string
-	planDraftActive  bool
+	thinkingIdx     int
+	lastPlanText    string
+	planDraftActive bool
 }
 
 func newSessionProgressDispatcher(
@@ -38,59 +35,39 @@ func newSessionProgressDispatcher(
 	locator baldasession.SessionLocator,
 	draftID int,
 	topicID int,
-	policy baldachannel.ProgressPolicy,
+	policy deliveryfmt.ProgressPolicy,
 	logger zerolog.Logger,
-	now func() time.Time,
 ) sessionProgressEmitter {
 	return &sessionProgressDispatcher{
-		dispatcher:       dispatcher,
-		from:             from,
-		locator:          locator,
-		draftID:          draftID,
-		topicID:          topicID,
-		policy:           policy,
-		logger:           logger,
-		typingThrottle:   throttle.New(telegramProgressThrottleInterval, throttle.WithClock(now)),
-		thinkingThrottle: throttle.New(telegramProgressThrottleInterval, throttle.WithClock(now)),
+		dispatcher: dispatcher,
+		from:       from,
+		locator:    locator,
+		draftID:    draftID,
+		topicID:    topicID,
+		policy:     policy,
+		logger:     logger,
 	}
 }
 
-var sessionThinkingStages = []string{"Thinking.", "Thinking..", "Thinking..."}
-
-func (d *sessionProgressDispatcher) HandleNonTerminal(ctx context.Context, planProgressText string, hasPlanUpdate bool) {
+func (d *sessionProgressDispatcher) HandleNonTerminal(ctx context.Context, plan progress.PlanSnapshot, planProgressText string, hasPlanUpdate bool, reasoningText string, hasThoughtUpdate bool, hasVisibleResponseText bool) {
 	if d == nil {
 		return
 	}
-	if d.policy.Typing {
-		d.typingThrottle.Do(func() {
-			if err := sendTyping(ctx, d.dispatcher, d.from, d.locator); err != nil {
-				d.logger.Warn().Err(err).Int("topic_id", d.topicID).Msg("failed to send typing chat action")
-			}
-		})
-	}
 	if hasPlanUpdate && planProgressText != "" && planProgressText != d.lastPlanText {
-		if d.policy.Thinking {
-			if err := sendDraftPlain(ctx, d.dispatcher, d.from, d.locator, d.draftID, planProgressText); err != nil {
-				d.logger.Warn().Err(err).Int("topic_id", d.topicID).Msg("failed to send plan update placeholder")
-			} else {
-				d.lastPlanText = planProgressText
-				d.planDraftActive = true
-			}
+		if err := sendProgressPlanUpdate(ctx, d.dispatcher, "", d.from, d.locator, d.policy, true, d.draftID, &plan, planProgressText, ""); err != nil {
+			d.logger.Warn().Err(err).Int("topic_id", d.topicID).Msg("failed to dispatch plan progress delivery")
 		} else {
-			if err := sendPlain(ctx, d.dispatcher, d.from, d.locator, planProgressText); err != nil {
-				d.logger.Warn().Err(err).Int("topic_id", d.topicID).Msg("failed to send plan update message")
-			} else {
-				d.lastPlanText = planProgressText
+			d.lastPlanText = planProgressText
+			if d.policy.Thinking {
+				d.planDraftActive = true
 			}
 		}
 	}
-	if d.policy.Thinking && !d.planDraftActive {
-		d.thinkingThrottle.Do(func() {
-			text := sessionThinkingStages[d.thinkingIdx%len(sessionThinkingStages)]
-			if err := sendDraftPlain(ctx, d.dispatcher, d.from, d.locator, d.draftID, text); err != nil {
-				d.logger.Warn().Err(err).Int("topic_id", d.topicID).Msg("failed to send thinking placeholder")
-			}
+	if d.policy.Thinking && hasThoughtUpdate && !d.planDraftActive && !hasVisibleResponseText {
+		if err := sendProgressThinking(ctx, d.dispatcher, "", d.from, d.locator, d.policy, true, d.draftID, reasoningText, d.thinkingIdx, ""); err != nil {
+			d.logger.Warn().Err(err).Int("topic_id", d.topicID).Msg("failed to dispatch thinking progress delivery")
+		} else {
 			d.thinkingIdx++
-		})
+		}
 	}
 }

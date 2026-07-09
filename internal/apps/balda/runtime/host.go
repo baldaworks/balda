@@ -1,4 +1,4 @@
-package swarm
+package runtime
 
 import (
 	"context"
@@ -15,14 +15,16 @@ import (
 	"go.uber.org/fx"
 )
 
+type DeadLetterRecorder interface {
+	DeadLetter(ctx context.Context, taskID string, actor string, messageID string, reason string) error
+}
+
 type ActorHost struct {
-	source actorengine.Source
-	events actortransport.EventPublisher
-	tasks  *TaskService
-	engine *actorengine.DispatchRuntime
-	logger zerolog.Logger
-	// heartbeatTick controls the in-progress ack cadence for long-running commands.
-	// Zero falls back to the package default.
+	source        actorengine.Source
+	events        actortransport.EventPublisher
+	tasks         DeadLetterRecorder
+	engine        *actorengine.DispatchRuntime
+	logger        zerolog.Logger
 	heartbeatTick time.Duration
 
 	cancel context.CancelFunc
@@ -35,7 +37,7 @@ type runtimeParams struct {
 	LC     fx.Lifecycle
 	Source actorengine.Source
 	Events actortransport.EventPublisher `optional:"true"`
-	Tasks  *TaskService
+	Tasks  DeadLetterRecorder            `optional:"true"`
 	Logger zerolog.Logger
 	Actors []dispatch.Actor `group:"balda_swarm_actors"`
 }
@@ -54,7 +56,7 @@ func NewActorHost(params runtimeParams) (*ActorHost, error) {
 		source:        params.Source,
 		events:        params.Events,
 		tasks:         params.Tasks,
-		logger:        params.Logger.With().Str("component", "balda.swarm.runtime").Logger(),
+		logger:        params.Logger.With().Str("component", "balda.runtime.host").Logger(),
 		heartbeatTick: heartbeatInterval,
 	}
 	engine, err := actorengine.NewDispatchRuntime(actorengine.RuntimeConfig{
@@ -109,14 +111,12 @@ func (r *ActorHost) Stop(ctx context.Context) error {
 		defer close(done)
 		r.wg.Wait()
 	}()
-	var stopErr error
 	select {
 	case <-done:
-		stopErr = nil
+		return nil
 	case <-ctx.Done():
-		stopErr = ctx.Err()
+		return ctx.Err()
 	}
-	return stopErr
 }
 
 type runtimeSource struct {

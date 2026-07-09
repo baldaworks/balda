@@ -17,7 +17,7 @@ Status: active
 
 ## Related tests
 
-- `internal/apps/balda/swarm/runtime_test.go`
+- `internal/apps/balda/runtime/host_test.go`
 - `internal/apps/balda/actors/swarm_session_actor_test.go`
 - `internal/apps/balda/actors/swarm_goal_actor_test.go`
 - `internal/apps/balda/actors/swarm_control_actor_test.go`
@@ -26,7 +26,8 @@ Status: active
 
 ## Related packages
 
-- `internal/apps/balda/swarm`
+- `internal/apps/balda/runtime`
+- `internal/apps/balda/jobs`
 - `internal/apps/balda/actors`
 - `internal/apps/balda/handlers`
 
@@ -72,10 +73,10 @@ Status: active
 
 ### Balda implementation map
 
-- Actor dispatch and lane execution are composed in `internal/apps/balda/swarm/runtime.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `swarm` through focused files for the host loop (`runtime.go`), lane/address policy (`runtime_lane_policy.go`), heartbeat visibility policy (`runtime_heartbeat.go`), dead-letter side effects (`runtime_deadletter.go`), and delivery wrapping/context (`runtime_delivery.go`).
+- Actor dispatch and lane execution are composed in `internal/apps/balda/runtime/host.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `runtime` through focused files for the host loop (`host.go`), lane/address policy (`lane_policy.go`), heartbeat visibility policy (`heartbeat.go`), dead-letter side effects (`deadletter.go`), and delivery wrapping/context (`delivery_wrapper.go`).
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
 - Telegram/Zulip/Slack/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers publish actor commands through actorlayer transport contracts and do not own actor behavior or actor registration.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and actorlayer transport contracts.
 - The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: actorlayer transport `Dispatcher`, `EventPublisher`, `EventConsumer`, `Drainer`, plus actorlayer `Source`.
-- Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`swarm`, `handlers`, and `state`), not in `pkg/actorlayer`.
+- Task projection, retry classification, DLQ reporting, and task/read-model persistence live in Balda packages (`runtime`, `jobs`, `handlers`, and `state`), not in `pkg/actorlayer`.

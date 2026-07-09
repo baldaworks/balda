@@ -66,15 +66,15 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 	})
 
 	t.Run("actors execute from actorlayer delivery source", func(t *testing.T) {
-		runtimeSource := readSource(t, filepath.Join(root, "swarm/runtime.go"))
+		runtimeSource := readSource(t, filepath.Join(root, "runtime/host.go"))
 		if !strings.Contains(runtimeSource, "Source actorengine.Source") {
-			t.Fatal("swarm runtime must depend on actorlayer Source, not a direct transport consumer")
+			t.Fatal("runtime host must depend on actorlayer Source, not a direct transport consumer")
 		}
 		if !strings.Contains(runtimeSource, "actorengine.NewDispatchRuntime") {
-			t.Fatal("swarm runtime must use Norma actorengine.NewDispatchRuntime")
+			t.Fatal("runtime host must use Norma actorengine.NewDispatchRuntime")
 		}
 		if !strings.Contains(runtimeSource, "runtimeSource{") || !strings.Contains(runtimeSource, "r.engine.Run(runCtx") {
-			t.Fatal("swarm runtime must dispatch actor deliveries through actorlayer dispatch runtime")
+			t.Fatal("runtime host must dispatch actor deliveries through actorlayer dispatch runtime")
 		}
 	})
 
@@ -193,10 +193,10 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
-	t.Run("swarm runtime stays always on", func(t *testing.T) {
-		swarmConfigSource := readSource(t, filepath.Join(root, "swarm/config.go"))
-		if regexp.MustCompile(`(?m)^\s*Enabled\b`).FindStringIndex(swarmConfigSource) != nil {
-			t.Fatal("swarm.Config must not expose an Enabled field")
+	t.Run("runtime config stays always on", func(t *testing.T) {
+		runtimeConfigSource := readSource(t, filepath.Join(root, "runtime/config.go"))
+		if regexp.MustCompile(`(?m)^\s*Enabled\b`).FindStringIndex(runtimeConfigSource) != nil {
+			t.Fatal("runtime.Config must not expose an Enabled field")
 		}
 
 		appConfigSource := readSource(t, filepath.Join(root, "config.go"))
@@ -233,13 +233,13 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 		}
 	})
 
-	t.Run("swarm runtime package does not import ingress handlers or external session SDK", func(t *testing.T) {
-		swarmDir := filepath.Join(root, "swarm")
-		swarmFiles := productionGoFiles(t, swarmDir)
+	t.Run("runtime package does not import ingress handlers or external session SDK", func(t *testing.T) {
+		runtimeDir := filepath.Join(root, "runtime")
+		runtimeFiles := productionGoFiles(t, runtimeDir)
 		forbiddenImportPattern := regexp.MustCompile(`github\.com/normahq/balda/internal/apps/balda/handlers|google\.golang\.org/adk`)
-		matches := findSourceMatches(t, swarmDir, swarmFiles, forbiddenImportPattern)
+		matches := findSourceMatches(t, runtimeDir, runtimeFiles, forbiddenImportPattern)
 		if len(matches) > 0 {
-			t.Fatalf("swarm runtime packages must not import ingress handlers or external session SDK:\n%s", formatSourceMatches(matches))
+			t.Fatalf("runtime packages must not import ingress handlers or external session SDK:\n%s", formatSourceMatches(matches))
 		}
 	})
 }

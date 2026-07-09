@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -19,7 +19,7 @@ type TestRuntimeHarness struct {
 
 // StartTestRuntime creates a built-in runtime bus backed by a temp store dir.
 // It ensures required streams/consumers are available through NewBus startup.
-func StartTestRuntime(t *testing.T, swarmCfg swarm.Config) *TestRuntimeHarness {
+func StartTestRuntime(t *testing.T, swarmCfg baldaruntime.Config) *TestRuntimeHarness {
 	t.Helper()
 	bus, err := NewBus(Params{
 		LC:       fxtest.NewLifecycle(t),

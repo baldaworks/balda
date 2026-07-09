@@ -13,10 +13,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/progress"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -104,7 +105,7 @@ type TaskRuns interface {
 type ActorParams struct {
 	fx.In
 
-	TaskService        *swarm.TaskService
+	JobService         *baldajobs.JobService
 	Dispatcher         actortransport.Dispatcher
 	SessionManager     *baldasession.Manager
 	GoalRunPreparer    GoalRunPreparer
@@ -115,7 +116,7 @@ type ActorParams struct {
 }
 
 type Actor struct {
-	tasks              *swarm.TaskService
+	tasks              *baldajobs.JobService
 	dispatcher         actortransport.Dispatcher
 	sessions           *baldasession.Manager
 	goalRunPreparer    GoalRunPreparer
@@ -202,7 +203,7 @@ type stepProgressState struct {
 
 func NewActor(params ActorParams) *Actor {
 	return &Actor{
-		tasks:              params.TaskService,
+		tasks:              params.JobService,
 		dispatcher:         params.Dispatcher,
 		sessions:           params.SessionManager,
 		goalRunPreparer:    params.GoalRunPreparer,
@@ -214,11 +215,11 @@ func NewActor(params ActorParams) *Actor {
 }
 
 func (a *Actor) Address() string {
-	return actorlayer.WildcardAddress(swarm.ActorTypeGoalkeeper)
+	return actorlayer.WildcardAddress(baldaruntime.ActorTypeGoalkeeper)
 }
 
 func (a *Actor) Handle(ctx context.Context, env actorlayer.Envelope) error {
-	if strings.TrimSpace(env.Namespace) != swarm.NamespaceGoalkeeperCommand {
+	if strings.TrimSpace(env.Namespace) != baldaruntime.NamespaceGoalkeeperCommand {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported goal namespace %q", env.Namespace))
 	}
 	var payload taskEnvelopePayload
@@ -265,10 +266,10 @@ func GoalTaskEnvelopeWithProfile(
 	}
 	return actorlayer.Envelope{
 		ID:          uuid.NewString(),
-		Namespace:   swarm.NamespaceGoalkeeperCommand,
-		Kind:        swarm.KindGoal,
+		Namespace:   baldaruntime.NamespaceGoalkeeperCommand,
+		Kind:        baldaruntime.KindGoal,
 		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
-		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeGoalkeeper, Key: taskID},
 		SessionID:   locator.SessionID,
 		TaskID:      taskID,
 		Priority:    90,
@@ -422,8 +423,8 @@ func (a *Actor) ensureGoalTask(ctx context.Context, payload goalTaskPayload) err
 		Title:         title,
 		Objective:     strings.TrimSpace(payload.Objective),
 		Status:        baldastate.SwarmTaskStatusCreated,
-		OwnerActor:    swarm.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.TaskID),
-		AssignedActor: swarm.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.TaskID),
+		OwnerActor:    baldaruntime.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.TaskID),
+		AssignedActor: baldaruntime.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.TaskID),
 		Priority:      90,
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
 	}
@@ -449,7 +450,7 @@ func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, taskID string, payl
 	if a == nil || a.tasks == nil {
 		return false, actorlayer.TransientError(fmt.Errorf("task service is required"))
 	}
-	activeGoals, err := a.tasks.ListActiveGoalTasksBySession(ctx, payload.Locator.SessionID)
+	activeGoals, err := a.tasks.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
 	if err != nil {
 		return false, actorlayer.TransientError(fmt.Errorf("list active goal tasks: %w", err))
 	}
@@ -564,11 +565,13 @@ func (a *Actor) runWorkflow(
 			stepStates[currentStep] = state
 		}
 		if a.planUpdatesEnabled {
-			if planText, ok := progress.PlanUpdateText(ev); ok && planText != "" && planText != state.lastPlanText {
-				state.lastPlanText = planText
-				message := renderGoalStepMessage(payload.DeliveryProfile, iteration, normalizeGoalMaxIterations(payload.MaxIterations), currentStep, "plan update", planText)
-				if err := a.recordStepProgress(ctx, payload, currentStep, iteration, progressKindPlan, message, &deliverySeq); err != nil {
-					return result, err
+			if planSnapshot, ok := progress.ParsePlanUpdate(ev); ok {
+				planText := planSnapshot.PlainText()
+				if planText != "" && planText != state.lastPlanText {
+					state.lastPlanText = planText
+					if err := a.recordStepPlanUpdate(ctx, payload, currentStep, iteration, planSnapshot, planText, &deliverySeq); err != nil {
+						return result, err
+					}
 				}
 			}
 		}
@@ -614,7 +617,7 @@ func (a *Actor) recordStepStarted(ctx context.Context, payload goalTaskPayload, 
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentStarted, actorName, "", map[string]any{
+	if err := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventAgentStarted, actorName, "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
@@ -641,9 +644,55 @@ func (a *Actor) recordStepCompleted(
 	if err := a.recordStepProgress(ctx, payload, step, iteration, progressKindCompleted, message, deliverySeq); err != nil {
 		return err
 	}
-	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentResult, actorName, "", map[string]any{
+	if err := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventAgentResult, actorName, "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
+	}); err != nil {
+		return actorlayer.TransientError(err)
+	}
+	return nil
+}
+
+func (a *Actor) recordStepPlanUpdate(
+	ctx context.Context,
+	payload goalTaskPayload,
+	step string,
+	iteration int,
+	plan progress.PlanSnapshot,
+	text string,
+	deliverySeq *int,
+) error {
+	if deliverySeq != nil {
+		(*deliverySeq)++
+	}
+	message := redactSecrets(strings.TrimSpace(text))
+	if message == "" {
+		return nil
+	}
+	loc := normalizeGoalDeliveryLocator(payload.Locator)
+	suffix := fmt.Sprintf("progress:%s:%s:%d:%03d", progressKindPlan, step, iteration, valueOrZero(deliverySeq))
+	env, err := deliverycmd.ProgressPlanUpdateEnvelope(
+		strings.TrimSpace(payload.TaskID),
+		actorlayer.ActorAddress{Target: baldaruntime.ActorTypeGoalkeeper, Key: payload.TaskID},
+		loc,
+		deliveryfmt.ProgressPolicy{},
+		true,
+		0,
+		&plan,
+		message,
+		suffix,
+	)
+	if err != nil {
+		return actorlayer.PermanentError(fmt.Errorf("build goal plan update envelope: %w", err))
+	}
+	if _, err := a.dispatcher.Dispatch(ctx, env); err != nil {
+		return actorlayer.TransientError(err)
+	}
+	if err := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventAgentProgress, actorName, "", map[string]any{
+		"step":      step,
+		"iteration": iteration,
+		"kind":      progressKindPlan,
+		"text":      message,
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
@@ -666,7 +715,7 @@ func (a *Actor) recordStepProgress(
 	if err := a.deliver(ctx, payload.TaskID, payload, text, suffix); err != nil {
 		return err
 	}
-	if err := a.tasks.AppendEvent(ctx, payload.TaskID, swarm.TaskEventAgentProgress, actorName, "", map[string]any{
+	if err := a.tasks.AppendEvent(ctx, payload.TaskID, baldajobs.TaskEventAgentProgress, actorName, "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 		"kind":      kind,
@@ -823,7 +872,7 @@ func (a *Actor) deliver(
 	locator := normalizeGoalDeliveryLocator(payload.Locator)
 	env, err := deliverycmd.AgentReplyEnvelopeWithProfile(
 		strings.TrimSpace(taskID),
-		actorlayer.ActorAddress{Target: swarm.ActorTypeGoalkeeper, Key: taskID},
+		actorlayer.ActorAddress{Target: baldaruntime.ActorTypeGoalkeeper, Key: taskID},
 		locator,
 		normalizeGoalDeliveryProfile(payload.DeliveryProfile),
 		message,

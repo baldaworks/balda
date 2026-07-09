@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 )
 
@@ -23,7 +23,7 @@ func TestSessionActorInterruptQueueModeCancelsSessionBeforeEnqueue(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := exec.enqueueTurn(ctx, testSessionTurnEnvelope(t, map[string]string{"queue_mode": swarm.QueueModeInterrupt}))
+	err := exec.enqueueTurn(ctx, testSessionTurnEnvelope(t, map[string]string{"queue_mode": baldaruntime.QueueModeInterrupt}))
 	if err == nil {
 		t.Fatal("enqueueTurn() error = nil, want canceled context after enqueue")
 	}
@@ -86,9 +86,11 @@ func TestSessionActorSettleSessionTurnResultMarksTaskFailedWithoutRetry(t *testi
 	exec := &sessionActorExecutor{tasks: tasks}
 	runErr := errors.New("runner failed")
 	env := testSessionTurnEnvelope(t, nil)
+	env.Namespace = baldaruntime.NamespaceWebhookInbound
 	env.TaskID = "task-session-failed"
+	payload := SessionTurnPayload{Source: sessionTurnSourceWebhook}
 
-	if err := exec.settleSessionTurnResult(ctx, env, SessionTurnPayload{}, runErr); err != nil {
+	if err := exec.settleSessionTurnResult(ctx, env, payload, runErr); err != nil {
 		t.Fatalf("settleSessionTurnResult() error = %v, want nil after recording task failure", err)
 	}
 
@@ -128,9 +130,11 @@ func TestSessionActorSettleSessionTurnResultMarksTaskCanceledWithoutRetry(t *tes
 
 	exec := &sessionActorExecutor{tasks: tasks}
 	env := testSessionTurnEnvelope(t, nil)
+	env.Namespace = baldaruntime.NamespaceWebhookInbound
 	env.TaskID = "task-session-canceled"
+	payload := SessionTurnPayload{Source: sessionTurnSourceWebhook}
 
-	if err := exec.settleSessionTurnResult(ctx, env, SessionTurnPayload{}, context.Canceled); err != nil {
+	if err := exec.settleSessionTurnResult(ctx, env, payload, context.Canceled); err != nil {
 		t.Fatalf("settleSessionTurnResult() error = %v, want nil after recording task cancellation", err)
 	}
 
@@ -153,6 +157,20 @@ func TestSessionActorSettleSessionTurnResultKeepsNonTaskErrorsRetryable(t *testi
 	runErr := errors.New("runner failed")
 
 	err := exec.settleSessionTurnResult(context.Background(), testSessionTurnEnvelope(t, nil), SessionTurnPayload{}, runErr)
+	if !errors.Is(err, runErr) {
+		t.Fatalf("settleSessionTurnResult() error = %v, want original run error", err)
+	}
+}
+
+func TestSessionActorSettleSessionTurnResultKeepsHumanTurnErrorsRetryableEvenWithTaskID(t *testing.T) {
+	t.Parallel()
+
+	exec := &sessionActorExecutor{}
+	env := testSessionTurnEnvelope(t, nil)
+	env.TaskID = "turn-legacy-1"
+	runErr := errors.New("runner failed")
+
+	err := exec.settleSessionTurnResult(context.Background(), env, SessionTurnPayload{Source: sessionTurnSourceTelegram}, runErr)
 	if !errors.Is(err, runErr) {
 		t.Fatalf("settleSessionTurnResult() error = %v, want original run error", err)
 	}
@@ -214,6 +232,7 @@ func TestSessionActorEnqueueTurnSkipsDeadLetteredTask(t *testing.T) {
 		tasks:  tasks,
 	}
 	env := testSessionTurnEnvelope(t, nil)
+	env.Namespace = baldaruntime.NamespaceWebhookInbound
 	env.TaskID = "task-session-deadlettered"
 
 	if err := exec.enqueueTurn(ctx, env); err != nil {
@@ -244,10 +263,10 @@ func testSessionTurnEnvelope(t *testing.T, meta map[string]string) actorlayer.En
 	}
 	return actorlayer.Envelope{
 		ID:          "session-command-1",
-		Namespace:   swarm.NamespaceHumanInbound,
-		Kind:        swarm.KindMessage,
+		Namespace:   baldaruntime.NamespaceHumanInbound,
+		Kind:        baldaruntime.KindMessage,
 		From:        actorlayer.ActorAddress{Target: "telegram", Key: "101"},
-		To:          actorlayer.ActorAddress{Target: swarm.ActorTypeSession, Key: locator.SessionID},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeSession, Key: locator.SessionID},
 		SessionID:   locator.SessionID,
 		PayloadJSON: string(payload),
 		Meta:        meta,

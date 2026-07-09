@@ -52,9 +52,9 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 		t.Fatalf("AppendTaskEvent() error = %v", err)
 	}
 
-	active, err := store.ListActiveTasksBySession(ctx, "session-1")
+	active, err := store.ListActiveJobsBySession(ctx, "session-1")
 	if err != nil {
-		t.Fatalf("ListActiveTasksBySession() error = %v", err)
+		t.Fatalf("ListActiveJobsBySession() error = %v", err)
 	}
 	if len(active) != 1 || active[0].ID != "task-1" {
 		t.Fatalf("active tasks = %+v, want task-1", active)
@@ -71,9 +71,9 @@ func TestSQLiteSwarmStore_TaskLifecycle(t *testing.T) {
 		t.Fatalf("task = %+v, found=%v, want completed with result/timestamps", got, ok)
 	}
 
-	active, err = store.ListActiveTasksBySession(ctx, "session-1")
+	active, err = store.ListActiveJobsBySession(ctx, "session-1")
 	if err != nil {
-		t.Fatalf("ListActiveTasksBySession(after complete) error = %v", err)
+		t.Fatalf("ListActiveJobsBySession(after complete) error = %v", err)
 	}
 	if len(active) != 0 {
 		t.Fatalf("active tasks after complete = %+v, want none", active)

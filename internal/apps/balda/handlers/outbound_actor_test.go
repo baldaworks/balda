@@ -46,6 +46,11 @@ func handleDeliveryCommandForTest(ctx context.Context, adapter *baldatelegram.Ad
 		return adapter.SendDraftPlain(ctx, payload.Locator, payload.DraftID, payload.Text)
 	case actors.DeliveryModeChatAction:
 		return adapter.SendTyping(ctx, payload.Locator)
+	case actors.DeliveryModeProgress:
+		if payload.Progress == nil {
+			return fmt.Errorf("progress payload is required")
+		}
+		return adapter.SendProgress(ctx, payload.Locator, *payload.Progress)
 	default:
 		return fmt.Errorf("unsupported delivery mode %q", payload.Mode)
 	}

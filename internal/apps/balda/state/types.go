@@ -238,7 +238,7 @@ type SwarmAgentStepRecord struct {
 type SwarmStore interface {
 	CreateTask(ctx context.Context, record SwarmTaskRecord) (bool, error)
 	GetTask(ctx context.Context, taskID string) (SwarmTaskRecord, bool, error)
-	ListActiveTasksBySession(ctx context.Context, sessionID string) ([]SwarmTaskRecord, error)
+	ListActiveJobsBySession(ctx context.Context, sessionID string) ([]SwarmTaskRecord, error)
 	UpdateTaskStatus(ctx context.Context, taskID string, status string, reason string) error
 	SetTaskResult(ctx context.Context, taskID string, resultJSON string, status string, reason string) error
 	AppendTaskEvent(ctx context.Context, record SwarmTaskEventRecord) error

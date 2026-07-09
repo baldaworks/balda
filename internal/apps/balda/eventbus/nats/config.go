@@ -8,12 +8,12 @@ import (
 	"time"
 
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 )
 
 type resolvedConfig struct {
 	NATS      baldaeventbus.Config
-	Swarm     swarm.Config
+	Swarm     baldaruntime.Config
 	StoreDir  string
 	MaxMemory int64
 	MaxStore  int64
@@ -33,7 +33,7 @@ type streamSpec struct {
 	Discard    string
 }
 
-func resolveConfig(natsCfg baldaeventbus.Config, swarmCfg swarm.Config, stateDir string) (resolvedConfig, error) {
+func resolveConfig(natsCfg baldaeventbus.Config, swarmCfg baldaruntime.Config, stateDir string) (resolvedConfig, error) {
 	normalizedNATS, err := natsCfg.Normalized()
 	if err != nil {
 		return resolvedConfig{}, err
@@ -61,11 +61,11 @@ func resolveConfig(natsCfg baldaeventbus.Config, swarmCfg swarm.Config, stateDir
 	out.DLQ = streamSpec{MaxAge: 30 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "new"}
 	out.AckWait, err = parseDuration(normalizedSwarm.Commands.AckWait)
 	if err != nil {
-		return resolvedConfig{}, fmt.Errorf("balda.swarm.commands.ack_wait: %w", err)
+		return resolvedConfig{}, fmt.Errorf("balda.baldaruntime.commands.ack_wait: %w", err)
 	}
 	out.FetchWait, err = parseDuration(normalizedSwarm.Commands.FetchWait)
 	if err != nil {
-		return resolvedConfig{}, fmt.Errorf("balda.swarm.commands.fetch_wait: %w", err)
+		return resolvedConfig{}, fmt.Errorf("balda.baldaruntime.commands.fetch_wait: %w", err)
 	}
 	return out, nil
 }

@@ -1,4 +1,4 @@
-package swarm
+package jobs
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -42,7 +43,7 @@ func NewEventProjector(params eventProjectorParams) (*EventProjector, error) {
 	p := &EventProjector{
 		consumer: params.Consumer,
 		store:    params.StateProvider.Swarm(),
-		logger:   params.Logger.With().Str("component", "balda.swarm.event_projector").Logger(),
+		logger:   params.Logger.With().Str("component", "balda.jobs.projector").Logger(),
 	}
 	params.LC.Append(fx.Hook{OnStart: p.Start, OnStop: p.Stop})
 	return p, nil
@@ -98,31 +99,31 @@ func (p *EventProjector) Project(ctx context.Context, subject string, env actorl
 	}
 	if eventType == "" {
 		switch strings.TrimSpace(subject) {
-		case SubjectEventCommandAccepted:
+		case baldaruntime.SubjectEventCommandAccepted:
 			eventType = "command.accepted"
-		case SubjectEventCommandRunning:
+		case baldaruntime.SubjectEventCommandRunning:
 			eventType = "command.running"
-		case SubjectEventCommandInProgress:
+		case baldaruntime.SubjectEventCommandInProgress:
 			eventType = "command.in_progress"
-		case SubjectEventCommandAcked:
+		case baldaruntime.SubjectEventCommandAcked:
 			eventType = "command.acked"
-		case SubjectEventCommandRetrying:
+		case baldaruntime.SubjectEventCommandRetrying:
 			eventType = "command.retrying"
-		case SubjectEventCommandDeadLettered:
+		case baldaruntime.SubjectEventCommandDeadLettered:
 			eventType = "command.deadlettered"
-		case SubjectEventCommandNoop:
+		case baldaruntime.SubjectEventCommandNoop:
 			eventType = "command.noop"
-		case SubjectEventCommandDecodeFailed:
+		case baldaruntime.SubjectEventCommandDecodeFailed:
 			eventType = "command.decode_failed"
-		case SubjectEventTaskCreated:
+		case baldaruntime.SubjectEventTaskCreated:
 			eventType = TaskEventTaskCreated
-		case SubjectEventTaskUpdated:
+		case baldaruntime.SubjectEventTaskUpdated:
 			eventType = TaskEventTaskAssigned
-		case SubjectEventTaskCompleted:
+		case baldaruntime.SubjectEventTaskCompleted:
 			eventType = TaskEventTaskCompleted
-		case SubjectEventDeliverySent:
+		case baldaruntime.SubjectEventDeliverySent:
 			eventType = TaskEventDeliverySent
-		case SubjectEventDeliveryFailed:
+		case baldaruntime.SubjectEventDeliveryFailed:
 			eventType = TaskEventDeliveryFailed
 		}
 	}

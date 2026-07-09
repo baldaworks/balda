@@ -1,4 +1,4 @@
-package swarm
+package jobs
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 )
@@ -31,7 +32,7 @@ func (b *recordingTaskCommandBus) PublishEvent(_ context.Context, subject string
 	return nil
 }
 
-func TestTaskServiceAppendEventPublishesDurableEvent(t *testing.T) {
+func TestJobServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -39,15 +40,15 @@ func TestTaskServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingTaskCommandBus{}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 	if err := service.AppendEvent(ctx, "task-1", TaskEventAgentProgress, "agent:executor", "msg-1", map[string]any{"text": "working"}); err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
 	}
-	if len(bus.subjects) != 1 || bus.subjects[0] != SubjectEventTaskUpdated {
-		t.Fatalf("subjects = %+v, want %q", bus.subjects, SubjectEventTaskUpdated)
+	if len(bus.subjects) != 1 || bus.subjects[0] != baldaruntime.SubjectEventTaskUpdated {
+		t.Fatalf("subjects = %+v, want %q", bus.subjects, baldaruntime.SubjectEventTaskUpdated)
 	}
 	if len(bus.envs) != 1 || bus.envs[0].TaskID != "task-1" || bus.envs[0].Meta["event_type"] != TaskEventAgentProgress {
 		t.Fatalf("envs = %+v, want task event envelope", bus.envs)
@@ -61,7 +62,7 @@ func TestTaskServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	}
 }
 
-func TestTaskServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
+func TestJobServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -69,19 +70,19 @@ func TestTaskServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingTaskCommandBus{}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 	if err := service.AppendEvent(ctx, "task-1", TaskEventDeliveryFailed, "delivery.actor", "msg-1", map[string]any{"reason": "telegram send failed"}); err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
 	}
-	if len(bus.subjects) != 1 || bus.subjects[0] != SubjectEventDeliveryFailed {
-		t.Fatalf("subjects = %+v, want %q", bus.subjects, SubjectEventDeliveryFailed)
+	if len(bus.subjects) != 1 || bus.subjects[0] != baldaruntime.SubjectEventDeliveryFailed {
+		t.Fatalf("subjects = %+v, want %q", bus.subjects, baldaruntime.SubjectEventDeliveryFailed)
 	}
 }
 
-func TestTaskServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
+func TestJobServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -89,9 +90,9 @@ func TestTaskServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) 
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingTaskCommandBus{}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 
 	payload := map[string]any{"step": "worker", "iteration": 1}
@@ -116,7 +117,7 @@ func TestTaskServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) 
 	}
 }
 
-func TestTaskServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
+func TestJobServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -124,9 +125,9 @@ func TestTaskServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testin
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingTaskCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 	record := baldastate.SwarmTaskRecord{ID: "task-created", SessionID: "s-1", Objective: "create task"}
 	created, err := service.Create(ctx, record, "task.actor", map[string]any{"objective": record.Objective})
@@ -155,7 +156,7 @@ func TestTaskServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testin
 	}
 }
 
-func TestTaskServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
+func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -171,9 +172,9 @@ func TestTaskServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *te
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	bus := &recordingTaskCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 
 	if err := service.MarkStatus(ctx, "task-running", baldastate.SwarmTaskStatusRunning, "task.actor", "msg-1", "", map[string]any{"step": "start"}); err != nil {
@@ -191,7 +192,7 @@ func TestTaskServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *te
 	}
 }
 
-func TestTaskServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
+func TestJobServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -207,9 +208,9 @@ func TestTaskServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *tes
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	bus := &recordingTaskCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 
 	result := map[string]any{"summary": "done"}
@@ -231,7 +232,7 @@ func TestTaskServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *tes
 	}
 }
 
-func TestTaskServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
+func TestJobServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -247,9 +248,9 @@ func TestTaskServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	bus := &recordingTaskCommandBus{}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 
 	if err := service.MarkStatus(ctx, "task-deadlettered", baldastate.SwarmTaskStatusFailed, "task.actor", "msg-1", "runner failed", nil); err != nil {
@@ -267,7 +268,7 @@ func TestTaskServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
 	}
 }
 
-func TestTaskServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
+func TestJobServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -284,9 +285,9 @@ func TestTaskServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	bus := &recordingTaskCommandBus{}
-	service, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
 	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
+		t.Fatalf("NewJobService() error = %v", err)
 	}
 
 	if err := service.SetResult(ctx, "task-deadlettered-result", map[string]any{"status": "failed"}, baldastate.SwarmTaskStatusFailed, "task.actor", "runner failed"); err != nil {

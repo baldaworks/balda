@@ -1,4 +1,4 @@
-package swarm
+package runtime
 
 import (
 	"context"
@@ -75,6 +75,12 @@ func (m testDelivery) DeadLetter(ctx context.Context, reason string) error {
 		return m.deadletter(ctx, reason)
 	}
 	return nil
+}
+
+type deadLetterRecorderFunc func(context.Context, string, string, string, string) error
+
+func (f deadLetterRecorderFunc) DeadLetter(ctx context.Context, taskID string, actor string, messageID string, reason string) error {
+	return f(ctx, taskID, actor, messageID, reason)
 }
 
 type recordingCommandBus struct {
@@ -259,23 +265,21 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 		t.Fatalf("NewSQLiteProvider() error = %v", err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	tasks, err := NewTaskService(taskServiceParams{StateProvider: provider, Bus: &recordingCommandBus{}})
-	if err != nil {
-		t.Fatalf("NewTaskService() error = %v", err)
-	}
-	_, err = tasks.Create(ctx, baldastate.SwarmTaskRecord{
+	_, err = provider.Swarm().CreateTask(ctx, baldastate.SwarmTaskRecord{
 		ID:        "task-retry",
 		SessionID: "s-1",
 		Objective: "retry",
 		Status:    baldastate.SwarmTaskStatusRunning,
-	}, "test", nil)
+	})
 	if err != nil {
-		t.Fatalf("Create task: %v", err)
+		t.Fatalf("CreateTask() error = %v", err)
 	}
 	actor := &testActor{address: actorlayer.WildcardAddress(ActorTypeSession), err: actorlayer.TransientError(fmt.Errorf("temporary"))}
 	registry := newTestRegistry(t, actor)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)
-	runtime.tasks = tasks
+	runtime.tasks = deadLetterRecorderFunc(func(ctx context.Context, taskID string, actor string, messageID string, reason string) error {
+		return provider.Swarm().UpdateTaskStatus(ctx, taskID, baldastate.SwarmTaskStatusDeadLettered, reason)
+	})
 	env := runtimeTestEnvelope("retry-exhausted", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "s-1"})
 	env.TaskID = "task-retry"
 	var deadletterCalled bool
@@ -294,7 +298,7 @@ func TestRuntime_RetryExhaustionMarksTaskDeadlettered(t *testing.T) {
 	if !deadletterCalled {
 		t.Fatal("DeadLetter() was not called")
 	}
-	task, ok, err := tasks.Get(ctx, "task-retry")
+	task, ok, err := provider.Swarm().GetTask(ctx, "task-retry")
 	if err != nil {
 		t.Fatalf("Get task: %v", err)
 	}

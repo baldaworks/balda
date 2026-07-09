@@ -1,4 +1,4 @@
-package swarm
+package jobs
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
@@ -31,18 +32,18 @@ func TestEventProjectorProjectsTaskEventIdempotently(t *testing.T) {
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
 	env := actorlayer.Envelope{
 		ID:          "event-1",
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "task_event",
 		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"text":"working"}`,
 		Meta:        map[string]string{"event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "msg-1"},
 	}
-	if err := projector.Project(ctx, SubjectEventTaskUpdated, env); err != nil {
+	if err := projector.Project(ctx, baldaruntime.SubjectEventTaskUpdated, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
 	}
-	if err := projector.Project(ctx, SubjectEventTaskUpdated, env); err != nil {
+	if err := projector.Project(ctx, baldaruntime.SubjectEventTaskUpdated, env); err != nil {
 		t.Fatalf("Project(duplicate) error = %v", err)
 	}
 	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
@@ -60,14 +61,14 @@ func TestEventProjectorProjectsCommandEventForTask(t *testing.T) {
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
 	env := actorlayer.Envelope{
 		ID:          "cmd-1:event:deadlettered",
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "command_event",
 		From:        actorlayer.SystemAddress("transport"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"retry exhausted"}`,
 	}
-	if err := projector.Project(ctx, SubjectEventCommandDeadLettered, env); err != nil {
+	if err := projector.Project(ctx, baldaruntime.SubjectEventCommandDeadLettered, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
 	}
 	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
@@ -85,14 +86,14 @@ func TestEventProjectorProjectsCommandDecodeFailedEventForTask(t *testing.T) {
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
 	env := actorlayer.Envelope{
 		ID:          "cmd-1:event:decode_failed",
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "command_event",
 		From:        actorlayer.SystemAddress("transport"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"decode failed: invalid json"}`,
 	}
-	if err := projector.Project(ctx, SubjectEventCommandDecodeFailed, env); err != nil {
+	if err := projector.Project(ctx, baldaruntime.SubjectEventCommandDecodeFailed, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
 	}
 	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
@@ -110,14 +111,14 @@ func TestEventProjectorProjectsDeliveryFailedEventForTask(t *testing.T) {
 	projector := &EventProjector{store: provider.Swarm(), logger: zerolog.Nop()}
 	env := actorlayer.Envelope{
 		ID:          "delivery-1:event:failed",
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "task_event",
 		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-1"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-1"},
 		TaskID:      "task-1",
 		PayloadJSON: `{"reason":"telegram send failed"}`,
 	}
-	if err := projector.Project(ctx, SubjectEventDeliveryFailed, env); err != nil {
+	if err := projector.Project(ctx, baldaruntime.SubjectEventDeliveryFailed, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
 	}
 	events, err := provider.Swarm().ListTaskEvents(ctx, "task-1")
@@ -137,28 +138,28 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	projectorA := &EventProjector{store: providerA.Swarm(), logger: zerolog.Nop()}
 	eventCreated := actorlayer.Envelope{
 		ID:          "evt-task-created",
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "task_event",
 		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"created"}`,
 		Meta:        map[string]string{"event_type": TaskEventTaskCreated, "actor": "task:actor", "message_id": "m-1"},
 	}
 	eventProgress := actorlayer.Envelope{
 		ID:          "evt-task-progress",
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "task_event",
 		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"running"}`,
 		Meta:        map[string]string{"event_type": TaskEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
 	}
-	if err := projectorA.Project(ctx, SubjectEventTaskCreated, eventCreated); err != nil {
+	if err := projectorA.Project(ctx, baldaruntime.SubjectEventTaskCreated, eventCreated); err != nil {
 		t.Fatalf("Project(created) error = %v", err)
 	}
-	if err := projectorA.Project(ctx, SubjectEventTaskUpdated, eventProgress); err != nil {
+	if err := projectorA.Project(ctx, baldaruntime.SubjectEventTaskUpdated, eventProgress); err != nil {
 		t.Fatalf("Project(progress) error = %v", err)
 	}
 	if err := providerA.Close(); err != nil {
@@ -169,21 +170,21 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	projectorB := &EventProjector{store: providerB.Swarm(), logger: zerolog.Nop()}
 	eventCompleted := actorlayer.Envelope{
 		ID:          "evt-task-completed",
-		Namespace:   NamespaceTelemetry,
+		Namespace:   baldaruntime.NamespaceTelemetry,
 		Kind:        "task_event",
 		From:        actorlayer.SystemAddress("task-events"),
-		To:          actorlayer.ActorAddress{Target: ActorTypeTask, Key: "task-replay"},
+		To:          actorlayer.ActorAddress{Target: baldaruntime.ActorTypeTask, Key: "task-replay"},
 		TaskID:      "task-replay",
 		PayloadJSON: `{"status":"completed"}`,
 		Meta:        map[string]string{"event_type": TaskEventTaskCompleted, "actor": "task:actor", "message_id": "m-3"},
 	}
-	if err := projectorB.Project(ctx, SubjectEventTaskCreated, eventCreated); err != nil {
+	if err := projectorB.Project(ctx, baldaruntime.SubjectEventTaskCreated, eventCreated); err != nil {
 		t.Fatalf("Project(replay created) error = %v", err)
 	}
-	if err := projectorB.Project(ctx, SubjectEventTaskUpdated, eventProgress); err != nil {
+	if err := projectorB.Project(ctx, baldaruntime.SubjectEventTaskUpdated, eventProgress); err != nil {
 		t.Fatalf("Project(replay progress) error = %v", err)
 	}
-	if err := projectorB.Project(ctx, SubjectEventTaskCompleted, eventCompleted); err != nil {
+	if err := projectorB.Project(ctx, baldaruntime.SubjectEventTaskCompleted, eventCompleted); err != nil {
 		t.Fatalf("Project(completed) error = %v", err)
 	}
 

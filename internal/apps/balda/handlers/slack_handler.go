@@ -23,9 +23,10 @@ import (
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -95,7 +96,7 @@ type SlackHandler struct {
 	channelAuth       *auth.ChannelAuthService
 	sessionManager    *baldasession.Manager
 	actorDispatcher   actortransport.Dispatcher
-	taskService       *swarm.TaskService
+	taskService       *baldajobs.JobService
 	client            *baldaslack.Client
 	config            SlackConfig
 	authToken         string
@@ -122,7 +123,7 @@ type slackHandlerParams struct {
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
 	Dispatcher        actortransport.Dispatcher
-	TaskService       *swarm.TaskService `optional:"true"`
+	JobService        *baldajobs.JobService `optional:"true"`
 	SlackClient       *baldaslack.Client
 	SlackConfig       SlackConfig
 	AuthToken         string `name:"balda_auth_token"`
@@ -140,7 +141,7 @@ func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		actorDispatcher:   params.Dispatcher,
-		taskService:       params.TaskService,
+		taskService:       params.JobService,
 		client:            params.SlackClient,
 		config:            params.SlackConfig,
 		authToken:         strings.TrimSpace(params.AuthToken),
@@ -696,7 +697,7 @@ func (h *SlackHandler) handleGoalCommand(ctx context.Context, locator baldasessi
 		return
 	}
 	if h.taskService != nil {
-		activeGoals, err := h.taskService.ListActiveGoalTasksBySession(ctx, locator.SessionID)
+		activeGoals, err := h.taskService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
 			_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 			return
@@ -835,7 +836,7 @@ func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.S
 		return
 	}
 	if _, err := h.actorDispatcher.Dispatch(ctx, env); err != nil {
-		if swarm.IsCommandQueueFull(err) {
+		if baldaruntime.IsCommandQueueFull(err) {
 			_ = h.sendPlain(ctx, locator, "Session command queue is full. Please wait or use /balda cancel.")
 			return
 		}

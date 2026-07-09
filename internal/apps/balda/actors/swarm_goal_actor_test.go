@@ -10,10 +10,11 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/progress"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
@@ -34,7 +35,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{t: t, finalValidatorText: "verdict: pass\nvalidated"}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -70,7 +71,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 	if runtimeBuilder.cleanupCalls != 1 {
 		t.Fatalf("cleanupCalls = %d, want 1", runtimeBuilder.cleanupCalls)
 	}
-	if got := lastPublishedCommandTo(t, bus, swarm.ActorTypeDelivery, locator.DeliveryActorKey()); got.Kind != taskPayloadKindDelivery {
+	if got := lastPublishedCommandTo(t, bus, baldaruntime.ActorTypeDelivery, locator.DeliveryActorKey()); got.Kind != taskPayloadKindDelivery {
 		t.Fatalf("last delivery = %+v, want delivery command", got)
 	}
 	payloads := deliveryPayloadsForTask(t, bus, env.TaskID)
@@ -108,7 +109,7 @@ func TestGoalKeeperActorCompletesPassingRunWithoutWorkspaceExport(t *testing.T) 
 		exportReason:       "workspace_disabled",
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -164,7 +165,7 @@ func TestGoalKeeperActorUsesLatestValidatorVerdictForCompletion(t *testing.T) {
 		events: goalEventsAfterInitialFailure("verdict: pass\nEvidence: final pass"),
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -249,7 +250,7 @@ func TestGoalKeeperActorFinalFailureUsesLatestValidatorOutput(t *testing.T) {
 		events: goalEventsAfterInitialFailure("verdict: fail\nEvidence: final failure"),
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -324,14 +325,14 @@ func TestGoalKeeperActorRejectsSecondActiveGoalInSession(t *testing.T) {
 		SessionID:     locator.SessionID,
 		Objective:     "existing goal",
 		Status:        baldastate.SwarmTaskStatusRunning,
-		OwnerActor:    swarm.ActorTypeGoalkeeper + ":goal-existing",
-		AssignedActor: swarm.ActorTypeGoalkeeper + ":goal-existing",
+		OwnerActor:    baldaruntime.ActorTypeGoalkeeper + ":goal-existing",
+		AssignedActor: baldaruntime.ActorTypeGoalkeeper + ":goal-existing",
 	}, "test", nil); err != nil {
 		t.Fatalf("Create existing goal task: %v", err)
 	}
 	runtimeBuilder := &fakeGoalRunPreparer{t: t}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -391,7 +392,7 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 		},
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -425,7 +426,7 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 	}
 	var progressKinds []string
 	for _, event := range bus.eventEnvs {
-		if event.Meta["event_type"] != swarm.TaskEventAgentProgress || event.TaskID != env.TaskID {
+		if event.Meta["event_type"] != baldajobs.TaskEventAgentProgress || event.TaskID != env.TaskID {
 			continue
 		}
 		var payload map[string]any
@@ -466,7 +467,7 @@ func TestGoalKeeperActorDeliversPlanUpdatesWhenEnabled(t *testing.T) {
 		},
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -483,10 +484,27 @@ func TestGoalKeeperActorDeliversPlanUpdatesWhenEnabled(t *testing.T) {
 		t.Fatalf("Handle() error = %v", err)
 	}
 
-	texts := deliveryTextsForTask(t, bus, env.TaskID)
-	planText := "Goal iteration 1/3: worker plan update.\n\nPlan update\n- [in progress] Run tests"
-	if got := countMatches(texts, planText); got != 1 {
-		t.Fatalf("plan update deliveries = %d, want 1\n%v", got, texts)
+	payloads := deliveryPayloadsForTask(t, bus, env.TaskID)
+	planPayloads := 0
+	for _, payload := range payloads {
+		if payload.Mode != DeliveryModeProgress || payload.Progress == nil || payload.Progress.Kind != DeliveryProgressPlanUpdate {
+			continue
+		}
+		planPayloads++
+		if got := payload.Progress.Text; got != "Plan update\n- [in progress] Run tests" {
+			t.Fatalf("plan progress text = %q, want plain plan text", got)
+		}
+		if payload.Progress.Plan == nil || len(payload.Progress.Plan.Entries) != 1 {
+			t.Fatalf("plan snapshot = %+v, want 1 entry", payload.Progress.Plan)
+		}
+		entry := payload.Progress.Plan.Entries[0]
+		if entry.Content != "Run tests" || entry.Status != "in progress" {
+			t.Fatalf("plan entry = %+v, want normalized content/status", entry)
+		}
+	}
+	if planPayloads != 1 {
+		texts := deliveryTextsForTask(t, bus, env.TaskID)
+		t.Fatalf("plan update deliveries = %d, want 1\n%v", planPayloads, texts)
 	}
 }
 
@@ -609,7 +627,7 @@ func TestGoalKeeperActorPreservesWorkspaceOnExportFailure(t *testing.T) {
 		exportErr:          context.DeadlineExceeded,
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		TaskService:        tasks,
+		JobService:         tasks,
 		Dispatcher:         dispatcher,
 		SessionManager:     manager,
 		GoalRunPreparer:    runtimeBuilder,
@@ -730,7 +748,11 @@ func deliveryTextsForTask(t *testing.T, bus *recordingHandlerCommandBus, taskID 
 	payloads := deliveryPayloadsForTask(t, bus, taskID)
 	var texts []string
 	for _, payload := range payloads {
-		texts = append(texts, payload.Text)
+		text := payload.Text
+		if strings.TrimSpace(text) == "" && payload.Progress != nil {
+			text = payload.Progress.Text
+		}
+		texts = append(texts, text)
 	}
 	return texts
 }
@@ -739,7 +761,7 @@ func deliveryPayloadsForTask(t *testing.T, bus *recordingHandlerCommandBus, task
 	t.Helper()
 	var payloads []DeliveryPayload
 	for _, env := range bus.commands {
-		if env.TaskID != taskID || env.To.Target != swarm.ActorTypeDelivery {
+		if env.TaskID != taskID || env.To.Target != baldaruntime.ActorTypeDelivery {
 			continue
 		}
 		var payload DeliveryPayload

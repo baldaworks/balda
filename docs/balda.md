@@ -112,7 +112,8 @@ flowchart TB
     messenger["github.com/normahq/balda/internal/apps/balda/messenger"]
     session["github.com/normahq/balda/internal/apps/balda/session"]
     state["github.com/normahq/balda/internal/apps/balda/state"]
-    swarm["github.com/normahq/balda/internal/apps/balda/swarm"]
+    runtime["github.com/normahq/balda/internal/apps/balda/runtime"]
+    jobs["github.com/normahq/balda/internal/apps/balda/jobs"]
     tgbotkit["github.com/normahq/balda/internal/apps/balda/tgbotkit"]
     welcome["github.com/normahq/balda/internal/apps/balda/welcome"]
 
@@ -155,17 +156,18 @@ flowchart TB
 
 | Package | Import Path | Description | Depends On |
 |---------|-------------|-------------|------------|
-| `balda` | `internal/apps/balda` | Root application module | actors, agent, auth, handlers, memory, state, swarm, tgbotkit |
+| `balda` | `internal/apps/balda` | Root application module | actors, agent, auth, handlers, jobs, memory, runtime, state, tgbotkit |
 | `agent` | `internal/apps/balda/agent` | Agent builder & workspace manager | `internal/git`, `pkg/runtime/*` |
-| `actors` | `internal/apps/balda/actors` | Balda product actors and actor command contracts | agent, channel/telegram, session, state, swarm |
+| `actors` | `internal/apps/balda/actors` | Balda product actors and actor command contracts | agent, channel/telegram, jobs, runtime, session, state |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram message adapter | messenger, session |
-| `handlers` | `internal/apps/balda/handlers` | Telegram/webhook/scheduler ingress and command publishing | actors, agent, auth, channel/telegram, messenger, session, state, swarm, tgbotkit, welcome |
+| `handlers` | `internal/apps/balda/handlers` | Telegram/webhook/scheduler ingress and command publishing | actors, agent, auth, channel/telegram, jobs, messenger, runtime, session, state, tgbotkit, welcome |
 | `memory` | `internal/apps/balda/memory` | Structured memory store and recall helpers | (standalone) |
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite`, `updatepoller` |
-| `swarm` | `internal/apps/balda/swarm` | Durable actor runtime, task services, and projections | memory, state, `pkg/actorlayer` |
+| `runtime` | `internal/apps/balda/runtime` | Actor runtime host, lane policy, subjects, and delivery wrapping | state, `pkg/actorlayer` |
+| `jobs` | `internal/apps/balda/jobs` | Durable job/task services and read-model projection | runtime, state, `pkg/actorlayer` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
 | `welcome` | `internal/apps/balda/welcome` | Welcome message builder | (standalone) |
 
@@ -197,7 +199,7 @@ The boundary is intentionally explicit:
 
 Balda's actorlayer integration is intentionally direct:
 
-- `internal/apps/balda/swarm/runtime.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
+- `internal/apps/balda/runtime/host.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
 - `internal/apps/balda/actors`: defines Balda product actors for session, task, goal, delivery, control, and memory command contracts.
 - `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
@@ -511,10 +513,10 @@ their next turn, and new or restored sessions start with the latest memory.
   - `none` is the legacy mode that sends raw text with no formatting mode
   - invalid values fail startup
   - see [Telegram Message Formatting](telegram-formatting.md) for supported tags, unsupported tags, and escaping behavior
-- `balda.telegram.plan_updates`: surface work-plan snapshots in balda progress (default: `true`)
+- `balda.telegram.plan_updates`: control visibility of work-plan progress in Telegram (default: `true`)
   - `true`: DM chats replace generic thinking placeholders with plan snapshots when the provider emits plan updates
   - `true`: public chats/topics send a plain-text message for each distinct plan snapshot
-  - `false`: balda uses `typing` plus DM `Thinking...` drafts instead of plan snapshots
+  - `false`: plan progress remains hidden; Balda still emits progress activity, sends typing indicators, and keeps DM thinking drafts instead of plan snapshots
 - `balda.telegram.webhook.enabled`: enable local HTTP webhook endpoint (`true` => webhook mode, `false` => polling mode; default: `false`)
 - `balda.telegram.webhook.url`: outgoing Telegram webhook URL (required when `balda.telegram.webhook.enabled=true`)
 - `balda.telegram.webhook.auth_token`: webhook auth token required when `balda.telegram.webhook.enabled=true`; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`
@@ -661,8 +663,7 @@ Telegram-specific message selection rules:
 
 Per model turn:
 
-1. Non-terminal provider progress sends throttled typing indicators for the same chat/topic; DM chats also emit throttled thinking placeholders.
-   When `balda.telegram.plan_updates=true`, work-plan snapshots replace generic DM thinking placeholders and are sent as plain-text progress messages in public chats/topics.
+1. Non-terminal session progress always emits a progress delivery. Telegram treats any progress delivery as activity for the same chat/topic and sends typing indicators; only progress deliveries marked visible render as drafts/messages. DM chats may also emit thinking placeholders. When `balda.telegram.plan_updates=true`, work-plan snapshots are visible, replace generic DM thinking placeholders, and are sent as plain-text progress messages in public chats/topics. When the flag is `false`, plan progress stays hidden while typing activity still flows.
 2. Final assistant text uses `balda.telegram.formatting_mode`:
    - `rich_markdown`: model writes Markdown/plain text; Balda sends Telegram rich Markdown.
    - `rich_html`: model writes rich-message HTML; Balda sends Telegram rich HTML.
@@ -1125,7 +1126,7 @@ Each configured task has `id`, `cron`, and an `envelope` with `target`, `key`,
 6. `/topic` without name returns usage error.
 7. Restart clears active process sessions; persisted non-owner sessions are lazy-restored from metadata when addressed again, while the owner main-DM session is bootstrapped during startup.
 8. Polling mode resumes from persisted Telegram offset in balda state DB.
-9. Non-terminal provider progress sends throttled typing indicators in DM and public chats; thinking placeholders are DM-only.
+9. Non-terminal session progress always emits progress activity; Telegram sends typing indicators in DM and public chats for that activity, while only visible progress renders as drafts/messages. Thinking placeholders remain DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode`; `rich_markdown` retries once as plain text on rich-message delivery errors, and `rich_html` retries once through the legacy HTML path.
 11. `/reset` and `/restart` cancel current session work, clear history, and immediately start a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
 12. `/locator` returns the current session locator in the config form `<channel_type>:<address_key>`.

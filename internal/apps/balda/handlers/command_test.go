@@ -13,9 +13,9 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -52,7 +52,7 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
 		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
 	}
 	if tgClient.closedTopicIDs[0] != topicID {
@@ -412,7 +412,7 @@ func TestCommandHandlerOnCommand_CloseCollaboratorAllowed(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
 		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
 	}
 }
@@ -436,7 +436,7 @@ func TestCommandHandlerOnCommand_CloseResetFailureDoesNotCloseTopic(t *testing.T
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
 		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
 	}
 	if len(tgClient.closedTopicIDs) != 0 {
@@ -601,7 +601,7 @@ func TestCommandHandlerOnCommand_GoalStartsRun(t *testing.T) {
 		t.Fatalf("published commands = %d, want 1", len(bus.commands))
 	}
 	cmd := bus.commands[0]
-	if cmd.To.Target != swarm.ActorTypeGoalkeeper || cmd.Namespace != swarm.NamespaceGoalkeeperCommand || cmd.Kind != swarm.KindGoal {
+	if cmd.To.Target != baldaruntime.ActorTypeGoalkeeper || cmd.Namespace != baldaruntime.NamespaceGoalkeeperCommand || cmd.Kind != baldaruntime.KindGoal {
 		t.Fatalf("published command = %+v, want goal command", cmd)
 	}
 	if len(tgClient.messages) != 0 {
@@ -673,7 +673,7 @@ func TestCommandHandlerOnCommand_GoalClearPublishesControlCommand(t *testing.T) 
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
 	cmd := turns.commands[0]
-	if cmd.Namespace != swarm.NamespaceTaskControl || cmd.Kind != swarm.KindCancel {
+	if cmd.Namespace != baldaruntime.NamespaceTaskControl || cmd.Kind != baldaruntime.KindCancel {
 		t.Fatalf("published command = %+v, want task control command", cmd)
 	}
 	payload := decodeControlPayload(t, cmd.PayloadJSON)
@@ -708,7 +708,7 @@ func TestCommandHandlerOnCommand_GoalClearExtraStartsGoal(t *testing.T) {
 
 func TestCommandHandlerOnCommand_GoalRejectsWhenActiveGoalExists(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.taskService = &fakeGoalTaskService{
+	handler.taskService = &fakeGoalJobService{
 		active: []baldastate.SwarmTaskRecord{{
 			ID:        "goal-1",
 			SessionID: "tg-9001-0",
@@ -736,7 +736,7 @@ func TestCommandHandlerSubmitGoalTask_RejectsWhenActiveGoalExists(t *testing.T) 
 	handler := &CommandHandler{
 		actorDispatcher:   bus,
 		goalMaxIterations: 7,
-		taskService: &fakeGoalTaskService{
+		taskService: &fakeGoalJobService{
 			active: []baldastate.SwarmTaskRecord{{
 				ID:        "goal-active",
 				SessionID: locator.SessionID,
@@ -772,7 +772,7 @@ func TestCommandHandlerOnCommand_CancelPublishesControlCommand(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+	if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
 		t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
 	}
 	payload := decodeControlPayload(t, turns.commands[0].PayloadJSON)
@@ -915,7 +915,7 @@ func assertCommandResetsRootSession(t *testing.T, command string) *fakeTelegramC
 		if len(turns.commands) != 1 {
 			t.Fatalf("published commands = %d, want 1", len(turns.commands))
 		}
-		if turns.commands[0].Namespace != swarm.NamespaceTaskControl || turns.commands[0].Kind != swarm.KindCancel {
+		if turns.commands[0].Namespace != baldaruntime.NamespaceTaskControl || turns.commands[0].Kind != baldaruntime.KindCancel {
 			t.Fatalf("published command = %+v, want task control cancel", turns.commands[0])
 		}
 	} else {
@@ -969,7 +969,7 @@ type cancelSessionCall struct {
 	Reason      string
 }
 
-type fakeGoalTaskService struct {
+type fakeGoalJobService struct {
 	active      []baldastate.SwarmTaskRecord
 	err         error
 	cancelCalls []cancelTasksCall
@@ -982,7 +982,7 @@ type cancelTasksCall struct {
 	Reason    string
 }
 
-func (f *fakeGoalTaskService) CancelBySession(_ context.Context, sessionID string, actor string, reason string) ([]string, error) {
+func (f *fakeGoalJobService) CancelBySession(_ context.Context, sessionID string, actor string, reason string) ([]string, error) {
 	f.cancelCalls = append(f.cancelCalls, cancelTasksCall{
 		SessionID: sessionID,
 		Actor:     actor,
@@ -1000,7 +1000,7 @@ func (f *fakeGoalTaskService) CancelBySession(_ context.Context, sessionID strin
 	return taskIDs, nil
 }
 
-func (f *fakeGoalTaskService) ListActiveGoalTasksBySession(_ context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
+func (f *fakeGoalJobService) ListActiveGoalJobsBySession(_ context.Context, sessionID string) ([]baldastate.SwarmTaskRecord, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -1067,23 +1067,23 @@ func (*fakeTurnDispatcher) Enqueue(actors.TurnTask) (int, error) {
 }
 
 func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
-	if env.To.Target == swarm.ActorTypeDelivery && f.deliveryAdapter != nil {
+	if env.To.Target == baldaruntime.ActorTypeDelivery && f.deliveryAdapter != nil {
 		f.deliveryCommands = append(f.deliveryCommands, env)
 		if err := handleDeliveryCommandForTest(context.Background(), f.deliveryAdapter, env); err != nil {
 			return nil, err
 		}
 		return &actortransport.DispatchReceipt{
-			Stream:   swarm.DefaultCommandStream,
+			Stream:   baldaruntime.DefaultCommandStream,
 			Sequence: uint64(len(f.deliveryCommands)),
-			Subject:  swarm.SubjectForEnvelope(env),
+			Subject:  baldaruntime.SubjectForEnvelope(env),
 			MsgID:    actorlayer.DedupeKeyOrID(env),
 		}, nil
 	}
 	f.commands = append(f.commands, env)
 	return &actortransport.DispatchReceipt{
-		Stream:   swarm.DefaultCommandStream,
+		Stream:   baldaruntime.DefaultCommandStream,
 		Sequence: uint64(len(f.commands)),
-		Subject:  swarm.SubjectForEnvelope(env),
+		Subject:  baldaruntime.SubjectForEnvelope(env),
 		MsgID:    actorlayer.DedupeKeyOrID(env),
 	}, nil
 }
@@ -1157,7 +1157,7 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 		sessionManager:    sessionManager,
 		workCanceller:     turnDispatcher,
 		actorDispatcher:   turnDispatcher,
-		taskService:       &fakeGoalTaskService{},
+		taskService:       &fakeGoalJobService{},
 		goalMaxIterations: normalizeGoalMaxIterations(0),
 		userHandler: &userHandler{
 			ownerStore:        ownerStore,
@@ -1189,12 +1189,12 @@ func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env actorlayer.
 		}
 	}
 	b.commands = append(b.commands, env)
-	if env.To.Target == swarm.ActorTypeDelivery && b.deliveryAdapter != nil {
+	if env.To.Target == baldaruntime.ActorTypeDelivery && b.deliveryAdapter != nil {
 		if err := handleDeliveryCommandForTest(context.Background(), b.deliveryAdapter, env); err != nil {
 			return nil, err
 		}
 	}
-	return &actortransport.DispatchReceipt{Stream: swarm.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: swarm.SubjectForEnvelope(env), MsgID: actorlayer.DedupeKeyOrID(env)}, nil
+	return &actortransport.DispatchReceipt{Stream: baldaruntime.DefaultCommandStream, Sequence: uint64(len(b.commands)), Subject: baldaruntime.SubjectForEnvelope(env), MsgID: actorlayer.DedupeKeyOrID(env)}, nil
 }
 
 func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject string, env actorlayer.Envelope) error {

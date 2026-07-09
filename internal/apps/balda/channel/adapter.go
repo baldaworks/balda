@@ -8,7 +8,7 @@ import (
 )
 
 // ChannelAdapter is the transport-neutral interface for sending messages
-// and typing indicators to a balda session.
+// and semantic progress updates to a balda session.
 type ChannelAdapter interface {
 	SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error
 	SendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error
@@ -18,4 +18,5 @@ type ChannelAdapter interface {
 	SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator baldasession.SessionLocator, profile deliverycmd.Profile, text string) (string, error)
 	SendDraftPlain(ctx context.Context, locator baldasession.SessionLocator, draftID int, text string) error
 	SendTyping(ctx context.Context, locator baldasession.SessionLocator) error
+	SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error
 }

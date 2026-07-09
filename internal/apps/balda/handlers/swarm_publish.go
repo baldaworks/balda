@@ -106,7 +106,7 @@ func (h *CommandHandler) submitGoalTask(ctx context.Context, locator baldasessio
 
 func (h *CommandHandler) submitGoalTaskWithProfile(ctx context.Context, locator baldasession.SessionLocator, deliveryProfile deliverycmd.Profile, objective string, transportUserID string) (bool, error) {
 	if h.taskService != nil {
-		activeGoals, err := h.taskService.ListActiveGoalTasksBySession(ctx, locator.SessionID)
+		activeGoals, err := h.taskService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
 			return false, fmt.Errorf("list active goal tasks: %w", err)
 		}

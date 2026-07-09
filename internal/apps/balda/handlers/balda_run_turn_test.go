@@ -16,10 +16,11 @@ import (
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
+	baldaruntime "github.com/normahq/balda/internal/apps/balda/runtime"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/swarm"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -35,8 +36,8 @@ import (
 const (
 	baldaRunTurnGenericEmptyTerminalMessage = "The provider ended the turn without a usable reply. Please try again."
 	baldaRunTurnFinalAnswerText             = "final answer"
-	baldaRunTurnThinkingOne                 = "Thinking."
-	baldaRunTurnThinkingTwo                 = "Thinking.."
+	baldaRunTurnReasoningOne                = "inspect current delivery path"
+	baldaRunTurnReasoningTwo                = "compare retry semantics"
 )
 
 type baldaRunTurnTelegramClient struct {
@@ -160,6 +161,22 @@ func baldaRunTurnDraftText(t *testing.T, draft client.SendMessageDraftJSONReques
 	return *draft.Text
 }
 
+func baldaRunTurnRichDraftMarkdown(t *testing.T, draft client.SendRichMessageDraftJSONRequestBody) string {
+	t.Helper()
+	if draft.RichMessage.Markdown == nil {
+		t.Fatal("rich draft markdown is nil")
+	}
+	return *draft.RichMessage.Markdown
+}
+
+func baldaRunTurnRichMessageMarkdown(t *testing.T, message client.SendRichMessageJSONRequestBody) string {
+	t.Helper()
+	if message.RichMessage.Markdown == nil {
+		t.Fatal("rich message markdown is nil")
+	}
+	return *message.RichMessage.Markdown
+}
+
 func newBaldaPlanSnapshot(entries ...map[string]any) map[string]any {
 	return map[string]any{
 		"entries": entries,
@@ -229,11 +246,14 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.drafts) != 1 {
-		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
+	if len(tgClient.drafts) != 2 {
+		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
 	}
-	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnReasoningOne {
+		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnReasoningOne)
+	}
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[1]); got != baldaRunTurnReasoningTwo {
+		t.Fatalf("draft[1].text = %q, want %s", got, baldaRunTurnReasoningTwo)
 	}
 	for i, draft := range tgClient.drafts {
 		if draft.MessageThreadId == nil || *draft.MessageThreadId != 77 {
@@ -241,8 +261,8 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 		}
 	}
 
-	if len(tgClient.chatActions) != 1 {
-		t.Fatalf("chat action calls = %d, want 1", len(tgClient.chatActions))
+	if len(tgClient.chatActions) != 3 {
+		t.Fatalf("chat action calls = %d, want 3", len(tgClient.chatActions))
 	}
 	for i, action := range tgClient.chatActions {
 		if action.Action != "typing" {
@@ -323,13 +343,8 @@ func TestRunTurn_SendsTypingWithoutThinkingDraftInPublicChat(t *testing.T) {
 	if len(tgClient.drafts) != 0 {
 		t.Fatalf("draft calls = %d, want 0", len(tgClient.drafts))
 	}
-	if len(tgClient.chatActions) != 1 {
-		t.Fatalf("chat action calls = %d, want 1", len(tgClient.chatActions))
-	}
-	for i, action := range tgClient.chatActions {
-		if action.Action != "typing" {
-			t.Fatalf("chatActions[%d].action = %q, want typing", i, action.Action)
-		}
+	if len(tgClient.chatActions) != 3 {
+		t.Fatalf("chat action calls = %d, want 3", len(tgClient.chatActions))
 	}
 }
 
@@ -366,8 +381,11 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *tes
 	if len(bus.eventEnvs) != 0 {
 		t.Fatalf("task events = %d, want 0", len(bus.eventEnvs))
 	}
-	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeChatAction); got != 1 {
-		t.Fatalf("chat action delivery commands = %d, want 1", got)
+	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeChatAction); got != 0 {
+		t.Fatalf("chat action delivery commands = %d, want 0", got)
+	}
+	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeProgress); got != 1 {
+		t.Fatalf("progress delivery commands = %d, want 1", got)
 	}
 	gotTexts := deliveryTextsFromCommands(t, bus.commands)
 	wantTexts := []string{
@@ -378,7 +396,7 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *tes
 		t.Fatalf("delivery texts = %#v, want %#v", gotTexts, wantTexts)
 	}
 	for _, env := range bus.commands {
-		if env.To.Target != swarm.ActorTypeDelivery {
+		if env.To.Target != baldaruntime.ActorTypeDelivery {
 			continue
 		}
 		if strings.TrimSpace(env.TaskID) != "" {
@@ -452,11 +470,11 @@ func TestBaldaSessionTurnRunner_DirectTelegramProgressDeliveriesComeFromSessionA
 	}
 
 	for _, env := range bus.commands {
-		if env.To.Target != swarm.ActorTypeDelivery {
+		if env.To.Target != baldaruntime.ActorTypeDelivery {
 			continue
 		}
-		if env.From.Target != swarm.ActorTypeSession {
-			t.Fatalf("delivery from target = %q, want %q", env.From.Target, swarm.ActorTypeSession)
+		if env.From.Target != baldaruntime.ActorTypeSession {
+			t.Fatalf("delivery from target = %q, want %q", env.From.Target, baldaruntime.ActorTypeSession)
 		}
 		if env.From.Key != sessionID {
 			t.Fatalf("delivery from key = %q, want %q", env.From.Key, sessionID)
@@ -563,8 +581,11 @@ func TestRunTurn_TaskBackedProgressUsesDeliveryActor(t *testing.T) {
 	if len(tgClient.drafts) != 0 || len(tgClient.chatActions) != 0 || len(tgClient.messages) != 0 {
 		t.Fatalf("telegram direct sends = drafts:%d typing:%d messages:%d, want 0", len(tgClient.drafts), len(tgClient.chatActions), len(tgClient.messages))
 	}
-	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeChatAction); got != 1 {
-		t.Fatalf("chat action delivery commands = %d, want 1", got)
+	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeChatAction); got != 0 {
+		t.Fatalf("chat action delivery commands = %d, want 0", got)
+	}
+	if got := deliveryModeCount(t, bus.commands, actors.DeliveryModeProgress); got != 2 {
+		t.Fatalf("progress delivery commands = %d, want 2", got)
 	}
 	gotTexts := deliveryTextsFromCommands(t, bus.commands)
 	wantTexts := []string{
@@ -574,18 +595,18 @@ func TestRunTurn_TaskBackedProgressUsesDeliveryActor(t *testing.T) {
 	if strings.Join(gotTexts, "\n---\n") != strings.Join(wantTexts, "\n---\n") {
 		t.Fatalf("delivery texts = %#v, want %#v", gotTexts, wantTexts)
 	}
-	agentEvents := taskEventsOfType(bus.eventEnvs, swarm.TaskEventAgentProgress, swarm.TaskEventAgentResult)
+	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.TaskEventAgentProgress, baldajobs.TaskEventAgentResult)
 	if len(agentEvents) != 2 {
 		t.Fatalf("agent task events = %d, want 2", len(agentEvents))
 	}
-	if got := agentEvents[0].Meta["event_type"]; got != swarm.TaskEventAgentProgress {
-		t.Fatalf("event[0] type = %q, want %q", got, swarm.TaskEventAgentProgress)
+	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.TaskEventAgentProgress {
+		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.TaskEventAgentProgress)
 	}
 	if got := taskEventPayload(t, agentEvents[0])["kind"]; got != "plan" {
 		t.Fatalf("event[0] kind = %v, want plan", got)
 	}
-	if got := agentEvents[1].Meta["event_type"]; got != swarm.TaskEventAgentResult {
-		t.Fatalf("event[1] type = %q, want %q", got, swarm.TaskEventAgentResult)
+	if got := agentEvents[1].Meta["event_type"]; got != baldajobs.TaskEventAgentResult {
+		t.Fatalf("event[1] type = %q, want %q", got, baldajobs.TaskEventAgentResult)
 	}
 	if got := taskEventPayload(t, agentEvents[1])["kind"]; got != nil {
 		t.Fatalf("event[1] kind = %v, want nil", got)
@@ -635,15 +656,15 @@ func TestRunTurn_TaskBackedVisibleOutputOnlySendsFinalReply(t *testing.T) {
 	if strings.Join(gotTexts, "\n---\n") != strings.Join(wantTexts, "\n---\n") {
 		t.Fatalf("delivery texts = %#v, want %#v", gotTexts, wantTexts)
 	}
-	agentEvents := taskEventsOfType(bus.eventEnvs, swarm.TaskEventAgentProgress, swarm.TaskEventAgentResult)
+	agentEvents := taskEventsOfType(bus.eventEnvs, baldajobs.TaskEventAgentProgress, baldajobs.TaskEventAgentResult)
 	if len(agentEvents) != 1 {
 		t.Fatalf("agent task events = %d, want 1", len(agentEvents))
 	}
-	if got := agentEvents[0].Meta["event_type"]; got != swarm.TaskEventAgentResult {
-		t.Fatalf("event[0] type = %q, want %q", got, swarm.TaskEventAgentResult)
+	if got := agentEvents[0].Meta["event_type"]; got != baldajobs.TaskEventAgentResult {
+		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.TaskEventAgentResult)
 	}
 	var payload actors.DeliveryPayload
-	if err := json.Unmarshal([]byte(bus.commands[0].PayloadJSON), &payload); err != nil {
+	if err := json.Unmarshal([]byte(bus.commands[len(bus.commands)-1].PayloadJSON), &payload); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
 	if payload.Profile.Format != options.Profile.Format || payload.Profile.TelegramMode != options.Profile.TelegramMode {
@@ -724,8 +745,8 @@ func TestRunTurn_SendsProgressAndGenericMessageForNonThoughtEventsWithoutFinalRe
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.chatActions) != 1 {
-		t.Fatalf("chat action calls = %d, want 1", len(tgClient.chatActions))
+	if len(tgClient.chatActions) != 2 {
+		t.Fatalf("chat action calls = %d, want 2", len(tgClient.chatActions))
 	}
 	if len(tgClient.drafts) != 0 {
 		t.Fatalf("draft calls = %d, want 0", len(tgClient.drafts))
@@ -749,21 +770,7 @@ func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	baseTime := time.Date(2026, 4, 24, 20, 0, 0, 0, time.UTC)
-	times := []time.Time{
-		baseTime,
-		baseTime.Add(telegramProgressThrottleInterval - time.Second),
-		baseTime.Add(telegramProgressThrottleInterval),
-	}
-	timeIdx := 0
-	h := newBaldaRunTurnHandlerWithChannel(channel, func() time.Time {
-		if timeIdx >= len(times) {
-			return times[len(times)-1]
-		}
-		now := times[timeIdx]
-		timeIdx++
-		return now
-	})
+	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
 	locator := baldatelegram.NewLocator(9001, 77)
@@ -772,15 +779,12 @@ func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.chatActions) != 2 {
-		t.Fatalf("chat action calls = %d, want 2", len(tgClient.chatActions))
-	}
-	if timeIdx != len(times) {
-		t.Fatalf("clock calls = %d, want %d", timeIdx, len(times))
+	if len(tgClient.chatActions) != 3 {
+		t.Fatalf("chat action calls = %d, want 3", len(tgClient.chatActions))
 	}
 }
 
-func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
+func TestRunTurn_SendsThinkingDraftForEachNonTerminalEvent(t *testing.T) {
 	t.Parallel()
 
 	tgClient := &baldaRunTurnTelegramClient{}
@@ -791,21 +795,7 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	baseTime := time.Date(2026, 4, 24, 20, 0, 0, 0, time.UTC)
-	times := []time.Time{
-		baseTime,
-		baseTime.Add(telegramProgressThrottleInterval - time.Second),
-		baseTime.Add(telegramProgressThrottleInterval),
-	}
-	timeIdx := 0
-	h := newBaldaRunTurnHandlerWithChannel(channel, func() time.Time {
-		if timeIdx >= len(times) {
-			return times[len(times)-1]
-		}
-		now := times[timeIdx]
-		timeIdx++
-		return now
-	})
+	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
 	locator := baldatelegram.NewLocator(9001, 77)
@@ -817,14 +807,11 @@ func TestRunTurn_SendsThinkingDraftAgainAfterThrottleInterval(t *testing.T) {
 	if len(tgClient.drafts) != 2 {
 		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
 	}
-	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnReasoningOne {
+		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnReasoningOne)
 	}
-	if got := baldaRunTurnDraftText(t, tgClient.drafts[1]); got != baldaRunTurnThinkingTwo {
-		t.Fatalf("draft[1].text = %q, want %s", got, baldaRunTurnThinkingTwo)
-	}
-	if timeIdx != len(times) {
-		t.Fatalf("clock calls = %d, want %d", timeIdx, len(times))
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[1]); got != baldaRunTurnReasoningTwo {
+		t.Fatalf("draft[1].text = %q, want %s", got, baldaRunTurnReasoningTwo)
 	}
 }
 
@@ -839,21 +826,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	baseTime := time.Date(2026, 4, 24, 20, 0, 0, 0, time.UTC)
-	times := []time.Time{
-		baseTime,
-		baseTime.Add(telegramProgressThrottleInterval),
-		baseTime.Add(2 * telegramProgressThrottleInterval),
-	}
-	timeIdx := 0
-	h := newBaldaRunTurnHandlerWithChannel(channel, func() time.Time {
-		if timeIdx >= len(times) {
-			return times[len(times)-1]
-		}
-		now := times[timeIdx]
-		timeIdx++
-		return now
-	})
+	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
 	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
@@ -861,7 +834,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		thought.Partial = true
 		thought.Content = &genai.Content{
 			Role:  genai.RoleModel,
-			Parts: []*genai.Part{{Thought: true}},
+			Parts: []*genai.Part{{Thought: true, Text: baldaRunTurnReasoningOne}},
 		}
 
 		plan := adksession.NewEvent(context.Background(), invocationID)
@@ -875,7 +848,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		thoughtTwo.Partial = true
 		thoughtTwo.Content = &genai.Content{
 			Role:  genai.RoleModel,
-			Parts: []*genai.Part{{Thought: true}},
+			Parts: []*genai.Part{{Thought: true, Text: baldaRunTurnReasoningTwo}},
 		}
 
 		done := adksession.NewEvent(context.Background(), invocationID)
@@ -893,8 +866,8 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 	if len(tgClient.drafts) != 2 {
 		t.Fatalf("draft calls = %d, want 2", len(tgClient.drafts))
 	}
-	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
+	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnReasoningOne {
+		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnReasoningOne)
 	}
 	if got := baldaRunTurnDraftText(t, tgClient.drafts[1]); got != "Plan update\n- [in progress] Run tests" {
 		t.Fatalf("draft[1].text = %q, want plan update text", got)
@@ -1155,8 +1128,8 @@ func TestRunTurn_DoesNotLeakNonFinalProgressTextInPublicChat(t *testing.T) {
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.chatActions) != 1 {
-		t.Fatalf("chat action calls = %d, want 1", len(tgClient.chatActions))
+	if len(tgClient.chatActions) != 3 {
+		t.Fatalf("chat action calls = %d, want 3", len(tgClient.chatActions))
 	}
 	if len(tgClient.drafts) != 0 {
 		t.Fatalf("draft calls = %d, want 0", len(tgClient.drafts))
@@ -1296,7 +1269,7 @@ func TestRunTurn_DeduplicatesRepeatedPlanUpdates(t *testing.T) {
 	}
 }
 
-func TestRunTurn_PlanUpdatesDisabledKeepsThinkingPlaceholderBehavior(t *testing.T) {
+func TestRunTurn_PlanUpdatesDisabledDoesNotSendPlaceholderDraft(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, true)
@@ -1322,11 +1295,8 @@ func TestRunTurn_PlanUpdatesDisabledKeepsThinkingPlaceholderBehavior(t *testing.
 		t.Fatalf("runTurn() error = %v", err)
 	}
 
-	if len(tgClient.drafts) != 1 {
-		t.Fatalf("draft calls = %d, want 1", len(tgClient.drafts))
-	}
-	if got := baldaRunTurnDraftText(t, tgClient.drafts[0]); got != baldaRunTurnThinkingOne {
-		t.Fatalf("draft[0].text = %q, want %s", got, baldaRunTurnThinkingOne)
+	if len(tgClient.drafts) != 0 {
+		t.Fatalf("draft calls = %d, want 0", len(tgClient.drafts))
 	}
 	if len(tgClient.messages) != 1 {
 		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
@@ -1711,11 +1681,11 @@ func TestRunTurnWithDelivery_AcceptsSlackLocator(t *testing.T) {
 		t.Fatalf("runTurnWithDelivery() error = %v", err)
 	}
 	bus := h.actorDispatcher.(*recordingHandlerCommandBus)
-	if len(bus.commands) != 1 {
-		t.Fatalf("dispatch calls = %d, want 1", len(bus.commands))
+	if len(bus.commands) != 2 {
+		t.Fatalf("dispatch calls = %d, want 2", len(bus.commands))
 	}
 	var payload actors.DeliveryPayload
-	if err := json.Unmarshal([]byte(bus.commands[0].PayloadJSON), &payload); err != nil {
+	if err := json.Unmarshal([]byte(bus.commands[len(bus.commands)-1].PayloadJSON), &payload); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
 	if payload.Locator.ChannelType != baldastate.ChannelTypeSlack {
@@ -1758,13 +1728,13 @@ func newBaldaRunTurnTestRunner(t *testing.T) (*runner.Runner, string) {
 		thoughtOne := adksession.NewEvent(context.Background(), invocationID)
 		thoughtOne.Content = &genai.Content{
 			Role:  genai.RoleModel,
-			Parts: []*genai.Part{{Thought: true}},
+			Parts: []*genai.Part{{Thought: true, Text: baldaRunTurnReasoningOne}},
 		}
 
 		thoughtTwo := adksession.NewEvent(context.Background(), invocationID)
 		thoughtTwo.Content = &genai.Content{
 			Role:  genai.RoleModel,
-			Parts: []*genai.Part{{Thought: true}},
+			Parts: []*genai.Part{{Thought: true, Text: baldaRunTurnReasoningTwo}},
 		}
 
 		reply := adksession.NewEvent(context.Background(), invocationID)
@@ -1775,6 +1745,128 @@ func newBaldaRunTurnTestRunner(t *testing.T) (*runner.Runner, string) {
 
 		return []*adksession.Event{thoughtOne, thoughtTwo, reply, done}
 	})
+}
+
+func TestRunTurn_SendsRichMarkdownReasoningDraftsInDM(t *testing.T) {
+	t.Parallel()
+
+	tgClient := &baldaRunTurnTelegramClient{}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("rich_markdown")
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+		Messenger: msg,
+		TGClient:  tgClient,
+		Logger:    zerolog.Nop(),
+	})
+	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
+
+	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
+		t.Fatalf("runTurn() error = %v", err)
+	}
+
+	if len(tgClient.richDrafts) != 2 {
+		t.Fatalf("rich draft calls = %d, want 2", len(tgClient.richDrafts))
+	}
+	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[0]); got != "> "+baldaRunTurnReasoningOne {
+		t.Fatalf("rich draft[0] markdown = %q, want quoted reasoning", got)
+	}
+	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[1]); got != "> "+baldaRunTurnReasoningTwo {
+		t.Fatalf("rich draft[1] markdown = %q, want quoted reasoning", got)
+	}
+}
+
+func TestRunTurn_SendsRichMarkdownPlanUpdateDraftInDM(t *testing.T) {
+	t.Parallel()
+
+	tgClient := &baldaRunTurnTelegramClient{}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("rich_markdown")
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+		Messenger: msg,
+		TGClient:  tgClient,
+		Logger:    zerolog.Nop(),
+	})
+	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
+	h.planUpdatesEnabled = true
+
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+		plan := adksession.NewEvent(context.Background(), invocationID)
+		plan.Partial = true
+		plan.CustomMetadata = map[string]any{
+			"acp_update_kind": "plan",
+			"acp_plan": newBaldaPlanSnapshot(
+				map[string]any{"content": "Check task_id handling", "status": "completed"},
+				map[string]any{"content": "Fix Telegram retry path", "status": "in_progress"},
+				map[string]any{"content": "Run actor tests", "status": "pending"},
+			),
+		}
+
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
+		done.TurnComplete = true
+
+		return []*adksession.Event{plan, done}
+	})
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
+		t.Fatalf("runTurn() error = %v", err)
+	}
+
+	if len(tgClient.richDrafts) != 1 {
+		t.Fatalf("rich draft calls = %d, want 1", len(tgClient.richDrafts))
+	}
+	if got := baldaRunTurnRichDraftMarkdown(t, tgClient.richDrafts[0]); got != "# Plan update\n\n- [x] Check task_id handling\n- [ ] _In progress:_ Fix Telegram retry path\n- [ ] Run actor tests" {
+		t.Fatalf("rich draft markdown = %q, want checklist payload", got)
+	}
+}
+
+func TestRunTurn_SendsRichMarkdownPlanUpdateMessageInPublicChat(t *testing.T) {
+	t.Parallel()
+
+	tgClient := &baldaRunTurnTelegramClient{}
+	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg.SetAgentReplyFormattingMode("rich_markdown")
+	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+		Messenger: msg,
+		TGClient:  tgClient,
+		Logger:    zerolog.Nop(),
+	})
+	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
+	h.planUpdatesEnabled = true
+
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+		plan := adksession.NewEvent(context.Background(), invocationID)
+		plan.Partial = true
+		plan.CustomMetadata = map[string]any{
+			"acp_update_kind": "plan",
+			"acp_plan": newBaldaPlanSnapshot(
+				map[string]any{"content": "Check task_id handling", "status": "completed"},
+				map[string]any{"content": "Run actor tests", "status": "pending"},
+			),
+		}
+
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.Content = genai.NewContentFromText(baldaRunTurnFinalAnswerText, genai.RoleModel)
+		done.TurnComplete = true
+
+		return []*adksession.Event{plan, done}
+	})
+	locator := baldatelegram.NewLocator(9001, 77)
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false}
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
+		t.Fatalf("runTurn() error = %v", err)
+	}
+
+	if len(tgClient.richMessages) < 1 {
+		t.Fatalf("rich message calls = %d, want at least 1", len(tgClient.richMessages))
+	}
+	if got := baldaRunTurnRichMessageMarkdown(t, tgClient.richMessages[0]); got != "# Plan update\n\n- [x] Check task_id handling\n- [ ] Run actor tests" {
+		t.Fatalf("rich message markdown = %q, want checklist payload", got)
+	}
 }
 
 func newBaldaRunTurnTestHandler(t *testing.T, agentReplyFormattingNone bool) (*BaldaHandler, *baldaRunTurnTelegramClient) {
@@ -1808,7 +1900,7 @@ func newBaldaRunTurnHandlerWithChannel(channel *baldatelegram.Adapter, now func(
 	}
 }
 
-func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnTelegramClient, *recordingHandlerCommandBus, *swarm.TaskService) {
+func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnTelegramClient, *recordingHandlerCommandBus, *baldajobs.JobService) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -1819,14 +1911,14 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 	t.Cleanup(func() { _ = provider.Close() })
 
 	bus := &recordingHandlerCommandBus{}
-	var tasks *swarm.TaskService
+	var tasks *baldajobs.JobService
 	app := fxtest.New(t,
 		fx.Supply(
 			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
 		),
 		fx.Provide(func() actortransport.Dispatcher { return bus }),
 		fx.Provide(func() actortransport.EventPublisher { return bus }),
-		fx.Provide(swarm.NewTaskService),
+		fx.Provide(baldajobs.NewJobService),
 		fx.Populate(&tasks),
 	)
 	app.RequireStart()
@@ -1853,17 +1945,21 @@ func deliveryTextsFromCommands(t *testing.T, commands []actorlayer.Envelope) []s
 
 	texts := make([]string, 0, len(commands))
 	for _, env := range commands {
-		if env.To.Target != swarm.ActorTypeDelivery {
+		if env.To.Target != baldaruntime.ActorTypeDelivery {
 			continue
 		}
 		var payload actors.DeliveryPayload
 		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
 			t.Fatalf("decode delivery payload: %v", err)
 		}
-		if strings.TrimSpace(payload.Text) == "" {
+		text := strings.TrimSpace(payload.Text)
+		if payload.Progress != nil && strings.TrimSpace(payload.Progress.Text) != "" {
+			text = strings.TrimSpace(payload.Progress.Text)
+		}
+		if text == "" {
 			continue
 		}
-		texts = append(texts, payload.Text)
+		texts = append(texts, text)
 	}
 	return texts
 }
@@ -1897,7 +1993,7 @@ func deliveryModeCount(t *testing.T, commands []actorlayer.Envelope, mode actors
 
 	count := 0
 	for _, env := range commands {
-		if env.To.Target != swarm.ActorTypeDelivery {
+		if env.To.Target != baldaruntime.ActorTypeDelivery {
 			continue
 		}
 		var payload actors.DeliveryPayload
