@@ -485,10 +485,20 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 	var terminalFinishReason genai.FinishReason
 	terminalErrorCode := ""
 	terminalErrorMessage := ""
-	thinkingIdx := 0
-	lastPlanProgressText := ""
-	planDraftActive := false
-	deliverySeq := 0
+	progressEmitter := h.progressEmitter
+	if progressEmitter == nil && h.actorDispatcher != nil {
+		progressEmitter = newSessionProgressDispatcher(
+			h.actorDispatcher,
+			outboundFrom,
+			locator,
+			jobID,
+			draftID,
+			topicID,
+			progressPolicy,
+			jobBackedDelivery,
+			zerolog.Ctx(runCtx).With().Logger(),
+		)
+	}
 
 	for ev, err := range r.Run(runCtx, userID, agentSessionID, userContent, agent.RunConfig{}, runOpts...) {
 		if err != nil {
@@ -534,54 +544,24 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 				}
 			}
 		}
-		if !ev.TurnComplete && h.actorDispatcher != nil {
-			sentProgress := false
-			if hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
-				visiblePlanUpdate := progressPolicy.PlanUpdates
-				deliverySeq++
-				if err := sendProgressPlanUpdate(ctx, h.actorDispatcher, jobID, outboundFrom, locator, progressPolicy, visiblePlanUpdate, draftID, &planProgress, planProgressText, fmt.Sprintf("progress:plan:%03d", deliverySeq)); err != nil {
-					if jobBackedDelivery {
-						return err
-					}
-					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to dispatch plan progress delivery")
-				} else {
-					if jobBackedDelivery {
-						if err := h.appendJobEvent(ctx, jobID, baldajobs.TaskEventAgentProgress, "session.actor", "", map[string]any{
-							"kind": "plan",
-							"text": strings.TrimSpace(planProgressText),
-						}); err != nil {
-							return err
-						}
-					}
-					lastPlanProgressText = planProgressText
-					if visiblePlanUpdate {
-						planDraftActive = true
-					}
-					sentProgress = true
-				}
+		if !ev.TurnComplete && progressEmitter != nil {
+			result, err := progressEmitter.HandleNonTerminal(ctx, sessionProgressUpdate{
+				Plan:                   planProgress,
+				PlanProgressText:       planProgressText,
+				HasPlanUpdate:          hasPlanUpdate,
+				ReasoningText:          reasoningText,
+				HasThoughtUpdate:       hasThoughtUpdate,
+				HasVisibleResponseText: hasVisibleResponseText,
+			})
+			if err != nil {
+				return err
 			}
-			if hasThoughtUpdate {
-				visibleThinking := progressPolicy.Thinking && strings.TrimSpace(reasoningText) != "" && !planDraftActive && !hasVisibleResponseText
-				deliverySeq++
-				if err := sendProgressThinking(ctx, h.actorDispatcher, jobID, outboundFrom, locator, progressPolicy, visibleThinking, draftID, reasoningText, thinkingIdx, fmt.Sprintf("progress:thinking:%03d", deliverySeq)); err != nil {
-					if jobBackedDelivery {
-						return err
-					}
-					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to dispatch thinking progress delivery")
-				} else {
-					if visibleThinking {
-						thinkingIdx++
-					}
-					sentProgress = true
-				}
-			}
-			if !sentProgress {
-				deliverySeq++
-				if err := sendProgressActivity(ctx, h.actorDispatcher, jobID, outboundFrom, locator, progressPolicy, deliverySeq, fmt.Sprintf("progress:activity:%03d", deliverySeq)); err != nil {
-					if jobBackedDelivery {
-						return err
-					}
-					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to dispatch activity progress delivery")
+			if jobBackedDelivery && result.DispatchedPlanText != "" {
+				if err := h.appendJobEvent(ctx, jobID, baldajobs.JobEventAgentProgress, "session.actor", "", map[string]any{
+					"kind": "plan",
+					"text": result.DispatchedPlanText,
+				}); err != nil {
+					return err
 				}
 			}
 		}
@@ -690,7 +670,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 					if err := h.dispatchJobDelivery(ctx, jobID, locator, sessionID, deliveryProfile, responseText, "final"); err != nil {
 						return err
 					}
-					if err := h.appendJobEvent(ctx, jobID, baldajobs.TaskEventAgentResult, "session.actor", "", map[string]any{
+					if err := h.appendJobEvent(ctx, jobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
 						"text": strings.TrimSpace(responseText),
 					}); err != nil {
 						return err
@@ -713,7 +693,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 						if err := h.dispatchJobDelivery(ctx, jobID, locator, sessionID, deliveryProfile, terminalMessage, "terminal"); err != nil {
 							return err
 						}
-						if err := h.appendJobEvent(ctx, jobID, baldajobs.TaskEventAgentResult, "session.actor", "", map[string]any{
+						if err := h.appendJobEvent(ctx, jobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
 							"text":          strings.TrimSpace(terminalMessage),
 							"finish_reason": strings.TrimSpace(string(terminalFinishReason)),
 						}); err != nil {

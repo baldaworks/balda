@@ -111,9 +111,11 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 		r.actorDispatcher,
 		outboundFrom,
 		deliveryLocator,
+		payload.JobID,
 		payload.MessageID+1,
 		payload.TopicID,
 		actors.NormalizeSessionDeliveryOptions(payload).ProgressPolicy,
+		strings.TrimSpace(payload.JobID) != "",
 		r.logger,
 	)
 	runOpts, err := prepareMemoryRunOptions(ctx, r.memoryStore, ts)

@@ -150,7 +150,7 @@ func TestJobServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing
 	if len(bus.envs) != 2 {
 		t.Fatalf("published created events = %d, want 2 attempts", len(bus.envs))
 	}
-	wantEventID := "task:" + record.ID + ":event:created"
+	wantEventID := "job:" + record.ID + ":event:created"
 	if bus.envs[0].ID != bus.envs[1].ID || bus.envs[1].ID != wantEventID {
 		t.Fatalf("event ids = %q/%q, want deterministic created event id", bus.envs[0].ID, bus.envs[1].ID)
 	}

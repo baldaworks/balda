@@ -17,11 +17,11 @@ func NewJobRunRegistry() *JobRunRegistry {
 	return &JobRunRegistry{cancels: make(map[string]map[string]context.CancelFunc)}
 }
 
-func (r *JobRunRegistry) Register(taskID string, cancel context.CancelFunc) string {
+func (r *JobRunRegistry) Register(jobID string, cancel context.CancelFunc) string {
 	if r == nil || cancel == nil {
 		return ""
 	}
-	trimmed := strings.TrimSpace(taskID)
+	trimmed := strings.TrimSpace(jobID)
 	if trimmed == "" {
 		return ""
 	}
@@ -38,11 +38,11 @@ func (r *JobRunRegistry) Register(taskID string, cancel context.CancelFunc) stri
 	return runID
 }
 
-func (r *JobRunRegistry) Unregister(taskID string, runID string) {
+func (r *JobRunRegistry) Unregister(jobID string, runID string) {
 	if r == nil {
 		return
 	}
-	trimmedJobID := strings.TrimSpace(taskID)
+	trimmedJobID := strings.TrimSpace(jobID)
 	trimmedRunID := strings.TrimSpace(runID)
 	if trimmedJobID == "" || trimmedRunID == "" {
 		return
@@ -59,11 +59,11 @@ func (r *JobRunRegistry) Unregister(taskID string, runID string) {
 	}
 }
 
-func (r *JobRunRegistry) Cancel(taskID string) bool {
+func (r *JobRunRegistry) Cancel(jobID string) bool {
 	if r == nil {
 		return false
 	}
-	trimmed := strings.TrimSpace(taskID)
+	trimmed := strings.TrimSpace(jobID)
 	if trimmed == "" {
 		return false
 	}

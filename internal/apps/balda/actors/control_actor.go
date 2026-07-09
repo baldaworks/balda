@@ -94,15 +94,15 @@ func (c *SessionWorkCanceller) CancelWork(ctx context.Context, locator baldasess
 	if c.tasks == nil {
 		return nil
 	}
-	taskIDs, err := c.tasks.CancelBySession(ctx, sessionID, actor, reason)
+	jobIDs, err := c.tasks.CancelBySession(ctx, sessionID, actor, reason)
 	if err != nil {
 		return fmt.Errorf("cancel session jobs: %w", err)
 	}
 	if c.taskRuns == nil {
 		return nil
 	}
-	for _, taskID := range taskIDs {
-		c.taskRuns.Cancel(taskID)
+	for _, jobID := range jobIDs {
+		c.taskRuns.Cancel(jobID)
 	}
 	return nil
 }
@@ -135,32 +135,32 @@ func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) e
 }
 
 func (a *jobControlActor) cancelTask(ctx context.Context, env actorlayer.Envelope, payload jobControlPayload) error {
-	taskID := strings.TrimSpace(payload.JobID)
-	if taskID == "" {
+	jobID := strings.TrimSpace(payload.JobID)
+	if jobID == "" {
 		return actorlayer.PolicyError(fmt.Errorf("job id is required"))
 	}
 	if a.tasks == nil {
 		return actorlayer.TransientError(fmt.Errorf("job service is required"))
 	}
-	task, ok, err := a.tasks.Get(ctx, taskID)
+	job, ok, err := a.tasks.Get(ctx, jobID)
 	if err != nil {
 		return actorlayer.TransientError(err)
 	}
 	if !ok {
 		if payload.Notify {
-			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Task %q not found.", taskID))
+			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Task %q not found.", jobID))
 		}
 		return nil
 	}
-	if isTerminalTaskStatus(task.Status) {
+	if isTerminalTaskStatus(job.Status) {
 		if payload.Notify {
-			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Task %s is already %s.", task.ID, task.Status))
+			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Task %s is already %s.", job.ID, job.Status))
 		}
 		return nil
 	}
 	runCanceled := false
 	if a.taskRuns != nil {
-		runCanceled = a.taskRuns.Cancel(task.ID)
+		runCanceled = a.taskRuns.Cancel(job.ID)
 	}
 	if !runCanceled && a.turnDispatcher != nil && strings.TrimSpace(payload.Locator.SessionID) != "" {
 		hadInFlight, dropped, err := a.turnDispatcher.CancelSession(payload.Locator, true)
@@ -170,11 +170,11 @@ func (a *jobControlActor) cancelTask(ctx context.Context, env actorlayer.Envelop
 		runCanceled = hadInFlight || dropped > 0
 	}
 	reason := firstNonEmpty(payload.Reason, "task canceled by user")
-	if err := a.tasks.CancelJob(ctx, task.ID, "command.task", reason); err != nil {
+	if err := a.tasks.CancelJob(ctx, job.ID, "command.task", reason); err != nil {
 		return actorlayer.TransientError(err)
 	}
 	if payload.Notify {
-		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Canceled task %s. Active run canceled: %t.", task.ID, runCanceled))
+		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Canceled task %s. Active run canceled: %t.", job.ID, runCanceled))
 	}
 	return nil
 }
@@ -192,21 +192,21 @@ func (a *jobControlActor) cancelSession(ctx context.Context, payload jobControlP
 			return actorlayer.TransientError(err)
 		}
 	}
-	taskCanceled := 0
+	jobCanceled := 0
 	if a.tasks != nil {
-		taskIDs, err := a.tasks.CancelBySession(ctx, payload.Locator.SessionID, "command.cancel", firstNonEmpty(payload.Reason, "session canceled by user"))
+		jobIDs, err := a.tasks.CancelBySession(ctx, payload.Locator.SessionID, "command.cancel", firstNonEmpty(payload.Reason, "session canceled by user"))
 		if err != nil {
 			return actorlayer.TransientError(err)
 		}
-		for _, taskID := range taskIDs {
-			if a.taskRuns != nil && a.taskRuns.Cancel(taskID) {
-				taskCanceled++
+		for _, jobID := range jobIDs {
+			if a.taskRuns != nil && a.taskRuns.Cancel(jobID) {
+				jobCanceled++
 			}
 		}
 	}
 	if payload.Notify {
 		response := "Canceled current turn."
-		if !hadInFlight && dropped == 0 && taskCanceled == 0 {
+		if !hadInFlight && dropped == 0 && jobCanceled == 0 {
 			response = "No running or queued session work."
 		} else if !hadInFlight {
 			response = "No running turn to cancel."
@@ -214,8 +214,8 @@ func (a *jobControlActor) cancelSession(ctx context.Context, payload jobControlP
 		if dropped > 0 {
 			response += fmt.Sprintf("\nDropped %d queued session message(s).", dropped)
 		}
-		if taskCanceled > 0 {
-			response += fmt.Sprintf("\nCanceled %d active task(s).", taskCanceled)
+		if jobCanceled > 0 {
+			response += fmt.Sprintf("\nCanceled %d active task(s).", jobCanceled)
 		}
 		a.sendControlMessage(ctx, payload.Locator, response)
 	}
@@ -298,12 +298,12 @@ func (a *jobControlActor) sendControlMessage(ctx context.Context, locator baldas
 	}
 }
 
-func ControlCancelEnvelope(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string) (actorlayer.Envelope, error) {
-	return ControlCancelEnvelopeWithNotify(locator, taskID, requestedBy, reason, true)
+func ControlCancelEnvelope(locator baldasession.SessionLocator, jobID string, requestedBy string, reason string) (actorlayer.Envelope, error) {
+	return ControlCancelEnvelopeWithNotify(locator, jobID, requestedBy, reason, true)
 }
 
-func ControlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, taskID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionCancel, taskID, requestedBy, reason, notify)
+func ControlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, jobID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
+	return controlEnvelope(locator, jobControlActionCancel, jobID, requestedBy, reason, notify)
 }
 
 func ControlCancelTurnEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
@@ -314,10 +314,10 @@ func ControlClearGoalEnvelopeWithNotify(locator baldasession.SessionLocator, req
 	return controlEnvelope(locator, jobControlActionClearGoal, "", requestedBy, reason, notify)
 }
 
-func controlEnvelope(locator baldasession.SessionLocator, action string, taskID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
+func controlEnvelope(locator baldasession.SessionLocator, action string, jobID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	payload := jobControlPayload{
 		Action:      strings.TrimSpace(action),
-		JobID:       strings.TrimSpace(taskID),
+		JobID:       strings.TrimSpace(jobID),
 		SessionID:   strings.TrimSpace(locator.SessionID),
 		Locator:     locator,
 		Reason:      strings.TrimSpace(reason),
@@ -336,7 +336,7 @@ func controlEnvelope(locator baldasession.SessionLocator, action string, taskID 
 		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
 		To:          actorlayer.SystemAddress("control"),
 		SessionID:   locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, taskID),
+		Meta:        baldaexecution.WithJobIDMeta(nil, jobID),
 		Priority:    100,
 		DedupeKey:   "control:" + strings.TrimSpace(action) + ":" + id,
 		PayloadJSON: string(data),

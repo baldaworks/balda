@@ -113,7 +113,7 @@ func (a *jobDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) 
 		if durable && a.tasks != nil {
 			_ = a.tasks.MarkDeliveryFailed(ctx, deliveryKey, err.Error())
 			if strings.TrimSpace(payload.JobID) != "" {
-				if appendErr := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.TaskEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
+				if appendErr := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
 					"text":   strings.TrimSpace(payload.Text),
 					"action": strings.TrimSpace(payload.Action),
 					"mode":   payload.Mode,
@@ -131,7 +131,7 @@ func (a *jobDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) 
 		}
 	}
 	if durable && a.tasks != nil && strings.TrimSpace(payload.JobID) != "" {
-		if err := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.TaskEventDeliverySent, "delivery.actor", env.ID, map[string]any{
+		if err := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliverySent, "delivery.actor", env.ID, map[string]any{
 			"text": strings.TrimSpace(payload.Text),
 			"mode": payload.Mode,
 		}); err != nil {

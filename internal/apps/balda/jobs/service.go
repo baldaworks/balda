@@ -75,15 +75,15 @@ func (s *JobService) Create(ctx context.Context, record baldastate.JobRecord, ac
 	if strings.TrimSpace(payloadJSON) == "" {
 		payloadJSON = "{}"
 	}
-	// Contract: task state is authoritative in SQLite; event publication is visibility-only.
+	// Contract: job state is authoritative in SQLite; event publication is visibility-only.
 	created, err := s.store.CreateJob(ctx, record)
 	if err != nil {
 		return false, err
 	}
-	taskID := strings.TrimSpace(record.ID)
+	jobID := strings.TrimSpace(record.ID)
 	s.publishEventRecordBestEffort(ctx, baldastate.JobEventRecord{
-		ID:          "task:" + taskID + ":event:created",
-		JobID:       taskID,
+		ID:          "job:" + jobID + ":event:created",
+		JobID:       jobID,
 		EventType:   JobEventCreated,
 		Actor:       strings.TrimSpace(actor),
 		PayloadJSON: payloadJSON,
@@ -91,11 +91,11 @@ func (s *JobService) Create(ctx context.Context, record baldastate.JobRecord, ac
 	return created, nil
 }
 
-func (s *JobService) Get(ctx context.Context, taskID string) (baldastate.JobRecord, bool, error) {
+func (s *JobService) Get(ctx context.Context, jobID string) (baldastate.JobRecord, bool, error) {
 	if s == nil {
 		return baldastate.JobRecord{}, false, nil
 	}
-	return s.store.GetJob(ctx, taskID)
+	return s.store.GetJob(ctx, jobID)
 }
 
 func (s *JobService) ListActiveJobsBySession(ctx context.Context, sessionID string) ([]baldastate.JobRecord, error) {
@@ -109,26 +109,26 @@ func (s *JobService) ListActiveGoalJobsBySession(ctx context.Context, sessionID 
 	if s == nil {
 		return nil, nil
 	}
-	tasks, err := s.store.ListActiveJobsBySession(ctx, sessionID)
+	jobs, err := s.store.ListActiveJobsBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]baldastate.JobRecord, 0, len(tasks))
-	for _, task := range tasks {
-		if IsGoalJob(task) {
-			out = append(out, task)
+	out := make([]baldastate.JobRecord, 0, len(jobs))
+	for _, job := range jobs {
+		if IsGoalJob(job) {
+			out = append(out, job)
 		}
 	}
 	return out, nil
 }
 
-func (s *JobService) MarkStatus(ctx context.Context, taskID string, status string, actor string, messageID string, reason string, payload any) error {
+func (s *JobService) MarkStatus(ctx context.Context, jobID string, status string, actor string, messageID string, reason string, payload any) error {
 	if s == nil {
 		return nil
 	}
 	// Contract: persist lifecycle transition first, then best-effort event emission.
-	if err := s.store.UpdateJobStatus(ctx, taskID, status, reason); err != nil {
-		return s.suppressStaleTerminalTransition(ctx, taskID, status, err)
+	if err := s.store.UpdateJobStatus(ctx, jobID, status, reason); err != nil {
+		return s.suppressStaleTerminalTransition(ctx, jobID, status, err)
 	}
 	eventType := ""
 	switch strings.TrimSpace(status) {
@@ -148,13 +148,13 @@ func (s *JobService) MarkStatus(ctx context.Context, taskID string, status strin
 	if eventType == "" {
 		return nil
 	}
-	return s.appendEventBestEffort(ctx, taskID, eventType, actor, messageID, mergePayload(payload, map[string]any{
+	return s.appendEventBestEffort(ctx, jobID, eventType, actor, messageID, mergePayload(payload, map[string]any{
 		"status": status,
 		"reason": reason,
 	}))
 }
 
-func (s *JobService) SetResult(ctx context.Context, taskID string, result any, status string, actor string, reason string) error {
+func (s *JobService) SetResult(ctx context.Context, jobID string, result any, status string, actor string, reason string) error {
 	if s == nil {
 		return nil
 	}
@@ -163,8 +163,8 @@ func (s *JobService) SetResult(ctx context.Context, taskID string, result any, s
 		return err
 	}
 	// Contract: result/state write is authoritative; event emission is best-effort visibility.
-	if err := s.store.SetJobResult(ctx, taskID, data, status, reason); err != nil {
-		return s.suppressStaleTerminalTransition(ctx, taskID, status, err)
+	if err := s.store.SetJobResult(ctx, jobID, data, status, reason); err != nil {
+		return s.suppressStaleTerminalTransition(ctx, jobID, status, err)
 	}
 	eventType := ""
 	switch strings.TrimSpace(status) {
@@ -181,13 +181,13 @@ func (s *JobService) SetResult(ctx context.Context, taskID string, result any, s
 	case baldastate.JobStatusCanceled:
 		eventType = JobEventCanceled
 	}
-	return s.appendEventBestEffort(ctx, taskID, eventType, actor, "", mergePayload(result, map[string]any{
+	return s.appendEventBestEffort(ctx, jobID, eventType, actor, "", mergePayload(result, map[string]any{
 		"status": status,
 		"reason": reason,
 	}))
 }
 
-func (s *JobService) suppressStaleTerminalTransition(ctx context.Context, taskID string, status string, err error) error {
+func (s *JobService) suppressStaleTerminalTransition(ctx context.Context, jobID string, status string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -197,11 +197,11 @@ func (s *JobService) suppressStaleTerminalTransition(ctx context.Context, taskID
 	if !isTerminalTaskStatus(status) {
 		return err
 	}
-	task, ok, getErr := s.Get(ctx, taskID)
+	job, ok, getErr := s.Get(ctx, jobID)
 	if getErr != nil || !ok {
 		return err
 	}
-	if !isTerminalTaskStatus(task.Status) {
+	if !isTerminalTaskStatus(job.Status) {
 		return err
 	}
 	return nil
@@ -219,22 +219,22 @@ func isTerminalTaskStatus(status string) bool {
 	}
 }
 
-func (s *JobService) AppendEvent(ctx context.Context, taskID string, eventType string, actor string, messageID string, payload any) error {
+func (s *JobService) AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error {
 	if s == nil {
 		return nil
 	}
-	event, err := jobEventRecord(taskID, eventType, actor, messageID, payload)
+	event, err := jobEventRecord(jobID, eventType, actor, messageID, payload)
 	if err != nil {
 		return err
 	}
 	return s.publishEventRecord(ctx, event)
 }
 
-func (s *JobService) appendEventBestEffort(ctx context.Context, taskID string, eventType string, actor string, messageID string, payload any) error {
+func (s *JobService) appendEventBestEffort(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error {
 	if s == nil {
 		return nil
 	}
-	event, err := jobEventRecord(taskID, eventType, actor, messageID, payload)
+	event, err := jobEventRecord(jobID, eventType, actor, messageID, payload)
 	if err != nil {
 		return err
 	}
@@ -242,17 +242,17 @@ func (s *JobService) appendEventBestEffort(ctx context.Context, taskID string, e
 	return nil
 }
 
-func jobEventRecord(taskID string, eventType string, actor string, messageID string, payload any) (baldastate.JobEventRecord, error) {
+func jobEventRecord(jobID string, eventType string, actor string, messageID string, payload any) (baldastate.JobEventRecord, error) {
 	data, err := marshalPayload(payload)
 	if err != nil {
 		return baldastate.JobEventRecord{}, err
 	}
 	eventID := ""
-	if strings.TrimSpace(eventType) == TaskEventAgentProgress {
+	if strings.TrimSpace(eventType) == JobEventAgentProgress {
 		eventID = uuid.NewString()
 	} else {
 		parts := []string{
-			strings.TrimSpace(taskID),
+			strings.TrimSpace(jobID),
 			strings.TrimSpace(eventType),
 			strings.TrimSpace(actor),
 			strings.TrimSpace(messageID),
@@ -281,11 +281,11 @@ func jobEventRecord(taskID string, eventType string, actor string, messageID str
 		if eventTypePart == "" {
 			eventTypePart = "event"
 		}
-		eventID = "task:" + strings.TrimSpace(taskID) + ":event:" + eventTypePart + ":" + hex.EncodeToString(sum[:])[:16]
+		eventID = "job:" + strings.TrimSpace(jobID) + ":event:" + eventTypePart + ":" + hex.EncodeToString(sum[:])[:16]
 	}
 	return baldastate.JobEventRecord{
 		ID:          eventID,
-		JobID:       strings.TrimSpace(taskID),
+		JobID:       strings.TrimSpace(jobID),
 		EventType:   strings.TrimSpace(eventType),
 		Actor:       strings.TrimSpace(actor),
 		MessageID:   strings.TrimSpace(messageID),
@@ -297,29 +297,29 @@ func (s *JobService) CancelBySession(ctx context.Context, sessionID string, acto
 	if s == nil {
 		return nil, nil
 	}
-	tasks, err := s.store.ListActiveJobsBySession(ctx, sessionID)
+	jobs, err := s.store.ListActiveJobsBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		if err := s.MarkStatus(ctx, task.ID, baldastate.JobStatusCanceled, actor, "", reason, nil); err != nil {
+	ids := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		if err := s.MarkStatus(ctx, job.ID, baldastate.JobStatusCanceled, actor, "", reason, nil); err != nil {
 			return ids, err
 		}
-		ids = append(ids, task.ID)
+		ids = append(ids, job.ID)
 	}
 	return ids, nil
 }
 
-func (s *JobService) CancelJob(ctx context.Context, taskID string, actor string, reason string) error {
+func (s *JobService) CancelJob(ctx context.Context, jobID string, actor string, reason string) error {
 	if s == nil {
 		return nil
 	}
-	return s.MarkStatus(ctx, taskID, baldastate.JobStatusCanceled, actor, "", reason, nil)
+	return s.MarkStatus(ctx, jobID, baldastate.JobStatusCanceled, actor, "", reason, nil)
 }
 
-func (s *JobService) DeadLetter(ctx context.Context, taskID string, actor string, messageID string, reason string) error {
-	return s.MarkStatus(ctx, taskID, baldastate.JobStatusDeadLettered, actor, messageID, reason, nil)
+func (s *JobService) DeadLetter(ctx context.Context, jobID string, actor string, messageID string, reason string) error {
+	return s.MarkStatus(ctx, jobID, baldastate.JobStatusDeadLettered, actor, messageID, reason, nil)
 }
 
 func (s *JobService) ReserveDelivery(ctx context.Context, record baldastate.DeliveryRecord) (baldastate.DeliveryRecord, bool, error) {
@@ -371,9 +371,9 @@ func (s *JobService) FailAgentStep(ctx context.Context, stepKey string, resultJS
 	return s.store.FailAgentStep(ctx, stepKey, resultJSON, reason)
 }
 
-func IsGoalJob(task baldastate.JobRecord) bool {
-	owner := strings.TrimSpace(task.OwnerActor)
-	assigned := strings.TrimSpace(task.AssignedActor)
+func IsGoalJob(job baldastate.JobRecord) bool {
+	owner := strings.TrimSpace(job.OwnerActor)
+	assigned := strings.TrimSpace(job.AssignedActor)
 	for _, prefix := range []string{"goalkeeper:", "goal:"} {
 		if strings.HasPrefix(owner, prefix) || strings.HasPrefix(assigned, prefix) {
 			return true
@@ -382,7 +382,7 @@ func IsGoalJob(task baldastate.JobRecord) bool {
 	return false
 }
 
-func (s *JobService) publishTaskEvent(ctx context.Context, event baldastate.JobEventRecord) error {
+func (s *JobService) publishJobEvent(ctx context.Context, event baldastate.JobEventRecord) error {
 	if s == nil || s.bus == nil {
 		return fmt.Errorf("event bus is required")
 	}
@@ -421,7 +421,7 @@ func (s *JobService) publishEventRecord(ctx context.Context, event baldastate.Jo
 	if s == nil {
 		return nil
 	}
-	return s.publishTaskEvent(ctx, event)
+	return s.publishJobEvent(ctx, event)
 }
 
 func (s *JobService) publishEventRecordBestEffort(ctx context.Context, event baldastate.JobEventRecord) {

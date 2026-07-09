@@ -122,9 +122,9 @@ func (p *EventProjector) Project(ctx context.Context, subject string, env actorl
 		case baldaexecution.SubjectEventJobCompleted:
 			eventType = JobEventCompleted
 		case baldaexecution.SubjectEventDeliverySent:
-			eventType = TaskEventDeliverySent
+			eventType = JobEventDeliverySent
 		case baldaexecution.SubjectEventDeliveryFailed:
-			eventType = TaskEventDeliveryFailed
+			eventType = JobEventDeliveryFailed
 		}
 	}
 	if eventType == "" {
