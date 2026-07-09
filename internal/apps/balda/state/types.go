@@ -27,10 +27,10 @@ const (
 	// ChannelTypeSlack is the balda channel type backed by Slack.
 	ChannelTypeSlack = "slack"
 
-	// ScheduledTaskStatusActive means the task is eligible for scheduler dispatch.
-	ScheduledTaskStatusActive = "active"
-	// ScheduledTaskStatusPaused means the task is persisted but not dispatched.
-	ScheduledTaskStatusPaused = "paused"
+	// ScheduledJobStatusActive means the job is eligible for scheduler dispatch.
+	ScheduledJobStatusActive = "active"
+	// ScheduledJobStatusPaused means the job is persisted but not dispatched.
+	ScheduledJobStatusPaused = "paused"
 
 	// JobStatusCreated means a task record exists but has not been queued.
 	JobStatusCreated = "created"
@@ -78,7 +78,7 @@ type Provider interface {
 	RuntimeSessions() adksession.Service
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
-	ScheduledTasks() ScheduledTaskStore
+	ScheduledJobs() ScheduledJobStore
 	Jobs() JobStore
 	PollingOffsetStore() updatepoller.OffsetStore
 	Collaborators() CollaboratorStore
@@ -130,8 +130,8 @@ type SessionStore interface {
 	List(ctx context.Context) ([]SessionRecord, error)
 }
 
-// ScheduledTaskRecord persists locator-targeted recurring task metadata.
-type ScheduledTaskRecord struct {
+// ScheduledJobRecord persists locator-targeted recurring job metadata.
+type ScheduledJobRecord struct {
 	JobID               string
 	SessionID           string
 	ChannelType         string
@@ -156,13 +156,13 @@ type ScheduledTaskRecord struct {
 	UpdatedAt           time.Time
 }
 
-// ScheduledTaskStore persists scheduler tasks bound to canonical locators.
-type ScheduledTaskStore interface {
-	Upsert(ctx context.Context, record ScheduledTaskRecord) error
-	GetByID(ctx context.Context, jobID string) (ScheduledTaskRecord, bool, error)
-	List(ctx context.Context) ([]ScheduledTaskRecord, error)
-	ListByAddress(ctx context.Context, channelType, addressKey string) ([]ScheduledTaskRecord, error)
-	ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledTaskRecord, error)
+// ScheduledJobStore persists scheduler jobs bound to canonical locators.
+type ScheduledJobStore interface {
+	Upsert(ctx context.Context, record ScheduledJobRecord) error
+	GetByID(ctx context.Context, jobID string) (ScheduledJobRecord, bool, error)
+	List(ctx context.Context) ([]ScheduledJobRecord, error)
+	ListByAddress(ctx context.Context, channelType, addressKey string) ([]ScheduledJobRecord, error)
+	ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledJobRecord, error)
 	Delete(ctx context.Context, jobID string) error
 }
 
@@ -187,7 +187,7 @@ type JobRecord struct {
 	CanceledAt    time.Time
 }
 
-// JobEventRecord persists an append-only task event.
+// JobEventRecord persists an append-only job event.
 type JobEventRecord struct {
 	ID          string
 	JobID       string

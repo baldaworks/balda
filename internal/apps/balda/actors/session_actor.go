@@ -46,7 +46,7 @@ type SessionTurnRunner interface {
 	RunSessionTurnPayload(ctx context.Context, payload SessionTurnPayload) error
 }
 
-type ScheduledTaskRecorder interface {
+type ScheduledJobRecorder interface {
 	MarkSuccess(ctx context.Context, jobID string) error
 	RecordExecutionFailure(ctx context.Context, jobID string, cause error) error
 }
@@ -95,7 +95,7 @@ type sessionActorExecutor struct {
 	turns     TurnQueue
 	runner    SessionTurnRunner
 	tasks     *baldajobs.JobService
-	scheduler ScheduledTaskRecorder
+	scheduler ScheduledJobRecorder
 }
 
 type sessionActorExecutorParams struct {
@@ -104,7 +104,7 @@ type sessionActorExecutorParams struct {
 	Turns     *TurnDispatcher
 	Runner    SessionTurnRunner
 	Tasks     *baldajobs.JobService `optional:"true"`
-	Scheduler ScheduledTaskRecorder `optional:"true"`
+	Scheduler ScheduledJobRecorder  `optional:"true"`
 }
 
 func (e *sessionActorExecutor) Address() string {
@@ -212,11 +212,11 @@ func (e *sessionActorExecutor) recordSessionTaskResult(ctx context.Context, env 
 	if e.scheduler != nil && strings.TrimSpace(payload.ScheduledJobID) != "" {
 		if runErr == nil {
 			if err := e.scheduler.MarkSuccess(ctx, payload.ScheduledJobID); err != nil {
-				return fmt.Errorf("mark scheduled task %q success: %w", payload.ScheduledJobID, err)
+				return fmt.Errorf("mark scheduled job %q success: %w", payload.ScheduledJobID, err)
 			}
 		} else {
 			if err := e.scheduler.RecordExecutionFailure(ctx, payload.ScheduledJobID, runErr); err != nil {
-				return fmt.Errorf("record scheduled task %q failure: %w", payload.ScheduledJobID, err)
+				return fmt.Errorf("record scheduled job %q failure: %w", payload.ScheduledJobID, err)
 			}
 		}
 	}

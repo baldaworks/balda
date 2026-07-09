@@ -8,11 +8,11 @@ import (
 	"time"
 )
 
-type sqliteScheduledTaskStore struct {
+type sqliteScheduledJobStore struct {
 	db *sql.DB
 }
 
-func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledTaskRecord) error {
+func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJobRecord) error {
 	jobID := strings.TrimSpace(record.JobID)
 	if jobID == "" {
 		return fmt.Errorf("job id is required")
@@ -43,7 +43,7 @@ func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledT
 
 	status := strings.TrimSpace(record.Status)
 	if status == "" {
-		status = ScheduledTaskStatusActive
+		status = ScheduledJobStatusActive
 	}
 	timezone := strings.TrimSpace(record.Timezone)
 	if timezone == "" {
@@ -66,7 +66,7 @@ func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledT
 	updatedAt := now
 
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO balda_scheduled_tasks (
+		INSERT INTO balda_scheduled_jobs (
 			job_id, session_id, channel_type, address_key, address_json,
 			report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 			content, schedule_spec, timezone, status,
@@ -94,7 +94,7 @@ func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledT
 			last_run_at = excluded.last_run_at,
 			last_error = excluded.last_error,
 			updated_at = excluded.updated_at,
-			created_at = balda_scheduled_tasks.created_at`,
+			created_at = balda_scheduled_jobs.created_at`,
 		jobID,
 		strings.TrimSpace(record.SessionID),
 		channelType,
@@ -129,51 +129,51 @@ func (s *sqliteScheduledTaskStore) Upsert(ctx context.Context, record ScheduledT
 	return nil
 }
 
-func (s *sqliteScheduledTaskStore) GetByID(ctx context.Context, jobID string) (ScheduledTaskRecord, bool, error) {
+func (s *sqliteScheduledJobStore) GetByID(ctx context.Context, jobID string) (ScheduledJobRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM balda_scheduled_tasks
+		FROM balda_scheduled_jobs
 		WHERE job_id = ?`,
 		strings.TrimSpace(jobID),
 	)
 
-	record, ok, err := scanScheduledTask(row.Scan)
+	record, ok, err := scanScheduledJob(row.Scan)
 	if err != nil {
-		return ScheduledTaskRecord{}, false, err
+		return ScheduledJobRecord{}, false, err
 	}
 	return record, ok, nil
 }
 
-func (s *sqliteScheduledTaskStore) List(ctx context.Context) ([]ScheduledTaskRecord, error) {
+func (s *sqliteScheduledJobStore) List(ctx context.Context) ([]ScheduledJobRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM balda_scheduled_tasks
+		FROM balda_scheduled_jobs
 		ORDER BY job_id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list scheduled jobs: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	return readScheduledTasks(rows)
+	return readScheduledJobs(rows)
 }
 
-func (s *sqliteScheduledTaskStore) ListByAddress(
+func (s *sqliteScheduledJobStore) ListByAddress(
 	ctx context.Context,
 	channelType string,
 	addressKey string,
-) ([]ScheduledTaskRecord, error) {
+) ([]ScheduledJobRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT job_id, session_id, channel_type, address_key, address_json,
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM balda_scheduled_tasks
+		FROM balda_scheduled_jobs
 		WHERE channel_type = ? AND address_key = ?
 		ORDER BY next_run_at ASC`,
 		strings.TrimSpace(channelType), strings.TrimSpace(addressKey),
@@ -183,10 +183,10 @@ func (s *sqliteScheduledTaskStore) ListByAddress(
 	}
 	defer func() { _ = rows.Close() }()
 
-	return readScheduledTasks(rows)
+	return readScheduledJobs(rows)
 }
 
-func (s *sqliteScheduledTaskStore) ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledTaskRecord, error) {
+func (s *sqliteScheduledJobStore) ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledJobRecord, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -196,11 +196,11 @@ func (s *sqliteScheduledTaskStore) ListDue(ctx context.Context, now time.Time, l
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at
-		FROM balda_scheduled_tasks
+		FROM balda_scheduled_jobs
 		WHERE status = ? AND next_run_at <= ?
 		ORDER BY next_run_at ASC
 		LIMIT ?`,
-		ScheduledTaskStatusActive,
+		ScheduledJobStatusActive,
 		now.UTC().Format(time.RFC3339),
 		limit,
 	)
@@ -209,17 +209,17 @@ func (s *sqliteScheduledTaskStore) ListDue(ctx context.Context, now time.Time, l
 	}
 	defer func() { _ = rows.Close() }()
 
-	return readScheduledTasks(rows)
+	return readScheduledJobs(rows)
 }
 
-func (s *sqliteScheduledTaskStore) Delete(ctx context.Context, jobID string) error {
+func (s *sqliteScheduledJobStore) Delete(ctx context.Context, jobID string) error {
 	trimmed := strings.TrimSpace(jobID)
 	if trimmed == "" {
 		return nil
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
-		DELETE FROM balda_scheduled_tasks
+		DELETE FROM balda_scheduled_jobs
 		WHERE job_id = ?`,
 		trimmed,
 	); err != nil {
@@ -228,10 +228,10 @@ func (s *sqliteScheduledTaskStore) Delete(ctx context.Context, jobID string) err
 	return nil
 }
 
-func readScheduledTasks(rows *sql.Rows) ([]ScheduledTaskRecord, error) {
-	out := make([]ScheduledTaskRecord, 0)
+func readScheduledJobs(rows *sql.Rows) ([]ScheduledJobRecord, error) {
+	out := make([]ScheduledJobRecord, 0)
 	for rows.Next() {
-		record, ok, err := scanScheduledTask(rows.Scan)
+		record, ok, err := scanScheduledJob(rows.Scan)
 		if err != nil {
 			return nil, err
 		}
@@ -245,9 +245,9 @@ func readScheduledTasks(rows *sql.Rows) ([]ScheduledTaskRecord, error) {
 	return out, nil
 }
 
-func scanScheduledTask(scan func(dest ...any) error) (ScheduledTaskRecord, bool, error) {
+func scanScheduledJob(scan func(dest ...any) error) (ScheduledJobRecord, bool, error) {
 	var (
-		record       ScheduledTaskRecord
+		record       ScheduledJobRecord
 		nextRunAtRaw string
 		lastRunAtRaw string
 		createdAtRaw string
@@ -280,26 +280,26 @@ func scanScheduledTask(scan func(dest ...any) error) (ScheduledTaskRecord, bool,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return ScheduledTaskRecord{}, false, nil
+			return ScheduledJobRecord{}, false, nil
 		}
-		return ScheduledTaskRecord{}, false, fmt.Errorf("scan scheduled job: %w", err)
+		return ScheduledJobRecord{}, false, fmt.Errorf("scan scheduled job: %w", err)
 	}
 
 	nextRunAt, err := parseRequiredRFC3339(nextRunAtRaw)
 	if err != nil {
-		return ScheduledTaskRecord{}, false, fmt.Errorf("parse next_run_at: %w", err)
+		return ScheduledJobRecord{}, false, fmt.Errorf("parse next_run_at: %w", err)
 	}
 	createdAt, err := parseRequiredRFC3339(createdAtRaw)
 	if err != nil {
-		return ScheduledTaskRecord{}, false, fmt.Errorf("parse created_at: %w", err)
+		return ScheduledJobRecord{}, false, fmt.Errorf("parse created_at: %w", err)
 	}
 	updatedAt, err := parseRequiredRFC3339(updatedAtRaw)
 	if err != nil {
-		return ScheduledTaskRecord{}, false, fmt.Errorf("parse updated_at: %w", err)
+		return ScheduledJobRecord{}, false, fmt.Errorf("parse updated_at: %w", err)
 	}
 	lastRunAt, err := parseOptionalRFC3339(lastRunAtRaw)
 	if err != nil {
-		return ScheduledTaskRecord{}, false, fmt.Errorf("parse last_run_at: %w", err)
+		return ScheduledJobRecord{}, false, fmt.Errorf("parse last_run_at: %w", err)
 	}
 
 	record.NextRunAt = nextRunAt

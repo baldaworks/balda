@@ -143,7 +143,7 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 	})
 
 	t.Run("ingress publishes commands before local state is advanced", func(t *testing.T) {
-		schedulerSource := readSource(t, filepath.Join(root, "handlers/scheduled_task_scheduler.go"))
+		schedulerSource := readSource(t, filepath.Join(root, "handlers/scheduled_job_scheduler.go"))
 		if !strings.Contains(schedulerSource, "s.dispatcher.Dispatch(ctx, env)") {
 			t.Fatal("scheduler ingress must dispatch durable actor work through actorlayer transport dispatcher")
 		}
@@ -180,7 +180,7 @@ func TestRuntimeArchitectureContractStatic(t *testing.T) {
 	})
 
 	t.Run("handler wiring stays package-local", func(t *testing.T) {
-		matches := findSourceMatches(t, root, files, regexp.MustCompile(`type\s+StartHandlerParams\s+struct|func\s+NewStartHandler\s*\(|func\s+\(h\s+\*StartHandler\)\s+SetBaldaHandler\s*\(|func\s+NewBaldaHandler\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SetOwner\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+ActivateOwner\s*\(|func\s+NewCommandHandler\s*\(|func\s+NewUserHandler\s*\(|func\s+NewScheduledTaskScheduler\s*\(|func\s+NewInboundWebhookReceiver\s*\(|func\s+WireHandlers\s*\(`))
+		matches := findSourceMatches(t, root, files, regexp.MustCompile(`type\s+StartHandlerParams\s+struct|func\s+NewStartHandler\s*\(|func\s+\(h\s+\*StartHandler\)\s+SetBaldaHandler\s*\(|func\s+NewBaldaHandler\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+SetOwner\s*\(|func\s+\(h\s+\*BaldaHandler\)\s+ActivateOwner\s*\(|func\s+NewCommandHandler\s*\(|func\s+NewUserHandler\s*\(|func\s+NewScheduledJobScheduler\s*\(|func\s+NewInboundWebhookReceiver\s*\(|func\s+WireHandlers\s*\(`))
 		if len(matches) > 0 {
 			t.Fatalf("handler-local wiring surface must not be exported:\n%s", formatSourceMatches(matches))
 		}

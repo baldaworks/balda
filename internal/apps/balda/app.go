@@ -118,18 +118,18 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	scheduledTaskSchedulerConfig := handlers.ScheduledTaskSchedulerConfig{
-		Jobs: make([]handlers.ConfiguredScheduledTask, 0, len(cfg.Balda.Scheduler.Jobs)),
+	scheduledJobSchedulerConfig := handlers.ScheduledJobSchedulerConfig{
+		Jobs: make([]handlers.ConfiguredScheduledJob, 0, len(cfg.Balda.Scheduler.Jobs)),
 	}
 	for _, task := range cfg.Balda.Scheduler.Jobs {
-		var reportTo *handlers.ConfiguredScheduledTaskTarget
+		var reportTo *handlers.ConfiguredScheduledJobTarget
 		if task.Envelope.ReportTo != nil {
-			reportTo = &handlers.ConfiguredScheduledTaskTarget{
+			reportTo = &handlers.ConfiguredScheduledJobTarget{
 				Target: strings.TrimSpace(task.Envelope.ReportTo.Target),
 				Key:    strings.TrimSpace(task.Envelope.ReportTo.Key),
 			}
 		}
-		scheduledTaskSchedulerConfig.Jobs = append(scheduledTaskSchedulerConfig.Jobs, handlers.ConfiguredScheduledTask{
+		scheduledJobSchedulerConfig.Jobs = append(scheduledJobSchedulerConfig.Jobs, handlers.ConfiguredScheduledJob{
 			ID:       strings.TrimSpace(task.ID),
 			Cron:     strings.TrimSpace(task.Cron),
 			Target:   strings.TrimSpace(task.Envelope.Target),
@@ -184,7 +184,7 @@ func Module(
 			normaCfg,
 			workingDir,
 			mcpReg,
-			scheduledTaskSchedulerConfig,
+			scheduledJobSchedulerConfig,
 			inboundWebhookConfig,
 			eventBusConfig,
 			executionConfig,

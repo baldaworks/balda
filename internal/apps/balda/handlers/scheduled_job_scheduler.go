@@ -25,28 +25,28 @@ const (
 	defaultSchedulerMaxRetries   = 3
 )
 
-// ConfiguredScheduledTask defines a startup-managed recurring task.
-type ConfiguredScheduledTask struct {
+// ConfiguredScheduledJob defines a startup-managed recurring task.
+type ConfiguredScheduledJob struct {
 	ID       string
 	Cron     string
 	Target   string
 	Key      string
 	Content  string
-	ReportTo *ConfiguredScheduledTaskTarget
+	ReportTo *ConfiguredScheduledJobTarget
 }
 
-// ConfiguredScheduledTaskTarget is a configured scheduler envelope address.
-type ConfiguredScheduledTaskTarget struct {
+// ConfiguredScheduledJobTarget is a configured scheduler envelope address.
+type ConfiguredScheduledJobTarget struct {
 	Target string
 	Key    string
 }
 
-// ScheduledTaskSchedulerConfig controls startup job reconciliation.
-type ScheduledTaskSchedulerConfig struct {
-	Jobs []ConfiguredScheduledTask
+// ScheduledJobSchedulerConfig controls startup job reconciliation.
+type ScheduledJobSchedulerConfig struct {
+	Jobs []ConfiguredScheduledJob
 }
 
-type scheduledTaskSchedulerParams struct {
+type scheduledJobSchedulerParams struct {
 	fx.In
 
 	LC            fx.Lifecycle
@@ -54,16 +54,16 @@ type scheduledTaskSchedulerParams struct {
 	Dispatcher    actortransport.Dispatcher
 	OwnerStore    *auth.OwnerStore
 	Logger        zerolog.Logger
-	Config        ScheduledTaskSchedulerConfig
+	Config        ScheduledJobSchedulerConfig
 }
 
-// ScheduledTaskScheduler publishes due locator-bound recurring tasks as durable job commands.
-type ScheduledTaskScheduler struct {
-	taskStore  baldastate.ScheduledTaskStore
+// ScheduledJobScheduler publishes due locator-bound recurring tasks as durable job commands.
+type ScheduledJobScheduler struct {
+	jobStore   baldastate.ScheduledJobStore
 	dispatcher actortransport.Dispatcher
 	owner      *auth.OwnerStore
 	logger     zerolog.Logger
-	config     ScheduledTaskSchedulerConfig
+	config     ScheduledJobSchedulerConfig
 
 	pollInterval time.Duration
 	dueBatchSize int
@@ -73,7 +73,7 @@ type ScheduledTaskScheduler struct {
 	wg     sync.WaitGroup
 }
 
-func (s *ScheduledTaskScheduler) start() {
+func (s *ScheduledJobScheduler) start() {
 	if s.cancel != nil {
 		return
 	}
@@ -101,7 +101,7 @@ func (s *ScheduledTaskScheduler) start() {
 	}()
 }
 
-func (s *ScheduledTaskScheduler) stop(ctx context.Context) error {
+func (s *ScheduledJobScheduler) stop(ctx context.Context) error {
 	if s.cancel == nil {
 		return nil
 	}
@@ -119,28 +119,28 @@ func (s *ScheduledTaskScheduler) stop(ctx context.Context) error {
 	}
 }
 
-func (s *ScheduledTaskScheduler) reconcileConfiguredTasks(ctx context.Context) error {
+func (s *ScheduledJobScheduler) reconcileConfiguredTasks(ctx context.Context) error {
 	desired := make(map[string]struct{}, len(s.config.Jobs))
 	now := s.now().UTC()
 
 	for _, task := range s.config.Jobs {
 		target, err := resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: task.Target, Key: task.Key})
 		if err != nil {
-			return fmt.Errorf("resolve scheduler task %q target: %w", task.ID, err)
+			return fmt.Errorf("resolve scheduler job %q target: %w", task.ID, err)
 		}
 		var reportTo *resolvedEnvelopeTarget
 		if task.ReportTo != nil {
 			resolved, err := resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: task.ReportTo.Target, Key: task.ReportTo.Key})
 			if err != nil {
-				return fmt.Errorf("resolve scheduler task %q report_to: %w", task.ID, err)
+				return fmt.Errorf("resolve scheduler job %q report_to: %w", task.ID, err)
 			}
 			reportTo = &resolved
 		}
 		nextRunAt, err := nextRunAtFromSpec(task.Cron, now)
 		if err != nil {
-			return fmt.Errorf("compute next run for scheduler task %q: %w", task.ID, err)
+			return fmt.Errorf("compute next run for scheduler job %q: %w", task.ID, err)
 		}
-		record := baldastate.ScheduledTaskRecord{
+		record := baldastate.ScheduledJobRecord{
 			JobID:        task.ID,
 			SessionID:    target.Locator.SessionID,
 			ChannelType:  target.Locator.ChannelType,
@@ -149,7 +149,7 @@ func (s *ScheduledTaskScheduler) reconcileConfiguredTasks(ctx context.Context) e
 			Content:      task.Content,
 			ScheduleSpec: task.Cron,
 			Timezone:     "UTC",
-			Status:       baldastate.ScheduledTaskStatusActive,
+			Status:       baldastate.ScheduledJobStatusActive,
 			MaxRetries:   defaultSchedulerMaxRetries,
 			RetryCount:   0,
 			NextRunAt:    nextRunAt,
@@ -161,13 +161,13 @@ func (s *ScheduledTaskScheduler) reconcileConfiguredTasks(ctx context.Context) e
 			record.ReportToAddressKey = reportTo.Locator.AddressKey
 			record.ReportToAddressJSON = reportTo.Locator.AddressJSON
 		}
-		if err := s.taskStore.Upsert(ctx, record); err != nil {
+		if err := s.jobStore.Upsert(ctx, record); err != nil {
 			return fmt.Errorf("upsert scheduler job %q: %w", task.ID, err)
 		}
 		desired[task.ID] = struct{}{}
 	}
 
-	currentTasks, err := s.taskStore.List(ctx)
+	currentTasks, err := s.jobStore.List(ctx)
 	if err != nil {
 		return fmt.Errorf("list persisted scheduler jobs: %w", err)
 	}
@@ -176,7 +176,7 @@ func (s *ScheduledTaskScheduler) reconcileConfiguredTasks(ctx context.Context) e
 		if _, ok := desired[jobID]; ok {
 			continue
 		}
-		if err := s.taskStore.Delete(ctx, jobID); err != nil {
+		if err := s.jobStore.Delete(ctx, jobID); err != nil {
 			return fmt.Errorf("delete unmanaged scheduler job %q: %w", jobID, err)
 		}
 	}
@@ -184,8 +184,8 @@ func (s *ScheduledTaskScheduler) reconcileConfiguredTasks(ctx context.Context) e
 	return nil
 }
 
-func (s *ScheduledTaskScheduler) dispatchDue(ctx context.Context, now time.Time) error {
-	due, err := s.taskStore.ListDue(ctx, now, s.dueBatchSize)
+func (s *ScheduledJobScheduler) dispatchDue(ctx context.Context, now time.Time) error {
+	due, err := s.jobStore.ListDue(ctx, now, s.dueBatchSize)
 	if err != nil {
 		return fmt.Errorf("list due jobs: %w", err)
 	}
@@ -198,20 +198,20 @@ func (s *ScheduledTaskScheduler) dispatchDue(ctx context.Context, now time.Time)
 	return nil
 }
 
-func (s *ScheduledTaskScheduler) dispatchTask(ctx context.Context, task baldastate.ScheduledTaskRecord, now time.Time) error {
+func (s *ScheduledJobScheduler) dispatchTask(ctx context.Context, task baldastate.ScheduledJobRecord, now time.Time) error {
 	jobID := strings.TrimSpace(task.JobID)
 	if jobID == "" {
 		return fmt.Errorf("job id is required")
 	}
 
-	current, ok, err := s.taskStore.GetByID(ctx, jobID)
+	current, ok, err := s.jobStore.GetByID(ctx, jobID)
 	if err != nil {
 		return fmt.Errorf("load scheduled job %q: %w", jobID, err)
 	}
 	if !ok {
 		return fmt.Errorf("scheduled job %q not found", jobID)
 	}
-	if strings.TrimSpace(current.Status) != baldastate.ScheduledTaskStatusActive {
+	if strings.TrimSpace(current.Status) != baldastate.ScheduledJobStatusActive {
 		return nil
 	}
 	if current.NextRunAt.After(now.UTC()) {
@@ -223,7 +223,7 @@ func (s *ScheduledTaskScheduler) dispatchTask(ctx context.Context, task baldasta
 		return nil
 	}
 
-	target, err := s.resolveScheduledTaskTarget(ctx, current)
+	target, err := s.resolveScheduledJobTarget(ctx, current)
 	if err != nil {
 		return s.markFailure(ctx, jobID, fmt.Errorf("resolve scheduler target: %w", err))
 	}
@@ -235,27 +235,27 @@ func (s *ScheduledTaskScheduler) dispatchTask(ctx context.Context, task baldasta
 	}
 
 	content := strings.TrimSpace(current.Content)
-	if err := s.dispatchScheduledTaskTask(ctx, current, target, content, dispatchKey); err != nil {
+	if err := s.dispatchScheduledJob(ctx, current, target, content, dispatchKey); err != nil {
 		return err
 	}
 
 	// Mark the slot only after durable command dispatch succeeds.
 	current.LastDispatchKey = dispatchKey
 	current.LastError = ""
-	current.Status = baldastate.ScheduledTaskStatusActive
+	current.Status = baldastate.ScheduledJobStatusActive
 	current.NextRunAt = nextRunAt
 	current.SessionID = locator.SessionID
 	current.ChannelType = locator.ChannelType
 	current.AddressKey = locator.AddressKey
 	current.AddressJSON = locator.AddressJSON
-	if err := s.taskStore.Upsert(ctx, current); err != nil {
+	if err := s.jobStore.Upsert(ctx, current); err != nil {
 		return fmt.Errorf("update scheduled job %q after publish: %w", jobID, err)
 	}
 
 	return nil
 }
 
-func (s *ScheduledTaskScheduler) resolveScheduledTaskTarget(ctx context.Context, task baldastate.ScheduledTaskRecord) (resolvedEnvelopeTarget, error) {
+func (s *ScheduledJobScheduler) resolveScheduledJobTarget(ctx context.Context, task baldastate.ScheduledJobRecord) (resolvedEnvelopeTarget, error) {
 	locator, err := baldasession.NewSessionLocator(task.ChannelType, task.AddressKey, task.AddressJSON, task.SessionID)
 	if err != nil {
 		return resolveEnvelopeTarget(ctx, s.owner, envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner})
@@ -274,9 +274,9 @@ func (s *ScheduledTaskScheduler) resolveScheduledTaskTarget(ctx context.Context,
 	return target, nil
 }
 
-func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
+func (s *ScheduledJobScheduler) dispatchScheduledJob(
 	ctx context.Context,
-	task baldastate.ScheduledTaskRecord,
+	task baldastate.ScheduledJobRecord,
 	target resolvedEnvelopeTarget,
 	content string,
 	dispatchKey string,
@@ -299,8 +299,8 @@ func (s *ScheduledTaskScheduler) dispatchScheduledTaskTask(
 	return nil
 }
 
-func (s *ScheduledTaskScheduler) MarkSuccess(ctx context.Context, jobID string) error {
-	job, ok, err := s.taskStore.GetByID(ctx, jobID)
+func (s *ScheduledJobScheduler) MarkSuccess(ctx context.Context, jobID string) error {
+	job, ok, err := s.jobStore.GetByID(ctx, jobID)
 	if err != nil {
 		return fmt.Errorf("load scheduled job %q: %w", jobID, err)
 	}
@@ -310,15 +310,15 @@ func (s *ScheduledTaskScheduler) MarkSuccess(ctx context.Context, jobID string) 
 	job.LastRunAt = s.now().UTC()
 	job.LastError = ""
 	job.RetryCount = 0
-	job.Status = baldastate.ScheduledTaskStatusActive
-	if err := s.taskStore.Upsert(ctx, job); err != nil {
+	job.Status = baldastate.ScheduledJobStatusActive
+	if err := s.jobStore.Upsert(ctx, job); err != nil {
 		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
 	}
 	return nil
 }
 
-func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, jobID string, cause error) error {
-	job, ok, err := s.taskStore.GetByID(ctx, jobID)
+func (s *ScheduledJobScheduler) markFailure(ctx context.Context, jobID string, cause error) error {
+	job, ok, err := s.jobStore.GetByID(ctx, jobID)
 	if err != nil {
 		return fmt.Errorf("load scheduled job %q: %w", jobID, err)
 	}
@@ -335,9 +335,9 @@ func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, jobID string, 
 		maxRetries = 0
 	}
 	if job.RetryCount > maxRetries {
-		job.Status = baldastate.ScheduledTaskStatusPaused
+		job.Status = baldastate.ScheduledJobStatusPaused
 	} else {
-		job.Status = baldastate.ScheduledTaskStatusActive
+		job.Status = baldastate.ScheduledJobStatusActive
 		retryCount := job.RetryCount
 		if retryCount < 1 {
 			retryCount = 1
@@ -348,14 +348,14 @@ func (s *ScheduledTaskScheduler) markFailure(ctx context.Context, jobID string, 
 		}
 		job.NextRunAt = now.Add(delay)
 	}
-	if err := s.taskStore.Upsert(ctx, job); err != nil {
+	if err := s.jobStore.Upsert(ctx, job); err != nil {
 		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
 	}
 	return cause
 }
 
-func (s *ScheduledTaskScheduler) RecordExecutionFailure(ctx context.Context, jobID string, cause error) error {
-	job, ok, err := s.taskStore.GetByID(ctx, jobID)
+func (s *ScheduledJobScheduler) RecordExecutionFailure(ctx context.Context, jobID string, cause error) error {
+	job, ok, err := s.jobStore.GetByID(ctx, jobID)
 	if err != nil {
 		return fmt.Errorf("load scheduled job %q: %w", jobID, err)
 	}
@@ -365,64 +365,64 @@ func (s *ScheduledTaskScheduler) RecordExecutionFailure(ctx context.Context, job
 	now := s.now().UTC()
 	job.LastError = strings.TrimSpace(cause.Error())
 	job.LastRunAt = now
-	job.Status = baldastate.ScheduledTaskStatusActive
-	if err := s.taskStore.Upsert(ctx, job); err != nil {
+	job.Status = baldastate.ScheduledJobStatusActive
+	if err := s.jobStore.Upsert(ctx, job); err != nil {
 		return fmt.Errorf("upsert scheduled job %q execution failure: %w", jobID, err)
 	}
 	return cause
 }
 
-func normalizeScheduledTaskSchedulerConfig(raw ScheduledTaskSchedulerConfig) (ScheduledTaskSchedulerConfig, error) {
-	cfg := ScheduledTaskSchedulerConfig{
-		Jobs: make([]ConfiguredScheduledTask, 0, len(raw.Jobs)),
+func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (ScheduledJobSchedulerConfig, error) {
+	cfg := ScheduledJobSchedulerConfig{
+		Jobs: make([]ConfiguredScheduledJob, 0, len(raw.Jobs)),
 	}
 
 	seenJobIDs := make(map[string]struct{}, len(raw.Jobs))
 	for idx, rawTask := range raw.Jobs {
 		jobID := strings.TrimSpace(rawTask.ID)
 		if jobID == "" {
-			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].id is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].id is required", idx)
 		}
 		if _, exists := seenJobIDs[jobID]; exists {
-			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("duplicate balda.scheduler.tasks id %q", jobID)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("duplicate balda.scheduler.tasks id %q", jobID)
 		}
 		seenJobIDs[jobID] = struct{}{}
 
 		cronSpec := strings.TrimSpace(rawTask.Cron)
 		if cronSpec == "" {
-			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].cron is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].cron is required", idx)
 		}
 		if _, err := parseScheduleSpec(cronSpec); err != nil {
-			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("invalid balda.scheduler.tasks[%d].cron: %w", idx, err)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("invalid balda.scheduler.tasks[%d].cron: %w", idx, err)
 		}
 
 		target := strings.TrimSpace(rawTask.Target)
 		if target == "" {
-			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.target is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.target is required", idx)
 		}
 		key := strings.TrimSpace(rawTask.Key)
 		if key == "" {
-			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.key is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.key is required", idx)
 		}
 		content := strings.TrimSpace(rawTask.Content)
 		if content == "" {
-			return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.content is required", idx)
+			return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.content is required", idx)
 		}
-		var reportTo *ConfiguredScheduledTaskTarget
+		var reportTo *ConfiguredScheduledJobTarget
 		if rawTask.ReportTo != nil {
-			reportTo = &ConfiguredScheduledTaskTarget{
+			reportTo = &ConfiguredScheduledJobTarget{
 				Target: strings.TrimSpace(rawTask.ReportTo.Target),
 				Key:    strings.TrimSpace(rawTask.ReportTo.Key),
 			}
 			if reportTo.Target == "" {
-				return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.report_to.target is required", idx)
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.report_to.target is required", idx)
 			}
 			if reportTo.Key == "" {
-				return ScheduledTaskSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.report_to.key is required", idx)
+				return ScheduledJobSchedulerConfig{}, fmt.Errorf("balda.scheduler.tasks[%d].envelope.report_to.key is required", idx)
 			}
 		}
 
-		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledTask{
+		cfg.Jobs = append(cfg.Jobs, ConfiguredScheduledJob{
 			ID:       jobID,
 			Cron:     cronSpec,
 			Target:   target,

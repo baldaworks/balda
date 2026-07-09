@@ -22,7 +22,7 @@ var requiredBaldaSQLiteTables = []string{
 	"balda_runtime_user_state",
 	"balda_runtime_sessions",
 	"balda_runtime_events",
-	"balda_scheduled_tasks",
+	"balda_scheduled_jobs",
 	"execution_jobs",
 	"execution_job_events",
 	"execution_delivery_outbox",

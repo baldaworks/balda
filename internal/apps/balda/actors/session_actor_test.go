@@ -191,10 +191,10 @@ func TestSessionActorSettleSessionTurnResultKeepsHumanTurnErrorsRetryableEvenWit
 	}
 }
 
-func TestSessionActorSettleSessionTurnResultRecordsScheduledTaskOutcome(t *testing.T) {
+func TestSessionActorSettleSessionTurnResultRecordsScheduledJobOutcome(t *testing.T) {
 	t.Parallel()
 
-	recorder := &fakeScheduledTaskRecorder{}
+	recorder := &fakeScheduledJobRecorder{}
 	exec := &sessionActorExecutor{scheduler: recorder}
 	payload := SessionTurnPayload{JobID: "runtime-task-1", ScheduledJobID: "scheduled-1"}
 	env := testSessionTurnEnvelopeWithJobID(t, nil, "runtime-task-1", sessionTurnSourceSchedule)
@@ -211,12 +211,12 @@ func TestSessionActorSettleSessionTurnResultRecordsScheduledTaskOutcome(t *testi
 
 	runErr := errors.New("scheduled run failed")
 	if err := exec.settleSessionTurnResult(context.Background(), env, payload, runErr); err != nil {
-		t.Fatalf("settleSessionTurnResult(failure) error = %v, want nil after recording scheduled task failure", err)
+		t.Fatalf("settleSessionTurnResult(failure) error = %v, want nil after recording scheduled job failure", err)
 	}
 	if len(recorder.failures) != 1 {
 		t.Fatalf("failures = %d, want 1", len(recorder.failures))
 	}
-	if got := recorder.failures[0]; got.taskID != "scheduled-1" || !errors.Is(got.cause, runErr) {
+	if got := recorder.failures[0]; got.jobID != "scheduled-1" || !errors.Is(got.cause, runErr) {
 		t.Fatalf("failure = %+v, want task scheduled-1 with original error", got)
 	}
 }
@@ -312,22 +312,22 @@ func (fakeSessionTurnRunner) RunSessionTurnPayload(context.Context, SessionTurnP
 	return nil
 }
 
-type fakeScheduledTaskRecorder struct {
+type fakeScheduledJobRecorder struct {
 	successes []string
-	failures  []scheduledTaskFailure
+	failures  []scheduledJobFailure
 }
 
-type scheduledTaskFailure struct {
-	taskID string
-	cause  error
+type scheduledJobFailure struct {
+	jobID string
+	cause error
 }
 
-func (f *fakeScheduledTaskRecorder) MarkSuccess(_ context.Context, taskID string) error {
-	f.successes = append(f.successes, taskID)
+func (f *fakeScheduledJobRecorder) MarkSuccess(_ context.Context, jobID string) error {
+	f.successes = append(f.successes, jobID)
 	return nil
 }
 
-func (f *fakeScheduledTaskRecorder) RecordExecutionFailure(_ context.Context, taskID string, cause error) error {
-	f.failures = append(f.failures, scheduledTaskFailure{taskID: taskID, cause: cause})
+func (f *fakeScheduledJobRecorder) RecordExecutionFailure(_ context.Context, jobID string, cause error) error {
+	f.failures = append(f.failures, scheduledJobFailure{jobID: jobID, cause: cause})
 	return nil
 }

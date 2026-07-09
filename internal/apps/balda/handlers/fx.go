@@ -60,14 +60,14 @@ var Module = fx.Module("balda_handlers",
 		},
 		NewZulipBaldaHandler,
 		NewSlackHandler,
-		func(params scheduledTaskSchedulerParams) (*ScheduledTaskScheduler, error) {
+		func(params scheduledJobSchedulerParams) (*ScheduledJobScheduler, error) {
 			if params.StateProvider == nil {
 				return nil, fmt.Errorf("balda state provider is required")
 			}
 			if params.Dispatcher == nil {
 				return nil, fmt.Errorf("balda actor dispatcher is required for scheduler")
 			}
-			config, err := normalizeScheduledTaskSchedulerConfig(params.Config)
+			config, err := normalizeScheduledJobSchedulerConfig(params.Config)
 			if err != nil {
 				return nil, err
 			}
@@ -75,11 +75,11 @@ var Module = fx.Module("balda_handlers",
 				return nil, fmt.Errorf("balda owner store is required for scheduler jobs")
 			}
 
-			scheduler := &ScheduledTaskScheduler{
-				taskStore:    params.StateProvider.ScheduledTasks(),
+			scheduler := &ScheduledJobScheduler{
+				jobStore:     params.StateProvider.ScheduledJobs(),
 				dispatcher:   params.Dispatcher,
 				owner:        params.OwnerStore,
-				logger:       params.Logger.With().Str("component", "balda.scheduled_task_scheduler").Logger(),
+				logger:       params.Logger.With().Str("component", "balda.scheduled_job_scheduler").Logger(),
 				config:       config,
 				pollInterval: defaultSchedulerPollInterval,
 				dueBatchSize: defaultSchedulerDueBatchSize,
@@ -180,7 +180,7 @@ var Module = fx.Module("balda_handlers",
 			},
 		),
 		fx.Annotate(
-			func(s *ScheduledTaskScheduler) actors.ScheduledTaskRecorder { return s },
+			func(s *ScheduledJobScheduler) actors.ScheduledJobRecorder { return s },
 		),
 		func(params commandHandlerParams) *CommandHandler {
 			return &CommandHandler{
@@ -225,7 +225,7 @@ var Module = fx.Module("balda_handlers",
 		func(start *StartHandler, balda *BaldaHandler) {
 			start.baldaHandler = balda
 		},
-		func(*ScheduledTaskScheduler) {},
+		func(*ScheduledJobScheduler) {},
 		func(*InboundWebhookReceiver) {},
 		func(*ZulipBaldaHandler) {},
 		func(*SlackHandler) {},

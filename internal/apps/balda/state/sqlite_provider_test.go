@@ -14,7 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 22
+const expectedSQLiteMigrationVersion = 23
 
 func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
@@ -252,16 +252,16 @@ func TestSQLiteProvider_SessionStoreUpsert_DoesNotDecodeAddressJSON(t *testing.T
 	}
 }
 
-func TestSQLiteProvider_ScheduledTaskStoreRoundTrip(t *testing.T) {
+func TestSQLiteProvider_ScheduledJobStoreRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
 	defer closeProvider(t, provider)
 
 	ctx := context.Background()
-	store := provider.ScheduledTasks()
+	store := provider.ScheduledJobs()
 	nextRunAt := time.Now().UTC().Add(5 * time.Minute).Truncate(time.Second)
 	const scheduledJobID = "task-1"
 
-	record := ScheduledTaskRecord{
+	record := ScheduledJobRecord{
 		JobID:               scheduledJobID,
 		SessionID:           "tg-1-2",
 		ChannelType:         ChannelTypeTelegram,
@@ -275,7 +275,7 @@ func TestSQLiteProvider_ScheduledTaskStoreRoundTrip(t *testing.T) {
 		Content:             "check deployment",
 		ScheduleSpec:        "*/5 * * * *",
 		Timezone:            "UTC",
-		Status:              ScheduledTaskStatusActive,
+		Status:              ScheduledJobStatusActive,
 		MaxRetries:          4,
 		NextRunAt:           nextRunAt,
 	}
@@ -595,10 +595,10 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 	var jobID, content string
 	if err := db.QueryRowContext(ctx, `
 		SELECT job_id, content
-		FROM balda_scheduled_tasks
+		FROM balda_scheduled_jobs
 		WHERE job_id = 'previous-daily-review'`,
 	).Scan(&jobID, &content); err != nil {
-		t.Fatalf("query migrated scheduled task: %v", err)
+		t.Fatalf("query migrated scheduled job: %v", err)
 	}
 	if jobID != "previous-daily-review" || content != "Review previous queue" {
 		t.Fatalf("migrated scheduled job = %q/%q, want previous-daily-review/Review previous queue", jobID, content)
