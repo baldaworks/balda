@@ -187,7 +187,6 @@ func TestRunTurn_SendsPlanUpdateDraftFromCustomMetadataInDM(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, false)
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(context.Background(), invocationID)
@@ -207,7 +206,7 @@ func TestRunTurn_SendsPlanUpdateDraftFromCustomMetadataInDM(t *testing.T) {
 		return []*adksession.Event{plan, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -241,7 +240,7 @@ func TestRunTurn_SendsProgressForNonTerminalEventsInDM(t *testing.T) {
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -335,7 +334,7 @@ func TestRunTurn_SendsTypingWithoutThinkingDraftInPublicChat(t *testing.T) {
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -356,7 +355,6 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *tes
 	if !ok || bus == nil {
 		t.Fatal("actorDispatcher is not a recording handler bus")
 	}
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(context.Background(), invocationID)
@@ -373,7 +371,7 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutTaskEvents(t *tes
 		return []*adksession.Event{plan, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -445,10 +443,9 @@ func TestBaldaSessionTurnRunner_DirectTelegramProgressDeliveriesComeFromSessionA
 	setUnexportedField(t, ts, "userID", "tg-101")
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	sessionRunner := &BaldaSessionTurnRunner{
-		sessionManager:     manager,
-		actorDispatcher:    bus,
-		planUpdatesEnabled: true,
-		logger:             zerolog.Nop(),
+		sessionManager:  manager,
+		actorDispatcher: bus,
+		logger:          zerolog.Nop(),
 	}
 
 	err := sessionRunner.RunSessionTurnPayload(context.Background(), actors.SessionTurnPayload{
@@ -459,9 +456,9 @@ func TestBaldaSessionTurnRunner_DirectTelegramProgressDeliveriesComeFromSessionA
 		MessageID:      41,
 		TopicID:        77,
 		DeliveryOptions: deliveryfmt.Options{
-			ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true},
+			ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
 		},
-		ProgressPolicy: baldachannel.ProgressPolicy{Typing: true, Thinking: true},
+		ProgressPolicy: baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
 		Deliver:        true,
 		Source:         "telegram",
 	})
@@ -489,7 +486,6 @@ func TestRunTurn_SendsPlanUpdateMessagesInPublicChat(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, true)
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		planOne := adksession.NewEvent(context.Background(), invocationID)
@@ -516,7 +512,7 @@ func TestRunTurn_SendsPlanUpdateMessagesInPublicChat(t *testing.T) {
 		return []*adksession.Event{planOne, planTwo, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -545,7 +541,6 @@ func TestRunTurn_TaskBackedProgressUsesDeliveryActor(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient, bus, tasks := newBaldaRunTurnTaskTestHandler(t)
-	h.planUpdatesEnabled = true
 	if _, err := tasks.Create(context.Background(), baldastate.JobRecord{
 		ID:        "task-1",
 		SessionID: "session-1",
@@ -574,7 +569,7 @@ func TestRunTurn_TaskBackedProgressUsesDeliveryActor(t *testing.T) {
 		return []*adksession.Event{plan, partial, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	if err := h.runTurnWithDelivery(context.Background(), "hello", adkRunner, "tg-101", sessionID, "task-1", sessionID, locator, 41, baldachannel.ProgressPolicy{Typing: true, Thinking: true}, true); err != nil {
+	if err := h.runTurnWithDelivery(context.Background(), "hello", adkRunner, "tg-101", sessionID, "task-1", sessionID, locator, 41, baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}, true); err != nil {
 		t.Fatalf("runTurnWithDelivery() error = %v", err)
 	}
 
@@ -740,7 +735,7 @@ func TestRunTurn_SendsProgressAndGenericMessageForNonThoughtEventsWithoutFinalRe
 		return []*adksession.Event{toolCall, partial, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -774,7 +769,7 @@ func TestRunTurn_SendsTypingAgainAfterThrottleInterval(t *testing.T) {
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -827,7 +822,6 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		Logger:    zerolog.Nop(),
 	})
 	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		thought := adksession.NewEvent(context.Background(), invocationID)
@@ -858,7 +852,7 @@ func TestRunTurn_DoesNotFallBackToThinkingAfterPlanDraftInDM(t *testing.T) {
 		return []*adksession.Event{thought, plan, thoughtTwo, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Thinking: true}
+	progressPolicy := baldachannel.ProgressPolicy{Thinking: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -1123,7 +1117,7 @@ func TestRunTurn_DoesNotLeakNonFinalProgressTextInPublicChat(t *testing.T) {
 		return []*adksession.Event{progressOne, progressTwo, final, done}
 	})
 	locator := baldatelegram.NewLocator(-5173524191, 0)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "approve PR", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -1204,7 +1198,6 @@ func TestRunTurn_UsesPlanStateDeltaFallback(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, true)
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(context.Background(), invocationID)
@@ -1218,7 +1211,7 @@ func TestRunTurn_UsesPlanStateDeltaFallback(t *testing.T) {
 		return []*adksession.Event{plan, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -1235,7 +1228,6 @@ func TestRunTurn_DeduplicatesRepeatedPlanUpdates(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, true)
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		planOne := adksession.NewEvent(context.Background(), invocationID)
@@ -1259,7 +1251,7 @@ func TestRunTurn_DeduplicatesRepeatedPlanUpdates(t *testing.T) {
 		return []*adksession.Event{planOne, planTwo, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -1273,7 +1265,6 @@ func TestRunTurn_PlanUpdatesDisabledDoesNotSendPlaceholderDraft(t *testing.T) {
 	t.Parallel()
 
 	h, tgClient := newBaldaRunTurnTestHandler(t, true)
-	h.planUpdatesEnabled = false
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(context.Background(), invocationID)
@@ -1762,7 +1753,7 @@ func TestRunTurn_SendsRichMarkdownReasoningDraftsInDM(t *testing.T) {
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunner(t)
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -1790,7 +1781,6 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateDraftInDM(t *testing.T) {
 		Logger:    zerolog.Nop(),
 	})
 	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(context.Background(), invocationID)
@@ -1811,7 +1801,7 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateDraftInDM(t *testing.T) {
 		return []*adksession.Event{plan, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}
@@ -1836,7 +1826,6 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateMessageInPublicChat(t *testing.T) {
 		Logger:    zerolog.Nop(),
 	})
 	h := newBaldaRunTurnHandlerWithChannel(channel, nil)
-	h.planUpdatesEnabled = true
 
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		plan := adksession.NewEvent(context.Background(), invocationID)
@@ -1856,7 +1845,7 @@ func TestRunTurn_SendsRichMarkdownPlanUpdateMessageInPublicChat(t *testing.T) {
 		return []*adksession.Event{plan, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}
 	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, progressPolicy); err != nil {
 		t.Fatalf("runTurn() error = %v", err)
 	}

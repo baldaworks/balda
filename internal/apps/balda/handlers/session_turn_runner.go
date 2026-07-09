@@ -21,34 +21,31 @@ import (
 // BaldaSessionTurnRunner executes queued agent turns independent of the inbound
 // channel that produced them.
 type BaldaSessionTurnRunner struct {
-	sessionManager     *baldasession.Manager
-	actorDispatcher    actortransport.Dispatcher
-	jobService         *baldajobs.JobService
-	memoryStore        *memory.Store
-	planUpdatesEnabled bool
-	logger             zerolog.Logger
-	now                func() time.Time
+	sessionManager  *baldasession.Manager
+	actorDispatcher actortransport.Dispatcher
+	jobService      *baldajobs.JobService
+	memoryStore     *memory.Store
+	logger          zerolog.Logger
+	now             func() time.Time
 }
 
 type sessionTurnRunnerParams struct {
 	fx.In
 
-	SessionManager     *baldasession.Manager
-	Dispatcher         actortransport.Dispatcher
-	JobService         *baldajobs.JobService `optional:"true"`
-	MemoryStore        *memory.Store
-	PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
-	Logger             zerolog.Logger
+	SessionManager *baldasession.Manager
+	Dispatcher     actortransport.Dispatcher
+	JobService     *baldajobs.JobService `optional:"true"`
+	MemoryStore    *memory.Store
+	Logger         zerolog.Logger
 }
 
 func NewBaldaSessionTurnRunner(params sessionTurnRunnerParams) *BaldaSessionTurnRunner {
 	return &BaldaSessionTurnRunner{
-		sessionManager:     params.SessionManager,
-		actorDispatcher:    params.Dispatcher,
-		jobService:         params.JobService,
-		memoryStore:        params.MemoryStore,
-		planUpdatesEnabled: params.PlanUpdatesEnabled,
-		logger:             params.Logger.With().Str("component", "balda.session_turn_runner").Logger(),
+		sessionManager:  params.SessionManager,
+		actorDispatcher: params.Dispatcher,
+		jobService:      params.JobService,
+		memoryStore:     params.MemoryStore,
+		logger:          params.Logger.With().Str("component", "balda.session_turn_runner").Logger(),
 	}
 }
 
@@ -102,14 +99,13 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 	}
 	outboundFrom := actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: ts.GetSessionID()}
 	handler := &BaldaHandler{
-		sessionManager:     r.sessionManager,
-		actorDispatcher:    r.actorDispatcher,
-		jobService:         r.jobService,
-		memoryStore:        r.memoryStore,
-		planUpdatesEnabled: r.planUpdatesEnabled,
-		logger:             r.logger,
-		now:                r.now,
-		outboundFrom:       outboundFrom,
+		sessionManager:  r.sessionManager,
+		actorDispatcher: r.actorDispatcher,
+		jobService:      r.jobService,
+		memoryStore:     r.memoryStore,
+		logger:          r.logger,
+		now:             r.now,
+		outboundFrom:    outboundFrom,
 	}
 	handler.progressEmitter = newSessionProgressDispatcher(
 		r.actorDispatcher,

@@ -54,7 +54,8 @@ func (d *sessionProgressDispatcher) HandleNonTerminal(ctx context.Context, plan 
 		return
 	}
 	if hasPlanUpdate && planProgressText != "" && planProgressText != d.lastPlanText {
-		if err := sendProgressPlanUpdate(ctx, d.dispatcher, "", d.from, d.locator, d.policy, true, d.draftID, &plan, planProgressText, ""); err != nil {
+		visiblePlanUpdate := d.policy.PlanUpdates
+		if err := sendProgressPlanUpdate(ctx, d.dispatcher, "", d.from, d.locator, d.policy, visiblePlanUpdate, d.draftID, &plan, planProgressText, ""); err != nil {
 			d.logger.Warn().Err(err).Int("topic_id", d.topicID).Msg("failed to dispatch plan progress delivery")
 		} else {
 			d.lastPlanText = planProgressText

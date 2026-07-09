@@ -55,7 +55,6 @@ type BaldaHandler struct {
 	tgClient           client.ClientWithResponsesInterface
 	authToken          string
 	baldaProviderName  string
-	planUpdatesEnabled bool
 	telegramEnabled    bool
 	telegramConfigured bool
 	logger             zerolog.Logger
@@ -86,7 +85,6 @@ type baldaHandlerDeps struct {
 	TGClient           client.ClientWithResponsesInterface
 	AuthToken          string `name:"balda_auth_token"`
 	BaldaProviderID    string `name:"balda_provider"`
-	PlanUpdatesEnabled bool   `name:"balda_telegram_plan_updates"`
 	TelegramEnabled    bool   `name:"balda_telegram_enabled"`
 	Logger             zerolog.Logger
 	InternalMCPManager *InternalMCPManager `optional:"true"`
@@ -539,7 +537,7 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 		if !ev.TurnComplete && h.actorDispatcher != nil {
 			sentProgress := false
 			if hasPlanUpdate && planProgressText != "" && planProgressText != lastPlanProgressText {
-				visiblePlanUpdate := h.planUpdatesEnabled
+				visiblePlanUpdate := progressPolicy.PlanUpdates
 				deliverySeq++
 				if err := sendProgressPlanUpdate(ctx, h.actorDispatcher, jobID, outboundFrom, locator, progressPolicy, visiblePlanUpdate, draftID, &planProgress, planProgressText, fmt.Sprintf("progress:plan:%03d", deliverySeq)); err != nil {
 					if jobBackedDelivery {

@@ -832,7 +832,7 @@ func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.S
 	if err != nil {
 		return
 	}
-	progressPolicy := baldachannel.ProgressPolicy{Typing: false, Thinking: false}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}
 	payload := actors.SessionTurnPayload{
 		Text:           text,
 		Locator:        locator,

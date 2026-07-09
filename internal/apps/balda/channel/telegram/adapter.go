@@ -31,9 +31,10 @@ const (
 
 // Adapter maps Telegram runtime events and operations to balda session locators.
 type Adapter struct {
-	messenger *messenger.Messenger
-	tgClient  client.ClientWithResponsesInterface
-	logger    zerolog.Logger
+	messenger          *messenger.Messenger
+	tgClient           client.ClientWithResponsesInterface
+	logger             zerolog.Logger
+	planUpdatesEnabled bool
 
 	typingMu               sync.Mutex
 	typingThrottleInterval time.Duration
@@ -85,9 +86,10 @@ type TopicLifecycleContext struct {
 type AdapterParams struct {
 	fx.In
 
-	Messenger *messenger.Messenger
-	TGClient  client.ClientWithResponsesInterface
-	Logger    zerolog.Logger
+	Messenger          *messenger.Messenger
+	TGClient           client.ClientWithResponsesInterface
+	PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
+	Logger             zerolog.Logger
 }
 
 // NewAdapter creates the Telegram balda adapter.
@@ -185,13 +187,15 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 				TelegramMode: a.messenger.TelegramFormattingMode(),
 			},
 			ProgressPolicy: deliveryfmt.ProgressPolicy{
-				Typing:   true,
-				Thinking: event.Message.Chat.Type == chatTypePrivate,
+				Typing:      true,
+				Thinking:    event.Message.Chat.Type == chatTypePrivate,
+				PlanUpdates: a.planUpdatesEnabled,
 			},
 		},
 		ProgressPolicy: baldachannel.ProgressPolicy{
-			Typing:   true,
-			Thinking: event.Message.Chat.Type == chatTypePrivate,
+			Typing:      true,
+			Thinking:    event.Message.Chat.Type == chatTypePrivate,
+			PlanUpdates: a.planUpdatesEnabled,
 		},
 		IsDM: event.Message.Chat.Type == chatTypePrivate,
 	}, true

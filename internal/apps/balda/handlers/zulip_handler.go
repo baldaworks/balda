@@ -1255,7 +1255,7 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 	if h.actorDispatcher == nil {
 		return fmt.Errorf("runtime runtime is unavailable")
 	}
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: isDM}
+	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: isDM, PlanUpdates: true}
 	payload := actors.SessionTurnPayload{
 		Text:           text,
 		Locator:        locator,

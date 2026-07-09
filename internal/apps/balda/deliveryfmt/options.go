@@ -18,8 +18,9 @@ const (
 
 // ProgressPolicy describes which progress indicators a delivery target supports.
 type ProgressPolicy struct {
-	Typing   bool `json:"typing,omitempty"`
-	Thinking bool `json:"thinking,omitempty"`
+	Typing      bool `json:"typing,omitempty"`
+	Thinking    bool `json:"thinking,omitempty"`
+	PlanUpdates bool `json:"plan_updates,omitempty"`
 }
 
 // Profile snapshots delivery-target formatting attributes at request time.

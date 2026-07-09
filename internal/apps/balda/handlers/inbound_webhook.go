@@ -574,13 +574,15 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		DeliveryOptions: deliveryfmt.Options{
 			Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatAuto},
 			ProgressPolicy: deliveryfmt.ProgressPolicy{
-				Typing:   false,
-				Thinking: false,
+				Typing:      false,
+				Thinking:    false,
+				PlanUpdates: true,
 			},
 		},
 		ProgressPolicy: baldachannel.ProgressPolicy{
-			Typing:   false,
-			Thinking: false,
+			Typing:      false,
+			Thinking:    false,
+			PlanUpdates: true,
 		},
 		Deliver:   reportTo != nil,
 		Source:    "webhook",
