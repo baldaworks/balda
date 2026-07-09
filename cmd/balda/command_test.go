@@ -244,7 +244,7 @@ func TestDefaultBaldaConfig_DocumentsCurrentTemplateWording(t *testing.T) {
 		"# /goal worker-validator loop iteration cap.",
 		"# Required built-in command/event runtime.",
 		"# Use the built-in `balda` server ID for Balda workspace/state tools.",
-		"# Tasks are upserted by id on boot; missing ids are deleted from state.db.",
+		"# Jobs are upserted by id on boot; missing ids are deleted from state.db.",
 		"swarm: {}",
 	} {
 		if !strings.Contains(body, want) {
