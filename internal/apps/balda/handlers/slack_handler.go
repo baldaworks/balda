@@ -96,7 +96,7 @@ type SlackHandler struct {
 	channelAuth       *auth.ChannelAuthService
 	sessionManager    *baldasession.Manager
 	actorDispatcher   actortransport.Dispatcher
-	jobService        *baldajobs.JobService
+	goalJobs          goalJobService
 	client            *baldaslack.Client
 	config            SlackConfig
 	authToken         string
@@ -141,7 +141,7 @@ func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		actorDispatcher:   params.Dispatcher,
-		jobService:        params.JobService,
+		goalJobs:          params.JobService,
 		client:            params.SlackClient,
 		config:            params.SlackConfig,
 		authToken:         strings.TrimSpace(params.AuthToken),
@@ -698,8 +698,8 @@ func (h *SlackHandler) handleGoalCommand(ctx context.Context, locator baldasessi
 		}
 		return
 	}
-	if h.jobService != nil {
-		activeGoals, err := h.jobService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
+	if h.goalJobs != nil {
+		activeGoals, err := h.goalJobs.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
 			_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 			return

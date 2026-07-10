@@ -34,8 +34,8 @@ func TestSessionWorkCancellerCancelsQueueTasksAndRuns(t *testing.T) {
 	registry.Register("task-session", cancel)
 	canceller := &SessionWorkCanceller{
 		turnDispatcher: turns,
-		tasks:          tasks,
-		taskRuns:       registry,
+		jobs:           tasks,
+		jobRuns:        registry,
 		logger:         zerolog.Nop(),
 	}
 

@@ -31,31 +31,31 @@ import (
 )
 
 const (
-	actorName                     = "goalkeeper.actor"
-	ownerSessionLabel             = "balda"
-	defaultGoalMaxIterations      = 25
-	goalExportStatusExported      = "exported"
-	goalExportStatusFailed        = "export_failed"
-	goalExportStatusNotExported   = "not_exported"
-	goalExportReasonDisabled      = "workspace_disabled"
-	MetadataEventKey              = "norma.goal.event"
-	MetadataStepKey               = "norma.goal.step"
-	StepStarted                   = "step_started"
-	StepCompleted                 = "step_completed"
-	StepFailed                    = "step_failed"
-	WorkerStep                    = "worker"
-	ValidatorStep                 = "validator"
-	jobPayloadKindGoal            = "goal"
-	jobPayloadKindDelivery        = "delivery"
-	taskResultSchemaVersionV1     = "task_result.v1"
-	taskReviewableOutcomeSchemaV1 = "task_reviewable_outcome.v1"
-	progressKindPlan              = "plan"
-	progressKindOutput            = "output"
-	progressKindCompleted         = "completed"
-	defaultNotVerifiedText        = goaldelivery.DefaultNotVerifiedText
-	defaultInspectNextAction      = goaldelivery.DefaultInspectNextAction
-	defaultExportedNextAction     = goaldelivery.DefaultExportedNextAction
-	defaultNotExportedNextAction  = goaldelivery.DefaultNotExportedNextAction
+	actorName                    = "goalkeeper.actor"
+	ownerSessionLabel            = "balda"
+	defaultGoalMaxIterations     = 25
+	goalExportStatusExported     = "exported"
+	goalExportStatusFailed       = "export_failed"
+	goalExportStatusNotExported  = "not_exported"
+	goalExportReasonDisabled     = "workspace_disabled"
+	MetadataEventKey             = "norma.goal.event"
+	MetadataStepKey              = "norma.goal.step"
+	StepStarted                  = "step_started"
+	StepCompleted                = "step_completed"
+	StepFailed                   = "step_failed"
+	WorkerStep                   = "worker"
+	ValidatorStep                = "validator"
+	jobPayloadKindGoal           = "goal"
+	jobPayloadKindDelivery       = "delivery"
+	jobResultSchemaVersionV1     = "job_result.v1"
+	jobReviewableOutcomeSchemaV1 = "job_reviewable_outcome.v1"
+	progressKindPlan             = "plan"
+	progressKindOutput           = "output"
+	progressKindCompleted        = "completed"
+	defaultNotVerifiedText       = goaldelivery.DefaultNotVerifiedText
+	defaultInspectNextAction     = goaldelivery.DefaultInspectNextAction
+	defaultExportedNextAction    = goaldelivery.DefaultExportedNextAction
+	defaultNotExportedNextAction = goaldelivery.DefaultNotExportedNextAction
 )
 
 var (
@@ -103,10 +103,19 @@ type JobRuns interface {
 	Unregister(jobID string, runID string)
 }
 
+type jobService interface {
+	Create(ctx context.Context, record baldastate.JobRecord, actor string, payload any) (bool, error)
+	Get(ctx context.Context, jobID string) (baldastate.JobRecord, bool, error)
+	ListActiveGoalJobsBySession(ctx context.Context, sessionID string) ([]baldastate.JobRecord, error)
+	MarkStatus(ctx context.Context, jobID string, status string, actor string, messageID string, reason string, payload any) error
+	SetResult(ctx context.Context, jobID string, result any, status string, actor string, reason string) error
+	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
+}
+
 type ActorParams struct {
 	fx.In
 
-	JobService      *baldajobs.JobService
+	JobService      jobService
 	Dispatcher      actortransport.Dispatcher
 	SessionManager  *baldasession.Manager
 	GoalRunPreparer GoalRunPreparer
@@ -116,11 +125,11 @@ type ActorParams struct {
 }
 
 type Actor struct {
-	tasks           *baldajobs.JobService
+	jobs            jobService
 	dispatcher      actortransport.Dispatcher
 	sessions        *baldasession.Manager
 	goalRunPreparer GoalRunPreparer
-	taskRuns        JobRuns
+	jobRuns         JobRuns
 	maxIters        int
 	logger          zerolog.Logger
 }
@@ -202,11 +211,11 @@ type stepProgressState struct {
 
 func NewActor(params ActorParams) *Actor {
 	return &Actor{
-		tasks:           params.JobService,
+		jobs:            params.JobService,
 		dispatcher:      params.Dispatcher,
 		sessions:        params.SessionManager,
 		goalRunPreparer: params.GoalRunPreparer,
-		taskRuns:        params.JobRuns,
+		jobRuns:         params.JobRuns,
 		maxIters:        normalizeGoalMaxIterations(params.MaxIterations),
 		logger:          params.Logger.With().Str("component", "balda.goalkeeper_actor").Logger(),
 	}
@@ -313,7 +322,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 	if err != nil {
 		return actorlayer.TransientError(err)
 	}
-	if err := a.tasks.MarkStatus(ctx, jobID, baldastate.JobStatusRunning, actorName, env.ID, "", map[string]any{
+	if err := a.jobs.MarkStatus(ctx, jobID, baldastate.JobStatusRunning, actorName, env.ID, "", map[string]any{
 		"objective": objective,
 	}); err != nil {
 		return actorlayer.TransientError(err)
@@ -342,9 +351,9 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 
 	runCtx, cancel := context.WithCancel(ctx)
 	runID := ""
-	if a.taskRuns != nil {
-		runID = a.taskRuns.Register(jobID, cancel)
-		defer a.taskRuns.Unregister(jobID, runID)
+	if a.jobRuns != nil {
+		runID = a.jobRuns.Register(jobID, cancel)
+		defer a.jobRuns.Unregister(jobID, runID)
 	}
 	defer cancel()
 
@@ -355,7 +364,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 			if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 				a.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup canceled goal run")
 			}
-			if setErr := a.tasks.SetResult(ctx, jobID, result.toJobResult(false, artifacts, &goalExportResultV1{Status: "canceled"}), baldastate.JobStatusCanceled, actorName, "goal run canceled"); setErr != nil {
+			if setErr := a.jobs.SetResult(ctx, jobID, result.toJobResult(false, artifacts, &goalExportResultV1{Status: "canceled"}), baldastate.JobStatusCanceled, actorName, "goal run canceled"); setErr != nil {
 				return actorlayer.TransientError(setErr)
 			}
 			return a.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "Goal run canceled."), "canceled")
@@ -364,7 +373,7 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 			a.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup failed goal run")
 		}
-		if setErr := a.tasks.SetResult(ctx, jobID, result.toJobResult(false, artifacts, &goalExportResultV1{Status: "failed", Error: reason}), baldastate.JobStatusFailed, actorName, reason); setErr != nil {
+		if setErr := a.jobs.SetResult(ctx, jobID, result.toJobResult(false, artifacts, &goalExportResultV1{Status: "failed", Error: reason}), baldastate.JobStatusFailed, actorName, reason); setErr != nil {
 			return actorlayer.TransientError(setErr)
 		}
 		return a.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "Goal run failed: "+reason), "failed")
@@ -380,13 +389,13 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 				exportSummary.Error = redactSecrets(exportErr.Error())
 			}
 			jobResult := result.toJobResult(true, artifacts, exportSummary)
-			if setErr := a.tasks.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, exportSummary.Error); setErr != nil {
+			if setErr := a.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, exportSummary.Error); setErr != nil {
 				return actorlayer.TransientError(setErr)
 			}
 			return a.deliver(ctx, jobID, payload, a.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal validation passed, but export failed."), "export-failed")
 		}
 		jobResult := result.toJobResult(true, artifacts, exportSummary)
-		if err := a.tasks.SetResult(ctx, jobID, jobResult, baldastate.JobStatusCompleted, actorName, ""); err != nil {
+		if err := a.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusCompleted, actorName, ""); err != nil {
 			return actorlayer.TransientError(err)
 		}
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
@@ -398,14 +407,14 @@ func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload go
 		a.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup max-iteration goal run")
 	}
 	jobResult := result.toJobResult(false, artifacts, &goalExportResultV1{Status: goalExportStatusNotExported})
-	if err := a.tasks.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, "max iterations reached"); err != nil {
+	if err := a.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, "max iterations reached"); err != nil {
 		return actorlayer.TransientError(err)
 	}
 	return a.deliver(ctx, jobID, payload, a.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal run reached max iterations without passing validation."), "max-iterations")
 }
 
 func (a *Actor) ensureGoalJob(ctx context.Context, payload goalJobPayload) error {
-	if a.tasks == nil {
+	if a.jobs == nil {
 		return actorlayer.TransientError(fmt.Errorf("job service is required"))
 	}
 	title := strings.TrimSpace(payload.Objective)
@@ -430,10 +439,10 @@ func (a *Actor) ensureGoalJob(ctx context.Context, payload goalJobPayload) error
 		Priority:      90,
 		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
 	}
-	if _, err := a.tasks.Create(ctx, record, actorName, payload); err != nil {
+	if _, err := a.jobs.Create(ctx, record, actorName, payload); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	task, ok, err := a.tasks.Get(ctx, payload.JobID)
+	task, ok, err := a.jobs.Get(ctx, payload.JobID)
 	if err != nil {
 		return actorlayer.TransientError(err)
 	}
@@ -442,17 +451,17 @@ func (a *Actor) ensureGoalJob(ctx context.Context, payload goalJobPayload) error
 	}
 	switch strings.TrimSpace(task.Status) {
 	case "", baldastate.JobStatusCreated, baldastate.JobStatusQueued:
-		return a.tasks.MarkStatus(ctx, payload.JobID, baldastate.JobStatusQueued, actorName, "", "", nil)
+		return a.jobs.MarkStatus(ctx, payload.JobID, baldastate.JobStatusQueued, actorName, "", "", nil)
 	default:
 		return nil
 	}
 }
 
 func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, jobID string, payload goalJobPayload) (bool, error) {
-	if a == nil || a.tasks == nil {
+	if a == nil || a.jobs == nil {
 		return false, actorlayer.TransientError(fmt.Errorf("job service is required"))
 	}
-	activeGoals, err := a.tasks.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
+	activeGoals, err := a.jobs.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
 	if err != nil {
 		return false, actorlayer.TransientError(fmt.Errorf("list active goal jobs: %w", err))
 	}
@@ -461,7 +470,7 @@ func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, jobID string, paylo
 			continue
 		}
 		reason := "another goal run is already active for this session"
-		if setErr := a.tasks.SetResult(ctx, jobID, goalRunResult{payload: payload}.toJobResult(false, goalArtifactSnapshot{}, &goalExportResultV1{
+		if setErr := a.jobs.SetResult(ctx, jobID, goalRunResult{payload: payload}.toJobResult(false, goalArtifactSnapshot{}, &goalExportResultV1{
 			Status: "canceled",
 			Error:  reason,
 		}), baldastate.JobStatusCanceled, actorName, reason); setErr != nil {
@@ -610,13 +619,13 @@ func (a *Actor) recordStepStarted(ctx context.Context, payload goalJobPayload, s
 	if step == ValidatorStep {
 		status = baldastate.JobStatusValidating
 	}
-	if err := a.tasks.MarkStatus(ctx, payload.JobID, status, actorName, "", "", map[string]any{
+	if err := a.jobs.MarkStatus(ctx, payload.JobID, status, actorName, "", "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	if err := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.JobEventAgentStarted, actorName, "", map[string]any{
+	if err := a.jobs.AppendEvent(ctx, payload.JobID, baldajobs.JobEventAgentStarted, actorName, "", map[string]any{
 		"step":      step,
 		"iteration": iteration,
 	}); err != nil {
@@ -648,7 +657,7 @@ func (a *Actor) recordStepCompleted(
 	)); err != nil {
 		return err
 	}
-	if err := a.tasks.AppendEvent(ctx, payload.JobID, baldajobs.JobEventAgentResult, actorName, "", map[string]any{
+	if err := a.jobs.AppendEvent(ctx, payload.JobID, baldajobs.JobEventAgentResult, actorName, "", map[string]any{
 		"step":      step,
 		"iteration": normalizeGoalIteration(iteration),
 	}); err != nil {
@@ -705,7 +714,7 @@ func (a *Actor) recordGoalProgress(ctx context.Context, update baldaexecution.Go
 	if err := dispatchGoalProgress(ctx, a.dispatcher, update); err != nil {
 		return err
 	}
-	if err := a.tasks.AppendEvent(ctx, update.JobID, baldajobs.JobEventAgentProgress, actorName, "", goalProgressEventPayload(update)); err != nil {
+	if err := a.jobs.AppendEvent(ctx, update.JobID, baldajobs.JobEventAgentProgress, actorName, "", goalProgressEventPayload(update)); err != nil {
 		return actorlayer.TransientError(err)
 	}
 	return nil
@@ -745,7 +754,7 @@ func (r goalRunResult) toJobResult(goalReached bool, artifacts goalArtifactSnaps
 		GitError:     strings.TrimSpace(artifacts.GitError),
 	}
 	return goalResultPayloadV1{
-		SchemaVersion:  taskResultSchemaVersionV1,
+		SchemaVersion:  jobResultSchemaVersionV1,
 		GoalReached:    goalReached,
 		Iterations:     r.iterations,
 		ExecutorOutput: workerOutput,
@@ -754,7 +763,7 @@ func (r goalRunResult) toJobResult(goalReached bool, artifacts goalArtifactSnaps
 		Artifacts:      artifactResult,
 		Export:         export,
 		ReviewableOutcome: goalReviewableOutcomeV1{
-			SchemaVersion: taskReviewableOutcomeSchemaV1,
+			SchemaVersion: jobReviewableOutcomeSchemaV1,
 			WhatWasDone:   whatWasDone,
 			Validation:    validation,
 			Verified:      verified,
@@ -814,10 +823,10 @@ func snapshotGoalRunArtifacts(ctx context.Context, runtime GoalRun) goalArtifact
 }
 
 func (a *Actor) jobStatusIs(ctx context.Context, jobID string, statuses ...string) bool {
-	if a == nil || a.tasks == nil || strings.TrimSpace(jobID) == "" {
+	if a == nil || a.jobs == nil || strings.TrimSpace(jobID) == "" {
 		return false
 	}
-	task, ok, err := a.tasks.Get(ctx, jobID)
+	task, ok, err := a.jobs.Get(ctx, jobID)
 	if err != nil || !ok {
 		return false
 	}
@@ -830,10 +839,10 @@ func (a *Actor) jobStatusIs(ctx context.Context, jobID string, statuses ...strin
 }
 
 func (a *Actor) renderJobOutcome(ctx context.Context, jobID string, profile deliverycmd.Profile, fallback string) string {
-	if a == nil || a.tasks == nil {
+	if a == nil || a.jobs == nil {
 		return goaldelivery.RenderStatusMessage(profile, fallback)
 	}
-	task, ok, err := a.tasks.Get(ctx, jobID)
+	task, ok, err := a.jobs.Get(ctx, jobID)
 	if err != nil || !ok {
 		return goaldelivery.RenderStatusMessage(profile, fallback)
 	}
@@ -977,4 +986,3 @@ func nextDeliverySequence(value *int) int {
 	*value++
 	return *value
 }
-

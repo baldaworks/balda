@@ -31,8 +31,8 @@ func TestTaskControlActorCancelsSessionWork(t *testing.T) {
 	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
-		tasks:          tasks,
-		taskRuns:       NewJobRunRegistry(),
+		jobs:           tasks,
+		jobRuns:        NewJobRunRegistry(),
 	}
 	env, err := ControlCancelEnvelope(locator, "", testTelegramUserID101, "session canceled by user")
 	if err != nil {
@@ -76,8 +76,8 @@ func TestTaskControlActorCancelsSessionTurnOnly(t *testing.T) {
 	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
-		tasks:          tasks,
-		taskRuns:       NewJobRunRegistry(),
+		jobs:           tasks,
+		jobRuns:        NewJobRunRegistry(),
 	}
 	env, err := ControlCancelTurnEnvelopeWithNotify(locator, testTelegramUserID101, "session turn canceled by user", true)
 	if err != nil {
@@ -118,8 +118,8 @@ func TestTaskControlActorCancelsTaskWork(t *testing.T) {
 	actor := &jobControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		dispatcher:     dispatcher,
-		tasks:          tasks,
-		taskRuns:       NewJobRunRegistry(),
+		jobs:           tasks,
+		jobRuns:        NewJobRunRegistry(),
 	}
 	env, err := ControlCancelEnvelope(locator, "task-one", testTelegramUserID101, "task canceled by user")
 	if err != nil {
@@ -170,8 +170,8 @@ func TestTaskControlActorCancelsAllRegisteredTaskRuns(t *testing.T) {
 	actor := &jobControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		dispatcher:     dispatcher,
-		tasks:          tasks,
-		taskRuns:       registry,
+		jobs:           tasks,
+		jobRuns:        registry,
 	}
 
 	env, err := ControlCancelEnvelope(locator, "task-multi-run", testTelegramUserID101, "task canceled by user")
@@ -230,8 +230,8 @@ func TestTaskControlActorClearsGoalJobsOnly(t *testing.T) {
 	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
-		tasks:          tasks,
-		taskRuns:       NewJobRunRegistry(),
+		jobs:           tasks,
+		jobRuns:        NewJobRunRegistry(),
 	}
 	env, err := ControlClearGoalEnvelopeWithNotify(locator, testTelegramUserID101, "goal cleared by user", true)
 	if err != nil {

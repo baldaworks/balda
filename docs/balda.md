@@ -123,14 +123,16 @@ flowchart TB
     balda_root --> handlers
     balda_root --> memory
     balda_root --> state
-    balda_root --> swarm
+    balda_root --> runtime
+    balda_root --> jobs
     balda_root --> tgbotkit
 
     actors --> agent
     actors --> telegram
     actors --> session
     actors --> state
-    actors --> swarm
+    actors --> runtime
+    actors --> jobs
 
     telegram --> messenger
     telegram --> session
@@ -141,7 +143,8 @@ flowchart TB
     handlers --> messenger
     handlers --> session
     handlers --> state
-    handlers --> swarm
+    handlers --> runtime
+    handlers --> jobs
     handlers --> tgbotkit
     handlers --> welcome
 
@@ -161,7 +164,7 @@ flowchart TB
 | `actors` | `internal/apps/balda/actors` | Balda product actors and actor command contracts | agent, channel/telegram, jobs, runtime, session, state |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram message adapter | messenger, session |
-| `handlers` | `internal/apps/balda/handlers` | Telegram/webhook/scheduler ingress and command publishing | actors, agent, auth, channel/telegram, jobs, messenger, runtime, session, state, tgbotkit, welcome |
+| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command parsing, and actor command publishing | actors, agent, auth, channel/telegram, jobs, messenger, runtime, session, state, tgbotkit, welcome |
 | `memory` | `internal/apps/balda/memory` | Structured memory store and recall helpers | (standalone) |
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
@@ -174,6 +177,16 @@ flowchart TB
 ## Actorlayer Boundary
 
 Balda treats `actorlayer` as the reusable actor library boundary and never as product policy.
+
+## Architecture Layers
+
+- `pkg/actorlayer`: generic actor library only. It owns envelopes, addressing, lane execution primitives, retry/error helpers, and transport-facing contracts. It does not own Balda product policy.
+- `internal/apps/balda/execution`: Balda runtime policy. It owns the host loop, lane policy, subjects, dead-letter handling, heartbeat policy, and runtime-facing transport wiring.
+- `internal/apps/balda/jobs`: durable job orchestration state and event projection. It owns job records, job events, and read-model updates, but it does not own transport execution.
+- `internal/apps/balda/actors`: product actors and product command contracts. It owns session, job, goalkeeper, delivery, control, and memory actor behavior.
+- `internal/apps/balda/handlers`: transport ingress only. It parses Telegram/Slack/Zulip/webhook/scheduler input, checks auth/session rules, and publishes actor work. It must not own product actors or direct transport settlement policy.
+- `internal/apps/balda/channel/*` and `internal/apps/balda/messenger`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
+- `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, memory, scheduler state, job tables, and delivery idempotency state.
 
 - `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goal` worker-validator runs in the process. `/goal` still creates isolated worker/validator ADK sessions and workspace state, but it reuses the same provider runtime/client ownership as normal session turns.
 - Actorlayer owns generic actor mechanics: registration, addressing, envelopes, retry/error helpers, lane execution, lifecycle state, and transport-facing contracts.
@@ -204,7 +217,7 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped provider runtime selected by `balda.provider` and the per-session state.
-- `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, tasks, projections, memory, and delivery outbox rows.
+- `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, jobs, projections, memory, and delivery outbox rows.
 
 Do not add extra Balda-local actor adapter packages or execution/delivery selector
 layers around the runtime. The generic actor runtime lives in `pkg/actorlayer`,
@@ -712,7 +725,7 @@ Balda runs with a single provider per process (`balda.provider`).
 ### Job runtime semantics (internal)
 
 Assignable job work is persisted in the legacy `execution_tasks` table; job history is published to
-`BALDA_EVENTS` and projected into `execution_job_events`. Ingress publishes a
+`BALDA_EVENTS` and projected into `execution_job_events`. The live domain model is jobs even where legacy table names remain for migration continuity. Ingress publishes a
 durable command first; job records are created after command delivery.
 Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 legacy `execution_tasks` rows; they run directly on the session actor path.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
 )
 
 func up00023ScheduledJobStorageNaming(ctx context.Context, tx *sql.Tx) error {
@@ -21,7 +20,7 @@ func down00023ScheduledJobStorageNaming(ctx context.Context, tx *sql.Tx) error {
 	if err := renameTableIfExists(ctx, tx, "balda_scheduled_jobs", "balda_scheduled_tasks"); err != nil {
 		return err
 	}
-	return ensureScheduledTaskIndexesForDownTx(ctx, tx)
+	return ensureScheduledLegacyIndexesForDownTx(ctx, tx)
 }
 
 func ensureScheduledJobIndexesTx(ctx context.Context, tx *sql.Tx) error {
@@ -52,14 +51,14 @@ func dropScheduledJobIndexesTx(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func ensureScheduledTaskIndexesForDownTx(ctx context.Context, tx *sql.Tx) error {
+func ensureScheduledLegacyIndexesForDownTx(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		"CREATE INDEX IF NOT EXISTS idx_balda_scheduled_tasks_due ON balda_scheduled_tasks(status, next_run_at)",
 		"CREATE INDEX IF NOT EXISTS idx_balda_scheduled_tasks_locator ON balda_scheduled_tasks(channel_type, address_key)",
 	}
 	for _, stmt := range stmts {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("restore scheduled task indexes: %w", err)
+			return fmt.Errorf("restore scheduled legacy indexes: %w", err)
 		}
 	}
 	return nil

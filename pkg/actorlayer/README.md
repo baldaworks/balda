@@ -87,6 +87,6 @@ Keep product and infrastructure policy outside this package:
   Balda users;
 - app lifecycle wiring, observability policy, and configuration loading.
 
-Balda-specific runtime policy currently lives under `internal/apps/balda/swarm`
+Balda-specific runtime policy currently lives under `internal/apps/balda/execution`
 and concrete durable transport adaptation lives under
 `internal/apps/balda/eventbus/nats`.

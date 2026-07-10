@@ -1927,7 +1927,7 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 	return &BaldaHandler{
 		channel:         channel,
 		actorDispatcher: bus,
-		jobService:      tasks,
+		jobEvents:       tasks,
 		logger:          zerolog.Nop(),
 	}, tgClient, bus, tasks
 }

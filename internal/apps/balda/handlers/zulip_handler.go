@@ -78,7 +78,7 @@ type ZulipBaldaHandler struct {
 	sessionManager    zulipSessionManager
 	turnDispatcher    actors.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
-	jobService        *baldajobs.JobService
+	goalJobs          goalJobService
 	memoryStore       *memory.Store
 	authToken         string
 	baldaProviderName string
@@ -143,7 +143,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		sessionManager:    params.SessionManager,
 		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.Dispatcher,
-		jobService:        params.JobService,
+		goalJobs:          params.JobService,
 		memoryStore:       params.MemoryStore,
 		authToken:         strings.TrimSpace(params.AuthToken),
 		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
@@ -1054,8 +1054,8 @@ func (h *ZulipBaldaHandler) submitGoalJob(
 	objective string,
 	transportUserID string,
 ) (bool, error) {
-	if h.jobService != nil {
-		activeGoals, err := h.jobService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
+	if h.goalJobs != nil {
+		activeGoals, err := h.goalJobs.ListActiveGoalJobsBySession(ctx, locator.SessionID)
 		if err != nil {
 			return false, fmt.Errorf("list active goal jobs: %w", err)
 		}

@@ -32,25 +32,25 @@ const (
 	// ScheduledJobStatusPaused means the job is persisted but not dispatched.
 	ScheduledJobStatusPaused = "paused"
 
-	// JobStatusCreated means a task record exists but has not been queued.
+	// JobStatusCreated means a job record exists but has not been queued.
 	JobStatusCreated = "created"
-	// JobStatusQueued means task work is queued for actor execution.
+	// JobStatusQueued means job work is queued for actor execution.
 	JobStatusQueued = "queued"
-	// JobStatusRunning means a task actor is actively coordinating work.
+	// JobStatusRunning means a job actor is actively coordinating work.
 	JobStatusRunning = "running"
-	// JobStatusWaitingForAgent means task execution waits on an agent role.
+	// JobStatusWaitingForAgent means job execution waits on an agent role.
 	JobStatusWaitingForAgent = "waiting_for_agent"
-	// JobStatusWaitingForUser means task execution is blocked on user input.
+	// JobStatusWaitingForUser means job execution is blocked on user input.
 	JobStatusWaitingForUser = "waiting_for_user"
 	// JobStatusValidating means a reviewer/validator is checking the work.
 	JobStatusValidating = "validating"
-	// JobStatusCompleted means the task finished successfully.
+	// JobStatusCompleted means the job finished successfully.
 	JobStatusCompleted = "completed"
-	// JobStatusFailed means the task exhausted its retry/iteration budget.
+	// JobStatusFailed means the job exhausted its retry/iteration budget.
 	JobStatusFailed = "failed"
-	// JobStatusCanceled means the task was canceled before completion.
+	// JobStatusCanceled means the job was canceled before completion.
 	JobStatusCanceled = "canceled"
-	// JobStatusDeadLettered means the actor runtime deadlettered the task.
+	// JobStatusDeadLettered means the actor runtime deadlettered the job.
 	JobStatusDeadLettered = "deadlettered"
 
 	// DeliveryStatusPending means a delivery side effect is reserved but not confirmed.

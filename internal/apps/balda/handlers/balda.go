@@ -40,6 +40,10 @@ const (
 	autoSessionLabel  = "auto"
 )
 
+type jobEventAppender interface {
+	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
+}
+
 // BaldaHandler handles bidirectional session messages for the owner and
 // collaborators.
 type BaldaHandler struct {
@@ -49,7 +53,7 @@ type BaldaHandler struct {
 	sessionManager     *baldasession.Manager
 	turnDispatcher     actors.TurnQueue
 	actorDispatcher    actortransport.Dispatcher
-	jobService         *baldajobs.JobService
+	jobEvents          jobEventAppender
 	memoryStore        *memory.Store
 	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
@@ -812,8 +816,8 @@ func (h *BaldaHandler) appendJobEvent(
 	messageID string,
 	payload any,
 ) error {
-	if h == nil || h.jobService == nil || strings.TrimSpace(jobID) == "" {
+	if h == nil || h.jobEvents == nil || strings.TrimSpace(jobID) == "" {
 		return nil
 	}
-	return h.jobService.AppendEvent(ctx, jobID, eventType, actor, messageID, payload)
+	return h.jobEvents.AppendEvent(ctx, jobID, eventType, actor, messageID, payload)
 }

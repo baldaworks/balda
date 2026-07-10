@@ -12,7 +12,7 @@ Status: active
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through Balda's local actorlayer contracts, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
-- Balda keeps that ownership inside `internal/apps/balda/execution` and `internal/apps/balda/jobs` through internal runtime decomposition: host loop, lane policy, heartbeat policy, dead-letter policy, and delivery wrapping remain Balda runtime code even when they use generic actorlayer contracts.
+- Balda keeps that ownership inside explicit app layers: `internal/apps/balda/execution` owns runtime policy, `internal/apps/balda/jobs` owns durable job state and projections, `internal/apps/balda/actors` owns product actor behavior, and `internal/apps/balda/handlers` owns ingress only.
 - The local `pkg/actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 
 ## Boundary contract
@@ -30,7 +30,7 @@ Status: active
   - Telegram, Slack, Zulip, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
   - Concrete transport adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
-  - Job/projector side effects in SQLite (legacy `runtime_*` tables plus command/job status state) for job-style orchestration and read models.
+  - Job/projector side effects in SQLite (legacy `execution_*` storage plus job/read-model state) for job-style orchestration and read models.
   - Internal command visibility backed by logs and tooling.
   - Mapping between policy metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`) and actor-level envelopes.
   - The single app-scoped provider runtime selected by `balda.provider`.

@@ -23,7 +23,7 @@ import (
 type BaldaSessionTurnRunner struct {
 	sessionManager  *baldasession.Manager
 	actorDispatcher actortransport.Dispatcher
-	jobService      *baldajobs.JobService
+	jobEvents       jobEventAppender
 	memoryStore     *memory.Store
 	logger          zerolog.Logger
 	now             func() time.Time
@@ -43,7 +43,7 @@ func NewBaldaSessionTurnRunner(params sessionTurnRunnerParams) *BaldaSessionTurn
 	return &BaldaSessionTurnRunner{
 		sessionManager:  params.SessionManager,
 		actorDispatcher: params.Dispatcher,
-		jobService:      params.JobService,
+		jobEvents:       params.JobService,
 		memoryStore:     params.MemoryStore,
 		logger:          params.Logger.With().Str("component", "balda.session_turn_runner").Logger(),
 	}
@@ -101,7 +101,7 @@ func (r *BaldaSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payl
 	handler := &BaldaHandler{
 		sessionManager:  r.sessionManager,
 		actorDispatcher: r.actorDispatcher,
-		jobService:      r.jobService,
+		jobEvents:       r.jobEvents,
 		memoryStore:     r.memoryStore,
 		logger:          r.logger,
 		now:             r.now,

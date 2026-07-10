@@ -36,8 +36,8 @@ type jobControlPayload struct {
 type jobControlActor struct {
 	turnDispatcher TurnQueue
 	dispatcher     actortransport.Dispatcher
-	tasks          *baldajobs.JobService
-	taskRuns       *JobRunRegistry
+	jobs           *baldajobs.JobService
+	jobRuns        *JobRunRegistry
 	logger         zerolog.Logger
 }
 
@@ -45,8 +45,8 @@ type jobControlActor struct {
 // work for a session without going through the async control actor path.
 type SessionWorkCanceller struct {
 	turnDispatcher TurnQueue
-	tasks          *baldajobs.JobService
-	taskRuns       *JobRunRegistry
+	jobs           *baldajobs.JobService
+	jobRuns        *JobRunRegistry
 	logger         zerolog.Logger
 }
 
@@ -72,8 +72,8 @@ type sessionWorkCancellerParams struct {
 func NewSessionWorkCanceller(params sessionWorkCancellerParams) *SessionWorkCanceller {
 	return &SessionWorkCanceller{
 		turnDispatcher: params.TurnDispatcher,
-		tasks:          params.JobService,
-		taskRuns:       params.JobRuns,
+		jobs:           params.JobService,
+		jobRuns:        params.JobRuns,
 		logger:         params.Logger.With().Str("component", "balda.session_work_canceller").Logger(),
 	}
 }
@@ -91,18 +91,18 @@ func (c *SessionWorkCanceller) CancelWork(ctx context.Context, locator baldasess
 			return fmt.Errorf("cancel session turn queue: %w", err)
 		}
 	}
-	if c.tasks == nil {
+	if c.jobs == nil {
 		return nil
 	}
-	jobIDs, err := c.tasks.CancelBySession(ctx, sessionID, actor, reason)
+	jobIDs, err := c.jobs.CancelBySession(ctx, sessionID, actor, reason)
 	if err != nil {
 		return fmt.Errorf("cancel session jobs: %w", err)
 	}
-	if c.taskRuns == nil {
+	if c.jobRuns == nil {
 		return nil
 	}
 	for _, jobID := range jobIDs {
-		c.taskRuns.Cancel(jobID)
+		c.jobRuns.Cancel(jobID)
 	}
 	return nil
 }
@@ -122,7 +122,7 @@ func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) e
 	switch strings.TrimSpace(payload.Action) {
 	case jobControlActionCancel:
 		if strings.TrimSpace(payload.JobID) != "" {
-			return a.cancelTask(ctx, env, payload)
+			return a.cancelJob(ctx, payload)
 		}
 		return a.cancelSession(ctx, payload)
 	case jobControlActionCancelTurn:
@@ -134,33 +134,33 @@ func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) e
 	}
 }
 
-func (a *jobControlActor) cancelTask(ctx context.Context, env actorlayer.Envelope, payload jobControlPayload) error {
+func (a *jobControlActor) cancelJob(ctx context.Context, payload jobControlPayload) error {
 	jobID := strings.TrimSpace(payload.JobID)
 	if jobID == "" {
 		return actorlayer.PolicyError(fmt.Errorf("job id is required"))
 	}
-	if a.tasks == nil {
+	if a.jobs == nil {
 		return actorlayer.TransientError(fmt.Errorf("job service is required"))
 	}
-	job, ok, err := a.tasks.Get(ctx, jobID)
+	job, ok, err := a.jobs.Get(ctx, jobID)
 	if err != nil {
 		return actorlayer.TransientError(err)
 	}
 	if !ok {
 		if payload.Notify {
-			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Task %q not found.", jobID))
+			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Job %q not found.", jobID))
 		}
 		return nil
 	}
 	if isTerminalJobStatus(job.Status) {
 		if payload.Notify {
-			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Task %s is already %s.", job.ID, job.Status))
+			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Job %s is already %s.", job.ID, job.Status))
 		}
 		return nil
 	}
 	runCanceled := false
-	if a.taskRuns != nil {
-		runCanceled = a.taskRuns.Cancel(job.ID)
+	if a.jobRuns != nil {
+		runCanceled = a.jobRuns.Cancel(job.ID)
 	}
 	if !runCanceled && a.turnDispatcher != nil && strings.TrimSpace(payload.Locator.SessionID) != "" {
 		hadInFlight, dropped, err := a.turnDispatcher.CancelSession(payload.Locator, true)
@@ -169,12 +169,12 @@ func (a *jobControlActor) cancelTask(ctx context.Context, env actorlayer.Envelop
 		}
 		runCanceled = hadInFlight || dropped > 0
 	}
-	reason := firstNonEmpty(payload.Reason, "task canceled by user")
-	if err := a.tasks.CancelJob(ctx, job.ID, "command.task", reason); err != nil {
+	reason := firstNonEmpty(payload.Reason, "job canceled by user")
+	if err := a.jobs.CancelJob(ctx, job.ID, "command.job", reason); err != nil {
 		return actorlayer.TransientError(err)
 	}
 	if payload.Notify {
-		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Canceled task %s. Active run canceled: %t.", job.ID, runCanceled))
+		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Canceled job %s. Active run canceled: %t.", job.ID, runCanceled))
 	}
 	return nil
 }
@@ -193,13 +193,13 @@ func (a *jobControlActor) cancelSession(ctx context.Context, payload jobControlP
 		}
 	}
 	jobCanceled := 0
-	if a.tasks != nil {
-		jobIDs, err := a.tasks.CancelBySession(ctx, payload.Locator.SessionID, "command.cancel", firstNonEmpty(payload.Reason, "session canceled by user"))
+	if a.jobs != nil {
+		jobIDs, err := a.jobs.CancelBySession(ctx, payload.Locator.SessionID, "command.cancel", firstNonEmpty(payload.Reason, "session canceled by user"))
 		if err != nil {
 			return actorlayer.TransientError(err)
 		}
 		for _, jobID := range jobIDs {
-			if a.taskRuns != nil && a.taskRuns.Cancel(jobID) {
+			if a.jobRuns != nil && a.jobRuns.Cancel(jobID) {
 				jobCanceled++
 			}
 		}
@@ -254,20 +254,20 @@ func (a *jobControlActor) clearGoal(ctx context.Context, payload jobControlPaylo
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
 		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
 	}
-	if a.tasks == nil {
+	if a.jobs == nil {
 		return actorlayer.TransientError(fmt.Errorf("job service is required"))
 	}
-	tasks, err := a.tasks.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
+	jobs, err := a.jobs.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
 	if err != nil {
 		return actorlayer.TransientError(err)
 	}
 	cleared := 0
-	for _, task := range tasks {
-		if err := a.tasks.CancelJob(ctx, task.ID, "command.goal", firstNonEmpty(payload.Reason, "goal cleared by user")); err != nil {
+	for _, job := range jobs {
+		if err := a.jobs.CancelJob(ctx, job.ID, "command.goal", firstNonEmpty(payload.Reason, "goal cleared by user")); err != nil {
 			return actorlayer.TransientError(err)
 		}
-		if a.taskRuns != nil {
-			a.taskRuns.Cancel(task.ID)
+		if a.jobRuns != nil {
+			a.jobRuns.Cancel(job.ID)
 		}
 		cleared++
 	}
