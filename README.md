@@ -12,7 +12,7 @@ team's tools, and keeps moving until there is a concrete result to review. A
 task can start as a message, a topic, a goal, a schedule, or an external event;
 Balda turns that intent into an active worker session.
 
-The name comes from Pushkin's работник Балда: practical, direct, and focused on
+The name comes from Pushkin's worker Balda: practical, direct, and focused on
 getting the job done. That is the project goal: an autonomous worker comrade for
 teams.
 
