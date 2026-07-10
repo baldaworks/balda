@@ -29,7 +29,7 @@ func TestTurnDispatcher_PerSessionFIFOQueue(t *testing.T) {
 	var mu sync.Mutex
 	order := make([]string, 0, 3)
 
-	pos, err := dispatcher.Enqueue(TurnTask{
+	pos, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-1-0",
 		Run: func(context.Context) error {
 			close(firstStarted)
@@ -48,7 +48,7 @@ func TestTurnDispatcher_PerSessionFIFOQueue(t *testing.T) {
 	}
 	waitForSignal(t, firstStarted, "first task start")
 
-	pos, err = dispatcher.Enqueue(TurnTask{
+	pos, err = enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-1-0",
 		Run: func(context.Context) error {
 			mu.Lock()
@@ -65,7 +65,7 @@ func TestTurnDispatcher_PerSessionFIFOQueue(t *testing.T) {
 		t.Fatalf("Enqueue(second) position = %d, want 1", pos)
 	}
 
-	pos, err = dispatcher.Enqueue(TurnTask{
+	pos, err = enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-1-0",
 		Run: func(context.Context) error {
 			mu.Lock()
@@ -112,7 +112,7 @@ func TestTurnDispatcher_QueueLimit(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	_, err := dispatcher.Enqueue(TurnTask{
+	_, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-2-0",
 		Run: func(context.Context) error {
 			close(started)
@@ -126,7 +126,7 @@ func TestTurnDispatcher_QueueLimit(t *testing.T) {
 	waitForSignal(t, started, "active task start")
 
 	for i := 0; i < perSessionQueueLimit; i++ {
-		pos, enqueueErr := dispatcher.Enqueue(TurnTask{
+		pos, enqueueErr := enqueueTurn(dispatcher, context.Background(), TurnTask{
 			SessionID: "tg-2-0",
 			Run: func(context.Context) error {
 				return nil
@@ -141,7 +141,7 @@ func TestTurnDispatcher_QueueLimit(t *testing.T) {
 		}
 	}
 
-	if _, err := dispatcher.Enqueue(TurnTask{
+	if _, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-2-0",
 		Run: func(context.Context) error {
 			return nil
@@ -167,7 +167,7 @@ func TestTurnDispatcher_CancelSessionClearsPendingAndCancelsRunning(t *testing.T
 	canceled := make(chan struct{})
 	pendingExecuted := make(chan struct{})
 
-	_, err := dispatcher.Enqueue(TurnTask{
+	_, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-3-0",
 		Run: func(ctx context.Context) error {
 			close(started)
@@ -181,7 +181,7 @@ func TestTurnDispatcher_CancelSessionClearsPendingAndCancelsRunning(t *testing.T
 	}
 	waitForSignal(t, started, "active task start")
 
-	_, err = dispatcher.Enqueue(TurnTask{
+	pendingResult, _, err := dispatcher.Enqueue(context.Background(), TurnTask{
 		SessionID: "tg-3-0",
 		Run: func(context.Context) error {
 			close(pendingExecuted)
@@ -204,6 +204,14 @@ func TestTurnDispatcher_CancelSessionClearsPendingAndCancelsRunning(t *testing.T
 	}
 
 	waitForSignal(t, canceled, "active task cancellation")
+	select {
+	case resultErr := <-pendingResult:
+		if !errors.Is(resultErr, context.Canceled) {
+			t.Fatalf("pending result = %v, want %v", resultErr, context.Canceled)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for dropped task completion")
+	}
 	ensureNoSignal(t, pendingExecuted, 200*time.Millisecond, "pending task should be dropped after cancel")
 }
 
@@ -223,9 +231,8 @@ func TestTurnDispatcher_TaskContextCancellationStopsRunningTask(t *testing.T) {
 	started := make(chan struct{})
 	stopped := make(chan struct{})
 
-	_, err := dispatcher.Enqueue(TurnTask{
+	_, _, err := dispatcher.Enqueue(taskCtx, TurnTask{
 		SessionID: "tg-ctx-1",
-		Context:   taskCtx,
 		Run: func(ctx context.Context) error {
 			close(started)
 			<-ctx.Done()
@@ -256,7 +263,7 @@ func TestTurnDispatcher_SkipsTaskRunWhenTaskContextAlreadyCanceled(t *testing.T)
 	release := make(chan struct{})
 	executed := make(chan struct{}, 1)
 
-	_, err := dispatcher.Enqueue(TurnTask{
+	_, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-ctx-2",
 		Run: func(context.Context) error {
 			close(started)
@@ -271,9 +278,8 @@ func TestTurnDispatcher_SkipsTaskRunWhenTaskContextAlreadyCanceled(t *testing.T)
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = dispatcher.Enqueue(TurnTask{
+	_, _, err = dispatcher.Enqueue(canceledCtx, TurnTask{
 		SessionID: "tg-ctx-2",
-		Context:   canceledCtx,
 		Run: func(context.Context) error {
 			executed <- struct{}{}
 			return nil
@@ -302,7 +308,7 @@ func TestTurnDispatcher_AllowsConcurrentSessions(t *testing.T) {
 	releaseA := make(chan struct{})
 	releaseB := make(chan struct{})
 
-	_, err := dispatcher.Enqueue(TurnTask{
+	_, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-4-1",
 		Run: func(context.Context) error {
 			close(startedA)
@@ -313,7 +319,7 @@ func TestTurnDispatcher_AllowsConcurrentSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(session A) error = %v", err)
 	}
-	_, err = dispatcher.Enqueue(TurnTask{
+	_, err = enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID: "tg-4-2",
 		Run: func(context.Context) error {
 			close(startedB)
@@ -347,4 +353,9 @@ func ensureNoSignal(t *testing.T, ch <-chan struct{}, wait time.Duration, label 
 		t.Fatalf("unexpected signal: %s", label)
 	case <-time.After(wait):
 	}
+}
+
+func enqueueTurn(dispatcher *TurnDispatcher, ctx context.Context, task TurnTask) (int, error) {
+	_, position, err := dispatcher.Enqueue(ctx, task)
+	return position, err
 }

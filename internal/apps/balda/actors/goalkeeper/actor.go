@@ -6,17 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/progress"
+	"github.com/normahq/balda/internal/apps/balda/redaction"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/git"
@@ -56,14 +56,6 @@ const (
 	defaultInspectNextAction     = goaldelivery.DefaultInspectNextAction
 	defaultExportedNextAction    = goaldelivery.DefaultExportedNextAction
 	defaultNotExportedNextAction = goaldelivery.DefaultNotExportedNextAction
-)
-
-var (
-	secretBearerHeaderPattern = regexp.MustCompile(`(?i)(authorization\s*:\s*bearer\s+)([^\s]+)`)
-	secretKeyValuePattern     = regexp.MustCompile(`(?i)\b(token|secret|password|api[_-]?key|access[_-]?key|private[_-]?key)\b(\s*[:=]\s*)([^\s,;]+)`)
-	secretPEMPattern          = regexp.MustCompile(`(?s)-----BEGIN [^-]+-----.*?-----END [^-]+-----`)
-	secretGitHubTokenPattern  = regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9_]{20,}\b`)
-	secretTelegramToken       = regexp.MustCompile(`\b\d{6,10}:[A-Za-z0-9_-]{20,}\b`)
 )
 
 type GoalRunPreparer interface {
@@ -650,7 +642,7 @@ func (a *Actor) recordStepCompleted(
 		payload,
 		step,
 		iteration,
-		baldaexecution.GoalProgressKindCompleted,
+		deliverycmd.GoalProgressKindCompleted,
 		text,
 		nil,
 		nextDeliverySequence(deliverySeq),
@@ -679,7 +671,7 @@ func (a *Actor) recordStepPlanUpdate(
 		payload,
 		step,
 		iteration,
-		baldaexecution.GoalProgressKindPlan,
+		deliverycmd.GoalProgressKindPlan,
 		text,
 		&plan,
 		nextDeliverySequence(deliverySeq),
@@ -699,16 +691,16 @@ func (a *Actor) recordStepProgress(
 		payload,
 		step,
 		iteration,
-		baldaexecution.GoalProgressKind(strings.TrimSpace(kind)),
+		deliverycmd.GoalProgressKind(strings.TrimSpace(kind)),
 		text,
 		nil,
 		nextDeliverySequence(deliverySeq),
 	))
 }
 
-func (a *Actor) recordGoalProgress(ctx context.Context, update baldaexecution.GoalProgressUpdate) error {
+func (a *Actor) recordGoalProgress(ctx context.Context, update deliverycmd.GoalProgressUpdate) error {
 	switch update.Kind {
-	case baldaexecution.GoalProgressKindOutput, baldaexecution.GoalProgressKindCompleted:
+	case deliverycmd.GoalProgressKindOutput, deliverycmd.GoalProgressKindCompleted:
 		update.Text = renderGoalProgressText(update)
 	}
 	if err := dispatchGoalProgress(ctx, a.dispatcher, update); err != nil {
@@ -967,16 +959,7 @@ func reviewerPassed(text string) bool {
 }
 
 func redactSecrets(raw string) string {
-	text := strings.TrimSpace(raw)
-	if text == "" {
-		return text
-	}
-	text = secretPEMPattern.ReplaceAllString(text, "[REDACTED_PEM]")
-	text = secretBearerHeaderPattern.ReplaceAllString(text, "${1}[REDACTED]")
-	text = secretKeyValuePattern.ReplaceAllString(text, "${1}${2}[REDACTED]")
-	text = secretGitHubTokenPattern.ReplaceAllString(text, "[REDACTED_TOKEN]")
-	text = secretTelegramToken.ReplaceAllString(text, "[REDACTED_TOKEN]")
-	return text
+	return redaction.Secrets(raw)
 }
 
 func nextDeliverySequence(value *int) int {

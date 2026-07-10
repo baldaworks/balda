@@ -22,7 +22,6 @@ type sqliteProvider struct {
 	jobs           *sqliteScheduledJobStore
 	runtime        *sqliteJobStore
 	offset         *sqliteOffsetStore
-	collab         *auth.CollaboratorStore
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -162,7 +161,6 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		runtime:        &sqliteJobStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
 	}
-	provider.collab = auth.NewCollaboratorStore(provider)
 	return provider, nil
 }
 
@@ -195,7 +193,7 @@ func (p *sqliteProvider) PollingOffsetStore() updatepoller.OffsetStore {
 }
 
 func (p *sqliteProvider) Collaborators() CollaboratorStore {
-	return p.collab
+	return p
 }
 
 func (p *sqliteProvider) Close() error {

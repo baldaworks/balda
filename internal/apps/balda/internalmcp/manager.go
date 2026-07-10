@@ -1,4 +1,4 @@
-package handlers
+package internalmcp
 
 import (
 	"context"
@@ -47,7 +47,6 @@ const (
 type internalMCPParams struct {
 	fx.In
 
-	LC               fx.Lifecycle
 	WorkspaceEnabled bool `name:"balda_workspace_enabled"`
 	Logger           zerolog.Logger
 	Registry         *mcpregistry.MapRegistry
@@ -69,27 +68,26 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		memoryStore:      params.MemoryStore,
 	}
 
-	params.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			return manager.EnsureStarted(ctx)
-		},
-		OnStop: func(ctx context.Context) error {
-			manager.mu.Lock()
-			defer manager.mu.Unlock()
-
-			manager.logger.Info().Int("cleanups", len(manager.cleanups)).Msg("stopping internal MCP servers")
-			for i := len(manager.cleanups) - 1; i >= 0; i-- {
-				if err := manager.cleanups[i](); err != nil {
-					manager.logger.Warn().Err(err).Msg("failed to stop internal MCP server")
-				}
-			}
-			manager.cleanups = nil
-			manager.started = false
-			return nil
-		},
-	})
-
 	return manager
+}
+
+// Stop shuts down bundled MCP servers in reverse startup order.
+func (m *InternalMCPManager) Stop(context.Context) error {
+	m.startMu.Lock()
+	defer m.startMu.Unlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.logger.Info().Int("cleanups", len(m.cleanups)).Msg("stopping internal MCP servers")
+	for i := len(m.cleanups) - 1; i >= 0; i-- {
+		if err := m.cleanups[i](); err != nil {
+			m.logger.Warn().Err(err).Msg("failed to stop internal MCP server")
+		}
+	}
+	m.cleanups = nil
+	m.started = false
+	return nil
 }
 
 // EnsureStarted initializes bundled MCP servers exactly once.

@@ -22,6 +22,9 @@ Use this map to find the authoritative runtime contracts.
 - Durable command/event transport is exposed to Balda runtime code through actorlayer abstractions.
 - SQLite is product/read-model state, not a command queue.
 - Ingress handlers dispatch actor envelopes through actorlayer transport dispatcher contracts; actors execute commands.
+- `actorcmd` is the leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata.
+- `sessionturn` owns queued-turn restoration and delegates provider iteration through a narrow executor port.
+- One composition-root lifecycle coordinator starts durable infrastructure before every ingress and stops it in reverse order.
 - Actor execution contract is split: core actor mechanics in Norma; Balda owns product actors, the configured provider runtime, command runtime adapter policy, and all queue/retry/dead-letter policy.
 
 ## Runtime Flow
@@ -32,14 +35,20 @@ Telegram/Zulip/Slack/webhook/scheduler ingress -> actorlayer transport dispatche
 
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/execution/host_test.go`
-- `internal/apps/balda/architecture_contract_test.go`
+- `internal/apps/balda/application_lifecycle_test.go`
+- `internal/apps/balda/architecture_dependencies_test.go`
+- `internal/apps/balda/actors/turn_dispatcher_test.go`
+- `internal/apps/balda/jobs/service_test.go`
 
 ## Related packages
 
 - `internal/apps/balda/eventbus/nats`
+- `internal/apps/balda/actorcmd`
 - `internal/apps/balda/execution`
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/actors`
+- `internal/apps/balda/sessionturn`
+- `internal/apps/balda/internalmcp`
 - `internal/apps/balda/handlers`
 - `internal/apps/balda/agent`
 - `internal/apps/balda/session`

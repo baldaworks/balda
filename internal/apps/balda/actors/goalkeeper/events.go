@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	deliverycmd "github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	"github.com/normahq/balda/internal/apps/balda/progress"
 	"github.com/normahq/balda/pkg/actorlayer"
@@ -17,12 +16,12 @@ func newGoalProgressUpdate(
 	payload goalJobPayload,
 	step string,
 	iteration int,
-	kind baldaexecution.GoalProgressKind,
+	kind deliverycmd.GoalProgressKind,
 	text string,
 	plan *progress.PlanSnapshot,
 	sequence int,
-) baldaexecution.GoalProgressUpdate {
-	return baldaexecution.GoalProgressUpdate{
+) deliverycmd.GoalProgressUpdate {
+	return deliverycmd.GoalProgressUpdate{
 		JobID:         strings.TrimSpace(payload.JobID),
 		Locator:       normalizeGoalDeliveryLocator(payload.Locator),
 		Profile:       goalDeliveryProfile(payload),
@@ -37,7 +36,7 @@ func newGoalProgressUpdate(
 	}
 }
 
-func dispatchGoalProgress(ctx context.Context, dispatcher actortransport.Dispatcher, update baldaexecution.GoalProgressUpdate) error {
+func dispatchGoalProgress(ctx context.Context, dispatcher actortransport.Dispatcher, update deliverycmd.GoalProgressUpdate) error {
 	if dispatcher == nil {
 		return actorlayer.TransientError(fmt.Errorf("actor dispatcher is required"))
 	}
@@ -54,7 +53,7 @@ func dispatchGoalProgress(ctx context.Context, dispatcher actortransport.Dispatc
 	return nil
 }
 
-func goalProgressEventPayload(update baldaexecution.GoalProgressUpdate) map[string]any {
+func goalProgressEventPayload(update deliverycmd.GoalProgressUpdate) map[string]any {
 	payload := map[string]any{
 		"step":      strings.TrimSpace(update.Step),
 		"iteration": normalizeGoalIteration(update.Iteration),
@@ -66,16 +65,16 @@ func goalProgressEventPayload(update baldaexecution.GoalProgressUpdate) map[stri
 	return payload
 }
 
-func renderGoalProgressText(update baldaexecution.GoalProgressUpdate) string {
+func renderGoalProgressText(update deliverycmd.GoalProgressUpdate) string {
 	body := redactSecrets(strings.TrimSpace(update.Text))
 	return goaldelivery.RenderStepMessage(update.Profile, update.Iteration, update.MaxIterations, update.Step, renderGoalProgressAction(update.Kind), body)
 }
 
-func renderGoalProgressAction(kind baldaexecution.GoalProgressKind) string {
+func renderGoalProgressAction(kind deliverycmd.GoalProgressKind) string {
 	switch kind {
-	case baldaexecution.GoalProgressKindOutput:
+	case deliverycmd.GoalProgressKindOutput:
 		return "update"
-	case baldaexecution.GoalProgressKindCompleted:
+	case deliverycmd.GoalProgressKindCompleted:
 		return "completed"
 	default:
 		return ""

@@ -34,7 +34,6 @@ type ActorHost struct {
 type executionParams struct {
 	fx.In
 
-	LC     fx.Lifecycle
 	Source actorengine.Source
 	Events actortransport.EventPublisher `optional:"true"`
 	Jobs   DeadLetterRecorder            `optional:"true"`
@@ -74,10 +73,6 @@ func NewActorHost(params executionParams) (*ActorHost, error) {
 		return nil, err
 	}
 	r.engine = engine
-	params.LC.Append(fx.Hook{
-		OnStart: r.Start,
-		OnStop:  r.Stop,
-	})
 	return r, nil
 }
 

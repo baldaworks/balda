@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/sessionturn"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/rs/zerolog"
@@ -50,7 +50,8 @@ var Module = fx.Module("balda_handlers",
 			return adapter
 		},
 		baldaslack.NewAdapter,
-		NewBaldaSessionTurnRunner,
+		fx.Annotate(newProviderTurnExecutor, fx.As(new(sessionturn.Executor))),
+		sessionturn.NewRunner,
 		func(tg *baldatelegram.Adapter, zu *baldazulip.Adapter, sl *baldaslack.Adapter) *baldachannel.Router {
 			return baldachannel.NewRouter(map[string]baldachannel.ChannelAdapter{
 				baldastate.ChannelTypeTelegram: tg,
@@ -61,8 +62,8 @@ var Module = fx.Module("balda_handlers",
 		NewZulipBaldaHandler,
 		NewSlackHandler,
 		func(params scheduledJobSchedulerParams) (*ScheduledJobScheduler, error) {
-			if params.StateProvider == nil {
-				return nil, fmt.Errorf("balda state provider is required")
+			if params.JobStore == nil {
+				return nil, fmt.Errorf("scheduled job store is required")
 			}
 			if params.Dispatcher == nil {
 				return nil, fmt.Errorf("balda actor dispatcher is required for scheduler")
@@ -76,7 +77,7 @@ var Module = fx.Module("balda_handlers",
 			}
 
 			scheduler := &ScheduledJobScheduler{
-				jobStore:     params.StateProvider.ScheduledJobs(),
+				jobStore:     params.JobStore,
 				dispatcher:   params.Dispatcher,
 				owner:        params.OwnerStore,
 				logger:       params.Logger.With().Str("component", "balda.scheduled_job_scheduler").Logger(),
@@ -85,19 +86,6 @@ var Module = fx.Module("balda_handlers",
 				dueBatchSize: defaultSchedulerDueBatchSize,
 				now:          time.Now,
 			}
-
-			params.LC.Append(fx.Hook{
-				OnStart: func(ctx context.Context) error {
-					if err := scheduler.reconcileConfiguredJobs(ctx); err != nil {
-						return err
-					}
-					scheduler.start()
-					return nil
-				},
-				OnStop: func(ctx context.Context) error {
-					return scheduler.stop(ctx)
-				},
-			})
 
 			return scheduler, nil
 		},
@@ -125,15 +113,6 @@ var Module = fx.Module("balda_handlers",
 			if receiver.owner == nil {
 				return nil, fmt.Errorf("balda owner store is required for inbound webhooks")
 			}
-
-			params.LC.Append(fx.Hook{
-				OnStart: func(ctx context.Context) error {
-					return receiver.start(ctx)
-				},
-				OnStop: func(ctx context.Context) error {
-					return receiver.stop(ctx)
-				},
-			})
 
 			return receiver, nil
 		},
@@ -166,16 +145,10 @@ var Module = fx.Module("balda_handlers",
 				logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
 			}
 
-			deps.LC.Append(fx.Hook{
-				OnStart: func(ctx context.Context) error {
-					return h.onStart(ctx)
-				},
-			})
-
 			return h, nil
 		},
 		fx.Annotate(
-			func(r *BaldaSessionTurnRunner) actors.SessionTurnRunner {
+			func(r *sessionturn.Runner) actors.SessionTurnRunner {
 				return r
 			},
 		),

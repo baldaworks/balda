@@ -20,6 +20,7 @@ import (
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/sessionturn"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -442,11 +443,8 @@ func TestBaldaSessionTurnRunner_DirectTelegramProgressDeliveriesComeFromSessionA
 	setUnexportedField(t, ts, "locator", locator)
 	setUnexportedField(t, ts, "userID", "tg-101")
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
-	sessionRunner := &BaldaSessionTurnRunner{
-		sessionManager:  manager,
-		actorDispatcher: bus,
-		logger:          zerolog.Nop(),
-	}
+	executor := &providerTurnExecutor{dispatcher: bus, logger: zerolog.Nop()}
+	sessionRunner := sessionturn.New(manager, executor, nil, zerolog.Nop())
 
 	err := sessionRunner.RunSessionTurnPayload(context.Background(), actors.SessionTurnPayload{
 		Text:           "hello",
@@ -1621,40 +1619,6 @@ func TestRunTurnTaskWithDelivery_HardFailureSuggestsReset(t *testing.T) {
 	}
 }
 
-func TestRunSessionTurnPayload_RestoresPersistedSessionWithoutPayloadUserID(t *testing.T) {
-	t.Parallel()
-
-	h := newBaldaRunTurnHandlerWithChannel(nil, nil)
-	locator := baldatelegram.NewLocator(9001, 77)
-	store := &fakeBaldaRestoreSessionStore{
-		record: baldastate.SessionRecord{
-			SessionID:   locator.SessionID,
-			UserID:      "tg-101",
-			ChannelType: locator.ChannelType,
-			AddressKey:  locator.AddressKey,
-			AddressJSON: locator.AddressJSON,
-			AgentName:   "auto",
-			Status:      baldastate.SessionStatusActive,
-		},
-		foundByAddress: true,
-	}
-	builder := &fakeBaldaRestoreAgentBuilder{createErr: errors.New("restore create failed")}
-	runtimeManager := &fakeBaldaRestoreRuntimeManager{providerID: "balda-provider"}
-	h.sessionManager = newBaldaRestoreSessionManager(t, builder, runtimeManager, store)
-
-	err := h.RunSessionTurnPayload(context.Background(), actors.SessionTurnPayload{
-		Text:    "hello",
-		Locator: locator,
-		Deliver: false,
-	})
-	if err == nil {
-		t.Fatal("RunSessionTurnPayload() error = nil, want non-nil")
-	}
-	if !strings.Contains(err.Error(), "restore session for queued turn") || !strings.Contains(err.Error(), "restore create failed") {
-		t.Fatalf("RunSessionTurnPayload() error = %v", err)
-	}
-}
-
 func TestRunTurnWithDelivery_AcceptsSlackLocator(t *testing.T) {
 	t.Parallel()
 
@@ -1910,6 +1874,7 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 		),
 		fx.Provide(func() actortransport.Dispatcher { return bus }),
 		fx.Provide(func() actortransport.EventPublisher { return bus }),
+		fx.Provide(func() baldajobs.ServiceStore { return provider.Jobs() }),
 		fx.Provide(baldajobs.NewJobService),
 		fx.Populate(&tasks),
 	)

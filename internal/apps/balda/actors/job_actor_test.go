@@ -177,6 +177,7 @@ func newTaskActorRuntimeServices(t *testing.T, ctx context.Context) (baldastate.
 		),
 		fx.Provide(func() actortransport.Dispatcher { return bus }),
 		fx.Provide(func() actortransport.EventPublisher { return bus }),
+		fx.Provide(func() baldajobs.ServiceStore { return provider.Jobs() }),
 		fx.Provide(baldajobs.NewJobService),
 		fx.Populate(&dispatcher, &tasks),
 	)

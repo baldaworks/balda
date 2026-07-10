@@ -1,4 +1,4 @@
-package handlers
+package internalmcp
 
 import (
 	"context"

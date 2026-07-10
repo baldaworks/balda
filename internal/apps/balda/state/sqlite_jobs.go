@@ -12,13 +12,21 @@ type sqliteJobStore struct {
 	db *sql.DB
 }
 
+type contextExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (s *sqliteJobStore) CreateJob(ctx context.Context, record JobRecord) (bool, error) {
 	now := time.Now().UTC()
 	normalized, err := normalizeExecutionJob(record, now)
 	if err != nil {
 		return false, err
 	}
-	res, err := s.db.ExecContext(ctx, `
+	return insertExecutionJob(ctx, s.db, normalized)
+}
+
+func insertExecutionJob(ctx context.Context, exec contextExecer, normalized JobRecord) (bool, error) {
+	res, err := exec.ExecContext(ctx, `
 		INSERT OR IGNORE INTO execution_jobs (
 			id, session_id, parent_job_id, title, objective, status, owner_actor, assigned_actor,
 			priority, created_by, result_json, error,
@@ -51,6 +59,38 @@ func (s *sqliteJobStore) CreateJob(ctx context.Context, record JobRecord) (bool,
 		return false, fmt.Errorf("count inserted runtime job %q: %w", normalized.ID, err)
 	}
 	return count > 0, nil
+}
+
+func (s *sqliteJobStore) CreateJobWithEvent(
+	ctx context.Context,
+	record JobRecord,
+	event JobEventOutboxRecord,
+) (bool, error) {
+	now := time.Now().UTC()
+	normalizedJob, err := normalizeExecutionJob(record, now)
+	if err != nil {
+		return false, err
+	}
+	normalizedEvent, err := normalizeJobEventOutbox(event, now)
+	if err != nil {
+		return false, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin create job transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	created, err := insertExecutionJob(ctx, tx, normalizedJob)
+	if err != nil {
+		return false, err
+	}
+	if err := enqueueJobEvent(ctx, tx, normalizedEvent); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit create job transaction: %w", err)
+	}
+	return created, nil
 }
 
 func (s *sqliteJobStore) GetJob(ctx context.Context, jobID string) (JobRecord, bool, error) {
@@ -138,6 +178,72 @@ func (s *sqliteJobStore) UpdateJobStatus(ctx context.Context, jobID string, stat
 	return nil
 }
 
+func (s *sqliteJobStore) UpdateJobStatusWithEvent(
+	ctx context.Context,
+	jobID string,
+	status string,
+	reason string,
+	event JobEventOutboxRecord,
+) error {
+	normalizedEvent, err := normalizeJobEventOutbox(event, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update job transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := updateJobStatusTx(ctx, tx, jobID, status, reason); err != nil {
+		return err
+	}
+	if err := enqueueJobEvent(ctx, tx, normalizedEvent); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update job transaction: %w", err)
+	}
+	return nil
+}
+
+func updateJobStatusTx(ctx context.Context, tx *sql.Tx, jobID string, status string, reason string) error {
+	trimmedJobID := strings.TrimSpace(jobID)
+	if trimmedJobID == "" {
+		return fmt.Errorf("job id is required")
+	}
+	currentStatus, err := currentJobStatusTx(ctx, tx, trimmedJobID)
+	if err != nil {
+		return err
+	}
+	normalizedStatus, err := normalizeExecutionJobStatus(status)
+	if err != nil {
+		return err
+	}
+	if err := guardJobStatusTransition(currentStatus, normalizedStatus); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	startedAt, completedAt, canceledAt := statusTimestamps(normalizedStatus, now)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE execution_jobs
+		SET status = ?, error = ?, updated_at = ?,
+		    started_at = COALESCE(started_at, ?),
+		    completed_at = COALESCE(completed_at, ?),
+		    canceled_at = COALESCE(canceled_at, ?)
+		WHERE id = ?`,
+		normalizedStatus,
+		nullIfEmpty(reason),
+		now.Format(time.RFC3339),
+		optionalTimeValue(startedAt),
+		optionalTimeValue(completedAt),
+		optionalTimeValue(canceledAt),
+		trimmedJobID,
+	); err != nil {
+		return fmt.Errorf("update runtime job %q status: %w", trimmedJobID, err)
+	}
+	return nil
+}
+
 func (s *sqliteJobStore) SetJobResult(ctx context.Context, jobID string, resultJSON string, status string, reason string) error {
 	trimmedJobID := strings.TrimSpace(jobID)
 	if trimmedJobID == "" {
@@ -162,6 +268,81 @@ func (s *sqliteJobStore) SetJobResult(ctx context.Context, jobID string, resultJ
 		    result_json = ?,
 		    error = ?,
 		    updated_at = ?,
+		    started_at = COALESCE(started_at, ?),
+		    completed_at = COALESCE(completed_at, ?),
+		    canceled_at = COALESCE(canceled_at, ?)
+		WHERE id = ?`,
+		normalizedStatus,
+		nullIfEmpty(resultJSON),
+		nullIfEmpty(reason),
+		now.Format(time.RFC3339),
+		optionalTimeValue(startedAt),
+		optionalTimeValue(completedAt),
+		optionalTimeValue(canceledAt),
+		trimmedJobID,
+	); err != nil {
+		return fmt.Errorf("set runtime job %q result: %w", trimmedJobID, err)
+	}
+	return nil
+}
+
+func (s *sqliteJobStore) SetJobResultWithEvent(
+	ctx context.Context,
+	jobID string,
+	resultJSON string,
+	status string,
+	reason string,
+	event JobEventOutboxRecord,
+) error {
+	normalizedEvent, err := normalizeJobEventOutbox(event, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin set job result transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := setJobResultTx(ctx, tx, jobID, resultJSON, status, reason); err != nil {
+		return err
+	}
+	if err := enqueueJobEvent(ctx, tx, normalizedEvent); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit set job result transaction: %w", err)
+	}
+	return nil
+}
+
+func setJobResultTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	jobID string,
+	resultJSON string,
+	status string,
+	reason string,
+) error {
+	trimmedJobID := strings.TrimSpace(jobID)
+	if trimmedJobID == "" {
+		return fmt.Errorf("job id is required")
+	}
+	currentStatus, err := currentJobStatusTx(ctx, tx, trimmedJobID)
+	if err != nil {
+		return err
+	}
+	normalizedStatus, err := normalizeExecutionJobStatus(status)
+	if err != nil {
+		return err
+	}
+	if err := guardJobStatusTransition(currentStatus, normalizedStatus); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	startedAt, completedAt, canceledAt := statusTimestamps(normalizedStatus, now)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE execution_jobs
+		SET status = ?, result_json = ?, error = ?, updated_at = ?,
 		    started_at = COALESCE(started_at, ?),
 		    completed_at = COALESCE(completed_at, ?),
 		    canceled_at = COALESCE(canceled_at, ?)
@@ -229,6 +410,90 @@ func (s *sqliteJobStore) ListJobEvents(ctx context.Context, jobID string) ([]Job
 		return nil, fmt.Errorf("iterate runtime job events: %w", err)
 	}
 	return out, nil
+}
+
+func (s *sqliteJobStore) EnqueueJobEvent(ctx context.Context, event JobEventOutboxRecord) error {
+	normalized, err := normalizeJobEventOutbox(event, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return enqueueJobEvent(ctx, s.db, normalized)
+}
+
+func enqueueJobEvent(ctx context.Context, exec contextExecer, event JobEventOutboxRecord) error {
+	if _, err := exec.ExecContext(ctx, `
+		INSERT OR IGNORE INTO execution_job_event_outbox (
+			id, job_id, subject, envelope_json, attempts, last_error, created_at, published_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		event.ID,
+		event.JobID,
+		event.Subject,
+		event.EnvelopeJSON,
+		event.Attempts,
+		nullIfEmpty(event.LastError),
+		event.CreatedAt.Format(time.RFC3339),
+		optionalTimeValue(event.PublishedAt),
+	); err != nil {
+		return fmt.Errorf("enqueue job event %q: %w", event.ID, err)
+	}
+	return nil
+}
+
+func (s *sqliteJobStore) ListPendingJobEvents(ctx context.Context, limit int) ([]JobEventOutboxRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, job_id, subject, envelope_json, attempts, COALESCE(last_error, ''),
+		       created_at, COALESCE(published_at, '')
+		FROM execution_job_event_outbox
+		WHERE published_at IS NULL
+		ORDER BY created_at ASC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pending job events: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var records []JobEventOutboxRecord
+	for rows.Next() {
+		record, err := scanJobEventOutbox(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pending job events: %w", err)
+	}
+	return records, nil
+}
+
+func (s *sqliteJobStore) MarkJobEventPublished(ctx context.Context, eventID string) error {
+	trimmed := strings.TrimSpace(eventID)
+	if trimmed == "" {
+		return fmt.Errorf("job event id is required")
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE execution_job_event_outbox
+		SET attempts = attempts + 1, last_error = NULL, published_at = ?
+		WHERE id = ?`, time.Now().UTC().Format(time.RFC3339), trimmed); err != nil {
+		return fmt.Errorf("mark job event %q published: %w", trimmed, err)
+	}
+	return nil
+}
+
+func (s *sqliteJobStore) MarkJobEventPublishFailed(ctx context.Context, eventID string, reason string) error {
+	trimmed := strings.TrimSpace(eventID)
+	if trimmed == "" {
+		return fmt.Errorf("job event id is required")
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE execution_job_event_outbox
+		SET attempts = attempts + 1, last_error = ?
+		WHERE id = ?`, nullIfEmpty(reason), trimmed); err != nil {
+		return fmt.Errorf("mark job event %q publish failed: %w", trimmed, err)
+	}
+	return nil
 }
 
 func (s *sqliteJobStore) ReserveDelivery(ctx context.Context, record DeliveryRecord) (DeliveryRecord, bool, error) {
@@ -866,8 +1131,17 @@ func optionalTimeValue(value time.Time) any {
 
 func (s *sqliteJobStore) currentJobStatus(ctx context.Context, jobID string) (string, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT status FROM execution_jobs WHERE id = ?`, jobID)
+	return scanCurrentJobStatus(row.Scan, jobID)
+}
+
+func currentJobStatusTx(ctx context.Context, tx *sql.Tx, jobID string) (string, error) {
+	row := tx.QueryRowContext(ctx, `SELECT status FROM execution_jobs WHERE id = ?`, jobID)
+	return scanCurrentJobStatus(row.Scan, jobID)
+}
+
+func scanCurrentJobStatus(scan func(...any) error, jobID string) (string, error) {
 	var status string
-	if err := row.Scan(&status); err != nil {
+	if err := scan(&status); err != nil {
 		if err == sql.ErrNoRows {
 			return "", fmt.Errorf("runtime job %q not found", jobID)
 		}
@@ -878,6 +1152,63 @@ func (s *sqliteJobStore) currentJobStatus(ctx context.Context, jobID string) (st
 		return "", err
 	}
 	return normalized, nil
+}
+
+func normalizeJobEventOutbox(record JobEventOutboxRecord, now time.Time) (JobEventOutboxRecord, error) {
+	record.ID = strings.TrimSpace(record.ID)
+	if record.ID == "" {
+		return JobEventOutboxRecord{}, fmt.Errorf("job event outbox id is required")
+	}
+	record.JobID = strings.TrimSpace(record.JobID)
+	if record.JobID == "" {
+		return JobEventOutboxRecord{}, fmt.Errorf("job event outbox job id is required")
+	}
+	record.Subject = strings.TrimSpace(record.Subject)
+	if record.Subject == "" {
+		return JobEventOutboxRecord{}, fmt.Errorf("job event outbox subject is required")
+	}
+	record.EnvelopeJSON = strings.TrimSpace(record.EnvelopeJSON)
+	if record.EnvelopeJSON == "" {
+		return JobEventOutboxRecord{}, fmt.Errorf("job event outbox envelope is required")
+	}
+	if record.Attempts < 0 {
+		return JobEventOutboxRecord{}, fmt.Errorf("job event outbox attempts must not be negative")
+	}
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = now
+	}
+	record.CreatedAt = record.CreatedAt.UTC()
+	record.PublishedAt = record.PublishedAt.UTC()
+	record.LastError = strings.TrimSpace(record.LastError)
+	return record, nil
+}
+
+func scanJobEventOutbox(scan func(...any) error) (JobEventOutboxRecord, error) {
+	var record JobEventOutboxRecord
+	var createdAtRaw, publishedAtRaw string
+	if err := scan(
+		&record.ID,
+		&record.JobID,
+		&record.Subject,
+		&record.EnvelopeJSON,
+		&record.Attempts,
+		&record.LastError,
+		&createdAtRaw,
+		&publishedAtRaw,
+	); err != nil {
+		return JobEventOutboxRecord{}, fmt.Errorf("scan job event outbox: %w", err)
+	}
+	createdAt, err := parseRequiredRFC3339(createdAtRaw)
+	if err != nil {
+		return JobEventOutboxRecord{}, fmt.Errorf("parse job event outbox created_at: %w", err)
+	}
+	publishedAt, err := parseOptionalRFC3339(publishedAtRaw)
+	if err != nil {
+		return JobEventOutboxRecord{}, fmt.Errorf("parse job event outbox published_at: %w", err)
+	}
+	record.CreatedAt = createdAt
+	record.PublishedAt = publishedAt
+	return record, nil
 }
 
 func guardJobStatusTransition(current string, next string) error {

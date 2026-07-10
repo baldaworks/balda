@@ -22,12 +22,11 @@ var ErrTurnQueueFull = errors.New("turn queue is full")
 
 type TurnTask struct {
 	SessionID string
-	Context   context.Context
 	Run       func(context.Context) error
 }
 
 type TurnQueue interface {
-	Enqueue(task TurnTask) (int, error)
+	Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error)
 	CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error)
 }
 
@@ -42,16 +41,21 @@ type TurnDispatcher struct {
 }
 
 type sessionTurnQueue struct {
-	pending        []TurnTask
+	pending        []*queuedTurn
 	running        bool
 	inFlightCancel context.CancelFunc
 	wakeCh         chan struct{}
 }
 
+type queuedTurn struct {
+	ctx    context.Context
+	task   TurnTask
+	result chan error
+}
+
 type turnDispatcherParams struct {
 	fx.In
 
-	LC     fx.Lifecycle
 	Logger zerolog.Logger
 }
 
@@ -61,27 +65,25 @@ func NewTurnDispatcher(params turnDispatcherParams) *TurnDispatcher {
 		sessions: make(map[string]*sessionTurnQueue),
 		stopCh:   make(chan struct{}),
 	}
-	params.LC.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			return dispatcher.Shutdown(ctx)
-		},
-	})
 	return dispatcher
 }
 
-func (d *TurnDispatcher) Enqueue(task TurnTask) (int, error) {
+func (d *TurnDispatcher) Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error) {
 	sessionID := strings.TrimSpace(task.SessionID)
 	if sessionID == "" {
-		return 0, fmt.Errorf("session id is required")
+		return nil, 0, fmt.Errorf("session id is required")
 	}
 	if task.Run == nil {
-		return 0, fmt.Errorf("turn task runner is required")
+		return nil, 0, fmt.Errorf("turn task runner is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.stopping {
-		return 0, fmt.Errorf("turn dispatcher is stopping")
+		return nil, 0, fmt.Errorf("turn dispatcher is stopping")
 	}
 
 	queue, ok := d.sessions[sessionID]
@@ -96,7 +98,7 @@ func (d *TurnDispatcher) Enqueue(task TurnTask) (int, error) {
 
 	pendingBefore := len(queue.pending)
 	if pendingBefore >= perSessionQueueLimit {
-		return 0, ErrTurnQueueFull
+		return nil, 0, ErrTurnQueueFull
 	}
 
 	position := 0
@@ -106,13 +108,18 @@ func (d *TurnDispatcher) Enqueue(task TurnTask) (int, error) {
 		position = pendingBefore
 	}
 
-	queue.pending = append(queue.pending, task)
+	queued := &queuedTurn{
+		ctx:    ctx,
+		task:   task,
+		result: make(chan error, 1),
+	}
+	queue.pending = append(queue.pending, queued)
 	select {
 	case queue.wakeCh <- struct{}{}:
 	default:
 	}
 
-	return position, nil
+	return queued.result, position, nil
 }
 
 func (d *TurnDispatcher) CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error) {
@@ -128,9 +135,9 @@ func (d *TurnDispatcher) CancelSession(locator session.SessionLocator, clearQueu
 		return false, 0, nil
 	}
 
-	dropped := 0
+	var droppedTurns []*queuedTurn
 	if clearQueued {
-		dropped = len(queue.pending)
+		droppedTurns = queue.pending
 		queue.pending = nil
 	}
 
@@ -141,8 +148,9 @@ func (d *TurnDispatcher) CancelSession(locator session.SessionLocator, clearQueu
 	if cancel != nil {
 		cancel()
 	}
+	completeTurns(droppedTurns, context.Canceled)
 
-	return hadInFlight, dropped, nil
+	return hadInFlight, len(droppedTurns), nil
 }
 
 func (d *TurnDispatcher) Shutdown(ctx context.Context) error {
@@ -154,16 +162,23 @@ func (d *TurnDispatcher) Shutdown(ctx context.Context) error {
 	d.stopping = true
 	close(d.stopCh)
 	cancels := make([]context.CancelFunc, 0, len(d.sessions))
+	droppedTurns := make([]*queuedTurn, 0)
 	for _, queue := range d.sessions {
-		if queue != nil && queue.inFlightCancel != nil {
+		if queue == nil {
+			continue
+		}
+		if queue.inFlightCancel != nil {
 			cancels = append(cancels, queue.inFlightCancel)
 		}
+		droppedTurns = append(droppedTurns, queue.pending...)
+		queue.pending = nil
 	}
 	d.mu.Unlock()
 
 	for _, cancel := range cancels {
 		cancel()
 	}
+	completeTurns(droppedTurns, context.Canceled)
 
 	done := make(chan struct{})
 	go func() {
@@ -183,26 +198,16 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 	defer d.wg.Done()
 
 	for {
-		task, ok := d.nextTask(sessionID, queue)
+		turn, runCtx, cancel, ok := d.nextTask(sessionID, queue)
 		if !ok {
 			return
 		}
-
-		baseCtx := task.Context
-		if baseCtx == nil {
-			baseCtx = context.Background()
-		}
-		runCtx, cancel := context.WithCancel(baseCtx)
-		d.mu.Lock()
-		queue.running = true
-		queue.inFlightCancel = cancel
-		d.mu.Unlock()
 
 		var err error
 		if runCtx.Err() != nil {
 			err = runCtx.Err()
 		} else {
-			err = task.Run(runCtx)
+			err = turn.task.Run(runCtx)
 		}
 		cancel()
 
@@ -210,6 +215,7 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 		queue.running = false
 		queue.inFlightCancel = nil
 		d.mu.Unlock()
+		completeTurn(turn, err)
 
 		if err != nil && !errors.Is(err, context.Canceled) {
 			d.logger.Error().Err(err).Str("session_id", sessionID).Msg("turn task failed")
@@ -217,19 +223,25 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 	}
 }
 
-func (d *TurnDispatcher) nextTask(sessionID string, queue *sessionTurnQueue) (TurnTask, bool) {
+func (d *TurnDispatcher) nextTask(
+	sessionID string,
+	queue *sessionTurnQueue,
+) (*queuedTurn, context.Context, context.CancelFunc, bool) {
 	for {
 		d.mu.Lock()
 		if d.stopping {
 			delete(d.sessions, sessionID)
 			d.mu.Unlock()
-			return TurnTask{}, false
+			return nil, nil, nil, false
 		}
 		if len(queue.pending) > 0 {
-			task := queue.pending[0]
+			turn := queue.pending[0]
 			queue.pending = queue.pending[1:]
+			runCtx, cancel := context.WithCancel(turn.ctx)
+			queue.running = true
+			queue.inFlightCancel = cancel
 			d.mu.Unlock()
-			return task, true
+			return turn, runCtx, cancel, true
 		}
 		d.mu.Unlock()
 
@@ -242,7 +254,7 @@ func (d *TurnDispatcher) nextTask(sessionID string, queue *sessionTurnQueue) (Tu
 			d.mu.Lock()
 			delete(d.sessions, sessionID)
 			d.mu.Unlock()
-			return TurnTask{}, false
+			return nil, nil, nil, false
 		case <-queue.wakeCh:
 			if !idleTimer.Stop() {
 				<-idleTimer.C
@@ -253,10 +265,24 @@ func (d *TurnDispatcher) nextTask(sessionID string, queue *sessionTurnQueue) (Tu
 			if d.sessions[sessionID] == queue && !queue.running && len(queue.pending) == 0 {
 				delete(d.sessions, sessionID)
 				d.mu.Unlock()
-				return TurnTask{}, false
+				return nil, nil, nil, false
 			}
 			d.mu.Unlock()
 			continue
 		}
 	}
+}
+
+func completeTurns(turns []*queuedTurn, err error) {
+	for _, turn := range turns {
+		completeTurn(turn, err)
+	}
+}
+
+func completeTurn(turn *queuedTurn, err error) {
+	if turn == nil {
+		return
+	}
+	turn.result <- err
+	close(turn.result)
 }

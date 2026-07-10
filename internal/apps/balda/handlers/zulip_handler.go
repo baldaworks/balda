@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	"github.com/normahq/balda/internal/apps/balda/auth"
@@ -20,7 +21,6 @@ import (
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -31,8 +31,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
-	"google.golang.org/adk/v2/agent"
-	"google.golang.org/genai"
 )
 
 var zulipHandlerActorAddress = actorlayer.ActorAddress{Target: "handler", Key: "zulip"}
@@ -113,7 +111,6 @@ type zulipSessionManager interface {
 type zulipBaldaHandlerParams struct {
 	fx.In
 
-	LC                fx.Lifecycle
 	OwnerStore        *auth.OwnerStore
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
@@ -133,7 +130,7 @@ type zulipBaldaHandlerParams struct {
 	Logger            zerolog.Logger
 }
 
-// NewZulipBaldaHandler creates a ZulipBaldaHandler and registers lifecycle hooks.
+// NewZulipBaldaHandler creates a ZulipBaldaHandler.
 func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 	h := &ZulipBaldaHandler{
 		ownerStore:        params.OwnerStore,
@@ -156,17 +153,14 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		processSem:        make(chan struct{}, zulipWebhookMaxConcurrentTasks),
 	}
 
-	params.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			return h.onStart(ctx)
-		},
-		OnStop: func(ctx context.Context) error {
-			return h.onStop(ctx)
-		},
-	})
-
 	return h
 }
+
+// Start begins accepting configured Zulip webhook requests.
+func (h *ZulipBaldaHandler) Start(ctx context.Context) error { return h.onStart(ctx) }
+
+// Stop gracefully shuts down the Zulip receiver.
+func (h *ZulipBaldaHandler) Stop(ctx context.Context) error { return h.onStop(ctx) }
 
 func (h *ZulipBaldaHandler) onStart(_ context.Context) error {
 	if !h.enabled {
@@ -1279,129 +1273,6 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 	}
 	_, err = h.actorDispatcher.Dispatch(ctx, env)
 	return err
-}
-
-// RunSessionTurnPayload implements actors.SessionTurnRunner for Zulip sessions.
-func (h *ZulipBaldaHandler) RunSessionTurnPayload(
-	ctx context.Context,
-	payload actors.SessionTurnPayload,
-) error {
-	if h.sessionManager == nil {
-		return fmt.Errorf("zulip turn: session manager is unavailable")
-	}
-	ts, err := h.sessionManager.GetSession(payload.Locator)
-	if err != nil || ts == nil {
-		userID := strings.TrimSpace(payload.UserID)
-		ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
-			Locator: payload.Locator,
-			UserID:  userID,
-		})
-		if err != nil {
-			if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-				return fmt.Errorf("restore session for queued zulip turn: %w", err)
-			}
-			if userID == "" {
-				h.logger.Debug().
-					Str("session_id", payload.Locator.SessionID).
-					Msg("dropping queued zulip turn for unknown session without transport user")
-				return nil
-			}
-			ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-				Locator: payload.Locator,
-				UserID:  userID,
-			}, ownerSessionLabel)
-			if err != nil {
-				return fmt.Errorf("create session for queued zulip turn: %w", err)
-			}
-		}
-	}
-	if ts == nil {
-		return fmt.Errorf("zulip turn: session %s unavailable after restore", payload.Locator.SessionID)
-	}
-
-	userID := strings.TrimSpace(payload.UserID)
-	if userID == "" {
-		userID = ts.GetUserID()
-	}
-	agentSessionID := strings.TrimSpace(payload.AgentSessionID)
-	if agentSessionID == "" {
-		agentSessionID = ts.GetAgentSessionID()
-	}
-	deliveryLocator := payload.Locator
-	if payload.ReportTo != nil {
-		deliveryLocator = *payload.ReportTo
-	}
-
-	r := ts.GetRunner()
-	if r == nil {
-		return fmt.Errorf("zulip turn: no runner in session %s", payload.Locator.SessionID)
-	}
-
-	userContent := genai.NewContentFromText(strings.TrimSpace(payload.Text), genai.RoleUser)
-	runOpts, err := prepareMemoryRunOptions(ctx, h.memoryStore, ts)
-	if err != nil {
-		return err
-	}
-
-	var responseText strings.Builder
-	sawTurnComplete := false
-	for ev, err := range r.Run(ctx, userID, agentSessionID, userContent, agent.RunConfig{}, runOpts...) {
-		if err != nil {
-			return fmt.Errorf("zulip agent run: %w", err)
-		}
-		if ev == nil {
-			continue
-		}
-		if ev.Content != nil {
-			var evText strings.Builder
-			for _, part := range ev.Content.Parts {
-				if part == nil || part.Thought || part.Text == "" {
-					continue
-				}
-				evText.WriteString(part.Text)
-			}
-			if evText.Len() > 0 && ev.IsFinalResponse() {
-				text := evText.String()
-				if text != responseText.String() {
-					responseText.Reset()
-					responseText.WriteString(text)
-				}
-			}
-		}
-		if ev.TurnComplete {
-			sawTurnComplete = true
-			break
-		}
-	}
-
-	if !sawTurnComplete {
-		h.logger.Warn().
-			Str("session_id", payload.Locator.SessionID).
-			Msg("zulip turn did not complete normally")
-	}
-
-	text := strings.TrimSpace(responseText.String())
-	if text == "" || !payload.Deliver {
-		return nil
-	}
-
-	return h.deliverZulipAgentReply(ctx, deliveryLocator, payload.Locator.SessionID, text)
-}
-
-func (h *ZulipBaldaHandler) deliverZulipAgentReply(
-	ctx context.Context,
-	locator baldasession.SessionLocator,
-	sessionID string,
-	text string,
-) error {
-	if err := h.sendZulipAgentReply(ctx, locator, text); err != nil {
-		h.logger.Warn().
-			Err(err).
-			Str("session_id", sessionID).
-			Msg("zulip: failed to deliver response")
-		return fmt.Errorf("deliver zulip response for session %s: %w", sessionID, err)
-	}
-	return nil
 }
 
 func (h *ZulipBaldaHandler) sendZulipAgentReply(

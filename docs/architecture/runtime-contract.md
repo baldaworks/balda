@@ -5,14 +5,16 @@ Status: active
 
 ## Invariants
 
-- Startup order stays strict: config -> bundled MCP lifecycle -> balda provider -> channel runtime.
+- Startup order stays strict: config -> bundled MCP -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Slack/Zulip/Telegram ingress.
+- Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
-- The session-turn execution path is the only code path that can enqueue `TurnDispatcher` work.
+- The session actor is the only code path that can enqueue `TurnDispatcher` work; `sessionturn` is the only queued-turn restoration use case.
+- `TurnDispatcher` is the authoritative per-session mailbox. Canceling a session resolves every dropped completion with `context.Canceled` and cancels the active turn.
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through Balda's local actorlayer contracts, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
-- Balda keeps that ownership inside explicit app layers: `internal/apps/balda/execution` owns runtime policy, `internal/apps/balda/jobs` owns durable job state and projections, `internal/apps/balda/actors` owns product actor behavior, and `internal/apps/balda/handlers` owns ingress only.
+- Balda keeps that ownership inside explicit app layers: `actorcmd` owns wire taxonomy; `execution` owns runtime policy; `jobs` owns durable job state, event outbox, and projections; `actors` owns product behavior; `sessionturn` owns queued-turn restoration; `internalmcp` owns bundled MCP lifecycle; and `handlers` owns ingress plus the provider-turn executor adapter.
 - The local `pkg/actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 
 ## Boundary contract
@@ -26,11 +28,11 @@ Status: active
   - No Balda provider selection, queue runtime, Telegram, MCP, or job projection policy.
 
 - Balda integration layer (policy owner):
-  - Product actor implementations and command contracts in `internal/apps/balda/actors`.
+  - Product actor implementations in `internal/apps/balda/actors` and wire contracts in leaf package `internal/apps/balda/actorcmd`.
   - Telegram, Slack, Zulip, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors.
   - Concrete transport adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
-  - Job/projector side effects in SQLite (legacy `execution_*` storage plus job/read-model state) for job-style orchestration and read models.
+  - Job state in `execution_jobs`, transactional event publication intent in `execution_job_event_outbox`, and idempotent history projections in `execution_job_events`.
   - Internal command visibility backed by logs and tooling.
   - Mapping between policy metadata (`chat_id`, `topic_id`, `goal_id`, `attempt`) and actor-level envelopes.
   - The single app-scoped provider runtime selected by `balda.provider`.
@@ -51,13 +53,19 @@ Status: active
 
 - `internal/apps/balda/execution/config_test.go`
 - `internal/apps/balda/eventbus/config_test.go`
-- `internal/apps/balda/architecture_contract_test.go`
+- `internal/apps/balda/application_lifecycle_test.go`
+- `internal/apps/balda/architecture_dependencies_test.go`
+- `internal/apps/balda/actors/turn_dispatcher_test.go`
+- `internal/apps/balda/jobs/service_test.go`
 
 ## Related packages
 
 - `internal/apps/balda`
 - `internal/apps/balda/actors`
+- `internal/apps/balda/actorcmd`
 - `internal/apps/balda/handlers`
+- `internal/apps/balda/sessionturn`
+- `internal/apps/balda/internalmcp`
 - `internal/apps/balda/execution`
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/eventbus`

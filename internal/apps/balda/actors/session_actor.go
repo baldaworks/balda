@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -152,14 +152,10 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 		return actorlayer.TransientError(fmt.Errorf("session turn runner is required"))
 	}
 
-	done := make(chan error, 1)
-	_, err := e.turns.Enqueue(TurnTask{
+	result, _, err := e.turns.Enqueue(ctx, TurnTask{
 		SessionID: payload.Locator.SessionID,
-		Context:   ctx,
 		Run: func(runCtx context.Context) error {
-			err := e.runner.RunSessionTurnPayload(runCtx, payload)
-			done <- err
-			return err
+			return e.runner.RunSessionTurnPayload(runCtx, payload)
 		},
 	})
 	if err != nil {
@@ -170,7 +166,7 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	}
 
 	select {
-	case err := <-done:
+	case err := <-result:
 		return e.settleSessionTurnResult(ctx, env, payload, err)
 	case <-ctx.Done():
 		return actorlayer.TransientError(ctx.Err())

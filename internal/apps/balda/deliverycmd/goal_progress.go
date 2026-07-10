@@ -4,14 +4,39 @@ import (
 	"fmt"
 	"strings"
 
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/progress"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/pkg/actorlayer"
 )
 
-func GoalProgressEnvelope(update baldaexecution.GoalProgressUpdate) (actorlayer.Envelope, error) {
+type GoalProgressKind string
+
+const (
+	GoalProgressKindPlan      GoalProgressKind = "plan"
+	GoalProgressKindOutput    GoalProgressKind = "output"
+	GoalProgressKindCompleted GoalProgressKind = "completed"
+)
+
+type GoalProgressUpdate struct {
+	JobID         string
+	Locator       baldasession.SessionLocator
+	Profile       deliveryfmt.Profile
+	Policy        deliveryfmt.ProgressPolicy
+	Step          string
+	Iteration     int
+	MaxIterations int
+	Kind          GoalProgressKind
+	Text          string
+	Plan          *progress.PlanSnapshot
+	Sequence      int
+}
+
+func GoalProgressEnvelope(update GoalProgressUpdate) (actorlayer.Envelope, error) {
 	from := actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: strings.TrimSpace(update.JobID)}
 	switch update.Kind {
-	case baldaexecution.GoalProgressKindPlan:
+	case GoalProgressKindPlan:
 		message := strings.TrimSpace(update.Text)
 		if message == "" {
 			return actorlayer.Envelope{}, nil
@@ -26,7 +51,7 @@ func GoalProgressEnvelope(update baldaexecution.GoalProgressUpdate) (actorlayer.
 			message,
 			goalProgressDedupeSuffix(update),
 		)
-	case baldaexecution.GoalProgressKindOutput, baldaexecution.GoalProgressKindCompleted:
+	case GoalProgressKindOutput, GoalProgressKindCompleted:
 		message := strings.TrimSpace(update.Text)
 		if message == "" {
 			return actorlayer.Envelope{}, nil
@@ -44,7 +69,7 @@ func GoalProgressEnvelope(update baldaexecution.GoalProgressUpdate) (actorlayer.
 	}
 }
 
-func goalProgressDedupeSuffix(update baldaexecution.GoalProgressUpdate) string {
+func goalProgressDedupeSuffix(update GoalProgressUpdate) string {
 	iteration := update.Iteration
 	if iteration <= 0 {
 		iteration = 1

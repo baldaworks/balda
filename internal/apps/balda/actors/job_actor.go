@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"

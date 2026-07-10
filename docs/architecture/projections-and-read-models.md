@@ -5,7 +5,9 @@ Status: active
 
 ## Invariants
 
-- SQLite task/command views are read models projected from durable events.
+- SQLite job history is a read model projected from durable events.
+- Every JobService state transition atomically writes its publication intent to `execution_job_event_outbox`; transient event-stream failure cannot lose the semantic event.
+- The outbox publisher retries pending events, while `execution_job_events` remains an idempotent projection of `BALDA_EVENTS`.
 - Projection failures do not stop command execution.
 - Projection handlers are idempotent.
 - Internal task/read-model views read product state + projections; they are not chat commands.

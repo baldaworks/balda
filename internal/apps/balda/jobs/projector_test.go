@@ -10,16 +10,14 @@ import (
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
-	"go.uber.org/fx/fxtest"
 )
 
 func TestNewEventProjectorRequiresConsumer(t *testing.T) {
 	t.Parallel()
 
 	projector, err := NewEventProjector(eventProjectorParams{
-		LC:            fxtest.NewLifecycle(t),
-		StateProvider: newEventProjectorStateProvider(t, context.Background()),
-		Logger:        zerolog.Nop(),
+		Store:  newEventProjectorStateProvider(t, context.Background()).Jobs(),
+		Logger: zerolog.Nop(),
 	})
 	if err == nil || !strings.Contains(err.Error(), "actor runtime event consumer") {
 		t.Fatalf("NewEventProjector() = (%v, %v), want consumer error", projector, err)

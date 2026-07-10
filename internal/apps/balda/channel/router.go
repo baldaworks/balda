@@ -29,7 +29,8 @@ func (r *Router) SendPlain(ctx context.Context, locator baldasession.SessionLoca
 	if err != nil {
 		return err
 	}
-	return adapter.SendPlain(ctx, locator, text)
+	_, err = adapter.Deliver(ctx, locator, Operation{Kind: OperationPlain, Text: text})
+	return err
 }
 
 func (r *Router) SendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error {
@@ -41,7 +42,8 @@ func (r *Router) SendMarkdownWithProfile(ctx context.Context, locator baldasessi
 	if err != nil {
 		return err
 	}
-	return adapter.SendMarkdownWithProfile(ctx, locator, profile, text)
+	_, err = adapter.Deliver(ctx, locator, Operation{Kind: OperationMarkdown, Profile: profile, Text: text})
+	return err
 }
 
 func (r *Router) SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error {
@@ -49,7 +51,8 @@ func (r *Router) SendAgentReply(ctx context.Context, locator baldasession.Sessio
 	if err != nil {
 		return err
 	}
-	return adapter.SendAgentReply(ctx, locator, text)
+	_, err = adapter.Deliver(ctx, locator, Operation{Kind: OperationAgentReply, Text: text})
+	return err
 }
 
 func (r *Router) SendAgentReplyWithProviderMessageID(ctx context.Context, locator baldasession.SessionLocator, text string) (string, error) {
@@ -61,7 +64,8 @@ func (r *Router) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Conte
 	if err != nil {
 		return "", err
 	}
-	return adapter.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, profile, text)
+	result, err := adapter.Deliver(ctx, locator, Operation{Kind: OperationAgentReply, Profile: profile, Text: text})
+	return result.ProviderMessageID, err
 }
 
 func (r *Router) SendDraftPlain(ctx context.Context, locator baldasession.SessionLocator, draftID int, text string) error {
@@ -69,7 +73,8 @@ func (r *Router) SendDraftPlain(ctx context.Context, locator baldasession.Sessio
 	if err != nil {
 		return err
 	}
-	return adapter.SendDraftPlain(ctx, locator, draftID, text)
+	_, err = adapter.Deliver(ctx, locator, Operation{Kind: OperationDraft, DraftID: draftID, Text: text})
+	return err
 }
 
 func (r *Router) SendTyping(ctx context.Context, locator baldasession.SessionLocator) error {
@@ -77,7 +82,8 @@ func (r *Router) SendTyping(ctx context.Context, locator baldasession.SessionLoc
 	if err != nil {
 		return err
 	}
-	return adapter.SendTyping(ctx, locator)
+	_, err = adapter.Deliver(ctx, locator, Operation{Kind: OperationTyping})
+	return err
 }
 
 func (r *Router) SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error {
@@ -85,5 +91,6 @@ func (r *Router) SendProgress(ctx context.Context, locator baldasession.SessionL
 	if err != nil {
 		return err
 	}
-	return adapter.SendProgress(ctx, locator, progress)
+	_, err = adapter.Deliver(ctx, locator, Operation{Kind: OperationProgress, Progress: progress})
+	return err
 }

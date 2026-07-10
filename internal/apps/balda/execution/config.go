@@ -2,9 +2,11 @@ package execution
 
 import (
 	"strings"
+
+	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 )
 
-const QueueModeInterrupt = "interrupt"
+const QueueModeInterrupt = actorcmd.QueueModeInterrupt
 
 const (
 	DefaultCommandStream          = "BALDA_COMMANDS"

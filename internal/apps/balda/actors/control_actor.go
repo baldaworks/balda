@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/pkg/actorlayer"

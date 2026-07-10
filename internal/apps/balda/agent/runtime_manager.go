@@ -35,7 +35,6 @@ type RuntimeManager struct {
 type RuntimeManagerParams struct {
 	fx.In
 
-	LC                fx.Lifecycle
 	Builder           *Builder
 	BaldaProviderID   string `name:"balda_provider"`
 	WorkingDir        string
@@ -131,13 +130,12 @@ func NewRuntimeManager(p RuntimeManagerParams) *RuntimeManager {
 		logger:            p.Logger.With().Str("component", "balda.runtime_manager").Logger(),
 	}
 
-	p.LC.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			return m.close()
-		},
-	})
-
 	return m
+}
+
+// Stop releases the app-scoped provider runtime.
+func (m *RuntimeManager) Stop(context.Context) error {
+	return m.close()
 }
 
 // ProviderID returns the configured balda provider ID.

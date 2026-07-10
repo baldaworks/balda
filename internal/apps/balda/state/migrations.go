@@ -25,6 +25,7 @@ var requiredBaldaSQLiteTables = []string{
 	"balda_scheduled_jobs",
 	"execution_jobs",
 	"execution_job_events",
+	"execution_job_event_outbox",
 	"execution_delivery_outbox",
 	"execution_agent_steps",
 }
