@@ -441,7 +441,6 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	if event == nil || event.Message == nil || event.Message.From == nil {
 		return CommandContext{}, false
 	}
-
 	topicID := a.topicIDFromMessage(event.Message)
 
 	return CommandContext{

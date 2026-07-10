@@ -514,7 +514,6 @@ func TestMessageContextFromEvent_CopiesEntities(t *testing.T) {
 func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T) {
 	topicID := 523431
 	isTopicMessage := false
-
 	got, ok := (&Adapter{}).CommandContextFromEvent(&events.CommandEvent{
 		Command: "topic",
 		Args:    "codex",
@@ -542,7 +541,6 @@ func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 func TestCommandContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing.T) {
 	topicID := 523431
 	isTopicMessage := true
-
 	got, ok := (&Adapter{}).CommandContextFromEvent(&events.CommandEvent{
 		Command: "topic",
 		Args:    "codex",
