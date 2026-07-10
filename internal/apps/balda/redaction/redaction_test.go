@@ -1,4 +1,4 @@
-package handlers
+package redaction
 
 import (
 	"strings"
@@ -55,13 +55,13 @@ func TestRedactSecrets(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := redactSecrets(tc.in)
+			got := Secrets(tc.in)
 			if got != tc.want {
-				t.Fatalf("redactSecrets() = %q, want %q", got, tc.want)
+				t.Fatalf("Secrets() = %q, want %q", got, tc.want)
 			}
 			for _, forbidden := range tc.notContain {
 				if forbidden != "" && strings.Contains(got, forbidden) {
-					t.Fatalf("redactSecrets() = %q, still contains %q", got, forbidden)
+					t.Fatalf("Secrets() = %q, still contains %q", got, forbidden)
 				}
 			}
 		})

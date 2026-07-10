@@ -23,7 +23,7 @@ import (
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -116,7 +116,6 @@ type SlackHandler struct {
 type slackHandlerParams struct {
 	fx.In
 
-	LC                fx.Lifecycle
 	OwnerStore        *auth.OwnerStore
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
@@ -132,7 +131,7 @@ type slackHandlerParams struct {
 	Logger            zerolog.Logger
 }
 
-// NewSlackHandler creates a Slack HTTP receiver and registers lifecycle hooks.
+// NewSlackHandler creates a Slack HTTP receiver.
 func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 	h := &SlackHandler{
 		ownerStore:        params.OwnerStore,
@@ -150,16 +149,14 @@ func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 		logger:            params.Logger.With().Str("component", "balda.handler.slack").Logger(),
 		processSem:        make(chan struct{}, slackWebhookMaxConcurrentTasks),
 	}
-	params.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			return h.onStart(ctx)
-		},
-		OnStop: func(ctx context.Context) error {
-			return h.onStop(ctx)
-		},
-	})
 	return h
 }
+
+// Start authenticates the Slack bot and begins accepting requests.
+func (h *SlackHandler) Start(ctx context.Context) error { return h.onStart(ctx) }
+
+// Stop gracefully shuts down the Slack receiver.
+func (h *SlackHandler) Stop(ctx context.Context) error { return h.onStop(ctx) }
 
 func (h *SlackHandler) onStart(ctx context.Context) error {
 	if !h.config.Enabled {

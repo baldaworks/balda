@@ -1,29 +1,14 @@
 package execution
 
 import (
-	"strings"
-
+	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/pkg/actorlayer"
 )
 
-const JobIDMetaKey = "job_id"
+const JobIDMetaKey = actorcmd.JobIDMetaKey
 
-func EnvelopeJobID(env actorlayer.Envelope) string {
-	if env.Meta == nil {
-		return ""
-	}
-	return strings.TrimSpace(env.Meta[JobIDMetaKey])
-}
+func EnvelopeJobID(env actorlayer.Envelope) string { return actorcmd.EnvelopeJobID(env) }
 
 func WithJobIDMeta(meta map[string]string, jobID string) map[string]string {
-	trimmed := strings.TrimSpace(jobID)
-	if trimmed == "" {
-		return meta
-	}
-	out := make(map[string]string, len(meta)+1)
-	for k, v := range meta {
-		out[k] = v
-	}
-	out[JobIDMetaKey] = trimmed
-	return out
+	return actorcmd.WithJobIDMeta(meta, jobID)
 }

@@ -5,11 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -33,22 +34,30 @@ const (
 )
 
 type JobService struct {
-	store baldastate.JobStore
+	store ServiceStore
 	bus   actortransport.EventPublisher
+}
+
+// ServiceStore is the job state needed by JobService.
+type ServiceStore interface {
+	baldastate.JobLifecycleStore
+	baldastate.JobEventOutboxStore
+	baldastate.DeliveryStore
+	baldastate.AgentStepStore
 }
 
 type jobServiceParams struct {
 	fx.In
 
-	StateProvider baldastate.Provider
-	Bus           actortransport.EventPublisher `optional:"true"`
+	Store ServiceStore
+	Bus   actortransport.EventPublisher `optional:"true"`
 }
 
 func NewJobService(params jobServiceParams) (*JobService, error) {
-	if params.StateProvider == nil {
-		return nil, fmt.Errorf("balda state provider is required")
+	if params.Store == nil {
+		return nil, fmt.Errorf("job service store is required")
 	}
-	return &JobService{store: params.StateProvider.Jobs(), bus: params.Bus}, nil
+	return &JobService{store: params.Store, bus: params.Bus}, nil
 }
 
 func (s *JobService) Create(ctx context.Context, record baldastate.JobRecord, actor string, payload any) (bool, error) {
@@ -62,19 +71,23 @@ func (s *JobService) Create(ctx context.Context, record baldastate.JobRecord, ac
 	if strings.TrimSpace(payloadJSON) == "" {
 		payloadJSON = "{}"
 	}
-	// Contract: job state is authoritative in SQLite; event publication is visibility-only.
-	created, err := s.store.CreateJob(ctx, record)
-	if err != nil {
-		return false, err
-	}
 	jobID := strings.TrimSpace(record.ID)
-	s.publishEventRecordBestEffort(ctx, baldastate.JobEventRecord{
+	event := baldastate.JobEventRecord{
 		ID:          "job:" + jobID + ":event:created",
 		JobID:       jobID,
 		EventType:   JobEventCreated,
 		Actor:       strings.TrimSpace(actor),
 		PayloadJSON: payloadJSON,
-	})
+	}
+	outbox, err := jobEventOutboxRecord(event)
+	if err != nil {
+		return false, err
+	}
+	created, err := s.store.CreateJobWithEvent(ctx, record, outbox)
+	if err != nil {
+		return false, err
+	}
+	s.publishOutboxBestEffort(ctx, outbox)
 	return created, nil
 }
 
@@ -113,32 +126,26 @@ func (s *JobService) MarkStatus(ctx context.Context, jobID string, status string
 	if s == nil {
 		return nil
 	}
-	// Contract: persist lifecycle transition first, then best-effort event emission.
-	if err := s.store.UpdateJobStatus(ctx, jobID, status, reason); err != nil {
-		return s.suppressStaleTerminalTransition(ctx, jobID, status, err)
-	}
-	eventType := ""
-	switch strings.TrimSpace(status) {
-	case baldastate.JobStatusQueued, baldastate.JobStatusWaitingForAgent, baldastate.JobStatusWaitingForUser:
-		eventType = JobEventAssigned
-	case baldastate.JobStatusRunning:
-		eventType = JobEventStarted
-	case baldastate.JobStatusValidating:
-		eventType = JobEventValidating
-	case baldastate.JobStatusCompleted:
-		eventType = JobEventCompleted
-	case baldastate.JobStatusFailed, baldastate.JobStatusDeadLettered:
-		eventType = JobEventFailed
-	case baldastate.JobStatusCanceled:
-		eventType = JobEventCanceled
-	}
+	eventType := jobStatusEventType(status)
 	if eventType == "" {
-		return nil
+		return fmt.Errorf("job status %q has no lifecycle event", status)
 	}
-	return s.appendEventBestEffort(ctx, jobID, eventType, actor, messageID, mergePayload(payload, map[string]any{
+	event, err := jobEventRecord(jobID, eventType, actor, messageID, mergePayload(payload, map[string]any{
 		"status": status,
 		"reason": reason,
 	}))
+	if err != nil {
+		return err
+	}
+	outbox, err := jobEventOutboxRecord(event)
+	if err != nil {
+		return err
+	}
+	if err := s.store.UpdateJobStatusWithEvent(ctx, jobID, status, reason, outbox); err != nil {
+		return s.suppressStaleTerminalTransition(ctx, jobID, status, err)
+	}
+	s.publishOutboxBestEffort(ctx, outbox)
+	return nil
 }
 
 func (s *JobService) SetResult(ctx context.Context, jobID string, result any, status string, actor string, reason string) error {
@@ -149,29 +156,47 @@ func (s *JobService) SetResult(ctx context.Context, jobID string, result any, st
 	if err != nil {
 		return err
 	}
-	// Contract: result/state write is authoritative; event emission is best-effort visibility.
-	if err := s.store.SetJobResult(ctx, jobID, data, status, reason); err != nil {
-		return s.suppressStaleTerminalTransition(ctx, jobID, status, err)
+	eventType := jobStatusEventType(status)
+	if eventType == "" {
+		return fmt.Errorf("job status %q has no lifecycle event", status)
 	}
-	eventType := ""
-	switch strings.TrimSpace(status) {
-	case baldastate.JobStatusQueued, baldastate.JobStatusWaitingForAgent, baldastate.JobStatusWaitingForUser:
-		eventType = JobEventAssigned
-	case baldastate.JobStatusRunning:
-		eventType = JobEventStarted
-	case baldastate.JobStatusValidating:
-		eventType = JobEventValidating
-	case baldastate.JobStatusCompleted:
-		eventType = JobEventCompleted
-	case baldastate.JobStatusFailed, baldastate.JobStatusDeadLettered:
-		eventType = JobEventFailed
-	case baldastate.JobStatusCanceled:
-		eventType = JobEventCanceled
-	}
-	return s.appendEventBestEffort(ctx, jobID, eventType, actor, "", mergePayload(result, map[string]any{
+	event, err := jobEventRecord(jobID, eventType, actor, "", mergePayload(result, map[string]any{
 		"status": status,
 		"reason": reason,
 	}))
+	if err != nil {
+		return err
+	}
+	outbox, err := jobEventOutboxRecord(event)
+	if err != nil {
+		return err
+	}
+	if err := s.store.SetJobResultWithEvent(ctx, jobID, data, status, reason, outbox); err != nil {
+		return s.suppressStaleTerminalTransition(ctx, jobID, status, err)
+	}
+	s.publishOutboxBestEffort(ctx, outbox)
+	return nil
+}
+
+func jobStatusEventType(status string) string {
+	switch strings.TrimSpace(status) {
+	case baldastate.JobStatusCreated:
+		return JobEventCreated
+	case baldastate.JobStatusQueued, baldastate.JobStatusWaitingForAgent, baldastate.JobStatusWaitingForUser:
+		return JobEventAssigned
+	case baldastate.JobStatusRunning:
+		return JobEventStarted
+	case baldastate.JobStatusValidating:
+		return JobEventValidating
+	case baldastate.JobStatusCompleted:
+		return JobEventCompleted
+	case baldastate.JobStatusFailed, baldastate.JobStatusDeadLettered:
+		return JobEventFailed
+	case baldastate.JobStatusCanceled:
+		return JobEventCanceled
+	default:
+		return ""
+	}
 }
 
 func (s *JobService) suppressStaleTerminalTransition(ctx context.Context, jobID string, status string, err error) error {
@@ -214,18 +239,14 @@ func (s *JobService) AppendEvent(ctx context.Context, jobID string, eventType st
 	if err != nil {
 		return err
 	}
-	return s.publishEventRecord(ctx, event)
-}
-
-func (s *JobService) appendEventBestEffort(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error {
-	if s == nil {
-		return nil
-	}
-	event, err := jobEventRecord(jobID, eventType, actor, messageID, payload)
+	outbox, err := jobEventOutboxRecord(event)
 	if err != nil {
 		return err
 	}
-	s.publishEventRecordBestEffort(ctx, event)
+	if err := s.store.EnqueueJobEvent(ctx, outbox); err != nil {
+		return err
+	}
+	s.publishOutboxBestEffort(ctx, outbox)
 	return nil
 }
 
@@ -369,10 +390,7 @@ func IsGoalJob(job baldastate.JobRecord) bool {
 	return false
 }
 
-func (s *JobService) publishJobEvent(ctx context.Context, event baldastate.JobEventRecord) error {
-	if s == nil || s.bus == nil {
-		return fmt.Errorf("event bus is required")
-	}
+func jobEventEnvelope(event baldastate.JobEventRecord) (string, actorlayer.Envelope) {
 	payload := strings.TrimSpace(event.PayloadJSON)
 	if payload == "" {
 		payload = "{}"
@@ -388,7 +406,7 @@ func (s *JobService) publishJobEvent(ctx context.Context, event baldastate.JobEv
 	case JobEventCompleted:
 		subject = baldaexecution.SubjectEventJobCompleted
 	}
-	env := actorlayer.Envelope{
+	return subject, actorlayer.Envelope{
 		ID:          event.ID,
 		Namespace:   baldaexecution.NamespaceTelemetry,
 		Kind:        "job_event",
@@ -401,24 +419,56 @@ func (s *JobService) publishJobEvent(ctx context.Context, event baldastate.JobEv
 			"message_id": event.MessageID,
 		}, event.JobID),
 	}
-	return s.bus.PublishEvent(ctx, subject, env)
 }
 
-func (s *JobService) publishEventRecord(ctx context.Context, event baldastate.JobEventRecord) error {
-	if s == nil {
-		return nil
+func jobEventOutboxRecord(event baldastate.JobEventRecord) (baldastate.JobEventOutboxRecord, error) {
+	subject, env := jobEventEnvelope(event)
+	data, err := json.Marshal(env)
+	if err != nil {
+		return baldastate.JobEventOutboxRecord{}, fmt.Errorf("encode job event envelope: %w", err)
 	}
-	return s.publishJobEvent(ctx, event)
+	return baldastate.JobEventOutboxRecord{
+		ID:           strings.TrimSpace(event.ID),
+		JobID:        strings.TrimSpace(event.JobID),
+		Subject:      subject,
+		EnvelopeJSON: string(data),
+	}, nil
 }
 
-func (s *JobService) publishEventRecordBestEffort(ctx context.Context, event baldastate.JobEventRecord) {
-	if err := s.publishEventRecord(ctx, event); err != nil {
+func publishOutboxRecord(
+	ctx context.Context,
+	store eventOutboxStore,
+	bus actortransport.EventPublisher,
+	record baldastate.JobEventOutboxRecord,
+) error {
+	if store == nil {
+		return fmt.Errorf("job event outbox store is required")
+	}
+	if bus == nil {
+		err := fmt.Errorf("event bus is required")
+		return errors.Join(err, store.MarkJobEventPublishFailed(ctx, record.ID, err.Error()))
+	}
+	var env actorlayer.Envelope
+	if err := json.Unmarshal([]byte(record.EnvelopeJSON), &env); err != nil {
+		decodeErr := fmt.Errorf("decode job event outbox %q: %w", record.ID, err)
+		return errors.Join(decodeErr, store.MarkJobEventPublishFailed(ctx, record.ID, decodeErr.Error()))
+	}
+	if err := bus.PublishEvent(ctx, record.Subject, env); err != nil {
+		return errors.Join(err, store.MarkJobEventPublishFailed(ctx, record.ID, err.Error()))
+	}
+	return store.MarkJobEventPublished(ctx, record.ID)
+}
+
+func (s *JobService) publishOutboxBestEffort(ctx context.Context, record baldastate.JobEventOutboxRecord) {
+	if s == nil {
+		return
+	}
+	if err := publishOutboxRecord(ctx, s.store, s.bus, record); err != nil {
 		log.Ctx(ctx).Warn().
 			Err(err).
-			Str("job_id", event.JobID).
-			Str("event_type", event.EventType).
-			Str("event_id", event.ID).
-			Msg("failed to publish job event")
+			Str("job_id", record.JobID).
+			Str("event_id", record.ID).
+			Msg("job event remains pending in outbox")
 	}
 }
 

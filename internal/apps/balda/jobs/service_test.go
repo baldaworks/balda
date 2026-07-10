@@ -40,7 +40,7 @@ func TestJobServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestJobServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}
@@ -90,7 +90,7 @@ func TestJobServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}
@@ -125,7 +125,7 @@ func TestJobServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}
@@ -156,6 +156,48 @@ func TestJobServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing
 	}
 }
 
+func TestOutboxPublisherRetriesFailedJobEvent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	if err != nil {
+		t.Fatalf("NewJobService() error = %v", err)
+	}
+	record := baldastate.JobRecord{ID: "job-retry", SessionID: "s-1", Objective: "retry event"}
+	if _, err := service.Create(ctx, record, "job.actor", nil); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	pending, err := provider.Jobs().ListPendingJobEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingJobEvents() error = %v", err)
+	}
+	if len(pending) != 1 || pending[0].Attempts != 1 {
+		t.Fatalf("pending events = %+v, want one failed attempt", pending)
+	}
+
+	publisher := &OutboxPublisher{store: provider.Jobs(), bus: bus, batchSize: 10}
+	if err := publisher.Flush(ctx); err != nil {
+		t.Fatalf("Flush() error = %v", err)
+	}
+	pending, err = provider.Jobs().ListPendingJobEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingJobEvents(after retry) error = %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending events after retry = %+v, want none", pending)
+	}
+	if len(bus.envs) != 2 || bus.envs[0].ID != bus.envs[1].ID {
+		t.Fatalf("published events = %+v, want two attempts with stable event id", bus.envs)
+	}
+}
+
 func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
@@ -172,7 +214,7 @@ func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *tes
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}
@@ -208,7 +250,7 @@ func TestJobServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *test
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}
@@ -248,7 +290,7 @@ func TestJobServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}
@@ -285,7 +327,7 @@ func TestJobServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{StateProvider: provider, Bus: bus})
+	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
 		t.Fatalf("NewJobService() error = %v", err)
 	}

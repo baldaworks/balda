@@ -7,16 +7,32 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 )
 
-// ChannelAdapter is the transport-neutral interface for sending messages
-// and semantic progress updates to a balda session.
+type OperationKind string
+
+const (
+	OperationPlain      OperationKind = "plain"
+	OperationMarkdown   OperationKind = "markdown"
+	OperationAgentReply OperationKind = "agent_reply"
+	OperationDraft      OperationKind = "draft"
+	OperationTyping     OperationKind = "typing"
+	OperationProgress   OperationKind = "progress"
+)
+
+// Operation describes one transport-neutral delivery side effect.
+type Operation struct {
+	Kind     OperationKind
+	Profile  deliverycmd.Profile
+	Text     string
+	DraftID  int
+	Progress deliverycmd.Progress
+}
+
+// Result contains transport metadata returned by a delivery.
+type Result struct {
+	ProviderMessageID string
+}
+
+// ChannelAdapter executes one semantic delivery operation.
 type ChannelAdapter interface {
-	SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error
-	SendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error
-	SendMarkdownWithProfile(ctx context.Context, locator baldasession.SessionLocator, profile deliverycmd.Profile, text string) error
-	SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error
-	SendAgentReplyWithProviderMessageID(ctx context.Context, locator baldasession.SessionLocator, text string) (string, error)
-	SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator baldasession.SessionLocator, profile deliverycmd.Profile, text string) (string, error)
-	SendDraftPlain(ctx context.Context, locator baldasession.SessionLocator, draftID int, text string) error
-	SendTyping(ctx context.Context, locator baldasession.SessionLocator) error
-	SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error
+	Deliver(ctx context.Context, locator baldasession.SessionLocator, operation Operation) (Result, error)
 }

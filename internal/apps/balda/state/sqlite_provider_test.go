@@ -14,7 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 23
+const expectedSQLiteMigrationVersion = 24
 
 func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
@@ -374,6 +374,47 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 	assertRequiredBaldaSQLiteTables(t, ctx, db)
 	assertSessionMetadataHasNoChatTopicUnique(t, ctx, db)
+}
+
+func TestJobEventOutboxMigrationRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "migration.db"))
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	upTx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx(up) error = %v", err)
+	}
+	if err := up00024JobEventOutbox(ctx, upTx); err != nil {
+		_ = upTx.Rollback()
+		t.Fatalf("up00024JobEventOutbox() error = %v", err)
+	}
+	if err := upTx.Commit(); err != nil {
+		t.Fatalf("Commit(up) error = %v", err)
+	}
+	if exists, err := sqliteTableExists(ctx, db, "execution_job_event_outbox"); err != nil || !exists {
+		t.Fatalf("job event outbox after up exists=%v err=%v, want true", exists, err)
+	}
+
+	downTx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx(down) error = %v", err)
+	}
+	if err := down00024JobEventOutbox(ctx, downTx); err != nil {
+		_ = downTx.Rollback()
+		t.Fatalf("down00024JobEventOutbox() error = %v", err)
+	}
+	if err := downTx.Commit(); err != nil {
+		t.Fatalf("Commit(down) error = %v", err)
+	}
+	if exists, err := sqliteTableExists(ctx, db, "execution_job_event_outbox"); err != nil || exists {
+		t.Fatalf("job event outbox after down exists=%v err=%v, want false", exists, err)
+	}
 }
 
 func TestSQLiteProvider_RuntimeSessionPersistsAcrossReopen(t *testing.T) {

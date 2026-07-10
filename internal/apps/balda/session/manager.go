@@ -70,7 +70,6 @@ type Manager struct {
 type ManagerParams struct {
 	fx.In
 
-	LC                   fx.Lifecycle
 	AgentBuilder         *baldaagent.Builder
 	RuntimeManager       *baldaagent.RuntimeManager
 	BaldaMCPServerIDs    []string `name:"balda_mcp_servers"`
@@ -81,14 +80,14 @@ type ManagerParams struct {
 	WorkspaceSessionsDir string `name:"balda_workspace_sessions_dir"`
 	WorkspaceBaseRef     string `name:"balda_workspace_base_branch"`
 	SessionsPersistent   bool   `name:"balda_sessions_persistent"`
-	StateProvider        baldastate.Provider
+	SessionStore         baldastate.SessionStore
 	Logger               zerolog.Logger
 }
 
 // NewManager creates a session Manager.
 func NewManager(p ManagerParams) (*Manager, error) {
-	if p.StateProvider == nil {
-		return nil, fmt.Errorf("balda state provider is required")
+	if p.SessionStore == nil {
+		return nil, fmt.Errorf("session store is required")
 	}
 
 	m := &Manager{
@@ -101,24 +100,28 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		workspaceEnabled:   p.WorkspaceEnabled,
 		workspaceBaseRef:   p.WorkspaceBaseRef,
 		sessionsPersistent: p.SessionsPersistent,
-		sessionStore:       p.StateProvider.Sessions(),
+		sessionStore:       p.SessionStore,
 		logger:             p.Logger.With().Str("component", "balda.session_manager").Logger(),
 		sessions:           make(map[string]*TopicSession),
 	}
 
-	p.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			m.logger.Info().Str("balda_provider", m.getProviderName()).Msg("session manager ready")
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			m.logger.Info().Int("active_sessions", len(m.sessions)).Msg("session manager stopping")
-			m.stopAllWithContext(ctx)
-			return nil
-		},
-	})
-
 	return m, nil
+}
+
+// Start marks the session manager ready after its provider runtime is initialized.
+func (m *Manager) Start(context.Context) error {
+	m.logger.Info().Str("balda_provider", m.getProviderName()).Msg("session manager ready")
+	return nil
+}
+
+// Stop terminates all active sessions.
+func (m *Manager) Stop(ctx context.Context) error {
+	m.mu.RLock()
+	activeSessions := len(m.sessions)
+	m.mu.RUnlock()
+	m.logger.Info().Int("active_sessions", activeSessions).Msg("session manager stopping")
+	m.stopAllWithContext(ctx)
+	return nil
 }
 
 // GetAgentMetadata returns balda-provider metadata with provider-scoped MCP IDs.

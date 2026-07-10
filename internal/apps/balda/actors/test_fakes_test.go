@@ -28,9 +28,9 @@ type fakeTurnDispatcher struct {
 	enqueueCalls []TurnTask
 }
 
-func (f *fakeTurnDispatcher) Enqueue(task TurnTask) (int, error) {
+func (f *fakeTurnDispatcher) Enqueue(_ context.Context, task TurnTask) (<-chan error, int, error) {
 	f.enqueueCalls = append(f.enqueueCalls, task)
-	return 0, nil
+	return make(chan error), 0, nil
 }
 
 func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {

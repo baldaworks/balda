@@ -198,6 +198,18 @@ type JobEventRecord struct {
 	CreatedAt   time.Time
 }
 
+// JobEventOutboxRecord persists one job event awaiting publication.
+type JobEventOutboxRecord struct {
+	ID           string
+	JobID        string
+	Subject      string
+	EnvelopeJSON string
+	Attempts     int
+	LastError    string
+	CreatedAt    time.Time
+	PublishedAt  time.Time
+}
+
 // DeliveryRecord persists idempotency state for external delivery side effects.
 type DeliveryRecord struct {
 	ID                string
@@ -234,20 +246,52 @@ type AgentStepRecord struct {
 	CompletedAt time.Time
 }
 
-// JobStore persists Balda job orchestration state and read models.
-type JobStore interface {
+// JobLifecycleStore persists job state transitions.
+type JobLifecycleStore interface {
 	CreateJob(ctx context.Context, record JobRecord) (bool, error)
+	CreateJobWithEvent(ctx context.Context, record JobRecord, event JobEventOutboxRecord) (bool, error)
 	GetJob(ctx context.Context, jobID string) (JobRecord, bool, error)
 	ListActiveJobsBySession(ctx context.Context, sessionID string) ([]JobRecord, error)
 	UpdateJobStatus(ctx context.Context, jobID string, status string, reason string) error
+	UpdateJobStatusWithEvent(ctx context.Context, jobID string, status string, reason string, event JobEventOutboxRecord) error
 	SetJobResult(ctx context.Context, jobID string, resultJSON string, status string, reason string) error
+	SetJobResultWithEvent(ctx context.Context, jobID string, resultJSON string, status string, reason string, event JobEventOutboxRecord) error
+}
+
+// JobEventStore persists projected job history.
+type JobEventStore interface {
 	AppendJobEvent(ctx context.Context, record JobEventRecord) error
 	ListJobEvents(ctx context.Context, jobID string) ([]JobEventRecord, error)
+}
+
+// JobEventOutboxStore persists job events until publication succeeds.
+type JobEventOutboxStore interface {
+	EnqueueJobEvent(ctx context.Context, event JobEventOutboxRecord) error
+	ListPendingJobEvents(ctx context.Context, limit int) ([]JobEventOutboxRecord, error)
+	MarkJobEventPublished(ctx context.Context, eventID string) error
+	MarkJobEventPublishFailed(ctx context.Context, eventID string, reason string) error
+}
+
+// DeliveryStore persists idempotent external deliveries.
+type DeliveryStore interface {
 	ReserveDelivery(ctx context.Context, record DeliveryRecord) (DeliveryRecord, bool, error)
 	MarkDeliverySending(ctx context.Context, deliveryKey string) error
 	MarkDeliverySent(ctx context.Context, deliveryKey string, providerMessageID string) error
 	MarkDeliveryFailed(ctx context.Context, deliveryKey string, reason string) error
+}
+
+// AgentStepStore persists idempotent agent workflow steps.
+type AgentStepStore interface {
 	ReserveAgentStep(ctx context.Context, record AgentStepRecord) (AgentStepRecord, bool, error)
 	CompleteAgentStep(ctx context.Context, stepKey string, resultJSON string) error
 	FailAgentStep(ctx context.Context, stepKey string, resultJSON string, reason string) error
+}
+
+// JobStore is the complete SQLite capability set exposed by the state provider.
+type JobStore interface {
+	JobLifecycleStore
+	JobEventStore
+	JobEventOutboxStore
+	DeliveryStore
+	AgentStepStore
 }

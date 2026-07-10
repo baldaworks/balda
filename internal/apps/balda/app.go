@@ -19,10 +19,10 @@ import (
 	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/handlers"
+	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
-	"github.com/normahq/balda/internal/apps/balda/shutdown"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
@@ -33,7 +33,6 @@ import (
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog/log"
-	"github.com/tgbotkit/runtime"
 	"github.com/tgbotkit/runtime/updatepoller"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
@@ -214,8 +213,23 @@ func Module(
 			func(provider baldastate.Provider) sessionmcp.Store {
 				return provider.SessionMCPKV()
 			},
+			func(provider baldastate.Provider) baldastate.SessionStore {
+				return provider.Sessions()
+			},
+			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
+				return provider.ScheduledJobs()
+			},
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
+			},
+			func(provider baldastate.Provider) baldajobs.ServiceStore {
+				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) baldajobs.ProjectionStore {
+				return provider.Jobs()
+			},
+			func(provider baldastate.Provider) baldajobs.OutboxStore {
+				return provider.Jobs()
 			},
 		),
 		fx.Provide(
@@ -445,39 +459,9 @@ func Module(
 		actors.Module,
 		handlers.Module,
 		fx.Provide(
-			handlers.NewInternalMCPManager,
+			internalmcp.NewInternalMCPManager,
 		),
-		// Start Balda provider runtime and bot runtime only after bundled internal MCP is started.
-		fx.Invoke(func(lc fx.Lifecycle, bot *runtime.Bot, runtimeManager *baldaagent.RuntimeManager, mcpManager *handlers.InternalMCPManager) {
-			telegramEnabled := strings.TrimSpace(cfg.Balda.Telegram.Token) != ""
-			runCtx, cancel := context.WithCancel(context.Background())
-			lc.Append(fx.Hook{
-				OnStart: func(ctx context.Context) error {
-					if err := mcpManager.EnsureStarted(ctx); err != nil {
-						return fmt.Errorf("start bundled internal MCP servers: %w", err)
-					}
-					if err := runtimeManager.EnsureRuntime(ctx); err != nil {
-						return fmt.Errorf("start Balda provider runtime: %w", err)
-					}
-					if telegramEnabled {
-						go func() {
-							if err := bot.Run(runCtx); err != nil {
-								if shutdown.IsExpected(err) {
-									bot.Logger().Debugf("bot run stopped during shutdown: %v", err)
-									return
-								}
-								bot.Logger().Errorf("bot run failed: %v", err)
-							}
-						}()
-					}
-					return nil
-				},
-				OnStop: func(ctx context.Context) error {
-					cancel()
-					return nil
-				},
-			})
-		}),
+		fx.Invoke(registerApplicationLifecycle),
 	)
 }
 

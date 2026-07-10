@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"text/template"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/redaction"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 )
@@ -200,25 +200,8 @@ func RenderReviewableOutcome(profile deliverycmd.Profile, task baldastate.JobRec
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
-var (
-	secretBearerHeaderPattern = regexp.MustCompile(`(?i)(authorization\s*:\s*bearer\s+)([^\s]+)`)
-	secretKeyValuePattern     = regexp.MustCompile(`(?i)\b(token|secret|password|api[_-]?key|access[_-]?key|private[_-]?key)\b(\s*[:=]\s*)([^\s,;]+)`)
-	secretPEMPattern          = regexp.MustCompile(`(?s)-----BEGIN [^-]+-----.*?-----END [^-]+-----`)
-	secretGitHubTokenPattern  = regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9_]{20,}\b`)
-	secretTelegramToken       = regexp.MustCompile(`\b\d{6,10}:[A-Za-z0-9_-]{20,}\b`)
-)
-
 func RedactSecrets(raw string) string {
-	text := strings.TrimSpace(raw)
-	if text == "" {
-		return text
-	}
-	text = secretPEMPattern.ReplaceAllString(text, "[REDACTED_PEM]")
-	text = secretBearerHeaderPattern.ReplaceAllString(text, "${1}[REDACTED]")
-	text = secretKeyValuePattern.ReplaceAllString(text, "${1}${2}[REDACTED]")
-	text = secretGitHubTokenPattern.ReplaceAllString(text, "[REDACTED_TOKEN]")
-	text = secretTelegramToken.ReplaceAllString(text, "[REDACTED_TOKEN]")
-	return text
+	return redaction.Secrets(raw)
 }
 
 func messageStyleForProfile(profile deliverycmd.Profile) messageStyle {

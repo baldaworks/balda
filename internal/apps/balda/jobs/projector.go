@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -17,7 +17,7 @@ import (
 
 type EventProjector struct {
 	consumer actortransport.EventConsumer
-	store    baldastate.JobStore
+	store    ProjectionStore
 	logger   zerolog.Logger
 
 	cancel context.CancelFunc
@@ -27,25 +27,28 @@ type EventProjector struct {
 type eventProjectorParams struct {
 	fx.In
 
-	LC            fx.Lifecycle
-	Consumer      actortransport.EventConsumer
-	StateProvider baldastate.Provider
-	Logger        zerolog.Logger
+	Consumer actortransport.EventConsumer
+	Store    ProjectionStore
+	Logger   zerolog.Logger
+}
+
+// ProjectionStore persists the idempotent job history projection.
+type ProjectionStore interface {
+	AppendJobEvent(ctx context.Context, record baldastate.JobEventRecord) error
 }
 
 func NewEventProjector(params eventProjectorParams) (*EventProjector, error) {
-	if params.StateProvider == nil {
-		return nil, fmt.Errorf("balda state provider is required")
+	if params.Store == nil {
+		return nil, fmt.Errorf("job event projection store is required")
 	}
 	if params.Consumer == nil {
 		return nil, fmt.Errorf("event projector requires an actor runtime event consumer")
 	}
 	p := &EventProjector{
 		consumer: params.Consumer,
-		store:    params.StateProvider.Jobs(),
+		store:    params.Store,
 		logger:   params.Logger.With().Str("component", "balda.jobs.projector").Logger(),
 	}
-	params.LC.Append(fx.Hook{OnStart: p.Start, OnStop: p.Stop})
 	return p, nil
 }
 

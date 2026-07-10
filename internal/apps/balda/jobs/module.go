@@ -6,6 +6,7 @@ var Module = fx.Module("balda_jobs",
 	fx.Provide(
 		NewJobService,
 		NewEventProjector,
+		NewOutboxPublisher,
 	),
-	fx.Invoke(func(*EventProjector) {}),
+	fx.Invoke(func(*EventProjector, *OutboxPublisher) {}),
 )

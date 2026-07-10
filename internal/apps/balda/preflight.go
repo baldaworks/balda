@@ -2,13 +2,14 @@ package balda
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/ipfans/fxlogger"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/handlers"
+	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/normahq/balda/internal/apps/balda/session"
@@ -96,7 +97,7 @@ func PreflightRuntime(
 	mcpReg := mcpregistry.New(mcpServers)
 
 	var runtimeManager *baldaagent.RuntimeManager
-	var mcpManager *handlers.InternalMCPManager
+	var mcpManager *internalmcp.InternalMCPManager
 
 	app := fx.New(
 		fx.WithLogger(
@@ -123,6 +124,9 @@ func PreflightRuntime(
 			},
 			func(provider baldastate.Provider) sessionmcp.Store {
 				return provider.SessionMCPKV()
+			},
+			func(provider baldastate.Provider) baldastate.SessionStore {
+				return provider.Sessions()
 			},
 			fx.Annotate(
 				func(provider baldastate.Provider) adksession.Service {
@@ -175,10 +179,10 @@ func PreflightRuntime(
 			baldaagent.NewBuilder,
 			baldaagent.NewRuntimeManager,
 			session.NewManager,
-			handlers.NewInternalMCPManager,
+			internalmcp.NewInternalMCPManager,
 		),
 		fx.Populate(&runtimeManager, &mcpManager),
-		fx.Invoke(func(lc fx.Lifecycle, manager *handlers.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager) {
+		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
 				if err := manager.EnsureStarted(ctx); err != nil {
 					return fmt.Errorf("start bundled internal MCP servers: %w", err)
@@ -187,6 +191,8 @@ func PreflightRuntime(
 					return fmt.Errorf("start Balda provider runtime: %w", err)
 				}
 				return nil
+			}, OnStop: func(ctx context.Context) error {
+				return errors.Join(runtimeManager.Stop(ctx), manager.Stop(ctx))
 			}})
 		}),
 	)

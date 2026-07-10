@@ -2,9 +2,7 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
@@ -37,67 +35,6 @@ func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.Ses
 		return nil, "", err
 	}
 	return result, jobID, nil
-}
-
-func (h *BaldaHandler) RunSessionTurnPayload(ctx context.Context, payload actors.SessionTurnPayload) error {
-	ts, err := h.sessionManager.GetSession(payload.Locator)
-	if err != nil {
-		userID := strings.TrimSpace(payload.UserID)
-		ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
-			Locator: payload.Locator,
-			UserID:  userID,
-		})
-		if err != nil {
-			if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-				return fmt.Errorf("restore session for queued turn: %w", err)
-			}
-			if userID == "" {
-				h.logger.Debug().
-					Str("session_id", payload.Locator.SessionID).
-					Str("address_key", payload.Locator.AddressKey).
-					Msg("dropping queued turn for unknown session without transport user")
-				return nil
-			}
-			ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-				Locator: payload.Locator,
-				UserID:  userID,
-			}, ownerSessionLabel)
-			if err != nil {
-				return fmt.Errorf("create session for queued turn: %w", err)
-			}
-		}
-	}
-	userID := strings.TrimSpace(payload.UserID)
-	if userID == "" {
-		userID = ts.GetUserID()
-	}
-	agentSessionID := strings.TrimSpace(payload.AgentSessionID)
-	if agentSessionID == "" {
-		agentSessionID = ts.GetAgentSessionID()
-	}
-	deliveryLocator := payload.Locator
-	if payload.ReportTo != nil {
-		deliveryLocator = *payload.ReportTo
-	}
-	runOpts, err := prepareMemoryRunOptions(ctx, h.memoryStore, ts)
-	if err != nil {
-		return err
-	}
-	return h.runTurnJobWithDeliveryOptions(
-		ctx,
-		payload.Text,
-		ts.GetRunner(),
-		userID,
-		ts.GetSessionID(),
-		payload.JobID,
-		agentSessionID,
-		deliveryLocator,
-		payload.MessageID,
-		payload.TopicID,
-		actors.NormalizeSessionDeliveryOptions(payload),
-		payload.Deliver,
-		runOpts...,
-	)
 }
 
 func (h *CommandHandler) submitGoalJob(ctx context.Context, locator baldasession.SessionLocator, objective string, transportUserID string) (bool, error) {

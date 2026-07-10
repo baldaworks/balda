@@ -104,13 +104,16 @@ selective rather than a full `go list` import dump.
 flowchart TB
     balda_root["github.com/normahq/balda/internal/apps/balda"]
     agent["github.com/normahq/balda/internal/apps/balda/agent"]
+    actorcmd["github.com/normahq/balda/internal/apps/balda/actorcmd"]
     actors["github.com/normahq/balda/internal/apps/balda/actors"]
     auth["github.com/normahq/balda/internal/apps/balda/auth"]
     telegram["github.com/normahq/balda/internal/apps/balda/channel/telegram"]
     handlers["github.com/normahq/balda/internal/apps/balda/handlers"]
+    internalmcp["github.com/normahq/balda/internal/apps/balda/internalmcp"]
     memory["github.com/normahq/balda/internal/apps/balda/memory"]
     messenger["github.com/normahq/balda/internal/apps/balda/messenger"]
     session["github.com/normahq/balda/internal/apps/balda/session"]
+    sessionturn["github.com/normahq/balda/internal/apps/balda/sessionturn"]
     state["github.com/normahq/balda/internal/apps/balda/state"]
     runtime["github.com/normahq/balda/internal/apps/balda/execution"]
     jobs["github.com/normahq/balda/internal/apps/balda/jobs"]
@@ -119,8 +122,10 @@ flowchart TB
 
     balda_root --> agent
     balda_root --> actors
+    balda_root --> actorcmd
     balda_root --> auth
     balda_root --> handlers
+    balda_root --> internalmcp
     balda_root --> memory
     balda_root --> state
     balda_root --> runtime
@@ -131,7 +136,7 @@ flowchart TB
     actors --> telegram
     actors --> session
     actors --> state
-    actors --> runtime
+    actors --> actorcmd
     actors --> jobs
 
     telegram --> messenger
@@ -142,14 +147,21 @@ flowchart TB
     handlers --> telegram
     handlers --> messenger
     handlers --> session
+    handlers --> sessionturn
     handlers --> state
-    handlers --> runtime
+    handlers --> actorcmd
     handlers --> jobs
     handlers --> tgbotkit
     handlers --> welcome
 
-    runtime --> memory
-    runtime --> state
+    runtime --> actorcmd
+
+    jobs --> actorcmd
+    jobs --> state
+
+    sessionturn --> actors
+    sessionturn --> memory
+    sessionturn --> session
 
     session --> agent
     session --> state
@@ -160,17 +172,20 @@ flowchart TB
 | Package | Import Path | Description | Depends On |
 |---------|-------------|-------------|------------|
 | `balda` | `internal/apps/balda` | Root application module | actors, agent, auth, handlers, jobs, memory, runtime, state, tgbotkit |
+| `actorcmd` | `internal/apps/balda/actorcmd` | Leaf actor targets, namespaces, subjects, headers, and job-scope metadata | `pkg/actorlayer` |
 | `agent` | `internal/apps/balda/agent` | Agent builder & workspace manager | `internal/git`, `pkg/runtime/*` |
-| `actors` | `internal/apps/balda/actors` | Balda product actors and actor command contracts | agent, channel/telegram, jobs, runtime, session, state |
+| `actors` | `internal/apps/balda/actors` | Balda product actor behavior | actorcmd, agent, channel, jobs, session, state |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram message adapter | messenger, session |
-| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command parsing, and actor command publishing | actors, agent, auth, channel/telegram, jobs, messenger, runtime, session, state, tgbotkit, welcome |
+| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command publishing, and provider-turn executor adapter | actorcmd, actors, agent, auth, channel, jobs, messenger, session, sessionturn, tgbotkit, welcome |
+| `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
 | `memory` | `internal/apps/balda/memory` | Structured memory store and recall helpers | (standalone) |
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
+| `sessionturn` | `internal/apps/balda/sessionturn` | Queued-turn restoration and execution orchestration | actors, memory, session |
 | `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite`, `updatepoller` |
-| `runtime` | `internal/apps/balda/execution` | Actor runtime host, lane policy, subjects, and delivery wrapping | state, `pkg/actorlayer` |
-| `jobs` | `internal/apps/balda/jobs` | Durable job/job services and read-model projection | runtime, state, `pkg/actorlayer` |
+| `runtime` | `internal/apps/balda/execution` | Actor runtime host, lane policy, retry/dead-letter policy, and delivery wrapping | actorcmd, `pkg/actorlayer` |
+| `jobs` | `internal/apps/balda/jobs` | Durable job service, transactional event outbox, and read-model projection | actorcmd, state, `pkg/actorlayer` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
 | `welcome` | `internal/apps/balda/welcome` | Welcome message builder | (standalone) |
 
@@ -181,9 +196,12 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 ## Architecture Layers
 
 - `pkg/actorlayer`: generic actor library only. It owns envelopes, addressing, lane execution primitives, retry/error helpers, and transport-facing contracts. It does not own Balda product policy.
-- `internal/apps/balda/execution`: Balda runtime policy. It owns the host loop, lane policy, subjects, dead-letter handling, heartbeat policy, and runtime-facing transport wiring.
+- `internal/apps/balda/actorcmd`: stable leaf package for product wire taxonomy. It owns actor targets, namespaces, kinds, subjects, headers, and job-scope metadata.
+- `internal/apps/balda/execution`: Balda runtime policy. It owns the host loop, lane policy, dead-letter handling, heartbeat policy, and runtime-facing transport wiring.
 - `internal/apps/balda/jobs`: durable job orchestration state and event projection. It owns job records, job events, and read-model updates, but it does not own transport execution.
-- `internal/apps/balda/actors`: product actors and product command contracts. It owns session, job, goalkeeper, delivery, control, and memory actor behavior.
+- `internal/apps/balda/actors`: product actors. It owns session, job, goalkeeper, delivery, control, and memory behavior.
+- `internal/apps/balda/sessionturn`: queued-turn restoration and provider execution orchestration behind a narrow executor port.
+- `internal/apps/balda/internalmcp`: bundled MCP construction and lifecycle.
 - `internal/apps/balda/handlers`: transport ingress only. It parses Telegram/Slack/Zulip/webhook/scheduler input, checks auth/session rules, and publishes actor work. It must not own product actors or direct transport settlement policy.
 - `internal/apps/balda/channel/*` and `internal/apps/balda/messenger`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
 - `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, memory, scheduler state, job tables, and delivery idempotency state.
@@ -215,6 +233,8 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/execution/host.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
 - `internal/apps/balda/actors`: defines Balda product actors for session, job, goal, delivery, control, and memory command contracts.
 - `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
+- `internal/apps/balda/sessionturn`: owns queued session restore/create and delegates the provider iteration to the executor adapter.
+- `internal/apps/balda/actorcmd`: owns product command/event wire constants shared by actors, runtime, jobs, and ingress.
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent` and `internal/apps/balda/session`: own the single app-scoped provider runtime selected by `balda.provider` and the per-session state.
 - `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, jobs, projections, memory, and delivery outbox rows.
@@ -230,7 +250,10 @@ Balda startup order is strict:
 1. Load runtime + balda config.
 2. Start internal MCP lifecycle manager.
 3. Start Balda provider runtime via `RuntimeManager.EnsureRuntime(...)`.
-4. Start channel and ingress runtimes (Telegram, Zulip, Slack, configured scheduler tasks, and inbound webhook receiver).
+4. Start session/mailbox and durable actor infrastructure: event projector, job-event outbox publisher, and actor host.
+5. Bootstrap Telegram owner state, then start scheduler, inbound webhooks, Zulip, Slack, and Telegram ingress.
+
+One composition-root coordinator owns this order. Shutdown runs the same stages in reverse, so ingress stops before actor/provider/MCP resources.
 
 Internal MCP v1 scope is config + lifecycle plumbing; server implementations can be added incrementally.
 
@@ -724,11 +747,11 @@ Balda runs with a single provider per process (`balda.provider`).
 
 ### Job runtime semantics (internal)
 
-Assignable job work is persisted in the legacy `execution_tasks` table; job history is published to
-`BALDA_EVENTS` and projected into `execution_job_events`. The live domain model is jobs even where legacy table names remain for migration continuity. Ingress publishes a
+Assignable job work is persisted in `execution_jobs`. Each job state mutation atomically appends its publication intent to
+`execution_job_event_outbox`; the publisher sends it to `BALDA_EVENTS`, and the idempotent projector builds `execution_job_events`. Ingress publishes a
 durable command first; job records are created after command delivery.
 Ordinary conversational turns from Telegram, Slack, and Zulip do not create
-legacy `execution_tasks` rows; they run directly on the session actor path.
+`execution_jobs` rows; they run directly on the session actor path.
 
 - `/goal` starts goal work for the current session context. Balda restores or creates the
   chat session, allocates separate GoalKeeper worker/validator ADK sessions for the
@@ -740,7 +763,9 @@ legacy `execution_tasks` rows; they run directly on the session actor path.
   `waiting_for_user`, `validating`, `completed`, `failed`, `canceled`, and
   `deadlettered`.
 - Job events are append-only durable transport events projected into SQLite read
-  models. Event projection failure never decides command success. Semantic
+  models. Job state plus outbox enqueue is one SQLite transaction; transient
+  event publication is retried after restart. Event projection failure never
+  decides command success. Semantic
   event types include `job.created`, `job.assigned`, `job.started`,
   `agent.started`, `agent.progress`, `agent.result`, `job.validating`,
   `job.completed`, `job.failed`, `job.canceled`, `delivery.sent`, and
@@ -799,7 +824,8 @@ session/job/goal/delivery/memory"]
     end
 
     subgraph State["SQLite product/read-model state"]
-        TASKS["legacy execution_tasks + execution_job_events"]
+        TASKS["execution_jobs + execution_job_events"]
+        EVENT_OUTBOX["execution_job_event_outbox"]
         OUTBOX["execution_delivery_outbox"]
         META["owner/session/scheduler/memory metadata"]
     end
@@ -809,7 +835,7 @@ session/job/goal/delivery/memory"]
     SCH --> CMD
     GOAL --> CMD
     CMD --> WKR --> SRC --> RT --> LNS --> ACT
-    ACT --> EVT
+    ACT --> EVENT_OUTBOX --> EVT
     RT -- retry exhausted / permanent / decode failure --> DLQ
     EVT --> PRJ --> TASKS
     ACT --> OUTBOX
@@ -821,8 +847,8 @@ session/job/goal/delivery/memory"]
     inside `internal/apps/balda/eventbus/nats`.
   - Actorlayer `Source`/`Delivery`/dispatch contracts are the boundary consumed
     by runtime, handlers, and product actors.
-  - SQLite owns product state/read models (legacy `execution_tasks`, projected
-    `execution_job_events`, delivery outbox records, session metadata, memory
+  - SQLite owns product state/read models (`execution_jobs`, projected
+    `execution_job_events`, job-event and delivery outbox records, session metadata, memory
     state, scheduler metadata).
   - Projections are derived views; projection lag/failure never blocks command
     settlement.
@@ -838,6 +864,9 @@ session/job/goal/delivery/memory"]
   command ownership from SQLite queue rows.
 - Projectors are idempotent by event identity (`event_id`/message identity) and
   can safely replay events after restart.
+- The job-event outbox is publication intent, not a projection input. Its
+  lifecycle worker retries pending rows and marks them published only after the
+  event stream accepts the stable envelope ID.
 - Projection failure does not block command execution or transport command
   settlement. Command success/failure is decided by actor side effects plus
   transport ack/nak/term only.
@@ -871,7 +900,7 @@ session/job/goal/delivery/memory"]
 - Stable subjects:
   - Commands: `balda.v1.cmd.session`, `balda.v1.cmd.job`,
     `balda.v1.cmd.goal`, `balda.v1.cmd.delivery`,
-    `balda.v1.cmd.control`.
+    `balda.v1.cmd.memory`, `balda.v1.cmd.control`.
   - Events: `balda.v1.evt.command.accepted`,
     `balda.v1.evt.command.running`, `balda.v1.evt.command.in_progress`,
     `balda.v1.evt.command.acked`, `balda.v1.evt.command.retrying`,
@@ -893,8 +922,9 @@ All commands use the common envelope schema:
 |---|---|---|---|---|
 | `balda.v1.cmd.session` | `to.target=session` or namespace fallback | `human.inbound` | `session_id` for existing sessions | session-turn payload (prompt/content + locator/user metadata) |
 | `balda.v1.cmd.job` | `to.target=job` or namespace fallback | `webhook.inbound`, `schedule.inbound` | `job_id` for existing job mutations; optional on job creation commands | webhook job or scheduled job payload |
-| `balda.v1.cmd.goal` | `to.target=goal` | `goal.command` | `job_id` for goal runs | goal objective/session payload |
+| `balda.v1.cmd.goal` | `to.target=goalkeeper` | `goalkeeper.command` | `job_id` for goal runs | goal objective/session payload |
 | `balda.v1.cmd.delivery` | `to.target=delivery` | `agent.result` / delivery work namespaces | channel-qualified delivery address in `to.key` (`<channel_type>:<address_key>`); `job_id` when task-owned | outbound delivery payload (channel message/terminal update) |
+| `balda.v1.cmd.memory` | `to.target=memory` | `memory.command` | session scope in envelope | durable memory update payload |
 | `balda.v1.cmd.control` | `namespace=job.control` (forced) | `job.control` | `job_id` and/or `session_id` | cancel/control payload (`reason`, actor/user origin) |
 
 Deduplication policy for all command subjects: transport message ID uses

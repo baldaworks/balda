@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"

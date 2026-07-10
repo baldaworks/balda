@@ -22,7 +22,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -142,7 +142,6 @@ type inboundTurnExecutor interface {
 type inboundWebhookParams struct {
 	fx.In
 
-	LC         fx.Lifecycle
 	Config     InboundWebhookConfig
 	Balda      *BaldaHandler
 	OwnerStore *auth.OwnerStore
@@ -165,6 +164,16 @@ type InboundWebhookReceiver struct {
 	server   *http.Server
 	listener net.Listener
 	started  bool
+}
+
+// Start begins accepting configured inbound webhook requests.
+func (r *InboundWebhookReceiver) Start(ctx context.Context) error {
+	return r.start(ctx)
+}
+
+// Stop gracefully shuts down the inbound webhook receiver.
+func (r *InboundWebhookReceiver) Stop(ctx context.Context) error {
+	return r.stop(ctx)
 }
 
 type inboundWebhookMetrics struct {

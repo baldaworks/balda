@@ -6,13 +6,13 @@ Status: active
 ## Invariants
 
 - ActorRuntime consumes durable command deliveries.
-- Actorlayer engine lanes serialize mutable state by actor key.
+- Actorlayer engine lanes serialize job/delivery actor state. Session commands use per-envelope runtime lanes and are serialized by the authoritative `TurnDispatcher` mailbox.
 - Runtime execution uses Balda's local `pkg/actorlayer/engine.DispatchRuntime`; Balda adapts durable command transport into actorlayer deliveries and supplies only Balda-specific delivery wrapping.
 - Command settlement happens after actor side effects complete.
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: session turns, webhook/scheduled work routing, `/goal` execution, outbound delivery, and cancellation.
 - `/goal` uses Balda's goal workflow wrapper built on Norma's reusable goal loop runtime.
-- Task progress/results and projected task-event payload summaries redact common secret/token patterns before persistence and delivery.
+- Job progress/results and projected event payload summaries use the shared `internal/apps/balda/redaction` policy before persistence and delivery.
 - The execution core does not depend on Balda, Telegram, MCP, transport, or provider SDK APIs.
 
 ## Related tests
@@ -27,9 +27,11 @@ Status: active
 ## Related packages
 
 - `internal/apps/balda/execution`
+- `internal/apps/balda/actorcmd`
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/actors`
 - `internal/apps/balda/handlers`
+- `internal/apps/balda/sessionturn`
 
 ## Update triggers
 
@@ -57,7 +59,7 @@ Status: active
   - generic actor mechanics: registration, addressing, deterministic lane execution, lifecycle state transitions, and delivery hooks.
 - Balda product actor code owns:
   - product actor implementations in `internal/apps/balda/actors` for session, job, goal, delivery, and control behavior,
-  - product command payloads/envelope builders consumed by ingress,
+  - product command payloads/envelope builders consumed by ingress; shared targets/namespaces/subjects live in leaf package `actorcmd`,
   - provider runtime invocation details (session execution, tools, model/runtime context),
   - job/session/delivery state transitions and user-visible outcomes.
 - Balda transport/runtime code owns:
@@ -75,6 +77,7 @@ Status: active
 
 - Actor dispatch and lane execution are composed in `internal/apps/balda/execution/host.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `execution` through focused files for the host loop (`host.go`), lane/address policy (`lane_policy.go`), heartbeat visibility policy (`heartbeat.go`), dead-letter side effects (`deadletter.go`), and delivery wrapping/context (`delivery_wrapper.go`).
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
+- Queued session restoration and execution orchestration lives in `internal/apps/balda/sessionturn`; `handlers` supplies only its provider-turn executor adapter.
 - Telegram/Zulip/Slack/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers publish actor commands through actorlayer transport contracts and do not own actor behavior or actor registration.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and actorlayer transport contracts.

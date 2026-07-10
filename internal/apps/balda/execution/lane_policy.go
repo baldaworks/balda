@@ -40,6 +40,14 @@ func actorLaneKeyFromEnvelope(env actorlayer.Envelope) string {
 			return "job:" + jobID
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(env.To.Target), ActorTypeSession) {
+		switch namespace {
+		case NamespaceHumanInbound, NamespaceWebhookInbound, NamespaceScheduleInbound, NamespaceGoalkeeperCommand:
+			if id := strings.TrimSpace(env.ID); id != "" {
+				return "session-command:" + id
+			}
+		}
+	}
 	switch namespace {
 	case NamespaceGoalkeeperCommand:
 		if key := strings.TrimSpace(env.To.Key); key != "" {

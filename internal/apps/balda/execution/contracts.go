@@ -1,29 +1,30 @@
-// Package runtime contains Balda's actor runtime host and transport-facing contracts.
 package execution
 
+import "github.com/normahq/balda/internal/apps/balda/actorcmd"
+
 const (
-	ActorTypeSystem     = "system"
-	ActorTypeSession    = "session"
-	ActorTypeJob        = "job"
-	ActorTypeGoalkeeper = "goalkeeper"
-	ActorTypeGoal       = ActorTypeGoalkeeper
-	ActorTypeDelivery   = "delivery"
-	ActorTypeMemory     = "memory"
+	ActorTypeSystem     = actorcmd.ActorTypeSystem
+	ActorTypeSession    = actorcmd.ActorTypeSession
+	ActorTypeJob        = actorcmd.ActorTypeJob
+	ActorTypeGoalkeeper = actorcmd.ActorTypeGoalkeeper
+	ActorTypeGoal       = actorcmd.ActorTypeGoal
+	ActorTypeDelivery   = actorcmd.ActorTypeDelivery
+	ActorTypeMemory     = actorcmd.ActorTypeMemory
 
-	NamespaceHumanInbound      = "human.inbound"
-	NamespaceWebhookInbound    = "webhook.inbound"
-	NamespaceScheduleInbound   = "schedule.inbound"
-	NamespaceAgentResult       = "agent.result"
-	NamespaceGoalkeeperCommand = "goalkeeper.command"
-	NamespaceGoalCommand       = NamespaceGoalkeeperCommand
-	NamespaceJobControl        = "job.control"
-	NamespaceMemoryCommand     = "memory.command"
-	NamespaceTelemetry         = "telemetry"
+	NamespaceHumanInbound      = actorcmd.NamespaceHumanInbound
+	NamespaceWebhookInbound    = actorcmd.NamespaceWebhookInbound
+	NamespaceScheduleInbound   = actorcmd.NamespaceScheduleInbound
+	NamespaceAgentResult       = actorcmd.NamespaceAgentResult
+	NamespaceGoalkeeperCommand = actorcmd.NamespaceGoalkeeperCommand
+	NamespaceGoalCommand       = actorcmd.NamespaceGoalCommand
+	NamespaceJobControl        = actorcmd.NamespaceJobControl
+	NamespaceMemoryCommand     = actorcmd.NamespaceMemoryCommand
+	NamespaceTelemetry         = actorcmd.NamespaceTelemetry
 
-	KindMessage        = "message"
-	KindWebhookEvent   = "webhook_event"
-	KindScheduledJob   = "scheduled_job"
-	KindGoal           = "goal"
-	KindCancel         = "cancel"
-	KindMemoryRemember = "memory_remember"
+	KindMessage        = actorcmd.KindMessage
+	KindWebhookEvent   = actorcmd.KindWebhookEvent
+	KindScheduledJob   = actorcmd.KindScheduledJob
+	KindGoal           = actorcmd.KindGoal
+	KindCancel         = actorcmd.KindCancel
+	KindMemoryRemember = actorcmd.KindMemoryRemember
 )

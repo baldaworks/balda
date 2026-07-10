@@ -49,12 +49,11 @@ type ScheduledJobSchedulerConfig struct {
 type scheduledJobSchedulerParams struct {
 	fx.In
 
-	LC            fx.Lifecycle
-	StateProvider baldastate.Provider
-	Dispatcher    actortransport.Dispatcher
-	OwnerStore    *auth.OwnerStore
-	Logger        zerolog.Logger
-	Config        ScheduledJobSchedulerConfig
+	JobStore   baldastate.ScheduledJobStore
+	Dispatcher actortransport.Dispatcher
+	OwnerStore *auth.OwnerStore
+	Logger     zerolog.Logger
+	Config     ScheduledJobSchedulerConfig
 }
 
 // ScheduledJobScheduler publishes due locator-bound recurring jobs as durable job commands.
@@ -71,6 +70,20 @@ type ScheduledJobScheduler struct {
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+}
+
+// Start reconciles configured jobs before accepting scheduler work.
+func (s *ScheduledJobScheduler) Start(ctx context.Context) error {
+	if err := s.reconcileConfiguredJobs(ctx); err != nil {
+		return err
+	}
+	s.start()
+	return nil
+}
+
+// Stop waits for the scheduler loop to terminate.
+func (s *ScheduledJobScheduler) Stop(ctx context.Context) error {
+	return s.stop(ctx)
 }
 
 func (s *ScheduledJobScheduler) start() {

@@ -14,7 +14,7 @@ import (
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
@@ -76,22 +76,25 @@ type BaldaHandler struct {
 type baldaHandlerDeps struct {
 	fx.In
 
-	LC                 fx.Lifecycle
-	OwnerStore         *auth.OwnerStore
-	CollaboratorStore  *auth.CollaboratorStore
-	Channel            *baldatelegram.Adapter
-	SessionManager     *baldasession.Manager
-	TurnDispatcher     *actors.TurnDispatcher
-	Dispatcher         actortransport.Dispatcher
-	JobService         *baldajobs.JobService `optional:"true"`
-	MemoryStore        *memory.Store
-	Messenger          *messenger.Messenger
-	TGClient           client.ClientWithResponsesInterface
-	AuthToken          string `name:"balda_auth_token"`
-	BaldaProviderID    string `name:"balda_provider"`
-	TelegramEnabled    bool   `name:"balda_telegram_enabled"`
-	Logger             zerolog.Logger
-	InternalMCPManager *InternalMCPManager `optional:"true"`
+	OwnerStore        *auth.OwnerStore
+	CollaboratorStore *auth.CollaboratorStore
+	Channel           *baldatelegram.Adapter
+	SessionManager    *baldasession.Manager
+	TurnDispatcher    *actors.TurnDispatcher
+	Dispatcher        actortransport.Dispatcher
+	JobService        *baldajobs.JobService `optional:"true"`
+	MemoryStore       *memory.Store
+	Messenger         *messenger.Messenger
+	TGClient          client.ClientWithResponsesInterface
+	AuthToken         string `name:"balda_auth_token"`
+	BaldaProviderID   string `name:"balda_provider"`
+	TelegramEnabled   bool   `name:"balda_telegram_enabled"`
+	Logger            zerolog.Logger
+}
+
+// Start validates the Telegram identity and bootstraps owner state.
+func (h *BaldaHandler) Start(ctx context.Context) error {
+	return h.onStart(ctx)
 }
 
 // Register registers the handler with the registry.

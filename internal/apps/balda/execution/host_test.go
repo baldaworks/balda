@@ -208,6 +208,22 @@ func TestActorLaneKeyFromEnvelopeUsesQualifiedDeliveryKey(t *testing.T) {
 	}
 }
 
+func TestActorLaneKeyFromEnvelopeDoesNotSerializeSessionCommandsAheadOfMailbox(t *testing.T) {
+	t.Parallel()
+
+	first := runtimeTestEnvelope("command-1", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "session-1"})
+	second := runtimeTestEnvelope("command-2", actorlayer.ActorAddress{Target: ActorTypeSession, Key: "session-1"})
+
+	firstLane := actorLaneKeyFromEnvelope(first)
+	secondLane := actorLaneKeyFromEnvelope(second)
+	if firstLane == secondLane {
+		t.Fatalf("session command lanes are both %q; TurnDispatcher must own per-session serialization", firstLane)
+	}
+	if firstLane != "session-command:command-1" {
+		t.Fatalf("first session command lane = %q, want %q", firstLane, "session-command:command-1")
+	}
+}
+
 func TestRuntime_UnknownActorDeadLettersMessage(t *testing.T) {
 	registry := newTestRegistry(t)
 	runtime := newRuntimeForTest(&recordingCommandBus{}, registry)

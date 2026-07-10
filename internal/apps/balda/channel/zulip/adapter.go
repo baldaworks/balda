@@ -10,11 +10,14 @@ import (
 	"sync"
 	"time"
 
+	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 )
+
+var _ baldachannel.ChannelAdapter = (*Adapter)(nil)
 
 var (
 	markdownImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
@@ -40,6 +43,29 @@ func NewAdapter(client *Client, logger zerolog.Logger) *Adapter {
 		typingLastSentAt: make(map[string]time.Time),
 		now:              time.Now,
 	}
+}
+
+// Deliver executes one semantic Zulip delivery operation.
+func (a *Adapter) Deliver(ctx context.Context, locator baldasession.SessionLocator, operation baldachannel.Operation) (baldachannel.Result, error) {
+	var err error
+	result := baldachannel.Result{}
+	switch operation.Kind {
+	case baldachannel.OperationPlain:
+		err = a.SendPlain(ctx, locator, operation.Text)
+	case baldachannel.OperationMarkdown:
+		err = a.SendMarkdownWithProfile(ctx, locator, operation.Profile, operation.Text)
+	case baldachannel.OperationAgentReply:
+		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, operation.Profile, operation.Text)
+	case baldachannel.OperationDraft:
+		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
+	case baldachannel.OperationTyping:
+		err = a.SendTyping(ctx, locator)
+	case baldachannel.OperationProgress:
+		err = a.SendProgress(ctx, locator, operation.Progress)
+	default:
+		err = fmt.Errorf("unsupported zulip delivery operation %q", operation.Kind)
+	}
+	return result, err
 }
 
 func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {

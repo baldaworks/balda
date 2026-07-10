@@ -1,13 +1,7 @@
 package execution
 
-import (
-	"errors"
-)
+import "github.com/normahq/balda/internal/apps/balda/actorcmd"
 
-// ErrCommandQueueFull means the durable command stream rejected new work due to pressure.
-var ErrCommandQueueFull = errors.New("command queue is full")
+var ErrCommandQueueFull = actorcmd.ErrCommandQueueFull
 
-// IsCommandQueueFull reports whether an error came from command stream pressure.
-func IsCommandQueueFull(err error) bool {
-	return errors.Is(err, ErrCommandQueueFull)
-}
+func IsCommandQueueFull(err error) bool { return actorcmd.IsCommandQueueFull(err) }

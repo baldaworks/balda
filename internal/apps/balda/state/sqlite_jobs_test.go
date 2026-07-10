@@ -124,6 +124,77 @@ func TestSQLiteJobStore_JobStatusTransitionsAreGuarded(t *testing.T) {
 	}
 }
 
+func TestSQLiteJobStore_JobMutationAndEventOutboxAreAtomic(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+	ctx := context.Background()
+	store := provider.Jobs()
+
+	created, err := store.CreateJobWithEvent(ctx, JobRecord{
+		ID:        "job-outbox-1",
+		SessionID: "session-1",
+		Objective: "publish durable event",
+		Status:    JobStatusCreated,
+	}, JobEventOutboxRecord{
+		ID:           "event-outbox-1",
+		JobID:        "job-outbox-1",
+		Subject:      "BALDA_EVENTS.job.created",
+		EnvelopeJSON: `{"id":"event-outbox-1"}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateJobWithEvent() error = %v", err)
+	}
+	if !created {
+		t.Fatal("CreateJobWithEvent() created = false, want true")
+	}
+	pending, err := store.ListPendingJobEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingJobEvents() error = %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != "event-outbox-1" {
+		t.Fatalf("pending events = %+v, want event-outbox-1", pending)
+	}
+
+	invalidEvent := JobEventOutboxRecord{
+		ID:           "event-outbox-invalid",
+		JobID:        "job-outbox-1",
+		EnvelopeJSON: `{"id":"event-outbox-invalid"}`,
+	}
+	if err := store.UpdateJobStatusWithEvent(ctx, "job-outbox-1", JobStatusRunning, "", invalidEvent); err == nil {
+		t.Fatal("UpdateJobStatusWithEvent(invalid event) error = nil, want validation error")
+	}
+	job, ok, err := store.GetJob(ctx, "job-outbox-1")
+	if err != nil || !ok {
+		t.Fatalf("GetJob() = %+v found=%v err=%v", job, ok, err)
+	}
+	if job.Status != JobStatusCreated {
+		t.Fatalf("job status after rejected atomic mutation = %q, want %q", job.Status, JobStatusCreated)
+	}
+
+	if err := store.MarkJobEventPublishFailed(ctx, "event-outbox-1", "stream unavailable"); err != nil {
+		t.Fatalf("MarkJobEventPublishFailed() error = %v", err)
+	}
+	pending, err = store.ListPendingJobEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingJobEvents(after failure) error = %v", err)
+	}
+	if len(pending) != 1 || pending[0].Attempts != 1 || pending[0].LastError != "stream unavailable" {
+		t.Fatalf("pending event after failure = %+v, want attempts=1 with error", pending)
+	}
+	if err := store.MarkJobEventPublished(ctx, "event-outbox-1"); err != nil {
+		t.Fatalf("MarkJobEventPublished() error = %v", err)
+	}
+	pending, err = store.ListPendingJobEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingJobEvents(after publish) error = %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending events after publish = %+v, want none", pending)
+	}
+}
+
 func TestSQLiteJobStore_SetJobResultTransitionGuarded(t *testing.T) {
 	provider := newTestProvider(t)
 	defer closeProvider(t, provider)

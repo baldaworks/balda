@@ -1119,8 +1119,8 @@ type fakeTurnDispatcher struct {
 	deliveryAdapter  *baldatelegram.Adapter
 }
 
-func (*fakeTurnDispatcher) Enqueue(actors.TurnTask) (int, error) {
-	return 0, nil
+func (*fakeTurnDispatcher) Enqueue(context.Context, actors.TurnTask) (<-chan error, int, error) {
+	return make(chan error), 0, nil
 }
 
 func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
