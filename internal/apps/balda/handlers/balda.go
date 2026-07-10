@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
@@ -521,19 +521,24 @@ func (h *BaldaHandler) runTurnWithDeliveryOptions(
 		if errorMessage := strings.TrimSpace(ev.ErrorMessage); errorMessage != "" {
 			terminalErrorMessage = errorMessage
 		}
+		var usageState usageSnapshot
+		var hasUsageState bool
 		if snapshot, ok := usageSnapshotFromMetadata(ev.UsageMetadata); ok {
+			usageState = mergeUsageSnapshots(usageState, snapshot)
+			hasUsageState = true
+		}
+		if snapshot, ok := usageSnapshotFromACPEvent(ev); ok {
+			usageState = mergeUsageSnapshots(usageState, snapshot)
+			hasUsageState = true
+		}
+		if hasUsageState {
 			if ev.Actions.StateDelta == nil {
 				ev.Actions.StateDelta = make(map[string]any)
 			}
-			ev.Actions.StateDelta[usageStateKey] = map[string]any{
-				"prompt_token_count":          snapshot.PromptTokenCount,
-				"cached_content_token_count":  snapshot.CachedContentTokenCount,
-				"response_token_count":        snapshot.ResponseTokenCount,
-				"tool_use_prompt_token_count": snapshot.ToolUsePromptTokenCount,
-				"thoughts_token_count":        snapshot.ThoughtsTokenCount,
-				"total_token_count":           snapshot.TotalTokenCount,
-				"traffic_type":                snapshot.TrafficType,
+			if existing, ok, err := loadUsageSnapshot(runCtx, h.sessionManager, locator); err == nil && ok {
+				usageState = mergeUsageSnapshots(existing, usageState)
 			}
+			ev.Actions.StateDelta[usageStateKey] = usageSnapshotStateMap(usageState)
 		}
 		planProgress, planProgressText, hasPlanUpdate := baldaPlanProgress(ev)
 		reasoningText, hasThoughtUpdate := progress.ReasoningText(ev)
