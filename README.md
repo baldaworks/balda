@@ -3,18 +3,18 @@
 [![test](https://github.com/normahq/balda/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/normahq/balda/actions/workflows/test.yml)
 [![lint](https://github.com/normahq/balda/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/normahq/balda/actions/workflows/lint.yml)
 
-## Autonomous Worker Comrade for Teams
+## Self-Hosted Autonomous Engineering Worker in Team Chat
 
-Balda exists to give teams a persistent AI worker they can assign real work to.
+Balda is a self-hosted autonomous engineering worker in team chat.
 
-It takes work from the team's conversation, keeps project context, uses the
-team's tools, and keeps moving until there is a concrete result to review. A
-task can start as a message, a topic, a goal, a schedule, or an external event;
-Balda turns that intent into an active worker session.
+It takes engineering work from the team's conversation, keeps project context,
+uses the team's tools, and keeps moving until there is a concrete result to
+review. A task can start as a message, a topic, a goal, a schedule, or an
+external event; Balda turns that intent into an active worker session.
 
 The name comes from Pushkin's worker Balda: practical, direct, and focused on
-getting the job done. That is the project goal: an autonomous worker comrade for
-teams.
+getting the job done. The project brings that spirit to engineering teams in the
+chat where they already coordinate their work.
 
 ```bash
 npm install -g -y @normahq/balda

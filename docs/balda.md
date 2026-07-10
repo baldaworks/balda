@@ -1,6 +1,9 @@
 # Balda (V1)
 
-`balda start` is a channel-aware background worker service that binds chat sessions to Balda worker sessions.
+Balda is a self-hosted autonomous engineering worker in team chat.
+
+`balda start` runs the channel-aware background service that binds team chat
+sessions to autonomous Balda worker sessions.
 
 Architecture contracts are maintained in:
 
