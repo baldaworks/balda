@@ -16,6 +16,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
 	"github.com/normahq/balda/internal/apps/workspacemcp"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
@@ -34,6 +35,7 @@ type InternalMCPManager struct {
 	sessionManager   *session.Manager
 	stateStore       sessionmcp.Store
 	memoryStore      *memory.Store
+	dispatcher       actortransport.Dispatcher
 	cleanups         []func() error
 }
 
@@ -54,6 +56,7 @@ type internalMCPParams struct {
 	SessionManager   *session.Manager
 	StateStore       sessionmcp.Store
 	MemoryStore      *memory.Store
+	Dispatcher       actortransport.Dispatcher
 }
 
 // NewInternalMCPManager creates an internal MCP lifecycle manager.
@@ -66,6 +69,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		sessionManager:   params.SessionManager,
 		stateStore:       params.StateStore,
 		memoryStore:      params.MemoryStore,
+		dispatcher:       params.Dispatcher,
 	}
 
 	return manager
@@ -139,9 +143,9 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		&mcp.ServerOptions{Instructions: instructions},
 	)
 
-	sessionmcp.RegisterTools(server, m.stateStore)
+	sessionmcp.RegisterTools(server, m.stateStore, m.dispatcher)
 	memory.RegisterTools(server, m.memoryStore)
-	controlmcp.RegisterTools(server, m.shutdowner)
+	controlmcp.RegisterTools(server, m.shutdowner, m.dispatcher)
 
 	if m.workspaceEnabled {
 		workspaceSvc := session.NewWorkspaceMCPServer(m.sessionManager)

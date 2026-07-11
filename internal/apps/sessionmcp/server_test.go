@@ -7,10 +7,21 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/normahq/balda/pkg/actorlayer"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
+type recordingDispatcher struct {
+	commands []actorlayer.Envelope
+}
+
+func (r *recordingDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
+	r.commands = append(r.commands, env)
+	return &actortransport.DispatchReceipt{}, nil
+}
+
 func TestSessionStateServerListsTools(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 
 	tools, err := session.ListTools(ctx, nil)
@@ -36,6 +47,7 @@ func TestSessionStateServerListsTools(t *testing.T) {
 		"balda.state.ns_list",
 		"balda.state.ns_set",
 		"balda.state.ns_set_json",
+		"balda.session.wait",
 	}
 
 	if len(got) != len(want) {
@@ -44,7 +56,7 @@ func TestSessionStateServerListsTools(t *testing.T) {
 }
 
 func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -64,6 +76,9 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 	if got := toolByName["balda.state.ns_set"].Description; !strings.Contains(got, "session or agent isolation") {
 		t.Fatalf("balda.state.ns_set description = %q, want namespace guidance", got)
 	}
+	if got := toolByName["balda.session.wait"].Description; !strings.Contains(got, "session-level action") {
+		t.Fatalf("balda.session.wait description = %q, want session-level wording", got)
+	}
 
 	outSchema, ok := toolByName["balda.state.get"].OutputSchema.(map[string]any)
 	if !ok {
@@ -74,10 +89,46 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 	if got := found["description"]; got != "whether the key exists" {
 		t.Fatalf("balda.state.get found description = %v, want whether the key exists", got)
 	}
+	waitSchema, ok := toolByName["balda.session.wait"].InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("balda.session.wait input schema type = %T, want map[string]any", toolByName["balda.session.wait"].InputSchema)
+	}
+	waitProps := waitSchema["properties"].(map[string]any)
+	if _, ok := waitProps["locator"]; !ok {
+		t.Fatal("balda.session.wait input schema missing locator property")
+	}
+}
+
+func TestSessionWaitPublishesControlCommand(t *testing.T) {
+	dispatcher := &recordingDispatcher{}
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), dispatcher)
+	defer cleanup()
+	_ = session.InitializeResult()
+
+	result := callTool(t, ctx, session, "balda.session.wait", map[string]any{
+		"locator": map[string]any{
+			"session_id":   "tg-1-0",
+			"channel_type": "telegram",
+			"address_key":  "1:0",
+			"address_json": `{"chat_id":1,"topic_id":0}`,
+		},
+		"content":       "wake me",
+		"delay_seconds": 60,
+		"job_id":        "wait-1",
+	})
+	if result.IsError {
+		t.Fatal("result.IsError = true, want false")
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(dispatcher.commands))
+	}
+	if dispatcher.commands[0].Namespace != "job.control" {
+		t.Fatalf("namespace = %q, want job.control", dispatcher.commands[0].Namespace)
+	}
 }
 
 func TestSetGetBasic(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -102,7 +153,7 @@ func TestSetGetBasic(t *testing.T) {
 }
 
 func TestGetMissingKey(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -116,7 +167,7 @@ func TestGetMissingKey(t *testing.T) {
 }
 
 func TestSetGetJSON(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -148,7 +199,7 @@ func TestSetGetJSON(t *testing.T) {
 }
 
 func TestMergeJSON(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -184,7 +235,7 @@ func TestMergeJSON(t *testing.T) {
 
 func TestListKeys(t *testing.T) {
 	ResetSharedStore()
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -212,7 +263,7 @@ func TestListKeys(t *testing.T) {
 
 func TestDeleteAndClearAffectMemoryStore(t *testing.T) {
 	ResetSharedStore()
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -240,7 +291,7 @@ func TestDeleteAndClearAffectMemoryStore(t *testing.T) {
 }
 
 func TestNamespaceIsolation(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -290,7 +341,7 @@ func TestNamespaceIsolation(t *testing.T) {
 }
 
 func TestValidationErrors(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore())
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -350,7 +401,7 @@ func TestSharedStateAcrossStores(t *testing.T) {
 
 // Test helpers
 
-func newTestSession(t *testing.T, store Store) (context.Context, func(), *mcp.ClientSession) {
+func newTestSession(t *testing.T, store Store, dispatcher actortransport.Dispatcher) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
 	if store == nil {
 		t.Fatal("store is required")
@@ -359,7 +410,7 @@ func newTestSession(t *testing.T, store Store) (context.Context, func(), *mcp.Cl
 		&mcp.Implementation{Name: "test-session-state", Version: "1.0.0"},
 		nil,
 	)
-	RegisterTools(server, store)
+	RegisterTools(server, store, dispatcher)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx, cancel := context.WithCancel(context.Background())

@@ -86,6 +86,7 @@ var Module = fx.Module("balda_actors",
 					turnDispatcher: params.TurnDispatcher,
 					dispatcher:     params.Dispatcher,
 					jobs:           params.JobService,
+					scheduledJobs:  params.ScheduledJobs,
 					jobRuns:        params.JobRuns,
 					logger:         params.Logger.With().Str("component", "balda.job_control_actor").Logger(),
 				}

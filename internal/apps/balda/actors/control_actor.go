@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -18,10 +20,20 @@ import (
 )
 
 const (
-	jobControlActionCancel     = "cancel"
-	jobControlActionCancelTurn = "cancel_turn"
-	jobControlActionClearGoal  = "clear_goal"
+	jobControlActionCancel       = "cancel"
+	jobControlActionCancelTurn   = "cancel_turn"
+	jobControlActionClearGoal    = "clear_goal"
+	jobControlActionScheduleWait = "schedule_wait"
+	scheduledJobOneShotSpec      = "@once"
 )
+
+type waitSchedulePayload struct {
+	JobID        string `json:"job_id,omitempty"`
+	Content      string `json:"content,omitempty"`
+	DelaySeconds int    `json:"delay_seconds,omitempty"`
+	RequestedBy  string `json:"requested_by,omitempty"`
+	ReportToSelf bool   `json:"report_to_self,omitempty"`
+}
 
 type jobControlPayload struct {
 	Action      string                      `json:"action"`
@@ -31,12 +43,14 @@ type jobControlPayload struct {
 	Reason      string                      `json:"reason,omitempty"`
 	RequestedBy string                      `json:"requested_by,omitempty"`
 	Notify      bool                        `json:"notify,omitempty"`
+	Wait        *waitSchedulePayload        `json:"wait,omitempty"`
 }
 
 type jobControlActor struct {
 	turnDispatcher TurnQueue
 	dispatcher     actortransport.Dispatcher
 	jobs           *baldajobs.JobService
+	scheduledJobs  baldastate.ScheduledJobStore
 	jobRuns        *JobRunRegistry
 	logger         zerolog.Logger
 }
@@ -56,6 +70,7 @@ type jobControlActorParams struct {
 	TurnDispatcher *TurnDispatcher
 	Dispatcher     actortransport.Dispatcher
 	JobService     *baldajobs.JobService
+	ScheduledJobs  baldastate.ScheduledJobStore `optional:"true"`
 	JobRuns        *JobRunRegistry
 	Logger         zerolog.Logger
 }
@@ -65,6 +80,7 @@ type sessionWorkCancellerParams struct {
 
 	TurnDispatcher *TurnDispatcher
 	JobService     *baldajobs.JobService
+	ScheduledJobs  baldastate.ScheduledJobStore `optional:"true"`
 	JobRuns        *JobRunRegistry
 	Logger         zerolog.Logger
 }
@@ -129,6 +145,8 @@ func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) e
 		return a.cancelSessionTurn(ctx, payload)
 	case jobControlActionClearGoal:
 		return a.clearGoal(ctx, payload)
+	case jobControlActionScheduleWait:
+		return a.scheduleWait(ctx, payload)
 	default:
 		return actorlayer.PolicyError(fmt.Errorf("unsupported control action %q", payload.Action))
 	}
@@ -284,6 +302,58 @@ func (a *jobControlActor) clearGoal(ctx context.Context, payload jobControlPaylo
 	return nil
 }
 
+func (a *jobControlActor) scheduleWait(ctx context.Context, payload jobControlPayload) error {
+	if a.scheduledJobs == nil {
+		return actorlayer.TransientError(fmt.Errorf("scheduled job store is required"))
+	}
+	if strings.TrimSpace(payload.Locator.SessionID) == "" {
+		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
+	}
+	if payload.Wait == nil {
+		return actorlayer.PolicyError(fmt.Errorf("wait payload is required"))
+	}
+	waitID := strings.TrimSpace(payload.Wait.JobID)
+	if waitID == "" {
+		waitID = "wait-" + uuid.NewString()
+	}
+	content := strings.TrimSpace(payload.Wait.Content)
+	if content == "" {
+		return actorlayer.PolicyError(fmt.Errorf("wait content is required"))
+	}
+	delaySeconds := payload.Wait.DelaySeconds
+	if delaySeconds <= 0 {
+		return actorlayer.PolicyError(fmt.Errorf("wait delay_seconds must be positive"))
+	}
+	now := time.Now().UTC()
+	record := baldastate.ScheduledJobRecord{
+		JobID:        waitID,
+		SessionID:    strings.TrimSpace(payload.Locator.SessionID),
+		ChannelType:  strings.TrimSpace(payload.Locator.ChannelType),
+		AddressKey:   strings.TrimSpace(payload.Locator.AddressKey),
+		AddressJSON:  strings.TrimSpace(payload.Locator.AddressJSON),
+		Content:      content,
+		ScheduleSpec: scheduledJobOneShotSpec,
+		Timezone:     "UTC",
+		Status:       baldastate.ScheduledJobStatusActive,
+		MaxRetries:   0,
+		NextRunAt:    now.Add(time.Duration(delaySeconds) * time.Second),
+	}
+	if payload.Wait.ReportToSelf {
+		record.ReportToEnabled = true
+		record.ReportToSessionID = record.SessionID
+		record.ReportToChannelType = record.ChannelType
+		record.ReportToAddressKey = record.AddressKey
+		record.ReportToAddressJSON = record.AddressJSON
+	}
+	if err := a.scheduledJobs.Upsert(ctx, record); err != nil {
+		return actorlayer.TransientError(err)
+	}
+	if payload.Notify {
+		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Scheduled wait %s for %ds.", waitID, delaySeconds))
+	}
+	return nil
+}
+
 func (a *jobControlActor) sendControlMessage(ctx context.Context, locator baldasession.SessionLocator, text string) {
 	if a == nil || a.dispatcher == nil || strings.TrimSpace(text) == "" {
 		return
@@ -303,18 +373,28 @@ func ControlCancelEnvelope(locator baldasession.SessionLocator, jobID string, re
 }
 
 func ControlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, jobID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionCancel, jobID, requestedBy, reason, notify)
+	return controlEnvelope(locator, jobControlActionCancel, jobID, requestedBy, reason, notify, nil)
 }
 
 func ControlCancelTurnEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionCancelTurn, "", requestedBy, reason, notify)
+	return controlEnvelope(locator, jobControlActionCancelTurn, "", requestedBy, reason, notify, nil)
 }
 
 func ControlClearGoalEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionClearGoal, "", requestedBy, reason, notify)
+	return controlEnvelope(locator, jobControlActionClearGoal, "", requestedBy, reason, notify, nil)
 }
 
-func controlEnvelope(locator baldasession.SessionLocator, action string, jobID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
+func ControlScheduleWaitEnvelope(locator baldasession.SessionLocator, jobID string, content string, delaySeconds int, requestedBy string, notify bool) (actorlayer.Envelope, error) {
+	return controlEnvelope(locator, jobControlActionScheduleWait, "", requestedBy, "", notify, &waitSchedulePayload{
+		JobID:        strings.TrimSpace(jobID),
+		Content:      strings.TrimSpace(content),
+		DelaySeconds: delaySeconds,
+		RequestedBy:  strings.TrimSpace(requestedBy),
+		ReportToSelf: true,
+	})
+}
+
+func controlEnvelope(locator baldasession.SessionLocator, action string, jobID string, requestedBy string, reason string, notify bool, wait *waitSchedulePayload) (actorlayer.Envelope, error) {
 	payload := jobControlPayload{
 		Action:      strings.TrimSpace(action),
 		JobID:       strings.TrimSpace(jobID),
@@ -323,6 +403,7 @@ func controlEnvelope(locator baldasession.SessionLocator, action string, jobID s
 		Reason:      strings.TrimSpace(reason),
 		RequestedBy: strings.TrimSpace(requestedBy),
 		Notify:      notify,
+		Wait:        wait,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

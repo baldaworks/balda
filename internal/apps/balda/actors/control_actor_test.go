@@ -260,6 +260,51 @@ func TestTaskControlActorClearsGoalJobsOnly(t *testing.T) {
 	}
 }
 
+func TestTaskControlActorSchedulesOneShotWait(t *testing.T) {
+	ctx := context.Background()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = bus
+	_ = allocator
+	_ = tasks
+	locator := baldatelegram.NewLocator(9001, 0)
+	store := provider.ScheduledJobs()
+	actor := &jobControlActor{
+		turnDispatcher: &fakeTurnDispatcher{},
+		dispatcher:     dispatcher,
+		scheduledJobs:  store,
+		jobRuns:        NewJobRunRegistry(),
+	}
+	env, err := ControlScheduleWaitEnvelope(locator, "wait-1", "wake me", 60, testTelegramUserID101, false)
+	if err != nil {
+		t.Fatalf("ControlScheduleWaitEnvelope() error = %v", err)
+	}
+	if err := actor.Handle(ctx, env); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	job, ok, err := store.GetByID(ctx, "wait-1")
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetByID() found = false, want true")
+	}
+	if got, want := job.ScheduleSpec, scheduledJobOneShotSpec; got != want {
+		t.Fatalf("ScheduleSpec = %q, want %q", got, want)
+	}
+	if got, want := job.Status, baldastate.ScheduledJobStatusActive; got != want {
+		t.Fatalf("Status = %q, want %q", got, want)
+	}
+	if got, want := job.Content, "wake me"; got != want {
+		t.Fatalf("Content = %q, want %q", got, want)
+	}
+	if !job.ReportToEnabled {
+		t.Fatal("ReportToEnabled = false, want true")
+	}
+	if job.NextRunAt.Before(time.Now().UTC().Add(50*time.Second)) || job.NextRunAt.After(time.Now().UTC().Add(70*time.Second)) {
+		t.Fatalf("NextRunAt = %s, want about 60s in future", job.NextRunAt)
+	}
+}
+
 func waitCancelDone(t *testing.T, runCtx context.Context, label string) {
 	t.Helper()
 	select {

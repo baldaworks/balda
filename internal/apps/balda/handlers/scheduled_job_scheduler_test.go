@@ -85,6 +85,102 @@ func TestScheduledJobSchedulerDispatchJob_PublishesCommandAndReschedules(t *test
 	}
 }
 
+func TestScheduledJobSchedulerDispatchJob_OneShotPausesAfterDispatch(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	locator := baldatelegram.NewLocator(9001, 55)
+	now := time.Date(2026, time.May, 14, 12, 10, 0, 0, time.UTC)
+	dueAt := now.Add(-time.Second)
+
+	record := baldastate.ScheduledJobRecord{
+		JobID:        "task-once",
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Content:      "wake once",
+		ScheduleSpec: oneShotScheduleSpec,
+		Status:       baldastate.ScheduledJobStatusActive,
+		NextRunAt:    dueAt,
+	}
+	if err := store.Upsert(ctx, record); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	bus := &recordingHandlerCommandBus{}
+	scheduler := newSchedulerForTest(t, store, bus, now)
+
+	if err := scheduler.dispatchJob(ctx, record, now); err != nil {
+		t.Fatalf("dispatchJob() error = %v", err)
+	}
+	if got := len(bus.commands); got != 1 {
+		t.Fatalf("published commands = %d, want 1", got)
+	}
+
+	updated, ok, err := store.GetByID(ctx, record.JobID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetByID() = not found, want found")
+	}
+	if got, want := updated.Status, baldastate.ScheduledJobStatusPaused; got != want {
+		t.Fatalf("Status = %q, want %q", got, want)
+	}
+	if got, want := updated.NextRunAt, dueAt; !got.Equal(want) {
+		t.Fatalf("NextRunAt = %s, want %s", got, want)
+	}
+	wantKey := record.JobID + "@" + dueAt.UTC().Format(time.RFC3339Nano)
+	if got := updated.LastDispatchKey; got != wantKey {
+		t.Fatalf("LastDispatchKey = %q, want %q", got, wantKey)
+	}
+	if updated.LastRunAt.IsZero() {
+		t.Fatal("LastRunAt is zero, want set")
+	}
+}
+
+func TestScheduledJobSchedulerMarkSuccess_OneShotStaysPaused(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newSchedulerJobStore(t)
+	locator := baldatelegram.NewLocator(9001, 56)
+	now := time.Date(2026, time.May, 14, 12, 11, 0, 0, time.UTC)
+
+	record := baldastate.ScheduledJobRecord{
+		JobID:        "task-once-success",
+		SessionID:    locator.SessionID,
+		ChannelType:  locator.ChannelType,
+		AddressKey:   locator.AddressKey,
+		AddressJSON:  locator.AddressJSON,
+		Content:      "wake once",
+		ScheduleSpec: oneShotScheduleSpec,
+		Status:       baldastate.ScheduledJobStatusPaused,
+		NextRunAt:    now.Add(-time.Second),
+	}
+	if err := store.Upsert(ctx, record); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	scheduler := newSchedulerForTest(t, store, &recordingHandlerCommandBus{}, now)
+	if err := scheduler.MarkSuccess(ctx, record.JobID); err != nil {
+		t.Fatalf("MarkSuccess() error = %v", err)
+	}
+
+	updated, ok, err := store.GetByID(ctx, record.JobID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetByID() = not found, want found")
+	}
+	if got, want := updated.Status, baldastate.ScheduledJobStatusPaused; got != want {
+		t.Fatalf("Status = %q, want %q", got, want)
+	}
+}
+
 func TestScheduledJobSchedulerDispatchJob_PublishesWithoutRestoringSession(t *testing.T) {
 	t.Parallel()
 

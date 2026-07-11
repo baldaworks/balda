@@ -1,103 +1,112 @@
-# Background Monitors
+# Wait Wake-Up via Scheduled Jobs
 
 Owner: Balda maintainers  
 Status: proposed
 
 ## Problem
 
-Balda does not currently have a durable background execution model for operator requests such as "watch GitHub until checks finish and report back".
+Balda needs a minimal way to resume work after a delay without keeping an interactive turn alive.
 
-Trying to keep an interactive agent turn alive in the background would mix session execution, transport delivery, retry policy, and long-lived monitoring state into one path. That would make restarts, retries, cancellation, and operator observability hard to reason about.
+Keeping a session turn or model run open across time would mix ingress, session execution, retry policy, and delayed wake-up behavior in one path. That breaks restart safety and layer boundaries.
 
 ## Decision
 
-Balda will treat background monitoring as a separate durable actor/job capability, not as a long-running conversational turn.
+Balda will implement the initial `wait` prototype by reusing existing scheduled job storage and scheduling flow.
 
-The chat/session layer may start, inspect, and cancel monitors, but the monitor itself runs as its own durable actor-driven workflow.
+A scheduled job may be either:
 
-Background updates are delivered as separate delivery envelopes through actorlayer. They are not continuations of the original LLM turn.
+- recurring; or
+- one-shot.
+
+The `wait` prototype is modeled as a one-shot scheduled job. When its due time arrives, the scheduler publishes normal product work and starts a new unit of work. It does not resume an old LLM turn.
+
+Version one is intentionally narrow:
+
+- one-shot wake-up only;
+- no goal evaluation;
+- no “monitor completed” semantics;
+- no transport-owned timers;
+- no separate wait store.
+
+## Layer boundaries
+
+Ingress layers may:
+
+- accept wait requests;
+- authenticate and validate input;
+- publish product commands.
+
+Ingress layers must not:
+
+- own wake-up timers;
+- own persisted wait state;
+- resume old turns directly.
+
+Product runtime owns:
+
+- creating one-shot scheduled jobs for wait requests;
+- deciding when due scheduled jobs become wake-up work;
+- dispatching new work when the wake-up fires.
+
+State owns durable scheduled job records.
+
+Delivery remains separate from wake-up scheduling.
 
 ## Model
 
-### Execution split
+Flow:
 
-Keep three concerns separate:
+`chat ingress -> session/control actor -> wait.start -> persist one-shot scheduled job -> scheduler observes due job -> publish scheduled job command -> new turn/command runs`
 
-1. Interactive session turns  
-   Short-lived conversational work for immediate user interaction.
-2. Background monitor jobs  
-   Durable polling or waiting work with its own lifecycle.
-3. Delivery subscriptions  
-   Where updates are reported, with transport-specific formatting and idempotency.
+The wake-up path reuses the existing scheduled job command flow rather than introducing a separate wait runtime.
 
-### Target flow
+## Metadata
 
-For an operator request such as "watch this commit until all checks are green":
+The prototype should align timing metadata with existing scheduled job fields rather than introducing a parallel timing model.
 
-`chat ingress -> session actor -> monitor start command -> monitor actor -> delivery actor(s)`
+The main fields are:
 
-The session actor acknowledges setup immediately. The monitor actor owns polling, state, retry, completion, and cancellation.
+- `CreatedAt` — when the wait request was accepted;
+- `NextRunAt` — when the wake-up is due;
+- `LastRunAt` — when the wake-up actually fired;
+- `UpdatedAt` — when the scheduled job record was last changed.
+
+If resumed work needs timing context, that context should be derived from these scheduled job fields.
 
 ## Required properties
 
-- Monitor execution survives process restarts.
-- Monitor state is explicit and inspectable.
-- Retry and polling policy are owned by the monitor runtime, not by chat transport code.
-- Intermediate and final updates are separate deliveries.
-- Delivery transport concerns stay outside monitor business logic.
-- One actor may emit deliveries to one or many downstream actors during monitor execution.
+- Wake-up survives process restarts.
+- Wake-up derives from persisted scheduled job state.
+- Wake-up is product-owned, not transport-owned.
+- A wake-up starts new work rather than reviving an old turn.
+- One-shot and recurring jobs share the same durable scheduling path.
 
-## Command and event shape
+## Initial scope
 
-Initial direction:
+Version one should include only:
 
-- `balda.v1.cmd.monitor.start`
-- `balda.v1.cmd.monitor.cancel`
-- `balda.v1.monitor.started`
-- `balda.v1.monitor.progressed`
-- `balda.v1.monitor.completed`
-- `balda.v1.monitor.failed`
-- `balda.v1.monitor.cancelled`
+- `wait.start`
+- optional `wait.cancel`
+- one-shot scheduled jobs
+- scheduler-driven wake-up
+- reuse of existing scheduled job command flow
 
-A monitor start command should carry:
+Version one should not include:
 
-- monitor kind;
-- target spec;
-- polling interval or schedule policy;
-- stop condition;
-- notification policy;
-- report destination.
-
-## Layering constraints
-
-- `actorlayer` remains the transport and execution boundary.
-- Chat ingress must not implement long-lived polling loops.
-- Transport handlers must not own monitor lifecycle.
-- SQLite/read models may store monitor state if chosen, but not as a generic transport queue.
-- Delivery actors keep provider-specific idempotency and settlement policy.
-
-## Consequences
-
-- Balda gets true background work without pretending that the interactive agent is still running between messages.
-- Operator-facing updates become explicit, observable, and restart-safe.
-- Chat transports stay simple: they start monitors and receive monitor updates.
-- The same pattern can later support GitHub checks, deployment watches, queue drains, health probes, and similar long-running operator requests.
-
-## Non-goals for now
-
-- No implementation in this ADR.
-- No commitment yet to exact persistence schema.
-- No commitment yet to whether monitors reuse existing job projections or get a dedicated projection model.
+- goal-achieved detection
+- generic monitor rules
+- event-driven waits
+- a dedicated wait store
+- transport-specific timer ownership
 
 ## Open questions
 
-- Should monitors be modeled as a dedicated actor family or as a typed job on top of existing job orchestration?
-- What operator-facing commands should expose list/status/cancel?
-- Which monitor types are worth supporting first beyond GitHub checks?
-- Should monitor updates edit prior transport messages or always emit new ones?
+- How should one-shot versus recurring mode be represented in scheduled job state?
+- Should wake-up dispatch continue through the existing session actor path, or use a dedicated actor while still reusing scheduled job storage?
+- What minimum wake-up context should be carried in payload versus reloaded from scheduled job state?
 
 ## Update triggers
 
-- Introduction of any background watch or wait capability.
-- Changes to actor/job layering for durable orchestration.
-- Changes to delivery semantics for intermediate monitor updates.
+- Introduction of richer monitor semantics.
+- Changes to scheduled job ownership or scheduling behavior.
+- Changes to actor/job layering for delayed wake-up work.

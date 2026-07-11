@@ -23,6 +23,7 @@ const (
 	defaultSchedulerPollInterval = 2 * time.Second
 	defaultSchedulerDueBatchSize = 100
 	defaultSchedulerMaxRetries   = 3
+	oneShotScheduleSpec          = "@once"
 )
 
 // ConfiguredScheduledJob defines a startup-managed recurring job.
@@ -242,9 +243,13 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 	}
 	locator := target.Locator
 
-	nextRunAt, err := nextRunAtFromSpec(current.ScheduleSpec, now)
-	if err != nil {
-		return s.markFailure(ctx, jobID, fmt.Errorf("invalid schedule_spec: %w", err))
+	var nextRunAt time.Time
+	if !isOneShotScheduleSpec(current.ScheduleSpec) {
+		var err error
+		nextRunAt, err = nextRunAtFromSpec(current.ScheduleSpec, now)
+		if err != nil {
+			return s.markFailure(ctx, jobID, fmt.Errorf("invalid schedule_spec: %w", err))
+		}
 	}
 
 	content := strings.TrimSpace(current.Content)
@@ -255,8 +260,13 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 	// Mark the slot only after durable command dispatch succeeds.
 	current.LastDispatchKey = dispatchKey
 	current.LastError = ""
-	current.Status = baldastate.ScheduledJobStatusActive
-	current.NextRunAt = nextRunAt
+	current.LastRunAt = now.UTC()
+	if isOneShotScheduleSpec(current.ScheduleSpec) {
+		current.Status = baldastate.ScheduledJobStatusPaused
+	} else {
+		current.Status = baldastate.ScheduledJobStatusActive
+		current.NextRunAt = nextRunAt
+	}
 	current.SessionID = locator.SessionID
 	current.ChannelType = locator.ChannelType
 	current.AddressKey = locator.AddressKey
@@ -323,7 +333,11 @@ func (s *ScheduledJobScheduler) MarkSuccess(ctx context.Context, jobID string) e
 	job.LastRunAt = s.now().UTC()
 	job.LastError = ""
 	job.RetryCount = 0
-	job.Status = baldastate.ScheduledJobStatusActive
+	if isOneShotScheduleSpec(job.ScheduleSpec) {
+		job.Status = baldastate.ScheduledJobStatusPaused
+	} else {
+		job.Status = baldastate.ScheduledJobStatusActive
+	}
 	if err := s.jobStore.Upsert(ctx, job); err != nil {
 		return fmt.Errorf("upsert scheduled job %q: %w", jobID, err)
 	}
@@ -378,7 +392,11 @@ func (s *ScheduledJobScheduler) RecordExecutionFailure(ctx context.Context, jobI
 	now := s.now().UTC()
 	job.LastError = strings.TrimSpace(cause.Error())
 	job.LastRunAt = now
-	job.Status = baldastate.ScheduledJobStatusActive
+	if isOneShotScheduleSpec(job.ScheduleSpec) {
+		job.Status = baldastate.ScheduledJobStatusPaused
+	} else {
+		job.Status = baldastate.ScheduledJobStatusActive
+	}
 	if err := s.jobStore.Upsert(ctx, job); err != nil {
 		return fmt.Errorf("upsert scheduled job %q execution failure: %w", jobID, err)
 	}
@@ -451,7 +469,14 @@ func normalizeScheduledJobSchedulerConfig(raw ScheduledJobSchedulerConfig) (Sche
 	return cfg, nil
 }
 
+func isOneShotScheduleSpec(spec string) bool {
+	return strings.EqualFold(strings.TrimSpace(spec), oneShotScheduleSpec)
+}
+
 func nextRunAtFromSpec(spec string, now time.Time) (time.Time, error) {
+	if isOneShotScheduleSpec(spec) {
+		return time.Time{}, fmt.Errorf("one-shot schedule has no next run")
+	}
 	schedule, err := parseScheduleSpec(spec)
 	if err != nil {
 		return time.Time{}, err
@@ -467,6 +492,9 @@ func parseScheduleSpec(spec string) (cron.Schedule, error) {
 	trimmed := strings.TrimSpace(spec)
 	if trimmed == "" {
 		return nil, fmt.Errorf("schedule spec is required")
+	}
+	if isOneShotScheduleSpec(trimmed) {
+		return nil, fmt.Errorf("one-shot schedule has no recurring parser")
 	}
 
 	schedule, err := cron.ParseStandard(trimmed)

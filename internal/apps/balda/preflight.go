@@ -8,6 +8,7 @@ import (
 
 	"github.com/ipfans/fxlogger"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -63,6 +64,10 @@ func PreflightRuntime(
 	if err := validateExecutionConfigLint(executionConfig, inboundWebhookConfig); err != nil {
 		return err
 	}
+	eventBusConfig, err := cfg.Balda.NATS.Normalized()
+	if err != nil {
+		return err
+	}
 	if err := validateZulipConfig(cfg.Balda.Zulip); err != nil {
 		return err
 	}
@@ -105,7 +110,7 @@ func PreflightRuntime(
 				logger,
 			),
 		),
-		fx.Supply(logger, normaCfg, workingDir, mcpReg),
+		fx.Supply(logger, normaCfg, workingDir, mcpReg, eventBusConfig, executionConfig),
 		fx.Provide(
 			fx.Annotate(
 				func() string { return stateDir },
@@ -181,6 +186,7 @@ func PreflightRuntime(
 			session.NewManager,
 			internalmcp.NewInternalMCPManager,
 		),
+		natsbus.Module,
 		fx.Populate(&runtimeManager, &mcpManager),
 		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {

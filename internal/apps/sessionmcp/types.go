@@ -2,6 +2,13 @@ package sessionmcp
 
 type noInput struct{}
 
+type sessionLocatorInput struct {
+	SessionID   string `json:"session_id" jsonschema:"target session id, e.g. tg-123-0"`
+	ChannelType string `json:"channel_type" jsonschema:"channel type, e.g. telegram"`
+	AddressKey  string `json:"address_key" jsonschema:"canonical address key, e.g. 12345:0"`
+	AddressJSON string `json:"address_json" jsonschema:"canonical address JSON for the target session locator"`
+}
+
 // ToolError represents an error from a tool operation.
 type ToolError struct {
 	Operation string `json:"operation" jsonschema:"tool name that produced the error"`
@@ -107,4 +114,19 @@ type keyspaceJSONInput struct {
 
 type namespaceOnlyInput struct {
 	Namespace string `json:"namespace" jsonschema:"namespace to list keys from"`
+}
+
+type sessionWaitInput struct {
+	Locator      sessionLocatorInput `json:"locator" jsonschema:"target session locator for the wake-up"`
+	Content      string              `json:"content" jsonschema:"message or command text to run when the wait wakes"`
+	DelaySeconds int                 `json:"delay_seconds" jsonschema:"positive delay in seconds before wake-up"`
+	JobID        string              `json:"job_id,omitempty" jsonschema:"optional stable wait id"`
+	RequestedBy  string              `json:"requested_by,omitempty" jsonschema:"optional requester id for audit metadata"`
+	Notify       bool                `json:"notify,omitempty" jsonschema:"whether to send an acknowledgement message to the session when the wait is scheduled"`
+}
+
+type sessionWaitOutput struct {
+	ToolOutcome
+	Accepted bool   `json:"accepted" jsonschema:"true when the wait command was published successfully"`
+	Message  string `json:"message,omitempty" jsonschema:"human-readable status message"`
 }

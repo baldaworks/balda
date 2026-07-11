@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"go.uber.org/fx"
 )
 
@@ -22,7 +23,7 @@ func (f *fakeShutdowner) Shutdown(...fx.ShutdownOption) error {
 }
 
 func TestRegisterToolsListsShutdownTool(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, &fakeShutdowner{}, nil)
+	ctx, cleanup, session := newTestSession(t, &fakeShutdowner{}, nil, nil)
 	defer cleanup()
 
 	tools, err := session.ListTools(ctx, nil)
@@ -45,7 +46,7 @@ func TestRegisterToolsListsShutdownTool(t *testing.T) {
 }
 
 func TestShutdownRequiresExplicitConfirmation(t *testing.T) {
-	ctx, cleanup, session := newTestSession(t, &fakeShutdowner{}, nil)
+	ctx, cleanup, session := newTestSession(t, &fakeShutdowner{}, nil, nil)
 	defer cleanup()
 
 	result := callTool(t, ctx, session, "balda.control.shutdown", map[string]any{"confirm": "yes"})
@@ -62,7 +63,7 @@ func TestShutdownRequiresExplicitConfirmation(t *testing.T) {
 func TestShutdownRequestsGracefulStop(t *testing.T) {
 	shutdowner := &fakeShutdowner{}
 	terminator := &fakeTerminator{called: make(chan struct{}, 1)}
-	ctx, cleanup, session := newTestSession(t, shutdowner, terminator.call)
+	ctx, cleanup, session := newTestSession(t, shutdowner, nil, terminator.call)
 	defer cleanup()
 
 	result := callTool(t, ctx, session, "balda.control.shutdown", map[string]any{
@@ -92,7 +93,7 @@ func TestShutdownRequestsGracefulStop(t *testing.T) {
 func TestShutdownDoesNotTerminateProcessWhenShutdownFails(t *testing.T) {
 	shutdowner := &fakeShutdowner{err: errors.New("boom")}
 	terminator := &fakeTerminator{called: make(chan struct{}, 1)}
-	ctx, cleanup, session := newTestSession(t, shutdowner, terminator.call)
+	ctx, cleanup, session := newTestSession(t, shutdowner, nil, terminator.call)
 	defer cleanup()
 
 	result := callTool(t, ctx, session, "balda.control.shutdown", map[string]any{
@@ -124,13 +125,13 @@ func (f *fakeTerminator) call() error {
 	return nil
 }
 
-func newTestSession(t *testing.T, shutdowner fx.Shutdowner, terminate func() error) (context.Context, func(), *mcp.ClientSession) {
+func newTestSession(t *testing.T, shutdowner fx.Shutdowner, dispatcher actortransport.Dispatcher, terminate func() error) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "test-control", Version: "1.0.0"},
 		nil,
 	)
-	registerTools(server, shutdowner, terminate)
+	registerTools(server, shutdowner, dispatcher, terminate)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx, cancel := context.WithCancel(context.Background())

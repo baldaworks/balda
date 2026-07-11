@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"go.uber.org/fx"
 )
 
@@ -68,22 +69,23 @@ type shutdownInput struct {
 
 type service struct {
 	shutdowner fx.Shutdowner
+	dispatcher actortransport.Dispatcher
 	terminate  func() error
 }
 
 // RegisterTools adds control MCP tools to an existing server.
-func RegisterTools(server *mcp.Server, shutdowner fx.Shutdowner) {
-	registerTools(server, shutdowner, terminateCurrentProcess)
+func RegisterTools(server *mcp.Server, shutdowner fx.Shutdowner, dispatcher actortransport.Dispatcher) {
+	registerTools(server, shutdowner, dispatcher, terminateCurrentProcess)
 }
 
-func registerTools(server *mcp.Server, shutdowner fx.Shutdowner, terminate func() error) {
+func registerTools(server *mcp.Server, shutdowner fx.Shutdowner, dispatcher actortransport.Dispatcher, terminate func() error) {
 	if server == nil || shutdowner == nil {
 		return
 	}
 	if terminate == nil {
 		terminate = terminateCurrentProcess
 	}
-	srv := &service{shutdowner: shutdowner, terminate: terminate}
+	srv := &service{shutdowner: shutdowner, dispatcher: dispatcher, terminate: terminate}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "balda.control.shutdown",
 		Description: "Gracefully stop the running Balda process. This affects the whole instance. Requires confirm='shutdown' and should only be used when the user explicitly asks for restart or shutdown.",
