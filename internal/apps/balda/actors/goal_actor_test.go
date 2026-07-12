@@ -35,7 +35,8 @@ func TestGoalKeeperActorRejectsMismatchedEnvelopeAndPayloadJobID(t *testing.T) {
 	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: &fakeGoalRunPreparer{t: t, finalValidatorText: "verdict: pass"},
@@ -71,7 +72,8 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	runtimeBuilder := &fakeGoalRunPreparer{t: t, finalValidatorText: "verdict: pass\nvalidated"}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,
@@ -120,7 +122,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 		if payload.Mode != DeliveryModeAgentReply {
 			t.Fatalf("delivery payload mode = %q, want %q", payload.Mode, DeliveryModeAgentReply)
 		}
-		if payload.Profile.Format != profile.Format || payload.Profile.TelegramMode != profile.TelegramMode {
+		if string(payload.Profile.Format) != string(profile.Format) || payload.Profile.TelegramMode != profile.TelegramMode {
 			t.Fatalf("delivery profile = %+v, want %+v", payload.Profile, profile)
 		}
 	}
@@ -144,7 +146,8 @@ func TestGoalKeeperActorCompletesPassingRunWithoutWorkspaceExport(t *testing.T) 
 		exportReason:       "workspace_disabled",
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,
@@ -199,7 +202,8 @@ func TestGoalKeeperActorUsesLatestValidatorVerdictForCompletion(t *testing.T) {
 		events: goalEventsAfterInitialFailure("verdict: pass\nEvidence: final pass"),
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,
@@ -283,7 +287,8 @@ func TestGoalKeeperActorFinalFailureUsesLatestValidatorOutput(t *testing.T) {
 		events: goalEventsAfterInitialFailure("verdict: fail\nEvidence: final failure"),
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,
@@ -364,7 +369,8 @@ func TestGoalKeeperActorRejectsSecondActiveGoalInSession(t *testing.T) {
 	}
 	runtimeBuilder := &fakeGoalRunPreparer{t: t}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,
@@ -423,7 +429,8 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 		},
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,
@@ -497,7 +504,8 @@ func TestGoalKeeperActorDeliversPlanUpdatesWhenEnabled(t *testing.T) {
 		},
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,
@@ -656,7 +664,8 @@ func TestGoalKeeperActorPreservesWorkspaceOnExportFailure(t *testing.T) {
 		exportErr:          context.DeadlineExceeded,
 	}
 	actor := goalkeeper.NewActor(goalkeeper.ActorParams{
-		JobService:      tasks,
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
 		Dispatcher:      dispatcher,
 		SessionManager:  manager,
 		GoalRunPreparer: runtimeBuilder,

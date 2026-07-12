@@ -12,6 +12,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/normahq/balda/internal/apps/balda/scheduledjobs"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/shutdown"
 	"github.com/rs/zerolog"
@@ -139,7 +140,7 @@ type applicationLifecycleParams struct {
 	ActorHost       *baldaexecution.ActorHost
 	TurnDispatcher  *actors.TurnDispatcher
 	BaldaHandler    *handlers.BaldaHandler
-	Scheduler       *handlers.ScheduledJobScheduler
+	Scheduler       *scheduledjobs.ScheduledJobScheduler
 	InboundWebhook  *handlers.InboundWebhookReceiver
 	Zulip           *handlers.ZulipBaldaHandler
 	Slack           *handlers.SlackHandler

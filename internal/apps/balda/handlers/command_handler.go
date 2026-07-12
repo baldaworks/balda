@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
+	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
@@ -78,10 +78,10 @@ type commandHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
 	SessionManager    *session.Manager
-	WorkCanceller     *actors.SessionWorkCanceller `optional:"true"`
+	WorkCanceller     appports.SessionWorkCanceller `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
-	JobService        *baldajobs.JobService `optional:"true"`
-	MaxIterations     int                   `name:"balda_goal_max_iterations"`
+	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
+	MaxIterations     int                            `name:"balda_goal_max_iterations"`
 	UserHandler       *userHandler
 }
 

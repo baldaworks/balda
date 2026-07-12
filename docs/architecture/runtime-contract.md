@@ -15,7 +15,11 @@ Status: active
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through Balda's local actorlayer contracts, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
 - Balda keeps that ownership inside explicit app layers: `actorcmd` owns wire taxonomy; `execution` owns runtime policy; `jobs` owns durable job state, event outbox, and projections; `actors` owns product behavior; `sessionturn` owns queued-turn restoration; `internalmcp` owns bundled MCP lifecycle; and `handlers` owns ingress plus the provider-turn executor adapter.
+- `agent` owns provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support. It does not own session lifecycle semantics or queued-turn orchestration.
 - The local `pkg/actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
+- Delivery boundaries are explicit: `deliverycmd` owns transport-neutral delivery contracts, `deliveryfmt` owns delivery formatting normalization, `locatorref` owns public locator parsing/formatting, and `channel/*` owns only concrete provider delivery behavior.
+- Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
+- Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 
 ## Boundary contract
 
@@ -48,6 +52,9 @@ Status: active
   - Actor definitions and actor state must not select or branch on provider IDs.
   - Provider-specific types stay outside actorlayer-facing contracts.
   - Transport settlement is hidden behind actorlayer delivery methods and exposes the same lifecycle outcomes regardless of command kind.
+  - Shared transport-neutral types must live in dedicated contract packages, not inside concrete adapter packages.
+  - Concrete transport adapters must not import application lifecycle/use-case packages just to reuse locator/profile/progress types.
+  - Public locator parsing/formatting must not require importing concrete transport adapter packages.
 
 ## Related tests
 

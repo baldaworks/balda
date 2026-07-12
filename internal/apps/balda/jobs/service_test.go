@@ -32,7 +32,7 @@ func (b *recordingJobCommandBus) PublishEvent(_ context.Context, subject string,
 	return nil
 }
 
-func TestJobServiceAppendEventPublishesDurableEvent(t *testing.T) {
+func TestJobEventsServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -40,9 +40,9 @@ func TestJobServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobEventsService(jobEventsServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobEventsService() error = %v", err)
 	}
 	if err := service.AppendEvent(ctx, "task-1", JobEventAgentProgress, "agent:executor", "msg-1", map[string]any{"text": "working"}); err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
@@ -62,7 +62,7 @@ func TestJobServiceAppendEventPublishesDurableEvent(t *testing.T) {
 	}
 }
 
-func TestJobServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
+func TestJobEventsServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -70,9 +70,9 @@ func TestJobServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobEventsService(jobEventsServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobEventsService() error = %v", err)
 	}
 	if err := service.AppendEvent(ctx, "task-1", JobEventDeliveryFailed, "delivery.actor", "msg-1", map[string]any{"reason": "telegram send failed"}); err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
@@ -82,7 +82,7 @@ func TestJobServiceAppendEventPublishesDeliveryFailedSubject(t *testing.T) {
 	}
 }
 
-func TestJobServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
+func TestJobEventsServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -90,9 +90,9 @@ func TestJobServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobEventsService(jobEventsServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobEventsService() error = %v", err)
 	}
 
 	payload := map[string]any{"step": "worker", "iteration": 1}
@@ -117,7 +117,7 @@ func TestJobServiceAppendEventUsesDeterministicIDsExceptProgress(t *testing.T) {
 	}
 }
 
-func TestJobServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
+func TestJobLifecycleServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -125,9 +125,9 @@ func TestJobServiceCreateIgnoresEventPublishFailureAfterStateMutation(t *testing
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobLifecycleService(jobLifecycleServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobLifecycleService() error = %v", err)
 	}
 	record := baldastate.JobRecord{ID: "task-created", SessionID: "s-1", Objective: "create task"}
 	created, err := service.Create(ctx, record, "task.actor", map[string]any{"objective": record.Objective})
@@ -166,9 +166,9 @@ func TestOutboxPublisherRetriesFailedJobEvent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobLifecycleService(jobLifecycleServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobLifecycleService() error = %v", err)
 	}
 	record := baldastate.JobRecord{ID: "job-retry", SessionID: "s-1", Objective: "retry event"}
 	if _, err := service.Create(ctx, record, "job.actor", nil); err != nil {
@@ -198,7 +198,7 @@ func TestOutboxPublisherRetriesFailedJobEvent(t *testing.T) {
 	}
 }
 
-func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
+func TestJobLifecycleServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -214,9 +214,9 @@ func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *tes
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobLifecycleService(jobLifecycleServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobLifecycleService() error = %v", err)
 	}
 
 	if err := service.MarkStatus(ctx, "task-running", baldastate.JobStatusRunning, "task.actor", "msg-1", "", map[string]any{"step": "start"}); err != nil {
@@ -234,7 +234,7 @@ func TestJobServiceMarkStatusIgnoresEventPublishFailureAfterStateMutation(t *tes
 	}
 }
 
-func TestJobServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
+func TestJobLifecycleServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -250,9 +250,9 @@ func TestJobServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *test
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{errs: []error{errors.New("event stream unavailable")}}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobLifecycleService(jobLifecycleServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobLifecycleService() error = %v", err)
 	}
 
 	result := map[string]any{"summary": "done"}
@@ -274,7 +274,7 @@ func TestJobServiceSetResultIgnoresEventPublishFailureAfterStateMutation(t *test
 	}
 }
 
-func TestJobServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
+func TestJobLifecycleServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -290,9 +290,9 @@ func TestJobServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobLifecycleService(jobLifecycleServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobLifecycleService() error = %v", err)
 	}
 
 	if err := service.MarkStatus(ctx, "task-deadlettered", baldastate.JobStatusFailed, "task.actor", "msg-1", "runner failed", nil); err != nil {
@@ -310,7 +310,7 @@ func TestJobServiceMarkStatusIgnoresStaleTerminalTransition(t *testing.T) {
 	}
 }
 
-func TestJobServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
+func TestJobLifecycleServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
 	ctx := context.Background()
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -327,9 +327,9 @@ func TestJobServiceSetResultIgnoresStaleTerminalTransition(t *testing.T) {
 		t.Fatalf("CreateJob() error = %v", err)
 	}
 	bus := &recordingJobCommandBus{}
-	service, err := NewJobService(jobServiceParams{Store: provider.Jobs(), Bus: bus})
+	service, err := NewJobLifecycleService(jobLifecycleServiceParams{Store: provider.Jobs(), Bus: bus})
 	if err != nil {
-		t.Fatalf("NewJobService() error = %v", err)
+		t.Fatalf("NewJobLifecycleService() error = %v", err)
 	}
 
 	if err := service.SetResult(ctx, "task-deadlettered-result", map[string]any{"status": "failed"}, baldastate.JobStatusFailed, "task.actor", "runner failed"); err != nil {

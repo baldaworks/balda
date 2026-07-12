@@ -87,7 +87,7 @@ func TestBuildBaldaInstruction_IncludesMemoryPlaceholdersWhenEnabled(t *testing.
 	t.Parallel()
 
 	builder := &Builder{
-		memoryStore: memory.NewStore(newBuilderMemoryKV(), t.TempDir(), true),
+		memoryEnabled: true,
 	}
 	got := builder.buildBaldaInstruction(
 		"tg-1-2",
@@ -115,7 +115,7 @@ func TestBuildBaldaInstruction_ExcludesMemoryWhenDisabled(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{
-		memoryStore: memory.NewStore(newBuilderMemoryKV(), t.TempDir(), false),
+		memoryEnabled: false,
 	}
 	got := builder.buildBaldaInstruction(
 		"tg-1-2",
@@ -443,9 +443,12 @@ func createRuntimeSessionWithMemory(t *testing.T, memoryEnabled bool) adksession
 		"alpha": {Type: "llm"},
 	}
 	builder := &Builder{
-		factory:     agentfactory.New(providers, mcpregistry.New(nil)),
-		normaCfg:    runtimeconfig.RuntimeConfig{Providers: providers},
-		memoryStore: memory.NewStore(newBuilderMemoryKV(), stateDir, memoryEnabled),
+		factory:       agentfactory.New(providers, mcpregistry.New(nil)),
+		normaCfg:      runtimeconfig.RuntimeConfig{Providers: providers},
+		memoryEnabled: memoryEnabled,
+		memorySnapshotReader: builderMemorySnapshotReader{
+			store: memory.NewStore(newBuilderMemoryKV(), stateDir, memoryEnabled),
+		},
 	}
 	runtime := &BuiltRuntime{
 		SessionSvc: adksession.InMemoryService(),
@@ -468,6 +471,21 @@ type builderMemoryKV struct {
 
 func newBuilderMemoryKV() *builderMemoryKV {
 	return &builderMemoryKV{values: make(map[string]any)}
+}
+
+type builderMemorySnapshotReader struct {
+	store *memory.Store
+}
+
+func (r builderMemorySnapshotReader) Snapshot(ctx context.Context) (MemorySnapshot, error) {
+	snapshot, err := r.store.Snapshot(ctx)
+	if err != nil {
+		return MemorySnapshot{}, err
+	}
+	return MemorySnapshot{
+		Content: snapshot.Content,
+		Version: snapshot.Version,
+	}, nil
 }
 
 func (s *builderMemoryKV) GetJSON(_ context.Context, key string) (any, bool, error) {

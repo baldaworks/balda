@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
@@ -44,14 +43,14 @@ func TestWorkspaceMCPImport_UsesPersistedSessionMetadata(t *testing.T) {
 	}
 
 	manager := &Manager{
-		workspaces:       baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, t.TempDir(), "master", ""),
+		workspaces:       newTestWorkspaceManager(workingDir, t.TempDir(), "master"),
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessionStore:     store,
 		sessions:         map[string]*TopicSession{},
 	}
 
-	svc := &workspaceMCPServer{manager: manager, logger: zerolog.Nop()}
+	svc := NewWorkspaceService(manager)
 	if err := svc.Import(ctx, "tg-1-2"); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
@@ -94,14 +93,14 @@ func TestWorkspaceMCPExport_UsesPersistedSessionMetadata(t *testing.T) {
 	}
 
 	manager := &Manager{
-		workspaces:       baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, t.TempDir(), "master", ""),
+		workspaces:       newTestWorkspaceManager(workingDir, t.TempDir(), "master"),
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessionStore:     store,
 		sessions:         map[string]*TopicSession{},
 	}
 
-	svc := &workspaceMCPServer{manager: manager, logger: zerolog.Nop()}
+	svc := NewWorkspaceService(manager)
 	if err := svc.Export(ctx, "tg-3-4", "feat: export persisted balda workspace"); err != nil {
 		t.Fatalf("Export() error = %v", err)
 	}

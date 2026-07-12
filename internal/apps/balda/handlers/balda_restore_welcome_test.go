@@ -189,7 +189,7 @@ func TestBaldaHandlerOnMessage_CollaboratorDMCreateFailureUsesGenericSessionMess
 	})
 
 	builder := &fakeBaldaRestoreAgentBuilder{
-		metadata: baldaagent.AgentMetadata{
+		metadata: baldasession.AgentMetadata{
 			Type:       "opencode_acp",
 			Model:      "opencode/minimax-m2.5-free",
 			MCPServers: []string{"balda", "azure_devops"},
@@ -299,7 +299,7 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 	}
 
 	builder := &fakeBaldaRestoreAgentBuilder{
-		metadata: baldaagent.AgentMetadata{
+		metadata: baldasession.AgentMetadata{
 			Type:       "opencode_acp",
 			Model:      "opencode/minimax-m2.5-free",
 			MCPServers: []string{"balda", "workspace"},
@@ -311,7 +311,9 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 	setUnexportedField(t, sessionManager, "runtimeManager", runtimeManager)
 	setUnexportedField(t, sessionManager, "baldaProviderName", "balda-provider")
 	setUnexportedField(t, sessionManager, "workingDir", workingDir)
-	setUnexportedField(t, sessionManager, "workspaces", baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baldaRestoreCurrentBranch(t, ctx, workingDir), ""))
+	setUnexportedField(t, sessionManager, "workspaces", sessionWorkspaceManagerAdapter{
+		manager: baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baldaRestoreCurrentBranch(t, ctx, workingDir), ""),
+	})
 	setUnexportedField(t, sessionManager, "workspaceEnabled", true)
 	setUnexportedField(t, sessionManager, "sessionStore", store)
 	setUnexportedField(t, sessionManager, "logger", zerolog.Nop())
@@ -376,7 +378,7 @@ func newBaldaRestoreHandlerHarness(t *testing.T, store *fakeBaldaRestoreSessionS
 	}
 
 	builder := &fakeBaldaRestoreAgentBuilder{
-		metadata: baldaagent.AgentMetadata{
+		metadata: baldasession.AgentMetadata{
 			Type:       "opencode_acp",
 			Model:      "opencode/minimax-m2.5-free",
 			MCPServers: []string{"balda", "azure_devops"},
@@ -520,18 +522,18 @@ func (f *fakeBaldaRestoreSessionStore) List(context.Context) ([]baldastate.Sessi
 }
 
 type fakeBaldaRestoreAgentBuilder struct {
-	metadata  baldaagent.AgentMetadata
+	metadata  baldasession.AgentMetadata
 	createErr error
 }
 
 func (f *fakeBaldaRestoreAgentBuilder) CreateRuntimeSession(
 	context.Context,
-	*baldaagent.BuiltRuntime,
+	*baldasession.BuiltRuntime,
 	string,
 	string,
 	string,
 	string,
-	baldaagent.RuntimeSessionContext,
+	baldasession.RuntimeSessionContext,
 ) (adksession.Session, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
@@ -539,7 +541,7 @@ func (f *fakeBaldaRestoreAgentBuilder) CreateRuntimeSession(
 	return nil, nil
 }
 
-func (f *fakeBaldaRestoreAgentBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
+func (f *fakeBaldaRestoreAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata {
 	return f.metadata
 }
 
@@ -547,8 +549,8 @@ type fakeBaldaRestoreRuntimeManager struct {
 	providerID string
 }
 
-func (*fakeBaldaRestoreRuntimeManager) Runtime(context.Context) (*baldaagent.BuiltRuntime, error) {
-	return &baldaagent.BuiltRuntime{}, nil
+func (*fakeBaldaRestoreRuntimeManager) Runtime(context.Context) (*baldasession.BuiltRuntime, error) {
+	return &baldasession.BuiltRuntime{}, nil
 }
 
 func (f *fakeBaldaRestoreRuntimeManager) ProviderID() string {

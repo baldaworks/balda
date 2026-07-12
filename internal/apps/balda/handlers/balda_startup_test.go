@@ -211,7 +211,7 @@ func TestBaldaHandlerOnStart_FailsWhenOwnerBootstrapFails(t *testing.T) {
 	handler, _ := newRegisteredOwnerStartupHandler(t)
 	sessionManager := &baldasession.Manager{}
 	setUnexportedField(t, sessionManager, "agentBuilder", &fakeBaldaStartupFailBuilder{
-		metadata: baldaagent.AgentMetadata{
+		metadata: baldasession.AgentMetadata{
 			Type:       "codex_acp",
 			Model:      "gpt-5-codex",
 			MCPServers: []string{"balda"},
@@ -279,7 +279,7 @@ func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testin
 	}
 
 	builder := &fakeBaldaRestoreAgentBuilder{
-		metadata: baldaagent.AgentMetadata{
+		metadata: baldasession.AgentMetadata{
 			Type:       "codex_acp",
 			Model:      "gpt-5-codex",
 			MCPServers: []string{"balda"},
@@ -291,7 +291,9 @@ func TestBootstrapOwnerSession_RestoresPersistedOwnerWorkspaceMetadata(t *testin
 	setUnexportedField(t, sessionManager, "runtimeManager", runtimeManager)
 	setUnexportedField(t, sessionManager, "baldaProviderName", "balda-provider")
 	setUnexportedField(t, sessionManager, "workingDir", workingDir)
-	setUnexportedField(t, sessionManager, "workspaces", baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baldaRestoreCurrentBranch(t, ctx, workingDir), ""))
+	setUnexportedField(t, sessionManager, "workspaces", sessionWorkspaceManagerAdapter{
+		manager: baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baldaRestoreCurrentBranch(t, ctx, workingDir), ""),
+	})
 	setUnexportedField(t, sessionManager, "workspaceEnabled", true)
 	setUnexportedField(t, sessionManager, "sessionStore", store)
 	setUnexportedField(t, sessionManager, "logger", zerolog.Nop())
@@ -373,7 +375,7 @@ func newRegisteredOwnerStartupHandler(t *testing.T) (*BaldaHandler, *fakeBaldaSt
 	}
 
 	builder := &fakeBaldaRestoreAgentBuilder{
-		metadata: baldaagent.AgentMetadata{
+		metadata: baldasession.AgentMetadata{
 			Type:       "codex_acp",
 			Model:      "gpt-5-codex",
 			MCPServers: []string{"balda"},
@@ -388,22 +390,22 @@ func newRegisteredOwnerStartupHandler(t *testing.T) (*BaldaHandler, *fakeBaldaSt
 }
 
 type fakeBaldaStartupFailBuilder struct {
-	metadata baldaagent.AgentMetadata
+	metadata baldasession.AgentMetadata
 	err      error
 }
 
 func (f *fakeBaldaStartupFailBuilder) CreateRuntimeSession(
 	context.Context,
-	*baldaagent.BuiltRuntime,
+	*baldasession.BuiltRuntime,
 	string,
 	string,
 	string,
 	string,
-	baldaagent.RuntimeSessionContext,
+	baldasession.RuntimeSessionContext,
 ) (adksession.Session, error) {
 	return nil, f.err
 }
 
-func (f *fakeBaldaStartupFailBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
+func (f *fakeBaldaStartupFailBuilder) GetAgentMetadata(string) baldasession.AgentMetadata {
 	return f.metadata
 }

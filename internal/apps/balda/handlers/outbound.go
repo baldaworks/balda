@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/progress"
@@ -29,7 +28,7 @@ func dispatchOutbound(ctx context.Context, dispatcher actortransport.Dispatcher,
 }
 
 func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
-	env, err := actors.PlainDeliveryEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
+	env, err := deliverycmd.PlainEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}
@@ -37,7 +36,7 @@ func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from a
 }
 
 func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
-	env, err := actors.MarkdownDeliveryEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
+	env, err := deliverycmd.MarkdownEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}
@@ -49,7 +48,7 @@ func sendAgentReply(ctx context.Context, dispatcher actortransport.Dispatcher, f
 }
 
 func sendAgentReplyWithProfile(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, text string) error {
-	env, err := actors.AgentReplyDeliveryEnvelopeWithProfileAndSettlement("", from, locator, profile, deliverycmd.SettlementBypass, text, "")
+	env, err := deliverycmd.AgentReplyEnvelopeWithProfileAndSettlement("", from, locator, handlerDeliveryProfile(profile), deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}
@@ -57,7 +56,7 @@ func sendAgentReplyWithProfile(ctx context.Context, dispatcher actortransport.Di
 }
 
 func sendProgressActivity(ctx context.Context, dispatcher actortransport.Dispatcher, jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, sequence int, dedupeSuffix string) error {
-	env, err := actors.ProgressActivityDeliveryEnvelope(jobID, from, locator, policy, sequence, dedupeSuffix)
+	env, err := deliverycmd.ProgressActivityEnvelope(jobID, from, locator, handlerProgressPolicy(policy), sequence, dedupeSuffix)
 	if err != nil {
 		return err
 	}
@@ -65,7 +64,7 @@ func sendProgressActivity(ctx context.Context, dispatcher actortransport.Dispatc
 }
 
 func sendProgressThinking(ctx context.Context, dispatcher actortransport.Dispatcher, jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) error {
-	env, err := actors.ProgressThinkingDeliveryEnvelope(jobID, from, locator, policy, visible, text, sequence, dedupeSuffix)
+	env, err := deliverycmd.ProgressThinkingEnvelope(jobID, from, locator, handlerProgressPolicy(policy), visible, text, sequence, dedupeSuffix)
 	if err != nil {
 		return err
 	}
@@ -73,9 +72,39 @@ func sendProgressThinking(ctx context.Context, dispatcher actortransport.Dispatc
 }
 
 func sendProgressPlanUpdate(ctx context.Context, dispatcher actortransport.Dispatcher, jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, plan *progress.PlanSnapshot, text string, dedupeSuffix string) error {
-	env, err := actors.ProgressPlanUpdateDeliveryEnvelope(jobID, from, locator, policy, visible, plan, text, dedupeSuffix)
+	env, err := deliverycmd.ProgressPlanUpdateEnvelope(jobID, from, locator, handlerProgressPolicy(policy), visible, handlerPlanSnapshot(plan), text, dedupeSuffix)
 	if err != nil {
 		return err
 	}
 	return dispatchOutbound(ctx, dispatcher, env)
+}
+
+func handlerDeliveryProfile(profile deliveryfmt.Profile) deliverycmd.Profile {
+	return deliverycmd.Profile{
+		Format:         deliverycmd.Format(profile.Format),
+		TelegramMode:   profile.TelegramMode,
+		FormattingMode: profile.FormattingMode,
+	}
+}
+
+func handlerProgressPolicy(policy deliveryfmt.ProgressPolicy) deliverycmd.ProgressPolicy {
+	return deliverycmd.ProgressPolicy{
+		Typing:      policy.Typing,
+		Thinking:    policy.Thinking,
+		PlanUpdates: policy.PlanUpdates,
+	}
+}
+
+func handlerPlanSnapshot(plan *progress.PlanSnapshot) *deliverycmd.PlanSnapshot {
+	if plan == nil {
+		return nil
+	}
+	out := &deliverycmd.PlanSnapshot{Entries: make([]deliverycmd.PlanEntry, 0, len(plan.Entries))}
+	for _, entry := range plan.Entries {
+		out.Entries = append(out.Entries, deliverycmd.PlanEntry{
+			Content: entry.Content,
+			Status:  entry.Status,
+		})
+	}
+	return out
 }

@@ -1,0 +1,172 @@
+version: 3
+workdir: .
+
+allow:
+  depOnAnyVendor: true
+
+excludeFiles:
+  - "^.*_test\\.go$"
+
+components:
+  # Generic, reusable building blocks that must stay free of Balda product policy.
+  foundation:
+    in:
+      - pkg/actorlayer
+      - pkg/actorlayer/**
+      - internal/git
+      - internal/logging
+      - internal/throttle
+
+  # Wire contracts, payloads, envelope builders, and shared delivery/progress DTOs.
+  contracts:
+    in:
+      - internal/apps/balda/actorcmd
+      - internal/apps/balda/controlcmd
+      - internal/apps/balda/deliverycmd
+      - internal/apps/balda/deliveryfmt
+      - internal/apps/balda/goalcmd
+      - internal/apps/balda/locatorref
+      - internal/apps/balda/progress
+      - internal/apps/balda/telegramref
+      - internal/apps/balda/telegramfmt
+      - internal/apps/balda/turncmd
+      - internal/apps/balda/usageview
+
+  # Narrow application-facing ports plus use-cases and orchestration services.
+  application:
+    in:
+      - internal/apps/balda/agent
+      - internal/apps/balda/appports
+      - internal/apps/balda/auth
+      - internal/apps/balda/controlapp
+      - internal/apps/balda/sessionapp
+      - internal/apps/balda/envelopetarget
+      - internal/apps/balda/jobs
+      - internal/apps/balda/jobexec
+      - internal/apps/balda/memory
+      - internal/apps/balda/scheduledjobs
+      - internal/apps/balda/session
+      - internal/apps/balda/sessionturn
+      - internal/apps/balda/sessionturnapp
+
+  # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
+  domain:
+    in:
+      - internal/apps/balda/actors
+      - internal/apps/balda/actors/**
+      - internal/apps/balda/goalkeeperworkflow
+
+  # Balda runtime policy and runtime host wiring.
+  runtime:
+    in:
+      - internal/apps/balda/execution
+
+  # Ingress only: parse/auth/session-check/publish.
+  ingress:
+    in:
+      - internal/apps/balda/handlers
+
+  # Provider-facing delivery and rendering adapters.
+  delivery:
+    in:
+      - internal/apps/balda/channel
+      - internal/apps/balda/channel/**
+      - internal/apps/balda/deliveryfx
+      - internal/apps/balda/deliveryworkflow
+      - internal/apps/balda/goaldelivery
+      - internal/apps/balda/messenger
+      - internal/apps/balda/tgbotkit
+      - internal/apps/balda/welcome
+
+  # Storage and adapter-heavy infrastructure that does not fit a narrower semantic layer.
+  infrastructure:
+    in:
+      - internal/apps/balda
+      - internal/apps/balda/controlmcp
+      - internal/apps/balda/eventbus
+      - internal/apps/balda/eventbus/**
+      - internal/apps/balda/internalmcp
+      - internal/apps/balda/paths
+      - internal/apps/balda/redaction
+      - internal/apps/balda/shutdown
+      - internal/apps/balda/state
+      - internal/apps/sessionmcp
+      - internal/apps/workspacemcp
+
+  entrypoints:
+    in:
+      - cmd/balda
+
+deps:
+  foundation:
+    anyProjectDeps: true
+    anyVendorDeps: true
+
+  contracts:
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - delivery
+    anyVendorDeps: true
+
+  application:
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - infrastructure
+    anyVendorDeps: true
+
+  domain:
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - domain
+      - runtime
+      - delivery
+      - infrastructure
+    anyVendorDeps: true
+
+  runtime:
+    # Transitional note: runtime still acts as the main orchestration root and
+    # currently wires feature actors and delivery adapters directly.
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - domain
+      - runtime
+      - delivery
+      - infrastructure
+    anyVendorDeps: true
+
+  ingress:
+    # Transitional note: ingress still reaches some delivery-side helpers and a
+    # few infrastructure entrypoints. The target shape is foundation+contracts+application only.
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - delivery
+      - infrastructure
+    anyVendorDeps: true
+
+  delivery:
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - delivery
+      - runtime
+      - infrastructure
+    anyVendorDeps: true
+
+  infrastructure:
+    anyProjectDeps: true
+    anyVendorDeps: true
+
+  entrypoints:
+    anyProjectDeps: true
+    anyVendorDeps: true

@@ -4,7 +4,10 @@ import "go.uber.org/fx"
 
 var Module = fx.Module("balda_jobs",
 	fx.Provide(
-		NewJobService,
+		NewJobLifecycleService,
+		NewJobEventsService,
+		NewDeliveryService,
+		NewAgentStepsService,
 		NewEventProjector,
 		NewOutboxPublisher,
 	),

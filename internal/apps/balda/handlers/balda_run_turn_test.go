@@ -21,13 +21,11 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
+	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
-	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
@@ -444,7 +442,7 @@ func TestBaldaSessionTurnRunner_DirectTelegramProgressDeliveriesComeFromSessionA
 	setUnexportedField(t, ts, "userID", "tg-101")
 	manager := newBaldaSessionManagerWithSession(t, locator, ts)
 	executor := &providerTurnExecutor{dispatcher: bus, logger: zerolog.Nop()}
-	sessionRunner := sessionturn.New(manager, executor, nil, zerolog.Nop())
+	sessionRunner := sessionturn.New(sessionTurnSessionAccessor{manager: manager}, executor, nil, zerolog.Nop())
 
 	err := sessionRunner.RunSessionTurnPayload(context.Background(), actors.SessionTurnPayload{
 		Text:           "hello",
@@ -660,7 +658,7 @@ func TestRunTurn_TaskBackedVisibleOutputOnlySendsFinalReply(t *testing.T) {
 	if err := json.Unmarshal([]byte(bus.commands[len(bus.commands)-1].PayloadJSON), &payload); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
-	if payload.Profile.Format != options.Profile.Format || payload.Profile.TelegramMode != options.Profile.TelegramMode {
+	if string(payload.Profile.Format) != string(options.Profile.Format) || payload.Profile.TelegramMode != options.Profile.TelegramMode {
 		t.Fatalf("delivery profile = %+v, want %+v", payload.Profile, options.Profile)
 	}
 }
@@ -1622,9 +1620,11 @@ func TestRunTurnTaskWithDelivery_HardFailureSuggestsReset(t *testing.T) {
 func TestRunTurnWithDelivery_AcceptsSlackLocator(t *testing.T) {
 	t.Parallel()
 
+	bus := &recordingHandlerCommandBus{}
 	h := &BaldaHandler{
-		actorDispatcher: &recordingHandlerCommandBus{},
+		actorDispatcher: bus,
 		logger:          zerolog.Nop(),
+		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, nil, zerolog.Nop()),
 	}
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		reply := adksession.NewEvent(context.Background(), invocationID)
@@ -1638,7 +1638,6 @@ func TestRunTurnWithDelivery_AcceptsSlackLocator(t *testing.T) {
 	if err := h.runTurnWithDelivery(context.Background(), "hello", adkRunner, "tg-101", sessionID, "", sessionID, locator, 41, baldachannel.ProgressPolicy{}, true); err != nil {
 		t.Fatalf("runTurnWithDelivery() error = %v", err)
 	}
-	bus := h.actorDispatcher.(*recordingHandlerCommandBus)
 	if len(bus.commands) != 2 {
 		t.Fatalf("dispatch calls = %d, want 2", len(bus.commands))
 	}
@@ -1848,15 +1847,23 @@ func newBaldaRunTurnHandlerWithChannel(channel *baldatelegram.Adapter, now func(
 	if channel == nil {
 		return &BaldaHandler{logger: zerolog.Nop(), now: now}
 	}
+	bus := &recordingHandlerCommandBus{deliveryAdapter: channel}
 	return &BaldaHandler{
 		channel:         channel,
-		actorDispatcher: &recordingHandlerCommandBus{deliveryAdapter: channel},
+		actorDispatcher: bus,
 		logger:          zerolog.Nop(),
 		now:             now,
+		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, nil, zerolog.Nop()),
 	}
 }
 
-func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnTelegramClient, *recordingHandlerCommandBus, *baldajobs.JobService) {
+type testJobServices struct {
+	*baldajobs.JobLifecycleService
+	*baldajobs.JobEventsService
+	*baldajobs.DeliveryService
+}
+
+func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnTelegramClient, *recordingHandlerCommandBus, *testJobServices) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -1867,19 +1874,23 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 	t.Cleanup(func() { _ = provider.Close() })
 
 	bus := &recordingHandlerCommandBus{}
-	var tasks *baldajobs.JobService
-	app := fxtest.New(t,
-		fx.Supply(
-			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
-		),
-		fx.Provide(func() actortransport.Dispatcher { return bus }),
-		fx.Provide(func() actortransport.EventPublisher { return bus }),
-		fx.Provide(func() baldajobs.ServiceStore { return provider.Jobs() }),
-		fx.Provide(baldajobs.NewJobService),
-		fx.Populate(&tasks),
-	)
-	app.RequireStart()
-	t.Cleanup(func() { app.RequireStop() })
+	lifecycle, err := baldajobs.NewJobLifecycleServiceForTests(provider.Jobs(), bus)
+	if err != nil {
+		t.Fatalf("NewJobLifecycleServiceForTests() error = %v", err)
+	}
+	eventsSvc, err := baldajobs.NewJobEventsServiceForTests(provider.Jobs(), bus)
+	if err != nil {
+		t.Fatalf("NewJobEventsServiceForTests() error = %v", err)
+	}
+	deliverySvc, err := baldajobs.NewDeliveryServiceForTests(provider.Jobs())
+	if err != nil {
+		t.Fatalf("NewDeliveryServiceForTests() error = %v", err)
+	}
+	tasks := &testJobServices{
+		JobLifecycleService: lifecycle,
+		JobEventsService:    eventsSvc,
+		DeliveryService:     deliverySvc,
+	}
 
 	tgClient := &baldaRunTurnTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
@@ -1894,6 +1905,7 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 		actorDispatcher: bus,
 		jobEvents:       tasks,
 		logger:          zerolog.Nop(),
+		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, tasks, zerolog.Nop()),
 	}, tgClient, bus, tasks
 }
 

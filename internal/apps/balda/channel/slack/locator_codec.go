@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
@@ -28,7 +28,7 @@ type LocatorAddress struct {
 }
 
 // NewDMLocator builds a canonical session locator for a Slack DM channel.
-func NewDMLocator(teamID, channel string) baldasession.SessionLocator {
+func NewDMLocator(teamID, channel string) deliverycmd.Locator {
 	address := LocatorAddress{
 		Type:    addressTypeDM,
 		TeamID:  strings.TrimSpace(teamID),
@@ -38,7 +38,7 @@ func NewDMLocator(teamID, channel string) baldasession.SessionLocator {
 }
 
 // NewThreadLocator builds a canonical session locator for a Slack channel thread.
-func NewThreadLocator(teamID, channel, threadTS string) baldasession.SessionLocator {
+func NewThreadLocator(teamID, channel, threadTS string) deliverycmd.Locator {
 	address := LocatorAddress{
 		Type:     addressTypeThread,
 		TeamID:   strings.TrimSpace(teamID),
@@ -48,14 +48,14 @@ func NewThreadLocator(teamID, channel, threadTS string) baldasession.SessionLoca
 	return newLocator(address, fmt.Sprintf("t:%s:%s:%s", address.TeamID, address.Channel, address.ThreadTS))
 }
 
-func newLocator(address LocatorAddress, addressKey string) baldasession.SessionLocator {
+func newLocator(address LocatorAddress, addressKey string) deliverycmd.Locator {
 	raw, _ := json.Marshal(address)
 	channelType := baldastate.ChannelTypeSlack
 	addressJSON := string(raw)
 	sessionID := slackSessionID(addressKey)
-	locator, err := baldasession.NewSessionLocator(channelType, addressKey, addressJSON, sessionID)
+	locator, err := deliverycmd.NewLocator(channelType, addressKey, addressJSON, sessionID)
 	if err != nil {
-		return baldasession.SessionLocator{
+		return deliverycmd.Locator{
 			ChannelType: channelType,
 			AddressKey:  addressKey,
 			AddressJSON: addressJSON,
@@ -71,7 +71,7 @@ func slackSessionID(addressKey string) string {
 }
 
 // DecodeLocator decodes a Slack locator payload from canonical session locator fields.
-func DecodeLocator(locator baldasession.SessionLocator) (LocatorAddress, bool, error) {
+func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	if strings.TrimSpace(locator.ChannelType) != baldastate.ChannelTypeSlack {
 		return LocatorAddress{}, false, nil
 	}
@@ -88,21 +88,21 @@ func DecodeLocator(locator baldasession.SessionLocator) (LocatorAddress, bool, e
 // LocatorFromAddressKey rebuilds a canonical Slack locator from an address key.
 // DM format: "dm:<team_id>:<channel_id>"
 // Thread format: "t:<team_id>:<channel_id>:<thread_ts>".
-func LocatorFromAddressKey(addressKey string) (baldasession.SessionLocator, error) {
+func LocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	parts := strings.Split(strings.TrimSpace(addressKey), ":")
 	switch {
 	case len(parts) == 3 && parts[0] == "dm":
 		if parts[1] == "" || parts[2] == "" {
-			return baldasession.SessionLocator{}, fmt.Errorf("slack dm address key %q must be dm:<team_id>:<channel_id>", addressKey)
+			return deliverycmd.Locator{}, fmt.Errorf("slack dm address key %q must be dm:<team_id>:<channel_id>", addressKey)
 		}
 		return NewDMLocator(parts[1], parts[2]), nil
 	case len(parts) == 4 && parts[0] == "t":
 		if parts[1] == "" || parts[2] == "" || parts[3] == "" {
-			return baldasession.SessionLocator{}, fmt.Errorf("slack thread address key %q must be t:<team_id>:<channel_id>:<thread_ts>", addressKey)
+			return deliverycmd.Locator{}, fmt.Errorf("slack thread address key %q must be t:<team_id>:<channel_id>:<thread_ts>", addressKey)
 		}
 		return NewThreadLocator(parts[1], parts[2], parts[3]), nil
 	default:
-		return baldasession.SessionLocator{}, fmt.Errorf("slack address key %q must be dm:<team_id>:<channel_id> or t:<team_id>:<channel_id>:<thread_ts>", addressKey)
+		return deliverycmd.Locator{}, fmt.Errorf("slack address key %q must be dm:<team_id>:<channel_id> or t:<team_id>:<channel_id>:<thread_ts>", addressKey)
 	}
 }
 

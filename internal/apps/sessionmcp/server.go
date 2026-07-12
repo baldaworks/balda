@@ -6,9 +6,6 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
 const (
@@ -17,17 +14,17 @@ const (
 )
 
 // RegisterTools adds session-state MCP tools to an existing server.
-func RegisterTools(server *mcp.Server, store Store, dispatcher actortransport.Dispatcher) {
+func RegisterTools(server *mcp.Server, store Store, waitScheduler SessionWaitScheduler) {
 	if server == nil || store == nil {
 		return
 	}
-	svc := &service{store: store, dispatcher: dispatcher}
+	svc := &service{store: store, waitScheduler: waitScheduler}
 	svc.registerTools(server)
 }
 
 type service struct {
-	store      Store
-	dispatcher actortransport.Dispatcher
+	store         Store
+	waitScheduler SessionWaitScheduler
 }
 
 func (s *service) registerTools(server *mcp.Server) {
@@ -258,9 +255,9 @@ func (s *service) nsList(ctx context.Context, _ *mcp.CallToolRequest, in namespa
 	return nil, listKeysOutput{ToolOutcome: okOutcome(), Keys: stripped}, nil
 }
 
-func (s *service) sessionWait(ctx context.Context, _ *mcp.CallToolRequest, in sessionWaitInput) (*mcp.CallToolResult, sessionWaitOutput, error) {
-	if s.dispatcher == nil {
-		result, out := backendFailure("balda.session.wait", fmt.Errorf("dispatcher is required"))
+func (s *service) sessionWait(ctx context.Context, _ *mcp.CallToolRequest, in SessionWaitInput) (*mcp.CallToolResult, sessionWaitOutput, error) {
+	if s.waitScheduler == nil {
+		result, out := backendFailure("balda.session.wait", fmt.Errorf("wait scheduler is required"))
 		return result, sessionWaitOutput{ToolOutcome: out}, nil
 	}
 	if strings.TrimSpace(in.Content) == "" {
@@ -271,22 +268,7 @@ func (s *service) sessionWait(ctx context.Context, _ *mcp.CallToolRequest, in se
 		result, out := validationFailure("balda.session.wait", "delay_seconds must be positive")
 		return result, sessionWaitOutput{ToolOutcome: out}, nil
 	}
-	locator, err := baldasession.NewSessionLocator(
-		in.Locator.ChannelType,
-		in.Locator.AddressKey,
-		in.Locator.AddressJSON,
-		in.Locator.SessionID,
-	)
-	if err != nil {
-		result, out := validationFailure("balda.session.wait", err.Error())
-		return result, sessionWaitOutput{ToolOutcome: out}, nil
-	}
-	env, err := actors.ControlScheduleWaitEnvelope(locator, in.JobID, in.Content, in.DelaySeconds, in.RequestedBy, in.Notify)
-	if err != nil {
-		result, out := backendFailure("balda.session.wait", err)
-		return result, sessionWaitOutput{ToolOutcome: out}, nil
-	}
-	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
+	if err := s.waitScheduler.ScheduleSessionWait(ctx, in); err != nil {
 		result, out := backendFailure("balda.session.wait", err)
 		return result, sessionWaitOutput{ToolOutcome: out}, nil
 	}

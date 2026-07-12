@@ -10,14 +10,12 @@ import (
 	"sync"
 	"time"
 
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 )
 
-var _ baldachannel.ChannelAdapter = (*Adapter)(nil)
+var _ deliverycmd.Adapter = (*Adapter)(nil)
 
 var (
 	markdownImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
@@ -46,21 +44,21 @@ func NewAdapter(client *Client, logger zerolog.Logger) *Adapter {
 }
 
 // Deliver executes one semantic Zulip delivery operation.
-func (a *Adapter) Deliver(ctx context.Context, locator baldasession.SessionLocator, operation baldachannel.Operation) (baldachannel.Result, error) {
+func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, operation deliverycmd.Operation) (deliverycmd.Result, error) {
 	var err error
-	result := baldachannel.Result{}
+	result := deliverycmd.Result{}
 	switch operation.Kind {
-	case baldachannel.OperationPlain:
+	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
-	case baldachannel.OperationMarkdown:
+	case deliverycmd.OperationMarkdown:
 		err = a.SendMarkdownWithProfile(ctx, locator, operation.Profile, operation.Text)
-	case baldachannel.OperationAgentReply:
+	case deliverycmd.OperationAgentReply:
 		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, operation.Profile, operation.Text)
-	case baldachannel.OperationDraft:
+	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
-	case baldachannel.OperationTyping:
+	case deliverycmd.OperationTyping:
 		err = a.SendTyping(ctx, locator)
-	case baldachannel.OperationProgress:
+	case deliverycmd.OperationProgress:
 		err = a.SendProgress(ctx, locator, operation.Progress)
 	default:
 		err = fmt.Errorf("unsupported zulip delivery operation %q", operation.Kind)
@@ -77,7 +75,7 @@ func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
 	a.typingThrottleInterval = interval
 }
 
-func (a *Adapter) shouldSendTyping(locator baldasession.SessionLocator) bool {
+func (a *Adapter) shouldSendTyping(locator deliverycmd.Locator) bool {
 	if a == nil {
 		return false
 	}
@@ -101,7 +99,7 @@ func (a *Adapter) shouldSendTyping(locator baldasession.SessionLocator) bool {
 // SendPlain sends a plain text message to the locator.
 func (a *Adapter) SendPlain(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	text string,
 ) error {
 	_, err := a.send(ctx, locator, text)
@@ -111,7 +109,7 @@ func (a *Adapter) SendPlain(
 // SendMarkdown sends a Markdown message to the locator.
 func (a *Adapter) SendMarkdown(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	text string,
 ) error {
 	return a.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
@@ -120,11 +118,11 @@ func (a *Adapter) SendMarkdown(
 // SendMarkdownWithProfile sends a Markdown message using Zulip's target formatting profile.
 func (a *Adapter) SendMarkdownWithProfile(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	profile deliverycmd.Profile,
 	text string,
 ) error {
-	normalized := deliveryfmt.NormalizeProfile(profile)
+	normalized := deliveryfmt.NormalizeProfile(zulipDeliveryProfile(profile))
 	if normalized.Format == deliveryfmt.FormatHTML {
 		return fmt.Errorf("zulip delivery does not support html formatting")
 	}
@@ -138,7 +136,7 @@ func (a *Adapter) SendMarkdownWithProfile(
 // SendAgentReply sends agent output to the locator.
 func (a *Adapter) SendAgentReply(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	text string,
 ) error {
 	_, err := a.sendWithPlainFallback(ctx, locator, text)
@@ -149,7 +147,7 @@ func (a *Adapter) SendAgentReply(
 // Zulip message ID as a string.
 func (a *Adapter) SendAgentReplyWithProviderMessageID(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	text string,
 ) (string, error) {
 	return a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
@@ -158,11 +156,11 @@ func (a *Adapter) SendAgentReplyWithProviderMessageID(
 // SendAgentReplyWithProviderMessageIDAndProfile sends agent output using Zulip's target formatting profile.
 func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	profile deliverycmd.Profile,
 	text string,
 ) (string, error) {
-	normalized := deliveryfmt.NormalizeProfile(profile)
+	normalized := deliveryfmt.NormalizeProfile(zulipDeliveryProfile(profile))
 	if normalized.Format == deliveryfmt.FormatHTML {
 		return "", fmt.Errorf("zulip delivery does not support html formatting")
 	}
@@ -189,7 +187,7 @@ func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(
 // SendDraftPlain is a no-op for Zulip, which has no draft/edit-in-place concept.
 func (a *Adapter) SendDraftPlain(
 	_ context.Context,
-	_ baldasession.SessionLocator,
+	_ deliverycmd.Locator,
 	_ int,
 	_ string,
 ) error {
@@ -199,7 +197,7 @@ func (a *Adapter) SendDraftPlain(
 // SendTyping sends a typing indicator to the locator.
 func (a *Adapter) SendTyping(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 ) error {
 	if err := a.validateReady(); err != nil {
 		return err
@@ -225,7 +223,7 @@ func (a *Adapter) SendTyping(
 }
 
 // SendProgress renders semantic progress updates for Zulip.
-func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error {
+func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error {
 	if progress.Policy.Typing {
 		if err := a.SendTyping(ctx, locator); err != nil {
 			a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("zulip typing progress sugar failed")
@@ -246,7 +244,7 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 
 func (a *Adapter) send(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	text string,
 ) (int, error) {
 	if err := a.validateReady(); err != nil {
@@ -278,7 +276,7 @@ func (a *Adapter) validateReady() error {
 
 func (a *Adapter) sendWithPlainFallback(
 	ctx context.Context,
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	text string,
 ) (int, error) {
 	msgID, err := a.send(ctx, locator, text)
@@ -301,6 +299,14 @@ func (a *Adapter) sendWithPlainFallback(
 		)
 	}
 	return msgID, nil
+}
+
+func zulipDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
+	return deliveryfmt.Profile{
+		Format:         deliveryfmt.Format(profile.Format),
+		TelegramMode:   profile.TelegramMode,
+		FormattingMode: profile.FormattingMode,
+	}
 }
 
 func plainTextFallback(text string) string {

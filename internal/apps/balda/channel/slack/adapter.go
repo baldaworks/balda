@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 )
 
-var _ baldachannel.ChannelAdapter = (*Adapter)(nil)
+var _ deliverycmd.Adapter = (*Adapter)(nil)
 
 // Adapter implements channel.ChannelAdapter for Slack.
 type Adapter struct {
@@ -28,21 +26,21 @@ func NewAdapter(client *Client, logger zerolog.Logger) *Adapter {
 }
 
 // Deliver executes one semantic Slack delivery operation.
-func (a *Adapter) Deliver(ctx context.Context, locator baldasession.SessionLocator, operation baldachannel.Operation) (baldachannel.Result, error) {
+func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, operation deliverycmd.Operation) (deliverycmd.Result, error) {
 	var err error
-	result := baldachannel.Result{}
+	result := deliverycmd.Result{}
 	switch operation.Kind {
-	case baldachannel.OperationPlain:
+	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
-	case baldachannel.OperationMarkdown:
+	case deliverycmd.OperationMarkdown:
 		err = a.SendMarkdownWithProfile(ctx, locator, operation.Profile, operation.Text)
-	case baldachannel.OperationAgentReply:
+	case deliverycmd.OperationAgentReply:
 		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, operation.Profile, operation.Text)
-	case baldachannel.OperationDraft:
+	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
-	case baldachannel.OperationTyping:
+	case deliverycmd.OperationTyping:
 		err = a.SendTyping(ctx, locator)
-	case baldachannel.OperationProgress:
+	case deliverycmd.OperationProgress:
 		err = a.SendProgress(ctx, locator, operation.Progress)
 	default:
 		err = fmt.Errorf("unsupported slack delivery operation %q", operation.Kind)
@@ -51,22 +49,22 @@ func (a *Adapter) Deliver(ctx context.Context, locator baldasession.SessionLocat
 }
 
 // SendPlain sends a plain text Slack message.
-func (a *Adapter) SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+func (a *Adapter) SendPlain(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	_, err := a.send(ctx, locator, text, false)
 	return err
 }
 
 // SendMarkdown sends a Slack mrkdwn message.
-func (a *Adapter) SendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+func (a *Adapter) SendMarkdown(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	return a.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
 }
 
 // SendMarkdownWithProfile sends a Slack message using the requested formatting profile.
-func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator baldasession.SessionLocator, profile deliverycmd.Profile, text string) error {
-	if deliveryfmt.NormalizeProfile(profile).Format == deliveryfmt.FormatHTML {
+func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) error {
+	if deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile)).Format == deliveryfmt.FormatHTML {
 		return fmt.Errorf("slack delivery does not support html formatting")
 	}
-	if deliveryfmt.NormalizeProfile(profile).Format == deliveryfmt.FormatPlain {
+	if deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile)).Format == deliveryfmt.FormatPlain {
 		return a.SendPlain(ctx, locator, text)
 	}
 	_, err := a.send(ctx, locator, text, true)
@@ -74,19 +72,19 @@ func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator baldasess
 }
 
 // SendAgentReply sends agent output to Slack.
-func (a *Adapter) SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+func (a *Adapter) SendAgentReply(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	_, err := a.SendAgentReplyWithProviderMessageID(ctx, locator, text)
 	return err
 }
 
 // SendAgentReplyWithProviderMessageID sends agent output and returns the Slack message timestamp.
-func (a *Adapter) SendAgentReplyWithProviderMessageID(ctx context.Context, locator baldasession.SessionLocator, text string) (string, error) {
+func (a *Adapter) SendAgentReplyWithProviderMessageID(ctx context.Context, locator deliverycmd.Locator, text string) (string, error) {
 	return a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
 }
 
 // SendAgentReplyWithProviderMessageIDAndProfile sends agent output using Slack mrkdwn unless plain is requested.
-func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator baldasession.SessionLocator, profile deliverycmd.Profile, text string) (string, error) {
-	normalized := deliveryfmt.NormalizeProfile(profile)
+func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) (string, error) {
+	normalized := deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile))
 	if normalized.Format == deliveryfmt.FormatHTML {
 		return "", fmt.Errorf("slack delivery does not support html formatting")
 	}
@@ -95,17 +93,17 @@ func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Cont
 }
 
 // SendDraftPlain is a no-op for Slack v1.
-func (a *Adapter) SendDraftPlain(_ context.Context, _ baldasession.SessionLocator, _ int, _ string) error {
+func (a *Adapter) SendDraftPlain(_ context.Context, _ deliverycmd.Locator, _ int, _ string) error {
 	return nil
 }
 
 // SendTyping is a no-op for Slack v1.
-func (a *Adapter) SendTyping(_ context.Context, _ baldasession.SessionLocator) error {
+func (a *Adapter) SendTyping(_ context.Context, _ deliverycmd.Locator) error {
 	return nil
 }
 
 // SendProgress renders semantic progress updates for Slack.
-func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error {
+func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error {
 	if !progress.Visible {
 		return nil
 	}
@@ -119,7 +117,7 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 	}
 }
 
-func (a *Adapter) send(ctx context.Context, locator baldasession.SessionLocator, text string, mrkdwn bool) (string, error) {
+func (a *Adapter) send(ctx context.Context, locator deliverycmd.Locator, text string, mrkdwn bool) (string, error) {
 	if a == nil || a.client == nil {
 		return "", fmt.Errorf("slack adapter client is required")
 	}
@@ -135,4 +133,12 @@ func (a *Adapter) send(ctx context.Context, locator baldasession.SessionLocator,
 		threadTS = address.ThreadTS
 	}
 	return a.client.PostMessage(ctx, address.Channel, threadTS, text, mrkdwn)
+}
+
+func slackDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
+	return deliveryfmt.Profile{
+		Format:         deliveryfmt.Format(profile.Format),
+		TelegramMode:   profile.TelegramMode,
+		FormattingMode: profile.FormattingMode,
+	}
 }

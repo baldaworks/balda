@@ -24,6 +24,7 @@ Run before opening or updating a PR:
 ```bash
 go test -race ./...
 go tool golangci-lint run
+go tool go-arch-lint check --project-path .
 ```
 
 ## Code Standards

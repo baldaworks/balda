@@ -13,6 +13,7 @@ import (
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
@@ -70,10 +71,10 @@ func TestTaskDeliveryActorDoesNotRetryAmbiguousSendingDelivery(t *testing.T) {
 func TestDeliveryReadyForAttemptNeverRetriesSendingDelivery(t *testing.T) {
 	record := baldastate.DeliveryRecord{
 		Status:    baldastate.DeliveryStatusSending,
-		UpdatedAt: time.Now().Add(-2 * deliveryPendingRetryAfter),
+		UpdatedAt: time.Now().Add(-60 * time.Second),
 	}
-	if deliveryReadyForAttempt(record) {
-		t.Fatal("deliveryReadyForAttempt(sending) = true, want false because send outcome is ambiguous")
+	if deliveryworkflow.ReadyForAttempt(record) {
+		t.Fatal("ReadyForAttempt(sending) = true, want false because send outcome is ambiguous")
 	}
 }
 
@@ -226,7 +227,7 @@ func TestTaskDeliveryActorSendsChatActionWithoutPersistingDelivery(t *testing.T)
 	}
 }
 
-func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliveryActor, *baldajobs.JobService, *fakeTelegramClient, *recordingHandlerCommandBus) {
+func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliveryActor, *testJobServices, *fakeTelegramClient, *recordingHandlerCommandBus) {
 	t.Helper()
 	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
 	_ = provider
@@ -240,13 +241,11 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliver
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-	router := baldachannel.NewRouter(map[string]baldachannel.ChannelAdapter{
+	router := baldachannel.NewRouter(map[string]deliverycmd.Adapter{
 		baldatelegram.ChannelType: tgAdapter,
 	})
 	return &jobDeliveryActor{
-		channel: router,
-		tasks:   tasks,
-		logger:  zerolog.Nop(),
+		service: deliveryworkflow.New(deliveryworkflow.NewChannelDispatcher(router), tasks, tasks, zerolog.Nop()),
 	}, tasks, tgClient, bus
 }
 

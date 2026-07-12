@@ -1,5 +1,7 @@
 package sessionmcp
 
+import "context"
+
 type noInput struct{}
 
 type sessionLocatorInput struct {
@@ -116,7 +118,7 @@ type namespaceOnlyInput struct {
 	Namespace string `json:"namespace" jsonschema:"namespace to list keys from"`
 }
 
-type sessionWaitInput struct {
+type SessionWaitInput struct {
 	Locator      sessionLocatorInput `json:"locator" jsonschema:"target session locator for the wake-up"`
 	Content      string              `json:"content" jsonschema:"message or command text to run when the wait wakes"`
 	DelaySeconds int                 `json:"delay_seconds" jsonschema:"positive delay in seconds before wake-up"`
@@ -129,4 +131,8 @@ type sessionWaitOutput struct {
 	ToolOutcome
 	Accepted bool   `json:"accepted" jsonschema:"true when the wait command was published successfully"`
 	Message  string `json:"message,omitempty" jsonschema:"human-readable status message"`
+}
+
+type SessionWaitScheduler interface {
+	ScheduleSessionWait(ctx context.Context, in SessionWaitInput) error
 }

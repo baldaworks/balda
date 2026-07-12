@@ -14,17 +14,18 @@ import (
 	"time"
 
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
+	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/goalcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -74,7 +75,7 @@ type ZulipBaldaHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	channelAuth       *auth.ChannelAuthService
 	sessionManager    zulipSessionManager
-	turnDispatcher    actors.TurnQueue
+	turnDispatcher    appports.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
 	goalJobs          goalJobService
 	memoryStore       *memory.Store
@@ -116,9 +117,9 @@ type zulipBaldaHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
-	TurnDispatcher    *actors.TurnDispatcher
+	TurnDispatcher    appports.TurnQueue
 	Dispatcher        actortransport.Dispatcher
-	JobService        *baldajobs.JobService `optional:"true"`
+	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	MemoryStore       *memory.Store
 	AuthToken         string `name:"balda_auth_token"`
 	BaldaProviderID   string `name:"balda_provider"`
@@ -140,7 +141,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		sessionManager:    params.SessionManager,
 		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.Dispatcher,
-		goalJobs:          params.JobService,
+		goalJobs:          params.GoalJobs,
 		memoryStore:       params.MemoryStore,
 		authToken:         strings.TrimSpace(params.AuthToken),
 		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
@@ -1058,7 +1059,7 @@ func (h *ZulipBaldaHandler) submitGoalJob(
 		}
 	}
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}}, objective, transportUserID, maxIterations)
+	env, err := goalcmd.JobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}}, objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
 	}
@@ -1250,7 +1251,7 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 		return fmt.Errorf("runtime is unavailable")
 	}
 	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}
-	payload := actors.SessionTurnPayload{
+	payload := turncmd.SessionTurnPayload{
 		Text:           text,
 		Locator:        locator,
 		UserID:         ts.GetUserID(),
@@ -1267,7 +1268,7 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 	if messageID > 0 {
 		payload.DedupeKey = fmt.Sprintf("zulip:%d", messageID)
 	}
-	env, err := actors.SessionTurnEnvelope(payload)
+	env, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {
 		return err
 	}
@@ -1283,7 +1284,7 @@ func (h *ZulipBaldaHandler) sendZulipAgentReply(
 	if h == nil || h.actorDispatcher == nil {
 		return fmt.Errorf("runtime is unavailable")
 	}
-	env, err := actors.AgentReplyDeliveryEnvelopeWithSettlement("", zulipHandlerActorAddress, locator, deliverycmd.SettlementBypass, text, "")
+	env, err := deliverycmd.AgentReplyEnvelopeWithSettlement("", zulipHandlerActorAddress, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}

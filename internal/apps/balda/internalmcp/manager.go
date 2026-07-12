@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/normahq/balda/internal/apps/balda/controlcmd"
 	"github.com/normahq/balda/internal/apps/balda/controlmcp"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/session"
@@ -143,12 +144,12 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		&mcp.ServerOptions{Instructions: instructions},
 	)
 
-	sessionmcp.RegisterTools(server, m.stateStore, m.dispatcher)
+	sessionmcp.RegisterTools(server, m.stateStore, sessionWaitScheduler{dispatcher: m.dispatcher})
 	memory.RegisterTools(server, m.memoryStore)
 	controlmcp.RegisterTools(server, m.shutdowner, m.dispatcher)
 
 	if m.workspaceEnabled {
-		workspaceSvc := session.NewWorkspaceMCPServer(m.sessionManager)
+		workspaceSvc := session.NewWorkspaceService(m.sessionManager)
 		workspacemcp.RegisterTools(server, workspaceSvc)
 	} else {
 		m.logger.Info().Msg("workspace mode disabled; skipping bundled workspace server")
@@ -179,6 +180,30 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		Str("routes", strings.Join(routes, ", ")).
 		Msg("bundled MCP listener started")
 
+	return nil
+}
+
+type sessionWaitScheduler struct {
+	dispatcher actortransport.Dispatcher
+}
+
+func (s sessionWaitScheduler) ScheduleSessionWait(ctx context.Context, in sessionmcp.SessionWaitInput) error {
+	locator, err := session.NewSessionLocator(
+		in.Locator.ChannelType,
+		in.Locator.AddressKey,
+		in.Locator.AddressJSON,
+		in.Locator.SessionID,
+	)
+	if err != nil {
+		return err
+	}
+	env, err := controlcmd.ScheduleWaitEnvelope(locator, in.JobID, in.Content, in.DelaySeconds, in.RequestedBy, in.Notify)
+	if err != nil {
+		return err
+	}
+	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
+		return err
+	}
 	return nil
 }
 

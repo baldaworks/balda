@@ -6,8 +6,10 @@ import (
 	"time"
 
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	"github.com/normahq/balda/internal/apps/balda/controlapp"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/rs/zerolog"
 )
 
 func TestTaskControlActorCancelsSessionWork(t *testing.T) {
@@ -28,11 +30,13 @@ func TestTaskControlActorCancelsSessionWork(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 	turns := &fakeTurnDispatcher{}
+	service := controlapp.New(turns, dispatcher, tasks, nil, NewJobRunRegistry(), zerolog.Nop())
 	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
 		jobs:           tasks,
 		jobRuns:        NewJobRunRegistry(),
+		service:        service,
 	}
 	env, err := ControlCancelEnvelope(locator, "", testTelegramUserID101, "session canceled by user")
 	if err != nil {
@@ -73,11 +77,13 @@ func TestTaskControlActorCancelsSessionTurnOnly(t *testing.T) {
 		t.Fatalf("Create task: %v", err)
 	}
 	turns := &fakeTurnDispatcher{}
+	service := controlapp.New(turns, dispatcher, tasks, nil, NewJobRunRegistry(), zerolog.Nop())
 	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
 		jobs:           tasks,
 		jobRuns:        NewJobRunRegistry(),
+		service:        service,
 	}
 	env, err := ControlCancelTurnEnvelopeWithNotify(locator, testTelegramUserID101, "session turn canceled by user", true)
 	if err != nil {
@@ -115,11 +121,14 @@ func TestTaskControlActorCancelsTaskWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create task: %v", err)
 	}
+	registry := NewJobRunRegistry()
+	service := controlapp.New(&fakeTurnDispatcher{}, dispatcher, tasks, nil, registry, zerolog.Nop())
 	actor := &jobControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		dispatcher:     dispatcher,
 		jobs:           tasks,
-		jobRuns:        NewJobRunRegistry(),
+		jobRuns:        registry,
+		service:        service,
 	}
 	env, err := ControlCancelEnvelope(locator, "task-one", testTelegramUserID101, "task canceled by user")
 	if err != nil {
@@ -167,11 +176,13 @@ func TestTaskControlActorCancelsAllRegisteredTaskRuns(t *testing.T) {
 	registry.Register("task-multi-run", cancelOne)
 	registry.Register("task-multi-run", cancelTwo)
 
+	service := controlapp.New(&fakeTurnDispatcher{}, dispatcher, tasks, nil, registry, zerolog.Nop())
 	actor := &jobControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		dispatcher:     dispatcher,
 		jobs:           tasks,
 		jobRuns:        registry,
+		service:        service,
 	}
 
 	env, err := ControlCancelEnvelope(locator, "task-multi-run", testTelegramUserID101, "task canceled by user")
@@ -227,11 +238,13 @@ func TestTaskControlActorClearsGoalJobsOnly(t *testing.T) {
 	}
 
 	turns := &fakeTurnDispatcher{}
+	service := controlapp.New(turns, dispatcher, tasks, nil, NewJobRunRegistry(), zerolog.Nop())
 	actor := &jobControlActor{
 		turnDispatcher: turns,
 		dispatcher:     dispatcher,
 		jobs:           tasks,
 		jobRuns:        NewJobRunRegistry(),
+		service:        service,
 	}
 	env, err := ControlClearGoalEnvelopeWithNotify(locator, testTelegramUserID101, "goal cleared by user", true)
 	if err != nil {
@@ -268,11 +281,14 @@ func TestTaskControlActorSchedulesOneShotWait(t *testing.T) {
 	_ = tasks
 	locator := baldatelegram.NewLocator(9001, 0)
 	store := provider.ScheduledJobs()
+	registry := NewJobRunRegistry()
+	service := controlapp.New(&fakeTurnDispatcher{}, dispatcher, nil, store, registry, zerolog.Nop())
 	actor := &jobControlActor{
 		turnDispatcher: &fakeTurnDispatcher{},
 		dispatcher:     dispatcher,
 		scheduledJobs:  store,
-		jobRuns:        NewJobRunRegistry(),
+		jobRuns:        registry,
+		service:        service,
 	}
 	env, err := ControlScheduleWaitEnvelope(locator, "wait-1", "wake me", 60, testTelegramUserID101, false)
 	if err != nil {

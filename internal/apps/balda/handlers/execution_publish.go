@@ -4,29 +4,29 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/goalcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
-func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
+func (h *BaldaHandler) submitSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
 	if h.actorDispatcher == nil {
 		return nil, fmt.Errorf("runtime is unavailable")
 	}
-	env, err := actors.SessionTurnEnvelope(payload)
+	env, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {
 		return nil, err
 	}
 	return h.actorDispatcher.Dispatch(ctx, env)
 }
 
-func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
+func (h *BaldaHandler) submitWebhookTask(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
 	if h.actorDispatcher == nil {
 		return nil, "", fmt.Errorf("runtime is unavailable")
 	}
-	env, jobID, err := actors.WebhookJobEnvelope(payload, routeName, requestID)
+	env, jobID, err := turncmd.WebhookJobEnvelope(payload, routeName, requestID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -52,7 +52,7 @@ func (h *CommandHandler) submitGoalJobWithOptions(ctx context.Context, locator b
 		}
 	}
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.NormalizeOptions(deliveryOptions), objective, transportUserID, maxIterations)
+	env, err := goalcmd.JobEnvelopeWithOptions(locator, deliveryfmt.NormalizeOptions(deliveryOptions), objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
 	}

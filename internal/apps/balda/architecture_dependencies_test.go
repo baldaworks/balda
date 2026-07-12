@@ -21,10 +21,31 @@ func TestArchitectureDependencyMap(t *testing.T) {
 		requires []string
 	}{
 		{
-			name: "actor command contracts are the product wire leaf",
+			name: "actor command contracts are the runtime wire leaf",
 			dir:  "actorcmd",
 			requires: []string{
 				"github.com/normahq/balda/pkg/actorlayer",
+			},
+		},
+		{
+			name: "delivery contracts remain transport neutral",
+			dir:  "deliverycmd",
+			requires: []string{
+				"github.com/normahq/balda/pkg/actorlayer",
+			},
+		},
+		{
+			name: "delivery formatting support stays foundation-only",
+			dir:  "deliveryfmt",
+			requires: []string{
+				"strings",
+			},
+		},
+		{
+			name: "delivery support depends on contracts not adapters",
+			dir:  "locatorref",
+			requires: []string{
+				baldaImportPrefix + "deliverycmd",
 			},
 		},
 		{
@@ -39,21 +60,43 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			dir:  "actors",
 			requires: []string{
 				baldaImportPrefix + "actorcmd",
+				baldaImportPrefix + "deliverycmd",
 			},
 		},
 		{
-			name: "queued turn use case owns session restoration",
+			name: "goal behavior depends on delivery contracts",
+			dir:  "actors/goalkeeper",
+			requires: []string{
+				baldaImportPrefix + "deliverycmd",
+			},
+		},
+		{
+			name: "queued turn use case depends on turn command contracts",
 			dir:  "sessionturn",
 			requires: []string{
-				baldaImportPrefix + "actors",
-				baldaImportPrefix + "session",
+				baldaImportPrefix + "turncmd",
 			},
 		},
 		{
 			name: "ingress wires the queued turn use case",
 			dir:  "handlers",
 			requires: []string{
-				baldaImportPrefix + "sessionturn",
+				baldaImportPrefix + "sessionturnapp",
+				baldaImportPrefix + "deliverycmd",
+			},
+		},
+		{
+			name: "transport adapters consume delivery contracts",
+			dir:  "channel/telegram",
+			requires: []string{
+				baldaImportPrefix + "deliverycmd",
+			},
+		},
+		{
+			name: "goal delivery rendering consumes delivery contracts",
+			dir:  "goaldelivery",
+			requires: []string{
+				baldaImportPrefix + "deliverycmd",
 			},
 		},
 		{
@@ -86,6 +129,26 @@ func TestActorCommandPackageRemainsAFrameworkLeaf(t *testing.T) {
 	for path := range imports {
 		if strings.HasPrefix(path, baldaImportPrefix) {
 			t.Errorf("actorcmd imports application package %q; wire contracts must remain a leaf", path)
+		}
+	}
+}
+
+func TestDeliveryCommandPackageRemainsAContractLeaf(t *testing.T) {
+	t.Parallel()
+
+	imports := productionImports(t, "deliverycmd")
+	disallowedPrefixes := []string{
+		baldaImportPrefix + "actors",
+		baldaImportPrefix + "agent",
+		baldaImportPrefix + "session",
+		baldaImportPrefix + "handlers",
+		baldaImportPrefix + "channel",
+	}
+	for path := range imports {
+		for _, prefix := range disallowedPrefixes {
+			if strings.HasPrefix(path, prefix) {
+				t.Errorf("deliverycmd imports application/adapter package %q; delivery contracts must remain a leaf", path)
+			}
 		}
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
+	"github.com/normahq/balda/internal/apps/balda/controlcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
@@ -20,7 +20,7 @@ func submitSessionCancelControl(
 	if dispatcher == nil {
 		return nil
 	}
-	env, err := actors.ControlCancelEnvelopeWithNotify(locator, "", requestedBy, reason, notify)
+	env, err := controlcmd.CancelEnvelopeWithNotify(locator, "", requestedBy, reason, notify)
 	if err != nil {
 		return fmt.Errorf("build session cancel control envelope: %w", err)
 	}
@@ -41,7 +41,7 @@ func submitSessionTurnCancelControl(
 	if dispatcher == nil {
 		return nil
 	}
-	env, err := actors.ControlCancelTurnEnvelopeWithNotify(locator, requestedBy, reason, notify)
+	env, err := controlcmd.CancelTurnEnvelopeWithNotify(locator, requestedBy, reason, notify)
 	if err != nil {
 		return fmt.Errorf("build session turn cancel control envelope: %w", err)
 	}
@@ -62,7 +62,7 @@ func submitGoalClearControl(
 	if dispatcher == nil {
 		return nil
 	}
-	env, err := actors.ControlClearGoalEnvelopeWithNotify(locator, requestedBy, reason, notify)
+	env, err := controlcmd.ClearGoalEnvelopeWithNotify(locator, requestedBy, reason, notify)
 	if err != nil {
 		return fmt.Errorf("build goal clear control envelope: %w", err)
 	}

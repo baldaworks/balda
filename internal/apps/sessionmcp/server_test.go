@@ -7,17 +7,15 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
-type recordingDispatcher struct {
-	commands []actorlayer.Envelope
+type recordingWaitScheduler struct {
+	inputs []SessionWaitInput
 }
 
-func (r *recordingDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
-	r.commands = append(r.commands, env)
-	return &actortransport.DispatchReceipt{}, nil
+func (r *recordingWaitScheduler) ScheduleSessionWait(_ context.Context, in SessionWaitInput) error {
+	r.inputs = append(r.inputs, in)
+	return nil
 }
 
 func TestSessionStateServerListsTools(t *testing.T) {
@@ -100,8 +98,8 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 }
 
 func TestSessionWaitPublishesControlCommand(t *testing.T) {
-	dispatcher := &recordingDispatcher{}
-	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), dispatcher)
+	waitScheduler := &recordingWaitScheduler{}
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), waitScheduler)
 	defer cleanup()
 	_ = session.InitializeResult()
 
@@ -119,11 +117,11 @@ func TestSessionWaitPublishesControlCommand(t *testing.T) {
 	if result.IsError {
 		t.Fatal("result.IsError = true, want false")
 	}
-	if len(dispatcher.commands) != 1 {
-		t.Fatalf("published commands = %d, want 1", len(dispatcher.commands))
+	if len(waitScheduler.inputs) != 1 {
+		t.Fatalf("scheduled waits = %d, want 1", len(waitScheduler.inputs))
 	}
-	if dispatcher.commands[0].Namespace != "job.control" {
-		t.Fatalf("namespace = %q, want job.control", dispatcher.commands[0].Namespace)
+	if got := waitScheduler.inputs[0].Locator.SessionID; got != "tg-1-0" {
+		t.Fatalf("locator.session_id = %q, want tg-1-0", got)
 	}
 }
 
@@ -401,7 +399,7 @@ func TestSharedStateAcrossStores(t *testing.T) {
 
 // Test helpers
 
-func newTestSession(t *testing.T, store Store, dispatcher actortransport.Dispatcher) (context.Context, func(), *mcp.ClientSession) {
+func newTestSession(t *testing.T, store Store, waitScheduler SessionWaitScheduler) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
 	if store == nil {
 		t.Fatal("store is required")
@@ -410,7 +408,7 @@ func newTestSession(t *testing.T, store Store, dispatcher actortransport.Dispatc
 		&mcp.Implementation{Name: "test-session-state", Version: "1.0.0"},
 		nil,
 	)
-	RegisterTools(server, store, dispatcher)
+	RegisterTools(server, store, waitScheduler)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx, cancel := context.WithCancel(context.Background())

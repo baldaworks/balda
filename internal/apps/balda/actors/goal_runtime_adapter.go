@@ -7,23 +7,6 @@ import (
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 )
 
-type goalRunPreparerAdapter struct {
-	manager *baldaagent.RuntimeManager
-}
-
-func (a goalRunPreparerAdapter) PrepareGoalRun(ctx context.Context, cfg goalkeeper.GoalRunConfig) (goalkeeper.GoalRun, error) {
-	runtime, err := a.manager.PrepareGoalRun(ctx, baldaagent.GoalRunConfig{
-		SourceSessionID: cfg.SourceSessionID,
-		JobID:           cfg.JobID,
-		UserID:          cfg.UserID,
-		MaxIterations:   cfg.MaxIterations,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return goalRunAdapter{runtime: runtime}, nil
-}
-
 type goalRunAdapter struct {
 	runtime *baldaagent.GoalRun
 }

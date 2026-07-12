@@ -9,12 +9,8 @@ import (
 	"sync"
 	"time"
 
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/messenger"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -22,17 +18,28 @@ import (
 	"go.uber.org/fx"
 )
 
-// Compile-time check: *Adapter must implement channel.ChannelAdapter.
-var _ baldachannel.ChannelAdapter = (*Adapter)(nil)
+var _ deliverycmd.Adapter = (*Adapter)(nil)
 
 const (
 	chatTypePrivate     = "private"
 	defaultTypingAction = "typing"
+	modeRichMarkdown    = "rich_markdown"
 )
+
+type TelegramMessenger interface {
+	TelegramFormattingMode() string
+	SendPlain(ctx context.Context, chatID int64, text string, topicID int) error
+	SendMarkdownWithMode(ctx context.Context, chatID int64, text string, topicID int, mode string) error
+	SendAgentReply(ctx context.Context, chatID int64, text string, topicID int) error
+	SendAgentReplyLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string) (int, error)
+	SendDraftPlain(ctx context.Context, chatID int64, draftID int, text string, topicID int) error
+	SendDraftMarkdownWithMode(ctx context.Context, chatID int64, draftID int, text string, topicID int, mode string) error
+	SendChatAction(ctx context.Context, chatID int64, topicID int, action string) error
+}
 
 // Adapter maps Telegram runtime events and operations to balda session locators.
 type Adapter struct {
-	messenger          *messenger.Messenger
+	messenger          TelegramMessenger
 	tgClient           client.ClientWithResponsesInterface
 	logger             zerolog.Logger
 	planUpdatesEnabled bool
@@ -49,7 +56,7 @@ type Adapter struct {
 
 // MessageContext is the balda-facing Telegram message shape.
 type MessageContext struct {
-	Locator         baldasession.SessionLocator
+	Locator         deliverycmd.Locator
 	ChatID          int64
 	TopicID         int
 	MessageID       int
@@ -62,13 +69,13 @@ type MessageContext struct {
 	Text            string
 	HasCommand      bool
 	DeliveryOptions deliveryfmt.Options
-	ProgressPolicy  baldachannel.ProgressPolicy
+	ProgressPolicy  deliveryfmt.ProgressPolicy
 	IsDM            bool
 }
 
 // CommandContext is the balda-facing Telegram command shape.
 type CommandContext struct {
-	Locator         baldasession.SessionLocator
+	Locator         deliverycmd.Locator
 	DeliveryOptions deliveryfmt.Options
 	ChatID          int64
 	TopicID         int
@@ -80,7 +87,7 @@ type CommandContext struct {
 
 // TopicLifecycleContext is the balda-facing Telegram topic lifecycle shape.
 type TopicLifecycleContext struct {
-	Locator   baldasession.SessionLocator
+	Locator   deliverycmd.Locator
 	ChatID    int64
 	TopicID   int
 	MessageID int
@@ -91,7 +98,7 @@ type TopicLifecycleContext struct {
 type AdapterParams struct {
 	fx.In
 
-	Messenger          *messenger.Messenger
+	Messenger          TelegramMessenger
 	TGClient           client.ClientWithResponsesInterface
 	PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
 	Logger             zerolog.Logger
@@ -121,21 +128,21 @@ func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
 }
 
 // Deliver executes one semantic Telegram delivery operation.
-func (a *Adapter) Deliver(ctx context.Context, locator baldasession.SessionLocator, operation baldachannel.Operation) (baldachannel.Result, error) {
+func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, operation deliverycmd.Operation) (deliverycmd.Result, error) {
 	var err error
-	result := baldachannel.Result{}
+	result := deliverycmd.Result{}
 	switch operation.Kind {
-	case baldachannel.OperationPlain:
+	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
-	case baldachannel.OperationMarkdown:
+	case deliverycmd.OperationMarkdown:
 		err = a.SendMarkdownWithProfile(ctx, locator, operation.Profile, operation.Text)
-	case baldachannel.OperationAgentReply:
+	case deliverycmd.OperationAgentReply:
 		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, operation.Profile, operation.Text)
-	case baldachannel.OperationDraft:
+	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
-	case baldachannel.OperationTyping:
+	case deliverycmd.OperationTyping:
 		err = a.SendTyping(ctx, locator)
-	case baldachannel.OperationProgress:
+	case deliverycmd.OperationProgress:
 		err = a.SendProgress(ctx, locator, operation.Progress)
 	default:
 		err = fmt.Errorf("unsupported telegram delivery operation %q", operation.Kind)
@@ -143,7 +150,7 @@ func (a *Adapter) Deliver(ctx context.Context, locator baldasession.SessionLocat
 	return result, err
 }
 
-func (a *Adapter) shouldSendTyping(locator baldasession.SessionLocator) bool {
+func (a *Adapter) shouldSendTyping(locator deliverycmd.Locator) bool {
 	if a == nil {
 		return false
 	}
@@ -164,7 +171,7 @@ func (a *Adapter) shouldSendTyping(locator baldasession.SessionLocator) bool {
 	return true
 }
 
-func (a *Adapter) progressDraftID(locator baldasession.SessionLocator) int {
+func (a *Adapter) progressDraftID(locator deliverycmd.Locator) int {
 	if a == nil {
 		return 0
 	}
@@ -234,7 +241,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		DeliveryOptions: deliveryfmt.Options{
 			Profile: deliveryfmt.Profile{
 				Format:       deliveryfmt.FormatAuto,
-				TelegramMode: a.messenger.TelegramFormattingMode(),
+				TelegramMode: a.telegramFormattingMode(),
 			},
 			ProgressPolicy: deliveryfmt.ProgressPolicy{
 				Typing:      true,
@@ -242,7 +249,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 				PlanUpdates: a.planUpdatesEnabled,
 			},
 		},
-		ProgressPolicy: baldachannel.ProgressPolicy{
+		ProgressPolicy: deliveryfmt.ProgressPolicy{
 			Typing:      true,
 			Thinking:    event.Message.Chat.Type == chatTypePrivate,
 			PlanUpdates: a.planUpdatesEnabled,
@@ -469,9 +476,9 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	return CommandContext{
 		Locator: NewLocator(event.Message.Chat.Id, topicID),
 		DeliveryOptions: deliveryfmt.Options{
-			Profile: deliverycmd.Profile{
+			Profile: deliveryfmt.Profile{
 				Format:       deliveryfmt.FormatAuto,
-				TelegramMode: a.messenger.TelegramFormattingMode(),
+				TelegramMode: a.telegramFormattingMode(),
 			},
 			ProgressPolicy: deliveryfmt.ProgressPolicy{
 				Typing:      true,
@@ -526,7 +533,7 @@ func telegramReasoningMarkdown(text string) string {
 }
 
 func telegramRichMarkdownEnabled(mode string) bool {
-	return telegramfmt.NormalizeMode(mode) == telegramfmt.ModeRichMarkdown
+	return normalizeTelegramMode(mode) == modeRichMarkdown
 }
 
 func telegramPlanUpdateMarkdown(progress deliverycmd.Progress) string {
@@ -567,7 +574,7 @@ func telegramPlanChecklistItem(content string, status string) string {
 }
 
 // SendPlain sends a plain text reply to the locator.
-func (a *Adapter) SendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+func (a *Adapter) SendPlain(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -576,22 +583,22 @@ func (a *Adapter) SendPlain(ctx context.Context, locator baldasession.SessionLoc
 }
 
 // SendMarkdown sends a Markdown reply to the locator.
-func (a *Adapter) SendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+func (a *Adapter) SendMarkdown(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	return a.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
 }
 
 // SendMarkdownWithProfile sends a Markdown reply using a request-scoped formatting profile.
-func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator baldasession.SessionLocator, profile deliverycmd.Profile, text string) error {
+func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
 	}
-	mode := deliveryfmt.EffectiveTelegramMode(profile, a.messenger.TelegramFormattingMode())
+	mode := deliveryfmt.EffectiveTelegramMode(telegramDeliveryProfile(profile), a.telegramFormattingMode())
 	return a.messenger.SendMarkdownWithMode(ctx, chatID, text, topicID, mode)
 }
 
 // SendAgentReply sends final agent output for the locator using configured formatting mode.
-func (a *Adapter) SendAgentReply(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+func (a *Adapter) SendAgentReply(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -600,30 +607,29 @@ func (a *Adapter) SendAgentReply(ctx context.Context, locator baldasession.Sessi
 }
 
 // SendAgentReplyWithProviderMessageID sends final agent output and returns the provider message ID when available.
-func (a *Adapter) SendAgentReplyWithProviderMessageID(ctx context.Context, locator baldasession.SessionLocator, text string) (string, error) {
+func (a *Adapter) SendAgentReplyWithProviderMessageID(ctx context.Context, locator deliverycmd.Locator, text string) (string, error) {
 	return a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
 }
 
 // SendAgentReplyWithProviderMessageIDAndProfile sends final agent output using a request-scoped formatting profile.
-func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator baldasession.SessionLocator, profile deliverycmd.Profile, text string) (string, error) {
+func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) (string, error) {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return "", err
 	}
-	var result messenger.AgentReplyResult
-	mode := deliveryfmt.EffectiveTelegramMode(profile, a.messenger.TelegramFormattingMode())
-	result, err = a.messenger.SendAgentReplyWithResultAndMode(ctx, chatID, text, topicID, mode)
+	mode := deliveryfmt.EffectiveTelegramMode(telegramDeliveryProfile(profile), a.telegramFormattingMode())
+	lastMessageID, err := a.messenger.SendAgentReplyLastMessageIDAndMode(ctx, chatID, text, topicID, mode)
 	if err != nil {
 		return "", err
 	}
-	if result.LastMessageID <= 0 {
+	if lastMessageID <= 0 {
 		return "", nil
 	}
-	return strconv.Itoa(result.LastMessageID), nil
+	return strconv.Itoa(lastMessageID), nil
 }
 
 // SendDraftPlain updates a draft message for the locator.
-func (a *Adapter) SendDraftPlain(ctx context.Context, locator baldasession.SessionLocator, draftID int, text string) error {
+func (a *Adapter) SendDraftPlain(ctx context.Context, locator deliverycmd.Locator, draftID int, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -632,7 +638,7 @@ func (a *Adapter) SendDraftPlain(ctx context.Context, locator baldasession.Sessi
 }
 
 // SendTyping sends a typing chat action to the locator chat/topic.
-func (a *Adapter) SendTyping(ctx context.Context, locator baldasession.SessionLocator) error {
+func (a *Adapter) SendTyping(ctx context.Context, locator deliverycmd.Locator) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -644,7 +650,7 @@ func (a *Adapter) SendTyping(ctx context.Context, locator baldasession.SessionLo
 }
 
 // SendProgress renders a semantic conversational progress update for Telegram.
-func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.SessionLocator, progress deliverycmd.Progress) error {
+func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error {
 	if progress.Policy.Typing {
 		if err := a.SendTyping(ctx, locator); err != nil {
 			a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("telegram typing progress sugar failed")
@@ -676,10 +682,10 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 		a.logger.Debug().
 			Str("session_id", locator.SessionID).
 			Int("draft_id", draftID).
-			Bool("rich_markdown", telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode())).
+			Bool("rich_markdown", telegramRichMarkdownEnabled(a.telegramFormattingMode())).
 			Msg("telegram rendering thinking progress")
-		if telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode()) {
-			return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, draftID, telegramReasoningMarkdown(progress.Text), topicID, telegramfmt.ModeRichMarkdown)
+		if telegramRichMarkdownEnabled(a.telegramFormattingMode()) {
+			return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, draftID, telegramReasoningMarkdown(progress.Text), topicID, modeRichMarkdown)
 		}
 		return a.messenger.SendDraftPlain(ctx, chatID, draftID, progress.Text, topicID)
 	case deliverycmd.ProgressPlanUpdate:
@@ -687,12 +693,12 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 		if err != nil {
 			return err
 		}
-		if telegramRichMarkdownEnabled(a.messenger.TelegramFormattingMode()) {
+		if telegramRichMarkdownEnabled(a.telegramFormattingMode()) {
 			markdown := telegramPlanUpdateMarkdown(progress)
 			if progress.Policy.Thinking {
-				return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, a.progressDraftID(locator), markdown, topicID, telegramfmt.ModeRichMarkdown)
+				return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, a.progressDraftID(locator), markdown, topicID, modeRichMarkdown)
 			}
-			return a.messenger.SendMarkdownWithMode(ctx, chatID, markdown, topicID, telegramfmt.ModeRichMarkdown)
+			return a.messenger.SendMarkdownWithMode(ctx, chatID, markdown, topicID, modeRichMarkdown)
 		}
 		if progress.Policy.Thinking {
 			return a.messenger.SendDraftPlain(ctx, chatID, a.progressDraftID(locator), progress.Text, topicID)
@@ -704,23 +710,23 @@ func (a *Adapter) SendProgress(ctx context.Context, locator baldasession.Session
 }
 
 // CreateTopicLocator creates a Telegram forum topic and returns the balda locator for it.
-func (a *Adapter) CreateTopicLocator(ctx context.Context, chatID int64, topicName string) (baldasession.SessionLocator, error) {
+func (a *Adapter) CreateTopicLocator(ctx context.Context, chatID int64, topicName string) (deliverycmd.Locator, error) {
 	createTopicResp, err := a.tgClient.CreateForumTopicWithResponse(ctx, client.CreateForumTopicJSONRequestBody{
 		ChatId: chatID,
 		Name:   topicName,
 	})
 	if err != nil {
-		return baldasession.SessionLocator{}, fmt.Errorf("creating forum topic: %w", err)
+		return deliverycmd.Locator{}, fmt.Errorf("creating forum topic: %w", err)
 	}
 	if createTopicResp.JSON200 == nil {
-		return baldasession.SessionLocator{}, fmt.Errorf("failed to create forum topic: %s", createTopicResp.Status())
+		return deliverycmd.Locator{}, fmt.Errorf("failed to create forum topic: %s", createTopicResp.Status())
 	}
 
 	return NewLocator(chatID, createTopicResp.JSON200.Result.MessageThreadId), nil
 }
 
 // Close removes a Telegram forum topic for the locator. Root locators are ignored.
-func (a *Adapter) Close(ctx context.Context, locator baldasession.SessionLocator) error {
+func (a *Adapter) Close(ctx context.Context, locator deliverycmd.Locator) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
@@ -742,7 +748,7 @@ func (a *Adapter) Close(ctx context.Context, locator baldasession.SessionLocator
 	return nil
 }
 
-func telegramTuple(locator baldasession.SessionLocator) (int64, int, error) {
+func telegramTuple(locator deliverycmd.Locator) (int64, int, error) {
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {
 		return 0, 0, fmt.Errorf("decode telegram locator %q: %w", locator.SessionID, err)
@@ -751,6 +757,38 @@ func telegramTuple(locator baldasession.SessionLocator) (int64, int, error) {
 		return 0, 0, fmt.Errorf("unsupported channel type %q", locator.ChannelType)
 	}
 	return address.ChatID, address.TopicID, nil
+}
+
+func telegramDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
+	return deliveryfmt.Profile{
+		Format:         deliveryfmt.Format(profile.Format),
+		TelegramMode:   profile.TelegramMode,
+		FormattingMode: profile.FormattingMode,
+	}
+}
+
+func normalizeTelegramMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case modeRichMarkdown:
+		return modeRichMarkdown
+	case "rich_html":
+		return "rich_html"
+	case "markdownv2":
+		return "markdownv2"
+	case string(deliveryfmt.FormatHTML):
+		return string(deliveryfmt.FormatHTML)
+	case "none":
+		return "none"
+	default:
+		return modeRichMarkdown
+	}
+}
+
+func (a *Adapter) telegramFormattingMode() string {
+	if a == nil || a.messenger == nil {
+		return modeRichMarkdown
+	}
+	return a.messenger.TelegramFormattingMode()
 }
 
 func (a *Adapter) topicIDFromMessage(msg *client.Message) int {

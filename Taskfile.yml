@@ -1,6 +1,11 @@
 version: "3"
 
 tasks:
+  arch-lint:
+    desc: Run architecture lint for internal/apps/balda
+    cmds:
+      - go tool go-arch-lint check --project-path .
+
   dev:
     desc: Run Balda with the embedded local runtime
     cmds:

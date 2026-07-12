@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	adksession "google.golang.org/adk/v2/session"
@@ -29,7 +28,7 @@ func TestStopAllWithContext_CleansWorkspaceWhenRootContextCanceled(t *testing.T)
 	runGit(t, ctx, workingDir, "worktree", "add", "-b", "norma/balda/tg-1-1", workspaceDir, "HEAD")
 
 	m := &Manager{
-		workspaces:       baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, t.TempDir(), "master", ""),
+		workspaces:       newTestWorkspaceManager(workingDir, t.TempDir(), "master"),
 		workspaceEnabled: true,
 		logger:           zerolog.Nop(),
 		sessions: map[string]*TopicSession{
@@ -144,7 +143,7 @@ func TestResetSession_DeletesRuntimeHistoryAndPreservesMetadata(t *testing.T) {
 func TestGetAgentMetadata_MergesUniqueMCPServers(t *testing.T) {
 	m := &Manager{
 		agentBuilder: &fakeAgentBuilder{
-			agentMetadata: baldaagent.AgentMetadata{
+			agentMetadata: AgentMetadata{
 				MCPServers: []string{"balda", "shared"},
 			},
 		},
@@ -219,21 +218,21 @@ func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 }
 
 type fakeAgentBuilder struct {
-	agentMetadata                     baldaagent.AgentMetadata
+	agentMetadata                     AgentMetadata
 	createRuntimeSessionAgentNames    []string
 	createRuntimeSessionUserIDs       []string
 	createRuntimeSessionSessionIDs    []string
 	createRuntimeSessionWorkspaceDirs []string
-	createRuntimeSessionContexts      []baldaagent.RuntimeSessionContext
+	createRuntimeSessionContexts      []RuntimeSessionContext
 	createRuntimeSessionErr           error
 }
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
 	_ context.Context,
-	_ *baldaagent.BuiltRuntime,
+	_ *BuiltRuntime,
 	agentName string,
 	userID, sessionID, workspaceDir string,
-	sessionCtx baldaagent.RuntimeSessionContext,
+	sessionCtx RuntimeSessionContext,
 ) (adksession.Session, error) {
 	f.createRuntimeSessionAgentNames = append(f.createRuntimeSessionAgentNames, agentName)
 	f.createRuntimeSessionUserIDs = append(f.createRuntimeSessionUserIDs, userID)
@@ -246,18 +245,18 @@ func (f *fakeAgentBuilder) CreateRuntimeSession(
 	return nil, nil
 }
 
-func (f *fakeAgentBuilder) GetAgentMetadata(string) baldaagent.AgentMetadata {
+func (f *fakeAgentBuilder) GetAgentMetadata(string) AgentMetadata {
 	return f.agentMetadata
 }
 
 type fakeBaldaRuntimeManager struct {
 	providerID   string
-	runtime      *baldaagent.BuiltRuntime
+	runtime      *BuiltRuntime
 	runtimeErr   error
 	runtimeCalls int
 }
 
-func (f *fakeBaldaRuntimeManager) Runtime(context.Context) (*baldaagent.BuiltRuntime, error) {
+func (f *fakeBaldaRuntimeManager) Runtime(context.Context) (*BuiltRuntime, error) {
 	f.runtimeCalls++
 	if f.runtimeErr != nil {
 		return nil, f.runtimeErr
@@ -265,7 +264,7 @@ func (f *fakeBaldaRuntimeManager) Runtime(context.Context) (*baldaagent.BuiltRun
 	if f.runtime != nil {
 		return f.runtime, nil
 	}
-	return &baldaagent.BuiltRuntime{}, nil
+	return &BuiltRuntime{}, nil
 }
 
 func (f *fakeBaldaRuntimeManager) ProviderID() string {
@@ -571,7 +570,7 @@ func TestRestoreSession_FailsWhenPersistedWorkspaceBranchMissing(t *testing.T) {
 		runtimeManager:    runtimeManager,
 		agentBuilder:      builder,
 		workingDir:        workingDir,
-		workspaces:        baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, t.TempDir(), currentBranch(t, ctx, workingDir), ""),
+		workspaces:        newTestWorkspaceManager(workingDir, t.TempDir(), currentBranch(t, ctx, workingDir)),
 		workspaceEnabled:  true,
 		logger:            zerolog.Nop(),
 		sessions:          make(map[string]*TopicSession),
@@ -633,7 +632,7 @@ func TestRestoreSession_ForceRemountsCanonicalWorkspaceAfterCollision(t *testing
 		runtimeManager:    runtimeManager,
 		agentBuilder:      builder,
 		workingDir:        workingDir,
-		workspaces:        baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, currentBranch(t, ctx, workingDir), ""),
+		workspaces:        newTestWorkspaceManager(workingDir, stateDir, currentBranch(t, ctx, workingDir)),
 		workspaceEnabled:  true,
 		logger:            zerolog.Nop(),
 		sessions:          make(map[string]*TopicSession),

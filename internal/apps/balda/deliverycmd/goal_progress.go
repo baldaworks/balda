@@ -4,10 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/progress"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/pkg/actorlayer"
 )
 
@@ -21,20 +17,20 @@ const (
 
 type GoalProgressUpdate struct {
 	JobID         string
-	Locator       baldasession.SessionLocator
-	Profile       deliveryfmt.Profile
-	Policy        deliveryfmt.ProgressPolicy
+	Locator       Locator
+	Profile       Profile
+	Policy        ProgressPolicy
 	Step          string
 	Iteration     int
 	MaxIterations int
 	Kind          GoalProgressKind
 	Text          string
-	Plan          *progress.PlanSnapshot
+	Plan          *PlanSnapshot
 	Sequence      int
 }
 
 func GoalProgressEnvelope(update GoalProgressUpdate) (actorlayer.Envelope, error) {
-	from := actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: strings.TrimSpace(update.JobID)}
+	from := actorlayer.ActorAddress{Target: actorTypeGoalkeeper, Key: strings.TrimSpace(update.JobID)}
 	switch update.Kind {
 	case GoalProgressKindPlan:
 		message := strings.TrimSpace(update.Text)
@@ -68,6 +64,8 @@ func GoalProgressEnvelope(update GoalProgressUpdate) (actorlayer.Envelope, error
 		return actorlayer.Envelope{}, fmt.Errorf("unsupported goal progress kind %q", update.Kind)
 	}
 }
+
+const actorTypeGoalkeeper = "goalkeeper"
 
 func goalProgressDedupeSuffix(update GoalProgressUpdate) string {
 	iteration := update.Iteration

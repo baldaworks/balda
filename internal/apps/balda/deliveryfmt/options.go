@@ -3,32 +3,30 @@ package deliveryfmt
 
 import (
 	"strings"
-
-	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 )
 
 type Format string
 
 const (
-	FormatAuto     Format = "auto"
-	FormatMarkdown Format = "markdown"
-	FormatHTML     Format = "html"
-	FormatPlain    Format = "plain"
+	FormatAuto               Format = "auto"
+	FormatMarkdown           Format = "markdown"
+	FormatHTML               Format = "html"
+	FormatPlain              Format = "plain"
+	TelegramModeRichMarkdown        = "rich_markdown"
+	TelegramModeRichHTML            = "rich_html"
+	TelegramModeMarkdownV2          = "markdownv2"
+	TelegramModeNone                = "none"
 )
 
-// ProgressPolicy describes which progress indicators a delivery target supports.
 type ProgressPolicy struct {
 	Typing      bool `json:"typing,omitempty"`
 	Thinking    bool `json:"thinking,omitempty"`
 	PlanUpdates bool `json:"plan_updates,omitempty"`
 }
 
-// Profile snapshots delivery-target formatting attributes at request time.
 type Profile struct {
-	Format       Format `json:"format,omitempty"`
-	TelegramMode string `json:"telegram_mode,omitempty"`
-
-	// FormattingMode is accepted for compatibility with older queued payloads.
+	Format         Format `json:"format,omitempty"`
+	TelegramMode   string `json:"telegram_mode,omitempty"`
 	FormattingMode string `json:"formatting_mode,omitempty"`
 }
 
@@ -81,7 +79,7 @@ func isDeliveryFormat(value string) bool {
 
 func isTelegramMode(value string) bool {
 	switch value {
-	case telegramfmt.ModeRichMarkdown, telegramfmt.ModeRichHTML, telegramfmt.ModeMarkdownV2, telegramfmt.ModeHTML, telegramfmt.ModeNone:
+	case TelegramModeRichMarkdown, TelegramModeRichHTML, TelegramModeMarkdownV2, string(FormatHTML), TelegramModeNone:
 		return true
 	default:
 		return false
@@ -91,10 +89,27 @@ func isTelegramMode(value string) bool {
 func EffectiveTelegramMode(profile Profile, fallback string) string {
 	normalized := NormalizeProfile(profile)
 	if normalized.Format == FormatPlain {
-		return telegramfmt.ModeNone
+		return TelegramModeNone
 	}
 	if normalized.TelegramMode != "" {
-		return telegramfmt.NormalizeMode(normalized.TelegramMode)
+		return normalizeTelegramMode(normalized.TelegramMode)
 	}
-	return telegramfmt.NormalizeMode(fallback)
+	return normalizeTelegramMode(fallback)
+}
+
+func normalizeTelegramMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case TelegramModeRichMarkdown:
+		return TelegramModeRichMarkdown
+	case TelegramModeRichHTML:
+		return TelegramModeRichHTML
+	case TelegramModeMarkdownV2:
+		return TelegramModeMarkdownV2
+	case string(FormatHTML):
+		return string(FormatHTML)
+	case TelegramModeNone:
+		return TelegramModeNone
+	default:
+		return TelegramModeRichMarkdown
+	}
 }

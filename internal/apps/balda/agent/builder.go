@@ -8,10 +8,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
-	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/git"
@@ -41,6 +41,9 @@ const (
 	baldaSessionIDPlaceholder         = "{" + BaldaSessionIDStateKey + "}"
 	baldaSessionBranchPlaceholder     = "{" + BaldaSessionBranchStateKey + "}"
 	baldaRepoBranchAtStartPlaceholder = "{" + BaldaRepoBranchAtStartStateKey + "}"
+
+	baldaMemoryStateKey        = "balda_memory"
+	baldaMemoryVersionStateKey = "balda_memory_version"
 )
 
 type Builder struct {
@@ -52,7 +55,8 @@ type Builder struct {
 	baldaGlobalInstruction string
 	telegramFormattingMode string
 	sessionSvc             adksession.Service
-	memoryStore            *memory.Store
+	memoryEnabled          bool
+	memorySnapshotReader   MemorySnapshotReader
 }
 
 type RuntimeSessionContext struct {
@@ -62,6 +66,15 @@ type RuntimeSessionContext struct {
 
 type sessionStateFactory interface {
 	BuildSessionState(agentID, workspaceDir string) (map[string]any, error)
+}
+
+type MemorySnapshot struct {
+	Content string
+	Version int64
+}
+
+type MemorySnapshotReader interface {
+	Snapshot(ctx context.Context) (MemorySnapshot, error)
 }
 
 type baldaPromptData struct {
@@ -125,7 +138,7 @@ func (b *Builder) buildBaldaInstruction(
 		WorkspaceMode:     workspaceMode,
 		BaseBranch:        baseBranch,
 		RepoBranchAtStart: repoBranch,
-		MemoryEnabled:     b.memoryStore.MemoryEnabled(),
+		MemoryEnabled:     b.memoryEnabled,
 	}
 	mode := telegramfmt.NormalizeMode(b.telegramFormattingMode)
 	rule, example := telegramfmt.PromptRuleAndExample(mode)
@@ -159,7 +172,8 @@ type BuilderParams struct {
 	BaldaGlobalInstruction string             `name:"balda_global_instruction"`
 	TelegramFormattingMode string             `name:"balda_telegram_formatting_mode"`
 	SessionService         adksession.Service `name:"balda_runtime_session_service"`
-	MemoryStore            *memory.Store
+	MemoryEnabled          bool               `name:"balda_memory_enabled"`
+	MemorySnapshotReader   MemorySnapshotReader
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -173,7 +187,8 @@ func NewBuilder(params BuilderParams) *Builder {
 		baldaGlobalInstruction: strings.TrimSpace(params.BaldaGlobalInstruction),
 		telegramFormattingMode: telegramfmt.NormalizeMode(params.TelegramFormattingMode),
 		sessionSvc:             params.SessionService,
-		memoryStore:            params.MemoryStore,
+		memoryEnabled:          params.MemoryEnabled,
+		memorySnapshotReader:   params.MemorySnapshotReader,
 	}
 }
 
@@ -489,16 +504,23 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 	if state == nil {
 		state = make(map[string]any)
 	}
-	state[memory.MemoryStateKey] = ""
-	state[memory.MemoryVersionStateKey] = ""
-	if b.memoryStore == nil {
+	state[baldaMemoryStateKey] = ""
+	state[baldaMemoryVersionStateKey] = ""
+	if b.memorySnapshotReader == nil {
 		return state, nil
 	}
-	snapshot, err := b.memoryStore.Snapshot(ctx)
+	snapshot, err := b.memorySnapshotReader.Snapshot(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read balda memory: %w", err)
 	}
-	state[memory.MemoryStateKey] = strings.TrimSpace(snapshot.Content)
-	state[memory.MemoryVersionStateKey] = memory.VersionStateValue(snapshot.Version)
+	state[baldaMemoryStateKey] = strings.TrimSpace(snapshot.Content)
+	state[baldaMemoryVersionStateKey] = formatMemoryVersionState(snapshot.Version)
 	return state, nil
+}
+
+func formatMemoryVersionState(version int64) string {
+	if version <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(version, 10)
 }

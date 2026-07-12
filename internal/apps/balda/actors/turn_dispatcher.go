@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -20,15 +21,8 @@ const (
 
 var ErrTurnQueueFull = errors.New("turn queue is full")
 
-type TurnTask struct {
-	SessionID string
-	Run       func(context.Context) error
-}
-
-type TurnQueue interface {
-	Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error)
-	CancelSession(locator session.SessionLocator, clearQueued bool) (bool, int, error)
-}
+type TurnTask = appports.TurnTask
+type TurnQueue = appports.TurnQueue
 
 type TurnDispatcher struct {
 	logger zerolog.Logger
@@ -49,7 +43,7 @@ type sessionTurnQueue struct {
 
 type queuedTurn struct {
 	ctx    context.Context
-	task   TurnTask
+	task   appports.TurnTask
 	result chan error
 }
 
@@ -68,7 +62,7 @@ func NewTurnDispatcher(params turnDispatcherParams) *TurnDispatcher {
 	return dispatcher
 }
 
-func (d *TurnDispatcher) Enqueue(ctx context.Context, task TurnTask) (<-chan error, int, error) {
+func (d *TurnDispatcher) Enqueue(ctx context.Context, task appports.TurnTask) (<-chan error, int, error) {
 	sessionID := strings.TrimSpace(task.SessionID)
 	if sessionID == "" {
 		return nil, 0, fmt.Errorf("session id is required")

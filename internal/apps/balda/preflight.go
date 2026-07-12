@@ -127,6 +127,18 @@ func PreflightRuntime(
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
 			},
+			fx.Annotate(
+				func(store *memory.Store) bool {
+					return store != nil && store.MemoryEnabled()
+				},
+				fx.ResultTags(`name:"balda_memory_enabled"`),
+			),
+			func(store *memory.Store) baldaagent.MemorySnapshotReader {
+				if store == nil {
+					return nil
+				}
+				return memorySnapshotReaderAdapter{store: store}
+			},
 			func(provider baldastate.Provider) sessionmcp.Store {
 				return provider.SessionMCPKV()
 			},

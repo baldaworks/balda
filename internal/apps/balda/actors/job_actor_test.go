@@ -7,14 +7,12 @@ import (
 	"testing"
 
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	"github.com/normahq/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
-	"github.com/rs/zerolog"
-	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 )
 
 func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
@@ -22,7 +20,7 @@ func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
 
 	ctx := context.Background()
 	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher}
+	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	env, taskID, err := WebhookJobEnvelope(SessionTurnPayload{
 		Text:    "handle webhook",
@@ -66,7 +64,7 @@ func TestTaskActorRejectsWebhookSessionTurnWithoutEnvelopeJobID(t *testing.T) {
 
 	ctx := context.Background()
 	_, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher}
+	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	env, _, err := WebhookJobEnvelope(SessionTurnPayload{
 		Text:    "handle webhook",
@@ -93,7 +91,7 @@ func TestTaskActorRejectsNonWebhookSessionTurnTask(t *testing.T) {
 
 	ctx := context.Background()
 	_, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher}
+	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	data, err := json.Marshal(jobEnvelopePayload{
 		Kind: jobPayloadKindWebhookSessionTurn,
@@ -129,7 +127,7 @@ func TestScheduledJobEnvelopeDispatchesSessionTurn(t *testing.T) {
 
 	ctx := context.Background()
 	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher}
+	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	env, err := ScheduledJobEnvelope("daily", "summarize", locator, nil, "101", 0, "tick-1")
 	if err != nil {
@@ -157,7 +155,13 @@ func lastPublishedCommandTo(t *testing.T, bus *recordingHandlerCommandBus, targe
 	return actorlayer.Envelope{}
 }
 
-func newTaskActorRuntimeServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, actortransport.Dispatcher, *baldajobs.JobService, any) {
+type testJobServices struct {
+	*baldajobs.JobLifecycleService
+	*baldajobs.JobEventsService
+	*baldajobs.DeliveryService
+}
+
+func newTaskActorRuntimeServices(t *testing.T, ctx context.Context) (baldastate.Provider, *recordingHandlerCommandBus, actortransport.Dispatcher, *testJobServices, any) {
 	t.Helper()
 	provider, err := baldastate.NewSQLiteProvider(ctx, ":memory:")
 	if err != nil {
@@ -167,26 +171,27 @@ func newTaskActorRuntimeServices(t *testing.T, ctx context.Context) (baldastate.
 		_ = provider.Close()
 	})
 	bus := &recordingHandlerCommandBus{}
-	var dispatcher actortransport.Dispatcher
-	var tasks *baldajobs.JobService
-	app := fxtest.New(t,
-		fx.Supply(
-			fx.Annotate(provider, fx.As(new(baldastate.Provider))),
-			zerolog.Nop(),
-			baldaexecution.Config{},
-		),
-		fx.Provide(func() actortransport.Dispatcher { return bus }),
-		fx.Provide(func() actortransport.EventPublisher { return bus }),
-		fx.Provide(func() baldajobs.ServiceStore { return provider.Jobs() }),
-		fx.Provide(baldajobs.NewJobService),
-		fx.Populate(&dispatcher, &tasks),
-	)
-	app.RequireStart()
-	t.Cleanup(func() { app.RequireStop() })
-	return provider, bus, dispatcher, tasks, nil
+	dispatcher := actortransport.Dispatcher(bus)
+	lifecycle, err := baldajobs.NewJobLifecycleServiceForTests(provider.Jobs(), bus)
+	if err != nil {
+		t.Fatalf("NewJobLifecycleServiceForTests() error = %v", err)
+	}
+	events, err := baldajobs.NewJobEventsServiceForTests(provider.Jobs(), bus)
+	if err != nil {
+		t.Fatalf("NewJobEventsServiceForTests() error = %v", err)
+	}
+	delivery, err := baldajobs.NewDeliveryServiceForTests(provider.Jobs())
+	if err != nil {
+		t.Fatalf("NewDeliveryServiceForTests() error = %v", err)
+	}
+	return provider, bus, dispatcher, &testJobServices{
+		JobLifecycleService: lifecycle,
+		JobEventsService:    events,
+		DeliveryService:     delivery,
+	}, nil
 }
 
-func newTaskActorDispatchServices(t *testing.T, ctx context.Context) (*recordingHandlerCommandBus, actortransport.Dispatcher, *baldajobs.JobService) {
+func newTaskActorDispatchServices(t *testing.T, ctx context.Context) (*recordingHandlerCommandBus, actortransport.Dispatcher, *testJobServices) {
 	t.Helper()
 	_, bus, dispatcher, tasks, _ := newTaskActorRuntimeServices(t, ctx)
 	return bus, dispatcher, tasks

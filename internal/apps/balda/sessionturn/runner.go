@@ -7,24 +7,26 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/memory"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkrunner "google.golang.org/adk/v2/runner"
 )
 
 const ownerSessionLabel = "balda"
+const (
+	baldaMemoryStateKey        = "balda_memory"
+	baldaMemoryVersionStateKey = "balda_memory_version"
+)
 
 // Request contains the resolved session context needed for one provider turn.
 type Request struct {
-	Payload          actors.SessionTurnPayload
-	Session          *baldasession.TopicSession
+	Payload          turncmd.SessionTurnPayload
+	Session          ActiveSession
 	UserID           string
 	AgentSessionID   string
-	DeliveryLocator  baldasession.SessionLocator
+	DeliveryLocator  SessionLocator
 	DeliveryOptions  deliveryfmt.Options
 	MemoryRunOptions []adkrunner.RunOption
 }
@@ -34,20 +36,56 @@ type Executor interface {
 	ExecuteSessionTurn(ctx context.Context, request Request) error
 }
 
+type SessionLocator struct {
+	SessionID   string
+	ChannelType string
+	AddressKey  string
+	AddressJSON string
+}
+
+type SessionContext struct {
+	Locator SessionLocator
+	UserID  string
+}
+
+type ActiveSession interface {
+	GetRunner() *adkrunner.Runner
+	GetSessionID() string
+	GetAgentSessionID() string
+	GetUserID() string
+	RuntimeStateValue(ctx context.Context, key string) (any, bool, error)
+}
+
+type SessionAccessor interface {
+	GetSession(locator SessionLocator) (ActiveSession, error)
+	RestoreSession(ctx context.Context, sessionCtx SessionContext) (ActiveSession, error)
+	EnsureSession(ctx context.Context, sessionCtx SessionContext, agentName string) (ActiveSession, error)
+}
+
+type MemorySnapshot struct {
+	Content string
+	Version int64
+}
+
+type MemoryStateProvider interface {
+	Enabled() bool
+	Snapshot(ctx context.Context) (MemorySnapshot, error)
+}
+
 // Runner restores the target session before delegating provider execution.
 type Runner struct {
-	sessions *baldasession.Manager
+	sessions SessionAccessor
 	executor Executor
-	memory   *memory.Store
+	memory   MemoryStateProvider
 	logger   zerolog.Logger
 }
 
 type runnerParams struct {
 	fx.In
 
-	Sessions *baldasession.Manager
+	Sessions SessionAccessor
 	Executor Executor
-	Memory   *memory.Store
+	Memory   MemoryStateProvider
 	Logger   zerolog.Logger
 }
 
@@ -57,7 +95,7 @@ func NewRunner(params runnerParams) *Runner {
 }
 
 // New creates a Runner from explicit dependencies.
-func New(sessions *baldasession.Manager, executor Executor, memoryStore *memory.Store, logger zerolog.Logger) *Runner {
+func New(sessions SessionAccessor, executor Executor, memoryStore MemoryStateProvider, logger zerolog.Logger) *Runner {
 	return &Runner{
 		sessions: sessions,
 		executor: executor,
@@ -67,22 +105,23 @@ func New(sessions *baldasession.Manager, executor Executor, memoryStore *memory.
 }
 
 // RunSessionTurnPayload restores the target session and executes one provider turn.
-func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload actors.SessionTurnPayload) error {
+func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.SessionTurnPayload) error {
 	if r.sessions == nil {
 		return fmt.Errorf("session turn: session manager is unavailable")
 	}
 	if r.executor == nil {
 		return fmt.Errorf("session turn: executor is unavailable")
 	}
-	topicSession, err := r.sessions.GetSession(payload.Locator)
+	locator := sessionLocatorFromPayload(payload)
+	topicSession, err := r.sessions.GetSession(locator)
 	if err != nil {
 		userID := strings.TrimSpace(payload.UserID)
-		topicSession, err = r.sessions.RestoreSession(ctx, baldasession.SessionContext{
-			Locator: payload.Locator,
+		topicSession, err = r.sessions.RestoreSession(ctx, SessionContext{
+			Locator: locator,
 			UserID:  userID,
 		})
 		if err != nil {
-			if !errors.Is(err, baldasession.ErrNoPersistedSession) {
+			if !errors.Is(err, ErrNoPersistedSession) {
 				return fmt.Errorf("restore session for queued turn: %w", err)
 			}
 			if userID == "" {
@@ -93,8 +132,8 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload actors.Sessi
 					Msg("dropping queued turn for unknown session without transport user")
 				return nil
 			}
-			topicSession, err = r.sessions.EnsureSession(ctx, baldasession.SessionContext{
-				Locator: payload.Locator,
+			topicSession, err = r.sessions.EnsureSession(ctx, SessionContext{
+				Locator: locator,
 				UserID:  userID,
 			}, ownerSessionLabel)
 			if err != nil {
@@ -122,22 +161,29 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload actors.Sessi
 		return err
 	}
 	return r.executor.ExecuteSessionTurn(ctx, Request{
-		Payload:          payload,
-		Session:          topicSession,
-		UserID:           userID,
-		AgentSessionID:   agentSessionID,
-		DeliveryLocator:  deliveryLocator,
-		DeliveryOptions:  actors.NormalizeSessionDeliveryOptions(payload),
+		Payload:        payload,
+		Session:        topicSession,
+		UserID:         userID,
+		AgentSessionID: agentSessionID,
+		DeliveryLocator: SessionLocator{
+			SessionID:   deliveryLocator.SessionID,
+			ChannelType: deliveryLocator.ChannelType,
+			AddressKey:  deliveryLocator.AddressKey,
+			AddressJSON: deliveryLocator.AddressJSON,
+		},
+		DeliveryOptions:  turncmd.NormalizeSessionDeliveryOptions(payload),
 		MemoryRunOptions: runOptions,
 	})
 }
 
+var ErrNoPersistedSession = errors.New("no persisted session")
+
 func prepareMemoryRunOptions(
 	ctx context.Context,
-	store *memory.Store,
-	topicSession *baldasession.TopicSession,
+	store MemoryStateProvider,
+	topicSession ActiveSession,
 ) ([]adkrunner.RunOption, error) {
-	if store == nil || !store.MemoryEnabled() || topicSession == nil {
+	if store == nil || !store.Enabled() || topicSession == nil {
 		return nil, nil
 	}
 	snapshot, err := store.Snapshot(ctx)
@@ -145,18 +191,56 @@ func prepareMemoryRunOptions(
 		return nil, fmt.Errorf("snapshot balda memory: %w", err)
 	}
 	seenVersion := int64(0)
-	value, ok, err := topicSession.RuntimeStateValue(ctx, memory.MemoryVersionStateKey)
+	value, ok, err := topicSession.RuntimeStateValue(ctx, baldaMemoryVersionStateKey)
 	if err != nil {
 		return nil, fmt.Errorf("read balda memory version: %w", err)
 	}
 	if ok {
-		seenVersion = memory.VersionFromState(value)
+		seenVersion = versionFromState(value)
 	}
 	if snapshot.Version <= seenVersion {
 		return nil, nil
 	}
 	return []adkrunner.RunOption{adkrunner.WithStateDelta(map[string]any{
-		memory.MemoryStateKey:        strings.TrimSpace(snapshot.Content),
-		memory.MemoryVersionStateKey: memory.VersionStateValue(snapshot.Version),
+		baldaMemoryStateKey:        strings.TrimSpace(snapshot.Content),
+		baldaMemoryVersionStateKey: versionStateValue(snapshot.Version),
 	})}, nil
+}
+
+func versionFromState(value any) int64 {
+	switch raw := value.(type) {
+	case int64:
+		return raw
+	case int:
+		return int64(raw)
+	case int32:
+		return int64(raw)
+	case float64:
+		return int64(raw)
+	case string:
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return 0
+		}
+		var parsed int64
+		if _, err := fmt.Sscan(trimmed, &parsed); err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func versionStateValue(version int64) string {
+	return fmt.Sprintf("%d", version)
+}
+
+func sessionLocatorFromPayload(payload turncmd.SessionTurnPayload) SessionLocator {
+	return SessionLocator{
+		SessionID:   payload.Locator.SessionID,
+		ChannelType: payload.Locator.ChannelType,
+		AddressKey:  payload.Locator.AddressKey,
+		AddressJSON: payload.Locator.AddressJSON,
+	}
 }

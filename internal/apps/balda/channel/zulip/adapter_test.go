@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/rs/zerolog"
 )
 
@@ -57,12 +57,12 @@ func TestAdapterFormattingProfileMapsMarkdownAndPlain(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		profile deliveryfmt.Profile
+		profile deliverycmd.Profile
 		want    string
 	}{
-		{name: "auto uses markdown content", profile: deliveryfmt.Profile{Format: deliveryfmt.FormatAuto}, want: "**hello**"},
-		{name: "markdown uses markdown content", profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, want: "**hello**"},
-		{name: "plain strips markdown content", profile: deliveryfmt.Profile{Format: deliveryfmt.FormatPlain}, want: "hello"},
+		{name: "auto uses markdown content", profile: deliverycmd.Profile{Format: deliverycmd.FormatAuto}, want: "**hello**"},
+		{name: "markdown uses markdown content", profile: deliverycmd.Profile{Format: deliverycmd.FormatMarkdown}, want: "**hello**"},
+		{name: "plain strips markdown content", profile: deliverycmd.Profile{Format: deliverycmd.FormatPlain}, want: "hello"},
 	}
 
 	for _, tt := range tests {
@@ -97,7 +97,7 @@ func TestAdapterRejectsHTMLFormatting(t *testing.T) {
 	_, err := adapter.SendAgentReplyWithProviderMessageIDAndProfile(
 		context.Background(),
 		NewStreamLocator(42, "ops"),
-		deliveryfmt.Profile{Format: deliveryfmt.FormatHTML},
+		deliverycmd.Profile{Format: deliverycmd.FormatHTML},
 		"hello",
 	)
 	if err == nil {

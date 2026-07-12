@@ -233,6 +233,14 @@ func (m *Messenger) SendAgentReplyWithResultAndMode(ctx context.Context, chatID 
 	}
 }
 
+func (m *Messenger) SendAgentReplyLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string) (int, error) {
+	result, err := m.SendAgentReplyWithResultAndMode(ctx, chatID, text, topicID, mode)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastMessageID, nil
+}
+
 func (m *Messenger) richMessagesEnabled() bool {
 	return telegramRichMessagesEnabled(m.TelegramFormattingMode())
 }

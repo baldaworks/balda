@@ -9,11 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/git"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -27,34 +28,64 @@ const workspaceSyncSkippedNotice = "Workspace restore hit a sync conflict, so Ba
 
 var ErrNoPersistedSession = errors.New("no persisted session")
 
-type agentBuilder interface {
+type AgentBuilder interface {
 	CreateRuntimeSession(
 		ctx context.Context,
-		runtime *baldaagent.BuiltRuntime,
+		runtime *BuiltRuntime,
 		agentName string,
 		userID string,
 		sessionID string,
 		workspaceDir string,
-		sessionCtx baldaagent.RuntimeSessionContext,
+		sessionCtx RuntimeSessionContext,
 	) (adksession.Session, error)
-	GetAgentMetadata(agentName string) baldaagent.AgentMetadata
+	GetAgentMetadata(agentName string) AgentMetadata
 }
 
-type baldaRuntimeManager interface {
-	Runtime(ctx context.Context) (*baldaagent.BuiltRuntime, error)
+type RuntimeManager interface {
+	Runtime(ctx context.Context) (*BuiltRuntime, error)
 	ProviderID() string
 }
 
-type AgentMetadata = baldaagent.AgentMetadata
+type WorkspaceManager interface {
+	CanonicalWorkspaceDir(key string) string
+	ForceRemountCanonicalWorkspace(ctx context.Context, key, branchName string) (EnsureWorkspaceResult, error)
+	EnsureWorkspace(ctx context.Context, key, branchName, existingPath string) (EnsureWorkspaceResult, error)
+	Import(ctx context.Context, workspaceDir string) error
+	Export(ctx context.Context, workspaceDir, branchName, commitMessage string) error
+	CleanupWorkspace(ctx context.Context, workspaceDir string) error
+}
+
+type AgentMetadata struct {
+	Type       string
+	Model      string
+	MCPServers []string
+}
+
+type RuntimeSessionContext struct {
+	BaldaSessionID string
+	SessionBranch  string
+}
+
+type BuiltRuntime struct {
+	Agent      agent.Agent
+	Runner     *runner.Runner
+	SessionSvc adksession.Service
+	AppName    string
+}
+
+type EnsureWorkspaceResult struct {
+	Dir         string
+	SyncSkipped bool
+}
 
 // Manager manages Balda sessions backed by the configured runtime and persists session metadata.
 type Manager struct {
-	agentBuilder       agentBuilder
-	runtimeManager     baldaRuntimeManager
+	agentBuilder       AgentBuilder
+	runtimeManager     RuntimeManager
 	baldaMCPServerIDs  []string
 	baldaProviderName  string
 	workingDir         string
-	workspaces         *baldaagent.WorkspaceManager
+	workspaces         WorkspaceManager
 	workspaceEnabled   bool
 	workspaceBaseRef   string
 	sessionsPersistent bool
@@ -70,18 +101,17 @@ type Manager struct {
 type ManagerParams struct {
 	fx.In
 
-	AgentBuilder         *baldaagent.Builder
-	RuntimeManager       *baldaagent.RuntimeManager
-	BaldaMCPServerIDs    []string `name:"balda_mcp_servers"`
-	BaldaProviderID      string   `name:"balda_provider"`
-	WorkingDir           string
-	StateDir             string `name:"balda_state_dir"`
-	WorkspaceEnabled     bool   `name:"balda_workspace_enabled"`
-	WorkspaceSessionsDir string `name:"balda_workspace_sessions_dir"`
-	WorkspaceBaseRef     string `name:"balda_workspace_base_branch"`
-	SessionsPersistent   bool   `name:"balda_sessions_persistent"`
-	SessionStore         baldastate.SessionStore
-	Logger               zerolog.Logger
+	AgentBuilder       AgentBuilder
+	RuntimeManager     RuntimeManager
+	BaldaMCPServerIDs  []string `name:"balda_mcp_servers"`
+	BaldaProviderID    string   `name:"balda_provider"`
+	WorkingDir         string
+	WorkspaceEnabled   bool   `name:"balda_workspace_enabled"`
+	WorkspaceBaseRef   string `name:"balda_workspace_base_branch"`
+	Workspaces         WorkspaceManager
+	SessionsPersistent bool `name:"balda_sessions_persistent"`
+	SessionStore       baldastate.SessionStore
+	Logger             zerolog.Logger
 }
 
 // NewManager creates a session Manager.
@@ -96,7 +126,7 @@ func NewManager(p ManagerParams) (*Manager, error) {
 		baldaMCPServerIDs:  append([]string(nil), p.BaldaMCPServerIDs...),
 		baldaProviderName:  strings.TrimSpace(p.BaldaProviderID),
 		workingDir:         p.WorkingDir,
-		workspaces:         baldaagent.NewWorkspaceManagerWithSessionsDir(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef, p.WorkspaceSessionsDir),
+		workspaces:         p.Workspaces,
 		workspaceEnabled:   p.WorkspaceEnabled,
 		workspaceBaseRef:   p.WorkspaceBaseRef,
 		sessionsPersistent: p.SessionsPersistent,
@@ -217,7 +247,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 
 		workspace, err := m.workspaces.EnsureWorkspace(ctx, sessionID, branchName, canonicalPath)
 		if err != nil {
-			if errors.Is(err, baldaagent.ErrWorkspaceCollision) {
+			if errors.Is(err, ErrWorkspaceCollision) {
 				m.logger.Warn().
 					Err(err).
 					Str("session_id", sessionID).
@@ -269,7 +299,7 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		userID,
 		agentSessionID,
 		workspaceDir,
-		baldaagent.RuntimeSessionContext{
+		RuntimeSessionContext{
 			BaldaSessionID: sessionID,
 			SessionBranch:  branchName,
 		},

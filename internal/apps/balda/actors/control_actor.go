@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/normahq/balda/internal/apps/balda/appports"
+	"github.com/normahq/balda/internal/apps/balda/controlapp"
+	"github.com/normahq/balda/internal/apps/balda/controlcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -20,48 +18,31 @@ import (
 )
 
 const (
-	jobControlActionCancel       = "cancel"
-	jobControlActionCancelTurn   = "cancel_turn"
-	jobControlActionClearGoal    = "clear_goal"
-	jobControlActionScheduleWait = "schedule_wait"
+	jobControlActionCancel       = controlcmd.ActionCancel
+	jobControlActionCancelTurn   = controlcmd.ActionCancelTurn
+	jobControlActionClearGoal    = controlcmd.ActionClearGoal
+	jobControlActionScheduleWait = controlcmd.ActionScheduleWait
 	scheduledJobOneShotSpec      = "@once"
 )
 
-type waitSchedulePayload struct {
-	JobID        string `json:"job_id,omitempty"`
-	Content      string `json:"content,omitempty"`
-	DelaySeconds int    `json:"delay_seconds,omitempty"`
-	RequestedBy  string `json:"requested_by,omitempty"`
-	ReportToSelf bool   `json:"report_to_self,omitempty"`
-}
+type jobControlPayload = controlcmd.Payload
 
-type jobControlPayload struct {
-	Action      string                      `json:"action"`
-	JobID       string                      `json:"job_id,omitempty"`
-	SessionID   string                      `json:"session_id,omitempty"`
-	Locator     baldasession.SessionLocator `json:"locator"`
-	Reason      string                      `json:"reason,omitempty"`
-	RequestedBy string                      `json:"requested_by,omitempty"`
-	Notify      bool                        `json:"notify,omitempty"`
-	Wait        *waitSchedulePayload        `json:"wait,omitempty"`
+type jobControlService interface {
+	CancelJob(ctx context.Context, payload controlcmd.Payload) error
+	CancelSession(ctx context.Context, payload controlcmd.Payload) error
+	CancelSessionTurn(ctx context.Context, payload controlcmd.Payload) error
+	ClearGoal(ctx context.Context, payload controlcmd.Payload) error
+	ScheduleWait(ctx context.Context, payload controlcmd.Payload) error
 }
 
 type jobControlActor struct {
-	turnDispatcher TurnQueue
+	turnDispatcher appports.TurnQueue
 	dispatcher     actortransport.Dispatcher
-	jobs           *baldajobs.JobService
-	scheduledJobs  baldastate.ScheduledJobStore
-	jobRuns        *JobRunRegistry
+	jobs           controlapp.JobLifecycle
+	scheduledJobs  controlapp.ScheduledJobs
+	jobRuns        controlapp.JobRuns
 	logger         zerolog.Logger
-}
-
-// SessionWorkCanceller synchronously stops queued, running, and job-backed
-// work for a session without going through the async control actor path.
-type SessionWorkCanceller struct {
-	turnDispatcher TurnQueue
-	jobs           *baldajobs.JobService
-	jobRuns        *JobRunRegistry
-	logger         zerolog.Logger
+	service        jobControlService
 }
 
 type jobControlActorParams struct {
@@ -69,58 +50,11 @@ type jobControlActorParams struct {
 
 	TurnDispatcher *TurnDispatcher
 	Dispatcher     actortransport.Dispatcher
-	JobService     *baldajobs.JobService
-	ScheduledJobs  baldastate.ScheduledJobStore `optional:"true"`
+	JobLifecycle   controlapp.JobLifecycle
+	ScheduledJobs  controlapp.ScheduledJobs `optional:"true"`
 	JobRuns        *JobRunRegistry
+	Service        jobControlService
 	Logger         zerolog.Logger
-}
-
-type sessionWorkCancellerParams struct {
-	fx.In
-
-	TurnDispatcher *TurnDispatcher
-	JobService     *baldajobs.JobService
-	ScheduledJobs  baldastate.ScheduledJobStore `optional:"true"`
-	JobRuns        *JobRunRegistry
-	Logger         zerolog.Logger
-}
-
-func NewSessionWorkCanceller(params sessionWorkCancellerParams) *SessionWorkCanceller {
-	return &SessionWorkCanceller{
-		turnDispatcher: params.TurnDispatcher,
-		jobs:           params.JobService,
-		jobRuns:        params.JobRuns,
-		logger:         params.Logger.With().Str("component", "balda.session_work_canceller").Logger(),
-	}
-}
-
-func (c *SessionWorkCanceller) CancelWork(ctx context.Context, locator baldasession.SessionLocator, actor string, reason string) error {
-	if c == nil {
-		return nil
-	}
-	sessionID := strings.TrimSpace(locator.SessionID)
-	if sessionID == "" {
-		return fmt.Errorf("session id is required")
-	}
-	if c.turnDispatcher != nil {
-		if _, _, err := c.turnDispatcher.CancelSession(locator, true); err != nil {
-			return fmt.Errorf("cancel session turn queue: %w", err)
-		}
-	}
-	if c.jobs == nil {
-		return nil
-	}
-	jobIDs, err := c.jobs.CancelBySession(ctx, sessionID, actor, reason)
-	if err != nil {
-		return fmt.Errorf("cancel session jobs: %w", err)
-	}
-	if c.jobRuns == nil {
-		return nil
-	}
-	for _, jobID := range jobIDs {
-		c.jobRuns.Cancel(jobID)
-	}
-	return nil
 }
 
 func (a *jobControlActor) Address() string {
@@ -153,219 +87,38 @@ func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) e
 }
 
 func (a *jobControlActor) cancelJob(ctx context.Context, payload jobControlPayload) error {
-	jobID := strings.TrimSpace(payload.JobID)
-	if jobID == "" {
-		return actorlayer.PolicyError(fmt.Errorf("job id is required"))
+	if a.service == nil {
+		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
-	if a.jobs == nil {
-		return actorlayer.TransientError(fmt.Errorf("job service is required"))
-	}
-	job, ok, err := a.jobs.Get(ctx, jobID)
-	if err != nil {
-		return actorlayer.TransientError(err)
-	}
-	if !ok {
-		if payload.Notify {
-			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Job %q not found.", jobID))
-		}
-		return nil
-	}
-	if isTerminalJobStatus(job.Status) {
-		if payload.Notify {
-			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Job %s is already %s.", job.ID, job.Status))
-		}
-		return nil
-	}
-	runCanceled := false
-	if a.jobRuns != nil {
-		runCanceled = a.jobRuns.Cancel(job.ID)
-	}
-	if !runCanceled && a.turnDispatcher != nil && strings.TrimSpace(payload.Locator.SessionID) != "" {
-		hadInFlight, dropped, err := a.turnDispatcher.CancelSession(payload.Locator, true)
-		if err != nil {
-			return actorlayer.TransientError(err)
-		}
-		runCanceled = hadInFlight || dropped > 0
-	}
-	reason := firstNonEmpty(payload.Reason, "job canceled by user")
-	if err := a.jobs.CancelJob(ctx, job.ID, "command.job", reason); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	if payload.Notify {
-		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Canceled job %s. Active run canceled: %t.", job.ID, runCanceled))
-	}
-	return nil
+	return a.service.CancelJob(ctx, payload)
 }
 
 func (a *jobControlActor) cancelSession(ctx context.Context, payload jobControlPayload) error {
-	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
+	if a.service == nil {
+		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
-	hadInFlight := false
-	dropped := 0
-	if a.turnDispatcher != nil {
-		var err error
-		hadInFlight, dropped, err = a.turnDispatcher.CancelSession(payload.Locator, true)
-		if err != nil {
-			return actorlayer.TransientError(err)
-		}
-	}
-	jobCanceled := 0
-	if a.jobs != nil {
-		jobIDs, err := a.jobs.CancelBySession(ctx, payload.Locator.SessionID, "command.cancel", firstNonEmpty(payload.Reason, "session canceled by user"))
-		if err != nil {
-			return actorlayer.TransientError(err)
-		}
-		for _, jobID := range jobIDs {
-			if a.jobRuns != nil && a.jobRuns.Cancel(jobID) {
-				jobCanceled++
-			}
-		}
-	}
-	if payload.Notify {
-		response := "Canceled current turn."
-		if !hadInFlight && dropped == 0 && jobCanceled == 0 {
-			response = "No running or queued session work."
-		} else if !hadInFlight {
-			response = "No running turn to cancel."
-		}
-		if dropped > 0 {
-			response += fmt.Sprintf("\nDropped %d queued session message(s).", dropped)
-		}
-		if jobCanceled > 0 {
-			response += fmt.Sprintf("\nCanceled %d active task(s).", jobCanceled)
-		}
-		a.sendControlMessage(ctx, payload.Locator, response)
-	}
-	return nil
+	return a.service.CancelSession(ctx, payload)
 }
 
 func (a *jobControlActor) cancelSessionTurn(ctx context.Context, payload jobControlPayload) error {
-	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
+	if a.service == nil {
+		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
-	hadInFlight := false
-	dropped := 0
-	if a.turnDispatcher != nil {
-		var err error
-		hadInFlight, dropped, err = a.turnDispatcher.CancelSession(payload.Locator, true)
-		if err != nil {
-			return actorlayer.TransientError(err)
-		}
-	}
-	if payload.Notify {
-		response := "Canceled current turn."
-		if !hadInFlight && dropped == 0 {
-			response = "No running or queued session work."
-		} else if !hadInFlight {
-			response = "No running turn to cancel."
-		}
-		if dropped > 0 {
-			response += fmt.Sprintf("\nDropped %d queued session message(s).", dropped)
-		}
-		a.sendControlMessage(ctx, payload.Locator, response)
-	}
-	return nil
+	return a.service.CancelSessionTurn(ctx, payload)
 }
 
 func (a *jobControlActor) clearGoal(ctx context.Context, payload jobControlPayload) error {
-	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
+	if a.service == nil {
+		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
-	if a.jobs == nil {
-		return actorlayer.TransientError(fmt.Errorf("job service is required"))
-	}
-	jobs, err := a.jobs.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
-	if err != nil {
-		return actorlayer.TransientError(err)
-	}
-	cleared := 0
-	for _, job := range jobs {
-		if err := a.jobs.CancelJob(ctx, job.ID, "command.goal", firstNonEmpty(payload.Reason, "goal cleared by user")); err != nil {
-			return actorlayer.TransientError(err)
-		}
-		if a.jobRuns != nil {
-			a.jobRuns.Cancel(job.ID)
-		}
-		cleared++
-	}
-	if payload.Notify {
-		switch cleared {
-		case 0:
-			a.sendControlMessage(ctx, payload.Locator, "No active goal run.")
-		case 1:
-			a.sendControlMessage(ctx, payload.Locator, "Cleared active goal run.")
-		default:
-			a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Cleared %d active goal runs.", cleared))
-		}
-	}
-	return nil
+	return a.service.ClearGoal(ctx, payload)
 }
 
 func (a *jobControlActor) scheduleWait(ctx context.Context, payload jobControlPayload) error {
-	if a.scheduledJobs == nil {
-		return actorlayer.TransientError(fmt.Errorf("scheduled job store is required"))
+	if a.service == nil {
+		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
-	if strings.TrimSpace(payload.Locator.SessionID) == "" {
-		return actorlayer.PolicyError(fmt.Errorf("session id is required"))
-	}
-	if payload.Wait == nil {
-		return actorlayer.PolicyError(fmt.Errorf("wait payload is required"))
-	}
-	waitID := strings.TrimSpace(payload.Wait.JobID)
-	if waitID == "" {
-		waitID = "wait-" + uuid.NewString()
-	}
-	content := strings.TrimSpace(payload.Wait.Content)
-	if content == "" {
-		return actorlayer.PolicyError(fmt.Errorf("wait content is required"))
-	}
-	delaySeconds := payload.Wait.DelaySeconds
-	if delaySeconds <= 0 {
-		return actorlayer.PolicyError(fmt.Errorf("wait delay_seconds must be positive"))
-	}
-	now := time.Now().UTC()
-	record := baldastate.ScheduledJobRecord{
-		JobID:        waitID,
-		SessionID:    strings.TrimSpace(payload.Locator.SessionID),
-		ChannelType:  strings.TrimSpace(payload.Locator.ChannelType),
-		AddressKey:   strings.TrimSpace(payload.Locator.AddressKey),
-		AddressJSON:  strings.TrimSpace(payload.Locator.AddressJSON),
-		Content:      content,
-		ScheduleSpec: scheduledJobOneShotSpec,
-		Timezone:     "UTC",
-		Status:       baldastate.ScheduledJobStatusActive,
-		MaxRetries:   0,
-		NextRunAt:    now.Add(time.Duration(delaySeconds) * time.Second),
-	}
-	if payload.Wait.ReportToSelf {
-		record.ReportToEnabled = true
-		record.ReportToSessionID = record.SessionID
-		record.ReportToChannelType = record.ChannelType
-		record.ReportToAddressKey = record.AddressKey
-		record.ReportToAddressJSON = record.AddressJSON
-	}
-	if err := a.scheduledJobs.Upsert(ctx, record); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	if payload.Notify {
-		a.sendControlMessage(ctx, payload.Locator, fmt.Sprintf("Scheduled wait %s for %ds.", waitID, delaySeconds))
-	}
-	return nil
-}
-
-func (a *jobControlActor) sendControlMessage(ctx context.Context, locator baldasession.SessionLocator, text string) {
-	if a == nil || a.dispatcher == nil || strings.TrimSpace(text) == "" {
-		return
-	}
-	env, err := PlainDeliveryEnvelopeWithSettlement("", actorlayer.SystemAddress("control"), locator, deliverycmd.SettlementBypass, text, "")
-	if err != nil {
-		a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to build control response")
-		return
-	}
-	if _, err := a.dispatcher.Dispatch(ctx, env); err != nil {
-		a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to send control response")
-	}
+	return a.service.ScheduleWait(ctx, payload)
 }
 
 func ControlCancelEnvelope(locator baldasession.SessionLocator, jobID string, requestedBy string, reason string) (actorlayer.Envelope, error) {
@@ -373,53 +126,17 @@ func ControlCancelEnvelope(locator baldasession.SessionLocator, jobID string, re
 }
 
 func ControlCancelEnvelopeWithNotify(locator baldasession.SessionLocator, jobID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionCancel, jobID, requestedBy, reason, notify, nil)
+	return controlcmd.CancelEnvelopeWithNotify(locator, jobID, requestedBy, reason, notify)
 }
 
 func ControlCancelTurnEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionCancelTurn, "", requestedBy, reason, notify, nil)
+	return controlcmd.CancelTurnEnvelopeWithNotify(locator, requestedBy, reason, notify)
 }
 
 func ControlClearGoalEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionClearGoal, "", requestedBy, reason, notify, nil)
+	return controlcmd.ClearGoalEnvelopeWithNotify(locator, requestedBy, reason, notify)
 }
 
 func ControlScheduleWaitEnvelope(locator baldasession.SessionLocator, jobID string, content string, delaySeconds int, requestedBy string, notify bool) (actorlayer.Envelope, error) {
-	return controlEnvelope(locator, jobControlActionScheduleWait, "", requestedBy, "", notify, &waitSchedulePayload{
-		JobID:        strings.TrimSpace(jobID),
-		Content:      strings.TrimSpace(content),
-		DelaySeconds: delaySeconds,
-		RequestedBy:  strings.TrimSpace(requestedBy),
-		ReportToSelf: true,
-	})
-}
-
-func controlEnvelope(locator baldasession.SessionLocator, action string, jobID string, requestedBy string, reason string, notify bool, wait *waitSchedulePayload) (actorlayer.Envelope, error) {
-	payload := jobControlPayload{
-		Action:      strings.TrimSpace(action),
-		JobID:       strings.TrimSpace(jobID),
-		SessionID:   strings.TrimSpace(locator.SessionID),
-		Locator:     locator,
-		Reason:      strings.TrimSpace(reason),
-		RequestedBy: strings.TrimSpace(requestedBy),
-		Notify:      notify,
-		Wait:        wait,
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return actorlayer.Envelope{}, fmt.Errorf("encode control payload: %w", err)
-	}
-	id := uuid.NewString()
-	return actorlayer.Envelope{
-		ID:          id,
-		Namespace:   baldaexecution.NamespaceJobControl,
-		Kind:        baldaexecution.KindCancel,
-		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
-		To:          actorlayer.SystemAddress("control"),
-		SessionID:   locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, jobID),
-		Priority:    100,
-		DedupeKey:   "control:" + strings.TrimSpace(action) + ":" + id,
-		PayloadJSON: string(data),
-	}, nil
+	return controlcmd.ScheduleWaitEnvelope(locator, jobID, content, delaySeconds, requestedBy, notify)
 }

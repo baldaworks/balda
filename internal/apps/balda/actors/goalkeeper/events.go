@@ -12,6 +12,7 @@ import (
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
+// events.go owns goal progress envelope shaping and event payload helpers.
 func newGoalProgressUpdate(
 	payload goalJobPayload,
 	step string,
@@ -31,7 +32,7 @@ func newGoalProgressUpdate(
 		MaxIterations: normalizeGoalMaxIterations(payload.MaxIterations),
 		Kind:          kind,
 		Text:          strings.TrimSpace(text),
-		Plan:          plan,
+		Plan:          goalProgressPlanSnapshot(plan),
 		Sequence:      sequence,
 	}
 }
@@ -86,4 +87,18 @@ func normalizeGoalIteration(iteration int) int {
 		return 1
 	}
 	return iteration
+}
+
+func goalProgressPlanSnapshot(plan *progress.PlanSnapshot) *deliverycmd.PlanSnapshot {
+	if plan == nil {
+		return nil
+	}
+	out := &deliverycmd.PlanSnapshot{Entries: make([]deliverycmd.PlanEntry, 0, len(plan.Entries))}
+	for _, entry := range plan.Entries {
+		out.Entries = append(out.Entries, deliverycmd.PlanEntry{
+			Content: entry.Content,
+			Status:  entry.Status,
+		})
+	}
+	return out
 }

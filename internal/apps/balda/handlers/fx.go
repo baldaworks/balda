@@ -3,92 +3,16 @@ package handlers
 import (
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	"github.com/normahq/balda/internal/apps/balda/agent"
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
-	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
-	"github.com/normahq/balda/internal/apps/balda/messenger"
-	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/sessionturn"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
-	"github.com/rs/zerolog"
-	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
 )
 
 // Module provides handlers for the balda bot.
 var Module = fx.Module("balda_handlers",
 	fx.Provide(
-		agent.NewBuilder,
-		agent.NewRuntimeManager,
-		session.NewManager,
-		fx.Annotate(
-			func(
-				tgClient client.ClientWithResponsesInterface,
-				logger zerolog.Logger,
-				formattingMode string,
-			) *messenger.Messenger {
-				m := messenger.NewMessenger(tgClient, logger)
-				m.SetAgentReplyFormattingMode(formattingMode)
-				return m
-			},
-			fx.ParamTags(``, ``, `name:"balda_telegram_formatting_mode"`),
-		),
-		func(params baldatelegram.AdapterParams) *baldatelegram.Adapter {
-			adapter := baldatelegram.NewAdapter(params)
-			adapter.SetTypingThrottleInterval(4 * time.Second)
-			return adapter
-		},
-		func(client *baldazulip.Client, logger zerolog.Logger) *baldazulip.Adapter {
-			adapter := baldazulip.NewAdapter(client, logger)
-			adapter.SetTypingThrottleInterval(4 * time.Second)
-			return adapter
-		},
-		baldaslack.NewAdapter,
-		fx.Annotate(newProviderTurnExecutor, fx.As(new(sessionturn.Executor))),
-		sessionturn.NewRunner,
-		func(tg *baldatelegram.Adapter, zu *baldazulip.Adapter, sl *baldaslack.Adapter) *baldachannel.Router {
-			return baldachannel.NewRouter(map[string]baldachannel.ChannelAdapter{
-				baldastate.ChannelTypeTelegram: tg,
-				baldastate.ChannelTypeZulip:    zu,
-				baldastate.ChannelTypeSlack:    sl,
-			})
-		},
 		NewZulipBaldaHandler,
 		NewSlackHandler,
-		func(params scheduledJobSchedulerParams) (*ScheduledJobScheduler, error) {
-			if params.JobStore == nil {
-				return nil, fmt.Errorf("scheduled job store is required")
-			}
-			if params.Dispatcher == nil {
-				return nil, fmt.Errorf("balda actor dispatcher is required for scheduler")
-			}
-			config, err := normalizeScheduledJobSchedulerConfig(params.Config)
-			if err != nil {
-				return nil, err
-			}
-			if len(config.Jobs) > 0 && params.OwnerStore == nil {
-				return nil, fmt.Errorf("balda owner store is required for scheduler jobs")
-			}
-
-			scheduler := &ScheduledJobScheduler{
-				jobStore:     params.JobStore,
-				dispatcher:   params.Dispatcher,
-				owner:        params.OwnerStore,
-				logger:       params.Logger.With().Str("component", "balda.scheduled_job_scheduler").Logger(),
-				config:       config,
-				pollInterval: defaultSchedulerPollInterval,
-				dueBatchSize: defaultSchedulerDueBatchSize,
-				now:          time.Now,
-			}
-
-			return scheduler, nil
-		},
 		func(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
 			normalized, err := normalizeInboundWebhookConfig(params.Config)
 			if err != nil {
@@ -134,8 +58,7 @@ var Module = fx.Module("balda_handlers",
 				sessionManager:     deps.SessionManager,
 				turnDispatcher:     deps.TurnDispatcher,
 				actorDispatcher:    deps.Dispatcher,
-				jobEvents:          deps.JobService,
-				memoryStore:        deps.MemoryStore,
+				jobEvents:          deps.JobEvents,
 				messenger:          deps.Messenger,
 				tgClient:           deps.TGClient,
 				authToken:          strings.TrimSpace(deps.AuthToken),
@@ -143,18 +66,11 @@ var Module = fx.Module("balda_handlers",
 				telegramEnabled:    deps.TelegramEnabled,
 				telegramConfigured: true,
 				logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
+				turnExecution:      deps.TurnExecution,
 			}
 
 			return h, nil
 		},
-		fx.Annotate(
-			func(r *sessionturn.Runner) actors.SessionTurnRunner {
-				return r
-			},
-		),
-		fx.Annotate(
-			func(s *ScheduledJobScheduler) actors.ScheduledJobRecorder { return s },
-		),
 		func(params commandHandlerParams) *CommandHandler {
 			return &CommandHandler{
 				ownerStore:        params.OwnerStore,
@@ -163,7 +79,7 @@ var Module = fx.Module("balda_handlers",
 				sessionManager:    params.SessionManager,
 				workCanceller:     params.WorkCanceller,
 				actorDispatcher:   params.Dispatcher,
-				jobService:        params.JobService,
+				jobService:        params.GoalJobs,
 				goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
 				userHandler:       params.UserHandler,
 			}
@@ -198,7 +114,6 @@ var Module = fx.Module("balda_handlers",
 		func(start *StartHandler, balda *BaldaHandler) {
 			start.baldaHandler = balda
 		},
-		func(*ScheduledJobScheduler) {},
 		func(*InboundWebhookReceiver) {},
 		func(*ZulipBaldaHandler) {},
 		func(*SlackHandler) {},

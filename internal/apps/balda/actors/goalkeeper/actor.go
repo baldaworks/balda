@@ -3,23 +3,17 @@ package goalkeeper
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"iter"
-	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	"github.com/normahq/balda/internal/apps/balda/progress"
+	"github.com/normahq/balda/internal/apps/balda/goalcmd"
 	"github.com/normahq/balda/internal/apps/balda/redaction"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -30,6 +24,7 @@ import (
 	"google.golang.org/genai"
 )
 
+// actor.go contains the goal actor entrypoint and feature contracts.
 const (
 	actorName                    = "goalkeeper.actor"
 	ownerSessionLabel            = "balda"
@@ -46,16 +41,9 @@ const (
 	WorkerStep                   = "worker"
 	ValidatorStep                = "validator"
 	jobPayloadKindGoal           = "goal"
-	jobPayloadKindDelivery       = "delivery"
 	jobResultSchemaVersionV1     = "job_result.v1"
 	jobReviewableOutcomeSchemaV1 = "job_reviewable_outcome.v1"
-	progressKindPlan             = "plan"
 	progressKindOutput           = "output"
-	progressKindCompleted        = "completed"
-	defaultNotVerifiedText       = goaldelivery.DefaultNotVerifiedText
-	defaultInspectNextAction     = goaldelivery.DefaultInspectNextAction
-	defaultExportedNextAction    = goaldelivery.DefaultExportedNextAction
-	defaultNotExportedNextAction = goaldelivery.DefaultNotExportedNextAction
 )
 
 type GoalRunPreparer interface {
@@ -95,50 +83,36 @@ type JobRuns interface {
 	Unregister(jobID string, runID string)
 }
 
-type jobService interface {
+type jobLifecycle interface {
 	Create(ctx context.Context, record baldastate.JobRecord, actor string, payload any) (bool, error)
 	Get(ctx context.Context, jobID string) (baldastate.JobRecord, bool, error)
 	ListActiveGoalJobsBySession(ctx context.Context, sessionID string) ([]baldastate.JobRecord, error)
 	MarkStatus(ctx context.Context, jobID string, status string, actor string, messageID string, reason string, payload any) error
 	SetResult(ctx context.Context, jobID string, result any, status string, actor string, reason string) error
+}
+
+type jobEvents interface {
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
 }
 
 type ActorParams struct {
 	fx.In
 
-	JobService      jobService
-	Dispatcher      actortransport.Dispatcher
+	JobLifecycle    jobLifecycle
+	JobEvents       jobEvents
 	SessionManager  *baldasession.Manager
 	GoalRunPreparer GoalRunPreparer
 	JobRuns         JobRuns
 	MaxIterations   int `name:"balda_goal_max_iterations"`
+	Dispatcher      actortransport.Dispatcher
 	Logger          zerolog.Logger
 }
 
 type Actor struct {
-	jobs            jobService
-	dispatcher      actortransport.Dispatcher
-	sessions        *baldasession.Manager
-	goalRunPreparer GoalRunPreparer
-	jobRuns         JobRuns
-	maxIters        int
-	logger          zerolog.Logger
+	coordinator *coordinator
 }
 
-type goalEnvelopePayload struct {
-	Kind string          `json:"kind"`
-	Goal *goalJobPayload `json:"goal,omitempty"`
-}
-
-type goalJobPayload struct {
-	JobID           string                      `json:"job_id,omitempty"`
-	Locator         baldasession.SessionLocator `json:"locator"`
-	DeliveryOptions deliveryfmt.Options         `json:"delivery_options,omitempty,omitzero"`
-	Objective       string                      `json:"objective"`
-	TransportUserID string                      `json:"transport_user_id"`
-	MaxIterations   int                         `json:"max_iterations,omitempty"`
-}
+type goalJobPayload = goalcmd.JobPayload
 
 type goalArtifactResultV1 struct {
 	WorkspaceDir string   `json:"workspace_dir,omitempty"`
@@ -203,13 +177,7 @@ type stepProgressState struct {
 
 func NewActor(params ActorParams) *Actor {
 	return &Actor{
-		jobs:            params.JobService,
-		dispatcher:      params.Dispatcher,
-		sessions:        params.SessionManager,
-		goalRunPreparer: params.GoalRunPreparer,
-		jobRuns:         params.JobRuns,
-		maxIters:        normalizeGoalMaxIterations(params.MaxIterations),
-		logger:          params.Logger.With().Str("component", "balda.goalkeeper_actor").Logger(),
+		coordinator: newCoordinator(params),
 	}
 }
 
@@ -221,14 +189,17 @@ func (a *Actor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	if strings.TrimSpace(env.Namespace) != baldaexecution.NamespaceGoalkeeperCommand {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported goal namespace %q", env.Namespace))
 	}
-	var payload goalEnvelopePayload
+	var payload goalcmd.EnvelopePayload
 	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode goal payload: %w", err))
 	}
-	if strings.TrimSpace(payload.Kind) != jobPayloadKindGoal || payload.Goal == nil {
+	if strings.TrimSpace(payload.Kind) != goalcmd.PayloadKindGoal || payload.Goal == nil {
 		return actorlayer.PolicyError(fmt.Errorf("goal payload is required"))
 	}
-	return a.runGoal(ctx, env, *payload.Goal)
+	if a == nil || a.coordinator == nil {
+		return actorlayer.TransientError(fmt.Errorf("goal coordinator is required"))
+	}
+	return a.coordinator.execute(ctx, env, *payload.Goal)
 }
 
 func GoalJobEnvelope(
@@ -237,7 +208,7 @@ func GoalJobEnvelope(
 	transportUserID string,
 	maxIterations int,
 ) (actorlayer.Envelope, error) {
-	return GoalJobEnvelopeWithOptions(locator, deliveryfmt.Options{}, objective, transportUserID, maxIterations)
+	return goalcmd.JobEnvelope(locator, objective, transportUserID, maxIterations)
 }
 
 func GoalJobEnvelopeWithOptions(
@@ -247,630 +218,11 @@ func GoalJobEnvelopeWithOptions(
 	transportUserID string,
 	maxIterations int,
 ) (actorlayer.Envelope, error) {
-	jobID := "goal-" + locator.SessionID + "-" + uuid.NewString()
-	payload := goalEnvelopePayload{
-		Kind: jobPayloadKindGoal,
-		Goal: &goalJobPayload{
-			JobID:           jobID,
-			Locator:         locator,
-			DeliveryOptions: normalizeGoalDeliveryOptions(deliveryOptions),
-			Objective:       strings.TrimSpace(objective),
-			TransportUserID: strings.TrimSpace(transportUserID),
-			MaxIterations:   normalizeGoalMaxIterations(maxIterations),
-		},
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return actorlayer.Envelope{}, fmt.Errorf("encode goal job payload: %w", err)
-	}
-	return actorlayer.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   baldaexecution.NamespaceGoalkeeperCommand,
-		Kind:        baldaexecution.KindGoal,
-		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
-		SessionID:   locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, jobID),
-		Priority:    90,
-		PayloadJSON: string(data),
-	}, nil
+	return goalcmd.JobEnvelopeWithOptions(locator, deliveryOptions, objective, transportUserID, maxIterations)
 }
 
-func (a *Actor) runGoal(ctx context.Context, env actorlayer.Envelope, payload goalJobPayload) error {
-	jobID := strings.TrimSpace(payload.JobID)
-	envelopeJobID := strings.TrimSpace(baldaexecution.EnvelopeJobID(env))
-	objective := strings.TrimSpace(payload.Objective)
-	if jobID == "" {
-		return actorlayer.PolicyError(fmt.Errorf("job id is required"))
-	}
-	if envelopeJobID != "" && envelopeJobID != jobID {
-		return actorlayer.PolicyError(fmt.Errorf("goal job id mismatch: envelope=%q payload=%q", envelopeJobID, jobID))
-	}
-	if objective == "" {
-		return actorlayer.PolicyError(fmt.Errorf("goal objective is required"))
-	}
-	if a.jobStatusIs(ctx, jobID, baldastate.JobStatusCompleted, baldastate.JobStatusFailed, baldastate.JobStatusCanceled, baldastate.JobStatusDeadLettered) {
-		return nil
-	}
-	maxIterations := normalizeGoalMaxIterations(payload.MaxIterations)
-	if maxIterations == defaultGoalMaxIterations && a.maxIters != defaultGoalMaxIterations {
-		maxIterations = a.maxIters
-	}
-	payload.JobID = jobID
-	payload.Objective = objective
-	payload.MaxIterations = maxIterations
-
-	if err := a.ensureGoalJob(ctx, payload); err != nil {
-		return err
-	}
-	skip, err := a.ensureNoOtherActiveGoal(ctx, jobID, payload)
-	if err != nil {
-		return err
-	}
-	if skip {
-		return nil
-	}
-	ts, err := a.resolveSession(ctx, payload)
-	if err != nil {
-		return actorlayer.TransientError(err)
-	}
-	if err := a.jobs.MarkStatus(ctx, jobID, baldastate.JobStatusRunning, actorName, env.ID, "", map[string]any{
-		"objective": objective,
-	}); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	if err := a.deliver(ctx, jobID, payload, goaldelivery.RenderStartedMessage(goalDeliveryProfile(payload), maxIterations, objective), "started"); err != nil {
-		return err
-	}
-
-	if a.goalRunPreparer == nil {
-		return actorlayer.TransientError(fmt.Errorf("goal run preparer is required"))
-	}
-	goalRun, err := a.goalRunPreparer.PrepareGoalRun(ctx, GoalRunConfig{
-		SourceSessionID: payload.Locator.SessionID,
-		JobID:           jobID,
-		UserID:          ts.GetUserID(),
-		MaxIterations:   uint(maxIterations),
-	})
-	if err != nil {
-		return actorlayer.TransientError(err)
-	}
-	defer func() {
-		if err := goalRun.Close(); err != nil {
-			a.logger.Warn().Err(err).Str("job_id", jobID).Msg("failed to close goal run")
-		}
-	}()
-
-	runCtx, cancel := context.WithCancel(ctx)
-	runID := ""
-	if a.jobRuns != nil {
-		runID = a.jobRuns.Register(jobID, cancel)
-		defer a.jobRuns.Unregister(jobID, runID)
-	}
-	defer cancel()
-
-	result, err := a.runWorkflow(runCtx, goalRun, ts.GetUserID(), goalRun.SessionID(), payload)
-	artifacts := snapshotGoalRunArtifacts(ctx, goalRun)
-	if err != nil {
-		if errors.Is(runCtx.Err(), context.Canceled) {
-			if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
-				a.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup canceled goal run")
-			}
-			if setErr := a.jobs.SetResult(ctx, jobID, result.toJobResult(false, artifacts, &goalExportResultV1{Status: "canceled"}), baldastate.JobStatusCanceled, actorName, "goal run canceled"); setErr != nil {
-				return actorlayer.TransientError(setErr)
-			}
-			return a.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "Goal run canceled."), "canceled")
-		}
-		reason := redactSecrets(err.Error())
-		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
-			a.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup failed goal run")
-		}
-		if setErr := a.jobs.SetResult(ctx, jobID, result.toJobResult(false, artifacts, &goalExportResultV1{Status: "failed", Error: reason}), baldastate.JobStatusFailed, actorName, reason); setErr != nil {
-			return actorlayer.TransientError(setErr)
-		}
-		return a.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "Goal run failed: "+reason), "failed")
-	}
-	if reviewerPassed(result.latestValidatorOutput) {
-		finalization, exportErr := goalRun.Finalize(ctx, payload.Objective, result.latestWorkerOutput, result.latestValidatorOutput)
-		exportSummary := finalization.toJobExportResult()
-		if exportErr != nil || strings.TrimSpace(exportSummary.Status) == goalExportStatusFailed {
-			if exportSummary.Status == "" {
-				exportSummary.Status = goalExportStatusFailed
-			}
-			if exportSummary.Error == "" && exportErr != nil {
-				exportSummary.Error = redactSecrets(exportErr.Error())
-			}
-			jobResult := result.toJobResult(true, artifacts, exportSummary)
-			if setErr := a.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, exportSummary.Error); setErr != nil {
-				return actorlayer.TransientError(setErr)
-			}
-			return a.deliver(ctx, jobID, payload, a.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal validation passed, but export failed."), "export-failed")
-		}
-		jobResult := result.toJobResult(true, artifacts, exportSummary)
-		if err := a.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusCompleted, actorName, ""); err != nil {
-			return actorlayer.TransientError(err)
-		}
-		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
-			a.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup completed goal run")
-		}
-		return a.deliver(ctx, jobID, payload, a.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal run completed."), "completed")
-	}
-	if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
-		a.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup max-iteration goal run")
-	}
-	jobResult := result.toJobResult(false, artifacts, &goalExportResultV1{Status: goalExportStatusNotExported})
-	if err := a.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, "max iterations reached"); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	return a.deliver(ctx, jobID, payload, a.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal run reached max iterations without passing validation."), "max-iterations")
-}
-
-func (a *Actor) ensureGoalJob(ctx context.Context, payload goalJobPayload) error {
-	if a.jobs == nil {
-		return actorlayer.TransientError(fmt.Errorf("job service is required"))
-	}
-	title := strings.TrimSpace(payload.Objective)
-	if title != "" {
-		const maxTitleRunes = 80
-		runes := []rune(title)
-		if len(runes) > maxTitleRunes {
-			title = strings.TrimSpace(string(runes[:maxTitleRunes])) + "..."
-		}
-		title = "Goal: " + title
-	} else {
-		title = "Goal"
-	}
-	record := baldastate.JobRecord{
-		ID:            strings.TrimSpace(payload.JobID),
-		SessionID:     strings.TrimSpace(payload.Locator.SessionID),
-		Title:         title,
-		Objective:     strings.TrimSpace(payload.Objective),
-		Status:        baldastate.JobStatusCreated,
-		OwnerActor:    baldaexecution.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.JobID),
-		AssignedActor: baldaexecution.ActorTypeGoalkeeper + ":" + strings.TrimSpace(payload.JobID),
-		Priority:      90,
-		CreatedBy:     strings.TrimSpace(payload.TransportUserID),
-	}
-	if _, err := a.jobs.Create(ctx, record, actorName, payload); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	task, ok, err := a.jobs.Get(ctx, payload.JobID)
-	if err != nil {
-		return actorlayer.TransientError(err)
-	}
-	if !ok {
-		return actorlayer.TransientError(fmt.Errorf("goal job %q was not persisted", payload.JobID))
-	}
-	switch strings.TrimSpace(task.Status) {
-	case "", baldastate.JobStatusCreated, baldastate.JobStatusQueued:
-		return a.jobs.MarkStatus(ctx, payload.JobID, baldastate.JobStatusQueued, actorName, "", "", nil)
-	default:
-		return nil
-	}
-}
-
-func (a *Actor) ensureNoOtherActiveGoal(ctx context.Context, jobID string, payload goalJobPayload) (bool, error) {
-	if a == nil || a.jobs == nil {
-		return false, actorlayer.TransientError(fmt.Errorf("job service is required"))
-	}
-	activeGoals, err := a.jobs.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
-	if err != nil {
-		return false, actorlayer.TransientError(fmt.Errorf("list active goal jobs: %w", err))
-	}
-	for _, task := range activeGoals {
-		if strings.TrimSpace(task.ID) == strings.TrimSpace(jobID) {
-			continue
-		}
-		reason := "another goal run is already active for this session"
-		if setErr := a.jobs.SetResult(ctx, jobID, goalRunResult{payload: payload}.toJobResult(false, goalArtifactSnapshot{}, &goalExportResultV1{
-			Status: "canceled",
-			Error:  reason,
-		}), baldastate.JobStatusCanceled, actorName, reason); setErr != nil {
-			return false, actorlayer.TransientError(setErr)
-		}
-		if err := a.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "A goal run is already active for this session."), "already-active"); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	return false, nil
-}
-
-func (a *Actor) resolveSession(ctx context.Context, payload goalJobPayload) (*baldasession.TopicSession, error) {
-	if a.sessions == nil {
-		return nil, fmt.Errorf("session manager is required")
-	}
-	ts, err := a.sessions.GetSession(payload.Locator)
-	if err == nil {
-		return ts, nil
-	}
-	userID := strings.TrimSpace(payload.TransportUserID)
-	if userID == "" {
-		return nil, fmt.Errorf("restore user id is required")
-	}
-	sessionCtx := baldasession.SessionContext{Locator: payload.Locator, UserID: userID}
-	ts, err = a.sessions.RestoreSession(ctx, sessionCtx)
-	if err == nil {
-		return ts, nil
-	}
-	if !errors.Is(err, baldasession.ErrNoPersistedSession) {
-		return nil, fmt.Errorf("restore session for goal: %w", err)
-	}
-	ts, err = a.sessions.EnsureSession(ctx, sessionCtx, ownerSessionLabel)
-	if err != nil {
-		return nil, fmt.Errorf("create session for goal: %w", err)
-	}
-	return ts, nil
-}
-
-func (a *Actor) runWorkflow(
-	ctx context.Context,
-	runtime GoalRun,
-	userID string,
-	agentSessionID string,
-	payload goalJobPayload,
-) (goalRunResult, error) {
-	result := goalRunResult{payload: payload}
-	if runtime == nil || runtime.Runner() == nil {
-		return result, fmt.Errorf("goal runner is required")
-	}
-	userContent := genai.NewContentFromText("Goal:\n"+strings.TrimSpace(payload.Objective), genai.RoleUser)
-	currentStep := ""
-	sawTurnComplete := false
-	deliverySeq := 0
-	stepStates := map[string]*stepProgressState{
-		WorkerStep:    {},
-		ValidatorStep: {},
-	}
-	for ev, err := range runtime.Runner().Run(ctx, userID, agentSessionID, userContent, adkagent.RunConfig{}) {
-		if err != nil {
-			return result, fmt.Errorf("run goal workflow: %w", err)
-		}
-		if ev == nil {
-			continue
-		}
-		iteration := result.iterations + 1
-		if len(ev.CustomMetadata) != 0 {
-			eventType, _ := ev.CustomMetadata[MetadataEventKey].(string)
-			step, _ := ev.CustomMetadata[MetadataStepKey].(string)
-			eventType = strings.TrimSpace(eventType)
-			step = strings.TrimSpace(step)
-			if eventType != "" && step != "" {
-				switch eventType {
-				case StepStarted:
-					currentStep = step
-					resetLatestStepOutput(&result, step)
-					if err := a.recordStepStarted(ctx, payload, step, iteration); err != nil {
-						return result, err
-					}
-				case StepCompleted:
-					if err := a.recordStepCompleted(ctx, payload, step, iteration, stepStates[step], &deliverySeq); err != nil {
-						return result, err
-					}
-					if step == ValidatorStep {
-						result.iterations++
-					}
-					currentStep = ""
-				case StepFailed:
-					return result, fmt.Errorf("%s step failed", step)
-				}
-			}
-		}
-		if currentStep == "" {
-			if ev.TurnComplete {
-				sawTurnComplete = true
-			}
-			continue
-		}
-		state := stepStates[currentStep]
-		if state == nil {
-			state = &stepProgressState{}
-			stepStates[currentStep] = state
-		}
-		if planSnapshot, ok := progress.ParsePlanUpdate(ev); ok {
-			planText := planSnapshot.PlainText()
-			if planText != "" && planText != state.lastPlanText {
-				state.lastPlanText = planText
-				if err := a.recordStepPlanUpdate(ctx, payload, currentStep, iteration, planSnapshot, planText, &deliverySeq); err != nil {
-					return result, err
-				}
-			}
-		}
-		text := visibleText(ev)
-		if text != "" && text != state.lastVisibleText {
-			state.lastVisibleText = text
-			result.finalText = appendVisibleText(result.finalText, text)
-			switch currentStep {
-			case WorkerStep:
-				result.workerOutput = appendVisibleText(result.workerOutput, text)
-				result.latestWorkerOutput = appendVisibleText(result.latestWorkerOutput, text)
-			case ValidatorStep:
-				result.validatorOutput = appendVisibleText(result.validatorOutput, text)
-				result.latestValidatorOutput = appendVisibleText(result.latestValidatorOutput, text)
-			}
-			if err := a.recordStepProgress(ctx, payload, currentStep, iteration, progressKindOutput, text, &deliverySeq); err != nil {
-				return result, err
-			}
-			state.deliveredOutput = true
-		}
-		if ev.TurnComplete {
-			sawTurnComplete = true
-		}
-	}
-	if result.iterations == 0 {
-		result.iterations = 1
-	}
-	if !sawTurnComplete {
-		return result, fmt.Errorf("goal workflow ended without completion")
-	}
-	return result, nil
-}
-
-func (a *Actor) recordStepStarted(ctx context.Context, payload goalJobPayload, step string, iteration int) error {
-	status := baldastate.JobStatusWaitingForAgent
-	if step == ValidatorStep {
-		status = baldastate.JobStatusValidating
-	}
-	if err := a.jobs.MarkStatus(ctx, payload.JobID, status, actorName, "", "", map[string]any{
-		"step":      step,
-		"iteration": iteration,
-	}); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	if err := a.jobs.AppendEvent(ctx, payload.JobID, baldajobs.JobEventAgentStarted, actorName, "", map[string]any{
-		"step":      step,
-		"iteration": iteration,
-	}); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	return a.deliver(ctx, payload.JobID, payload, goaldelivery.RenderStepMessage(goalDeliveryProfile(payload), iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "started", ""), "started:"+step+":"+strconv.Itoa(iteration))
-}
-
-func (a *Actor) recordStepCompleted(
-	ctx context.Context,
-	payload goalJobPayload,
-	step string,
-	iteration int,
-	state *stepProgressState,
-	deliverySeq *int,
-) error {
-	text := ""
-	if state != nil && !state.deliveredOutput {
-		text = state.lastVisibleText
-	}
-	if err := a.recordGoalProgress(ctx, newGoalProgressUpdate(
-		payload,
-		step,
-		iteration,
-		deliverycmd.GoalProgressKindCompleted,
-		text,
-		nil,
-		nextDeliverySequence(deliverySeq),
-	)); err != nil {
-		return err
-	}
-	if err := a.jobs.AppendEvent(ctx, payload.JobID, baldajobs.JobEventAgentResult, actorName, "", map[string]any{
-		"step":      step,
-		"iteration": normalizeGoalIteration(iteration),
-	}); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	return nil
-}
-
-func (a *Actor) recordStepPlanUpdate(
-	ctx context.Context,
-	payload goalJobPayload,
-	step string,
-	iteration int,
-	plan progress.PlanSnapshot,
-	text string,
-	deliverySeq *int,
-) error {
-	return a.recordGoalProgress(ctx, newGoalProgressUpdate(
-		payload,
-		step,
-		iteration,
-		deliverycmd.GoalProgressKindPlan,
-		text,
-		&plan,
-		nextDeliverySequence(deliverySeq),
-	))
-}
-
-func (a *Actor) recordStepProgress(
-	ctx context.Context,
-	payload goalJobPayload,
-	step string,
-	iteration int,
-	kind string,
-	text string,
-	deliverySeq *int,
-) error {
-	return a.recordGoalProgress(ctx, newGoalProgressUpdate(
-		payload,
-		step,
-		iteration,
-		deliverycmd.GoalProgressKind(strings.TrimSpace(kind)),
-		text,
-		nil,
-		nextDeliverySequence(deliverySeq),
-	))
-}
-
-func (a *Actor) recordGoalProgress(ctx context.Context, update deliverycmd.GoalProgressUpdate) error {
-	switch update.Kind {
-	case deliverycmd.GoalProgressKindOutput, deliverycmd.GoalProgressKindCompleted:
-		update.Text = renderGoalProgressText(update)
-	}
-	if err := dispatchGoalProgress(ctx, a.dispatcher, update); err != nil {
-		return err
-	}
-	if err := a.jobs.AppendEvent(ctx, update.JobID, baldajobs.JobEventAgentProgress, actorName, "", goalProgressEventPayload(update)); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	return nil
-}
-
-func (r goalRunResult) toJobResult(goalReached bool, artifacts goalArtifactSnapshot, export *goalExportResultV1) goalResultPayloadV1 {
-	workerOutput := redactSecrets(strings.TrimSpace(r.workerOutput))
-	validatorOutput := redactSecrets(strings.TrimSpace(r.validatorOutput))
-	latestWorkerOutput := redactSecrets(strings.TrimSpace(r.latestWorkerOutput))
-	latestValidatorOutput := redactSecrets(strings.TrimSpace(r.latestValidatorOutput))
-	finalText := redactSecrets(strings.TrimSpace(r.finalText))
-	whatWasDone := firstNonEmpty(latestWorkerOutput, workerOutput, finalText, strings.TrimSpace(r.payload.Objective))
-	validation := firstNonEmpty(latestValidatorOutput, validatorOutput, finalText)
-	verified := "validator returned feedback"
-	if reviewerPassed(latestValidatorOutput) {
-		verified = "validator returned pass"
-	}
-	nextAction := goaldelivery.DefaultInspectNextAction
-	if goalReached {
-		nextAction = goaldelivery.DefaultExportedNextAction
-		if export != nil {
-			switch strings.TrimSpace(export.Status) {
-			case goalExportStatusFailed:
-				nextAction = "Inspect the preserved goal workspace and retry export after resolving the base-branch issue."
-			case goalExportStatusNotExported:
-				nextAction = "Review the direct working directory changes and commit or follow up manually if needed."
-			}
-		}
-	} else if r.payload.MaxIterations > 0 && r.iterations >= r.payload.MaxIterations {
-		nextAction = "Review failure evidence and rerun /goal or assign a narrower follow-up task."
-	}
-	artifactResult := &goalArtifactResultV1{
-		WorkspaceDir: strings.TrimSpace(artifacts.WorkspaceDir),
-		BranchName:   strings.TrimSpace(artifacts.BranchName),
-		Commit:       strings.TrimSpace(artifacts.Commit),
-		ChangedFiles: append([]string(nil), artifacts.ChangedFiles...),
-		GitError:     strings.TrimSpace(artifacts.GitError),
-	}
-	return goalResultPayloadV1{
-		SchemaVersion:  jobResultSchemaVersionV1,
-		GoalReached:    goalReached,
-		Iterations:     r.iterations,
-		ExecutorOutput: workerOutput,
-		ReviewerOutput: validatorOutput,
-		ReviewerNotes:  validatorOutput,
-		Artifacts:      artifactResult,
-		Export:         export,
-		ReviewableOutcome: goalReviewableOutcomeV1{
-			SchemaVersion: jobReviewableOutcomeSchemaV1,
-			WhatWasDone:   whatWasDone,
-			Validation:    validation,
-			Verified:      verified,
-			NotVerified:   goaldelivery.DefaultNotVerifiedText,
-			NextAction:    nextAction,
-		},
-	}
-}
-
-func (r GoalFinalizationResult) toJobExportResult() *goalExportResultV1 {
-	status := strings.TrimSpace(r.Status)
-	if status == "" {
-		status = goalExportStatusNotExported
-	}
-	return &goalExportResultV1{
-		Status:        status,
-		CommitMessage: redactSecrets(strings.TrimSpace(r.CommitMessage)),
-		Reason:        redactSecrets(strings.TrimSpace(r.Reason)),
-		Error:         redactSecrets(strings.TrimSpace(r.Error)),
-	}
-}
-
-func snapshotGoalRunArtifacts(ctx context.Context, runtime GoalRun) goalArtifactSnapshot {
-	if runtime == nil {
-		return goalArtifactSnapshot{}
-	}
-	artifacts := goalArtifactSnapshot{
-		WorkspaceDir: strings.TrimSpace(runtime.WorkspaceDir()),
-		BranchName:   strings.TrimSpace(runtime.BranchName()),
-	}
-	if artifacts.WorkspaceDir == "" {
-		return artifacts
-	}
-	if !git.Available(ctx, artifacts.WorkspaceDir) {
-		artifacts.GitError = "workspace is not a git repository"
-		return artifacts
-	}
-	status, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "status", "--short")
-	if err != nil {
-		artifacts.GitError = err.Error()
-	} else {
-		for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
-			if trimmed := strings.TrimSpace(line); trimmed != "" {
-				artifacts.ChangedFiles = append(artifacts.ChangedFiles, trimmed)
-			}
-		}
-	}
-	commit, err := git.GitRunCmdOutput(ctx, artifacts.WorkspaceDir, "git", "rev-parse", "--short", "HEAD")
-	if err != nil {
-		if artifacts.GitError == "" {
-			artifacts.GitError = err.Error()
-		}
-	} else {
-		artifacts.Commit = strings.TrimSpace(commit)
-	}
-	return artifacts
-}
-
-func (a *Actor) jobStatusIs(ctx context.Context, jobID string, statuses ...string) bool {
-	if a == nil || a.jobs == nil || strings.TrimSpace(jobID) == "" {
-		return false
-	}
-	task, ok, err := a.jobs.Get(ctx, jobID)
-	if err != nil || !ok {
-		return false
-	}
-	for _, status := range statuses {
-		if strings.TrimSpace(task.Status) == strings.TrimSpace(status) {
-			return true
-		}
-	}
-	return false
-}
-
-func (a *Actor) renderJobOutcome(ctx context.Context, jobID string, profile deliverycmd.Profile, fallback string) string {
-	if a == nil || a.jobs == nil {
-		return goaldelivery.RenderStatusMessage(profile, fallback)
-	}
-	task, ok, err := a.jobs.Get(ctx, jobID)
-	if err != nil || !ok {
-		return goaldelivery.RenderStatusMessage(profile, fallback)
-	}
-	return goaldelivery.RenderReviewableOutcome(profile, task)
-}
-
-func (a *Actor) deliver(
-	ctx context.Context,
-	jobID string,
-	payload goalJobPayload,
-	text string,
-	dedupeSuffix string,
-) error {
-	if a.dispatcher == nil {
-		return actorlayer.TransientError(fmt.Errorf("actor dispatcher is required"))
-	}
-	message := redactSecrets(strings.TrimSpace(text))
-	if message == "" {
-		return nil
-	}
-	locator := normalizeGoalDeliveryLocator(payload.Locator)
-	env, err := deliverycmd.AgentReplyEnvelopeWithProfile(
-		strings.TrimSpace(jobID),
-		actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
-		locator,
-		normalizeGoalDeliveryProfile(goalDeliveryProfile(payload)),
-		message,
-		dedupeSuffix,
-	)
-	if err != nil {
-		return actorlayer.PermanentError(fmt.Errorf("build goal delivery envelope: %w", err))
-	}
-	if _, err := a.dispatcher.Dispatch(ctx, env); err != nil {
-		return actorlayer.TransientError(err)
-	}
-	return nil
+func envelopeJobID(env actorlayer.Envelope) string {
+	return strings.TrimSpace(baldaexecution.EnvelopeJobID(env))
 }
 
 func normalizeGoalDeliveryLocator(locator baldasession.SessionLocator) baldasession.SessionLocator {
@@ -881,7 +233,16 @@ func normalizeGoalDeliveryLocator(locator baldasession.SessionLocator) baldasess
 }
 
 func normalizeGoalDeliveryProfile(profile deliverycmd.Profile) deliverycmd.Profile {
-	return deliveryfmt.NormalizeProfile(profile)
+	normalized := deliveryfmt.NormalizeProfile(deliveryfmt.Profile{
+		Format:         deliveryfmt.Format(profile.Format),
+		TelegramMode:   profile.TelegramMode,
+		FormattingMode: profile.FormattingMode,
+	})
+	return deliverycmd.Profile{
+		Format:         deliverycmd.Format(normalized.Format),
+		TelegramMode:   normalized.TelegramMode,
+		FormattingMode: normalized.FormattingMode,
+	}
 }
 
 func normalizeGoalDeliveryOptions(options deliveryfmt.Options) deliveryfmt.Options {
@@ -892,12 +253,22 @@ func goalDeliveryOptions(payload goalJobPayload) deliveryfmt.Options {
 	return normalizeGoalDeliveryOptions(payload.DeliveryOptions)
 }
 
-func goalDeliveryProfile(payload goalJobPayload) deliveryfmt.Profile {
-	return goalDeliveryOptions(payload).Profile
+func goalDeliveryProfile(payload goalJobPayload) deliverycmd.Profile {
+	profile := goalDeliveryOptions(payload).Profile
+	return deliverycmd.Profile{
+		Format:         deliverycmd.Format(profile.Format),
+		TelegramMode:   profile.TelegramMode,
+		FormattingMode: profile.FormattingMode,
+	}
 }
 
-func goalProgressPolicy(payload goalJobPayload) deliveryfmt.ProgressPolicy {
-	return goalDeliveryOptions(payload).ProgressPolicy
+func goalProgressPolicy(payload goalJobPayload) deliverycmd.ProgressPolicy {
+	policy := goalDeliveryOptions(payload).ProgressPolicy
+	return deliverycmd.ProgressPolicy{
+		Typing:      policy.Typing,
+		Thinking:    policy.Thinking,
+		PlanUpdates: policy.PlanUpdates,
+	}
 }
 
 func normalizeGoalMaxIterations(v int) int {
@@ -914,48 +285,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func appendVisibleText(existing string, next string) string {
-	existing = strings.TrimSpace(existing)
-	next = strings.TrimSpace(next)
-	if existing == "" {
-		return next
-	}
-	if next == "" {
-		return existing
-	}
-	return existing + "\n\n" + next
-}
-
-func resetLatestStepOutput(result *goalRunResult, step string) {
-	if result == nil {
-		return
-	}
-	switch strings.TrimSpace(step) {
-	case WorkerStep:
-		result.latestWorkerOutput = ""
-	case ValidatorStep:
-		result.latestValidatorOutput = ""
-	}
-}
-
-func visibleText(ev *adksession.Event) string {
-	if ev == nil || ev.Content == nil {
-		return ""
-	}
-	content := ev.Content
-	var parts []string
-	for _, part := range content.Parts {
-		if part != nil && !part.Thought && strings.TrimSpace(part.Text) != "" {
-			parts = append(parts, strings.TrimSpace(part.Text))
-		}
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n\n"))
-}
-
-func reviewerPassed(text string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(text)), "verdict: pass")
 }
 
 func redactSecrets(raw string) string {

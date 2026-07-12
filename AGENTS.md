@@ -31,6 +31,11 @@ go tool golangci-lint run
 - Keep workspace mode behavior stable (`on|off|auto`) with safe defaults and explicit failures.
 - Keep Balda MCP/server contracts stable (`balda.workspace.*`).
 - Keep config loading via app-specific `.config/balda/config.yaml` with `BALDA_*` env overrides.
+- Keep transport-neutral delivery contracts in `internal/apps/balda/deliverycmd`; do not re-home shared locator/profile/progress payload types in `session` or concrete `channel/*` packages.
+- Keep `session` focused on lifecycle/create/restore/reset semantics; do not make it the owner of transport delivery contract types.
+- Keep `channel/*` packages as concrete transport adapters only; do not add imports from Balda application/use-case packages just to reuse types or formatting helpers.
+- Keep `locatorref` independent from concrete transport adapter packages; public `<channel_type>:<address_key>` parsing/formatting must stay transport-agnostic.
+- Prefer package-local ports plus composition-root adapters for use-case and integration seams (`sessionturn`, MCP surfaces, transport helpers) instead of direct dependencies on concrete runtime implementations.
 - Do not add or maintain tests whose primary purpose is checking deprecated, legacy, removed, or unsupported surfaces by name.
 - Do not add blacklist-style tests or command/config tables that only assert old names stay gone.
 - Prefer positive tests of the current contract and behavior.

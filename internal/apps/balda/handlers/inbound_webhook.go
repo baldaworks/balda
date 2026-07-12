@@ -18,12 +18,13 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/envelopetarget"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -116,9 +117,9 @@ type inboundWebhookRoute struct {
 	Name           string
 	Path           string
 	PromptTemplate *template.Template
-	Target         envelopeTarget
+	Target         envelopetarget.Target
 	Mode           string
-	ReportTo       *envelopeTarget
+	ReportTo       *envelopetarget.Target
 	Auth           inboundWebhookAuthPolicy
 	Dedupe         inboundWebhookDedupePolicy
 }
@@ -135,8 +136,8 @@ type inboundWebhookDedupePolicy struct {
 }
 
 type inboundTurnExecutor interface {
-	submitWebhookTask(ctx context.Context, payload actors.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error)
-	submitSessionTurn(ctx context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error)
+	submitWebhookTask(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error)
+	submitSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error)
 }
 
 type inboundWebhookParams struct {
@@ -280,12 +281,12 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 		if err != nil {
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("invalid balda.webhooks.routes.%s.prompt_template: %w", routeName, err)
 		}
-		target := envelopeTarget{
+		target := envelopetarget.Target{
 			Target: strings.TrimSpace(rawRoute.Envelope.Target),
 			Key:    strings.TrimSpace(rawRoute.Envelope.Key),
 		}
 		if target.Target == "" && target.Key == "" {
-			target = envelopeTarget{Target: envelopeTargetAlias, Key: envelopeAliasOwner}
+			target = envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner}
 		}
 		if target.Target == "" {
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.target is required", routeName)
@@ -293,9 +294,9 @@ func normalizeInboundWebhookConfig(cfg InboundWebhookConfig) (normalizedInboundW
 		if target.Key == "" {
 			return normalizedInboundWebhookConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.key is required", routeName)
 		}
-		var reportTo *envelopeTarget
+		var reportTo *envelopetarget.Target
 		if rawRoute.Envelope.ReportTo != nil {
-			reportTo = &envelopeTarget{
+			reportTo = &envelopetarget.Target{
 				Target: strings.TrimSpace(rawRoute.Envelope.ReportTo.Target),
 				Key:    strings.TrimSpace(rawRoute.Envelope.ReportTo.Key),
 			}
@@ -537,7 +538,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		})
 		return
 	}
-	target, targetErr := resolveEnvelopeTarget(req.Context(), r.owner, route.Target)
+	target, targetErr := envelopetarget.Resolve(req.Context(), r.owner, route.Target)
 	if targetErr != nil {
 		r.metrics.notFound.Add(1)
 		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
@@ -550,7 +551,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	}
 	var reportTo *baldasession.SessionLocator
 	if route.ReportTo != nil {
-		resolved, err := resolveEnvelopeTarget(req.Context(), r.owner, *route.ReportTo)
+		resolved, err := envelopetarget.Resolve(req.Context(), r.owner, *route.ReportTo)
 		if err != nil {
 			r.metrics.notFound.Add(1)
 			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
@@ -574,7 +575,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		dedupeBase = fmt.Sprintf("%x", sum[:])
 	}
 	dedupeKey := strings.Join([]string{"webhook", strings.TrimSpace(route.Name), dedupeBase}, ":")
-	payload := actors.SessionTurnPayload{
+	payload := turncmd.SessionTurnPayload{
 		Text:     prompt,
 		Locator:  target.Locator,
 		ReportTo: reportTo,

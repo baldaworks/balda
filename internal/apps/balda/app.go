@@ -16,13 +16,20 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
+	"github.com/normahq/balda/internal/apps/balda/controlapp"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfx"
+	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
 	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
+	"github.com/normahq/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/normahq/balda/internal/apps/balda/scheduledjobs"
+	"github.com/normahq/balda/internal/apps/balda/sessionapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
@@ -54,6 +61,21 @@ const (
 var configIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 const defaultWorkspaceSessionsDirName = "sessions"
+
+type memorySnapshotReaderAdapter struct {
+	store *memory.Store
+}
+
+func (a memorySnapshotReaderAdapter) Snapshot(ctx context.Context) (baldaagent.MemorySnapshot, error) {
+	snapshot, err := a.store.Snapshot(ctx)
+	if err != nil {
+		return baldaagent.MemorySnapshot{}, err
+	}
+	return baldaagent.MemorySnapshot{
+		Content: snapshot.Content,
+		Version: snapshot.Version,
+	}, nil
+}
 
 // App creates a new fx.App for the Balda bot with the provided configuration.
 func App(
@@ -117,18 +139,18 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	scheduledJobSchedulerConfig := handlers.ScheduledJobSchedulerConfig{
-		Jobs: make([]handlers.ConfiguredScheduledJob, 0, len(cfg.Balda.Scheduler.Jobs)),
+	scheduledJobSchedulerConfig := scheduledjobs.ScheduledJobSchedulerConfig{
+		Jobs: make([]scheduledjobs.ConfiguredScheduledJob, 0, len(cfg.Balda.Scheduler.Jobs)),
 	}
 	for _, task := range cfg.Balda.Scheduler.Jobs {
-		var reportTo *handlers.ConfiguredScheduledJobTarget
+		var reportTo *scheduledjobs.ConfiguredScheduledJobTarget
 		if task.Envelope.ReportTo != nil {
-			reportTo = &handlers.ConfiguredScheduledJobTarget{
+			reportTo = &scheduledjobs.ConfiguredScheduledJobTarget{
 				Target: strings.TrimSpace(task.Envelope.ReportTo.Target),
 				Key:    strings.TrimSpace(task.Envelope.ReportTo.Key),
 			}
 		}
-		scheduledJobSchedulerConfig.Jobs = append(scheduledJobSchedulerConfig.Jobs, handlers.ConfiguredScheduledJob{
+		scheduledJobSchedulerConfig.Jobs = append(scheduledJobSchedulerConfig.Jobs, scheduledjobs.ConfiguredScheduledJob{
 			ID:       strings.TrimSpace(task.ID),
 			Cron:     strings.TrimSpace(task.Cron),
 			Target:   strings.TrimSpace(task.Envelope.Target),
@@ -222,6 +244,18 @@ func Module(
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
 			},
+			fx.Annotate(
+				func(store *memory.Store) bool {
+					return store != nil && store.MemoryEnabled()
+				},
+				fx.ResultTags(`name:"balda_memory_enabled"`),
+			),
+			func(store *memory.Store) baldaagent.MemorySnapshotReader {
+				if store == nil {
+					return nil
+				}
+				return memorySnapshotReaderAdapter{store: store}
+			},
 			func(provider baldastate.Provider) baldajobs.ServiceStore {
 				return provider.Jobs()
 			},
@@ -230,6 +264,9 @@ func Module(
 			},
 			func(provider baldastate.Provider) baldajobs.OutboxStore {
 				return provider.Jobs()
+			},
+			func(s *baldajobs.JobLifecycleService) baldaexecution.DeadLetterRecorder {
+				return s
 			},
 		),
 		fx.Provide(
@@ -456,7 +493,14 @@ func Module(
 		natsbus.Module,
 		baldaexecution.Module,
 		baldajobs.Module,
+		sessionapp.Module,
+		sessionturnapp.Module,
+		controlapp.Module,
+		deliveryfx.Module,
+		deliveryworkflow.Module,
+		jobexec.Module,
 		actors.Module,
+		scheduledjobs.Module,
 		handlers.Module,
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,

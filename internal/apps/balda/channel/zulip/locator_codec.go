@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
@@ -30,7 +30,7 @@ type LocatorAddress struct {
 }
 
 // NewStreamLocator builds a canonical session locator for a Zulip stream/topic.
-func NewStreamLocator(streamID int, topic string) baldasession.SessionLocator {
+func NewStreamLocator(streamID int, topic string) deliverycmd.Locator {
 	address := LocatorAddress{
 		Type:     addressTypeStream,
 		StreamID: streamID,
@@ -46,9 +46,9 @@ func NewStreamLocator(streamID int, topic string) baldasession.SessionLocator {
 	hashStr := fmt.Sprintf("%x", topicHash[:4])
 	sessionID := fmt.Sprintf("%s-s-%d-%s", zulipSessionIDPrefix, streamID, hashStr)
 
-	locator, err := baldasession.NewSessionLocator(channelType, addressKey, addressJSON, sessionID)
+	locator, err := deliverycmd.NewLocator(channelType, addressKey, addressJSON, sessionID)
 	if err != nil {
-		return baldasession.SessionLocator{
+		return deliverycmd.Locator{
 			ChannelType: channelType,
 			AddressKey:  addressKey,
 			AddressJSON: addressJSON,
@@ -59,7 +59,7 @@ func NewStreamLocator(streamID int, topic string) baldasession.SessionLocator {
 }
 
 // NewDMLocator builds a canonical session locator for a Zulip direct message.
-func NewDMLocator(userID int) baldasession.SessionLocator {
+func NewDMLocator(userID int) deliverycmd.Locator {
 	address := LocatorAddress{
 		Type:   addressTypeDM,
 		UserID: userID,
@@ -70,9 +70,9 @@ func NewDMLocator(userID int) baldasession.SessionLocator {
 	addressJSON := string(raw)
 	sessionID := fmt.Sprintf("%s-dm-%d", zulipSessionIDPrefix, userID)
 
-	locator, err := baldasession.NewSessionLocator(channelType, addressKey, addressJSON, sessionID)
+	locator, err := deliverycmd.NewLocator(channelType, addressKey, addressJSON, sessionID)
 	if err != nil {
-		return baldasession.SessionLocator{
+		return deliverycmd.Locator{
 			ChannelType: channelType,
 			AddressKey:  addressKey,
 			AddressJSON: addressJSON,
@@ -84,7 +84,7 @@ func NewDMLocator(userID int) baldasession.SessionLocator {
 
 // DecodeLocator decodes a Zulip locator payload from canonical session locator
 // fields. Returns false if the locator is not a Zulip channel type.
-func DecodeLocator(locator baldasession.SessionLocator) (LocatorAddress, bool, error) {
+func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	if strings.TrimSpace(locator.ChannelType) != baldastate.ChannelTypeZulip {
 		return LocatorAddress{}, false, nil
 	}
@@ -101,7 +101,7 @@ func DecodeLocator(locator baldasession.SessionLocator) (LocatorAddress, bool, e
 // LocatorFromAddressKey rebuilds a canonical Zulip locator from an address key.
 // Stream format: "s:<stream_id>:<url-path-escaped topic>"
 // DM format: "dm:<user_id>".
-func LocatorFromAddressKey(addressKey string) (baldasession.SessionLocator, error) {
+func LocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	trimmed := strings.TrimSpace(addressKey)
 	if strings.HasPrefix(trimmed, "s:") {
 		return streamLocatorFromAddressKey(trimmed)
@@ -109,17 +109,17 @@ func LocatorFromAddressKey(addressKey string) (baldasession.SessionLocator, erro
 	if strings.HasPrefix(trimmed, "dm:") {
 		return dmLocatorFromAddressKey(trimmed)
 	}
-	return baldasession.SessionLocator{}, fmt.Errorf(
+	return deliverycmd.Locator{}, fmt.Errorf(
 		"zulip address key %q must start with \"s:\" (stream) or \"dm:\" (direct message)",
 		addressKey,
 	)
 }
 
-func streamLocatorFromAddressKey(addressKey string) (baldasession.SessionLocator, error) {
+func streamLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	rest := strings.TrimPrefix(addressKey, "s:")
 	colonIdx := strings.Index(rest, ":")
 	if colonIdx < 0 {
-		return baldasession.SessionLocator{}, fmt.Errorf(
+		return deliverycmd.Locator{}, fmt.Errorf(
 			"zulip stream address key %q must be s:<stream_id>:<topic>",
 			addressKey,
 		)
@@ -128,17 +128,17 @@ func streamLocatorFromAddressKey(addressKey string) (baldasession.SessionLocator
 	escapedTopic := rest[colonIdx+1:]
 	streamID, err := strconv.Atoi(strings.TrimSpace(streamIDStr))
 	if err != nil {
-		return baldasession.SessionLocator{}, fmt.Errorf(
+		return deliverycmd.Locator{}, fmt.Errorf(
 			"parse zulip stream_id from %q: %w",
 			addressKey, err,
 		)
 	}
 	if streamID <= 0 {
-		return baldasession.SessionLocator{}, fmt.Errorf("zulip stream_id from %q must be positive", addressKey)
+		return deliverycmd.Locator{}, fmt.Errorf("zulip stream_id from %q must be positive", addressKey)
 	}
 	topic, err := url.PathUnescape(escapedTopic)
 	if err != nil {
-		return baldasession.SessionLocator{}, fmt.Errorf(
+		return deliverycmd.Locator{}, fmt.Errorf(
 			"unescape zulip topic from %q: %w",
 			addressKey, err,
 		)
@@ -146,17 +146,17 @@ func streamLocatorFromAddressKey(addressKey string) (baldasession.SessionLocator
 	return NewStreamLocator(streamID, topic), nil
 }
 
-func dmLocatorFromAddressKey(addressKey string) (baldasession.SessionLocator, error) {
+func dmLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	rest := strings.TrimPrefix(addressKey, "dm:")
 	userID, err := strconv.Atoi(strings.TrimSpace(rest))
 	if err != nil {
-		return baldasession.SessionLocator{}, fmt.Errorf(
+		return deliverycmd.Locator{}, fmt.Errorf(
 			"parse zulip user_id from %q: %w",
 			addressKey, err,
 		)
 	}
 	if userID <= 0 {
-		return baldasession.SessionLocator{}, fmt.Errorf("zulip user_id from %q must be positive", addressKey)
+		return deliverycmd.Locator{}, fmt.Errorf("zulip user_id from %q must be positive", addressKey)
 	}
 	return NewDMLocator(userID), nil
 }
@@ -179,7 +179,7 @@ func validateLocatorAddress(address LocatorAddress) error {
 
 // StreamIDFromLocator extracts the stream ID from a Zulip stream locator.
 // Returns (0, false) if the locator is not a Zulip stream locator.
-func StreamIDFromLocator(locator baldasession.SessionLocator) (int, bool) {
+func StreamIDFromLocator(locator deliverycmd.Locator) (int, bool) {
 	addr, ok, err := DecodeLocator(locator)
 	if !ok || err != nil || addr.Type != addressTypeStream {
 		return 0, false

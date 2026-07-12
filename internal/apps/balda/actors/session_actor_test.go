@@ -106,9 +106,10 @@ func TestSessionActorSettleSessionTurnResultMarksTaskFailedWithoutRetry(t *testi
 	env := testSessionTurnEnvelopeWithJobID(t, nil, "task-session-failed", sessionTurnSourceWebhook)
 	env.Namespace = baldaexecution.NamespaceWebhookInbound
 	payload := SessionTurnPayload{JobID: "task-session-failed", Source: sessionTurnSourceWebhook}
+	settlement := newSessionSettlementCoordinator(exec.tasks, exec.scheduler)
 
-	if err := exec.settleSessionTurnResult(ctx, env, payload, runErr); err != nil {
-		t.Fatalf("settleSessionTurnResult() error = %v, want nil after recording task failure", err)
+	if err := settlement.settle(ctx, env, payload, runErr); err != nil {
+		t.Fatalf("settle() error = %v, want nil after recording task failure", err)
 	}
 
 	task, ok, err := tasks.Get(ctx, baldaexecution.EnvelopeJobID(env))
@@ -149,9 +150,10 @@ func TestSessionActorSettleSessionTurnResultMarksTaskCanceledWithoutRetry(t *tes
 	env := testSessionTurnEnvelopeWithJobID(t, nil, "task-session-canceled", sessionTurnSourceWebhook)
 	env.Namespace = baldaexecution.NamespaceWebhookInbound
 	payload := SessionTurnPayload{JobID: "task-session-canceled", Source: sessionTurnSourceWebhook}
+	settlement := newSessionSettlementCoordinator(exec.tasks, exec.scheduler)
 
-	if err := exec.settleSessionTurnResult(ctx, env, payload, context.Canceled); err != nil {
-		t.Fatalf("settleSessionTurnResult() error = %v, want nil after recording task cancellation", err)
+	if err := settlement.settle(ctx, env, payload, context.Canceled); err != nil {
+		t.Fatalf("settle() error = %v, want nil after recording task cancellation", err)
 	}
 
 	task, ok, err := tasks.Get(ctx, baldaexecution.EnvelopeJobID(env))
@@ -169,25 +171,25 @@ func TestSessionActorSettleSessionTurnResultMarksTaskCanceledWithoutRetry(t *tes
 func TestSessionActorSettleSessionTurnResultKeepsNonTaskErrorsRetryable(t *testing.T) {
 	t.Parallel()
 
-	exec := &sessionActorExecutor{}
+	settlement := newSessionSettlementCoordinator(nil, nil)
 	runErr := errors.New("runner failed")
 
-	err := exec.settleSessionTurnResult(context.Background(), testSessionTurnEnvelope(t, nil), SessionTurnPayload{}, runErr)
+	err := settlement.settle(context.Background(), testSessionTurnEnvelope(t, nil), SessionTurnPayload{}, runErr)
 	if !errors.Is(err, runErr) {
-		t.Fatalf("settleSessionTurnResult() error = %v, want original run error", err)
+		t.Fatalf("settle() error = %v, want original run error", err)
 	}
 }
 
 func TestSessionActorSettleSessionTurnResultKeepsHumanTurnErrorsRetryableEvenWithJobID(t *testing.T) {
 	t.Parallel()
 
-	exec := &sessionActorExecutor{}
+	settlement := newSessionSettlementCoordinator(nil, nil)
 	env := testSessionTurnEnvelopeWithJobID(t, nil, "turn-legacy-1", sessionTurnSourceTelegram)
 	runErr := errors.New("runner failed")
 
-	err := exec.settleSessionTurnResult(context.Background(), env, SessionTurnPayload{Source: sessionTurnSourceTelegram}, runErr)
+	err := settlement.settle(context.Background(), env, SessionTurnPayload{Source: sessionTurnSourceTelegram}, runErr)
 	if !errors.Is(err, runErr) {
-		t.Fatalf("settleSessionTurnResult() error = %v, want original run error", err)
+		t.Fatalf("settle() error = %v, want original run error", err)
 	}
 }
 
@@ -198,9 +200,10 @@ func TestSessionActorSettleSessionTurnResultRecordsScheduledJobOutcome(t *testin
 	exec := &sessionActorExecutor{scheduler: recorder}
 	payload := SessionTurnPayload{JobID: "runtime-task-1", ScheduledJobID: "scheduled-1"}
 	env := testSessionTurnEnvelopeWithJobID(t, nil, "runtime-task-1", sessionTurnSourceSchedule)
+	settlement := newSessionSettlementCoordinator(exec.tasks, exec.scheduler)
 
-	if err := exec.settleSessionTurnResult(context.Background(), env, payload, nil); err != nil {
-		t.Fatalf("settleSessionTurnResult(success) error = %v", err)
+	if err := settlement.settle(context.Background(), env, payload, nil); err != nil {
+		t.Fatalf("settle(success) error = %v", err)
 	}
 	if len(recorder.successes) != 1 || recorder.successes[0] != "scheduled-1" {
 		t.Fatalf("successes = %#v, want [scheduled-1]", recorder.successes)
@@ -210,8 +213,8 @@ func TestSessionActorSettleSessionTurnResultRecordsScheduledJobOutcome(t *testin
 	}
 
 	runErr := errors.New("scheduled run failed")
-	if err := exec.settleSessionTurnResult(context.Background(), env, payload, runErr); err != nil {
-		t.Fatalf("settleSessionTurnResult(failure) error = %v, want nil after recording scheduled job failure", err)
+	if err := settlement.settle(context.Background(), env, payload, runErr); err != nil {
+		t.Fatalf("settle(failure) error = %v, want nil after recording scheduled job failure", err)
 	}
 	if len(recorder.failures) != 1 {
 		t.Fatalf("failures = %d, want 1", len(recorder.failures))

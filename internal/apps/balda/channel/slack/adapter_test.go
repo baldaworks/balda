@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/rs/zerolog"
 )
 
@@ -47,12 +47,12 @@ func TestAdapterFormattingProfileMapsMarkdownAndPlain(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		profile    deliveryfmt.Profile
+		profile    deliverycmd.Profile
 		wantMrkdwn bool
 	}{
-		{name: "auto uses mrkdwn", profile: deliveryfmt.Profile{Format: deliveryfmt.FormatAuto}, wantMrkdwn: true},
-		{name: "markdown uses mrkdwn", profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, wantMrkdwn: true},
-		{name: "plain disables mrkdwn", profile: deliveryfmt.Profile{Format: deliveryfmt.FormatPlain}, wantMrkdwn: false},
+		{name: "auto uses mrkdwn", profile: deliverycmd.Profile{Format: deliverycmd.FormatAuto}, wantMrkdwn: true},
+		{name: "markdown uses mrkdwn", profile: deliverycmd.Profile{Format: deliverycmd.FormatMarkdown}, wantMrkdwn: true},
+		{name: "plain disables mrkdwn", profile: deliverycmd.Profile{Format: deliverycmd.FormatPlain}, wantMrkdwn: false},
 	}
 
 	for _, tt := range tests {
@@ -86,7 +86,7 @@ func TestAdapterRejectsHTMLFormatting(t *testing.T) {
 	_, err := adapter.SendAgentReplyWithProviderMessageIDAndProfile(
 		context.Background(),
 		NewThreadLocator("T123", "C456", threadTS),
-		deliveryfmt.Profile{Format: deliveryfmt.FormatHTML},
+		deliverycmd.Profile{Format: deliverycmd.FormatHTML},
 		"hello",
 	)
 	if err == nil {

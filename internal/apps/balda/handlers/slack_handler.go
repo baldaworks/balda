@@ -17,16 +17,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/goalcmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/normahq/balda/pkg/actorlayer"
 	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
@@ -122,7 +122,7 @@ type slackHandlerParams struct {
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
 	Dispatcher        actortransport.Dispatcher
-	JobService        *baldajobs.JobService `optional:"true"`
+	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	SlackClient       *baldaslack.Client
 	SlackConfig       SlackConfig
 	AuthToken         string `name:"balda_auth_token"`
@@ -140,7 +140,7 @@ func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		actorDispatcher:   params.Dispatcher,
-		goalJobs:          params.JobService,
+		goalJobs:          params.GoalJobs,
 		client:            params.SlackClient,
 		config:            params.SlackConfig,
 		authToken:         strings.TrimSpace(params.AuthToken),
@@ -706,7 +706,7 @@ func (h *SlackHandler) handleGoalCommand(ctx context.Context, locator baldasessi
 			return
 		}
 	}
-	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}}, objective, subject, h.goalMaxIterations)
+	env, err := goalcmd.JobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}}, objective, subject, h.goalMaxIterations)
 	if err != nil {
 		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 		return
@@ -830,7 +830,7 @@ func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.S
 		return
 	}
 	progressPolicy := baldachannel.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}
-	payload := actors.SessionTurnPayload{
+	payload := turncmd.SessionTurnPayload{
 		Text:           text,
 		Locator:        locator,
 		UserID:         ts.GetUserID(),
@@ -845,7 +845,7 @@ func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.S
 		Source:         "slack",
 		DedupeKey:      "slack:" + strings.TrimSpace(messageID),
 	}
-	env, err := actors.SessionTurnEnvelope(payload)
+	env, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {
 		_ = h.sendPlain(ctx, locator, "Failed to publish your message for processing. Please try again.")
 		return

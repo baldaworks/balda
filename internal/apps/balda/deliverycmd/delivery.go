@@ -6,25 +6,21 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/progress"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 const jobPayloadKindDelivery = "delivery"
 
 type Payload struct {
-	JobID      string                      `json:"job_id,omitempty"`
-	Locator    baldasession.SessionLocator `json:"locator"`
-	Profile    Profile                     `json:"profile,omitempty,omitzero"`
-	Mode       Mode                        `json:"mode"`
-	Settlement SettlementPolicy            `json:"settlement,omitempty"`
-	Text       string                      `json:"text,omitempty"`
-	DraftID    int                         `json:"draft_id,omitempty"`
-	Action     string                      `json:"action,omitempty"`
-	Progress   *Progress                   `json:"progress,omitempty"`
+	JobID      string           `json:"job_id,omitempty"`
+	Locator    Locator          `json:"locator"`
+	Profile    Profile          `json:"profile,omitempty,omitzero"`
+	Mode       Mode             `json:"mode"`
+	Settlement SettlementPolicy `json:"settlement,omitempty"`
+	Text       string           `json:"text,omitempty"`
+	DraftID    int              `json:"draft_id,omitempty"`
+	Action     string           `json:"action,omitempty"`
+	Progress   *Progress        `json:"progress,omitempty"`
 }
 
 type Mode string
@@ -33,15 +29,43 @@ type SettlementPolicy string
 
 type ProgressKind string
 
-type Profile = deliveryfmt.Profile
+type Format string
+
+const (
+	FormatAuto     Format = "auto"
+	FormatMarkdown Format = "markdown"
+	FormatHTML     Format = "html"
+	FormatPlain    Format = "plain"
+)
+
+type Profile struct {
+	Format         Format `json:"format,omitempty"`
+	TelegramMode   string `json:"telegram_mode,omitempty"`
+	FormattingMode string `json:"formatting_mode,omitempty"`
+}
+
+type ProgressPolicy struct {
+	Typing      bool `json:"typing,omitempty"`
+	Thinking    bool `json:"thinking,omitempty"`
+	PlanUpdates bool `json:"plan_updates,omitempty"`
+}
+
+type PlanSnapshot struct {
+	Entries []PlanEntry `json:"entries,omitempty"`
+}
+
+type PlanEntry struct {
+	Content string `json:"content"`
+	Status  string `json:"status,omitempty"`
+}
 
 type Progress struct {
-	Kind     ProgressKind               `json:"kind"`
-	Text     string                     `json:"text,omitempty"`
-	Plan     *progress.PlanSnapshot     `json:"plan,omitempty"`
-	Visible  bool                       `json:"visible,omitempty"`
-	Policy   deliveryfmt.ProgressPolicy `json:"policy,omitempty,omitzero"`
-	Sequence int                        `json:"sequence,omitempty"`
+	Kind     ProgressKind   `json:"kind"`
+	Text     string         `json:"text,omitempty"`
+	Plan     *PlanSnapshot  `json:"plan,omitempty"`
+	Visible  bool           `json:"visible,omitempty"`
+	Policy   ProgressPolicy `json:"policy,omitempty,omitzero"`
+	Sequence int            `json:"sequence,omitempty"`
 }
 
 const (
@@ -65,19 +89,19 @@ const (
 	ProgressPlanUpdate ProgressKind = "plan_update"
 )
 
-func AgentReplyEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func AgentReplyEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return AgentReplyEnvelopeWithProfile(jobID, from, locator, Profile{}, text, dedupeSuffix)
 }
 
-func AgentReplyEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func AgentReplyEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return AgentReplyEnvelopeWithProfileAndSettlement(jobID, from, locator, Profile{}, settlement, text, dedupeSuffix)
 }
 
-func AgentReplyEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func AgentReplyEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return AgentReplyEnvelopeWithProfileAndSettlement(jobID, from, locator, profile, SettlementAuto, text, dedupeSuffix)
 }
 
-func AgentReplyEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func AgentReplyEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
 		Locator:    locator,
@@ -88,11 +112,11 @@ func AgentReplyEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.Ac
 	}, dedupeSuffix)
 }
 
-func PlainEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func PlainEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return PlainEnvelopeWithSettlement(jobID, from, locator, SettlementAuto, text, dedupeSuffix)
 }
 
-func PlainEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func PlainEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
 		Locator:    locator,
@@ -102,19 +126,19 @@ func PlainEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, loc
 	}, dedupeSuffix)
 }
 
-func MarkdownEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func MarkdownEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return MarkdownEnvelopeWithProfile(jobID, from, locator, Profile{}, text, dedupeSuffix)
 }
 
-func MarkdownEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func MarkdownEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return MarkdownEnvelopeWithProfileAndSettlement(jobID, from, locator, Profile{}, settlement, text, dedupeSuffix)
 }
 
-func MarkdownEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func MarkdownEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return MarkdownEnvelopeWithProfileAndSettlement(jobID, from, locator, profile, SettlementAuto, text, dedupeSuffix)
 }
 
-func MarkdownEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func MarkdownEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
 		Locator:    locator,
@@ -125,7 +149,7 @@ func MarkdownEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.Acto
 	}, dedupeSuffix)
 }
 
-func DraftPlainEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, draftID int, text string) (actorlayer.Envelope, error) {
+func DraftPlainEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, draftID int, text string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
 		Locator: locator,
@@ -135,7 +159,7 @@ func DraftPlainEnvelope(jobID string, from actorlayer.ActorAddress, locator bald
 	}, "")
 }
 
-func ChatActionEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, action string) (actorlayer.Envelope, error) {
+func ChatActionEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, action string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
 		Locator: locator,
@@ -144,7 +168,7 @@ func ChatActionEnvelope(jobID string, from actorlayer.ActorAddress, locator bald
 	}, "")
 }
 
-func ProgressActivityEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
+func ProgressActivityEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, policy ProgressPolicy, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
 		Locator: locator,
@@ -158,7 +182,7 @@ func ProgressActivityEnvelope(jobID string, from actorlayer.ActorAddress, locato
 	}, dedupeSuffix)
 }
 
-func ProgressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
+func ProgressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, policy ProgressPolicy, visible bool, text string, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
 		Locator: locator,
@@ -173,7 +197,7 @@ func ProgressThinkingEnvelope(jobID string, from actorlayer.ActorAddress, locato
 	}, dedupeSuffix)
 }
 
-func ProgressPlanUpdateEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, policy deliveryfmt.ProgressPolicy, visible bool, plan *progress.PlanSnapshot, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+func ProgressPlanUpdateEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, policy ProgressPolicy, visible bool, plan *PlanSnapshot, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
 		Locator: locator,
@@ -188,7 +212,32 @@ func ProgressPlanUpdateEnvelope(jobID string, from actorlayer.ActorAddress, loca
 	}, dedupeSuffix)
 }
 
-func normalizeProfile(profile Profile) Profile { return deliveryfmt.NormalizeProfile(profile) }
+func normalizeProfile(profile Profile) Profile {
+	format := Format(strings.ToLower(strings.TrimSpace(string(profile.Format))))
+	telegramMode := strings.ToLower(strings.TrimSpace(profile.TelegramMode))
+	legacy := strings.ToLower(strings.TrimSpace(profile.FormattingMode))
+
+	if format == "" && legacy != "" {
+		switch legacy {
+		case "auto", "markdown", "html", "plain":
+			format = Format(legacy)
+		default:
+			format = FormatAuto
+			telegramMode = legacy
+		}
+	}
+	if format == "" {
+		format = FormatAuto
+	}
+	if telegramMode == "" && legacy != "" && legacy != "auto" && legacy != "markdown" && legacy != "html" && legacy != "plain" {
+		telegramMode = legacy
+	}
+
+	return Profile{
+		Format:       format,
+		TelegramMode: telegramMode,
+	}
+}
 
 func normalizeSettlementPolicy(policy SettlementPolicy) SettlementPolicy {
 	switch strings.TrimSpace(string(policy)) {
@@ -266,12 +315,12 @@ func envelope(jobID string, from actorlayer.ActorAddress, payload Payload, dedup
 	dedupeKey := deliveryDedupeKey(trimmedJobID, payload.Mode, dedupeSuffix)
 	return actorlayer.Envelope{
 		ID:            dedupeKey,
-		Namespace:     baldaexecution.NamespaceAgentResult,
+		Namespace:     namespaceAgentResult,
 		Kind:          jobPayloadKindDelivery,
 		From:          from,
-		To:            actorlayer.ActorAddress{Target: baldaexecution.ActorTypeDelivery, Key: payload.Locator.DeliveryActorKey()},
+		To:            actorlayer.ActorAddress{Target: actorTypeDelivery, Key: payload.Locator.DeliveryActorKey()},
 		SessionID:     payload.Locator.SessionID,
-		Meta:          baldaexecution.WithJobIDMeta(nil, trimmedJobID),
+		Meta:          withJobIDMeta(nil, trimmedJobID),
 		CorrelationID: trimmedJobID,
 		Priority:      70,
 		DedupeKey:     dedupeKey,
@@ -292,4 +341,23 @@ func deliveryDedupeKey(jobID string, mode Mode, dedupeSuffix string) string {
 		return trimmedJobID + ":delivery:" + suffix
 	}
 	return trimmedJobID + ":delivery:" + strings.ToLower(string(mode)) + ":" + uuid.NewString()
+}
+
+const (
+	namespaceAgentResult = "agent.result"
+	actorTypeDelivery    = "delivery"
+	jobIDMetaKey         = "job_id"
+)
+
+func withJobIDMeta(meta map[string]string, jobID string) map[string]string {
+	trimmed := strings.TrimSpace(jobID)
+	if trimmed == "" {
+		return meta
+	}
+	out := make(map[string]string, len(meta)+1)
+	for key, value := range meta {
+		out[key] = value
+	}
+	out[jobIDMetaKey] = trimmed
+	return out
 }
