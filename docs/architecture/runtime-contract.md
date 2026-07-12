@@ -12,11 +12,11 @@ Status: active
 - The session actor is the only code path that can enqueue `TurnDispatcher` work; `sessionturn` is the only queued-turn restoration use case.
 - `TurnDispatcher` is the authoritative per-session mailbox. Canceling a session resolves every dropped completion with `context.Canceled` and cancels the active turn.
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
-- Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through Balda's local actorlayer contracts, and concrete transport policy stays in Balda's NATS adapter.
+- Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through `github.com/baldaworks/go-actorlayer`, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
 - Balda keeps that ownership inside explicit app layers: `actorcmd` owns wire taxonomy; `execution` owns runtime policy; `jobs` owns durable job state, event outbox, and projections; `actors` owns product behavior; `sessionturn` owns queued-turn restoration; `internalmcp` owns bundled MCP lifecycle; and `handlers` owns ingress plus the provider-turn executor adapter.
 - `agent` owns provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support. It does not own session lifecycle semantics or queued-turn orchestration.
-- The local `pkg/actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
+- `github.com/baldaworks/go-actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 - Delivery boundaries are explicit: `deliverycmd` owns transport-neutral delivery contracts, `deliveryfmt` owns delivery formatting normalization, `locatorref` owns public locator parsing/formatting, and `channel/*` owns only concrete provider delivery behavior.
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.

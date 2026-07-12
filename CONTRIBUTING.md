@@ -33,7 +33,7 @@ go tool go-arch-lint check --project-path .
 - Prefer project-local tooling via `go tool ...` when available.
 - Use Conventional Commits for commit messages.
 - Sync shared branches with merge (`git pull --no-rebase`), not rebase.
-- Keep Balda actor execution on the local generic `pkg/actorlayer`. Do not add extra adapter or runtime-provider selector packages around it.
+- Keep Balda actor execution on generic `github.com/baldaworks/go-actorlayer`. Do not add extra adapter or runtime-provider selector packages around it.
 - `balda.provider` is the single app-scoped provider runtime for Balda sessions; actor code must not choose providers.
 
 ## Logging Policy

@@ -30,7 +30,7 @@ jobs:
           go tool govulncheck ./... 2>&1 | tee -a test.log
       - name: Upload failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-failure-artifacts
           path: |
@@ -39,14 +39,14 @@ jobs:
             .tmp/**/.config/balda/nats/**
           if-no-files-found: warn
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage.out
           path: coverage.out
           if-no-files-found: error
       - name: Upload coverage to Codecov
         if: github.event_name != 'pull_request'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: coverage.out
           fail_ci_if_error: false

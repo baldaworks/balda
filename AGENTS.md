@@ -31,7 +31,7 @@ go tool golangci-lint run
 - Keep workspace mode behavior stable (`on|off|auto`) with safe defaults and explicit failures.
 - Keep Balda MCP/server contracts stable (`balda.workspace.*`).
 - Keep config loading via app-specific `.config/balda/config.yaml` with `BALDA_*` env overrides.
-- Keep transport-neutral delivery contracts in `internal/apps/balda/deliverycmd`; do not re-home shared locator/profile/progress payload types in `session` or concrete `channel/*` packages.
+- Keep transport-neutral delivery contracts in `internal/apps/balda/deliverycmd`; do not re-home shared locator/profile/progress/boundary contract types in `session` or concrete `channel/*` packages.
 - Keep `session` focused on lifecycle/create/restore/reset semantics; do not make it the owner of transport delivery contract types.
 - Keep `channel/*` packages as concrete transport adapters only; do not add imports from Balda application/use-case packages just to reuse types or formatting helpers.
 - Keep `locatorref` independent from concrete transport adapter packages; public `<channel_type>:<address_key>` parsing/formatting must stay transport-agnostic.
@@ -44,7 +44,7 @@ go tool golangci-lint run
 
 - Treat architecture work as enforcement of ownership boundaries, not only import cleanup.
 - Every package change should preserve a clear owner:
-  - `pkg/actorlayer`: generic actor/runtime primitives only; no Balda product policy.
+  - external module `github.com/baldaworks/go-actorlayer`: generic actor/runtime primitives only; no Balda product policy.
   - `internal/apps/balda/execution`: runtime policy and host wiring only.
   - `internal/apps/balda/jobs`: durable job state, event projection, outbox.
   - `internal/apps/balda/actors`: product actor behavior and command handling.
@@ -53,7 +53,7 @@ go tool golangci-lint run
   - `internal/apps/balda/state`: storage and read models only.
 
 - Do not move shared transport-neutral contracts into concrete transport or session packages.
-  - Shared locator/profile/progress/delivery payloads belong in dedicated contract packages such as `deliverycmd`, `deliveryfmt`, `turncmd`, `controlcmd`, `goalcmd`.
+  - Shared locator/profile/progress/delivery boundary types belong in dedicated contract packages such as `deliverycmd`, `deliveryfmt`, `turncmd`, `controlcmd`, `goalcmd`.
 
 - Do not add reusable business logic to `handlers`.
   - `handlers` may normalize inbound transport input and enforce access/session preconditions.

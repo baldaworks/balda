@@ -15,7 +15,7 @@ This document defines layer ownership for the Balda application. The goal is to 
 
 | Layer | Owns | Must not own |
 | --- | --- | --- |
-| `pkg/actorlayer` | generic actor runtime primitives, envelopes, transport-facing contracts, retry/error helpers | Balda product policy |
+| `github.com/baldaworks/go-actorlayer` | generic actor runtime primitives, envelopes, transport-facing contracts, retry/error helpers | Balda product policy |
 | `internal/apps/balda/execution` | Balda runtime policy, host lifecycle, lane policy, dead-letter behavior, runtime wiring | feature semantics, ingress behavior |
 | `internal/apps/balda/handlers` | ingress parsing, auth/session checks, publishing work into actor/runtime system | feature execution logic, provider settlement policy |
 | `internal/apps/balda/actors` | product actor behavior and feature-owned orchestration | transport parsing, generic runtime policy |

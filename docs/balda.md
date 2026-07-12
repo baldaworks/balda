@@ -175,7 +175,7 @@ flowchart TB
 | Package | Import Path | Description | Depends On |
 |---------|-------------|-------------|------------|
 | `balda` | `internal/apps/balda` | Root application module | actors, agent, auth, handlers, jobs, memory, runtime, state, tgbotkit |
-| `actorcmd` | `internal/apps/balda/actorcmd` | Leaf actor targets, namespaces, subjects, headers, and job-scope metadata | `pkg/actorlayer` |
+| `actorcmd` | `internal/apps/balda/actorcmd` | Leaf actor targets, namespaces, subjects, headers, and job-scope metadata | `github.com/baldaworks/go-actorlayer` |
 | `agent` | `internal/apps/balda/agent` | Provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support | `internal/git`, runtime/agent factory packages |
 | `actors` | `internal/apps/balda/actors` | Balda product actor behavior | actorcmd, agent, channel, jobs, session, state |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
@@ -186,10 +186,10 @@ flowchart TB
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `sessionturn` | `internal/apps/balda/sessionturn` | Queued-turn restoration and execution orchestration | memory, session |
-| `sessionturnapp` | `internal/apps/balda/sessionturnapp` | Queued turn execution wiring, provider-turn execution, progress dispatch, and turn-facing adapters | jobs, memory, session, sessionturn, `pkg/actorlayer` |
+| `sessionturnapp` | `internal/apps/balda/sessionturnapp` | Queued turn execution wiring, provider-turn execution, progress dispatch, and turn-facing adapters | jobs, memory, session, sessionturn, `github.com/baldaworks/go-actorlayer` |
 | `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite`, `updatepoller` |
-| `runtime` | `internal/apps/balda/execution` | Actor runtime host, lane policy, retry/dead-letter policy, and delivery wrapping | actorcmd, `pkg/actorlayer` |
-| `jobs` | `internal/apps/balda/jobs` | Durable job service, transactional event outbox, and read-model projection | actorcmd, state, `pkg/actorlayer` |
+| `runtime` | `internal/apps/balda/execution` | Actor runtime host, lane policy, retry/dead-letter policy, and delivery wrapping | actorcmd, `github.com/baldaworks/go-actorlayer` |
+| `jobs` | `internal/apps/balda/jobs` | Durable job service, transactional event outbox, and read-model projection | actorcmd, state, `github.com/baldaworks/go-actorlayer` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
 | `welcome` | `internal/apps/balda/welcome` | Welcome message builder | (standalone) |
 
@@ -199,7 +199,7 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 
 ## Architecture Layers
 
-- `pkg/actorlayer`: generic actor library only. It owns envelopes, addressing, lane execution primitives, retry/error helpers, and transport-facing contracts. It does not own Balda product policy.
+- `github.com/baldaworks/go-actorlayer`: generic actor library only. It owns envelopes, addressing, lane execution primitives, retry/error helpers, and transport-facing contracts. It does not own Balda product policy.
 - `internal/apps/balda/actorcmd`: stable leaf package for product wire taxonomy. It owns actor targets, namespaces, kinds, subjects, headers, and job-scope metadata.
 - `internal/apps/balda/execution`: Balda runtime policy. It owns the host loop, lane policy, dead-letter handling, heartbeat policy, and runtime-facing transport wiring.
 - `internal/apps/balda/agent`: provider-backed runtime support. It owns root runtime construction, prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support. It does not own session lifecycle semantics.
@@ -247,7 +247,7 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, jobs, projections, memory, and delivery outbox rows.
 
 Do not add extra Balda-local actor adapter packages or execution/delivery selector
-layers around the runtime. The generic actor runtime lives in `pkg/actorlayer`,
+layers around the runtime. The generic actor runtime lives in `github.com/baldaworks/go-actorlayer`,
 and Balda keeps product policy in Balda.
 
 ## Startup Order (Required)
@@ -1008,10 +1008,11 @@ All events are published as the same envelope shape. For event envelopes,
 | Delivery redelivery after partial send | delivery outbox reserve | duplicate suppressed by delivery key (noop path) | final user message not duplicated | inspect outbox row/status if delivery appears missing |
 | Cancellation races with queued/running work | control command handling | control command applied; canceled/terminal commands settle noop/ack | job/session stops promptly, later duplicates ignored | verify job state/events; no queue surgery needed |
 
-- NATS identity is carried in headers: `Balda-Envelope-ID`,
-  `Balda-Session-ID`, `Balda-Job-ID`, `Balda-Correlation-ID`,
-  `Balda-Causation-ID`, `Balda-Dedupe-Key`, `Balda-Actor-Key`,
-  `Balda-Priority`, and `Balda-Namespace`.
+- NATS command identity is carried in headers such as
+  `Balda-Envelope-ID`, `Balda-Correlation-ID`, `Balda-Causation-ID`,
+  `Balda-Dedupe-Key`, `Balda-Actor-Key`, `Balda-Priority`, and
+  `Balda-Namespace`. Session and job context are carried in the envelope body
+  and Balda metadata rather than dedicated transport headers.
 - Embedded NATS binds to `127.0.0.1` by default and is not exposed externally.
   NATS transport files live under `${balda.state_dir}/nats`, which is runtime state and should
   not be committed.

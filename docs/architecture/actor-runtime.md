@@ -7,7 +7,7 @@ Status: active
 
 - ActorRuntime consumes durable command deliveries.
 - Actorlayer engine lanes serialize job/delivery actor state. Session commands use per-envelope runtime lanes and are serialized by the authoritative `TurnDispatcher` mailbox.
-- Runtime execution uses Balda's local `pkg/actorlayer/engine.DispatchRuntime`; Balda adapts durable command transport into actorlayer deliveries and supplies only Balda-specific delivery wrapping.
+- Runtime execution uses `github.com/baldaworks/go-actorlayer/engine.DispatchRuntime`; Balda adapts durable command transport into actorlayer deliveries and supplies only Balda-specific delivery wrapping.
 - Command settlement happens after actor side effects complete.
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: session turns, webhook/scheduled work routing, `/goal` execution, outbound delivery, and cancellation.
@@ -40,11 +40,11 @@ Status: active
 - Job/goal/delivery lifecycle changes.
 - Goal workflow, session, or job-result behavior changes.
 
-## Local actorlayer contract boundaries
+## Actorlayer contract boundaries
 
 ### Contract shape
 
-- Engine contract: Balda's local `pkg/actorlayer` is the fixed typed dispatch+state model Balda uses for actors through `actorengine.NewDispatchRuntime`. It exposes:
+- Engine contract: `github.com/baldaworks/go-actorlayer` is the fixed typed dispatch+state model Balda uses for actors through `actorengine.NewDispatchRuntime`. It exposes:
   - actor keying and deterministic lane routing,
   - typed envelope handling,
   - dispatch result states (`acked`, `running`, `in_progress`, `retry`, `deadletter`, `noop`),
@@ -71,15 +71,15 @@ Status: active
 
 - All actor sessions in one Balda process use the configured `balda.provider`; actor contracts do not choose providers.
 - Balda can own product semantics (queue policy, telemetry, job projection, and workspace/job metadata) while still reusing the same execution kernel.
-- Future transport/provider integration code must preserve the local actorlayer engine contract and keep product policy in Balda.
+- Future transport/provider integration code must preserve the actorlayer engine contract and keep product policy in Balda.
 
 ### Balda implementation map
 
-- Actor dispatch and lane execution are composed in `internal/apps/balda/execution/host.go`, backed by `github.com/normahq/balda/pkg/actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `execution` through focused files for the host loop (`host.go`), lane/address policy (`lane_policy.go`), heartbeat visibility policy (`heartbeat.go`), dead-letter side effects (`deadletter.go`), and delivery wrapping/context (`delivery_wrapper.go`).
+- Actor dispatch and lane execution are composed in `internal/apps/balda/execution/host.go`, backed by `github.com/baldaworks/go-actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `execution` through focused files for the host loop (`host.go`), lane/address policy (`lane_policy.go`), heartbeat visibility policy (`heartbeat.go`), dead-letter side effects (`deadletter.go`), and delivery wrapping/context (`delivery_wrapper.go`).
 - Balda product actor definitions live in `internal/apps/balda/actors` and are registered through `actors.Module`.
 - Queued session restoration and execution orchestration lives in `internal/apps/balda/sessionturn`; `handlers` supplies only its provider-turn executor adapter.
 - Telegram/Zulip/Slack/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers publish actor commands through actorlayer transport contracts and do not own actor behavior or actor registration.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and actorlayer transport contracts.
 - The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: actorlayer transport `Dispatcher`, `EventPublisher`, `EventConsumer`, `Drainer`, plus actorlayer `Source`.
-- Job projection, retry classification, DLQ reporting, and job/read-model persistence live in Balda packages (`runtime`, `jobs`, `handlers`, and `state`), not in `pkg/actorlayer`.
+- Job projection, retry classification, DLQ reporting, and job/read-model persistence live in Balda packages (`runtime`, `jobs`, `handlers`, and `state`), not in `github.com/baldaworks/go-actorlayer`.
