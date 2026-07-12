@@ -40,6 +40,88 @@ go tool golangci-lint run
 - Do not add blacklist-style tests or command/config tables that only assert old names stay gone.
 - Prefer positive tests of the current contract and behavior.
 
+## Architecture Audit Standard
+
+- Treat architecture work as enforcement of ownership boundaries, not only import cleanup.
+- Every package change should preserve a clear owner:
+  - `pkg/actorlayer`: generic actor/runtime primitives only; no Balda product policy.
+  - `internal/apps/balda/execution`: runtime policy and host wiring only.
+  - `internal/apps/balda/jobs`: durable job state, event projection, outbox.
+  - `internal/apps/balda/actors`: product actor behavior and command handling.
+  - `internal/apps/balda/handlers`: ingress only — parse/auth/session-check/publish.
+  - `internal/apps/balda/channel/*` and `messenger`: provider-specific delivery behavior only.
+  - `internal/apps/balda/state`: storage and read models only.
+
+- Do not move shared transport-neutral contracts into concrete transport or session packages.
+  - Shared locator/profile/progress/delivery payloads belong in dedicated contract packages such as `deliverycmd`, `deliveryfmt`, `turncmd`, `controlcmd`, `goalcmd`.
+
+- Do not add reusable business logic to `handlers`.
+  - `handlers` may normalize inbound transport input and enforce access/session preconditions.
+  - `handlers` must not become the default home for turn orchestration, goal policy, delivery workflow policy, or reusable runtime logic.
+
+- Prefer ports plus adapters over concrete cross-layer dependencies.
+  - Use small interfaces in the consuming package.
+  - Put composition-root adapters in dedicated app/wiring packages such as `sessionapp`, `sessionturnapp`, `controlapp`, `deliveryfx`, `deliveryworkflow`.
+
+- Concrete transport packages must stay concrete.
+  - `channel/*` packages must not import Balda application/use-case packages for convenience.
+  - Public locator parsing/formatting must stay transport-agnostic via `locatorref` or dedicated contract helpers.
+
+- Transitional compatibility layers are allowed only with an exit path.
+  - Compat aliases/adapters must be minimal, documented, and removable.
+  - Do not let temporary glue in `handlers` or other broad packages become permanent architecture.
+
+- When changing architecture, update enforcement in the same change.
+  - Update `.go-arch-lint.yml` together with the code.
+  - Prefer tightening layer rules after moving code, rather than leaving broad transitional allowances indefinitely.
+
+- Architecture audit findings should always include:
+  - violated boundary,
+  - concrete evidence (file/import/type dependency),
+  - why the dependency is wrong,
+  - intended fix shape (contract, port, adapter, or ownership move),
+  - whether it is transitional or must be fixed immediately.
+
+## Architecture Operations Checklist
+
+Use this checklist before merging any architecture-affecting change.
+
+- Ownership
+  - Does each touched package still have one clear responsibility?
+  - Did any package become a convenience hub for unrelated logic?
+
+- Shared contracts
+  - If a type is used across transports or layers, is it in a dedicated contract package?
+  - Did any shared type drift into `session` or `channel/*` for convenience?
+
+- Ingress purity
+  - Did `handlers` stay limited to parse/auth/session-check/publish?
+  - If logic was added to `handlers`, can it move into an app/use-case package instead?
+
+- Transport isolation
+  - Did any `channel/*` package import application/use-case/runtime packages?
+  - Did any provider-specific rule leak outside delivery/transport packages?
+
+- Ports and adapters
+  - If a package needs another layer, does it depend on a small interface/port?
+  - Is the concrete adapter placed in a composition-root package instead of a broad feature package?
+
+- Transitional glue
+  - If a compat adapter/alias was added, is it minimal and explicitly temporary?
+  - Is there a clear next step to remove it?
+
+- Enforcement
+  - Were `.go-arch-lint.yml` rules updated with the architecture change?
+  - Did `go tool go-arch-lint check --project-path .` and `go tool golangci-lint run` pass after the change?
+
+## Architecture Change Decision Rules
+
+- Prefer moving logic to the layer that owns the policy, not the layer that currently has convenient access.
+- Prefer introducing a small local port over importing a concrete implementation across a boundary.
+- Prefer dedicated wiring packages over adding adapters to `handlers`.
+- Prefer tightening lint rules after cleanup in the same series of changes.
+- Do not accept a new cross-layer shortcut without documenting why an existing boundary is insufficient.
+
 ## Bot Commands (Current Contract)
 
 - `/start owner=<owner_token>`: direct message only; owner authentication/bootstrap entrypoint.
