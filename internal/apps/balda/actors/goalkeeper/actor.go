@@ -232,19 +232,6 @@ func normalizeGoalDeliveryLocator(locator baldasession.SessionLocator) baldasess
 	return locator
 }
 
-func normalizeGoalDeliveryProfile(profile deliverycmd.Profile) deliverycmd.Profile {
-	normalized := deliveryfmt.NormalizeProfile(deliveryfmt.Profile{
-		Format:         deliveryfmt.Format(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	})
-	return deliverycmd.Profile{
-		Format:         deliverycmd.Format(normalized.Format),
-		TelegramMode:   normalized.TelegramMode,
-		FormattingMode: normalized.FormattingMode,
-	}
-}
-
 func normalizeGoalDeliveryOptions(options deliveryfmt.Options) deliveryfmt.Options {
 	return deliveryfmt.NormalizeOptions(options)
 }

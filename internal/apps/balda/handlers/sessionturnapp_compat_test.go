@@ -13,7 +13,6 @@ import (
 )
 
 type sessionProgressUpdate = sessionturnapp.SessionProgressUpdate
-type sessionProgressResult = sessionturnapp.SessionProgressResult
 
 type providerTurnExecutor struct {
 	execution  *sessionturnapp.TurnExecutionService

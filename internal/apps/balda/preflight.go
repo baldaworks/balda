@@ -14,6 +14,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/sessionapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
@@ -195,6 +196,20 @@ func PreflightRuntime(
 			},
 			baldaagent.NewBuilder,
 			baldaagent.NewRuntimeManager,
+			func(builder *baldaagent.Builder) session.AgentBuilder {
+				return sessionapp.SessionAgentBuilderAdapter{Builder: builder}
+			},
+			func(manager *baldaagent.RuntimeManager) session.RuntimeManager {
+				return sessionapp.SessionRuntimeManagerAdapter{Manager: manager}
+			},
+			fx.Annotate(
+				func(workingDir string, stateDir string, baseBranch string, sessionsDir string) session.WorkspaceManager {
+					return sessionapp.SessionWorkspaceManagerAdapter{
+						Manager: baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baseBranch, sessionsDir),
+					}
+				},
+				fx.ParamTags(``, `name:"balda_state_dir"`, `name:"balda_workspace_base_branch"`, `name:"balda_workspace_sessions_dir"`),
+			),
 			session.NewManager,
 			internalmcp.NewInternalMCPManager,
 		),

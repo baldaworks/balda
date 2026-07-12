@@ -67,7 +67,6 @@ const (
 type jobActorExecutor struct {
 	tasks      jobexec.JobLifecycle
 	dispatcher actortransport.Dispatcher
-	sessions   *baldasession.Manager
 	service    jobExecutionService
 }
 
@@ -130,14 +129,6 @@ func (e *jobActorExecutor) dispatchWebhookSessionTurn(ctx context.Context, env a
 		return actorlayer.TransientError(fmt.Errorf("job execution service is required"))
 	}
 	return e.service.DispatchWebhookSessionTurn(ctx, env, payload)
-}
-
-func webhookJobTitle() string {
-	return "Webhook job"
-}
-
-func webhookJobPriority() int {
-	return 80
 }
 
 func (e *jobActorExecutor) startScheduledJob(ctx context.Context, env actorlayer.Envelope, payload scheduledJobPayload) error {

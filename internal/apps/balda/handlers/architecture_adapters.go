@@ -8,9 +8,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
 )
 
-type sessionAgentBuilderAdapter = sessionapp.SessionAgentBuilderAdapter
-type sessionRuntimeManagerAdapter = sessionapp.SessionRuntimeManagerAdapter
-
 type sessionWorkspaceManagerAdapter struct {
 	manager *baldaagent.WorkspaceManager
 }

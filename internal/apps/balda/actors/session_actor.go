@@ -118,15 +118,6 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	}
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
 func NormalizeSessionDeliveryOptions(payload SessionTurnPayload) deliveryfmt.Options {
 	return turncmd.NormalizeSessionDeliveryOptions(payload)
 }

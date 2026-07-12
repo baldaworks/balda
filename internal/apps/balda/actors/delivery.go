@@ -72,8 +72,6 @@ func ProgressPlanUpdateDeliveryEnvelope(jobID string, from actorlayer.ActorAddre
 	return deliverycmd.ProgressPlanUpdateEnvelope(jobID, from, locator, actorProgressPolicy(policy), visible, deliveryPlanSnapshot(plan), text, dedupeSuffix)
 }
 
-func validateDeliveryPayload(payload DeliveryPayload) error { return deliverycmd.Validate(payload) }
-
 func deliveryPlanSnapshot(plan *progress.PlanSnapshot) *deliverycmd.PlanSnapshot {
 	if plan == nil {
 		return nil

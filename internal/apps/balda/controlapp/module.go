@@ -13,11 +13,7 @@ var Module = fx.Module("balda_controlapp",
 		fx.Annotate(
 			func(s *baldajobs.JobLifecycleService) JobLifecycle { return s },
 		),
-		fx.Annotate(
-			func(turns appports.TurnQueue, jobs JobLifecycle, runs JobRuns, logger zerolog.Logger) *SessionWorkCanceller {
-				return NewSessionWorkCanceller(turns, jobs, runs, logger)
-			},
-		),
+		NewSessionWorkCanceller,
 		fx.Annotate(
 			func(c *SessionWorkCanceller) appports.SessionWorkCanceller { return c },
 		),

@@ -88,11 +88,11 @@ func (c *coordinator) ensureGoalJob(ctx context.Context, payload goalJobPayload)
 }
 
 func (c *coordinator) ensureNoOtherActiveGoal(ctx context.Context, jobID string, payload goalJobPayload) (bool, error) {
-	progressEmitter := newGoalProgressEmitter(c.jobs, c.events, c.dispatcher)
-	outcomes := newGoalOutcomeAssembler(c.jobs)
 	if c == nil || c.jobs == nil {
 		return false, actorlayer.TransientError(fmt.Errorf("job service is required"))
 	}
+	progressEmitter := newGoalProgressEmitter(c.jobs, c.events, c.dispatcher)
+	outcomes := newGoalOutcomeAssembler(c.jobs)
 	activeGoals, err := c.jobs.ListActiveGoalJobsBySession(ctx, payload.Locator.SessionID)
 	if err != nil {
 		return false, actorlayer.TransientError(fmt.Errorf("list active goal jobs: %w", err))
