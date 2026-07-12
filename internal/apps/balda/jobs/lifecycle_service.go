@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"go.uber.org/fx"
 )
 

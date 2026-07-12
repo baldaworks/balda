@@ -4,8 +4,8 @@ import (
 	"context"
 
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 const testLocatorTopicSessionID = "tg--1002667079342-8939"

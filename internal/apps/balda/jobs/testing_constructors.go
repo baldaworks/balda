@@ -1,6 +1,6 @@
 package jobs
 
-import actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+import actortransport "github.com/baldaworks/go-actorlayer/transport"
 
 func NewJobLifecycleServiceForTests(store ServiceStore, bus actortransport.EventPublisher) (*JobLifecycleService, error) {
 	return NewJobLifecycleService(jobLifecycleServiceParams{Store: store, Bus: bus})

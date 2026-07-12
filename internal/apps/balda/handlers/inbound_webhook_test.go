@@ -13,7 +13,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/envelopetarget"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 func executionAddressOf(env actorlayer.Envelope) (string, error) {
@@ -54,7 +54,7 @@ func actorLaneKeyFromEnvelope(env actorlayer.Envelope) string {
 			return "goalkeeper:" + key
 		}
 	case NamespaceHumanInbound, NamespaceWebhookInbound, NamespaceScheduleInbound:
-		if sessionID := strings.TrimSpace(env.SessionID); sessionID != "" {
+		if sessionID := strings.TrimSpace(EnvelopeSessionID(env)); sessionID != "" {
 			return "session:" + sessionID
 		}
 	}

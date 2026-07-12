@@ -11,9 +11,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	"github.com/baldaworks/go-actorlayer"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -103,7 +103,7 @@ func (b *Bus) Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortran
 		Str("subject", subject).
 		Str("envelope_id", strings.TrimSpace(env.ID)).
 		Str("job_id", baldaexecution.EnvelopeJobID(env)).
-		Str("session_id", strings.TrimSpace(env.SessionID)).
+		Str("session_id", baldaexecution.EnvelopeSessionID(env)).
 		Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
 		Str("causation_id", strings.TrimSpace(env.CausationID)).
 		Str("actor_key", strings.TrimSpace(env.To.Key)).
@@ -117,7 +117,7 @@ func (b *Bus) Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortran
 			Err(err).
 			Str("envelope_id", env.ID).
 			Str("job_id", baldaexecution.EnvelopeJobID(env)).
-			Str("session_id", strings.TrimSpace(env.SessionID)).
+			Str("session_id", baldaexecution.EnvelopeSessionID(env)).
 			Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
 			Str("causation_id", strings.TrimSpace(env.CausationID)).
 			Str("subject", subject)
@@ -130,7 +130,7 @@ func (b *Bus) Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortran
 				Err(err).
 				Str("envelope_id", env.ID).
 				Str("job_id", baldaexecution.EnvelopeJobID(env)).
-				Str("session_id", strings.TrimSpace(env.SessionID)).
+				Str("session_id", baldaexecution.EnvelopeSessionID(env)).
 				Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
 				Str("causation_id", strings.TrimSpace(env.CausationID)).
 				Str("subject", subject)
@@ -224,7 +224,7 @@ func (b *Bus) publishDLQ(ctx context.Context, env actorlayer.Envelope, reason st
 				Err(err).
 				Str("envelope_id", env.ID).
 				Str("job_id", baldaexecution.EnvelopeJobID(env)).
-				Str("session_id", strings.TrimSpace(env.SessionID)).
+				Str("session_id", baldaexecution.EnvelopeSessionID(env)).
 				Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
 				Str("causation_id", strings.TrimSpace(env.CausationID))
 			withDeliveryKey(logEvt, env).Msg("failed to publish command deadlettered event")

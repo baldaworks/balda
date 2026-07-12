@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 )
 

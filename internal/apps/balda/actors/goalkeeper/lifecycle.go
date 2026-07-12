@@ -10,7 +10,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 // lifecycle.go owns goal job/session lifecycle helpers used by the actor coordinator.

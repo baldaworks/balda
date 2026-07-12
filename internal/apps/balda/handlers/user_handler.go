@@ -8,7 +8,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
 )

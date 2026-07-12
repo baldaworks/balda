@@ -25,7 +25,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/envelopetarget"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

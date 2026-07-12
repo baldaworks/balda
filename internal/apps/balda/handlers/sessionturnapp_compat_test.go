@@ -7,8 +7,8 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
 	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 

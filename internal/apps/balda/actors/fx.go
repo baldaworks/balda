@@ -9,8 +9,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer/dispatch"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	"github.com/baldaworks/go-actorlayer/dispatch"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

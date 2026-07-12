@@ -14,7 +14,7 @@ import (
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
 	"go.uber.org/fx"

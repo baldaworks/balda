@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 const (
@@ -38,7 +38,6 @@ const (
 
 const (
 	HeaderEnvelopeID    = "Balda-Envelope-ID"
-	HeaderSessionID     = "Balda-Session-ID"
 	HeaderCorrelationID = "Balda-Correlation-ID"
 	HeaderCausationID   = "Balda-Causation-ID"
 	HeaderDedupeKey     = "Balda-Dedupe-Key"
@@ -83,9 +82,8 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 }
 
 func EnvelopeHeaders(env actorlayer.Envelope) map[string]string {
-	out := make(map[string]string, 8)
+	out := make(map[string]string, 7)
 	addHeader(out, HeaderEnvelopeID, env.ID)
-	addHeader(out, HeaderSessionID, env.SessionID)
 	addHeader(out, HeaderCorrelationID, env.CorrelationID)
 	addHeader(out, HeaderCausationID, env.CausationID)
 	addHeader(out, HeaderDedupeKey, env.DedupeKey)

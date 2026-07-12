@@ -1,8 +1,8 @@
 package natsbus
 
 import (
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"go.uber.org/fx"
 )
 

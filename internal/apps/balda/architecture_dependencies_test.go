@@ -24,14 +24,14 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			name: "actor command contracts are the runtime wire leaf",
 			dir:  "actorcmd",
 			requires: []string{
-				"github.com/normahq/balda/pkg/actorlayer",
+				"github.com/baldaworks/go-actorlayer",
 			},
 		},
 		{
 			name: "delivery contracts remain transport neutral",
 			dir:  "deliverycmd",
 			requires: []string{
-				"github.com/normahq/balda/pkg/actorlayer",
+				"github.com/baldaworks/go-actorlayer",
 			},
 		},
 		{

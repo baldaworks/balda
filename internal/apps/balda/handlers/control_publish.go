@@ -6,7 +6,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/controlcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 func submitSessionCancelControl(

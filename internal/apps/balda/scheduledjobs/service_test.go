@@ -59,7 +59,7 @@ func TestScheduledJobSchedulerDispatchJob_PublishesCommandAndReschedules(t *test
 	if command.ID == "" {
 		t.Fatal("command id is empty")
 	}
-	if got, want := command.SessionID, locator.SessionID; got != want {
+	if got, want := baldaexecution.EnvelopeSessionID(command), locator.SessionID; got != want {
 		t.Fatalf("session_id = %q, want %q", got, want)
 	}
 	wantKey := record.JobID + "@" + dueAt.UTC().Format(time.RFC3339Nano)

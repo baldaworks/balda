@@ -9,7 +9,7 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 // session_settlement.go owns session turn durable settlement policy. The actor

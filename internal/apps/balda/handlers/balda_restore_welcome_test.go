@@ -12,6 +12,7 @@ import (
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
@@ -103,7 +104,7 @@ func TestBaldaHandlerOnMessage_PublicMainChatAutoCreateEnqueuesTurn(t *testing.T
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if got := turns.commands[0].SessionID; got != locator.SessionID {
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 	assertLastSentContains(t, tgClient, "***Name:*** `balda`")
@@ -136,7 +137,7 @@ func TestBaldaHandlerOnMessage_PublicMainChatAutoCreateWithUnrelatedActiveSessio
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if got := turns.commands[0].SessionID; got != locator.SessionID {
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 	if got := store.lastUpsert.SessionID; got != locator.SessionID {
@@ -160,7 +161,7 @@ func TestBaldaHandlerOnMessage_OwnerDMCreatesOwnerSession(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if got := turns.commands[0].SessionID; got != locator.SessionID {
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 	assertLastSentContains(t, tgClient, "***Name:*** `balda`")

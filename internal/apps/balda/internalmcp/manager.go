@@ -17,7 +17,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
 	"github.com/normahq/balda/internal/apps/workspacemcp"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"

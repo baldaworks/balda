@@ -14,7 +14,7 @@ import (
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"

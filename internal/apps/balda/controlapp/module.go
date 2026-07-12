@@ -3,7 +3,7 @@ package controlapp
 import (
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

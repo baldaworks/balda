@@ -8,8 +8,8 @@ import (
 	deliverycmd "github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	"github.com/normahq/balda/internal/apps/balda/progress"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 // events.go owns goal progress envelope shaping and event payload helpers.

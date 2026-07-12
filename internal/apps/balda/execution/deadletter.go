@@ -3,8 +3,8 @@ package execution
 import (
 	"context"
 
-	"github.com/normahq/balda/pkg/actorlayer"
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
+	"github.com/baldaworks/go-actorlayer"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
 )
 
 func (r *ActorHost) deadletterJob(ctx context.Context, env actorlayer.Envelope, reason string) {

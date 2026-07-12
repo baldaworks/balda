@@ -8,8 +8,8 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
