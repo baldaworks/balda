@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -219,13 +219,15 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler acto
 			"payload": string(msg.Data()),
 		})
 		decodeFailureEnv := actorlayer.Envelope{
-			ID:          id,
-			Namespace:   namespace,
-			Kind:        "decode_failed",
-			From:        actorlayer.SystemAddress("transport"),
-			To:          actorlayer.ActorAddress{Target: toTarget, Key: toKey},
-			SessionID:   strings.TrimSpace(msg.Headers().Get(baldaexecution.HeaderSessionID)),
-			PayloadJSON: string(payload),
+			ID:        id,
+			Namespace: namespace,
+			Kind:      "decode_failed",
+			From:      actorlayer.SystemAddress("transport"),
+			To:        actorlayer.ActorAddress{Target: toTarget, Key: toKey},
+			Payload: actorlayer.Payload{
+				Encoding: actorlayer.EncodingJSON,
+				Data:     payload,
+			},
 		}
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
@@ -396,12 +398,15 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 		return err
 	}
 	env := actorlayer.Envelope{
-		ID:          "poison-" + uuid.NewString(),
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "poison_message",
-		From:        actorlayer.SystemAddress("transport"),
-		To:          actorlayer.SystemAddress("dlq"),
-		PayloadJSON: string(data),
+		ID:        "poison-" + uuid.NewString(),
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "poison_message",
+		From:      actorlayer.SystemAddress("transport"),
+		To:        actorlayer.SystemAddress("dlq"),
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     data,
+		},
 	}
 	msg, err := messageFromEnvelope(baldaexecution.SubjectDLQCommand, env)
 	if err != nil {
@@ -419,7 +424,7 @@ func commandEventEnvelope(env actorlayer.Envelope, result *actortransport.Dispat
 	payload := map[string]any{
 		"envelope_id":    env.ID,
 		"job_id":         baldaexecution.EnvelopeJobID(env),
-		"session_id":     env.SessionID,
+		"session_id":     baldaexecution.EnvelopeSessionID(env),
 		"namespace":      env.Namespace,
 		"status":         status,
 		"correlation_id": env.CorrelationID,
@@ -450,7 +455,10 @@ func commandEventEnvelope(env actorlayer.Envelope, result *actortransport.Dispat
 	out.ID = strings.TrimSpace(env.ID) + ":event:" + strings.TrimSpace(status)
 	out.Namespace = baldaexecution.NamespaceTelemetry
 	out.Kind = "command_event"
-	out.PayloadJSON = string(data)
+	out.Payload = actorlayer.Payload{
+		Encoding: actorlayer.EncodingJSON,
+		Data:     data,
+	}
 	out.DedupeKey = out.ID
 	if out.Meta == nil {
 		out.Meta = map[string]string{}
@@ -510,7 +518,7 @@ func commandLogEnvelope(evt *zerolog.Event, env actorlayer.Envelope) *zerolog.Ev
 		Str("envelope_id", strings.TrimSpace(env.ID)).
 		Str("namespace", strings.TrimSpace(env.Namespace)).
 		Str("task_id", baldaexecution.EnvelopeJobID(env)).
-		Str("session_id", strings.TrimSpace(env.SessionID)).
+		Str("session_id", baldaexecution.EnvelopeSessionID(env)).
 		Str("correlation_id", strings.TrimSpace(env.CorrelationID)).
 		Str("causation_id", strings.TrimSpace(env.CausationID)).
 		Str("actor_key", strings.TrimSpace(env.To.Key)).

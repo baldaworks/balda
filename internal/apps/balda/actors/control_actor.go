@@ -2,17 +2,16 @@ package actors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/controlapp"
 	"github.com/normahq/balda/internal/apps/balda/controlcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -66,7 +65,7 @@ func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) e
 		return actorlayer.PolicyError(fmt.Errorf("unsupported control namespace %q", env.Namespace))
 	}
 	var payload jobControlPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode control payload: %w", err))
 	}
 	switch strings.TrimSpace(payload.Action) {

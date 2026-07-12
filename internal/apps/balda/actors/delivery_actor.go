@@ -2,14 +2,13 @@ package actors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"go.uber.org/fx"
 )
 
@@ -39,7 +38,7 @@ func (a *jobDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) 
 		return actorlayer.PolicyError(fmt.Errorf("unsupported delivery kind %q", env.Kind))
 	}
 	var payload DeliveryPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode job delivery payload: %w", err))
 	}
 	if a.service == nil {

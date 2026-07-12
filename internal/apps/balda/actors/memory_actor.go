@@ -2,15 +2,14 @@ package actors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/memory"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"go.uber.org/fx"
 )
 
@@ -37,20 +36,20 @@ func MemoryRememberEnvelope(payload MemoryRememberPayload) (actorlayer.Envelope,
 	if strings.TrimSpace(payload.Fact) == "" {
 		return actorlayer.Envelope{}, fmt.Errorf("fact is required")
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode memory remember payload: %w", err)
 	}
 	return actorlayer.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   baldaexecution.NamespaceMemoryCommand,
-		Kind:        baldaexecution.KindMemoryRemember,
-		From:        actorlayer.SystemAddress("memory"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeMemory, Key: "global"},
-		SessionID:   strings.TrimSpace(payload.SourceSessionID),
-		Priority:    70,
-		DedupeKey:   uuid.NewString(),
-		PayloadJSON: string(data),
+		ID:        uuid.NewString(),
+		Namespace: baldaexecution.NamespaceMemoryCommand,
+		Kind:      baldaexecution.KindMemoryRemember,
+		From:      actorlayer.SystemAddress("memory"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeMemory, Key: "global"},
+		Meta:      baldaexecution.WithSessionIDMeta(nil, strings.TrimSpace(payload.SourceSessionID)),
+		Priority:  70,
+		DedupeKey: uuid.NewString(),
+		Payload:   data,
 	}, nil
 }
 
@@ -75,7 +74,7 @@ func (e *memoryActorExecutor) remember(ctx context.Context, env actorlayer.Envel
 		return actorlayer.TransientError(fmt.Errorf("memory store is required"))
 	}
 	var payload MemoryRememberPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode memory remember payload: %w", err))
 	}
 	if strings.TrimSpace(payload.Fact) == "" {
@@ -97,7 +96,7 @@ func (e *memoryActorExecutor) publishUpdated(ctx context.Context, env actorlayer
 		"version": snapshot.Version,
 		"found":   snapshot.Found,
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return
 	}
@@ -106,7 +105,7 @@ func (e *memoryActorExecutor) publishUpdated(ctx context.Context, env actorlayer
 	eventEnv.Namespace = baldaexecution.NamespaceTelemetry
 	eventEnv.Kind = "memory_updated"
 	eventEnv.DedupeKey = eventEnv.ID
-	eventEnv.PayloadJSON = string(data)
+	eventEnv.Payload = data
 	if err := e.events.PublishEvent(ctx, baldaexecution.SubjectEventMemoryUpdated, eventEnv); err != nil {
 		return
 	}

@@ -1,15 +1,14 @@
 package turncmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 const (
@@ -61,7 +60,7 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
 		return actorlayer.Envelope{}, fmt.Errorf("session id is required")
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode session turn payload: %w", err)
 	}
@@ -84,16 +83,15 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 		namespace = baldaexecution.NamespaceGoalkeeperCommand
 	}
 	return actorlayer.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   namespace,
-		Kind:        kind,
-		From:        actorlayer.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: payload.Locator.SessionID},
-		SessionID:   payload.Locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, payload.JobID),
-		Priority:    priority,
-		DedupeKey:   strings.TrimSpace(payload.DedupeKey),
-		PayloadJSON: string(data),
+		ID:        uuid.NewString(),
+		Namespace: namespace,
+		Kind:      kind,
+		From:      actorlayer.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: payload.Locator.SessionID},
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, payload.JobID), payload.Locator.SessionID),
+		Priority:  priority,
+		DedupeKey: strings.TrimSpace(payload.DedupeKey),
+		Payload:   data,
 	}, nil
 }
 
@@ -132,7 +130,7 @@ func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID 
 	jobID := "webhook-" + part + "-" + shortJobHash(dedupeBase)
 	payload.JobID = jobID
 	payload.DedupeKey = dedupeBase + ":session"
-	data, err := json.Marshal(jobEnvelopePayload{
+	data, err := actorlayer.MarshalPayload(jobEnvelopePayload{
 		Kind:        jobPayloadKindWebhookSessionTurn,
 		SessionTurn: &payload,
 	})
@@ -140,16 +138,15 @@ func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID 
 		return actorlayer.Envelope{}, "", fmt.Errorf("encode webhook job payload: %w", err)
 	}
 	return actorlayer.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   baldaexecution.NamespaceWebhookInbound,
-		Kind:        baldaexecution.KindWebhookEvent,
-		From:        actorlayer.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: jobID},
-		SessionID:   payload.Locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, jobID),
-		Priority:    80,
-		DedupeKey:   dedupeBase + ":job",
-		PayloadJSON: string(data),
+		ID:        uuid.NewString(),
+		Namespace: baldaexecution.NamespaceWebhookInbound,
+		Kind:      baldaexecution.KindWebhookEvent,
+		From:      actorlayer.ActorAddress{Target: "webhook", Key: firstNonEmpty(routeName, requestID, "inbound")},
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: jobID},
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), payload.Locator.SessionID),
+		Priority:  80,
+		DedupeKey: dedupeBase + ":job",
+		Payload:   data,
 	}, jobID, nil
 }
 
@@ -173,21 +170,20 @@ func ScheduledJobEnvelope(
 			TopicID:  topicID,
 		},
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode scheduled job payload: %w", err)
 	}
 	jobID := "scheduled-" + strings.TrimSpace(scheduledJobID) + "-" + strings.TrimSpace(dispatchKey)
 	return actorlayer.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   baldaexecution.NamespaceScheduleInbound,
-		Kind:        baldaexecution.KindScheduledJob,
-		From:        actorlayer.ActorAddress{Target: "schedule", Key: strings.TrimSpace(scheduledJobID)},
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: jobID},
-		SessionID:   locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, jobID),
-		DedupeKey:   strings.TrimSpace(dispatchKey),
-		PayloadJSON: string(data),
+		ID:        uuid.NewString(),
+		Namespace: baldaexecution.NamespaceScheduleInbound,
+		Kind:      baldaexecution.KindScheduledJob,
+		From:      actorlayer.ActorAddress{Target: "schedule", Key: strings.TrimSpace(scheduledJobID)},
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: jobID},
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), locator.SessionID),
+		DedupeKey: strings.TrimSpace(dispatchKey),
+		Payload:   data,
 	}, nil
 }
 

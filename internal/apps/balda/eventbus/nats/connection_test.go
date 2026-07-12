@@ -2,7 +2,6 @@ package natsbus
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -11,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
 )
@@ -363,7 +362,7 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 		t.Fatalf("DecodeEnvelope(command.retrying) error = %v", err)
 	}
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(got.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(got.Payload, &payload); err != nil {
 		t.Fatalf("Unmarshal(command.retrying payload) error = %v", err)
 	}
 	delayMS, ok := payload["retry_delay_ms"].(float64)
@@ -800,7 +799,7 @@ func TestBus_DispatchReportsDuplicate(t *testing.T) {
 		t.Fatalf("command.noop event_type = %q, want %q", got.Meta["event_type"], "command.noop")
 	}
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(got.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(got.Payload, &payload); err != nil {
 		t.Fatalf("Unmarshal(command.noop payload) error = %v", err)
 	}
 	if reason, _ := payload["reason"].(string); reason != "duplicate publish suppressed" {
@@ -948,8 +947,8 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 	if got.From != env.From || got.To != env.To {
 		t.Fatalf("dlq envelope routing = from:%+v to:%+v, want from:%+v to:%+v", got.From, got.To, env.From, env.To)
 	}
-	if baldaexecution.EnvelopeJobID(got) != baldaexecution.EnvelopeJobID(env) || got.PayloadJSON != env.PayloadJSON {
-		t.Fatalf("dlq envelope payload = task:%q payload:%q, want task:%q payload:%q", baldaexecution.EnvelopeJobID(got), got.PayloadJSON, baldaexecution.EnvelopeJobID(env), env.PayloadJSON)
+	if baldaexecution.EnvelopeJobID(got) != baldaexecution.EnvelopeJobID(env) || got.Payload.String() != env.Payload.String() {
+		t.Fatalf("dlq envelope payload = task:%q payload:%q, want task:%q payload:%q", baldaexecution.EnvelopeJobID(got), got.Payload.String(), baldaexecution.EnvelopeJobID(env), env.Payload.String())
 	}
 	if gotReason := msg.Headers().Get("Balda-DLQ-Reason"); gotReason != reason {
 		t.Fatalf("dlq header reason = %q, want %q", gotReason, reason)
@@ -1258,13 +1257,16 @@ func (e fakeJetStreamAPIError) APIError() *jetstream.APIError {
 
 func commandTestEnvelope(id string) actorlayer.Envelope {
 	return actorlayer.Envelope{
-		ID:          id,
-		Namespace:   baldaexecution.NamespaceGoalCommand,
-		Kind:        baldaexecution.KindGoal,
-		From:        actorlayer.SystemAddress("test"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoal, Key: "task-1"},
-		Meta:        baldaexecution.WithJobIDMeta(nil, "task-1"),
-		PayloadJSON: `{"ok":true}`,
+		ID:        id,
+		Namespace: baldaexecution.NamespaceGoalCommand,
+		Kind:      baldaexecution.KindGoal,
+		From:      actorlayer.SystemAddress("test"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoal, Key: "task-1"},
+		Meta:      baldaexecution.WithJobIDMeta(nil, "task-1"),
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"ok":true}`),
+		},
 	}
 }
 

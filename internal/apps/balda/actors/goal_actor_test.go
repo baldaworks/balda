@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
@@ -15,7 +16,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/progress"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
@@ -467,7 +467,7 @@ func TestGoalKeeperActorDeliversWorkerProgressAndDedupesRepeatedOutput(t *testin
 			continue
 		}
 		var payload map[string]any
-		if err := json.Unmarshal([]byte(event.PayloadJSON), &payload); err != nil {
+		if err := actorlayer.UnmarshalPayload(event.Payload, &payload); err != nil {
 			t.Fatalf("progress payload decode: %v", err)
 		}
 		progressKinds = append(progressKinds, strings.TrimSpace(payload["kind"].(string)))
@@ -802,7 +802,7 @@ func deliveryPayloadsForTask(t *testing.T, bus *recordingHandlerCommandBus, task
 			continue
 		}
 		var payload DeliveryPayload
-		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			t.Fatalf("decode delivery payload: %v", err)
 		}
 		payloads = append(payloads, payload)

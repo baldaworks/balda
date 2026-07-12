@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 const subjectTestJobID = "task-1"
@@ -66,13 +66,16 @@ func TestEnvelopeHeaders_UseEnvelopeIdentityHeaders(t *testing.T) {
 
 func subjectTestEnvelope(to actorlayer.ActorAddress) actorlayer.Envelope {
 	return actorlayer.Envelope{
-		ID:          "env-1",
-		Namespace:   NamespaceHumanInbound,
-		Kind:        KindMessage,
-		From:        actorlayer.ActorAddress{Target: "test", Key: "source"},
-		To:          to,
-		SessionID:   "session-1",
-		PayloadJSON: `{"ok":true}`,
+		ID:        "env-1",
+		Namespace: NamespaceHumanInbound,
+		Kind:      KindMessage,
+		From:      actorlayer.ActorAddress{Target: "test", Key: "source"},
+		To:        to,
+		Meta:      WithSessionIDMeta(nil, "session-1"),
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"ok":true}`),
+		},
 	}
 }
 

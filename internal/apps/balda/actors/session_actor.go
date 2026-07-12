@@ -2,17 +2,16 @@ package actors
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"go.uber.org/fx"
 )
 
@@ -66,7 +65,7 @@ func (e *sessionActorExecutor) Handle(ctx context.Context, env actorlayer.Envelo
 
 func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.Envelope) error {
 	var payload SessionTurnPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode session turn payload: %w", err))
 	}
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {

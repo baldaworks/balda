@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 )
 
 func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
@@ -107,12 +107,15 @@ func TestTaskActorRejectsNonWebhookSessionTurnTask(t *testing.T) {
 	}
 
 	err = exec.Handle(ctx, actorlayer.Envelope{
-		ID:          "task-1",
-		Namespace:   baldaexecution.NamespaceHumanInbound,
-		Kind:        baldaexecution.KindMessage,
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "turn-1"},
-		SessionID:   locator.SessionID,
-		PayloadJSON: string(data),
+		ID:        "task-1",
+		Namespace: baldaexecution.NamespaceHumanInbound,
+		Kind:      baldaexecution.KindMessage,
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "turn-1"},
+		Meta:      baldaexecution.WithSessionIDMeta(nil, locator.SessionID),
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     data,
+		},
 	})
 	if err == nil {
 		t.Fatal("Handle() error = nil, want policy error")

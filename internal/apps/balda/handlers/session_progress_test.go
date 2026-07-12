@@ -2,15 +2,14 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/progress"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -108,7 +107,7 @@ func assertProgressKind(t *testing.T, envs []actorlayer.Envelope, idx int, wantK
 		t.Fatalf("missing envelope %d, have %d", idx, len(envs))
 	}
 	var payload deliverycmd.Payload
-	if err := json.Unmarshal([]byte(envs[idx].PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(envs[idx].Payload, &payload); err != nil {
 		t.Fatalf("decode payload %d: %v", idx, err)
 	}
 	if payload.Progress == nil {

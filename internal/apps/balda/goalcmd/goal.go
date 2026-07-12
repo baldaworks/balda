@@ -1,15 +1,14 @@
 package goalcmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 const (
@@ -59,20 +58,19 @@ func JobEnvelopeWithOptions(
 			MaxIterations:   NormalizeMaxIterations(maxIterations),
 		},
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode goal job payload: %w", err)
 	}
 	return actorlayer.Envelope{
-		ID:          uuid.NewString(),
-		Namespace:   baldaexecution.NamespaceGoalkeeperCommand,
-		Kind:        baldaexecution.KindGoal,
-		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
-		SessionID:   locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, jobID),
-		Priority:    90,
-		PayloadJSON: string(data),
+		ID:        uuid.NewString(),
+		Namespace: baldaexecution.NamespaceGoalkeeperCommand,
+		Kind:      baldaexecution.KindGoal,
+		From:      actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), locator.SessionID),
+		Priority:  90,
+		Payload:   data,
 	}, nil
 }
 

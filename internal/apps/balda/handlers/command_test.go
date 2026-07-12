@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -15,8 +17,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -681,7 +681,7 @@ func TestCommandHandlerSubmitGoalJob_PublishesDurableCommandOnly(t *testing.T) {
 			DeliveryOptions deliveryfmt.Options `json:"delivery_options"`
 		} `json:"goal"`
 	}
-	if err := json.Unmarshal([]byte(bus.commands[0].PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &payload); err != nil {
 		t.Fatalf("decode goal command payload: %v", err)
 	}
 	if payload.Goal == nil || payload.Goal.MaxIterations != 7 {
@@ -720,7 +720,7 @@ func TestCommandHandlerOnCommand_GoalClearPublishesControlCommand(t *testing.T) 
 	if cmd.Namespace != baldaexecution.NamespaceJobControl || cmd.Kind != baldaexecution.KindCancel {
 		t.Fatalf("published command = %+v, want job control command", cmd)
 	}
-	payload := decodeControlPayload(t, cmd.PayloadJSON)
+	payload := decodeControlPayload(t, cmd.Payload.String())
 	if payload.Action != "clear_goal" {
 		t.Fatalf("control payload action = %q, want clear_goal", payload.Action)
 	}
@@ -819,7 +819,7 @@ func TestCommandHandlerOnCommand_CancelPublishesControlCommand(t *testing.T) {
 	if turns.commands[0].Namespace != baldaexecution.NamespaceJobControl || turns.commands[0].Kind != baldaexecution.KindCancel {
 		t.Fatalf("published command = %+v, want job control cancel", turns.commands[0])
 	}
-	payload := decodeControlPayload(t, turns.commands[0].PayloadJSON)
+	payload := decodeControlPayload(t, turns.commands[0].Payload.String())
 	if payload.Action != "cancel_turn" {
 		t.Fatalf("control payload action = %q, want cancel_turn", payload.Action)
 	}

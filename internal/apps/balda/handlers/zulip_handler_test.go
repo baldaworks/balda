@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -12,13 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -913,7 +912,7 @@ func TestZulipBaldaHandlerMessagePublishesDirectSessionTurn(t *testing.T) {
 		t.Fatalf("dedupe_key = %q, want %q", got, want)
 	}
 	var payload actors.SessionTurnPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		t.Fatalf("decode session turn payload: %v", err)
 	}
 	if payload.Source != "zulip" || !payload.Deliver {
@@ -1070,7 +1069,7 @@ func zulipDeliveryPayloads(t *testing.T, envs []actorlayer.Envelope) []actors.De
 			continue
 		}
 		var payload actors.DeliveryPayload
-		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			t.Fatalf("decode delivery payload: %v", err)
 		}
 		payloads = append(payloads, payload)

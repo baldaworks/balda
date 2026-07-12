@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 )
 
@@ -29,13 +29,16 @@ func TestEventProjectorProjectsJobEventIdempotently(t *testing.T) {
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Jobs(), logger: zerolog.Nop()}
 	env := actorlayer.Envelope{
-		ID:          "event-1",
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "job_event",
-		From:        actorlayer.SystemAddress("job-events"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
-		PayloadJSON: `{"text":"working"}`,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-1", "event_type": JobEventAgentProgress, "actor": "agent:executor", "message_id": "msg-1"},
+		ID:        "event-1",
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "job_event",
+		From:      actorlayer.SystemAddress("job-events"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"text":"working"}`),
+		},
+		Meta: map[string]string{baldaexecution.JobIDMetaKey: "task-1", "event_type": JobEventAgentProgress, "actor": "agent:executor", "message_id": "msg-1"},
 	}
 	if err := projector.Project(ctx, baldaexecution.SubjectEventJobUpdated, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
@@ -79,13 +82,16 @@ func testEventProjectorProjectsCommandEventForTask(t *testing.T, subject string,
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Jobs(), logger: zerolog.Nop()}
 	env := actorlayer.Envelope{
-		ID:          envelopeID,
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "command_event",
-		From:        actorlayer.SystemAddress("transport"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
-		PayloadJSON: payloadJSON,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-1"},
+		ID:        envelopeID,
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "command_event",
+		From:      actorlayer.SystemAddress("transport"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(payloadJSON),
+		},
+		Meta: map[string]string{baldaexecution.JobIDMetaKey: "task-1"},
 	}
 	if err := projector.Project(ctx, subject, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
@@ -104,13 +110,16 @@ func TestEventProjectorProjectsDeliveryFailedEventForTask(t *testing.T) {
 	provider := newEventProjectorStateProvider(t, ctx)
 	projector := &EventProjector{store: provider.Jobs(), logger: zerolog.Nop()}
 	env := actorlayer.Envelope{
-		ID:          "delivery-1:event:failed",
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "job_event",
-		From:        actorlayer.SystemAddress("job-events"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
-		PayloadJSON: `{"reason":"telegram send failed"}`,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-1"},
+		ID:        "delivery-1:event:failed",
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "job_event",
+		From:      actorlayer.SystemAddress("job-events"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"reason":"telegram send failed"}`),
+		},
+		Meta: map[string]string{baldaexecution.JobIDMetaKey: "task-1"},
 	}
 	if err := projector.Project(ctx, baldaexecution.SubjectEventDeliveryFailed, env); err != nil {
 		t.Fatalf("Project() error = %v", err)
@@ -131,22 +140,28 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	providerA := newEventProjectorStateProviderAtPath(t, ctx, dbPath)
 	projectorA := &EventProjector{store: providerA.Jobs(), logger: zerolog.Nop()}
 	eventCreated := actorlayer.Envelope{
-		ID:          "evt-task-created",
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "job_event",
-		From:        actorlayer.SystemAddress("job-events"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-replay"},
-		PayloadJSON: `{"status":"created"}`,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": JobEventCreated, "actor": "task:actor", "message_id": "m-1"},
+		ID:        "evt-task-created",
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "job_event",
+		From:      actorlayer.SystemAddress("job-events"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-replay"},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"status":"created"}`),
+		},
+		Meta: map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": JobEventCreated, "actor": "task:actor", "message_id": "m-1"},
 	}
 	eventProgress := actorlayer.Envelope{
-		ID:          "evt-task-progress",
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "job_event",
-		From:        actorlayer.SystemAddress("job-events"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-replay"},
-		PayloadJSON: `{"status":"running"}`,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": JobEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
+		ID:        "evt-task-progress",
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "job_event",
+		From:      actorlayer.SystemAddress("job-events"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-replay"},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"status":"running"}`),
+		},
+		Meta: map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": JobEventAgentProgress, "actor": "agent:executor", "message_id": "m-2"},
 	}
 	if err := projectorA.Project(ctx, baldaexecution.SubjectEventJobCreated, eventCreated); err != nil {
 		t.Fatalf("Project(created) error = %v", err)
@@ -161,13 +176,16 @@ func TestEventProjectorReplayAfterRestartRemainsIdempotent(t *testing.T) {
 	providerB := newEventProjectorStateProviderAtPath(t, ctx, dbPath)
 	projectorB := &EventProjector{store: providerB.Jobs(), logger: zerolog.Nop()}
 	eventCompleted := actorlayer.Envelope{
-		ID:          "evt-task-completed",
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "job_event",
-		From:        actorlayer.SystemAddress("job-events"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-replay"},
-		PayloadJSON: `{"status":"completed"}`,
-		Meta:        map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": JobEventCompleted, "actor": "task:actor", "message_id": "m-3"},
+		ID:        "evt-task-completed",
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "job_event",
+		From:      actorlayer.SystemAddress("job-events"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-replay"},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"status":"completed"}`),
+		},
+		Meta: map[string]string{baldaexecution.JobIDMetaKey: "task-replay", "event_type": JobEventCompleted, "actor": "task:actor", "message_id": "m-3"},
 	}
 	if err := projectorB.Project(ctx, baldaexecution.SubjectEventJobCreated, eventCreated); err != nil {
 		t.Fatalf("Project(replay created) error = %v", err)

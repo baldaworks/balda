@@ -52,8 +52,8 @@ func TestMemoryActorRememberWritesMemoryAndPublishesVersionEvent(t *testing.T) {
 	if bus.eventSubjects[0] != baldaexecution.SubjectEventMemoryUpdated {
 		t.Fatalf("event subject = %q, want %q", bus.eventSubjects[0], baldaexecution.SubjectEventMemoryUpdated)
 	}
-	if strings.Contains(bus.eventEnvs[0].PayloadJSON, "remember actor fact") {
-		t.Fatalf("memory updated event leaked fact payload: %s", bus.eventEnvs[0].PayloadJSON)
+	if strings.Contains(bus.eventEnvs[0].Payload.String(), "remember actor fact") {
+		t.Fatalf("memory updated event leaked fact payload: %s", bus.eventEnvs[0].Payload.String())
 	}
 }
 

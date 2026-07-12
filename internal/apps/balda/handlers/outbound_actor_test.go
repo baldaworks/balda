@@ -2,14 +2,13 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 )
@@ -31,7 +30,7 @@ func handleDeliveryCommandForTest(ctx context.Context, adapter *baldatelegram.Ad
 		return fmt.Errorf("delivery adapter is required")
 	}
 	var payload actors.DeliveryPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return err
 	}
 	switch payload.Mode {

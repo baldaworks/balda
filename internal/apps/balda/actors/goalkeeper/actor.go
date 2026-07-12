@@ -2,11 +2,12 @@ package goalkeeper
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"iter"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
@@ -14,8 +15,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/redaction"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -190,7 +189,7 @@ func (a *Actor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported goal namespace %q", env.Namespace))
 	}
 	var payload goalcmd.EnvelopePayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode goal payload: %w", err))
 	}
 	if strings.TrimSpace(payload.Kind) != goalcmd.PayloadKindGoal || payload.Goal == nil {

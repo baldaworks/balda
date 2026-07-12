@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 )
 
@@ -69,9 +69,9 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 		deliveryKey = strings.TrimSpace(env.ID)
 	}
 	if deliveryKey == "" {
-		deliveryKey = "delivery:" + shortJobHash(env.PayloadJSON)
+		deliveryKey = "delivery:" + shortJobHash(env.Payload.String())
 	}
-	sum := sha256.Sum256([]byte(strings.TrimSpace(env.PayloadJSON)))
+	sum := sha256.Sum256(env.Payload.Data)
 	payloadHash := hex.EncodeToString(sum[:])
 	if durable && s.outbox != nil {
 		record, created, err := s.outbox.ReserveDelivery(ctx, baldastate.DeliveryRecord{
@@ -82,7 +82,7 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 			Channel:     firstNonEmpty(payload.Locator.ChannelType, "telegram"),
 			AddressKey:  firstNonEmpty(payload.Locator.AddressKey, payload.Locator.SessionID),
 			Kind:        env.Kind,
-			PayloadJSON: env.PayloadJSON,
+			PayloadJSON: strings.TrimSpace(env.Payload.String()),
 			PayloadHash: payloadHash,
 			Status:      baldastate.DeliveryStatusPending,
 		})

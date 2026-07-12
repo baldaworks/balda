@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -149,6 +149,6 @@ func (p *EventProjector) Project(ctx context.Context, subject string, env actorl
 		EventType:   eventType,
 		Actor:       actor,
 		MessageID:   messageID,
-		PayloadJSON: strings.TrimSpace(env.PayloadJSON),
+		PayloadJSON: strings.TrimSpace(env.Payload.String()),
 	})
 }

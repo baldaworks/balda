@@ -1,12 +1,11 @@
 package deliverycmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 const jobPayloadKindDelivery = "delivery"
@@ -308,7 +307,7 @@ func envelope(jobID string, from actorlayer.ActorAddress, payload Payload, dedup
 	if err := Validate(payload); err != nil {
 		return actorlayer.Envelope{}, err
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode delivery payload: %w", err)
 	}
@@ -319,12 +318,11 @@ func envelope(jobID string, from actorlayer.ActorAddress, payload Payload, dedup
 		Kind:          jobPayloadKindDelivery,
 		From:          from,
 		To:            actorlayer.ActorAddress{Target: actorTypeDelivery, Key: payload.Locator.DeliveryActorKey()},
-		SessionID:     payload.Locator.SessionID,
-		Meta:          withJobIDMeta(nil, trimmedJobID),
+		Meta:          withSessionIDMeta(withJobIDMeta(nil, trimmedJobID), payload.Locator.SessionID),
 		CorrelationID: trimmedJobID,
 		Priority:      70,
 		DedupeKey:     dedupeKey,
-		PayloadJSON:   string(data),
+		Payload:       data,
 	}, nil
 }
 
@@ -359,5 +357,18 @@ func withJobIDMeta(meta map[string]string, jobID string) map[string]string {
 		out[key] = value
 	}
 	out[jobIDMetaKey] = trimmed
+	return out
+}
+
+func withSessionIDMeta(meta map[string]string, sessionID string) map[string]string {
+	trimmed := strings.TrimSpace(sessionID)
+	if trimmed == "" {
+		return meta
+	}
+	out := make(map[string]string, len(meta)+1)
+	for key, value := range meta {
+		out[key] = value
+	}
+	out["session_id"] = trimmed
 	return out
 }

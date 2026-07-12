@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
+	"github.com/baldaworks/go-actorlayer/dispatch"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
-	"github.com/normahq/balda/pkg/actorlayer/dispatch"
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
 )
 
 type testActor struct {
@@ -407,5 +407,16 @@ func handleRuntimeDelivery(runtime *ActorHost, ctx context.Context, delivery act
 }
 
 func runtimeTestEnvelope(id string, to actorlayer.ActorAddress) actorlayer.Envelope {
-	return actorlayer.Envelope{ID: id, Namespace: NamespaceHumanInbound, Kind: KindMessage, From: actorlayer.ActorAddress{Target: "test", Key: "source"}, To: to, SessionID: to.Key, PayloadJSON: `{"ok":true}`}
+	return actorlayer.Envelope{
+		ID:        id,
+		Namespace: NamespaceHumanInbound,
+		Kind:      KindMessage,
+		From:      actorlayer.ActorAddress{Target: "test", Key: "source"},
+		To:        to,
+		Meta:      WithSessionIDMeta(nil, to.Key),
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"ok":true}`),
+		},
+	}
 }

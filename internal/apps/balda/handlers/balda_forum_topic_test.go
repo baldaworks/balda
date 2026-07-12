@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 	"unsafe"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -15,7 +15,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/eventemitter"
@@ -270,8 +269,8 @@ func TestBaldaHandlerOnMessage_ChannelMentionBypassesGate(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].SessionID != locator.SessionID {
-		t.Fatalf("command session = %q, want %q", turns.commands[0].SessionID, locator.SessionID)
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 }
 
@@ -298,8 +297,8 @@ func TestBaldaHandlerOnMessage_DMNonMentionAllowed(t *testing.T) {
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].SessionID != locator.SessionID {
-		t.Fatalf("command session = %q, want %q", turns.commands[0].SessionID, locator.SessionID)
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 }
 
@@ -406,8 +405,8 @@ func TestBaldaHandlerOnMessage_ChannelReplyToBotBypassesMentionGate(t *testing.T
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].SessionID != locator.SessionID {
-		t.Fatalf("command session = %q, want %q", turns.commands[0].SessionID, locator.SessionID)
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 }
 
@@ -485,8 +484,8 @@ func TestBaldaHandlerOnMessage_TopicReplyToBotBypassesMentionGate(t *testing.T) 
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	if turns.commands[0].SessionID != locator.SessionID {
-		t.Fatalf("command session = %q, want %q", turns.commands[0].SessionID, locator.SessionID)
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 }
 
@@ -515,11 +514,11 @@ func TestBaldaHandlerOnMessage_PublishesDirectSessionTurn(t *testing.T) {
 	if turns.commands[0].To.Target != baldaexecution.ActorTypeSession {
 		t.Fatalf("command target = %q, want %q", turns.commands[0].To.Target, baldaexecution.ActorTypeSession)
 	}
-	if turns.commands[0].SessionID != locator.SessionID {
-		t.Fatalf("command session = %q, want %q", turns.commands[0].SessionID, locator.SessionID)
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
 	var payload actors.SessionTurnPayload
-	if err := json.Unmarshal([]byte(turns.commands[0].PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(turns.commands[0].Payload, &payload); err != nil {
 		t.Fatalf("decode session turn payload: %v", err)
 	}
 	if payload.Source != "telegram" || !payload.Deliver {
@@ -616,12 +615,12 @@ func assertPublishedTurnIncludesReplyContext(t *testing.T, commands []actorlayer
 		t.Fatalf("published commands = %d, want 1", len(commands))
 	}
 	var payload actors.SessionTurnPayload
-	if err := json.Unmarshal([]byte(commands[0].PayloadJSON), &payload); err != nil || strings.TrimSpace(payload.Text) == "" {
+	if err := actorlayer.UnmarshalPayload(commands[0].Payload, &payload); err != nil || strings.TrimSpace(payload.Text) == "" {
 		var wrapped struct {
 			Kind        string                     `json:"kind"`
 			SessionTurn *actors.SessionTurnPayload `json:"session_turn,omitempty"`
 		}
-		if wrapErr := json.Unmarshal([]byte(commands[0].PayloadJSON), &wrapped); wrapErr != nil {
+		if wrapErr := actorlayer.UnmarshalPayload(commands[0].Payload, &wrapped); wrapErr != nil {
 			t.Fatalf("decode session turn payload: %v", err)
 		}
 		if wrapped.SessionTurn == nil {

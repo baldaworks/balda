@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 func TestSessionActorInterruptQueueModeCancelsSessionBeforeEnqueue(t *testing.T) {
@@ -278,14 +278,16 @@ func testSessionTurnEnvelope(t *testing.T, meta map[string]string) actorlayer.En
 		t.Fatalf("Marshal(SessionTurnPayload) error = %v", err)
 	}
 	return actorlayer.Envelope{
-		ID:          "session-command-1",
-		Namespace:   baldaexecution.NamespaceHumanInbound,
-		Kind:        baldaexecution.KindMessage,
-		From:        actorlayer.ActorAddress{Target: "telegram", Key: "101"},
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: locator.SessionID},
-		SessionID:   locator.SessionID,
-		PayloadJSON: string(payload),
-		Meta:        meta,
+		ID:        "session-command-1",
+		Namespace: baldaexecution.NamespaceHumanInbound,
+		Kind:      baldaexecution.KindMessage,
+		From:      actorlayer.ActorAddress{Target: "telegram", Key: "101"},
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: locator.SessionID},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     payload,
+		},
+		Meta: baldaexecution.WithSessionIDMeta(meta, locator.SessionID),
 	}
 }
 
@@ -293,7 +295,7 @@ func testSessionTurnEnvelopeWithJobID(t *testing.T, meta map[string]string, jobI
 	t.Helper()
 	env := testSessionTurnEnvelope(t, meta)
 	var payload SessionTurnPayload
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		t.Fatalf("Unmarshal(SessionTurnPayload) error = %v", err)
 	}
 	payload.JobID = jobID
@@ -305,7 +307,10 @@ func testSessionTurnEnvelopeWithJobID(t *testing.T, meta map[string]string, jobI
 	if err != nil {
 		t.Fatalf("Marshal(SessionTurnPayload with JobID) error = %v", err)
 	}
-	env.PayloadJSON = string(data)
+	env.Payload = actorlayer.Payload{
+		Encoding: actorlayer.EncodingJSON,
+		Data:     data,
+	}
 	return env
 }
 

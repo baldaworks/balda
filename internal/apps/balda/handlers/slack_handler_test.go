@@ -5,11 +5,11 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
@@ -89,7 +89,7 @@ func TestSlackHandlerHandleMessagePublishesDirectSessionTurn(t *testing.T) {
 		if got, want := env.DedupeKey, "slack:1712345678.1234"; got != want {
 			t.Fatalf("dedupe_key = %q, want %q", got, want)
 		}
-		if err := json.Unmarshal([]byte(env.PayloadJSON), &envPayload); err != nil {
+		if err := actorlayer.UnmarshalPayload(env.Payload, &envPayload); err != nil {
 			t.Fatalf("decode session turn payload: %v", err)
 		}
 		envFound = true

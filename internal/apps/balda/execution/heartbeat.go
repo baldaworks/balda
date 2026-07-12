@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/pkg/actorlayer"
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
+	"github.com/baldaworks/go-actorlayer"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
 )
 
 const heartbeatInterval = 30 * time.Second
@@ -56,8 +56,11 @@ func (r *ActorHost) Publish(ctx context.Context, event actorengine.Event) {
 	inProgressEnv.Namespace = NamespaceTelemetry
 	inProgressEnv.Kind = "command_event"
 	inProgressEnv.DedupeKey = inProgressEnv.ID
-	if strings.TrimSpace(inProgressEnv.PayloadJSON) == "" {
-		inProgressEnv.PayloadJSON = `{"ok":true}`
+	if len(inProgressEnv.Payload.Data) == 0 {
+		inProgressEnv.Payload = actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(`{"ok":true}`),
+		}
 	}
 	if err := r.events.PublishEvent(ctx, SubjectEventCommandInProgress, inProgressEnv); err != nil {
 		r.logger.Warn().Err(err).Str("envelope_id", env.ID).Msg("failed to publish command in-progress event")

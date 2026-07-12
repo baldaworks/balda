@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"iter"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
@@ -23,7 +23,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
 	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -400,7 +399,7 @@ func TestRunTurn_DirectTelegramPathUsesDeliveryEnvelopesWithoutJobEvents(t *test
 			t.Fatalf("delivery env job_id = %q, want empty for direct telegram path", baldaexecution.EnvelopeJobID(env))
 		}
 		var payload actors.DeliveryPayload
-		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			t.Fatalf("decode delivery payload: %v", err)
 		}
 		if strings.TrimSpace(payload.JobID) != "" {
@@ -655,7 +654,7 @@ func TestRunTurn_TaskBackedVisibleOutputOnlySendsFinalReply(t *testing.T) {
 		t.Fatalf("event[0] type = %q, want %q", got, baldajobs.JobEventAgentResult)
 	}
 	var payload actors.DeliveryPayload
-	if err := json.Unmarshal([]byte(bus.commands[len(bus.commands)-1].PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(bus.commands[len(bus.commands)-1].Payload, &payload); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
 	if string(payload.Profile.Format) != string(options.Profile.Format) || payload.Profile.TelegramMode != options.Profile.TelegramMode {
@@ -1642,7 +1641,7 @@ func TestRunTurnWithDelivery_AcceptsSlackLocator(t *testing.T) {
 		t.Fatalf("dispatch calls = %d, want 2", len(bus.commands))
 	}
 	var payload actors.DeliveryPayload
-	if err := json.Unmarshal([]byte(bus.commands[len(bus.commands)-1].PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(bus.commands[len(bus.commands)-1].Payload, &payload); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
 	if payload.Locator.ChannelType != baldastate.ChannelTypeSlack {
@@ -1918,7 +1917,7 @@ func deliveryTextsFromCommands(t *testing.T, commands []actorlayer.Envelope) []s
 			continue
 		}
 		var payload actors.DeliveryPayload
-		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			t.Fatalf("decode delivery payload: %v", err)
 		}
 		text := strings.TrimSpace(payload.Text)
@@ -1951,7 +1950,7 @@ func taskEventPayload(t *testing.T, env actorlayer.Envelope) map[string]any {
 	t.Helper()
 
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		t.Fatalf("decode job event payload: %v", err)
 	}
 	return payload
@@ -1966,7 +1965,7 @@ func deliveryModeCount(t *testing.T, commands []actorlayer.Envelope, mode actors
 			continue
 		}
 		var payload actors.DeliveryPayload
-		if err := json.Unmarshal([]byte(env.PayloadJSON), &payload); err != nil {
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			t.Fatalf("decode delivery payload: %v", err)
 		}
 		if payload.Mode == mode {

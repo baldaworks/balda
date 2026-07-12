@@ -1,14 +1,13 @@
 package controlcmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer"
 )
 
 const (
@@ -70,22 +69,21 @@ func envelope(locator baldasession.SessionLocator, action string, jobID string, 
 		Notify:      notify,
 		Wait:        wait,
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode control payload: %w", err)
 	}
 	id := uuid.NewString()
 	return actorlayer.Envelope{
-		ID:          id,
-		Namespace:   baldaexecution.NamespaceJobControl,
-		Kind:        baldaexecution.KindCancel,
-		From:        actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
-		To:          actorlayer.SystemAddress("control"),
-		SessionID:   locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, jobID),
-		Priority:    100,
-		DedupeKey:   "control:" + strings.TrimSpace(action) + ":" + id,
-		PayloadJSON: string(data),
+		ID:        id,
+		Namespace: baldaexecution.NamespaceJobControl,
+		Kind:      baldaexecution.KindCancel,
+		From:      actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(requestedBy, locator.AddressKey, "unknown")},
+		To:        actorlayer.SystemAddress("control"),
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), locator.SessionID),
+		Priority:  100,
+		DedupeKey: "control:" + strings.TrimSpace(action) + ":" + id,
+		Payload:   data,
 	}, nil
 }
 

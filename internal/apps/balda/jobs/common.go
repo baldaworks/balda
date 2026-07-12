@@ -4,16 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
 	"github.com/rs/zerolog/log"
 )
 
@@ -152,12 +151,15 @@ func jobEventEnvelope(event baldastate.JobEventRecord) (string, actorlayer.Envel
 		subject = baldaexecution.SubjectEventJobCompleted
 	}
 	return subject, actorlayer.Envelope{
-		ID:          event.ID,
-		Namespace:   baldaexecution.NamespaceTelemetry,
-		Kind:        "job_event",
-		From:        actorlayer.SystemAddress("job-events"),
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: event.JobID},
-		PayloadJSON: payload,
+		ID:        event.ID,
+		Namespace: baldaexecution.NamespaceTelemetry,
+		Kind:      "job_event",
+		From:      actorlayer.SystemAddress("job-events"),
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: event.JobID},
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     []byte(payload),
+		},
 		Meta: baldaexecution.WithJobIDMeta(map[string]string{
 			"event_type": event.EventType,
 			"actor":      event.Actor,
@@ -168,7 +170,7 @@ func jobEventEnvelope(event baldastate.JobEventRecord) (string, actorlayer.Envel
 
 func jobEventOutboxRecord(event baldastate.JobEventRecord) (baldastate.JobEventOutboxRecord, error) {
 	subject, env := jobEventEnvelope(event)
-	data, err := json.Marshal(env)
+	data, err := actorlayer.EncodeEnvelope(env)
 	if err != nil {
 		return baldastate.JobEventOutboxRecord{}, fmt.Errorf("encode job event envelope: %w", err)
 	}
@@ -176,7 +178,7 @@ func jobEventOutboxRecord(event baldastate.JobEventRecord) (baldastate.JobEventO
 		ID:           strings.TrimSpace(event.ID),
 		JobID:        strings.TrimSpace(event.JobID),
 		Subject:      subject,
-		EnvelopeJSON: string(data),
+		EnvelopeJSON: data,
 	}, nil
 }
 
@@ -194,10 +196,12 @@ func publishOutboxRecord(
 		return errors.Join(err, store.MarkJobEventPublishFailed(ctx, record.ID, err.Error()))
 	}
 	var env actorlayer.Envelope
-	if err := json.Unmarshal([]byte(record.EnvelopeJSON), &env); err != nil {
+	decoded, err := actorlayer.DecodeEnvelope(record.EnvelopeJSON)
+	if err != nil {
 		decodeErr := fmt.Errorf("decode job event outbox %q: %w", record.ID, err)
 		return errors.Join(decodeErr, store.MarkJobEventPublishFailed(ctx, record.ID, decodeErr.Error()))
 	}
+	env = decoded
 	if err := bus.PublishEvent(ctx, record.Subject, env); err != nil {
 		return errors.Join(err, store.MarkJobEventPublishFailed(ctx, record.ID, err.Error()))
 	}
@@ -226,11 +230,11 @@ func marshalPayload(payload any) (string, error) {
 	if payload == nil {
 		return "", nil
 	}
-	data, err := json.Marshal(payload)
+	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return "", fmt.Errorf("encode job payload: %w", err)
 	}
-	return string(data), nil
+	return data.String(), nil
 }
 
 func mergePayload(payload any, extra map[string]any) any {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -18,7 +19,6 @@ import (
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/pkg/actorlayer"
 	"github.com/rs/zerolog"
 )
 
@@ -258,15 +258,17 @@ func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text str
 		t.Fatalf("marshal payload: %v", err)
 	}
 	return actorlayer.Envelope{
-		ID:          id,
-		Namespace:   baldaexecution.NamespaceAgentResult,
-		Kind:        jobPayloadKindDelivery,
-		From:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
-		To:          actorlayer.ActorAddress{Target: baldaexecution.ActorTypeDelivery, Key: locator.DeliveryActorKey()},
-		SessionID:   locator.SessionID,
-		Meta:        baldaexecution.WithJobIDMeta(nil, payload.JobID),
-		DedupeKey:   dedupeKey,
-		PayloadJSON: string(data),
+		ID:        id,
+		Namespace: baldaexecution.NamespaceAgentResult,
+		Kind:      jobPayloadKindDelivery,
+		From:      actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"},
+		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeDelivery, Key: locator.DeliveryActorKey()},
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, payload.JobID), locator.SessionID),
+		DedupeKey: dedupeKey,
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     data,
+		},
 	}, payload
 }
 
@@ -276,9 +278,9 @@ func deliveryRecordForTest(env actorlayer.Envelope, payload DeliveryPayload, sta
 		deliveryKey = strings.TrimSpace(env.ID)
 	}
 	if deliveryKey == "" {
-		deliveryKey = "delivery:" + shortJobHash(env.PayloadJSON)
+		deliveryKey = "delivery:" + shortJobHash(env.Payload.String())
 	}
-	sum := sha256.Sum256([]byte(strings.TrimSpace(env.PayloadJSON)))
+	sum := sha256.Sum256(env.Payload.Data)
 
 	return baldastate.DeliveryRecord{
 		ID:          "delivery-record-" + env.ID,
@@ -287,7 +289,7 @@ func deliveryRecordForTest(env actorlayer.Envelope, payload DeliveryPayload, sta
 		Channel:     "telegram",
 		AddressKey:  payload.Locator.AddressKey,
 		Kind:        env.Kind,
-		PayloadJSON: env.PayloadJSON,
+		PayloadJSON: env.Payload.String(),
 		PayloadHash: hex.EncodeToString(sum[:]),
 		Status:      status,
 	}
