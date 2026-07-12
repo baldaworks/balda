@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
 )
 
 var (

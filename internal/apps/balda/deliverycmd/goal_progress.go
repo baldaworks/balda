@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 type GoalProgressKind string

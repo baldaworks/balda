@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/normahq/balda/pkg/actorlayer"
-	"github.com/normahq/balda/pkg/actorlayer/dispatch"
-	actorengine "github.com/normahq/balda/pkg/actorlayer/engine"
-	actortransport "github.com/normahq/balda/pkg/actorlayer/transport"
+	"github.com/baldaworks/go-actorlayer"
+	"github.com/baldaworks/go-actorlayer/dispatch"
+	actorengine "github.com/baldaworks/go-actorlayer/engine"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

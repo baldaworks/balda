@@ -3,7 +3,7 @@ package actorcmd
 import (
 	"strings"
 
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 const JobIDMetaKey = "job_id"

@@ -5,7 +5,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/progress"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 func DeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {

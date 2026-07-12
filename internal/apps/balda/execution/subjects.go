@@ -2,7 +2,7 @@ package execution
 
 import (
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/pkg/actorlayer"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 const (
@@ -34,7 +34,6 @@ const (
 	SubjectDLQAll     = actorcmd.SubjectDLQAll
 
 	HeaderEnvelopeID    = actorcmd.HeaderEnvelopeID
-	HeaderSessionID     = actorcmd.HeaderSessionID
 	HeaderCorrelationID = actorcmd.HeaderCorrelationID
 	HeaderCausationID   = actorcmd.HeaderCausationID
 	HeaderDedupeKey     = actorcmd.HeaderDedupeKey
