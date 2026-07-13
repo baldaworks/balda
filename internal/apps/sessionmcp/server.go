@@ -2,6 +2,7 @@ package sessionmcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,17 +15,17 @@ const (
 )
 
 // RegisterTools adds session-state MCP tools to an existing server.
-func RegisterTools(server *mcp.Server, store Store, waitScheduler SessionWaitScheduler) {
+func RegisterTools(server *mcp.Server, store Store, waitService SessionWaitService) {
 	if server == nil || store == nil {
 		return
 	}
-	svc := &service{store: store, waitScheduler: waitScheduler}
+	svc := &service{store: store, waitService: waitService}
 	svc.registerTools(server)
 }
 
 type service struct {
-	store         Store
-	waitScheduler SessionWaitScheduler
+	store       Store
+	waitService SessionWaitService
 }
 
 func (s *service) registerTools(server *mcp.Server) {
@@ -48,7 +49,7 @@ func (s *service) registerTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "balda.session.wait",
-		Description: "Schedule a one-shot wake-up for a specific Balda session after a delay. This is a session-level action, not an instance-level control action.",
+		Description: "Manage one-shot wake-ups for a specific Balda session. Use action=schedule, list, or cancel. This is a session-level action, not an instance-level control action.",
 	}, s.sessionWait)
 }
 
@@ -256,24 +257,62 @@ func (s *service) nsList(ctx context.Context, _ *mcp.CallToolRequest, in namespa
 }
 
 func (s *service) sessionWait(ctx context.Context, _ *mcp.CallToolRequest, in SessionWaitInput) (*mcp.CallToolResult, sessionWaitOutput, error) {
-	if s.waitScheduler == nil {
+	if s.waitService == nil {
 		result, out := backendFailure("balda.session.wait", fmt.Errorf("wait scheduler is required"))
 		return result, sessionWaitOutput{ToolOutcome: out}, nil
 	}
-	if strings.TrimSpace(in.Content) == "" {
-		result, out := validationFailure("balda.session.wait", "content is required")
+	action := strings.TrimSpace(in.Action)
+	if action == "" {
+		action = "schedule"
+	}
+	if strings.TrimSpace(in.Locator.ChannelType) == "" || strings.TrimSpace(in.Locator.AddressKey) == "" {
+		result, out := validationFailure("balda.session.wait", "locator.channel_type and locator.address_key are required")
 		return result, sessionWaitOutput{ToolOutcome: out}, nil
 	}
-	if in.DelaySeconds <= 0 {
-		result, out := validationFailure("balda.session.wait", "delay_seconds must be positive")
+	switch action {
+	case "schedule":
+		if strings.TrimSpace(in.Content) == "" {
+			result, out := validationFailure("balda.session.wait", "content is required for action=schedule")
+			return result, sessionWaitOutput{ToolOutcome: out}, nil
+		}
+		if in.DelaySeconds <= 0 {
+			result, out := validationFailure("balda.session.wait", "delay_seconds must be positive for action=schedule")
+			return result, sessionWaitOutput{ToolOutcome: out}, nil
+		}
+		if err := s.waitService.ScheduleSessionWait(ctx, in); err != nil {
+			result, out := backendFailure("balda.session.wait", err)
+			return result, sessionWaitOutput{ToolOutcome: out}, nil
+		}
+		message := "wait scheduled"
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, sessionWaitOutput{ToolOutcome: okOutcome(), Accepted: true, Message: message}, nil
+	case "list":
+		items, err := s.waitService.ListSessionWaits(ctx, in.Locator)
+		if err != nil {
+			result, out := backendFailure("balda.session.wait", err)
+			return result, sessionWaitOutput{ToolOutcome: out}, nil
+		}
+		out := sessionWaitOutput{ToolOutcome: okOutcome(), Items: items}
+		return jsonToolResult(out), out, nil
+	case "cancel":
+		if strings.TrimSpace(in.JobID) == "" {
+			result, out := validationFailure("balda.session.wait", "job_id is required for action=cancel")
+			return result, sessionWaitOutput{ToolOutcome: out}, nil
+		}
+		deleted, err := s.waitService.CancelSessionWait(ctx, in.Locator, in.JobID)
+		if err != nil {
+			result, out := backendFailure("balda.session.wait", err)
+			return result, sessionWaitOutput{ToolOutcome: out}, nil
+		}
+		message := "wait not found"
+		if deleted {
+			message = "wait canceled"
+		}
+		out := sessionWaitOutput{ToolOutcome: okOutcome(), Deleted: deleted, Message: message}
+		return jsonToolResult(out), out, nil
+	default:
+		result, out := validationFailure("balda.session.wait", "action must be one of: schedule, list, cancel")
 		return result, sessionWaitOutput{ToolOutcome: out}, nil
 	}
-	if err := s.waitScheduler.ScheduleSessionWait(ctx, in); err != nil {
-		result, out := backendFailure("balda.session.wait", err)
-		return result, sessionWaitOutput{ToolOutcome: out}, nil
-	}
-	message := "wait scheduled"
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, sessionWaitOutput{ToolOutcome: okOutcome(), Accepted: true, Message: message}, nil
 }
 
 // Helpers
@@ -302,4 +341,12 @@ func failure(operation string, code string, message string) (*mcp.CallToolResult
 				Message:   message,
 			},
 		}
+}
+
+func jsonToolResult(v any) *mcp.CallToolResult {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "{}"}}}
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}
 }

@@ -4,7 +4,7 @@ import "context"
 
 type noInput struct{}
 
-type sessionLocatorInput struct {
+type SessionLocatorInput struct {
 	SessionID   string `json:"session_id" jsonschema:"target session id, e.g. tg-123-0"`
 	ChannelType string `json:"channel_type" jsonschema:"channel type, e.g. telegram"`
 	AddressKey  string `json:"address_key" jsonschema:"canonical address key, e.g. 12345:0"`
@@ -119,9 +119,10 @@ type namespaceOnlyInput struct {
 }
 
 type SessionWaitInput struct {
-	Locator      sessionLocatorInput `json:"locator" jsonschema:"target session locator for the wake-up"`
-	Content      string              `json:"content" jsonschema:"message or command text to run when the wait wakes"`
-	DelaySeconds int                 `json:"delay_seconds" jsonschema:"positive delay in seconds before wake-up"`
+	Action       string              `json:"action,omitempty" jsonschema:"wait action: schedule, list, or cancel; defaults to schedule"`
+	Locator      SessionLocatorInput `json:"locator" jsonschema:"target session locator for the wake-up"`
+	Content      string              `json:"content,omitempty" jsonschema:"message or command text to run when the wait wakes"`
+	DelaySeconds int                 `json:"delay_seconds,omitempty" jsonschema:"positive delay in seconds before wake-up"`
 	JobID        string              `json:"job_id,omitempty" jsonschema:"optional stable wait id"`
 	RequestedBy  string              `json:"requested_by,omitempty" jsonschema:"optional requester id for audit metadata"`
 	Notify       bool                `json:"notify,omitempty" jsonschema:"whether to send an acknowledgement message to the session when the wait is scheduled"`
@@ -129,10 +130,26 @@ type SessionWaitInput struct {
 
 type sessionWaitOutput struct {
 	ToolOutcome
-	Accepted bool   `json:"accepted" jsonschema:"true when the wait command was published successfully"`
-	Message  string `json:"message,omitempty" jsonschema:"human-readable status message"`
+	Accepted bool                  `json:"accepted,omitempty" jsonschema:"true when action=schedule and the wait command was published successfully"`
+	Deleted  bool                  `json:"deleted,omitempty" jsonschema:"true when the wait job existed and was deleted"`
+	Message  string                `json:"message,omitempty" jsonschema:"human-readable status message"`
+	Items    []SessionWaitListItem `json:"items,omitempty" jsonschema:"scheduled wait jobs for the locator"`
 }
 
-type SessionWaitScheduler interface {
+type SessionWaitListItem struct {
+	JobID        string `json:"job_id" jsonschema:"wait job id"`
+	Content      string `json:"content" jsonschema:"message or command text to run when the wait wakes"`
+	Status       string `json:"status" jsonschema:"scheduled job status"`
+	ScheduleSpec string `json:"schedule_spec" jsonschema:"schedule mode specification"`
+	Timezone     string `json:"timezone" jsonschema:"scheduled job timezone"`
+	NextRunAt    string `json:"next_run_at,omitempty" jsonschema:"next scheduled run time in RFC3339"`
+	CreatedAt    string `json:"created_at,omitempty" jsonschema:"creation time in RFC3339"`
+	UpdatedAt    string `json:"updated_at,omitempty" jsonschema:"last update time in RFC3339"`
+	LastError    string `json:"last_error,omitempty" jsonschema:"last execution error if any"`
+}
+
+type SessionWaitService interface {
 	ScheduleSessionWait(ctx context.Context, in SessionWaitInput) error
+	ListSessionWaits(ctx context.Context, locator SessionLocatorInput) ([]SessionWaitListItem, error)
+	CancelSessionWait(ctx context.Context, locator SessionLocatorInput, jobID string) (bool, error)
 }

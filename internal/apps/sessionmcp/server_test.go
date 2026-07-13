@@ -11,11 +11,24 @@ import (
 
 type recordingWaitScheduler struct {
 	inputs []SessionWaitInput
+	items  []SessionWaitListItem
+	cancel map[string]bool
 }
 
 func (r *recordingWaitScheduler) ScheduleSessionWait(_ context.Context, in SessionWaitInput) error {
 	r.inputs = append(r.inputs, in)
 	return nil
+}
+
+func (r *recordingWaitScheduler) ListSessionWaits(_ context.Context, _ SessionLocatorInput) ([]SessionWaitListItem, error) {
+	return append([]SessionWaitListItem(nil), r.items...), nil
+}
+
+func (r *recordingWaitScheduler) CancelSessionWait(_ context.Context, _ SessionLocatorInput, jobID string) (bool, error) {
+	if r.cancel == nil {
+		return false, nil
+	}
+	return r.cancel[jobID], nil
 }
 
 func TestSessionStateServerListsTools(t *testing.T) {
@@ -77,6 +90,9 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 	if got := toolByName["balda.session.wait"].Description; !strings.Contains(got, "session-level action") {
 		t.Fatalf("balda.session.wait description = %q, want session-level wording", got)
 	}
+	if got := toolByName["balda.session.wait"].Description; !strings.Contains(got, "action=schedule, list, or cancel") {
+		t.Fatalf("balda.session.wait description = %q, want action wording", got)
+	}
 
 	outSchema, ok := toolByName["balda.state.get"].OutputSchema.(map[string]any)
 	if !ok {
@@ -97,6 +113,64 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 	}
 }
 
+func TestSessionWaitListReturnsItems(t *testing.T) {
+	waitScheduler := &recordingWaitScheduler{
+		items: []SessionWaitListItem{{JobID: "wait-1", Content: "wake me", Status: "active", ScheduleSpec: "@once", Timezone: "UTC"}},
+	}
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), waitScheduler)
+	defer cleanup()
+	_ = session.InitializeResult()
+
+	result := callTool(t, ctx, session, "balda.session.wait", map[string]any{
+		"action": "list",
+		"locator": map[string]any{
+			"session_id":   "tg-1-0",
+			"channel_type": "telegram",
+			"address_key":  "1:0",
+			"address_json": `{"chat_id":1,"topic_id":0}`,
+		},
+	})
+	if result == nil || result.IsError {
+		text := ""
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+				text = tc.Text
+			}
+		}
+		t.Fatalf("result = %#v, text=%q, want success", result, text)
+	}
+	if got := waitScheduler.items[0].JobID; got != "wait-1" {
+		t.Fatalf("waitScheduler.items[0].JobID = %q, want wait-1", got)
+	}
+}
+
+func TestSessionWaitCancelReturnsDeleted(t *testing.T) {
+	waitScheduler := &recordingWaitScheduler{cancel: map[string]bool{"wait-1": true}}
+	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), waitScheduler)
+	defer cleanup()
+	_ = session.InitializeResult()
+
+	result := callTool(t, ctx, session, "balda.session.wait", map[string]any{
+		"action": "cancel",
+		"locator": map[string]any{
+			"session_id":   "tg-1-0",
+			"channel_type": "telegram",
+			"address_key":  "1:0",
+			"address_json": `{"chat_id":1,"topic_id":0}`,
+		},
+		"job_id": "wait-1",
+	})
+	if result == nil || result.IsError {
+		text := ""
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+				text = tc.Text
+			}
+		}
+		t.Fatalf("result = %#v, text=%q, want success", result, text)
+	}
+}
+
 func TestSessionWaitPublishesControlCommand(t *testing.T) {
 	waitScheduler := &recordingWaitScheduler{}
 	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), waitScheduler)
@@ -104,6 +178,7 @@ func TestSessionWaitPublishesControlCommand(t *testing.T) {
 	_ = session.InitializeResult()
 
 	result := callTool(t, ctx, session, "balda.session.wait", map[string]any{
+		"action": "schedule",
 		"locator": map[string]any{
 			"session_id":   "tg-1-0",
 			"channel_type": "telegram",
@@ -399,7 +474,7 @@ func TestSharedStateAcrossStores(t *testing.T) {
 
 // Test helpers
 
-func newTestSession(t *testing.T, store Store, waitScheduler SessionWaitScheduler) (context.Context, func(), *mcp.ClientSession) {
+func newTestSession(t *testing.T, store Store, waitScheduler SessionWaitService) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
 	if store == nil {
 		t.Fatal("store is required")

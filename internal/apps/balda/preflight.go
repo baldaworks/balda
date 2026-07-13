@@ -146,6 +146,9 @@ func PreflightRuntime(
 			func(provider baldastate.Provider) baldastate.SessionStore {
 				return provider.Sessions()
 			},
+			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
+				return provider.ScheduledJobs()
+			},
 			fx.Annotate(
 				func(provider baldastate.Provider) adksession.Service {
 					if sessionPersistence == sessionPersistenceSQLite {

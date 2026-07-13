@@ -10,14 +10,15 @@ import (
 	"sync"
 	"time"
 
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/balda/internal/apps/balda/controlcmd"
 	"github.com/normahq/balda/internal/apps/balda/controlmcp"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/session"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
 	"github.com/normahq/balda/internal/apps/workspacemcp"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
@@ -35,6 +36,7 @@ type InternalMCPManager struct {
 	shutdowner       fx.Shutdowner
 	sessionManager   *session.Manager
 	stateStore       sessionmcp.Store
+	scheduledJobs    baldastate.ScheduledJobStore
 	memoryStore      *memory.Store
 	dispatcher       actortransport.Dispatcher
 	cleanups         []func() error
@@ -56,6 +58,7 @@ type internalMCPParams struct {
 	Shutdowner       fx.Shutdowner
 	SessionManager   *session.Manager
 	StateStore       sessionmcp.Store
+	ScheduledJobs    baldastate.ScheduledJobStore
 	MemoryStore      *memory.Store
 	Dispatcher       actortransport.Dispatcher
 }
@@ -69,6 +72,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		shutdowner:       params.Shutdowner,
 		sessionManager:   params.SessionManager,
 		stateStore:       params.StateStore,
+		scheduledJobs:    params.ScheduledJobs,
 		memoryStore:      params.MemoryStore,
 		dispatcher:       params.Dispatcher,
 	}
@@ -144,7 +148,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		&mcp.ServerOptions{Instructions: instructions},
 	)
 
-	sessionmcp.RegisterTools(server, m.stateStore, sessionWaitScheduler{dispatcher: m.dispatcher})
+	sessionmcp.RegisterTools(server, m.stateStore, sessionWaitService{dispatcher: m.dispatcher, jobs: m.scheduledJobs})
 	memory.RegisterTools(server, m.memoryStore)
 	controlmcp.RegisterTools(server, m.shutdowner, m.dispatcher)
 
@@ -183,11 +187,12 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	return nil
 }
 
-type sessionWaitScheduler struct {
+type sessionWaitService struct {
 	dispatcher actortransport.Dispatcher
+	jobs       baldastate.ScheduledJobStore
 }
 
-func (s sessionWaitScheduler) ScheduleSessionWait(ctx context.Context, in sessionmcp.SessionWaitInput) error {
+func (s sessionWaitService) ScheduleSessionWait(ctx context.Context, in sessionmcp.SessionWaitInput) error {
 	locator, err := session.NewSessionLocator(
 		in.Locator.ChannelType,
 		in.Locator.AddressKey,
@@ -205,6 +210,70 @@ func (s sessionWaitScheduler) ScheduleSessionWait(ctx context.Context, in sessio
 		return err
 	}
 	return nil
+}
+
+func (s sessionWaitService) ListSessionWaits(ctx context.Context, locator sessionmcp.SessionLocatorInput) ([]sessionmcp.SessionWaitListItem, error) {
+	if s.jobs == nil {
+		return nil, fmt.Errorf("scheduled job store is required")
+	}
+	records, err := s.jobs.ListByAddress(ctx, locator.ChannelType, locator.AddressKey)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]sessionmcp.SessionWaitListItem, 0, len(records))
+	for _, record := range records {
+		if strings.TrimSpace(record.ScheduleSpec) != "@once" {
+			continue
+		}
+		if strings.TrimSpace(record.SessionID) != strings.TrimSpace(locator.SessionID) && strings.TrimSpace(locator.SessionID) != "" {
+			continue
+		}
+		items = append(items, sessionmcp.SessionWaitListItem{
+			JobID:        record.JobID,
+			Content:      record.Content,
+			Status:       record.Status,
+			ScheduleSpec: record.ScheduleSpec,
+			Timezone:     record.Timezone,
+			NextRunAt:    formatRFC3339(record.NextRunAt),
+			CreatedAt:    formatRFC3339(record.CreatedAt),
+			UpdatedAt:    formatRFC3339(record.UpdatedAt),
+			LastError:    record.LastError,
+		})
+	}
+	return items, nil
+}
+
+func (s sessionWaitService) CancelSessionWait(ctx context.Context, locator sessionmcp.SessionLocatorInput, jobID string) (bool, error) {
+	if s.jobs == nil {
+		return false, fmt.Errorf("scheduled job store is required")
+	}
+	record, ok, err := s.jobs.GetByID(ctx, jobID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	if strings.TrimSpace(record.ScheduleSpec) != "@once" {
+		return false, nil
+	}
+	if strings.TrimSpace(record.ChannelType) != strings.TrimSpace(locator.ChannelType) || strings.TrimSpace(record.AddressKey) != strings.TrimSpace(locator.AddressKey) {
+		return false, nil
+	}
+	if strings.TrimSpace(locator.SessionID) != "" && strings.TrimSpace(record.SessionID) != strings.TrimSpace(locator.SessionID) {
+		return false, nil
+	}
+	if err := s.jobs.Delete(ctx, jobID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func formatRFC3339(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 type bundledHTTPServerResult struct {
