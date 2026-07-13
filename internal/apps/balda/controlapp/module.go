@@ -1,9 +1,10 @@
 package controlapp
 
 import (
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -12,6 +13,9 @@ var Module = fx.Module("balda_controlapp",
 	fx.Provide(
 		fx.Annotate(
 			func(s *baldajobs.JobLifecycleService) JobLifecycle { return s },
+		),
+		fx.Annotate(
+			func(store baldastate.ScheduledJobStore) ScheduledJobs { return store },
 		),
 		NewSessionWorkCanceller,
 		fx.Annotate(
