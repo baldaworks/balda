@@ -42,11 +42,11 @@ Status: active
   - The single app-scoped provider runtime selected by `balda.provider`.
 
 - Internal Balda runtime decomposition:
-  - `runtime.go`: host loop and dispatch-runtime wiring.
-  - `runtime_lane_policy.go`: Balda actor addressing and lane-key policy.
-  - `runtime_heartbeat.go`: Balda heartbeat cadence and in-progress visibility publication.
-  - `runtime_deadletter.go`: Balda retry-exhaustion and job dead-letter side effects.
-  - `runtime_delivery.go`: Balda delivery wrapping and envelope-context attachment.
+  - `host.go`: host loop and dispatch-runtime wiring.
+  - `lane_policy.go`: Balda actor addressing and lane-key policy.
+  - `heartbeat.go`: Balda heartbeat cadence and in-progress visibility publication.
+  - `deadletter.go`: Balda retry-exhaustion and job dead-letter side effects.
+  - `delivery_wrapper.go`: Balda delivery wrapping and envelope-context attachment.
 
 - Boundary obligations:
   - Actor definitions and actor state must not select or branch on provider IDs.

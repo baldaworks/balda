@@ -128,16 +128,10 @@ deps:
     anyVendorDeps: true
 
   runtime:
-    # Transitional note: runtime still acts as the main orchestration root and
-    # currently wires feature actors and delivery adapters directly.
     mayDependOn:
       - foundation
       - contracts
-      - application
-      - domain
       - runtime
-      - delivery
-      - infrastructure
     anyVendorDeps: true
 
   ingress:
