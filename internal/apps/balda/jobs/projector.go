@@ -23,7 +23,6 @@ type EventProjector struct {
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	stateMu sync.Mutex
-	runErr  error
 }
 
 type eventProjectorParams struct {
@@ -69,9 +68,6 @@ func (p *EventProjector) Start(ctx context.Context) error {
 	go func() {
 		defer p.wg.Done()
 		if err := p.consumer.RunEventConsumer(runCtx, p.Project); err != nil && !errors.Is(err, context.Canceled) {
-			p.stateMu.Lock()
-			p.runErr = err
-			p.stateMu.Unlock()
 			p.logger.Error().Err(err).Msg("event projector stopped")
 		}
 	}()
@@ -100,22 +96,6 @@ func (p *EventProjector) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// Ready reports whether the projector is started and healthy.
-func (p *EventProjector) Ready() error {
-	if p == nil {
-		return errors.New("event projector is nil")
-	}
-	p.stateMu.Lock()
-	defer p.stateMu.Unlock()
-	if p.runErr != nil {
-		return fmt.Errorf("event projector stopped: %w", p.runErr)
-	}
-	if p.cancel == nil {
-		return errors.New("event projector is not started")
-	}
-	return nil
 }
 
 func (p *EventProjector) Project(ctx context.Context, subject string, env actorlayer.Envelope) error {

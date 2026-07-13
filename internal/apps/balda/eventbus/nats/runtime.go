@@ -127,7 +127,7 @@ func (m *commandMessage) settle(fn func() error) error {
 }
 
 func (b *Bus) Run(ctx context.Context, handler actorengine.Handler) error {
-	if err := b.ensureStarted(ctx); err != nil {
+	if err := b.requireStarted(); err != nil {
 		return err
 	}
 	if b == nil || b.consumer == nil {
@@ -289,7 +289,7 @@ func (b *Bus) publishCommandEventBestEffort(ctx context.Context, subject string,
 }
 
 func (b *Bus) RunEventConsumer(ctx context.Context, handler actortransport.EventHandler) error {
-	if err := b.ensureStarted(ctx); err != nil {
+	if err := b.requireStarted(); err != nil {
 		return err
 	}
 	if b == nil || b.eventConsumer == nil {

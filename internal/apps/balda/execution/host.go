@@ -30,7 +30,6 @@ type ActorHost struct {
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	stateMu sync.Mutex
-	runErr  error
 }
 
 type executionParams struct {
@@ -94,9 +93,6 @@ func (r *ActorHost) Start(ctx context.Context) error {
 	go func() {
 		defer r.wg.Done()
 		if err := r.engine.Run(runCtx, source); err != nil && !errors.Is(err, context.Canceled) {
-			r.stateMu.Lock()
-			r.runErr = err
-			r.stateMu.Unlock()
 			r.logger.Error().Err(err).Msg("actor delivery source stopped")
 		}
 	}()
@@ -122,22 +118,6 @@ func (r *ActorHost) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// Ready reports whether the actor runtime is started and healthy.
-func (r *ActorHost) Ready() error {
-	if r == nil {
-		return errors.New("actor host is nil")
-	}
-	r.stateMu.Lock()
-	defer r.stateMu.Unlock()
-	if r.runErr != nil {
-		return fmt.Errorf("actor host stopped: %w", r.runErr)
-	}
-	if r.cancel == nil {
-		return errors.New("actor host is not started")
-	}
-	return nil
 }
 
 type executionSource struct {

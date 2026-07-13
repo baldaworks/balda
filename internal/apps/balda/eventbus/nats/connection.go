@@ -93,7 +93,7 @@ func (b *Bus) Start(ctx context.Context) error {
 		_ = b.drainResources(context.Background())
 		return fmt.Errorf("runtime transport is required")
 	}
-		if err := b.ensureRuntime(ctx); err != nil {
+	if err := b.ensureRuntime(ctx); err != nil {
 		_ = b.drainResources(context.Background())
 		return err
 	}
@@ -101,15 +101,21 @@ func (b *Bus) Start(ctx context.Context) error {
 	return nil
 }
 
-func (b *Bus) ensureStarted(ctx context.Context) error {
+func (b *Bus) requireStarted() error {
 	if b == nil {
 		return fmt.Errorf("runtime transport is required")
 	}
-	return b.Start(ctx)
+	b.startMu.Lock()
+	started := b.started && b.js != nil
+	b.startMu.Unlock()
+	if !started {
+		return fmt.Errorf("runtime transport is not started")
+	}
+	return nil
 }
 
 func (b *Bus) Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
-	if err := b.ensureStarted(ctx); err != nil {
+	if err := b.requireStarted(); err != nil {
 		return nil, err
 	}
 	if err := env.Validate(); err != nil {
@@ -207,7 +213,7 @@ func isRuntimeQueuePressure(err error) bool {
 }
 
 func (b *Bus) PublishEvent(ctx context.Context, subject string, env actorlayer.Envelope) error {
-	if err := b.ensureStarted(ctx); err != nil {
+	if err := b.requireStarted(); err != nil {
 		return err
 	}
 	if err := env.Validate(); err != nil {
