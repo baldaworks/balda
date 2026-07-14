@@ -529,7 +529,7 @@ func telegramReasoningMarkdown(text string) string {
 	if text == "" {
 		return ""
 	}
-	return "<tg-thinking>" + gohtml.EscapeString(text) + "</tg-thinking>"
+	return gohtml.EscapeString(text)
 }
 
 func telegramRichMarkdownEnabled(mode string) bool {
