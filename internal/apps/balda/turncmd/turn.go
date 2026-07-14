@@ -33,6 +33,7 @@ type SessionTurnPayload struct {
 	Deliver         bool                         `json:"deliver"`
 	Source          string                       `json:"source,omitempty"`
 	DedupeKey       string                       `json:"dedupe_key,omitempty"`
+	QuestionID      string                       `json:"question_id,omitempty"`
 }
 
 type jobEnvelopePayload struct {

@@ -28,6 +28,7 @@ var requiredBaldaSQLiteTables = []string{
 	"execution_job_event_outbox",
 	"execution_delivery_outbox",
 	"execution_agent_steps",
+	"balda_questions",
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

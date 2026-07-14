@@ -1,0 +1,121 @@
+package questions
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/rs/zerolog"
+)
+
+type fakeStore struct {
+	record     baldastate.QuestionRecord
+	replyMatch baldastate.QuestionRecord
+}
+
+type fakeScheduledStore struct {
+	record baldastate.ScheduledJobRecord
+}
+
+func (f *fakeScheduledStore) Upsert(_ context.Context, record baldastate.ScheduledJobRecord) error {
+	f.record = record
+	return nil
+}
+
+func (f *fakeStore) CreatePendingQuestion(_ context.Context, record baldastate.QuestionRecord) error {
+	f.record = record
+	return nil
+}
+func (f *fakeStore) BindQuestionDeliveryRef(_ context.Context, questionID string, ref questioncmd.DeliveryRef) error {
+	f.record.QuestionID = questionID
+	f.record.Provider = ref.Provider
+	f.record.ConversationKey = ref.ConversationKey
+	f.record.ProviderMessageID = ref.ProviderMessageID
+	return nil
+}
+func (f *fakeStore) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
+	return f.record, f.record.QuestionID == questionID, nil
+}
+func (f *fakeStore) GetPendingQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
+	if f.replyMatch.Provider == provider && f.replyMatch.ConversationKey == conversationKey && f.replyMatch.ProviderMessageID == replyToMessageID {
+		return f.replyMatch, true, nil
+	}
+	return baldastate.QuestionRecord{}, false, nil
+}
+func (f *fakeStore) MarkQuestionAnswered(_ context.Context, questionID string, answer questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {
+	if f.replyMatch.QuestionID != questionID {
+		return baldastate.QuestionRecord{}, false, nil
+	}
+	f.replyMatch.Status = questioncmd.StatusAnswered
+	f.replyMatch.AnswerJSON = mustJSON(answer)
+	return f.replyMatch, true, nil
+}
+func (f *fakeStore) MarkQuestionTimedOut(_ context.Context, questionID string, timedOutAt time.Time) (baldastate.QuestionRecord, bool, error) {
+	if f.record.QuestionID != questionID {
+		return baldastate.QuestionRecord{}, false, nil
+	}
+	f.record.Status = questioncmd.StatusTimedOut
+	f.record.AnsweredAt = timedOutAt
+	return f.record, true, nil
+}
+
+func TestServiceAskCreatesPendingRecord(t *testing.T) {
+	store := &fakeStore{}
+	scheduled := &fakeScheduledStore{}
+	svc := New(store, scheduled, zerolog.Nop())
+	now := time.Date(2026, 7, 14, 5, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+
+	record, err := svc.Ask(context.Background(), questioncmd.InteractionContext{
+		SessionID:   "tg-1-0",
+		ChannelKind: "telegram",
+		Locator:     deliverycmd.Locator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1,"topic_id":0}`},
+	}, questioncmd.ResumeTarget{To: "goalkeeper:job-1"}, questioncmd.Request{
+		Prompt:  "continue?",
+		Timeout: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("Ask() error = %v", err)
+	}
+	if record.Status != questioncmd.StatusPending {
+		t.Fatalf("status = %q, want pending", record.Status)
+	}
+	if record.ExpiresAt.IsZero() {
+		t.Fatal("expires_at = zero, want timeout recorded")
+	}
+	if scheduled.record.JobID == "" {
+		t.Fatal("scheduled timeout job = empty, want one-shot scheduled job")
+	}
+}
+
+func TestServiceResolveReplySettlesPendingQuestion(t *testing.T) {
+	store := &fakeStore{
+		replyMatch: baldastate.QuestionRecord{
+			QuestionID:        "question-1",
+			Status:            questioncmd.StatusPending,
+			Provider:          "telegram",
+			ConversationKey:   "1:0",
+			ProviderMessageID: "42",
+		},
+	}
+	svc := New(store, nil, zerolog.Nop())
+	record, ok, err := svc.ResolveReply(context.Background(), questioncmd.InboundReply{
+		Provider:         "telegram",
+		ConversationKey:  "1:0",
+		ReplyToMessageID: "42",
+		MessageID:        "43",
+		Text:             "yes",
+	})
+	if err != nil {
+		t.Fatalf("ResolveReply() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("ResolveReply() matched = false, want true")
+	}
+	if record.Status != questioncmd.StatusAnswered {
+		t.Fatalf("status = %q, want answered", record.Status)
+	}
+}

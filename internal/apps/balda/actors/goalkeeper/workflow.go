@@ -2,6 +2,7 @@ package goalkeeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/genai"
 )
+
+var errGoalWaitingForUser = errors.New("goal waiting for user")
 
 // workflow.go owns the runtime event loop for worker/validator goal execution.
 func (c *coordinator) runWorkflow(
@@ -62,6 +65,15 @@ func (c *coordinator) runWorkflow(
 					currentStep = ""
 				case StepFailed:
 					return result, fmt.Errorf("%s step failed", step)
+				case "step_question":
+					questionPrompt, _ := ev.CustomMetadata["question_prompt"].(string)
+					if strings.TrimSpace(questionPrompt) == "" {
+						return result, fmt.Errorf("goal question event missing prompt")
+					}
+					if _, err := c.askQuestion(ctx, payload, questionPrompt, 0); err != nil {
+						return result, err
+					}
+					return result, errGoalWaitingForUser
 				}
 			}
 		}

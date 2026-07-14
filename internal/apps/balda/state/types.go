@@ -6,6 +6,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -80,6 +81,7 @@ type Provider interface {
 	SessionMCPKV() KVStore
 	Sessions() SessionStore
 	ScheduledJobs() ScheduledJobStore
+	Questions() QuestionStore
 	Jobs() JobStore
 	PollingOffsetStore() updatepoller.OffsetStore
 	Collaborators() CollaboratorStore
@@ -165,6 +167,37 @@ type ScheduledJobStore interface {
 	ListByAddress(ctx context.Context, channelType, addressKey string) ([]ScheduledJobRecord, error)
 	ListDue(ctx context.Context, now time.Time, limit int) ([]ScheduledJobRecord, error)
 	Delete(ctx context.Context, jobID string) error
+}
+
+type QuestionRecord struct {
+	QuestionID        string
+	SessionID         string
+	ChannelKind       string
+	AddressKey        string
+	AddressJSON       string
+	Prompt            string
+	Status            string
+	InteractionJSON   string
+	ResumeJSON        string
+	RequestJSON       string
+	AnswerJSON        string
+	Provider          string
+	ConversationKey   string
+	ProviderMessageID string
+	ReplyHandle       string
+	ExpiresAt         time.Time
+	AnsweredAt        time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type QuestionStore interface {
+	CreatePendingQuestion(ctx context.Context, record QuestionRecord) error
+	BindQuestionDeliveryRef(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
+	GetQuestionByID(ctx context.Context, questionID string) (QuestionRecord, bool, error)
+	GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error)
+	MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (QuestionRecord, bool, error)
+	MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (QuestionRecord, bool, error)
 }
 
 // JobRecord persists one assignable work item.

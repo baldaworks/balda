@@ -16,6 +16,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
@@ -61,6 +62,7 @@ type BaldaHandler struct {
 	outboundFrom       actorlayer.ActorAddress
 	progressEmitter    sessionturnapp.SessionProgressEmitter
 	turnExecution      *sessionturnapp.TurnExecutionService
+	questionService    *questions.Service
 
 	mu          sync.RWMutex
 	ownerID     int64
@@ -87,6 +89,7 @@ type baldaHandlerDeps struct {
 	TelegramEnabled   bool   `name:"balda_telegram_enabled"`
 	Logger            zerolog.Logger
 	TurnExecution     *sessionturnapp.TurnExecutionService
+	QuestionService   *questions.Service `optional:"true"`
 }
 
 // Start validates the Telegram identity and bootstraps owner state.
@@ -147,6 +150,14 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		text = normalized
 	}
 	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+
+	if handled, err := h.handleQuestionReply(ctx, messageCtx, text); err != nil {
+		h.logger.Warn().Err(err).Str("session_id", messageCtx.Locator.SessionID).Msg("failed to handle question reply")
+		_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, messageCtx.Locator, "Could not process this reply right now. Please try again.")
+		return nil
+	} else if handled {
 		return nil
 	}
 

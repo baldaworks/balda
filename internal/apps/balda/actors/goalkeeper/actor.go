@@ -12,6 +12,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/goalcmd"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/redaction"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -102,6 +103,7 @@ type ActorParams struct {
 	SessionManager  *baldasession.Manager
 	GoalRunPreparer GoalRunPreparer
 	JobRuns         JobRuns
+	QuestionService *questions.Service
 	MaxIterations   int `name:"balda_goal_max_iterations"`
 	Dispatcher      actortransport.Dispatcher
 	Logger          zerolog.Logger
@@ -112,6 +114,7 @@ type Actor struct {
 }
 
 type goalJobPayload = goalcmd.JobPayload
+type goalQuestionPayload = goalcmd.QuestionPayload
 
 type goalArtifactResultV1 struct {
 	WorkspaceDir string   `json:"workspace_dir,omitempty"`
@@ -192,13 +195,23 @@ func (a *Actor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode goal payload: %w", err))
 	}
-	if strings.TrimSpace(payload.Kind) != goalcmd.PayloadKindGoal || payload.Goal == nil {
-		return actorlayer.PolicyError(fmt.Errorf("goal payload is required"))
-	}
 	if a == nil || a.coordinator == nil {
 		return actorlayer.TransientError(fmt.Errorf("goal coordinator is required"))
 	}
-	return a.coordinator.execute(ctx, env, *payload.Goal)
+	switch strings.TrimSpace(payload.Kind) {
+	case goalcmd.PayloadKindGoal:
+		if payload.Goal == nil {
+			return actorlayer.PolicyError(fmt.Errorf("goal payload is required"))
+		}
+		return a.coordinator.execute(ctx, env, *payload.Goal)
+	case goalcmd.PayloadKindQuestion:
+		if payload.Question == nil {
+			return actorlayer.PolicyError(fmt.Errorf("goal question payload is required"))
+		}
+		return a.coordinator.handleQuestionContinuation(ctx, env, *payload.Question)
+	default:
+		return actorlayer.PolicyError(fmt.Errorf("unsupported goal payload kind %q", payload.Kind))
+	}
 }
 
 func GoalJobEnvelope(

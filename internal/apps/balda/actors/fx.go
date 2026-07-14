@@ -1,6 +1,8 @@
 package actors
 
 import (
+	"github.com/baldaworks/go-actorlayer/dispatch"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/appports"
@@ -8,9 +10,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
 	"github.com/normahq/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/baldaworks/go-actorlayer/dispatch"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -49,7 +50,14 @@ var Module = fx.Module("balda_actors",
 		),
 		fx.Annotate(
 			func(params sessionActorExecutorParams) dispatch.Actor {
-				return &sessionActorExecutor{turns: params.Turns, runner: params.Runner, tasks: params.Tasks, scheduler: params.Scheduler}
+				return &sessionActorExecutor{
+					turns:      params.Turns,
+					runner:     params.Runner,
+					tasks:      params.Tasks,
+					scheduler:  params.Scheduler,
+					dispatcher: params.Dispatcher,
+					questions:  params.Questions,
+				}
 			},
 			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_product_actors"`),
@@ -75,6 +83,7 @@ var Module = fx.Module("balda_actors",
 				SessionManager  *baldasession.Manager
 				GoalRunPreparer goalRunPreparerPort
 				JobRuns         *JobRunRegistry
+				QuestionService *questions.Service
 				MaxIterations   int `name:"balda_goal_max_iterations"`
 				Logger          zerolog.Logger
 			}) dispatch.Actor {
@@ -85,6 +94,7 @@ var Module = fx.Module("balda_actors",
 					SessionManager:  params.SessionManager,
 					GoalRunPreparer: params.GoalRunPreparer,
 					JobRuns:         params.JobRuns,
+					QuestionService: params.QuestionService,
 					MaxIterations:   params.MaxIterations,
 					Logger:          params.Logger,
 				})
@@ -98,6 +108,13 @@ var Module = fx.Module("balda_actors",
 					store:  params.Store,
 					events: params.Events,
 				}
+			},
+			fx.As(new(dispatch.Actor)),
+			fx.ResultTags(`group:"balda_product_actors"`),
+		),
+		fx.Annotate(
+			func(params questionActorParams) dispatch.Actor {
+				return &questionActor{dispatcher: params.Dispatcher}
 			},
 			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_product_actors"`),

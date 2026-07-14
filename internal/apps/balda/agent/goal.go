@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/goalresultcmd"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
@@ -34,10 +35,13 @@ const (
 	goalMetadataDurationMSKey         = "duration_ms"
 	goalMetadataEscalatedKey          = "escalated"
 	goalMetadataErrorKey              = "error"
+	goalMetadataQuestionPromptKey     = "question_prompt"
+	goalMetadataQuestionReasonKey     = "question_reason"
 
 	goalStepStarted   = "step_started"
 	goalStepCompleted = "step_completed"
 	goalStepFailed    = "step_failed"
+	goalStepQuestion  = "step_question"
 
 	goalWorkerStep    = "worker"
 	goalValidatorStep = "validator"
@@ -322,7 +326,13 @@ func runGoalKeeperLoop(ctx adkagent.InvocationContext, cfg goalKeeperConfig) ite
 			if err != nil {
 				return
 			}
-			previousWorkerResult = workerResult
+			if workerResult.Worker != nil && strings.EqualFold(strings.TrimSpace(workerResult.Worker.Status), goalresultcmd.StatusNeedUserInput) {
+				if !yield(newGoalQuestionEvent(ctx, workerResult.Worker.Question, workerResult.Worker.Reason), nil) {
+					return
+				}
+				return
+			}
+			previousWorkerResult = workerResult.VisibleText
 
 			validatorPrompt := buildGoalValidationPromptFromText(objective, previousWorkerResult, previousValidatorResult)
 			validatorResult, err := runGoalStep(
@@ -338,8 +348,8 @@ func runGoalKeeperLoop(ctx adkagent.InvocationContext, cfg goalKeeperConfig) ite
 			if err != nil {
 				return
 			}
-			previousValidatorResult = validatorResult
-			if strings.HasPrefix(strings.TrimSpace(validatorResult), "verdict: pass") {
+			previousValidatorResult = validatorResult.VisibleText
+			if strings.HasPrefix(strings.TrimSpace(validatorResult.VisibleText), "verdict: pass") {
 				return
 			}
 		}
@@ -358,6 +368,11 @@ type goalStepStats struct {
 	duration           time.Duration
 	escalated          bool
 	err                error
+}
+
+type goalStepResult struct {
+	VisibleText string
+	Worker      *goalresultcmd.WorkerResult
 }
 
 func (s *goalStepStats) record(ev *adksession.Event) {
@@ -384,14 +399,14 @@ func runGoalStep(
 	sessionID string,
 	prompt string,
 	yield func(*adksession.Event, error) bool,
-) (string, error) {
+) (goalStepResult, error) {
 	startedAt := time.Now()
 	invocationID := ""
 	if invCtx, ok := ctx.(adkagent.InvocationContext); ok {
 		invocationID = invCtx.InvocationID()
 	}
 	if !yield(newGoalStepEvent(ctx, invocationID, agent, spec, goalStepStarted, goalStepStats{}), nil) {
-		return "", fmt.Errorf("goal step delivery stopped")
+		return goalStepResult{}, fmt.Errorf("goal step delivery stopped")
 	}
 
 	stats := goalStepStats{}
@@ -401,10 +416,13 @@ func runGoalStep(
 			stats.err = err
 			stats.duration = time.Since(startedAt)
 			if !yield(newGoalStepEvent(ctx, invocationID, agent, spec, goalStepFailed, stats), nil) {
-				return latestVisibleOutput, err
+				return goalStepResult{VisibleText: latestVisibleOutput}, err
 			}
 			yield(ev, err)
-			return latestVisibleOutput, err
+			return goalStepResult{VisibleText: latestVisibleOutput}, err
+		}
+		if spec.name == goalWorkerStep {
+			ev = normalizeGoalWorkerEvent(ev)
 		}
 		if text := visibleGoalEventText(ev); text != "" {
 			latestVisibleOutput = strings.TrimSpace(text)
@@ -414,7 +432,7 @@ func runGoalStep(
 			ev.Author = goalkeeperRootAgentName
 		}
 		if !yield(ev, nil) {
-			return latestVisibleOutput, fmt.Errorf("goal step delivery stopped")
+			return goalStepResult{VisibleText: latestVisibleOutput}, fmt.Errorf("goal step delivery stopped")
 		}
 	}
 	stats.duration = time.Since(startedAt)
@@ -422,9 +440,18 @@ func runGoalStep(
 		stats.escalated = true
 	}
 	if !yield(newGoalStepEvent(ctx, invocationID, agent, spec, goalStepCompleted, stats), nil) {
-		return latestVisibleOutput, fmt.Errorf("goal step delivery stopped")
+		return goalStepResult{VisibleText: latestVisibleOutput}, fmt.Errorf("goal step delivery stopped")
 	}
-	return latestVisibleOutput, nil
+	result := goalStepResult{VisibleText: latestVisibleOutput}
+	if spec.name == goalWorkerStep {
+		if parsed, ok := goalresultcmd.ParseWorkerResult(latestVisibleOutput); ok {
+			result.Worker = &parsed
+			if strings.EqualFold(parsed.Status, goalresultcmd.StatusDone) && parsed.Summary != "" {
+				result.VisibleText = parsed.Summary
+			}
+		}
+	}
+	return result, nil
 }
 
 func newGoalStepEvent(
@@ -465,9 +492,58 @@ func goalWorkerInstruction() string {
 		"Do the requested work in the current working directory.",
 		"Prefer direct execution over clarification when execution is possible.",
 		"Ask clarifying questions only when execution is blocked by missing critical information.",
-		"Return a concise plain-text summary of what changed and what evidence supports it.",
+		"Return exactly one JSON object as the final response.",
+		"For normal completion, return {\"status\":\"done\",\"summary\":\"...\"}.",
+		"When blocked on missing critical user input, return {\"status\":\"need_user_input\",\"question\":\"...\",\"reason\":\"...\"}.",
+		"Do not wrap the JSON in markdown fences.",
+		"Keep summary, question, and reason concise.",
 		"Run only lightweight sanity checks directly relevant to the work unless the goal asks for broader verification.",
 	}, "\n")
+}
+
+func newGoalQuestionEvent(ctx context.Context, question string, reason string) *adksession.Event {
+	ev := adksession.NewEvent(ctx, "")
+	ev.Author = goalkeeperRootAgentName
+	ev.CustomMetadata = map[string]any{
+		goalMetadataEventKey:          goalStepQuestion,
+		goalMetadataStepKey:           goalWorkerStep,
+		goalMetadataQuestionPromptKey: strings.TrimSpace(question),
+		goalMetadataQuestionReasonKey: strings.TrimSpace(reason),
+	}
+	return ev
+}
+
+func normalizeGoalWorkerEvent(ev *adksession.Event) *adksession.Event {
+	if ev == nil || ev.Partial || !ev.IsFinalResponse() {
+		return ev
+	}
+	text := visibleGoalEventText(ev)
+	parsed, ok := goalresultcmd.ParseWorkerResult(text)
+	if !ok {
+		return ev
+	}
+	switch parsed.Status {
+	case goalresultcmd.StatusDone:
+		return cloneGoalEventWithVisibleText(ev, parsed.Summary)
+	case goalresultcmd.StatusNeedUserInput:
+		return cloneGoalEventWithVisibleText(ev, "")
+	default:
+		return ev
+	}
+}
+
+func cloneGoalEventWithVisibleText(ev *adksession.Event, text string) *adksession.Event {
+	if ev == nil {
+		return nil
+	}
+	clone := *ev
+	switch strings.TrimSpace(text) {
+	case "":
+		clone.Content = nil
+	default:
+		clone.Content = genai.NewContentFromText(strings.TrimSpace(text), genai.RoleModel)
+	}
+	return &clone
 }
 
 func goalValidatorInstruction() string {

@@ -35,6 +35,20 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			},
 		},
 		{
+			name: "question contracts remain transport neutral",
+			dir:  "questioncmd",
+			requires: []string{
+				baldaImportPrefix + "deliverycmd",
+			},
+		},
+		{
+			name: "goal result contracts remain transport neutral",
+			dir:  "goalresultcmd",
+			requires: []string{
+				"encoding/json",
+			},
+		},
+		{
 			name: "delivery formatting support stays foundation-only",
 			dir:  "deliveryfmt",
 			requires: []string{
@@ -75,6 +89,13 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			dir:  "sessionturn",
 			requires: []string{
 				baldaImportPrefix + "turncmd",
+			},
+		},
+		{
+			name: "question lifecycle depends on question contracts",
+			dir:  "questions",
+			requires: []string{
+				baldaImportPrefix + "questioncmd",
 			},
 		},
 		{

@@ -13,6 +13,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -149,6 +150,9 @@ func PreflightRuntime(
 			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
 				return provider.ScheduledJobs()
 			},
+			func(provider baldastate.Provider) baldastate.QuestionStore {
+				return provider.Questions()
+			},
 			fx.Annotate(
 				func(provider baldastate.Provider) adksession.Service {
 					if sessionPersistence == sessionPersistenceSQLite {
@@ -217,6 +221,7 @@ func PreflightRuntime(
 			internalmcp.NewInternalMCPManager,
 		),
 		natsbus.Module,
+		questions.Module,
 		fx.Populate(&runtimeManager, &mcpManager),
 		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {

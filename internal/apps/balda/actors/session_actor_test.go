@@ -6,11 +6,16 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/go-actorlayer"
+	baldaactorcmd "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/rs/zerolog"
 )
 
 func TestSessionActorInterruptQueueModeCancelsSessionBeforeEnqueue(t *testing.T) {
@@ -222,6 +227,79 @@ func TestSessionActorSettleSessionTurnResultRecordsScheduledJobOutcome(t *testin
 	if got := recorder.failures[0]; got.jobID != "scheduled-1" || !errors.Is(got.cause, runErr) {
 		t.Fatalf("failure = %+v, want task scheduled-1 with original error", got)
 	}
+}
+
+func TestSessionActorHandlesScheduledQuestionTimeout(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeQuestionStoreForTimeout{
+		record: baldastate.QuestionRecord{
+			QuestionID:      "question-1",
+			Status:          questioncmd.StatusPending,
+			InteractionJSON: `{"session_id":"tg-1-0","channel_kind":"telegram","locator":{"session_id":"tg-1-0","channel_type":"telegram","address_key":"1:0","address_json":"{\"chat_id\":1}"}}`,
+			ResumeJSON:      `{"to":"goalkeeper:goal-1","namespace":"goalkeeper.command"}`,
+		},
+	}
+	dispatcher := &fakeTurnDispatcher{}
+	exec := &sessionActorExecutor{
+		dispatcher: dispatcher,
+		questions:  questions.New(store, nil, zerolog.Nop()),
+		scheduler:  &fakeScheduledJobRecorder{},
+	}
+	content, err := questioncmd.TimeoutScheduledContent("question-1")
+	if err != nil {
+		t.Fatalf("TimeoutScheduledContent() error = %v", err)
+	}
+	env := testSessionTurnEnvelopeWithJobID(t, nil, "scheduled-job-1", sessionTurnSourceSchedule)
+	env.Namespace = baldaexecution.NamespaceScheduleInbound
+	payload := SessionTurnPayload{
+		JobID:          "scheduled-job-1",
+		ScheduledJobID: "question-timeout-question-1",
+		Source:         sessionTurnSourceSchedule,
+		Text:           content,
+		Locator:        baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1}`},
+	}
+	env.Payload, err = actorlayer.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if err := exec.enqueueTurn(context.Background(), env); err != nil {
+		t.Fatalf("enqueueTurn() error = %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("dispatched commands = %d, want 1", len(dispatcher.commands))
+	}
+	if dispatcher.commands[0].Kind != baldaactorcmd.KindQuestionTimedOut {
+		t.Fatalf("kind = %q, want %q", dispatcher.commands[0].Kind, baldaactorcmd.KindQuestionTimedOut)
+	}
+}
+
+type fakeQuestionStoreForTimeout struct {
+	record baldastate.QuestionRecord
+}
+
+func (*fakeQuestionStoreForTimeout) CreatePendingQuestion(context.Context, baldastate.QuestionRecord) error {
+	return nil
+}
+func (*fakeQuestionStoreForTimeout) BindQuestionDeliveryRef(context.Context, string, questioncmd.DeliveryRef) error {
+	return nil
+}
+func (f *fakeQuestionStoreForTimeout) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
+	return f.record, f.record.QuestionID == questionID, nil
+}
+func (*fakeQuestionStoreForTimeout) GetPendingQuestionByReplyRef(context.Context, string, string, string) (baldastate.QuestionRecord, bool, error) {
+	return baldastate.QuestionRecord{}, false, nil
+}
+func (*fakeQuestionStoreForTimeout) MarkQuestionAnswered(context.Context, string, questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {
+	return baldastate.QuestionRecord{}, false, nil
+}
+func (f *fakeQuestionStoreForTimeout) MarkQuestionTimedOut(_ context.Context, questionID string, timedOutAt time.Time) (baldastate.QuestionRecord, bool, error) {
+	if f.record.QuestionID != questionID {
+		return baldastate.QuestionRecord{}, false, nil
+	}
+	f.record.Status = questioncmd.StatusTimedOut
+	f.record.AnsweredAt = timedOutAt
+	return f.record, true, nil
 }
 
 func TestSessionActorEnqueueTurnSkipsDeadLetteredTask(t *testing.T) {

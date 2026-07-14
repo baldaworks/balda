@@ -67,6 +67,7 @@ var Module = fx.Module("balda_handlers",
 				telegramConfigured: true,
 				logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
 				turnExecution:      deps.TurnExecution,
+				questionService:    deps.QuestionService,
 			}
 
 			return h, nil

@@ -12,6 +12,8 @@ Use this map to find the authoritative runtime contracts.
 - [Command runtime adapter](command-runtime-adapter.md)
 - [Conversational turns and jobs](conversational-turns-and-jobs.md)
 - [Background monitors](background-monitors.md)
+- [Interactive questions](interactive-questions.md)
+- [Goal worker results](goal-worker-results.md)
 - [Actor runtime](actor-runtime.md)
 - [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)
@@ -53,6 +55,7 @@ Telegram/Zulip/Slack/webhook/scheduler ingress -> actorlayer transport dispatche
 - `internal/apps/balda/execution`
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/actors`
+- `internal/apps/balda/questions`
 - `internal/apps/balda/sessionturn`
 - `internal/apps/balda/internalmcp`
 - `internal/apps/balda/handlers`

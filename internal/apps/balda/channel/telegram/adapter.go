@@ -60,6 +60,7 @@ type MessageContext struct {
 	ChatID          int64
 	TopicID         int
 	MessageID       int
+	ReplyToMessageID int
 	UserID          int64
 	Entities        []client.MessageEntity
 	IsReply         bool
@@ -209,9 +210,11 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	isReply := event.Message.ReplyToMessage != nil || event.Message.Quote != nil || event.Message.ExternalReply != nil
 	replyToUserID := int64(0)
 	replyToIsBot := false
+	replyToMessageID := 0
 	if event.Message.ReplyToMessage != nil && event.Message.ReplyToMessage.From != nil {
 		replyToUserID = event.Message.ReplyToMessage.From.Id
 		replyToIsBot = event.Message.ReplyToMessage.From.IsBot
+		replyToMessageID = event.Message.ReplyToMessage.MessageId
 	}
 	replyContent := replyContentFromMessage(event.Message)
 
@@ -230,6 +233,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		ChatID:        event.Message.Chat.Id,
 		TopicID:       topicID,
 		MessageID:     event.Message.MessageId,
+		ReplyToMessageID: replyToMessageID,
 		UserID:        event.Message.From.Id,
 		Entities:      entities,
 		IsReply:       isReply,

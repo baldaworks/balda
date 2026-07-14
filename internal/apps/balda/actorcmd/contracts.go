@@ -9,6 +9,7 @@ const (
 	ActorTypeGoal       = ActorTypeGoalkeeper
 	ActorTypeDelivery   = "delivery"
 	ActorTypeMemory     = "memory"
+	ActorTypeQuestion   = "question"
 
 	NamespaceHumanInbound      = "human.inbound"
 	NamespaceWebhookInbound    = "webhook.inbound"
@@ -18,6 +19,7 @@ const (
 	NamespaceGoalCommand       = NamespaceGoalkeeperCommand
 	NamespaceJobControl        = "job.control"
 	NamespaceMemoryCommand     = "memory.command"
+	NamespaceQuestionCommand   = "question.command"
 	NamespaceTelemetry         = "telemetry"
 
 	KindMessage        = "message"
@@ -26,6 +28,8 @@ const (
 	KindGoal           = "goal"
 	KindCancel         = "cancel"
 	KindMemoryRemember = "memory_remember"
+	KindQuestionAnswered = "question_answered"
+	KindQuestionTimedOut = "question_timed_out"
 
 	QueueModeInterrupt = "interrupt"
 )

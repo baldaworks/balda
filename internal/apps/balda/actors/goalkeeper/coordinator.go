@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
+	"github.com/normahq/balda/internal/apps/balda/questions"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 
@@ -22,6 +23,7 @@ type coordinator struct {
 	sessionAccessor sessionAccessor
 	goalRunPreparer GoalRunPreparer
 	jobRuns         JobRuns
+	questions       *questions.Service
 	maxIters        int
 	logger          zerolog.Logger
 }
@@ -34,6 +36,7 @@ func newCoordinator(params ActorParams) *coordinator {
 		sessionAccessor: newSessionAccessor(params.SessionManager),
 		goalRunPreparer: params.GoalRunPreparer,
 		jobRuns:         params.JobRuns,
+		questions:       params.QuestionService,
 		maxIters:        normalizeGoalMaxIterations(params.MaxIterations),
 		logger:          params.Logger.With().Str("component", "balda.goalkeeper_actor").Logger(),
 	}
@@ -117,6 +120,9 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 	result, err := c.runWorkflow(runCtx, goalRun, ts.GetUserID(), goalRun.SessionID(), payload)
 	artifacts := snapshotGoalRunArtifacts(ctx, goalRun)
 	if err != nil {
+		if errors.Is(err, errGoalWaitingForUser) {
+			return nil
+		}
 		if errors.Is(runCtx.Err(), context.Canceled) {
 			if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 				c.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup canceled goal run")

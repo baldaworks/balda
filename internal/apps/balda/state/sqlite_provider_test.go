@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 25
+const expectedSQLiteMigrationVersion = 26
 
 func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
@@ -215,6 +216,60 @@ func TestSQLiteProvider_SessionStoreUpsert_PopulatesTelegramAddressColumns(t *te
 	}
 	if chatID != -1002667079342 || topicID != 8939 {
 		t.Fatalf("telegram address columns = %d/%d, want -1002667079342/8939", chatID, topicID)
+	}
+}
+
+func TestSQLiteProvider_QuestionStoreRoundTrip(t *testing.T) {
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.Questions()
+
+	record := QuestionRecord{
+		QuestionID:      "question-1",
+		SessionID:       "tg-1-0",
+		ChannelKind:     ChannelTypeTelegram,
+		AddressKey:      "1:0",
+		AddressJSON:     `{"chat_id":1,"topic_id":0}`,
+		Prompt:          "continue?",
+		Status:          questioncmd.StatusPending,
+		InteractionJSON: `{"session_id":"tg-1-0"}`,
+		ResumeJSON:      `{"to":"goalkeeper:job-1"}`,
+		RequestJSON:     `{"prompt":"continue?"}`,
+	}
+	if err := store.CreatePendingQuestion(ctx, record); err != nil {
+		t.Fatalf("CreatePendingQuestion() error = %v", err)
+	}
+	if err := store.BindQuestionDeliveryRef(ctx, record.QuestionID, questioncmd.DeliveryRef{
+		Provider:          "telegram",
+		ConversationKey:   "1:0",
+		ProviderMessageID: "42",
+	}); err != nil {
+		t.Fatalf("BindQuestionDeliveryRef() error = %v", err)
+	}
+	got, ok, err := store.GetPendingQuestionByReplyRef(ctx, "telegram", "1:0", "42")
+	if err != nil {
+		t.Fatalf("GetPendingQuestionByReplyRef() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetPendingQuestionByReplyRef() found = false, want true")
+	}
+	if got.QuestionID != record.QuestionID {
+		t.Fatalf("question_id = %q, want %q", got.QuestionID, record.QuestionID)
+	}
+	answered, settled, err := store.MarkQuestionAnswered(ctx, record.QuestionID, questioncmd.Answer{
+		Text:       "yes",
+		AnsweredAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("MarkQuestionAnswered() error = %v", err)
+	}
+	if !settled {
+		t.Fatal("MarkQuestionAnswered() settled = false, want true")
+	}
+	if answered.Status != questioncmd.StatusAnswered {
+		t.Fatalf("status = %q, want answered", answered.Status)
 	}
 }
 

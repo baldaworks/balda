@@ -14,6 +14,7 @@ const (
 	SubjectCommandDelivery = "balda.v1.cmd.delivery"
 	SubjectCommandMemory   = "balda.v1.cmd.memory"
 	SubjectCommandControl  = "balda.v1.cmd.control"
+	SubjectCommandQuestion = "balda.v1.cmd.question"
 	SubjectCommandAll      = "balda.v1.cmd.>"
 
 	SubjectEventCommandAccepted     = "balda.v1.evt.command.accepted"
@@ -63,6 +64,8 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 		return SubjectCommandDelivery
 	case ActorTypeMemory:
 		return SubjectCommandMemory
+	case ActorTypeQuestion:
+		return SubjectCommandQuestion
 	default:
 		switch namespace {
 		case NamespaceGoalkeeperCommand:
@@ -71,6 +74,8 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 			return SubjectCommandControl
 		case NamespaceMemoryCommand:
 			return SubjectCommandMemory
+		case NamespaceQuestionCommand:
+			return SubjectCommandQuestion
 		case NamespaceWebhookInbound, NamespaceScheduleInbound:
 			return SubjectCommandJob
 		case NamespaceHumanInbound:

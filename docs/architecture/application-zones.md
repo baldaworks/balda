@@ -22,6 +22,7 @@ New code should attach to one of these zones deliberately instead of landing in
 | Turn execution | queued turn restoration, provider turn execution, turn progress/final reply orchestration | `sessionturn`, `sessionturnapp` | general session lifecycle, generic job persistence |
 | Job lifecycle | durable job records, job events, delivery persistence, projections, scheduled durable work execution | `jobs`, `jobexec`, `scheduledjobs` | transport adapters, ingress parsing, conversational session ownership |
 | Control and access | operator-driven cancel/clear/restart/wait flows, owner/collaborator/channel auth state | `controlapp`, `auth` | feature actor behavior, transport-specific command handling |
+| Interactive questions | session-scoped user questions, pending-question lifecycle, reply settlement, timeout orchestration, actor resume targeting | `questions` | transport adapters, generic session lifecycle, hidden suspended runtime frames |
 | Application support | small app-facing ports and support helpers used by the zones above | `appports`, `envelopetarget`, `memory` | broad workflow orchestration, feature-specific business logic |
 
 ## Zone details
@@ -91,6 +92,29 @@ This zone owns operator-facing control semantics and access state:
 
 Do not mix feature behavior into this zone. It should express "who may do what"
 and "how operator actions settle", not product actor workflows.
+
+### Interactive questions
+
+This zone owns interactive user-input orchestration that is scoped to a Balda
+conversation but may be initiated by any product actor in that conversation's
+activation chain.
+
+It owns:
+
+- pending question lifecycle;
+- durable reply correlation;
+- timeout orchestration via scheduled jobs;
+- actor resume targeting after answer or timeout.
+
+It does not own:
+
+- transport-specific reply parsing;
+- session lifecycle/create/restore semantics;
+- provider runtime suspension across time.
+
+Keep this zone small and explicit. If question contracts are shared across
+layers, place those contracts in a dedicated contract package rather than in
+`questions` itself.
 
 ### Application support
 

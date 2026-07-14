@@ -140,8 +140,12 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	}
 	if durable && s.events != nil && strings.TrimSpace(payload.JobID) != "" {
 		if err := s.events.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliverySent, "delivery.actor", env.ID, map[string]any{
-			"text": strings.TrimSpace(payload.Text),
-			"mode": payload.Mode,
+			"text":                strings.TrimSpace(payload.Text),
+			"mode":                payload.Mode,
+			"provider":            strings.TrimSpace(payload.Locator.ChannelType),
+			"conversation_key":    strings.TrimSpace(payload.Locator.AddressKey),
+			"provider_message_id": strings.TrimSpace(providerMessageID),
+			"refs":                payload.Refs,
 		}); err != nil {
 			s.logger.Warn().Err(err).Str("job_id", payload.JobID).Msg("failed to record job delivery event")
 		}

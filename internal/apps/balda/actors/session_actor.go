@@ -2,14 +2,19 @@ package actors
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"go.uber.org/fx"
@@ -35,19 +40,23 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 }
 
 type sessionActorExecutor struct {
-	turns     appports.TurnQueue
-	runner    appports.SessionTurnRunner
-	tasks     sessionJobLifecycle
-	scheduler appports.ScheduledJobRecorder
+	turns      appports.TurnQueue
+	runner     appports.SessionTurnRunner
+	tasks      sessionJobLifecycle
+	scheduler  appports.ScheduledJobRecorder
+	dispatcher actortransport.Dispatcher
+	questions  *questions.Service
 }
 
 type sessionActorExecutorParams struct {
 	fx.In
 
-	Turns     appports.TurnQueue
-	Runner    appports.SessionTurnRunner
-	Tasks     sessionJobLifecycle           `optional:"true"`
-	Scheduler appports.ScheduledJobRecorder `optional:"true"`
+	Dispatcher actortransport.Dispatcher
+	Turns      appports.TurnQueue
+	Runner     appports.SessionTurnRunner
+	Tasks      sessionJobLifecycle           `optional:"true"`
+	Scheduler  appports.ScheduledJobRecorder `optional:"true"`
+	Questions  *questions.Service            `optional:"true"`
 }
 
 func (e *sessionActorExecutor) Address() string {
@@ -83,6 +92,9 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	if settlement.taskAlreadyDone(ctx, env, payload) {
 		return nil
 	}
+	if handled, err := e.handleScheduledQuestionTimeout(ctx, env, payload); handled {
+		return settlement.settle(ctx, env, payload, err)
+	}
 	if e.turns == nil {
 		return actorlayer.TransientError(fmt.Errorf("turn dispatcher is required"))
 	}
@@ -115,6 +127,37 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	case <-ctx.Done():
 		return actorlayer.TransientError(ctx.Err())
 	}
+}
+
+func (e *sessionActorExecutor) handleScheduledQuestionTimeout(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) (bool, error) {
+	if e == nil || e.questions == nil || e.dispatcher == nil {
+		return false, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(payload.Source), sessionTurnSourceSchedule) && !strings.EqualFold(strings.TrimSpace(env.Namespace), baldaexecution.NamespaceScheduleInbound) {
+		return false, nil
+	}
+	questionID, ok := questioncmd.ParseTimeoutScheduledContent(payload.Text)
+	if !ok {
+		return false, nil
+	}
+	record, settled, err := e.questions.Timeout(ctx, questionID, time.Now().UTC())
+	if err != nil || !settled {
+		return true, err
+	}
+	var interaction questioncmd.InteractionContext
+	if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
+		return true, fmt.Errorf("decode timed out question interaction: %w", err)
+	}
+	var resume questioncmd.ResumeTarget
+	if err := json.Unmarshal([]byte(record.ResumeJSON), &resume); err != nil {
+		return true, fmt.Errorf("decode timed out question resume: %w", err)
+	}
+	timeoutEnv, err := questioncmd.TimedOutEnvelope(resume, interaction, record.QuestionID, record.AnsweredAt)
+	if err != nil {
+		return true, err
+	}
+	_, err = e.dispatcher.Dispatch(ctx, timeoutEnv)
+	return true, err
 }
 
 func NormalizeSessionDeliveryOptions(payload SessionTurnPayload) deliveryfmt.Options {

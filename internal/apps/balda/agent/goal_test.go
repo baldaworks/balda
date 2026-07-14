@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/goalkeeperworkflow"
+	"github.com/normahq/balda/internal/apps/balda/goalresultcmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
@@ -19,6 +20,8 @@ import (
 )
 
 const goalTestSecondOutput = "second output"
+const goalTestWorkerSummary = "worker summary"
+const goalTestNeedUserInput = "need_user_input"
 
 func visibleContentText(content *genai.Content) string {
 	return extractGoalPromptText(content)
@@ -64,8 +67,8 @@ func TestWrapGoalPromptAgentPrefixesPromptAndReturnsBaseOutput(t *testing.T) {
 	}
 
 	got := runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
-	if got != "worker summary" {
-		t.Fatalf("runGoalAgentOnce() = %q, want %q", got, "worker summary")
+	if got != goalTestWorkerSummary {
+		t.Fatalf("runGoalAgentOnce() = %q, want %q", got, goalTestWorkerSummary)
 	}
 	if len(prompts) != 1 {
 		t.Fatalf("base agent runs = %d, want 1", len(prompts))
@@ -87,6 +90,41 @@ func TestGoalValidatorInstruction_DoesNotUseWorkerOutputPlaceholder(t *testing.T
 	}
 	if !strings.Contains(got, "isolated validator session") {
 		t.Fatalf("goalValidatorInstruction() = %q, want isolated validator session guidance", got)
+	}
+}
+
+func TestParseGoalWorkerResult(t *testing.T) {
+	t.Parallel()
+
+	result, ok := goalresultcmd.ParseWorkerResult(`{"status":"need_user_input","question":"Нужен токен?","reason":"без него нельзя продолжить"}`)
+	if !ok {
+		t.Fatal("parseGoalWorkerResult() ok = false, want true")
+	}
+	if result.Status != goalTestNeedUserInput {
+		t.Fatalf("status = %q, want %s", result.Status, goalTestNeedUserInput)
+	}
+	if result.Question != "Нужен токен?" {
+		t.Fatalf("question = %q, want %q", result.Question, "Нужен токен?")
+	}
+}
+
+func TestNormalizeGoalWorkerEvent_RewritesDoneJSONToSummary(t *testing.T) {
+	t.Parallel()
+
+	ev := goalTestTextEvent("inv-1", `{"status":"done","summary":"worker summary"}`)
+	got := normalizeGoalWorkerEvent(ev)
+	if text := visibleContentText(got.Content); text != goalTestWorkerSummary {
+		t.Fatalf("normalized text = %q, want %q", text, goalTestWorkerSummary)
+	}
+}
+
+func TestNormalizeGoalWorkerEvent_HidesNeedUserInputJSON(t *testing.T) {
+	t.Parallel()
+
+	ev := goalTestTextEvent("inv-1", `{"status":"need_user_input","question":"Нужен токен?","reason":"blocked"}`)
+	got := normalizeGoalWorkerEvent(ev)
+	if got.Content != nil && visibleContentText(got.Content) != "" {
+		t.Fatalf("normalized content = %q, want empty", visibleContentText(got.Content))
 	}
 }
 

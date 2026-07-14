@@ -27,6 +27,7 @@ import (
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/scheduledjobs"
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
 	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
@@ -240,6 +241,9 @@ func Module(
 			},
 			func(provider baldastate.Provider) baldastate.ScheduledJobStore {
 				return provider.ScheduledJobs()
+			},
+			func(provider baldastate.Provider) baldastate.QuestionStore {
+				return provider.Questions()
 			},
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
@@ -493,6 +497,7 @@ func Module(
 		natsbus.Module,
 		baldaexecution.Module,
 		baldajobs.Module,
+		questions.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
 		controlapp.Module,

@@ -20,6 +20,7 @@ type sqliteProvider struct {
 	runtimeSession *sqliteRuntimeSessionService
 	session        *sqliteSessionStore
 	jobs           *sqliteScheduledJobStore
+	questions      *sqliteQuestionStore
 	runtime        *sqliteJobStore
 	offset         *sqliteOffsetStore
 }
@@ -158,6 +159,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		runtimeSession: &sqliteRuntimeSessionService{db: db},
 		session:        &sqliteSessionStore{db: db},
 		jobs:           &sqliteScheduledJobStore{db: db},
+		questions:      &sqliteQuestionStore{db: db},
 		runtime:        &sqliteJobStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
 	}
@@ -182,6 +184,10 @@ func (p *sqliteProvider) Sessions() SessionStore {
 
 func (p *sqliteProvider) ScheduledJobs() ScheduledJobStore {
 	return p.jobs
+}
+
+func (p *sqliteProvider) Questions() QuestionStore {
+	return p.questions
 }
 
 func (p *sqliteProvider) Jobs() JobStore {

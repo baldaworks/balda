@@ -11,15 +11,16 @@ import (
 const jobPayloadKindDelivery = "delivery"
 
 type Payload struct {
-	JobID      string           `json:"job_id,omitempty"`
-	Locator    Locator          `json:"locator"`
-	Profile    Profile          `json:"profile,omitempty,omitzero"`
-	Mode       Mode             `json:"mode"`
-	Settlement SettlementPolicy `json:"settlement,omitempty"`
-	Text       string           `json:"text,omitempty"`
-	DraftID    int              `json:"draft_id,omitempty"`
-	Action     string           `json:"action,omitempty"`
-	Progress   *Progress        `json:"progress,omitempty"`
+	JobID      string            `json:"job_id,omitempty"`
+	Locator    Locator           `json:"locator"`
+	Profile    Profile           `json:"profile,omitempty,omitzero"`
+	Mode       Mode              `json:"mode"`
+	Settlement SettlementPolicy  `json:"settlement,omitempty"`
+	Refs       map[string]string `json:"refs,omitempty"`
+	Text       string            `json:"text,omitempty"`
+	DraftID    int               `json:"draft_id,omitempty"`
+	Action     string            `json:"action,omitempty"`
+	Progress   *Progress         `json:"progress,omitempty"`
 }
 
 type Mode string
@@ -101,12 +102,17 @@ func AgentReplyEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, l
 }
 
 func AgentReplyEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return AgentReplyEnvelopeWithProfileAndSettlementAndRefs(jobID, from, locator, profile, settlement, text, dedupeSuffix, nil)
+}
+
+func AgentReplyEnvelopeWithProfileAndSettlementAndRefs(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string, refs map[string]string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
 		Locator:    locator,
 		Profile:    normalizeProfile(profile),
 		Mode:       ModeAgentReply,
 		Settlement: normalizeSettlementPolicy(settlement),
+		Refs:       refs,
 		Text:       strings.TrimSpace(text),
 	}, dedupeSuffix)
 }

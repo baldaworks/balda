@@ -7,13 +7,17 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/go-actorlayer"
+	baldaactorcmd "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/progress"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
@@ -28,7 +32,7 @@ func TestGoalKeeperActorRejectsMismatchedEnvelopeAndPayloadJobID(t *testing.T) {
 
 	ctx := context.Background()
 	_, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
+	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
 	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
@@ -64,7 +68,7 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 
 	ctx := context.Background()
 	_, bus, dispatcher, tasks, _ := newTaskActorRuntimeServices(t, ctx)
-	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101"}
+	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
 	ts := newBaldaTopicSession(t, locator.SessionID)
 	setUnexportedField(t, ts, "userID", "101")
 	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
@@ -558,6 +562,7 @@ type fakeGoalRunPreparer struct {
 	finalizeWorkerOutput    string
 	finalizeValidatorOutput string
 	events                  []goalTestEvent
+	eventBatches            [][]goalTestEvent
 }
 
 func (b *fakeGoalRunPreparer) PrepareGoalRun(ctx context.Context, cfg goalkeeper.GoalRunConfig) (goalkeeper.GoalRun, error) {
@@ -581,6 +586,9 @@ func (b *fakeGoalRunPreparer) PrepareGoalRun(ctx context.Context, cfg goalkeeper
 		Run: func(inv adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 			return func(yield func(*adksession.Event, error) bool) {
 				events := b.events
+				if len(b.eventBatches) >= b.buildCalls && len(b.eventBatches[b.buildCalls-1]) > 0 {
+					events = b.eventBatches[b.buildCalls-1]
+				}
 				if len(events) == 0 {
 					events = []goalTestEvent{
 						{kind: "step", step: goalkeeper.WorkerStep, eventType: goalkeeper.StepStarted},
@@ -644,6 +652,298 @@ func (b *fakeGoalRunPreparer) PrepareGoalRun(ctx context.Context, cfg goalkeeper
 	}, nil
 }
 
+func TestGoalKeeperActorQuestionFlowResumesAfterAnswer(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = bus
+	_ = allocator
+	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-202", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
+	ts := newBaldaTopicSession(t, locator.SessionID)
+	setUnexportedField(t, ts, "userID", "101")
+	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
+	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
+	manager := newBaldaSessionManagerWithSession(t, locator, ts)
+	questionService := questions.New(provider.Questions(), provider.ScheduledJobs(), zerolog.Nop())
+	runtimeBuilder := &fakeGoalRunPreparer{
+		t: t,
+		eventBatches: [][]goalTestEvent{
+			{
+				{kind: "step", step: goalkeeper.WorkerStep, eventType: goalkeeper.StepStarted},
+				{kind: "step", step: goalkeeper.WorkerStep, eventType: "step_question", extraMeta: map[string]any{"question_prompt": "Нужен токен?"}},
+			},
+			{
+				{kind: "step", step: goalkeeper.WorkerStep, eventType: goalkeeper.StepStarted},
+				{kind: "text", text: "worker completed after answer"},
+				{kind: "step", step: goalkeeper.WorkerStep, eventType: goalkeeper.StepCompleted},
+				{kind: "step", step: goalkeeper.ValidatorStep, eventType: goalkeeper.StepStarted},
+				{kind: "text", text: "verdict: pass\nvalidated"},
+				{kind: "step", step: goalkeeper.ValidatorStep, eventType: goalkeeper.StepCompleted, turnComplete: true},
+			},
+		},
+	}
+	goalActor := goalkeeper.NewActor(goalkeeper.ActorParams{
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
+		Dispatcher:      dispatcher,
+		SessionManager:  manager,
+		GoalRunPreparer: runtimeBuilder,
+		QuestionService: questionService,
+		JobRuns:         NewJobRunRegistry(),
+		MaxIterations:   3,
+		Logger:          zerolog.Nop(),
+	})
+	env, err := goalkeeper.GoalJobEnvelope(locator, "ship release", "101", 3)
+	if err != nil {
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
+	}
+	if err := goalActor.Handle(ctx, env); err != nil {
+		t.Fatalf("initial Handle() error = %v", err)
+	}
+	jobID := baldaexecution.EnvelopeJobID(env)
+	task, ok, err := tasks.Get(ctx, jobID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("task %q not found", jobID)
+	}
+	if task.Status != baldastate.JobStatusWaitingForUser {
+		t.Fatalf("task status after question = %q, want %q (error=%q result=%q)", task.Status, baldastate.JobStatusWaitingForUser, task.Error, task.Result)
+	}
+	var pendingID string
+	for _, payload := range deliveryPayloadsForTask(t, bus, jobID) {
+		if strings.TrimSpace(payload.Text) != "Нужен токен?" {
+			continue
+		}
+		if questionID := strings.TrimSpace(payload.Refs["question_id"]); questionID != "" {
+			pendingID = questionID
+			break
+		}
+	}
+	if pendingID == "" {
+		t.Fatal("pending question id = empty, want question delivery refs")
+	}
+	record, ok, err := provider.Questions().GetQuestionByID(ctx, pendingID)
+	if err != nil {
+		t.Fatalf("GetQuestionByID() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("question %q not found", pendingID)
+	}
+	var interaction questioncmd.InteractionContext
+	if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
+		t.Fatalf("unmarshal interaction json: %v", err)
+	}
+	var resume questioncmd.ResumeTarget
+	if err := json.Unmarshal([]byte(record.ResumeJSON), &resume); err != nil {
+		t.Fatalf("unmarshal resume json: %v", err)
+	}
+	questionActor := &questionActor{dispatcher: dispatcher}
+	answerEnv, err := questioncmd.AnsweredEnvelope(
+		resume,
+		interaction,
+		questioncmd.Answer{
+			Text:       "да, вот токен",
+			AnsweredAt: testAnsweredAt,
+		},
+		record.QuestionID,
+	)
+	if err != nil {
+		t.Fatalf("AnsweredEnvelope() error = %v", err)
+	}
+	if err := questionActor.Handle(ctx, answerEnv); err != nil {
+		t.Fatalf("question actor Handle() error = %v", err)
+	}
+	continuations := bus.commands
+	var questionContinuationEnv actorlayer.Envelope
+	found := false
+	for i := len(continuations) - 1; i >= 0; i-- {
+		candidate := continuations[i]
+		if candidate.To.Target == baldaexecution.ActorTypeGoalkeeper && candidate.To.Key == jobID {
+			questionContinuationEnv = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("question continuation envelope not dispatched")
+	}
+	if err := goalActor.Handle(ctx, questionContinuationEnv); err != nil {
+		t.Fatalf("question continuation Handle() error = %v", err)
+	}
+	continuations = bus.commands
+	var resumedGoalEnv actorlayer.Envelope
+	found = false
+	for i := len(continuations) - 1; i >= 0; i-- {
+		candidate := continuations[i]
+		if candidate.To.Target == baldaexecution.ActorTypeGoalkeeper && candidate.To.Key == jobID && candidate.DedupeKey == "goal-resume:"+jobID {
+			resumedGoalEnv = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("resumed goal envelope not dispatched")
+	}
+	if err := goalActor.Handle(ctx, resumedGoalEnv); err != nil {
+		t.Fatalf("resumed goal Handle() error = %v", err)
+	}
+	task, ok, err = tasks.Get(ctx, jobID)
+	if err != nil {
+		t.Fatalf("Get() after resume error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("task %q not found after resume", jobID)
+	}
+	if task.Status != baldastate.JobStatusCompleted {
+		t.Fatalf("final task status = %q, want %q", task.Status, baldastate.JobStatusCompleted)
+	}
+	if runtimeBuilder.buildCalls != 2 {
+		t.Fatalf("buildCalls = %d, want 2", runtimeBuilder.buildCalls)
+	}
+	if !strings.Contains(runtimeBuilder.finalizeWorkerOutput, "worker completed after answer") {
+		t.Fatalf("finalize worker output = %q, want resumed worker output", runtimeBuilder.finalizeWorkerOutput)
+	}
+}
+
+var testAnsweredAt = time.Date(2026, 7, 14, 7, 0, 0, 0, time.UTC)
+
+func TestGoalKeeperActorQuestionTimeoutFlow(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = allocator
+	locator := session.SessionLocator{ChannelType: "telegram", SessionID: "tg-101-303", AddressKey: "101", AddressJSON: `{"chat_id":101}`}
+	ts := newBaldaTopicSession(t, locator.SessionID)
+	setUnexportedField(t, ts, "userID", "101")
+	setUnexportedField(t, ts, "agentSessionID", "adk-session-1")
+	setUnexportedField(t, ts, "workspaceDir", t.TempDir())
+	manager := newBaldaSessionManagerWithSession(t, locator, ts)
+	questionService := questions.New(provider.Questions(), provider.ScheduledJobs(), zerolog.Nop())
+	runtimeBuilder := &fakeGoalRunPreparer{
+		t: t,
+		eventBatches: [][]goalTestEvent{
+			{
+				{kind: "step", step: goalkeeper.WorkerStep, eventType: goalkeeper.StepStarted},
+				{kind: "step", step: goalkeeper.WorkerStep, eventType: "step_question", extraMeta: map[string]any{"question_prompt": "Нужен токен?"}},
+			},
+		},
+	}
+	goalActor := goalkeeper.NewActor(goalkeeper.ActorParams{
+		JobLifecycle:    tasks,
+		JobEvents:       tasks,
+		Dispatcher:      dispatcher,
+		SessionManager:  manager,
+		GoalRunPreparer: runtimeBuilder,
+		QuestionService: questionService,
+		JobRuns:         NewJobRunRegistry(),
+		MaxIterations:   3,
+		Logger:          zerolog.Nop(),
+	})
+	env, err := goalkeeper.GoalJobEnvelope(locator, "ship release", "101", 3)
+	if err != nil {
+		t.Fatalf("GoalJobEnvelope() error = %v", err)
+	}
+	if err := goalActor.Handle(ctx, env); err != nil {
+		t.Fatalf("initial Handle() error = %v", err)
+	}
+	jobID := baldaexecution.EnvelopeJobID(env)
+	var pendingID string
+	for _, payload := range deliveryPayloadsForTask(t, bus, jobID) {
+		if strings.TrimSpace(payload.Text) != "Нужен токен?" {
+			continue
+		}
+		if questionID := strings.TrimSpace(payload.Refs["question_id"]); questionID != "" {
+			pendingID = questionID
+			break
+		}
+	}
+	if pendingID == "" {
+		t.Fatal("pending question id = empty, want question delivery refs")
+	}
+	record, ok, err := provider.Questions().GetQuestionByID(ctx, pendingID)
+	if err != nil {
+		t.Fatalf("GetQuestionByID() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("question %q not found", pendingID)
+	}
+	content, err := questioncmd.TimeoutScheduledContent(record.QuestionID)
+	if err != nil {
+		t.Fatalf("TimeoutScheduledContent() error = %v", err)
+	}
+	sessionExec := &sessionActorExecutor{
+		dispatcher: dispatcher,
+		questions:  questionService,
+		scheduler:  &fakeScheduledJobRecorder{},
+	}
+	timeoutEnv := testSessionTurnEnvelopeWithJobID(t, nil, "scheduled-question-timeout-1", sessionTurnSourceSchedule)
+	timeoutEnv.Namespace = baldaexecution.NamespaceScheduleInbound
+	timeoutPayload := SessionTurnPayload{
+		JobID:          "scheduled-question-timeout-1",
+		ScheduledJobID: "question-timeout-" + record.QuestionID,
+		Source:         sessionTurnSourceSchedule,
+		Text:           content,
+		Locator:        locator,
+	}
+	timeoutEnv.Payload, err = actorlayer.MarshalPayload(timeoutPayload)
+	if err != nil {
+		t.Fatalf("marshal timeout payload: %v", err)
+	}
+	if err := sessionExec.enqueueTurn(ctx, timeoutEnv); err != nil {
+		t.Fatalf("session timeout enqueueTurn() error = %v", err)
+	}
+	var timedOutEnv actorlayer.Envelope
+	found := false
+	for i := len(bus.commands) - 1; i >= 0; i-- {
+		candidate := bus.commands[i]
+		if candidate.Kind == baldaactorcmd.KindQuestionTimedOut {
+			timedOutEnv = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("question timed_out envelope not dispatched")
+	}
+	questionActor := &questionActor{dispatcher: dispatcher}
+	if err := questionActor.Handle(ctx, timedOutEnv); err != nil {
+		t.Fatalf("question actor Handle() error = %v", err)
+	}
+	var continuation actorlayer.Envelope
+	found = false
+	for i := len(bus.commands) - 1; i >= 0; i-- {
+		candidate := bus.commands[i]
+		if candidate.To.Target == baldaexecution.ActorTypeGoalkeeper && candidate.To.Key == jobID {
+			continuation = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("goalkeeper timeout continuation not dispatched")
+	}
+	if err := goalActor.Handle(ctx, continuation); err != nil {
+		t.Fatalf("goalkeeper timeout continuation Handle() error = %v", err)
+	}
+	task, ok, err := tasks.Get(ctx, jobID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("task %q not found", jobID)
+	}
+	if task.Status != baldastate.JobStatusWaitingForUser {
+		t.Fatalf("final task status = %q, want %q", task.Status, baldastate.JobStatusWaitingForUser)
+	}
+	if !strings.Contains(task.Error, "question timed out") {
+		t.Fatalf("task error = %q, want timeout reason", task.Error)
+	}
+}
+
 func TestGoalKeeperActorPreservesWorkspaceOnExportFailure(t *testing.T) {
 	t.Parallel()
 
@@ -705,6 +1005,7 @@ type goalTestEvent struct {
 	text         string
 	turnComplete bool
 	planEntries  []map[string]any
+	extraMeta    map[string]any
 }
 
 func goalEventsAfterInitialFailure(finalValidatorText string) []goalTestEvent {
@@ -731,6 +1032,9 @@ func (e goalTestEvent) build(invocationID string, fallbackValidatorText string) 
 		ev.CustomMetadata = map[string]any{
 			goalkeeper.MetadataEventKey: e.eventType,
 			goalkeeper.MetadataStepKey:  e.step,
+		}
+		for key, value := range e.extraMeta {
+			ev.CustomMetadata[key] = value
 		}
 	case "text":
 		text := e.text
