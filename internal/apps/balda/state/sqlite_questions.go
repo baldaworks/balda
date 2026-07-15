@@ -125,29 +125,18 @@ func (s *sqliteQuestionStore) MarkQuestionAnswered(ctx context.Context, question
 	if answeredAt.IsZero() {
 		answeredAt = time.Now().UTC()
 	}
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE balda_questions
+	return s.updateQuestionResolution(
+		ctx,
+		questionID,
+		`UPDATE balda_questions
 		SET status = ?, answer_json = ?, answered_at = ?, updated_at = ?
 		WHERE question_id = ? AND status = ?`,
 		questioncmd.StatusAnswered,
 		answerJSON,
-		answeredAt.Format(time.RFC3339),
-		answeredAt.Format(time.RFC3339),
-		strings.TrimSpace(questionID),
-		questioncmd.StatusPending,
+		answeredAt,
+		answeredAt,
+		"answered",
 	)
-	if err != nil {
-		return QuestionRecord{}, false, fmt.Errorf("mark question %q answered: %w", questionID, err)
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return QuestionRecord{}, false, fmt.Errorf("count answered question %q: %w", questionID, err)
-	}
-	record, ok, err := s.GetQuestionByID(ctx, questionID)
-	if err != nil {
-		return QuestionRecord{}, false, err
-	}
-	return record, affected > 0 && ok, nil
 }
 
 func (s *sqliteQuestionStore) MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (QuestionRecord, bool, error) {
@@ -188,23 +177,44 @@ func (s *sqliteQuestionStore) MarkQuestionFailed(ctx context.Context, questionID
 	if failedAt.IsZero() {
 		failedAt = time.Now().UTC()
 	}
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE balda_questions
+	return s.updateQuestionResolution(
+		ctx,
+		questionID,
+		`UPDATE balda_questions
 		SET status = ?, failure_json = ?, failed_at = ?, updated_at = ?
 		WHERE question_id = ? AND status = ?`,
 		questioncmd.StatusFailed,
 		failureJSON,
-		failedAt.Format(time.RFC3339),
-		failedAt.Format(time.RFC3339),
+		failedAt,
+		failedAt,
+		"failed",
+	)
+}
+
+func (s *sqliteQuestionStore) updateQuestionResolution(
+	ctx context.Context,
+	questionID string,
+	query string,
+	status string,
+	payload string,
+	recordedAt time.Time,
+	updatedAt time.Time,
+	action string,
+) (QuestionRecord, bool, error) {
+	result, err := s.db.ExecContext(ctx, query,
+		status,
+		payload,
+		recordedAt.Format(time.RFC3339),
+		updatedAt.Format(time.RFC3339),
 		strings.TrimSpace(questionID),
 		questioncmd.StatusPending,
 	)
 	if err != nil {
-		return QuestionRecord{}, false, fmt.Errorf("mark question %q failed: %w", questionID, err)
+		return QuestionRecord{}, false, fmt.Errorf("mark question %q %s: %w", questionID, action, err)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return QuestionRecord{}, false, fmt.Errorf("count failed question %q: %w", questionID, err)
+		return QuestionRecord{}, false, fmt.Errorf("count %s question %q: %w", action, questionID, err)
 	}
 	record, ok, err := s.GetQuestionByID(ctx, questionID)
 	if err != nil {

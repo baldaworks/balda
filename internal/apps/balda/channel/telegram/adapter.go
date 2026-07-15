@@ -637,9 +637,10 @@ func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator delive
 	}
 	mode := deliveryfmt.EffectiveTelegramMode(telegramDeliveryProfile(profile), a.telegramFormattingMode())
 	var lastMessageID int
-	if question == nil {
+	switch {
+	case question == nil:
 		lastMessageID, err = a.messenger.SendAgentReplyLastMessageIDAndMode(ctx, chatID, text, topicID, mode)
-	} else if question.Audience.Visibility == deliverycmd.QuestionVisibilityPrivate {
+	case question.Audience.Visibility == deliverycmd.QuestionVisibilityPrivate:
 		receiverUserID, parseErr := telegramref.ParseUserID(question.Audience.UserID)
 		if parseErr != nil {
 			return "", fmt.Errorf("resolve private telegram question audience: %w", parseErr)
@@ -661,7 +662,7 @@ func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator delive
 				return ephemeralProviderMessageID(receiverUserID, ephemeralMessageID), nil
 			}
 		}
-	} else {
+	default:
 		keyboard, keyboardErr := questionInlineKeyboard(*question)
 		if keyboardErr != nil {
 			a.logger.Warn().Err(keyboardErr).Str("question_id", question.ID).Msg("build telegram question controls failed, using text choices")

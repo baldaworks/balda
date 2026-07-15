@@ -31,7 +31,7 @@ func (a *permissionActor) Handle(_ context.Context, env actorlayer.Envelope) err
 		return actorlayer.TransientError(fmt.Errorf("permission decision sink is required"))
 	}
 	resumeTarget := ""
-	decision := permissioncmd.Decision{}
+	var decision permissioncmd.Decision
 	switch strings.TrimSpace(env.Kind) {
 	case actorcmd.KindQuestionAnswered:
 		var payload questioncmd.AnsweredContinuation

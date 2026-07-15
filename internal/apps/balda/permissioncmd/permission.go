@@ -81,7 +81,7 @@ type Outcome struct {
 }
 
 type OutcomeSink interface {
-	RecordPermissionOutcome(Outcome)
+	RecordPermissionOutcome(outcome Outcome)
 }
 
 type interactionContextKey struct{}
