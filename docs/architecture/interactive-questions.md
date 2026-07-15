@@ -201,7 +201,8 @@ is an idempotent no-op after settlement.
 
 Version one should stay narrow:
 
-- plain text question prompt;
+- channel-appropriate permission presentation and plain text prompts for other
+  question kinds;
 - free-text answers and transport-neutral numbered options;
 - durable correlation by provider reply reference;
 - one answer per pending question;

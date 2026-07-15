@@ -30,6 +30,7 @@ components:
       - internal/apps/balda/locatorref
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
+      - internal/apps/balda/permissionfmt
       - internal/apps/balda/questioncmd
       - internal/apps/balda/telegramref
       - internal/apps/balda/telegramfmt

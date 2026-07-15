@@ -138,6 +138,14 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		return nil
 	}
 
+	if handled, err := h.handleQuestionReply(ctx, messageCtx); err != nil {
+		h.logger.Warn().Err(err).Str("session_id", messageCtx.Locator.SessionID).Msg("failed to handle question reply")
+		_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, messageCtx.Locator, "Could not process this reply right now. Please try again.")
+		return nil
+	} else if handled {
+		return nil
+	}
+
 	topicID := messageCtx.TopicID
 	var text string
 	if messageCtx.IsDM {
@@ -150,14 +158,6 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		text = normalized
 	}
 	if strings.TrimSpace(text) == "" {
-		return nil
-	}
-
-	if handled, err := h.handleQuestionReply(ctx, messageCtx, text); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", messageCtx.Locator.SessionID).Msg("failed to handle question reply")
-		_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, messageCtx.Locator, "Could not process this reply right now. Please try again.")
-		return nil
-	} else if handled {
 		return nil
 	}
 

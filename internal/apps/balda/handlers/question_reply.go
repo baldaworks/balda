@@ -14,7 +14,8 @@ import (
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
-func (h *BaldaHandler) handleQuestionReply(ctx context.Context, messageCtx baldatelegram.MessageContext, text string) (bool, error) {
+func (h *BaldaHandler) handleQuestionReply(ctx context.Context, messageCtx baldatelegram.MessageContext) (bool, error) {
+	text := messageCtx.Text
 	if h == nil || h.questionService == nil || messageCtx.ReplyToMessageID <= 0 || strings.TrimSpace(text) == "" {
 		return false, nil
 	}

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,17 +15,13 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
+	"github.com/normahq/balda/internal/apps/balda/permissionfmt"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questions"
-	"github.com/normahq/balda/internal/apps/balda/redaction"
 	"github.com/rs/zerolog"
 )
 
-const (
-	defaultTimeout = 2 * time.Minute
-	maxInputLength = 4096
-	maxLocations   = 10
-)
+const defaultTimeout = 2 * time.Minute
 
 type Config struct {
 	Mode    permissioncmd.Mode
@@ -131,11 +126,12 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 	for _, option := range request.Options {
 		options = append(options, questioncmd.Option{ID: strings.TrimSpace(option.ID), Label: strings.TrimSpace(option.Name)})
 	}
+	presentation := permissionfmt.Render(request)
 	record, err := s.questions.Ask(ctx, interaction, questioncmd.ResumeTarget{
 		To:        actorcmd.ActorTypePermission + ":" + reviewID,
 		Namespace: actorcmd.NamespacePermissionCommand,
 	}, questioncmd.Request{
-		Prompt:        renderPrompt(request),
+		Prompt:        presentation.Prompt,
 		Options:       options,
 		AllowFreeText: false,
 		Responder:     questioncmd.ResponderRequester,
@@ -148,7 +144,7 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 		"",
 		actorlayer.ActorAddress{Target: actorcmd.ActorTypePermission, Key: reviewID},
 		interaction.Locator,
-		deliverycmd.Profile{Format: deliverycmd.FormatPlain},
+		presentation.Profile,
 		deliverycmd.SettlementOutbox,
 		record.Prompt,
 		"permission:"+reviewID,
@@ -236,44 +232,4 @@ func hasOption(options []permissioncmd.Option, optionID string) bool {
 		}
 	}
 	return false
-}
-
-func renderPrompt(request permissioncmd.Request) string {
-	var out strings.Builder
-	out.WriteString("Permission required")
-	if title := strings.TrimSpace(request.ToolCall.Title); title != "" {
-		out.WriteString("\nTool: ")
-		out.WriteString(title)
-	}
-	if kind := strings.TrimSpace(request.ToolCall.Kind); kind != "" {
-		out.WriteString("\nKind: ")
-		out.WriteString(kind)
-	}
-	for index, location := range request.ToolCall.Locations {
-		if index >= maxLocations {
-			break
-		}
-		out.WriteString("\nLocation: ")
-		out.WriteString(strings.TrimSpace(location.Path))
-		if location.Line != nil {
-			out.WriteString(":")
-			out.WriteString(strconv.Itoa(*location.Line))
-		}
-	}
-	if input := truncate(redaction.Secrets(request.ToolCall.RawInput), maxInputLength); input != "" {
-		out.WriteString("\nInput: ")
-		out.WriteString(input)
-	}
-	out.WriteString("\n\nReply with the option number, ID, or name:")
-	for index, option := range request.Options {
-		fmt.Fprintf(&out, "\n%d. %s [%s]", index+1, strings.TrimSpace(option.Name), strings.TrimSpace(option.ID))
-	}
-	return out.String()
-}
-
-func truncate(value string, limit int) string {
-	if len(value) <= limit {
-		return value
-	}
-	return value[:limit] + "…"
 }

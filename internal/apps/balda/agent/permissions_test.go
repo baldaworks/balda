@@ -25,7 +25,13 @@ func TestPermissionHandlerTranslatesInteractionAndSelection(t *testing.T) {
 	handler := NewPermissionHandler(reviewer, zerolog.Nop())
 	ctx := permissioncmd.WithInteraction(context.Background(), questioncmd.InteractionContext{SessionID: "session-1"})
 	response, err := handler(ctx, acpagent.PermissionRequest{
-		ToolCall: acpagent.PermissionToolCall{ID: "call-1", RawInput: map[string]any{"command": "pwd"}},
+		ToolCall: acpagent.PermissionToolCall{
+			ID:       "call-1",
+			RawInput: map[string]any{"command": "pwd"},
+			Content: []acpagent.PermissionContent{
+				{Kind: acpagent.PermissionContentKindText, Text: "Run `pwd`."},
+			},
+		},
 		Options: []acpagent.PermissionOption{
 			{ID: "allow", Name: "Allow", Kind: acpagent.PermissionOptionKindAllowOnce},
 			{ID: "reject", Name: "Reject", Kind: acpagent.PermissionOptionKindRejectOnce},
@@ -36,6 +42,9 @@ func TestPermissionHandlerTranslatesInteractionAndSelection(t *testing.T) {
 	}
 	if got.Interaction.SessionID != "session-1" || got.ToolCall.ID != "call-1" {
 		t.Fatalf("translated request = %+v", got)
+	}
+	if len(got.ToolCall.Content) != 1 || got.ToolCall.Content[0].Kind != permissioncmd.ContentKindText || got.ToolCall.Content[0].Text != "Run `pwd`." {
+		t.Fatalf("translated content = %+v", got.ToolCall.Content)
 	}
 	if response.OptionID != "reject" {
 		t.Fatalf("decision = %+v, want reject", response)

@@ -27,12 +27,30 @@ type Location struct {
 	Line *int   `json:"line,omitempty"`
 }
 
+type ContentKind string
+
+const (
+	ContentKindText     ContentKind = "text"
+	ContentKindDiff     ContentKind = "diff"
+	ContentKindTerminal ContentKind = "terminal"
+)
+
+type Content struct {
+	Kind       ContentKind `json:"kind"`
+	Text       string      `json:"text,omitempty"`
+	Path       string      `json:"path,omitempty"`
+	OldText    *string     `json:"old_text,omitempty"`
+	NewText    string      `json:"new_text,omitempty"`
+	TerminalID string      `json:"terminal_id,omitempty"`
+}
+
 type ToolCall struct {
 	ID        string     `json:"id,omitempty"`
 	Title     string     `json:"title,omitempty"`
 	Kind      string     `json:"kind,omitempty"`
 	RawInput  string     `json:"raw_input,omitempty"`
 	Locations []Location `json:"locations,omitempty"`
+	Content   []Content  `json:"content,omitempty"`
 }
 
 type Request struct {

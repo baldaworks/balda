@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
+	"github.com/normahq/balda/internal/apps/balda/redaction"
 	acpagent "github.com/normahq/go-adk-acpagent/v2"
 	"github.com/rs/zerolog"
 )
@@ -66,6 +67,17 @@ func translatePermissionRequest(ctx context.Context, request acpagent.Permission
 	for _, location := range request.ToolCall.Locations {
 		locations = append(locations, permissioncmd.Location{Path: strings.TrimSpace(location.Path), Line: location.Line})
 	}
+	content := make([]permissioncmd.Content, 0, len(request.ToolCall.Content))
+	for _, item := range request.ToolCall.Content {
+		content = append(content, permissioncmd.Content{
+			Kind:       permissioncmd.ContentKind(item.Kind),
+			Text:       strings.TrimSpace(redaction.Secrets(item.Text)),
+			Path:       strings.TrimSpace(redaction.Secrets(item.Path)),
+			OldText:    redactedStringPointer(item.OldText),
+			NewText:    redaction.Secrets(item.NewText),
+			TerminalID: strings.TrimSpace(item.TerminalID),
+		})
+	}
 	rawInput := ""
 	if request.ToolCall.RawInput != nil {
 		if data, err := json.Marshal(request.ToolCall.RawInput); err == nil {
@@ -80,9 +92,18 @@ func translatePermissionRequest(ctx context.Context, request acpagent.Permission
 			Kind:      strings.TrimSpace(request.ToolCall.Kind),
 			RawInput:  rawInput,
 			Locations: locations,
+			Content:   content,
 		},
 		Options: options,
 	}
+}
+
+func redactedStringPointer(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	redacted := redaction.Secrets(*value)
+	return &redacted
 }
 
 func denyDecision(options []permissioncmd.Option) permissioncmd.Decision {

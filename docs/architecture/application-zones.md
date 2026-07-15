@@ -23,7 +23,7 @@ New code should attach to one of these zones deliberately instead of landing in
 | Job lifecycle | durable job records, job events, delivery persistence, projections, scheduled durable work execution | `jobs`, `jobexec`, `scheduledjobs` | transport adapters, ingress parsing, conversational session ownership |
 | Control and access | operator-driven cancel/clear/restart/wait flows, owner/collaborator/channel auth state | `controlapp`, `auth` | feature actor behavior, transport-specific command handling |
 | Interactive questions | session-scoped user questions, pending-question lifecycle, reply settlement, timeout orchestration, actor resume targeting | `questions` | transport adapters, generic session lifecycle, hidden suspended runtime frames |
-| Agent permissions | transport-neutral agent permission policy, interactive permission review, fail-closed settlement | `permissions`, ADK-facing adapter in `agent` | provider protocol types, transport-specific reply parsing, general question lifecycle |
+| Agent permissions | transport-neutral agent permission policy, interactive permission review, fail-closed settlement | `permissions`, ADK-facing adapter in `agent`, channel presentation in `permissionfmt` | provider protocol types, transport-specific reply parsing, general question lifecycle |
 | Application support | small app-facing ports and support helpers used by the zones above | `appports`, `envelopetarget`, `memory` | broad workflow orchestration, feature-specific business logic |
 
 ## Zone details
@@ -132,6 +132,9 @@ active agent run:
 Provider protocol SDK types must not cross that adapter boundary. The
 `permissions` package may reuse `questions`, but it does not own generic reply
 correlation, durable question state, or concrete channel delivery behavior.
+`permissionfmt` projects structured permission content into channel-appropriate
+presentation. It must not parse opaque provider input; that input remains below
+the ADK-facing adapter boundary and is never used as user-facing prompt text.
 
 ### Application support
 

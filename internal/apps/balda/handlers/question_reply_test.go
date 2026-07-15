@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -48,7 +49,11 @@ func (f *fakeQuestionStore) MarkQuestionAnswered(_ context.Context, questionID s
 		return baldastate.QuestionRecord{}, false, nil
 	}
 	f.record.Status = questioncmd.StatusAnswered
-	f.record.AnswerJSON = `{"text":"` + answer.Text + `"}`
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		return baldastate.QuestionRecord{}, false, err
+	}
+	f.record.AnswerJSON = string(encoded)
 	return f.record, true, nil
 }
 func (f *fakeQuestionStore) MarkQuestionTimedOut(context.Context, string, time.Time) (baldastate.QuestionRecord, bool, error) {
@@ -65,6 +70,7 @@ func TestHandleQuestionReplyEnqueuesContinuationTurn(t *testing.T) {
 			ConversationKey:   "1:0",
 			ProviderMessageID: "42",
 			Status:            questioncmd.StatusPending,
+			RequestJSON:       `{"options":[{"id":"opt-1","label":"Allow once"},{"id":"opt-2","label":"Allow"},{"id":"opt-3","label":"Cancel"}]}`,
 			InteractionJSON:   `{"session_id":"tg-1-0","channel_kind":"telegram","locator":{"session_id":"tg-1-0","channel_type":"telegram","address_key":"1:0","address_json":"{\"chat_id\":1,\"topic_id\":0}"}}`,
 			ResumeJSON:        `{"to":"session:tg-1-0"}`,
 		},
@@ -81,7 +87,9 @@ func TestHandleQuestionReplyEnqueuesContinuationTurn(t *testing.T) {
 		MessageID:        43,
 		ReplyToMessageID: 42,
 		UserID:           101,
-	}, "да")
+		Text:             "2",
+		ReplyContent:     "Permission required\n1. Allow once\n2. Allow\n3. Cancel",
+	})
 	if err != nil {
 		t.Fatalf("handleQuestionReply() error = %v", err)
 	}
@@ -98,7 +106,7 @@ func TestHandleQuestionReplyEnqueuesContinuationTurn(t *testing.T) {
 	if payload.QuestionID != "question-1" {
 		t.Fatalf("question_id = %q, want question-1", payload.QuestionID)
 	}
-	if payload.Answer.Text != "да" {
-		t.Fatalf("answer text = %q, want да", payload.Answer.Text)
+	if payload.Answer.Text != "2" || payload.Answer.SelectedOption != "opt-2" {
+		t.Fatalf("answer = %+v, want raw reply and opt-2", payload.Answer)
 	}
 }

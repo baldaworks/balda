@@ -2,7 +2,6 @@ package permissions
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -92,19 +91,6 @@ func TestAskUnsupportedChannelFailsClosed(t *testing.T) {
 	}
 	if decision.OptionID != "reject" {
 		t.Fatalf("decision = %+v, want reject", decision)
-	}
-}
-
-func TestRenderPromptRedactsSecretsAndListsOptions(t *testing.T) {
-	prompt := renderPrompt(permissioncmd.Request{
-		ToolCall: permissioncmd.ToolCall{Title: "run", RawInput: `{"token":"secret-value"}`},
-		Options:  []permissioncmd.Option{{ID: "yes", Name: "Allow once"}},
-	})
-	if strings.Contains(prompt, "secret-value") {
-		t.Fatalf("prompt leaked secret: %q", prompt)
-	}
-	if !strings.Contains(prompt, "1. Allow once [yes]") {
-		t.Fatalf("prompt missing option: %q", prompt)
 	}
 }
 
