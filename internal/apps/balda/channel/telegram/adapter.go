@@ -11,6 +11,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -33,7 +34,9 @@ type TelegramMessenger interface {
 	SendAgentReply(ctx context.Context, chatID int64, text string, topicID int) error
 	SendAgentReplyLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string) (int, error)
 	SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup, fallbackText string) (int, error)
+	SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID, receiverUserID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error)
 	ClearInlineKeyboard(ctx context.Context, chatID int64, messageID int) error
+	ClearEphemeralInlineKeyboard(ctx context.Context, chatID, receiverUserID int64, ephemeralMessageID int) error
 	AnswerCallbackQuery(ctx context.Context, callbackQueryID, text string, showAlert bool) error
 	SendDraftPlain(ctx context.Context, chatID int64, draftID int, text string, topicID int) error
 	SendDraftMarkdownWithMode(ctx context.Context, chatID int64, draftID int, text string, topicID int, mode string) error
@@ -636,6 +639,28 @@ func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator delive
 	var lastMessageID int
 	if question == nil {
 		lastMessageID, err = a.messenger.SendAgentReplyLastMessageIDAndMode(ctx, chatID, text, topicID, mode)
+	} else if question.Audience.Visibility == deliverycmd.QuestionVisibilityPrivate {
+		receiverUserID, parseErr := telegramref.ParseUserID(question.Audience.UserID)
+		if parseErr != nil {
+			return "", fmt.Errorf("resolve private telegram question audience: %w", parseErr)
+		}
+		keyboard, keyboardErr := questionInlineKeyboard(*question)
+		if keyboardErr != nil {
+			return "", fmt.Errorf("build private telegram question controls: %w", keyboardErr)
+		}
+		if chatID == receiverUserID {
+			lastMessageID, err = a.messenger.SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+				ctx, chatID, text, topicID, mode, keyboard, questionTextFallback(text, *question),
+			)
+		} else {
+			var ephemeralMessageID int
+			ephemeralMessageID, err = a.messenger.SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+				ctx, chatID, receiverUserID, text, topicID, mode, keyboard,
+			)
+			if err == nil {
+				return ephemeralProviderMessageID(receiverUserID, ephemeralMessageID), nil
+			}
+		}
 	} else {
 		keyboard, keyboardErr := questionInlineKeyboard(*question)
 		if keyboardErr != nil {
@@ -668,6 +693,9 @@ func (a *Adapter) ClearQuestionControls(ctx context.Context, locator deliverycmd
 	chatID, _, err := telegramTuple(locator)
 	if err != nil {
 		return err
+	}
+	if receiverUserID, ephemeralMessageID, ok := parseEphemeralProviderMessageID(messageID); ok {
+		return a.messenger.ClearEphemeralInlineKeyboard(ctx, chatID, receiverUserID, ephemeralMessageID)
 	}
 	id, err := strconv.Atoi(strings.TrimSpace(messageID))
 	if err != nil || id <= 0 {

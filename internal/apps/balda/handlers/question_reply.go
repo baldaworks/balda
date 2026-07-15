@@ -31,7 +31,10 @@ func (h *BaldaHandler) onQuestionCallback(ctx context.Context, event *events.Cal
 	if h.questionService == nil {
 		return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, "This request is unavailable.", true)
 	}
-	if h.ownerStore != nil && h.collaboratorStore != nil && !h.canAccessCollaboratorScope(ctx, callback.UserID) {
+	if h.ownerStore == nil || h.collaboratorStore == nil {
+		return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, "This request is unavailable.", true)
+	}
+	if !h.canAccessCollaboratorScope(ctx, callback.UserID) {
 		return h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, "You cannot answer this request.", true)
 	}
 	receivedAt := time.Now()

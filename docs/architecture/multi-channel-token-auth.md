@@ -59,6 +59,11 @@ Current token purpose:
 Collaborator invite tokens keep the existing invite flow and command
 compatibility.
 
+Interactive permission controls are additionally bound to the exact user who
+initiated the active turn. Owner status and collaborator status permit normal
+bot access but do not override that responder binding. If authorization state
+is unavailable, callback handling fails closed.
+
 ## Removed Static Whitelist
 
 Slack and Zulip `allowed_owners` static whitelist auth is removed. Ownership is

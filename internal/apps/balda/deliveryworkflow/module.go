@@ -1,6 +1,7 @@
 package deliveryworkflow
 
 import (
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/rs/zerolog"
@@ -26,6 +27,7 @@ var Module = fx.Module("balda_deliveryworkflow",
 				Outbox     DeliveryStore
 				Events     JobEvents
 				Questions  QuestionDeliveryBinder `optional:"true"`
+				Actor      actortransport.Dispatcher
 				Logger     zerolog.Logger
 			}) *Service {
 				return New(
@@ -33,6 +35,7 @@ var Module = fx.Module("balda_deliveryworkflow",
 					params.Outbox,
 					params.Events,
 					params.Questions,
+					params.Actor,
 					params.Logger.With().Str("component", "balda.deliveryworkflow").Logger(),
 				)
 			},

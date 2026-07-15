@@ -37,9 +37,19 @@ func (a *questionActor) Handle(ctx context.Context, env actorlayer.Envelope) err
 		return a.handleAnswered(ctx, env)
 	case baldaexecution.KindQuestionTimedOut:
 		return a.handleTimedOut(ctx, env)
+	case baldaexecution.KindQuestionFailed:
+		return a.handleFailed(ctx, env)
 	default:
 		return actorlayer.PolicyError(fmt.Errorf("unsupported question kind %q", env.Kind))
 	}
+}
+
+func (a *questionActor) handleFailed(ctx context.Context, env actorlayer.Envelope) error {
+	var payload questioncmd.FailedContinuation
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		return actorlayer.PermanentError(fmt.Errorf("decode failed continuation: %w", err))
+	}
+	return a.resume(ctx, env, payload.QuestionID, payload.Resume, payload.Interaction, "")
 }
 
 func (a *questionActor) handleAnswered(ctx context.Context, env actorlayer.Envelope) error {
@@ -91,7 +101,7 @@ func (a *questionActor) resume(ctx context.Context, env actorlayer.Envelope, que
 			next actorlayer.Envelope
 			err  error
 		)
-		if strings.TrimSpace(env.Kind) == baldaexecution.KindQuestionTimedOut {
+		if strings.TrimSpace(env.Kind) == baldaexecution.KindQuestionTimedOut || strings.TrimSpace(env.Kind) == baldaexecution.KindQuestionFailed {
 			next, err = goalcmd.QuestionTimedOutEnvelope(resumeTo.Key, questionID, env.Meta["timed_out_at"])
 		} else {
 			next, err = goalcmd.QuestionAnsweredEnvelope(resumeTo.Key, questionID, text, env.Meta["answered_at"])

@@ -13,12 +13,49 @@ import (
 
 type recordingQuestionMessenger struct {
 	TelegramMessenger
-	keyboard     client.InlineKeyboardMarkup
-	fallbackText string
+	keyboard                client.InlineKeyboardMarkup
+	fallbackText            string
+	ephemeralChatID         int64
+	ephemeralReceiverUserID int64
+	ephemeralTopicID        int
 }
 
 func (m *recordingQuestionMessenger) TelegramFormattingMode() string {
 	return telegramfmt.ModeRichMarkdown
+}
+
+func (m *recordingQuestionMessenger) SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+	_ context.Context,
+	chatID, receiverUserID int64,
+	_ string,
+	topicID int,
+	_ string,
+	keyboard client.InlineKeyboardMarkup,
+) (int, error) {
+	m.ephemeralChatID = chatID
+	m.ephemeralReceiverUserID = receiverUserID
+	m.ephemeralTopicID = topicID
+	m.keyboard = keyboard
+	return 73, nil
+}
+
+func TestSendPrivateGroupQuestionUsesEphemeralDelivery(t *testing.T) {
+	messenger := &recordingQuestionMessenger{}
+	adapter := NewAdapter(AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
+	messageID, err := adapter.SendAgentReplyWithQuestion(context.Background(), NewLocator(-1001, 77), deliverycmd.Profile{}, "Approve?", &deliverycmd.Question{
+		ID:       "question-1",
+		Audience: deliverycmd.QuestionAudience{Visibility: deliverycmd.QuestionVisibilityPrivate, UserID: "tg-101"},
+		Options:  []deliverycmd.QuestionOption{{ID: "allow", Label: "Allow"}, {ID: "deny", Label: "Deny"}},
+	})
+	if err != nil {
+		t.Fatalf("SendAgentReplyWithQuestion() error = %v", err)
+	}
+	if messageID != "ephemeral:101:73" {
+		t.Fatalf("message id = %q", messageID)
+	}
+	if messenger.ephemeralChatID != -1001 || messenger.ephemeralReceiverUserID != 101 || messenger.ephemeralTopicID != 77 {
+		t.Fatalf("ephemeral target = %d/%d/%d", messenger.ephemeralChatID, messenger.ephemeralReceiverUserID, messenger.ephemeralTopicID)
+	}
 }
 
 func (m *recordingQuestionMessenger) SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
@@ -86,6 +123,25 @@ func TestCallbackContextFromEventNormalizesSelection(t *testing.T) {
 	}
 	if got.Locator != NewLocator(-1001, 77) {
 		t.Fatalf("locator = %+v", got.Locator)
+	}
+}
+
+func TestCallbackContextFromEphemeralMessageRequiresReceiver(t *testing.T) {
+	data := "balda:q:question-1:1"
+	message := client.MaybeInaccessibleMessage{
+		"message_id":           0,
+		"ephemeral_message_id": 73,
+		"receiver_user":        map[string]any{"id": int64(101)},
+		"chat":                 map[string]any{"id": int64(-1001), "type": "supergroup"},
+	}
+	event := &events.CallbackQueryEvent{CallbackQuery: &client.CallbackQuery{Id: "callback-1", Data: &data, From: client.User{Id: 101}, Message: &message}}
+	got, ok := (&Adapter{}).CallbackContextFromEvent(event)
+	if !ok || got.ProviderMessageID != "ephemeral:101:73" {
+		t.Fatalf("callback = %+v ok=%v", got, ok)
+	}
+	event.CallbackQuery.From.Id = 202
+	if _, ok := (&Adapter{}).CallbackContextFromEvent(event); ok {
+		t.Fatal("callback from non-receiver accepted")
 	}
 }
 

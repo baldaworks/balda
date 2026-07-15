@@ -65,7 +65,27 @@ type Decision struct {
 	Canceled bool   `json:"canceled,omitempty"`
 }
 
+type OutcomeKind string
+
+const (
+	OutcomeAllowed  OutcomeKind = "allowed"
+	OutcomeDenied   OutcomeKind = "denied"
+	OutcomeCanceled OutcomeKind = "canceled"
+)
+
+// Outcome is the provider-independent semantic result of a permission review.
+type Outcome struct {
+	Kind       OutcomeKind `json:"kind"`
+	Source     string      `json:"source,omitempty"`
+	ToolCallID string      `json:"tool_call_id,omitempty"`
+}
+
+type OutcomeSink interface {
+	RecordPermissionOutcome(Outcome)
+}
+
 type interactionContextKey struct{}
+type outcomeContextKey struct{}
 
 func WithInteraction(ctx context.Context, interaction questioncmd.InteractionContext) context.Context {
 	return context.WithValue(ctx, interactionContextKey{}, interaction)
@@ -77,4 +97,17 @@ func InteractionFromContext(ctx context.Context) (questioncmd.InteractionContext
 	}
 	interaction, ok := ctx.Value(interactionContextKey{}).(questioncmd.InteractionContext)
 	return interaction, ok && strings.TrimSpace(interaction.SessionID) != ""
+}
+
+func WithOutcomeSink(ctx context.Context, sink OutcomeSink) context.Context {
+	return context.WithValue(ctx, outcomeContextKey{}, sink)
+}
+
+func RecordOutcome(ctx context.Context, outcome Outcome) {
+	if ctx == nil {
+		return
+	}
+	if sink, ok := ctx.Value(outcomeContextKey{}).(OutcomeSink); ok && sink != nil {
+		sink.RecordPermissionOutcome(outcome)
+	}
 }

@@ -17,6 +17,7 @@ func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {
 		"question-1",
 		"test",
 		[]QuestionOption{{ID: "allow", Label: "Allow"}, {ID: "cancel", Label: "Cancel"}},
+		QuestionAudience{Visibility: QuestionVisibilityPrivate, UserID: "user-1"},
 	)
 	if err != nil {
 		t.Fatalf("QuestionEnvelope() error = %v", err)
@@ -27,6 +28,9 @@ func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {
 	}
 	if payload.Question == nil || payload.Question.ID != "question-1" || len(payload.Question.Options) != 2 {
 		t.Fatalf("question = %+v", payload.Question)
+	}
+	if payload.Question.Audience.Visibility != QuestionVisibilityPrivate || payload.Question.Audience.UserID != "user-1" {
+		t.Fatalf("question audience = %+v", payload.Question.Audience)
 	}
 	if payload.Refs["question_id"] != "question-1" {
 		t.Fatalf("refs = %+v", payload.Refs)

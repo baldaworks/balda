@@ -13,6 +13,7 @@ import (
 )
 
 const QuestionCallbackPrefix = "balda:q:"
+const ephemeralProviderMessagePrefix = "ephemeral:"
 
 // CallbackContext is the channel-normalized context of a Telegram question
 // selection.
@@ -62,15 +63,28 @@ func (a *Adapter) CallbackContextFromEvent(event *events.CallbackQueryEvent) (Ca
 		return CallbackContext{}, false
 	}
 	var message struct {
-		MessageID       int `json:"message_id"`
-		MessageThreadID int `json:"message_thread_id,omitempty"`
-		Chat            struct {
+		MessageID          int  `json:"message_id"`
+		EphemeralMessageID *int `json:"ephemeral_message_id,omitempty"`
+		MessageThreadID    int  `json:"message_thread_id,omitempty"`
+		ReceiverUser       *struct {
+			ID int64 `json:"id"`
+		} `json:"receiver_user,omitempty"`
+		Chat struct {
 			ID   int64  `json:"id"`
 			Type string `json:"type"`
 		} `json:"chat"`
 	}
 	raw, err := json.Marshal(event.CallbackQuery.Message)
-	if err != nil || json.Unmarshal(raw, &message) != nil || message.MessageID <= 0 || message.Chat.ID == 0 {
+	if err != nil || json.Unmarshal(raw, &message) != nil || message.Chat.ID == 0 {
+		return CallbackContext{}, false
+	}
+	providerMessageID := ""
+	switch {
+	case message.MessageID > 0:
+		providerMessageID = strconv.Itoa(message.MessageID)
+	case message.EphemeralMessageID != nil && *message.EphemeralMessageID > 0 && message.ReceiverUser != nil && message.ReceiverUser.ID == event.CallbackQuery.From.Id:
+		providerMessageID = ephemeralProviderMessageID(message.ReceiverUser.ID, *message.EphemeralMessageID)
+	default:
 		return CallbackContext{}, false
 	}
 	topicID := message.MessageThreadID
@@ -82,9 +96,27 @@ func (a *Adapter) CallbackContextFromEvent(event *events.CallbackQueryEvent) (Ca
 		CallbackQueryID:   strings.TrimSpace(event.CallbackQuery.Id),
 		QuestionID:        questionID,
 		OptionIndex:       optionIndex,
-		ProviderMessageID: strconv.Itoa(message.MessageID),
+		ProviderMessageID: providerMessageID,
 		UserID:            event.CallbackQuery.From.Id,
 	}, true
+}
+
+func ephemeralProviderMessageID(receiverUserID int64, ephemeralMessageID int) string {
+	return fmt.Sprintf("%s%d:%d", ephemeralProviderMessagePrefix, receiverUserID, ephemeralMessageID)
+}
+
+func parseEphemeralProviderMessageID(value string) (int64, int, bool) {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, ephemeralProviderMessagePrefix) {
+		return 0, 0, false
+	}
+	userPart, messagePart, ok := strings.Cut(strings.TrimPrefix(trimmed, ephemeralProviderMessagePrefix), ":")
+	if !ok {
+		return 0, 0, false
+	}
+	userID, userErr := strconv.ParseInt(userPart, 10, 64)
+	messageID, messageErr := strconv.Atoi(messagePart)
+	return userID, messageID, userErr == nil && messageErr == nil && userID > 0 && messageID > 0
 }
 
 func parseQuestionCallback(data string) (string, int, bool) {

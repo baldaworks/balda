@@ -7,11 +7,12 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 )
 
 type permissionDecisionSink interface {
-	Resolve(reviewID, optionID string)
+	Resolve(reviewID string, decision permissioncmd.Decision)
 }
 
 type permissionActor struct {
@@ -30,7 +31,7 @@ func (a *permissionActor) Handle(_ context.Context, env actorlayer.Envelope) err
 		return actorlayer.TransientError(fmt.Errorf("permission decision sink is required"))
 	}
 	resumeTarget := ""
-	optionID := ""
+	decision := permissioncmd.Decision{}
 	switch strings.TrimSpace(env.Kind) {
 	case actorcmd.KindQuestionAnswered:
 		var payload questioncmd.AnsweredContinuation
@@ -38,13 +39,21 @@ func (a *permissionActor) Handle(_ context.Context, env actorlayer.Envelope) err
 			return actorlayer.PermanentError(fmt.Errorf("decode permission answer: %w", err))
 		}
 		resumeTarget = payload.Resume.To
-		optionID = payload.Answer.SelectedOption
+		decision = permissioncmd.Decision{OptionID: payload.Answer.SelectedOption, Source: "user"}
 	case actorcmd.KindQuestionTimedOut:
 		var payload questioncmd.TimedOutContinuation
 		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			return actorlayer.PermanentError(fmt.Errorf("decode permission timeout: %w", err))
 		}
 		resumeTarget = payload.Resume.To
+		decision = permissioncmd.Decision{Source: "timeout", Canceled: true}
+	case actorcmd.KindQuestionFailed:
+		var payload questioncmd.FailedContinuation
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+			return actorlayer.PermanentError(fmt.Errorf("decode permission failure: %w", err))
+		}
+		resumeTarget = payload.Resume.To
+		decision = permissioncmd.Decision{Source: firstNonEmpty(payload.Failure.Code, "fail_closed"), Canceled: true}
 	default:
 		return actorlayer.PolicyError(fmt.Errorf("unsupported permission kind %q", env.Kind))
 	}
@@ -55,6 +64,6 @@ func (a *permissionActor) Handle(_ context.Context, env actorlayer.Envelope) err
 	if resume.Target != actorcmd.ActorTypePermission || strings.TrimSpace(resume.Key) != strings.TrimSpace(env.To.Key) {
 		return actorlayer.PolicyError(fmt.Errorf("permission resume target mismatch"))
 	}
-	a.sink.Resolve(resume.Key, optionID)
+	a.sink.Resolve(resume.Key, decision)
 	return nil
 }

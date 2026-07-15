@@ -6,17 +6,22 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 )
 
 type testPermissionSink struct {
 	reviewID string
 	optionID string
+	source   string
+	canceled bool
 }
 
-func (s *testPermissionSink) Resolve(reviewID, optionID string) {
+func (s *testPermissionSink) Resolve(reviewID string, decision permissioncmd.Decision) {
 	s.reviewID = reviewID
-	s.optionID = optionID
+	s.optionID = decision.OptionID
+	s.source = decision.Source
+	s.canceled = decision.Canceled
 }
 
 func TestPermissionActorResolvesSelectedOption(t *testing.T) {
@@ -38,7 +43,7 @@ func TestPermissionActorResolvesSelectedOption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if sink.reviewID != "review-1" || sink.optionID != "allow-once" {
+	if sink.reviewID != "review-1" || sink.optionID != "allow-once" || sink.source != "user" {
 		t.Fatalf("resolution = %q %q", sink.reviewID, sink.optionID)
 	}
 }
@@ -61,7 +66,7 @@ func TestPermissionActorResolvesTimeoutAsCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if sink.reviewID != "review-1" || sink.optionID != "" {
+	if sink.reviewID != "review-1" || sink.optionID != "" || sink.source != "timeout" || !sink.canceled {
 		t.Fatalf("resolution = %q %q", sink.reviewID, sink.optionID)
 	}
 }

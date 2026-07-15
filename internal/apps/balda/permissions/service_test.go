@@ -133,7 +133,10 @@ func TestAskWaitsForGenericPermissionDecision(t *testing.T) {
 	if delivery.Question == nil || len(delivery.Question.Options) != 2 || delivery.Question.Options[0].ID != "allow" {
 		t.Fatalf("delivery question = %+v", delivery.Question)
 	}
-	service.Resolve(envelope.From.Key, "allow")
+	if delivery.Question.Audience.Visibility != deliverycmd.QuestionVisibilityPrivate || delivery.Question.Audience.UserID != "tg-101" {
+		t.Fatalf("delivery audience = %+v", delivery.Question.Audience)
+	}
+	service.Resolve(envelope.From.Key, permissioncmd.Decision{OptionID: "allow", Source: "user"})
 	if err := <-errors; err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}

@@ -12,6 +12,12 @@ import (
 
 type permissionReviewerFunc func(context.Context, permissioncmd.Request) (permissioncmd.Decision, error)
 
+type recordingOutcomeSink struct{ outcomes []permissioncmd.Outcome }
+
+func (s *recordingOutcomeSink) RecordPermissionOutcome(outcome permissioncmd.Outcome) {
+	s.outcomes = append(s.outcomes, outcome)
+}
+
 func (f permissionReviewerFunc) Review(ctx context.Context, request permissioncmd.Request) (permissioncmd.Decision, error) {
 	return f(ctx, request)
 }
@@ -62,5 +68,23 @@ func TestPermissionHandlerWithoutReviewerRejectsInsteadOfAllowingFirstOption(t *
 	}
 	if response.OptionID != "reject" {
 		t.Fatalf("decision = %+v, want reject", response)
+	}
+}
+
+func TestPermissionHandlerRecordsProviderIndependentDenialOutcome(t *testing.T) {
+	sink := &recordingOutcomeSink{}
+	ctx := permissioncmd.WithOutcomeSink(context.Background(), sink)
+	handler := NewPermissionHandler(permissionReviewerFunc(func(context.Context, permissioncmd.Request) (permissioncmd.Decision, error) {
+		return permissioncmd.Decision{OptionID: "reject", Source: "timeout"}, nil
+	}), zerolog.Nop())
+	_, err := handler(ctx, acpagent.PermissionRequest{
+		ToolCall: acpagent.PermissionToolCall{ID: "call-1"},
+		Options:  []acpagent.PermissionOption{{ID: "allow", Kind: acpagent.PermissionOptionKindAllowOnce}, {ID: "reject", Kind: acpagent.PermissionOptionKindRejectOnce}},
+	})
+	if err != nil {
+		t.Fatalf("handler() error = %v", err)
+	}
+	if len(sink.outcomes) != 1 || sink.outcomes[0].Kind != permissioncmd.OutcomeDenied || sink.outcomes[0].Source != "timeout" {
+		t.Fatalf("outcomes = %+v", sink.outcomes)
 	}
 }

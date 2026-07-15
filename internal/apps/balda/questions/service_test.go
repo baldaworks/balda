@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -74,6 +75,44 @@ func (f *fakeStore) MarkQuestionTimedOut(_ context.Context, questionID string, t
 	f.record.Status = questioncmd.StatusTimedOut
 	f.record.AnsweredAt = timedOutAt
 	return f.record, true, nil
+}
+
+func (f *fakeStore) MarkQuestionFailed(_ context.Context, questionID string, failure questioncmd.Failure) (baldastate.QuestionRecord, bool, error) {
+	if f.record.QuestionID != questionID {
+		return baldastate.QuestionRecord{}, false, nil
+	}
+	if f.record.Status != questioncmd.StatusPending {
+		return f.record, false, nil
+	}
+	f.record.Status = questioncmd.StatusFailed
+	f.record.FailureJSON = mustJSON(failure)
+	f.record.FailedAt = failure.FailedAt
+	return f.record, true, nil
+}
+
+func TestServiceFailDeliverySettlesAndBuildsContinuation(t *testing.T) {
+	store := &fakeStore{record: selectableQuestionRecord()}
+	store.record.ResumeJSON = mustJSON(questioncmd.ResumeTarget{To: "permission:review-1"})
+	service := New(store, nil, zerolog.Nop())
+	failure := questioncmd.Failure{Code: "delivery_failed", Message: "ephemeral unavailable", FailedAt: time.Date(2026, 7, 16, 1, 0, 0, 0, time.UTC)}
+
+	envelope, failed, err := service.FailDelivery(context.Background(), "question-1", failure)
+	if err != nil {
+		t.Fatalf("FailDelivery() error = %v", err)
+	}
+	if !failed || store.record.Status != questioncmd.StatusFailed {
+		t.Fatalf("failed = %v record = %+v", failed, store.record)
+	}
+	if envelope.DedupeKey != "question:question-1:failed" {
+		t.Fatalf("dedupe key = %q", envelope.DedupeKey)
+	}
+	var continuation questioncmd.FailedContinuation
+	if err := actorlayer.UnmarshalPayload(envelope.Payload, &continuation); err != nil {
+		t.Fatalf("decode continuation: %v", err)
+	}
+	if continuation.Failure.Code != "delivery_failed" || continuation.Resume.To != "permission:review-1" {
+		t.Fatalf("continuation = %+v", continuation)
+	}
 }
 
 func TestServiceAskCreatesPendingRecord(t *testing.T) {
@@ -328,6 +367,7 @@ func selectableQuestionRecord() baldastate.QuestionRecord {
 		ConversationKey:   "1:0",
 		ProviderMessageID: "42",
 		InteractionJSON:   mustJSON(interaction),
+		ResumeJSON:        mustJSON(questioncmd.ResumeTarget{To: "permission:review-1"}),
 		RequestJSON: mustJSON(questioncmd.Request{
 			Responder: questioncmd.ResponderRequester,
 			Options:   []questioncmd.Option{{ID: "allow", Label: "Allow"}, {ID: "cancel", Label: "Cancel"}},

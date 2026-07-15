@@ -126,6 +126,8 @@ active agent run:
 - interactive `ask` orchestration over the shared question lifecycle;
 - bounded waiting and fail-closed behavior;
 - mapping a settled option back to the active ADK-facing permission callback.
+- recording a provider-independent semantic outcome so an empty terminal turn
+  can distinguish timeout, delivery failure, and user denial.
 
 `permissioncmd` contains the transport- and provider-neutral contracts. The
 `agent` package adapts the ADK-facing permission callback into those contracts.

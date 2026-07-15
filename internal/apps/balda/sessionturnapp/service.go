@@ -139,6 +139,8 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	if requesterUserID == "" {
 		requesterUserID = strings.TrimSpace(req.UserID)
 	}
+	permissionOutcomes := &permissionOutcomeRecorder{}
+	runCtx = permissioncmd.WithOutcomeSink(runCtx, permissionOutcomes)
 	runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
 		SessionID:   req.SessionID,
 		ChannelKind: req.Locator.ChannelType,
@@ -370,8 +372,14 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					terminalErrorMessage = lastNonRetryErrorMessage
 				}
 				terminalMessage := terminalErrorTurnMessage(terminalErrorMessage)
+				terminalSource := "provider_error"
+				if terminalMessage == "" {
+					terminalMessage = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
+					terminalSource = "permission_outcome"
+				}
 				if terminalMessage == "" {
 					terminalMessage = terminalTurnMessage(terminalFinishReason)
+					terminalSource = "finish_reason"
 				}
 				if terminalMessage != "" {
 					if jobBackedDelivery {
@@ -385,13 +393,13 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 							return err
 						}
 						responseEmitted = true
-						responseSource = "finish_reason"
+						responseSource = terminalSource
 						handledEmptyTerminalReason = true
 					} else if sendErr := sendPlain(ctx, s.dispatcher, req.OutboundFrom, req.Locator, terminalMessage); sendErr != nil {
 						log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda terminal finish reason message")
 					} else {
 						responseEmitted = true
-						responseSource = "finish_reason"
+						responseSource = terminalSource
 						handledEmptyTerminalReason = true
 					}
 				}

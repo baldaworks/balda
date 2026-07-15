@@ -183,12 +183,14 @@ type QuestionRecord struct {
 	ResumeJSON        string
 	RequestJSON       string
 	AnswerJSON        string
+	FailureJSON       string
 	Provider          string
 	ConversationKey   string
 	ProviderMessageID string
 	ReplyHandle       string
 	ExpiresAt         time.Time
 	AnsweredAt        time.Time
+	FailedAt          time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -200,6 +202,7 @@ type QuestionStore interface {
 	GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (QuestionRecord, bool, error)
 	MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (QuestionRecord, bool, error)
 	MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (QuestionRecord, bool, error)
+	MarkQuestionFailed(ctx context.Context, questionID string, failure questioncmd.Failure) (QuestionRecord, bool, error)
 }
 
 // JobRecord persists one assignable work item.

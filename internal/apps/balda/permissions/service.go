@@ -154,6 +154,7 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 		record.QuestionID,
 		"permission:"+reviewID,
 		deliveryOptions,
+		permissionQuestionAudience(interaction),
 	)
 	if err != nil {
 		_, _, _ = s.questions.Timeout(context.WithoutCancel(ctx), record.QuestionID, s.now().UTC())
@@ -169,6 +170,7 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 	select {
 	case decision := <-waiter:
 		if decision.Canceled {
+			fallback.Source = firstNonEmpty(decision.Source, "canceled")
 			return fallback, nil
 		}
 		if hasOption(request.Options, decision.OptionID) {
@@ -201,18 +203,38 @@ func (s *Service) timeoutDecision(questionID string, options []permissioncmd.Opt
 	return fallback, nil
 }
 
-func (s *Service) Resolve(reviewID, optionID string) {
+func (s *Service) Resolve(reviewID string, decision permissioncmd.Decision) {
 	s.waitMu.Lock()
 	waiter := s.waiters[strings.TrimSpace(reviewID)]
 	s.waitMu.Unlock()
 	if waiter == nil {
 		return
 	}
-	trimmedOptionID := strings.TrimSpace(optionID)
+	decision.OptionID = strings.TrimSpace(decision.OptionID)
+	decision.Source = strings.TrimSpace(decision.Source)
 	select {
-	case waiter <- permissioncmd.Decision{OptionID: trimmedOptionID, Source: "user", Canceled: trimmedOptionID == ""}:
+	case waiter <- decision:
 	default:
 	}
+}
+
+func permissionQuestionAudience(interaction questioncmd.InteractionContext) deliverycmd.QuestionAudience {
+	if !strings.EqualFold(strings.TrimSpace(interaction.Locator.ChannelType), string(deliverycmd.ChannelTypeTelegram)) {
+		return deliverycmd.QuestionAudience{}
+	}
+	return deliverycmd.QuestionAudience{
+		Visibility: deliverycmd.QuestionVisibilityPrivate,
+		UserID:     strings.TrimSpace(interaction.RequestedBy.UserID),
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func selectDecision(options []permissioncmd.Option, allow bool, source string) permissioncmd.Decision {

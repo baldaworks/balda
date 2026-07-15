@@ -270,6 +270,36 @@ func (m *Messenger) SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
 	return result.LastMessageID, nil
 }
 
+// SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode sends a
+// group/supergroup question visible only to receiverUserID. It deliberately
+// has no public fallback.
+func (m *Messenger) SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+	ctx context.Context,
+	chatID, receiverUserID int64,
+	text string,
+	topicID int,
+	mode string,
+	keyboard client.InlineKeyboardMarkup,
+) (int, error) {
+	if receiverUserID <= 0 {
+		return 0, fmt.Errorf("ephemeral telegram receiver is required")
+	}
+	switch telegramfmt.NormalizeMode(mode) {
+	case telegramfmt.ModeRichHTML, telegramfmt.ModeHTML:
+		return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, telegramfmt.HTML(text), topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeHTML), keyboard)
+	case telegramfmt.ModeNone:
+		return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, text, topicID, "", keyboard)
+	case telegramfmt.ModeRichMarkdown:
+		fallthrough
+	default:
+		payload, err := telegramfmt.MarkdownV2(text)
+		if err != nil {
+			payload = telegramfmt.EscapeMarkdownV2(text)
+		}
+		return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, payload, topicID, "MarkdownV2", keyboard)
+	}
+}
+
 func (m *Messenger) sendAgentReplyWithInlineKeyboard(ctx context.Context, chatID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error) {
 	switch telegramfmt.NormalizeMode(mode) {
 	case telegramfmt.ModeRichHTML:
@@ -331,6 +361,45 @@ type sendMessageWithInlineKeyboardRequest struct {
 	ReplyMarkup     client.InlineKeyboardMarkup `json:"reply_markup"`
 }
 
+type sendEphemeralMessageWithInlineKeyboardRequest struct {
+	ChatID          int64                       `json:"chat_id"`
+	ReceiverUserID  int64                       `json:"receiver_user_id"`
+	Text            string                      `json:"text"`
+	ParseMode       *string                     `json:"parse_mode,omitempty"`
+	MessageThreadID *int                        `json:"message_thread_id,omitempty"`
+	ReplyMarkup     client.InlineKeyboardMarkup `json:"reply_markup"`
+}
+
+func (m *Messenger) sendEphemeralMessageWithInlineKeyboard(ctx context.Context, chatID, receiverUserID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error) {
+	request := sendEphemeralMessageWithInlineKeyboardRequest{ChatID: chatID, ReceiverUserID: receiverUserID, Text: text, ReplyMarkup: keyboard}
+	if mode != "" {
+		request.ParseMode = &mode
+	}
+	if topicID != 0 {
+		request.MessageThreadID = &topicID
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return 0, fmt.Errorf("encode ephemeral telegram question: %w", err)
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendMessageWithBodyWithResponse(sendCtx, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return 0, fmt.Errorf("send ephemeral telegram question to chat %d: %w", chatID, err)
+	}
+	if resp == nil || resp.JSON200 == nil {
+		if resp != nil && resp.JSON400 != nil {
+			return 0, fmt.Errorf("send ephemeral telegram question to chat %d: %s", chatID, resp.JSON400.Description)
+		}
+		return 0, fmt.Errorf("send ephemeral telegram question to chat %d: no response body", chatID)
+	}
+	if resp.JSON200.Result.EphemeralMessageId == nil || *resp.JSON200.Result.EphemeralMessageId <= 0 {
+		return 0, fmt.Errorf("send ephemeral telegram question to chat %d: missing ephemeral message id", chatID)
+	}
+	return *resp.JSON200.Result.EphemeralMessageId, nil
+}
+
 func (m *Messenger) sendMessageWithInlineKeyboard(ctx context.Context, chatID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error) {
 	request := sendMessageWithInlineKeyboardRequest{ChatID: chatID, Text: text, ReplyMarkup: keyboard}
 	if mode != "" {
@@ -382,6 +451,35 @@ func (m *Messenger) ClearInlineKeyboard(ctx context.Context, chatID int64, messa
 	}
 	if resp.JSON200 == nil {
 		return fmt.Errorf("clear inline keyboard from message %d: no response body", messageID)
+	}
+	return nil
+}
+
+// ClearEphemeralInlineKeyboard removes controls from an ephemeral message.
+func (m *Messenger) ClearEphemeralInlineKeyboard(ctx context.Context, chatID, receiverUserID int64, ephemeralMessageID int) error {
+	request := client.EditEphemeralMessageReplyMarkupJSONRequestBody{
+		ChatId:             chatID,
+		ReceiverUserId:     int(receiverUserID),
+		EphemeralMessageId: ephemeralMessageID,
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.EditEphemeralMessageReplyMarkupWithResponse(sendCtx, request)
+	if err != nil {
+		return fmt.Errorf("clear inline keyboard from ephemeral message %d: %w", ephemeralMessageID, err)
+	}
+	if resp == nil {
+		return fmt.Errorf("clear inline keyboard from ephemeral message %d: no response body", ephemeralMessageID)
+	}
+	if resp.JSON400 != nil {
+		description := strings.TrimSpace(resp.JSON400.Description)
+		if strings.Contains(strings.ToLower(description), "message is not modified") {
+			return nil
+		}
+		return fmt.Errorf("clear inline keyboard from ephemeral message %d: %s", ephemeralMessageID, description)
+	}
+	if resp.JSON200 == nil {
+		return fmt.Errorf("clear inline keyboard from ephemeral message %d: no response body", ephemeralMessageID)
 	}
 	return nil
 }

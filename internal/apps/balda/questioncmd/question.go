@@ -20,6 +20,7 @@ const (
 	StatusFailed       = "failed"
 	ActionAnswered     = "answered"
 	ActionTimedOut     = "timed_out"
+	ActionFailed       = "failed"
 	DefaultKindAsk     = "question"
 	ResponderAny       = "any"
 	ResponderRequester = "requester"
@@ -126,6 +127,22 @@ type TimedOutContinuation struct {
 	TimedOutAt  time.Time          `json:"timed_out_at"`
 }
 
+// Failure describes why a pending question could not be presented or
+// completed. Code is stable policy input; Message is diagnostic only.
+type Failure struct {
+	Code     string    `json:"code"`
+	Message  string    `json:"message,omitempty"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+type FailedContinuation struct {
+	QuestionID  string             `json:"question_id"`
+	Action      string             `json:"action"`
+	Resume      ResumeTarget       `json:"resume"`
+	Interaction InteractionContext `json:"interaction"`
+	Failure     Failure            `json:"failure"`
+}
+
 func AnsweredEnvelope(resume ResumeTarget, interaction InteractionContext, answer Answer, questionID string) (actorlayer.Envelope, error) {
 	to, err := routerAddress()
 	if err != nil {
@@ -194,6 +211,43 @@ func TimedOutEnvelope(resume ResumeTarget, interaction InteractionContext, quest
 		},
 		Priority:  80,
 		DedupeKey: "question:" + strings.TrimSpace(questionID) + ":timed_out",
+		Payload:   data,
+	}, nil
+}
+
+func FailedEnvelope(resume ResumeTarget, interaction InteractionContext, questionID string, failure Failure) (actorlayer.Envelope, error) {
+	to, err := routerAddress()
+	if err != nil {
+		return actorlayer.Envelope{}, err
+	}
+	data, err := actorlayer.MarshalPayload(FailedContinuation{
+		QuestionID:  strings.TrimSpace(questionID),
+		Action:      ActionFailed,
+		Resume:      resume,
+		Interaction: interaction,
+		Failure:     failure,
+	})
+	if err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("encode failed continuation: %w", err)
+	}
+	return actorlayer.Envelope{
+		ID:        uuid.NewString(),
+		Namespace: actorcmd.NamespaceQuestionCommand,
+		Kind:      actorcmd.KindQuestionFailed,
+		From:      actorlayer.SystemAddress("question"),
+		To:        to,
+		Meta: map[string]string{
+			"resume_to":             strings.TrimSpace(resume.To),
+			"resume_namespace":      strings.TrimSpace(resume.Namespace),
+			"resume_subject":        strings.TrimSpace(resume.Subject),
+			"resume_correlation_id": strings.TrimSpace(resume.CorrelationID),
+			"session_id":            strings.TrimSpace(interaction.SessionID),
+			"question_id":           strings.TrimSpace(questionID),
+			"failure_code":          strings.TrimSpace(failure.Code),
+			"failed_at":             failure.FailedAt.UTC().Format(time.RFC3339),
+		},
+		Priority:  80,
+		DedupeKey: "question:" + strings.TrimSpace(questionID) + ":failed",
 		Payload:   data,
 	}, nil
 }

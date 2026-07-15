@@ -49,10 +49,10 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO balda_questions (
 			question_id, session_id, channel_kind, address_key, address_json,
-			prompt, status, interaction_json, resume_json, request_json, answer_json,
+			prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
 			provider, conversation_key, provider_message_id, reply_handle,
-			expires_at, answered_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			expires_at, answered_at, failed_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.QuestionID,
 		record.SessionID,
 		record.ChannelKind,
@@ -64,12 +64,14 @@ func (s *sqliteQuestionStore) CreatePendingQuestion(ctx context.Context, record 
 		emptyJSON(record.ResumeJSON),
 		emptyJSON(record.RequestJSON),
 		strings.TrimSpace(record.AnswerJSON),
+		strings.TrimSpace(record.FailureJSON),
 		strings.TrimSpace(record.Provider),
 		strings.TrimSpace(record.ConversationKey),
 		strings.TrimSpace(record.ProviderMessageID),
 		strings.TrimSpace(record.ReplyHandle),
 		optionalTimeString(record.ExpiresAt),
 		optionalTimeString(record.AnsweredAt),
+		optionalTimeString(record.FailedAt),
 		createdAt.Format(time.RFC3339),
 		updatedAt.Format(time.RFC3339),
 	)
@@ -177,11 +179,45 @@ func (s *sqliteQuestionStore) MarkQuestionTimedOut(ctx context.Context, question
 	return record, affected > 0 && ok, nil
 }
 
+func (s *sqliteQuestionStore) MarkQuestionFailed(ctx context.Context, questionID string, failure questioncmd.Failure) (QuestionRecord, bool, error) {
+	failureJSON, err := marshalJSON(failure)
+	if err != nil {
+		return QuestionRecord{}, false, fmt.Errorf("marshal question failure: %w", err)
+	}
+	failedAt := failure.FailedAt.UTC()
+	if failedAt.IsZero() {
+		failedAt = time.Now().UTC()
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE balda_questions
+		SET status = ?, failure_json = ?, failed_at = ?, updated_at = ?
+		WHERE question_id = ? AND status = ?`,
+		questioncmd.StatusFailed,
+		failureJSON,
+		failedAt.Format(time.RFC3339),
+		failedAt.Format(time.RFC3339),
+		strings.TrimSpace(questionID),
+		questioncmd.StatusPending,
+	)
+	if err != nil {
+		return QuestionRecord{}, false, fmt.Errorf("mark question %q failed: %w", questionID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return QuestionRecord{}, false, fmt.Errorf("count failed question %q: %w", questionID, err)
+	}
+	record, ok, err := s.GetQuestionByID(ctx, questionID)
+	if err != nil {
+		return QuestionRecord{}, false, err
+	}
+	return record, affected > 0 && ok, nil
+}
+
 const questionSelectSQL = `
 	SELECT question_id, session_id, channel_kind, address_key, address_json,
-	       prompt, status, interaction_json, resume_json, request_json, answer_json,
+	       prompt, status, interaction_json, resume_json, request_json, answer_json, failure_json,
 	       provider, conversation_key, provider_message_id, reply_handle,
-	       expires_at, answered_at, created_at, updated_at
+	       expires_at, answered_at, failed_at, created_at, updated_at
 	FROM balda_questions`
 
 func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
@@ -189,6 +225,7 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		record        QuestionRecord
 		expiresAtRaw  string
 		answeredAtRaw string
+		failedAtRaw   string
 		createdAtRaw  string
 		updatedAtRaw  string
 	)
@@ -204,12 +241,14 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 		&record.ResumeJSON,
 		&record.RequestJSON,
 		&record.AnswerJSON,
+		&record.FailureJSON,
 		&record.Provider,
 		&record.ConversationKey,
 		&record.ProviderMessageID,
 		&record.ReplyHandle,
 		&expiresAtRaw,
 		&answeredAtRaw,
+		&failedAtRaw,
 		&createdAtRaw,
 		&updatedAtRaw,
 	)
@@ -221,6 +260,7 @@ func scanQuestion(scan func(dest ...any) error) (QuestionRecord, bool, error) {
 	}
 	record.ExpiresAt = parseOptionalTime(expiresAtRaw)
 	record.AnsweredAt = parseOptionalTime(answeredAtRaw)
+	record.FailedAt = parseOptionalTime(failedAtRaw)
 	record.CreatedAt = parseOptionalTime(createdAtRaw)
 	record.UpdatedAt = parseOptionalTime(updatedAtRaw)
 	return record, true, nil

@@ -76,3 +76,20 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 func UserID(userID int64) string {
 	return fmt.Sprintf("%s-%d", telegramSessionIDPrefix, userID)
 }
+
+// ParseUserID decodes a canonical Telegram transport user identifier.
+func ParseUserID(value string) (int64, error) {
+	prefix := telegramSessionIDPrefix + "-"
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return 0, fmt.Errorf("telegram user id %q must start with %q", value, prefix)
+	}
+	userID, err := strconv.ParseInt(strings.TrimPrefix(trimmed, prefix), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse telegram user id %q: %w", value, err)
+	}
+	if userID <= 0 {
+		return 0, fmt.Errorf("telegram user id %q must be positive", value)
+	}
+	return userID, nil
+}

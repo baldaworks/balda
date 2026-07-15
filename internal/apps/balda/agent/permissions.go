@@ -46,11 +46,32 @@ func NewPermissionHandler(reviewer PermissionReviewer, logger zerolog.Logger) ac
 			Str("source", decision.Source).
 			Bool("canceled", decision.Canceled).
 			Msg("agent permission review completed")
+		recordPermissionOutcome(ctx, translated, decision)
 		if decision.OptionID != "" && hasPermissionOption(request.Options, decision.OptionID) {
 			return acpagent.PermissionDecision{OptionID: decision.OptionID}, nil
 		}
 		return acpagent.PermissionDecision{Canceled: true}, nil
 	}
+}
+
+func recordPermissionOutcome(ctx context.Context, request permissioncmd.Request, decision permissioncmd.Decision) {
+	kind := permissioncmd.OutcomeCanceled
+	for _, option := range request.Options {
+		if strings.TrimSpace(option.ID) != strings.TrimSpace(decision.OptionID) {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(option.Kind)), "allow_") {
+			kind = permissioncmd.OutcomeAllowed
+		} else {
+			kind = permissioncmd.OutcomeDenied
+		}
+		break
+	}
+	permissioncmd.RecordOutcome(ctx, permissioncmd.Outcome{
+		Kind:       kind,
+		Source:     strings.TrimSpace(decision.Source),
+		ToolCallID: strings.TrimSpace(request.ToolCall.ID),
+	})
 }
 
 func translatePermissionRequest(ctx context.Context, request acpagent.PermissionRequest) permissioncmd.Request {

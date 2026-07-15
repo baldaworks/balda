@@ -63,9 +63,21 @@ type PlanEntry struct {
 
 // Question describes transport-neutral choices attached to a delivered prompt.
 type Question struct {
-	ID      string           `json:"id"`
-	Options []QuestionOption `json:"options"`
+	ID       string           `json:"id"`
+	Options  []QuestionOption `json:"options"`
+	Audience QuestionAudience `json:"audience,omitempty,omitzero"`
 }
+
+// QuestionAudience describes who may see a delivered question without
+// prescribing how a concrete channel enforces that visibility.
+type QuestionAudience struct {
+	Visibility QuestionVisibility `json:"visibility,omitempty"`
+	UserID     string             `json:"user_id,omitempty"`
+}
+
+type QuestionVisibility string
+
+const QuestionVisibilityPrivate QuestionVisibility = "private"
 
 // QuestionOption is one selectable value in a delivered question.
 type QuestionOption struct {
@@ -133,7 +145,7 @@ func AgentReplyEnvelopeWithProfileAndSettlementAndRefs(jobID string, from actorl
 }
 
 // QuestionEnvelope builds an agent-reply delivery carrying generic selectable options.
-func QuestionEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text, questionID, dedupeSuffix string, options []QuestionOption) (actorlayer.Envelope, error) {
+func QuestionEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text, questionID, dedupeSuffix string, options []QuestionOption, audience QuestionAudience) (actorlayer.Envelope, error) {
 	questionID = strings.TrimSpace(questionID)
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
@@ -143,8 +155,9 @@ func QuestionEnvelope(jobID string, from actorlayer.ActorAddress, locator Locato
 		Settlement: normalizeSettlementPolicy(settlement),
 		Refs:       map[string]string{"question_id": questionID},
 		Question: &Question{
-			ID:      questionID,
-			Options: append([]QuestionOption(nil), options...),
+			ID:       questionID,
+			Options:  append([]QuestionOption(nil), options...),
+			Audience: audience,
 		},
 		Text: strings.TrimSpace(text),
 	}, dedupeSuffix)
@@ -368,6 +381,15 @@ func validateQuestion(question Question) error {
 	}
 	if len(question.Options) == 0 {
 		return fmt.Errorf("question options are required")
+	}
+	switch question.Audience.Visibility {
+	case "":
+	case QuestionVisibilityPrivate:
+		if strings.TrimSpace(question.Audience.UserID) == "" {
+			return fmt.Errorf("private question audience user id is required")
+		}
+	default:
+		return fmt.Errorf("unsupported question visibility %q", question.Audience.Visibility)
 	}
 	seen := make(map[string]struct{}, len(question.Options))
 	for _, option := range question.Options {

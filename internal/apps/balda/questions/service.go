@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
@@ -22,6 +23,10 @@ type Store interface {
 	GetPendingQuestionByReplyRef(ctx context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error)
 	MarkQuestionAnswered(ctx context.Context, questionID string, answer questioncmd.Answer) (baldastate.QuestionRecord, bool, error)
 	MarkQuestionTimedOut(ctx context.Context, questionID string, timedOutAt time.Time) (baldastate.QuestionRecord, bool, error)
+}
+
+type failureStore interface {
+	MarkQuestionFailed(ctx context.Context, questionID string, failure questioncmd.Failure) (baldastate.QuestionRecord, bool, error)
 }
 
 type ScheduledJobStore interface {
@@ -341,6 +346,71 @@ func (s *Service) Timeout(ctx context.Context, questionID string, timedOutAt tim
 		s.clearControls(ctx, record)
 	}
 	return record, settled, err
+}
+
+// FailedDeliveryContinuation returns the deterministic continuation for a
+// question already failed by delivery. The bool is false for every other
+// lifecycle state.
+func (s *Service) FailedDeliveryContinuation(ctx context.Context, questionID string) (actorlayer.Envelope, bool, error) {
+	if s == nil || s.store == nil {
+		return actorlayer.Envelope{}, false, fmt.Errorf("question store is required")
+	}
+	record, ok, err := s.store.GetQuestionByID(ctx, strings.TrimSpace(questionID))
+	if err != nil || !ok || record.Status != questioncmd.StatusFailed {
+		return actorlayer.Envelope{}, false, err
+	}
+	envelope, err := failedEnvelopeFromRecord(record)
+	return envelope, err == nil, err
+}
+
+// FailDelivery atomically fails a pending question and builds its generic
+// continuation. Repeated calls return the same lifecycle continuation shape
+// so actor deduplication can safely complete an interrupted publication.
+func (s *Service) FailDelivery(ctx context.Context, questionID string, failure questioncmd.Failure) (actorlayer.Envelope, bool, error) {
+	if s == nil || s.store == nil {
+		return actorlayer.Envelope{}, false, fmt.Errorf("question store is required")
+	}
+	store, ok := s.store.(failureStore)
+	if !ok {
+		return actorlayer.Envelope{}, false, fmt.Errorf("question failure store is required")
+	}
+	if failure.FailedAt.IsZero() {
+		failure.FailedAt = s.now().UTC()
+	}
+	record, settled, err := store.MarkQuestionFailed(ctx, strings.TrimSpace(questionID), failure)
+	if err != nil {
+		return actorlayer.Envelope{}, false, err
+	}
+	if !settled && record.Status != questioncmd.StatusFailed {
+		return actorlayer.Envelope{}, false, nil
+	}
+	if !settled && strings.TrimSpace(record.FailureJSON) != "" {
+		if err := json.Unmarshal([]byte(record.FailureJSON), &failure); err != nil {
+			return actorlayer.Envelope{}, false, fmt.Errorf("decode question failure: %w", err)
+		}
+	}
+	envelope, err := failedEnvelopeFromRecordWithFailure(record, failure)
+	return envelope, err == nil, err
+}
+
+func failedEnvelopeFromRecord(record baldastate.QuestionRecord) (actorlayer.Envelope, error) {
+	var failure questioncmd.Failure
+	if err := json.Unmarshal([]byte(record.FailureJSON), &failure); err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("decode question failure: %w", err)
+	}
+	return failedEnvelopeFromRecordWithFailure(record, failure)
+}
+
+func failedEnvelopeFromRecordWithFailure(record baldastate.QuestionRecord, failure questioncmd.Failure) (actorlayer.Envelope, error) {
+	var interaction questioncmd.InteractionContext
+	if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("decode failed question interaction: %w", err)
+	}
+	var resume questioncmd.ResumeTarget
+	if err := json.Unmarshal([]byte(record.ResumeJSON), &resume); err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("decode failed question resume: %w", err)
+	}
+	return questioncmd.FailedEnvelope(resume, interaction, record.QuestionID, failure)
 }
 
 func (s *Service) clearControls(ctx context.Context, record baldastate.QuestionRecord) {

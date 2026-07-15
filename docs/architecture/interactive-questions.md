@@ -78,7 +78,7 @@ Shared contracts also define:
 - normalized structured selection payload;
 - settled answer payload;
 - continuation payloads such as `QuestionAnswered` and
-  `QuestionTimedOut`.
+	`QuestionTimedOut` or `QuestionFailed`.
 
 When a product workflow needs to request user input based on structured agent
 output rather than an ordinary reply, that upstream agent/result contract
@@ -138,6 +138,12 @@ transport packages may project generic options into channel-native controls and
 extract transport-specific reply references. They must not own option validity,
 pending-question matching, responder policy, or question lifecycle rules.
 
+A question may carry a transport-neutral private audience. The concrete
+channel adapter decides whether it can enforce that audience. Telegram uses a
+normal private-chat message in DMs and a receiver-targeted ephemeral message in
+groups or supergroups. It must not fall back to a public group message when
+private delivery cannot be enforced.
+
 Control cleanup is also a delivery side effect. After a question settles or
 times out, the question application publishes a generic clear-controls request.
 Composition routes it through delivery, and only the concrete transport adapter
@@ -151,7 +157,7 @@ State owns durable records for:
 - pending questions;
 - provider delivery correlation needed to match user replies;
 - atomic transitions such as `pending -> answered` or
-  `pending -> timed_out`.
+	`pending -> timed_out` and `pending -> failed`.
 
 ## Flow
 
@@ -194,6 +200,16 @@ the session actor cannot process the scheduled wake-up yet. The durable
 one-shot timeout remains the restart-safe source of truth; its later delivery
 is an idempotent no-op after settlement.
 
+### Delivery failure path
+
+`delivery actor fails to present question -> questions service atomically marks failed -> publish QuestionFailed continuation`
+
+Question delivery failure is a lifecycle outcome, not an invitation to expose
+a private prompt through another audience. Permission reviews map this outcome
+to an immediate fail-closed denial. Retried delivery commands observe the
+failed state and republish only the deduplicated continuation; they do not
+resend the prompt.
+
 ## Required properties
 
 - Any actor in a session-scoped activation chain may ask a question by using an
@@ -205,6 +221,9 @@ is an idempotent no-op after settlement.
 - Permission replies may be restricted to the user who initiated the active
   turn. Unauthorized and invalid replies are consumed but do not settle the
   question.
+- Group permission prompts are visible only to that exact requester when the
+  channel supports enforceable private delivery. Missing auth dependencies or
+  failed private delivery deny the request.
 - Text replies and channel-native selections share one atomic settlement rule.
 - Channel controls are removed after answer or timeout without making cleanup
   part of durable settlement.
@@ -227,7 +246,9 @@ The current scope stays narrow:
 - channel-appropriate permission presentation and generic question prompts;
 - free-text answers and transport-neutral numbered options;
 - Telegram inline controls for any question carrying options, with one option
-  per row and a numbered text fallback if controlled delivery fails;
+  per row; ordinary questions retain a numbered text fallback, while private
+  group questions use receiver-targeted ephemeral delivery with no public or
+  DM fallback;
 - durable correlation by provider reply reference;
 - one answer per pending question;
 - optional timeout via one-shot scheduled job;

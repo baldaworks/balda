@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questions"
@@ -130,11 +131,14 @@ func TestHandleQuestionCallbackSettlesAndDispatchesContinuation(t *testing.T) {
 	dispatcher := &fakeTurnDispatcher{}
 	messenger := &callbackMessenger{}
 	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
+	ownerStore, collaboratorStore := questionCallbackAuthStores(t)
 	handler := &BaldaHandler{
-		channel:         channel,
-		actorDispatcher: dispatcher,
-		questionService: questions.New(store, nil, zerolog.Nop()),
-		now:             func() time.Time { return time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC) },
+		ownerStore:        ownerStore,
+		collaboratorStore: collaboratorStore,
+		channel:           channel,
+		actorDispatcher:   dispatcher,
+		questionService:   questions.New(store, nil, zerolog.Nop()),
+		now:               func() time.Time { return time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC) },
 	}
 
 	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent("balda:q:question-1:2")); err != nil {
@@ -159,10 +163,13 @@ func TestHandleQuestionCallbackAcknowledgesStaleSelection(t *testing.T) {
 	store := &fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusAnswered)}
 	dispatcher := &fakeTurnDispatcher{}
 	messenger := &callbackMessenger{}
+	ownerStore, collaboratorStore := questionCallbackAuthStores(t)
 	handler := &BaldaHandler{
-		channel:         baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
-		actorDispatcher: dispatcher,
-		questionService: questions.New(store, nil, zerolog.Nop()),
+		ownerStore:        ownerStore,
+		collaboratorStore: collaboratorStore,
+		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		actorDispatcher:   dispatcher,
+		questionService:   questions.New(store, nil, zerolog.Nop()),
 	}
 
 	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent("balda:q:question-1:1")); err != nil {
@@ -174,6 +181,52 @@ func TestHandleQuestionCallbackAcknowledgesStaleSelection(t *testing.T) {
 	if len(dispatcher.commands) != 0 {
 		t.Fatalf("dispatched commands = %d, want 0", len(dispatcher.commands))
 	}
+}
+
+func TestHandleQuestionCallbackFailsClosedWithoutAuthorizationStores(t *testing.T) {
+	messenger := &callbackMessenger{}
+	handler := &BaldaHandler{
+		channel:         baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		questionService: questions.New(&fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}, nil, zerolog.Nop()),
+	}
+	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent("balda:q:question-1:1")); err != nil {
+		t.Fatalf("onQuestionCallback() error = %v", err)
+	}
+	if len(messenger.answers) != 1 || messenger.answers[0] != "This request is unavailable." || !messenger.alerts[0] {
+		t.Fatalf("callback answers = %v alerts = %v", messenger.answers, messenger.alerts)
+	}
+}
+
+func TestHandleQuestionCallbackRejectsAuthenticatedNonRequester(t *testing.T) {
+	messenger := &callbackMessenger{}
+	ownerStore, collaboratorStore := questionCallbackAuthStores(t)
+	if err := collaboratorStore.AddCollaborator(context.Background(), auth.Collaborator{UserID: "202"}); err != nil {
+		t.Fatalf("AddCollaborator() error = %v", err)
+	}
+	handler := &BaldaHandler{
+		ownerStore:        ownerStore,
+		collaboratorStore: collaboratorStore,
+		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		questionService:   questions.New(&fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}, nil, zerolog.Nop()),
+	}
+	if err := handler.onQuestionCallback(context.Background(), questionCallbackEventForUser("balda:q:question-1:1", 202)); err != nil {
+		t.Fatalf("onQuestionCallback() error = %v", err)
+	}
+	if len(messenger.answers) != 1 || messenger.answers[0] != "This choice is not available to you." || !messenger.alerts[0] {
+		t.Fatalf("callback answers = %v alerts = %v", messenger.answers, messenger.alerts)
+	}
+}
+
+func questionCallbackAuthStores(t *testing.T) (*auth.OwnerStore, *auth.CollaboratorStore) {
+	t.Helper()
+	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	if _, err := ownerStore.RegisterOwner(101, 1); err != nil {
+		t.Fatalf("RegisterOwner() error = %v", err)
+	}
+	return ownerStore, auth.NewCollaboratorStore(&fakeCollaboratorBackingStore{})
 }
 
 func callbackQuestionRecord(status string) baldastate.QuestionRecord {
@@ -192,11 +245,15 @@ func callbackQuestionRecord(status string) baldastate.QuestionRecord {
 }
 
 func questionCallbackEvent(data string) *events.CallbackQueryEvent {
+	return questionCallbackEventForUser(data, 101)
+}
+
+func questionCallbackEventForUser(data string, userID int64) *events.CallbackQueryEvent {
 	message := client.MaybeInaccessibleMessage{
 		"message_id": 42,
 		"chat":       map[string]any{"id": int64(1), "type": "private"},
 	}
 	return &events.CallbackQueryEvent{CallbackQuery: &client.CallbackQuery{
-		Id: "callback-1", Data: &data, From: client.User{Id: 101}, Message: &message,
+		Id: "callback-1", Data: &data, From: client.User{Id: userID}, Message: &message,
 	}}
 }

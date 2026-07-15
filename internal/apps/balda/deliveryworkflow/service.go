@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -28,6 +29,8 @@ type Lifecycle interface {
 
 type QuestionDeliveryBinder interface {
 	BindDelivery(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
+	FailedDeliveryContinuation(ctx context.Context, questionID string) (actorlayer.Envelope, bool, error)
+	FailDelivery(ctx context.Context, questionID string, failure questioncmd.Failure) (actorlayer.Envelope, bool, error)
 }
 
 type Service struct {
@@ -35,11 +38,12 @@ type Service struct {
 	outbox     DeliveryStore
 	events     JobEvents
 	questions  QuestionDeliveryBinder
+	actor      actortransport.Dispatcher
 	logger     zerolog.Logger
 }
 
-func New(dispatcher Dispatcher, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, logger zerolog.Logger) *Service {
-	return &Service{dispatcher: dispatcher, outbox: outbox, events: events, questions: questions, logger: logger}
+func New(dispatcher Dispatcher, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, actor actortransport.Dispatcher, logger zerolog.Logger) *Service {
+	return &Service{dispatcher: dispatcher, outbox: outbox, events: events, questions: questions, actor: actor, logger: logger}
 }
 
 func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload deliverycmd.Payload) error {
@@ -48,6 +52,11 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	}
 	if err := deliverycmd.Validate(payload); err != nil {
 		return actorlayer.PermanentError(err)
+	}
+	if handled, err := s.resumeFailedQuestionDelivery(ctx, payload); err != nil {
+		return actorlayer.TransientError(err)
+	} else if handled {
+		return nil
 	}
 	envelopeJobID := strings.TrimSpace(baldaexecution.EnvelopeJobID(env))
 	payloadJobID := strings.TrimSpace(payload.JobID)
@@ -131,6 +140,11 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 				}
 			}
 		}
+		if handled, failErr := s.failQuestionDelivery(ctx, payload, err); failErr != nil {
+			return actorlayer.TransientError(failErr)
+		} else if handled {
+			return nil
+		}
 		return actorlayer.ExternalDeliveryError(err)
 	}
 	if durable && s.outbox != nil {
@@ -154,6 +168,52 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 		}
 	}
 	return nil
+}
+
+func (s *Service) resumeFailedQuestionDelivery(ctx context.Context, payload deliverycmd.Payload) (bool, error) {
+	questionID := questionIDFromPayload(payload)
+	if s.questions == nil || questionID == "" {
+		return false, nil
+	}
+	envelope, failed, err := s.questions.FailedDeliveryContinuation(ctx, questionID)
+	if err != nil || !failed {
+		return false, err
+	}
+	return true, s.dispatchQuestionContinuation(ctx, envelope)
+}
+
+func (s *Service) failQuestionDelivery(ctx context.Context, payload deliverycmd.Payload, deliveryErr error) (bool, error) {
+	questionID := questionIDFromPayload(payload)
+	if s.questions == nil || questionID == "" {
+		return false, nil
+	}
+	envelope, failed, err := s.questions.FailDelivery(ctx, questionID, questioncmd.Failure{
+		Code:     "delivery_failed",
+		Message:  deliveryErr.Error(),
+		FailedAt: time.Now().UTC(),
+	})
+	if err != nil || !failed {
+		return false, err
+	}
+	return true, s.dispatchQuestionContinuation(ctx, envelope)
+}
+
+func (s *Service) dispatchQuestionContinuation(ctx context.Context, envelope actorlayer.Envelope) error {
+	if s.actor == nil {
+		return fmt.Errorf("actor dispatcher is required for question delivery failure")
+	}
+	_, err := s.actor.Dispatch(ctx, envelope)
+	if err != nil {
+		return fmt.Errorf("dispatch question delivery failure: %w", err)
+	}
+	return nil
+}
+
+func questionIDFromPayload(payload deliverycmd.Payload) string {
+	if payload.Refs == nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Refs["question_id"])
 }
 
 func (s *Service) bindQuestionDelivery(ctx context.Context, payload deliverycmd.Payload, providerMessageID string) error {

@@ -32,6 +32,7 @@ const (
 	KindMemoryRemember   = "memory_remember"
 	KindQuestionAnswered = "question_answered"
 	KindQuestionTimedOut = "question_timed_out"
+	KindQuestionFailed   = "question_failed"
 
 	QueueModeInterrupt = "interrupt"
 )
