@@ -8,7 +8,7 @@ import (
 
 var (
 	bearerHeaderPattern = regexp.MustCompile(`(?i)(authorization\s*:\s*bearer\s+)([^\s]+)`)
-	keyValuePattern     = regexp.MustCompile(`(?i)\b(token|secret|password|api[_-]?key|access[_-]?key|private[_-]?key)\b(\s*[:=]\s*)([^\s,;]+)`)
+	keyValuePattern     = regexp.MustCompile(`(?i)(\b(?:token|secret|password|api[_-]?key|access[_-]?key|private[_-]?key)\b"?\s*[:=]\s*"?)([^"\s,;}\]]+)`)
 	pemPattern          = regexp.MustCompile(`(?s)-----BEGIN [^-]+-----.*?-----END [^-]+-----`)
 	githubTokenPattern  = regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9_]{20,}\b`)
 	telegramToken       = regexp.MustCompile(`\b\d{6,10}:[A-Za-z0-9_-]{20,}\b`)
@@ -23,7 +23,7 @@ func Secrets(raw string) string {
 	}
 	text = pemPattern.ReplaceAllString(text, "[REDACTED_PEM]")
 	text = bearerHeaderPattern.ReplaceAllString(text, "${1}[REDACTED]")
-	text = keyValuePattern.ReplaceAllString(text, "${1}${2}[REDACTED]")
+	text = keyValuePattern.ReplaceAllString(text, "${1}[REDACTED]")
 	text = githubTokenPattern.ReplaceAllString(text, "[REDACTED_TOKEN]")
 	text = telegramToken.ReplaceAllString(text, "[REDACTED_TOKEN]")
 	text = slackToken.ReplaceAllString(text, "[REDACTED_TOKEN]")

@@ -28,6 +28,7 @@ import (
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/normahq/balda/internal/apps/balda/permissions"
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/scheduledjobs"
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
@@ -129,6 +130,10 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	permissionConfig, err := permissions.ParseConfig(cfg.Balda.Permissions.Mode, cfg.Balda.Permissions.Timeout)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	stateDir, err := paths.ResolveStateDir(workingDir, cfg.Balda.StateDir)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -211,6 +216,7 @@ func Module(
 			inboundWebhookConfig,
 			eventBusConfig,
 			executionConfig,
+			permissionConfig,
 		),
 		fx.Provide(
 			fx.Annotate(
@@ -501,11 +507,11 @@ func Module(
 			// The wrapper delegates to the underlying store implementation
 			return auth.NewCollaboratorStore(provider.Collaborators())
 		}),
-		fx.Provide(func(reg *mcpregistry.MapRegistry) *agentfactory.Factory {
+		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service) *agentfactory.Factory {
 			return agentfactory.New(
 				normaCfg.Providers,
 				reg,
-				agentfactory.WithPermissionHandler(baldaagent.DefaultPermissionHandler),
+				agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(reviewer, logger)),
 			)
 		}),
 		tgbotkit.Module,
@@ -513,11 +519,15 @@ func Module(
 		baldaexecution.Module,
 		baldajobs.Module,
 		questions.Module,
+		permissions.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
 		controlapp.Module,
 		deliveryfx.Module,
 		deliveryworkflow.Module,
+		fx.Provide(fx.Annotate(
+			func(service *questions.Service) deliveryworkflow.QuestionDeliveryBinder { return service },
+		)),
 		jobexec.Module,
 		actors.Module,
 		scheduledjobs.Module,

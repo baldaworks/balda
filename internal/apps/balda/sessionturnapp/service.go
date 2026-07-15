@@ -12,7 +12,9 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
 	"github.com/normahq/balda/internal/apps/balda/progress"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/normahq/balda/internal/apps/balda/usageview"
@@ -39,6 +41,7 @@ type ExecutionRequest struct {
 	Text            string
 	Runner          *runner.Runner
 	UserID          string
+	RequesterUserID string
 	SessionID       string
 	JobID           string
 	AgentSessionID  string
@@ -132,6 +135,17 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		Str("transport_user_id", req.UserID).
 		Logger().
 		WithContext(ctx)
+	requesterUserID := strings.TrimSpace(req.RequesterUserID)
+	if requesterUserID == "" {
+		requesterUserID = strings.TrimSpace(req.UserID)
+	}
+	runCtx = permissioncmd.WithInteraction(runCtx, questioncmd.InteractionContext{
+		SessionID:   req.SessionID,
+		ChannelKind: req.Locator.ChannelType,
+		Locator:     req.Locator,
+		RequestedBy: questioncmd.UserRef{UserID: requesterUserID},
+		Origin:      questioncmd.InteractionOrigin{RootJobID: strings.TrimSpace(req.JobID)},
+	})
 
 	progressEmitter := req.ProgressEmitter
 	if progressEmitter == nil && s.dispatcher != nil {

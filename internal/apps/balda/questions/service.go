@@ -2,7 +2,9 @@ package questions
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,24 +117,73 @@ func (s *Service) BindDelivery(ctx context.Context, questionID string, ref quest
 }
 
 func (s *Service) ResolveReply(ctx context.Context, in questioncmd.InboundReply) (baldastate.QuestionRecord, bool, error) {
+	result, err := s.ResolveReplyDetailed(ctx, in)
+	return result.Record, result.Matched, err
+}
+
+type ReplyResolution struct {
+	Record  baldastate.QuestionRecord
+	Matched bool
+	Settled bool
+	Invalid bool
+}
+
+func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.InboundReply) (ReplyResolution, error) {
 	if s.store == nil {
-		return baldastate.QuestionRecord{}, false, fmt.Errorf("question store is required")
+		return ReplyResolution{}, fmt.Errorf("question store is required")
 	}
 	record, ok, err := s.store.GetPendingQuestionByReplyRef(ctx, strings.TrimSpace(in.Provider), strings.TrimSpace(in.ConversationKey), strings.TrimSpace(in.ReplyToMessageID))
 	if err != nil || !ok {
-		return record, ok, err
+		return ReplyResolution{Record: record, Matched: ok}, err
+	}
+	var request questioncmd.Request
+	if strings.TrimSpace(record.RequestJSON) == "" {
+		request.AllowFreeText = true
+	} else if err := json.Unmarshal([]byte(record.RequestJSON), &request); err != nil {
+		return ReplyResolution{Record: record, Matched: true}, fmt.Errorf("decode question request: %w", err)
+	}
+	if strings.EqualFold(strings.TrimSpace(request.Responder), questioncmd.ResponderRequester) {
+		var interaction questioncmd.InteractionContext
+		if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
+			return ReplyResolution{Record: record, Matched: true}, fmt.Errorf("decode question interaction: %w", err)
+		}
+		if strings.TrimSpace(interaction.RequestedBy.UserID) == "" || strings.TrimSpace(in.User.UserID) != strings.TrimSpace(interaction.RequestedBy.UserID) {
+			return ReplyResolution{Record: record, Matched: true, Invalid: true}, nil
+		}
+	}
+	selected, valid := selectedOption(request, in.Text)
+	if !valid {
+		return ReplyResolution{Record: record, Matched: true, Invalid: true}, nil
 	}
 	answer := questioncmd.Answer{
-		Text:          strings.TrimSpace(in.Text),
-		AnsweredBy:    in.User,
-		AnsweredAt:    zeroOrNow(in.ReceivedAt, s.now().UTC()),
-		ProviderMsgID: strings.TrimSpace(in.MessageID),
+		Text:           strings.TrimSpace(in.Text),
+		SelectedOption: selected,
+		AnsweredBy:     in.User,
+		AnsweredAt:     zeroOrNow(in.ReceivedAt, s.now().UTC()),
+		ProviderMsgID:  strings.TrimSpace(in.MessageID),
 	}
 	updated, settled, err := s.store.MarkQuestionAnswered(ctx, record.QuestionID, answer)
-	if err != nil || !settled {
-		return updated, settled, err
+	return ReplyResolution{Record: updated, Matched: true, Settled: settled}, err
+}
+
+func selectedOption(request questioncmd.Request, raw string) (string, bool) {
+	text := strings.TrimSpace(raw)
+	if len(request.Options) == 0 {
+		return "", request.AllowFreeText && text != ""
 	}
-	return updated, true, nil
+	for _, option := range request.Options {
+		if strings.EqualFold(text, strings.TrimSpace(option.ID)) || strings.EqualFold(text, strings.TrimSpace(option.Label)) {
+			return strings.TrimSpace(option.ID), true
+		}
+	}
+	index, err := strconv.Atoi(text)
+	if err == nil && index > 0 && index <= len(request.Options) {
+		return strings.TrimSpace(request.Options[index-1].ID), true
+	}
+	if request.AllowFreeText && text != "" {
+		return "", true
+	}
+	return "", false
 }
 
 func (s *Service) Timeout(ctx context.Context, questionID string, timedOutAt time.Time) (baldastate.QuestionRecord, bool, error) {

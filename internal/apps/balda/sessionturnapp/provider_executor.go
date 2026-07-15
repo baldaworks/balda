@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -66,12 +66,13 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		execution.logger,
 	)
 	return execution.Execute(ctx, ExecutionRequest{
-		Text:           payload.Text,
-		Runner:         request.Session.GetRunner(),
-		UserID:         request.UserID,
-		SessionID:      request.Session.GetSessionID(),
-		JobID:          payload.JobID,
-		AgentSessionID: request.AgentSessionID,
+		Text:            payload.Text,
+		Runner:          request.Session.GetRunner(),
+		UserID:          request.UserID,
+		RequesterUserID: payload.RequesterUserID,
+		SessionID:       request.Session.GetSessionID(),
+		JobID:           payload.JobID,
+		AgentSessionID:  request.AgentSessionID,
 		Locator: session.SessionLocator{
 			SessionID:   request.DeliveryLocator.SessionID,
 			ChannelType: request.DeliveryLocator.ChannelType,

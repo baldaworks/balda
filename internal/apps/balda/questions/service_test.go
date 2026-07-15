@@ -2,6 +2,7 @@ package questions
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -117,5 +118,66 @@ func TestServiceResolveReplySettlesPendingQuestion(t *testing.T) {
 	}
 	if record.Status != questioncmd.StatusAnswered {
 		t.Fatalf("status = %q, want answered", record.Status)
+	}
+}
+
+func TestServiceResolveReplyRejectsDifferentRequester(t *testing.T) {
+	store := &fakeStore{replyMatch: baldastate.QuestionRecord{
+		QuestionID:        "question-1",
+		Status:            questioncmd.StatusPending,
+		Provider:          "telegram",
+		ConversationKey:   "1:0",
+		ProviderMessageID: "42",
+		RequestJSON:       mustJSON(questioncmd.Request{Responder: questioncmd.ResponderRequester, AllowFreeText: true}),
+		InteractionJSON:   mustJSON(questioncmd.InteractionContext{RequestedBy: questioncmd.UserRef{UserID: "tg-101"}}),
+	}}
+	result, err := New(store, nil, zerolog.Nop()).ResolveReplyDetailed(context.Background(), questioncmd.InboundReply{
+		Provider:         "telegram",
+		ConversationKey:  "1:0",
+		ReplyToMessageID: "42",
+		User:             questioncmd.UserRef{UserID: "tg-202"},
+		Text:             "yes",
+	})
+	if err != nil {
+		t.Fatalf("ResolveReplyDetailed() error = %v", err)
+	}
+	if !result.Matched || !result.Invalid || result.Settled {
+		t.Fatalf("resolution = %+v, want matched invalid unsettled", result)
+	}
+	if store.replyMatch.Status != questioncmd.StatusPending {
+		t.Fatalf("status = %q, want pending", store.replyMatch.Status)
+	}
+}
+
+func TestServiceResolveReplyMapsOptionNumber(t *testing.T) {
+	store := &fakeStore{replyMatch: baldastate.QuestionRecord{
+		QuestionID:        "question-1",
+		Status:            questioncmd.StatusPending,
+		Provider:          "telegram",
+		ConversationKey:   "1:0",
+		ProviderMessageID: "42",
+		RequestJSON: mustJSON(questioncmd.Request{Options: []questioncmd.Option{
+			{ID: "allow", Label: "Allow once"},
+			{ID: "reject", Label: "Reject once"},
+		}}),
+	}}
+	result, err := New(store, nil, zerolog.Nop()).ResolveReplyDetailed(context.Background(), questioncmd.InboundReply{
+		Provider:         "telegram",
+		ConversationKey:  "1:0",
+		ReplyToMessageID: "42",
+		Text:             "2",
+	})
+	if err != nil {
+		t.Fatalf("ResolveReplyDetailed() error = %v", err)
+	}
+	if !result.Settled {
+		t.Fatalf("resolution = %+v, want settled", result)
+	}
+	var answer questioncmd.Answer
+	if err := json.Unmarshal([]byte(result.Record.AnswerJSON), &answer); err != nil {
+		t.Fatalf("decode answer: %v", err)
+	}
+	if answer.SelectedOption != "reject" {
+		t.Fatalf("selected option = %q, want reject", answer.SelectedOption)
 	}
 }

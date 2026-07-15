@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
@@ -109,7 +112,14 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 		}
 	}()
 
-	runCtx, cancel := context.WithCancel(ctx)
+	cancelCtx, cancel := context.WithCancel(ctx)
+	runCtx := permissioncmd.WithInteraction(cancelCtx, questioncmd.InteractionContext{
+		SessionID:   payload.Locator.SessionID,
+		ChannelKind: payload.Locator.ChannelType,
+		Locator:     payload.Locator,
+		RequestedBy: questioncmd.UserRef{UserID: strings.TrimSpace(payload.TransportUserID)},
+		Origin:      questioncmd.InteractionOrigin{RootJobID: jobID},
+	})
 	runID := ""
 	if c.jobRuns != nil {
 		runID = c.jobRuns.Register(jobID, cancel)
@@ -142,7 +152,7 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 		return progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "Goal run failed: "+reason), "failed")
 	}
 	if reviewerPassed(result.latestValidatorOutput) {
-		finalization, exportErr := goalRun.Finalize(ctx, payload.Objective, result.latestWorkerOutput, result.latestValidatorOutput)
+		finalization, exportErr := goalRun.Finalize(runCtx, payload.Objective, result.latestWorkerOutput, result.latestValidatorOutput)
 		exportSummary := finalization.toJobExportResult()
 		if exportErr != nil || strings.TrimSpace(exportSummary.Status) == goalExportStatusFailed {
 			if exportSummary.Status == "" {

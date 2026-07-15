@@ -28,6 +28,12 @@ func TestRedactSecrets(t *testing.T) {
 			notContain: []string{"abcd1234"},
 		},
 		{
+			name:       "json token",
+			in:         `{"token":"abcd1234"}`,
+			want:       `{"token":"[REDACTED]"}`,
+			notContain: []string{"abcd1234"},
+		},
+		{
 			name:       "pem block",
 			in:         "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
 			want:       "[REDACTED_PEM]",

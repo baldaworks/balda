@@ -8,14 +8,15 @@ import (
 )
 
 const (
-	SubjectCommandSession  = "balda.v1.cmd.session"
-	SubjectCommandJob      = "balda.v1.cmd.job"
-	SubjectCommandGoal     = "balda.v1.cmd.goal"
-	SubjectCommandDelivery = "balda.v1.cmd.delivery"
-	SubjectCommandMemory   = "balda.v1.cmd.memory"
-	SubjectCommandControl  = "balda.v1.cmd.control"
-	SubjectCommandQuestion = "balda.v1.cmd.question"
-	SubjectCommandAll      = "balda.v1.cmd.>"
+	SubjectCommandSession    = "balda.v1.cmd.session"
+	SubjectCommandJob        = "balda.v1.cmd.job"
+	SubjectCommandGoal       = "balda.v1.cmd.goal"
+	SubjectCommandDelivery   = "balda.v1.cmd.delivery"
+	SubjectCommandMemory     = "balda.v1.cmd.memory"
+	SubjectCommandControl    = "balda.v1.cmd.control"
+	SubjectCommandQuestion   = "balda.v1.cmd.question"
+	SubjectCommandPermission = "balda.v1.cmd.permission"
+	SubjectCommandAll        = "balda.v1.cmd.>"
 
 	SubjectEventCommandAccepted     = "balda.v1.evt.command.accepted"
 	SubjectEventCommandRunning      = "balda.v1.evt.command.running"
@@ -66,6 +67,8 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 		return SubjectCommandMemory
 	case ActorTypeQuestion:
 		return SubjectCommandQuestion
+	case ActorTypePermission:
+		return SubjectCommandPermission
 	default:
 		switch namespace {
 		case NamespaceGoalkeeperCommand:
@@ -76,6 +79,8 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 			return SubjectCommandMemory
 		case NamespaceQuestionCommand:
 			return SubjectCommandQuestion
+		case NamespacePermissionCommand:
+			return SubjectCommandPermission
 		case NamespaceWebhookInbound, NamespaceScheduleInbound:
 			return SubjectCommandJob
 		case NamespaceHumanInbound:

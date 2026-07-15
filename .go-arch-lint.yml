@@ -29,6 +29,7 @@ components:
       - internal/apps/balda/goalresultcmd
       - internal/apps/balda/locatorref
       - internal/apps/balda/progress
+      - internal/apps/balda/permissioncmd
       - internal/apps/balda/questioncmd
       - internal/apps/balda/telegramref
       - internal/apps/balda/telegramfmt
@@ -48,6 +49,7 @@ components:
       - internal/apps/balda/jobexec
       - internal/apps/balda/memory
       - internal/apps/balda/questions
+      - internal/apps/balda/permissions
       - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
       - internal/apps/balda/sessionturn

@@ -23,6 +23,7 @@ New code should attach to one of these zones deliberately instead of landing in
 | Job lifecycle | durable job records, job events, delivery persistence, projections, scheduled durable work execution | `jobs`, `jobexec`, `scheduledjobs` | transport adapters, ingress parsing, conversational session ownership |
 | Control and access | operator-driven cancel/clear/restart/wait flows, owner/collaborator/channel auth state | `controlapp`, `auth` | feature actor behavior, transport-specific command handling |
 | Interactive questions | session-scoped user questions, pending-question lifecycle, reply settlement, timeout orchestration, actor resume targeting | `questions` | transport adapters, generic session lifecycle, hidden suspended runtime frames |
+| Agent permissions | transport-neutral agent permission policy, interactive permission review, fail-closed settlement | `permissions`, ADK-facing adapter in `agent` | provider protocol types, transport-specific reply parsing, general question lifecycle |
 | Application support | small app-facing ports and support helpers used by the zones above | `appports`, `envelopetarget`, `memory` | broad workflow orchestration, feature-specific business logic |
 
 ## Zone details
@@ -115,6 +116,22 @@ It does not own:
 Keep this zone small and explicit. If question contracts are shared across
 layers, place those contracts in a dedicated contract package rather than in
 `questions` itself.
+
+### Agent permissions
+
+This zone owns application policy for sensitive actions requested during an
+active agent run:
+
+- static `allow_all` and `deny_all` decisions by option semantics;
+- interactive `ask` orchestration over the shared question lifecycle;
+- bounded waiting and fail-closed behavior;
+- mapping a settled option back to the active ADK-facing permission callback.
+
+`permissioncmd` contains the transport- and provider-neutral contracts. The
+`agent` package adapts the ADK-facing permission callback into those contracts.
+Provider protocol SDK types must not cross that adapter boundary. The
+`permissions` package may reuse `questions`, but it does not own generic reply
+correlation, durable question state, or concrete channel delivery behavior.
 
 ### Application support
 

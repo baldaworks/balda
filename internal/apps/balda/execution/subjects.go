@@ -1,18 +1,20 @@
 package execution
 
 import (
-	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 )
 
 const (
-	SubjectCommandSession  = actorcmd.SubjectCommandSession
-	SubjectCommandJob      = actorcmd.SubjectCommandJob
-	SubjectCommandGoal     = actorcmd.SubjectCommandGoal
-	SubjectCommandDelivery = actorcmd.SubjectCommandDelivery
-	SubjectCommandMemory   = actorcmd.SubjectCommandMemory
-	SubjectCommandControl  = actorcmd.SubjectCommandControl
-	SubjectCommandAll      = actorcmd.SubjectCommandAll
+	SubjectCommandSession    = actorcmd.SubjectCommandSession
+	SubjectCommandJob        = actorcmd.SubjectCommandJob
+	SubjectCommandGoal       = actorcmd.SubjectCommandGoal
+	SubjectCommandDelivery   = actorcmd.SubjectCommandDelivery
+	SubjectCommandMemory     = actorcmd.SubjectCommandMemory
+	SubjectCommandControl    = actorcmd.SubjectCommandControl
+	SubjectCommandQuestion   = actorcmd.SubjectCommandQuestion
+	SubjectCommandPermission = actorcmd.SubjectCommandPermission
+	SubjectCommandAll        = actorcmd.SubjectCommandAll
 
 	SubjectEventCommandAccepted     = actorcmd.SubjectEventCommandAccepted
 	SubjectEventCommandRunning      = actorcmd.SubjectEventCommandRunning

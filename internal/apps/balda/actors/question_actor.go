@@ -68,13 +68,14 @@ func (a *questionActor) resume(ctx context.Context, env actorlayer.Envelope, que
 	}
 	if resumeTo.Target == baldaexecution.ActorTypeSession {
 		next, err := turncmd.SessionTurnEnvelope(turncmd.SessionTurnPayload{
-			Text:       strings.TrimSpace(text),
-			Locator:    interaction.Locator,
-			UserID:     strings.TrimSpace(interaction.RequestedBy.UserID),
-			Deliver:    true,
-			Source:     "agent",
-			DedupeKey:  actorlayer.DedupeKeyOrID(env),
-			QuestionID: strings.TrimSpace(questionID),
+			Text:            strings.TrimSpace(text),
+			Locator:         interaction.Locator,
+			UserID:          strings.TrimSpace(interaction.RequestedBy.UserID),
+			RequesterUserID: strings.TrimSpace(interaction.RequestedBy.UserID),
+			Deliver:         true,
+			Source:          "agent",
+			DedupeKey:       actorlayer.DedupeKeyOrID(env),
+			QuestionID:      strings.TrimSpace(questionID),
 		})
 		if err != nil {
 			return actorlayer.PermanentError(fmt.Errorf("build question session continuation: %w", err))

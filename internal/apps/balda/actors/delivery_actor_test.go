@@ -245,7 +245,7 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliver
 		baldatelegram.ChannelType: tgAdapter,
 	})
 	return &jobDeliveryActor{
-		service: deliveryworkflow.New(deliveryworkflow.NewChannelDispatcher(router), tasks, tasks, zerolog.Nop()),
+		service: deliveryworkflow.New(deliveryworkflow.NewChannelDispatcher(router), tasks, tasks, nil, zerolog.Nop()),
 	}, tasks, tgClient, bus
 }
 

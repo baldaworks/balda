@@ -14,6 +14,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/normahq/balda/internal/apps/balda/permissions"
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
@@ -51,6 +52,11 @@ func PreflightRuntime(
 	if err != nil {
 		return err
 	}
+	permissionConfig, err := permissions.ParseConfig(cfg.Balda.Permissions.Mode, cfg.Balda.Permissions.Timeout)
+	if err != nil {
+		return err
+	}
+	permissionReviewer := permissions.New(permissionConfig, nil, nil, logger)
 	stateDir, err := paths.ResolveStateDir(workingDir, cfg.Balda.StateDir)
 	if err != nil {
 		return fmt.Errorf("resolve balda state_dir: %w", err)
@@ -201,7 +207,7 @@ func PreflightRuntime(
 				return agentfactory.New(
 					normaCfg.Providers,
 					reg,
-					agentfactory.WithPermissionHandler(baldaagent.DefaultPermissionHandler),
+					agentfactory.WithPermissionHandler(baldaagent.NewPermissionHandler(permissionReviewer, logger)),
 				)
 			},
 			baldaagent.NewBuilder,

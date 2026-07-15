@@ -18,22 +18,25 @@ func (h *BaldaHandler) handleQuestionReply(ctx context.Context, messageCtx balda
 	if h == nil || h.questionService == nil || messageCtx.ReplyToMessageID <= 0 || strings.TrimSpace(text) == "" {
 		return false, nil
 	}
-	record, matched, err := h.questionService.ResolveReply(ctx, questioncmd.InboundReply{
+	result, err := h.questionService.ResolveReplyDetailed(ctx, questioncmd.InboundReply{
 		Provider:         "telegram",
 		SessionID:        messageCtx.Locator.SessionID,
 		ConversationKey:  messageCtx.Locator.AddressKey,
 		ReplyToMessageID: strconv.Itoa(messageCtx.ReplyToMessageID),
 		MessageID:        strconv.Itoa(messageCtx.MessageID),
 		User: questioncmd.UserRef{
-			UserID: strconv.FormatInt(messageCtx.UserID, 10),
+			UserID: baldatelegram.UserID(messageCtx.UserID),
 		},
 		Text:       text,
 		ReceivedAt: h.now(),
 	})
-	if err != nil || !matched {
-		return matched, err
+	if err != nil || !result.Matched {
+		return result.Matched, err
 	}
-	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, record); err != nil {
+	if !result.Settled {
+		return true, nil
+	}
+	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Record); err != nil {
 		return true, err
 	}
 	return true, nil

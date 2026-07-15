@@ -25,12 +25,14 @@ var Module = fx.Module("balda_deliveryworkflow",
 				Dispatcher Dispatcher
 				Outbox     DeliveryStore
 				Events     JobEvents
+				Questions  QuestionDeliveryBinder `optional:"true"`
 				Logger     zerolog.Logger
 			}) *Service {
 				return New(
 					params.Dispatcher,
 					params.Outbox,
 					params.Events,
+					params.Questions,
 					params.Logger.With().Str("component", "balda.deliveryworkflow").Logger(),
 				)
 			},

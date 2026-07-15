@@ -241,11 +241,12 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 	}
 	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
 	payload := turncmd.SessionTurnPayload{
-		Text:           strings.TrimSpace(event.Text),
-		Locator:        locator,
-		UserID:         ts.GetUserID(),
-		AgentSessionID: ts.GetAgentSessionID(),
-		MessageID:      slackMessageID(firstNonEmpty(event.MessageID, env.EventID)),
+		Text:            strings.TrimSpace(event.Text),
+		Locator:         locator,
+		UserID:          ts.GetUserID(),
+		RequesterUserID: subject,
+		AgentSessionID:  ts.GetAgentSessionID(),
+		MessageID:       slackMessageID(firstNonEmpty(event.MessageID, env.EventID)),
 		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
 			ProgressPolicy: progressPolicy,
@@ -287,7 +288,7 @@ func (h *SlackAgentHandler) handleQuestionReply(ctx context.Context, locator bal
 	if h == nil || h.questionService == nil || strings.TrimSpace(event.ReplyToMessageID) == "" || strings.TrimSpace(event.Text) == "" {
 		return false, nil
 	}
-	record, matched, err := h.questionService.ResolveReply(ctx, questioncmd.InboundReply{
+	result, err := h.questionService.ResolveReplyDetailed(ctx, questioncmd.InboundReply{
 		Provider:         baldaslackagent.ChannelType,
 		SessionID:        locator.SessionID,
 		ConversationKey:  locator.AddressKey,
@@ -297,10 +298,13 @@ func (h *SlackAgentHandler) handleQuestionReply(ctx context.Context, locator bal
 		Text:             strings.TrimSpace(event.Text),
 		ReceivedAt:       time.Now().UTC(),
 	})
-	if err != nil || !matched {
-		return matched, err
+	if err != nil || !result.Matched {
+		return result.Matched, err
 	}
-	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, record); err != nil {
+	if !result.Settled {
+		return true, nil
+	}
+	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Record); err != nil {
 		return true, err
 	}
 	return true, nil

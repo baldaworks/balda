@@ -13,6 +13,7 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
@@ -34,15 +35,20 @@ type Sender interface {
 	SendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error
 }
 
+type QuestionDeliveryBinder interface {
+	BindDelivery(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
+}
+
 type Service struct {
 	dispatcher Dispatcher
 	outbox     DeliveryStore
 	events     JobEvents
+	questions  QuestionDeliveryBinder
 	logger     zerolog.Logger
 }
 
-func New(dispatcher Dispatcher, outbox DeliveryStore, events JobEvents, logger zerolog.Logger) *Service {
-	return &Service{dispatcher: dispatcher, outbox: outbox, events: events, logger: logger}
+func New(dispatcher Dispatcher, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, logger zerolog.Logger) *Service {
+	return &Service{dispatcher: dispatcher, outbox: outbox, events: events, questions: questions, logger: logger}
 }
 
 func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload deliverycmd.Payload) error {
@@ -93,6 +99,9 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 			return actorlayer.PermanentError(fmt.Errorf("delivery key %q already reserved for different payload", deliveryKey))
 		}
 		if record.Status == baldastate.DeliveryStatusSent {
+			if err := s.bindQuestionDelivery(ctx, payload, record.ProviderMessageID); err != nil {
+				return actorlayer.TransientError(err)
+			}
 			return nil
 		}
 		if !created && !ReadyForAttempt(record) {
@@ -138,6 +147,9 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 			return actorlayer.TransientError(err)
 		}
 	}
+	if err := s.bindQuestionDelivery(ctx, payload, providerMessageID); err != nil {
+		return actorlayer.TransientError(err)
+	}
 	if durable && s.events != nil && strings.TrimSpace(payload.JobID) != "" {
 		if err := s.events.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliverySent, "delivery.actor", env.ID, map[string]any{
 			"text":                strings.TrimSpace(payload.Text),
@@ -151,6 +163,22 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 		}
 	}
 	return nil
+}
+
+func (s *Service) bindQuestionDelivery(ctx context.Context, payload deliverycmd.Payload, providerMessageID string) error {
+	if s.questions == nil || payload.Refs == nil {
+		return nil
+	}
+	questionID := strings.TrimSpace(payload.Refs["question_id"])
+	providerMessageID = strings.TrimSpace(providerMessageID)
+	if questionID == "" || providerMessageID == "" {
+		return nil
+	}
+	return s.questions.BindDelivery(ctx, questionID, questioncmd.DeliveryRef{
+		Provider:          strings.TrimSpace(payload.Locator.ChannelType),
+		ConversationKey:   strings.TrimSpace(payload.Locator.AddressKey),
+		ProviderMessageID: providerMessageID,
+	})
 }
 
 func RequiresOutbox(payload deliverycmd.Payload) bool {

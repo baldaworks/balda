@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
@@ -22,8 +24,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
@@ -243,6 +243,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		topicID,
 		messageCtx.DeliveryOptions,
 		messageCtx.ProgressPolicy,
+		baldatelegram.UserID(messageCtx.UserID),
 	); err != nil {
 		if baldaexecution.IsCommandQueueFull(err) {
 			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Session command queue is full. Please wait or use /cancel.")
@@ -265,18 +266,20 @@ func (h *BaldaHandler) enqueueTurn(
 	topicID int,
 	deliveryOptions deliveryfmt.Options,
 	progressPolicy baldachannel.ProgressPolicy,
+	requesterUserID string,
 ) error {
 	if ts == nil {
 		return fmt.Errorf("topic session is required")
 	}
 
 	_, err := h.submitSessionTurn(ctx, turncmd.SessionTurnPayload{
-		Text:           text,
-		Locator:        locator,
-		UserID:         ts.GetUserID(),
-		AgentSessionID: ts.GetAgentSessionID(),
-		MessageID:      messageID,
-		TopicID:        topicID,
+		Text:            text,
+		Locator:         locator,
+		UserID:          ts.GetUserID(),
+		RequesterUserID: strings.TrimSpace(requesterUserID),
+		AgentSessionID:  ts.GetAgentSessionID(),
+		MessageID:       messageID,
+		TopicID:         topicID,
 		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryOptions.Profile,
 			ProgressPolicy: progressPolicy,

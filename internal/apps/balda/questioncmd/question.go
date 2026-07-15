@@ -8,7 +8,7 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 )
 
@@ -21,6 +21,8 @@ const (
 	ActionAnswered     = "answered"
 	ActionTimedOut     = "timed_out"
 	DefaultKindAsk     = "question"
+	ResponderAny       = "any"
+	ResponderRequester = "requester"
 	timeoutContentKind = "question_timeout"
 )
 
@@ -62,6 +64,7 @@ type Request struct {
 	Prompt        string            `json:"prompt"`
 	Options       []Option          `json:"options,omitempty"`
 	AllowFreeText bool              `json:"allow_free_text,omitempty"`
+	Responder     string            `json:"responder,omitempty"`
 	Timeout       time.Duration     `json:"timeout,omitempty"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
 }
@@ -125,8 +128,8 @@ func AnsweredEnvelope(resume ResumeTarget, interaction InteractionContext, answe
 	}
 	return actorlayer.Envelope{
 		ID:        uuid.NewString(),
-		Namespace: baldaexecution.NamespaceQuestionCommand,
-		Kind:      baldaexecution.KindQuestionAnswered,
+		Namespace: actorcmd.NamespaceQuestionCommand,
+		Kind:      actorcmd.KindQuestionAnswered,
 		From:      actorlayer.SystemAddress("question"),
 		To:        to,
 		Meta: map[string]string{
@@ -161,8 +164,8 @@ func TimedOutEnvelope(resume ResumeTarget, interaction InteractionContext, quest
 	}
 	return actorlayer.Envelope{
 		ID:        uuid.NewString(),
-		Namespace: baldaexecution.NamespaceQuestionCommand,
-		Kind:      baldaexecution.KindQuestionTimedOut,
+		Namespace: actorcmd.NamespaceQuestionCommand,
+		Kind:      actorcmd.KindQuestionTimedOut,
 		From:      actorlayer.SystemAddress("question"),
 		To:        to,
 		Meta: map[string]string{
@@ -189,7 +192,7 @@ func ParseResumeAddress(raw string) (actorlayer.ActorAddress, error) {
 }
 
 func routerAddress() (actorlayer.ActorAddress, error) {
-	return ParseResumeAddress(baldaexecution.ActorTypeQuestion + ":router")
+	return ParseResumeAddress(actorcmd.ActorTypeQuestion + ":router")
 }
 
 type timeoutContent struct {

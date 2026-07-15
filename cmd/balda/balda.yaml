@@ -6,6 +6,12 @@ balda:
   # Provider id from runtime providers registry used for Balda sessions.
   provider: ""
 
+  # Agent tool permission policy: allow_all, ask, or deny_all.
+  # allow_all preserves the historical behavior; production deployments should prefer ask.
+  permissions:
+    mode: "allow_all"
+    timeout: "2m"
+
   telegram:
     # Telegram bot token (required)
     # Set via BALDA_TELEGRAM_TOKEN env var

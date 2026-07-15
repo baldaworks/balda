@@ -539,6 +539,30 @@ The balda MCP server (`balda`) is automatically included in all sessions. It pro
 It updates durable memory immediately. Active sessions refresh memory state on
 their next turn, and new or restored sessions start with the latest memory.
 
+### Agent permission review
+
+- `balda.permissions.mode`: `allow_all`, `ask`, or `deny_all` (default `allow_all`)
+- `balda.permissions.timeout`: maximum time to wait for a reply in `ask` mode
+  (default `2m`)
+
+Environment overrides are `BALDA_PERMISSIONS_MODE` and
+`BALDA_PERMISSIONS_TIMEOUT`. `allow_all` is retained for backward
+compatibility, but it grants every agent request using an allow option and should
+only be used for trusted agents. `ask` sends a redacted permission prompt to
+the initiating user on Telegram or Slack Agent. Replies can use the displayed
+number, exact option ID, or option name. Unknown channels, another user's
+reply, timeout, cancellation, or missing interaction context never grant the
+request.
+
+Example:
+
+```yaml
+balda:
+  permissions:
+    mode: ask
+    timeout: 2m
+```
+
 ### Telegram settings
 
 - `balda.telegram.token`: bot token (required)

@@ -10,6 +10,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
 	"github.com/normahq/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/normahq/balda/internal/apps/balda/permissions"
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
@@ -47,6 +48,16 @@ var Module = fx.Module("balda_actors",
 		),
 		fx.Annotate(
 			func(m *baldaagent.RuntimeManager) goalRunPreparerPort { return runtimeGoalRunPreparer{manager: m} },
+		),
+		fx.Annotate(
+			func(s *permissions.Service) permissionDecisionSink { return s },
+		),
+		fx.Annotate(
+			func(sink permissionDecisionSink) dispatch.Actor {
+				return &permissionActor{sink: sink}
+			},
+			fx.As(new(dispatch.Actor)),
+			fx.ResultTags(`group:"balda_product_actors"`),
 		),
 		fx.Annotate(
 			func(params sessionActorExecutorParams) dispatch.Actor {

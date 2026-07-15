@@ -19,6 +19,7 @@ type BaldaConfig struct {
 	StateDir          string               `mapstructure:"state_dir"`
 	Sessions          SessionsConfig       `mapstructure:"sessions"`
 	Memory            MemoryConfig         `mapstructure:"memory"`
+	Permissions       PermissionsConfig    `mapstructure:"permissions"`
 	Goal              GoalConfig           `mapstructure:"goal"`
 	NATS              baldaeventbus.Config `mapstructure:"nats"`
 	Execution         ExecutionConfig      `mapstructure:"execution"`
@@ -148,6 +149,11 @@ type SessionsConfig struct {
 
 type MemoryConfig struct {
 	Enabled bool `mapstructure:"enabled"`
+}
+
+type PermissionsConfig struct {
+	Mode    string `mapstructure:"mode"`
+	Timeout string `mapstructure:"timeout"`
 }
 
 // GoalConfig controls /goal command execution behavior.

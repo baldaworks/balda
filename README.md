@@ -218,7 +218,14 @@ Common settings:
 - `balda.webhooks.*` — optional inbound webhook routes
 - `balda.scheduler.jobs` — recurring scheduled jobs
 - `balda.workspace.*` — workspace/worktree behavior for goal execution
+- `balda.permissions.mode` — agent permission policy: `allow_all`, `ask`, or `deny_all`
+- `balda.permissions.timeout` — maximum wait for an interactive permission decision (default `2m`)
 - `balda.mcp_servers` — MCP servers injected into Balda-started sessions
+
+`allow_all` preserves historical behavior and should be used only where every
+agent tool call is trusted. Production chat deployments should normally set
+`BALDA_PERMISSIONS_MODE=ask`; unsupported channels, missing requester context,
+cancellation, and timeout fail closed.
 
 For complete configuration, examples, and provider-specific details, see
 [docs/balda.md](docs/balda.md).

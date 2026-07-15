@@ -4,7 +4,6 @@ go 1.26.5
 
 require (
 	github.com/Mad-Pixels/goldmark-tgmd v0.0.10
-	github.com/coder/acp-go-sdk v0.13.5
 	github.com/google/uuid v1.6.0
 	github.com/ipfans/fxlogger v0.2.0
 	github.com/joho/godotenv v1.5.1
@@ -28,7 +27,10 @@ require (
 	modernc.org/sqlite v1.27.0
 )
 
-require cloud.google.com/go/logging v1.18.0 // indirect
+require (
+	cloud.google.com/go/logging v1.18.0 // indirect
+	github.com/coder/acp-go-sdk v0.13.5 // indirect
+)
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
@@ -208,7 +210,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
-	github.com/normahq/go-adk-acpagent/v2 v2.2.1-0.20260710145435-71892397d36f // indirect
+	github.com/normahq/go-adk-acpagent/v2 v2.2.2-0.20260715122700-88b26f7d04fd
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
 	github.com/oapi-codegen/runtime v1.1.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect

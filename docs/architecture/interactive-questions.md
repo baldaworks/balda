@@ -30,6 +30,14 @@ actor-resume semantics.
 - A reply or timeout starts a new continuation command; Balda does not keep an
   old model/tool turn alive across time.
 
+Synchronous agent permission requests are the one bounded exception. The
+ADK-facing permission callback must receive a decision before the active run
+can continue, so the permission application service waits while that run
+remains active. The request is still provider-neutral, persisted and delivered
+through the question boundary, has a configured deadline, and resumes through
+a dedicated permission actor. Ordinary conversational questions must continue
+to use the actor-resume rule above.
+
 ## Core contracts
 
 Balda uses shared question contracts in the dedicated contract package
@@ -160,6 +168,12 @@ session-scoped scheduled wake-up path already used for other delayed work.
 Timeout handling does not create a transport-owned timer and does not resume an
 old turn frame.
 
+For the bounded agent permission exception, the permission application service
+also owns an in-process deadline so a blocked ADK-facing callback fails closed even if
+the session actor cannot process the scheduled wake-up yet. The durable
+one-shot timeout remains the restart-safe source of truth; its later delivery
+is an idempotent no-op after settlement.
+
 ## Required properties
 
 - Any actor in a session-scoped activation chain may ask a question by using an
@@ -168,6 +182,9 @@ old turn frame.
 - Provider-specific reply ids are durable and restart-safe.
 - A question answer or timeout becomes new actor work, not hidden suspended
   runtime state.
+- Permission replies may be restricted to the user who initiated the active
+  turn. Unauthorized and invalid replies are consumed but do not settle the
+  question.
 - Delivery, ingress, and question lifecycle stay in separate owners.
 
 ## Consequences
@@ -185,11 +202,13 @@ old turn frame.
 Version one should stay narrow:
 
 - plain text question prompt;
-- free-text answer;
+- free-text answers and transport-neutral numbered options;
 - durable correlation by provider reply reference;
 - one answer per pending question;
 - optional timeout via one-shot scheduled job;
 - continuation to explicit actor resume target.
+- agent permission policy modes `allow_all`, `ask`, and `deny_all`; `ask` is
+  supported for Telegram and Slack Agent and fails closed elsewhere.
 
 Provider-native buttons, richer validation, and multiple simultaneous question
 policies may be added later.
