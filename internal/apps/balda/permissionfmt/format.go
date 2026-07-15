@@ -35,7 +35,6 @@ func Render(request permissioncmd.Request) Presentation {
 func renderTelegramMarkdown(request permissioncmd.Request) string {
 	var out strings.Builder
 	writeMarkdownRequest(&out, request)
-	out.WriteString("\n\n_Choose an action below._")
 	return out.String()
 }
 

@@ -455,31 +455,31 @@ func (m *Messenger) ClearInlineKeyboard(ctx context.Context, chatID int64, messa
 	return nil
 }
 
-// ClearEphemeralInlineKeyboard removes controls from an ephemeral message.
-func (m *Messenger) ClearEphemeralInlineKeyboard(ctx context.Context, chatID, receiverUserID int64, ephemeralMessageID int) error {
-	request := client.EditEphemeralMessageReplyMarkupJSONRequestBody{
+// DeleteEphemeralMessage removes a settled ephemeral question in full.
+func (m *Messenger) DeleteEphemeralMessage(ctx context.Context, chatID, receiverUserID int64, ephemeralMessageID int) error {
+	request := client.DeleteEphemeralMessageJSONRequestBody{
 		ChatId:             chatID,
 		ReceiverUserId:     int(receiverUserID),
 		EphemeralMessageId: ephemeralMessageID,
 	}
 	sendCtx, cancel := telegramSendContext(ctx)
 	defer cancel()
-	resp, err := m.client.EditEphemeralMessageReplyMarkupWithResponse(sendCtx, request)
+	resp, err := m.client.DeleteEphemeralMessageWithResponse(sendCtx, request)
 	if err != nil {
-		return fmt.Errorf("clear inline keyboard from ephemeral message %d: %w", ephemeralMessageID, err)
+		return fmt.Errorf("delete ephemeral message %d: %w", ephemeralMessageID, err)
 	}
 	if resp == nil {
-		return fmt.Errorf("clear inline keyboard from ephemeral message %d: no response body", ephemeralMessageID)
+		return fmt.Errorf("delete ephemeral message %d: no response body", ephemeralMessageID)
 	}
 	if resp.JSON400 != nil {
 		description := strings.TrimSpace(resp.JSON400.Description)
-		if strings.Contains(strings.ToLower(description), "message is not modified") {
+		if strings.Contains(strings.ToLower(description), "message to delete not found") {
 			return nil
 		}
-		return fmt.Errorf("clear inline keyboard from ephemeral message %d: %s", ephemeralMessageID, description)
+		return fmt.Errorf("delete ephemeral message %d: %s", ephemeralMessageID, description)
 	}
 	if resp.JSON200 == nil {
-		return fmt.Errorf("clear inline keyboard from ephemeral message %d: no response body", ephemeralMessageID)
+		return fmt.Errorf("delete ephemeral message %d: no response body", ephemeralMessageID)
 	}
 	return nil
 }

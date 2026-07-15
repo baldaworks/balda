@@ -147,8 +147,9 @@ private delivery cannot be enforced.
 Control cleanup is also a delivery side effect. After a question settles or
 times out, the question application publishes a generic clear-controls request.
 Composition routes it through delivery, and only the concrete transport adapter
-knows how to remove its controls. Cleanup is best effort and idempotent; it must
-not roll back an already durable answer.
+knows how to clean up its presentation. Telegram removes controls from ordinary
+messages and deletes private ephemeral prompts in full. Cleanup is best effort
+and idempotent; it must not roll back an already durable answer.
 
 ### State
 

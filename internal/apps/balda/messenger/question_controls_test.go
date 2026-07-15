@@ -14,11 +14,20 @@ import (
 
 type inlineKeyboardClient struct {
 	client.ClientWithResponsesInterface
-	richBody      []byte
-	richBodyError error
-	richFallback  []client.SendRichMessageJSONRequestBody
-	editRequests  []client.EditMessageReplyMarkupJSONRequestBody
-	answers       []client.AnswerCallbackQueryJSONRequestBody
+	richBody       []byte
+	richBodyError  error
+	richFallback   []client.SendRichMessageJSONRequestBody
+	editRequests   []client.EditMessageReplyMarkupJSONRequestBody
+	deleteRequests []client.DeleteEphemeralMessageJSONRequestBody
+	answers        []client.AnswerCallbackQueryJSONRequestBody
+}
+
+func (f *inlineKeyboardClient) DeleteEphemeralMessageWithResponse(_ context.Context, body client.DeleteEphemeralMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.DeleteEphemeralMessageResponse, error) {
+	f.deleteRequests = append(f.deleteRequests, body)
+	return &client.DeleteEphemeralMessageResponse{JSON200: &struct {
+		Ok     client.DeleteEphemeralMessage200Ok `json:"ok"`
+		Result bool                               `json:"result"`
+	}{Ok: true, Result: true}}, nil
 }
 
 func (f *inlineKeyboardClient) EditMessageReplyMarkupWithResponse(_ context.Context, body client.EditMessageReplyMarkupJSONRequestBody, _ ...client.RequestEditorFn) (*client.EditMessageReplyMarkupResponse, error) {
@@ -108,6 +117,12 @@ func TestQuestionControlLifecycleCallsTelegramAPIs(t *testing.T) {
 	}
 	if len(tgClient.editRequests) != 1 || tgClient.editRequests[0].ReplyMarkup != nil {
 		t.Fatalf("edit requests = %+v", tgClient.editRequests)
+	}
+	if err := messenger.DeleteEphemeralMessage(context.Background(), 9001, 101, 73); err != nil {
+		t.Fatalf("DeleteEphemeralMessage() error = %v", err)
+	}
+	if len(tgClient.deleteRequests) != 1 || tgClient.deleteRequests[0].ChatId != 9001 || tgClient.deleteRequests[0].ReceiverUserId != 101 || tgClient.deleteRequests[0].EphemeralMessageId != 73 {
+		t.Fatalf("delete requests = %+v", tgClient.deleteRequests)
 	}
 	if err := messenger.AnswerCallbackQuery(context.Background(), "callback-1", "Selected.", false); err != nil {
 		t.Fatalf("AnswerCallbackQuery() error = %v", err)

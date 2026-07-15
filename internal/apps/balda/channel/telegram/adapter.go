@@ -36,7 +36,7 @@ type TelegramMessenger interface {
 	SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup, fallbackText string) (int, error)
 	SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID, receiverUserID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error)
 	ClearInlineKeyboard(ctx context.Context, chatID int64, messageID int) error
-	ClearEphemeralInlineKeyboard(ctx context.Context, chatID, receiverUserID int64, ephemeralMessageID int) error
+	DeleteEphemeralMessage(ctx context.Context, chatID, receiverUserID int64, ephemeralMessageID int) error
 	AnswerCallbackQuery(ctx context.Context, callbackQueryID, text string, showAlert bool) error
 	SendDraftPlain(ctx context.Context, chatID int64, draftID int, text string, topicID int) error
 	SendDraftMarkdownWithMode(ctx context.Context, chatID int64, draftID int, text string, topicID int, mode string) error
@@ -695,7 +695,7 @@ func (a *Adapter) ClearQuestionControls(ctx context.Context, locator deliverycmd
 		return err
 	}
 	if receiverUserID, ephemeralMessageID, ok := parseEphemeralProviderMessageID(messageID); ok {
-		return a.messenger.ClearEphemeralInlineKeyboard(ctx, chatID, receiverUserID, ephemeralMessageID)
+		return a.messenger.DeleteEphemeralMessage(ctx, chatID, receiverUserID, ephemeralMessageID)
 	}
 	id, err := strconv.Atoi(strings.TrimSpace(messageID))
 	if err != nil || id <= 0 {
