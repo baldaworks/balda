@@ -18,6 +18,16 @@ type fakeQuestionStore struct {
 	record baldastate.QuestionRecord
 }
 
+func TestNewBaldaHandlerInitializesClock(t *testing.T) {
+	handler, err := newBaldaHandler(baldaHandlerDeps{})
+	if err != nil {
+		t.Fatalf("newBaldaHandler() error = %v", err)
+	}
+	if handler.now == nil {
+		t.Fatal("newBaldaHandler() clock is nil")
+	}
+}
+
 func (f *fakeQuestionStore) CreatePendingQuestion(context.Context, baldastate.QuestionRecord) error {
 	return nil
 }

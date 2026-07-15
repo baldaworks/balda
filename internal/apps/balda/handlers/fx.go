@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
@@ -51,28 +52,7 @@ var Module = fx.Module("balda_handlers",
 				authToken:         params.AuthToken,
 			}
 		},
-		func(deps baldaHandlerDeps) (*BaldaHandler, error) {
-			h := &BaldaHandler{
-				ownerStore:         deps.OwnerStore,
-				collaboratorStore:  deps.CollaboratorStore,
-				channel:            deps.Channel,
-				sessionManager:     deps.SessionManager,
-				turnDispatcher:     deps.TurnDispatcher,
-				actorDispatcher:    deps.Dispatcher,
-				jobEvents:          deps.JobEvents,
-				messenger:          deps.Messenger,
-				tgClient:           deps.TGClient,
-				authToken:          strings.TrimSpace(deps.AuthToken),
-				baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
-				telegramEnabled:    deps.TelegramEnabled,
-				telegramConfigured: true,
-				logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
-				turnExecution:      deps.TurnExecution,
-				questionService:    deps.QuestionService,
-			}
-
-			return h, nil
-		},
+		newBaldaHandler,
 		func(params commandHandlerParams) *CommandHandler {
 			return &CommandHandler{
 				ownerStore:        params.OwnerStore,
@@ -122,3 +102,25 @@ var Module = fx.Module("balda_handlers",
 		func(*SlackAgentHandler) {},
 	),
 )
+
+func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
+	return &BaldaHandler{
+		ownerStore:         deps.OwnerStore,
+		collaboratorStore:  deps.CollaboratorStore,
+		channel:            deps.Channel,
+		sessionManager:     deps.SessionManager,
+		turnDispatcher:     deps.TurnDispatcher,
+		actorDispatcher:    deps.Dispatcher,
+		jobEvents:          deps.JobEvents,
+		messenger:          deps.Messenger,
+		tgClient:           deps.TGClient,
+		authToken:          strings.TrimSpace(deps.AuthToken),
+		baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
+		telegramEnabled:    deps.TelegramEnabled,
+		telegramConfigured: true,
+		logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
+		turnExecution:      deps.TurnExecution,
+		questionService:    deps.QuestionService,
+		now:                time.Now,
+	}, nil
+}
