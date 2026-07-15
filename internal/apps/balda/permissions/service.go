@@ -69,11 +69,18 @@ type Service struct {
 }
 
 func New(config Config, questionService *questions.Service, dispatcher actortransport.Dispatcher, logger zerolog.Logger) *Service {
+	serviceLogger := logger.With().Str("component", "balda.permissions").Logger()
+	serviceLogger.Info().
+		Str("mode", string(config.Mode)).
+		Str("timeout", config.Timeout.String()).
+		Bool("questions_available", questionService != nil).
+		Bool("dispatcher_available", dispatcher != nil).
+		Msg("agent permission policy configured")
 	return &Service{
 		config:     config,
 		questions:  questionService,
 		dispatcher: dispatcher,
-		logger:     logger.With().Str("component", "balda.permissions").Logger(),
+		logger:     serviceLogger,
 		now:        time.Now,
 		waiters:    make(map[string]chan permissioncmd.Decision),
 	}

@@ -20,6 +20,13 @@ func NewPermissionHandler(reviewer PermissionReviewer, logger zerolog.Logger) ac
 	permissionLogger := logger.With().Str("component", "balda.agent.permissions").Logger()
 	return func(ctx context.Context, request acpagent.PermissionRequest) (acpagent.PermissionDecision, error) {
 		translated := translatePermissionRequest(ctx, request)
+		permissionLogger.Debug().
+			Str("tool_call_id", translated.ToolCall.ID).
+			Str("session_id", translated.Interaction.SessionID).
+			Str("channel_type", translated.Interaction.Locator.ChannelType).
+			Str("requester_user_id", translated.Interaction.RequestedBy.UserID).
+			Int("option_count", len(translated.Options)).
+			Msg("reviewing agent permission request")
 		decision := denyDecision(translated.Options)
 		if reviewer == nil {
 			permissionLogger.Warn().Msg("permission reviewer unavailable; denying request")
@@ -32,6 +39,12 @@ func NewPermissionHandler(reviewer PermissionReviewer, logger zerolog.Logger) ac
 					Msg("permission review failed closed")
 			}
 		}
+		permissionLogger.Debug().
+			Str("tool_call_id", translated.ToolCall.ID).
+			Str("option_id", decision.OptionID).
+			Str("source", decision.Source).
+			Bool("canceled", decision.Canceled).
+			Msg("agent permission review completed")
 		if decision.OptionID != "" && hasPermissionOption(request.Options, decision.OptionID) {
 			return acpagent.PermissionDecision{OptionID: decision.OptionID}, nil
 		}
