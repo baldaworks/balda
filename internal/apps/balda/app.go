@@ -15,6 +15,7 @@ import (
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
+	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/controlapp"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfx"
@@ -456,12 +457,12 @@ func Module(
 				fx.ResultTags(`name:"balda_zulip_webhook_token"`),
 			),
 		),
-		// Slack transport
+		// Slack chat transport
 		fx.Provide(func() *baldaslack.Client {
 			return baldaslack.NewClient(cfg.Balda.Slack.BotToken)
 		}),
-		fx.Provide(func() handlers.SlackConfig {
-			return handlers.SlackConfig{
+		fx.Provide(func() handlers.SlackChatConfig {
+			return handlers.SlackChatConfig{
 				Enabled:                cfg.Balda.Slack.Enabled,
 				BotToken:               strings.TrimSpace(cfg.Balda.Slack.BotToken),
 				SigningSecret:          strings.TrimSpace(cfg.Balda.Slack.SigningSecret),
@@ -469,6 +470,20 @@ func Module(
 				EventsPath:             strings.TrimSpace(cfg.Balda.Slack.EventsPath),
 				CommandsPath:           strings.TrimSpace(cfg.Balda.Slack.CommandsPath),
 				IncludePrivateChannels: cfg.Balda.Slack.IncludePrivateChannels,
+			}
+		}),
+		fx.Provide(func() handlers.SlackAgentConfig {
+			return handlers.SlackAgentConfig{
+				Enabled:       cfg.Balda.Slack.Agent.Enabled,
+				ListenAddr:    strings.TrimSpace(cfg.Balda.Slack.Agent.ListenAddr),
+				EventsPath:    strings.TrimSpace(cfg.Balda.Slack.Agent.EventsPath),
+				SigningSecret: strings.TrimSpace(cfg.Balda.Slack.SigningSecret),
+			}
+		}),
+		fx.Provide(func() baldaslackagent.AdapterConfig {
+			return baldaslackagent.AdapterConfig{
+				EnableStreaming:  cfg.Balda.Slack.Agent.EnableStreaming,
+				SuggestedPrompts: cfg.Balda.Slack.Agent.SuggestedPrompts,
 			}
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
@@ -717,20 +732,31 @@ func validateZulipConfig(cfg ZulipConfig) error {
 }
 
 func validateSlackConfig(cfg SlackConfig) error {
-	if !cfg.Enabled {
+	if !cfg.Enabled && !cfg.Agent.Enabled {
 		return nil
 	}
 	if strings.TrimSpace(cfg.BotToken) == "" {
-		return fmt.Errorf("balda.slack.bot_token is required when Slack is enabled")
+		return fmt.Errorf("balda.slack.bot_token is required when Slack chat or slack_agent is enabled")
 	}
 	if strings.TrimSpace(cfg.SigningSecret) == "" {
-		return fmt.Errorf("balda.slack.signing_secret is required when Slack is enabled")
+		return fmt.Errorf("balda.slack.signing_secret is required when Slack chat or slack_agent is enabled")
 	}
 	if path := strings.TrimSpace(cfg.EventsPath); path != "" && !strings.HasPrefix(path, "/") {
 		return fmt.Errorf("balda.slack.events_path must start with /")
 	}
 	if path := strings.TrimSpace(cfg.CommandsPath); path != "" && !strings.HasPrefix(path, "/") {
 		return fmt.Errorf("balda.slack.commands_path must start with /")
+	}
+	if cfg.Agent.Enabled {
+		if strings.TrimSpace(cfg.Agent.AppToken) == "" {
+			return fmt.Errorf("balda.slack.agent.app_token is required when slack_agent is enabled")
+		}
+		if path := strings.TrimSpace(cfg.Agent.EventsPath); path != "" && !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("balda.slack.agent.events_path must start with /")
+		}
+		if strings.TrimSpace(cfg.Agent.EventsPath) != "" && strings.TrimSpace(cfg.Agent.EventsPath) == strings.TrimSpace(cfg.EventsPath) {
+			return fmt.Errorf("balda.slack.agent.events_path must differ from balda.slack.events_path")
+		}
 	}
 	return nil
 }

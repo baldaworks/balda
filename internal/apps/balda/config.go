@@ -63,13 +63,26 @@ type ZulipWebhookConfig struct {
 
 // SlackConfig holds Slack app configuration.
 type SlackConfig struct {
-	Enabled                bool   `mapstructure:"enabled"`
-	BotToken               string `mapstructure:"bot_token"`
-	SigningSecret          string `mapstructure:"signing_secret"`
-	ListenAddr             string `mapstructure:"listen_addr"`
-	EventsPath             string `mapstructure:"events_path"`
-	CommandsPath           string `mapstructure:"commands_path"`
-	IncludePrivateChannels bool   `mapstructure:"include_private_channels"`
+	Enabled                bool             `mapstructure:"enabled"`
+	BotToken               string           `mapstructure:"bot_token"`
+	SigningSecret          string           `mapstructure:"signing_secret"`
+	ListenAddr             string           `mapstructure:"listen_addr"`
+	EventsPath             string           `mapstructure:"events_path"`
+	CommandsPath           string           `mapstructure:"commands_path"`
+	IncludePrivateChannels bool             `mapstructure:"include_private_channels"`
+	Agent                  SlackAgentConfig `mapstructure:"agent"`
+}
+
+// SlackAgentConfig holds Slack AI Agents-specific ingress and capability settings.
+// It is intentionally nested under balda.slack so the existing slack_chat public
+// config surface stays intact while Balda grows a separate slack_agent mode.
+type SlackAgentConfig struct {
+	Enabled          bool   `mapstructure:"enabled"`
+	ListenAddr       string `mapstructure:"listen_addr"`
+	EventsPath       string `mapstructure:"events_path"`
+	AppToken         string `mapstructure:"app_token"`
+	EnableStreaming  bool   `mapstructure:"enable_streaming"`
+	SuggestedPrompts bool   `mapstructure:"suggested_prompts"`
 }
 
 // WebhooksConfig controls Balda-owned external webhook ingestion.

@@ -13,6 +13,7 @@ Use this map to find the authoritative runtime contracts.
 - [Conversational turns and jobs](conversational-turns-and-jobs.md)
 - [Background monitors](background-monitors.md)
 - [Interactive questions](interactive-questions.md)
+- [Slack agent mode](slack-agent-mode.md)
 - [Goal worker results](goal-worker-results.md)
 - [Actor runtime](actor-runtime.md)
 - [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
@@ -37,7 +38,7 @@ Use this map to find the authoritative runtime contracts.
 
 ## Runtime Flow
 
-Telegram/Zulip/Slack/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
+Telegram/Zulip/Slack chat/Slack agent/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
 
 ## Related tests
 

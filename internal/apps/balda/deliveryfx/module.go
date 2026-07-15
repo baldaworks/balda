@@ -5,6 +5,7 @@ import (
 
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
+	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -42,11 +43,15 @@ var Module = fx.Module("balda_deliveryfx",
 			return adapter
 		},
 		baldaslack.NewAdapter,
-		func(tg *baldatelegram.Adapter, zu *baldazulip.Adapter, sl *baldaslack.Adapter) *baldachannel.Router {
+		func(client *baldaslack.Client, logger zerolog.Logger, cfg baldaslackagent.AdapterConfig) *baldaslackagent.Adapter {
+			return baldaslackagent.NewAdapter(client, logger, cfg)
+		},
+		func(tg *baldatelegram.Adapter, zu *baldazulip.Adapter, sl *baldaslack.Adapter, sla *baldaslackagent.Adapter) *baldachannel.Router {
 			return baldachannel.NewRouter(map[string]deliverycmd.Adapter{
-				string(deliverycmd.ChannelTypeTelegram): tg,
-				string(deliverycmd.ChannelTypeZulip):    zu,
-				string(deliverycmd.ChannelTypeSlack):    sl,
+				string(deliverycmd.ChannelTypeTelegram):   tg,
+				string(deliverycmd.ChannelTypeZulip):      zu,
+				string(deliverycmd.ChannelTypeSlackChat):  sl,
+				string(deliverycmd.ChannelTypeSlackAgent): sla,
 			})
 		},
 	),

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
@@ -14,12 +16,11 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/normahq/balda/internal/apps/balda/usageview"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
+	adksession "google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
 
@@ -151,6 +152,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	var terminalFinishReason genai.FinishReason
 	terminalErrorCode := ""
 	terminalErrorMessage := ""
+	lastNonRetryErrorMessage := ""
 
 	for ev, err := range req.Runner.Run(runCtx, req.UserID, req.AgentSessionID, userContent, agent.RunConfig{}, req.RunOptions...) {
 		if err != nil {
@@ -167,6 +169,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		}
 		if errorMessage := strings.TrimSpace(ev.ErrorMessage); errorMessage != "" {
 			terminalErrorMessage = errorMessage
+			if !looksLikeRetryOnlyProviderError(errorMessage) {
+				lastNonRetryErrorMessage = errorMessage
+			}
 		}
 		if snapshot, ok := usageview.SnapshotFromMetadata(ev.UsageMetadata); ok {
 			if ev.Actions.StateDelta == nil {
@@ -211,6 +216,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				ReasoningText:          reasoningText,
 				HasThoughtUpdate:       hasThoughtUpdate,
 				HasVisibleResponseText: hasVisibleResponseText,
+				VisibleResponseText:    visibleResponseDelta(ev),
 			})
 			if err != nil {
 				return err
@@ -346,6 +352,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					responseSource = "streamed_text"
 				}
 			default:
+				if terminalErrorMessage == "" {
+					terminalErrorMessage = lastNonRetryErrorMessage
+				}
 				terminalMessage := terminalErrorTurnMessage(terminalErrorMessage)
 				if terminalMessage == "" {
 					terminalMessage = terminalTurnMessage(terminalFinishReason)
@@ -391,4 +400,28 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 
 	return nil
+}
+
+func visibleResponseDelta(ev *adksession.Event) string {
+	if ev == nil || !ev.Partial || ev.Content == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, part := range ev.Content.Parts {
+		if part == nil || part.Thought {
+			continue
+		}
+		if strings.TrimSpace(part.Text) != "" {
+			b.WriteString(part.Text)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func looksLikeRetryOnlyProviderError(message string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(message))
+	if trimmed == "" {
+		return false
+	}
+	return strings.Contains(trimmed, "reconnecting") || strings.Contains(trimmed, "will retry")
 }

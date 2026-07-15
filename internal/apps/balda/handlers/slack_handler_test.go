@@ -55,7 +55,7 @@ func TestStripSlackBotMentions(t *testing.T) {
 	}
 }
 
-func TestSlackHandlerHandleMessagePublishesDirectSessionTurn(t *testing.T) {
+func TestSlackChatHandlerHandleMessagePublishesDirectSessionTurn(t *testing.T) {
 	stateStore := &fakeOwnerKVStore{}
 	ownerStore, err := auth.NewOwnerStore(stateStore)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestSlackHandlerHandleMessagePublishesDirectSessionTurn(t *testing.T) {
 	setUnexportedField(t, ts, "agentSessionID", "agent-session-1")
 	sessionManager := newBaldaSessionManagerWithSession(t, locator, ts)
 	dispatcher := &recordingHandlerCommandBus{}
-	handler := &SlackHandler{
+	handler := &SlackChatHandler{
 		ownerStore:      ownerStore,
 		sessionManager:  sessionManager,
 		actorDispatcher: dispatcher,

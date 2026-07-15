@@ -11,14 +11,14 @@ import (
 
 const (
 	slackSessionIDPrefix = "sl"
-	// ChannelType is the channel type string for the Slack transport.
-	ChannelType = "slack"
+	// ChannelType is the channel type string for the current Slack chat transport.
+	ChannelType = string(deliverycmd.ChannelTypeSlackChat)
 
 	addressTypeDM     = "dm"
 	addressTypeThread = "thread"
 )
 
-// LocatorAddress is the Slack-specific transport address payload.
+// LocatorAddress is the Slack chat-specific transport address payload.
 type LocatorAddress struct {
 	Type     string `json:"type"`
 	TeamID   string `json:"team_id"`
@@ -26,7 +26,7 @@ type LocatorAddress struct {
 	ThreadTS string `json:"thread_ts,omitempty"`
 }
 
-// NewDMLocator builds a canonical session locator for a Slack DM channel.
+// NewDMLocator builds a canonical session locator for a Slack chat DM channel.
 func NewDMLocator(teamID, channel string) deliverycmd.Locator {
 	address := LocatorAddress{
 		Type:    addressTypeDM,
@@ -36,7 +36,7 @@ func NewDMLocator(teamID, channel string) deliverycmd.Locator {
 	return newLocator(address, fmt.Sprintf("dm:%s:%s", address.TeamID, address.Channel))
 }
 
-// NewThreadLocator builds a canonical session locator for a Slack channel thread.
+// NewThreadLocator builds a canonical session locator for a Slack chat channel thread.
 func NewThreadLocator(teamID, channel, threadTS string) deliverycmd.Locator {
 	address := LocatorAddress{
 		Type:     addressTypeThread,
@@ -49,7 +49,7 @@ func NewThreadLocator(teamID, channel, threadTS string) deliverycmd.Locator {
 
 func newLocator(address LocatorAddress, addressKey string) deliverycmd.Locator {
 	raw, _ := json.Marshal(address)
-	channelType := string(deliverycmd.ChannelTypeSlack)
+	channelType := string(deliverycmd.ChannelTypeSlackChat)
 	addressJSON := string(raw)
 	sessionID := slackSessionID(addressKey)
 	locator, err := deliverycmd.NewLocator(channelType, addressKey, addressJSON, sessionID)
@@ -69,9 +69,9 @@ func slackSessionID(addressKey string) string {
 	return fmt.Sprintf("%s-%x", slackSessionIDPrefix, sum[:8])
 }
 
-// DecodeLocator decodes a Slack locator payload from canonical session locator fields.
+// DecodeLocator decodes a Slack chat locator payload from canonical session locator fields.
 func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
-	if strings.TrimSpace(locator.ChannelType) != string(deliverycmd.ChannelTypeSlack) {
+	if strings.TrimSpace(locator.ChannelType) != string(deliverycmd.ChannelTypeSlackChat) {
 		return LocatorAddress{}, false, nil
 	}
 	var address LocatorAddress
@@ -84,7 +84,7 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	return address, true, nil
 }
 
-// LocatorFromAddressKey rebuilds a canonical Slack locator from an address key.
+// LocatorFromAddressKey rebuilds a canonical Slack chat locator from an address key.
 // DM format: "dm:<team_id>:<channel_id>"
 // Thread format: "t:<team_id>:<channel_id>:<thread_ts>".
 func LocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
@@ -125,7 +125,7 @@ func validateLocatorAddress(address LocatorAddress) error {
 	}
 }
 
-// UserID returns a Slack transport user subject.
+// UserID returns a Slack chat transport user subject.
 func UserID(teamID, userID string) string {
 	return fmt.Sprintf("slack:%s:%s", strings.TrimSpace(teamID), strings.TrimSpace(userID))
 }

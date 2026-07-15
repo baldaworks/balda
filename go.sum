@@ -825,6 +825,8 @@ github.com/tgbotkit/runtime v0.0.0-20260710072010-a66a52261b0d h1:Rb5zEXPEfudZ1l
 github.com/tgbotkit/runtime v0.0.0-20260710072010-a66a52261b0d/go.mod h1:pofFiBb98BkfBS7v16ijeGtNk96owNE68dQ8bJuVo3U=
 github.com/tgbotkit/runtime v0.1.0 h1:uneNJloEQkIGOaTOGU1BwazI2COPp1H5YFw0twSx320=
 github.com/tgbotkit/runtime v0.1.0/go.mod h1:Zy4DaSiEMmnUoPBrLLVNOZFNbSrb9Y6gcjrWJtGJxuU=
+github.com/tgbotkit/runtime v0.1.1-0.20260715072030-0364ea88fe48 h1:K3SPCxmb4d+1cDdc147NmTXHDV620mE6GlaTvet5EPg=
+github.com/tgbotkit/runtime v0.1.1-0.20260715072030-0364ea88fe48/go.mod h1:Zy4DaSiEMmnUoPBrLLVNOZFNbSrb9Y6gcjrWJtGJxuU=
 github.com/timakin/bodyclose v0.0.0-20241222091800-1db5c5ca4d67 h1:9LPGD+jzxMlnk5r6+hJnar67cgpDIz/iyD+rfl5r2Vk=
 github.com/timakin/bodyclose v0.0.0-20241222091800-1db5c5ca4d67/go.mod h1:mkjARE7Yr8qU23YcGMSALbIxTQ9r9QBVahQOBRfU460=
 github.com/timonwong/loggercheck v0.11.0 h1:jdaMpYBl+Uq9mWPXv1r8jc5fC3gyXx4/WGwTnnNKn4M=

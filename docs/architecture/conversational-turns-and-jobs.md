@@ -70,7 +70,7 @@ Delivery is no longer modeled as one universal persistence rule for every user-v
 ## Consequences
 
 - The runtime model becomes easier to explain: sessions are sessions, jobs are jobs.
-- Telegram, Slack, and Zulip conversational ingress can share the same direct session-dispatch model without affecting goals, schedules, or webhooks.
+- Telegram, Slack chat, Slack agent, and Zulip conversational ingress can share the same direct session-dispatch model without affecting goals, schedules, or webhooks, as long as transport-specific response semantics stay outside the common session path.
 - Documentation must not describe `execution_jobs` and the delivery outbox as mandatory for every conversational reply.
 - Operational tooling should focus `execution_jobs` persistence on real job lifecycle management.
 

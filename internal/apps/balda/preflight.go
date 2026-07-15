@@ -8,6 +8,7 @@ import (
 
 	"github.com/ipfans/fxlogger"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	"github.com/normahq/balda/internal/apps/balda/channel/slackagent"
 	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
@@ -24,6 +25,7 @@ import (
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
@@ -76,6 +78,7 @@ func PreflightRuntime(
 	if err := validateSlackConfig(cfg.Balda.Slack); err != nil {
 		return err
 	}
+	logSlackModeDiagnostics(logger, cfg.Balda.Slack)
 
 	workspaceMode, workspaceEnabled, err := resolveWorkspaceEnabledForApp(
 		ctx,
@@ -250,6 +253,30 @@ func PreflightRuntime(
 		return err
 	}
 	return nil
+}
+
+func logSlackModeDiagnostics(logger zerolog.Logger, cfg SlackConfig) {
+	capabilities := normalizedSlackAgentCapabilities(cfg)
+	logger.Info().
+		Bool("slack_chat_enabled", cfg.Enabled).
+		Bool("slack_agent_enabled", capabilities.Enabled).
+		Bool("slack_agent_status", capabilities.Status).
+		Bool("slack_agent_questions", capabilities.Questions).
+		Bool("slack_agent_wait", capabilities.Wait).
+		Bool("slack_agent_streaming", capabilities.Streaming).
+		Bool("slack_agent_suggested_prompts", capabilities.SuggestedPrompts).
+		Msg("balda preflight slack mode diagnostics")
+}
+
+func normalizedSlackAgentCapabilities(cfg SlackConfig) slackagent.Capabilities {
+	return slackagent.Capabilities{
+		Enabled:          cfg.Agent.Enabled,
+		Status:           cfg.Agent.Enabled,
+		Questions:        cfg.Agent.Enabled,
+		Wait:             cfg.Agent.Enabled,
+		Streaming:        cfg.Agent.Enabled && cfg.Agent.EnableStreaming,
+		SuggestedPrompts: cfg.Agent.Enabled && cfg.Agent.SuggestedPrompts,
+	}
 }
 
 func executionConfigFromBalda(cfg BaldaConfig) baldaexecution.Config {

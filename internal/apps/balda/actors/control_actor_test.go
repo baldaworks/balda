@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/controlapp"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
@@ -318,6 +319,51 @@ func TestTaskControlActorSchedulesOneShotWait(t *testing.T) {
 	}
 	if job.NextRunAt.Before(time.Now().UTC().Add(50*time.Second)) || job.NextRunAt.After(time.Now().UTC().Add(70*time.Second)) {
 		t.Fatalf("NextRunAt = %s, want about 60s in future", job.NextRunAt)
+	}
+}
+
+func TestTaskControlActorSchedulesOneShotWaitForSlackAgentLocator(t *testing.T) {
+	ctx := context.Background()
+	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
+	_ = bus
+	_ = allocator
+	_ = tasks
+	locator := baldaslackagent.NewThreadLocator("T123", "C456", "thread-789")
+	store := provider.ScheduledJobs()
+	registry := NewJobRunRegistry()
+	service := controlapp.New(&fakeTurnDispatcher{}, dispatcher, nil, store, registry, zerolog.Nop())
+	actor := &jobControlActor{
+		turnDispatcher: &fakeTurnDispatcher{},
+		dispatcher:     dispatcher,
+		scheduledJobs:  store,
+		jobRuns:        registry,
+		service:        service,
+	}
+	env, err := ControlScheduleWaitEnvelope(locator, "wait-slack-agent-1", "wake slack agent", 60, "slack:T123:U456", false)
+	if err != nil {
+		t.Fatalf("ControlScheduleWaitEnvelope() error = %v", err)
+	}
+	if err := actor.Handle(ctx, env); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	job, ok, err := store.GetByID(ctx, "wait-slack-agent-1")
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("GetByID() found = false, want true")
+	}
+	if got, want := job.ChannelType, locator.ChannelType; got != want {
+		t.Fatalf("ChannelType = %q, want %q", got, want)
+	}
+	if got, want := job.AddressKey, locator.AddressKey; got != want {
+		t.Fatalf("AddressKey = %q, want %q", got, want)
+	}
+	if got, want := job.ReportToChannelType, locator.ChannelType; got != want {
+		t.Fatalf("ReportToChannelType = %q, want %q", got, want)
+	}
+	if got, want := job.ReportToAddressKey, locator.AddressKey; got != want {
+		t.Fatalf("ReportToAddressKey = %q, want %q", got, want)
 	}
 }
 

@@ -11,21 +11,21 @@ import (
 
 var _ deliverycmd.Adapter = (*Adapter)(nil)
 
-// Adapter implements channel.ChannelAdapter for Slack.
+// Adapter implements channel.ChannelAdapter for the current Slack chat integration.
 type Adapter struct {
 	client *Client
 	logger zerolog.Logger
 }
 
-// NewAdapter creates a Slack channel adapter.
+// NewAdapter creates a Slack chat channel adapter.
 func NewAdapter(client *Client, logger zerolog.Logger) *Adapter {
 	return &Adapter{
 		client: client,
-		logger: logger.With().Str("component", "balda.channel.slack").Logger(),
+		logger: logger.With().Str("component", "balda.channel.slack_chat").Logger(),
 	}
 }
 
-// Deliver executes one semantic Slack delivery operation.
+// Deliver executes one semantic Slack chat delivery operation.
 func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, operation deliverycmd.Operation) (deliverycmd.Result, error) {
 	var err error
 	result := deliverycmd.Result{}
@@ -48,18 +48,18 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	return result, err
 }
 
-// SendPlain sends a plain text Slack message.
+// SendPlain sends a plain text Slack chat message.
 func (a *Adapter) SendPlain(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	_, err := a.send(ctx, locator, text, false)
 	return err
 }
 
-// SendMarkdown sends a Slack mrkdwn message.
+// SendMarkdown sends a Slack chat mrkdwn message.
 func (a *Adapter) SendMarkdown(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	return a.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
 }
 
-// SendMarkdownWithProfile sends a Slack message using the requested formatting profile.
+// SendMarkdownWithProfile sends a Slack chat message using the requested formatting profile.
 func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) error {
 	if deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile)).Format == deliveryfmt.FormatHTML {
 		return fmt.Errorf("slack delivery does not support html formatting")
@@ -71,18 +71,18 @@ func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator deliveryc
 	return err
 }
 
-// SendAgentReply sends agent output to Slack.
+// SendAgentReply sends agent output to Slack chat.
 func (a *Adapter) SendAgentReply(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	_, err := a.SendAgentReplyWithProviderMessageID(ctx, locator, text)
 	return err
 }
 
-// SendAgentReplyWithProviderMessageID sends agent output and returns the Slack message timestamp.
+// SendAgentReplyWithProviderMessageID sends agent output and returns the Slack chat message timestamp.
 func (a *Adapter) SendAgentReplyWithProviderMessageID(ctx context.Context, locator deliverycmd.Locator, text string) (string, error) {
 	return a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
 }
 
-// SendAgentReplyWithProviderMessageIDAndProfile sends agent output using Slack mrkdwn unless plain is requested.
+// SendAgentReplyWithProviderMessageIDAndProfile sends agent output using Slack chat mrkdwn unless plain is requested.
 func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) (string, error) {
 	normalized := deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile))
 	if normalized.Format == deliveryfmt.FormatHTML {
@@ -92,17 +92,17 @@ func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Cont
 	return a.send(ctx, locator, text, mrkdwn)
 }
 
-// SendDraftPlain is a no-op for Slack v1.
+// SendDraftPlain is a no-op for Slack chat v1.
 func (a *Adapter) SendDraftPlain(_ context.Context, _ deliverycmd.Locator, _ int, _ string) error {
 	return nil
 }
 
-// SendTyping is a no-op for Slack v1.
+// SendTyping is a no-op for Slack chat v1.
 func (a *Adapter) SendTyping(_ context.Context, _ deliverycmd.Locator) error {
 	return nil
 }
 
-// SendProgress renders semantic progress updates for Slack.
+// SendProgress renders semantic progress updates for Slack chat.
 func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error {
 	if !progress.Visible {
 		return nil

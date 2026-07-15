@@ -18,7 +18,7 @@ const (
 	maxErrorResponseBodyText = 4096
 )
 
-// Client is a small Slack Web API client for Balda's channel needs.
+// Client is a small Slack Web API client for Balda's Slack chat channel needs.
 type Client struct {
 	baseURL string
 	token   string

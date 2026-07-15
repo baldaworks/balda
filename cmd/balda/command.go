@@ -221,8 +221,8 @@ func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
 }
 
 func validateBaldaChannelConfiguration(workingDir string, cfg balda.Config) error {
-	if cfg.Balda.Telegram.Token == "" && !cfg.Balda.Zulip.Webhook.Enabled && !cfg.Balda.Slack.Enabled {
-		return fmt.Errorf("at least one channel is required.\nFor Telegram:\n  - Environment: BALDA_TELEGRAM_TOKEN=<token>\n  - CWD .env: %s with BALDA_TELEGRAM_TOKEN=<token>\nFor Zulip: set balda.zulip.webhook.enabled=true (or BALDA_ZULIP_WEBHOOK_ENABLED=true)\nFor Slack: set balda.slack.enabled=true (or BALDA_SLACK_ENABLED=true)", filepath.Join(workingDir, ".env"))
+	if cfg.Balda.Telegram.Token == "" && !cfg.Balda.Zulip.Webhook.Enabled && !cfg.Balda.Slack.Enabled && !cfg.Balda.Slack.Agent.Enabled {
+		return fmt.Errorf("at least one channel is required.\nFor Telegram:\n  - Environment: BALDA_TELEGRAM_TOKEN=<token>\n  - CWD .env: %s with BALDA_TELEGRAM_TOKEN=<token>\nFor Zulip: set balda.zulip.webhook.enabled=true (or BALDA_ZULIP_WEBHOOK_ENABLED=true)\nFor Slack chat: set balda.slack.enabled=true (or BALDA_SLACK_ENABLED=true)\nFor Slack agent: set balda.slack.agent.enabled=true (or BALDA_SLACK_AGENT_ENABLED=true)", filepath.Join(workingDir, ".env"))
 	}
 	return nil
 }

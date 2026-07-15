@@ -715,16 +715,16 @@ Per model turn:
    - `none`: Balda sends raw text with no formatting mode.
 3. If rich-message delivery fails at transport or formatting-validation level, balda retries once using the legacy path for that mode.
 
-## Slack Messaging Behavior
+## Slack Chat Messaging Behavior
 
-See [Slack Integration](slack.md) for setup details.
+See [Slack Integration](slack.md) for current Slack chat setup details.
 
-1. Slack DMs map to Balda DM sessions.
-2. Slack `app_mention` events map to thread sessions. If the mention is not already in a thread, Balda uses that message timestamp as the thread root.
+1. Slack chat DMs map to Balda DM sessions.
+2. Slack chat `app_mention` events map to thread sessions. If the mention is not already in a thread, Balda uses that message timestamp as the thread root.
 3. Ambient channel messages are ignored unless they belong to an already-active Balda thread session.
-4. Ordinary Slack conversational ingress publishes direct `balda.v1.cmd.session` work with Slack message-based dedupe.
+4. Ordinary Slack chat conversational ingress publishes direct `balda.v1.cmd.session` work with Slack message-based dedupe.
 5. `/balda topic <name>` posts a seed message and creates a Balda session from that seed thread.
-6. Slack typing and draft progress are no-ops in v1; final replies are posted with Slack `mrkdwn`.
+6. Slack chat typing and draft progress are no-ops in v1; final replies are posted with Slack `mrkdwn`.
 
 ## Topic Sessions
 

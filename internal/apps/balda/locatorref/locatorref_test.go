@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
+	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 )
 
@@ -52,6 +53,20 @@ func TestParseSlackThread(t *testing.T) {
 	}
 
 	want := baldaslack.NewThreadLocator("T123", "C456", "1712345678.000100")
+	if got != want {
+		t.Fatalf("Parse() = %+v, want %+v", got, want)
+	}
+}
+
+func TestParseSlackAgentThread(t *testing.T) {
+	t.Parallel()
+
+	got, err := Parse("slack_agent:t:T123:C456:thread-789")
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	want := baldaslackagent.NewThreadLocator("T123", "C456", "thread-789")
 	if got != want {
 		t.Fatalf("Parse() = %+v, want %+v", got, want)
 	}

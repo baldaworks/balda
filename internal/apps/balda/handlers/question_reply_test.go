@@ -28,7 +28,7 @@ func (f *fakeQuestionStore) GetQuestionByID(context.Context, string) (baldastate
 	return f.record, true, nil
 }
 func (f *fakeQuestionStore) GetPendingQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
-	if provider == "telegram" && conversationKey == f.record.AddressKey && replyToMessageID == f.record.ProviderMessageID {
+	if provider == f.record.Provider && conversationKey == f.record.AddressKey && replyToMessageID == f.record.ProviderMessageID {
 		return f.record, true, nil
 	}
 	return baldastate.QuestionRecord{}, false, nil

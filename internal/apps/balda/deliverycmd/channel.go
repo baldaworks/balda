@@ -6,9 +6,10 @@ import "context"
 type ChannelType string
 
 const (
-	ChannelTypeTelegram ChannelType = "telegram"
-	ChannelTypeZulip    ChannelType = "zulip"
-	ChannelTypeSlack    ChannelType = "slack"
+	ChannelTypeTelegram   ChannelType = "telegram"
+	ChannelTypeZulip      ChannelType = "zulip"
+	ChannelTypeSlackChat  ChannelType = "slack"
+	ChannelTypeSlackAgent ChannelType = "slack_agent"
 )
 
 type OperationKind string

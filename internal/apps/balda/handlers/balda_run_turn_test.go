@@ -1560,6 +1560,37 @@ func TestRunTurn_PrefersProviderErrorMessageOnEmptyTurnComplete(t *testing.T) {
 	}
 }
 
+func TestRunTurn_FallsBackToLastNonRetryProviderErrorOnEmptyTurnComplete(t *testing.T) {
+	t.Parallel()
+
+	h, tgClient := newBaldaRunTurnTestHandler(t, false)
+	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
+		retrying := adksession.NewEvent(context.Background(), invocationID)
+		retrying.ErrorMessage = "Reconnecting... 1/5"
+
+		terminal := adksession.NewEvent(context.Background(), invocationID)
+		terminal.ErrorMessage = "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header"
+
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.ErrorCode = "provider_error"
+		done.TurnComplete = true
+
+		return []*adksession.Event{retrying, terminal, done}
+	})
+	locator := baldatelegram.NewLocator(9001, 77)
+	if err := h.runTurn(context.Background(), "hello", adkRunner, "tg-101", sessionID, sessionID, locator, 41, baldachannel.ProgressPolicy{}); err != nil {
+		t.Fatalf("runTurn() error = %v", err)
+	}
+
+	if len(tgClient.messages) != 1 {
+		t.Fatalf("message calls = %d, want 1", len(tgClient.messages))
+	}
+	want := "Provider error: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header"
+	if got := tgClient.messages[0].Text; got != want {
+		t.Fatalf("message text = %q, want %q", got, want)
+	}
+}
+
 func TestRunTurnTaskWithDelivery_HardFailureSuggestsReset(t *testing.T) {
 	t.Parallel()
 
@@ -1644,7 +1675,7 @@ func TestRunTurnWithDelivery_AcceptsSlackLocator(t *testing.T) {
 	if err := actorlayer.UnmarshalPayload(bus.commands[len(bus.commands)-1].Payload, &payload); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
-	if payload.Locator.ChannelType != baldastate.ChannelTypeSlack {
+	if payload.Locator.ChannelType != baldastate.ChannelTypeSlackChat {
 		t.Fatalf("delivery channel type = %q, want slack", payload.Locator.ChannelType)
 	}
 	if payload.Text != baldaRunTurnFinalAnswerText {

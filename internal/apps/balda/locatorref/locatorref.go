@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	channelTypeTelegram = telegramref.ChannelType
-	channelTypeSlack    = "slack"
-	channelTypeZulip    = "zulip"
+	channelTypeTelegram   = telegramref.ChannelType
+	channelTypeSlackChat  = string(deliverycmd.ChannelTypeSlackChat)
+	channelTypeSlackAgent = string(deliverycmd.ChannelTypeSlackAgent)
+	channelTypeZulip      = "zulip"
 )
 
 // Format returns the public locator reference form used in config.
@@ -54,8 +55,10 @@ func Parse(ref string) (deliverycmd.Locator, error) {
 		return telegramLocatorFromAddressKey(addressKey)
 	case channelTypeZulip:
 		return zulipLocatorFromAddressKey(addressKey)
-	case channelTypeSlack:
+	case channelTypeSlackChat:
 		return slackLocatorFromAddressKey(addressKey)
+	case channelTypeSlackAgent:
+		return slackAgentLocatorFromAddressKey(addressKey)
 	default:
 		return deliverycmd.Locator{}, fmt.Errorf("unsupported locator transport %q", channelType)
 	}
@@ -122,10 +125,52 @@ func newSlackLocator(address slackLocatorAddress, addressKey string) (deliverycm
 	raw, _ := json.Marshal(address)
 	sum := sha256.Sum256([]byte(strings.TrimSpace(addressKey)))
 	return deliverycmd.NewLocator(
-		channelTypeSlack,
+		channelTypeSlackChat,
 		strings.TrimSpace(addressKey),
 		string(raw),
 		fmt.Sprintf("sl-%x", sum[:8]),
+	)
+}
+
+type slackAgentLocatorAddress struct {
+	TeamID         string `json:"team_id"`
+	ConversationID string `json:"conversation_id"`
+	ThreadID       string `json:"thread_id,omitempty"`
+}
+
+func slackAgentLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
+	parts := strings.Split(strings.TrimSpace(addressKey), ":")
+	switch {
+	case len(parts) == 3 && parts[0] == "c":
+		if parts[1] == "" || parts[2] == "" {
+			return deliverycmd.Locator{}, fmt.Errorf("slack_agent address key %q must be c:<team_id>:<conversation_id>", addressKey)
+		}
+		return newSlackAgentLocator(slackAgentLocatorAddress{
+			TeamID:         strings.TrimSpace(parts[1]),
+			ConversationID: strings.TrimSpace(parts[2]),
+		}, addressKey)
+	case len(parts) == 4 && parts[0] == "t":
+		if parts[1] == "" || parts[2] == "" || parts[3] == "" {
+			return deliverycmd.Locator{}, fmt.Errorf("slack_agent address key %q must be t:<team_id>:<conversation_id>:<thread_id>", addressKey)
+		}
+		return newSlackAgentLocator(slackAgentLocatorAddress{
+			TeamID:         strings.TrimSpace(parts[1]),
+			ConversationID: strings.TrimSpace(parts[2]),
+			ThreadID:       strings.TrimSpace(parts[3]),
+		}, addressKey)
+	default:
+		return deliverycmd.Locator{}, fmt.Errorf("slack_agent address key %q must be c:<team_id>:<conversation_id> or t:<team_id>:<conversation_id>:<thread_id>", addressKey)
+	}
+}
+
+func newSlackAgentLocator(address slackAgentLocatorAddress, addressKey string) (deliverycmd.Locator, error) {
+	raw, _ := json.Marshal(address)
+	sum := sha256.Sum256([]byte(strings.TrimSpace(addressKey)))
+	return deliverycmd.NewLocator(
+		channelTypeSlackAgent,
+		strings.TrimSpace(addressKey),
+		string(raw),
+		fmt.Sprintf("sla-%x", sum[:8]),
 	)
 }
 

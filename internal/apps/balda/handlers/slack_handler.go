@@ -34,7 +34,7 @@ import (
 	"go.uber.org/fx"
 )
 
-var slackHandlerActorAddress = actorlayer.ActorAddress{Target: "handler", Key: "slack"}
+var slackChatHandlerActorAddress = actorlayer.ActorAddress{Target: "handler", Key: "slack"}
 
 const (
 	slackWebhookMaxBodyBytes       = 1 << 20
@@ -47,8 +47,8 @@ const (
 	slackSignatureVersion          = "v0"
 )
 
-// SlackConfig is the normalized handler config for Slack.
-type SlackConfig struct {
+// SlackChatConfig is the normalized handler config for the current Slack chat integration.
+type SlackChatConfig struct {
 	Enabled                bool
 	BotToken               string
 	SigningSecret          string
@@ -88,8 +88,9 @@ type slackSlashCommand struct {
 	TriggerID   string
 }
 
-// SlackHandler handles inbound Slack Events API and slash command requests.
-type SlackHandler struct {
+// SlackChatHandler handles inbound Slack Events API and slash command requests
+// for the current Slack chat integration.
+type SlackChatHandler struct {
 	ownerStore        *auth.OwnerStore
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
@@ -98,7 +99,7 @@ type SlackHandler struct {
 	actorDispatcher   actortransport.Dispatcher
 	goalJobs          goalJobService
 	client            *baldaslack.Client
-	config            SlackConfig
+	config            SlackChatConfig
 	authToken         string
 	baldaProviderName string
 	goalMaxIterations int
@@ -124,16 +125,16 @@ type slackHandlerParams struct {
 	Dispatcher        actortransport.Dispatcher
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	SlackClient       *baldaslack.Client
-	SlackConfig       SlackConfig
+	SlackChatConfig   SlackChatConfig
 	AuthToken         string `name:"balda_auth_token"`
 	BaldaProviderID   string `name:"balda_provider"`
 	MaxIterations     int    `name:"balda_goal_max_iterations"`
 	Logger            zerolog.Logger
 }
 
-// NewSlackHandler creates a Slack HTTP receiver.
-func NewSlackHandler(params slackHandlerParams) *SlackHandler {
-	h := &SlackHandler{
+// NewSlackChatHandler creates a Slack chat HTTP receiver.
+func NewSlackChatHandler(params slackHandlerParams) *SlackChatHandler {
+	h := &SlackChatHandler{
 		ownerStore:        params.OwnerStore,
 		inviteStore:       params.InviteStore,
 		collaboratorStore: params.CollaboratorStore,
@@ -142,23 +143,23 @@ func NewSlackHandler(params slackHandlerParams) *SlackHandler {
 		actorDispatcher:   params.Dispatcher,
 		goalJobs:          params.GoalJobs,
 		client:            params.SlackClient,
-		config:            params.SlackConfig,
+		config:            params.SlackChatConfig,
 		authToken:         strings.TrimSpace(params.AuthToken),
 		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
-		logger:            params.Logger.With().Str("component", "balda.handler.slack").Logger(),
+		logger:            params.Logger.With().Str("component", "balda.handler.slack_chat").Logger(),
 		processSem:        make(chan struct{}, slackWebhookMaxConcurrentTasks),
 	}
 	return h
 }
 
 // Start authenticates the Slack bot and begins accepting requests.
-func (h *SlackHandler) Start(ctx context.Context) error { return h.onStart(ctx) }
+func (h *SlackChatHandler) Start(ctx context.Context) error { return h.onStart(ctx) }
 
 // Stop gracefully shuts down the Slack receiver.
-func (h *SlackHandler) Stop(ctx context.Context) error { return h.onStop(ctx) }
+func (h *SlackChatHandler) Stop(ctx context.Context) error { return h.onStop(ctx) }
 
-func (h *SlackHandler) onStart(ctx context.Context) error {
+func (h *SlackChatHandler) onStart(ctx context.Context) error {
 	if !h.config.Enabled {
 		h.logger.Info().Msg("slack disabled; skipping server start")
 		return nil
@@ -224,7 +225,7 @@ func normalizeSlackPath(path string, fallback string) (string, error) {
 	return trimmed, nil
 }
 
-func (h *SlackHandler) onStop(ctx context.Context) error {
+func (h *SlackChatHandler) onStop(ctx context.Context) error {
 	if h.server == nil {
 		return nil
 	}
@@ -244,7 +245,7 @@ func (h *SlackHandler) onStop(ctx context.Context) error {
 	}
 }
 
-func (h *SlackHandler) handleEvents(w http.ResponseWriter, r *http.Request) {
+func (h *SlackChatHandler) handleEvents(w http.ResponseWriter, r *http.Request) {
 	body, ok := h.readAndVerifySlackRequest(w, r)
 	if !ok {
 		return
@@ -283,7 +284,7 @@ func (h *SlackHandler) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func (h *SlackHandler) handleCommand(w http.ResponseWriter, r *http.Request) {
+func (h *SlackChatHandler) handleCommand(w http.ResponseWriter, r *http.Request) {
 	body, ok := h.readAndVerifySlackRequest(w, r)
 	if !ok {
 		return
@@ -315,7 +316,7 @@ func (h *SlackHandler) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func (h *SlackHandler) readAndVerifySlackRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+func (h *SlackChatHandler) readAndVerifySlackRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -362,7 +363,7 @@ func verifySlackSignature(secret, timestamp, signature string, body []byte, now 
 	return nil
 }
 
-func (h *SlackHandler) acquireProcessSlot() (func(), bool) {
+func (h *SlackChatHandler) acquireProcessSlot() (func(), bool) {
 	if h.processSem == nil {
 		return func() {}, true
 	}
@@ -374,7 +375,7 @@ func (h *SlackHandler) acquireProcessSlot() (func(), bool) {
 	}
 }
 
-func (h *SlackHandler) processEvent(requestCtx context.Context, env slackEventEnvelope) {
+func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEventEnvelope) {
 	ctx, cancel := context.WithTimeout(requestCtx, slackWebhookProcessingTimeout)
 	defer cancel()
 	event := env.Event
@@ -408,7 +409,7 @@ func (h *SlackHandler) processEvent(requestCtx context.Context, env slackEventEn
 	}
 }
 
-func (h *SlackHandler) processSlashCommand(requestCtx context.Context, cmd slackSlashCommand) {
+func (h *SlackChatHandler) processSlashCommand(requestCtx context.Context, cmd slackSlashCommand) {
 	ctx, cancel := context.WithTimeout(requestCtx, slackWebhookProcessingTimeout)
 	defer cancel()
 	fields := strings.Fields(strings.TrimSpace(cmd.Text))
@@ -431,7 +432,7 @@ func slackCommandIsDM(cmd slackSlashCommand) bool {
 	return strings.HasPrefix(strings.TrimSpace(cmd.ChannelID), "D") || strings.EqualFold(strings.TrimSpace(cmd.ChannelName), "directmessage")
 }
 
-func (h *SlackHandler) handleCommandText(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, text string, isDM bool) {
+func (h *SlackChatHandler) handleCommandText(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, text string, isDM bool) {
 	fields := strings.Fields(text)
 	if len(fields) == 0 {
 		_ = h.sendPlain(ctx, locator, "Usage: /balda <start|topic|goal|cancel|locator|usage|close|user>")
@@ -471,7 +472,7 @@ func (h *SlackHandler) handleCommandText(ctx context.Context, locator baldasessi
 	}
 }
 
-func (h *SlackHandler) handleStartCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {
+func (h *SlackChatHandler) handleStartCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {
 	if !isDM {
 		_ = h.sendPlain(ctx, locator, "This command is only available in direct messages.")
 		return
@@ -540,7 +541,7 @@ func (h *SlackHandler) handleStartCommand(ctx context.Context, locator baldasess
 	_ = h.sendPlain(ctx, locator, "You are now registered as the bot owner.")
 }
 
-func (h *SlackHandler) handleInviteStart(ctx context.Context, locator baldasession.SessionLocator, subject, token string) {
+func (h *SlackChatHandler) handleInviteStart(ctx context.Context, locator baldasession.SessionLocator, subject, token string) {
 	if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(subject) {
 		_ = h.sendPlain(ctx, locator, "You are already the bot owner.")
 		return
@@ -567,7 +568,7 @@ func (h *SlackHandler) handleInviteStart(ctx context.Context, locator baldasessi
 	_ = h.sendPlain(ctx, locator, "Welcome! You are now a bot collaborator.")
 }
 
-func (h *SlackHandler) handleOwnerBindToken(ctx context.Context, locator baldasession.SessionLocator, subject, token string) {
+func (h *SlackChatHandler) handleOwnerBindToken(ctx context.Context, locator baldasession.SessionLocator, subject, token string) {
 	if h.channelAuth == nil {
 		_ = h.sendPlain(ctx, locator, "Token authentication is unavailable right now.")
 		return
@@ -585,7 +586,7 @@ func (h *SlackHandler) handleOwnerBindToken(ctx context.Context, locator baldase
 	_ = h.sendPlain(ctx, locator, "This Slack account is now connected to the Balda owner.")
 }
 
-func (h *SlackHandler) handleResetCommand(ctx context.Context, locator baldasession.SessionLocator, subject, cmd, args string, isDM bool) {
+func (h *SlackChatHandler) handleResetCommand(ctx context.Context, locator baldasession.SessionLocator, subject, cmd, args string, isDM bool) {
 	if strings.TrimSpace(args) != "" {
 		_ = h.sendPlain(ctx, locator, fmt.Sprintf("Usage: /balda %s", cmd))
 		return
@@ -612,7 +613,7 @@ func (h *SlackHandler) handleResetCommand(ctx context.Context, locator baldasess
 	h.sendSessionStartupNotice(ctx, locator, locator.SessionID)
 }
 
-func (h *SlackHandler) handleCancelCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string) {
+func (h *SlackChatHandler) handleCancelCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string) {
 	if strings.TrimSpace(args) != "" {
 		_ = h.sendPlain(ctx, locator, "Usage: /balda cancel")
 		return
@@ -624,7 +625,7 @@ func (h *SlackHandler) handleCancelCommand(ctx context.Context, locator baldases
 	_ = h.sendPlain(ctx, locator, "Cancel requested.")
 }
 
-func (h *SlackHandler) handleLocatorCommand(ctx context.Context, locator baldasession.SessionLocator, args string) {
+func (h *SlackChatHandler) handleLocatorCommand(ctx context.Context, locator baldasession.SessionLocator, args string) {
 	if strings.TrimSpace(args) != "" {
 		_ = h.sendPlain(ctx, locator, "Usage: /balda locator")
 		return
@@ -633,7 +634,7 @@ func (h *SlackHandler) handleLocatorCommand(ctx context.Context, locator baldase
 	_ = h.sendPlain(ctx, locator, fmt.Sprintf("Transport: %s\nLocator: %s\n\nUse in scheduler/webhook config:\ntarget: locator\nkey: %s", locator.ChannelType, ref, ref))
 }
 
-func (h *SlackHandler) handleTopicCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {
+func (h *SlackChatHandler) handleTopicCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {
 	if isDM {
 		_ = h.sendPlain(ctx, locator, "This command is only available in channel messages.")
 		return
@@ -651,7 +652,7 @@ func (h *SlackHandler) handleTopicCommand(ctx context.Context, locator baldasess
 	_ = h.sendMarkdown(ctx, locator, welcome.BuildAgentWelcomeMessage(topicName, locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers))
 }
 
-func (h *SlackHandler) handleTopicSlashCommand(ctx context.Context, cmd slackSlashCommand, args string) {
+func (h *SlackChatHandler) handleTopicSlashCommand(ctx context.Context, cmd slackSlashCommand, args string) {
 	subject := baldaslack.UserID(cmd.TeamID, cmd.UserID)
 	if !h.canAccessSubject(ctx, subject) {
 		if _, err := h.client.PostMessage(ctx, cmd.ChannelID, "", "Only the bot owner or collaborators can use this bot.", true); err != nil {
@@ -683,7 +684,7 @@ func (h *SlackHandler) handleTopicSlashCommand(ctx context.Context, cmd slackSla
 	_ = h.sendMarkdown(ctx, locator, welcome.BuildAgentWelcomeMessage(topicName, locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers))
 }
 
-func (h *SlackHandler) handleGoalCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string) {
+func (h *SlackChatHandler) handleGoalCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string) {
 	objective := strings.TrimSpace(args)
 	if objective == "" {
 		_ = h.sendPlain(ctx, locator, "Usage:\n/balda goal <objective>\n/balda goal clear")
@@ -716,7 +717,7 @@ func (h *SlackHandler) handleGoalCommand(ctx context.Context, locator baldasessi
 	}
 }
 
-func (h *SlackHandler) handleUsageCommand(ctx context.Context, locator baldasession.SessionLocator, args string) {
+func (h *SlackChatHandler) handleUsageCommand(ctx context.Context, locator baldasession.SessionLocator, args string) {
 	if strings.TrimSpace(args) != "" {
 		_ = h.sendPlain(ctx, locator, "Usage: /balda usage")
 		return
@@ -732,7 +733,7 @@ func (h *SlackHandler) handleUsageCommand(ctx context.Context, locator baldasess
 	_ = h.sendPlain(ctx, locator, renderUsageSnapshot(snapshot))
 }
 
-func (h *SlackHandler) handleCloseCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {
+func (h *SlackChatHandler) handleCloseCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {
 	if !isDM {
 		_ = h.sendPlain(ctx, locator, "This command is only available in direct messages.")
 		return
@@ -749,7 +750,7 @@ func (h *SlackHandler) handleCloseCommand(ctx context.Context, locator baldasess
 	_ = h.sendPlain(ctx, locator, "Session history reset.")
 }
 
-func (h *SlackHandler) handleUserCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string) {
+func (h *SlackChatHandler) handleUserCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string) {
 	if h.ownerStore == nil || !h.ownerStore.IsOwnerSubject(subject) {
 		_ = h.sendPlain(ctx, locator, "This command is only for the owner.")
 		return
@@ -808,7 +809,7 @@ func (h *SlackHandler) handleUserCommand(ctx context.Context, locator baldasessi
 	}
 }
 
-func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, messageID, text string, isDM bool, createIfMissing bool) {
+func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, messageID, text string, isDM bool, createIfMissing bool) {
 	subject := baldaslack.UserID(teamID, userID)
 	if h.ownerStore == nil || !h.ownerStore.HasOwner() {
 		return
@@ -859,7 +860,7 @@ func (h *SlackHandler) handleMessage(ctx context.Context, locator baldasession.S
 	}
 }
 
-func (h *SlackHandler) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string, isDM bool, createIfMissing bool) (*baldasession.TopicSession, error) {
+func (h *SlackChatHandler) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string, isDM bool, createIfMissing bool) (*baldasession.TopicSession, error) {
 	if existing, _ := h.sessionManager.GetSession(locator); existing != nil {
 		return existing, nil
 	}
@@ -888,7 +889,7 @@ func (h *SlackHandler) getOrCreateSession(ctx context.Context, locator baldasess
 	return ts, nil
 }
 
-func (h *SlackHandler) sendSessionWelcome(ctx context.Context, locator baldasession.SessionLocator, ts *baldasession.TopicSession, isDM bool) {
+func (h *SlackChatHandler) sendSessionWelcome(ctx context.Context, locator baldasession.SessionLocator, ts *baldasession.TopicSession, isDM bool) {
 	label := autoSessionLabel
 	if isDM {
 		label = ownerSessionLabel
@@ -898,7 +899,7 @@ func (h *SlackHandler) sendSessionWelcome(ctx context.Context, locator baldasess
 	h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
 }
 
-func (h *SlackHandler) canAccessSubject(ctx context.Context, subject string) bool {
+func (h *SlackChatHandler) canAccessSubject(ctx context.Context, subject string) bool {
 	if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(subject) {
 		return true
 	}
@@ -909,22 +910,22 @@ func (h *SlackHandler) canAccessSubject(ctx context.Context, subject string) boo
 	return err == nil && found
 }
 
-func (h *SlackHandler) getProviderName() string {
+func (h *SlackChatHandler) getProviderName() string {
 	if h.sessionManager == nil {
 		return h.baldaProviderName
 	}
 	return firstNonEmpty(h.sessionManager.BaldaProviderID(), h.baldaProviderName)
 }
 
-func (h *SlackHandler) sendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error {
-	return sendPlain(ctx, h.actorDispatcher, slackHandlerActorAddress, locator, text)
+func (h *SlackChatHandler) sendPlain(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+	return sendPlain(ctx, h.actorDispatcher, slackChatHandlerActorAddress, locator, text)
 }
 
-func (h *SlackHandler) sendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error {
-	return sendMarkdown(ctx, h.actorDispatcher, slackHandlerActorAddress, locator, text)
+func (h *SlackChatHandler) sendMarkdown(ctx context.Context, locator baldasession.SessionLocator, text string) error {
+	return sendMarkdown(ctx, h.actorDispatcher, slackChatHandlerActorAddress, locator, text)
 }
 
-func (h *SlackHandler) sendSessionStartupNotice(ctx context.Context, locator baldasession.SessionLocator, sessionID string) {
+func (h *SlackChatHandler) sendSessionStartupNotice(ctx context.Context, locator baldasession.SessionLocator, sessionID string) {
 	notice := strings.TrimSpace(h.sessionManager.TakeStartupNotice(sessionID))
 	if notice == "" {
 		return
@@ -932,7 +933,7 @@ func (h *SlackHandler) sendSessionStartupNotice(ctx context.Context, locator bal
 	_ = h.sendPlain(ctx, locator, notice)
 }
 
-func (h *SlackHandler) isBotEcho(event slackEvent) bool {
+func (h *SlackChatHandler) isBotEcho(event slackEvent) bool {
 	if event.BotID != "" {
 		return true
 	}
@@ -940,13 +941,13 @@ func (h *SlackHandler) isBotEcho(event slackEvent) bool {
 	return botUserID != "" && event.User == botUserID
 }
 
-func (h *SlackHandler) getBotUserID() string {
+func (h *SlackChatHandler) getBotUserID() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.botUserID
 }
 
-func (h *SlackHandler) getBotTeamID() string {
+func (h *SlackChatHandler) getBotTeamID() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.botTeamID

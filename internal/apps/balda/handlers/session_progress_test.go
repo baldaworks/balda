@@ -6,6 +6,7 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/progress"
@@ -99,6 +100,43 @@ func TestSessionProgressDispatcherVisibleThinkingTracksDeliverySequence(t *testi
 	}
 	assertProgressKind(t, dispatcher.envs, 0, deliverycmd.ProgressThinking, true, 1)
 	assertProgressKind(t, dispatcher.envs, 1, deliverycmd.ProgressThinking, true, 2)
+}
+
+func TestSessionProgressDispatcherStreamsVisibleResponseForSlackAgent(t *testing.T) {
+	dispatcher := &captureDispatcher{}
+	emitter := newSessionProgressDispatcher(
+		dispatcher,
+		actorlayer.ActorAddress{Target: "session", Key: "s1"},
+		baldasession.SessionLocator{
+			ChannelType: baldaslackagent.ChannelType,
+			SessionID:   "sla-1",
+			AddressKey:  "c:T123:C456",
+		},
+		"",
+		42,
+		deliveryfmt.ProgressPolicy{Thinking: true},
+		false,
+		zerolog.Nop(),
+	)
+
+	result, err := emitter.HandleNonTerminal(context.Background(), sessionProgressUpdate{
+		HasVisibleResponseText: true,
+		VisibleResponseText:    "partial answer",
+	})
+	if err != nil {
+		t.Fatalf("streaming progress: %v", err)
+	}
+	if !result.SentProgress {
+		t.Fatal("expected streaming progress to count as sent")
+	}
+	assertProgressKind(t, dispatcher.envs, 0, deliverycmd.ProgressThinking, true, 1)
+	var payload deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envs[0].Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Progress == nil || payload.Progress.Text != "partial answer" {
+		t.Fatalf("progress text = %#v, want partial answer", payload.Progress)
+	}
 }
 
 func assertProgressKind(t *testing.T, envs []actorlayer.Envelope, idx int, wantKind deliverycmd.ProgressKind, wantVisible bool, wantSequence int) {

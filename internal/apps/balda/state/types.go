@@ -26,8 +26,10 @@ const (
 	// ChannelTypeZulip is the balda channel type backed by Zulip.
 	ChannelTypeZulip = string(deliverycmd.ChannelTypeZulip)
 
-	// ChannelTypeSlack is the balda channel type backed by Slack.
-	ChannelTypeSlack = string(deliverycmd.ChannelTypeSlack)
+	// ChannelTypeSlackChat is the balda channel type backed by the current Slack chat integration.
+	ChannelTypeSlackChat = string(deliverycmd.ChannelTypeSlackChat)
+	// ChannelTypeSlackAgent is the balda channel type backed by the Slack AI Agents integration.
+	ChannelTypeSlackAgent = string(deliverycmd.ChannelTypeSlackAgent)
 
 	// ScheduledJobStatusActive means the job is eligible for scheduler dispatch.
 	ScheduledJobStatusActive = "active"

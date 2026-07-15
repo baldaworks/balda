@@ -295,6 +295,45 @@ func TestValidateSlackConfig(t *testing.T) {
 		{name: "missing bot token", cfg: SlackConfig{Enabled: true, SigningSecret: "secret"}, wantError: "bot_token"},
 		{name: "missing signing secret", cfg: SlackConfig{Enabled: true, BotToken: "xoxb-token"}, wantError: "signing_secret"},
 		{
+			name: "slack agent requires app token",
+			cfg: SlackConfig{
+				BotToken:      "xoxb-token",
+				SigningSecret: "secret",
+				Agent: SlackAgentConfig{
+					Enabled: true,
+				},
+			},
+			wantError: "agent.app_token",
+		},
+		{
+			name: "invalid slack agent events path",
+			cfg: SlackConfig{
+				BotToken:      "xoxb-token",
+				SigningSecret: "secret",
+				Agent: SlackAgentConfig{
+					Enabled:    true,
+					AppToken:   "xapp-token",
+					EventsPath: "slack/agent/events",
+				},
+			},
+			wantError: "agent.events_path",
+		},
+		{
+			name: "slack agent path must differ from slack chat path",
+			cfg: SlackConfig{
+				Enabled:       true,
+				BotToken:      "xoxb-token",
+				SigningSecret: "secret",
+				EventsPath:    "/slack/events",
+				Agent: SlackAgentConfig{
+					Enabled:    true,
+					AppToken:   "xapp-token",
+					EventsPath: "/slack/events",
+				},
+			},
+			wantError: "must differ",
+		},
+		{
 			name: "invalid events path",
 			cfg: SlackConfig{
 				Enabled:       true,
@@ -315,11 +354,24 @@ func TestValidateSlackConfig(t *testing.T) {
 			wantError: "commands_path",
 		},
 		{
-			name: "valid",
+			name: "valid slack chat",
 			cfg: SlackConfig{
 				Enabled:       true,
 				BotToken:      "xoxb-token",
 				SigningSecret: "secret",
+			},
+			wantError: "",
+		},
+		{
+			name: "valid slack agent only",
+			cfg: SlackConfig{
+				BotToken:      "xoxb-token",
+				SigningSecret: "secret",
+				Agent: SlackAgentConfig{
+					Enabled:    true,
+					AppToken:   "xapp-token",
+					EventsPath: "/slack/agent/events",
+				},
 			},
 			wantError: "",
 		},

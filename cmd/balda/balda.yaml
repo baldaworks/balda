@@ -85,6 +85,19 @@ balda:
     # If true, process private channel message events when the Slack app has
     # groups:history. Public channel and DM support does not require this.
     include_private_channels: false
+    agent:
+      # Enable separate Slack AI Agents ingress/runtime wiring.
+      # This is distinct from balda.slack.enabled, which keeps the current Slack chat mode.
+      enabled: false
+      # Local HTTP bind address for Slack agent events.
+      listen_addr: "0.0.0.0:8092"
+      # Local HTTP path for Slack agent ingress requests.
+      events_path: "/slack/agent/events"
+      # Slack app-level token required for Slack AI Agents mode.
+      app_token: ""
+      # Optional richer UX toggles. These do not affect current slack_chat behavior.
+      enable_streaming: false
+      suggested_prompts: false
 
   webhooks:
     # Enable generic inbound webhook ingestion.

@@ -10,7 +10,7 @@ func TestThreadLocatorRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	locator := NewThreadLocator("T123", "C456", "1712345678.000100")
-	if locator.ChannelType != baldastate.ChannelTypeSlack {
+	if locator.ChannelType != baldastate.ChannelTypeSlackChat {
 		t.Fatalf("ChannelType = %q, want slack", locator.ChannelType)
 	}
 	if locator.AddressKey != "t:T123:C456:1712345678.000100" {
