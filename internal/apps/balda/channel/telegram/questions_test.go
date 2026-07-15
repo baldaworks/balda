@@ -11,6 +11,8 @@ import (
 	"github.com/tgbotkit/runtime/events"
 )
 
+const testQuestionCallbackAllowData = "balda:q:question-1:1"
+
 type recordingQuestionMessenger struct {
 	TelegramMessenger
 	keyboard                client.InlineKeyboardMarkup
@@ -123,9 +125,11 @@ func TestSendAgentReplyWithQuestionBuildsOneButtonPerRow(t *testing.T) {
 
 func TestCallbackContextFromEventNormalizesSelection(t *testing.T) {
 	data := "balda:q:question-1:2"
+	isTopicMessage := false
 	message := client.MaybeInaccessibleMessage{
 		"message_id":        42,
 		"message_thread_id": 77,
+		"is_topic_message":  isTopicMessage,
 		"chat": map[string]any{
 			"id":   int64(-1001),
 			"type": "supergroup",
@@ -148,8 +152,64 @@ func TestCallbackContextFromEventNormalizesSelection(t *testing.T) {
 	}
 }
 
+func TestCallbackContextFromPrivateTopicPreservesMessageThreadID(t *testing.T) {
+	data := testQuestionCallbackAllowData
+	message := client.MaybeInaccessibleMessage{
+		"message_id":        42,
+		"message_thread_id": 523431,
+		"is_topic_message":  true,
+		"chat":              map[string]any{"id": int64(101), "type": "private"},
+	}
+	got, ok := (&Adapter{}).CallbackContextFromEvent(&events.CallbackQueryEvent{CallbackQuery: &client.CallbackQuery{
+		Id: "callback-1", Data: &data, From: client.User{Id: 101}, Message: &message,
+	}})
+	if !ok {
+		t.Fatal("CallbackContextFromEvent() ok = false")
+	}
+	if got.Locator != NewLocator(101, 523431) {
+		t.Fatalf("locator = %+v", got.Locator)
+	}
+}
+
+func TestCallbackContextFromPrivateNonTopicIgnoresMessageThreadID(t *testing.T) {
+	data := testQuestionCallbackAllowData
+	message := client.MaybeInaccessibleMessage{
+		"message_id":        42,
+		"message_thread_id": 523431,
+		"is_topic_message":  false,
+		"chat":              map[string]any{"id": int64(101), "type": "private"},
+	}
+	got, ok := (&Adapter{}).CallbackContextFromEvent(&events.CallbackQueryEvent{CallbackQuery: &client.CallbackQuery{
+		Id: "callback-1", Data: &data, From: client.User{Id: 101}, Message: &message,
+	}})
+	if !ok {
+		t.Fatal("CallbackContextFromEvent() ok = false")
+	}
+	if got.Locator != NewLocator(101, 0) {
+		t.Fatalf("locator = %+v", got.Locator)
+	}
+}
+
+func TestCallbackContextFromPrivateTopicUsesThreadWhenTopicFlagOmitted(t *testing.T) {
+	data := testQuestionCallbackAllowData
+	message := client.MaybeInaccessibleMessage{
+		"message_id":        42,
+		"message_thread_id": 523431,
+		"chat":              map[string]any{"id": int64(101), "type": "private"},
+	}
+	got, ok := (&Adapter{}).CallbackContextFromEvent(&events.CallbackQueryEvent{CallbackQuery: &client.CallbackQuery{
+		Id: "callback-1", Data: &data, From: client.User{Id: 101}, Message: &message,
+	}})
+	if !ok {
+		t.Fatal("CallbackContextFromEvent() ok = false")
+	}
+	if got.Locator != NewLocator(101, 523431) {
+		t.Fatalf("locator = %+v", got.Locator)
+	}
+}
+
 func TestCallbackContextFromEphemeralMessageRequiresReceiver(t *testing.T) {
-	data := "balda:q:question-1:1"
+	data := testQuestionCallbackAllowData
 	message := client.MaybeInaccessibleMessage{
 		"message_id":           0,
 		"ephemeral_message_id": 73,

@@ -18,6 +18,8 @@ import (
 	"github.com/tgbotkit/runtime/events"
 )
 
+const testQuestionCallbackAllowData = "balda:q:question-1:1"
+
 type fakeQuestionStore struct {
 	record baldastate.QuestionRecord
 }
@@ -144,7 +146,7 @@ func TestHandleQuestionCallbackSettlesAndDispatchesContinuation(t *testing.T) {
 	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent("balda:q:question-1:2")); err != nil {
 		t.Fatalf("onQuestionCallback() error = %v", err)
 	}
-	if len(messenger.answers) != 1 || messenger.answers[0] != "Selected." || messenger.alerts[0] {
+	if len(messenger.answers) != 1 || messenger.answers[0] != questionCallbackSelectedMessage || messenger.alerts[0] {
 		t.Fatalf("callback answers = %v alerts = %v", messenger.answers, messenger.alerts)
 	}
 	if len(dispatcher.commands) != 1 {
@@ -156,6 +158,54 @@ func TestHandleQuestionCallbackSettlesAndDispatchesContinuation(t *testing.T) {
 	}
 	if payload.Answer.SelectedOption != "cancel" {
 		t.Fatalf("selected option = %q, want cancel", payload.Answer.SelectedOption)
+	}
+}
+
+func TestHandleQuestionCallbackSettlesPrivateTopic(t *testing.T) {
+	store := &fakeQuestionStore{record: callbackPrivateTopicQuestionRecord(questioncmd.StatusPending)}
+	dispatcher := &fakeTurnDispatcher{}
+	messenger := &callbackMessenger{}
+	ownerStore, collaboratorStore := questionCallbackAuthStores(t)
+	handler := &BaldaHandler{
+		ownerStore:        ownerStore,
+		collaboratorStore: collaboratorStore,
+		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		actorDispatcher:   dispatcher,
+		questionService:   questions.New(store, nil, zerolog.Nop()),
+	}
+
+	if err := handler.onQuestionCallback(context.Background(), questionCallbackPrivateTopicEvent(testQuestionCallbackAllowData, 523431)); err != nil {
+		t.Fatalf("onQuestionCallback() error = %v", err)
+	}
+	if len(messenger.answers) != 1 || messenger.answers[0] != questionCallbackSelectedMessage || messenger.alerts[0] {
+		t.Fatalf("callback answers = %v alerts = %v", messenger.answers, messenger.alerts)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("dispatched commands = %d, want 1", len(dispatcher.commands))
+	}
+}
+
+func TestHandleQuestionCallbackRejectsDifferentPrivateTopic(t *testing.T) {
+	store := &fakeQuestionStore{record: callbackPrivateTopicQuestionRecord(questioncmd.StatusPending)}
+	dispatcher := &fakeTurnDispatcher{}
+	messenger := &callbackMessenger{}
+	ownerStore, collaboratorStore := questionCallbackAuthStores(t)
+	handler := &BaldaHandler{
+		ownerStore:        ownerStore,
+		collaboratorStore: collaboratorStore,
+		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		actorDispatcher:   dispatcher,
+		questionService:   questions.New(store, nil, zerolog.Nop()),
+	}
+
+	if err := handler.onQuestionCallback(context.Background(), questionCallbackPrivateTopicEvent(testQuestionCallbackAllowData, 523432)); err != nil {
+		t.Fatalf("onQuestionCallback() error = %v", err)
+	}
+	if len(messenger.answers) != 1 || messenger.answers[0] != questionCallbackUnavailableMessage || !messenger.alerts[0] {
+		t.Fatalf("callback answers = %v alerts = %v", messenger.answers, messenger.alerts)
+	}
+	if len(dispatcher.commands) != 0 {
+		t.Fatalf("dispatched commands = %d, want 0", len(dispatcher.commands))
 	}
 }
 
@@ -172,7 +222,7 @@ func TestHandleQuestionCallbackAcknowledgesStaleSelection(t *testing.T) {
 		questionService:   questions.New(store, nil, zerolog.Nop()),
 	}
 
-	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent("balda:q:question-1:1")); err != nil {
+	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent(testQuestionCallbackAllowData)); err != nil {
 		t.Fatalf("onQuestionCallback() error = %v", err)
 	}
 	if len(messenger.answers) != 1 || messenger.answers[0] != "This request has expired." {
@@ -189,7 +239,7 @@ func TestHandleQuestionCallbackFailsClosedWithoutAuthorizationStores(t *testing.
 		channel:         baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
 		questionService: questions.New(&fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}, nil, zerolog.Nop()),
 	}
-	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent("balda:q:question-1:1")); err != nil {
+	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent(testQuestionCallbackAllowData)); err != nil {
 		t.Fatalf("onQuestionCallback() error = %v", err)
 	}
 	if len(messenger.answers) != 1 || messenger.answers[0] != "This request is unavailable." || !messenger.alerts[0] {
@@ -209,10 +259,10 @@ func TestHandleQuestionCallbackRejectsAuthenticatedNonRequester(t *testing.T) {
 		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
 		questionService:   questions.New(&fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}, nil, zerolog.Nop()),
 	}
-	if err := handler.onQuestionCallback(context.Background(), questionCallbackEventForUser("balda:q:question-1:1", 202)); err != nil {
+	if err := handler.onQuestionCallback(context.Background(), questionCallbackEventForUser(testQuestionCallbackAllowData, 202)); err != nil {
 		t.Fatalf("onQuestionCallback() error = %v", err)
 	}
-	if len(messenger.answers) != 1 || messenger.answers[0] != "This choice is not available to you." || !messenger.alerts[0] {
+	if len(messenger.answers) != 1 || messenger.answers[0] != questionCallbackUnavailableMessage || !messenger.alerts[0] {
 		t.Fatalf("callback answers = %v alerts = %v", messenger.answers, messenger.alerts)
 	}
 }
@@ -244,6 +294,16 @@ func callbackQuestionRecord(status string) baldastate.QuestionRecord {
 	}
 }
 
+func callbackPrivateTopicQuestionRecord(status string) baldastate.QuestionRecord {
+	record := callbackQuestionRecord(status)
+	record.SessionID = "tg-1-523431"
+	record.AddressKey = "1:523431"
+	record.ConversationKey = "1:523431"
+	record.InteractionJSON = `{"session_id":"tg-1-523431","requested_by":{"user_id":"tg-101"},"locator":{"session_id":"tg-1-523431","channel_type":"telegram","address_key":"1:523431","address_json":"{\"chat_id\":1,\"topic_id\":523431}"}}`
+	record.ResumeJSON = `{"to":"session:tg-1-523431"}`
+	return record
+}
+
 func questionCallbackEvent(data string) *events.CallbackQueryEvent {
 	return questionCallbackEventForUser(data, 101)
 }
@@ -255,5 +315,17 @@ func questionCallbackEventForUser(data string, userID int64) *events.CallbackQue
 	}
 	return &events.CallbackQueryEvent{CallbackQuery: &client.CallbackQuery{
 		Id: "callback-1", Data: &data, From: client.User{Id: userID}, Message: &message,
+	}}
+}
+
+func questionCallbackPrivateTopicEvent(data string, topicID int) *events.CallbackQueryEvent {
+	message := client.MaybeInaccessibleMessage{
+		"message_id":        42,
+		"message_thread_id": topicID,
+		"is_topic_message":  true,
+		"chat":              map[string]any{"id": int64(1), "type": "private"},
+	}
+	return &events.CallbackQueryEvent{CallbackQuery: &client.CallbackQuery{
+		Id: "callback-1", Data: &data, From: client.User{Id: 101}, Message: &message,
 	}}
 }

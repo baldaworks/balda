@@ -17,6 +17,11 @@ import (
 	"github.com/tgbotkit/runtime/events"
 )
 
+const (
+	questionCallbackSelectedMessage    = "Selected."
+	questionCallbackUnavailableMessage = "This choice is not available to you."
+)
+
 func (h *BaldaHandler) onQuestionCallback(ctx context.Context, event *events.CallbackQueryEvent) error {
 	if h == nil || h.channel == nil {
 		return nil
@@ -57,12 +62,12 @@ func (h *BaldaHandler) onQuestionCallback(ctx context.Context, event *events.Cal
 		_ = h.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, "Could not process this choice.", true)
 		return err
 	}
-	message, alert := "Selected.", false
+	message, alert := questionCallbackSelectedMessage, false
 	switch {
 	case !result.Matched || result.Inactive:
 		message = "This request has expired."
 	case result.Invalid:
-		message, alert = "This choice is not available to you.", true
+		message, alert = questionCallbackUnavailableMessage, true
 	case !result.Settled:
 		message = "This request has already been answered."
 	}

@@ -63,9 +63,10 @@ func (a *Adapter) CallbackContextFromEvent(event *events.CallbackQueryEvent) (Ca
 		return CallbackContext{}, false
 	}
 	var message struct {
-		MessageID          int  `json:"message_id"`
-		EphemeralMessageID *int `json:"ephemeral_message_id,omitempty"`
-		MessageThreadID    int  `json:"message_thread_id,omitempty"`
+		MessageID          int   `json:"message_id"`
+		EphemeralMessageID *int  `json:"ephemeral_message_id,omitempty"`
+		MessageThreadID    *int  `json:"message_thread_id,omitempty"`
+		IsTopicMessage     *bool `json:"is_topic_message,omitempty"`
 		ReceiverUser       *struct {
 			ID int64 `json:"id"`
 		} `json:"receiver_user,omitempty"`
@@ -87,10 +88,7 @@ func (a *Adapter) CallbackContextFromEvent(event *events.CallbackQueryEvent) (Ca
 	default:
 		return CallbackContext{}, false
 	}
-	topicID := message.MessageThreadID
-	if strings.EqualFold(strings.TrimSpace(message.Chat.Type), chatTypePrivate) {
-		topicID = 0
-	}
+	topicID := telegramTopicID(strings.ToLower(strings.TrimSpace(message.Chat.Type)), message.MessageThreadID, message.IsTopicMessage)
 	return CallbackContext{
 		Locator:           NewLocator(message.Chat.ID, topicID),
 		CallbackQueryID:   strings.TrimSpace(event.CallbackQuery.Id),

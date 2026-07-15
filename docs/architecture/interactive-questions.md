@@ -138,6 +138,10 @@ transport packages may project generic options into channel-native controls and
 extract transport-specific reply references. They must not own option validity,
 pending-question matching, responder policy, or question lifecycle rules.
 
+Telegram callback normalization preserves conversation topic scope in both
+private and public chats. It uses the same topic classification as message
+ingress before the question application validates the persisted context.
+
 A question may carry a transport-neutral private audience. The concrete
 channel adapter decides whether it can enforce that audience. Telegram uses a
 normal private-chat message in DMs and a receiver-targeted ephemeral message in

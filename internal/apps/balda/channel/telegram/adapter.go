@@ -512,7 +512,8 @@ func (a *Adapter) TopicLifecycleFromEvent(event *events.MessageEvent) (TopicLife
 	if event == nil || event.Message == nil || event.Message.MessageThreadId == nil {
 		return TopicLifecycleContext{}, false
 	}
-	if !isTopicMessage(event.Message) {
+	topicID := telegramTopicID(event.Message.Chat.Type, event.Message.MessageThreadId, event.Message.IsTopicMessage)
+	if topicID == 0 {
 		a.logger.Debug().
 			Str("chat_type", event.Message.Chat.Type).
 			Int("message_thread_id", *event.Message.MessageThreadId).
@@ -520,7 +521,6 @@ func (a *Adapter) TopicLifecycleFromEvent(event *events.MessageEvent) (TopicLife
 		return TopicLifecycleContext{}, false
 	}
 
-	topicID := *event.Message.MessageThreadId
 	userID := int64(0)
 	if event.Message.From != nil {
 		userID = event.Message.From.Id
@@ -871,29 +871,29 @@ func (a *Adapter) topicIDFromMessage(msg *client.Message) int {
 	if msg == nil || msg.MessageThreadId == nil {
 		return 0
 	}
-	if msg.Chat.Type != chatTypePrivate {
-		// In public chats, message_thread_id is the routing key for balda job
-		// threads even when is_topic_message is omitted or false.
-		return *msg.MessageThreadId
-	}
-	if !isTopicMessage(msg) {
+	topicID := telegramTopicID(msg.Chat.Type, msg.MessageThreadId, msg.IsTopicMessage)
+	if topicID == 0 && msg.Chat.Type == chatTypePrivate {
 		a.logger.Debug().
 			Str("chat_type", msg.Chat.Type).
 			Int("message_thread_id", *msg.MessageThreadId).
 			Msg("ignoring message_thread_id for non-topic message")
-		return 0
 	}
-	return *msg.MessageThreadId
+	return topicID
 }
 
-func isTopicMessage(msg *client.Message) bool {
-	if msg == nil || msg.MessageThreadId == nil {
-		return false
+func telegramTopicID(chatType string, messageThreadID *int, topicMessage *bool) int {
+	if messageThreadID == nil {
+		return 0
 	}
-	if msg.IsTopicMessage != nil {
-		return *msg.IsTopicMessage
+	if !strings.EqualFold(strings.TrimSpace(chatType), chatTypePrivate) {
+		// In public chats, message_thread_id is the routing key for balda job
+		// threads even when is_topic_message is omitted or false.
+		return *messageThreadID
 	}
-	// Fallback for payloads that omit is_topic_message: if Telegram sent a
-	// message_thread_id, treat it as a topic/thread-scoped message.
-	return true
+	if topicMessage != nil && !*topicMessage {
+		return 0
+	}
+	// For private chats, an explicit false marks a regular DM. If Telegram
+	// omits is_topic_message, the thread identifier remains authoritative.
+	return *messageThreadID
 }
