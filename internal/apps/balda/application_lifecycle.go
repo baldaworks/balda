@@ -13,6 +13,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/handlers"
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/scheduledjobs"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/shutdown"
@@ -131,24 +132,25 @@ func (t *telegramLifecycle) Stop(ctx context.Context) error {
 type applicationLifecycleParams struct {
 	fx.In
 
-	LC              fx.Lifecycle
-	Logger          zerolog.Logger
-	MCP             *internalmcp.InternalMCPManager
-	Runtime         *baldaagent.RuntimeManager
-	Sessions        *session.Manager
-	Bus             *natsbus.Bus
-	Projector       *baldajobs.EventProjector
-	OutboxPublisher *baldajobs.OutboxPublisher
-	ActorHost       *baldaexecution.ActorHost
-	TurnDispatcher  *actors.TurnDispatcher
-	BaldaHandler    *handlers.BaldaHandler
-	Scheduler       *scheduledjobs.ScheduledJobScheduler
-	InboundWebhook  *handlers.InboundWebhookReceiver
-	Zulip           *handlers.ZulipBaldaHandler
-	SlackChat       *handlers.SlackChatHandler
-	SlackAgent      *handlers.SlackAgentHandler
-	TelegramBot     *runtime.Bot
-	TelegramEnabled bool `name:"balda_telegram_enabled"`
+	LC                fx.Lifecycle
+	Logger            zerolog.Logger
+	MCP               *internalmcp.InternalMCPManager
+	Runtime           *baldaagent.RuntimeManager
+	Sessions          *session.Manager
+	Bus               *natsbus.Bus
+	QuestionProjector *questions.DeliveryBindingProjector
+	Projector         *baldajobs.EventProjector
+	OutboxPublisher   *baldajobs.OutboxPublisher
+	ActorHost         *baldaexecution.ActorHost
+	TurnDispatcher    *actors.TurnDispatcher
+	BaldaHandler      *handlers.BaldaHandler
+	Scheduler         *scheduledjobs.ScheduledJobScheduler
+	InboundWebhook    *handlers.InboundWebhookReceiver
+	Zulip             *handlers.ZulipBaldaHandler
+	SlackChat         *handlers.SlackChatHandler
+	SlackAgent        *handlers.SlackAgentHandler
+	TelegramBot       *runtime.Bot
+	TelegramEnabled   bool `name:"balda_telegram_enabled"`
 }
 
 func registerApplicationLifecycle(p applicationLifecycleParams) {
@@ -157,12 +159,18 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 		bot:     p.TelegramBot,
 		logger:  p.Logger.With().Str("component", "balda.telegram_runtime").Logger(),
 	}
-	coordinator := newApplicationLifecycle(p.Logger, []lifecycleStage{
+	coordinator := newApplicationLifecycle(p.Logger, applicationLifecycleStages(p, telegram))
+	p.LC.Append(fx.Hook{OnStart: coordinator.Start, OnStop: coordinator.Stop})
+}
+
+func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegramLifecycle) []lifecycleStage {
+	return []lifecycleStage{
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
 		{name: "provider runtime", start: p.Runtime.EnsureRuntime, stop: p.Runtime.Stop},
 		{name: "session manager", start: p.Sessions.Start, stop: p.Sessions.Stop},
 		{name: "turn dispatcher", stop: p.TurnDispatcher.Shutdown},
 		{name: "durable transport", start: p.Bus.Start, stop: p.Bus.Drain},
+		{name: "question delivery binding projector", start: p.QuestionProjector.Start, stop: p.QuestionProjector.Stop},
 		{name: "job event projector", start: p.Projector.Start, stop: p.Projector.Stop},
 		{name: "job event outbox", start: p.OutboxPublisher.Start, stop: p.OutboxPublisher.Stop},
 		{name: "actor host", start: p.ActorHost.Start, stop: p.ActorHost.Stop},
@@ -173,6 +181,5 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 		{name: "slack chat ingress", start: p.SlackChat.Start, stop: p.SlackChat.Stop},
 		{name: "slack agent ingress", start: p.SlackAgent.Start, stop: p.SlackAgent.Stop},
 		{name: "telegram ingress", start: telegram.Start, stop: telegram.Stop},
-	})
-	p.LC.Append(fx.Hook{OnStart: coordinator.Start, OnStop: coordinator.Stop})
+	}
 }

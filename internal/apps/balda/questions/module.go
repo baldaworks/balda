@@ -1,7 +1,6 @@
 package questions
 
 import (
-	"context"
 	"fmt"
 
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -19,13 +18,4 @@ var Module = fx.Module("balda_questions",
 		},
 		NewDeliveryBindingProjector,
 	),
-	fx.Invoke(func(lc fx.Lifecycle, projector *DeliveryBindingProjector) {
-		if projector == nil {
-			return
-		}
-		lc.Append(fx.Hook{
-			OnStart: func(ctx context.Context) error { return projector.Start(ctx) },
-			OnStop:  func(ctx context.Context) error { return projector.Stop(ctx) },
-		})
-	}),
 )

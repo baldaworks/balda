@@ -55,6 +55,38 @@ func TestApplicationLifecycleStartsInOrderAndStopsInReverse(t *testing.T) {
 	}
 }
 
+func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testing.T) {
+	t.Parallel()
+
+	stages := applicationLifecycleStages(applicationLifecycleParams{}, &telegramLifecycle{})
+	names := make([]string, 0, len(stages))
+	for _, stage := range stages {
+		names = append(names, stage.name)
+	}
+
+	want := []string{
+		"bundled MCP",
+		"provider runtime",
+		"session manager",
+		"turn dispatcher",
+		"durable transport",
+		"question delivery binding projector",
+		"job event projector",
+		"job event outbox",
+		"actor host",
+		"telegram bootstrap",
+		"scheduled jobs",
+		"inbound webhooks",
+		"zulip ingress",
+		"slack chat ingress",
+		"slack agent ingress",
+		"telegram ingress",
+	}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("lifecycle stages = %v, want %v", names, want)
+	}
+}
+
 func TestApplicationLifecycleRollsBackStartedStages(t *testing.T) {
 	t.Parallel()
 
