@@ -19,8 +19,8 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	github.com/tgbotkit/client v0.8.0
-	github.com/tgbotkit/runtime v0.0.0-20260710072010-a66a52261b0d
+	github.com/tgbotkit/client v0.9.0
+	github.com/tgbotkit/runtime v0.1.0
 	go.uber.org/fx v1.24.0
 	google.golang.org/adk/v2 v2.0.0
 	google.golang.org/genai v1.57.0
