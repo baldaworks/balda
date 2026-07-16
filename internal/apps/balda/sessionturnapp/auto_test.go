@@ -14,6 +14,32 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func TestAutoDecisionNotificationSuppressesSentinels(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name         string
+		turnSource   string
+		responseText string
+		wantText     string
+		wantSource   string
+		wantOK       bool
+	}{
+		{name: "done", turnSource: turncmd.SourceAuto, responseText: automode.DoneSentinel, wantText: "Auto mode is idle.", wantSource: "auto_done", wantOK: true},
+		{name: "wait", turnSource: turncmd.SourceAuto, responseText: automode.WaitSentinel, wantText: "Auto mode is waiting for user.", wantSource: "auto_wait_for_user", wantOK: true},
+		{name: "visible auto response", turnSource: turncmd.SourceAuto, responseText: "continue", wantOK: false},
+		{name: "ordinary turn", turnSource: turncmd.SourceTelegram, responseText: automode.DoneSentinel, wantOK: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotText, gotSource, gotOK := autoDecisionNotification(tt.turnSource, tt.responseText)
+			if gotText != tt.wantText || gotSource != tt.wantSource || gotOK != tt.wantOK {
+				t.Fatalf("autoDecisionNotification() = %q, %q, %v; want %q, %q, %v", gotText, gotSource, gotOK, tt.wantText, tt.wantSource, tt.wantOK)
+			}
+		})
+	}
+}
+
 type fakeAutoRuntimeState struct {
 	state map[string]any
 }

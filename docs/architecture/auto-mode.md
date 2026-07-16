@@ -56,7 +56,9 @@ It uses a fixed steering prompt that tells the model:
 - otherwise continue the task immediately and provide only the next
   user-visible response
 
-Balda intercepts these sentinels and suppresses delivery for that internal turn.
+Balda intercepts these sentinels, suppresses the sentinel text, and emits a
+short user-visible lifecycle notification (`Auto mode is idle.` or
+`Auto mode is waiting for user.`).
 
 ## Session state
 

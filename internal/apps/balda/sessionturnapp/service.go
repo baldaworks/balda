@@ -37,6 +37,12 @@ type runtimeStateReader interface {
 	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
 }
 
+const (
+	responseSourceNone            = "none"
+	responseSourceAutoDone        = "auto_done"
+	responseSourceAutoWaitForUser = "auto_wait_for_user"
+)
+
 type TurnExecutionService struct {
 	dispatcher actortransport.Dispatcher
 	jobEvents  jobEventAppender
@@ -354,18 +360,17 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			responseEmitted := false
-			responseSource := "none"
+			responseSource := responseSourceNone
 			handledEmptyTerminalReason := false
 			switch {
 			case !req.Deliver:
 				responseSource = "fire_and_forget"
 			case strings.TrimSpace(responseText) != "":
-				if strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
-					trimmed := strings.TrimSpace(responseText)
-					switch trimmed {
-					case automode.DoneSentinel:
-						responseEmitted = false
-						responseSource = "auto_done"
+				if notification, source, ok := autoDecisionNotification(req.TurnSource, responseText); ok {
+					responseText = notification
+					responseSource = source
+					switch source {
+					case responseSourceAutoDone:
 						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 							automode.StateKeyMode:             automode.StateIdle,
 							automode.StateKeyConsecutiveTurns: 0,
@@ -374,10 +379,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						}); err != nil {
 							return err
 						}
-						break
-					case automode.WaitSentinel:
-						responseEmitted = false
-						responseSource = "auto_wait_for_user"
+					case responseSourceAutoWaitForUser:
 						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 							automode.StateKeyMode:             automode.StateWaitingForUser,
 							automode.StateKeyConsecutiveTurns: 0,
@@ -386,7 +388,6 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						}); err != nil {
 							return err
 						}
-						break
 					}
 				}
 				if jobBackedDelivery {
@@ -399,12 +400,16 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						return err
 					}
 					responseEmitted = true
-					responseSource = "streamed_text"
+					if responseSource == responseSourceNone {
+						responseSource = "streamed_text"
+					}
 				} else if sendErr := sendAgentReplyWithProfile(ctx, s.dispatcher, req.OutboundFrom, req.Locator, deliveryProfile, responseText); sendErr != nil {
 					log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda response")
 				} else {
 					responseEmitted = true
-					responseSource = "streamed_text"
+					if responseSource == responseSourceNone {
+						responseSource = "streamed_text"
+					}
 				}
 			default:
 				if terminalErrorMessage == "" {
@@ -510,6 +515,20 @@ func (s *TurnExecutionService) autoStatus(ctx context.Context, locator baldasess
 	return automode.Normalize(status), nil
 }
 
+func autoDecisionNotification(turnSource, responseText string) (string, string, bool) {
+	if !strings.EqualFold(strings.TrimSpace(turnSource), turncmd.SourceAuto) {
+		return "", "", false
+	}
+	switch strings.TrimSpace(responseText) {
+	case automode.DoneSentinel:
+		return "Auto mode is idle.", responseSourceAutoDone, true
+	case automode.WaitSentinel:
+		return "Auto mode is waiting for user.", responseSourceAutoWaitForUser, true
+	default:
+		return "", "", false
+	}
+}
+
 func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any) error {
 	if s == nil || s.dispatcher == nil || len(state) == 0 {
 		return nil
@@ -529,7 +548,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 	if s == nil || s.dispatcher == nil || s.sessions == nil {
 		return nil
 	}
-	if responseSource == "auto_done" || responseSource == "auto_wait_for_user" {
+	if responseSource == responseSourceAutoDone || responseSource == responseSourceAutoWaitForUser {
 		return nil
 	}
 	status, err := s.autoStatus(ctx, req.Locator)

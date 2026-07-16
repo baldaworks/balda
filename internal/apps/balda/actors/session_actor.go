@@ -52,7 +52,7 @@ type sessionActorExecutor struct {
 }
 
 type sessionRuntimeStateUpdater interface {
-	GetSession(locator baldasession.SessionLocator) (*baldasession.TopicSession, error)
+	UpdateRuntimeState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any) error
 }
 
 type sessionActorExecutorParams struct {
@@ -90,14 +90,7 @@ func (e *sessionActorExecutor) updateAutoModeState(ctx context.Context, env acto
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode auto mode payload: %w", err))
 	}
-	ts, err := e.sessions.GetSession(baldasession.SessionLocator(payload.Locator))
-	if err != nil {
-		return actorlayer.TransientError(fmt.Errorf("lookup session for auto mode update: %w", err))
-	}
-	if ts == nil {
-		return actorlayer.TransientError(fmt.Errorf("session %q unavailable for auto mode update", payload.Locator.SessionID))
-	}
-	if err := ts.UpdateRuntimeState(ctx, payload.State); err != nil {
+	if err := e.sessions.UpdateRuntimeState(ctx, payload.Locator, payload.State); err != nil {
 		return actorlayer.TransientError(fmt.Errorf("update auto mode runtime state: %w", err))
 	}
 	return nil
