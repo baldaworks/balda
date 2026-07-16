@@ -52,7 +52,8 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			name: "goalkeeper contracts remain transport neutral",
 			dir:  "goalkeepercmd",
 			requires: []string{
-				baldaImportPrefix + "deliverycmd",
+				baldaImportPrefix + "actorcmd",
+				baldaImportPrefix + "deliveryfmt",
 			},
 		},
 		{
