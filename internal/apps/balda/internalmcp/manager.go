@@ -16,6 +16,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/controlcmd"
 	"github.com/normahq/balda/internal/apps/balda/controlmcp"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questions"
@@ -259,6 +260,10 @@ func (s sessionQuestionService) StartSessionQuestion(ctx context.Context, in ses
 	if s.service == nil {
 		return sessionmcp.SessionQuestionOutput{}, fmt.Errorf("session question service is required")
 	}
+	locator, err := canonicalSessionQuestionLocator(in.Locator)
+	if err != nil {
+		return sessionmcp.SessionQuestionOutput{}, err
+	}
 	options := make([]questions.SessionOption, 0, len(in.Options))
 	for _, option := range in.Options {
 		options = append(options, questions.SessionOption{
@@ -268,18 +273,13 @@ func (s sessionQuestionService) StartSessionQuestion(ctx context.Context, in ses
 	}
 	req := questions.SessionRequest{
 		Interaction: questioncmd.InteractionContext{
-			SessionID:   strings.TrimSpace(in.Locator.SessionID),
-			ChannelKind: strings.TrimSpace(in.Locator.ChannelType),
-			Locator: deliverycmd.Locator{
-				SessionID:   strings.TrimSpace(in.Locator.SessionID),
-				ChannelType: strings.TrimSpace(in.Locator.ChannelType),
-				AddressKey:  strings.TrimSpace(in.Locator.AddressKey),
-				AddressJSON: strings.TrimSpace(in.Locator.AddressJSON),
-			},
+			SessionID:   locator.SessionID,
+			ChannelKind: locator.ChannelType,
+			Locator:     locator,
 			RequestedBy: questioncmd.UserRef{UserID: strings.TrimSpace(in.RequestedBy)},
 		},
 		Resume: questioncmd.ResumeTarget{
-			To: actorcmd.ActorTypeSession + ":" + strings.TrimSpace(in.Locator.SessionID),
+			To: actorcmd.ActorTypeSession + ":" + locator.SessionID,
 		},
 		Prompt:          strings.TrimSpace(in.Prompt),
 		Options:         options,
@@ -307,6 +307,20 @@ func (s sessionQuestionService) StartSessionQuestion(ctx context.Context, in ses
 		TimedOut:    result.TimedOut,
 		Canceled:    result.Canceled,
 	}, nil
+}
+
+func canonicalSessionQuestionLocator(in sessionmcp.SessionLocatorInput) (deliverycmd.Locator, error) {
+	channelType := strings.ToLower(strings.TrimSpace(in.ChannelType))
+	addressKey := strings.TrimSpace(in.AddressKey)
+	locator, err := locatorref.Parse(channelType + ":" + addressKey)
+	if err != nil {
+		return deliverycmd.Locator{}, fmt.Errorf("canonicalize session question locator: %w", err)
+	}
+	expectedSessionID := strings.TrimSpace(in.SessionID)
+	if expectedSessionID == "" || expectedSessionID != locator.SessionID {
+		return deliverycmd.Locator{}, fmt.Errorf("session question locator mismatch: session_id=%q canonical=%q", expectedSessionID, locator.SessionID)
+	}
+	return locator, nil
 }
 
 func (s sessionWaitService) CancelSessionWait(ctx context.Context, locator sessionmcp.SessionLocatorInput, jobID string) (bool, error) {

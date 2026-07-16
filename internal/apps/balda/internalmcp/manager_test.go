@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/sessionmcp"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -167,6 +168,36 @@ func TestBundledBaldaServerInstructionsReflectWorkspaceMode(t *testing.T) {
 	}
 	if strings.Contains(disabled, "balda.memory") {
 		t.Fatalf("bundledBaldaServerInstructions(false, false) = %q, want no memory guidance", disabled)
+	}
+}
+
+func TestCanonicalSessionQuestionLocatorReconstructsTelegramAddress(t *testing.T) {
+	t.Parallel()
+
+	got, err := canonicalSessionQuestionLocator(sessionmcp.SessionLocatorInput{
+		SessionID:   "tg-2317500-536036",
+		ChannelType: "telegram",
+		AddressKey:  "2317500:536036",
+		AddressJSON: `{"chat_id":2317500,"message_thread_id":536036}`,
+	})
+	if err != nil {
+		t.Fatalf("canonicalSessionQuestionLocator() error = %v", err)
+	}
+	if got.AddressJSON != `{"chat_id":2317500,"topic_id":536036}` {
+		t.Fatalf("address_json = %q, want canonical Telegram topic", got.AddressJSON)
+	}
+}
+
+func TestCanonicalSessionQuestionLocatorRejectsSessionMismatch(t *testing.T) {
+	t.Parallel()
+
+	_, err := canonicalSessionQuestionLocator(sessionmcp.SessionLocatorInput{
+		SessionID:   "tg-2317500-1",
+		ChannelType: "telegram",
+		AddressKey:  "2317500:536036",
+	})
+	if err == nil || !strings.Contains(err.Error(), "locator mismatch") {
+		t.Fatalf("canonicalSessionQuestionLocator() error = %v, want mismatch", err)
 	}
 }
 
