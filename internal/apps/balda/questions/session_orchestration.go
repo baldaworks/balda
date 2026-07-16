@@ -11,6 +11,7 @@ import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
 const metadataDefaultOptionID = "default_option_id"
@@ -44,24 +45,61 @@ type SessionResult struct {
 }
 
 func (s *Service) AskSession(ctx context.Context, dispatcher actortransport.Dispatcher, req SessionRequest) (SessionResult, error) {
-	fallback := SessionResult{Source: "canceled", Canceled: true}
+	waiter := make(chan SessionResult, 1)
+	record, err := s.startSession(ctx, dispatcher, req, waiter)
+	if err != nil {
+		return SessionResult{Source: "canceled", Canceled: true}, err
+	}
+	defer s.removeSessionWaiter(record.QuestionID)
+
+	timer := time.NewTimer(req.Timeout)
+	defer timer.Stop()
+	select {
+	case result := <-waiter:
+		if strings.TrimSpace(result.QuestionID) == "" {
+			result.QuestionID = record.QuestionID
+		}
+		return result, nil
+	case <-timer.C:
+		return s.sessionTimeoutResult(record.QuestionID)
+	case <-ctx.Done():
+		result, err := s.sessionTimeoutResult(record.QuestionID)
+		if err != nil {
+			return result, fmt.Errorf("session question canceled: %w", err)
+		}
+		return result, ctx.Err()
+	}
+}
+
+// StartSession creates and delivers an ordinary conversational question
+// without holding the current model/tool turn open. The persisted resume target
+// receives the answer or timeout as new actor work.
+func (s *Service) StartSession(ctx context.Context, dispatcher actortransport.Dispatcher, req SessionRequest) (SessionResult, error) {
+	record, err := s.startSession(ctx, dispatcher, req, nil)
+	if err != nil {
+		return SessionResult{Source: "canceled", Canceled: true}, err
+	}
+	return SessionResult{QuestionID: record.QuestionID, Source: "pending"}, nil
+}
+
+func (s *Service) startSession(ctx context.Context, dispatcher actortransport.Dispatcher, req SessionRequest, waiter chan SessionResult) (baldastate.QuestionRecord, error) {
 	if s == nil || s.store == nil || dispatcher == nil {
-		return fallback, fmt.Errorf("interactive session question is unavailable")
+		return baldastate.QuestionRecord{}, fmt.Errorf("interactive session question is unavailable")
 	}
 	if strings.TrimSpace(req.Interaction.SessionID) == "" {
-		return fallback, fmt.Errorf("interaction session_id is required")
+		return baldastate.QuestionRecord{}, fmt.Errorf("interaction session_id is required")
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
-		return fallback, fmt.Errorf("question prompt is required")
+		return baldastate.QuestionRecord{}, fmt.Errorf("question prompt is required")
 	}
 	if strings.TrimSpace(req.Resume.To) == "" {
-		return fallback, fmt.Errorf("question resume target is required")
+		return baldastate.QuestionRecord{}, fmt.Errorf("question resume target is required")
 	}
 	if !req.AllowFreeText && len(req.Options) == 0 {
-		return fallback, fmt.Errorf("question requires options or free text")
+		return baldastate.QuestionRecord{}, fmt.Errorf("question requires options or free text")
 	}
 	if defaultID := strings.TrimSpace(req.DefaultOptionID); defaultID != "" && !hasSessionOption(req.Options, defaultID) {
-		return fallback, fmt.Errorf("default option %q is not present in options", defaultID)
+		return baldastate.QuestionRecord{}, fmt.Errorf("default option %q is not present in options", defaultID)
 	}
 
 	options := make([]questioncmd.Option, 0, len(req.Options))
@@ -70,7 +108,7 @@ func (s *Service) AskSession(ctx context.Context, dispatcher actortransport.Disp
 		id := strings.TrimSpace(option.ID)
 		label := strings.TrimSpace(option.Label)
 		if id == "" || label == "" {
-			return fallback, fmt.Errorf("question options require id and label")
+			return baldastate.QuestionRecord{}, fmt.Errorf("question options require id and label")
 		}
 		options = append(options, questioncmd.Option{ID: id, Label: label})
 		deliveryOptions = append(deliveryOptions, deliverycmd.QuestionOption{ID: id, Label: label})
@@ -92,46 +130,36 @@ func (s *Service) AskSession(ctx context.Context, dispatcher actortransport.Disp
 		Metadata:      metadata,
 	})
 	if err != nil {
-		return fallback, fmt.Errorf("create session question: %w", err)
+		return baldastate.QuestionRecord{}, fmt.Errorf("create session question: %w", err)
 	}
 
-	waiter := make(chan SessionResult, 1)
-	s.waitMu.Lock()
-	s.waiters[record.QuestionID] = waiter
-	s.waitMu.Unlock()
-	defer func() {
+	if waiter != nil {
 		s.waitMu.Lock()
-		delete(s.waiters, record.QuestionID)
+		s.waiters[record.QuestionID] = waiter
 		s.waitMu.Unlock()
-	}()
+	}
 
 	envelope, err := buildSessionDeliveryEnvelope(record.QuestionID, req, deliveryOptions)
 	if err != nil {
+		s.removeSessionWaiter(record.QuestionID)
 		_, _, _ = s.Timeout(context.WithoutCancel(ctx), record.QuestionID, s.now().UTC())
-		return SessionResult{QuestionID: record.QuestionID, Source: "delivery_failed", Canceled: true}, fmt.Errorf("build session question delivery: %w", err)
+		return baldastate.QuestionRecord{}, fmt.Errorf("build session question delivery: %w", err)
 	}
 	if _, err := dispatcher.Dispatch(ctx, envelope); err != nil {
+		s.removeSessionWaiter(record.QuestionID)
 		_, _, _ = s.Timeout(context.WithoutCancel(ctx), record.QuestionID, s.now().UTC())
-		return SessionResult{QuestionID: record.QuestionID, Source: "delivery_failed", Canceled: true}, fmt.Errorf("dispatch session question delivery: %w", err)
+		return baldastate.QuestionRecord{}, fmt.Errorf("dispatch session question delivery: %w", err)
 	}
+	return record, nil
+}
 
-	timer := time.NewTimer(req.Timeout)
-	defer timer.Stop()
-	select {
-	case result := <-waiter:
-		if strings.TrimSpace(result.QuestionID) == "" {
-			result.QuestionID = record.QuestionID
-		}
-		return result, nil
-	case <-timer.C:
-		return s.sessionTimeoutResult(record.QuestionID)
-	case <-ctx.Done():
-		result, err := s.sessionTimeoutResult(record.QuestionID)
-		if err != nil {
-			return result, fmt.Errorf("session question canceled: %w", err)
-		}
-		return result, ctx.Err()
+func (s *Service) removeSessionWaiter(questionID string) {
+	if s == nil {
+		return
 	}
+	s.waitMu.Lock()
+	delete(s.waiters, strings.TrimSpace(questionID))
+	s.waitMu.Unlock()
 }
 
 func (s *Service) ResolveSession(questionID string, result SessionResult) {

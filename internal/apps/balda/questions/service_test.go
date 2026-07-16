@@ -185,6 +185,34 @@ func TestServiceAskSessionAddsDefaultOptionToEmptyMetadata(t *testing.T) {
 	}
 }
 
+func TestServiceStartSessionReturnsWithoutWaitingForAnswer(t *testing.T) {
+	store := &fakeStore{}
+	svc := New(store, nil, zerolog.Nop())
+
+	result, err := svc.StartSession(context.Background(), fakeSessionDispatcher{}, SessionRequest{
+		Interaction: questioncmd.InteractionContext{
+			SessionID:   "tg-1-0",
+			ChannelKind: "telegram",
+			Locator: deliverycmd.Locator{
+				SessionID:   "tg-1-0",
+				ChannelType: "telegram",
+				AddressKey:  "1:0",
+				AddressJSON: `{"chat_id":1,"topic_id":0}`,
+			},
+		},
+		Resume:  questioncmd.ResumeTarget{To: "session:tg-1-0"},
+		Prompt:  "continue?",
+		Options: []SessionOption{{ID: "allow", Label: "Allow"}},
+		Timeout: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("StartSession() error = %v", err)
+	}
+	if result.QuestionID == "" || result.Source != "pending" || store.record.Status != questioncmd.StatusPending {
+		t.Fatalf("StartSession() = %+v, record = %+v", result, store.record)
+	}
+}
+
 func TestServiceResolveReplySettlesPendingQuestion(t *testing.T) {
 	store := &fakeStore{
 		replyMatch: baldastate.QuestionRecord{

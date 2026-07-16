@@ -182,5 +182,5 @@ type SessionQuestionOutput struct {
 }
 
 type SessionQuestionService interface {
-	AskSessionQuestion(ctx context.Context, in SessionQuestionInput) (SessionQuestionOutput, error)
+	StartSessionQuestion(ctx context.Context, in SessionQuestionInput) (SessionQuestionOutput, error)
 }

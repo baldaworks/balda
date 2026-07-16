@@ -54,7 +54,12 @@ func (s *service) registerTools(server *mcp.Server) {
 	}, s.sessionWait)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "balda.session.question",
-		Description: "Ask a generic interactive question in a specific Balda session and wait for the settled answer. Supports transport-native buttons, optional default_option_id timeout fallback, and private requester-scoped questions.",
+		Description: "Start a generic interactive question in a specific Balda session and return immediately with its question_id. The settled answer resumes the session as a new turn. Supports transport-native buttons, optional default_option_id timeout fallback, and private requester-scoped questions.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Ask session question",
+			DestructiveHint: boolPointer(false),
+			OpenWorldHint:   boolPointer(false),
+		},
 	}, s.sessionQuestion)
 }
 
@@ -342,12 +347,16 @@ func (s *service) sessionQuestion(ctx context.Context, _ *mcp.CallToolRequest, i
 		return result, SessionQuestionOutput{ToolOutcome: out}, nil
 	}
 
-	out, err := s.questionService.AskSessionQuestion(ctx, in)
+	out, err := s.questionService.StartSessionQuestion(ctx, in)
 	if err != nil {
 		result, toolOut := backendFailure("balda.session.question", err)
 		return result, SessionQuestionOutput{ToolOutcome: toolOut}, nil
 	}
 	return jsonToolResult(out), out, nil
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }
 
 // Helpers

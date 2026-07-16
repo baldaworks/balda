@@ -36,7 +36,7 @@ func (r *recordingWaitScheduler) CancelSessionWait(_ context.Context, _ SessionL
 	return r.cancel[jobID], nil
 }
 
-func (r *recordingQuestionService) AskSessionQuestion(_ context.Context, in SessionQuestionInput) (SessionQuestionOutput, error) {
+func (r *recordingQuestionService) StartSessionQuestion(_ context.Context, in SessionQuestionInput) (SessionQuestionOutput, error) {
 	r.inputs = append(r.inputs, in)
 	if !r.output.OK {
 		r.output.ToolOutcome = ToolOutcome{OK: true}
@@ -109,6 +109,10 @@ func TestSessionStateToolDescriptionsAndSchemas(t *testing.T) {
 	}
 	if got := toolByName["balda.session.question"].Description; !strings.Contains(got, "default_option_id") {
 		t.Fatalf("balda.session.question description = %q, want default option wording", got)
+	}
+	questionTool := toolByName["balda.session.question"]
+	if questionTool.Annotations == nil || questionTool.Annotations.ReadOnlyHint || questionTool.Annotations.DestructiveHint == nil || *questionTool.Annotations.DestructiveHint || questionTool.Annotations.OpenWorldHint == nil || *questionTool.Annotations.OpenWorldHint {
+		t.Fatalf("balda.session.question annotations = %+v, want additive closed-session hints", questionTool.Annotations)
 	}
 
 	outSchema, ok := toolByName["balda.state.get"].OutputSchema.(map[string]any)

@@ -255,7 +255,7 @@ func (s sessionWaitService) ListSessionWaits(ctx context.Context, locator sessio
 	return items, nil
 }
 
-func (s sessionQuestionService) AskSessionQuestion(ctx context.Context, in sessionmcp.SessionQuestionInput) (sessionmcp.SessionQuestionOutput, error) {
+func (s sessionQuestionService) StartSessionQuestion(ctx context.Context, in sessionmcp.SessionQuestionInput) (sessionmcp.SessionQuestionOutput, error) {
 	if s.service == nil {
 		return sessionmcp.SessionQuestionOutput{}, fmt.Errorf("session question service is required")
 	}
@@ -294,7 +294,7 @@ func (s sessionQuestionService) AskSessionQuestion(ctx context.Context, in sessi
 			UserID:     strings.TrimSpace(in.RequestedBy),
 		}
 	}
-	result, err := s.service.AskSession(ctx, s.dispatcher, req)
+	result, err := s.service.StartSession(ctx, s.dispatcher, req)
 	if err != nil {
 		return sessionmcp.SessionQuestionOutput{}, err
 	}
