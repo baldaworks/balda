@@ -2,6 +2,7 @@ package sessionturnapp
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
@@ -67,6 +68,7 @@ type ExecutionRequest struct {
 	OutboundFrom    actorlayer.ActorAddress
 	RunOptions      []runner.RunOption
 	TurnSource      string
+	DedupeKey       string
 }
 
 func NewTurnExecutionService(dispatcher actortransport.Dispatcher, jobEvents *baldajobs.JobEventsService, sessions *baldasession.Manager, logger zerolog.Logger) *TurnExecutionService {
@@ -605,7 +607,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		AgentSessionID:  req.AgentSessionID,
 		Deliver:         true,
 		Source:          turncmd.SourceAuto,
-		DedupeKey:       fmt.Sprintf("auto:%s:%d", req.Locator.SessionID, nextCount),
+		DedupeKey:       autoTurnDedupeKey(req.Locator.SessionID, req.DedupeKey, nextCount),
 		DeliveryOptions: req.DeliveryOptions,
 	})
 	if err != nil {
@@ -613,6 +615,11 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 	}
 	_, err = s.dispatcher.Dispatch(ctx, env)
 	return err
+}
+
+func autoTurnDedupeKey(sessionID string, parentDedupeKey string, turn int) string {
+	parentSum := sha256.Sum256([]byte(strings.TrimSpace(parentDedupeKey)))
+	return fmt.Sprintf("auto:%s:%d:%x", strings.TrimSpace(sessionID), turn, parentSum[:16])
 }
 
 func visibleResponseDelta(ev *adksession.Event) string {

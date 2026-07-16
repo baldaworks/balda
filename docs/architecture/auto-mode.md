@@ -44,6 +44,11 @@ When `/auto` is enabled:
 7. the loop repeats until done, waiting on user input, `/auto off`, or limit
    reached
 
+Each synthetic turn derives its deduplication identity from the completed
+parent turn. Retries of the same parent remain idempotent, while a later user
+turn starts an independent continuation chain even after the auto-turn counter
+has been reset.
+
 ## Synthetic internal turn
 
 The synthetic turn is internal-only and does not appear in transport history.

@@ -63,6 +63,12 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
 		return actorlayer.Envelope{}, fmt.Errorf("session id is required")
 	}
+	id := uuid.NewString()
+	dedupeKey := strings.TrimSpace(payload.DedupeKey)
+	if dedupeKey == "" {
+		dedupeKey = id
+		payload.DedupeKey = dedupeKey
+	}
 	data, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode session turn payload: %w", err)
@@ -86,14 +92,14 @@ func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error
 		namespace = baldaexecution.NamespaceGoalkeeperCommand
 	}
 	return actorlayer.Envelope{
-		ID:        uuid.NewString(),
+		ID:        id,
 		Namespace: namespace,
 		Kind:      kind,
 		From:      actorlayer.ActorAddress{Target: source, Key: firstNonEmpty(payload.UserID, payload.Locator.AddressKey, "unknown")},
 		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: payload.Locator.SessionID},
 		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, payload.JobID), payload.Locator.SessionID),
 		Priority:  priority,
-		DedupeKey: strings.TrimSpace(payload.DedupeKey),
+		DedupeKey: dedupeKey,
 		Payload:   data,
 	}, nil
 }

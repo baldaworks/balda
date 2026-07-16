@@ -100,6 +100,7 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 		RequesterUserID: "tg-101",
 		AgentSessionID:  "tg-1-0",
 		Locator:         locator,
+		DedupeKey:       "human-turn-1",
 		DeliveryOptions: turncmd.NormalizeSessionDeliveryOptions(turncmd.SessionTurnPayload{}),
 	}, "streamed_text", "visible output")
 	if err != nil {
@@ -118,8 +119,28 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 	if payload.Text != automode.InternalPrompt(automode.DefaultMaxTurns) {
 		t.Fatalf("payload.Text = %q, want internal prompt", payload.Text)
 	}
+	if got, want := dispatcher.envelopes[1].DedupeKey, autoTurnDedupeKey(locator.SessionID, "human-turn-1", 1); got != want {
+		t.Fatalf("dedupe key = %q, want %q", got, want)
+	}
+	if payload.DedupeKey != dispatcher.envelopes[1].DedupeKey {
+		t.Fatalf("payload dedupe key = %q, want envelope dedupe key %q", payload.DedupeKey, dispatcher.envelopes[1].DedupeKey)
+	}
 	if got := automode.ParseInt(state.state[automode.StateKeyConsecutiveTurns], 0); got != 1 {
 		t.Fatalf("consecutive turns state = %d, want 1", got)
+	}
+}
+
+func TestAutoTurnDedupeKeySeparatesContinuationChains(t *testing.T) {
+	t.Parallel()
+
+	first := autoTurnDedupeKey("tg-1-0", "human-turn-1", 1)
+	retry := autoTurnDedupeKey("tg-1-0", "human-turn-1", 1)
+	second := autoTurnDedupeKey("tg-1-0", "human-turn-2", 1)
+	if first != retry {
+		t.Fatalf("retry dedupe key = %q, want %q", retry, first)
+	}
+	if first == second {
+		t.Fatalf("independent continuation chains share dedupe key %q", first)
 	}
 }
 
