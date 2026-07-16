@@ -134,23 +134,26 @@ func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx baldatele
 	case "":
 		status, err := loadAutoStatus(ctx, h.sessionManager, commandCtx.Locator)
 		if err != nil {
+			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to load auto mode status")
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not read auto mode status.")
 		}
-		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatus(status))
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(status))
 	case "on":
 		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, commandCtx.Locator, automode.EnableState(time.Now())); err != nil {
+			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to dispatch auto mode enable")
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not enable auto mode.")
 		}
-		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatus(automode.Normalize(automode.Status{
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(automode.Normalize(automode.Status{
 			Enabled:  true,
 			State:    automode.StateIdle,
 			MaxTurns: automode.DefaultMaxTurns,
 		})))
 	case "off":
 		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, commandCtx.Locator, automode.DisableState()); err != nil {
+			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to dispatch auto mode disable")
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not disable auto mode.")
 		}
-		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatus(automode.DefaultStatus()))
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(automode.DefaultStatus()))
 	default:
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage: /auto\n/auto on\n/auto off")
 	}

@@ -222,7 +222,7 @@ func TestCommandHandlerOnCommand_UsageWithArgsShowsUsage(t *testing.T) {
 }
 
 func TestCommandHandlerOnCommand_AutoOnOffAndStatus(t *testing.T) {
-	handler, sm, _, tgClient := newCommandHandlerTestHarness(t)
+	handler, sm, _, tgClient := newCommandHandlerTestHarnessWithFormatting(t, "rich_markdown")
 
 	if err := handler.onCommand(context.Background(), newCommandEvent("auto", "on", 101, 9001, nil)); err != nil {
 		t.Fatalf("auto on error = %v", err)
@@ -230,12 +230,13 @@ func TestCommandHandlerOnCommand_AutoOnOffAndStatus(t *testing.T) {
 	if got := sm.runtimeState[testRootSessionID][automode.StateKeyEnabled]; got != true {
 		t.Fatalf("auto enabled state = %#v, want true", got)
 	}
-	assertLastSentContains(t, tgClient, "Auto mode: on")
+	assertLastRichSentContains(t, tgClient, "**Auto mode**")
+	assertLastRichSentContains(t, tgClient, "**Mode:** `on`")
 
 	if err := handler.onCommand(context.Background(), newCommandEvent("auto", "", 101, 9001, nil)); err != nil {
 		t.Fatalf("auto status error = %v", err)
 	}
-	assertLastSentContains(t, tgClient, "State: idle")
+	assertLastRichSentContains(t, tgClient, "**State:** `idle`")
 
 	if err := handler.onCommand(context.Background(), newCommandEvent("auto", "off", 101, 9001, nil)); err != nil {
 		t.Fatalf("auto off error = %v", err)
@@ -243,7 +244,7 @@ func TestCommandHandlerOnCommand_AutoOnOffAndStatus(t *testing.T) {
 	if got := sm.runtimeState[testRootSessionID][automode.StateKeyEnabled]; got != false {
 		t.Fatalf("auto enabled state after off = %#v, want false", got)
 	}
-	assertLastSentContains(t, tgClient, "Auto mode: off")
+	assertLastRichSentContains(t, tgClient, "**Mode:** `off`")
 }
 
 func TestCommandHandlerOnCommand_LocatorWithArgsShowsUsage(t *testing.T) {
@@ -1168,6 +1169,9 @@ func (*fakeTurnDispatcher) Enqueue(context.Context, actors.TurnTask) (<-chan err
 
 func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
 	if env.Namespace == baldaexecution.NamespaceAutoModeCommand && f.stateManager != nil {
+		if err := env.Validate(); err != nil {
+			return nil, err
+		}
 		var payload automodecmd.Payload
 		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			return nil, err
@@ -1221,6 +1225,11 @@ func (f *fakeTurnDispatcher) CancelWork(_ context.Context, locator session.Sessi
 
 func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSessionManager, *fakeTurnDispatcher, *fakeTelegramClient) {
 	t.Helper()
+	return newCommandHandlerTestHarnessWithFormatting(t, "none")
+}
+
+func newCommandHandlerTestHarnessWithFormatting(t *testing.T, formattingMode string) (*CommandHandler, *fakeCommandSessionManager, *fakeTurnDispatcher, *fakeTelegramClient) {
+	t.Helper()
 
 	stateStore := &fakeOwnerKVStore{}
 	ownerStore, err := auth.NewOwnerStore(stateStore)
@@ -1242,7 +1251,7 @@ func newCommandHandlerTestHarness(t *testing.T) (*CommandHandler, *fakeCommandSe
 	}
 
 	tgClient := &fakeTelegramClient{}
-	adapter := newTestTelegramAdapter(tgClient, "none")
+	adapter := newTestTelegramAdapter(tgClient, formattingMode)
 	sessionManager := &fakeCommandSessionManager{}
 	turnDispatcher := &fakeTurnDispatcher{deliveryAdapter: adapter, stateManager: sessionManager}
 	sessionManager.baldaProvider = testProviderAlpha

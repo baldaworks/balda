@@ -135,6 +135,27 @@ func RenderStatus(status Status) string {
 	)
 }
 
+func RenderStatusMarkdown(status Status) string {
+	normalized := Normalize(status)
+	last := normalized.LastTurnAt
+	if strings.TrimSpace(last) == "" {
+		last = "never"
+	}
+	mode := "off"
+	if normalized.Enabled {
+		mode = "on"
+	}
+	return fmt.Sprintf(
+		"⚙️ **Auto mode**\n\n**Mode:** `%s`\n**State:** `%s`\n**Auto turns:** `%d/%d`\n**Last turn:** `%s`\n**Stop reason:** `%s`",
+		mode,
+		renderState(normalized.State),
+		normalized.ConsecutiveTurns,
+		normalized.MaxTurns,
+		last,
+		renderStopReason(normalized.LastStopReason),
+	)
+}
+
 func EnableState(now time.Time) map[string]any {
 	return map[string]any{
 		StateKeyEnabled:          true,

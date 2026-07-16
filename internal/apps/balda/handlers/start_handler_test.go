@@ -621,6 +621,20 @@ func assertLastSentContains(t *testing.T, tgClient *fakeTelegramClient, wantSubs
 	}
 }
 
+func assertLastRichSentContains(t *testing.T, tgClient *fakeTelegramClient, wantSubstring string) {
+	t.Helper()
+	if len(tgClient.richMessages) == 0 {
+		t.Fatal("no rich messages were sent")
+	}
+	last := tgClient.richMessages[len(tgClient.richMessages)-1]
+	if last.RichMessage.Markdown == nil {
+		t.Fatal("last rich message has no markdown")
+	}
+	if !strings.Contains(*last.RichMessage.Markdown, wantSubstring) {
+		t.Fatalf("last rich message = %q, want substring %q", *last.RichMessage.Markdown, wantSubstring)
+	}
+}
+
 func assertLastSentNotContains(t *testing.T, tgClient *fakeTelegramClient, unwantedSubstring string) {
 	t.Helper()
 	if len(tgClient.messages) == 0 {

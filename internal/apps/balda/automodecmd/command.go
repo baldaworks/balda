@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/google/uuid"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 )
@@ -20,14 +21,20 @@ func Envelope(payload Payload) (actorlayer.Envelope, error) {
 	}
 	raw, err := actorlayer.MarshalPayload(payload)
 	if err != nil {
-		return actorlayer.Envelope{}, err
+		return actorlayer.Envelope{}, fmt.Errorf("encode auto mode payload: %w", err)
 	}
+	id := uuid.NewString()
 	return actorlayer.Envelope{
+		ID:        id,
 		Namespace: actorcmd.NamespaceAutoModeCommand,
+		Kind:      actorcmd.KindMessage,
+		From:      actorlayer.SystemAddress("auto-mode"),
 		To: actorlayer.ActorAddress{
 			Target: actorcmd.ActorTypeSession,
 			Key:    payload.Locator.SessionID,
 		},
-		Payload: raw,
+		Meta:     actorcmd.WithSessionIDMeta(nil, payload.Locator.SessionID),
+		Priority: 100,
+		Payload:  raw,
 	}, nil
 }
