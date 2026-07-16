@@ -78,6 +78,9 @@ func (s *Service) AskSession(ctx context.Context, dispatcher actortransport.Disp
 
 	metadata := copySessionMetadata(req.Metadata)
 	if defaultID := strings.TrimSpace(req.DefaultOptionID); defaultID != "" {
+		if metadata == nil {
+			metadata = make(map[string]string, 1)
+		}
 		metadata[metadataDefaultOptionID] = defaultID
 	}
 	record, err := s.Ask(ctx, req.Interaction, req.Resume, questioncmd.Request{

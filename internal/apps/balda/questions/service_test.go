@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -20,6 +21,12 @@ type fakeStore struct {
 
 type fakeScheduledStore struct {
 	record baldastate.ScheduledJobRecord
+}
+
+type fakeSessionDispatcher struct{}
+
+func (fakeSessionDispatcher) Dispatch(_ context.Context, _ actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
+	return &actortransport.DispatchReceipt{}, nil
 }
 
 func (f *fakeScheduledStore) Upsert(_ context.Context, record baldastate.ScheduledJobRecord) error {
@@ -142,6 +149,39 @@ func TestServiceAskCreatesPendingRecord(t *testing.T) {
 	}
 	if scheduled.record.JobID == "" {
 		t.Fatal("scheduled timeout job = empty, want one-shot scheduled job")
+	}
+}
+
+func TestServiceAskSessionAddsDefaultOptionToEmptyMetadata(t *testing.T) {
+	store := &fakeStore{}
+	svc := New(store, nil, zerolog.Nop())
+
+	_, err := svc.AskSession(context.Background(), fakeSessionDispatcher{}, SessionRequest{
+		Interaction: questioncmd.InteractionContext{
+			SessionID:   "tg-1-0",
+			ChannelKind: "telegram",
+			Locator: deliverycmd.Locator{
+				SessionID:   "tg-1-0",
+				ChannelType: "telegram",
+				AddressKey:  "1:0",
+				AddressJSON: `{"chat_id":1,"topic_id":0}`,
+			},
+		},
+		Resume:          questioncmd.ResumeTarget{To: "goalkeeper:job-1"},
+		Prompt:          "continue?",
+		Options:         []SessionOption{{ID: "allow", Label: "Allow"}},
+		DefaultOptionID: "allow",
+	})
+	if err != nil {
+		t.Fatalf("AskSession() error = %v", err)
+	}
+
+	var request questioncmd.Request
+	if err := json.Unmarshal([]byte(store.record.RequestJSON), &request); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got := request.Metadata[metadataDefaultOptionID]; got != "allow" {
+		t.Fatalf("default option metadata = %q, want allow", got)
 	}
 }
 
