@@ -18,6 +18,19 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func TestNewSessionActorWiresRuntimeStateUpdater(t *testing.T) {
+	t.Parallel()
+
+	manager := &baldasession.Manager{}
+	actor, ok := newSessionActor(sessionActorExecutorParams{Sessions: manager}).(*sessionActorExecutor)
+	if !ok {
+		t.Fatalf("newSessionActor() type = %T", actor)
+	}
+	if actor.sessions != manager {
+		t.Fatal("newSessionActor() did not wire session runtime state updater")
+	}
+}
+
 func TestSessionActorInterruptQueueModeCancelsSessionBeforeEnqueue(t *testing.T) {
 	t.Parallel()
 

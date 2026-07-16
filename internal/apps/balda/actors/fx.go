@@ -60,16 +60,7 @@ var Module = fx.Module("balda_actors",
 			fx.ResultTags(`group:"balda_product_actors"`),
 		),
 		fx.Annotate(
-			func(params sessionActorExecutorParams) dispatch.Actor {
-				return &sessionActorExecutor{
-					turns:      params.Turns,
-					runner:     params.Runner,
-					tasks:      params.Tasks,
-					scheduler:  params.Scheduler,
-					dispatcher: params.Dispatcher,
-					questions:  params.Questions,
-				}
-			},
+			newSessionActor,
 			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_product_actors"`),
 		),
@@ -156,3 +147,15 @@ var Module = fx.Module("balda_actors",
 		),
 	),
 )
+
+func newSessionActor(params sessionActorExecutorParams) dispatch.Actor {
+	return &sessionActorExecutor{
+		turns:      params.Turns,
+		runner:     params.Runner,
+		tasks:      params.Tasks,
+		scheduler:  params.Scheduler,
+		dispatcher: params.Dispatcher,
+		questions:  params.Questions,
+		sessions:   params.Sessions,
+	}
+}
