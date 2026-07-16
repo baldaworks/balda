@@ -20,12 +20,13 @@ func (p questionControlPublisher) ClearQuestionControls(ctx context.Context, req
 	if !strings.EqualFold(strings.TrimSpace(request.Locator.ChannelType), string(deliverycmd.ChannelTypeTelegram)) {
 		return nil
 	}
-	env, err := deliverycmd.ClearQuestionControlsEnvelope(
+	env, err := deliverycmd.SettleQuestionControlsEnvelope(
 		actorlayer.SystemAddress("question"),
 		request.Locator,
 		request.QuestionID,
 		request.ProviderMessageID,
 		request.ControlHandle,
+		request.SelectionText,
 	)
 	if err != nil {
 		return err

@@ -331,7 +331,7 @@ func TestServiceResolveSelectionSettlesPersistedOptionAndClearsControls(t *testi
 	if answer.SelectedOption != "cancel" || answer.Text != "Cancel" {
 		t.Fatalf("answer = %+v, want cancel selection", answer)
 	}
-	if len(controls.requests) != 1 || controls.requests[0].QuestionID != "question-1" || controls.requests[0].ProviderMessageID != "42" {
+	if len(controls.requests) != 1 || controls.requests[0].QuestionID != "question-1" || controls.requests[0].ProviderMessageID != "42" || controls.requests[0].SelectionText != "Cancel" {
 		t.Fatalf("control cleanup = %+v", controls.requests)
 	}
 }

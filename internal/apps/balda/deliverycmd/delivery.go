@@ -166,6 +166,12 @@ func QuestionEnvelope(jobID string, from actorlayer.ActorAddress, locator Locato
 
 // ClearQuestionControlsEnvelope removes channel-native controls from a settled question.
 func ClearQuestionControlsEnvelope(from actorlayer.ActorAddress, locator Locator, questionID, messageID, handle string) (actorlayer.Envelope, error) {
+	return SettleQuestionControlsEnvelope(from, locator, questionID, messageID, handle, "")
+}
+
+// SettleQuestionControlsEnvelope removes channel-native controls and carries
+// an optional structured-selection acknowledgement for channel projection.
+func SettleQuestionControlsEnvelope(from actorlayer.ActorAddress, locator Locator, questionID, messageID, handle, selectionText string) (actorlayer.Envelope, error) {
 	questionID = strings.TrimSpace(questionID)
 	env, err := envelope("", from, Payload{
 		Locator:   locator,
@@ -173,6 +179,7 @@ func ClearQuestionControlsEnvelope(from actorlayer.ActorAddress, locator Locator
 		Refs:      map[string]string{"question_id": questionID},
 		MessageID: strings.TrimSpace(messageID),
 		Handle:    strings.TrimSpace(handle),
+		Text:      strings.TrimSpace(selectionText),
 	}, "question-controls-clear")
 	if err != nil {
 		return actorlayer.Envelope{}, err

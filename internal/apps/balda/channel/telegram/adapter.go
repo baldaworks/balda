@@ -35,6 +35,7 @@ type TelegramMessenger interface {
 	SendAgentReplyLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string) (int, error)
 	SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup, fallbackText string) (int, error)
 	SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID, receiverUserID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error)
+	SendPlainReply(ctx context.Context, chatID int64, text string, topicID, replyToMessageID int) error
 	ClearInlineKeyboard(ctx context.Context, chatID int64, messageID int) error
 	DeleteMessage(ctx context.Context, chatID int64, messageID int) error
 	DeleteEphemeralMessage(ctx context.Context, chatID, receiverUserID int64, ephemeralMessageID int) error
@@ -156,7 +157,7 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationProgress:
 		err = a.SendProgress(ctx, locator, operation.Progress)
 	case deliverycmd.OperationClearQuestionControls:
-		err = a.ClearQuestionControls(ctx, locator, operation.MessageID, operation.Handle)
+		err = a.SettleQuestionControls(ctx, locator, operation.MessageID, operation.Handle, operation.Text)
 	default:
 		err = fmt.Errorf("unsupported telegram delivery operation %q", operation.Kind)
 	}
@@ -726,7 +727,14 @@ func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator delive
 // ClearQuestionControls removes the inline keyboard from a previously sent
 // Telegram question.
 func (a *Adapter) ClearQuestionControls(ctx context.Context, locator deliverycmd.Locator, messageID, handle string) error {
-	chatID, _, err := telegramTuple(locator)
+	return a.SettleQuestionControls(ctx, locator, messageID, handle, "")
+}
+
+// SettleQuestionControls removes interactive controls while preserving normal
+// messages and records a structured choice as a native reply. Ephemeral
+// prompts remain private and are deleted instead of producing a public reply.
+func (a *Adapter) SettleQuestionControls(ctx context.Context, locator deliverycmd.Locator, messageID, handle, selectionText string) error {
+	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
 	}
@@ -748,10 +756,14 @@ func (a *Adapter) ClearQuestionControls(ctx context.Context, locator deliverycmd
 	if err != nil || id <= 0 {
 		return fmt.Errorf("invalid telegram message id %q", messageID)
 	}
-	if chatID > 0 && strings.TrimSpace(handle) == "" {
-		return a.messenger.DeleteMessage(ctx, chatID, id)
+	if err := a.messenger.ClearInlineKeyboard(ctx, chatID, id); err != nil {
+		return err
 	}
-	return a.messenger.ClearInlineKeyboard(ctx, chatID, id)
+	selectionText = strings.TrimSpace(selectionText)
+	if selectionText == "" {
+		return nil
+	}
+	return a.messenger.SendPlainReply(ctx, chatID, "Your selection: "+selectionText, topicID, id)
 }
 
 // SendDraftPlain updates a draft message for the locator.

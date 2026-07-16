@@ -25,6 +25,12 @@ type recordingQuestionMessenger struct {
 	deletedChatID           int64
 	deletedReceiverUserID   int64
 	deletedEphemeralID      int
+	clearedKeyboardChatID   int64
+	clearedKeyboardMsgID    int
+	replyChatID             int64
+	replyTopicID            int
+	replyToMessageID        int
+	replyText               string
 }
 
 func (m *recordingQuestionMessenger) DeleteMessage(_ context.Context, chatID int64, messageID int) error {
@@ -37,6 +43,20 @@ func (m *recordingQuestionMessenger) DeleteEphemeralMessage(_ context.Context, c
 	m.deletedChatID = chatID
 	m.deletedReceiverUserID = receiverUserID
 	m.deletedEphemeralID = ephemeralMessageID
+	return nil
+}
+
+func (m *recordingQuestionMessenger) ClearInlineKeyboard(_ context.Context, chatID int64, messageID int) error {
+	m.clearedKeyboardChatID = chatID
+	m.clearedKeyboardMsgID = messageID
+	return nil
+}
+
+func (m *recordingQuestionMessenger) SendPlainReply(_ context.Context, chatID int64, text string, topicID, replyToMessageID int) error {
+	m.replyChatID = chatID
+	m.replyTopicID = topicID
+	m.replyToMessageID = replyToMessageID
+	m.replyText = text
 	return nil
 }
 
@@ -90,7 +110,7 @@ func TestClearPrivateGroupQuestionDeletesEphemeralMessage(t *testing.T) {
 	}
 }
 
-func TestClearPrivateDMQuestionDeletesMessage(t *testing.T) {
+func TestClearQuestionWithDeleteHandleDeletesMessage(t *testing.T) {
 	messenger := &recordingQuestionMessenger{}
 	adapter := NewAdapter(AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
 
@@ -99,6 +119,36 @@ func TestClearPrivateDMQuestionDeletesMessage(t *testing.T) {
 	}
 	if messenger.deletedMessageChatID != 101 || messenger.deletedMessageID != 42 {
 		t.Fatalf("deleted message = %d/%d", messenger.deletedMessageChatID, messenger.deletedMessageID)
+	}
+}
+
+func TestSettleOrdinaryQuestionPreservesPromptAndRepliesWithSelection(t *testing.T) {
+	messenger := &recordingQuestionMessenger{}
+	adapter := NewAdapter(AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
+
+	if err := adapter.SettleQuestionControls(context.Background(), NewLocator(101, 77), "42", "", "Allow"); err != nil {
+		t.Fatalf("SettleQuestionControls() error = %v", err)
+	}
+	if messenger.deletedMessageID != 0 {
+		t.Fatalf("deleted message id = %d, want prompt preserved", messenger.deletedMessageID)
+	}
+	if messenger.clearedKeyboardChatID != 101 || messenger.clearedKeyboardMsgID != 42 {
+		t.Fatalf("cleared keyboard = %d/%d", messenger.clearedKeyboardChatID, messenger.clearedKeyboardMsgID)
+	}
+	if messenger.replyChatID != 101 || messenger.replyTopicID != 77 || messenger.replyToMessageID != 42 || messenger.replyText != "Your selection: Allow" {
+		t.Fatalf("selection reply = %d/%d/%d %q", messenger.replyChatID, messenger.replyTopicID, messenger.replyToMessageID, messenger.replyText)
+	}
+}
+
+func TestClearFreeTextQuestionPreservesPromptWithoutFollowUp(t *testing.T) {
+	messenger := &recordingQuestionMessenger{}
+	adapter := NewAdapter(AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
+
+	if err := adapter.ClearQuestionControls(context.Background(), NewLocator(101, 77), "42", ""); err != nil {
+		t.Fatalf("ClearQuestionControls() error = %v", err)
+	}
+	if messenger.deletedMessageID != 0 || messenger.replyText != "" {
+		t.Fatalf("deleted message id = %d, reply = %q, want history unchanged", messenger.deletedMessageID, messenger.replyText)
 	}
 }
 

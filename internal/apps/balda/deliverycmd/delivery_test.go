@@ -38,7 +38,7 @@ func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {
 }
 
 func TestClearQuestionControlsEnvelopeIsIdempotentlyKeyed(t *testing.T) {
-	env, err := ClearQuestionControlsEnvelope(actorlayer.SystemAddress("question"), testLocator(), "question-1", "42", "telegram:message:delete")
+	env, err := SettleQuestionControlsEnvelope(actorlayer.SystemAddress("question"), testLocator(), "question-1", "42", "telegram:inline:clear", "Allow")
 	if err != nil {
 		t.Fatalf("ClearQuestionControlsEnvelope() error = %v", err)
 	}
@@ -49,7 +49,7 @@ func TestClearQuestionControlsEnvelopeIsIdempotentlyKeyed(t *testing.T) {
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload.Mode != ModeClearQuestionControls || payload.MessageID != "42" || payload.Handle != "telegram:message:delete" {
+	if payload.Mode != ModeClearQuestionControls || payload.MessageID != "42" || payload.Handle != "telegram:inline:clear" || payload.Text != "Allow" {
 		t.Fatalf("payload = %+v", payload)
 	}
 }

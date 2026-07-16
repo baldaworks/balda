@@ -21,6 +21,7 @@ type inlineKeyboardClient struct {
 	deleteMessageRequests []client.DeleteMessageJSONRequestBody
 	deleteRequests        []client.DeleteEphemeralMessageJSONRequestBody
 	answers               []client.AnswerCallbackQueryJSONRequestBody
+	messages              []client.SendMessageJSONRequestBody
 }
 
 func (f *inlineKeyboardClient) DeleteMessageWithResponse(_ context.Context, body client.DeleteMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.DeleteMessageResponse, error) {
@@ -63,6 +64,11 @@ func (f *inlineKeyboardClient) SendRichMessageWithBodyWithResponse(_ context.Con
 func (f *inlineKeyboardClient) SendRichMessageWithResponse(_ context.Context, body client.SendRichMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendRichMessageResponse, error) {
 	f.richFallback = append(f.richFallback, body)
 	return successfulSendRichMessageResponse(43), nil
+}
+
+func (f *inlineKeyboardClient) SendMessageWithResponse(_ context.Context, body client.SendMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendMessageResponse, error) {
+	f.messages = append(f.messages, body)
+	return successfulSendMessageResponse(44), nil
 }
 
 func TestSendAgentReplyWithInlineKeyboardIncludesMarkup(t *testing.T) {
@@ -144,5 +150,11 @@ func TestQuestionControlLifecycleCallsTelegramAPIs(t *testing.T) {
 	}
 	if len(tgClient.answers) != 1 || tgClient.answers[0].Text == nil || *tgClient.answers[0].Text != "Selected." {
 		t.Fatalf("callback answers = %+v", tgClient.answers)
+	}
+	if err := messenger.SendPlainReply(context.Background(), 9001, "Your selection: Allow", 77, 42); err != nil {
+		t.Fatalf("SendPlainReply() error = %v", err)
+	}
+	if len(tgClient.messages) != 1 || tgClient.messages[0].ReplyParameters == nil || tgClient.messages[0].ReplyParameters.MessageId == nil || *tgClient.messages[0].ReplyParameters.MessageId != 42 || tgClient.messages[0].MessageThreadId == nil || *tgClient.messages[0].MessageThreadId != 77 {
+		t.Fatalf("selection reply request = %+v", tgClient.messages)
 	}
 }

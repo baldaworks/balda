@@ -41,6 +41,7 @@ type ControlClearRequest struct {
 	Locator           deliverycmd.Locator
 	ProviderMessageID string
 	ControlHandle     string
+	SelectionText     string
 }
 
 // ControlPublisher projects question lifecycle changes to delivery channels.
@@ -432,9 +433,21 @@ func (s *Service) clearControls(ctx context.Context, record baldastate.QuestionR
 		Locator:           interaction.Locator,
 		ProviderMessageID: strings.TrimSpace(record.ProviderMessageID),
 		ControlHandle:     strings.TrimSpace(record.ControlHandle),
+		SelectionText:     selectedAnswerText(record.AnswerJSON),
 	}); err != nil {
 		s.logger.Warn().Err(err).Str("question_id", record.QuestionID).Msg("clear settled question controls")
 	}
+}
+
+func selectedAnswerText(answerJSON string) string {
+	if strings.TrimSpace(answerJSON) == "" {
+		return ""
+	}
+	var answer questioncmd.Answer
+	if err := json.Unmarshal([]byte(answerJSON), &answer); err != nil || strings.TrimSpace(answer.SelectedOption) == "" {
+		return ""
+	}
+	return strings.TrimSpace(answer.Text)
 }
 
 func firstNonEmpty(values ...string) string {

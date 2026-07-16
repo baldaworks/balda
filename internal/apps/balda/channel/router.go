@@ -72,11 +72,15 @@ func (r *Router) SendAgentReplyWithQuestion(ctx context.Context, locator deliver
 }
 
 func (r *Router) ClearQuestionControls(ctx context.Context, locator deliverycmd.Locator, messageID, handle string) error {
+	return r.SettleQuestionControls(ctx, locator, messageID, handle, "")
+}
+
+func (r *Router) SettleQuestionControls(ctx context.Context, locator deliverycmd.Locator, messageID, handle, selectionText string) error {
 	adapter, err := r.adapterFor(locator)
 	if err != nil {
 		return err
 	}
-	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{Kind: deliverycmd.OperationClearQuestionControls, MessageID: messageID, Handle: handle})
+	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{Kind: deliverycmd.OperationClearQuestionControls, MessageID: messageID, Handle: handle, Text: selectionText})
 	return err
 }
 

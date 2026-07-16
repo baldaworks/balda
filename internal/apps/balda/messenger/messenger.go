@@ -128,6 +128,36 @@ func (m *Messenger) SendPlain(ctx context.Context, chatID int64, text string, to
 	return err
 }
 
+// SendPlainReply sends a plain-text message as a native Telegram reply.
+func (m *Messenger) SendPlainReply(ctx context.Context, chatID int64, text string, topicID, replyToMessageID int) error {
+	if replyToMessageID <= 0 {
+		return fmt.Errorf("reply-to message id must be positive")
+	}
+	req := client.SendMessageJSONRequestBody{
+		ChatId: chatID,
+		Text:   text,
+		ReplyParameters: &client.ReplyParameters{
+			MessageId: &replyToMessageID,
+		},
+	}
+	if topicID != 0 {
+		req.MessageThreadId = &topicID
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendMessageWithResponse(sendCtx, req)
+	if err != nil {
+		return fmt.Errorf("sending reply to message %d in chat %d: %w", replyToMessageID, chatID, err)
+	}
+	if resp.JSON400 != nil {
+		return fmt.Errorf("sending reply to message %d in chat %d: %s", replyToMessageID, chatID, resp.JSON400.Description)
+	}
+	if resp.JSON200 == nil {
+		return fmt.Errorf("sending reply to message %d in chat %d: no response body", replyToMessageID, chatID)
+	}
+	return nil
+}
+
 func (m *Messenger) sendPlainLegacy(ctx context.Context, chatID int64, text string, topicID int) (int, error) {
 	target := respond.ChatTarget{ChatID: chatID}
 	if topicID != 0 {
