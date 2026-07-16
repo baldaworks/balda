@@ -18,7 +18,6 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -544,34 +543,7 @@ func (h *ZulipBaldaHandler) handleAutoCommand(
 	locator baldasession.SessionLocator,
 	args string,
 ) {
-	arg := strings.ToLower(strings.TrimSpace(args))
-	switch arg {
-	case "":
-		status, err := loadAutoStatus(ctx, h.sessionManager, locator)
-		if err != nil {
-			_ = h.sendPlain(ctx, locator, "Could not read auto mode status.")
-			return
-		}
-		_ = h.sendPlain(ctx, locator, automode.RenderStatus(status))
-	case "on":
-		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, locator, automode.EnableState(time.Now())); err != nil {
-			_ = h.sendPlain(ctx, locator, "Could not enable auto mode.")
-			return
-		}
-		_ = h.sendPlain(ctx, locator, automode.RenderStatus(automode.Normalize(automode.Status{
-			Enabled:  true,
-			State:    automode.StateIdle,
-			MaxTurns: automode.DefaultMaxTurns,
-		})))
-	case "off":
-		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, locator, automode.DisableState()); err != nil {
-			_ = h.sendPlain(ctx, locator, "Could not disable auto mode.")
-			return
-		}
-		_ = h.sendPlain(ctx, locator, automode.RenderStatus(automode.DefaultStatus()))
-	default:
-		_ = h.sendPlain(ctx, locator, "Usage: /auto [on|off]")
-	}
+	_ = h.sendPlain(ctx, locator, plainAutoCommandReply(ctx, h.sessionManager, h.actorDispatcher, locator, args, "Usage: /auto [on|off]", time.Now()))
 }
 
 func (h *ZulipBaldaHandler) handleStartCommand(

@@ -138,7 +138,7 @@ func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx baldatele
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not read auto mode status.")
 		}
 		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(status))
-	case "on":
+	case autoActionOn:
 		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, commandCtx.Locator, automode.EnableState(time.Now())); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to dispatch auto mode enable")
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not enable auto mode.")
@@ -148,7 +148,7 @@ func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx baldatele
 			State:    automode.StateIdle,
 			MaxTurns: automode.DefaultMaxTurns,
 		})))
-	case "off":
+	case autoActionOff:
 		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, commandCtx.Locator, automode.DisableState()); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to dispatch auto mode disable")
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not disable auto mode.")

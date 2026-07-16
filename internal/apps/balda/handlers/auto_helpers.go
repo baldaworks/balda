@@ -5,14 +5,19 @@ import (
 	"strings"
 	"time"
 
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 )
 
 type autoStateManager interface {
 	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
-	UpdateRuntimeState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any) error
 }
+
+const (
+	autoActionOn  = "on"
+	autoActionOff = "off"
+)
 
 func loadAutoStatus(ctx context.Context, sessions autoStateManager, locator baldasession.SessionLocator) (automode.Status, error) {
 	status := automode.DefaultStatus()
@@ -51,12 +56,37 @@ func loadAutoStatus(ctx context.Context, sessions autoStateManager, locator bald
 	return automode.Normalize(status), nil
 }
 
-func setAutoEnabled(ctx context.Context, sessions autoStateManager, locator baldasession.SessionLocator, enabled bool, now time.Time) error {
-	if sessions == nil {
-		return nil
+func plainAutoCommandReply(
+	ctx context.Context,
+	sessions autoStateManager,
+	dispatcher actortransport.Dispatcher,
+	locator baldasession.SessionLocator,
+	args string,
+	usage string,
+	now time.Time,
+) string {
+	switch strings.ToLower(strings.TrimSpace(args)) {
+	case "":
+		status, err := loadAutoStatus(ctx, sessions, locator)
+		if err != nil {
+			return "Could not read auto mode status."
+		}
+		return automode.RenderStatus(status)
+	case autoActionOn:
+		if err := dispatchAutoStateUpdate(ctx, dispatcher, locator, automode.EnableState(now)); err != nil {
+			return "Could not enable auto mode."
+		}
+		return automode.RenderStatus(automode.Normalize(automode.Status{
+			Enabled:  true,
+			State:    automode.StateIdle,
+			MaxTurns: automode.DefaultMaxTurns,
+		}))
+	case autoActionOff:
+		if err := dispatchAutoStateUpdate(ctx, dispatcher, locator, automode.DisableState()); err != nil {
+			return "Could not disable auto mode."
+		}
+		return automode.RenderStatus(automode.DefaultStatus())
+	default:
+		return usage
 	}
-	if enabled {
-		return sessions.UpdateRuntimeState(ctx, locator, automode.EnableState(now))
-	}
-	return sessions.UpdateRuntimeState(ctx, locator, automode.DisableState())
 }

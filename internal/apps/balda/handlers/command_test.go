@@ -1159,7 +1159,7 @@ type fakeTurnDispatcher struct {
 	cancelCalls      []cancelSessionCall
 	deliveryAdapter  *baldatelegram.Adapter
 	stateManager     interface {
-		UpdateRuntimeState(context.Context, session.SessionLocator, map[string]any) error
+		UpdateRuntimeState(ctx context.Context, locator session.SessionLocator, state map[string]any) error
 	}
 }
 
@@ -1176,7 +1176,7 @@ func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope
 		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			return nil, err
 		}
-		if err := f.stateManager.UpdateRuntimeState(context.Background(), session.SessionLocator(payload.Locator), payload.State); err != nil {
+		if err := f.stateManager.UpdateRuntimeState(context.Background(), payload.Locator, payload.State); err != nil {
 			return nil, err
 		}
 	}

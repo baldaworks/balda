@@ -22,6 +22,7 @@ components:
   contracts:
     in:
       - internal/apps/balda/actorcmd
+      - internal/apps/balda/automodecmd
       - internal/apps/balda/controlcmd
       - internal/apps/balda/deliverycmd
       - internal/apps/balda/deliveryfmt
@@ -43,6 +44,7 @@ components:
       - internal/apps/balda/agent
       - internal/apps/balda/appports
       - internal/apps/balda/auth
+      - internal/apps/balda/automode
       - internal/apps/balda/controlapp
       - internal/apps/balda/sessionapp
       - internal/apps/balda/envelopetarget

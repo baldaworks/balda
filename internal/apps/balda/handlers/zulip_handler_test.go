@@ -1095,7 +1095,7 @@ type recordingZulipDispatcher struct {
 	commands     []actorlayer.Envelope
 	err          error
 	stateManager interface {
-		UpdateRuntimeState(context.Context, session.SessionLocator, map[string]any) error
+		UpdateRuntimeState(ctx context.Context, locator session.SessionLocator, state map[string]any) error
 	}
 }
 
@@ -1105,7 +1105,7 @@ func (d *recordingZulipDispatcher) Dispatch(_ context.Context, env actorlayer.En
 		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 			return nil, err
 		}
-		if err := d.stateManager.UpdateRuntimeState(context.Background(), session.SessionLocator(payload.Locator), payload.State); err != nil {
+		if err := d.stateManager.UpdateRuntimeState(context.Background(), payload.Locator, payload.State); err != nil {
 			return nil, err
 		}
 	}
