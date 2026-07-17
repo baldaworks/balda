@@ -8,7 +8,7 @@ import (
 
 var Module = fx.Module("balda_sessionturnapp",
 	fx.Provide(
-		NewTurnExecutionService,
+		fx.Annotate(NewTurnExecutionService, fx.ParamTags(``, ``, ``, ``, `name:"balda_automode_max_turns"`)),
 		fx.Annotate(NewProviderTurnExecutorFromService, fx.As(new(sessionturn.Executor))),
 		NewSessionAccessor,
 		NewMemoryStateProvider,

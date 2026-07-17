@@ -20,6 +20,7 @@ type BaldaConfig struct {
 	Sessions          SessionsConfig       `mapstructure:"sessions"`
 	Memory            MemoryConfig         `mapstructure:"memory"`
 	Permissions       PermissionsConfig    `mapstructure:"permissions"`
+	Features          FeaturesConfig       `mapstructure:"features"`
 	Goal              GoalConfig           `mapstructure:"goal"`
 	NATS              baldaeventbus.Config `mapstructure:"nats"`
 	Execution         ExecutionConfig      `mapstructure:"execution"`
@@ -154,6 +155,14 @@ type MemoryConfig struct {
 type PermissionsConfig struct {
 	Mode    string `mapstructure:"mode"`
 	Timeout string `mapstructure:"timeout"`
+}
+
+type FeaturesConfig struct {
+	AutoMode AutoModeConfig `mapstructure:"automode"`
+}
+
+type AutoModeConfig struct {
+	MaxTurns int `mapstructure:"max_turns"`
 }
 
 // GoalConfig controls /goal command execution behavior.

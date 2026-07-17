@@ -72,6 +72,7 @@ type CommandHandler struct {
 	actorDispatcher   actortransport.Dispatcher
 	jobService        goalJobService
 	goalMaxIterations int
+	autoMaxTurns      int
 	userHandler       *userHandler
 }
 
@@ -86,6 +87,7 @@ type commandHandlerParams struct {
 	Dispatcher        actortransport.Dispatcher
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	MaxIterations     int                            `name:"balda_goal_max_iterations"`
+	AutoMaxTurns      int                            `name:"balda_automode_max_turns"`
 	UserHandler       *userHandler
 }
 
@@ -139,21 +141,21 @@ func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx baldatele
 		}
 		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(status))
 	case autoActionOn:
-		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, commandCtx.Locator, automode.EnableState(time.Now())); err != nil {
+		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, commandCtx.Locator, automode.EnableStateWithMaxTurns(time.Now(), h.autoMaxTurns)); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to dispatch auto mode enable")
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not enable auto mode.")
 		}
-		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(automode.Normalize(automode.Status{
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(automode.NormalizeWithDefault(automode.Status{
 			Enabled:  true,
 			State:    automode.StateIdle,
-			MaxTurns: automode.DefaultMaxTurns,
-		})))
+			MaxTurns: h.autoMaxTurns,
+		}, h.autoMaxTurns)))
 	case autoActionOff:
 		if err := dispatchAutoStateUpdate(ctx, h.actorDispatcher, commandCtx.Locator, automode.DisableState()); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to dispatch auto mode disable")
 			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not disable auto mode.")
 		}
-		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(automode.DefaultStatus()))
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, automode.RenderStatusMarkdown(automode.DefaultStatusWithMaxTurns(h.autoMaxTurns)))
 	default:
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage: /auto\n/auto on\n/auto off")
 	}

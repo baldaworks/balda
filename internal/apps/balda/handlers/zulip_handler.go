@@ -18,6 +18,7 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -86,6 +87,7 @@ type ZulipBaldaHandler struct {
 	webhookPath       string
 	enabled           bool
 	goalMaxIterations int
+	autoMaxTurns      int
 	logger            zerolog.Logger
 
 	mu         sync.RWMutex
@@ -129,6 +131,7 @@ type zulipBaldaHandlerParams struct {
 	ZulipWebhookPath  string `name:"balda_zulip_webhook_path"`
 	ZulipEnabled      bool   `name:"balda_zulip_webhook_enabled"`
 	MaxIterations     int    `name:"balda_goal_max_iterations"`
+	AutoMaxTurns      int    `name:"balda_automode_max_turns"`
 	Logger            zerolog.Logger
 }
 
@@ -151,6 +154,7 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		webhookPath:       strings.TrimSpace(params.ZulipWebhookPath),
 		enabled:           params.ZulipEnabled,
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
+		autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
 		logger:            params.Logger.With().Str("component", "balda.handler.zulip").Logger(),
 		processSem:        make(chan struct{}, zulipWebhookMaxConcurrentTasks),
 	}
@@ -543,7 +547,7 @@ func (h *ZulipBaldaHandler) handleAutoCommand(
 	locator baldasession.SessionLocator,
 	args string,
 ) {
-	_ = h.sendPlain(ctx, locator, plainAutoCommandReply(ctx, h.sessionManager, h.actorDispatcher, locator, args, "Usage: /auto [on|off]", time.Now()))
+	_ = h.sendPlain(ctx, locator, plainAutoCommandReply(ctx, h.sessionManager, h.actorDispatcher, locator, args, "Usage: /auto [on|off]", time.Now(), h.autoMaxTurns))
 }
 
 func (h *ZulipBaldaHandler) handleStartCommand(

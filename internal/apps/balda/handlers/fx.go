@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/automode"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
 )
@@ -63,6 +64,7 @@ var Module = fx.Module("balda_handlers",
 				actorDispatcher:   params.Dispatcher,
 				jobService:        params.GoalJobs,
 				goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
+				autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
 				userHandler:       params.UserHandler,
 			}
 		},

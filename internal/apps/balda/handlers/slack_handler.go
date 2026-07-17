@@ -21,6 +21,7 @@ import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
@@ -103,6 +104,7 @@ type SlackChatHandler struct {
 	authToken         string
 	baldaProviderName string
 	goalMaxIterations int
+	autoMaxTurns      int
 	logger            zerolog.Logger
 
 	mu         sync.RWMutex
@@ -129,6 +131,7 @@ type slackHandlerParams struct {
 	AuthToken         string `name:"balda_auth_token"`
 	BaldaProviderID   string `name:"balda_provider"`
 	MaxIterations     int    `name:"balda_goal_max_iterations"`
+	AutoMaxTurns      int    `name:"balda_automode_max_turns"`
 	Logger            zerolog.Logger
 }
 
@@ -147,6 +150,7 @@ func NewSlackChatHandler(params slackHandlerParams) *SlackChatHandler {
 		authToken:         strings.TrimSpace(params.AuthToken),
 		baldaProviderName: strings.TrimSpace(params.BaldaProviderID),
 		goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
+		autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
 		logger:            params.Logger.With().Str("component", "balda.handler.slack_chat").Logger(),
 		processSem:        make(chan struct{}, slackWebhookMaxConcurrentTasks),
 	}
@@ -475,7 +479,7 @@ func (h *SlackChatHandler) handleCommandText(ctx context.Context, locator baldas
 }
 
 func (h *SlackChatHandler) handleAutoCommand(ctx context.Context, locator baldasession.SessionLocator, args string) {
-	_ = h.sendPlain(ctx, locator, plainAutoCommandReply(ctx, h.sessionManager, h.actorDispatcher, locator, args, "Usage: /balda auto [on|off]", time.Now()))
+	_ = h.sendPlain(ctx, locator, plainAutoCommandReply(ctx, h.sessionManager, h.actorDispatcher, locator, args, "Usage: /balda auto [on|off]", time.Now(), h.autoMaxTurns))
 }
 
 func (h *SlackChatHandler) handleStartCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string, isDM bool) {

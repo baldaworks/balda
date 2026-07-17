@@ -7,6 +7,7 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/automode"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
 	"github.com/rs/zerolog"
@@ -43,9 +44,10 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 	execution := e.execution
 	if execution == nil {
 		execution = &TurnExecutionService{
-			dispatcher: e.dispatcher,
-			jobEvents:  e.jobEvents,
-			logger:     e.logger,
+			dispatcher:   e.dispatcher,
+			jobEvents:    e.jobEvents,
+			logger:       e.logger,
+			autoMaxTurns: automode.DefaultMaxTurns,
 		}
 	}
 	payload := request.Payload

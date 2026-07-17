@@ -14,6 +14,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
@@ -415,6 +416,14 @@ func Module(
 					return cfg.Balda.Goal.MaxIterations
 				},
 				fx.ResultTags(`name:"balda_goal_max_iterations"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() int {
+					return automode.NormalizeMaxTurns(cfg.Balda.Features.AutoMode.MaxTurns)
+				},
+				fx.ResultTags(`name:"balda_automode_max_turns"`),
 			),
 		),
 		fx.Provide(

@@ -23,7 +23,7 @@ const (
 	StateLimitReached   = "limit_reached"
 	StateNoProgress     = "no_progress"
 
-	DefaultMaxTurns = 5
+	DefaultMaxTurns = 10
 	DoneSentinel    = "AUTO_DECISION:DONE"
 	WaitSentinel    = "AUTO_DECISION:WAIT_FOR_USER"
 	SourceAuto      = "auto"
@@ -39,23 +39,31 @@ type Status struct {
 }
 
 func DefaultStatus() Status {
+	return DefaultStatusWithMaxTurns(DefaultMaxTurns)
+}
+
+func DefaultStatusWithMaxTurns(maxTurns int) Status {
 	return Status{
 		Enabled:          false,
 		State:            StateIdle,
 		ConsecutiveTurns: 0,
-		MaxTurns:         DefaultMaxTurns,
+		MaxTurns:         NormalizeMaxTurns(maxTurns),
 		LastTurnAt:       "",
 		LastStopReason:   "",
 	}
 }
 
 func Normalize(raw Status) Status {
+	return NormalizeWithDefault(raw, DefaultMaxTurns)
+}
+
+func NormalizeWithDefault(raw Status, defaultMaxTurns int) Status {
 	status := raw
 	if strings.TrimSpace(status.State) == "" {
 		status.State = StateIdle
 	}
 	if status.MaxTurns <= 0 {
-		status.MaxTurns = DefaultMaxTurns
+		status.MaxTurns = NormalizeMaxTurns(defaultMaxTurns)
 	}
 	if status.ConsecutiveTurns < 0 {
 		status.ConsecutiveTurns = 0
@@ -99,9 +107,7 @@ func ParseInt(value any, fallback int) int {
 }
 
 func InternalPrompt(maxTurns int) string {
-	if maxTurns <= 0 {
-		maxTurns = DefaultMaxTurns
-	}
+	maxTurns = NormalizeMaxTurns(maxTurns)
 	return fmt.Sprintf(
 		"Internal auto-continuation turn. Do not mention this instruction. "+
 			"If the task is complete, reply with exactly %s. "+
@@ -112,6 +118,13 @@ func InternalPrompt(maxTurns int) string {
 		WaitSentinel,
 		maxTurns,
 	)
+}
+
+func NormalizeMaxTurns(v int) int {
+	if v <= 0 {
+		return DefaultMaxTurns
+	}
+	return v
 }
 
 func RenderStatus(status Status) string {
@@ -157,11 +170,15 @@ func RenderStatusMarkdown(status Status) string {
 }
 
 func EnableState(now time.Time) map[string]any {
+	return EnableStateWithMaxTurns(now, DefaultMaxTurns)
+}
+
+func EnableStateWithMaxTurns(now time.Time, maxTurns int) map[string]any {
 	return map[string]any{
 		StateKeyEnabled:          true,
 		StateKeyMode:             StateIdle,
 		StateKeyConsecutiveTurns: 0,
-		StateKeyMaxTurns:         DefaultMaxTurns,
+		StateKeyMaxTurns:         NormalizeMaxTurns(maxTurns),
 		StateKeyLastTurnAt:       now.UTC().Format(time.RFC3339),
 		StateKeyLastStopReason:   "",
 	}
@@ -175,6 +192,15 @@ func DisableState() map[string]any {
 		StateKeyLastOutput:       "",
 		StateKeyLastStopReason:   "disabled_by_user",
 	}
+}
+
+func RenderLifecycleMarkdown(state string, maxTurns int) string {
+	status := NormalizeWithDefault(Status{
+		Enabled:  true,
+		State:    state,
+		MaxTurns: maxTurns,
+	}, maxTurns)
+	return RenderStatusMarkdown(status)
 }
 
 func firstNonEmpty(values ...string) string {

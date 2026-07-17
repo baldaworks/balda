@@ -25,14 +25,14 @@ func TestAutoDecisionNotificationSuppressesSentinels(t *testing.T) {
 		wantSource   string
 		wantOK       bool
 	}{
-		{name: "done", turnSource: turncmd.SourceAuto, responseText: automode.DoneSentinel, wantText: "Auto mode is idle.", wantSource: "auto_done", wantOK: true},
-		{name: "wait", turnSource: turncmd.SourceAuto, responseText: automode.WaitSentinel, wantText: "Auto mode is waiting for user.", wantSource: "auto_wait_for_user", wantOK: true},
+		{name: "done", turnSource: turncmd.SourceAuto, responseText: automode.DoneSentinel, wantText: automode.RenderLifecycleMarkdown(automode.StateIdle, automode.DefaultMaxTurns), wantSource: "auto_done", wantOK: true},
+		{name: "wait", turnSource: turncmd.SourceAuto, responseText: automode.WaitSentinel, wantText: automode.RenderLifecycleMarkdown(automode.StateWaitingForUser, automode.DefaultMaxTurns), wantSource: "auto_wait_for_user", wantOK: true},
 		{name: "visible auto response", turnSource: turncmd.SourceAuto, responseText: "continue", wantOK: false},
 		{name: "ordinary turn", turnSource: turncmd.SourceTelegram, responseText: automode.DoneSentinel, wantOK: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			gotText, gotSource, gotOK := autoDecisionNotification(tt.turnSource, tt.responseText)
+			gotText, gotSource, gotOK := autoDecisionNotification(tt.turnSource, tt.responseText, automode.DefaultMaxTurns)
 			if gotText != tt.wantText || gotSource != tt.wantSource || gotOK != tt.wantOK {
 				t.Fatalf("autoDecisionNotification() = %q, %q, %v; want %q, %q, %v", gotText, gotSource, gotOK, tt.wantText, tt.wantSource, tt.wantOK)
 			}
@@ -92,7 +92,7 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 		},
 	}
 	dispatcher := &fakeAutoDispatcher{state: state}
-	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, state, zerolog.Nop())
+	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, state, zerolog.Nop(), automode.DefaultMaxTurns)
 	locator := baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0"}
 
 	err := service.maybeScheduleAutoTurn(context.Background(), ExecutionRequest{
@@ -157,7 +157,7 @@ func TestMaybeScheduleAutoTurnStopsOnNoProgressForAutoTurns(t *testing.T) {
 		},
 	}
 	dispatcher := &fakeAutoDispatcher{state: state}
-	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, state, zerolog.Nop())
+	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, state, zerolog.Nop(), automode.DefaultMaxTurns)
 	locator := baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0"}
 
 	err := service.maybeScheduleAutoTurn(context.Background(), ExecutionRequest{

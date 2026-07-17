@@ -20,7 +20,11 @@ const (
 )
 
 func loadAutoStatus(ctx context.Context, sessions autoStateManager, locator baldasession.SessionLocator) (automode.Status, error) {
-	status := automode.DefaultStatus()
+	return loadAutoStatusWithDefault(ctx, sessions, locator, automode.DefaultMaxTurns)
+}
+
+func loadAutoStatusWithDefault(ctx context.Context, sessions autoStateManager, locator baldasession.SessionLocator, defaultMaxTurns int) (automode.Status, error) {
+	status := automode.DefaultStatusWithMaxTurns(defaultMaxTurns)
 	if sessions == nil {
 		return status, nil
 	}
@@ -44,7 +48,7 @@ func loadAutoStatus(ctx context.Context, sessions autoStateManager, locator bald
 	if value, ok, err := sessions.RuntimeStateValue(ctx, locator, automode.StateKeyMaxTurns); err != nil {
 		return status, err
 	} else if ok {
-		status.MaxTurns = automode.ParseInt(value, automode.DefaultMaxTurns)
+		status.MaxTurns = automode.ParseInt(value, automode.NormalizeMaxTurns(defaultMaxTurns))
 	}
 	if value, ok, err := sessions.RuntimeStateValue(ctx, locator, automode.StateKeyLastTurnAt); err != nil {
 		return status, err
@@ -53,7 +57,7 @@ func loadAutoStatus(ctx context.Context, sessions autoStateManager, locator bald
 			status.LastTurnAt = strings.TrimSpace(text)
 		}
 	}
-	return automode.Normalize(status), nil
+	return automode.NormalizeWithDefault(status, defaultMaxTurns), nil
 }
 
 func plainAutoCommandReply(
@@ -64,28 +68,29 @@ func plainAutoCommandReply(
 	args string,
 	usage string,
 	now time.Time,
+	defaultMaxTurns int,
 ) string {
 	switch strings.ToLower(strings.TrimSpace(args)) {
 	case "":
-		status, err := loadAutoStatus(ctx, sessions, locator)
+		status, err := loadAutoStatusWithDefault(ctx, sessions, locator, defaultMaxTurns)
 		if err != nil {
 			return "Could not read auto mode status."
 		}
 		return automode.RenderStatus(status)
 	case autoActionOn:
-		if err := dispatchAutoStateUpdate(ctx, dispatcher, locator, automode.EnableState(now)); err != nil {
+		if err := dispatchAutoStateUpdate(ctx, dispatcher, locator, automode.EnableStateWithMaxTurns(now, defaultMaxTurns)); err != nil {
 			return "Could not enable auto mode."
 		}
-		return automode.RenderStatus(automode.Normalize(automode.Status{
+		return automode.RenderStatus(automode.NormalizeWithDefault(automode.Status{
 			Enabled:  true,
 			State:    automode.StateIdle,
-			MaxTurns: automode.DefaultMaxTurns,
-		}))
+			MaxTurns: defaultMaxTurns,
+		}, defaultMaxTurns))
 	case autoActionOff:
 		if err := dispatchAutoStateUpdate(ctx, dispatcher, locator, automode.DisableState()); err != nil {
 			return "Could not disable auto mode."
 		}
-		return automode.RenderStatus(automode.DefaultStatus())
+		return automode.RenderStatus(automode.DefaultStatusWithMaxTurns(defaultMaxTurns))
 	default:
 		return usage
 	}

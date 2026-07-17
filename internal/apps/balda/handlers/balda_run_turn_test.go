@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors"
+	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -1654,7 +1655,7 @@ func TestRunTurnWithDelivery_AcceptsSlackLocator(t *testing.T) {
 	h := &BaldaHandler{
 		actorDispatcher: bus,
 		logger:          zerolog.Nop(),
-		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop()),
+		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns),
 	}
 	adkRunner, sessionID := newBaldaRunTurnTestRunnerWithEvents(t, func(invocationID string) []*adksession.Event {
 		reply := adksession.NewEvent(context.Background(), invocationID)
@@ -1883,7 +1884,7 @@ func newBaldaRunTurnHandlerWithChannel(channel *baldatelegram.Adapter, now func(
 		actorDispatcher: bus,
 		logger:          zerolog.Nop(),
 		now:             now,
-		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop()),
+		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns),
 	}
 }
 
@@ -1935,7 +1936,7 @@ func newBaldaRunTurnTaskTestHandler(t *testing.T) (*BaldaHandler, *baldaRunTurnT
 		actorDispatcher: bus,
 		jobEvents:       tasks,
 		logger:          zerolog.Nop(),
-		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, tasks, nil, zerolog.Nop()),
+		turnExecution:   sessionturnapp.NewTurnExecutionServiceWithJobEvents(bus, tasks, nil, zerolog.Nop(), automode.DefaultMaxTurns),
 	}, tgClient, bus, tasks
 }
 

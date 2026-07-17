@@ -1277,6 +1277,7 @@ func newCommandHandlerTestHarnessWithFormatting(t *testing.T, formattingMode str
 		actorDispatcher:   turnDispatcher,
 		jobService:        &fakeGoalJobService{},
 		goalMaxIterations: normalizeGoalMaxIterations(0),
+		autoMaxTurns:      automode.DefaultMaxTurns,
 		userHandler: &userHandler{
 			ownerStore:        ownerStore,
 			inviteStore:       inviteStore,

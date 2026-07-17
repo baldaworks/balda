@@ -171,6 +171,12 @@ balda:
     # If false, balda.memory.* MCP tools are disabled.
     enabled: true
 
+  features:
+    automode:
+      # Consecutive synthetic auto-turn cap for /auto continuation chains.
+      # Balda clamps invalid values to 5.
+      max_turns: 10
+
   goal:
     # /goal worker-validator loop iteration cap.
     # Balda clamps invalid values to 25.

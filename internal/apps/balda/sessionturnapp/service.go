@@ -49,6 +49,7 @@ type TurnExecutionService struct {
 	jobEvents  jobEventAppender
 	sessions   runtimeStateReader
 	logger     zerolog.Logger
+	autoMaxTurns int
 	now        func() time.Time
 }
 
@@ -71,17 +72,18 @@ type ExecutionRequest struct {
 	DedupeKey       string
 }
 
-func NewTurnExecutionService(dispatcher actortransport.Dispatcher, jobEvents *baldajobs.JobEventsService, sessions *baldasession.Manager, logger zerolog.Logger) *TurnExecutionService {
-	return NewTurnExecutionServiceWithJobEvents(dispatcher, jobEvents, sessions, logger)
+func NewTurnExecutionService(dispatcher actortransport.Dispatcher, jobEvents *baldajobs.JobEventsService, sessions *baldasession.Manager, logger zerolog.Logger, autoMaxTurns int) *TurnExecutionService {
+	return NewTurnExecutionServiceWithJobEvents(dispatcher, jobEvents, sessions, logger, autoMaxTurns)
 }
 
-func NewTurnExecutionServiceWithJobEvents(dispatcher actortransport.Dispatcher, jobEvents jobEventAppender, sessions runtimeStateReader, logger zerolog.Logger) *TurnExecutionService {
+func NewTurnExecutionServiceWithJobEvents(dispatcher actortransport.Dispatcher, jobEvents jobEventAppender, sessions runtimeStateReader, logger zerolog.Logger, autoMaxTurns int) *TurnExecutionService {
 	return &TurnExecutionService{
-		dispatcher: dispatcher,
-		jobEvents:  jobEvents,
-		sessions:   sessions,
-		logger:     logger.With().Str("component", "balda.turn_execution").Logger(),
-		now:        time.Now,
+		dispatcher:   dispatcher,
+		jobEvents:    jobEvents,
+		sessions:     sessions,
+		logger:       logger.With().Str("component", "balda.turn_execution").Logger(),
+		autoMaxTurns: automode.NormalizeMaxTurns(autoMaxTurns),
+		now:          time.Now,
 	}
 }
 
@@ -379,7 +381,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			case !req.Deliver:
 				responseSource = "fire_and_forget"
 			case strings.TrimSpace(responseText) != "":
-				if notification, source, ok := autoDecisionNotification(req.TurnSource, responseText); ok {
+				if notification, source, ok := autoDecisionNotification(req.TurnSource, responseText, s.autoMaxTurns); ok {
 					responseText = notification
 					responseSource = source
 					switch source {
@@ -485,7 +487,11 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 }
 
 func (s *TurnExecutionService) autoStatus(ctx context.Context, locator baldasession.SessionLocator) (automode.Status, error) {
-	status := automode.DefaultStatus()
+	defaultMaxTurns := automode.DefaultMaxTurns
+	if s != nil {
+		defaultMaxTurns = automode.NormalizeMaxTurns(s.autoMaxTurns)
+	}
+	status := automode.DefaultStatusWithMaxTurns(defaultMaxTurns)
 	if s == nil || s.sessions == nil {
 		return status, nil
 	}
@@ -509,7 +515,7 @@ func (s *TurnExecutionService) autoStatus(ctx context.Context, locator baldasess
 	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyMaxTurns); err != nil {
 		return status, err
 	} else if ok {
-		status.MaxTurns = automode.ParseInt(value, automode.DefaultMaxTurns)
+		status.MaxTurns = automode.ParseInt(value, defaultMaxTurns)
 	}
 	if value, ok, err := s.sessions.RuntimeStateValue(ctx, locator, automode.StateKeyLastTurnAt); err != nil {
 		return status, err
@@ -525,18 +531,18 @@ func (s *TurnExecutionService) autoStatus(ctx context.Context, locator baldasess
 			status.LastStopReason = strings.TrimSpace(text)
 		}
 	}
-	return automode.Normalize(status), nil
+	return automode.NormalizeWithDefault(status, defaultMaxTurns), nil
 }
 
-func autoDecisionNotification(turnSource, responseText string) (string, string, bool) {
+func autoDecisionNotification(turnSource, responseText string, maxTurns int) (string, string, bool) {
 	if !strings.EqualFold(strings.TrimSpace(turnSource), turncmd.SourceAuto) {
 		return "", "", false
 	}
 	switch strings.TrimSpace(responseText) {
 	case automode.DoneSentinel:
-		return "Auto mode is idle.", responseSourceAutoDone, true
+		return automode.RenderLifecycleMarkdown(automode.StateIdle, maxTurns), responseSourceAutoDone, true
 	case automode.WaitSentinel:
-		return "Auto mode is waiting for user.", responseSourceAutoWaitForUser, true
+		return automode.RenderLifecycleMarkdown(automode.StateWaitingForUser, maxTurns), responseSourceAutoWaitForUser, true
 	default:
 		return "", "", false
 	}
