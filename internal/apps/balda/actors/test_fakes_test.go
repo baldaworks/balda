@@ -6,11 +6,11 @@ import (
 	"reflect"
 	"unsafe"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/tgbotkit/client"
 	"testing"
 )
@@ -88,12 +88,13 @@ func (b *recordingHandlerCommandBus) PublishEvent(_ context.Context, subject str
 
 type fakeTelegramClient struct {
 	client.ClientWithResponsesInterface
-	sendErr      error
-	messages     []client.SendMessageJSONRequestBody
-	richMessages []client.SendRichMessageJSONRequestBody
-	drafts       []client.SendMessageDraftJSONRequestBody
-	richDrafts   []client.SendRichMessageDraftJSONRequestBody
-	chatActions  []client.SendChatActionJSONRequestBody
+	sendErr          error
+	sendRichResponse *client.SendRichMessageResponse
+	messages         []client.SendMessageJSONRequestBody
+	richMessages     []client.SendRichMessageJSONRequestBody
+	drafts           []client.SendMessageDraftJSONRequestBody
+	richDrafts       []client.SendRichMessageDraftJSONRequestBody
+	chatActions      []client.SendChatActionJSONRequestBody
 }
 
 func (c *fakeTelegramClient) SendMessageWithResponse(_ context.Context, body client.SendMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendMessageResponse, error) {
@@ -117,6 +118,9 @@ func (c *fakeTelegramClient) SendRichMessageWithResponse(_ context.Context, body
 	c.richMessages = append(c.richMessages, body)
 	if c.sendErr != nil {
 		return nil, c.sendErr
+	}
+	if c.sendRichResponse != nil {
+		return c.sendRichResponse, nil
 	}
 	return &client.SendRichMessageResponse{
 		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},

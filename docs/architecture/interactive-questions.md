@@ -210,13 +210,20 @@ is an idempotent no-op after settlement.
 
 ### Delivery failure path
 
-`delivery actor fails to present question -> questions service atomically marks failed -> publish QuestionFailed continuation`
+`delivery actor gets retryable failure -> command retry remains bounded -> retry reloads durable question state -> present only while still pending`
+
+`delivery actor gets permanent failure -> questions service atomically marks failed -> publish QuestionFailed continuation`
 
 Question delivery failure is a lifecycle outcome, not an invitation to expose
 a private prompt through another audience. Permission reviews map this outcome
-to an immediate fail-closed denial. Retried delivery commands observe the
-failed state and republish only the deduplicated continuation; they do not
-resend the prompt.
+to a fail-closed denial. Explicitly retryable provider failures leave the
+question pending and use the bounded actor retry path. Before every provider
+side effect, a retried command reloads durable question state; answered,
+timed-out, and failed questions suppress prompt delivery. Permanent failures
+fail immediately. Retry exhaustion is bounded by runtime policy, while the
+question deadline remains the final fail-closed lifecycle guard. Retried
+delivery commands that observe an already failed state republish only the
+deduplicated continuation; they do not resend the prompt.
 
 ## Required properties
 

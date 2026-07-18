@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -273,7 +274,7 @@ func TestSendPlain_ReturnsResponderError(t *testing.T) {
 	}
 }
 
-func TestSendAgentReplyUsesBoundedSendContextForRetry(t *testing.T) {
+func TestSendAgentReplyUsesBoundedSendContextForTransportFailure(t *testing.T) {
 	t.Parallel()
 
 	tgClient := &fakeChatActionClient{
@@ -284,18 +285,17 @@ func TestSendAgentReplyUsesBoundedSendContextForRetry(t *testing.T) {
 	m := NewMessenger(tgClient, zerolog.Nop())
 	m.SetAgentReplyFormattingMode(telegramfmt.ModeHTML)
 
-	if err := m.SendAgentReply(context.Background(), 9001, "hello", 77); err != nil {
-		t.Fatalf("SendAgentReply() error = %v", err)
+	err := m.SendAgentReply(context.Background(), 9001, "hello", 77)
+	kind, classified := deliverycmd.ClassifyError(err)
+	if !classified || kind != deliverycmd.ErrorKindRetryable {
+		t.Fatalf("SendAgentReply() error = %v, want retryable", err)
 	}
 
-	if len(tgClient.messageContexts) != 2 {
-		t.Fatalf("message contexts = %d, want initial send and retry", len(tgClient.messageContexts))
+	if len(tgClient.messageContexts) != 1 {
+		t.Fatalf("message contexts = %d, want one bounded attempt", len(tgClient.messageContexts))
 	}
 	for _, ctx := range tgClient.messageContexts {
 		assertContextDeadlineWithin(t, ctx, telegramSendTimeout)
-	}
-	if tgClient.messageContexts[0] != tgClient.messageContexts[1] {
-		t.Fatal("retry should reuse the same bounded context as the initial send")
 	}
 }
 
@@ -526,12 +526,51 @@ func TestSendAgentReply_RichMarkdownTransportErrorDoesNotFallbackToPlainText(t *
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("SendAgentReplyWithResult() error = %v, want deadline exceeded", err)
 	}
+	kind, classified := deliverycmd.ClassifyError(err)
+	if !classified || kind != deliverycmd.ErrorKindRetryable {
+		t.Fatalf("SendAgentReplyWithResult() error = %v, want retryable", err)
+	}
 
 	if len(tgClient.richMessages) != 1 {
 		t.Fatalf("rich message calls = %d, want 1 failed attempt", len(tgClient.richMessages))
 	}
 	if len(tgClient.messages) != 0 {
 		t.Fatalf("legacy message calls = %d, want 0 on transport error", len(tgClient.messages))
+	}
+}
+
+func TestTelegramDeliveryErrorsAreClassifiedAndRedacted(t *testing.T) {
+	t.Parallel()
+
+	const token = "123456:ABCdefGhIjkLMNopQRST_uvwx"
+	cause := errors.New("Post https://api.telegram.org/bot" + token + "/sendMessage: timeout")
+	err := telegramTransportError("send message", 9001, cause)
+	kind, classified := deliverycmd.ClassifyError(err)
+	if !classified || kind != deliverycmd.ErrorKindRetryable {
+		t.Fatalf("transport error = %v, want retryable", err)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("transport error = %v, want original cause preserved", err)
+	}
+	if strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "[REDACTED_TOKEN]") {
+		t.Fatalf("transport error = %q, want token redacted", err)
+	}
+
+	tests := []struct {
+		status int
+		want   deliverycmd.ErrorKind
+	}{
+		{status: http.StatusBadRequest, want: deliverycmd.ErrorKindPermanent},
+		{status: http.StatusUnauthorized, want: deliverycmd.ErrorKindPermanent},
+		{status: http.StatusTooManyRequests, want: deliverycmd.ErrorKindRetryable},
+		{status: http.StatusBadGateway, want: deliverycmd.ErrorKindRetryable},
+	}
+	for _, tt := range tests {
+		err := telegramHTTPError("send message", 9001, tt.status, "provider response")
+		kind, classified := deliverycmd.ClassifyError(err)
+		if !classified || kind != tt.want {
+			t.Errorf("telegramHTTPError(status=%d) = %v kind=%q classified=%t, want %q", tt.status, err, kind, classified, tt.want)
+		}
 	}
 }
 
@@ -741,18 +780,18 @@ func TestSendAgentReply_MarkdownV2ReturnsErrorFromLaterSplitChunk(t *testing.T) 
 	if !strings.Contains(err.Error(), "network timeout") {
 		t.Fatalf("SendAgentReply() error = %v, want network timeout", err)
 	}
-	if len(tgClient.messages) != 3 {
-		t.Fatalf("messages calls = %d, want second chunk retry after transport error", len(tgClient.messages))
+	kind, classified := deliverycmd.ClassifyError(err)
+	if !classified || kind != deliverycmd.ErrorKindRetryable {
+		t.Fatalf("SendAgentReply() error = %v, want retryable", err)
 	}
-	if tgClient.messages[0].Text != "first" || tgClient.messages[1].Text != "second" || tgClient.messages[2].Text != "second" {
-		t.Fatalf("message texts = %#v, want first then second retry", []string{
+	if len(tgClient.messages) != 2 {
+		t.Fatalf("messages calls = %d, want each chunk attempted once", len(tgClient.messages))
+	}
+	if tgClient.messages[0].Text != "first" || tgClient.messages[1].Text != "second" {
+		t.Fatalf("message texts = %#v, want first then second", []string{
 			tgClient.messages[0].Text,
 			tgClient.messages[1].Text,
-			tgClient.messages[2].Text,
 		})
-	}
-	if tgClient.messages[2].ParseMode != nil {
-		t.Fatalf("retry parse_mode = %v, want nil", *tgClient.messages[2].ParseMode)
 	}
 }
 
@@ -813,7 +852,7 @@ func TestSendAgentReply_DoesNotRetryWithoutParseModeOnNonParseBadRequest(t *test
 	}
 }
 
-func TestSendAgentReply_RetriesWithoutParseModeOnTransportError(t *testing.T) {
+func TestSendAgentReply_DoesNotRetryWithoutParseModeOnTransportError(t *testing.T) {
 	t.Parallel()
 
 	tgClient := &fakeChatActionClient{
@@ -824,17 +863,16 @@ func TestSendAgentReply_RetriesWithoutParseModeOnTransportError(t *testing.T) {
 	m := NewMessenger(tgClient, zerolog.Nop())
 	m.SetAgentReplyFormattingMode(telegramfmt.ModeHTML)
 
-	if err := m.SendAgentReply(context.Background(), 9001, "hello", 77); err != nil {
-		t.Fatalf("SendAgentReply() error = %v", err)
+	err := m.SendAgentReply(context.Background(), 9001, "hello", 77)
+	kind, classified := deliverycmd.ClassifyError(err)
+	if !classified || kind != deliverycmd.ErrorKindRetryable {
+		t.Fatalf("SendAgentReply() error = %v, want retryable", err)
 	}
-	if len(tgClient.messages) != 2 {
-		t.Fatalf("messages calls = %d, want 2", len(tgClient.messages))
+	if len(tgClient.messages) != 1 {
+		t.Fatalf("messages calls = %d, want 1", len(tgClient.messages))
 	}
 	if tgClient.messages[0].ParseMode == nil || *tgClient.messages[0].ParseMode != testParseModeHTML {
 		t.Fatalf("first parse_mode = %v, want %s", tgClient.messages[0].ParseMode, testParseModeHTML)
-	}
-	if tgClient.messages[1].ParseMode != nil {
-		t.Fatalf("second parse_mode = %v, want nil", *tgClient.messages[1].ParseMode)
 	}
 }
 

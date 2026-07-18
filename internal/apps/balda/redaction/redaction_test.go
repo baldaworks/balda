@@ -46,6 +46,12 @@ func TestRedactSecrets(t *testing.T) {
 			notContain: []string{"123456:ABCdefGhIjkLMNopQRST_uvwx"},
 		},
 		{
+			name:       "telegram bot URL",
+			in:         "Post https://api.telegram.org/bot123456:ABCdefGhIjkLMNopQRST_uvwx/sendMessage: timeout",
+			want:       "Post https://api.telegram.org/bot[REDACTED_TOKEN]/sendMessage: timeout",
+			notContain: []string{"123456:ABCdefGhIjkLMNopQRST_uvwx"},
+		},
+		{
 			name:       "slack token",
 			in:         "slack " + slackToken,
 			want:       "slack [REDACTED_TOKEN]",

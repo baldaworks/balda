@@ -3,10 +3,12 @@ package messenger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
 
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -130,6 +132,26 @@ func TestSendAgentReplyWithInlineKeyboardFallsBackToTextChoices(t *testing.T) {
 	markdown := tgClient.richFallback[0].RichMessage.Markdown
 	if markdown == nil || *markdown != "Choose\n\n1. Allow" {
 		t.Fatalf("fallback markdown = %v", markdown)
+	}
+}
+
+func TestSendAgentReplyWithInlineKeyboardDoesNotFallbackOnTransportError(t *testing.T) {
+	tgClient := &inlineKeyboardClient{richBodyError: context.DeadlineExceeded}
+	messenger := NewMessenger(tgClient, zerolog.Nop())
+	keyboard := client.InlineKeyboardMarkup{InlineKeyboard: [][]client.InlineKeyboardButton{{{Text: "Allow"}}}}
+
+	_, err := messenger.SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+		context.Background(), 9001, "Choose", 0, telegramfmt.ModeRichMarkdown, keyboard, "Choose\n\n1. Allow",
+	)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SendAgentReplyWithInlineKeyboardLastMessageIDAndMode() error = %v, want deadline exceeded", err)
+	}
+	kind, classified := deliverycmd.ClassifyError(err)
+	if !classified || kind != deliverycmd.ErrorKindRetryable {
+		t.Fatalf("delivery error = %v, want retryable", err)
+	}
+	if len(tgClient.richFallback) != 0 {
+		t.Fatalf("fallback requests = %d, want 0 after ambiguous transport failure", len(tgClient.richFallback))
 	}
 }
 

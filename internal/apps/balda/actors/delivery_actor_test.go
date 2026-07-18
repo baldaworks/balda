@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
+	"github.com/tgbotkit/client"
 )
 
 func TestTaskDeliveryActorDeduplicatesSentDelivery(t *testing.T) {
@@ -78,7 +80,7 @@ func TestDeliveryReadyForAttemptNeverRetriesSendingDelivery(t *testing.T) {
 	}
 }
 
-func TestTaskDeliveryActorPublishesFailedEventOnSendError(t *testing.T) {
+func TestTaskDeliveryActorDefersFailedEventOnRetryableSendError(t *testing.T) {
 	ctx := context.Background()
 	actor, _, tgClient, bus := newTaskDeliveryActorForTest(t, ctx)
 	tgClient.sendErr = errors.New("telegram send failed")
@@ -89,11 +91,27 @@ func TestTaskDeliveryActorPublishesFailedEventOnSendError(t *testing.T) {
 		t.Fatalf("Handle() error kind = %s, want external_delivery: %v", actorlayer.ClassifyError(err), err)
 	}
 
-	if len(bus.eventSubjects) != 1 {
-		t.Fatalf("published event subjects len = %d, want 1", len(bus.eventSubjects))
+	if len(bus.eventSubjects) != 0 {
+		t.Fatalf("published event subjects = %+v, want no terminal event before retry exhaustion", bus.eventSubjects)
 	}
-	if got := bus.eventSubjects[0]; got != baldaexecution.SubjectEventDeliveryFailed {
-		t.Fatalf("event subject = %q, want %q", got, baldaexecution.SubjectEventDeliveryFailed)
+}
+
+func TestTaskDeliveryActorPublishesFailedEventOnPermanentSendError(t *testing.T) {
+	ctx := context.Background()
+	actor, _, tgClient, bus := newTaskDeliveryActorForTest(t, ctx)
+	tgClient.sendRichResponse = &client.SendRichMessageResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized"},
+		JSON401:      &client.ErrorResponse{Description: "Unauthorized"},
+	}
+	env, _ := deliveryEnvelopeForTest(t, "delivery-command-failed", "task-1:delivery:failed", "Goal failed")
+
+	err := actor.Handle(ctx, env)
+	if actorlayer.ClassifyError(err) != actorlayer.ErrorKindPermanent {
+		t.Fatalf("Handle() error kind = %s, want permanent: %v", actorlayer.ClassifyError(err), err)
+	}
+
+	if len(bus.eventSubjects) != 1 || bus.eventSubjects[0] != baldaexecution.SubjectEventDeliveryFailed {
+		t.Fatalf("published event subjects = %+v, want %q", bus.eventSubjects, baldaexecution.SubjectEventDeliveryFailed)
 	}
 	if len(bus.eventEnvs) != 1 {
 		t.Fatalf("published event envelopes len = %d, want 1", len(bus.eventEnvs))

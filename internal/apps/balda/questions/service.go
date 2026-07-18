@@ -354,6 +354,19 @@ func (s *Service) Timeout(ctx context.Context, questionID string, timedOutAt tim
 	return record, settled, err
 }
 
+// DeliveryState returns the current durable lifecycle state used to suppress
+// late prompt retries after a question has already settled.
+func (s *Service) DeliveryState(ctx context.Context, questionID string) (string, bool, error) {
+	if s == nil || s.store == nil {
+		return "", false, fmt.Errorf("question store is required")
+	}
+	record, ok, err := s.store.GetQuestionByID(ctx, strings.TrimSpace(questionID))
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	return record.Status, true, nil
+}
+
 // FailedDeliveryContinuation returns the deterministic continuation for a
 // question already failed by delivery. The bool is false for every other
 // lifecycle state.

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/redaction"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -27,8 +29,8 @@ type Messenger struct {
 }
 
 type richDeliveryError struct {
-	err        error
-	statusCode int
+	err      error
+	fallback bool
 }
 
 func (e *richDeliveryError) Error() string {
@@ -43,6 +45,87 @@ func (e *richDeliveryError) Unwrap() error {
 		return nil
 	}
 	return e.err
+}
+
+type redactedTransportError struct {
+	cause   error
+	message string
+}
+
+func (e *redactedTransportError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.message
+}
+
+func (e *redactedTransportError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+func richTransportError(action string, chatID int64, err error) error {
+	return &richDeliveryError{err: telegramTransportError(action, chatID, err)}
+}
+
+func richNoResponseError(action string, chatID int64) error {
+	return &richDeliveryError{err: telegramNoResponseError(action, chatID)}
+}
+
+func richFallbackError(action string, chatID int64, description string) error {
+	return &richDeliveryError{
+		err:      telegramHTTPError(action, chatID, http.StatusBadRequest, description),
+		fallback: true,
+	}
+}
+
+func richHTTPError(action string, chatID int64, statusCode int, description string) error {
+	return &richDeliveryError{err: telegramHTTPError(action, chatID, statusCode, description)}
+}
+
+func telegramTransportError(action string, chatID int64, err error) error {
+	if err == nil {
+		return telegramNoResponseError(action, chatID)
+	}
+	return deliverycmd.RetryableError(&redactedTransportError{
+		cause:   err,
+		message: fmt.Sprintf("%s to chat %d: %s", action, chatID, redaction.Secrets(err.Error())),
+	})
+}
+
+func telegramNoResponseError(action string, chatID int64) error {
+	return deliverycmd.RetryableError(fmt.Errorf("%s to chat %d: no response body", action, chatID))
+}
+
+func telegramHTTPError(action string, chatID int64, statusCode int, description string) error {
+	description = redaction.Secrets(description)
+	message := fmt.Sprintf("%s to chat %d: telegram HTTP %d", action, chatID, statusCode)
+	if description != "" {
+		message += ": " + description
+	}
+	err := errors.New(message)
+	if retryableTelegramHTTPStatus(statusCode) {
+		return deliverycmd.RetryableError(err)
+	}
+	return deliverycmd.PermanentError(err)
+}
+
+func retryableTelegramHTTPStatus(statusCode int) bool {
+	return statusCode == 0 || statusCode == http.StatusRequestTimeout || statusCode == http.StatusTooEarly ||
+		statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
+}
+
+func telegramParseError(resp *client.SendMessageResponse) bool {
+	if resp == nil || resp.JSON400 == nil {
+		return false
+	}
+	description := strings.ToLower(strings.TrimSpace(resp.JSON400.Description))
+	return description != "" &&
+		(strings.Contains(description, "can't parse entities") ||
+			strings.Contains(description, "cant parse entities") ||
+			(strings.Contains(description, "parse entities") && strings.Contains(description, "entity")))
 }
 
 // AgentReplyResult carries provider delivery metadata for a final agent reply.
@@ -108,13 +191,19 @@ func (m *Messenger) sendDraftPlainLegacy(ctx context.Context, chatID int64, draf
 
 	resp, err := m.client.SendMessageDraftWithResponse(sendCtx, req)
 	if err != nil {
-		return fmt.Errorf("sending plain draft to chat %d: %w", chatID, err)
+		return telegramTransportError("sending plain draft", chatID, err)
+	}
+	if resp == nil {
+		return telegramNoResponseError("sending plain draft", chatID)
 	}
 	if resp.JSON400 != nil {
-		return fmt.Errorf("sending plain draft to chat %d: %s", chatID, resp.JSON400.Description)
+		return telegramHTTPError("sending plain draft", chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return telegramHTTPError("sending plain draft", chatID, http.StatusUnauthorized, resp.JSON401.Description)
 	}
 	if resp.JSON200 == nil {
-		return fmt.Errorf("sending plain draft to chat %d: no response body", chatID)
+		return telegramHTTPError("sending plain draft", chatID, resp.StatusCode(), "")
 	}
 	return nil
 }
@@ -389,19 +478,19 @@ func (m *Messenger) sendRichMessageWithInlineKeyboard(ctx context.Context, chatI
 	defer cancel()
 	resp, err := m.client.SendRichMessageWithBodyWithResponse(sendCtx, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return 0, &richDeliveryError{err: fmt.Errorf("send rich telegram question to chat %d: %w", chatID, err)}
+		return 0, richTransportError("send rich telegram question", chatID, err)
 	}
 	if resp == nil {
-		return 0, &richDeliveryError{err: fmt.Errorf("send rich telegram question to chat %d: no response body", chatID)}
+		return 0, richNoResponseError("send rich telegram question", chatID)
 	}
 	if resp.JSON400 != nil {
-		return 0, &richDeliveryError{
-			err:        fmt.Errorf("send rich telegram question to chat %d: %s", chatID, resp.JSON400.Description),
-			statusCode: http.StatusBadRequest,
-		}
+		return 0, richFallbackError("send rich telegram question", chatID, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return 0, richHTTPError("send rich telegram question", chatID, http.StatusUnauthorized, resp.JSON401.Description)
 	}
 	if resp.JSON200 == nil {
-		return 0, &richDeliveryError{err: fmt.Errorf("send rich telegram question to chat %d: no response body", chatID)}
+		return 0, richHTTPError("send rich telegram question", chatID, resp.StatusCode(), "")
 	}
 	return resp.JSON200.Result.MessageId, nil
 }
@@ -439,13 +528,19 @@ func (m *Messenger) sendEphemeralMessageWithInlineKeyboard(ctx context.Context, 
 	defer cancel()
 	resp, err := m.client.SendMessageWithBodyWithResponse(sendCtx, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return 0, fmt.Errorf("send ephemeral telegram question to chat %d: %w", chatID, err)
+		return 0, telegramTransportError("send ephemeral telegram question", chatID, err)
 	}
-	if resp == nil || resp.JSON200 == nil {
-		if resp != nil && resp.JSON400 != nil {
-			return 0, fmt.Errorf("send ephemeral telegram question to chat %d: %s", chatID, resp.JSON400.Description)
-		}
-		return 0, fmt.Errorf("send ephemeral telegram question to chat %d: no response body", chatID)
+	if resp == nil {
+		return 0, telegramNoResponseError("send ephemeral telegram question", chatID)
+	}
+	if resp.JSON400 != nil {
+		return 0, telegramHTTPError("send ephemeral telegram question", chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return 0, telegramHTTPError("send ephemeral telegram question", chatID, http.StatusUnauthorized, resp.JSON401.Description)
+	}
+	if resp.JSON200 == nil {
+		return 0, telegramHTTPError("send ephemeral telegram question", chatID, resp.StatusCode(), "")
 	}
 	if resp.JSON200.Result.EphemeralMessageId == nil || *resp.JSON200.Result.EphemeralMessageId <= 0 {
 		return 0, fmt.Errorf("send ephemeral telegram question to chat %d: missing ephemeral message id", chatID)
@@ -469,16 +564,19 @@ func (m *Messenger) sendMessageWithInlineKeyboard(ctx context.Context, chatID in
 	defer cancel()
 	resp, err := m.client.SendMessageWithBodyWithResponse(sendCtx, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return 0, fmt.Errorf("send telegram question to chat %d: %w", chatID, err)
+		return 0, telegramTransportError("send telegram question", chatID, err)
 	}
 	if resp == nil {
-		return 0, fmt.Errorf("send telegram question to chat %d: no response body", chatID)
+		return 0, telegramNoResponseError("send telegram question", chatID)
 	}
 	if resp.JSON400 != nil {
-		return 0, fmt.Errorf("send telegram question to chat %d: %s", chatID, resp.JSON400.Description)
+		return 0, telegramHTTPError("send telegram question", chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return 0, telegramHTTPError("send telegram question", chatID, http.StatusUnauthorized, resp.JSON401.Description)
 	}
 	if resp.JSON200 == nil {
-		return 0, fmt.Errorf("send telegram question to chat %d: no response body", chatID)
+		return 0, telegramHTTPError("send telegram question", chatID, resp.StatusCode(), "")
 	}
 	return resp.JSON200.Result.MessageId, nil
 }
@@ -661,19 +759,19 @@ func (m *Messenger) sendRichDraft(ctx context.Context, chatID int64, draftID int
 
 	resp, err := m.client.SendRichMessageDraftWithResponse(sendCtx, req)
 	if err != nil {
-		return &richDeliveryError{err: fmt.Errorf("sending rich draft to chat %d: %w", chatID, err)}
+		return richTransportError("sending rich draft", chatID, err)
 	}
 	if resp == nil {
-		return &richDeliveryError{err: fmt.Errorf("sending rich draft to chat %d: no response body", chatID)}
+		return richNoResponseError("sending rich draft", chatID)
 	}
 	if resp.JSON400 != nil {
-		return &richDeliveryError{
-			err:        fmt.Errorf("sending rich draft to chat %d: %s", chatID, resp.JSON400.Description),
-			statusCode: http.StatusBadRequest,
-		}
+		return richFallbackError("sending rich draft", chatID, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return richHTTPError("sending rich draft", chatID, http.StatusUnauthorized, resp.JSON401.Description)
 	}
 	if resp.JSON200 == nil {
-		return &richDeliveryError{err: fmt.Errorf("sending rich draft to chat %d: no response body", chatID)}
+		return richHTTPError("sending rich draft", chatID, resp.StatusCode(), "")
 	}
 	return nil
 }
@@ -714,19 +812,19 @@ func (m *Messenger) sendRichMessage(ctx context.Context, chatID int64, rich clie
 
 	resp, err := m.client.SendRichMessageWithResponse(sendCtx, req)
 	if err != nil {
-		return 0, &richDeliveryError{err: fmt.Errorf("send rich message to chat %d: %w", chatID, err)}
+		return 0, richTransportError("send rich message", chatID, err)
 	}
 	if resp == nil {
-		return 0, &richDeliveryError{err: fmt.Errorf("send rich message to chat %d: no response body", chatID)}
+		return 0, richNoResponseError("send rich message", chatID)
 	}
 	if resp.JSON400 != nil {
-		return 0, &richDeliveryError{
-			err:        fmt.Errorf("send rich message to chat %d: %s", chatID, resp.JSON400.Description),
-			statusCode: http.StatusBadRequest,
-		}
+		return 0, richFallbackError("send rich message", chatID, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return 0, richHTTPError("send rich message", chatID, http.StatusUnauthorized, resp.JSON401.Description)
 	}
 	if resp.JSON200 == nil {
-		return 0, &richDeliveryError{err: fmt.Errorf("send rich message to chat %d: no response body", chatID)}
+		return 0, richHTTPError("send rich message", chatID, resp.StatusCode(), "")
 	}
 	return resp.JSON200.Result.MessageId, nil
 }
@@ -753,7 +851,7 @@ func shouldFallbackRichSend(ctx context.Context, err error) bool {
 	if !errors.As(err, &deliveryErr) {
 		return false
 	}
-	return deliveryErr.statusCode >= 400 && deliveryErr.statusCode < 500
+	return deliveryErr.fallback
 }
 
 func (m *Messenger) sendMessageWithMode(ctx context.Context, chatID int64, text string, topicID int, mode, logMsg string) (int, error) {
@@ -776,36 +874,29 @@ func (m *Messenger) sendMessageWithMode(ctx context.Context, chatID int64, text 
 	defer cancel()
 
 	resp, err := m.client.SendMessageWithResponse(sendCtx, req)
-	retryWithoutParseMode := false
-	if strings.TrimSpace(mode) != "" {
-		switch {
-		case err != nil:
-			retryWithoutParseMode = true
-		case resp != nil && resp.JSON400 != nil:
-			desc := strings.ToLower(strings.TrimSpace(resp.JSON400.Description))
-			retryWithoutParseMode = desc != "" &&
-				(strings.Contains(desc, "can't parse entities") ||
-					strings.Contains(desc, "cant parse entities") ||
-					(strings.Contains(desc, "parse entities") && strings.Contains(desc, "entity")))
-		}
+	if err != nil {
+		return 0, telegramTransportError(logMsg, chatID, err)
 	}
+	retryWithoutParseMode := strings.TrimSpace(mode) != "" && telegramParseError(resp)
 	if retryWithoutParseMode {
-		retryReason := "transport error"
-		if err == nil && resp != nil && resp.JSON400 != nil {
-			retryReason = "telegram parse error"
-		}
-		m.logger.Warn().Err(err).Int64("chat_id", chatID).Str("retry_reason", retryReason).Msg(logMsg + " failed, retrying without parse_mode")
+		m.logger.Warn().Int64("chat_id", chatID).Str("retry_reason", "telegram parse error").Msg(logMsg + " failed, retrying without parse_mode")
 		req.ParseMode = nil
 		resp, err = m.client.SendMessageWithResponse(sendCtx, req)
 		if err != nil {
-			return 0, fmt.Errorf("%s to chat %d: %w", logMsg, chatID, err)
+			return 0, telegramTransportError(logMsg, chatID, err)
 		}
 	}
+	if resp == nil {
+		return 0, telegramNoResponseError(logMsg, chatID)
+	}
 	if resp.JSON400 != nil {
-		return 0, fmt.Errorf("%s to chat %d: %s", logMsg, chatID, resp.JSON400.Description)
+		return 0, telegramHTTPError(logMsg, chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return 0, telegramHTTPError(logMsg, chatID, http.StatusUnauthorized, resp.JSON401.Description)
 	}
 	if resp.JSON200 == nil {
-		return 0, fmt.Errorf("%s to chat %d: no response body", logMsg, chatID)
+		return 0, telegramHTTPError(logMsg, chatID, resp.StatusCode(), "")
 	}
 	return resp.JSON200.Result.MessageId, nil
 }

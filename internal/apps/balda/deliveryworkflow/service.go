@@ -29,6 +29,7 @@ type Lifecycle interface {
 
 type QuestionDeliveryBinder interface {
 	BindDelivery(ctx context.Context, questionID string, ref questioncmd.DeliveryRef) error
+	DeliveryState(ctx context.Context, questionID string) (string, bool, error)
 	FailedDeliveryContinuation(ctx context.Context, questionID string) (actorlayer.Envelope, bool, error)
 	FailDelivery(ctx context.Context, questionID string, failure questioncmd.Failure) (actorlayer.Envelope, bool, error)
 }
@@ -53,7 +54,7 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	if err := deliverycmd.Validate(payload); err != nil {
 		return actorlayer.PermanentError(err)
 	}
-	if handled, err := s.resumeFailedQuestionDelivery(ctx, payload); err != nil {
+	if handled, err := s.resumeSettledQuestionDelivery(ctx, payload); err != nil {
 		return actorlayer.TransientError(err)
 	} else if handled {
 		return nil
@@ -125,9 +126,11 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	}
 	providerMessageID, err := s.dispatcher.Dispatch(ctx, payload)
 	if err != nil {
+		deliveryErrorKind, classified := deliverycmd.ClassifyError(err)
+		retryable := classified && deliveryErrorKind == deliverycmd.ErrorKindRetryable
 		if durable && s.outbox != nil {
 			_ = s.outbox.MarkDeliveryFailed(ctx, deliveryKey, err.Error())
-			if strings.TrimSpace(payload.JobID) != "" {
+			if !retryable && strings.TrimSpace(payload.JobID) != "" {
 				if s.events != nil {
 					if appendErr := s.events.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
 						"text":   strings.TrimSpace(payload.Text),
@@ -140,10 +143,16 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 				}
 			}
 		}
+		if retryable {
+			return actorlayer.ExternalDeliveryError(err)
+		}
 		if handled, failErr := s.failQuestionDelivery(ctx, payload, err); failErr != nil {
 			return actorlayer.TransientError(failErr)
 		} else if handled {
 			return nil
+		}
+		if classified && deliveryErrorKind == deliverycmd.ErrorKindPermanent {
+			return actorlayer.PermanentError(err)
 		}
 		return actorlayer.ExternalDeliveryError(err)
 	}
@@ -170,10 +179,17 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	return nil
 }
 
-func (s *Service) resumeFailedQuestionDelivery(ctx context.Context, payload deliverycmd.Payload) (bool, error) {
+func (s *Service) resumeSettledQuestionDelivery(ctx context.Context, payload deliverycmd.Payload) (bool, error) {
 	questionID := questionIDFromPayload(payload)
 	if s.questions == nil || questionID == "" {
 		return false, nil
+	}
+	status, found, err := s.questions.DeliveryState(ctx, questionID)
+	if err != nil || !found || status == questioncmd.StatusPending {
+		return false, err
+	}
+	if status != questioncmd.StatusFailed {
+		return true, nil
 	}
 	envelope, failed, err := s.questions.FailedDeliveryContinuation(ctx, questionID)
 	if err != nil || !failed {
