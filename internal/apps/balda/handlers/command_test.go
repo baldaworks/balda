@@ -664,7 +664,7 @@ func TestCommandHandlerOnCommand_GoalStartsRun(t *testing.T) {
 	handler.actorDispatcher = bus
 
 	topicID := 99
-	err := handler.onCommand(context.Background(), newCommandEvent("goal", "deploy release", 101, 9001, &topicID))
+	err := handler.onCommand(context.Background(), newCommandEvent("goalkeeper", "deploy release", 101, 9001, &topicID))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}
@@ -723,20 +723,20 @@ func TestCommandHandlerSubmitGoalJob_PublishesDurableCommandOnly(t *testing.T) {
 func TestCommandHandlerOnCommand_GoalWithoutArgsShowsUsage(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
 
-	err := handler.onCommand(context.Background(), newCommandEvent("goal", "", 101, 9001, nil))
+	err := handler.onCommand(context.Background(), newCommandEvent("goalkeeper", "", 101, 9001, nil))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
 	assertLastSentContains(t, tgClient, "Usage:")
-	assertLastSentContains(t, tgClient, "/goal <objective>")
-	assertLastSentContains(t, tgClient, "/goal clear")
+	assertLastSentContains(t, tgClient, "/goalkeeper <objective>")
+	assertLastSentContains(t, tgClient, "/goalkeeper clear")
 }
 
 func TestCommandHandlerOnCommand_GoalClearPublishesControlCommand(t *testing.T) {
 	handler, _, turns, tgClient := newCommandHandlerTestHarness(t)
 
-	err := handler.onCommand(context.Background(), newCommandEvent("goal", "clear", 101, 9001, nil))
+	err := handler.onCommand(context.Background(), newCommandEvent("goalkeeper", "clear", 101, 9001, nil))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}
@@ -762,7 +762,7 @@ func TestCommandHandlerOnCommand_GoalClearExtraStartsGoal(t *testing.T) {
 	bus := &recordingHandlerCommandBus{}
 	handler.actorDispatcher = bus
 
-	err := handler.onCommand(context.Background(), newCommandEvent("goal", "clear extra", 101, 9001, nil))
+	err := handler.onCommand(context.Background(), newCommandEvent("goalkeeper", "clear extra", 101, 9001, nil))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}
@@ -788,7 +788,7 @@ func TestCommandHandlerOnCommand_GoalRejectsWhenActiveGoalExists(t *testing.T) {
 		}},
 	}
 
-	err := handler.onCommand(context.Background(), newCommandEvent("goal", "deploy release", 101, 9001, nil))
+	err := handler.onCommand(context.Background(), newCommandEvent("goalkeeper", "deploy release", 101, 9001, nil))
 	if err != nil {
 		t.Fatalf("onCommand() error = %v", err)
 	}

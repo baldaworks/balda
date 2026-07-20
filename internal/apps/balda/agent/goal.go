@@ -50,7 +50,7 @@ const (
 
 var conventionalCommitSubjectPattern = regexp.MustCompile(`^[a-z]+(?:\([^)]+\))?(?:!)?: .+`)
 
-// GoalBuildConfig configures Balda's /goal worker-validator workflow.
+// GoalBuildConfig configures Balda's /goalkeeper worker-validator workflow.
 type GoalBuildConfig struct {
 	BaseAgent           adkagent.Agent
 	ProviderID          string
@@ -66,7 +66,7 @@ type GoalBuildConfig struct {
 	ExtraMCPServerIDs   []string
 }
 
-// BuildGoalWorkflow builds Balda's /goal worker-validator workflow using
+// BuildGoalWorkflow builds Balda's /goalkeeper worker-validator workflow using
 // Balda's configured provider for both child agents.
 func (b *Builder) BuildGoalWorkflow(ctx context.Context, cfg GoalBuildConfig) (adkagent.Agent, error) {
 	_ = ctx

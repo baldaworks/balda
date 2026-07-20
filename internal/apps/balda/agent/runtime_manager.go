@@ -52,7 +52,7 @@ const (
 	GoalExportReasonDisabled    = "workspace_disabled"
 )
 
-// GoalRunConfig configures a per-run /goal worker-validator execution context.
+// GoalRunConfig configures a per-run /goalkeeper worker-validator execution context.
 type GoalRunConfig struct {
 	SourceSessionID string
 	JobID           string
@@ -61,7 +61,7 @@ type GoalRunConfig struct {
 }
 
 // GoalExportResult describes the export/finalization outcome for a passing
-// /goal run.
+// /goalkeeper run.
 type GoalExportResult struct {
 	Status        string
 	CommitMessage string
@@ -69,7 +69,7 @@ type GoalExportResult struct {
 	Error         string
 }
 
-// GoalRun owns the per-run /goal worker-validator runner and agents.
+// GoalRun owns the per-run /goalkeeper worker-validator runner and agents.
 type GoalRun struct {
 	Agent              adkagent.Agent
 	Runner             *runner.Runner
@@ -96,7 +96,7 @@ func (r *GoalRun) Close() error {
 	return closeRuntimeAgent(r.Agent)
 }
 
-// Finalize completes a passing /goal run by exporting workspace-backed runs or
+// Finalize completes a passing /goalkeeper run by exporting workspace-backed runs or
 // reporting an explicit no-export outcome for direct mode.
 func (r *GoalRun) Finalize(
 	ctx context.Context,

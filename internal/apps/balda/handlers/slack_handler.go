@@ -439,7 +439,7 @@ func slackCommandIsDM(cmd slackSlashCommand) bool {
 func (h *SlackChatHandler) handleCommandText(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, text string, isDM bool) {
 	fields := strings.Fields(text)
 	if len(fields) == 0 {
-		_ = h.sendPlain(ctx, locator, "Usage: /balda <start|topic|goal|cancel|locator|usage|auto|close|user>")
+		_ = h.sendPlain(ctx, locator, "Usage: /balda <start|topic|goalkeeper|cancel|locator|usage|auto|close|user>")
 		return
 	}
 	cmd := strings.ToLower(strings.TrimPrefix(fields[0], "/"))
@@ -697,7 +697,7 @@ func (h *SlackChatHandler) handleTopicSlashCommand(ctx context.Context, cmd slac
 func (h *SlackChatHandler) handleGoalCommand(ctx context.Context, locator baldasession.SessionLocator, subject, args string) {
 	objective := strings.TrimSpace(args)
 	if objective == "" {
-		_ = h.sendPlain(ctx, locator, "Usage:\n/balda goal <objective>\n/balda goal clear")
+		_ = h.sendPlain(ctx, locator, "Usage:\n/balda goalkeeper <objective>\n/balda goalkeeper clear")
 		return
 	}
 	if strings.EqualFold(objective, "clear") {

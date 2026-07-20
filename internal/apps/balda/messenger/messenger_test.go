@@ -945,7 +945,7 @@ func TestSendAgentReply_MarkdownV2CleansConverterArtifacts(t *testing.T) {
 		"  1. `balda.workspace.import`\n" +
 		"  2. implement + verify\n" +
 		"  3. `balda.workspace.export` with a Conventional Commit message\n" +
-		"- Help with bot command contracts (`/start`, `/topic`, `/goal <objective>`, `/goal clear`, `/reset`, `/restart`, `/locator`, `/close`, `/cancel`, `/user ...`)\n" +
+		"- Help with bot command contracts (`/start`, `/topic`, `/goalkeeper <objective>`, `/goalkeeper clear`, `/reset`, `/restart`, `/locator`, `/close`, `/cancel`, `/user ...`)\n" +
 		"- Update docs when behavior changes (`README.md`, `docs/balda.md`)"
 	if err := m.SendAgentReply(context.Background(), 9001, input, 77); err != nil {
 		t.Fatalf("SendAgentReply() error = %v", err)

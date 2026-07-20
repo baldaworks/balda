@@ -43,7 +43,7 @@ func (a goalOutcomeAssembler) toJobResult(r goalRunResult, goalReached bool, art
 			}
 		}
 	} else if r.payload.MaxIterations > 0 && r.iterations >= r.payload.MaxIterations {
-		nextAction = "Review failure evidence and rerun /goal or assign a narrower follow-up task."
+		nextAction = "Review failure evidence and rerun /goalkeeper or assign a narrower follow-up task."
 	}
 	artifactResult := &goalArtifactResultV1{
 		WorkspaceDir: strings.TrimSpace(artifacts.WorkspaceDir),

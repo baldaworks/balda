@@ -212,7 +212,7 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/channel/*` and `internal/apps/balda/messenger`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
 - `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, memory, scheduler state, job tables, and delivery idempotency state.
 
-- `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goal` worker-validator runs in the process. `/goal` still creates isolated worker/validator ADK sessions and workspace state, but it reuses the same provider runtime/client ownership as normal session turns.
+- `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goalkeeper` worker-validator runs in the process. `/goalkeeper` still creates isolated worker/validator ADK sessions and workspace state, but it reuses the same provider runtime/client ownership as normal session turns.
 - Actorlayer owns generic actor mechanics: registration, addressing, envelopes, retry/error helpers, lane execution, lifecycle state, and transport-facing contracts.
 - Balda owns product actors and product behavior implemented as actors: session turns, job routing, goal execution, delivery, control, and memory.
 - Balda exposes its durable transport to product/runtime code only as actorlayer source, delivery, and dispatch abstractions; the concrete transport stays inside the NATS adapter.
@@ -635,7 +635,7 @@ balda:
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
-- `balda.goal.max_iterations`: maximum `/goal` worker-validator loop iterations (default `25`)
+- `balda.goal.max_iterations`: maximum `/goalkeeper` worker-validator loop iterations (default `25`)
   - invalid values are clamped to `25`.
 - `runtime.providers.<provider_id>.codex_acp.reasoning_effort`: optional Codex reasoning effort.
   - allowed values: `minimal`, `low`, `medium`, `high`, `xhigh`
@@ -645,9 +645,9 @@ balda:
 - embedded NATS transport files live under `${balda.state_dir}/nats`
 - `balda.nats.max_memory` / `max_store`: embedded runtime resource caps (defaults `256mb` and `2gb`)
 - `balda.runtime`: optional advanced runtime tuning for command handling, retries, backpressure, and failure retention. Most installs should leave it at defaults.
-- `/goal` runs repeated work and validation passes in isolated GoalKeeper worker/validator ADK sessions until the goal passes validation or `balda.goal.max_iterations` is reached.
-  - with workspace mode enabled, `/goal` uses a separate goal worktree and exports passing work to `balda.workspace.base_branch`.
-  - with workspace mode disabled, `/goal` works directly in `balda.working_dir` and records `not_exported` on passing runs.
+- `/goalkeeper` runs repeated work and validation passes in isolated GoalKeeper worker/validator ADK sessions until the goal passes validation or `balda.goal.max_iterations` is reached.
+  - with workspace mode enabled, `/goalkeeper` uses a separate goal worktree and exports passing work to `balda.workspace.base_branch`.
+  - with workspace mode disabled, `/goalkeeper` works directly in `balda.working_dir` and records `not_exported` on passing runs.
 - internal durable memory uses app KV in `${balda.state_dir}/state.db` when `balda.memory.enabled=true`
   - `balda.memory.read` reads memory from MCP.
   - `balda.memory.remember` appends facts from MCP.
@@ -764,13 +764,13 @@ Balda runs with a single provider per process (`balda.provider`).
 - `/topic <name>` (DM only, owner/collaborator): creates a new Telegram topic and a topic-bound session.
   - `<name>` is required.
   - `<name>` is a session label, not a provider selector.
-- `/goal <objective>` (owner/collaborator): starts goal work from the current session context in isolated GoalKeeper worker/validator ADK sessions. With workspace mode enabled, Balda creates a goal workspace from `balda.workspace.base_branch`, exports it back automatically on success, and preserves it for recovery when export fails. With workspace mode disabled, GoalKeeper works directly in `balda.working_dir` and records `not_exported` on success. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include concise result, export, work, validation, and actionable next-step sections when needed. See the [goal workflow doc](goal-workflow.md).
-  - concurrent `/goal` runs in the same session are rejected.
-  - `/goal clear` stops active goal work for the current session only.
+- `/goalkeeper <objective>` (owner/collaborator): starts goal work from the current session context in isolated GoalKeeper worker/validator ADK sessions. With workspace mode enabled, Balda creates a goal workspace from `balda.workspace.base_branch`, exports it back automatically on success, and preserves it for recovery when export fails. With workspace mode disabled, GoalKeeper works directly in `balda.working_dir` and records `not_exported` on success. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include concise result, export, work, validation, and actionable next-step sections when needed. See the [goal workflow doc](goal-workflow.md).
+  - concurrent `/goalkeeper` runs in the same session are rejected.
+  - `/goalkeeper clear` stops active goal work for the current session only.
 - `/reset`, `/restart` (owner/collaborator): cancel current session work, clear the current session history, and immediately start a fresh runtime session without closing the chat/topic. Both commands work in the current DM, public-chat, or thread-scoped session.
 - `/locator` (owner/collaborator): replies with the current transport type and locator ref in the public config form `<channel_type>:<address_key>`. Use that value with `target: locator` in scheduler/webhook config.
 - `/close` (DM only, owner/collaborator): resets the current session history. In topic contexts, it also closes that topic.
-- `/cancel` (owner/collaborator): cancels the current session turn and drops queued turns for that session. It does not stop active `/goal` work.
+- `/cancel` (owner/collaborator): cancels the current session turn and drops queued turns for that session. It does not stop active `/goalkeeper` work.
 - `/user add` (owner only): generates a collaborator invite link for this bot.
 - `/user list` (owner only): lists collaborators and active invites.
 - `/user remove <user_id>` (owner only): removes a collaborator by ID.
@@ -784,7 +784,7 @@ durable command first; job records are created after command delivery.
 Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 `execution_jobs` rows; they run directly on the session actor path.
 
-- `/goal` starts goal work for the current session context. Balda restores or creates the
+- `/goalkeeper` starts goal work for the current session context. Balda restores or creates the
   chat session, allocates separate GoalKeeper worker/validator ADK sessions for the
   job, runs repeated work and validation passes, passes only the latest worker and
   validator results across those role sessions, exports successful work back to the
@@ -804,7 +804,7 @@ Ordinary conversational turns from Telegram, Slack, and Zulip do not create
 - Runtime deadletters mark the owning job `deadlettered`. Session control
   commands and internal control envelopes publish durable control work.
   `/cancel` stops the current session turn and clears queued turns for that
-  session. `/goal clear` marks active goal jobs `canceled` and stops any
+  session. `/goalkeeper clear` marks active goal jobs `canceled` and stops any
   currently running GoalKeeper job for that session.
 - Terminal job delivery stores reviewable outcomes and, when applicable,
   sends concise result, export, work, validation, and actionable next-step
@@ -830,7 +830,7 @@ flowchart LR
         TG["Telegram"]
         WH["Webhooks"]
         SCH["Scheduler"]
-        GOAL["/goal"]
+        GOAL["/goalkeeper"]
     end
 
     subgraph JS["Transport adapter"]

@@ -70,7 +70,7 @@ Then send a normal direct message to the bot, or open an isolated topic:
 From there you can:
 
 - ask for ordinary help in chat
-- start a goal loop with `/goal <objective>`
+- start a goal loop with `/goalkeeper <objective>`
 - stop the current turn with `/cancel`
 - reset the current session with `/reset`
 
@@ -88,7 +88,7 @@ or stream of work.
 
 ### 3. Goal-driven execution
 
-Use `/goal <objective>` when you want Balda to keep working until there is a
+Use `/goalkeeper <objective>` when you want Balda to keep working until there is a
 result to review.
 
 Balda will:
@@ -181,8 +181,8 @@ ENTRYPOINT ["balda"]
 - `/start owner=<owner_token>` — owner bootstrap in direct messages
 - `/start invite=<invite_token>` — collaborator onboarding
 - `/topic <name>` — open a focused session
-- `/goal <objective>` — run a longer goal loop
-- `/goal clear` — stop active goal work in the current session
+- `/goalkeeper <objective>` — run a longer goal loop
+- `/goalkeeper clear` — stop active goal work in the current session
 - `/cancel` — stop the current turn
 - `/reset` or `/restart` — clear the current session and start fresh
 - `/locator` — show the current session locator for scheduler/webhook routing

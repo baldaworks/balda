@@ -165,7 +165,7 @@ type AutoModeConfig struct {
 	MaxTurns int `mapstructure:"max_turns"`
 }
 
-// GoalConfig controls /goal command execution behavior.
+// GoalConfig controls /goalkeeper command execution behavior.
 type GoalConfig struct {
 	MaxIterations int `mapstructure:"max_iterations"`
 }

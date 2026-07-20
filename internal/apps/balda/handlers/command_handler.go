@@ -46,7 +46,7 @@ const (
 	commandTopic    = "topic"
 	commandLocator  = "locator"
 	commandCancel   = "cancel"
-	commandGoal     = "goal"
+	commandGoal     = "goalkeeper"
 	commandUser     = "user"
 	commandUsage    = "usage"
 	commandAuto     = "auto"
@@ -61,7 +61,7 @@ const (
 	userActionRemove = "remove"
 )
 
-// CommandHandler handles Balda chat commands such as /topic, /goal, /reset,
+// CommandHandler handles Balda chat commands such as /topic, /goalkeeper, /reset,
 // /restart, /locator, /close, /cancel, and /user.
 type CommandHandler struct {
 	ownerStore        *auth.OwnerStore
@@ -197,7 +197,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatele
 
 	objective := strings.TrimSpace(commandCtx.Args)
 	if objective == "" {
-		if err := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage:\n/goal <objective>\n/goal clear"); err != nil {
+		if err := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage:\n/goalkeeper <objective>\n/goalkeeper clear"); err != nil {
 			return err
 		}
 		return nil
@@ -220,7 +220,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatele
 
 	started, err := h.submitGoalJobWithOptions(ctx, commandCtx.Locator, commandCtx.DeliveryOptions, objective, baldatelegram.UserID(commandCtx.UserID))
 	if err != nil {
-		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to start /goal run")
+		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to start /goalkeeper run")
 		if sendErr := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not start goal run."); sendErr != nil {
 			return sendErr
 		}

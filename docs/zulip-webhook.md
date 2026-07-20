@@ -101,8 +101,8 @@ Balda supports these commands in Zulip:
 | `/start invite=<token>` | Onboard as collaborator (DM only) |
 | `/start <balda_token>` | Connect this Zulip account to the existing owner (DM only) |
 | `/topic <name>` | Create a session in the current stream's native Zulip topic |
-| `/goal <objective>` | Start goal work from the current session context |
-| `/goal clear` | Stop active goal work for the current session |
+| `/goalkeeper <objective>` | Start goal work from the current session context |
+| `/goalkeeper clear` | Stop active goal work for the current session |
 | `/reset`, `/restart` | Restart current session history |
 | `/cancel` | Cancel current session turn; active goal runs continue |
 | `/locator` | Show current locator ref |

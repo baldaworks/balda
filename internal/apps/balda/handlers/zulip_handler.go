@@ -1031,7 +1031,7 @@ func (h *ZulipBaldaHandler) handleGoalCommand(
 ) {
 	objective := strings.TrimSpace(args)
 	if objective == "" {
-		_ = h.sendPlain(ctx, locator, "Usage:\n/goal <objective>\n/goal clear")
+		_ = h.sendPlain(ctx, locator, "Usage:\n/goalkeeper <objective>\n/goalkeeper clear")
 		return
 	}
 	if strings.EqualFold(objective, "clear") {
@@ -1049,7 +1049,7 @@ func (h *ZulipBaldaHandler) handleGoalCommand(
 	}
 	started, err := h.submitGoalJob(ctx, locator, objective, baldazulip.UserID(senderID))
 	if err != nil {
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to start /goal run")
+		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to start /goalkeeper run")
 		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 		return
 	}

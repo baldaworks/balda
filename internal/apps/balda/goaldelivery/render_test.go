@@ -200,7 +200,7 @@ func TestRenderReviewableOutcomeFailureKeepsEvidence(t *testing.T) {
 		"validation_output":     "verdict: fail\nEvidence: mismatch found",
 		"what_was_verified":     "validator returned feedback",
 		"what_was_not_verified": DefaultNotVerifiedText,
-		"next_action":           "Review failure evidence and rerun /goal or assign a narrower follow-up task.",
+		"next_action":           "Review failure evidence and rerun /goalkeeper or assign a narrower follow-up task.",
 	})
 
 	got := RenderReviewableOutcome(deliverycmd.Profile{FormattingMode: "rich_markdown"}, task)
@@ -208,7 +208,7 @@ func TestRenderReviewableOutcomeFailureKeepsEvidence(t *testing.T) {
 		"Evidence: worker command output",
 		"Evidence: mismatch found",
 		"**Verified:** validator returned feedback",
-		"**Next action:** Review failure evidence and rerun /goal or assign a narrower follow-up task.",
+		"**Next action:** Review failure evidence and rerun /goalkeeper or assign a narrower follow-up task.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("RenderReviewableOutcome() = %q, want %q", got, want)
@@ -234,7 +234,7 @@ func TestRenderReviewableOutcomeKeepsActionableNextActions(t *testing.T) {
 		{
 			name:        "not reached",
 			goalReached: false,
-			nextAction:  "Review failure evidence and rerun /goal or assign a narrower follow-up task.",
+			nextAction:  "Review failure evidence and rerun /goalkeeper or assign a narrower follow-up task.",
 		},
 	}
 
