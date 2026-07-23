@@ -132,10 +132,12 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 		return actorlayer.TransientError(fmt.Errorf("session turn runner is required"))
 	}
 
+	payloadCopy := payload
 	result, _, err := e.turns.Enqueue(ctx, appports.TurnTask{
-		SessionID: payload.Locator.SessionID,
+		SessionID:   payload.Locator.SessionID,
+		SessionTurn: &payloadCopy,
 		Run: func(runCtx context.Context) error {
-			return e.runner.RunSessionTurnPayload(runCtx, payload)
+			return e.runner.RunSessionTurnPayload(runCtx, payloadCopy)
 		},
 	})
 	if err != nil {

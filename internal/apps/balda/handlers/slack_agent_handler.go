@@ -247,6 +247,8 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 		RequesterUserID: subject,
 		AgentSessionID:  ts.GetAgentSessionID(),
 		MessageID:       slackMessageID(firstNonEmpty(event.MessageID, env.EventID)),
+		ReplyToMessageID: slackMessageID(event.ReplyToMessageID),
+		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
 		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
 			ProgressPolicy: progressPolicy,

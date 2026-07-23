@@ -8,8 +8,9 @@ import (
 )
 
 type TurnTask struct {
-	SessionID string
-	Run       func(context.Context) error
+	SessionID   string
+	Run         func(context.Context) error
+	SessionTurn *turncmd.SessionTurnPayload
 }
 
 type TurnQueue interface {

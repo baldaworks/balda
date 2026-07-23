@@ -29,6 +29,9 @@ type SessionTurnPayload struct {
 	AgentSessionID  string                       `json:"agent_session_id,omitempty"`
 	ScheduledJobID  string                       `json:"scheduled_job_id,omitempty"`
 	MessageID       int                          `json:"message_id,omitempty"`
+	ReplyToMessageID int                         `json:"reply_to_message_id,omitempty"`
+	ReceivedAt      string                       `json:"received_at,omitempty"`
+	SteeringMessages []SteeringMessage          `json:"steering_messages,omitempty"`
 	TopicID         int                          `json:"topic_id,omitempty"`
 	DeliveryOptions deliveryfmt.Options          `json:"delivery_options,omitempty,omitzero"`
 	ProgressPolicy  deliveryfmt.ProgressPolicy   `json:"progress_policy,omitempty"`
@@ -36,6 +39,14 @@ type SessionTurnPayload struct {
 	Source          string                       `json:"source,omitempty"`
 	DedupeKey       string                       `json:"dedupe_key,omitempty"`
 	QuestionID      string                       `json:"question_id,omitempty"`
+}
+
+type SteeringMessage struct {
+	MessageID        int    `json:"message_id,omitempty"`
+	ReplyToMessageID int    `json:"reply_to_message_id,omitempty"`
+	UserID           string `json:"user_id,omitempty"`
+	ReceivedAt       string `json:"received_at,omitempty"`
+	Text             string `json:"text,omitempty"`
 }
 
 type jobEnvelopePayload struct {

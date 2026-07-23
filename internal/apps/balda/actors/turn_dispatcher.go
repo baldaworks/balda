@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -37,6 +39,7 @@ type TurnDispatcher struct {
 type sessionTurnQueue struct {
 	pending        []*queuedTurn
 	running        bool
+	runningTurn    *queuedTurn
 	inFlightCancel context.CancelFunc
 	wakeCh         chan struct{}
 }
@@ -95,17 +98,20 @@ func (d *TurnDispatcher) Enqueue(ctx context.Context, task appports.TurnTask) (<
 		return nil, 0, ErrTurnQueueFull
 	}
 
-	position := 0
-	if queue.running {
-		position = pendingBefore + 1
-	} else if pendingBefore > 0 {
-		position = pendingBefore
-	}
-
 	queued := &queuedTurn{
 		ctx:    ctx,
 		task:   task,
 		result: make(chan error, 1),
+	}
+	if queue.running && tryMergeSteeringTurn(queue, queued) {
+		return queued.result, 1, nil
+	}
+
+	position := 0
+	if queue.running {
+		position = len(queue.pending) + 1
+	} else if len(queue.pending) > 0 {
+		position = len(queue.pending)
 	}
 	queue.pending = append(queue.pending, queued)
 	select {
@@ -207,6 +213,7 @@ func (d *TurnDispatcher) sessionWorker(sessionID string, queue *sessionTurnQueue
 
 		d.mu.Lock()
 		queue.running = false
+		queue.runningTurn = nil
 		queue.inFlightCancel = nil
 		d.mu.Unlock()
 		completeTurn(turn, err)
@@ -233,6 +240,7 @@ func (d *TurnDispatcher) nextTask(
 			queue.pending = queue.pending[1:]
 			runCtx, cancel := context.WithCancel(turn.ctx)
 			queue.running = true
+			queue.runningTurn = turn
 			queue.inFlightCancel = cancel
 			d.mu.Unlock()
 			return turn, runCtx, cancel, true
@@ -271,6 +279,131 @@ func completeTurns(turns []*queuedTurn, err error) {
 	for _, turn := range turns {
 		completeTurn(turn, err)
 	}
+}
+
+func tryMergeSteeringTurn(queue *sessionTurnQueue, incoming *queuedTurn) bool {
+	if queue == nil || incoming == nil || incoming.task.SessionTurn == nil {
+		return false
+	}
+	if !isSteeringCandidate(incoming.task.SessionTurn) {
+		return false
+	}
+	for i := len(queue.pending) - 1; i >= 0; i-- {
+		if mergeIntoSteeringBatch(queue.pending[i], incoming.task.SessionTurn) {
+			completeTurn(incoming, nil)
+			return true
+		}
+	}
+	runningPayload := (*turncmd.SessionTurnPayload)(nil)
+	if queue.runningTurn != nil {
+		runningPayload = queue.runningTurn.task.SessionTurn
+	}
+	if !matchesRunningSteering(runningPayload, incoming.task.SessionTurn) {
+		return false
+	}
+	incoming.task.SessionTurn = initializeSteeringBatch(incoming.task.SessionTurn)
+	return false
+}
+
+func isSteeringCandidate(payload *turncmd.SessionTurnPayload) bool {
+	if payload == nil {
+		return false
+	}
+	return payload.MessageID > 0 && payload.ReplyToMessageID > 0 && strings.TrimSpace(payload.RequesterUserID) != ""
+}
+
+func matchesRunningSteering(runningPayload, incoming *turncmd.SessionTurnPayload) bool {
+	if runningPayload == nil || incoming == nil {
+		return false
+	}
+	if strings.TrimSpace(runningPayload.RequesterUserID) == "" || strings.TrimSpace(incoming.RequesterUserID) == "" {
+		return false
+	}
+	if strings.TrimSpace(runningPayload.RequesterUserID) != strings.TrimSpace(incoming.RequesterUserID) {
+		return false
+	}
+	return slices.Contains(steeringAnchorMessageIDs(runningPayload), incoming.ReplyToMessageID)
+}
+
+func mergeIntoSteeringBatch(turn *queuedTurn, incoming *turncmd.SessionTurnPayload) bool {
+	if turn == nil || turn.task.SessionTurn == nil || incoming == nil {
+		return false
+	}
+	batch := turn.task.SessionTurn
+	if strings.TrimSpace(batch.RequesterUserID) != strings.TrimSpace(incoming.RequesterUserID) {
+		return false
+	}
+	if !slices.Contains(steeringAnchorMessageIDs(batch), incoming.ReplyToMessageID) {
+		return false
+	}
+	batch.SteeringMessages = append(batch.SteeringMessages, steeringMessageFromPayload(incoming))
+	batch.Text = renderSteeringBatchText(batch.SteeringMessages)
+	batch.MessageID = incoming.MessageID
+	batch.ReplyToMessageID = incoming.ReplyToMessageID
+	if strings.TrimSpace(incoming.ReceivedAt) != "" {
+		batch.ReceivedAt = incoming.ReceivedAt
+	}
+	return true
+}
+
+func initializeSteeringBatch(payload *turncmd.SessionTurnPayload) *turncmd.SessionTurnPayload {
+	if payload == nil {
+		return nil
+	}
+	payload.SteeringMessages = []turncmd.SteeringMessage{steeringMessageFromPayload(payload)}
+	payload.Text = renderSteeringBatchText(payload.SteeringMessages)
+	return payload
+}
+
+func steeringMessageFromPayload(payload *turncmd.SessionTurnPayload) turncmd.SteeringMessage {
+	if payload == nil {
+		return turncmd.SteeringMessage{}
+	}
+	return turncmd.SteeringMessage{
+		MessageID:        payload.MessageID,
+		ReplyToMessageID: payload.ReplyToMessageID,
+		UserID:           strings.TrimSpace(payload.RequesterUserID),
+		ReceivedAt:       strings.TrimSpace(payload.ReceivedAt),
+		Text:             strings.TrimSpace(payload.Text),
+	}
+}
+
+func steeringAnchorMessageIDs(payload *turncmd.SessionTurnPayload) []int {
+	if payload == nil {
+		return nil
+	}
+	ids := make([]int, 0, 1+len(payload.SteeringMessages))
+	if payload.MessageID > 0 {
+		ids = append(ids, payload.MessageID)
+	}
+	for _, msg := range payload.SteeringMessages {
+		if msg.MessageID > 0 && !slices.Contains(ids, msg.MessageID) {
+			ids = append(ids, msg.MessageID)
+		}
+	}
+	return ids
+}
+
+func renderSteeringBatchText(messages []turncmd.SteeringMessage) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Steering messages:\n")
+	for i, msg := range messages {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		ts := strings.TrimSpace(msg.ReceivedAt)
+		if ts == "" {
+			ts = "unknown_time"
+		}
+		b.WriteString("- [")
+		b.WriteString(ts)
+		b.WriteString("] ")
+		b.WriteString(strings.TrimSpace(msg.Text))
+	}
+	return b.String()
 }
 
 func completeTurn(turn *queuedTurn, err error) {

@@ -241,6 +241,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		ts,
 		locator,
 		messageCtx.MessageID,
+		messageCtx.ReplyToMessageID,
 		topicID,
 		messageCtx.DeliveryOptions,
 		messageCtx.ProgressPolicy,
@@ -264,6 +265,7 @@ func (h *BaldaHandler) enqueueTurn(
 	ts *baldasession.TopicSession,
 	locator baldasession.SessionLocator,
 	messageID int,
+	replyToMessageID int,
 	topicID int,
 	deliveryOptions deliveryfmt.Options,
 	progressPolicy baldachannel.ProgressPolicy,
@@ -273,6 +275,10 @@ func (h *BaldaHandler) enqueueTurn(
 		return fmt.Errorf("topic session is required")
 	}
 
+	receivedAtNow := time.Now
+	if h != nil && h.now != nil {
+		receivedAtNow = h.now
+	}
 	_, err := h.submitSessionTurn(ctx, turncmd.SessionTurnPayload{
 		Text:            text,
 		Locator:         locator,
@@ -280,6 +286,8 @@ func (h *BaldaHandler) enqueueTurn(
 		RequesterUserID: strings.TrimSpace(requesterUserID),
 		AgentSessionID:  ts.GetAgentSessionID(),
 		MessageID:       messageID,
+		ReplyToMessageID: replyToMessageID,
+		ReceivedAt:      receivedAtNow().UTC().Format(time.RFC3339),
 		TopicID:         topicID,
 		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryOptions.Profile,

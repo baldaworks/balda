@@ -8,6 +8,7 @@ import (
 	"time"
 
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 
@@ -247,6 +248,173 @@ func TestTurnDispatcher_TaskContextCancellationStopsRunningTask(t *testing.T) {
 	waitForSignal(t, started, "task start")
 	cancelTask()
 	waitForSignal(t, stopped, "task context cancellation")
+}
+
+func TestTurnDispatcher_CoalescesSteeringRepliesForActiveTurn(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
+	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	var executed turncmd.SessionTurnPayload
+
+	root := turncmd.SessionTurnPayload{
+		Locator:         baldatelegram.NewLocator(10, 0),
+		RequesterUserID: "tg-101",
+		MessageID:       100,
+		Text:            "root",
+	}
+	_, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
+		SessionID:   root.Locator.SessionID,
+		SessionTurn: &root,
+		Run: func(context.Context) error {
+			close(started)
+			<-release
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(root) error = %v", err)
+	}
+	waitForSignal(t, started, "root start")
+
+	merged := turncmd.SessionTurnPayload{
+		Locator:         root.Locator,
+		RequesterUserID: "tg-101",
+		MessageID:       101,
+		ReplyToMessageID: 100,
+		ReceivedAt:      "2026-07-20T10:00:00Z",
+		Text:            "first steer",
+	}
+	pos, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
+		SessionID:   root.Locator.SessionID,
+		SessionTurn: &merged,
+		Run: func(context.Context) error {
+			executed = merged
+			close(done)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(first steering) error = %v", err)
+	}
+	if pos != 1 {
+		t.Fatalf("Enqueue(first steering) position = %d, want 1", pos)
+	}
+
+	second := turncmd.SessionTurnPayload{
+		Locator:         root.Locator,
+		RequesterUserID: "tg-101",
+		MessageID:       102,
+		ReplyToMessageID: 101,
+		ReceivedAt:      "2026-07-20T10:01:00Z",
+		Text:            "second steer",
+	}
+	pos, err = enqueueTurn(dispatcher, context.Background(), TurnTask{
+		SessionID:   root.Locator.SessionID,
+		SessionTurn: &second,
+		Run: func(context.Context) error {
+			t.Fatal("second steering task should be coalesced, not executed separately")
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(second steering) error = %v", err)
+	}
+	if pos != 1 {
+		t.Fatalf("Enqueue(second steering) position = %d, want 1", pos)
+	}
+
+	close(release)
+	waitForSignal(t, done, "merged steering completion")
+
+	if len(executed.SteeringMessages) != 2 {
+		t.Fatalf("steering messages = %d, want 2", len(executed.SteeringMessages))
+	}
+	if executed.SteeringMessages[0].Text != "first steer" || executed.SteeringMessages[1].Text != "second steer" {
+		t.Fatalf("steering texts = %+v", executed.SteeringMessages)
+	}
+	if executed.Text == "" || executed.Text == "first steer" {
+		t.Fatalf("merged text = %q, want rendered batch", executed.Text)
+	}
+}
+
+func TestTurnDispatcher_DoesNotCoalesceDifferentUserSteering(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
+	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	root := turncmd.SessionTurnPayload{
+		Locator:         baldatelegram.NewLocator(11, 0),
+		RequesterUserID: "tg-101",
+		MessageID:       200,
+		Text:            "root",
+	}
+	_, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
+		SessionID:   root.Locator.SessionID,
+		SessionTurn: &root,
+		Run: func(context.Context) error {
+			close(started)
+			<-release
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(root) error = %v", err)
+	}
+	waitForSignal(t, started, "root start")
+
+	first := turncmd.SessionTurnPayload{
+		Locator:         root.Locator,
+		RequesterUserID: "tg-101",
+		MessageID:       201,
+		ReplyToMessageID: 200,
+		ReceivedAt:      "2026-07-20T10:00:00Z",
+		Text:            "first steer",
+	}
+	if _, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
+		SessionID:   root.Locator.SessionID,
+		SessionTurn: &first,
+		Run:         func(context.Context) error { return nil },
+	}); err != nil {
+		t.Fatalf("Enqueue(first) error = %v", err)
+	}
+
+	second := turncmd.SessionTurnPayload{
+		Locator:         root.Locator,
+		RequesterUserID: "tg-202",
+		MessageID:       202,
+		ReplyToMessageID: 201,
+		ReceivedAt:      "2026-07-20T10:01:00Z",
+		Text:            "foreign steer",
+	}
+	pos, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
+		SessionID:   root.Locator.SessionID,
+		SessionTurn: &second,
+		Run:         func(context.Context) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("Enqueue(second) error = %v", err)
+	}
+	if pos != 2 {
+		t.Fatalf("Enqueue(second) position = %d, want 2", pos)
+	}
+	close(release)
 }
 
 func TestTurnDispatcher_SkipsTaskRunWhenTaskContextAlreadyCanceled(t *testing.T) {

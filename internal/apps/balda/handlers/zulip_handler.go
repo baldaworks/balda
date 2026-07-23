@@ -1173,7 +1173,7 @@ func (h *ZulipBaldaHandler) handleMessage(
 		return
 	}
 
-	if err := h.enqueueTurn(ctx, text, ts, locator, messageID, isDM); err != nil {
+	if err := h.enqueueTurn(ctx, text, ts, locator, messageID, baldazulip.UserID(senderID), isDM); err != nil {
 		if baldaexecution.IsCommandQueueFull(err) {
 			_ = h.sendPlain(ctx, locator, "Session command queue is full. Please wait or use /cancel.")
 			return
@@ -1257,6 +1257,7 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 	ts *baldasession.TopicSession,
 	locator baldasession.SessionLocator,
 	messageID int,
+	requesterUserID string,
 	isDM bool,
 ) error {
 	if ts == nil {
@@ -1267,11 +1268,13 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 	}
 	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}
 	payload := turncmd.SessionTurnPayload{
-		Text:           text,
-		Locator:        locator,
-		UserID:         ts.GetUserID(),
-		AgentSessionID: ts.GetAgentSessionID(),
-		MessageID:      messageID,
+		Text:            text,
+		Locator:         locator,
+		UserID:          ts.GetUserID(),
+		RequesterUserID: strings.TrimSpace(requesterUserID),
+		AgentSessionID:  ts.GetAgentSessionID(),
+		MessageID:       messageID,
+		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
 		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
 			ProgressPolicy: progressPolicy,

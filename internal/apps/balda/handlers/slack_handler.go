@@ -842,11 +842,13 @@ func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasessi
 	}
 	progressPolicy := baldachannel.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}
 	payload := turncmd.SessionTurnPayload{
-		Text:           text,
-		Locator:        locator,
-		UserID:         ts.GetUserID(),
-		AgentSessionID: ts.GetAgentSessionID(),
-		MessageID:      slackMessageID(messageID),
+		Text:            text,
+		Locator:         locator,
+		UserID:          ts.GetUserID(),
+		RequesterUserID: subject,
+		AgentSessionID:  ts.GetAgentSessionID(),
+		MessageID:       slackMessageID(messageID),
+		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
 		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
 			ProgressPolicy: progressPolicy,
