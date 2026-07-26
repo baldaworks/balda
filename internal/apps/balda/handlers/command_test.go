@@ -221,6 +221,64 @@ func TestCommandHandlerOnCommand_UsageWithArgsShowsUsage(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Usage: /usage")
 }
 
+func TestCommandHandlerOnCommand_HelpShowsGroupedCommandsForCollaborator(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("help", "", 202, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Available commands:")
+	assertLastSentContains(t, tgClient, "Onboarding:")
+	assertLastSentContains(t, tgClient, "Sessions:")
+	assertLastSentContains(t, tgClient, "Automation:")
+	assertLastSentContains(t, tgClient, "/topic <name>")
+	assertLastSentContains(t, tgClient, "/goalkeeper <objective>")
+	assertLastSentContains(t, tgClient, "/auto on")
+	assertLastSentNotContains(t, tgClient, "Admin:")
+}
+
+func TestCommandHandlerOnCommand_HelpShowsAdminCommandsForOwner(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("help", "", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Admin:")
+	assertLastSentContains(t, tgClient, "/user add")
+	assertLastSentContains(t, tgClient, "/user remove <user_id>")
+}
+
+func TestCommandHandlerOnCommand_HelpForUnauthorizedShowsPublicCommandsOnly(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("help", "", 999, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Available commands:")
+	assertLastSentContains(t, tgClient, "Onboarding:")
+	assertLastSentContains(t, tgClient, "/start")
+	assertLastSentNotContains(t, tgClient, "Sessions:")
+	assertLastSentNotContains(t, tgClient, "Automation:")
+	assertLastSentNotContains(t, tgClient, "Admin:")
+}
+
+func TestCommandHandlerOnCommand_HelpWithArgsShowsUsage(t *testing.T) {
+	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
+
+	err := handler.onCommand(context.Background(), newCommandEvent("help", "now", 101, 9001, nil))
+	if err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+
+	assertLastSentContains(t, tgClient, "Usage: /help")
+}
+
 func TestCommandHandlerOnCommand_AutoOnOffAndStatus(t *testing.T) {
 	handler, sm, _, tgClient := newCommandHandlerTestHarnessWithFormatting(t, "rich_markdown")
 
