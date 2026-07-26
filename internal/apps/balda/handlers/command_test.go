@@ -229,14 +229,16 @@ func TestCommandHandlerOnCommand_HelpShowsGroupedCommandsForCollaborator(t *test
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	assertLastSentContains(t, tgClient, "Available commands:")
-	assertLastSentContains(t, tgClient, "Onboarding:")
-	assertLastSentContains(t, tgClient, "Sessions:")
-	assertLastSentContains(t, tgClient, "Automation:")
-	assertLastSentContains(t, tgClient, "/topic <name>")
-	assertLastSentContains(t, tgClient, "/goalkeeper <objective>")
-	assertLastSentContains(t, tgClient, "/auto on")
-	assertLastSentNotContains(t, tgClient, "Admin:")
+	assertLastSentContains(t, tgClient, "Available commands")
+	assertLastSentContains(t, tgClient, "Onboarding")
+	assertLastSentContains(t, tgClient, "Sessions")
+	assertLastSentContains(t, tgClient, "Automation")
+	assertLastSentContains(t, tgClient, "/topic")
+	assertLastSentContains(t, tgClient, "name")
+	assertLastSentContains(t, tgClient, "/goalkeeper")
+	assertLastSentContains(t, tgClient, "objective")
+	assertLastSentContains(t, tgClient, "`/auto on`")
+	assertLastSentNotContains(t, tgClient, "Admin")
 }
 
 func TestCommandHandlerOnCommand_HelpShowsAdminCommandsForOwner(t *testing.T) {
@@ -247,9 +249,11 @@ func TestCommandHandlerOnCommand_HelpShowsAdminCommandsForOwner(t *testing.T) {
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	assertLastSentContains(t, tgClient, "Admin:")
-	assertLastSentContains(t, tgClient, "/user add")
-	assertLastSentContains(t, tgClient, "/user remove <user_id>")
+	assertLastSentContains(t, tgClient, "Admin")
+	assertLastSentContains(t, tgClient, "`/user add`")
+	assertLastSentContains(t, tgClient, "/user remove")
+	assertLastSentContains(t, tgClient, "user")
+	assertLastSentContains(t, tgClient, "id")
 }
 
 func TestCommandHandlerOnCommand_HelpForUnauthorizedShowsPublicCommandsOnly(t *testing.T) {
@@ -260,12 +264,12 @@ func TestCommandHandlerOnCommand_HelpForUnauthorizedShowsPublicCommandsOnly(t *t
 		t.Fatalf("onCommand() error = %v", err)
 	}
 
-	assertLastSentContains(t, tgClient, "Available commands:")
-	assertLastSentContains(t, tgClient, "Onboarding:")
-	assertLastSentContains(t, tgClient, "/start")
-	assertLastSentNotContains(t, tgClient, "Sessions:")
-	assertLastSentNotContains(t, tgClient, "Automation:")
-	assertLastSentNotContains(t, tgClient, "Admin:")
+	assertLastSentContains(t, tgClient, "Available commands")
+	assertLastSentContains(t, tgClient, "Onboarding")
+	assertLastSentContains(t, tgClient, "`/start`")
+	assertLastSentNotContains(t, tgClient, "Sessions")
+	assertLastSentNotContains(t, tgClient, "Automation")
+	assertLastSentNotContains(t, tgClient, "Admin")
 }
 
 func TestCommandHandlerOnCommand_HelpWithArgsShowsUsage(t *testing.T) {

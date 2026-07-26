@@ -134,38 +134,36 @@ func (h *CommandHandler) onHelpCommand(ctx context.Context, commandCtx baldatele
 	if strings.TrimSpace(commandCtx.Args) != "" {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage: /help")
 	}
-	return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, renderHelpMessage(h.canUseSessionCommand(ctx, commandCtx.UserID), h.ownerStore != nil && h.ownerStore.IsOwner(commandCtx.UserID)))
+	return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, renderHelpMessage(h.canUseSessionCommand(ctx, commandCtx.UserID), h.ownerStore != nil && h.ownerStore.IsOwner(commandCtx.UserID)))
 }
 
 func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 	var lines []string
-	lines = append(lines, "Available commands:")
-	lines = append(lines, "")
-	lines = append(lines, "Onboarding:")
-	lines = append(lines, "• /start — connect or restore access")
+	lines = append(lines, "# Available commands")
+	lines = append(lines, "", "## Onboarding", "", "- `/start` — connect or restore access")
 
 	if canUseSessionCommands {
-		lines = append(lines, "", "Sessions:")
-		lines = append(lines, "• /topic <name> — create a new DM topic session")
-		lines = append(lines, "• /reset — reset current session and start again")
-		lines = append(lines, "• /restart — alias of /reset")
-		lines = append(lines, "• /close — close topic or clear current DM session")
-		lines = append(lines, "• /cancel — request cancel for the current turn")
-		lines = append(lines, "• /locator — show current session locator")
-		lines = append(lines, "• /usage — show last provider usage for this session")
-		lines = append(lines, "", "Automation:")
-		lines = append(lines, "• /goalkeeper <objective> — start a goal run")
-		lines = append(lines, "• /goalkeeper clear — clear active goal run")
-		lines = append(lines, "• /auto — show auto mode status")
-		lines = append(lines, "• /auto on — enable auto mode")
-		lines = append(lines, "• /auto off — disable auto mode")
+		lines = append(lines, "", "## Sessions", "")
+		lines = append(lines, "- `/topic <name>` — create a new DM topic session")
+		lines = append(lines, "- `/reset` — reset current session and start again")
+		lines = append(lines, "- `/restart` — alias of `/reset`")
+		lines = append(lines, "- `/close` — close topic or clear current DM session")
+		lines = append(lines, "- `/cancel` — request cancel for the current turn")
+		lines = append(lines, "- `/locator` — show current session locator")
+		lines = append(lines, "- `/usage` — show last provider usage for this session")
+		lines = append(lines, "", "## Automation", "")
+		lines = append(lines, "- `/goalkeeper <objective>` — start a goal run")
+		lines = append(lines, "- `/goalkeeper clear` — clear active goal run")
+		lines = append(lines, "- `/auto` — show auto mode status")
+		lines = append(lines, "- `/auto on` — enable auto mode")
+		lines = append(lines, "- `/auto off` — disable auto mode")
 	}
 
 	if isOwner {
-		lines = append(lines, "", "Admin:")
-		lines = append(lines, "• /user add — create collaborator invite")
-		lines = append(lines, "• /user list — list collaborators and invites")
-		lines = append(lines, "• /user remove <user_id> — remove collaborator")
+		lines = append(lines, "", "## Admin", "")
+		lines = append(lines, "- `/user add` — create collaborator invite")
+		lines = append(lines, "- `/user list` — list collaborators and invites")
+		lines = append(lines, "- `/user remove <user_id>` — remove collaborator")
 	}
 
 	return strings.Join(lines, "\n")
