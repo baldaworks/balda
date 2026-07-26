@@ -548,6 +548,32 @@ func TestMessageContextFromEvent_CopiesEntities(t *testing.T) {
 	}
 }
 
+func TestMessageContextFromEvent_BotCommandInsideTextIsNotMarkedAsCommand(t *testing.T) {
+	text := "please check /help later"
+	entities := []client.MessageEntity{
+		{Type: "bot_command", Offset: 13, Length: 5},
+	}
+
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 99,
+			Chat: client.Chat{
+				Id:   2317500,
+				Type: "private",
+			},
+			From:     &client.User{Id: 2317500},
+			Text:     &text,
+			Entities: &entities,
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if got.HasCommand {
+		t.Fatal("has_command = true, want false when /command is not at offset 0")
+	}
+}
+
 func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T) {
 	topicID := 523431
 	isTopicMessage := false

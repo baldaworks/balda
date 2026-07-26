@@ -237,7 +237,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	hasCommand := false
 	if event.Message.Entities != nil {
 		for _, entity := range *event.Message.Entities {
-			if entity.Type == "bot_command" {
+			if entity.Type == "bot_command" && entity.Offset == 0 {
 				hasCommand = true
 				break
 			}
