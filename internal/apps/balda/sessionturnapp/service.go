@@ -10,6 +10,7 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/automode"
 	"github.com/normahq/balda/internal/apps/balda/automodecmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
@@ -55,6 +56,7 @@ type TurnExecutionService struct {
 
 type ExecutionRequest struct {
 	Text            string
+	Attachments     []attachment.Descriptor
 	Runner          *runner.Runner
 	UserID          string
 	RequesterUserID string
@@ -138,7 +140,10 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		topicID = address.TopicID
 	}
 
-	userContent := genai.NewContentFromText(req.Text, genai.RoleUser)
+	userContent, err := buildUserContent(req.Text, req.Attachments)
+	if err != nil {
+		return fmt.Errorf("build user content: %w", err)
+	}
 	jobBackedDelivery := req.Deliver && strings.TrimSpace(req.JobID) != "" && s.dispatcher != nil
 	req.DeliveryOptions = deliveryfmt.NormalizeOptions(req.DeliveryOptions)
 	progressPolicy := req.DeliveryOptions.ProgressPolicy
@@ -155,6 +160,42 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		Str("transport_user_id", req.UserID).
 		Logger().
 		WithContext(ctx)
+	inputPartCount := 0
+	inputTextPartCount := 0
+	inputInlineDataPartCount := 0
+	inputFileDataPartCount := 0
+	inputTextCharCount := 0
+	inlineMIMETypes := make([]string, 0, len(userContent.Parts))
+	if userContent != nil {
+		inputPartCount = len(userContent.Parts)
+		for _, part := range userContent.Parts {
+			if part == nil {
+				continue
+			}
+			if part.Text != "" {
+				inputTextPartCount++
+				inputTextCharCount += len(part.Text)
+			}
+			if part.InlineData != nil {
+				inputInlineDataPartCount++
+				if mimeType := strings.TrimSpace(part.InlineData.MIMEType); mimeType != "" {
+					inlineMIMETypes = append(inlineMIMETypes, mimeType)
+				}
+			}
+			if part.FileData != nil {
+				inputFileDataPartCount++
+			}
+		}
+	}
+	zerolog.Ctx(runCtx).Info().
+		Int("attachments_count", len(req.Attachments)).
+		Int("input_part_count", inputPartCount).
+		Int("input_text_part_count", inputTextPartCount).
+		Int("input_text_char_count", inputTextCharCount).
+		Int("input_inline_data_part_count", inputInlineDataPartCount).
+		Int("input_file_data_part_count", inputFileDataPartCount).
+		Strs("input_inline_data_mime_types", inlineMIMETypes).
+		Msg("assembled provider user content")
 	requesterUserID := strings.TrimSpace(req.RequesterUserID)
 	if requesterUserID == "" {
 		requesterUserID = strings.TrimSpace(req.UserID)

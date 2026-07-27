@@ -7,6 +7,7 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/automode"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
@@ -81,6 +82,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 			AddressKey:  request.DeliveryLocator.AddressKey,
 			AddressJSON: request.DeliveryLocator.AddressJSON,
 		},
+		Attachments:     attachment.NormalizeList(payload.Attachments),
 		MessageID:       payload.MessageID,
 		DeliveryOptions: request.DeliveryOptions,
 		Deliver:         payload.Deliver,
