@@ -11,6 +11,8 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/attachment"
+	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
@@ -63,6 +65,7 @@ type BaldaHandler struct {
 	progressEmitter    sessionturnapp.SessionProgressEmitter
 	turnExecution      *sessionturnapp.TurnExecutionService
 	questionService    *questions.Service
+	attachmentStore    attachmentstore.Store
 
 	mu          sync.RWMutex
 	ownerID     int64
@@ -90,6 +93,7 @@ type baldaHandlerDeps struct {
 	Logger            zerolog.Logger
 	TurnExecution     *sessionturnapp.TurnExecutionService
 	QuestionService   *questions.Service `optional:"true"`
+	AttachmentStore   attachmentstore.Store `optional:"true"`
 }
 
 // Start validates the Telegram identity and bootstraps owner state.
@@ -112,9 +116,19 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	if !ok {
 		return nil
 	}
+	if h.attachmentStore != nil && len(messageCtx.Attachments) > 0 {
+		persisted, err := h.attachmentStore.PersistTelegram(ctx, messageCtx.Attachments)
+		if err != nil {
+			h.logger.Warn().Err(err).Msg("failed to persist inbound telegram attachments")
+		} else {
+			messageCtx.Attachments = persisted
+		}
+	}
 
-	h.logger.Debug().
+	h.logger.Info().
 		Str("message_type", string(event.Type)).
+		Int("attachments_count", len(messageCtx.Attachments)).
+		Interface("attachments", attachment.LogFields(messageCtx.Attachments)).
 		Interface("raw_transport_message", event.Message).
 		Msg("received inbound telegram transport message")
 
@@ -158,7 +172,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		}
 		text = normalized
 	}
-	if strings.TrimSpace(text) == "" {
+	if strings.TrimSpace(text) == "" && len(messageCtx.Attachments) == 0 {
 		return nil
 	}
 
@@ -238,6 +252,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	if err := h.enqueueTurn(
 		ctx,
 		text,
+		messageCtx.Attachments,
 		ts,
 		locator,
 		messageCtx.MessageID,
@@ -262,6 +277,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 func (h *BaldaHandler) enqueueTurn(
 	ctx context.Context,
 	text string,
+	attachments []attachment.Descriptor,
 	ts *baldasession.TopicSession,
 	locator baldasession.SessionLocator,
 	messageID int,
@@ -280,16 +296,17 @@ func (h *BaldaHandler) enqueueTurn(
 		receivedAtNow = h.now
 	}
 	_, err := h.submitSessionTurn(ctx, turncmd.SessionTurnPayload{
-		Text:            text,
-		Locator:         locator,
-		UserID:          ts.GetUserID(),
-		RequesterUserID: strings.TrimSpace(requesterUserID),
-		AgentSessionID:  ts.GetAgentSessionID(),
-		MessageID:       messageID,
+		Text:             appendAttachmentSummary(text, attachments),
+		Attachments:      attachment.NormalizeList(attachments),
+		Locator:          locator,
+		UserID:           ts.GetUserID(),
+		RequesterUserID:  strings.TrimSpace(requesterUserID),
+		AgentSessionID:   ts.GetAgentSessionID(),
+		MessageID:        messageID,
 		ReplyToMessageID: replyToMessageID,
-		ReceivedAt:      receivedAtNow().UTC().Format(time.RFC3339),
-		TopicID:         topicID,
-		DeliveryOptions: deliveryfmt.Options{
+		ReceivedAt:       receivedAtNow().UTC().Format(time.RFC3339),
+		TopicID:          topicID,
+		DeliveryOptions:  deliveryfmt.Options{
 			Profile:        deliveryOptions.Profile,
 			ProgressPolicy: progressPolicy,
 		},

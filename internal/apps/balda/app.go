@@ -13,6 +13,7 @@ import (
 	"github.com/ipfans/fxlogger"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
@@ -44,6 +45,7 @@ import (
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog/log"
+	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/updatepoller"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
@@ -255,6 +257,12 @@ func Module(
 			},
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
+			},
+			func(tgCfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface) (attachmentstore.Store, error) {
+				return attachmentstore.New(attachmentstore.Config{
+					Engine:   cfg.Balda.Features.Attachments.Store.Engine,
+					StateDir: stateDir,
+				}, attachmentstore.NewTelegramDownloader(tgClient, tgCfg.Token))
 			},
 			fx.Annotate(
 				func(store *memory.Store) bool {

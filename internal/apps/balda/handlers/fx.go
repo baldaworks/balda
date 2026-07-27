@@ -123,6 +123,7 @@ func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
 		logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
 		turnExecution:      deps.TurnExecution,
 		questionService:    deps.QuestionService,
+		attachmentStore:    deps.AttachmentStore,
 		now:                time.Now,
 	}, nil
 }

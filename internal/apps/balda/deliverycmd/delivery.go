@@ -24,6 +24,7 @@ type Payload struct {
 	MessageID  string            `json:"message_id,omitempty"`
 	Handle     string            `json:"handle,omitempty"`
 	Progress   *Progress         `json:"progress,omitempty"`
+	Media      *Media            `json:"media,omitempty"`
 }
 
 type Mode string
@@ -103,6 +104,8 @@ const (
 	ModeChatAction            Mode = "chat_action"
 	ModeProgress              Mode = "progress"
 	ModeClearQuestionControls Mode = "clear_question_controls"
+	ModePhoto                 Mode = "photo"
+	ModeDocument              Mode = "document"
 )
 
 const (
@@ -246,6 +249,35 @@ func ChatActionEnvelope(jobID string, from actorlayer.ActorAddress, locator Loca
 	}, "")
 }
 
+func PhotoEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, fileID, caption, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return envelope(jobID, from, Payload{
+		JobID:      strings.TrimSpace(jobID),
+		Locator:    locator,
+		Mode:       ModePhoto,
+		Settlement: normalizeSettlementPolicy(settlement),
+		Media: &Media{
+			Kind:    "photo",
+			FileID:  strings.TrimSpace(fileID),
+			Caption: strings.TrimSpace(caption),
+		},
+	}, dedupeSuffix)
+}
+
+func DocumentEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, fileID, caption, name, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return envelope(jobID, from, Payload{
+		JobID:      strings.TrimSpace(jobID),
+		Locator:    locator,
+		Mode:       ModeDocument,
+		Settlement: normalizeSettlementPolicy(settlement),
+		Media: &Media{
+			Kind:    "document",
+			FileID:  strings.TrimSpace(fileID),
+			Caption: strings.TrimSpace(caption),
+			Name:    strings.TrimSpace(name),
+		},
+	}, dedupeSuffix)
+}
+
 func ProgressActivityEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, policy ProgressPolicy, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:   strings.TrimSpace(jobID),
@@ -369,6 +401,13 @@ func Validate(payload Payload) error {
 		}
 		if strings.TrimSpace(payload.MessageID) == "" {
 			return fmt.Errorf("provider message id is required")
+		}
+	case ModePhoto, ModeDocument:
+		if payload.Media == nil {
+			return fmt.Errorf("delivery media is required")
+		}
+		if strings.TrimSpace(payload.Media.FileID) == "" {
+			return fmt.Errorf("delivery media file id is required")
 		}
 	default:
 		return fmt.Errorf("unsupported delivery mode %q", payload.Mode)

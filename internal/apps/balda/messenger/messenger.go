@@ -382,6 +382,70 @@ func (m *Messenger) SendAgentReplyLastMessageIDAndMode(ctx context.Context, chat
 	return result.LastMessageID, nil
 }
 
+func (m *Messenger) SendPhotoByFileID(ctx context.Context, chatID int64, fileID, caption string, topicID int) error {
+	req := client.SendPhotoJSONRequestBody{
+		ChatId: chatID,
+		Photo:  strings.TrimSpace(fileID),
+	}
+	if trimmed := strings.TrimSpace(caption); trimmed != "" {
+		req.Caption = &trimmed
+	}
+	if topicID != 0 {
+		req.MessageThreadId = &topicID
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendPhotoWithResponse(sendCtx, req)
+	if err != nil {
+		return telegramTransportError("sending photo", chatID, err)
+	}
+	if resp == nil {
+		return telegramNoResponseError("sending photo", chatID)
+	}
+	if resp.JSON400 != nil {
+		return telegramHTTPError("sending photo", chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return telegramHTTPError("sending photo", chatID, http.StatusUnauthorized, resp.JSON401.Description)
+	}
+	if resp.JSON200 == nil {
+		return telegramHTTPError("sending photo", chatID, resp.StatusCode(), "")
+	}
+	return nil
+}
+
+func (m *Messenger) SendDocumentByFileID(ctx context.Context, chatID int64, fileID, caption, _ string, topicID int) error {
+	req := client.SendDocumentJSONRequestBody{
+		ChatId:   chatID,
+		Document: strings.TrimSpace(fileID),
+	}
+	if trimmed := strings.TrimSpace(caption); trimmed != "" {
+		req.Caption = &trimmed
+	}
+	if topicID != 0 {
+		req.MessageThreadId = &topicID
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendDocumentWithResponse(sendCtx, req)
+	if err != nil {
+		return telegramTransportError("sending document", chatID, err)
+	}
+	if resp == nil {
+		return telegramNoResponseError("sending document", chatID)
+	}
+	if resp.JSON400 != nil {
+		return telegramHTTPError("sending document", chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return telegramHTTPError("sending document", chatID, http.StatusUnauthorized, resp.JSON401.Description)
+	}
+	if resp.JSON200 == nil {
+		return telegramHTTPError("sending document", chatID, resp.StatusCode(), "")
+	}
+	return nil
+}
+
 // SendAgentReplyWithInlineKeyboardLastMessageIDAndMode sends a single final
 // reply with Telegram-native controls. If Telegram rejects the controlled
 // message, it retries with a self-contained text fallback.

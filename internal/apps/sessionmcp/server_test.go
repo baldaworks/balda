@@ -20,6 +20,11 @@ type recordingQuestionService struct {
 	output SessionQuestionOutput
 }
 
+type recordingSendAttachmentService struct {
+	inputs  []SessionSendAttachmentInput
+	output  SessionSendAttachmentOutput
+}
+
 func (r *recordingWaitScheduler) ScheduleSessionWait(_ context.Context, in SessionWaitInput) error {
 	r.inputs = append(r.inputs, in)
 	return nil
@@ -44,6 +49,14 @@ func (r *recordingQuestionService) StartSessionQuestion(_ context.Context, in Se
 	return r.output, nil
 }
 
+func (r *recordingSendAttachmentService) SendSessionAttachment(_ context.Context, in SessionSendAttachmentInput) (SessionSendAttachmentOutput, error) {
+	r.inputs = append(r.inputs, in)
+	if !r.output.OK {
+		r.output.ToolOutcome = ToolOutcome{OK: true}
+	}
+	return r.output, nil
+}
+
 func TestSessionStateServerListsTools(t *testing.T) {
 	ctx, cleanup, session := newTestSession(t, NewMemoryStore(), nil)
 	defer cleanup()
@@ -59,6 +72,9 @@ func TestSessionStateServerListsTools(t *testing.T) {
 	}
 
 	want := []string{
+		"balda.session.question",
+		"balda.session.send_attachment",
+		"balda.session.wait",
 		"balda.state.clear",
 		"balda.state.delete",
 		"balda.state.get",
@@ -71,8 +87,6 @@ func TestSessionStateServerListsTools(t *testing.T) {
 		"balda.state.ns_list",
 		"balda.state.ns_set",
 		"balda.state.ns_set_json",
-		"balda.session.wait",
-		"balda.session.question",
 	}
 
 	if len(got) != len(want) {
@@ -548,10 +562,14 @@ func TestSharedStateAcrossStores(t *testing.T) {
 // Test helpers
 
 func newTestSession(t *testing.T, store Store, waitScheduler SessionWaitService) (context.Context, func(), *mcp.ClientSession) {
-	return newTestSessionWithQuestionService(t, store, waitScheduler, nil)
+	return newTestSessionWithServices(t, store, waitScheduler, nil, nil)
 }
 
 func newTestSessionWithQuestionService(t *testing.T, store Store, waitScheduler SessionWaitService, questionService SessionQuestionService) (context.Context, func(), *mcp.ClientSession) {
+	return newTestSessionWithServices(t, store, waitScheduler, questionService, nil)
+}
+
+func newTestSessionWithServices(t *testing.T, store Store, waitScheduler SessionWaitService, questionService SessionQuestionService, sendAttachmentService SessionSendAttachmentService) (context.Context, func(), *mcp.ClientSession) {
 	t.Helper()
 	if store == nil {
 		t.Fatal("store is required")
@@ -560,7 +578,7 @@ func newTestSessionWithQuestionService(t *testing.T, store Store, waitScheduler 
 		&mcp.Implementation{Name: "test-session-state", Version: "1.0.0"},
 		nil,
 	)
-	RegisterTools(server, store, waitScheduler, questionService)
+	RegisterTools(server, store, waitScheduler, questionService, sendAttachmentService)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -581,6 +599,41 @@ func newTestSessionWithQuestionService(t *testing.T, store Store, waitScheduler 
 		_ = session.Close()
 	}
 	return ctx, cleanup, session
+}
+
+func TestSessionSendAttachmentToolInvokesService(t *testing.T) {
+	store := NewMemoryStore()
+	sendSvc := &recordingSendAttachmentService{
+		output: SessionSendAttachmentOutput{
+			ToolOutcome: ToolOutcome{OK: true},
+			Sent:        true,
+			Message:     "attachment sent",
+		},
+	}
+	ctx, cleanup, session := newTestSessionWithServices(t, store, nil, nil, sendSvc)
+	defer cleanup()
+
+	result := callTool(t, ctx, session, "balda.session.send_attachment", map[string]any{
+		"locator": map[string]any{
+			"session_id":   "tg-2317500-536036",
+			"channel_type": "telegram",
+			"address_key":  "2317500:536036",
+		},
+		"kind":      "photo",
+		"file_id":   "file-123",
+		"caption":   "hello",
+		"file_name": "",
+	})
+	got := structuredResultMap(t, result)
+	if len(sendSvc.inputs) != 1 {
+		t.Fatalf("send attachment inputs = %d, want 1", len(sendSvc.inputs))
+	}
+	if sendSvc.inputs[0].Kind != "photo" || sendSvc.inputs[0].FileID != "file-123" || sendSvc.inputs[0].Caption != "hello" {
+		t.Fatalf("send attachment input = %+v", sendSvc.inputs[0])
+	}
+	if sent, _ := got["sent"].(bool); !sent {
+		t.Fatalf("tool result sent = %v, want true", got["sent"])
+	}
 }
 
 func callTool(t *testing.T, ctx context.Context, session *mcp.ClientSession, toolName string, args map[string]any) *mcp.CallToolResult {

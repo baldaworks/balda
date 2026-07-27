@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
@@ -43,6 +44,8 @@ type TelegramMessenger interface {
 	SendDraftPlain(ctx context.Context, chatID int64, draftID int, text string, topicID int) error
 	SendDraftMarkdownWithMode(ctx context.Context, chatID int64, draftID int, text string, topicID int, mode string) error
 	SendChatAction(ctx context.Context, chatID int64, topicID int, action string) error
+	SendPhotoByFileID(ctx context.Context, chatID int64, fileID, caption string, topicID int) error
+	SendDocumentByFileID(ctx context.Context, chatID int64, fileID, caption, fileName string, topicID int) error
 }
 
 // Adapter maps Telegram runtime events and operations to balda session locators.
@@ -79,6 +82,7 @@ type MessageContext struct {
 	ReplyContent     string
 	ForwardedContent string
 	Text             string
+	Attachments      []attachment.Descriptor
 	HasCommand       bool
 	DeliveryOptions  deliveryfmt.Options
 	ProgressPolicy   deliveryfmt.ProgressPolicy
@@ -158,6 +162,18 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		err = a.SendProgress(ctx, locator, operation.Progress)
 	case deliverycmd.OperationClearQuestionControls:
 		err = a.SettleQuestionControls(ctx, locator, operation.MessageID, operation.Handle, operation.Text)
+	case deliverycmd.OperationPhoto:
+		if operation.Media == nil {
+			err = fmt.Errorf("telegram photo operation requires media payload")
+			break
+		}
+		err = a.SendPhotoByFileID(ctx, locator, operation.Media.FileID, operation.Media.Caption)
+	case deliverycmd.OperationDocument:
+		if operation.Media == nil {
+			err = fmt.Errorf("telegram document operation requires media payload")
+			break
+		}
+		err = a.SendDocumentByFileID(ctx, locator, operation.Media.FileID, operation.Media.Caption, operation.Media.Name)
 	default:
 		err = fmt.Errorf("unsupported telegram delivery operation %q", operation.Kind)
 	}
@@ -233,6 +249,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	replyContent := replyContentFromMessage(event.Message)
 	forwardedFromBot := forwardedOriginIsBot(event.Message.ForwardOrigin)
 	forwardedContent := forwardedContentFromMessage(event.Message)
+	attachments := attachmentsFromMessage(event.Message)
 
 	hasCommand := false
 	if event.Message.Entities != nil {
@@ -260,6 +277,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		ReplyContent:     replyContent,
 		ForwardedContent: forwardedContent,
 		Text:             text,
+		Attachments:      attachments,
 		HasCommand:       hasCommand,
 		DeliveryOptions: deliveryfmt.Options{
 			Profile: deliveryfmt.Profile{
@@ -279,6 +297,71 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		},
 		IsDM: event.Message.Chat.Type == chatTypePrivate,
 	}, true
+}
+
+func attachmentsFromMessage(message *client.Message) []attachment.Descriptor {
+	if message == nil {
+		return nil
+	}
+	out := make([]attachment.Descriptor, 0, 2)
+	caption := ""
+	if message.Caption != nil {
+		caption = strings.TrimSpace(*message.Caption)
+	}
+	if photo := largestPhoto(message.Photo); photo != nil {
+		sizeBytes := int64(0)
+		if photo.FileSize != nil {
+			sizeBytes = int64(*photo.FileSize)
+		}
+		out = append(out, attachment.Descriptor{
+			Kind:         attachment.KindPhoto,
+			FileID:       strings.TrimSpace(photo.FileId),
+			FileUniqueID: strings.TrimSpace(photo.FileUniqueId),
+			SizeBytes:    sizeBytes,
+			Caption:      caption,
+		})
+	}
+	if doc := message.Document; doc != nil {
+		sizeBytes := int64(0)
+		if doc.FileSize != nil {
+			sizeBytes = *doc.FileSize
+		}
+		fileName := ""
+		if doc.FileName != nil {
+			fileName = strings.TrimSpace(*doc.FileName)
+		}
+		mimeType := ""
+		if doc.MimeType != nil {
+			mimeType = strings.TrimSpace(*doc.MimeType)
+		}
+		out = append(out, attachment.Descriptor{
+			Kind:         attachment.KindDocument,
+			FileID:       strings.TrimSpace(doc.FileId),
+			FileUniqueID: strings.TrimSpace(doc.FileUniqueId),
+			FileName:     fileName,
+			MIMEType:     mimeType,
+			SizeBytes:    sizeBytes,
+			Caption:      caption,
+		})
+	}
+	return attachment.NormalizeList(out)
+}
+
+func largestPhoto(photos *[]client.PhotoSize) *client.PhotoSize {
+	if photos == nil || len(*photos) == 0 {
+		return nil
+	}
+	best := &(*photos)[0]
+	bestArea := best.Width * best.Height
+	for i := 1; i < len(*photos); i++ {
+		candidate := &(*photos)[i]
+		area := candidate.Width * candidate.Height
+		if area > bestArea {
+			best = candidate
+			bestArea = area
+		}
+	}
+	return best
 }
 
 func replyContentFromMessage(message *client.Message) string {
@@ -845,6 +928,22 @@ func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator,
 	default:
 		return fmt.Errorf("unsupported telegram progress kind %q", progress.Kind)
 	}
+}
+
+func (a *Adapter) SendPhotoByFileID(ctx context.Context, locator deliverycmd.Locator, fileID, caption string) error {
+	chatID, topicID, err := telegramTuple(locator)
+	if err != nil {
+		return err
+	}
+	return a.messenger.SendPhotoByFileID(ctx, chatID, fileID, caption, topicID)
+}
+
+func (a *Adapter) SendDocumentByFileID(ctx context.Context, locator deliverycmd.Locator, fileID, caption, fileName string) error {
+	chatID, topicID, err := telegramTuple(locator)
+	if err != nil {
+		return err
+	}
+	return a.messenger.SendDocumentByFileID(ctx, chatID, fileID, caption, fileName, topicID)
 }
 
 // CreateTopicLocator creates a Telegram forum topic and returns the balda locator for it.

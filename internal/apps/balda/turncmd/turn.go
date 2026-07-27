@@ -6,6 +6,7 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
+	"github.com/normahq/balda/internal/apps/balda/attachment"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -19,26 +20,27 @@ const (
 )
 
 type SessionTurnPayload struct {
-	JobID           string                       `json:"job_id,omitempty"`
-	Text            string                       `json:"text"`
-	Locator         baldasession.SessionLocator  `json:"locator"`
-	ReportTo        *baldasession.SessionLocator `json:"report_to,omitempty"`
-	ParentJobID     string                       `json:"parent_job_id,omitempty"`
-	UserID          string                       `json:"user_id,omitempty"`
-	RequesterUserID string                       `json:"requester_user_id,omitempty"`
-	AgentSessionID  string                       `json:"agent_session_id,omitempty"`
-	ScheduledJobID  string                       `json:"scheduled_job_id,omitempty"`
-	MessageID       int                          `json:"message_id,omitempty"`
-	ReplyToMessageID int                         `json:"reply_to_message_id,omitempty"`
-	ReceivedAt      string                       `json:"received_at,omitempty"`
-	SteeringMessages []SteeringMessage          `json:"steering_messages,omitempty"`
-	TopicID         int                          `json:"topic_id,omitempty"`
-	DeliveryOptions deliveryfmt.Options          `json:"delivery_options,omitempty,omitzero"`
-	ProgressPolicy  deliveryfmt.ProgressPolicy   `json:"progress_policy,omitempty"`
-	Deliver         bool                         `json:"deliver"`
-	Source          string                       `json:"source,omitempty"`
-	DedupeKey       string                       `json:"dedupe_key,omitempty"`
-	QuestionID      string                       `json:"question_id,omitempty"`
+	JobID            string                        `json:"job_id,omitempty"`
+	Text             string                        `json:"text"`
+	Attachments      []attachment.Descriptor       `json:"attachments,omitempty"`
+	Locator          baldasession.SessionLocator   `json:"locator"`
+	ReportTo         *baldasession.SessionLocator  `json:"report_to,omitempty"`
+	ParentJobID      string                        `json:"parent_job_id,omitempty"`
+	UserID           string                        `json:"user_id,omitempty"`
+	RequesterUserID  string                        `json:"requester_user_id,omitempty"`
+	AgentSessionID   string                        `json:"agent_session_id,omitempty"`
+	ScheduledJobID   string                        `json:"scheduled_job_id,omitempty"`
+	MessageID        int                           `json:"message_id,omitempty"`
+	ReplyToMessageID int                           `json:"reply_to_message_id,omitempty"`
+	ReceivedAt       string                        `json:"received_at,omitempty"`
+	SteeringMessages []SteeringMessage             `json:"steering_messages,omitempty"`
+	TopicID          int                           `json:"topic_id,omitempty"`
+	DeliveryOptions  deliveryfmt.Options           `json:"delivery_options,omitempty,omitzero"`
+	ProgressPolicy   deliveryfmt.ProgressPolicy    `json:"progress_policy,omitempty"`
+	Deliver          bool                          `json:"deliver"`
+	Source           string                        `json:"source,omitempty"`
+	DedupeKey        string                        `json:"dedupe_key,omitempty"`
+	QuestionID       string                        `json:"question_id,omitempty"`
 }
 
 type SteeringMessage struct {

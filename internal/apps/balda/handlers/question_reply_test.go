@@ -128,6 +128,14 @@ func (m *callbackMessenger) AnswerCallbackQuery(_ context.Context, _ string, tex
 	return nil
 }
 
+func (m *callbackMessenger) SendPhotoByFileID(context.Context, int64, string, string, int) error {
+	return nil
+}
+
+func (m *callbackMessenger) SendDocumentByFileID(context.Context, int64, string, string, string, int) error {
+	return nil
+}
+
 func TestHandleQuestionCallbackSettlesAndDispatchesContinuation(t *testing.T) {
 	store := &fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}
 	dispatcher := &fakeTurnDispatcher{}

@@ -15,6 +15,7 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/controlcmd"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
 	"github.com/normahq/runtime/v2/mcpregistry"
@@ -150,6 +151,7 @@ func TestBundledBaldaServerInstructionsReflectWorkspaceMode(t *testing.T) {
 		instructions := `Use this bundled balda server for session-local balda tools.
 
 - balda.state stores persistent Balda session and app state in state.db.
+- balda.session.send_attachment can resend Telegram photos and documents back into the active session when you already have a provider file_id. Prefer it for returning user-provided files.
 - balda config editing is not exposed through MCP; edit the balda config file directly.
 - balda.control.shutdown gracefully stops the whole Balda process; use it only when the user explicitly asks for restart or shutdown. After installing a new override binary, prefer balda.control.shutdown for restart. Use kill -TERM 1 only as a fallback when the in-process shutdown path is unavailable or broken.`
 		if memoryEnabled {
@@ -169,6 +171,9 @@ func TestBundledBaldaServerInstructionsReflectWorkspaceMode(t *testing.T) {
 	}
 	if !strings.Contains(enabled, "balda.memory") {
 		t.Fatalf("bundledBaldaServerInstructions(true, true) = %q, want memory guidance", enabled)
+	}
+	if !strings.Contains(enabled, "balda.session.send_attachment") {
+		t.Fatalf("bundledBaldaServerInstructions(true, true) = %q, want attachment guidance", enabled)
 	}
 	if strings.Contains(enabled, "balda.agents.") {
 		t.Fatalf("bundledBaldaServerInstructions(true, true) = %q, want balda.agents absent", enabled)
@@ -196,6 +201,81 @@ func TestCanonicalSessionLocatorReconstructsTelegramAddress(t *testing.T) {
 	}
 	if got.AddressJSON != `{"chat_id":2317500,"topic_id":536036}` {
 		t.Fatalf("address_json = %q, want canonical Telegram topic", got.AddressJSON)
+	}
+}
+
+func TestSessionSendAttachmentServiceDispatchesPhotoEnvelope(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &recordingDispatcher{}
+	svc := sessionSendAttachmentService{dispatcher: dispatcher}
+	out, err := svc.SendSessionAttachment(context.Background(), sessionmcp.SessionSendAttachmentInput{
+		Locator: sessionmcp.SessionLocatorInput{
+			SessionID:   "tg-2317500-536036",
+			ChannelType: "telegram",
+			AddressKey:  "2317500:536036",
+		},
+		Kind:        "photo",
+		FileID:      "file-photo-1",
+		Caption:     "hello",
+		RequestedBy: "tg-101",
+	})
+	if err != nil {
+		t.Fatalf("SendSessionAttachment() error = %v", err)
+	}
+	if !out.Sent {
+		t.Fatalf("SendSessionAttachment() sent = false, want true")
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("dispatched envelopes = %d, want 1", len(dispatcher.envelopes))
+	}
+	var payload deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Mode != deliverycmd.ModePhoto {
+		t.Fatalf("payload mode = %q, want %q", payload.Mode, deliverycmd.ModePhoto)
+	}
+	if payload.Media == nil || payload.Media.FileID != "file-photo-1" || payload.Media.Caption != "hello" {
+		t.Fatalf("payload media = %+v", payload.Media)
+	}
+}
+
+func TestSessionSendAttachmentServiceDispatchesDocumentEnvelope(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &recordingDispatcher{}
+	svc := sessionSendAttachmentService{dispatcher: dispatcher}
+	out, err := svc.SendSessionAttachment(context.Background(), sessionmcp.SessionSendAttachmentInput{
+		Locator: sessionmcp.SessionLocatorInput{
+			SessionID:   "tg-2317500-536036",
+			ChannelType: "telegram",
+			AddressKey:  "2317500:536036",
+		},
+		Kind:        "document",
+		FileID:      "file-doc-1",
+		Caption:     "report",
+		FileName:    "report.pdf",
+		RequestedBy: "tg-101",
+	})
+	if err != nil {
+		t.Fatalf("SendSessionAttachment() error = %v", err)
+	}
+	if !out.Sent {
+		t.Fatalf("SendSessionAttachment() sent = false, want true")
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("dispatched envelopes = %d, want 1", len(dispatcher.envelopes))
+	}
+	var payload deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Mode != deliverycmd.ModeDocument {
+		t.Fatalf("payload mode = %q, want %q", payload.Mode, deliverycmd.ModeDocument)
+	}
+	if payload.Media == nil || payload.Media.FileID != "file-doc-1" || payload.Media.Caption != "report" || payload.Media.Name != "report.pdf" {
+		t.Fatalf("payload media = %+v", payload.Media)
 	}
 }
 

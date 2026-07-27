@@ -158,11 +158,20 @@ type PermissionsConfig struct {
 }
 
 type FeaturesConfig struct {
-	AutoMode AutoModeConfig `mapstructure:"automode"`
+	AutoMode    AutoModeConfig    `mapstructure:"automode"`
+	Attachments AttachmentsConfig `mapstructure:"attachments"`
 }
 
 type AutoModeConfig struct {
 	MaxTurns int `mapstructure:"max_turns"`
+}
+
+type AttachmentsConfig struct {
+	Store AttachmentsStoreConfig `mapstructure:"store"`
+}
+
+type AttachmentsStoreConfig struct {
+	Engine string `mapstructure:"engine"`
 }
 
 // GoalConfig controls /goalkeeper command execution behavior.

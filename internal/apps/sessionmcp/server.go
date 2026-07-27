@@ -15,11 +15,11 @@ const (
 )
 
 // RegisterTools adds session-state MCP tools to an existing server.
-func RegisterTools(server *mcp.Server, store Store, waitService SessionWaitService, questionService SessionQuestionService) {
+func RegisterTools(server *mcp.Server, store Store, waitService SessionWaitService, questionService SessionQuestionService, sendAttachmentService SessionSendAttachmentService) {
 	if server == nil || store == nil {
 		return
 	}
-	svc := &service{store: store, waitService: waitService, questionService: questionService}
+	svc := &service{store: store, waitService: waitService, questionService: questionService, sendAttachmentService: sendAttachmentService}
 	svc.registerTools(server)
 }
 
@@ -27,6 +27,7 @@ type service struct {
 	store           Store
 	waitService     SessionWaitService
 	questionService SessionQuestionService
+	sendAttachmentService SessionSendAttachmentService
 }
 
 func (s *service) registerTools(server *mcp.Server) {
@@ -61,6 +62,15 @@ func (s *service) registerTools(server *mcp.Server) {
 			OpenWorldHint:   boolPointer(false),
 		},
 	}, s.sessionQuestion)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "balda.session.send_attachment",
+		Description: "Send a Telegram attachment into a specific Balda session using an existing provider file_id. Supports kind=photo or kind=document.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Send session attachment",
+			DestructiveHint: boolPointer(false),
+			OpenWorldHint:   boolPointer(false),
+		},
+	}, s.sessionSendAttachment)
 }
 
 // nsKey builds a namespaced key for isolation.
@@ -264,6 +274,19 @@ func (s *service) nsList(ctx context.Context, _ *mcp.CallToolRequest, in namespa
 		}
 	}
 	return nil, listKeysOutput{ToolOutcome: okOutcome(), Keys: stripped}, nil
+}
+
+func (s *service) sessionSendAttachment(ctx context.Context, _ *mcp.CallToolRequest, in SessionSendAttachmentInput) (*mcp.CallToolResult, SessionSendAttachmentOutput, error) {
+	if s.sendAttachmentService == nil {
+		result, out := backendFailure("balda.session.send_attachment", fmt.Errorf("session attachment service is required"))
+		return result, SessionSendAttachmentOutput{ToolOutcome: out}, nil
+	}
+	out, err := s.sendAttachmentService.SendSessionAttachment(ctx, in)
+	if err != nil {
+		result, toolOut := backendFailure("balda.session.send_attachment", err)
+		return result, SessionSendAttachmentOutput{ToolOutcome: toolOut}, nil
+	}
+	return nil, out, nil
 }
 
 func (s *service) sessionWait(ctx context.Context, _ *mcp.CallToolRequest, in SessionWaitInput) (*mcp.CallToolResult, sessionWaitOutput, error) {

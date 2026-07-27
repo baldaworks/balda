@@ -184,3 +184,22 @@ type SessionQuestionOutput struct {
 type SessionQuestionService interface {
 	StartSessionQuestion(ctx context.Context, in SessionQuestionInput) (SessionQuestionOutput, error)
 }
+
+type SessionSendAttachmentInput struct {
+	Locator     SessionLocatorInput `json:"locator" jsonschema:"target session locator for attachment delivery"`
+	Kind        string              `json:"kind" jsonschema:"attachment kind: photo or document"`
+	FileID      string              `json:"file_id" jsonschema:"provider file identifier to resend"`
+	Caption     string              `json:"caption,omitempty" jsonschema:"optional attachment caption"`
+	FileName    string              `json:"file_name,omitempty" jsonschema:"optional original file name for documents"`
+	RequestedBy string              `json:"requested_by,omitempty" jsonschema:"optional requester id for audit/debug metadata"`
+}
+
+type SessionSendAttachmentOutput struct {
+	ToolOutcome
+	Sent    bool   `json:"sent,omitempty" jsonschema:"true when the attachment delivery was published successfully"`
+	Message string `json:"message,omitempty" jsonschema:"human-readable status message"`
+}
+
+type SessionSendAttachmentService interface {
+	SendSessionAttachment(ctx context.Context, in SessionSendAttachmentInput) (SessionSendAttachmentOutput, error)
+}

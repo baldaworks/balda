@@ -176,6 +176,12 @@ balda:
       # Consecutive synthetic auto-turn cap for /auto continuation chains.
       # Balda clamps invalid values to 5.
       max_turns: 10
+    attachments:
+      store:
+        # Attachment store engine:
+        # - off: do not persist inbound attachments
+        # - local: save inbound attachments under ${balda.state_dir}/attachments
+        engine: "local"
 
   goal:
     # /goal worker-validator loop iteration cap.

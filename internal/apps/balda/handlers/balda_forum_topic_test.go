@@ -574,6 +574,57 @@ func TestBaldaHandlerOnMessage_PublishesDirectSessionTurn(t *testing.T) {
 	}
 }
 
+func TestBaldaHandlerOnMessage_PublishesAttachmentOnlySessionTurn(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
+
+	size := 81375
+	event := &events.MessageEvent{
+		Type: messagetype.Photo,
+		Message: &client.Message{
+			Chat: client.Chat{
+				Id:   9001,
+				Type: "private",
+			},
+			Photo: &[]client.PhotoSize{
+				{
+					FileId:       "photo-file-id",
+					FileUniqueId: "photo-unique-id",
+					FileSize:     &size,
+					Width:        900,
+					Height:       896,
+				},
+			},
+			From: &client.User{Id: 101},
+		},
+	}
+
+	if err := handler.onMessage(context.Background(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
+	}
+	var payload actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(turns.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if len(payload.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(payload.Attachments))
+	}
+	if payload.Attachments[0].Kind != "photo" {
+		t.Fatalf("attachment kind = %q, want photo", payload.Attachments[0].Kind)
+	}
+	if !strings.Contains(payload.Text, "Attachment manifest:") {
+		t.Fatalf("payload text = %q, want attachment manifest", payload.Text)
+	}
+	if !strings.Contains(payload.Text, "kind: photo") {
+		t.Fatalf("payload text = %q, want photo attachment metadata", payload.Text)
+	}
+}
+
 func TestBaldaHandlerOnMessage_ChannelReplyToDifferentBotIgnored(t *testing.T) {
 	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
 

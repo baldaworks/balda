@@ -64,6 +64,14 @@ func (m *recordingQuestionMessenger) TelegramFormattingMode() string {
 	return telegramfmt.ModeRichMarkdown
 }
 
+func (m *recordingQuestionMessenger) SendPhotoByFileID(context.Context, int64, string, string, int) error {
+	return nil
+}
+
+func (m *recordingQuestionMessenger) SendDocumentByFileID(context.Context, int64, string, string, string, int) error {
+	return nil
+}
+
 func (m *recordingQuestionMessenger) SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(
 	_ context.Context,
 	chatID, receiverUserID int64,

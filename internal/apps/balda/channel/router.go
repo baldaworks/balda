@@ -110,3 +110,36 @@ func (r *Router) SendProgress(ctx context.Context, locator deliverycmd.Locator, 
 	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{Kind: deliverycmd.OperationProgress, Progress: progress})
 	return err
 }
+
+func (r *Router) SendPhoto(ctx context.Context, locator deliverycmd.Locator, fileID, caption string) error {
+	adapter, err := r.adapterFor(locator)
+	if err != nil {
+		return err
+	}
+	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{
+		Kind: deliverycmd.OperationPhoto,
+		Media: &deliverycmd.Media{
+			Kind:    "photo",
+			FileID:  fileID,
+			Caption: caption,
+		},
+	})
+	return err
+}
+
+func (r *Router) SendDocument(ctx context.Context, locator deliverycmd.Locator, fileID, caption, name string) error {
+	adapter, err := r.adapterFor(locator)
+	if err != nil {
+		return err
+	}
+	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{
+		Kind: deliverycmd.OperationDocument,
+		Media: &deliverycmd.Media{
+			Kind:    "document",
+			FileID:  fileID,
+			Caption: caption,
+			Name:    name,
+		},
+	})
+	return err
+}

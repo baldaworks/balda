@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
@@ -137,6 +138,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	instructions := `Use this bundled balda server for session-local balda tools.
 
 - balda.state stores persistent Balda session and app state in state.db.
+- balda.session.send_attachment can resend Telegram photos and documents back into the active session when you already have a provider file_id. Prefer it for returning user-provided files.
 - balda config editing is not exposed through MCP; edit the balda config file directly.
 - balda.control.shutdown gracefully stops the whole Balda process; use it only when the user explicitly asks for restart or shutdown. After installing a new override binary, prefer balda.control.shutdown for restart. Use kill -TERM 1 only as a fallback when the in-process shutdown path is unavailable or broken.`
 	if m.memoryStore.MemoryEnabled() {
@@ -156,7 +158,13 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		&mcp.ServerOptions{Instructions: instructions},
 	)
 
-	sessionmcp.RegisterTools(server, m.stateStore, sessionWaitService{dispatcher: m.dispatcher, jobs: m.scheduledJobs}, sessionQuestionService{service: m.questionService, dispatcher: m.dispatcher})
+	sessionmcp.RegisterTools(
+		server,
+		m.stateStore,
+		sessionWaitService{dispatcher: m.dispatcher, jobs: m.scheduledJobs},
+		sessionQuestionService{service: m.questionService, dispatcher: m.dispatcher},
+		sessionSendAttachmentService{dispatcher: m.dispatcher},
+	)
 	memory.RegisterTools(server, m.memoryStore)
 	controlmcp.RegisterTools(server, m.shutdowner, m.dispatcher)
 
@@ -202,6 +210,10 @@ type sessionWaitService struct {
 
 type sessionQuestionService struct {
 	service    *questions.Service
+	dispatcher actortransport.Dispatcher
+}
+
+type sessionSendAttachmentService struct {
 	dispatcher actortransport.Dispatcher
 }
 
@@ -305,6 +317,38 @@ func (s sessionQuestionService) StartSessionQuestion(ctx context.Context, in ses
 		Source:      result.Source,
 		TimedOut:    result.TimedOut,
 		Canceled:    result.Canceled,
+	}, nil
+}
+
+func (s sessionSendAttachmentService) SendSessionAttachment(ctx context.Context, in sessionmcp.SessionSendAttachmentInput) (sessionmcp.SessionSendAttachmentOutput, error) {
+	if s.dispatcher == nil {
+		return sessionmcp.SessionSendAttachmentOutput{}, fmt.Errorf("dispatcher is required")
+	}
+	locator, err := canonicalSessionLocator(in.Locator)
+	if err != nil {
+		return sessionmcp.SessionSendAttachmentOutput{}, err
+	}
+	kind := strings.ToLower(strings.TrimSpace(in.Kind))
+	from := actorlayer.ActorAddress{Target: "sessionmcp", Key: strings.TrimSpace(in.RequestedBy)}
+	var env actorlayer.Envelope
+	switch kind {
+	case "photo":
+		env, err = deliverycmd.PhotoEnvelope("", from, locator, deliverycmd.SettlementBypass, in.FileID, in.Caption, "sessionmcp-photo")
+	case "document":
+		env, err = deliverycmd.DocumentEnvelope("", from, locator, deliverycmd.SettlementBypass, in.FileID, in.Caption, in.FileName, "sessionmcp-document")
+	default:
+		return sessionmcp.SessionSendAttachmentOutput{}, fmt.Errorf("unsupported attachment kind %q", in.Kind)
+	}
+	if err != nil {
+		return sessionmcp.SessionSendAttachmentOutput{}, err
+	}
+	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
+		return sessionmcp.SessionSendAttachmentOutput{}, err
+	}
+	return sessionmcp.SessionSendAttachmentOutput{
+		ToolOutcome: sessionmcp.ToolOutcome{OK: true},
+		Sent:        true,
+		Message:     "attachment sent",
 	}, nil
 }
 
