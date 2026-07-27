@@ -21,8 +21,8 @@ type recordingQuestionService struct {
 }
 
 type recordingSendAttachmentService struct {
-	inputs  []SessionSendAttachmentInput
-	output  SessionSendAttachmentOutput
+	batchInputs []SessionSendAttachmentsInput
+	batchOutput SessionSendAttachmentsOutput
 }
 
 func (r *recordingWaitScheduler) ScheduleSessionWait(_ context.Context, in SessionWaitInput) error {
@@ -49,12 +49,12 @@ func (r *recordingQuestionService) StartSessionQuestion(_ context.Context, in Se
 	return r.output, nil
 }
 
-func (r *recordingSendAttachmentService) SendSessionAttachment(_ context.Context, in SessionSendAttachmentInput) (SessionSendAttachmentOutput, error) {
-	r.inputs = append(r.inputs, in)
-	if !r.output.OK {
-		r.output.ToolOutcome = ToolOutcome{OK: true}
+func (r *recordingSendAttachmentService) SendSessionAttachments(_ context.Context, in SessionSendAttachmentsInput) (SessionSendAttachmentsOutput, error) {
+	r.batchInputs = append(r.batchInputs, in)
+	if !r.batchOutput.OK {
+		r.batchOutput.ToolOutcome = ToolOutcome{OK: true}
 	}
-	return r.output, nil
+	return r.batchOutput, nil
 }
 
 func TestSessionStateServerListsTools(t *testing.T) {
@@ -73,7 +73,7 @@ func TestSessionStateServerListsTools(t *testing.T) {
 
 	want := []string{
 		"balda.session.question",
-		"balda.session.send_attachment",
+		"balda.session.send_attachments",
 		"balda.session.wait",
 		"balda.state.clear",
 		"balda.state.delete",
@@ -601,38 +601,57 @@ func newTestSessionWithServices(t *testing.T, store Store, waitScheduler Session
 	return ctx, cleanup, session
 }
 
-func TestSessionSendAttachmentToolInvokesService(t *testing.T) {
-	store := NewMemoryStore()
+func TestSessionSendAttachmentsToolInvokesService(t *testing.T) {
+	t.Parallel()
+
 	sendSvc := &recordingSendAttachmentService{
-		output: SessionSendAttachmentOutput{
+		batchOutput: SessionSendAttachmentsOutput{
 			ToolOutcome: ToolOutcome{OK: true},
 			Sent:        true,
-			Message:     "attachment sent",
+			Count:       1,
+			HasText:     true,
+			Message:     "attachments sent",
 		},
 	}
-	ctx, cleanup, session := newTestSessionWithServices(t, store, nil, nil, sendSvc)
+	ctx, cleanup, session := newTestSessionWithServices(t, NewMemoryStore(), nil, nil, sendSvc)
 	defer cleanup()
 
-	result := callTool(t, ctx, session, "balda.session.send_attachment", map[string]any{
+	result := callTool(t, ctx, session, "balda.session.send_attachments", map[string]any{
 		"locator": map[string]any{
 			"session_id":   "tg-2317500-536036",
 			"channel_type": "telegram",
 			"address_key":  "2317500:536036",
 		},
-		"kind":      "photo",
-		"file_id":   "file-123",
-		"caption":   "hello",
-		"file_name": "",
+		"text": "Here you go",
+		"attachments": []map[string]any{
+			{
+				"kind": "document",
+				"source": map[string]any{
+					"engine":     "local",
+					"local_path": "/state/output/report.pdf",
+				},
+				"caption":   "Report",
+				"file_name": "report.pdf",
+				"mime_type": "application/pdf",
+			},
+		},
+		"requested_by": "tg-101",
 	})
-	got := structuredResultMap(t, result)
-	if len(sendSvc.inputs) != 1 {
-		t.Fatalf("send attachment inputs = %d, want 1", len(sendSvc.inputs))
+	if result == nil {
+		t.Fatalf("call result is not structured")
 	}
-	if sendSvc.inputs[0].Kind != "photo" || sendSvc.inputs[0].FileID != "file-123" || sendSvc.inputs[0].Caption != "hello" {
-		t.Fatalf("send attachment input = %+v", sendSvc.inputs[0])
+	if len(sendSvc.batchInputs) != 1 {
+		t.Fatalf("SendSessionAttachments calls = %d, want 1", len(sendSvc.batchInputs))
 	}
-	if sent, _ := got["sent"].(bool); !sent {
-		t.Fatalf("tool result sent = %v, want true", got["sent"])
+	got := sendSvc.batchInputs[0]
+	if got.Text != "Here you go" || got.RequestedBy != "tg-101" {
+		t.Fatalf("batch input = %+v", got)
+	}
+	if len(got.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(got.Attachments))
+	}
+	if got.Attachments[0].Source.LocalPath != "/state/output/report.pdf" || got.Attachments[0].Kind != "document" {
+		t.Fatalf("attachment = %+v", got.Attachments[0])
 	}
 }
 

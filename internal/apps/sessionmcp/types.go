@@ -185,21 +185,36 @@ type SessionQuestionService interface {
 	StartSessionQuestion(ctx context.Context, in SessionQuestionInput) (SessionQuestionOutput, error)
 }
 
-type SessionSendAttachmentInput struct {
-	Locator     SessionLocatorInput `json:"locator" jsonschema:"target session locator for attachment delivery"`
-	Kind        string              `json:"kind" jsonschema:"attachment kind: photo or document"`
-	FileID      string              `json:"file_id" jsonschema:"provider file identifier to resend"`
-	Caption     string              `json:"caption,omitempty" jsonschema:"optional attachment caption"`
-	FileName    string              `json:"file_name,omitempty" jsonschema:"optional original file name for documents"`
-	RequestedBy string              `json:"requested_by,omitempty" jsonschema:"optional requester id for audit/debug metadata"`
+type SessionAttachmentSourceInput struct {
+	Engine    string `json:"engine" jsonschema:"attachment source engine; currently local"`
+	LocalPath string `json:"local_path,omitempty" jsonschema:"local filesystem path for a staged attachment"`
+	BlobStore string `json:"blob_store,omitempty" jsonschema:"reserved blob store identifier for future use"`
+	BlobKey   string `json:"blob_key,omitempty" jsonschema:"reserved blob object key for future use"`
 }
 
-type SessionSendAttachmentOutput struct {
+type SessionAttachmentItemInput struct {
+	Kind     string                       `json:"kind" jsonschema:"attachment kind: photo or document"`
+	Source   SessionAttachmentSourceInput `json:"source" jsonschema:"attachment source descriptor"`
+	Caption  string                       `json:"caption,omitempty" jsonschema:"optional attachment caption"`
+	FileName string                       `json:"file_name,omitempty" jsonschema:"optional file name for documents"`
+	MIMEType string                       `json:"mime_type,omitempty" jsonschema:"optional MIME type metadata"`
+}
+
+type SessionSendAttachmentsInput struct {
+	Locator     SessionLocatorInput          `json:"locator" jsonschema:"target session locator for attachment delivery"`
+	Text        string                       `json:"text,omitempty" jsonschema:"optional text message to send before attachments"`
+	Attachments []SessionAttachmentItemInput `json:"attachments,omitempty" jsonschema:"attachments to send"`
+	RequestedBy string                       `json:"requested_by,omitempty" jsonschema:"optional requester id for audit/debug metadata"`
+}
+
+type SessionSendAttachmentsOutput struct {
 	ToolOutcome
-	Sent    bool   `json:"sent,omitempty" jsonschema:"true when the attachment delivery was published successfully"`
+	Sent    bool   `json:"sent,omitempty" jsonschema:"true when the attachment deliveries were published successfully"`
+	Count   int    `json:"count,omitempty" jsonschema:"number of attachment deliveries published"`
+	HasText bool   `json:"has_text,omitempty" jsonschema:"true when a leading text message was also published"`
 	Message string `json:"message,omitempty" jsonschema:"human-readable status message"`
 }
 
 type SessionSendAttachmentService interface {
-	SendSessionAttachment(ctx context.Context, in SessionSendAttachmentInput) (SessionSendAttachmentOutput, error)
+	SendSessionAttachments(ctx context.Context, in SessionSendAttachmentsInput) (SessionSendAttachmentsOutput, error)
 }

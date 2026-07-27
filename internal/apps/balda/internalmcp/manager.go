@@ -138,7 +138,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	instructions := `Use this bundled balda server for session-local balda tools.
 
 - balda.state stores persistent Balda session and app state in state.db.
-- balda.session.send_attachment can resend Telegram photos and documents back into the active session when you already have a provider file_id. Prefer it for returning user-provided files.
+- balda.session.send_attachments can send one or more Telegram photos or documents into the active session from local files. Use source.engine=local with source.local_path.
 - balda config editing is not exposed through MCP; edit the balda config file directly.
 - balda.control.shutdown gracefully stops the whole Balda process; use it only when the user explicitly asks for restart or shutdown. After installing a new override binary, prefer balda.control.shutdown for restart. Use kill -TERM 1 only as a fallback when the in-process shutdown path is unavailable or broken.`
 	if m.memoryStore.MemoryEnabled() {
@@ -320,35 +320,65 @@ func (s sessionQuestionService) StartSessionQuestion(ctx context.Context, in ses
 	}, nil
 }
 
-func (s sessionSendAttachmentService) SendSessionAttachment(ctx context.Context, in sessionmcp.SessionSendAttachmentInput) (sessionmcp.SessionSendAttachmentOutput, error) {
+func (s sessionSendAttachmentService) SendSessionAttachments(ctx context.Context, in sessionmcp.SessionSendAttachmentsInput) (sessionmcp.SessionSendAttachmentsOutput, error) {
 	if s.dispatcher == nil {
-		return sessionmcp.SessionSendAttachmentOutput{}, fmt.Errorf("dispatcher is required")
+		return sessionmcp.SessionSendAttachmentsOutput{}, fmt.Errorf("dispatcher is required")
 	}
 	locator, err := canonicalSessionLocator(in.Locator)
 	if err != nil {
-		return sessionmcp.SessionSendAttachmentOutput{}, err
+		return sessionmcp.SessionSendAttachmentsOutput{}, err
 	}
-	kind := strings.ToLower(strings.TrimSpace(in.Kind))
+	if strings.TrimSpace(in.Text) == "" && len(in.Attachments) == 0 {
+		return sessionmcp.SessionSendAttachmentsOutput{}, fmt.Errorf("text or attachments are required")
+	}
 	from := actorlayer.ActorAddress{Target: "sessionmcp", Key: strings.TrimSpace(in.RequestedBy)}
-	var env actorlayer.Envelope
-	switch kind {
-	case "photo":
-		env, err = deliverycmd.PhotoEnvelope("", from, locator, deliverycmd.SettlementBypass, in.FileID, in.Caption, "sessionmcp-photo")
-	case "document":
-		env, err = deliverycmd.DocumentEnvelope("", from, locator, deliverycmd.SettlementBypass, in.FileID, in.Caption, in.FileName, "sessionmcp-document")
-	default:
-		return sessionmcp.SessionSendAttachmentOutput{}, fmt.Errorf("unsupported attachment kind %q", in.Kind)
+	if text := strings.TrimSpace(in.Text); text != "" {
+		env, err := deliverycmd.AgentReplyEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "sessionmcp-attachments-text")
+		if err != nil {
+			return sessionmcp.SessionSendAttachmentsOutput{}, err
+		}
+		if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
+			return sessionmcp.SessionSendAttachmentsOutput{}, err
+		}
 	}
-	if err != nil {
-		return sessionmcp.SessionSendAttachmentOutput{}, err
+	sentCount := 0
+	for idx, item := range in.Attachments {
+		kind := strings.ToLower(strings.TrimSpace(item.Kind))
+		engine := strings.ToLower(strings.TrimSpace(item.Source.Engine))
+		if engine == "" {
+			engine = "local"
+		}
+		if engine != "local" {
+			return sessionmcp.SessionSendAttachmentsOutput{}, fmt.Errorf("unsupported attachment source engine %q", item.Source.Engine)
+		}
+		localPath := strings.TrimSpace(item.Source.LocalPath)
+		if localPath == "" {
+			return sessionmcp.SessionSendAttachmentsOutput{}, fmt.Errorf("local attachment path is required")
+		}
+		dedupeSuffix := fmt.Sprintf("sessionmcp-attachment-%d", idx+1)
+		var env actorlayer.Envelope
+		switch kind {
+		case "photo":
+			env, err = deliverycmd.PhotoLocalEnvelope("", from, locator, deliverycmd.SettlementBypass, localPath, "", item.Caption, dedupeSuffix)
+		case "document":
+			env, err = deliverycmd.DocumentLocalEnvelope("", from, locator, deliverycmd.SettlementBypass, localPath, "", item.Caption, item.FileName, item.MIMEType, dedupeSuffix)
+		default:
+			return sessionmcp.SessionSendAttachmentsOutput{}, fmt.Errorf("unsupported attachment kind %q", item.Kind)
+		}
+		if err != nil {
+			return sessionmcp.SessionSendAttachmentsOutput{}, err
+		}
+		if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
+			return sessionmcp.SessionSendAttachmentsOutput{}, err
+		}
+		sentCount++
 	}
-	if _, err := s.dispatcher.Dispatch(ctx, env); err != nil {
-		return sessionmcp.SessionSendAttachmentOutput{}, err
-	}
-	return sessionmcp.SessionSendAttachmentOutput{
+	return sessionmcp.SessionSendAttachmentsOutput{
 		ToolOutcome: sessionmcp.ToolOutcome{OK: true},
-		Sent:        true,
-		Message:     "attachment sent",
+		Sent:        sentCount > 0 || strings.TrimSpace(in.Text) != "",
+		Count:       sentCount,
+		HasText:     strings.TrimSpace(in.Text) != "",
+		Message:     "attachments sent",
 	}, nil
 }
 
