@@ -54,6 +54,13 @@ type TurnExecutionService struct {
 	now        func() time.Time
 }
 
+func (s *TurnExecutionService) currentTime() time.Time {
+	if s == nil || s.now == nil {
+		return time.Now()
+	}
+	return s.now()
+}
+
 type ExecutionRequest struct {
 	Text            string
 	Attachments     []attachment.Descriptor
@@ -432,7 +439,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						autoModeStatus = loadedStatus
 					}
 				}
-				if notification, source, ok := autoDecisionNotification(autoModeStatus, req.TurnSource, responseText, s.now()); ok {
+				if notification, source, ok := autoDecisionNotification(autoModeStatus, req.TurnSource, responseText, s.currentTime()); ok {
 					responseText = notification
 					responseSource = source
 					switch source {
@@ -440,7 +447,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 							automode.StateKeyMode:             automode.StateIdle,
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
-							automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
+							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_reported_done",
 						}); err != nil {
 							return err
@@ -449,7 +456,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 							automode.StateKeyMode:             automode.StateWaitingForUser,
 							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
-							automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
+							automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_waiting_for_user",
 						}); err != nil {
 							return err
@@ -545,7 +552,7 @@ func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req E
 	if err != nil || !status.Enabled || status.State == automode.StateRunning {
 		return err
 	}
-	now := s.now().UTC().Format(time.RFC3339)
+	now := s.currentTime().UTC().Format(time.RFC3339)
 	if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 		automode.StateKeyMode:           automode.StateRunning,
 		automode.StateKeyLastTurnAt:     now,
@@ -687,7 +694,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 				if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 					automode.StateKeyMode:             automode.StateNoProgress,
 					automode.StateKeyConsecutiveTurns: status.ConsecutiveTurns,
-					automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
+					automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 					automode.StateKeyLastStopReason:   "repeated_visible_output",
 				}); err != nil {
 					return err
@@ -698,7 +705,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 						State:            automode.StateNoProgress,
 						ConsecutiveTurns: status.ConsecutiveTurns,
 						MaxTurns:         status.MaxTurns,
-						LastTurnAt:       s.now().UTC().Format(time.RFC3339),
+						LastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 						LastStopReason:   "repeated_visible_output",
 					})
 				}
@@ -714,7 +721,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 			automode.StateKeyMode:             automode.StateLimitReached,
 			automode.StateKeyConsecutiveTurns: status.MaxTurns,
-			automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
+			automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 			automode.StateKeyLastStopReason:   "max_auto_turns_reached",
 		}); err != nil {
 			return err
@@ -725,7 +732,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 				State:            automode.StateLimitReached,
 				ConsecutiveTurns: status.MaxTurns,
 				MaxTurns:         status.MaxTurns,
-				LastTurnAt:       s.now().UTC().Format(time.RFC3339),
+				LastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 				LastStopReason:   "max_auto_turns_reached",
 			})
 		}
@@ -738,7 +745,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 	if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 		automode.StateKeyMode:             automode.StateRunning,
 		automode.StateKeyConsecutiveTurns: nextCount,
-		automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
+		automode.StateKeyLastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 		automode.StateKeyMaxTurns:         status.MaxTurns,
 		automode.StateKeyLastOutput:       lastOutput,
 		automode.StateKeyLastStopReason:   "",
@@ -751,7 +758,7 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 			State:            automode.StateRunning,
 			ConsecutiveTurns: nextCount,
 			MaxTurns:         status.MaxTurns,
-			LastTurnAt:       s.now().UTC().Format(time.RFC3339),
+			LastTurnAt:       s.currentTime().UTC().Format(time.RFC3339),
 			LastStopReason:   "",
 		}); err != nil {
 			return err
