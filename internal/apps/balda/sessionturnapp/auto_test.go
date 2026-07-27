@@ -138,11 +138,11 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maybeScheduleAutoTurn() error = %v", err)
 	}
-	if len(dispatcher.envelopes) != 3 {
-		t.Fatalf("dispatches = %d, want 3", len(dispatcher.envelopes))
+	if len(dispatcher.envelopes) != 2 {
+		t.Fatalf("dispatches = %d, want 2", len(dispatcher.envelopes))
 	}
 	var payload turncmd.SessionTurnPayload
-	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[2].Payload, &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[1].Payload, &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
 	if payload.Source != turncmd.SourceAuto {
@@ -151,11 +151,11 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 	if payload.Text != automode.InternalPrompt(automode.DefaultMaxTurns) {
 		t.Fatalf("payload.Text = %q, want internal prompt", payload.Text)
 	}
-	if got, want := dispatcher.envelopes[2].DedupeKey, autoTurnDedupeKey(locator.SessionID, "human-turn-1", 1); got != want {
+	if got, want := dispatcher.envelopes[1].DedupeKey, autoTurnDedupeKey(locator.SessionID, "human-turn-1", 1); got != want {
 		t.Fatalf("dedupe key = %q, want %q", got, want)
 	}
-	if payload.DedupeKey != dispatcher.envelopes[2].DedupeKey {
-		t.Fatalf("payload dedupe key = %q, want envelope dedupe key %q", payload.DedupeKey, dispatcher.envelopes[2].DedupeKey)
+	if payload.DedupeKey != dispatcher.envelopes[1].DedupeKey {
+		t.Fatalf("payload dedupe key = %q, want envelope dedupe key %q", payload.DedupeKey, dispatcher.envelopes[1].DedupeKey)
 	}
 	if got := automode.ParseInt(state.state[automode.StateKeyConsecutiveTurns], 0); got != 1 {
 		t.Fatalf("consecutive turns state = %d, want 1", got)
@@ -186,11 +186,74 @@ func TestStartAutoCycleIfNeededTransitionsToRunningImmediately(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("startAutoCycleIfNeeded() error = %v", err)
 	}
-	if len(dispatcher.envelopes) < 2 {
-		t.Fatalf("dispatches = %d, want at least 2", len(dispatcher.envelopes))
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("dispatches = %d, want only state update without visible running notification", len(dispatcher.envelopes))
 	}
 	if got := state.state[automode.StateKeyMode]; got != automode.StateRunning {
 		t.Fatalf("state mode = %#v, want %q", got, automode.StateRunning)
+	}
+}
+
+func TestNotifyAutoStateChangeSuppressesRunningNotification(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &fakeAutoDispatcher{}
+	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns)
+
+	err := service.notifyAutoStateChange(context.Background(), ExecutionRequest{
+		Locator:         baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0"},
+		DeliveryOptions: turncmd.NormalizeSessionDeliveryOptions(turncmd.SessionTurnPayload{}),
+	}, automode.Status{
+		Enabled: true,
+		State:   automode.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("notifyAutoStateChange() error = %v", err)
+	}
+	if len(dispatcher.envelopes) != 0 {
+		t.Fatalf("dispatches = %d, want 0 for suppressed running state", len(dispatcher.envelopes))
+	}
+}
+
+func TestNotifyAutoStateChangeDeliversWaitingForUserNotification(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &fakeAutoDispatcher{}
+	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns)
+
+	err := service.notifyAutoStateChange(context.Background(), ExecutionRequest{
+		Locator:         baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0"},
+		DeliveryOptions: turncmd.NormalizeSessionDeliveryOptions(turncmd.SessionTurnPayload{}),
+	}, automode.Status{
+		Enabled: true,
+		State:   automode.StateWaitingForUser,
+	})
+	if err != nil {
+		t.Fatalf("notifyAutoStateChange() error = %v", err)
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("dispatches = %d, want 1", len(dispatcher.envelopes))
+	}
+}
+
+func TestNotifyAutoStateChangeDeliversIdleNotification(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &fakeAutoDispatcher{}
+	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns)
+
+	err := service.notifyAutoStateChange(context.Background(), ExecutionRequest{
+		Locator:         baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0"},
+		DeliveryOptions: turncmd.NormalizeSessionDeliveryOptions(turncmd.SessionTurnPayload{}),
+	}, automode.Status{
+		Enabled: true,
+		State:   automode.StateIdle,
+	})
+	if err != nil {
+		t.Fatalf("notifyAutoStateChange() error = %v", err)
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("dispatches = %d, want 1", len(dispatcher.envelopes))
 	}
 }
 

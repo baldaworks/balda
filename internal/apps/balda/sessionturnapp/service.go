@@ -666,6 +666,9 @@ func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator bald
 
 func (s *TurnExecutionService) notifyAutoStateChange(ctx context.Context, req ExecutionRequest, status automode.Status) error {
 	status = automode.NormalizeWithDefault(status, s.autoMaxTurns)
+	if status.State == automode.StateRunning {
+		return nil
+	}
 	text := automode.RenderCompactStatusMarkdown(status)
 	if req.JobID != "" {
 		return s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, req.DeliveryOptions.Profile, text, "auto-status")
