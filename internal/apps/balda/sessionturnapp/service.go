@@ -423,14 +423,20 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			case !req.Deliver:
 				responseSource = "fire_and_forget"
 			case strings.TrimSpace(responseText) != "":
-				if notification, source, ok := autoDecisionNotification(req.TurnSource, responseText, s.autoMaxTurns); ok {
+				autoModeStatus := automode.DefaultStatusWithMaxTurns(s.autoMaxTurns)
+				if strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
+					if loadedStatus, err := s.autoStatus(ctx, req.Locator); err == nil {
+						autoModeStatus = loadedStatus
+					}
+				}
+				if notification, source, ok := autoDecisionNotification(autoModeStatus, req.TurnSource, responseText, s.now()); ok {
 					responseText = notification
 					responseSource = source
 					switch source {
 					case responseSourceAutoDone:
 						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 							automode.StateKeyMode:             automode.StateIdle,
-							automode.StateKeyConsecutiveTurns: 0,
+							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_reported_done",
 						}); err != nil {
@@ -439,7 +445,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					case responseSourceAutoWaitForUser:
 						if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 							automode.StateKeyMode:             automode.StateWaitingForUser,
-							automode.StateKeyConsecutiveTurns: 0,
+							automode.StateKeyConsecutiveTurns: autoModeStatus.ConsecutiveTurns,
 							automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
 							automode.StateKeyLastStopReason:   "model_waiting_for_user",
 						}); err != nil {
@@ -576,15 +582,31 @@ func (s *TurnExecutionService) autoStatus(ctx context.Context, locator baldasess
 	return automode.NormalizeWithDefault(status, defaultMaxTurns), nil
 }
 
-func autoDecisionNotification(turnSource, responseText string, maxTurns int) (string, string, bool) {
+func autoDecisionNotification(status automode.Status, turnSource, responseText string, now time.Time) (string, string, bool) {
 	if !strings.EqualFold(strings.TrimSpace(turnSource), turncmd.SourceAuto) {
 		return "", "", false
 	}
+	status = automode.NormalizeWithDefault(status, automode.DefaultMaxTurns)
+	lastTurnAt := now.UTC().Format(time.RFC3339)
 	switch strings.TrimSpace(responseText) {
 	case automode.DoneSentinel:
-		return automode.RenderLifecycleMarkdown(automode.StateIdle, maxTurns), responseSourceAutoDone, true
+		return automode.RenderCompactStatusMarkdown(automode.Status{
+			Enabled:          true,
+			State:            automode.StateIdle,
+			ConsecutiveTurns: status.ConsecutiveTurns,
+			MaxTurns:         status.MaxTurns,
+			LastTurnAt:       lastTurnAt,
+			LastStopReason:   "model_reported_done",
+		}), responseSourceAutoDone, true
 	case automode.WaitSentinel:
-		return automode.RenderLifecycleMarkdown(automode.StateWaitingForUser, maxTurns), responseSourceAutoWaitForUser, true
+		return automode.RenderCompactStatusMarkdown(automode.Status{
+			Enabled:          true,
+			State:            automode.StateWaitingForUser,
+			ConsecutiveTurns: status.ConsecutiveTurns,
+			MaxTurns:         status.MaxTurns,
+			LastTurnAt:       lastTurnAt,
+			LastStopReason:   "model_waiting_for_user",
+		}), responseSourceAutoWaitForUser, true
 	default:
 		return "", "", false
 	}
@@ -605,6 +627,15 @@ func (s *TurnExecutionService) updateAutoState(ctx context.Context, locator bald
 	return err
 }
 
+func (s *TurnExecutionService) notifyAutoStateChange(ctx context.Context, req ExecutionRequest, status automode.Status) error {
+	status = automode.NormalizeWithDefault(status, s.autoMaxTurns)
+	text := automode.RenderCompactStatusMarkdown(status)
+	if req.JobID != "" {
+		return s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, req.DeliveryOptions.Profile, text, "auto-status")
+	}
+	return sendAgentReplyWithProfile(ctx, s.dispatcher, req.OutboundFrom, req.Locator, req.DeliveryOptions.Profile, text)
+}
+
 func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req ExecutionRequest, responseSource string, visibleOutput string) error {
 	if s == nil || s.dispatcher == nil || s.sessions == nil {
 		return nil
@@ -623,12 +654,25 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 				currentOutput = strings.TrimSpace(responseSource)
 			}
 			if lastText, ok := lastOutput.(string); ok && strings.TrimSpace(lastText) != "" && strings.TrimSpace(lastText) == currentOutput {
-				return s.updateAutoState(ctx, req.Locator, map[string]any{
+				if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 					automode.StateKeyMode:             automode.StateNoProgress,
 					automode.StateKeyConsecutiveTurns: status.ConsecutiveTurns,
 					automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
 					automode.StateKeyLastStopReason:   "repeated_visible_output",
-				})
+				}); err != nil {
+					return err
+				}
+				if status.State != automode.StateNoProgress {
+					return s.notifyAutoStateChange(ctx, req, automode.Status{
+						Enabled:          status.Enabled,
+						State:            automode.StateNoProgress,
+						ConsecutiveTurns: status.ConsecutiveTurns,
+						MaxTurns:         status.MaxTurns,
+						LastTurnAt:       s.now().UTC().Format(time.RFC3339),
+						LastStopReason:   "repeated_visible_output",
+					})
+				}
+				return nil
 			}
 		}
 	}
@@ -637,12 +681,25 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		nextCount = status.ConsecutiveTurns + 1
 	}
 	if nextCount > status.MaxTurns {
-		return s.updateAutoState(ctx, req.Locator, map[string]any{
+		if err := s.updateAutoState(ctx, req.Locator, map[string]any{
 			automode.StateKeyMode:             automode.StateLimitReached,
 			automode.StateKeyConsecutiveTurns: status.MaxTurns,
 			automode.StateKeyLastTurnAt:       s.now().UTC().Format(time.RFC3339),
 			automode.StateKeyLastStopReason:   "max_auto_turns_reached",
-		})
+		}); err != nil {
+			return err
+		}
+		if status.State != automode.StateLimitReached {
+			return s.notifyAutoStateChange(ctx, req, automode.Status{
+				Enabled:          status.Enabled,
+				State:            automode.StateLimitReached,
+				ConsecutiveTurns: status.MaxTurns,
+				MaxTurns:         status.MaxTurns,
+				LastTurnAt:       s.now().UTC().Format(time.RFC3339),
+				LastStopReason:   "max_auto_turns_reached",
+			})
+		}
+		return nil
 	}
 	lastOutput := strings.TrimSpace(visibleOutput)
 	if lastOutput == "" {
@@ -657,6 +714,18 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		automode.StateKeyLastStopReason:   "",
 	}); err != nil {
 		return err
+	}
+	if status.State != automode.StateRunning {
+		if err := s.notifyAutoStateChange(ctx, req, automode.Status{
+			Enabled:          status.Enabled,
+			State:            automode.StateRunning,
+			ConsecutiveTurns: nextCount,
+			MaxTurns:         status.MaxTurns,
+			LastTurnAt:       s.now().UTC().Format(time.RFC3339),
+			LastStopReason:   "",
+		}); err != nil {
+			return err
+		}
 	}
 	env, err := turncmd.SessionTurnEnvelope(turncmd.SessionTurnPayload{
 		Text:            automode.InternalPrompt(status.MaxTurns),

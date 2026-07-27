@@ -57,6 +57,13 @@ func loadAutoStatusWithDefault(ctx context.Context, sessions autoStateManager, l
 			status.LastTurnAt = strings.TrimSpace(text)
 		}
 	}
+	if value, ok, err := sessions.RuntimeStateValue(ctx, locator, automode.StateKeyLastStopReason); err != nil {
+		return status, err
+	} else if ok {
+		if text, ok := value.(string); ok {
+			status.LastStopReason = strings.TrimSpace(text)
+		}
+	}
 	return automode.NormalizeWithDefault(status, defaultMaxTurns), nil
 }
 

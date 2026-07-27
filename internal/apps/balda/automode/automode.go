@@ -169,6 +169,14 @@ func RenderStatusMarkdown(status Status) string {
 	)
 }
 
+func RenderCompactStatusMarkdown(status Status) string {
+	normalized := Normalize(status)
+	return fmt.Sprintf(
+		"⚙️ **Auto mode**\n\n**State:** `%s`",
+		renderState(normalized.State),
+	)
+}
+
 func EnableState(now time.Time) map[string]any {
 	return EnableStateWithMaxTurns(now, DefaultMaxTurns)
 }
@@ -200,7 +208,7 @@ func RenderLifecycleMarkdown(state string, maxTurns int) string {
 		State:    state,
 		MaxTurns: maxTurns,
 	}, maxTurns)
-	return RenderStatusMarkdown(status)
+	return RenderCompactStatusMarkdown(status)
 }
 
 func firstNonEmpty(values ...string) string {

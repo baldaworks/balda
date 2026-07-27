@@ -3,6 +3,7 @@ package sessionturnapp
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -21,18 +22,49 @@ func TestAutoDecisionNotificationSuppressesSentinels(t *testing.T) {
 		name         string
 		turnSource   string
 		responseText string
+		status       automode.Status
 		wantText     string
 		wantSource   string
 		wantOK       bool
 	}{
-		{name: "done", turnSource: turncmd.SourceAuto, responseText: automode.DoneSentinel, wantText: automode.RenderLifecycleMarkdown(automode.StateIdle, automode.DefaultMaxTurns), wantSource: "auto_done", wantOK: true},
-		{name: "wait", turnSource: turncmd.SourceAuto, responseText: automode.WaitSentinel, wantText: automode.RenderLifecycleMarkdown(automode.StateWaitingForUser, automode.DefaultMaxTurns), wantSource: "auto_wait_for_user", wantOK: true},
-		{name: "visible auto response", turnSource: turncmd.SourceAuto, responseText: "continue", wantOK: false},
-		{name: "ordinary turn", turnSource: turncmd.SourceTelegram, responseText: automode.DoneSentinel, wantOK: false},
+		{
+			name:         "done",
+			turnSource:   turncmd.SourceAuto,
+			responseText: automode.DoneSentinel,
+			status:       automode.Status{Enabled: true, State: automode.StateRunning, ConsecutiveTurns: 3, MaxTurns: automode.DefaultMaxTurns},
+			wantText: automode.RenderCompactStatusMarkdown(automode.Status{
+				Enabled:          true,
+				State:            automode.StateIdle,
+				ConsecutiveTurns: 3,
+				MaxTurns:         automode.DefaultMaxTurns,
+				LastTurnAt:       "2026-07-27T18:00:00Z",
+				LastStopReason:   "model_reported_done",
+			}),
+			wantSource: "auto_done",
+			wantOK:     true,
+		},
+		{
+			name:         "wait",
+			turnSource:   turncmd.SourceAuto,
+			responseText: automode.WaitSentinel,
+			status:       automode.Status{Enabled: true, State: automode.StateRunning, ConsecutiveTurns: 2, MaxTurns: automode.DefaultMaxTurns},
+			wantText: automode.RenderCompactStatusMarkdown(automode.Status{
+				Enabled:          true,
+				State:            automode.StateWaitingForUser,
+				ConsecutiveTurns: 2,
+				MaxTurns:         automode.DefaultMaxTurns,
+				LastTurnAt:       "2026-07-27T18:00:00Z",
+				LastStopReason:   "model_waiting_for_user",
+			}),
+			wantSource: "auto_wait_for_user",
+			wantOK:     true,
+		},
+		{name: "visible auto response", turnSource: turncmd.SourceAuto, responseText: "continue", status: automode.DefaultStatusWithMaxTurns(automode.DefaultMaxTurns), wantOK: false},
+		{name: "ordinary turn", turnSource: turncmd.SourceTelegram, responseText: automode.DoneSentinel, status: automode.DefaultStatusWithMaxTurns(automode.DefaultMaxTurns), wantOK: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			gotText, gotSource, gotOK := autoDecisionNotification(tt.turnSource, tt.responseText, automode.DefaultMaxTurns)
+			gotText, gotSource, gotOK := autoDecisionNotification(tt.status, tt.turnSource, tt.responseText, time.Date(2026, 7, 27, 18, 0, 0, 0, time.UTC))
 			if gotText != tt.wantText || gotSource != tt.wantSource || gotOK != tt.wantOK {
 				t.Fatalf("autoDecisionNotification() = %q, %q, %v; want %q, %q, %v", gotText, gotSource, gotOK, tt.wantText, tt.wantSource, tt.wantOK)
 			}
@@ -106,11 +138,11 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maybeScheduleAutoTurn() error = %v", err)
 	}
-	if len(dispatcher.envelopes) != 2 {
-		t.Fatalf("dispatches = %d, want 2", len(dispatcher.envelopes))
+	if len(dispatcher.envelopes) != 3 {
+		t.Fatalf("dispatches = %d, want 3", len(dispatcher.envelopes))
 	}
 	var payload turncmd.SessionTurnPayload
-	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[1].Payload, &payload); err != nil {
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[2].Payload, &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
 	if payload.Source != turncmd.SourceAuto {
@@ -119,11 +151,11 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 	if payload.Text != automode.InternalPrompt(automode.DefaultMaxTurns) {
 		t.Fatalf("payload.Text = %q, want internal prompt", payload.Text)
 	}
-	if got, want := dispatcher.envelopes[1].DedupeKey, autoTurnDedupeKey(locator.SessionID, "human-turn-1", 1); got != want {
+	if got, want := dispatcher.envelopes[2].DedupeKey, autoTurnDedupeKey(locator.SessionID, "human-turn-1", 1); got != want {
 		t.Fatalf("dedupe key = %q, want %q", got, want)
 	}
-	if payload.DedupeKey != dispatcher.envelopes[1].DedupeKey {
-		t.Fatalf("payload dedupe key = %q, want envelope dedupe key %q", payload.DedupeKey, dispatcher.envelopes[1].DedupeKey)
+	if payload.DedupeKey != dispatcher.envelopes[2].DedupeKey {
+		t.Fatalf("payload dedupe key = %q, want envelope dedupe key %q", payload.DedupeKey, dispatcher.envelopes[2].DedupeKey)
 	}
 	if got := automode.ParseInt(state.state[automode.StateKeyConsecutiveTurns], 0); got != 1 {
 		t.Fatalf("consecutive turns state = %d, want 1", got)
@@ -170,8 +202,8 @@ func TestMaybeScheduleAutoTurnStopsOnNoProgressForAutoTurns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maybeScheduleAutoTurn() error = %v", err)
 	}
-	if len(dispatcher.envelopes) != 1 {
-		t.Fatalf("dispatches = %d, want 1", len(dispatcher.envelopes))
+	if len(dispatcher.envelopes) != 2 {
+		t.Fatalf("dispatches = %d, want 2", len(dispatcher.envelopes))
 	}
 	if got := state.state[automode.StateKeyMode]; got != automode.StateNoProgress {
 		t.Fatalf("state mode = %#v, want %q", got, automode.StateNoProgress)
