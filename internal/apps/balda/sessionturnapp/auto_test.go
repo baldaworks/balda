@@ -162,6 +162,38 @@ func TestMaybeScheduleAutoTurnDispatchesSyntheticTurn(t *testing.T) {
 	}
 }
 
+func TestStartAutoCycleIfNeededTransitionsToRunningImmediately(t *testing.T) {
+	t.Parallel()
+
+	state := &fakeAutoRuntimeState{
+		state: map[string]any{
+			automode.StateKeyEnabled:  true,
+			automode.StateKeyMode:     automode.StateIdle,
+			automode.StateKeyMaxTurns: automode.DefaultMaxTurns,
+		},
+	}
+	dispatcher := &fakeAutoDispatcher{state: state}
+	service := NewTurnExecutionServiceWithJobEvents(dispatcher, nil, state, zerolog.Nop(), automode.DefaultMaxTurns)
+	service.now = func() time.Time { return time.Date(2026, 7, 27, 18, 20, 0, 0, time.UTC) }
+	locator := baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0"}
+
+	if err := service.startAutoCycleIfNeeded(context.Background(), ExecutionRequest{
+		UserID:          "tg-101",
+		RequesterUserID: "tg-101",
+		Locator:         locator,
+		TurnSource:      turncmd.SourceTelegram,
+		DeliveryOptions: turncmd.NormalizeSessionDeliveryOptions(turncmd.SessionTurnPayload{}),
+	}); err != nil {
+		t.Fatalf("startAutoCycleIfNeeded() error = %v", err)
+	}
+	if len(dispatcher.envelopes) < 2 {
+		t.Fatalf("dispatches = %d, want at least 2", len(dispatcher.envelopes))
+	}
+	if got := state.state[automode.StateKeyMode]; got != automode.StateRunning {
+		t.Fatalf("state mode = %#v, want %q", got, automode.StateRunning)
+	}
+}
+
 func TestAutoTurnDedupeKeySeparatesContinuationChains(t *testing.T) {
 	t.Parallel()
 

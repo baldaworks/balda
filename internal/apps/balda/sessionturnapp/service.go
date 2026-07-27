@@ -197,6 +197,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		Int("input_file_data_part_count", inputFileDataPartCount).
 		Strs("input_inline_data_mime_types", inlineMIMETypes).
 		Msg("assembled provider user content")
+	if err := s.startAutoCycleIfNeeded(ctx, req); err != nil {
+		return err
+	}
 	requesterUserID := strings.TrimSpace(req.RequesterUserID)
 	if requesterUserID == "" {
 		requesterUserID = strings.TrimSpace(req.UserID)
@@ -532,6 +535,33 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 
 	return nil
+}
+
+func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req ExecutionRequest) error {
+	if s == nil || strings.EqualFold(strings.TrimSpace(req.TurnSource), turncmd.SourceAuto) {
+		return nil
+	}
+	status, err := s.autoStatus(ctx, req.Locator)
+	if err != nil || !status.Enabled || status.State == automode.StateRunning {
+		return err
+	}
+	now := s.now().UTC().Format(time.RFC3339)
+	if err := s.updateAutoState(ctx, req.Locator, map[string]any{
+		automode.StateKeyMode:           automode.StateRunning,
+		automode.StateKeyLastTurnAt:     now,
+		automode.StateKeyMaxTurns:       status.MaxTurns,
+		automode.StateKeyLastStopReason: "",
+	}); err != nil {
+		return err
+	}
+	return s.notifyAutoStateChange(ctx, req, automode.Status{
+		Enabled:          status.Enabled,
+		State:            automode.StateRunning,
+		ConsecutiveTurns: status.ConsecutiveTurns,
+		MaxTurns:         status.MaxTurns,
+		LastTurnAt:       now,
+		LastStopReason:   "",
+	})
 }
 
 func (s *TurnExecutionService) autoStatus(ctx context.Context, locator baldasession.SessionLocator) (automode.Status, error) {
