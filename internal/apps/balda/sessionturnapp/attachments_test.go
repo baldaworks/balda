@@ -9,6 +9,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/attachment"
 )
 
+const testJPEGMIMEType = "image/jpeg"
+
 func TestBuildUserContent_InlinesPhotoAttachment(t *testing.T) {
 	t.Parallel()
 
@@ -40,8 +42,8 @@ func TestBuildUserContent_InlinesPhotoAttachment(t *testing.T) {
 	if content.Parts[2].InlineData == nil {
 		t.Fatal("part[2].inline_data = nil, want bytes")
 	}
-	if got := content.Parts[2].InlineData.MIMEType; got != "image/jpeg" {
-		t.Fatalf("part[2].inline_data.mime_type = %q, want image/jpeg", got)
+	if got := content.Parts[2].InlineData.MIMEType; got != testJPEGMIMEType {
+		t.Fatalf("part[2].inline_data.mime_type = %q, want %s", got, testJPEGMIMEType)
 	}
 }
 

@@ -165,8 +165,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	inputInlineDataPartCount := 0
 	inputFileDataPartCount := 0
 	inputTextCharCount := 0
-	inlineMIMETypes := make([]string, 0, len(userContent.Parts))
+	inlineMIMETypes := []string{}
 	if userContent != nil {
+		inlineMIMETypes = make([]string, 0, len(userContent.Parts))
 		inputPartCount = len(userContent.Parts)
 		for _, part := range userContent.Parts {
 			if part == nil {

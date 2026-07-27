@@ -121,13 +121,13 @@ func LogFields(in []Descriptor) []map[string]any {
 	return out
 }
 
-func truncateForLog(value string, max int) string {
+func truncateForLog(value string, limit int) string {
 	value = strings.TrimSpace(value)
-	if value == "" || max <= 0 {
+	if value == "" || limit <= 0 {
 		return ""
 	}
-	if len(value) <= max {
+	if len(value) <= limit {
 		return value
 	}
-	return fmt.Sprintf("%s…", value[:max])
+	return fmt.Sprintf("%s…", value[:limit])
 }

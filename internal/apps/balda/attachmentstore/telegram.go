@@ -44,7 +44,9 @@ func (d *TelegramDownloader) DownloadFile(ctx context.Context, fileID string) (D
 	if err != nil {
 		return DownloadedFile{}, fmt.Errorf("download telegram file %s: %w", fileID, err)
 	}
-	defer httpResp.Body.Close()
+	defer func() {
+		_ = httpResp.Body.Close()
+	}()
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		return DownloadedFile{}, fmt.Errorf("download telegram file %s: status %s", fileID, httpResp.Status)
 	}
