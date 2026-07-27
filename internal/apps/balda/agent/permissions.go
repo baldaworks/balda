@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
@@ -99,6 +100,14 @@ func translatePermissionRequest(ctx context.Context, request acpagent.Permission
 			TerminalID: strings.TrimSpace(item.TerminalID),
 		})
 	}
+	if len(content) == 0 {
+		if text := elicitationMessageText(request.ToolCall.RawInput); text != "" {
+			content = append(content, permissioncmd.Content{
+				Kind: permissioncmd.ContentKindText,
+				Text: text,
+			})
+		}
+	}
 	rawInput := ""
 	if request.ToolCall.RawInput != nil {
 		if data, err := json.Marshal(request.ToolCall.RawInput); err == nil {
@@ -116,6 +125,45 @@ func translatePermissionRequest(ctx context.Context, request acpagent.Permission
 			Content:   content,
 		},
 		Options: options,
+	}
+}
+
+func elicitationMessageText(rawInput any) string {
+	if rawInput == nil {
+		return ""
+	}
+	message, ok := nestedString(rawInput, "message")
+	if ok {
+		return strings.TrimSpace(redaction.Secrets(message))
+	}
+	for _, key := range []string{"form", "url"} {
+		message, ok = nestedString(rawInput, key, "message")
+		if ok {
+			return strings.TrimSpace(redaction.Secrets(message))
+		}
+	}
+	return ""
+}
+
+func nestedString(value any, path ...string) (string, bool) {
+	current := value
+	for _, key := range path {
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		current, ok = obj[key]
+		if !ok {
+			return "", false
+		}
+	}
+	switch typed := current.(type) {
+	case string:
+		return typed, true
+	case fmt.Stringer:
+		return typed.String(), true
+	default:
+		return "", false
 	}
 }
 

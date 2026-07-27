@@ -88,3 +88,34 @@ func TestPermissionHandlerRecordsProviderIndependentDenialOutcome(t *testing.T) 
 		t.Fatalf("outcomes = %+v", sink.outcomes)
 	}
 }
+
+func TestPermissionHandlerUsesElicitationMessageWhenStructuredContentMissing(t *testing.T) {
+	var got permissioncmd.Request
+	handler := NewPermissionHandler(permissionReviewerFunc(func(_ context.Context, request permissioncmd.Request) (permissioncmd.Decision, error) {
+		got = request
+		return permissioncmd.Decision{OptionID: "allow"}, nil
+	}), zerolog.Nop())
+
+	_, err := handler(context.Background(), acpagent.PermissionRequest{
+		ToolCall: acpagent.PermissionToolCall{
+			ID:    "call-elicitation-1",
+			Title: "MCP elicitation request",
+			RawInput: map[string]any{
+				"message": "Choose the target environment.",
+			},
+		},
+		Options: []acpagent.PermissionOption{
+			{ID: "allow", Name: "Allow", Kind: acpagent.PermissionOptionKindAllowOnce},
+			{ID: "reject", Name: "Reject", Kind: acpagent.PermissionOptionKindRejectOnce},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler() error = %v", err)
+	}
+	if len(got.ToolCall.Content) != 1 {
+		t.Fatalf("translated content = %+v, want 1 text item", got.ToolCall.Content)
+	}
+	if got.ToolCall.Content[0].Kind != permissioncmd.ContentKindText || got.ToolCall.Content[0].Text != "Choose the target environment." {
+		t.Fatalf("translated content = %+v", got.ToolCall.Content)
+	}
+}
