@@ -530,40 +530,14 @@ func mediaFileFromPath(localPath, fileName string) (openapi_types.File, error) {
 }
 
 func encodeMultipartPhoto(chatID int64, topicID int, caption string, file openapi_types.File) (*bytes.Buffer, string, error) {
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("chat_id", fmt.Sprintf("%d", chatID)); err != nil {
-		return nil, "", err
-	}
-	if topicID != 0 {
-		if err := writer.WriteField("message_thread_id", fmt.Sprintf("%d", topicID)); err != nil {
-			return nil, "", err
-		}
-	}
-	if trimmed := strings.TrimSpace(caption); trimmed != "" {
-		if err := writer.WriteField("caption", trimmed); err != nil {
-			return nil, "", err
-		}
-	}
-	part, err := writer.CreateFormFile("photo", file.Filename())
-	if err != nil {
-		return nil, "", err
-	}
-	reader, err := file.Reader()
-	if err != nil {
-		return nil, "", err
-	}
-	defer func() { _ = reader.Close() }()
-	if _, err := io.Copy(part, reader); err != nil {
-		return nil, "", err
-	}
-	if err := writer.Close(); err != nil {
-		return nil, "", err
-	}
-	return &body, writer.FormDataContentType(), nil
+	return encodeMultipartMedia("photo", chatID, topicID, caption, file)
 }
 
 func encodeMultipartDocument(chatID int64, topicID int, caption string, file openapi_types.File) (*bytes.Buffer, string, error) {
+	return encodeMultipartMedia("document", chatID, topicID, caption, file)
+}
+
+func encodeMultipartMedia(fieldName string, chatID int64, topicID int, caption string, file openapi_types.File) (*bytes.Buffer, string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	if err := writer.WriteField("chat_id", fmt.Sprintf("%d", chatID)); err != nil {
@@ -579,7 +553,7 @@ func encodeMultipartDocument(chatID int64, topicID int, caption string, file ope
 			return nil, "", err
 		}
 	}
-	part, err := writer.CreateFormFile("document", file.Filename())
+	part, err := writer.CreateFormFile(fieldName, file.Filename())
 	if err != nil {
 		return nil, "", err
 	}
