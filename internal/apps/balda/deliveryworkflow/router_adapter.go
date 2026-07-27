@@ -44,12 +44,12 @@ func (d channelRouterDispatcher) Dispatch(ctx context.Context, payload deliveryc
 		if payload.Media == nil {
 			return "", fmt.Errorf("photo payload is required")
 		}
-		return "", d.router.SendPhoto(ctx, payload.Locator, payload.Media.FileID, payload.Media.Caption)
+		return "", d.router.SendPhotoMedia(ctx, payload.Locator, *payload.Media)
 	case deliverycmd.ModeDocument:
 		if payload.Media == nil {
 			return "", fmt.Errorf("document payload is required")
 		}
-		return "", d.router.SendDocument(ctx, payload.Locator, payload.Media.FileID, payload.Media.Caption, payload.Media.Name)
+		return "", d.router.SendDocumentMedia(ctx, payload.Locator, *payload.Media)
 	default:
 		return "", fmt.Errorf("unsupported delivery mode %q", payload.Mode)
 	}

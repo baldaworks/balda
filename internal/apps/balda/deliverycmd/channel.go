@@ -40,10 +40,15 @@ type Operation struct {
 }
 
 type Media struct {
-	Kind    string `json:"kind,omitempty"`
-	FileID  string `json:"file_id,omitempty"`
-	Caption string `json:"caption,omitempty"`
-	Name    string `json:"name,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	FileID     string `json:"file_id,omitempty"`
+	LocalPath  string `json:"local_path,omitempty"`
+	BlobStore  string `json:"blob_store,omitempty"`
+	BlobKey    string `json:"blob_key,omitempty"`
+	MIMEType   string `json:"mime_type,omitempty"`
+	Caption    string `json:"caption,omitempty"`
+	Name       string `json:"name,omitempty"`
+	SourceKind string `json:"source_kind,omitempty"`
 }
 
 // Result contains transport metadata returned by a delivery.

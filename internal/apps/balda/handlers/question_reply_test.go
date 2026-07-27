@@ -136,6 +136,14 @@ func (m *callbackMessenger) SendDocumentByFileID(context.Context, int64, string,
 	return nil
 }
 
+func (m *callbackMessenger) SendPhotoByPath(context.Context, int64, string, string, int) error {
+	return nil
+}
+
+func (m *callbackMessenger) SendDocumentByPath(context.Context, int64, string, string, string, string, int) error {
+	return nil
+}
+
 func TestHandleQuestionCallbackSettlesAndDispatchesContinuation(t *testing.T) {
 	store := &fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}
 	dispatcher := &fakeTurnDispatcher{}

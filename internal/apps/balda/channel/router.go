@@ -112,34 +112,42 @@ func (r *Router) SendProgress(ctx context.Context, locator deliverycmd.Locator, 
 }
 
 func (r *Router) SendPhoto(ctx context.Context, locator deliverycmd.Locator, fileID, caption string) error {
+	return r.SendPhotoMedia(ctx, locator, deliverycmd.Media{
+		Kind:    "photo",
+		FileID:  fileID,
+		Caption: caption,
+	})
+}
+
+func (r *Router) SendPhotoMedia(ctx context.Context, locator deliverycmd.Locator, media deliverycmd.Media) error {
 	adapter, err := r.adapterFor(locator)
 	if err != nil {
 		return err
 	}
 	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{
-		Kind: deliverycmd.OperationPhoto,
-		Media: &deliverycmd.Media{
-			Kind:    "photo",
-			FileID:  fileID,
-			Caption: caption,
-		},
+		Kind:  deliverycmd.OperationPhoto,
+		Media: &media,
 	})
 	return err
 }
 
 func (r *Router) SendDocument(ctx context.Context, locator deliverycmd.Locator, fileID, caption, name string) error {
+	return r.SendDocumentMedia(ctx, locator, deliverycmd.Media{
+		Kind:    "document",
+		FileID:  fileID,
+		Caption: caption,
+		Name:    name,
+	})
+}
+
+func (r *Router) SendDocumentMedia(ctx context.Context, locator deliverycmd.Locator, media deliverycmd.Media) error {
 	adapter, err := r.adapterFor(locator)
 	if err != nil {
 		return err
 	}
 	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{
-		Kind: deliverycmd.OperationDocument,
-		Media: &deliverycmd.Media{
-			Kind:    "document",
-			FileID:  fileID,
-			Caption: caption,
-			Name:    name,
-		},
+		Kind:  deliverycmd.OperationDocument,
+		Media: &media,
 	})
 	return err
 }

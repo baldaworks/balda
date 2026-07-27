@@ -54,3 +54,49 @@ func TestToolFailureFromFunctionResponseIgnoresSuccess(t *testing.T) {
 		t.Fatal("toolFailureFromFunctionResponse() ok = true, want false")
 	}
 }
+
+func TestToolFailureFromFunctionResponseKeepsFallbackToolNameWhenRawOutputToolMissing(t *testing.T) {
+	t.Parallel()
+
+	got, ok := toolFailureFromFunctionResponse(&genai.FunctionResponse{
+		ID:   "call-2",
+		Name: "acp_tool_call_update",
+		Response: map[string]any{
+			"status": "failed",
+			"rawOutput": map[string]any{
+				"status": "failed",
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("toolFailureFromFunctionResponse() ok = false, want true")
+	}
+	if got.ToolName != "acp_tool_call_update" {
+		t.Fatalf("toolFailureFromFunctionResponse() ToolName = %q, want %q", got.ToolName, "acp_tool_call_update")
+	}
+}
+
+func TestToolFailureFromFunctionResponseReadsTopLevelErrorFallback(t *testing.T) {
+	t.Parallel()
+
+	got, ok := toolFailureFromFunctionResponse(&genai.FunctionResponse{
+		ID:   "call-3",
+		Name: "acp_tool_call_update",
+		Response: map[string]any{
+			"status": "failed",
+			"error": map[string]any{
+				"code":    "tool_failed",
+				"message": "provider ended tool call update without metadata",
+			},
+			"rawOutput": map[string]any{
+				"status": "failed",
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("toolFailureFromFunctionResponse() ok = false, want true")
+	}
+	if got.Code != "tool_failed" || got.Message != "provider ended tool call update without metadata" {
+		t.Fatalf("toolFailureFromFunctionResponse() = %+v", got)
+	}
+}

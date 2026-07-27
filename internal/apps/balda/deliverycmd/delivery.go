@@ -250,32 +250,55 @@ func ChatActionEnvelope(jobID string, from actorlayer.ActorAddress, locator Loca
 }
 
 func PhotoEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, fileID, caption, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return PhotoLocalEnvelope(jobID, from, locator, settlement, "", fileID, caption, dedupeSuffix)
+}
+
+func PhotoLocalEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, localPath, fileID, caption, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
 		Locator:    locator,
 		Mode:       ModePhoto,
 		Settlement: normalizeSettlementPolicy(settlement),
 		Media: &Media{
-			Kind:    "photo",
-			FileID:  strings.TrimSpace(fileID),
-			Caption: strings.TrimSpace(caption),
+			Kind:       "photo",
+			FileID:     strings.TrimSpace(fileID),
+			LocalPath:  strings.TrimSpace(localPath),
+			Caption:    strings.TrimSpace(caption),
+			SourceKind: mediaSourceKind(localPath, fileID),
 		},
 	}, dedupeSuffix)
 }
 
 func DocumentEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, fileID, caption, name, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return DocumentLocalEnvelope(jobID, from, locator, settlement, "", fileID, caption, name, "", dedupeSuffix)
+}
+
+func DocumentLocalEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, localPath, fileID, caption, name, mimeType, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
 		Locator:    locator,
 		Mode:       ModeDocument,
 		Settlement: normalizeSettlementPolicy(settlement),
 		Media: &Media{
-			Kind:    "document",
-			FileID:  strings.TrimSpace(fileID),
-			Caption: strings.TrimSpace(caption),
-			Name:    strings.TrimSpace(name),
+			Kind:       "document",
+			FileID:     strings.TrimSpace(fileID),
+			LocalPath:  strings.TrimSpace(localPath),
+			Caption:    strings.TrimSpace(caption),
+			Name:       strings.TrimSpace(name),
+			MIMEType:   strings.TrimSpace(mimeType),
+			SourceKind: mediaSourceKind(localPath, fileID),
 		},
 	}, dedupeSuffix)
+}
+
+func mediaSourceKind(localPath, fileID string) string {
+	if strings.TrimSpace(localPath) != "" {
+		return "local"
+	}
+	if strings.TrimSpace(fileID) != "" {
+		return "file_id"
+	}
+	return ""
 }
 
 func ProgressActivityEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, policy ProgressPolicy, sequence int, dedupeSuffix string) (actorlayer.Envelope, error) {
@@ -406,8 +429,8 @@ func Validate(payload Payload) error {
 		if payload.Media == nil {
 			return fmt.Errorf("delivery media is required")
 		}
-		if strings.TrimSpace(payload.Media.FileID) == "" {
-			return fmt.Errorf("delivery media file id is required")
+		if strings.TrimSpace(payload.Media.FileID) == "" && strings.TrimSpace(payload.Media.LocalPath) == "" {
+			return fmt.Errorf("delivery media file id or local path is required")
 		}
 	default:
 		return fmt.Errorf("unsupported delivery mode %q", payload.Mode)

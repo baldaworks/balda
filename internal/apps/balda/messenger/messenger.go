@@ -6,13 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/redaction"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/respond"
@@ -444,6 +449,152 @@ func (m *Messenger) SendDocumentByFileID(ctx context.Context, chatID int64, file
 		return telegramHTTPError("sending document", chatID, resp.StatusCode(), "")
 	}
 	return nil
+}
+
+func (m *Messenger) SendPhotoByPath(ctx context.Context, chatID int64, localPath, caption string, topicID int) error {
+	file, err := mediaFileFromPath(localPath, filepath.Base(strings.TrimSpace(localPath)))
+	if err != nil {
+		return telegramTransportError("sending photo", chatID, err)
+	}
+	body, contentType, err := encodeMultipartPhoto(chatID, topicID, caption, file)
+	if err != nil {
+		return telegramTransportError("sending photo", chatID, err)
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendPhotoWithBodyWithResponse(sendCtx, contentType, body)
+	if err != nil {
+		return telegramTransportError("sending photo", chatID, err)
+	}
+	if resp == nil {
+		return telegramNoResponseError("sending photo", chatID)
+	}
+	if resp.JSON400 != nil {
+		return telegramHTTPError("sending photo", chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return telegramHTTPError("sending photo", chatID, http.StatusUnauthorized, resp.JSON401.Description)
+	}
+	if resp.JSON200 == nil {
+		return telegramHTTPError("sending photo", chatID, resp.StatusCode(), "")
+	}
+	return nil
+}
+
+func (m *Messenger) SendDocumentByPath(ctx context.Context, chatID int64, localPath, caption, fileName, _ string, topicID int) error {
+	file, err := mediaFileFromPath(localPath, fileName)
+	if err != nil {
+		return telegramTransportError("sending document", chatID, err)
+	}
+	body, contentType, err := encodeMultipartDocument(chatID, topicID, caption, file)
+	if err != nil {
+		return telegramTransportError("sending document", chatID, err)
+	}
+	sendCtx, cancel := telegramSendContext(ctx)
+	defer cancel()
+	resp, err := m.client.SendDocumentWithBodyWithResponse(sendCtx, contentType, body)
+	if err != nil {
+		return telegramTransportError("sending document", chatID, err)
+	}
+	if resp == nil {
+		return telegramNoResponseError("sending document", chatID)
+	}
+	if resp.JSON400 != nil {
+		return telegramHTTPError("sending document", chatID, http.StatusBadRequest, resp.JSON400.Description)
+	}
+	if resp.JSON401 != nil {
+		return telegramHTTPError("sending document", chatID, http.StatusUnauthorized, resp.JSON401.Description)
+	}
+	if resp.JSON200 == nil {
+		return telegramHTTPError("sending document", chatID, resp.StatusCode(), "")
+	}
+	return nil
+}
+
+func mediaFileFromPath(localPath, fileName string) (openapi_types.File, error) {
+	var file openapi_types.File
+	path := strings.TrimSpace(localPath)
+	if path == "" {
+		return file, fmt.Errorf("local path is required")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return file, err
+	}
+	name := strings.TrimSpace(fileName)
+	if name == "" {
+		name = filepath.Base(path)
+	}
+	file.InitFromBytes(data, name)
+	return file, nil
+}
+
+func encodeMultipartPhoto(chatID int64, topicID int, caption string, file openapi_types.File) (*bytes.Buffer, string, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", fmt.Sprintf("%d", chatID)); err != nil {
+		return nil, "", err
+	}
+	if topicID != 0 {
+		if err := writer.WriteField("message_thread_id", fmt.Sprintf("%d", topicID)); err != nil {
+			return nil, "", err
+		}
+	}
+	if trimmed := strings.TrimSpace(caption); trimmed != "" {
+		if err := writer.WriteField("caption", trimmed); err != nil {
+			return nil, "", err
+		}
+	}
+	part, err := writer.CreateFormFile("photo", file.Filename())
+	if err != nil {
+		return nil, "", err
+	}
+	reader, err := file.Reader()
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = reader.Close() }()
+	if _, err := io.Copy(part, reader); err != nil {
+		return nil, "", err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return &body, writer.FormDataContentType(), nil
+}
+
+func encodeMultipartDocument(chatID int64, topicID int, caption string, file openapi_types.File) (*bytes.Buffer, string, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", fmt.Sprintf("%d", chatID)); err != nil {
+		return nil, "", err
+	}
+	if topicID != 0 {
+		if err := writer.WriteField("message_thread_id", fmt.Sprintf("%d", topicID)); err != nil {
+			return nil, "", err
+		}
+	}
+	if trimmed := strings.TrimSpace(caption); trimmed != "" {
+		if err := writer.WriteField("caption", trimmed); err != nil {
+			return nil, "", err
+		}
+	}
+	part, err := writer.CreateFormFile("document", file.Filename())
+	if err != nil {
+		return nil, "", err
+	}
+	reader, err := file.Reader()
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = reader.Close() }()
+	if _, err := io.Copy(part, reader); err != nil {
+		return nil, "", err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return &body, writer.FormDataContentType(), nil
 }
 
 // SendAgentReplyWithInlineKeyboardLastMessageIDAndMode sends a single final

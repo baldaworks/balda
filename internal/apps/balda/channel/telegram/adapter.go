@@ -46,6 +46,8 @@ type TelegramMessenger interface {
 	SendChatAction(ctx context.Context, chatID int64, topicID int, action string) error
 	SendPhotoByFileID(ctx context.Context, chatID int64, fileID, caption string, topicID int) error
 	SendDocumentByFileID(ctx context.Context, chatID int64, fileID, caption, fileName string, topicID int) error
+	SendPhotoByPath(ctx context.Context, chatID int64, localPath, caption string, topicID int) error
+	SendDocumentByPath(ctx context.Context, chatID int64, localPath, caption, fileName, mimeType string, topicID int) error
 }
 
 // Adapter maps Telegram runtime events and operations to balda session locators.
@@ -167,10 +169,18 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 			err = fmt.Errorf("telegram photo operation requires media payload")
 			break
 		}
+		if strings.TrimSpace(operation.Media.LocalPath) != "" {
+			err = a.SendPhotoByPath(ctx, locator, operation.Media.LocalPath, operation.Media.Caption)
+			break
+		}
 		err = a.SendPhotoByFileID(ctx, locator, operation.Media.FileID, operation.Media.Caption)
 	case deliverycmd.OperationDocument:
 		if operation.Media == nil {
 			err = fmt.Errorf("telegram document operation requires media payload")
+			break
+		}
+		if strings.TrimSpace(operation.Media.LocalPath) != "" {
+			err = a.SendDocumentByPath(ctx, locator, operation.Media.LocalPath, operation.Media.Caption, operation.Media.Name, operation.Media.MIMEType)
 			break
 		}
 		err = a.SendDocumentByFileID(ctx, locator, operation.Media.FileID, operation.Media.Caption, operation.Media.Name)
@@ -944,6 +954,28 @@ func (a *Adapter) SendDocumentByFileID(ctx context.Context, locator deliverycmd.
 		return err
 	}
 	return a.messenger.SendDocumentByFileID(ctx, chatID, fileID, caption, fileName, topicID)
+}
+
+func (a *Adapter) SendPhotoByPath(ctx context.Context, locator deliverycmd.Locator, localPath, caption string) error {
+	address, ok, err := DecodeLocator(locator)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("telegram locator is required")
+	}
+	return a.messenger.SendPhotoByPath(ctx, address.ChatID, localPath, caption, address.TopicID)
+}
+
+func (a *Adapter) SendDocumentByPath(ctx context.Context, locator deliverycmd.Locator, localPath, caption, fileName, mimeType string) error {
+	address, ok, err := DecodeLocator(locator)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("telegram locator is required")
+	}
+	return a.messenger.SendDocumentByPath(ctx, address.ChatID, localPath, caption, fileName, mimeType, address.TopicID)
 }
 
 // CreateTopicLocator creates a Telegram forum topic and returns the balda locator for it.

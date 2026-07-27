@@ -72,6 +72,14 @@ func (m *recordingQuestionMessenger) SendDocumentByFileID(context.Context, int64
 	return nil
 }
 
+func (m *recordingQuestionMessenger) SendPhotoByPath(context.Context, int64, string, string, int) error {
+	return nil
+}
+
+func (m *recordingQuestionMessenger) SendDocumentByPath(context.Context, int64, string, string, string, string, int) error {
+	return nil
+}
+
 func (m *recordingQuestionMessenger) SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(
 	_ context.Context,
 	chatID, receiverUserID int64,

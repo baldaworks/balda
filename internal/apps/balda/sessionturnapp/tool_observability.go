@@ -26,8 +26,8 @@ func toolFailureFromFunctionResponse(response *genai.FunctionResponse) (toolFail
 	failure := toolFailure{ToolName: strings.TrimSpace(response.Name), Status: stringValue(response.Response["status"])}
 	errorValue := response.Response["error"]
 	if rawOutput, ok := mapValue(response.Response["rawOutput"]); ok {
-		failure.ToolName = stringValue(rawOutput["tool"])
-		failure.Server = stringValue(rawOutput["server"])
+		failure.ToolName = firstNonEmptyString(stringValue(rawOutput["tool"]), failure.ToolName)
+		failure.Server = firstNonEmptyString(stringValue(rawOutput["server"]), failure.Server)
 		failure.Status = firstNonEmptyString(stringValue(rawOutput["status"]), failure.Status)
 		errorValue = firstNonNil(rawOutput["error"], nestedValue(rawOutput, "result", "structuredContent", "error"), errorValue)
 	}
