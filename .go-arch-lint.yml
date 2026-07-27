@@ -21,6 +21,7 @@ components:
   # Wire contracts, payloads, envelope builders, and shared delivery/progress DTOs.
   contracts:
     in:
+      - internal/apps/balda/attachment
       - internal/apps/balda/actorcmd
       - internal/apps/balda/automodecmd
       - internal/apps/balda/controlcmd
@@ -92,6 +93,7 @@ components:
   infrastructure:
     in:
       - internal/apps/balda
+      - internal/apps/balda/attachmentstore
       - internal/apps/balda/controlmcp
       - internal/apps/balda/eventbus
       - internal/apps/balda/eventbus/**
