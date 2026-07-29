@@ -1079,9 +1079,13 @@ func telegramTopicID(chatType string, messageThreadID *int, topicMessage *bool) 
 		return 0
 	}
 	if !strings.EqualFold(strings.TrimSpace(chatType), chatTypePrivate) {
-		// In public chats, message_thread_id is the routing key for balda job
-		// threads even when is_topic_message is omitted or false.
-		return *messageThreadID
+		// In public chats, only explicit forum-topic messages should route to a
+		// topic-scoped Balda session. Ordinary replies may still carry
+		// message_thread_id metadata, but they must stay on the root session.
+		if topicMessage != nil && *topicMessage {
+			return *messageThreadID
+		}
+		return 0
 	}
 	if topicMessage != nil && !*topicMessage {
 		return 0

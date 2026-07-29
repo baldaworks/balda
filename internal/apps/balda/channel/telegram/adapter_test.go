@@ -72,11 +72,13 @@ func TestMessageContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 
 func TestMessageContextFromEvent_SupergroupPreservesMessageThreadID(t *testing.T) {
 	topicID := 77
+	isTopicMessage := true
 
 	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
 		Message: &client.Message{
 			MessageId:       21,
 			MessageThreadId: &topicID,
+			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
 				Id:   -1009001,
 				Type: "supergroup",
@@ -102,7 +104,7 @@ func TestMessageContextFromEvent_SupergroupPreservesMessageThreadID(t *testing.T
 	}
 }
 
-func TestMessageContextFromEvent_SupergroupPreservesMessageThreadIDWhenNonTopicFlagFalse(t *testing.T) {
+func TestMessageContextFromEvent_SupergroupIgnoresMessageThreadIDWhenNonTopicFlagFalse(t *testing.T) {
 	topicID := 88
 	isTopicMessage := false
 
@@ -122,11 +124,37 @@ func TestMessageContextFromEvent_SupergroupPreservesMessageThreadIDWhenNonTopicF
 	if !ok {
 		t.Fatal("MessageContextFromEvent() ok = false, want true")
 	}
-	if got.TopicID != 88 {
-		t.Fatalf("topic_id = %d, want 88 for supergroup thread", got.TopicID)
+	if got.TopicID != 0 {
+		t.Fatalf("topic_id = %d, want 0 for non-topic supergroup reply", got.TopicID)
 	}
-	if got.Locator.SessionID != "tg--1009001-88" {
-		t.Fatalf("session_id = %q, want tg--1009001-88", got.Locator.SessionID)
+	if got.Locator.SessionID != "tg--1009001-0" {
+		t.Fatalf("session_id = %q, want tg--1009001-0", got.Locator.SessionID)
+	}
+}
+
+func TestMessageContextFromEvent_SupergroupIgnoresMessageThreadIDWhenTopicFlagMissing(t *testing.T) {
+	topicID := 89
+
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId:       23,
+			MessageThreadId: &topicID,
+			Chat: client.Chat{
+				Id:   -1009001,
+				Type: "supergroup",
+			},
+			From: &client.User{Id: 101},
+			Text: textPtr(testMessageText),
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if got.TopicID != 0 {
+		t.Fatalf("topic_id = %d, want 0 when topic flag is absent", got.TopicID)
+	}
+	if got.Locator.SessionID != "tg--1009001-0" {
+		t.Fatalf("session_id = %q, want tg--1009001-0", got.Locator.SessionID)
 	}
 }
 
@@ -652,12 +680,14 @@ func TestTopicLifecycleFromEvent_IgnoresPrivateNonTopicChat(t *testing.T) {
 
 func TestTopicLifecycleFromEvent_AcceptsSupergroup(t *testing.T) {
 	topicID := 77
+	isTopicMessage := true
 
 	got, ok := (&Adapter{}).TopicLifecycleFromEvent(&events.MessageEvent{
 		Type: messagetype.ForumTopicCreated,
 		Message: &client.Message{
 			MessageId:       42,
 			MessageThreadId: &topicID,
+			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
 				Id:   9001,
 				Type: "supergroup",

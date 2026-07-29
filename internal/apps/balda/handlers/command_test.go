@@ -379,14 +379,14 @@ func TestCommandHandlerOnCommand_ResetInGroupChatAllowed(t *testing.T) {
 	if len(sm.createCalls) != 1 {
 		t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
 	}
-	if sm.createCalls[0].AgentName != autoSessionLabel {
-		t.Fatalf("CreateSession agent = %q, want %q", sm.createCalls[0].AgentName, autoSessionLabel)
+	if sm.createCalls[0].AgentName != ownerSessionLabel {
+		t.Fatalf("CreateSession agent = %q, want %q", sm.createCalls[0].AgentName, ownerSessionLabel)
 	}
 	if len(turns.cancelCalls) != 1 {
 		t.Fatalf("CancelSession calls = %d, want 1 synchronous call", len(turns.cancelCalls))
 	}
-	if sm.resetCalls[0].SessionID != "tg-9001-33" {
-		t.Fatalf("ResetSession call = %+v, want session=tg-9001-33", sm.resetCalls[0])
+	if sm.resetCalls[0].SessionID != "tg-9001-0" {
+		t.Fatalf("ResetSession call = %+v, want session=tg-9001-0", sm.resetCalls[0])
 	}
 	if len(turns.commands) != 0 {
 		t.Fatalf("published control commands = %d, want 0", len(turns.commands))

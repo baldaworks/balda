@@ -233,7 +233,7 @@ func TestCallbackContextFromEventNormalizesSelection(t *testing.T) {
 	if got.QuestionID != "question-1" || got.OptionIndex != 2 || got.ProviderMessageID != "42" || got.UserID != 101 {
 		t.Fatalf("callback = %+v", got)
 	}
-	if got.Locator != NewLocator(-1001, 77) {
+	if got.Locator != NewLocator(-1001, 0) {
 		t.Fatalf("locator = %+v", got.Locator)
 	}
 }

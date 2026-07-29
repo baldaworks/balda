@@ -118,6 +118,7 @@ func TestBaldaHandlerOnForumTopicLifecycle_NonClosingEventsDoNotStopSession(t *t
 
 func TestBaldaHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T) {
 	topicID := 77
+	isTopicMessage := true
 	locator := baldatelegram.NewLocator(9001, topicID)
 	sessionManager := newBaldaSessionManagerWithSession(t, locator, newBaldaTopicSession(t, locator.SessionID))
 	turnDispatcher := &fakeTurnDispatcher{}
@@ -135,6 +136,7 @@ func TestBaldaHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T)
 		Message: &client.Message{
 			MessageId:       42,
 			MessageThreadId: &topicID,
+			IsTopicMessage:  &isTopicMessage,
 			Chat: client.Chat{
 				Id:   9001,
 				Type: "supergroup",
@@ -511,6 +513,7 @@ func TestBaldaHandlerOnMessage_TopicReplyToBotBypassesMentionGate(t *testing.T) 
 
 	text := "topic follow up"
 	topicID := 77
+	isTopicMessage := true
 	event := &events.MessageEvent{
 		Type: messagetype.Text,
 		Message: &client.Message{
@@ -519,6 +522,7 @@ func TestBaldaHandlerOnMessage_TopicReplyToBotBypassesMentionGate(t *testing.T) 
 				Type: "supergroup",
 			},
 			MessageThreadId: &topicID,
+			IsTopicMessage:  &isTopicMessage,
 			Text:            &text,
 			From:            &client.User{Id: 101},
 			ReplyToMessage:  replyToMessageFrom(4242, true),

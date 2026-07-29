@@ -428,6 +428,7 @@ func newBaldaRestoreSessionManager(
 
 func newPublicTopicMessageEvent(topicID int, text string) *events.MessageEvent {
 	entities := []client.MessageEntity{{Type: "mention", Offset: 0, Length: len("@" + testBaldaBotUsername)}}
+	isTopicMessage := true
 	return &events.MessageEvent{
 		Type: messagetype.Text,
 		Message: &client.Message{
@@ -436,6 +437,7 @@ func newPublicTopicMessageEvent(topicID int, text string) *events.MessageEvent {
 				Type: "supergroup",
 			},
 			MessageThreadId: &topicID,
+			IsTopicMessage:  &isTopicMessage,
 			Text:            &text,
 			Entities:        &entities,
 			From:            &client.User{Id: 101},
