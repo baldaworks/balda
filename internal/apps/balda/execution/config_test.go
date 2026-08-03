@@ -21,6 +21,11 @@ func TestConfigNormalized_DefaultsToDurableRuntime(t *testing.T) {
 	if got.Events.Stream != DefaultEventStream || got.DLQ.Stream != DefaultDLQStream {
 		t.Fatalf("Events/DLQ defaults = %+v/%+v", got.Events, got.DLQ)
 	}
+	if got.Memory.Stream != DefaultSessionMemoryStream || got.Memory.Consumer != DefaultSessionMemoryConsumer ||
+		got.Memory.AckWait != "5m" || got.Memory.FetchWait != "1s" ||
+		got.Memory.PublishTimeout != "2s" || got.Memory.PublishAttempts != 3 {
+		t.Fatalf("Memory defaults = %+v", got.Memory)
+	}
 }
 
 func TestCommandConfigNormalized_ClampsFetchBatchToMaxAckPending(t *testing.T) {

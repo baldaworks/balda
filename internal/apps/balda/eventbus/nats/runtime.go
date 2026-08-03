@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/rs/zerolog"
 )
 
@@ -355,6 +356,7 @@ func ensureStreams(ctx context.Context, js jetstream.JetStream, cfg resolvedConf
 		streamConfig(cfg.Execution.Commands.Stream, []string{baldaexecution.SubjectCommandAll}, jetstream.WorkQueuePolicy, cfg.Commands),
 		streamConfig(cfg.Execution.Events.Stream, []string{baldaexecution.SubjectEventAll}, jetstream.LimitsPolicy, cfg.Events),
 		streamConfig(cfg.Execution.DLQ.Stream, []string{baldaexecution.SubjectDLQAll}, jetstream.LimitsPolicy, cfg.DLQ),
+		streamConfig(cfg.Execution.Memory.Stream, []string{sessionmemorycmd.SubjectAll}, jetstream.WorkQueuePolicy, cfg.Memory),
 	}
 	for _, stream := range streams {
 		if _, err := js.CreateOrUpdateStream(ctx, stream); err != nil {

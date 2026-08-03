@@ -20,8 +20,14 @@ type resolvedConfig struct {
 	Commands  streamSpec
 	Events    streamSpec
 	DLQ       streamSpec
+	Memory    streamSpec
 	AckWait   time.Duration
 	FetchWait time.Duration
+
+	MemoryAckWait         time.Duration
+	MemoryFetchWait       time.Duration
+	MemoryPublishTimeout  time.Duration
+	MemoryPublishAttempts int
 }
 
 const embeddedNATSStateDirName = "nats"
@@ -59,6 +65,7 @@ func resolveConfig(natsCfg baldaeventbus.Config, executionCfg baldaexecution.Con
 	out.Commands = streamSpec{MaxAge: 7 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "new"}
 	out.Events = streamSpec{MaxAge: 30 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "old"}
 	out.DLQ = streamSpec{MaxAge: 30 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "new"}
+	out.Memory = streamSpec{MaxAge: 7 * 24 * time.Hour, MaxBytes: -1, MaxMsgSize: -1, Discard: "new"}
 	out.AckWait, err = parseDuration(normalizedExecution.Commands.AckWait)
 	if err != nil {
 		return resolvedConfig{}, fmt.Errorf("balda.execution.commands.ack_wait: %w", err)
@@ -67,7 +74,41 @@ func resolveConfig(natsCfg baldaeventbus.Config, executionCfg baldaexecution.Con
 	if err != nil {
 		return resolvedConfig{}, fmt.Errorf("balda.execution.commands.fetch_wait: %w", err)
 	}
+	out.MemoryAckWait, err = parseDuration(normalizedExecution.Memory.AckWait)
+	if err != nil {
+		return resolvedConfig{}, fmt.Errorf("balda.session_memory.ack_wait: %w", err)
+	}
+	out.MemoryFetchWait, err = parseDuration(normalizedExecution.Memory.FetchWait)
+	if err != nil {
+		return resolvedConfig{}, fmt.Errorf("balda.session_memory.fetch_wait: %w", err)
+	}
+	out.MemoryPublishTimeout, err = parseDuration(normalizedExecution.Memory.PublishTimeout)
+	if err != nil {
+		return resolvedConfig{}, fmt.Errorf("balda.session_memory.publish_timeout: %w", err)
+	}
+	out.MemoryPublishAttempts = normalizedExecution.Memory.PublishAttempts
+	if err := validateSessionMemoryNames(normalizedExecution); err != nil {
+		return resolvedConfig{}, err
+	}
 	return out, nil
+}
+
+func validateSessionMemoryNames(cfg baldaexecution.Config) error {
+	memoryStream := strings.TrimSpace(cfg.Memory.Stream)
+	for name, stream := range map[string]string{
+		"commands": cfg.Commands.Stream,
+		"events":   cfg.Events.Stream,
+		"dlq":      cfg.DLQ.Stream,
+	} {
+		if strings.EqualFold(memoryStream, strings.TrimSpace(stream)) {
+			return fmt.Errorf("balda.session_memory.stream must differ from %s stream", name)
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Memory.Consumer), strings.TrimSpace(cfg.Commands.Consumer)) ||
+		strings.EqualFold(strings.TrimSpace(cfg.Memory.Consumer), baldaexecution.DefaultEventProjectorConsumer) {
+		return fmt.Errorf("balda.session_memory.consumer must differ from runtime consumers")
+	}
+	return nil
 }
 
 func parseDuration(raw string) (time.Duration, error) {

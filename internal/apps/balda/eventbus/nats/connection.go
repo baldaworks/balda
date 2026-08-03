@@ -15,20 +15,22 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
 
 type Bus struct {
-	cfg           resolvedConfig
-	embedded      *EmbeddedNATS
-	conn          *gnats.Conn
-	js            jetstream.JetStream
-	consumer      jetstream.Consumer
-	eventConsumer jetstream.Consumer
-	logger        zerolog.Logger
-	startMu       sync.Mutex
-	started       bool
+	cfg            resolvedConfig
+	embedded       *EmbeddedNATS
+	conn           *gnats.Conn
+	js             jetstream.JetStream
+	consumer       jetstream.Consumer
+	eventConsumer  jetstream.Consumer
+	memoryConsumer jetstream.Consumer
+	logger         zerolog.Logger
+	startMu        sync.Mutex
+	started        bool
 }
 
 type Params struct {
@@ -340,5 +342,18 @@ func (b *Bus) ensureRuntime(ctx context.Context) error {
 		return fmt.Errorf("create event projector consumer: %w", err)
 	}
 	b.eventConsumer = eventConsumer
+	memoryConsumer, err := b.js.CreateOrUpdateConsumer(ctx, b.cfg.Execution.Memory.Stream, jetstream.ConsumerConfig{
+		Durable:       b.cfg.Execution.Memory.Consumer,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		AckWait:       b.cfg.MemoryAckWait,
+		MaxDeliver:    -1,
+		MaxAckPending: 1,
+		FilterSubject: sessionmemorycmd.SubjectAll,
+	})
+	if err != nil {
+		return fmt.Errorf("create session-memory consumer: %w", err)
+	}
+	b.memoryConsumer = memoryConsumer
 	return nil
 }

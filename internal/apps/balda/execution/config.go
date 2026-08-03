@@ -14,12 +14,15 @@ const (
 	DefaultEventStream            = "BALDA_EVENTS"
 	DefaultEventProjectorConsumer = "BALDA_EVENT_PROJECTOR"
 	DefaultDLQStream              = "BALDA_DLQ"
+	DefaultSessionMemoryStream    = "BALDA_SESSION_MEMORY"
+	DefaultSessionMemoryConsumer  = "BALDA_SESSION_MEMORY_WORKER"
 )
 
 type Config struct {
 	Commands CommandConfig
 	Events   EventStreamConfig
 	DLQ      DLQConfig
+	Memory   SessionMemoryConfig
 }
 
 type CommandConfig struct {
@@ -40,10 +43,20 @@ type DLQConfig struct {
 	Stream string
 }
 
+type SessionMemoryConfig struct {
+	Stream          string
+	Consumer        string
+	AckWait         string
+	FetchWait       string
+	PublishTimeout  string
+	PublishAttempts int
+}
+
 func (c Config) Normalized() (Config, error) {
 	c.Commands = c.Commands.Normalized()
 	c.Events = c.Events.Normalized()
 	c.DLQ = c.DLQ.Normalized()
+	c.Memory = c.Memory.Normalized()
 	return c, nil
 }
 
@@ -88,4 +101,27 @@ func (c DLQConfig) Normalized() DLQConfig {
 		c.Stream = DefaultDLQStream
 	}
 	return c
+}
+
+func (c SessionMemoryConfig) Normalized() SessionMemoryConfig {
+	out := c
+	if strings.TrimSpace(out.Stream) == "" {
+		out.Stream = DefaultSessionMemoryStream
+	}
+	if strings.TrimSpace(out.Consumer) == "" {
+		out.Consumer = DefaultSessionMemoryConsumer
+	}
+	if strings.TrimSpace(out.AckWait) == "" {
+		out.AckWait = "5m"
+	}
+	if strings.TrimSpace(out.FetchWait) == "" {
+		out.FetchWait = "1s"
+	}
+	if strings.TrimSpace(out.PublishTimeout) == "" {
+		out.PublishTimeout = "2s"
+	}
+	if out.PublishAttempts <= 0 {
+		out.PublishAttempts = 3
+	}
+	return out
 }
