@@ -188,3 +188,12 @@ type OperationOutcome struct {
 	ScopeVersion  uint64         `json:"scope_version"`
 	Revisions     []RevisionRef  `json:"revisions,omitempty"`
 }
+
+// BoundaryOutcome contains the independently durable scenario and profile stages.
+// When profile synthesis fails, Scenarios remains populated for safe replay.
+type BoundaryOutcome struct {
+	SchemaVersion string           `json:"schema_version"`
+	Scope         Scope            `json:"scope"`
+	Scenarios     OperationOutcome `json:"scenarios"`
+	Profile       OperationOutcome `json:"profile"`
+}

@@ -227,14 +227,60 @@ func (r CommitRequest) Validate() error {
 		}
 		transitionSeen[transition.Ref] = struct{}{}
 	}
+	wantTransitions := make(map[RevisionRef]struct{}, len(r.Transitions))
 	for _, atom := range r.Atoms {
-		if atom.Meta.Supersedes == nil {
-			continue
+		if err := validateSupersessionTransition(atom.Meta, r.Transitions); err != nil {
+			return err
 		}
-		transition, ok := transitionForRef(r.Transitions, *atom.Meta.Supersedes)
-		if !ok || transition.From != RevisionStateActive || transition.To != RevisionStateSuperseded {
-			return invalidDerived("superseding atom requires its active-to-superseded transition")
+		if !addSupersessionRef(wantTransitions, atom.Meta) {
+			return invalidDerived("commit supersedes one revision more than once")
 		}
+	}
+	for _, scenario := range r.Scenarios {
+		if err := validateSupersessionTransition(scenario.Meta, r.Transitions); err != nil {
+			return err
+		}
+		if !addSupersessionRef(wantTransitions, scenario.Meta) {
+			return invalidDerived("commit supersedes one revision more than once")
+		}
+	}
+	for _, profile := range r.Profiles {
+		if err := validateSupersessionTransition(profile.Meta, r.Transitions); err != nil {
+			return err
+		}
+		if !addSupersessionRef(wantTransitions, profile.Meta) {
+			return invalidDerived("commit supersedes one revision more than once")
+		}
+	}
+	if len(transitionSeen) != len(wantTransitions) {
+		return invalidDerived("commit contains a transition unrelated to a superseding revision")
+	}
+	for ref := range transitionSeen {
+		if _, ok := wantTransitions[ref]; !ok {
+			return invalidDerived("commit contains a transition unrelated to a superseding revision")
+		}
+	}
+	return nil
+}
+
+func addSupersessionRef(refs map[RevisionRef]struct{}, meta RevisionMeta) bool {
+	if meta.Supersedes == nil {
+		return true
+	}
+	if _, exists := refs[*meta.Supersedes]; exists {
+		return false
+	}
+	refs[*meta.Supersedes] = struct{}{}
+	return true
+}
+
+func validateSupersessionTransition(meta RevisionMeta, transitions []RevisionTransition) error {
+	if meta.Supersedes == nil {
+		return nil
+	}
+	transition, ok := transitionForRef(transitions, *meta.Supersedes)
+	if !ok || transition.From != RevisionStateActive || transition.To != RevisionStateSuperseded {
+		return invalidDerived("superseding revision requires its active-to-superseded transition")
 	}
 	return nil
 }
