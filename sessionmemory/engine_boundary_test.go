@@ -276,6 +276,10 @@ func (s *boundaryTestStore) LookupOperation(_ context.Context, lookup OperationL
 	return OperationLookupResult{Found: ok, Outcome: cloneOperationOutcome(outcome)}, nil
 }
 
+func (s *boundaryTestStore) LookupForget(context.Context, ForgetLookup) (ForgetLookupResult, error) {
+	return ForgetLookupResult{}, nil
+}
+
 func (s *boundaryTestStore) LoadScope(_ context.Context, _ Scope) (ScopeSnapshot, error) {
 	return cloneScopeSnapshot(s.snapshot), nil
 }
@@ -304,6 +308,14 @@ func (s *boundaryTestStore) Commit(_ context.Context, request CommitRequest) (Op
 	outcome := outcomeForCommit(request)
 	s.operations[request.OperationID] = cloneOperationOutcome(outcome)
 	return outcome, nil
+}
+
+func (s *boundaryTestStore) ForgetSource(context.Context, ForgetSourceRequest) (ForgetOutcome, error) {
+	return ForgetOutcome{}, nil
+}
+
+func (s *boundaryTestStore) ForgetScope(context.Context, ForgetScopeRequest) (ForgetOutcome, error) {
+	return ForgetOutcome{}, nil
 }
 
 func (s *boundaryTestStore) Search(context.Context, DerivedSearchRequest) ([]SearchHit, error) {

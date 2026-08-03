@@ -29,6 +29,28 @@ func cloneOperationOutcome(outcome OperationOutcome) OperationOutcome {
 	return outcome
 }
 
+func cloneForgetLookupResult(result ForgetLookupResult) ForgetLookupResult {
+	result.Outcome = cloneForgetOutcome(result.Outcome)
+	return result
+}
+
+func cloneForgetOutcome(outcome ForgetOutcome) ForgetOutcome {
+	outcome.Sources = append([]SourceRef(nil), outcome.Sources...)
+	outcome.Revisions = append([]RevisionRef(nil), outcome.Revisions...)
+	return outcome
+}
+
+func cloneForgetSourceRequest(request ForgetSourceRequest) ForgetSourceRequest {
+	request.ExpectedRevisions = append([]RevisionRef(nil), request.ExpectedRevisions...)
+	return request
+}
+
+func cloneForgetScopeRequest(request ForgetScopeRequest) ForgetScopeRequest {
+	request.ExpectedSources = append([]SourceRef(nil), request.ExpectedSources...)
+	request.ExpectedRevisions = append([]RevisionRef(nil), request.ExpectedRevisions...)
+	return request
+}
+
 func cloneSearchHits(hits []SearchHit) []SearchHit {
 	cloned := append([]SearchHit(nil), hits...)
 	for index := range cloned {

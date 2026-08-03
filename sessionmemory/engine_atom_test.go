@@ -505,15 +505,25 @@ func TestProcessTurnRedactsClassifiedStoreError(t *testing.T) {
 }
 
 type engineTestStore struct {
-	lookup func(context.Context, OperationLookup) (OperationLookupResult, error)
-	load   func(context.Context, Scope) (ScopeSnapshot, error)
-	commit func(context.Context, CommitRequest) (OperationOutcome, error)
-	search func(context.Context, DerivedSearchRequest) ([]SearchHit, error)
-	trace  func(context.Context, TraceRequest) (TraceGraph, error)
+	lookup       func(context.Context, OperationLookup) (OperationLookupResult, error)
+	lookupForget func(context.Context, ForgetLookup) (ForgetLookupResult, error)
+	load         func(context.Context, Scope) (ScopeSnapshot, error)
+	commit       func(context.Context, CommitRequest) (OperationOutcome, error)
+	forgetSource func(context.Context, ForgetSourceRequest) (ForgetOutcome, error)
+	forgetScope  func(context.Context, ForgetScopeRequest) (ForgetOutcome, error)
+	search       func(context.Context, DerivedSearchRequest) ([]SearchHit, error)
+	trace        func(context.Context, TraceRequest) (TraceGraph, error)
 }
 
 func (s *engineTestStore) LookupOperation(ctx context.Context, lookup OperationLookup) (OperationLookupResult, error) {
 	return s.lookup(ctx, lookup)
+}
+
+func (s *engineTestStore) LookupForget(ctx context.Context, lookup ForgetLookup) (ForgetLookupResult, error) {
+	if s.lookupForget == nil {
+		return ForgetLookupResult{}, nil
+	}
+	return s.lookupForget(ctx, lookup)
 }
 
 func (s *engineTestStore) LoadScope(ctx context.Context, scope Scope) (ScopeSnapshot, error) {
@@ -522,6 +532,20 @@ func (s *engineTestStore) LoadScope(ctx context.Context, scope Scope) (ScopeSnap
 
 func (s *engineTestStore) Commit(ctx context.Context, request CommitRequest) (OperationOutcome, error) {
 	return s.commit(ctx, request)
+}
+
+func (s *engineTestStore) ForgetSource(ctx context.Context, request ForgetSourceRequest) (ForgetOutcome, error) {
+	if s.forgetSource == nil {
+		return ForgetOutcome{}, nil
+	}
+	return s.forgetSource(ctx, request)
+}
+
+func (s *engineTestStore) ForgetScope(ctx context.Context, request ForgetScopeRequest) (ForgetOutcome, error) {
+	if s.forgetScope == nil {
+		return ForgetOutcome{}, nil
+	}
+	return s.forgetScope(ctx, request)
 }
 
 func (s *engineTestStore) Search(ctx context.Context, request DerivedSearchRequest) ([]SearchHit, error) {

@@ -72,11 +72,17 @@ type CommitRequest struct {
 
 // Store is the atomic persistence port required by derived processing.
 // Implementations must be concurrency-safe and enforce operation idempotency
-// plus optimistic concurrency at the exact Scope boundary.
+// plus optimistic concurrency at the exact Scope boundary. ForgetSource and
+// ForgetScope must atomically verify the supplied complete cascade, replace raw
+// content with identity-only tombstones, invalidate readable revisions, and
+// persist their outcome; no partial mutation may be visible on failure.
 type Store interface {
 	LookupOperation(ctx context.Context, lookup OperationLookup) (OperationLookupResult, error)
+	LookupForget(ctx context.Context, lookup ForgetLookup) (ForgetLookupResult, error)
 	LoadScope(ctx context.Context, scope Scope) (ScopeSnapshot, error)
 	Commit(ctx context.Context, request CommitRequest) (OperationOutcome, error)
+	ForgetSource(ctx context.Context, request ForgetSourceRequest) (ForgetOutcome, error)
+	ForgetScope(ctx context.Context, request ForgetScopeRequest) (ForgetOutcome, error)
 	Search(ctx context.Context, request DerivedSearchRequest) ([]SearchHit, error)
 	Trace(ctx context.Context, request TraceRequest) (TraceGraph, error)
 }
