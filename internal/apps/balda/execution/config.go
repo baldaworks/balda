@@ -51,6 +51,9 @@ type SessionMemoryConfig struct {
 	FetchWait       string
 	PublishTimeout  string
 	PublishAttempts int
+	MaxAge          string
+	MaxBytes        string
+	MaxMsgSize      string
 }
 
 func (c Config) Normalized() (Config, error) {
@@ -123,6 +126,15 @@ func (c SessionMemoryConfig) Normalized() SessionMemoryConfig {
 	}
 	if out.PublishAttempts <= 0 {
 		out.PublishAttempts = 3
+	}
+	if strings.TrimSpace(out.MaxAge) == "" {
+		out.MaxAge = "7d"
+	}
+	if strings.TrimSpace(out.MaxBytes) == "" {
+		out.MaxBytes = "-1"
+	}
+	if strings.TrimSpace(out.MaxMsgSize) == "" {
+		out.MaxMsgSize = "-1"
 	}
 	return out
 }

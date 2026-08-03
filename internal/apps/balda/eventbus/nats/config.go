@@ -74,23 +74,52 @@ func resolveConfig(natsCfg baldaeventbus.Config, executionCfg baldaexecution.Con
 	if err != nil {
 		return resolvedConfig{}, fmt.Errorf("balda.execution.commands.fetch_wait: %w", err)
 	}
-	out.MemoryAckWait, err = parseDuration(normalizedExecution.Memory.AckWait)
-	if err != nil {
-		return resolvedConfig{}, fmt.Errorf("balda.session_memory.ack_wait: %w", err)
-	}
-	out.MemoryFetchWait, err = parseDuration(normalizedExecution.Memory.FetchWait)
-	if err != nil {
-		return resolvedConfig{}, fmt.Errorf("balda.session_memory.fetch_wait: %w", err)
-	}
-	out.MemoryPublishTimeout, err = parseDuration(normalizedExecution.Memory.PublishTimeout)
-	if err != nil {
-		return resolvedConfig{}, fmt.Errorf("balda.session_memory.publish_timeout: %w", err)
-	}
-	out.MemoryPublishAttempts = normalizedExecution.Memory.PublishAttempts
 	if normalizedExecution.Memory.Enabled {
+		out.Memory.MaxAge, err = parsePositiveDuration(normalizedExecution.Memory.MaxAge)
+		if err != nil {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.max_age: %w", err)
+		}
+		out.Memory.MaxBytes, err = parseBytes(normalizedExecution.Memory.MaxBytes)
+		if err != nil {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.max_bytes: %w", err)
+		}
+		if out.Memory.MaxBytes == 0 || out.Memory.MaxBytes < -1 {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.max_bytes must be positive or -1")
+		}
+		maxMsgSize, msgErr := parseBytes(normalizedExecution.Memory.MaxMsgSize)
+		if msgErr != nil {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.max_msg_size: %w", msgErr)
+		}
+		if maxMsgSize == 0 || maxMsgSize < -1 {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.max_msg_size must be positive or -1")
+		}
+		if maxMsgSize != -1 && maxMsgSize > int64(^uint32(0)>>1) {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.max_msg_size exceeds int32 maximum")
+		}
+		out.Memory.MaxMsgSize = int32(maxMsgSize)
+		out.MemoryAckWait, err = parsePositiveDuration(normalizedExecution.Memory.AckWait)
+		if err != nil {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.ack_wait: %w", err)
+		}
+		out.MemoryFetchWait, err = parsePositiveDuration(normalizedExecution.Memory.FetchWait)
+		if err != nil {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.fetch_wait: %w", err)
+		}
+		out.MemoryPublishTimeout, err = parsePositiveDuration(normalizedExecution.Memory.PublishTimeout)
+		if err != nil {
+			return resolvedConfig{}, fmt.Errorf("balda.session_memory.publish_timeout: %w", err)
+		}
+		out.MemoryPublishAttempts = normalizedExecution.Memory.PublishAttempts
 		if err := validateSessionMemoryNames(normalizedExecution); err != nil {
 			return resolvedConfig{}, err
 		}
+	} else {
+		// Ignore malformed optional values while disabled so existing installs
+		// retain their historical no-session-memory startup behavior.
+		out.MemoryAckWait = 5 * time.Minute
+		out.MemoryFetchWait = time.Second
+		out.MemoryPublishTimeout = 2 * time.Second
+		out.MemoryPublishAttempts = 3
 	}
 	return out, nil
 }
@@ -126,8 +155,22 @@ func parseDuration(raw string) (time.Duration, error) {
 	return time.ParseDuration(trimmed)
 }
 
+func parsePositiveDuration(raw string) (time.Duration, error) {
+	value, err := parseDuration(raw)
+	if err != nil {
+		return 0, err
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("duration must be greater than zero")
+	}
+	return value, nil
+}
+
 func parseBytes(raw string) (int64, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if trimmed == "-1" {
+		return -1, nil
+	}
 	if trimmed == "" {
 		return 0, fmt.Errorf("value is required")
 	}

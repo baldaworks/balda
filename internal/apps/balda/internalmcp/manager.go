@@ -47,6 +47,7 @@ type InternalMCPManager struct {
 	memoryStore      *memory.Store
 	dispatcher       actortransport.Dispatcher
 	questionService  *questions.Service
+	sessionMemoryCfg sessionmemorymcp.Config
 	cleanups         []func() error
 }
 
@@ -70,6 +71,7 @@ type internalMCPParams struct {
 	MemoryStore      *memory.Store
 	Dispatcher       actortransport.Dispatcher
 	QuestionService  *questions.Service `optional:"true"`
+	SessionMemory    sessionmemorymcp.Config
 }
 
 // NewInternalMCPManager creates an internal MCP lifecycle manager.
@@ -85,6 +87,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		memoryStore:      params.MemoryStore,
 		dispatcher:       params.Dispatcher,
 		questionService:  params.QuestionService,
+		sessionMemoryCfg: params.SessionMemory,
 	}
 
 	return manager
@@ -168,11 +171,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		sessionSendAttachmentService{dispatcher: m.dispatcher},
 	)
 	memory.RegisterTools(server, m.memoryStore)
-	// Session-memory provider/context wiring is optional until the configured
-	// durable provider is enabled. Registering the disabled tool keeps its MCP
-	// contract stable and lets a later composition-root adapter replace the
-	// zero configuration without changing the server surface.
-	sessionmemorymcp.RegisterTools(server, sessionmemorymcp.Config{})
+	sessionmemorymcp.RegisterTools(server, m.sessionMemoryCfg)
 	controlmcp.RegisterTools(server, m.shutdowner, m.dispatcher)
 
 	if m.workspaceEnabled {

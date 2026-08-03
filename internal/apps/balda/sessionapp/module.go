@@ -6,6 +6,7 @@ import (
 
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -123,5 +124,11 @@ var Module = fx.Module("balda_sessionapp",
 			fx.ParamTags(``, `name:"balda_state_dir"`, `name:"balda_workspace_base_branch"`, `name:"balda_workspace_sessions_dir"`),
 		),
 		baldasession.NewManager,
+		fx.Annotate(
+			func(capture *sessionmemoryapp.BoundaryCapture) baldasession.BoundaryObserver {
+				return SessionBoundaryObserverAdapter{Capture: capture}
+			},
+			fx.As(new(baldasession.BoundaryObserver)),
+		),
 	),
 )

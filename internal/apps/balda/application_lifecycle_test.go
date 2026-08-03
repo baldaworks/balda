@@ -69,7 +69,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"provider runtime",
 		"session manager",
 		"durable transport",
-		"session memory boundaries",
+		"session memory",
 		"turn dispatcher",
 		"question delivery binding projector",
 		"job event projector",

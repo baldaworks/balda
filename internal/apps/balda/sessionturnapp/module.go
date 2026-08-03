@@ -1,14 +1,57 @@
 package sessionturnapp
 
 import (
+	"context"
+
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/appports"
+	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
+	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
 
+type completedTurnCaptureAdapter struct {
+	capture *sessionmemoryapp.TurnCapture
+}
+
+func (a completedTurnCaptureAdapter) CaptureCompletedTurn(ctx context.Context, turn CompletedTurn) error {
+	if a.capture == nil {
+		return nil
+	}
+	return a.capture.CaptureCompletedTurn(ctx, sessionmemoryapp.CaptureRequest{
+		UserText:       turn.UserText,
+		AssistantText:  turn.AssistantText,
+		Locator:        turn.Locator,
+		SessionID:      turn.SessionID,
+		AgentSessionID: turn.AgentSessionID,
+		SourceTurnID:   turn.SourceTurnID,
+		CompletedAt:    turn.CompletedAt,
+	})
+}
+
+func newTurnExecutionServiceWithCapture(
+	dispatcher actortransport.Dispatcher,
+	jobEvents *baldajobs.JobEventsService,
+	sessions *baldasession.Manager,
+	logger zerolog.Logger,
+	autoMaxTurns int,
+	capture CompletedTurnCapture,
+) *TurnExecutionService {
+	return NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, jobEvents, sessions, logger, autoMaxTurns, capture)
+}
+
 var Module = fx.Module("balda_sessionturnapp",
 	fx.Provide(
-		fx.Annotate(NewTurnExecutionService, fx.ParamTags(``, ``, ``, ``, `name:"balda_automode_max_turns"`)),
+		fx.Annotate(newTurnExecutionServiceWithCapture, fx.ParamTags(``, ``, ``, ``, `name:"balda_automode_max_turns"`, ``)),
+		fx.Annotate(
+			func(capture *sessionmemoryapp.TurnCapture) CompletedTurnCapture {
+				return completedTurnCaptureAdapter{capture: capture}
+			},
+			fx.As(new(CompletedTurnCapture)),
+		),
 		fx.Annotate(NewProviderTurnExecutorFromService, fx.As(new(sessionturn.Executor))),
 		NewSessionAccessor,
 		NewMemoryStateProvider,

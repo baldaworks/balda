@@ -635,6 +635,14 @@ balda:
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
+- `balda.session_memory`: optional durable conversation-memory integration (default disabled)
+  - `enabled`: starts the serialized JetStream consumer and enables the locator-scoped `balda.session_memory.search` tool.
+  - `provider.type`: currently `http`; `provider.base_url` must be an HTTP(S) endpoint when enabled.
+  - `provider.token` or `provider.token_env`: optional Bearer credential source; the token is never logged.
+  - completed text-only turns and session reset/close/rotation/shutdown boundaries are published to the dedicated `BALDA_SESSION_MEMORY` stream.
+  - `stream` / `consumer`, timeout, retry, and retention fields are validated and must not collide with command/event/DLQ names.
+  - search is bound to the authenticated current locator; direct/personal and group/topic locators are classified by their concrete channel codecs, while the exact `<channel_type>:<address_key>` remains the isolation key.
+  - recalled text is returned as untrusted reference data and is never treated as instructions or commands.
 - `balda.goal.max_iterations`: maximum `/goalkeeper` worker-validator loop iterations (default `25`)
   - invalid values are clamped to `25`.
 - `runtime.providers.<provider_id>.codex_acp.reasoning_effort`: optional Codex reasoning effort.
@@ -911,12 +919,18 @@ session/job/goal/delivery/memory"]
   - `BALDA_EVENTS`: limits-retention stream for `balda.v1.evt.>` events.
   - `BALDA_DLQ`: limits-retention stream for terminal failures on
     `balda.v1.dlq.>`.
+  - `BALDA_SESSION_MEMORY` (when enabled): file-backed work-queue stream for
+    `balda.v1.session_memory.>` exports; `DiscardNew` preserves older pending
+    exports under pressure.
 - Required consumer:
   - `BALDA_WORKER_COMMANDS`: command worker consumer with explicit ack,
     redelivery, `NakWithDelay`, and `InProgress` heartbeat support.
   - `BALDA_EVENT_PROJECTOR`: event projector consumer that projects
     `BALDA_EVENTS` into SQLite read models. Permanent projection failures are
     terminated to `BALDA_DLQ`; transient failures retry with bounded delivery.
+  - `BALDA_SESSION_MEMORY_WORKER` (when enabled): one-at-a-time explicit-ack
+    consumer on `BALDA_SESSION_MEMORY`; provider retries retain ordering and
+    publish a redacted diagnostic to `BALDA_DLQ` before termination.
 
 #### Stream/consumer table
 
@@ -927,6 +941,8 @@ session/job/goal/delivery/memory"]
 | `BALDA_DLQ` | durable DLQ stream | `balda.v1.dlq.>` | limits retention | file storage, terminal failure inspection source |
 | `BALDA_WORKER_COMMANDS` | command worker consumer (on `BALDA_COMMANDS`) | `balda.v1.cmd.>` | deliver-all + explicit ack | `ack_wait`, `max_deliver`, `max_ack_pending`, `fetch_batch`, `fetch_wait` |
 | `BALDA_EVENT_PROJECTOR` | event projector consumer (on `BALDA_EVENTS`) | `balda.v1.evt.>` | deliver-all + explicit ack | same retry/backpressure knobs as command consumer; projector applies idempotent read-model updates |
+| `BALDA_SESSION_MEMORY` | session-memory export stream (optional) | `balda.v1.session_memory.>` | work-queue retention, `DiscardNew` | `max_age`, `max_bytes`, `max_msg_size` |
+| `BALDA_SESSION_MEMORY_WORKER` | session-memory consumer (optional) | `balda.v1.session_memory.>` | deliver-all + explicit ack, serialized | `ack_wait`, `fetch_wait`, provider retry and bounded shutdown |
 
 - Stable subjects:
   - Commands: `balda.v1.cmd.session`, `balda.v1.cmd.job`,

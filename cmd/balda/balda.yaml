@@ -171,6 +171,36 @@ balda:
     # If false, balda.memory.* MCP tools are disabled.
     enabled: true
 
+  # Optional durable session-memory export/search integration. This is
+  # independent from the global fact memory above and remains disabled unless
+  # an HTTP/JSON provider is configured.
+  session_memory:
+    enabled: false
+    provider:
+      type: "http"
+      base_url: ""
+      token: ""
+      token_env: ""
+      timeout: "10s"
+      max_response_bytes: 1048576
+    stream: "BALDA_SESSION_MEMORY"
+    consumer: "BALDA_SESSION_MEMORY_WORKER"
+    ack_wait: "5m"
+    fetch_wait: "1s"
+    publish_timeout: "2s"
+    publish_attempts: 3
+    max_age: "7d"
+    max_bytes: "-1"
+    max_msg_size: "-1"
+    search_timeout: "5s"
+    retry:
+      max_attempts: 5
+      base_delay: "250ms"
+      max_delay: "5s"
+      progress_interval: "30s"
+      fetch_error_delay: "100ms"
+      shutdown_timeout: "30s"
+
   features:
     automode:
       # Consecutive synthetic auto-turn cap for /auto continuation chains.

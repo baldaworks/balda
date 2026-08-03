@@ -224,6 +224,62 @@ func TestResolveConfigIgnoresDisabledSessionMemoryNameCollisions(t *testing.T) {
 	}
 }
 
+func TestResolveConfigIgnoresDisabledSessionMemoryMalformedOptionalValues(t *testing.T) {
+	t.Parallel()
+	const malformedDuration = "not-a-duration"
+	cfg := enabledSessionMemoryExecutionConfig()
+	cfg.Memory.Enabled = false
+	cfg.Memory.AckWait = malformedDuration
+	cfg.Memory.FetchWait = malformedDuration
+	cfg.Memory.PublishTimeout = malformedDuration
+	cfg.Memory.MaxAge = malformedDuration
+	cfg.Memory.MaxBytes = "not-bytes"
+	cfg.Memory.MaxMsgSize = "not-bytes"
+	resolved, err := resolveConfig(baldaeventbus.Config{Embedded: true}, cfg, t.TempDir())
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v, want nil while disabled", err)
+	}
+	if resolved.Execution.Memory.Enabled {
+		t.Fatal("resolved disabled memory unexpectedly enabled")
+	}
+}
+
+func TestResolveConfigUsesSessionMemoryRetentionLimits(t *testing.T) {
+	t.Parallel()
+	cfg := enabledSessionMemoryExecutionConfig()
+	cfg.Memory.MaxAge = "2d"
+	cfg.Memory.MaxBytes = "32MiB"
+	cfg.Memory.MaxMsgSize = "2MiB"
+	resolved, err := resolveConfig(baldaeventbus.Config{Embedded: true}, cfg, t.TempDir())
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	if resolved.Memory.MaxAge != 2*24*time.Hour || resolved.Memory.MaxBytes != 32*1024*1024 || resolved.Memory.MaxMsgSize != 2*1024*1024 {
+		t.Fatalf("memory stream spec = %+v, want configured retention", resolved.Memory)
+	}
+}
+
+func TestResolveConfigRejectsNonPositiveEnabledSessionMemoryLimits(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		mutate func(*baldaexecution.Config)
+	}{
+		{name: "max age", mutate: func(cfg *baldaexecution.Config) { cfg.Memory.MaxAge = "0s" }},
+		{name: "max bytes", mutate: func(cfg *baldaexecution.Config) { cfg.Memory.MaxBytes = "0" }},
+		{name: "max message size", mutate: func(cfg *baldaexecution.Config) { cfg.Memory.MaxMsgSize = "0" }},
+		{name: "ack wait", mutate: func(cfg *baldaexecution.Config) { cfg.Memory.AckWait = "0s" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := enabledSessionMemoryExecutionConfig()
+			test.mutate(&cfg)
+			if _, err := resolveConfig(baldaeventbus.Config{Embedded: true}, cfg, t.TempDir()); err == nil {
+				t.Fatal("resolveConfig() error = nil, want non-positive setting rejection")
+			}
+		})
+	}
+}
+
 func testSessionMemoryTurn(t *testing.T, sourceID string) sessionmemorycmd.Export {
 	t.Helper()
 	scope := sessionmemory.Scope{Key: "telegram:1:0", Kind: sessionmemory.ScopeKindPersonal}

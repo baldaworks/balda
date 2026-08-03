@@ -8,7 +8,10 @@ import (
 
 	"github.com/ipfans/fxlogger"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
-	"github.com/normahq/balda/internal/apps/balda/channel/slackagent"
+	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
+	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
@@ -18,6 +21,9 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorymcp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
@@ -74,6 +80,13 @@ func PreflightRuntime(
 	if err := validateExecutionConfigLint(executionConfig, inboundWebhookConfig); err != nil {
 		return err
 	}
+	if err := validateSessionMemoryConfig(cfg.Balda.SessionMemory); err != nil {
+		return err
+	}
+	sessionMemorySearchTimeout, err := sessionMemorySearchTimeout(cfg.Balda.SessionMemory)
+	if err != nil {
+		return err
+	}
 	eventBusConfig, err := cfg.Balda.NATS.Normalized()
 	if err != nil {
 		return err
@@ -123,6 +136,40 @@ func PreflightRuntime(
 		),
 		fx.Supply(logger, normaCfg, workingDir, mcpReg, eventBusConfig, executionConfig),
 		fx.Provide(
+			func() sessionmemoryapp.ScopeResolver {
+				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
+					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
+					baldaslack.ChannelType:      baldaslack.ClassifyLocatorScope,
+					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
+					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
+				})
+			},
+			func() (sessionmemory.Provider, error) {
+				return newSessionMemoryProvider(cfg.Balda.SessionMemory)
+			},
+			func(bus *natsbus.Bus, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
+				var publisher sessionmemoryapp.ExportPublisher
+				if cfg.Balda.SessionMemory.Enabled {
+					publisher = bus.SessionMemoryExportPublisher()
+				}
+				return sessionmemoryapp.NewTurnCapture(publisher, resolver)
+			},
+			func(bus *natsbus.Bus, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.BoundaryCapture {
+				var publisher sessionmemoryapp.ExportPublisher
+				if cfg.Balda.SessionMemory.Enabled {
+					publisher = bus.SessionMemoryExportPublisher()
+				}
+				return sessionmemoryapp.NewBoundaryCapture(publisher, resolver)
+			},
+			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver) sessionmemorymcp.Config {
+				return sessionmemorymcp.Config{
+					Enabled:         cfg.Balda.SessionMemory.Enabled,
+					Searcher:        provider,
+					SessionResolver: sessionmemorymcp.HeaderSessionResolver{},
+					ScopeResolver:   resolver,
+					Timeout:         sessionMemorySearchTimeout,
+				}
+			},
 			fx.Annotate(
 				func() string { return stateDir },
 				fx.ResultTags(`name:"balda_state_dir"`),
@@ -226,6 +273,12 @@ func PreflightRuntime(
 				},
 				fx.ParamTags(``, `name:"balda_state_dir"`, `name:"balda_workspace_base_branch"`, `name:"balda_workspace_sessions_dir"`),
 			),
+			fx.Annotate(
+				func(capture *sessionmemoryapp.BoundaryCapture) session.BoundaryObserver {
+					return sessionapp.SessionBoundaryObserverAdapter{Capture: capture}
+				},
+				fx.As(new(session.BoundaryObserver)),
+			),
 			session.NewManager,
 			internalmcp.NewInternalMCPManager,
 		),
@@ -274,8 +327,8 @@ func logSlackModeDiagnostics(logger zerolog.Logger, cfg SlackConfig) {
 		Msg("balda preflight slack mode diagnostics")
 }
 
-func normalizedSlackAgentCapabilities(cfg SlackConfig) slackagent.Capabilities {
-	return slackagent.Capabilities{
+func normalizedSlackAgentCapabilities(cfg SlackConfig) baldaslackagent.Capabilities {
+	return baldaslackagent.Capabilities{
 		Enabled:          cfg.Agent.Enabled,
 		Status:           cfg.Agent.Enabled,
 		Questions:        cfg.Agent.Enabled,
@@ -298,6 +351,7 @@ func executionConfigFromBalda(cfg BaldaConfig) baldaexecution.Config {
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: strings.TrimSpace(cfg.Execution.Events.Stream)},
 		DLQ:    baldaexecution.DLQConfig{Stream: strings.TrimSpace(cfg.Execution.DLQ.Stream)},
+		Memory: sessionMemoryExecutionConfig(cfg.SessionMemory),
 	}
 	normalized, err := executionConfig.Normalized()
 	if err != nil {

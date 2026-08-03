@@ -19,6 +19,7 @@ type BaldaConfig struct {
 	StateDir          string               `mapstructure:"state_dir"`
 	Sessions          SessionsConfig       `mapstructure:"sessions"`
 	Memory            MemoryConfig         `mapstructure:"memory"`
+	SessionMemory     SessionMemoryConfig  `mapstructure:"session_memory"`
 	Permissions       PermissionsConfig    `mapstructure:"permissions"`
 	Features          FeaturesConfig       `mapstructure:"features"`
 	Goal              GoalConfig           `mapstructure:"goal"`
@@ -150,6 +151,45 @@ type SessionsConfig struct {
 
 type MemoryConfig struct {
 	Enabled bool `mapstructure:"enabled"`
+}
+
+// SessionMemoryConfig controls the optional durable conversation-memory
+// integration. It is separate from MemoryConfig, which remains Balda's
+// existing global fact KV capability.
+type SessionMemoryConfig struct {
+	Enabled         bool                        `mapstructure:"enabled"`
+	Provider        SessionMemoryProviderConfig `mapstructure:"provider"`
+	Stream          string                      `mapstructure:"stream"`
+	Consumer        string                      `mapstructure:"consumer"`
+	AckWait         string                      `mapstructure:"ack_wait"`
+	FetchWait       string                      `mapstructure:"fetch_wait"`
+	PublishTimeout  string                      `mapstructure:"publish_timeout"`
+	PublishAttempts int                         `mapstructure:"publish_attempts"`
+	MaxAge          string                      `mapstructure:"max_age"`
+	MaxBytes        string                      `mapstructure:"max_bytes"`
+	MaxMsgSize      string                      `mapstructure:"max_msg_size"`
+	Retry           SessionMemoryRetryConfig    `mapstructure:"retry"`
+	SearchTimeout   string                      `mapstructure:"search_timeout"`
+}
+
+// SessionMemoryProviderConfig selects the vendor-neutral HTTP/JSON provider.
+type SessionMemoryProviderConfig struct {
+	Type             string `mapstructure:"type"`
+	BaseURL          string `mapstructure:"base_url"`
+	Token            string `mapstructure:"token"`
+	TokenEnv         string `mapstructure:"token_env"`
+	Timeout          string `mapstructure:"timeout"`
+	MaxResponseBytes int64  `mapstructure:"max_response_bytes"`
+}
+
+// SessionMemoryRetryConfig controls the serialized background consumer.
+type SessionMemoryRetryConfig struct {
+	MaxAttempts      int    `mapstructure:"max_attempts"`
+	BaseDelay        string `mapstructure:"base_delay"`
+	MaxDelay         string `mapstructure:"max_delay"`
+	ProgressInterval string `mapstructure:"progress_interval"`
+	FetchErrorDelay  string `mapstructure:"fetch_error_delay"`
+	ShutdownTimeout  string `mapstructure:"shutdown_timeout"`
 }
 
 type PermissionsConfig struct {

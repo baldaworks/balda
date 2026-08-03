@@ -18,6 +18,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
+	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/controlapp"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfx"
@@ -34,6 +35,9 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/scheduledjobs"
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
@@ -182,6 +186,7 @@ func Module(
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: strings.TrimSpace(cfg.Balda.Execution.Events.Stream)},
 		DLQ:    baldaexecution.DLQConfig{Stream: strings.TrimSpace(cfg.Balda.Execution.DLQ.Stream)},
+		Memory: sessionMemoryExecutionConfig(cfg.Balda.SessionMemory),
 	}
 	executionConfig, err = executionConfig.Normalized()
 	if err != nil {
@@ -192,6 +197,13 @@ func Module(
 		return fx.Module("balda", fx.Error(err))
 	}
 	if err := validateExecutionConfigLint(executionConfig, inboundWebhookConfig); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	if err := validateSessionMemoryConfig(cfg.Balda.SessionMemory); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	sessionMemorySearchTimeout, err := sessionMemorySearchTimeout(cfg.Balda.SessionMemory)
+	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 	if err := validateZulipConfig(cfg.Balda.Zulip); err != nil {
@@ -222,6 +234,47 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
+			func() sessionmemoryapp.ScopeResolver {
+				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
+					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
+					baldaslack.ChannelType:      baldaslack.ClassifyLocatorScope,
+					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
+					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
+				})
+			},
+			func() (sessionmemory.Provider, error) {
+				return newSessionMemoryProvider(cfg.Balda.SessionMemory)
+			},
+			func(bus *natsbus.Bus, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
+				var publisher sessionmemoryapp.ExportPublisher
+				if cfg.Balda.SessionMemory.Enabled {
+					publisher = bus.SessionMemoryExportPublisher()
+				}
+				return sessionmemoryapp.NewTurnCapture(publisher, resolver)
+			},
+			func(bus *natsbus.Bus, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.BoundaryCapture {
+				var publisher sessionmemoryapp.ExportPublisher
+				if cfg.Balda.SessionMemory.Enabled {
+					publisher = bus.SessionMemoryExportPublisher()
+				}
+				return sessionmemoryapp.NewBoundaryCapture(publisher, resolver)
+			},
+			func(bus *natsbus.Bus, provider sessionmemory.Provider) (*sessionmemoryapp.Worker, error) {
+				workerCfg, workerErr := sessionMemoryWorkerConfig(cfg.Balda.SessionMemory)
+				if workerErr != nil {
+					return nil, workerErr
+				}
+				return sessionmemoryapp.NewWorker(bus.SessionMemoryTransport(), provider, workerCfg, logger)
+			},
+			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver) sessionmemorymcp.Config {
+				return sessionmemorymcp.Config{
+					Enabled:         cfg.Balda.SessionMemory.Enabled,
+					Searcher:        provider,
+					SessionResolver: sessionmemorymcp.HeaderSessionResolver{},
+					ScopeResolver:   resolver,
+					Timeout:         sessionMemorySearchTimeout,
+				}
+			},
 			fx.Annotate(
 				func() string { return stateDir },
 				fx.ResultTags(`name:"balda_state_dir"`),
@@ -669,6 +722,9 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 		"balda.execution.events.stream":   executionCfg.Events.Stream,
 		"balda.execution.dlq.stream":      executionCfg.DLQ.Stream,
 	}
+	if executionCfg.Memory.Enabled {
+		streamNames["balda.session_memory.stream"] = executionCfg.Memory.Stream
+	}
 	for field, value := range streamNames {
 		if err := validateIdentifierValue(field, value); err != nil {
 			errs = append(errs, err.Error())
@@ -678,7 +734,11 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 	for _, value := range streamNames {
 		normalized := strings.ToLower(strings.TrimSpace(value))
 		if _, ok := seenStreamNames[normalized]; ok {
-			errs = append(errs, "balda.execution.commands.stream, balda.execution.events.stream, and balda.execution.dlq.stream must be distinct")
+			if executionCfg.Memory.Enabled {
+				errs = append(errs, "configured JetStream stream names must be distinct")
+			} else {
+				errs = append(errs, "balda.execution.commands.stream, balda.execution.events.stream, and balda.execution.dlq.stream must be distinct")
+			}
 			break
 		}
 		seenStreamNames[normalized] = struct{}{}
@@ -688,6 +748,9 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 		"balda.execution.commands.consumer": executionCfg.Commands.Consumer,
 		"balda.execution.events.consumer":   baldaexecution.DefaultEventProjectorConsumer,
 	}
+	if executionCfg.Memory.Enabled {
+		consumerNames["balda.session_memory.consumer"] = executionCfg.Memory.Consumer
+	}
 	for field, value := range consumerNames {
 		if err := validateIdentifierValue(field, value); err != nil {
 			errs = append(errs, err.Error())
@@ -695,6 +758,12 @@ func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg 
 	}
 	if strings.EqualFold(strings.TrimSpace(executionCfg.Commands.Consumer), strings.TrimSpace(baldaexecution.DefaultEventProjectorConsumer)) {
 		errs = append(errs, "balda.execution.commands.consumer must differ from balda.execution.events.consumer")
+	}
+	if executionCfg.Memory.Enabled {
+		if strings.EqualFold(strings.TrimSpace(executionCfg.Memory.Consumer), strings.TrimSpace(executionCfg.Commands.Consumer)) ||
+			strings.EqualFold(strings.TrimSpace(executionCfg.Memory.Consumer), baldaexecution.DefaultEventProjectorConsumer) {
+			errs = append(errs, "balda.session_memory.consumer must differ from runtime consumers")
+		}
 	}
 
 	if webhookCfg.Enabled {
