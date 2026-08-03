@@ -54,7 +54,6 @@ func TestContextBrokerBindsConcurrentSessionsAndOverwritesCallerHeaders(t *testi
 		{binding: personalBinding, want: personal},
 		{binding: groupBinding, want: group},
 	} {
-		test := test
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

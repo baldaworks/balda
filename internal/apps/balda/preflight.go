@@ -169,7 +169,7 @@ func PreflightRuntime(
 			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver, broker *sessionmemorymcp.ContextBroker) sessionmemorymcp.Config {
 				return sessionmemorymcp.Config{
 					Enabled:         cfg.Balda.SessionMemory.Enabled,
-					Searcher:        provider,
+					DerivedSearcher: nativeDerivedSearcher(provider),
 					SessionResolver: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
 					ScopeResolver:   resolver,
 					Timeout:         sessionMemorySearchTimeout,

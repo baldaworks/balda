@@ -72,6 +72,11 @@ var configIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 const defaultWorkspaceSessionsDirName = "sessions"
 
+func nativeDerivedSearcher(provider sessionmemory.Provider) sessionmemorymcp.DerivedSearcher {
+	derived, _ := provider.(sessionmemorymcp.DerivedSearcher)
+	return derived
+}
+
 type memorySnapshotReaderAdapter struct {
 	store *memory.Store
 }
@@ -274,7 +279,7 @@ func Module(
 			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver, broker *sessionmemorymcp.ContextBroker) sessionmemorymcp.Config {
 				return sessionmemorymcp.Config{
 					Enabled:         cfg.Balda.SessionMemory.Enabled,
-					Searcher:        provider,
+					DerivedSearcher: nativeDerivedSearcher(provider),
 					SessionResolver: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
 					ScopeResolver:   resolver,
 					Timeout:         sessionMemorySearchTimeout,

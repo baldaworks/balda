@@ -47,6 +47,24 @@ func (p *NativeProvider) OnSessionBoundary(ctx context.Context, boundary session
 	return err
 }
 
+// SearchDerived returns the validated, structured native search response. The
+// caller is responsible for deriving the exact scope from authenticated
+// Balda context; this method never accepts a locator fallback.
+func (p *NativeProvider) SearchDerived(ctx context.Context, request sessionmemory.DerivedSearchRequest) (sessionmemory.DerivedSearchResponse, error) {
+	if p == nil || p.engine == nil {
+		return sessionmemory.DerivedSearchResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "native session-memory provider is unavailable", nil)
+	}
+	return p.engine.Search(ctx, request)
+}
+
+// Trace returns the validated native provenance graph for one exact scope.
+func (p *NativeProvider) Trace(ctx context.Context, request sessionmemory.TraceRequest) (sessionmemory.TraceResponse, error) {
+	if p == nil || p.engine == nil {
+		return sessionmemory.TraceResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "native session-memory provider is unavailable", nil)
+	}
+	return p.engine.Trace(ctx, request)
+}
+
 // Search adapts derived references to the legacy Provider response shape. The
 // MCP surface will consume the richer Engine response in the scope migration.
 func (p *NativeProvider) Search(ctx context.Context, request sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error) {

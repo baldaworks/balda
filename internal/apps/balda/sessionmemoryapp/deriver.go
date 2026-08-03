@@ -37,8 +37,8 @@ type StructuredInvocation struct {
 // StructuredInvoker executes one bounded structured model call. Implementors
 // own credentials, provider selection, retries and runtime lifecycle.
 type StructuredInvoker interface {
-	Invoke(context.Context, StructuredInvocation) ([]byte, error)
-	Close(context.Context) error
+	Invoke(ctx context.Context, invocation StructuredInvocation) ([]byte, error)
+	Close(ctx context.Context) error
 }
 
 // Deriver implements all three typed sessionmemory model ports. It never
