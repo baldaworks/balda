@@ -29,6 +29,35 @@ func cloneOperationOutcome(outcome OperationOutcome) OperationOutcome {
 	return outcome
 }
 
+func cloneSearchHits(hits []SearchHit) []SearchHit {
+	cloned := append([]SearchHit(nil), hits...)
+	for index := range cloned {
+		if cloned[index].Atom != nil {
+			atom := cloneAtoms([]Atom{*cloned[index].Atom})[0]
+			cloned[index].Atom = &atom
+		}
+		if cloned[index].Scenario != nil {
+			scenario := cloneScenarios([]Scenario{*cloned[index].Scenario})[0]
+			cloned[index].Scenario = &scenario
+		}
+		if cloned[index].Profile != nil {
+			profile := cloneProfiles([]Profile{*cloned[index].Profile})[0]
+			cloned[index].Profile = &profile
+		}
+		if cloned[index].Score != nil {
+			score := *cloned[index].Score
+			cloned[index].Score = &score
+		}
+	}
+	return cloned
+}
+
+func cloneTraceGraph(graph TraceGraph) TraceGraph {
+	graph.Revisions = cloneSearchHits(graph.Revisions)
+	graph.Sources = cloneSources(graph.Sources)
+	return graph
+}
+
 func cloneCommitRequest(request CommitRequest) CommitRequest {
 	request.Sources = cloneSources(request.Sources)
 	request.Atoms = cloneAtoms(request.Atoms)

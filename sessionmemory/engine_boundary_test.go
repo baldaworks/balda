@@ -306,6 +306,14 @@ func (s *boundaryTestStore) Commit(_ context.Context, request CommitRequest) (Op
 	return outcome, nil
 }
 
+func (s *boundaryTestStore) Search(context.Context, DerivedSearchRequest) ([]SearchHit, error) {
+	return nil, nil
+}
+
+func (s *boundaryTestStore) Trace(context.Context, TraceRequest) (TraceGraph, error) {
+	return TraceGraph{}, nil
+}
+
 func applyBoundaryTestTransition(snapshot *ScopeSnapshot, transition RevisionTransition) bool {
 	for index := range snapshot.Atoms {
 		if revisionRef(snapshot.Atoms[index].Meta) == transition.Ref && snapshot.Atoms[index].Meta.State == transition.From {

@@ -508,6 +508,8 @@ type engineTestStore struct {
 	lookup func(context.Context, OperationLookup) (OperationLookupResult, error)
 	load   func(context.Context, Scope) (ScopeSnapshot, error)
 	commit func(context.Context, CommitRequest) (OperationOutcome, error)
+	search func(context.Context, DerivedSearchRequest) ([]SearchHit, error)
+	trace  func(context.Context, TraceRequest) (TraceGraph, error)
 }
 
 func (s *engineTestStore) LookupOperation(ctx context.Context, lookup OperationLookup) (OperationLookupResult, error) {
@@ -520,6 +522,20 @@ func (s *engineTestStore) LoadScope(ctx context.Context, scope Scope) (ScopeSnap
 
 func (s *engineTestStore) Commit(ctx context.Context, request CommitRequest) (OperationOutcome, error) {
 	return s.commit(ctx, request)
+}
+
+func (s *engineTestStore) Search(ctx context.Context, request DerivedSearchRequest) ([]SearchHit, error) {
+	if s.search == nil {
+		return nil, nil
+	}
+	return s.search(ctx, request)
+}
+
+func (s *engineTestStore) Trace(ctx context.Context, request TraceRequest) (TraceGraph, error) {
+	if s.trace == nil {
+		return TraceGraph{}, nil
+	}
+	return s.trace(ctx, request)
 }
 
 type engineAtomExtractorFunc func(context.Context, AtomExtractionRequest) ([]AtomCandidate, error)

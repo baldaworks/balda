@@ -77,6 +77,8 @@ type Store interface {
 	LookupOperation(ctx context.Context, lookup OperationLookup) (OperationLookupResult, error)
 	LoadScope(ctx context.Context, scope Scope) (ScopeSnapshot, error)
 	Commit(ctx context.Context, request CommitRequest) (OperationOutcome, error)
+	Search(ctx context.Context, request DerivedSearchRequest) ([]SearchHit, error)
+	Trace(ctx context.Context, request TraceRequest) (TraceGraph, error)
 }
 
 // AtomExtractionRequest is bounded input for atom extraction.
