@@ -44,6 +44,7 @@ type DLQConfig struct {
 }
 
 type SessionMemoryConfig struct {
+	Enabled         bool
 	Stream          string
 	Consumer        string
 	AckWait         string

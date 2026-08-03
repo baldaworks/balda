@@ -75,6 +75,7 @@ components:
       - internal/apps/balda/session
       - internal/apps/balda/sessionturn
       - internal/apps/balda/sessionturnapp
+      - internal/apps/balda/sessionmemoryapp
 
   # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
   domain:
@@ -157,6 +158,8 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - session_memory_core
+      - session_memory_contracts
       - application
       - infrastructure
     anyVendorDeps: true

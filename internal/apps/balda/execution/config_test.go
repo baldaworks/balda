@@ -23,7 +23,7 @@ func TestConfigNormalized_DefaultsToDurableRuntime(t *testing.T) {
 	}
 	if got.Memory.Stream != DefaultSessionMemoryStream || got.Memory.Consumer != DefaultSessionMemoryConsumer ||
 		got.Memory.AckWait != "5m" || got.Memory.FetchWait != "1s" ||
-		got.Memory.PublishTimeout != "2s" || got.Memory.PublishAttempts != 3 {
+		got.Memory.PublishTimeout != "2s" || got.Memory.PublishAttempts != 3 || got.Memory.Enabled {
 		t.Fatalf("Memory defaults = %+v", got.Memory)
 	}
 }

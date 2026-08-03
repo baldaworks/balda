@@ -8,6 +8,7 @@ import (
 
 	gnats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 )
 
@@ -18,6 +19,8 @@ var (
 	ErrSessionMemoryQueueFull = errors.New("session-memory queue is full")
 	// ErrNoSessionMemoryMessages means no export arrived within the bounded fetch wait.
 	ErrNoSessionMemoryMessages = errors.New("no session-memory messages available")
+	// ErrSessionMemoryDisabled means the optional memory transport is disabled.
+	ErrSessionMemoryDisabled = errors.New("session-memory is disabled")
 	// ErrSessionMemoryConsumerUnavailable means the durable memory consumer is not configured.
 	ErrSessionMemoryConsumerUnavailable = errors.New("session-memory consumer is unavailable")
 )
@@ -32,19 +35,10 @@ type SessionMemoryPublishReceipt struct {
 }
 
 // SessionMemoryDeliveryMetadata describes durable ordering and redelivery.
-type SessionMemoryDeliveryMetadata struct {
-	StreamSequence   uint64
-	ConsumerSequence uint64
-	DeliveryCount    uint64
-}
+type SessionMemoryDeliveryMetadata = sessionmemoryapp.DeliveryMetadata
 
 // SessionMemoryStats reports the durable export backlog without message bodies.
-type SessionMemoryStats struct {
-	Messages        uint64
-	Pending         uint64
-	Acknowledging   int
-	OldestPendingAt time.Time
-}
+type SessionMemoryStats = sessionmemoryapp.BacklogStats
 
 // SessionMemoryDelivery wraps one JetStream message without exposing transport types.
 type SessionMemoryDelivery struct {
@@ -55,6 +49,9 @@ type SessionMemoryDelivery struct {
 func (b *Bus) PublishSessionMemory(ctx context.Context, export sessionmemorycmd.Export) (SessionMemoryPublishReceipt, error) {
 	if err := b.requireStarted(); err != nil {
 		return SessionMemoryPublishReceipt{}, err
+	}
+	if !b.cfg.Execution.Memory.Enabled {
+		return SessionMemoryPublishReceipt{}, ErrSessionMemoryDisabled
 	}
 	data, err := sessionmemorycmd.Marshal(export)
 	if err != nil {
@@ -105,6 +102,9 @@ func (b *Bus) PublishSessionMemory(ctx context.Context, export sessionmemorycmd.
 func (b *Bus) FetchSessionMemory(ctx context.Context) (*SessionMemoryDelivery, error) {
 	if err := b.requireStarted(); err != nil {
 		return nil, err
+	}
+	if !b.cfg.Execution.Memory.Enabled {
+		return nil, ErrSessionMemoryDisabled
 	}
 	if b.memoryConsumer == nil {
 		return nil, ErrSessionMemoryConsumerUnavailable
@@ -192,6 +192,9 @@ func (d *SessionMemoryDelivery) Term(reason string) error {
 func (b *Bus) SessionMemoryStats(ctx context.Context) (SessionMemoryStats, error) {
 	if err := b.requireStarted(); err != nil {
 		return SessionMemoryStats{}, err
+	}
+	if !b.cfg.Execution.Memory.Enabled {
+		return SessionMemoryStats{}, ErrSessionMemoryDisabled
 	}
 	if b.memoryConsumer == nil {
 		return SessionMemoryStats{}, ErrSessionMemoryConsumerUnavailable

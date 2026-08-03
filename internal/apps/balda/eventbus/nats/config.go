@@ -87,8 +87,10 @@ func resolveConfig(natsCfg baldaeventbus.Config, executionCfg baldaexecution.Con
 		return resolvedConfig{}, fmt.Errorf("balda.session_memory.publish_timeout: %w", err)
 	}
 	out.MemoryPublishAttempts = normalizedExecution.Memory.PublishAttempts
-	if err := validateSessionMemoryNames(normalizedExecution); err != nil {
-		return resolvedConfig{}, err
+	if normalizedExecution.Memory.Enabled {
+		if err := validateSessionMemoryNames(normalizedExecution); err != nil {
+			return resolvedConfig{}, err
+		}
 	}
 	return out, nil
 }

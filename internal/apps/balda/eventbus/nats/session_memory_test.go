@@ -16,7 +16,7 @@ import (
 )
 
 func TestBus_SessionMemoryTopologyPublishFetchAndAck(t *testing.T) {
-	h := StartTestRuntime(t, baldaexecution.Config{})
+	h := StartTestRuntime(t, enabledSessionMemoryExecutionConfig())
 	bus := h.Bus
 
 	stream, err := bus.js.Stream(context.Background(), baldaexecution.DefaultSessionMemoryStream)
@@ -97,7 +97,7 @@ func TestBus_SessionMemoryRestartPreservesPendingExport(t *testing.T) {
 	params := Params{
 		LC:        fxtest.NewLifecycle(t),
 		Config:    baldaeventbus.Config{Embedded: true},
-		Execution: baldaexecution.Config{},
+		Execution: enabledSessionMemoryExecutionConfig(),
 		StateDir:  stateDir,
 		Logger:    zerolog.Nop(),
 	}
@@ -145,7 +145,7 @@ func TestBus_SessionMemoryPublishReportsDiscardNewPressure(t *testing.T) {
 	bus, err := NewBus(Params{
 		LC:        fxtest.NewLifecycle(t),
 		Config:    baldaeventbus.Config{Embedded: true},
-		Execution: baldaexecution.Config{},
+		Execution: enabledSessionMemoryExecutionConfig(),
 		StateDir:  t.TempDir(),
 		Logger:    zerolog.Nop(),
 	})
@@ -164,7 +164,7 @@ func TestBus_SessionMemoryPublishReportsDiscardNewPressure(t *testing.T) {
 }
 
 func TestBus_FetchSessionMemoryHonorsCanceledContext(t *testing.T) {
-	h := StartTestRuntime(t, baldaexecution.Config{})
+	h := StartTestRuntime(t, enabledSessionMemoryExecutionConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := h.Bus.FetchSessionMemory(ctx)
@@ -174,7 +174,7 @@ func TestBus_FetchSessionMemoryHonorsCanceledContext(t *testing.T) {
 }
 
 func TestBus_SessionMemoryStatsRequiresConsumer(t *testing.T) {
-	h := StartTestRuntime(t, baldaexecution.Config{})
+	h := StartTestRuntime(t, enabledSessionMemoryExecutionConfig())
 	h.Bus.memoryConsumer = nil
 	_, err := h.Bus.SessionMemoryStats(context.Background())
 	if !errors.Is(err, ErrSessionMemoryConsumerUnavailable) {
@@ -182,14 +182,45 @@ func TestBus_SessionMemoryStatsRequiresConsumer(t *testing.T) {
 	}
 }
 
+func TestBus_DisabledSessionMemoryHasNoStreamOrConsumer(t *testing.T) {
+	h := StartTestRuntime(t, baldaexecution.Config{})
+	if h.Bus.memoryConsumer != nil {
+		t.Fatal("disabled session-memory created a consumer")
+	}
+	if _, err := h.Bus.js.Stream(context.Background(), baldaexecution.DefaultSessionMemoryStream); err == nil {
+		t.Fatal("disabled session-memory created a stream")
+	}
+	export := testSessionMemoryTurn(t, "disabled")
+	if _, err := h.Bus.PublishSessionMemory(context.Background(), export); !errors.Is(err, ErrSessionMemoryDisabled) {
+		t.Fatalf("PublishSessionMemory(disabled) error = %v, want ErrSessionMemoryDisabled", err)
+	}
+	if _, err := h.Bus.FetchSessionMemory(context.Background()); !errors.Is(err, ErrSessionMemoryDisabled) {
+		t.Fatalf("FetchSessionMemory(disabled) error = %v, want ErrSessionMemoryDisabled", err)
+	}
+	if _, err := h.Bus.SessionMemoryStats(context.Background()); !errors.Is(err, ErrSessionMemoryDisabled) {
+		t.Fatalf("SessionMemoryStats(disabled) error = %v, want ErrSessionMemoryDisabled", err)
+	}
+}
+
 func TestResolveConfigRejectsSessionMemoryNameCollisions(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolveConfig(baldaeventbus.Config{Embedded: true}, baldaexecution.Config{
+		Memory: baldaexecution.SessionMemoryConfig{Enabled: true, Stream: baldaexecution.DefaultCommandStream},
+	}, t.TempDir())
+	if err == nil {
+		t.Fatal("resolveConfig() error = nil, want stream collision error")
+	}
+}
+
+func TestResolveConfigIgnoresDisabledSessionMemoryNameCollisions(t *testing.T) {
 	t.Parallel()
 
 	_, err := resolveConfig(baldaeventbus.Config{Embedded: true}, baldaexecution.Config{
 		Memory: baldaexecution.SessionMemoryConfig{Stream: baldaexecution.DefaultCommandStream},
 	}, t.TempDir())
-	if err == nil {
-		t.Fatal("resolveConfig() error = nil, want stream collision error")
+	if err != nil {
+		t.Fatalf("resolveConfig(disabled collision) error = %v, want nil", err)
 	}
 }
 
@@ -225,5 +256,11 @@ func waitForSessionMemoryEmpty(t *testing.T, bus *Bus) {
 			t.Fatalf("session-memory stats did not empty: %+v", stats)
 		case <-time.After(10 * time.Millisecond):
 		}
+	}
+}
+
+func enabledSessionMemoryExecutionConfig() baldaexecution.Config {
+	return baldaexecution.Config{
+		Memory: baldaexecution.SessionMemoryConfig{Enabled: true},
 	}
 }

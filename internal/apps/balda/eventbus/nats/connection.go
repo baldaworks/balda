@@ -342,6 +342,9 @@ func (b *Bus) ensureRuntime(ctx context.Context) error {
 		return fmt.Errorf("create event projector consumer: %w", err)
 	}
 	b.eventConsumer = eventConsumer
+	if !b.cfg.Execution.Memory.Enabled {
+		return nil
+	}
 	memoryConsumer, err := b.js.CreateOrUpdateConsumer(ctx, b.cfg.Execution.Memory.Stream, jetstream.ConsumerConfig{
 		Durable:       b.cfg.Execution.Memory.Consumer,
 		AckPolicy:     jetstream.AckExplicitPolicy,
