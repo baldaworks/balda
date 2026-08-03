@@ -11,6 +11,22 @@ exclude:
   - .config
 
 components:
+  # Extraction-ready session-memory values and provider API. This package may
+  # use only the standard library and must remain independent of Balda policy.
+  session_memory_core:
+    in:
+      - internal/apps/balda/sessionmemory
+
+  # Portable export wire contracts may depend only on the portable core.
+  session_memory_contracts:
+    in:
+      - internal/apps/balda/sessionmemorycmd
+
+  # Reusable in-process test support for provider consumers.
+  session_memory_testkit:
+    in:
+      - internal/apps/balda/sessionmemorytest
+
   # Generic, reusable building blocks that must stay free of Balda product policy.
   foundation:
     in:
@@ -110,6 +126,21 @@ components:
       - cmd/balda
 
 deps:
+  session_memory_core:
+    mayDependOn:
+      - session_memory_core
+    anyVendorDeps: false
+
+  session_memory_contracts:
+    mayDependOn:
+      - session_memory_core
+    anyVendorDeps: false
+
+  session_memory_testkit:
+    mayDependOn:
+      - session_memory_core
+    anyVendorDeps: false
+
   foundation:
     anyProjectDeps: true
     anyVendorDeps: true
