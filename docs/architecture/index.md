@@ -20,6 +20,7 @@ Use this map to find the authoritative runtime contracts.
 - [Projections and read models](projections-and-read-models.md)
 - [Reliability](reliability.md)
 - [Testing and evals](testing-and-evals.md)
+- [Session-memory HTTP/JSON v1](session-memory-http.md)
 
 ## Invariants
 
@@ -63,6 +64,11 @@ Telegram/Zulip/Slack chat/Slack agent/webhook/scheduler ingress -> actorlayer tr
 - `internal/apps/balda/agent`
 - `internal/apps/balda/session`
 - `internal/apps/balda/state`
+- `internal/apps/balda/sessionmemory`
+- `internal/apps/balda/sessionmemorycmd`
+- `internal/apps/balda/sessionmemoryapp`
+- `internal/apps/balda/sessionmemoryhttp`
+- `internal/apps/balda/sessionmemorymcp`
 
 ## Update triggers
 

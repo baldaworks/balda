@@ -691,6 +691,263 @@ balda:
   servers must be declared explicitly through `runtime.mcp_servers`,
   provider-level `mcp_servers`, or `balda.mcp_servers`.
 
+## Durable session memory
+
+`balda.session_memory` is an optional episodic-memory integration. It is not a
+replacement for the existing fact store: `balda.memory.read` and
+`balda.memory.remember` remain global-per-instance KV operations in
+`${balda.state_dir}/state.db`. Session memory sends eligible conversation text
+to a configured service and recalls it only on demand.
+
+### Enablement and configuration
+
+The feature is disabled unless `balda.session_memory.enabled=true`. Disabled
+mode is deliberately inert: malformed optional memory values are ignored,
+the provider is not contacted, no memory stream or consumer is created, and
+the existing fact-memory/session-restore path is unchanged.
+
+The smallest enabled configuration is:
+
+```yaml
+balda:
+  session_memory:
+    enabled: true
+    provider:
+      type: http
+      base_url: https://memory.example.internal
+      token_env: BALDA_SESSION_MEMORY_TOKEN
+```
+
+All `balda.session_memory.*` keys also accept the corresponding
+`BALDA_SESSION_MEMORY_*` environment override (nested keys use underscores).
+`provider.token_env` names the separate environment variable from which the
+Bearer token is read; the token itself is never written to logs, exports, DLQ
+diagnostics, or error messages.
+
+The shipped example in `cmd/balda/balda.yaml` lists every default. The enabled
+defaults are:
+
+| Key | Default | Meaning |
+|---|---:|---|
+| `provider.type` | `http` | Vendor-neutral HTTP/JSON v1 adapter. |
+| `provider.timeout` | `10s` | Per-request provider deadline. |
+| `provider.max_response_bytes` | `1048576` | Bounded response/error body read. |
+| `stream` / `consumer` | `BALDA_SESSION_MEMORY` / `BALDA_SESSION_MEMORY_WORKER` | Dedicated JetStream names; collisions with command/event/DLQ names fail startup. |
+| `ack_wait` / `fetch_wait` | `5m` / `1s` | JetStream acknowledgement deadline and worker fetch wait. |
+| `publish_timeout` / `publish_attempts` | `2s` / `3` | Bounded pre-PubAck handoff retry. |
+| `max_age` / `max_bytes` / `max_msg_size` | `7d` / `-1` / `-1` | Stream retention; `-1` means unlimited for byte/message limits. |
+| `search_timeout` | `5s` | MCP search deadline. |
+| `retry.max_attempts` | `5` | Provider attempts per export before DLQ. |
+| `retry.base_delay` / `max_delay` | `250ms` / `5s` | Exponential retry delay bounds. |
+| `retry.progress_interval` | `30s` | `InProgress` heartbeat while a provider call/retry is running. |
+| `retry.fetch_error_delay` | `100ms` | Delay after a transport fetch error. |
+| `retry.shutdown_timeout` | `30s` | Maximum worker drain/close interval. |
+
+Enabled mode requires an HTTP(S) base URL, valid positive durations/limits,
+and valid stream/consumer identifiers. Values are parsed before the runtime
+starts, so an invalid enabled configuration fails fast rather than silently
+disabling export.
+
+### What is exported and how scopes split
+
+After ADK emits `TurnComplete`, Balda exports one completed turn only when it
+has non-empty visible user text and final visible assistant text. Thought
+parts, tool calls/results, binary parts, partial responses, and interrupted or
+non-completed turns are excluded. The export contains the stable Balda session
+identity, current provider-session identity, optional lineage, source turn ID,
+completion time, and the two text messages. A provider failure is logged as a
+bounded diagnostic and does not suppress the already completed user-facing
+reply.
+
+The exact canonical locator string, produced by `locatorref`, is the provider
+partition and authorization key:
+
+```text
+<channel_type>:<address_key>
+```
+
+The scope kind (`personal` or `group`) is metadata classified by the concrete
+channel codec; it never replaces the exact key. A direct/private locator,
+group locator, and group-topic locator are separate partitions. There is no
+owner, collaborator, channel-type, chat-ID, or topic inheritance, and no
+cross-scope fallback. Ambiguous or unsupported locator classification fails
+closed. Group conversation text is sent only to the exact group locator's
+trusted provider scope.
+
+Session reset, close, rotation, and bounded application shutdown also publish a
+boundary export with the old session identity before that identity is removed
+or rebound. Boundary order follows completed-turn order, so a later session
+cannot overtake an unresolved earlier export.
+
+### Search MCP contract
+
+When enabled, the bundled MCP server registers
+`balda.session_memory.search`. Its public input is only:
+
+```json
+{"query":"release checklist","limit":10}
+```
+
+The current authenticated Balda runtime supplies the locator and stable
+session headers out of band; callers cannot select an arbitrary locator in the
+tool schema. The response echoes the exact scope and returns bounded
+references. Each reference is explicitly `untrusted_reference` data. Balda
+does not execute recalled text, turn it into a prompt/system instruction, or
+interpret it as a transport/command request. Invalid query/scope, unsupported
+scope, disabled service, timeout, unavailable provider, and foreign provider
+results produce stable structured tool errors without leaking provider bodies.
+
+The resolver is fail-closed: a request without authenticated runtime headers
+gets `invalid_scope` and cannot fall back to a caller-provided locator. The
+app-scoped ACP runtime's per-session header injection is tracked separately in
+Beads issue `balda-dmof`; until that adapter is deployed, an integration must
+provide the trusted headers itself (or receive the intentional fail-closed
+error). This limitation does not weaken the public schema or exact-scope
+validation.
+
+### HTTP/JSON v1 provider contract
+
+The replaceable reference adapter is
+`internal/apps/balda/sessionmemoryhttp`. An independent provider can implement
+these three endpoints without importing Balda:
+
+| Method | Path | Request | Success |
+|---|---|---|---|
+| `POST` | `/v1/turns` | `sessionmemory.Turn` JSON | Any `2xx`; write is idempotent. |
+| `POST` | `/v1/boundaries` | `sessionmemory.Boundary` JSON | Any `2xx`; write is idempotent. |
+| `POST` | `/v1/search` | `sessionmemory.SearchRequest` JSON | `sessionmemory.SearchResponse` JSON. |
+
+The base URL may contain a deployment path; the adapter appends the endpoint
+path. Requests use `Content-Type: application/json` and
+`Accept: application/json`. Turn and boundary writes set
+`Idempotency-Key: <export_id>`; the service must deduplicate that key beyond
+the JetStream duplicate window. A `409` is success only when its JSON `code`
+or `kind` is `duplicate`, `already_exists`, or `idempotent_replay`.
+
+The portable v1 shapes are:
+
+```json
+{
+  "schema_version":"session-memory/v1",
+  "export_id":"session-memory:v1:turn:…",
+  "scope":{"key":"telegram:123:0","kind":"personal"},
+  "session":{"session_id":"tg-123-0","agent_session_id":"adk-7"},
+  "source_turn_id":"telegram:message:9",
+  "completed_at":"2026-08-03T05:06:07Z",
+  "messages":[
+    {"role":"user","text":"hello"},
+    {"role":"assistant","text":"hi"}
+  ]
+}
+```
+
+Boundary JSON replaces `source_turn_id`, `completed_at`, and `messages` with
+`transition_id`, `occurred_at`, and `reason` (`reset`, `close`, `rotation`, or
+`shutdown`). Search requests carry `schema_version`, the same exact `scope`
+and `session`, a trimmed non-empty `query`, and a `limit` from 1 to 100.
+Search responses must echo the request scope and every result must carry that
+same `scope_key`, a session ID, and non-empty text.
+
+HTTP outcome classification is stable:
+
+| Response | Balda behavior |
+|---|---|
+| `2xx` | Acknowledge the export or return the validated search response. |
+| `409` duplicate marker | Treat as an idempotent success. Other `409` is permanent. |
+| `408`, `429`, `5xx`, timeout, connection failure | Retry with the JetStream worker policy. |
+| Other `4xx` | Permanent failure; send to the session-memory DLQ after the retry/settlement path. |
+
+Response bodies are bounded and are never copied into logs, tool errors, or
+DLQ diagnostics.
+
+### JetStream durability, retry, and operations
+
+Session-memory transport is deliberately JetStream-only. It does not add a
+SQLite outbox, export-status table, lease table, migration, or `state.Provider`
+surface. When enabled, Balda creates:
+
+- file-backed work-queue stream `BALDA_SESSION_MEMORY` for
+  `balda.v1.session_memory.turn` and `balda.v1.session_memory.boundary`;
+- `DiscardNew` retention to preserve older pending exports under configured
+  age/byte/message pressure;
+- durable explicit-ack consumer `BALDA_SESSION_MEMORY_WORKER` with
+  `MaxAckPending=1`, so one FIFO delivery is processed at a time;
+- terminal diagnostics on `BALDA_DLQ` before the source message is
+  `Term`-inated.
+
+The capture path publishes a stable `export_id` with a JetStream message ID
+and waits for `PubAck`. A successful `PubAck` is the durability boundary: the
+export survives a Balda restart and an unresolved delivery is redelivered.
+Duplicate publication with the same ID is safe. The worker retries transient
+provider failures in place, sends `InProgress` heartbeats during slow calls and
+backoff, acknowledges only after provider success, and publishes a redacted
+diagnostic before terminating permanent or exhausted failures. Because there
+is intentionally no SQLite outbox, a process crash after capture but before
+`PubAck` can lose that one export; this integration does not claim zero-loss
+semantics before the acknowledgement.
+
+Operators can inspect backlog without reading message bodies by pointing the
+NATS CLI at the running runtime:
+
+```bash
+nats --server "$NATS_URL" stream info BALDA_SESSION_MEMORY --json
+nats --server "$NATS_URL" consumer info BALDA_SESSION_MEMORY BALDA_SESSION_MEMORY_WORKER --json
+nats --server "$NATS_URL" stream info BALDA_DLQ --json
+```
+
+The first two commands show stream messages, pending deliveries,
+ack-pending deliveries, age, and redelivery counters. The DLQ consumer name is
+operator-chosen; create a read-only durable consumer filtered to
+`balda.v1.dlq.command` when inspecting terminal diagnostics. Diagnostics carry
+export ID, kind, subject, sequence, delivery count, stable error code/class,
+and a safe reason—never conversation text or provider response bodies. After
+fixing the provider/configuration, replay must be an explicit operator action
+from a trusted source (or re-run the source turn); there is no automatic DLQ
+replay that could duplicate unreviewed conversation data. Stable export IDs
+make a reviewed replay idempotent at the provider.
+
+### Privacy, trust, and shutdown
+
+The configured HTTP endpoint is a raw conversation-data trust boundary. Use a
+trusted deployment and TLS for non-local endpoints, restrict who can read the
+provider's personal/group partitions, and configure provider-side retention to
+match the deployment's privacy policy. Balda minimizes the payload to visible
+text, keeps credentials out of core values and durable envelopes, bounds
+response bodies, and redacts worker/DLQ diagnostics. The provider remains
+responsible for encryption, access control, indexing, and deletion policy.
+
+Shutdown preserves ordering: channel ingress stops accepting new work, the
+turn dispatcher stops producing turns, active session identities publish
+shutdown boundaries while JetStream is still live, and only then does the
+serialized memory worker drain/close the provider. The drain is bounded by
+`retry.shutdown_timeout`; the final backlog and any abandoned work are
+observable in the worker shutdown report. A slow provider therefore cannot
+hold the process indefinitely or block the final chat response.
+
+### Extraction path
+
+The implementation is intentionally split for a later package/skill/repository
+release:
+
+1. `sessionmemory` is the portable versioned core (`Scope`, `SessionRef`,
+   `Turn`, `Boundary`, search contracts, validation, error classes, and the
+   small `Provider` port). It imports no Balda transport, MCP, Fx, NATS, or
+   SQLite package.
+2. `sessionmemorycmd` owns neutral `turn.v1`/`boundary.v1` export envelopes and
+   subjects; it has no queue client or provider SDK.
+3. `sessionmemoryapp` adapts Balda turn/session lifecycle to the core and owns
+   the serialized worker ports. `sessionmemoryhttp` is one replaceable
+   vendor-neutral adapter; a vendor-specific adapter can implement the same
+   port later.
+4. Balda-only adapters remain at the composition root: JetStream transport,
+   channel-owned locator classifiers, and the MCP search surface. The existing
+   global fact-memory package is not part of the extraction.
+
+A future Go module can publish steps 1–2, a provider integration skill can
+   document search/configuration without owning persistence, and a standalone
+   repository can publish the HTTP/JetStream adapters. This story does not
+   vendor a memory SDK or move `pack/callee/**`.
+
 ### Delivery formatting
 
 Balda actor commands carry a request-scoped delivery format so session, goal,
