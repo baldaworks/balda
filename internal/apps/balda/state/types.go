@@ -7,6 +7,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/normahq/balda/sessionmemory"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -84,6 +85,9 @@ type Provider interface {
 	Sessions() SessionStore
 	ScheduledJobs() ScheduledJobStore
 	Questions() QuestionStore
+	// SessionMemoryStore returns the durable exact-scope session-memory store.
+	// It owns memory data only; JetStream remains the handoff mechanism.
+	SessionMemoryStore() sessionmemory.Store
 	Jobs() JobStore
 	PollingOffsetStore() updatepoller.OffsetStore
 	Collaborators() CollaboratorStore

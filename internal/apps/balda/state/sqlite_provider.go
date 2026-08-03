@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/normahq/balda/sessionmemory"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
@@ -21,6 +22,7 @@ type sqliteProvider struct {
 	session        *sqliteSessionStore
 	jobs           *sqliteScheduledJobStore
 	questions      *sqliteQuestionStore
+	sessionMemory  *sqliteSessionMemoryStore
 	runtime        *sqliteJobStore
 	offset         *sqliteOffsetStore
 }
@@ -160,6 +162,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		session:        &sqliteSessionStore{db: db},
 		jobs:           &sqliteScheduledJobStore{db: db},
 		questions:      &sqliteQuestionStore{db: db},
+		sessionMemory:  &sqliteSessionMemoryStore{db: db},
 		runtime:        &sqliteJobStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
 	}
@@ -188,6 +191,10 @@ func (p *sqliteProvider) ScheduledJobs() ScheduledJobStore {
 
 func (p *sqliteProvider) Questions() QuestionStore {
 	return p.questions
+}
+
+func (p *sqliteProvider) SessionMemoryStore() sessionmemory.Store {
+	return p.sessionMemory
 }
 
 func (p *sqliteProvider) Jobs() JobStore {
