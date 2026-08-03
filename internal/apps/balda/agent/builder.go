@@ -251,6 +251,57 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	}, nil
 }
 
+// BuildDedicatedRuntime creates an isolated provider runtime for internal
+// structured jobs such as session-memory derivation. The runtime has its own
+// in-memory session service and deliberately receives no MCP servers; callers
+// must not use it as a user-facing chat runtime.
+func (b *Builder) BuildDedicatedRuntime(
+	ctx context.Context,
+	agentName string,
+	workspaceDir string,
+	instruction string,
+) (*BuiltRuntime, error) {
+	if b == nil || b.factory == nil {
+		return nil, fmt.Errorf("agent builder is required")
+	}
+	if strings.TrimSpace(agentName) == "" {
+		return nil, fmt.Errorf("dedicated runtime agent is required")
+	}
+	if strings.TrimSpace(workspaceDir) == "" {
+		return nil, fmt.Errorf("dedicated runtime workspace is required")
+	}
+	req := agentfactory.BuildRequest{
+		AgentID:          strings.TrimSpace(agentName),
+		Name:             strings.TrimSpace(agentName) + "-session-memory",
+		Description:      "Dedicated session-memory structured derivation runtime",
+		WorkingDirectory: strings.TrimSpace(workspaceDir),
+		Instruction:      strings.TrimSpace(instruction),
+		MCPServerIDs:     []string{},
+	}
+	ag, err := b.factory.Build(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("creating dedicated agent %q: %w", agentName, err)
+	}
+	sessionSvc := adksession.InMemoryService()
+	r, err := runner.New(runner.Config{
+		AppName:        defaultRuntimeAppName + "-session-memory",
+		Agent:          ag,
+		SessionService: sessionSvc,
+	})
+	if err != nil {
+		if closer, ok := ag.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		return nil, fmt.Errorf("creating dedicated runtime runner: %w", err)
+	}
+	return &BuiltRuntime{
+		Agent:      ag,
+		Runner:     r,
+		SessionSvc: sessionSvc,
+		AppName:    defaultRuntimeAppName + "-session-memory",
+	}, nil
+}
+
 func (b *Builder) CreateRuntimeSession(
 	ctx context.Context,
 	runtime *BuiltRuntime,
