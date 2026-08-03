@@ -17,19 +17,26 @@ const (
 	HeaderSessionID      = "X-Balda-Session-ID"
 	HeaderAgentSessionID = "X-Balda-Agent-Session-ID"
 	HeaderLineageID      = "X-Balda-Session-Lineage-ID"
+	HeaderSessionBinding = "X-Balda-Session-Binding"
 )
 
 // HeaderSessionResolver is the composition boundary for runtimes that can
-// attach the current Balda session to an MCP HTTP request. The bundled server
-// is bound to localhost; deployments exposing it through a proxy must only
-// forward these headers from an authenticated runtime adapter.
-type HeaderSessionResolver struct{}
+// attach the current Balda session to an MCP HTTP request. The ContextBroker
+// capability must authenticate the headers; locator/session headers alone are
+// never trusted. The bundled server is bound to localhost, and deployments
+// exposing it through a proxy must preserve the binding header.
+type HeaderSessionResolver struct {
+	Broker *ContextBroker
+}
 
-func (HeaderSessionResolver) Resolve(_ context.Context, req *mcp.CallToolRequest) (CurrentSession, error) {
+func (r HeaderSessionResolver) Resolve(_ context.Context, req *mcp.CallToolRequest) (CurrentSession, error) {
 	if req == nil || req.GetExtra() == nil {
 		return CurrentSession{}, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "current session context is unavailable", nil)
 	}
 	headers := req.GetExtra().Header
+	if r.Broker == nil || !r.Broker.Verify(headers) {
+		return CurrentSession{}, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "current session context is unauthenticated", nil)
+	}
 	locatorJSON := strings.TrimSpace(headers.Get(HeaderSessionLocator))
 	if locatorJSON == "" {
 		return CurrentSession{}, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "current session context is unavailable", nil)

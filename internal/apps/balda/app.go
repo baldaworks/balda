@@ -234,6 +234,11 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
+			sessionmemorymcp.NewContextBroker,
+			fx.Annotate(
+				func() bool { return cfg.Balda.SessionMemory.Enabled },
+				fx.ResultTags(`name:"balda_session_memory_enabled"`),
+			),
 			func() sessionmemoryapp.ScopeResolver {
 				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
 					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
@@ -266,11 +271,11 @@ func Module(
 				}
 				return sessionmemoryapp.NewWorker(bus.SessionMemoryTransport(), provider, workerCfg, logger)
 			},
-			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver) sessionmemorymcp.Config {
+			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver, broker *sessionmemorymcp.ContextBroker) sessionmemorymcp.Config {
 				return sessionmemorymcp.Config{
 					Enabled:         cfg.Balda.SessionMemory.Enabled,
 					Searcher:        provider,
-					SessionResolver: sessionmemorymcp.HeaderSessionResolver{},
+					SessionResolver: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
 					ScopeResolver:   resolver,
 					Timeout:         sessionMemorySearchTimeout,
 				}

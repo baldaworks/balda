@@ -8,7 +8,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/shutdown"
+	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -17,7 +20,34 @@ import (
 	"google.golang.org/genai"
 )
 
-// RuntimeManager owns the single app-scoped balda provider runtime.
+// SessionRuntimeRequest identifies the authenticated session that owns a
+// scoped provider runtime and its internal MCP capability.
+type SessionRuntimeRequest struct {
+	Locator        deliverycmd.Locator
+	UserID         string
+	AgentSessionID string
+	LineageID      string
+	WorkspaceDir   string
+}
+
+// ScopedMCPServer is an authenticated per-session MCP endpoint registration.
+type ScopedMCPServer struct {
+	ID      string
+	Config  agentconfig.MCPServerConfig
+	Release func() error
+}
+
+// SessionMCPBinder creates a capability that injects trusted session headers
+// before an internal MCP request reaches bundled tools.
+type SessionMCPBinder interface {
+	BindSession(ctx context.Context, request SessionRuntimeRequest) (ScopedMCPServer, error)
+}
+
+type sessionMCPBinderStatus interface {
+	SessionMCPEnabled() bool
+}
+
+// RuntimeManager owns the app-scoped runtime and optional per-session runtimes.
 type RuntimeManager struct {
 	builder           *Builder
 	providerID        string
@@ -25,10 +55,13 @@ type RuntimeManager struct {
 	workspaceEnabled  bool
 	baldaMCPServerIDs []string
 	goalWorkspaces    *WorkspaceManager
+	sessionMCPBinder  SessionMCPBinder
+	mcpRegistry       *mcpregistry.MapRegistry
 	logger            zerolog.Logger
 
-	mu      sync.RWMutex
-	runtime *BuiltRuntime
+	mu             sync.RWMutex
+	runtime        *BuiltRuntime
+	scopedRuntimes map[string]*BuiltRuntime
 }
 
 // RuntimeManagerParams wires RuntimeManager dependencies.
@@ -38,10 +71,12 @@ type RuntimeManagerParams struct {
 	Builder           *Builder
 	BaldaProviderID   string `name:"balda_provider"`
 	WorkingDir        string
-	StateDir          string   `name:"balda_state_dir"`
-	WorkspaceEnabled  bool     `name:"balda_workspace_enabled"`
-	WorkspaceBaseRef  string   `name:"balda_workspace_base_branch"`
-	BaldaMCPServerIDs []string `name:"balda_mcp_servers"`
+	StateDir          string           `name:"balda_state_dir"`
+	WorkspaceEnabled  bool             `name:"balda_workspace_enabled"`
+	WorkspaceBaseRef  string           `name:"balda_workspace_base_branch"`
+	BaldaMCPServerIDs []string         `name:"balda_mcp_servers"`
+	SessionMCPBinder  SessionMCPBinder `optional:"true"`
+	MCPRegistry       *mcpregistry.MapRegistry
 	Logger            zerolog.Logger
 }
 
@@ -126,8 +161,11 @@ func NewRuntimeManager(p RuntimeManagerParams) *RuntimeManager {
 		workingDir:        strings.TrimSpace(p.WorkingDir),
 		workspaceEnabled:  p.WorkspaceEnabled,
 		baldaMCPServerIDs: append([]string(nil), p.BaldaMCPServerIDs...),
+		sessionMCPBinder:  p.SessionMCPBinder,
+		mcpRegistry:       p.MCPRegistry,
 		goalWorkspaces:    NewWorkspaceManagerWithSessionsDir(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef, "goals"),
 		logger:            p.Logger.With().Str("component", "balda.runtime_manager").Logger(),
+		scopedRuntimes:    make(map[string]*BuiltRuntime),
 	}
 
 	return m
@@ -198,6 +236,80 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	m.mu.Unlock()
 
 	m.logger.Info().Str("agent", providerID).Msg("balda provider runtime ready")
+	return runtime, nil
+}
+
+// RuntimeForSession builds a provider runtime whose bundled MCP URL is bound
+// to one exact authenticated Balda locator. It intentionally uses a distinct
+// ACP process/runtime because the provider's MCP headers are static for the
+// lifetime of an ACP process and cannot be safely mutated between turns.
+func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error) {
+	if m == nil {
+		return nil, fmt.Errorf("balda runtime manager is required")
+	}
+	m.mu.RLock()
+	builder := m.builder
+	providerID := strings.TrimSpace(m.providerID)
+	workingDir := strings.TrimSpace(request.WorkspaceDir)
+	binder := m.sessionMCPBinder
+	registry := m.mcpRegistry
+	if workingDir == "" {
+		workingDir = m.workingDir
+	}
+	m.mu.RUnlock()
+	if binder == nil || registry == nil {
+		return m.Runtime(ctx)
+	}
+	if status, ok := binder.(sessionMCPBinderStatus); ok && !status.SessionMCPEnabled() {
+		return m.Runtime(ctx)
+	}
+	if builder == nil {
+		return nil, fmt.Errorf("agent builder is required")
+	}
+	if providerID == "" {
+		return nil, fmt.Errorf("balda provider is not configured")
+	}
+	binding, err := binder.BindSession(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("bind session MCP context: %w", err)
+	}
+	if strings.TrimSpace(binding.ID) == "" || strings.TrimSpace(binding.Config.URL) == "" {
+		if binding.Release != nil {
+			_ = binding.Release()
+		}
+		return nil, fmt.Errorf("session MCP binding is incomplete")
+	}
+	registry.Set(binding.ID, binding.Config)
+	runtime, err := builder.BuildRuntimeWithMCPServerIDs(ctx, providerID, workingDir, nil, []string{binding.ID})
+	if err != nil {
+		registry.Delete(binding.ID)
+		if binding.Release != nil {
+			_ = binding.Release()
+		}
+		return nil, err
+	}
+	var once sync.Once
+	closeScoped := func() error {
+		var closeErr error
+		once.Do(func() {
+			registry.Delete(binding.ID)
+			if binding.Release != nil {
+				closeErr = errors.Join(closeErr, binding.Release())
+			}
+			closeErr = errors.Join(closeErr, closeRuntimeAgent(runtime.Agent))
+			m.mu.Lock()
+			delete(m.scopedRuntimes, binding.ID)
+			m.mu.Unlock()
+		})
+		return closeErr
+	}
+	runtime.Close = closeScoped
+	m.mu.Lock()
+	if m.scopedRuntimes == nil {
+		m.scopedRuntimes = make(map[string]*BuiltRuntime)
+	}
+	m.scopedRuntimes[binding.ID] = runtime
+	m.mu.Unlock()
 	return runtime, nil
 }
 
@@ -525,12 +637,28 @@ func goalWorkspaceBranchName(jobID string) string {
 func (m *RuntimeManager) close() error {
 	m.mu.Lock()
 	runtime := m.runtime
+	scoped := make([]*BuiltRuntime, 0, len(m.scopedRuntimes))
+	for _, item := range m.scopedRuntimes {
+		scoped = append(scoped, item)
+	}
+	m.scopedRuntimes = make(map[string]*BuiltRuntime)
 	m.runtime = nil
 	m.mu.Unlock()
-	if runtime == nil {
-		return nil
+	var errs []error
+	for _, item := range scoped {
+		if item == nil {
+			continue
+		}
+		if item.Close != nil {
+			errs = append(errs, item.Close())
+		} else {
+			errs = append(errs, closeRuntimeAgent(item.Agent))
+		}
 	}
-	return closeRuntimeAgent(runtime.Agent)
+	if runtime != nil {
+		errs = append(errs, closeRuntimeAgent(runtime.Agent))
+	}
+	return errors.Join(errs...)
 }
 
 func closeRuntimeAgent(agent any) error {

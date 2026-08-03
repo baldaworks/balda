@@ -136,6 +136,11 @@ func PreflightRuntime(
 		),
 		fx.Supply(logger, normaCfg, workingDir, mcpReg, eventBusConfig, executionConfig),
 		fx.Provide(
+			sessionmemorymcp.NewContextBroker,
+			fx.Annotate(
+				func() bool { return cfg.Balda.SessionMemory.Enabled },
+				fx.ResultTags(`name:"balda_session_memory_enabled"`),
+			),
 			func() sessionmemoryapp.ScopeResolver {
 				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
 					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
@@ -161,11 +166,11 @@ func PreflightRuntime(
 				}
 				return sessionmemoryapp.NewBoundaryCapture(publisher, resolver)
 			},
-			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver) sessionmemorymcp.Config {
+			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver, broker *sessionmemorymcp.ContextBroker) sessionmemorymcp.Config {
 				return sessionmemorymcp.Config{
 					Enabled:         cfg.Balda.SessionMemory.Enabled,
 					Searcher:        provider,
-					SessionResolver: sessionmemorymcp.HeaderSessionResolver{},
+					SessionResolver: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
 					ScopeResolver:   resolver,
 					Timeout:         sessionMemorySearchTimeout,
 				}

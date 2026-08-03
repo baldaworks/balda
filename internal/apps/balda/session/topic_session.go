@@ -21,6 +21,7 @@ type TopicSession struct {
 	runner         *runner.Runner
 	sessionSvc     session.Service
 	sess           session.Session
+	runtimeClose   func() error
 	workspaceDir   string
 	branchName     string
 	startupNotice  string

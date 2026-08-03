@@ -48,6 +48,7 @@ type InternalMCPManager struct {
 	dispatcher       actortransport.Dispatcher
 	questionService  *questions.Service
 	sessionMemoryCfg sessionmemorymcp.Config
+	contextBroker    *sessionmemorymcp.ContextBroker
 	cleanups         []func() error
 }
 
@@ -72,6 +73,7 @@ type internalMCPParams struct {
 	Dispatcher       actortransport.Dispatcher
 	QuestionService  *questions.Service `optional:"true"`
 	SessionMemory    sessionmemorymcp.Config
+	ContextBroker    *sessionmemorymcp.ContextBroker
 }
 
 // NewInternalMCPManager creates an internal MCP lifecycle manager.
@@ -88,6 +90,7 @@ func NewInternalMCPManager(params internalMCPParams) *InternalMCPManager {
 		dispatcher:       params.Dispatcher,
 		questionService:  params.QuestionService,
 		sessionMemoryCfg: params.SessionMemory,
+		contextBroker:    params.ContextBroker,
 	}
 
 	return manager
@@ -181,17 +184,27 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 		m.logger.Info().Msg("workspace mode disabled; skipping bundled workspace server")
 	}
 
+	var baldaHandler http.Handler = mcp.NewStreamableHTTPHandler(
+		func(_ *http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{},
+	)
+	if m.contextBroker != nil {
+		baldaHandler = m.contextBroker.Wrap(baldaHandler)
+	}
 	handlersByID := map[string]http.Handler{
-		bundledBaldaServerID: mcp.NewStreamableHTTPHandler(
-			func(_ *http.Request) *mcp.Server { return server },
-			&mcp.StreamableHTTPOptions{},
-		),
+		bundledBaldaServerID: baldaHandler,
 	}
 	routes := []string{"/mcp", "/mcp/" + bundledBaldaServerID}
 
 	res, err := startBundledMCPHTTPServer(ctx, "127.0.0.1:0", handlersByID)
 	if err != nil {
 		return fmt.Errorf("start bundled MCP listener: %w", err)
+	}
+	if m.contextBroker != nil {
+		if err := m.contextBroker.SetBaseURL("http://" + res.Addr + "/mcp"); err != nil {
+			_ = res.Close()
+			return fmt.Errorf("configure session MCP context broker: %w", err)
+		}
 	}
 	m.addCleanup(res.Close)
 

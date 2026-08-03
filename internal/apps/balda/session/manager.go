@@ -46,6 +46,22 @@ type RuntimeManager interface {
 	ProviderID() string
 }
 
+// SessionRuntimeManager is an optional composition-root extension. It gives
+// one session a provider runtime whose internal MCP capability is bound to
+// that session, while preserving RuntimeManager compatibility for tests and
+// deployments without scoped MCP.
+type SessionRuntimeManager interface {
+	RuntimeForSession(ctx context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error)
+}
+
+type SessionRuntimeRequest struct {
+	Locator        SessionLocator
+	UserID         string
+	AgentSessionID string
+	LineageID      string
+	WorkspaceDir   string
+}
+
 type WorkspaceManager interface {
 	CanonicalWorkspaceDir(key string) string
 	ForceRemountCanonicalWorkspace(ctx context.Context, key, branchName string) (EnsureWorkspaceResult, error)
@@ -71,6 +87,7 @@ type BuiltRuntime struct {
 	Runner     *runner.Runner
 	SessionSvc adksession.Service
 	AppName    string
+	Close      func() error
 }
 
 type EnsureWorkspaceResult struct {
@@ -350,9 +367,24 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	if m.sessionsPersistent {
 		agentSessionID = sessionID
 	}
+	sessionRuntime := rootRuntime
+	if scopedManager, ok := runtimeManager.(SessionRuntimeManager); ok {
+		sessionRuntime, err = scopedManager.RuntimeForSession(ctx, SessionRuntimeRequest{
+			Locator:        locator,
+			UserID:         userID,
+			AgentSessionID: agentSessionID,
+			WorkspaceDir:   workspaceDir,
+		})
+		if err != nil {
+			if m.workspaceEnabled {
+				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
+			}
+			return err
+		}
+	}
 	sess, err := builder.CreateRuntimeSession(
 		ctx,
-		rootRuntime,
+		sessionRuntime,
 		baldaProvider,
 		userID,
 		agentSessionID,
@@ -373,6 +405,9 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		if m.workspaceEnabled {
 			_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
 		}
+		if sessionRuntime != nil && sessionRuntime.Close != nil {
+			_ = sessionRuntime.Close()
+		}
 		return err
 	}
 
@@ -382,9 +417,10 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 		userID:         userID,
 		locator:        locator,
 		agentName:      agentName,
-		agent:          rootRuntime.Agent,
-		runner:         rootRuntime.Runner,
-		sessionSvc:     rootRuntime.SessionSvc,
+		agent:          sessionRuntime.Agent,
+		runner:         sessionRuntime.Runner,
+		sessionSvc:     sessionRuntime.SessionSvc,
+		runtimeClose:   sessionRuntime.Close,
 		sess:           sess,
 		workspaceDir:   workspaceDir,
 		branchName:     branchName,
@@ -746,6 +782,11 @@ func (m *Manager) cleanupTopicSession(ctx context.Context, ts *TopicSession, opt
 	if opts.cleanupWorkspace && ts != nil && m.workspaceEnabled && ts.workspaceDir != "" {
 		if err := m.workspaces.CleanupWorkspace(ctx, ts.workspaceDir); err != nil && firstErr == nil {
 			firstErr = err
+		}
+	}
+	if ts != nil && ts.runtimeClose != nil {
+		if err := ts.runtimeClose(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("close scoped runtime: %w", err)
 		}
 	}
 	return firstErr

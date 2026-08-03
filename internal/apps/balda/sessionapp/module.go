@@ -5,8 +5,12 @@ import (
 	"errors"
 
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorymcp"
+	"github.com/normahq/balda/sessionmemory"
+	"github.com/normahq/runtime/v2/agentconfig"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -61,11 +65,72 @@ func (a SessionRuntimeManagerAdapter) Runtime(ctx context.Context) (*baldasessio
 		Runner:     runtime.Runner,
 		SessionSvc: runtime.SessionSvc,
 		AppName:    runtime.AppName,
+		Close:      runtime.Close,
 	}, nil
 }
 
 func (a SessionRuntimeManagerAdapter) ProviderID() string {
 	return a.Manager.ProviderID()
+}
+
+func (a SessionRuntimeManagerAdapter) RuntimeForSession(ctx context.Context, request baldasession.SessionRuntimeRequest) (*baldasession.BuiltRuntime, error) {
+	runtime, err := a.Manager.RuntimeForSession(ctx, baldaagent.SessionRuntimeRequest{
+		Locator: deliverycmd.Locator{
+			ChannelType: request.Locator.ChannelType,
+			AddressKey:  request.Locator.AddressKey,
+			AddressJSON: request.Locator.AddressJSON,
+			SessionID:   request.Locator.SessionID,
+		},
+		UserID:         request.UserID,
+		AgentSessionID: request.AgentSessionID,
+		LineageID:      request.LineageID,
+		WorkspaceDir:   request.WorkspaceDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &baldasession.BuiltRuntime{
+		Agent:      runtime.Agent,
+		Runner:     runtime.Runner,
+		SessionSvc: runtime.SessionSvc,
+		AppName:    runtime.AppName,
+		Close:      runtime.Close,
+	}, nil
+}
+
+// SessionMCPBinderAdapter bridges the MCP context broker to the runtime port.
+// It is kept in the composition-root package so the provider runtime does not
+// import the concrete MCP surface.
+type SessionMCPBinderAdapter struct {
+	Broker  *sessionmemorymcp.ContextBroker
+	Enabled bool
+}
+
+func (a SessionMCPBinderAdapter) SessionMCPEnabled() bool { return a.Enabled }
+
+func (a SessionMCPBinderAdapter) BindSession(_ context.Context, request baldaagent.SessionRuntimeRequest) (baldaagent.ScopedMCPServer, error) {
+	if a.Broker == nil {
+		return baldaagent.ScopedMCPServer{}, errors.New("session MCP context broker is required")
+	}
+	binding, err := a.Broker.Bind(sessionmemorymcp.CurrentSession{
+		Locator: request.Locator,
+		Session: sessionmemory.SessionRef{
+			SessionID:      request.Locator.SessionID,
+			AgentSessionID: request.AgentSessionID,
+			LineageID:      request.LineageID,
+		},
+	})
+	if err != nil {
+		return baldaagent.ScopedMCPServer{}, err
+	}
+	return baldaagent.ScopedMCPServer{
+		ID: binding.ID,
+		Config: agentconfig.MCPServerConfig{
+			Type: agentconfig.MCPServerTypeHTTP,
+			URL:  binding.URL,
+		},
+		Release: binding.Release,
+	}, nil
 }
 
 type SessionWorkspaceManagerAdapter struct {
@@ -115,6 +180,12 @@ var Module = fx.Module("balda_sessionapp",
 		func(manager *baldaagent.RuntimeManager) baldasession.RuntimeManager {
 			return SessionRuntimeManagerAdapter{Manager: manager}
 		},
+		fx.Annotate(
+			func(broker *sessionmemorymcp.ContextBroker, enabled bool) baldaagent.SessionMCPBinder {
+				return SessionMCPBinderAdapter{Broker: broker, Enabled: enabled}
+			},
+			fx.ParamTags(``, `name:"balda_session_memory_enabled"`),
+		),
 		fx.Annotate(
 			func(workingDir string, stateDir string, baseBranch string, sessionsDir string) baldasession.WorkspaceManager {
 				return SessionWorkspaceManagerAdapter{

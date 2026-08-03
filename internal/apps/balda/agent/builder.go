@@ -197,6 +197,9 @@ type BuiltRuntime struct {
 	Runner     *runner.Runner
 	SessionSvc adksession.Service
 	AppName    string
+	// Close releases resources owned by a scoped runtime. The app-scoped
+	// runtime leaves this nil and is closed by RuntimeManager.Stop.
+	Close func() error
 }
 
 type AgentMetadata struct {
