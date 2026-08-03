@@ -27,12 +27,12 @@ func TestNativeProviderProcessesAndSearchesDerivedMemory(t *testing.T) {
 	if err := provider.SyncTurn(context.Background(), turn); err != nil {
 		t.Fatalf("SyncTurn() error = %v", err)
 	}
-	response, err := provider.Search(context.Background(), sessionmemory.SearchRequest{Scope: scope, Session: turn.Session, Query: "native", Limit: 10})
+	response, err := provider.SearchDerived(context.Background(), sessionmemory.DerivedSearchRequest{Scope: scope, Query: "native", Limit: 10})
 	if err != nil {
-		t.Fatalf("Search() error = %v", err)
+		t.Fatalf("SearchDerived() error = %v", err)
 	}
-	if len(response.Results) != 1 || response.Results[0].Text != "native memory" || response.Results[0].ScopeKey != scope.Key {
-		t.Fatalf("Search() = %#v", response)
+	if len(response.Results) != 1 || response.Results[0].Text != "native memory" || response.Results[0].Scope.Key != scope.Key {
+		t.Fatalf("SearchDerived() = %#v", response)
 	}
 	if err := provider.Close(context.Background()); err != nil {
 		t.Fatalf("Close() error = %v", err)

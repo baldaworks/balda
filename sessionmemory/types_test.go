@@ -3,7 +3,6 @@ package sessionmemory
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 )
@@ -116,57 +115,6 @@ func TestScopeValidateUsesExactLocatorAndKnownKind(t *testing.T) {
 				t.Fatalf("ClassifyError() = %q, %q, %v; want %q, permanent, true", code, class, ok, tt.wantCode)
 			}
 		})
-	}
-}
-
-func TestNormalizeSearchRequestAndRejectForeignScope(t *testing.T) {
-	t.Parallel()
-
-	scope, session := testIdentity()
-	req, err := NormalizeSearchRequest(SearchRequest{Scope: scope, Session: session, Query: "  deploy decision  "})
-	if err != nil {
-		t.Fatalf("NormalizeSearchRequest() error = %v", err)
-	}
-	if req.Query != "deploy decision" || req.Limit != DefaultSearchLimit || req.SchemaVersion != SchemaVersionV1 {
-		t.Fatalf("normalized request = %+v", req)
-	}
-	response := SearchResponse{
-		SchemaVersion: SchemaVersionV1,
-		Scope:         scope,
-		Results: []SearchResult{{
-			ID:        "result-1",
-			ScopeKey:  scope.Key,
-			SessionID: session.SessionID,
-			Text:      "untrusted recalled text",
-		}},
-	}
-	if err := ValidateSearchResponse(req, response); err != nil {
-		t.Fatalf("ValidateSearchResponse() error = %v", err)
-	}
-	response.Results[0].ScopeKey = "telegram:-100:42"
-	err = ValidateSearchResponse(req, response)
-	code, class, ok := ClassifyError(err)
-	if !ok || code != CodeScopeViolation || class != ErrorClassPermanent {
-		t.Fatalf("foreign scope error = %v; class = %q, %q, %v", err, code, class, ok)
-	}
-}
-
-func TestSearchRequestValidationBoundsQueryAndLimit(t *testing.T) {
-	t.Parallel()
-
-	scope, session := testIdentity()
-	tests := []SearchRequest{
-		{Scope: scope, Session: session, Query: "   ", Limit: 1},
-		{Scope: scope, Session: session, Query: strings.Repeat("x", MaxSearchQueryBytes+1), Limit: 1},
-		{Scope: scope, Session: session, Query: "query", Limit: MaxSearchLimit + 1},
-	}
-	for _, req := range tests {
-		req.SchemaVersion = SchemaVersionV1
-		err := req.Validate()
-		code, _, ok := ClassifyError(err)
-		if !ok || code != CodeInvalidQuery {
-			t.Fatalf("Validate() error = %v, code = %q, classified = %v", err, code, ok)
-		}
 	}
 }
 

@@ -7,8 +7,9 @@ import (
 )
 
 // NativeProvider runs the portable Engine against Balda's durable Store and a
-// dedicated structured deriver. It keeps the existing Provider boundary used
-// by the JetStream worker while exposing derived retrieval to current callers.
+// dedicated structured deriver. JetStream carries completed exports and
+// boundaries into this native provider; retrieval and forgetting stay on the
+// native application ports below.
 type NativeProvider struct {
 	engine  *sessionmemory.Engine
 	invoker StructuredInvoker
@@ -84,43 +85,6 @@ func (p *NativeProvider) ForgetScope(ctx context.Context, command sessionmemory.
 	return p.engine.ForgetScope(ctx, command)
 }
 
-// Search adapts derived references to the legacy Provider response shape. The
-// MCP surface will consume the richer Engine response in the scope migration.
-func (p *NativeProvider) Search(ctx context.Context, request sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error) {
-	if p == nil || p.engine == nil {
-		return sessionmemory.SearchResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "native session-memory provider is unavailable", nil)
-	}
-	normalized, err := sessionmemory.NormalizeSearchRequest(request)
-	if err != nil {
-		return sessionmemory.SearchResponse{}, err
-	}
-	response, err := p.engine.Search(ctx, sessionmemory.DerivedSearchRequest{
-		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
-		Scope:         normalized.Scope,
-		Query:         normalized.Query,
-		Limit:         normalized.Limit,
-	})
-	if err != nil {
-		return sessionmemory.SearchResponse{}, err
-	}
-	results := make([]sessionmemory.SearchResult, 0, len(response.Results))
-	for _, reference := range response.Results {
-		sessionID := "native"
-		if len(reference.Provenance.RawSources) > 0 {
-			sessionID = reference.Provenance.RawSources[0].SessionID
-		}
-		results = append(results, sessionmemory.SearchResult{
-			ID:        reference.RevisionID,
-			ScopeKey:  reference.Scope.Key,
-			SessionID: sessionID,
-			Text:      reference.Text,
-			CreatedAt: reference.CreatedAt,
-			Score:     reference.Score,
-		})
-	}
-	return sessionmemory.SearchResponse{SchemaVersion: sessionmemory.SchemaVersionV1, Scope: response.Scope, Results: results}, nil
-}
-
 func (p *NativeProvider) Close(ctx context.Context) error {
 	if p == nil || p.invoker == nil {
 		return nil
@@ -142,10 +106,6 @@ func (DisabledProvider) SyncTurn(context.Context, sessionmemory.Turn) error {
 
 func (DisabledProvider) OnSessionBoundary(context.Context, sessionmemory.Boundary) error {
 	return sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
-}
-
-func (DisabledProvider) Search(context.Context, sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error) {
-	return sessionmemory.SearchResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
 }
 
 func (DisabledProvider) SearchDerived(context.Context, sessionmemory.DerivedSearchRequest) (sessionmemory.DerivedSearchResponse, error) {

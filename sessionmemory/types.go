@@ -99,37 +99,12 @@ type Boundary struct {
 	OccurredAt    time.Time      `json:"occurred_at"`
 }
 
-// SearchRequest asks a provider for memory within one exact locator scope.
-type SearchRequest struct {
-	SchemaVersion string     `json:"schema_version"`
-	Scope         Scope      `json:"scope"`
-	Session       SessionRef `json:"session"`
-	Query         string     `json:"query"`
-	Limit         int        `json:"limit"`
-}
-
-// SearchResult is one untrusted reference returned by a memory provider.
-type SearchResult struct {
-	ID        string    `json:"id"`
-	ScopeKey  string    `json:"scope_key"`
-	SessionID string    `json:"session_id"`
-	Text      string    `json:"text"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	Score     *float64  `json:"score,omitempty"`
-}
-
-// SearchResponse contains provider results for the echoed exact scope.
-type SearchResponse struct {
-	SchemaVersion string         `json:"schema_version"`
-	Scope         Scope          `json:"scope"`
-	Results       []SearchResult `json:"results"`
-}
-
-// Provider synchronizes completed conversation data and serves scoped recall.
+// Provider synchronizes completed conversation data and lifecycle boundaries.
+// Native retrieval and forgetting are exposed through the derived application
+// port rather than a remote-provider compatibility contract.
 type Provider interface {
 	SyncTurn(ctx context.Context, turn Turn) error
 	OnSessionBoundary(ctx context.Context, boundary Boundary) error
-	Search(ctx context.Context, req SearchRequest) (SearchResponse, error)
 	Close(ctx context.Context) error
 }
 
@@ -176,21 +151,6 @@ func NewBoundary(scope Scope, session SessionRef, transitionID string, reason Bo
 		return Boundary{}, err
 	}
 	return boundary, nil
-}
-
-// NormalizeSearchRequest trims a query, supplies the default limit, and validates the request.
-func NormalizeSearchRequest(req SearchRequest) (SearchRequest, error) {
-	req.Query = strings.TrimSpace(req.Query)
-	if req.SchemaVersion == "" {
-		req.SchemaVersion = SchemaVersionV1
-	}
-	if req.Limit == 0 {
-		req.Limit = DefaultSearchLimit
-	}
-	if err := req.Validate(); err != nil {
-		return SearchRequest{}, err
-	}
-	return req, nil
 }
 
 // TurnExportID derives a stable idempotency key for one source turn.

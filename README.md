@@ -116,31 +116,32 @@ automation, and agent execution instead of separate bots and scripts.
 
 ### 5. Durable session memory
 
-Balda can optionally export completed, text-only turns to an external
-memory service and expose scoped recall through `balda.session_memory.search`.
-This is separate from the existing global fact memory (`balda.memory.*`),
-which remains in `state.db` and keeps its current contract.
+Balda can optionally persist completed, text-only turns in its native
+session-memory Store and expose exact-scope recall through
+`balda.session_memory.search` and provenance through
+`balda.session_memory.trace`. This is separate from the existing global fact
+memory (`balda.memory.*`), which remains in `state.db` and keeps its current
+contract.
 
-The feature is disabled by default. Enable it only after configuring a trusted
-HTTP/JSON v1 service:
+The feature is disabled by default. Enable it with the native SQLite-backed
+Store and JetStream handoff:
 
 ```yaml
 balda:
   session_memory:
     enabled: true
-    provider:
-      type: http
-      base_url: https://memory.example.internal
-      token_env: BALDA_SESSION_MEMORY_TOKEN
+    stream: BALDA_SESSION_MEMORY
+    consumer: BALDA_SESSION_MEMORY_WORKER
 ```
 
 Exports are keyed by the exact transport-neutral locator
 `<channel_type>:<address_key>`. A personal conversation, a personal topic, a
 group, and a group topic are different scopes; topic/thread identity is
 orthogonal to the audience and there is no implicit inheritance between them.
-Search accepts only a query and optional result limit—the current
-authenticated session supplies the locator. Recalled text is untrusted
-reference data, never an instruction or command.
+Search accepts only a query and optional result limit; trace accepts only a
+revision identity and node bound. The current authenticated session supplies
+the locator. Recalled text is untrusted reference data, never an instruction
+or command.
 
 The handoff uses the file-backed JetStream stream
 `BALDA_SESSION_MEMORY` and the serialized consumer
@@ -148,7 +149,7 @@ The handoff uses the file-backed JetStream stream
 JetStream `PubAck` is the durability boundary; a process crash before that ack
 can still lose an export because Balda deliberately does not add a SQLite
 session-memory outbox. See the [session-memory operator and extraction guide](docs/balda.md#durable-session-memory)
-for the HTTP contract, retries/DLQ, shutdown behavior, privacy boundary, and
+for the native contract, retries/DLQ, shutdown behavior, privacy boundary, and
 the path to a standalone package or skill.
 
 ## Supported chat providers

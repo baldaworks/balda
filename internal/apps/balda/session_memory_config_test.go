@@ -11,7 +11,6 @@ import (
 func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	cfg := SessionMemoryConfig{
 		Enabled:       false,
-		Provider:      SessionMemoryProviderConfig{BaseURL: "not a URL", Timeout: "not-a-duration"},
 		MaxAge:        "not-a-duration",
 		MaxBytes:      "not-bytes",
 		MaxMsgSize:    "not-bytes",
@@ -39,8 +38,6 @@ func TestSessionMemoryConfigEnabledUsesNativeProvider(t *testing.T) {
 		cfg  SessionMemoryConfig
 		want string
 	}{
-		{name: "remote provider type", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{Type: "http"}}, want: "unsupported"},
-		{name: "remote provider URL", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{BaseURL: "http://memory"}}, want: "removed"},
 		{name: "bad retention", cfg: SessionMemoryConfig{Enabled: true, MaxBytes: "zero"}, want: "max_bytes"},
 		{name: "bad derivation timeout", cfg: SessionMemoryConfig{Enabled: true, Derivation: SessionMemoryDerivationConfig{Timeout: "bad"}}, want: "derivation.timeout"},
 		{name: "bad stream name", cfg: SessionMemoryConfig{Enabled: true, Stream: "memory stream"}, want: "stream"},

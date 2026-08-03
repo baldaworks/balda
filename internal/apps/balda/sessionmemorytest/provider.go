@@ -11,13 +11,11 @@ import (
 type Provider struct {
 	SyncTurnFunc func(context.Context, sessionmemory.Turn) error
 	BoundaryFunc func(context.Context, sessionmemory.Boundary) error
-	SearchFunc   func(context.Context, sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error)
 	CloseFunc    func(context.Context) error
 
 	mu         sync.Mutex
 	turns      []sessionmemory.Turn
 	boundaries []sessionmemory.Boundary
-	searches   []sessionmemory.SearchRequest
 	closeCalls int
 }
 
@@ -43,18 +41,6 @@ func (p *Provider) OnSessionBoundary(ctx context.Context, boundary sessionmemory
 		return nil
 	}
 	return fn(ctx, boundary)
-}
-
-// Search records req and invokes SearchFunc when configured.
-func (p *Provider) Search(ctx context.Context, req sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error) {
-	p.mu.Lock()
-	p.searches = append(p.searches, req)
-	fn := p.SearchFunc
-	p.mu.Unlock()
-	if fn == nil {
-		return sessionmemory.SearchResponse{SchemaVersion: sessionmemory.SchemaVersionV1, Scope: req.Scope}, nil
-	}
-	return fn(ctx, req)
 }
 
 // Close records the call and invokes CloseFunc when configured.
@@ -85,13 +71,6 @@ func (p *Provider) Boundaries() []sessionmemory.Boundary {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]sessionmemory.Boundary(nil), p.boundaries...)
-}
-
-// Searches returns a snapshot of recorded search requests.
-func (p *Provider) Searches() []sessionmemory.SearchRequest {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return append([]sessionmemory.SearchRequest(nil), p.searches...)
 }
 
 // CloseCalls returns the number of recorded Close calls.

@@ -171,18 +171,15 @@ balda:
     # If false, balda.memory.* MCP tools are disabled.
     enabled: true
 
-  # Optional durable session-memory export/search integration. This is
+  # Optional native durable session-memory export/search integration. This is
   # independent from the global fact memory above and remains disabled unless
-  # an HTTP/JSON provider is configured.
+  # explicitly enabled. Memory data is stored in state.db; JetStream is the
+  # only handoff queue and Norma performs bounded isolated derivation.
   session_memory:
     enabled: false
-    provider:
-      type: "http"
-      base_url: ""
-      token: ""
-      token_env: ""
-      timeout: "10s"
-      max_response_bytes: 1048576
+    derivation:
+      timeout: "30s"
+      max_output_bytes: 262144
     stream: "BALDA_SESSION_MEMORY"
     consumer: "BALDA_SESSION_MEMORY_WORKER"
     ack_wait: "5m"

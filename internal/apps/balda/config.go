@@ -158,7 +158,6 @@ type MemoryConfig struct {
 // existing global fact KV capability.
 type SessionMemoryConfig struct {
 	Enabled         bool                          `mapstructure:"enabled"`
-	Provider        SessionMemoryProviderConfig   `mapstructure:"provider"`
 	Derivation      SessionMemoryDerivationConfig `mapstructure:"derivation"`
 	Stream          string                        `mapstructure:"stream"`
 	Consumer        string                        `mapstructure:"consumer"`
@@ -171,17 +170,6 @@ type SessionMemoryConfig struct {
 	MaxMsgSize      string                        `mapstructure:"max_msg_size"`
 	Retry           SessionMemoryRetryConfig      `mapstructure:"retry"`
 	SearchTimeout   string                        `mapstructure:"search_timeout"`
-}
-
-// SessionMemoryProviderConfig is retained as a migration marker for old
-// configuration files. Native memory does not use a remote provider.
-type SessionMemoryProviderConfig struct {
-	Type             string `mapstructure:"type"`
-	BaseURL          string `mapstructure:"base_url"`
-	Token            string `mapstructure:"token"`
-	TokenEnv         string `mapstructure:"token_env"`
-	Timeout          string `mapstructure:"timeout"`
-	MaxResponseBytes int64  `mapstructure:"max_response_bytes"`
 }
 
 // SessionMemoryDerivationConfig controls the dedicated Norma derivation call.

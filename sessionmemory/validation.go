@@ -102,60 +102,6 @@ func (b Boundary) Validate() error {
 	return nil
 }
 
-// Validate verifies a normalized exact-scope search request.
-func (r SearchRequest) Validate() error {
-	if r.SchemaVersion != SchemaVersionV1 {
-		return PermanentError(CodeInvalidQuery, "unsupported search schema version", nil)
-	}
-	if err := r.Scope.Validate(); err != nil {
-		return err
-	}
-	if err := r.Session.Validate(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(r.Query) == "" {
-		return PermanentError(CodeInvalidQuery, "search query is required", nil)
-	}
-	if len(r.Query) > MaxSearchQueryBytes {
-		return PermanentError(CodeInvalidQuery, "search query exceeds the size limit", nil)
-	}
-	if r.Limit < 1 || r.Limit > MaxSearchLimit {
-		return PermanentError(CodeInvalidQuery, fmt.Sprintf("search limit must be between 1 and %d", MaxSearchLimit), nil)
-	}
-	return nil
-}
-
-// ValidateSearchResponse rejects malformed or cross-scope provider results.
-func ValidateSearchResponse(req SearchRequest, response SearchResponse) error {
-	if err := req.Validate(); err != nil {
-		return err
-	}
-	if response.SchemaVersion != SchemaVersionV1 {
-		return PermanentError(CodePermanent, "unsupported search response schema version", nil)
-	}
-	if err := response.Scope.Validate(); err != nil {
-		return err
-	}
-	if response.Scope != req.Scope {
-		return PermanentError(CodeScopeViolation, "provider response scope does not match the request", nil)
-	}
-	for index, result := range response.Results {
-		if strings.TrimSpace(result.ID) == "" {
-			return PermanentError(CodePermanent, fmt.Sprintf("search result %d id is required", index), nil)
-		}
-		if result.ScopeKey != req.Scope.Key {
-			return PermanentError(CodeScopeViolation, fmt.Sprintf("search result %d scope does not match the request", index), nil)
-		}
-		if strings.TrimSpace(result.SessionID) == "" {
-			return PermanentError(CodePermanent, fmt.Sprintf("search result %d session id is required", index), nil)
-		}
-		if strings.TrimSpace(result.Text) == "" {
-			return PermanentError(CodePermanent, fmt.Sprintf("search result %d text is required", index), nil)
-		}
-	}
-	return nil
-}
-
 func validateMessage(message Message, role MessageRole) error {
 	if message.Role != role {
 		return PermanentError(CodePermanent, fmt.Sprintf("turn message role must be %s", role), nil)

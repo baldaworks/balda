@@ -15,7 +15,6 @@ import (
 )
 
 const (
-	defaultSessionMemoryProviderType  = "native"
 	defaultSessionMemorySearchTimeout = 5 * time.Second
 )
 
@@ -41,13 +40,6 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 		return nil
 	}
 
-	providerType := strings.ToLower(strings.TrimSpace(cfg.Provider.Type))
-	if providerType != "" && providerType != defaultSessionMemoryProviderType {
-		return fmt.Errorf("balda.session_memory.provider.type %q is unsupported; native memory uses %q", cfg.Provider.Type, defaultSessionMemoryProviderType)
-	}
-	if strings.TrimSpace(cfg.Provider.BaseURL) != "" || strings.TrimSpace(cfg.Provider.Token) != "" || strings.TrimSpace(cfg.Provider.TokenEnv) != "" || strings.TrimSpace(cfg.Provider.Timeout) != "" || cfg.Provider.MaxResponseBytes != 0 {
-		return fmt.Errorf("balda.session_memory.provider is removed; native memory uses SQLite and Norma runtime")
-	}
 	if cfg.Derivation.MaxOutputBytes < 0 {
 		return fmt.Errorf("balda.session_memory.derivation.max_output_bytes must be non-negative")
 	}
@@ -136,10 +128,16 @@ func newSessionMemoryProvider(cfg SessionMemoryConfig, store sessionmemory.Store
 	if err := validateSessionMemoryConfig(cfg); err != nil {
 		return nil, err
 	}
+	derivationTimeout, err := optionalSessionMemoryDuration(cfg.Derivation.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("balda.session_memory.derivation.timeout: %w", err)
+	}
 	invoker, err := sessionmemoryapp.NewNormaInvoker(sessionmemoryapp.NormaInvokerConfig{
 		Builder:    builder,
 		ProviderID: providerID,
 		WorkingDir: workingDir,
+		MaxBytes:   cfg.Derivation.MaxOutputBytes,
+		Timeout:    derivationTimeout,
 	})
 	if err != nil {
 		return nil, err
