@@ -95,9 +95,9 @@ func (p *NativeProvider) Close(ctx context.Context) error {
 	return p.invoker.Close(ctx)
 }
 
-// DisabledProvider is the stable no-op provider used when session memory is
+// DisabledProvider is the stable no-op processor used when session memory is
 // disabled. Keeping a concrete implementation in the graph lets Fx compose a
-// disabled application without constructing an HTTP client or a consumer.
+// disabled application without constructing the native runtime or consumer.
 type DisabledProvider struct{}
 
 func (DisabledProvider) SyncTurn(context.Context, sessionmemory.Turn) error {

@@ -25,7 +25,7 @@ type BoundaryCaptureRequest struct {
 }
 
 // BoundaryCapture normalizes lifecycle boundaries and publishes a neutral
-// export to the durable handoff. It never calls the remote memory provider.
+// export to the durable handoff. It never invokes native derivation directly.
 type BoundaryCapture struct {
 	publisher ExportPublisher
 	resolver  ScopeResolver
@@ -95,7 +95,7 @@ func (c *BoundaryCapture) Capture(ctx context.Context, req BoundaryCaptureReques
 	return result, nil
 }
 
-// CaptureSessionBoundary is the error-only form used by lifecycle adapters.
+// CaptureSessionBoundary is the error-only form used by lifecycle wiring.
 func (c *BoundaryCapture) CaptureSessionBoundary(ctx context.Context, req BoundaryCaptureRequest) error {
 	_, err := c.Capture(ctx, req)
 	return err

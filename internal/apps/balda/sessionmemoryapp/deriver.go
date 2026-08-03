@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -242,6 +243,9 @@ func (n *NormaInvoker) Invoke(ctx context.Context, request StructuredInvocation)
 	if n.runtime == nil {
 		runtime, err := n.builder.BuildDedicatedRuntime(invokeCtx, n.providerID, n.workingDir, memoryDerivationInstruction)
 		if err != nil {
+			if errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
+				return nil, sessionmemory.RetryableError(sessionmemory.CodeTimeout, "build isolated memory runtime timed out", nil)
+			}
 			return nil, sessionmemory.RetryableError(sessionmemory.CodeModelFailure, "build isolated memory runtime", nil)
 		}
 		n.runtime = runtime
@@ -273,6 +277,9 @@ func (n *NormaInvoker) Invoke(ctx context.Context, request StructuredInvocation)
 	userID := "session-memory-processor"
 	_ = n.runtime.SessionSvc.Delete(invokeCtx, &adksession.DeleteRequest{AppName: n.runtime.AppName, UserID: userID, SessionID: sessionID})
 	if _, err := n.runtime.SessionSvc.Create(invokeCtx, &adksession.CreateRequest{AppName: n.runtime.AppName, UserID: userID, SessionID: sessionID}); err != nil {
+		if errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
+			return nil, sessionmemory.RetryableError(sessionmemory.CodeTimeout, "create isolated memory session timed out", nil)
+		}
 		return nil, sessionmemory.RetryableError(sessionmemory.CodeModelFailure, "create isolated memory session", nil)
 	}
 	defer func() {
@@ -285,6 +292,9 @@ func (n *NormaInvoker) Invoke(ctx context.Context, request StructuredInvocation)
 	var output string
 	for event, runErr := range r.Run(invokeCtx, userID, sessionID, genai.NewContentFromText(string(envelope), genai.RoleUser), adkagent.RunConfig{}) {
 		if runErr != nil {
+			if errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
+				return nil, sessionmemory.RetryableError(sessionmemory.CodeTimeout, "run structured memory derivation timed out", nil)
+			}
 			return nil, sessionmemory.RetryableError(sessionmemory.CodeModelFailure, "run structured memory derivation", nil)
 		}
 		if event == nil || event.Content == nil {
@@ -301,6 +311,9 @@ func (n *NormaInvoker) Invoke(ctx context.Context, request StructuredInvocation)
 		}
 	}
 	if strings.TrimSpace(output) == "" {
+		if errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
+			return nil, sessionmemory.RetryableError(sessionmemory.CodeTimeout, "structured memory derivation timed out", nil)
+		}
 		return nil, sessionmemory.RetryableError(sessionmemory.CodeModelFailure, "structured memory derivation returned no output", nil)
 	}
 	if len(output) > n.maxBytes {

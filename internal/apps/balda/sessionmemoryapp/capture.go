@@ -14,7 +14,7 @@ import (
 
 // ExportPublisher is the bounded local handoff used by turn capture. The
 // implementation may be JetStream or another durable transport, but capture
-// never calls the remote memory provider directly.
+// never invokes native derivation directly; JetStream remains the handoff.
 type ExportPublisher interface {
 	Publish(ctx context.Context, export sessionmemorycmd.Export) error
 }

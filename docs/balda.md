@@ -885,11 +885,11 @@ release:
    SQLite package.
 2. `sessionmemorycmd` owns neutral `turn.v1`/`boundary.v1` export envelopes and
    subjects; it has no queue client or provider SDK.
-3. `sessionmemoryapp` adapts Balda turn/session lifecycle to the core, owns
+3. `sessionmemoryapp` connects Balda turn/session lifecycle to the core, owns
    the serialized JetStream worker, and exposes native Store search/trace/
    forgetting through application ports. Derivation uses an isolated Norma
-   runtime and is not a remote provider adapter.
-4. Balda-only adapters remain at the composition root: JetStream transport,
+   runtime and remains an in-process native processor.
+4. Balda-only integrations remain at the composition root: JetStream transport,
    channel-owned locator classifiers, and the MCP search surface. The existing
    global fact-memory package is not part of the extraction.
 
