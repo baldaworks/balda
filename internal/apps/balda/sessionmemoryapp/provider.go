@@ -65,6 +65,25 @@ func (p *NativeProvider) Trace(ctx context.Context, request sessionmemory.TraceR
 	return p.engine.Trace(ctx, request)
 }
 
+// ForgetSource atomically tombstones one native raw source and invalidates its
+// complete same-scope derived dependency closure. It is an application-level
+// operation; no user-facing MCP tool invokes it implicitly.
+func (p *NativeProvider) ForgetSource(ctx context.Context, command sessionmemory.ForgetSourceCommand) (sessionmemory.ForgetOutcome, error) {
+	if p == nil || p.engine == nil {
+		return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "native session-memory provider is unavailable", nil)
+	}
+	return p.engine.ForgetSource(ctx, command)
+}
+
+// ForgetScope atomically tombstones all readable native memory in one exact
+// scope. Global fact memory is owned by a separate Store and is untouched.
+func (p *NativeProvider) ForgetScope(ctx context.Context, command sessionmemory.ForgetScopeCommand) (sessionmemory.ForgetOutcome, error) {
+	if p == nil || p.engine == nil {
+		return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "native session-memory provider is unavailable", nil)
+	}
+	return p.engine.ForgetScope(ctx, command)
+}
+
 // Search adapts derived references to the legacy Provider response shape. The
 // MCP surface will consume the richer Engine response in the scope migration.
 func (p *NativeProvider) Search(ctx context.Context, request sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error) {
@@ -127,6 +146,22 @@ func (DisabledProvider) OnSessionBoundary(context.Context, sessionmemory.Boundar
 
 func (DisabledProvider) Search(context.Context, sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error) {
 	return sessionmemory.SearchResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
+}
+
+func (DisabledProvider) SearchDerived(context.Context, sessionmemory.DerivedSearchRequest) (sessionmemory.DerivedSearchResponse, error) {
+	return sessionmemory.DerivedSearchResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
+}
+
+func (DisabledProvider) Trace(context.Context, sessionmemory.TraceRequest) (sessionmemory.TraceResponse, error) {
+	return sessionmemory.TraceResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
+}
+
+func (DisabledProvider) ForgetSource(context.Context, sessionmemory.ForgetSourceCommand) (sessionmemory.ForgetOutcome, error) {
+	return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
+}
+
+func (DisabledProvider) ForgetScope(context.Context, sessionmemory.ForgetScopeCommand) (sessionmemory.ForgetOutcome, error) {
+	return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
 }
 
 func (DisabledProvider) Close(context.Context) error { return nil }
