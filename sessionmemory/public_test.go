@@ -55,7 +55,11 @@ func TestPublicDerivedAtomRoundTrip(t *testing.T) {
 		scope,
 		itemID,
 		"operation-1",
-		[]string{string(sessionmemory.AtomCategoryFact), "The project uses Go"},
+		[]string{
+			string(sessionmemory.AtomCategoryFact),
+			"The project uses Go",
+			string(sessionmemory.CandidateRelationNew),
+		},
 		provenance,
 		nil,
 	)
@@ -77,6 +81,7 @@ func TestPublicDerivedAtomRoundTrip(t *testing.T) {
 		},
 		Category: sessionmemory.AtomCategoryFact,
 		Text:     "The project uses Go",
+		Relation: sessionmemory.CandidateRelationNew,
 	}
 	payload, err := json.Marshal(want)
 	if err != nil {

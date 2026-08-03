@@ -133,9 +133,11 @@ type RevisionMeta struct {
 
 // Atom is one independently searchable derived statement.
 type Atom struct {
-	Meta     RevisionMeta `json:"meta"`
-	Category AtomCategory `json:"category"`
-	Text     string       `json:"text"`
+	Meta            RevisionMeta      `json:"meta"`
+	Category        AtomCategory      `json:"category"`
+	Text            string            `json:"text"`
+	Relation        CandidateRelation `json:"relation"`
+	RelatedRevision *RevisionRef      `json:"related_revision,omitempty"`
 }
 
 // Scenario is one topic or project context revision.

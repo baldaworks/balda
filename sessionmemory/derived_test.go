@@ -150,6 +150,65 @@ func TestDerivedValuesValidateStableIdentityAndProvenance(t *testing.T) {
 	}
 }
 
+func TestAtomRelationsPreserveCrossItemConflictHistory(t *testing.T) {
+	t.Parallel()
+
+	scope := derivedTestScope()
+	prior := derivedTestAtom(t, scope)
+	priorRef := RevisionRef{ItemID: prior.Meta.ItemID, RevisionID: prior.Meta.RevisionID}
+
+	for _, relation := range []CandidateRelation{CandidateRelationCoexist, CandidateRelationSupersede} {
+		t.Run(string(relation), func(t *testing.T) {
+			text := "Do not ship the public memory package"
+			itemID, err := AtomItemID(scope, AtomCategoryDecision, text)
+			if err != nil {
+				t.Fatalf("AtomItemID() error = %v", err)
+			}
+			provenance := Provenance{
+				RawSources:      []SourceRef{derivedTestSource(scope, "export-2", "turn-2")},
+				ParentRevisions: []RevisionRef{priorRef},
+			}
+			var supersedes *RevisionRef
+			if relation == CandidateRelationSupersede {
+				supersedes = &priorRef
+			}
+			revisionID, err := DerivedRevisionID(
+				scope,
+				itemID,
+				"operation-conflict-"+string(relation),
+				[]string{string(AtomCategoryDecision), text, string(relation), priorRef.ItemID, priorRef.RevisionID},
+				provenance,
+				supersedes,
+			)
+			if err != nil {
+				t.Fatalf("DerivedRevisionID() error = %v", err)
+			}
+			atom := Atom{
+				Meta: RevisionMeta{
+					SchemaVersion: DerivedSchemaVersionV1,
+					Kind:          DerivedKindAtom,
+					ItemID:        itemID,
+					RevisionID:    revisionID,
+					Revision:      1,
+					OperationID:   "operation-conflict-" + string(relation),
+					Scope:         scope,
+					State:         RevisionStateActive,
+					Provenance:    provenance,
+					CreatedAt:     derivedTestTime(),
+					Supersedes:    supersedes,
+				},
+				Category:        AtomCategoryDecision,
+				Text:            text,
+				Relation:        relation,
+				RelatedRevision: &priorRef,
+			}
+			if err := atom.Validate(); err != nil {
+				t.Fatalf("Atom.Validate() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestProvenanceRejectsForeignDuplicateAndExcessiveReferences(t *testing.T) {
 	t.Parallel()
 
@@ -209,6 +268,7 @@ func TestModelCandidatesFailClosed(t *testing.T) {
 	valid := []interface{ Validate() error }{
 		AtomCandidate{Category: AtomCategoryFact, Text: "The project uses Go", Relation: CandidateRelationNew},
 		AtomCandidate{Category: AtomCategoryDecision, Text: "Ship it", Relation: CandidateRelationSupersede, Target: &ref},
+		AtomCandidate{Category: AtomCategoryDecision, Text: "Do not ship it", Relation: CandidateRelationCoexist, Target: &ref},
 		ScenarioCandidate{TopicKey: "release", Title: "Release", Summary: "Release context", Atoms: []RevisionRef{ref}},
 		ProfileCandidate{Summary: "Long-lived context", Scenarios: []RevisionRef{ref}},
 	}
@@ -220,6 +280,7 @@ func TestModelCandidatesFailClosed(t *testing.T) {
 
 	invalid := []interface{ Validate() error }{
 		AtomCandidate{Category: AtomCategoryFact, Text: "missing target", Relation: CandidateRelationSupersede},
+		AtomCandidate{Category: AtomCategoryFact, Text: "missing target", Relation: CandidateRelationCoexist},
 		AtomCandidate{Category: AtomCategoryFact, Text: "unexpected target", Relation: CandidateRelationNew, Target: &ref},
 		ScenarioCandidate{TopicKey: "release", Title: "Release", Summary: "missing atoms"},
 		ProfileCandidate{Summary: "missing parents"},
@@ -267,7 +328,7 @@ func derivedTestAtom(t *testing.T, scope Scope) Atom {
 		scope,
 		itemID,
 		"operation-atom",
-		[]string{string(AtomCategoryDecision), "Ship the public memory package"},
+		[]string{string(AtomCategoryDecision), "Ship the public memory package", string(CandidateRelationNew)},
 		provenance,
 		nil,
 	)
@@ -289,6 +350,7 @@ func derivedTestAtom(t *testing.T, scope Scope) Atom {
 		},
 		Category: AtomCategoryDecision,
 		Text:     "Ship the public memory package",
+		Relation: CandidateRelationNew,
 	}
 }
 

@@ -81,9 +81,6 @@ func DerivedRevisionID(
 		if err := supersedes.Validate(); err != nil {
 			return "", err
 		}
-		if supersedes.ItemID != itemID {
-			return "", invalidDerived("superseded revision must belong to the same item")
-		}
 	}
 
 	parts := []string{scope.Key, string(scope.Kind), itemID, operationID}

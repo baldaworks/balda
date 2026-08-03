@@ -143,11 +143,21 @@ func (a Atom) Validate() error {
 	if text != a.Text {
 		return invalidDerived("atom text must be normalized")
 	}
+	if err := a.Relation.Validate(); err != nil {
+		return err
+	}
+	if err := validateAtomRelation(a); err != nil {
+		return err
+	}
 	itemID, err := AtomItemID(a.Meta.Scope, a.Category, a.Text)
 	if err != nil {
 		return err
 	}
-	return validateRevisionMeta(a.Meta, DerivedKindAtom, itemID, []string{string(a.Category), a.Text})
+	contentParts := []string{string(a.Category), a.Text, string(a.Relation)}
+	if a.RelatedRevision != nil {
+		contentParts = append(contentParts, a.RelatedRevision.ItemID, a.RelatedRevision.RevisionID)
+	}
+	return validateRevisionMeta(a.Meta, DerivedKindAtom, itemID, contentParts, true)
 }
 
 // Validate verifies a complete scenario revision and its deterministic identities.
@@ -177,7 +187,7 @@ func (s Scenario) Validate() error {
 	if err != nil {
 		return err
 	}
-	return validateRevisionMeta(s.Meta, DerivedKindScenario, itemID, []string{s.TopicKey, s.Title, s.Summary})
+	return validateRevisionMeta(s.Meta, DerivedKindScenario, itemID, []string{s.TopicKey, s.Title, s.Summary}, false)
 }
 
 // Validate verifies a complete profile revision and its deterministic identities.
@@ -193,7 +203,7 @@ func (p Profile) Validate() error {
 	if err != nil {
 		return err
 	}
-	return validateRevisionMeta(p.Meta, DerivedKindProfile, itemID, []string{p.Summary})
+	return validateRevisionMeta(p.Meta, DerivedKindProfile, itemID, []string{p.Summary}, false)
 }
 
 // Validate verifies syntactically grounded atom candidate output.
@@ -208,13 +218,13 @@ func (c AtomCandidate) Validate() error {
 		return err
 	}
 	switch c.Relation {
-	case CandidateRelationNew, CandidateRelationCoexist:
+	case CandidateRelationNew:
 		if c.Target != nil {
-			return invalidDerived("new or coexisting atom candidate cannot have a target")
+			return invalidDerived("new atom candidate cannot have a target")
 		}
-	case CandidateRelationSupersede:
+	case CandidateRelationCoexist, CandidateRelationSupersede:
 		if c.Target == nil {
-			return invalidDerived("superseding atom candidate requires a target")
+			return invalidDerived("related atom candidate requires a target")
 		}
 		if err := c.Target.Validate(); err != nil {
 			return err
@@ -333,7 +343,13 @@ func ValidateSourceStateTransition(from, to SourceState) error {
 	return invalidDerived("source state transition is not allowed")
 }
 
-func validateRevisionMeta(meta RevisionMeta, kind DerivedKind, itemID string, contentParts []string) error {
+func validateRevisionMeta(
+	meta RevisionMeta,
+	kind DerivedKind,
+	itemID string,
+	contentParts []string,
+	allowCrossItemSupersession bool,
+) error {
 	if meta.SchemaVersion != DerivedSchemaVersionV1 {
 		return invalidDerived("unsupported derived revision schema version")
 	}
@@ -365,10 +381,11 @@ func validateRevisionMeta(meta RevisionMeta, kind DerivedKind, itemID string, co
 		if err := meta.Supersedes.Validate(); err != nil {
 			return err
 		}
-		if meta.Revision < 2 {
+		sameItem := meta.Supersedes.ItemID == meta.ItemID
+		if sameItem && meta.Revision < 2 {
 			return invalidDerived("superseding revision number must be greater than one")
 		}
-		if meta.Supersedes.ItemID != meta.ItemID {
+		if !sameItem && !allowCrossItemSupersession {
 			return invalidDerived("superseded revision must belong to the same item")
 		}
 	}
@@ -380,6 +397,47 @@ func validateRevisionMeta(meta RevisionMeta, kind DerivedKind, itemID string, co
 		return invalidDerived("derived revision id does not match its stable identity")
 	}
 	return nil
+}
+
+func validateAtomRelation(atom Atom) error {
+	switch atom.Relation {
+	case CandidateRelationNew:
+		if atom.RelatedRevision != nil || atom.Meta.Supersedes != nil {
+			return invalidDerived("new atom cannot relate to a prior revision")
+		}
+	case CandidateRelationCoexist:
+		if atom.RelatedRevision == nil {
+			return invalidDerived("coexisting atom requires a related revision")
+		}
+		if atom.Meta.Supersedes != nil {
+			return invalidDerived("coexisting atom cannot supersede a revision")
+		}
+	case CandidateRelationSupersede:
+		if atom.RelatedRevision == nil || atom.Meta.Supersedes == nil {
+			return invalidDerived("superseding atom requires a related revision")
+		}
+		if *atom.RelatedRevision != *atom.Meta.Supersedes {
+			return invalidDerived("superseding atom relation does not match revision metadata")
+		}
+	}
+	if atom.RelatedRevision != nil {
+		if err := atom.RelatedRevision.Validate(); err != nil {
+			return err
+		}
+		if !containsRevisionRef(atom.Meta.Provenance.ParentRevisions, *atom.RelatedRevision) {
+			return invalidDerived("related atom revision must be retained in provenance")
+		}
+	}
+	return nil
+}
+
+func containsRevisionRef(refs []RevisionRef, want RevisionRef) bool {
+	for _, ref := range refs {
+		if ref == want {
+			return true
+		}
+	}
+	return false
 }
 
 func validateRevisionRefs(refs []RevisionRef) error {
