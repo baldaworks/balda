@@ -100,6 +100,7 @@ func TestClassifyLocatorScope(t *testing.T) {
 		want    deliverycmd.LocatorScopeKind
 	}{
 		{name: "personal", locator: NewLocator(101, 0), want: deliverycmd.LocatorScopePersonal},
+		{name: "personal topic", locator: NewLocator(101, 77), want: deliverycmd.LocatorScopePersonal},
 		{name: "group topic", locator: NewLocator(-1001, 77), want: deliverycmd.LocatorScopeGroup},
 	} {
 		t.Run(test.name, func(t *testing.T) {

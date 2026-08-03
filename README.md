@@ -135,9 +135,10 @@ balda:
 ```
 
 Exports are keyed by the exact transport-neutral locator
-`<channel_type>:<address_key>`. A direct/private conversation, a group, and a
-group topic are different scopes; there is no implicit inheritance between
-them. Search accepts only a query and optional result limit—the current
+`<channel_type>:<address_key>`. A personal conversation, a personal topic, a
+group, and a group topic are different scopes; topic/thread identity is
+orthogonal to the audience and there is no implicit inheritance between them.
+Search accepts only a query and optional result limit—the current
 authenticated session supplies the locator. Recalled text is untrusted
 reference data, never an instruction or command.
 
@@ -158,7 +159,7 @@ the path to a standalone package or skill.
 
 Balda maps each conversation scope to its own session:
 
-- Telegram direct chat or topic
+- Telegram direct chat or personal/group topic
 - Zulip stream + topic
 - Slack thread
 

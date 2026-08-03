@@ -641,7 +641,10 @@ balda:
   - `provider.token` or `provider.token_env`: optional Bearer credential source; the token is never logged.
   - completed text-only turns and session reset/close/rotation/shutdown boundaries are published to the dedicated `BALDA_SESSION_MEMORY` stream.
   - `stream` / `consumer`, timeout, retry, and retention fields are validated and must not collide with command/event/DLQ names.
-  - search is bound to the authenticated current locator; direct/personal and group/topic locators are classified by their concrete channel codecs, while the exact `<channel_type>:<address_key>` remains the isolation key.
+  - search is bound to the authenticated current locator; personal and group
+    audiences, including their topics/threads, are classified by concrete
+    channel codecs, while the exact `<channel_type>:<address_key>` remains the
+    isolation key.
   - recalled text is returned as untrusted reference data and is never treated as instructions or commands.
 - `balda.goal.max_iterations`: maximum `/goalkeeper` worker-validator loop iterations (default `25`)
   - invalid values are clamped to `25`.
@@ -767,8 +770,9 @@ partition and authorization key:
 ```
 
 The scope kind (`personal` or `group`) is metadata classified by the concrete
-channel codec; it never replaces the exact key. A direct/private locator,
-group locator, and group-topic locator are separate partitions. There is no
+channel codec; it never replaces the exact key. A personal root locator,
+personal-topic locator, group locator, and group-topic locator are separate
+partitions. Topic identity is orthogonal to audience. There is no
 owner, collaborator, channel-type, chat-ID, or topic inheritance, and no
 cross-scope fallback. Ambiguous or unsupported locator classification fails
 closed. Group conversation text is sent only to the exact group locator's

@@ -13,7 +13,8 @@ type LocatorScopeKind string
 const (
 	// LocatorScopePersonal identifies a direct/private conversation.
 	LocatorScopePersonal LocatorScopeKind = "personal"
-	// LocatorScopeGroup identifies a shared group, channel, stream, or topic.
+	// LocatorScopeGroup identifies a shared group, channel, or stream. A
+	// topic/thread is a locator partition, not an audience classification.
 	LocatorScopeGroup LocatorScopeKind = "group"
 )
 

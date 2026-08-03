@@ -1,11 +1,12 @@
 // Package sessionmemory defines portable raw and derived contracts for durable,
 // locator-scoped session memory.
 //
-// Scope is the ownership boundary. A personal conversation, a group chat, and
-// each group topic use distinct canonical Scope values. The package performs no
-// inheritance, promotion, persona merge, or cross-scope lookup. Transport
-// adapters are responsible for producing the canonical locator key; the core
-// remains transport-neutral.
+// Scope is the ownership boundary. A personal conversation, each personal
+// topic, a group chat, and each group topic use distinct canonical Scope
+// values. Topic/thread identity is orthogonal to the personal/group audience;
+// the package performs no inheritance, promotion, persona merge, or cross-scope
+// lookup. Transport adapters are responsible for producing the canonical
+// locator key; the core remains transport-neutral.
 //
 // The derived pipeline has three layers:
 //

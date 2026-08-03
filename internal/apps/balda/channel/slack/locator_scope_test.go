@@ -13,6 +13,7 @@ func TestClassifyLocatorScope(t *testing.T) {
 		want    deliverycmd.LocatorScopeKind
 	}{
 		{name: "dm", locator: NewDMLocator("T123", "D456"), want: deliverycmd.LocatorScopePersonal},
+		{name: "dm thread", locator: NewThreadLocator("T123", "D456", "1712345678.000100"), want: deliverycmd.LocatorScopePersonal},
 		{name: "thread", locator: NewThreadLocator("T123", "C456", "1712345678.000100"), want: deliverycmd.LocatorScopeGroup},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -24,5 +25,8 @@ func TestClassifyLocatorScope(t *testing.T) {
 				t.Fatalf("ClassifyLocatorScope() = %q, want %q", got, test.want)
 			}
 		})
+	}
+	if _, err := ClassifyLocatorScope(NewThreadLocator("T123", "unknown", "1712345678.000100")); err == nil {
+		t.Fatal("ClassifyLocatorScope(unknown thread) error = nil, want fail-closed error")
 	}
 }

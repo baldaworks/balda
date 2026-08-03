@@ -74,10 +74,10 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	return address, true, nil
 }
 
-// ClassifyLocatorScope classifies an explicitly threaded Slack Agent
-// conversation as a shared scope. An unthreaded conversation does not carry
-// enough transport metadata to distinguish a DM from a channel, so it fails
-// closed instead of risking cross-scope memory access.
+// ClassifyLocatorScope classifies a Slack Agent conversation from its Slack
+// conversation ID. Slack DM IDs are personal even when threaded; channel and
+// private-channel IDs are shared. Unknown IDs fail closed instead of risking
+// cross-scope memory access.
 func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {
@@ -86,8 +86,20 @@ func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScope
 	if !ok {
 		return "", fmt.Errorf("locator channel type %q is not Slack Agent", locator.ChannelType)
 	}
-	if strings.TrimSpace(address.ThreadID) == "" {
-		return "", fmt.Errorf("unthreaded Slack Agent locator is ambiguous")
+	return classifyConversation(address.ConversationID)
+}
+
+func classifyConversation(conversationID string) (deliverycmd.LocatorScopeKind, error) {
+	trimmed := strings.ToUpper(strings.TrimSpace(conversationID))
+	if trimmed == "" {
+		return "", fmt.Errorf("slack agent conversation id is required")
 	}
-	return deliverycmd.LocatorScopeGroup, nil
+	switch trimmed[0] {
+	case 'D':
+		return deliverycmd.LocatorScopePersonal, nil
+	case 'C', 'G':
+		return deliverycmd.LocatorScopeGroup, nil
+	default:
+		return "", fmt.Errorf("cannot classify Slack Agent conversation %q", conversationID)
+	}
 }

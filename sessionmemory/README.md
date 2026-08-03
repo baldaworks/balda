@@ -11,7 +11,11 @@ It depends only on the Go standard library. Consumers provide persistence and mo
 
 ## Isolation model
 
-`Scope` is the only ownership and concurrency boundary. Personal conversations, group chats, and individual group topics must have different canonical scope keys. The core never inherits or shares memory between scopes, even when session IDs, source turn IDs, or human participants collide.
+`Scope` is the only ownership and concurrency boundary. Personal conversations,
+personal topics, group chats, and individual group topics must have different
+canonical scope keys. Topic/thread identity is orthogonal to the personal/group
+audience. The core never inherits or shares memory between scopes, even when
+session IDs, source turn IDs, or human participants collide.
 
 Transport-specific locator parsing stays outside this package. A future adapter maps its authenticated locator to:
 

@@ -28,7 +28,8 @@ type ScopeKind string
 const (
 	// ScopeKindPersonal is a direct or private conversation scope.
 	ScopeKindPersonal ScopeKind = "personal"
-	// ScopeKindGroup is a shared group, channel, stream, or topic scope.
+	// ScopeKindGroup is a shared group, channel, or stream scope. A topic or
+	// thread may still have this kind when its parent audience is shared.
 	ScopeKindGroup ScopeKind = "group"
 )
 

@@ -36,7 +36,7 @@ func NewDMLocator(teamID, channel string) deliverycmd.Locator {
 	return newLocator(address, fmt.Sprintf("dm:%s:%s", address.TeamID, address.Channel))
 }
 
-// NewThreadLocator builds a canonical session locator for a Slack chat channel thread.
+// NewThreadLocator builds a canonical session locator for a Slack chat thread.
 func NewThreadLocator(teamID, channel, threadTS string) deliverycmd.Locator {
 	address := LocatorAddress{
 		Type:     addressTypeThread,
@@ -85,8 +85,9 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 }
 
 // ClassifyLocatorScope classifies a Slack chat locator. Direct-message keys
-// are personal; thread keys are shared channel scopes. The exact locator key
-// remains the isolation boundary for both kinds.
+// are personal. Thread keys use the Slack conversation ID to distinguish a
+// threaded DM from a shared channel thread; the exact locator key remains the
+// isolation boundary for both kinds.
 func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {
@@ -99,9 +100,24 @@ func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScope
 	case addressTypeDM:
 		return deliverycmd.LocatorScopePersonal, nil
 	case addressTypeThread:
-		return deliverycmd.LocatorScopeGroup, nil
+		return classifySlackConversation(address.Channel)
 	default:
 		return "", fmt.Errorf("unsupported Slack locator address type %q", address.Type)
+	}
+}
+
+func classifySlackConversation(channel string) (deliverycmd.LocatorScopeKind, error) {
+	trimmed := strings.ToUpper(strings.TrimSpace(channel))
+	if trimmed == "" {
+		return "", fmt.Errorf("slack conversation id is required")
+	}
+	switch trimmed[0] {
+	case 'D':
+		return deliverycmd.LocatorScopePersonal, nil
+	case 'C', 'G':
+		return deliverycmd.LocatorScopeGroup, nil
+	default:
+		return "", fmt.Errorf("cannot classify Slack conversation %q", channel)
 	}
 }
 

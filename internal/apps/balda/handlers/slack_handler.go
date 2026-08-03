@@ -396,6 +396,11 @@ func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEve
 		switch event.ChannelType {
 		case "im":
 			locator := baldaslack.NewDMLocator(teamID, event.Channel)
+			if strings.TrimSpace(event.ThreadTS) != "" {
+				// A Slack DM thread is still personal, but must get its own
+				// exact locator rather than collapsing into the DM root.
+				locator = baldaslack.NewThreadLocator(teamID, event.Channel, event.ThreadTS)
+			}
 			h.handleMessage(ctx, locator, teamID, event.User, event.TS, event.Text, true, true)
 		case "channel", "group":
 			if event.ChannelType == "group" && !h.config.IncludePrivateChannels {

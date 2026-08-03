@@ -94,6 +94,7 @@ func TestScopeValidateUsesExactLocatorAndKnownKind(t *testing.T) {
 		wantCode ErrorCode
 	}{
 		{name: "personal", scope: Scope{Key: "telegram:1:0", Kind: ScopeKindPersonal}},
+		{name: "personal topic", scope: Scope{Key: "telegram:1:77", Kind: ScopeKindPersonal}},
 		{name: "group topic", scope: Scope{Key: "telegram:-100:42", Kind: ScopeKindGroup}},
 		{name: "leading whitespace", scope: Scope{Key: " telegram:1:0", Kind: ScopeKindPersonal}, wantCode: CodeInvalidScope},
 		{name: "uppercase channel", scope: Scope{Key: "Telegram:1:0", Kind: ScopeKindPersonal}, wantCode: CodeInvalidScope},
