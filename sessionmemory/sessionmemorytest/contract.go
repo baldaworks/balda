@@ -41,6 +41,9 @@ func RunStoreContract(t *testing.T, factory StoreFactory) {
 	t.Run("same_operation_race", func(t *testing.T) {
 		runSameOperationRaceContract(t, factory())
 	})
+	t.Run("concurrent_reads_revision_and_forgetting", func(t *testing.T) {
+		runConcurrentLifecycleContract(t, factory())
+	})
 }
 
 func runWorkflowContract(t *testing.T, store sessionmemory.Store) {
@@ -407,6 +410,240 @@ func runMalformedContract(t *testing.T, store sessionmemory.Store) {
 	}
 }
 
+func runConcurrentLifecycleContract(t *testing.T, store sessionmemory.Store) {
+	t.Helper()
+	sharedScope := sessionmemory.Scope{Key: "contract:concurrent:group:7:topic:3", Kind: sessionmemory.ScopeKindGroup}
+	independentScope := sessionmemory.Scope{Key: "contract:concurrent:personal:42", Kind: sessionmemory.ScopeKindPersonal}
+	models := NewModels()
+	models.SetAtoms([]sessionmemory.AtomCandidate{{
+		Category: sessionmemory.AtomCategoryFact,
+		Text:     "Concurrent lifecycle memory",
+		Relation: sessionmemory.CandidateRelationNew,
+	}}, nil)
+	engine := contractEngine(t, store, models, models, models)
+	sharedTurn := contractTurn(t, sharedScope, "concurrent-shared-turn", "shared", "shared")
+	sharedAtom, err := engine.ProcessTurn(context.Background(), sharedTurn)
+	if err != nil {
+		t.Fatalf("shared seed ProcessTurn() error = %v", err)
+	}
+	independentTurn := contractTurn(t, independentScope, "concurrent-independent-turn", "independent", "independent")
+	independentAtom, err := engine.ProcessTurn(context.Background(), independentTurn)
+	if err != nil {
+		t.Fatalf("independent seed ProcessTurn() error = %v", err)
+	}
+
+	boundary := contractBoundary(t, sharedScope, "concurrent-boundary")
+	models.SetScenarios([]sessionmemory.ScenarioCandidate{{
+		TopicKey: "concurrent",
+		Title:    "Concurrent lifecycle",
+		Summary:  "Concurrent lifecycle scenario",
+		Atoms:    []sessionmemory.RevisionRef{sharedAtom.Revisions[0]},
+	}}, nil)
+	scenarioRef := concurrentScenarioRef(t, boundary, sharedAtom.Revisions[0])
+	models.SetProfile(&sessionmemory.ProfileCandidate{
+		Summary:   "Concurrent lifecycle profile",
+		Scenarios: []sessionmemory.RevisionRef{scenarioRef},
+	}, nil)
+	sharedForget := sessionmemory.ForgetSourceCommand{
+		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
+		Source:        sourceRef(sharedTurn),
+		ForgottenAt:   time.Date(2026, time.August, 3, 18, 0, 0, 0, time.UTC),
+	}
+	independentForget := sessionmemory.ForgetScopeCommand{
+		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
+		Scope:         independentScope,
+		RequestID:     "concurrent-independent-forget",
+		ForgottenAt:   time.Date(2026, time.August, 3, 18, 1, 0, 0, time.UTC),
+	}
+
+	calls := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "shared search",
+			run: func() error {
+				_, err := engine.Search(context.Background(), contractSearchRequest(sharedScope))
+				return err
+			},
+		},
+		{
+			name: "shared trace",
+			run: func() error {
+				_, err := engine.Trace(context.Background(), contractTraceRequest(sharedScope, sharedAtom.Revisions[0]))
+				return err
+			},
+		},
+		{
+			name: "shared boundary revision",
+			run: func() error {
+				_, err := engine.ProcessBoundary(context.Background(), boundary)
+				return err
+			},
+		},
+		{
+			name: "shared source forget",
+			run: func() error {
+				_, err := engine.ForgetSource(context.Background(), sharedForget)
+				return err
+			},
+		},
+		{
+			name: "independent search",
+			run: func() error {
+				_, err := engine.Search(context.Background(), contractSearchRequest(independentScope))
+				return err
+			},
+		},
+		{
+			name: "independent trace",
+			run: func() error {
+				_, err := engine.Trace(context.Background(), contractTraceRequest(independentScope, independentAtom.Revisions[0]))
+				return err
+			},
+		},
+		{
+			name: "independent scope forget",
+			run: func() error {
+				_, err := engine.ForgetScope(context.Background(), independentForget)
+				return err
+			},
+		},
+	}
+	ready := make(chan struct{}, len(calls))
+	release := make(chan struct{})
+	errs := make([]error, len(calls))
+	var wait sync.WaitGroup
+	for index := range calls {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			ready <- struct{}{}
+			<-release
+			errs[index] = calls[index].run()
+		}()
+	}
+	for range calls {
+		<-ready
+	}
+	close(release)
+	wait.Wait()
+
+	for index, call := range calls {
+		switch call.name {
+		case "shared search", "independent search":
+			if errs[index] != nil {
+				t.Fatalf("concurrent %s error = %v", call.name, errs[index])
+			}
+		case "shared trace", "independent trace":
+			if errs[index] != nil && !hasCode(errs[index], sessionmemory.CodeForgotten) {
+				t.Fatalf("concurrent %s error = %v, want nil or forgotten", call.name, errs[index])
+			}
+		case "shared boundary revision":
+			if errs[index] != nil && !hasAnyCode(
+				errs[index],
+				sessionmemory.CodeConflict,
+				sessionmemory.CodeInvalidDerived,
+				sessionmemory.CodeForgotten,
+			) {
+				t.Fatalf("concurrent boundary error = %v", errs[index])
+			}
+		case "shared source forget":
+			if errs[index] != nil && !hasCode(errs[index], sessionmemory.CodeConflict) {
+				t.Fatalf("concurrent source forget error = %v, want nil or conflict", errs[index])
+			}
+			if hasCode(errs[index], sessionmemory.CodeConflict) {
+				if _, err := engine.ForgetSource(context.Background(), sharedForget); err != nil {
+					t.Fatalf("ForgetSource() retry after concurrent CAS error = %v", err)
+				}
+			}
+		case "independent scope forget":
+			if errs[index] != nil {
+				t.Fatalf("concurrent independent ForgetScope() error = %v", errs[index])
+			}
+		}
+	}
+
+	assertScopeForgotten(t, engine, store, sharedScope, sharedAtom.Revisions[0])
+	assertScopeForgotten(t, engine, store, independentScope, independentAtom.Revisions[0])
+}
+
+func contractSearchRequest(scope sessionmemory.Scope) sessionmemory.DerivedSearchRequest {
+	return sessionmemory.DerivedSearchRequest{
+		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
+		Scope:         scope,
+		Query:         "concurrent lifecycle memory",
+		Limit:         10,
+	}
+}
+
+func contractTraceRequest(scope sessionmemory.Scope, root sessionmemory.RevisionRef) sessionmemory.TraceRequest {
+	return sessionmemory.TraceRequest{
+		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
+		Scope:         scope,
+		Root:          root,
+		MaxNodes:      10,
+	}
+}
+
+func assertScopeForgotten(
+	t *testing.T,
+	engine *sessionmemory.Engine,
+	store sessionmemory.Store,
+	scope sessionmemory.Scope,
+	root sessionmemory.RevisionRef,
+) {
+	t.Helper()
+	search, err := engine.Search(context.Background(), contractSearchRequest(scope))
+	if err != nil || len(search.Results) != 0 {
+		t.Fatalf("Search(%q) after concurrent forget = %#v, error = %v", scope.Key, search, err)
+	}
+	_, err = engine.Trace(context.Background(), contractTraceRequest(scope, root))
+	assertCode(t, err, sessionmemory.CodeForgotten)
+	snapshot, err := store.LoadScope(context.Background(), scope)
+	if err != nil {
+		t.Fatalf("LoadScope(%q) error = %v", scope.Key, err)
+	}
+	for _, source := range snapshot.Sources {
+		if source.State != sessionmemory.SourceStateForgotten || source.Turn != nil {
+			t.Fatalf("scope %q retained readable source = %#v", scope.Key, source)
+		}
+	}
+	for _, meta := range allMetas(snapshot) {
+		if meta.State != sessionmemory.RevisionStateInvalidated {
+			t.Fatalf("scope %q retained readable revision = %#v", scope.Key, meta)
+		}
+	}
+}
+
+func concurrentScenarioRef(
+	t *testing.T,
+	boundary sessionmemory.Boundary,
+	atom sessionmemory.RevisionRef,
+) sessionmemory.RevisionRef {
+	t.Helper()
+	operationID, err := sessionmemory.ProcessingOperationID(sessionmemory.OperationStageScenarios, boundary.ExportID)
+	if err != nil {
+		t.Fatalf("ProcessingOperationID() error = %v", err)
+	}
+	itemID, err := sessionmemory.ScenarioItemID(boundary.Scope, "concurrent")
+	if err != nil {
+		t.Fatalf("ScenarioItemID() error = %v", err)
+	}
+	revisionID, err := sessionmemory.DerivedRevisionID(
+		boundary.Scope,
+		itemID,
+		operationID,
+		[]string{"concurrent", "Concurrent lifecycle", "Concurrent lifecycle scenario"},
+		sessionmemory.Provenance{ParentRevisions: []sessionmemory.RevisionRef{atom}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("DerivedRevisionID() error = %v", err)
+	}
+	return sessionmemory.RevisionRef{ItemID: itemID, RevisionID: revisionID}
+}
+
 func runSameScopeRaceContract(t *testing.T, store sessionmemory.Store) {
 	t.Helper()
 	scope := sessionmemory.Scope{Key: "contract:race", Kind: sessionmemory.ScopeKindGroup}
@@ -427,6 +664,10 @@ func runSameScopeRaceContract(t *testing.T, store sessionmemory.Store) {
 		engines[index] = contractEngine(t, store, extractor, models, models)
 	}
 	results := make([]error, len(engines))
+	turns := []sessionmemory.Turn{
+		contractTurn(t, scope, "race-turn-0", "race", "race"),
+		contractTurn(t, scope, "race-turn-1", "race", "race"),
+	}
 	var wait sync.WaitGroup
 	for index, engine := range engines {
 		wait.Add(1)
@@ -434,7 +675,7 @@ func runSameScopeRaceContract(t *testing.T, store sessionmemory.Store) {
 			defer wait.Done()
 			_, results[index] = engine.ProcessTurn(
 				context.Background(),
-				contractTurn(t, scope, fmt.Sprintf("race-turn-%d", index), "race", "race"),
+				turns[index],
 			)
 		}()
 	}
