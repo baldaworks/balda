@@ -84,6 +84,27 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	return address, true, nil
 }
 
+// ClassifyLocatorScope classifies a Slack chat locator. Direct-message keys
+// are personal; thread keys are shared channel scopes. The exact locator key
+// remains the isolation boundary for both kinds.
+func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+	address, ok, err := DecodeLocator(locator)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("locator channel type %q is not Slack chat", locator.ChannelType)
+	}
+	switch strings.TrimSpace(address.Type) {
+	case addressTypeDM:
+		return deliverycmd.LocatorScopePersonal, nil
+	case addressTypeThread:
+		return deliverycmd.LocatorScopeGroup, nil
+	default:
+		return "", fmt.Errorf("unsupported Slack locator address type %q", address.Type)
+	}
+}
+
 // LocatorFromAddressKey rebuilds a canonical Slack chat locator from an address key.
 // DM format: "dm:<team_id>:<channel_id>"
 // Thread format: "t:<team_id>:<channel_id>:<thread_ts>".

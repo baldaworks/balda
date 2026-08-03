@@ -97,6 +97,26 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	return address, true, nil
 }
 
+// ClassifyLocatorScope classifies a Zulip direct-message or stream/topic
+// locator. The exact locator key remains the isolation boundary.
+func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+	address, ok, err := DecodeLocator(locator)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("locator channel type %q is not Zulip", locator.ChannelType)
+	}
+	switch strings.TrimSpace(address.Type) {
+	case addressTypeDM:
+		return deliverycmd.LocatorScopePersonal, nil
+	case addressTypeStream:
+		return deliverycmd.LocatorScopeGroup, nil
+	default:
+		return "", fmt.Errorf("unsupported Zulip locator address type %q", address.Type)
+	}
+}
+
 // LocatorFromAddressKey rebuilds a canonical Zulip locator from an address key.
 // Stream format: "s:<stream_id>:<url-path-escaped topic>"
 // DM format: "dm:<user_id>".

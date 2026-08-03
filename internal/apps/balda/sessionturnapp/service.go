@@ -39,6 +39,26 @@ type runtimeStateReader interface {
 	RuntimeStateValue(ctx context.Context, locator baldasession.SessionLocator, key string) (any, bool, error)
 }
 
+// CompletedTurn is the transport-neutral input handed to the optional
+// session-memory capture hook after ADK reports TurnComplete. The hook owns
+// normalization and durable publication; sessionturnapp only owns the seam.
+type CompletedTurn struct {
+	UserText       string
+	AssistantText  string
+	Locator        baldasession.SessionLocator
+	SessionID      string
+	AgentSessionID string
+	SourceTurnID   string
+	CompletedAt    time.Time
+}
+
+// CompletedTurnCapture is a small consuming-package port. Capture failures
+// are reported to the caller but must never change the user-facing delivery
+// result of a completed turn.
+type CompletedTurnCapture interface {
+	CaptureCompletedTurn(ctx context.Context, turn CompletedTurn) error
+}
+
 const (
 	responseSourceNone            = "none"
 	responseSourceAutoDone        = "auto_done"
@@ -46,12 +66,13 @@ const (
 )
 
 type TurnExecutionService struct {
-	dispatcher actortransport.Dispatcher
-	jobEvents  jobEventAppender
-	sessions   runtimeStateReader
-	logger     zerolog.Logger
+	dispatcher   actortransport.Dispatcher
+	jobEvents    jobEventAppender
+	sessions     runtimeStateReader
+	turnCapture  CompletedTurnCapture
+	logger       zerolog.Logger
 	autoMaxTurns int
-	now        func() time.Time
+	now          func() time.Time
 }
 
 func (s *TurnExecutionService) currentTime() time.Time {
@@ -86,14 +107,39 @@ func NewTurnExecutionService(dispatcher actortransport.Dispatcher, jobEvents *ba
 }
 
 func NewTurnExecutionServiceWithJobEvents(dispatcher actortransport.Dispatcher, jobEvents jobEventAppender, sessions runtimeStateReader, logger zerolog.Logger, autoMaxTurns int) *TurnExecutionService {
+	return NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, jobEvents, sessions, logger, autoMaxTurns, nil)
+}
+
+// NewTurnExecutionServiceWithJobEventsAndCapture creates a turn executor with
+// an optional completed-turn capture hook. The legacy constructor remains the
+// default so existing callers keep the same behavior until composition-root
+// wiring opts into session memory.
+func NewTurnExecutionServiceWithJobEventsAndCapture(
+	dispatcher actortransport.Dispatcher,
+	jobEvents jobEventAppender,
+	sessions runtimeStateReader,
+	logger zerolog.Logger,
+	autoMaxTurns int,
+	turnCapture CompletedTurnCapture,
+) *TurnExecutionService {
 	return &TurnExecutionService{
 		dispatcher:   dispatcher,
 		jobEvents:    jobEvents,
 		sessions:     sessions,
+		turnCapture:  turnCapture,
 		logger:       logger.With().Str("component", "balda.turn_execution").Logger(),
 		autoMaxTurns: automode.NormalizeMaxTurns(autoMaxTurns),
 		now:          time.Now,
 	}
+}
+
+// SetCompletedTurnCapture installs the optional capture hook at the
+// composition root without changing the established constructor contract.
+func (s *TurnExecutionService) SetCompletedTurnCapture(capture CompletedTurnCapture) {
+	if s == nil {
+		return
+	}
+	s.turnCapture = capture
 }
 
 func (s *TurnExecutionService) dispatchJobDelivery(
@@ -236,6 +282,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 
 	var streamedText strings.Builder
+	var memoryStreamedText strings.Builder
 	sawTurnComplete := false
 	var terminalFinishReason genai.FinishReason
 	terminalErrorCode := ""
@@ -384,6 +431,13 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				streamedText.WriteString(eventText)
 			}
 		}
+		memoryEventText := visibleMemoryResponseText(ev)
+		if memoryEventText != "" {
+			currentText := memoryStreamedText.String()
+			if memoryEventText != currentText {
+				memoryStreamedText.WriteString(memoryEventText)
+			}
+		}
 		zerolog.Ctx(runCtx).Debug().
 			Str("event_id", ev.ID).
 			Str("event_invocation_id", ev.InvocationID).
@@ -426,6 +480,26 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		if ev.TurnComplete {
 			sawTurnComplete = true
 			responseText := streamedText.String()
+			memoryResponseText := memoryStreamedText.String()
+			if s.turnCapture != nil && strings.TrimSpace(req.Text) != "" && strings.TrimSpace(memoryResponseText) != "" {
+				if sourceTurnID := completedTurnSourceID(req); sourceTurnID != "" {
+					captureErr := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{
+						UserText:       req.Text,
+						AssistantText:  memoryResponseText,
+						Locator:        req.Locator,
+						SessionID:      req.SessionID,
+						AgentSessionID: req.AgentSessionID,
+						SourceTurnID:   sourceTurnID,
+						CompletedAt:    s.currentTime().UTC(),
+					})
+					if captureErr != nil {
+						zerolog.Ctx(runCtx).Warn().
+							Err(captureErr).
+							Str("source_turn_id", sourceTurnID).
+							Msg("failed to publish completed turn to session memory")
+					}
+				}
+			}
 			responseEmitted := false
 			responseSource := responseSourceNone
 			handledEmptyTerminalReason := false
@@ -790,6 +864,25 @@ func autoTurnDedupeKey(sessionID string, parentDedupeKey string, turn int) strin
 	return fmt.Sprintf("auto:%s:%d:%x", strings.TrimSpace(sessionID), turn, parentSum[:16])
 }
 
+func completedTurnSourceID(req ExecutionRequest) string {
+	if dedupeKey := strings.TrimSpace(req.DedupeKey); dedupeKey != "" {
+		return dedupeKey
+	}
+	if jobID := strings.TrimSpace(req.JobID); jobID != "" {
+		return "job:" + jobID
+	}
+	if req.MessageID > 0 {
+		sessionID := strings.TrimSpace(req.SessionID)
+		if sessionID == "" {
+			sessionID = strings.TrimSpace(req.Locator.SessionID)
+		}
+		if sessionID != "" {
+			return fmt.Sprintf("message:%s:%d", sessionID, req.MessageID)
+		}
+	}
+	return ""
+}
+
 func visibleResponseDelta(ev *adksession.Event) string {
 	if ev == nil || !ev.Partial || ev.Content == nil {
 		return ""
@@ -804,6 +897,25 @@ func visibleResponseDelta(ev *adksession.Event) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func visibleMemoryResponseText(ev *adksession.Event) string {
+	if ev == nil || ev.Partial || !ev.IsFinalResponse() || ev.Content == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, part := range ev.Content.Parts {
+		if part == nil || part.Thought || strings.TrimSpace(part.Text) == "" {
+			continue
+		}
+		if part.FunctionCall != nil || part.FunctionResponse != nil ||
+			part.ExecutableCode != nil || part.CodeExecutionResult != nil ||
+			part.FileData != nil || part.InlineData != nil {
+			continue
+		}
+		b.WriteString(part.Text)
+	}
+	return b.String()
 }
 
 func looksLikeRetryOnlyProviderError(message string) bool {

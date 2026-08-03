@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
@@ -89,5 +90,26 @@ func TestLocatorFromAddressKey_Invalid(t *testing.T) {
 func TestUserID(t *testing.T) {
 	if got := UserID(101); got != "tg-101" {
 		t.Fatalf("UserID() = %q, want %q", got, "tg-101")
+	}
+}
+
+func TestClassifyLocatorScope(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		locator deliverycmd.Locator
+		want    deliverycmd.LocatorScopeKind
+	}{
+		{name: "personal", locator: NewLocator(101, 0), want: deliverycmd.LocatorScopePersonal},
+		{name: "group topic", locator: NewLocator(-1001, 77), want: deliverycmd.LocatorScopeGroup},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ClassifyLocatorScope(test.locator)
+			if err != nil {
+				t.Fatalf("ClassifyLocatorScope() error = %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("ClassifyLocatorScope() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

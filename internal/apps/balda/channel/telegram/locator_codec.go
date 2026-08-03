@@ -28,6 +28,12 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	return telegramref.DecodeLocator(locator)
 }
 
+// ClassifyLocatorScope delegates Telegram scope classification to the
+// transport-specific locator codec.
+func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+	return telegramref.ClassifyLocatorScope(locator)
+}
+
 // UserID returns a Telegram transport user identifier.
 func UserID(userID int64) string {
 	return telegramref.UserID(userID)

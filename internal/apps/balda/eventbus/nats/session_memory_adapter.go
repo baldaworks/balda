@@ -12,7 +12,31 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 )
+
+// SessionMemoryExportPublisher adapts the JetStream PubAck publisher to the
+// small sessionmemoryapp handoff port. The receipt is intentionally hidden at
+// this boundary; capture only needs the durability/error result.
+type SessionMemoryExportPublisher struct {
+	Bus *Bus
+}
+
+// Publish hands one validated export to JetStream and waits for PubAck.
+func (p SessionMemoryExportPublisher) Publish(ctx context.Context, export sessionmemorycmd.Export) error {
+	if p.Bus == nil {
+		return fmt.Errorf("runtime transport is required")
+	}
+	_, err := p.Bus.PublishSessionMemory(ctx, export)
+	return err
+}
+
+var _ sessionmemoryapp.ExportPublisher = SessionMemoryExportPublisher{}
+
+// SessionMemoryExportPublisher returns the composition adapter for this bus.
+func (b *Bus) SessionMemoryExportPublisher() sessionmemoryapp.ExportPublisher {
+	return SessionMemoryExportPublisher{Bus: b}
+}
 
 // SessionMemoryTransport adapts the JetStream memory delivery to the
 // provider-facing worker port without exposing JetStream outside this adapter.

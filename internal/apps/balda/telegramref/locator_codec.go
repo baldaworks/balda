@@ -72,6 +72,27 @@ func DecodeLocator(locator deliverycmd.Locator) (LocatorAddress, bool, error) {
 	return address, true, nil
 }
 
+// ClassifyLocatorScope classifies a Telegram locator without changing its
+// exact locator-key isolation boundary. Positive chat IDs are direct chats;
+// negative chat IDs are shared groups/channels. A zero chat ID is invalid.
+func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+	address, ok, err := DecodeLocator(locator)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("locator channel type %q is not Telegram", locator.ChannelType)
+	}
+	switch {
+	case address.ChatID > 0:
+		return deliverycmd.LocatorScopePersonal, nil
+	case address.ChatID < 0:
+		return deliverycmd.LocatorScopeGroup, nil
+	default:
+		return "", fmt.Errorf("telegram locator chat_id must be non-zero")
+	}
+}
+
 // UserID returns a Telegram transport user identifier.
 func UserID(userID int64) string {
 	return fmt.Sprintf("%s-%d", telegramSessionIDPrefix, userID)

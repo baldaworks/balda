@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+// LocatorScopeKind is the transport-neutral classification returned by a
+// concrete locator codec. The exact locator ref remains the isolation key;
+// this value is descriptive policy metadata only.
+type LocatorScopeKind string
+
+const (
+	// LocatorScopePersonal identifies a direct/private conversation.
+	LocatorScopePersonal LocatorScopeKind = "personal"
+	// LocatorScopeGroup identifies a shared group, channel, stream, or topic.
+	LocatorScopeGroup LocatorScopeKind = "group"
+)
+
 // Locator identifies a delivery target without exposing transport-specific tuples.
 type Locator struct {
 	ChannelType string `json:"channel_type"`
