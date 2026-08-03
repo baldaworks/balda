@@ -178,28 +178,26 @@ const profileOutputSchema = `{"type":"object","properties":{"output":{"type":"ob
 // Norma/ADK runtime. Its session service is in-memory and is never shared with
 // user chat sessions.
 type NormaInvoker struct {
-	mu       sync.Mutex
-	runtime  *baldaagent.BuiltRuntime
-	maxBytes int
-	closed   bool
+	mu         sync.Mutex
+	builder    *baldaagent.Builder
+	providerID string
+	workingDir string
+	runtime    *baldaagent.BuiltRuntime
+	maxBytes   int
+	closed     bool
 }
 
 // NormaInvokerConfig selects the configured Balda provider and working dir for
 // an isolated memory derivation runtime.
 type NormaInvokerConfig struct {
-	Builder      *baldaagent.Builder
-	ProviderID   string
-	WorkingDir   string
-	MaxBytes     int
-	BuildContext context.Context
+	Builder    *baldaagent.Builder
+	ProviderID string
+	WorkingDir string
+	MaxBytes   int
 }
 
 // NewNormaInvoker builds an isolated runtime with no MCP server IDs.
 func NewNormaInvoker(cfg NormaInvokerConfig) (*NormaInvoker, error) {
-	ctx := cfg.BuildContext
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if cfg.Builder == nil {
 		return nil, fmt.Errorf("memory runtime builder is required")
 	}
@@ -207,11 +205,13 @@ func NewNormaInvoker(cfg NormaInvokerConfig) (*NormaInvoker, error) {
 	if maxBytes <= 0 {
 		maxBytes = defaultDerivationMaxOutputBytes
 	}
-	runtime, err := cfg.Builder.BuildDedicatedRuntime(ctx, strings.TrimSpace(cfg.ProviderID), strings.TrimSpace(cfg.WorkingDir), memoryDerivationInstruction)
-	if err != nil {
-		return nil, err
+	if strings.TrimSpace(cfg.ProviderID) == "" {
+		return nil, fmt.Errorf("memory runtime provider is required")
 	}
-	return &NormaInvoker{runtime: runtime, maxBytes: maxBytes}, nil
+	if strings.TrimSpace(cfg.WorkingDir) == "" {
+		return nil, fmt.Errorf("memory runtime working directory is required")
+	}
+	return &NormaInvoker{builder: cfg.Builder, providerID: strings.TrimSpace(cfg.ProviderID), workingDir: strings.TrimSpace(cfg.WorkingDir), maxBytes: maxBytes}, nil
 }
 
 func (n *NormaInvoker) Invoke(ctx context.Context, request StructuredInvocation) ([]byte, error) {
@@ -220,8 +220,18 @@ func (n *NormaInvoker) Invoke(ctx context.Context, request StructuredInvocation)
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.closed || n.runtime == nil || n.runtime.Agent == nil {
+	if n.closed {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "memory runtime is closed", nil)
+	}
+	if n.runtime == nil {
+		runtime, err := n.builder.BuildDedicatedRuntime(ctx, n.providerID, n.workingDir, memoryDerivationInstruction)
+		if err != nil {
+			return nil, sessionmemory.RetryableError(sessionmemory.CodeModelFailure, "build isolated memory runtime", nil)
+		}
+		n.runtime = runtime
+	}
+	if n.runtime.Agent == nil {
+		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "memory runtime agent is unavailable", nil)
 	}
 	if len(request.InputJSON) > sessionmemory.MaxDerivedTurnTextBytes {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeLimitExceeded, "memory invocation input exceeds the limit", nil)
@@ -293,8 +303,10 @@ func (n *NormaInvoker) Close(context.Context) error {
 		return nil
 	}
 	n.closed = true
-	if closer, ok := n.runtime.Agent.(io.Closer); ok {
-		return closer.Close()
+	if n.runtime != nil {
+		if closer, ok := n.runtime.Agent.(io.Closer); ok {
+			return closer.Close()
+		}
 	}
 	return nil
 }

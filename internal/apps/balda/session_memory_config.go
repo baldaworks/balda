@@ -1,22 +1,21 @@
 package balda
 
 import (
+	"context"
 	"fmt"
 	"math"
-	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemoryhttp"
 	"github.com/normahq/balda/sessionmemory"
 )
 
 const (
-	defaultSessionMemoryProviderType  = "http"
+	defaultSessionMemoryProviderType  = "native"
 	defaultSessionMemorySearchTimeout = 5 * time.Second
 )
 
@@ -43,23 +42,14 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 	}
 
 	providerType := strings.ToLower(strings.TrimSpace(cfg.Provider.Type))
-	if providerType == "" {
-		providerType = defaultSessionMemoryProviderType
+	if providerType != "" && providerType != defaultSessionMemoryProviderType {
+		return fmt.Errorf("balda.session_memory.provider.type %q is unsupported; native memory uses %q", cfg.Provider.Type, defaultSessionMemoryProviderType)
 	}
-	if providerType != defaultSessionMemoryProviderType {
-		return fmt.Errorf("balda.session_memory.provider.type %q is unsupported; only %q is available", cfg.Provider.Type, defaultSessionMemoryProviderType)
+	if strings.TrimSpace(cfg.Provider.BaseURL) != "" || strings.TrimSpace(cfg.Provider.Token) != "" || strings.TrimSpace(cfg.Provider.TokenEnv) != "" || strings.TrimSpace(cfg.Provider.Timeout) != "" || cfg.Provider.MaxResponseBytes != 0 {
+		return fmt.Errorf("balda.session_memory.provider is removed; native memory uses SQLite and Norma runtime")
 	}
-	if strings.TrimSpace(cfg.Provider.BaseURL) == "" {
-		return fmt.Errorf("balda.session_memory.provider.base_url is required when session memory is enabled")
-	}
-	if err := validateSessionMemoryBaseURL(cfg.Provider.BaseURL); err != nil {
-		return fmt.Errorf("balda.session_memory.provider.base_url: %w", err)
-	}
-	if tokenEnv := strings.TrimSpace(cfg.Provider.TokenEnv); tokenEnv != "" && !validSessionMemoryEnvName(tokenEnv) {
-		return fmt.Errorf("balda.session_memory.provider.token_env must be a valid environment variable name")
-	}
-	if cfg.Provider.MaxResponseBytes < 0 {
-		return fmt.Errorf("balda.session_memory.provider.max_response_bytes must be non-negative")
+	if cfg.Derivation.MaxOutputBytes < 0 {
+		return fmt.Errorf("balda.session_memory.derivation.max_output_bytes must be non-negative")
 	}
 	for field, raw := range map[string]string{
 		"balda.session_memory.ack_wait":        cfg.AckWait,
@@ -101,8 +91,8 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 		"balda.session_memory.retry.progress_interval": cfg.Retry.ProgressInterval,
 		"balda.session_memory.retry.fetch_error_delay": cfg.Retry.FetchErrorDelay,
 		"balda.session_memory.retry.shutdown_timeout":  cfg.Retry.ShutdownTimeout,
-		"balda.session_memory.provider.timeout":        cfg.Provider.Timeout,
 		"balda.session_memory.search_timeout":          cfg.SearchTimeout,
+		"balda.session_memory.derivation.timeout":      cfg.Derivation.Timeout,
 	} {
 		if strings.TrimSpace(raw) == "" {
 			continue
@@ -139,67 +129,27 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 	return nil
 }
 
-func validateSessionMemoryBaseURL(raw string) error {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
-		return fmt.Errorf("must be an HTTP(S) origin")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("must use http or https")
-	}
-	return nil
-}
-
-func validSessionMemoryEnvName(name string) bool {
-	for i, char := range name {
-		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == '_' {
-			continue
-		}
-		if i == 0 || char < '0' || char > '9' {
-			return false
-		}
-	}
-	return name != ""
-}
-
-func sessionMemoryProviderConfig(cfg SessionMemoryConfig) (sessionmemoryhttp.Config, error) {
-	if err := validateSessionMemoryConfig(cfg); err != nil {
-		return sessionmemoryhttp.Config{}, err
-	}
-	if !cfg.Enabled {
-		return sessionmemoryhttp.Config{}, nil
-	}
-	token := strings.TrimSpace(cfg.Provider.Token)
-	if envName := strings.TrimSpace(cfg.Provider.TokenEnv); envName != "" {
-		if envToken, ok := os.LookupEnv(envName); ok {
-			token = strings.TrimSpace(envToken)
-		}
-	}
-	timeout, err := optionalSessionMemoryDuration(cfg.Provider.Timeout)
-	if err != nil {
-		return sessionmemoryhttp.Config{}, fmt.Errorf("balda.session_memory.provider.timeout: %w", err)
-	}
-	config := sessionmemoryhttp.Config{
-		BaseURL:          strings.TrimSpace(cfg.Provider.BaseURL),
-		Token:            token,
-		Timeout:          timeout,
-		MaxResponseBytes: cfg.Provider.MaxResponseBytes,
-	}
-	if _, err := sessionmemoryhttp.New(config); err != nil {
-		return sessionmemoryhttp.Config{}, err
-	}
-	return config, nil
-}
-
-func newSessionMemoryProvider(cfg SessionMemoryConfig) (sessionmemory.Provider, error) {
+func newSessionMemoryProvider(cfg SessionMemoryConfig, store sessionmemory.Store, builder *baldaagent.Builder, providerID, workingDir string) (sessionmemory.Provider, error) {
 	if !cfg.Enabled {
 		return sessionmemoryapp.DisabledProvider{}, nil
 	}
-	httpConfig, err := sessionMemoryProviderConfig(cfg)
+	if err := validateSessionMemoryConfig(cfg); err != nil {
+		return nil, err
+	}
+	invoker, err := sessionmemoryapp.NewNormaInvoker(sessionmemoryapp.NormaInvokerConfig{
+		Builder:    builder,
+		ProviderID: providerID,
+		WorkingDir: workingDir,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return sessionmemoryhttp.New(httpConfig)
+	deriver, err := sessionmemoryapp.NewDeriver(invoker)
+	if err != nil {
+		_ = invoker.Close(context.Background())
+		return nil, err
+	}
+	return sessionmemoryapp.NewNativeProvider(store, deriver, invoker)
 }
 
 func sessionMemoryWorkerConfig(cfg SessionMemoryConfig) (sessionmemoryapp.Config, error) {

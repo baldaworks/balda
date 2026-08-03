@@ -157,22 +157,24 @@ type MemoryConfig struct {
 // integration. It is separate from MemoryConfig, which remains Balda's
 // existing global fact KV capability.
 type SessionMemoryConfig struct {
-	Enabled         bool                        `mapstructure:"enabled"`
-	Provider        SessionMemoryProviderConfig `mapstructure:"provider"`
-	Stream          string                      `mapstructure:"stream"`
-	Consumer        string                      `mapstructure:"consumer"`
-	AckWait         string                      `mapstructure:"ack_wait"`
-	FetchWait       string                      `mapstructure:"fetch_wait"`
-	PublishTimeout  string                      `mapstructure:"publish_timeout"`
-	PublishAttempts int                         `mapstructure:"publish_attempts"`
-	MaxAge          string                      `mapstructure:"max_age"`
-	MaxBytes        string                      `mapstructure:"max_bytes"`
-	MaxMsgSize      string                      `mapstructure:"max_msg_size"`
-	Retry           SessionMemoryRetryConfig    `mapstructure:"retry"`
-	SearchTimeout   string                      `mapstructure:"search_timeout"`
+	Enabled         bool                          `mapstructure:"enabled"`
+	Provider        SessionMemoryProviderConfig   `mapstructure:"provider"`
+	Derivation      SessionMemoryDerivationConfig `mapstructure:"derivation"`
+	Stream          string                        `mapstructure:"stream"`
+	Consumer        string                        `mapstructure:"consumer"`
+	AckWait         string                        `mapstructure:"ack_wait"`
+	FetchWait       string                        `mapstructure:"fetch_wait"`
+	PublishTimeout  string                        `mapstructure:"publish_timeout"`
+	PublishAttempts int                           `mapstructure:"publish_attempts"`
+	MaxAge          string                        `mapstructure:"max_age"`
+	MaxBytes        string                        `mapstructure:"max_bytes"`
+	MaxMsgSize      string                        `mapstructure:"max_msg_size"`
+	Retry           SessionMemoryRetryConfig      `mapstructure:"retry"`
+	SearchTimeout   string                        `mapstructure:"search_timeout"`
 }
 
-// SessionMemoryProviderConfig selects the vendor-neutral HTTP/JSON provider.
+// SessionMemoryProviderConfig is retained as a migration marker for old
+// configuration files. Native memory does not use a remote provider.
 type SessionMemoryProviderConfig struct {
 	Type             string `mapstructure:"type"`
 	BaseURL          string `mapstructure:"base_url"`
@@ -180,6 +182,12 @@ type SessionMemoryProviderConfig struct {
 	TokenEnv         string `mapstructure:"token_env"`
 	Timeout          string `mapstructure:"timeout"`
 	MaxResponseBytes int64  `mapstructure:"max_response_bytes"`
+}
+
+// SessionMemoryDerivationConfig controls the dedicated Norma derivation call.
+type SessionMemoryDerivationConfig struct {
+	Timeout        string `mapstructure:"timeout"`
+	MaxOutputBytes int    `mapstructure:"max_output_bytes"`
 }
 
 // SessionMemoryRetryConfig controls the serialized background consumer.

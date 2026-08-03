@@ -21,7 +21,7 @@ func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	if err := validateSessionMemoryConfig(cfg); err != nil {
 		t.Fatalf("validateSessionMemoryConfig() error = %v, want nil while disabled", err)
 	}
-	if _, err := newSessionMemoryProvider(cfg); err != nil {
+	if _, err := newSessionMemoryProvider(cfg, nil, nil, "", ""); err != nil {
 		t.Fatalf("newSessionMemoryProvider() error = %v, want nil while disabled", err)
 	}
 	workerCfg, err := sessionMemoryWorkerConfig(cfg)
@@ -33,18 +33,17 @@ func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	}
 }
 
-func TestSessionMemoryConfigEnabledRequiresHTTPProvider(t *testing.T) {
+func TestSessionMemoryConfigEnabledUsesNativeProvider(t *testing.T) {
 	tests := []struct {
 		name string
 		cfg  SessionMemoryConfig
 		want string
 	}{
-		{name: "missing URL", cfg: SessionMemoryConfig{Enabled: true}, want: "base_url is required"},
-		{name: "unsupported provider", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{Type: "sqlite", BaseURL: "http://memory"}}, want: "unsupported"},
-		{name: "bad timeout", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{BaseURL: "http://memory", Timeout: "bad"}}, want: "provider.timeout"},
-		{name: "bad retention", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{BaseURL: "http://memory"}, MaxBytes: "zero"}, want: "max_bytes"},
-		{name: "bad token env", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{BaseURL: "http://memory", TokenEnv: "9TOKEN"}}, want: "token_env"},
-		{name: "bad stream name", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{BaseURL: "http://memory"}, Stream: "memory stream"}, want: "stream"},
+		{name: "remote provider type", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{Type: "http"}}, want: "unsupported"},
+		{name: "remote provider URL", cfg: SessionMemoryConfig{Enabled: true, Provider: SessionMemoryProviderConfig{BaseURL: "http://memory"}}, want: "removed"},
+		{name: "bad retention", cfg: SessionMemoryConfig{Enabled: true, MaxBytes: "zero"}, want: "max_bytes"},
+		{name: "bad derivation timeout", cfg: SessionMemoryConfig{Enabled: true, Derivation: SessionMemoryDerivationConfig{Timeout: "bad"}}, want: "derivation.timeout"},
+		{name: "bad stream name", cfg: SessionMemoryConfig{Enabled: true, Stream: "memory stream"}, want: "stream"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -89,8 +88,7 @@ func TestSessionMemoryExecutionConfigMapsDurabilitySettings(t *testing.T) {
 
 func TestSessionMemoryWorkerConfigUsesApplicationRetryPort(t *testing.T) {
 	cfg := SessionMemoryConfig{
-		Enabled:  true,
-		Provider: SessionMemoryProviderConfig{BaseURL: "http://memory"},
+		Enabled: true,
 		Retry: SessionMemoryRetryConfig{
 			MaxAttempts:      7,
 			BaseDelay:        "100ms",

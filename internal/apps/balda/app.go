@@ -242,8 +242,8 @@ func Module(
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
 				})
 			},
-			func() (sessionmemory.Provider, error) {
-				return newSessionMemoryProvider(cfg.Balda.SessionMemory)
+			func(provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
+				return newSessionMemoryProvider(cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir)
 			},
 			func(bus *natsbus.Bus, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
 				var publisher sessionmemoryapp.ExportPublisher
