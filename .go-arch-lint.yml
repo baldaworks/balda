@@ -79,6 +79,7 @@ components:
       - internal/apps/balda/permissions
       - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
+      - internal/apps/balda/sessionmemorymcp
       - internal/apps/balda/sessionturn
       - internal/apps/balda/sessionturnapp
       - internal/apps/balda/sessionmemoryapp

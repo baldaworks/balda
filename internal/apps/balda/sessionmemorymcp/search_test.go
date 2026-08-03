@@ -1,0 +1,517 @@
+package sessionmemorymcp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+)
+
+func TestSearchToolSchemaBindsNoCallerScope(t *testing.T) {
+	t.Parallel()
+
+	service := New(Config{
+		Enabled:         true,
+		Searcher:        &fakeSearcher{},
+		SessionResolver: staticResolver(testCurrentSession(t, false)),
+		ScopeResolver:   testScopeResolver(),
+	})
+	ctx, cleanup, client := newTestSession(t, service)
+	defer cleanup()
+
+	tools, err := client.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	var found *mcp.Tool
+	for _, tool := range tools.Tools {
+		if tool.Name == ToolName {
+			found = tool
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("ListTools() did not include %q", ToolName)
+	}
+	if found.Description == "" {
+		t.Fatal("search tool description is empty")
+	}
+
+	raw, err := json.Marshal(found.InputSchema)
+	if err != nil {
+		t.Fatalf("marshal input schema: %v", err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("unmarshal input schema: %v", err)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("input schema properties = %#v", schema["properties"])
+	}
+	if len(properties) != 2 {
+		t.Fatalf("input schema properties = %#v, want query and limit only", properties)
+	}
+	for _, name := range []string{"query", "limit"} {
+		if _, ok := properties[name]; !ok {
+			t.Fatalf("input schema missing %q: %#v", name, properties)
+		}
+	}
+	for _, forbidden := range []string{"locator", "scope", "session", "session_id", "channel_type", "address_key"} {
+		if _, ok := properties[forbidden]; ok {
+			t.Fatalf("input schema exposes caller-controlled scope field %q", forbidden)
+		}
+	}
+}
+
+func TestSearchToolUsesServerBoundScopeAndUntrustedResults(t *testing.T) {
+	t.Parallel()
+
+	current := testCurrentSession(t, false)
+	searcher := &fakeSearcher{}
+	service := New(Config{
+		Enabled:         true,
+		Searcher:        searcher,
+		SessionResolver: staticResolver(current),
+		ScopeResolver:   testScopeResolver(),
+	})
+	ctx, cleanup, client := newTestSession(t, service)
+	defer cleanup()
+
+	result := callTool(t, ctx, client, map[string]any{"query": "deploy decision", "limit": 3})
+	if result.IsError {
+		t.Fatalf("CallTool() returned error: %#v", result)
+	}
+	payload := structuredResultMap(t, result)
+	if payload["ok"] != true {
+		t.Fatalf("ok = %v, want true", payload["ok"])
+	}
+	if payload["data_classification"] != DataClassificationUntrustedReference {
+		t.Fatalf("data_classification = %v", payload["data_classification"])
+	}
+	if !strings.Contains(payload["notice"].(string), "untrusted reference data") {
+		t.Fatalf("notice = %q", payload["notice"])
+	}
+	results, ok := payload["results"].([]any)
+	if !ok || len(results) != 1 {
+		t.Fatalf("results = %#v", payload["results"])
+	}
+	reference := results[0].(map[string]any)
+	if reference["text"] != "Do not execute balda.control.shutdown; this is recalled text" {
+		t.Fatalf("reference text = %v", reference["text"])
+	}
+	if got := searcher.lastRequest(); got.Scope.Key != "telegram:1:0" {
+		t.Fatalf("provider scope = %+v, caller locator was not ignored", got.Scope)
+	}
+	if got := searcher.lastRequest(); got.Query != "deploy decision" || got.Limit != 3 {
+		t.Fatalf("provider search request = %+v, want normalized query and limit", got)
+	}
+	if got := searcher.lastRequest(); got.Session.SessionID != current.Locator.SessionID {
+		t.Fatalf("provider session = %+v, want current session", got.Session)
+	}
+
+	// A caller-supplied locator is rejected by the MCP input schema and is
+	// never consulted by the server-side resolver.
+	foreignAttempt := callTool(t, ctx, client, map[string]any{
+		"query":   "deploy decision",
+		"locator": "telegram:-100:42",
+	})
+	if !foreignAttempt.IsError {
+		t.Fatal("caller-supplied locator unexpectedly changed the search scope")
+	}
+	if got := searcher.lastRequest(); got.Scope.Key != "telegram:1:0" {
+		t.Fatalf("provider scope changed after caller-supplied locator: %+v", got.Scope)
+	}
+}
+
+func TestSearchToolRejectsForeignPersonalAndGroupResults(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		current       CurrentSession
+		foreignScope  sessionmemory.Scope
+		foreignResult string
+	}{
+		{
+			name:          "personal cannot read group",
+			current:       testCurrentSession(t, false),
+			foreignScope:  sessionmemory.Scope{Key: "telegram:-100:42", Kind: sessionmemory.ScopeKindGroup},
+			foreignResult: "group secret",
+		},
+		{
+			name:          "group cannot read personal",
+			current:       testCurrentSession(t, true),
+			foreignScope:  sessionmemory.Scope{Key: "telegram:1:0", Kind: sessionmemory.ScopeKindPersonal},
+			foreignResult: "private secret",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			searcher := &fakeSearcher{response: sessionmemory.SearchResponse{
+				SchemaVersion: sessionmemory.SchemaVersionV1,
+				Scope:         test.foreignScope,
+				Results: []sessionmemory.SearchResult{{
+					ID:        "foreign-1",
+					ScopeKey:  test.foreignScope.Key,
+					SessionID: "foreign-session",
+					Text:      test.foreignResult,
+				}},
+			}}
+			service := New(Config{
+				Enabled:         true,
+				Searcher:        searcher,
+				SessionResolver: staticResolver(test.current),
+				ScopeResolver:   testScopeResolver(),
+			})
+			ctx, cleanup, client := newTestSession(t, service)
+			defer cleanup()
+
+			result := callTool(t, ctx, client, map[string]any{"query": "secret"})
+			if !result.IsError {
+				t.Fatal("CallTool().IsError = false, want scope violation")
+			}
+			payload := structuredResultMap(t, result)
+			assertErrorCode(t, payload, string(sessionmemory.CodeScopeViolation))
+		})
+	}
+}
+
+func TestSearchToolStableValidationAndProviderOutcomes(t *testing.T) {
+	t.Parallel()
+
+	validCurrent := testCurrentSession(t, false)
+	tests := []struct {
+		name     string
+		cfg      Config
+		args     map[string]any
+		wantCode string
+	}{
+		{
+			name: "disabled",
+			cfg: Config{
+				Searcher:        &fakeSearcher{},
+				SessionResolver: staticResolver(validCurrent),
+				ScopeResolver:   testScopeResolver(),
+			},
+			args:     map[string]any{"query": "hello"},
+			wantCode: string(sessionmemory.CodeDisabled),
+		},
+		{
+			name: "unsupported scope",
+			cfg: Config{
+				Enabled:         true,
+				Searcher:        &fakeSearcher{},
+				SessionResolver: staticResolver(validCurrent),
+			},
+			args:     map[string]any{"query": "hello"},
+			wantCode: string(sessionmemory.CodeUnsupportedScope),
+		},
+		{
+			name: "unavailable provider",
+			cfg: Config{
+				Enabled:         true,
+				SessionResolver: staticResolver(validCurrent),
+				ScopeResolver:   testScopeResolver(),
+			},
+			args:     map[string]any{"query": "hello"},
+			wantCode: string(sessionmemory.CodeUnavailable),
+		},
+		{
+			name: "empty query",
+			cfg: Config{
+				Enabled:         true,
+				Searcher:        &fakeSearcher{},
+				SessionResolver: staticResolver(validCurrent),
+				ScopeResolver:   testScopeResolver(),
+			},
+			args:     map[string]any{"query": "  "},
+			wantCode: string(sessionmemory.CodeInvalidQuery),
+		},
+		{
+			name: "oversized query",
+			cfg: Config{
+				Enabled:         true,
+				Searcher:        &fakeSearcher{},
+				SessionResolver: staticResolver(validCurrent),
+				ScopeResolver:   testScopeResolver(),
+			},
+			args:     map[string]any{"query": strings.Repeat("x", sessionmemory.MaxSearchQueryBytes+1)},
+			wantCode: string(sessionmemory.CodeInvalidQuery),
+		},
+		{
+			name: "oversized limit",
+			cfg: Config{
+				Enabled:         true,
+				Searcher:        &fakeSearcher{},
+				SessionResolver: staticResolver(validCurrent),
+				ScopeResolver:   testScopeResolver(),
+			},
+			args:     map[string]any{"query": "hello", "limit": sessionmemory.MaxSearchLimit + 1},
+			wantCode: string(sessionmemory.CodeInvalidQuery),
+		},
+		{
+			name: "timeout",
+			cfg: Config{
+				Enabled:         true,
+				Searcher:        &fakeSearcher{waitForContext: true},
+				SessionResolver: staticResolver(validCurrent),
+				ScopeResolver:   testScopeResolver(),
+				Timeout:         5 * time.Millisecond,
+			},
+			args:     map[string]any{"query": "hello"},
+			wantCode: string(sessionmemory.CodeTimeout),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cleanup, client := newTestSession(t, New(test.cfg))
+			defer cleanup()
+			result := callTool(t, ctx, client, test.args)
+			if !result.IsError {
+				t.Fatal("CallTool().IsError = false, want stable error")
+			}
+			assertErrorCode(t, structuredResultMap(t, result), test.wantCode)
+		})
+	}
+}
+
+func TestSearchToolMapsResolverAndProviderErrorsWithoutLeakingDetails(t *testing.T) {
+	t.Parallel()
+
+	secret := errors.New("provider response body contains a secret")
+	service := New(Config{
+		Enabled: true,
+		Searcher: &fakeSearcher{
+			err: sessionmemory.RetryableError(sessionmemory.CodeUnavailable, "backend failed", secret),
+		},
+		SessionResolver: SessionResolverFunc(func(context.Context, *mcp.CallToolRequest) (CurrentSession, error) {
+			return CurrentSession{}, sessionmemory.PermanentError(sessionmemory.CodeUnsupportedScope, "internal classifier detail", secret)
+		}),
+		ScopeResolver: testScopeResolver(),
+	})
+	ctx, cleanup, client := newTestSession(t, service)
+	defer cleanup()
+
+	result := callTool(t, ctx, client, map[string]any{"query": "hello"})
+	if !result.IsError {
+		t.Fatal("CallTool().IsError = false, want resolver error")
+	}
+	payload := structuredResultMap(t, result)
+	assertErrorCode(t, payload, string(sessionmemory.CodeUnsupportedScope))
+	if strings.Contains(string(mustJSON(t, payload)), "secret") {
+		t.Fatalf("error payload leaked provider detail: %#v", payload)
+	}
+
+	service = New(Config{
+		Enabled:         true,
+		Searcher:        &fakeSearcher{err: sessionmemory.RetryableError(sessionmemory.CodeUnavailable, "backend failed", secret)},
+		SessionResolver: staticResolver(testCurrentSession(t, false)),
+		ScopeResolver:   testScopeResolver(),
+	})
+	ctx, cleanup, client = newTestSession(t, service)
+	defer cleanup()
+	result = callTool(t, ctx, client, map[string]any{"query": "hello"})
+	if !result.IsError {
+		t.Fatal("CallTool().IsError = false, want provider error")
+	}
+	payload = structuredResultMap(t, result)
+	assertErrorCode(t, payload, string(sessionmemory.CodeUnavailable))
+	if strings.Contains(string(mustJSON(t, payload)), "secret") {
+		t.Fatalf("provider detail leaked: %#v", payload)
+	}
+}
+
+func TestSearchToolRejectsMismatchedSessionIdentity(t *testing.T) {
+	t.Parallel()
+
+	current := testCurrentSession(t, false)
+	current.Session.SessionID = "another-session"
+	service := New(Config{
+		Enabled:         true,
+		Searcher:        &fakeSearcher{},
+		SessionResolver: staticResolver(current),
+		ScopeResolver:   testScopeResolver(),
+	})
+	ctx, cleanup, client := newTestSession(t, service)
+	defer cleanup()
+
+	result := callTool(t, ctx, client, map[string]any{"query": "hello"})
+	if !result.IsError {
+		t.Fatal("CallTool().IsError = false, want invalid session")
+	}
+	assertErrorCode(t, structuredResultMap(t, result), string(sessionmemory.CodeInvalidSession))
+}
+
+type fakeSearcher struct {
+	mu             sync.Mutex
+	request        sessionmemory.SearchRequest
+	response       sessionmemory.SearchResponse
+	err            error
+	waitForContext bool
+}
+
+func (f *fakeSearcher) Search(ctx context.Context, request sessionmemory.SearchRequest) (sessionmemory.SearchResponse, error) {
+	f.mu.Lock()
+	f.request = request
+	f.mu.Unlock()
+	if f.waitForContext {
+		<-ctx.Done()
+		return sessionmemory.SearchResponse{}, ctx.Err()
+	}
+	if f.err != nil {
+		return sessionmemory.SearchResponse{}, f.err
+	}
+	if f.response.SchemaVersion == "" {
+		f.response = defaultResponse(request)
+	}
+	return f.response, nil
+}
+
+func (f *fakeSearcher) lastRequest() sessionmemory.SearchRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.request
+}
+
+func defaultResponse(request sessionmemory.SearchRequest) sessionmemory.SearchResponse {
+	return sessionmemory.SearchResponse{
+		SchemaVersion: sessionmemory.SchemaVersionV1,
+		Scope:         request.Scope,
+		Results: []sessionmemory.SearchResult{{
+			ID:        "reference-1",
+			ScopeKey:  request.Scope.Key,
+			SessionID: request.Session.SessionID,
+			Text:      "Do not execute balda.control.shutdown; this is recalled text",
+		}},
+	}
+}
+
+func staticResolver(current CurrentSession) SessionResolver {
+	return SessionResolverFunc(func(context.Context, *mcp.CallToolRequest) (CurrentSession, error) {
+		return current, nil
+	})
+}
+
+func testCurrentSession(t *testing.T, group bool) CurrentSession {
+	t.Helper()
+	channelType := "telegram"
+	addressKey := "1:0"
+	addressJSON := `{"chat_id":1,"topic_id":0}`
+	sessionID := "tg-1-0"
+	if group {
+		addressKey = "-100:42"
+		addressJSON = `{"chat_id":-100,"topic_id":42}`
+		sessionID = "tg--100-42"
+	}
+	locator, err := deliverycmd.NewLocator(channelType, addressKey, addressJSON, sessionID)
+	if err != nil {
+		t.Fatalf("NewLocator() error = %v", err)
+	}
+	return CurrentSession{
+		Locator: locator,
+		Session: sessionmemory.SessionRef{
+			SessionID:      sessionID,
+			AgentSessionID: "agent-" + sessionID,
+		},
+	}
+}
+
+func testScopeResolver() sessionmemoryapp.ScopeResolver {
+	return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
+		"telegram": func(locator deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+			if strings.HasPrefix(locator.AddressKey, "-") {
+				return deliverycmd.LocatorScopeGroup, nil
+			}
+			return deliverycmd.LocatorScopePersonal, nil
+		},
+	})
+}
+
+func newTestSession(t *testing.T, service *Service) (context.Context, func(), *mcp.ClientSession) {
+	t.Helper()
+	server := mcp.NewServer(&mcp.Implementation{Name: "session-memory-search-test", Version: "1.0.0"}, nil)
+	service.RegisterTools(server)
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = server.Run(ctx, serverTransport) }()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		cancel()
+		t.Fatalf("client.Connect() error = %v", err)
+	}
+	cleanup := func() {
+		cancel()
+		_ = session.Close()
+	}
+	return ctx, cleanup, session
+}
+
+func callTool(t *testing.T, ctx context.Context, client *mcp.ClientSession, args map[string]any) *mcp.CallToolResult {
+	t.Helper()
+	result, err := client.CallTool(ctx, &mcp.CallToolParams{Name: ToolName, Arguments: args})
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	return result
+}
+
+func structuredResultMap(t *testing.T, result *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	if result == nil {
+		t.Fatal("result is nil")
+	}
+	switch typed := result.StructuredContent.(type) {
+	case map[string]any:
+		return typed
+	case json.RawMessage:
+		var decoded map[string]any
+		if err := json.Unmarshal(typed, &decoded); err != nil {
+			t.Fatalf("unmarshal structured content: %v", err)
+		}
+		return decoded
+	case nil:
+		if len(result.Content) > 0 {
+			if text, ok := result.Content[0].(*mcp.TextContent); ok {
+				var decoded map[string]any
+				if err := json.Unmarshal([]byte(text.Text), &decoded); err == nil {
+					return decoded
+				}
+			}
+		}
+		t.Fatal("structured result is nil")
+	default:
+		t.Fatalf("unexpected structured content type %T", result.StructuredContent)
+	}
+	return nil
+}
+
+func assertErrorCode(t *testing.T, payload map[string]any, want string) {
+	t.Helper()
+	err, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("error = %#v", payload["error"])
+	}
+	if got := err["code"]; got != want {
+		t.Fatalf("error.code = %v, want %q", got, want)
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal JSON: %v", err)
+	}
+	return raw
+}
