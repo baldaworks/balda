@@ -107,6 +107,8 @@ func detectAttachmentMIMEType(item attachment.Descriptor, data []byte) string {
 		case ".jpg", ".jpeg":
 			return "image/jpeg"
 		}
+	case attachment.KindVoice:
+		return "audio/ogg"
 	}
 	return ""
 }

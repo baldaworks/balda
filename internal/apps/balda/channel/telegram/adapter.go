@@ -313,7 +313,7 @@ func attachmentsFromMessage(message *client.Message) []attachment.Descriptor {
 	if message == nil {
 		return nil
 	}
-	out := make([]attachment.Descriptor, 0, 2)
+	out := make([]attachment.Descriptor, 0, 3)
 	caption := ""
 	if message.Caption != nil {
 		caption = strings.TrimSpace(*message.Caption)
@@ -349,6 +349,24 @@ func attachmentsFromMessage(message *client.Message) []attachment.Descriptor {
 			FileID:       strings.TrimSpace(doc.FileId),
 			FileUniqueID: strings.TrimSpace(doc.FileUniqueId),
 			FileName:     fileName,
+			MIMEType:     mimeType,
+			SizeBytes:    sizeBytes,
+			Caption:      caption,
+		})
+	}
+	if voice := message.Voice; voice != nil {
+		sizeBytes := int64(0)
+		if voice.FileSize != nil {
+			sizeBytes = *voice.FileSize
+		}
+		mimeType := ""
+		if voice.MimeType != nil {
+			mimeType = strings.TrimSpace(*voice.MimeType)
+		}
+		out = append(out, attachment.Descriptor{
+			Kind:         attachment.KindVoice,
+			FileID:       strings.TrimSpace(voice.FileId),
+			FileUniqueID: strings.TrimSpace(voice.FileUniqueId),
 			MIMEType:     mimeType,
 			SizeBytes:    sizeBytes,
 			Caption:      caption,

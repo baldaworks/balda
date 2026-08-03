@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
@@ -16,6 +17,81 @@ import (
 )
 
 const testMessageText = "hello"
+
+func TestMessageContextFromEvent_MapsVoiceAttachment(t *testing.T) {
+	size := int64(4096)
+	mimeType := " audio/ogg "
+	caption := " listen to this "
+
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 42,
+			Chat: client.Chat{
+				Id:   9001,
+				Type: "private",
+			},
+			From:    &client.User{Id: 101},
+			Caption: &caption,
+			Voice: &client.Voice{
+				FileId:       " voice-file-id ",
+				FileUniqueId: " voice-unique-id ",
+				FileSize:     &size,
+				MimeType:     &mimeType,
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if len(got.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(got.Attachments))
+	}
+	voice := got.Attachments[0]
+	if voice.Kind != attachment.KindVoice {
+		t.Fatalf("attachment kind = %q, want %q", voice.Kind, attachment.KindVoice)
+	}
+	if voice.FileID != "voice-file-id" || voice.FileUniqueID != "voice-unique-id" {
+		t.Fatalf("voice file identifiers = %+v", voice)
+	}
+	if voice.SizeBytes != size {
+		t.Fatalf("voice size = %d, want %d", voice.SizeBytes, size)
+	}
+	if voice.MIMEType != "audio/ogg" {
+		t.Fatalf("voice MIME type = %q, want audio/ogg", voice.MIMEType)
+	}
+	if voice.Caption != "listen to this" {
+		t.Fatalf("voice caption = %q, want listen to this", voice.Caption)
+	}
+	if got.Locator.SessionID != "tg-9001-0" {
+		t.Fatalf("session ID = %q, want tg-9001-0", got.Locator.SessionID)
+	}
+}
+
+func TestMessageContextFromEvent_MapsVoiceWithoutOptionalMetadata(t *testing.T) {
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			Chat: client.Chat{
+				Id:   9001,
+				Type: "private",
+			},
+			From:  &client.User{Id: 101},
+			Voice: &client.Voice{FileId: "voice-file-id"},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if len(got.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(got.Attachments))
+	}
+	voice := got.Attachments[0]
+	if voice.Kind != attachment.KindVoice || voice.FileID != "voice-file-id" {
+		t.Fatalf("voice attachment = %+v", voice)
+	}
+	if voice.SizeBytes != 0 || voice.MIMEType != "" || voice.Caption != "" {
+		t.Fatalf("voice optional metadata = %+v, want zero values", voice)
+	}
+}
 
 func TestMessageContextFromEvent_SnapshotsDeliveryOptions(t *testing.T) {
 	msg := messenger.NewMessenger(nil, zerolog.Nop())

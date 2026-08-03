@@ -10,6 +10,7 @@ type Kind string
 const (
 	KindPhoto    Kind = "photo"
 	KindDocument Kind = "document"
+	KindVoice    Kind = "voice"
 )
 
 // Descriptor is transport-neutral attachment metadata carried through turns.
@@ -70,7 +71,7 @@ func Normalize(in Descriptor) (Descriptor, bool) {
 		}
 	}
 	switch in.Kind {
-	case KindPhoto, KindDocument:
+	case KindPhoto, KindDocument, KindVoice:
 	default:
 		return Descriptor{}, false
 	}

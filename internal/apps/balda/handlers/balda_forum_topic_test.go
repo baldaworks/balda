@@ -629,6 +629,93 @@ func TestBaldaHandlerOnMessage_PublishesAttachmentOnlySessionTurn(t *testing.T) 
 	}
 }
 
+func TestBaldaHandlerOnMessage_PublishesVoiceOnlySessionTurn(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
+
+	size := int64(4096)
+	event := &events.MessageEvent{
+		Type: messagetype.Voice,
+		Message: &client.Message{
+			Chat: client.Chat{
+				Id:   9001,
+				Type: "private",
+			},
+			From: &client.User{Id: 101},
+			Voice: &client.Voice{
+				FileId:       "voice-file-id",
+				FileUniqueId: "voice-unique-id",
+				FileSize:     &size,
+			},
+		},
+	}
+
+	if err := handler.onMessage(context.Background(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
+	}
+	var payload actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(turns.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if len(payload.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(payload.Attachments))
+	}
+	voice := payload.Attachments[0]
+	if voice.Kind != "voice" || voice.FileID != "voice-file-id" || voice.SizeBytes != size {
+		t.Fatalf("voice attachment = %+v", voice)
+	}
+	if !strings.Contains(payload.Text, "Attachment manifest:") || !strings.Contains(payload.Text, "kind: voice") {
+		t.Fatalf("payload text = %q, want voice attachment manifest", payload.Text)
+	}
+}
+
+func TestBaldaHandlerOnMessage_PublishesTextAndVoiceInOneSessionTurn(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
+
+	text := "please summarize this"
+	caption := "voice context"
+	event := &events.MessageEvent{
+		Type: messagetype.Voice,
+		Message: &client.Message{
+			Chat: client.Chat{
+				Id:   9001,
+				Type: "private",
+			},
+			From:    &client.User{Id: 101},
+			Text:    &text,
+			Caption: &caption,
+			Voice: &client.Voice{
+				FileId: "voice-file-id",
+			},
+		},
+	}
+
+	if err := handler.onMessage(context.Background(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
+	}
+	var payload actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(turns.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if len(payload.Attachments) != 1 || payload.Attachments[0].Kind != "voice" {
+		t.Fatalf("attachments = %+v, want one voice attachment", payload.Attachments)
+	}
+	if !strings.Contains(payload.Text, text) || !strings.Contains(payload.Text, "kind: voice") || !strings.Contains(payload.Text, "caption: voice context") {
+		t.Fatalf("payload text = %q, want text and voice manifest", payload.Text)
+	}
+}
+
 func TestBaldaHandlerOnMessage_ChannelReplyToDifferentBotIgnored(t *testing.T) {
 	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
 

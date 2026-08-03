@@ -87,6 +87,8 @@ func extensionFromDescriptor(item attachment.Descriptor) string {
 		return ext
 	}
 	switch strings.ToLower(strings.TrimSpace(item.MIMEType)) {
+	case "audio/ogg":
+		return ".ogg"
 	case "image/jpeg":
 		return ".jpg"
 	case "image/png":
@@ -95,7 +97,9 @@ func extensionFromDescriptor(item attachment.Descriptor) string {
 		return ".webp"
 	case "application/pdf":
 		return ".pdf"
-	default:
-		return ""
 	}
+	if item.Kind == attachment.KindVoice {
+		return ".ogg"
+	}
+	return ""
 }

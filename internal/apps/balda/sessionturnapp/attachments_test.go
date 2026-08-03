@@ -1,6 +1,7 @@
 package sessionturnapp
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,60 @@ import (
 )
 
 const testJPEGMIMEType = "image/jpeg"
+
+func TestBuildUserContent_InlinesVoiceAttachment(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "voice.ogg")
+	data := []byte("voice bytes")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	content, err := buildUserContent("transcribe this", []attachment.Descriptor{{
+		Kind:      attachment.KindVoice,
+		SizeBytes: int64(len(data)),
+		Blob:      &attachment.BlobRef{Path: path},
+	}})
+	if err != nil {
+		t.Fatalf("buildUserContent() error = %v", err)
+	}
+	if len(content.Parts) != 3 {
+		t.Fatalf("parts = %d, want 3", len(content.Parts))
+	}
+	if content.Parts[2].InlineData == nil {
+		t.Fatal("voice inline data = nil, want bytes")
+	}
+	if got := content.Parts[2].InlineData.MIMEType; got != "audio/ogg" {
+		t.Fatalf("voice MIME type = %q, want audio/ogg", got)
+	}
+	if !bytes.Equal(content.Parts[2].InlineData.Data, data) {
+		t.Fatalf("voice inline bytes = %q, want %q", content.Parts[2].InlineData.Data, data)
+	}
+}
+
+func TestBuildUserContent_PreservesExplicitVoiceMIME(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "voice.bin")
+	if err := os.WriteFile(path, []byte("voice bytes"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	content, err := buildUserContent("listen", []attachment.Descriptor{{
+		Kind:     attachment.KindVoice,
+		MIMEType: "audio/opus",
+		Blob:     &attachment.BlobRef{Path: path},
+	}})
+	if err != nil {
+		t.Fatalf("buildUserContent() error = %v", err)
+	}
+	if got := content.Parts[2].InlineData.MIMEType; got != "audio/opus" {
+		t.Fatalf("voice MIME type = %q, want audio/opus", got)
+	}
+}
 
 func TestBuildUserContent_InlinesPhotoAttachment(t *testing.T) {
 	t.Parallel()
