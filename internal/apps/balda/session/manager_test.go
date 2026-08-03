@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -94,6 +95,32 @@ func TestStopSession_PersistentModeSuspendsWithoutDeletingMetadata(t *testing.T)
 	}
 }
 
+func TestStopSessionPublishesOneCloseBoundary(t *testing.T) {
+	observer := &fakeBoundaryObserver{}
+	store := &fakeSessionStore{}
+	locator := testTelegramLocator(10, 42)
+	m := &Manager{
+		logger:           zerolog.Nop(),
+		sessionStore:     store,
+		boundaryObserver: observer,
+		sessions: map[string]*TopicSession{
+			locator.SessionID: {
+				sessionID: locator.SessionID,
+				locator:   locator,
+			},
+		},
+	}
+
+	m.StopSession(locator)
+
+	if len(observer.boundaries) != 1 {
+		t.Fatalf("close boundaries = %d, want 1", len(observer.boundaries))
+	}
+	if observer.boundaries[0].Reason != BoundaryReasonClose {
+		t.Fatalf("boundary reason = %q, want close", observer.boundaries[0].Reason)
+	}
+}
+
 func TestResetSession_DeletesRuntimeHistoryAndPreservesMetadata(t *testing.T) {
 	ctx := context.Background()
 	store := &fakeSessionStore{}
@@ -137,6 +164,128 @@ func TestResetSession_DeletesRuntimeHistoryAndPreservesMetadata(t *testing.T) {
 		SessionID: "tg-10-42",
 	}); err == nil {
 		t.Fatal("runtime session still exists after ResetSession")
+	}
+}
+
+func TestResetSessionPublishesBoundaryBeforeRuntimeDeletion(t *testing.T) {
+	ctx := context.Background()
+	svc := adksession.InMemoryService()
+	created, err := svc.Create(ctx, &adksession.CreateRequest{
+		AppName:   "norma-balda",
+		UserID:    "tg-101",
+		SessionID: "tg-10-42",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	observer := &fakeBoundaryObserver{}
+	observer.before = func(ctx context.Context, boundary SessionBoundary) {
+		if boundary.Reason != BoundaryReasonReset {
+			return
+		}
+		_, getErr := svc.Get(ctx, &adksession.GetRequest{
+			AppName:   "norma-balda",
+			UserID:    "tg-101",
+			SessionID: boundary.AgentSessionID,
+		})
+		observer.runtimeStillExists = getErr == nil
+	}
+	m := &Manager{
+		logger:           zerolog.Nop(),
+		sessionStore:     &fakeSessionStore{},
+		boundaryObserver: observer,
+		sessions: map[string]*TopicSession{
+			"tg-10-42": {
+				sessionID:      "tg-10-42",
+				agentSessionID: "tg-10-42",
+				userID:         "tg-101",
+				locator:        testTelegramLocator(10, 42),
+				sessionSvc:     svc,
+				sess:           created.Session,
+			},
+		},
+	}
+
+	if err := m.ResetSession(ctx, testTelegramLocator(10, 42)); err != nil {
+		t.Fatalf("ResetSession() error = %v", err)
+	}
+	if len(observer.boundaries) != 1 {
+		t.Fatalf("boundaries = %d, want 1", len(observer.boundaries))
+	}
+	boundary := observer.boundaries[0]
+	if boundary.Reason != BoundaryReasonReset || boundary.TransitionID == "" || boundary.OccurredAt.IsZero() {
+		t.Fatalf("boundary = %+v", boundary)
+	}
+	if !observer.runtimeStillExists {
+		t.Fatal("runtime session was deleted before boundary observer ran")
+	}
+}
+
+func TestResetSessionBoundaryFailureDoesNotPreventRuntimeDeletion(t *testing.T) {
+	ctx := context.Background()
+	svc := adksession.InMemoryService()
+	created, err := svc.Create(ctx, &adksession.CreateRequest{
+		AppName:   "norma-balda",
+		UserID:    "tg-101",
+		SessionID: "tg-10-42",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	m := &Manager{
+		logger:           zerolog.Nop(),
+		sessionStore:     &fakeSessionStore{},
+		boundaryObserver: &fakeBoundaryObserver{err: errors.New("publisher unavailable")},
+		sessions: map[string]*TopicSession{
+			"tg-10-42": {
+				sessionID:      "tg-10-42",
+				agentSessionID: "tg-10-42",
+				userID:         "tg-101",
+				locator:        testTelegramLocator(10, 42),
+				sessionSvc:     svc,
+				sess:           created.Session,
+			},
+		},
+	}
+
+	if err := m.ResetSession(ctx, testTelegramLocator(10, 42)); err == nil {
+		t.Fatal("ResetSession() error = nil, want boundary failure")
+	}
+	if _, err := svc.Get(ctx, &adksession.GetRequest{
+		AppName:   "norma-balda",
+		UserID:    "tg-101",
+		SessionID: "tg-10-42",
+	}); err == nil {
+		t.Fatal("runtime session still exists after failed boundary publication")
+	}
+}
+
+func TestShutdownBoundaryIsPublishedOnceAcrossLifecycleAndManagerStop(t *testing.T) {
+	observer := &fakeBoundaryObserver{}
+	locator := testTelegramLocator(10, 42)
+	m := &Manager{
+		logger:           zerolog.Nop(),
+		boundaryObserver: observer,
+		sessions: map[string]*TopicSession{
+			locator.SessionID: {
+				sessionID:      locator.SessionID,
+				agentSessionID: "adk-42",
+				locator:        locator,
+			},
+		},
+	}
+
+	if err := m.PublishShutdownBoundaries(context.Background()); err != nil {
+		t.Fatalf("PublishShutdownBoundaries() error = %v", err)
+	}
+	if err := m.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if len(observer.boundaries) != 1 {
+		t.Fatalf("shutdown boundaries = %d, want 1", len(observer.boundaries))
+	}
+	if observer.boundaries[0].Reason != BoundaryReasonShutdown {
+		t.Fatalf("boundary reason = %q, want shutdown", observer.boundaries[0].Reason)
 	}
 }
 
@@ -750,6 +899,21 @@ func testTelegramLocator(chatID int64, topicID int) SessionLocator {
 		panic(err)
 	}
 	return locator
+}
+
+type fakeBoundaryObserver struct {
+	boundaries         []SessionBoundary
+	err                error
+	before             func(context.Context, SessionBoundary)
+	runtimeStillExists bool
+}
+
+func (f *fakeBoundaryObserver) BeforeSessionBoundary(ctx context.Context, boundary SessionBoundary) error {
+	f.boundaries = append(f.boundaries, boundary)
+	if f.before != nil {
+		f.before(ctx, boundary)
+	}
+	return f.err
 }
 
 type fakeSessionStore struct {

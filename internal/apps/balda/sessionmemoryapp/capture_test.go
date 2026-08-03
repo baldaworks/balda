@@ -174,3 +174,81 @@ func TestScopeResolverRejectsUnknownAndNonCanonicalLocators(t *testing.T) {
 		t.Fatalf("Resolve(non-canonical) error = %v, code = %q", err, code)
 	}
 }
+
+func TestBoundaryCapturePublishesStableBoundary(t *testing.T) {
+	t.Parallel()
+
+	publisher := &capturePublisher{}
+	resolver := NewScopeResolver(map[string]ScopeClassifier{
+		"telegram": func(deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+			return deliverycmd.LocatorScopeGroup, nil
+		},
+	})
+	capture := NewBoundaryCapture(publisher, resolver)
+	capture.now = func() time.Time { return time.Date(2026, 8, 3, 4, 5, 6, 0, time.UTC) }
+	req := BoundaryCaptureRequest{
+		Locator:        testCaptureLocator(t, "telegram", "-100:77", "tg--100-77"),
+		AgentSessionID: "adk-42",
+		TransitionID:   "shutdown-42",
+		Reason:         sessionmemory.BoundaryReasonShutdown,
+	}
+	result, err := capture.Capture(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Capture() error = %v", err)
+	}
+	if !result.Attempted || result.ExportID == "" || len(publisher.exports) != 1 {
+		t.Fatalf("result = %+v, exports = %d", result, len(publisher.exports))
+	}
+	boundary := publisher.exports[0].Boundary
+	if boundary == nil {
+		t.Fatal("published boundary is nil")
+	}
+	if boundary.Scope.Key != "telegram:-100:77" || boundary.Scope.Kind != sessionmemory.ScopeKindGroup {
+		t.Fatalf("scope = %+v", boundary.Scope)
+	}
+	if boundary.Session.SessionID != "tg--100-77" || boundary.Session.AgentSessionID != "adk-42" {
+		t.Fatalf("session = %+v", boundary.Session)
+	}
+	if boundary.TransitionID != req.TransitionID || boundary.Reason != req.Reason ||
+		!boundary.OccurredAt.Equal(time.Date(2026, 8, 3, 4, 5, 6, 0, time.UTC)) {
+		t.Fatalf("boundary = %+v", *boundary)
+	}
+
+	second, err := capture.Capture(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second Capture() error = %v", err)
+	}
+	if second.ExportID != result.ExportID {
+		t.Fatalf("second export id = %q, want %q", second.ExportID, result.ExportID)
+	}
+}
+
+func TestBoundaryCaptureRejectsInvalidReasonAndReturnsPublishFailure(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewScopeResolver(map[string]ScopeClassifier{
+		"telegram": func(deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+			return deliverycmd.LocatorScopePersonal, nil
+		},
+	})
+	invalid := NewBoundaryCapture(&capturePublisher{}, resolver)
+	_, err := invalid.Capture(context.Background(), BoundaryCaptureRequest{
+		Locator:      testCaptureLocator(t, "telegram", "123:0", "tg-123-0"),
+		TransitionID: "transition-1",
+		Reason:       "unknown",
+	})
+	if err == nil {
+		t.Fatal("invalid reason Capture() error = nil")
+	}
+
+	publisher := &capturePublisher{err: errors.New("puback timeout")}
+	capture := NewBoundaryCapture(publisher, resolver)
+	result, err := capture.Capture(context.Background(), BoundaryCaptureRequest{
+		Locator:      testCaptureLocator(t, "telegram", "123:0", "tg-123-0"),
+		TransitionID: "transition-1",
+		Reason:       sessionmemory.BoundaryReasonClose,
+	})
+	if err == nil || !result.Attempted || len(publisher.exports) != 1 {
+		t.Fatalf("result = %+v, err = %v, exports = %d", result, err, len(publisher.exports))
+	}
+}

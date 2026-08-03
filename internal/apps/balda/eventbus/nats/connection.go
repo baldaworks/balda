@@ -21,16 +21,17 @@ import (
 )
 
 type Bus struct {
-	cfg            resolvedConfig
-	embedded       *EmbeddedNATS
-	conn           *gnats.Conn
-	js             jetstream.JetStream
-	consumer       jetstream.Consumer
-	eventConsumer  jetstream.Consumer
-	memoryConsumer jetstream.Consumer
-	logger         zerolog.Logger
-	startMu        sync.Mutex
-	started        bool
+	cfg                    resolvedConfig
+	embedded               *EmbeddedNATS
+	conn                   *gnats.Conn
+	js                     jetstream.JetStream
+	consumer               jetstream.Consumer
+	eventConsumer          jetstream.Consumer
+	memoryConsumer         jetstream.Consumer
+	logger                 zerolog.Logger
+	startMu                sync.Mutex
+	sessionMemoryPublishMu sync.Mutex
+	started                bool
 }
 
 type Params struct {

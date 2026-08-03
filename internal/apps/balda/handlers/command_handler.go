@@ -493,7 +493,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatel
 		if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "session canceled by close command", false); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish /close cancel control command")
 		}
-		if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
+		if err := resetSessionWithReason(ctx, h.sessionManager, commandCtx.Locator, session.BoundaryReasonClose); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset session during /close")
 			if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not close this topic."); sendErr != nil {
 				return sendErr
@@ -512,7 +512,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatel
 	if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "session canceled by close command", false); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish /close cancel control command")
 	}
-	if err := h.sessionManager.ResetSession(ctx, commandCtx.Locator); err != nil {
+	if err := resetSessionWithReason(ctx, h.sessionManager, commandCtx.Locator, session.BoundaryReasonClose); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to reset main dm session during /close")
 		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not reset this session."); sendErr != nil {
 			return sendErr

@@ -47,6 +47,11 @@ type SessionMemoryDelivery struct {
 
 // PublishSessionMemory validates and durably publishes one export with bounded retries.
 func (b *Bus) PublishSessionMemory(ctx context.Context, export sessionmemorycmd.Export) (SessionMemoryPublishReceipt, error) {
+	if b == nil {
+		return SessionMemoryPublishReceipt{}, fmt.Errorf("runtime transport is required")
+	}
+	b.sessionMemoryPublishMu.Lock()
+	defer b.sessionMemoryPublishMu.Unlock()
 	if err := b.requireStarted(); err != nil {
 		return SessionMemoryPublishReceipt{}, err
 	}

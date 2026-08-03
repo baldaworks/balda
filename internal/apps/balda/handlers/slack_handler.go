@@ -753,7 +753,7 @@ func (h *SlackChatHandler) handleCloseCommand(ctx context.Context, locator balda
 		return
 	}
 	_ = submitSessionCancelControl(ctx, h.actorDispatcher, locator, subject, "session canceled by close command", false)
-	if err := h.sessionManager.ResetSession(ctx, locator); err != nil {
+	if err := resetSessionWithReason(ctx, h.sessionManager, locator, baldasession.BoundaryReasonClose); err != nil {
 		_ = h.sendPlain(ctx, locator, "Could not close this session.")
 		return
 	}

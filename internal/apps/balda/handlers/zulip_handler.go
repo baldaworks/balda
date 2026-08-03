@@ -887,7 +887,7 @@ func (h *ZulipBaldaHandler) handleCloseCommand(
 	); submitErr != nil {
 		h.logger.Warn().Err(submitErr).Str("session_id", locator.SessionID).Msg("failed to submit cancel control for /close")
 	}
-	if err := h.sessionManager.ResetSession(ctx, locator); err != nil {
+	if err := resetSessionWithReason(ctx, h.sessionManager, locator, baldasession.BoundaryReasonClose); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to reset session for /close")
 		_ = h.sendPlain(ctx, locator, "Could not close this session.")
 		return
