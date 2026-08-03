@@ -7,9 +7,9 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 type boundaryObserverPublisher struct {

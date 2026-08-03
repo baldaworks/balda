@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 func TestClientImplementsV1ProtocolWithAuthAndIdempotency(t *testing.T) {

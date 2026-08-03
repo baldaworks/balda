@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 const (

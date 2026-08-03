@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 func TestProviderRecordsCallsAndUsesCallbacks(t *testing.T) {

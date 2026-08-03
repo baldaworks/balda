@@ -3,7 +3,7 @@ package sessionmemoryapp
 import (
 	"context"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 // DisabledProvider is the stable no-op provider used when session memory is

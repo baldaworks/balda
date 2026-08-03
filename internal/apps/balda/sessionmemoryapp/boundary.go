@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 // BoundaryCaptureRequest contains the old session identity that must be

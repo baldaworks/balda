@@ -15,7 +15,7 @@ components:
   # use only the standard library and must remain independent of Balda policy.
   session_memory_core:
     in:
-      - internal/apps/balda/sessionmemory
+      - sessionmemory
 
   # Portable export wire contracts may depend only on the portable core.
   session_memory_contracts:

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 // Provider is a concurrency-safe, callback-configurable in-process fake.

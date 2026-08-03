@@ -9,8 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 const (

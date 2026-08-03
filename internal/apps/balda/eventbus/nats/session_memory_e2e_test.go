@@ -10,9 +10,9 @@ import (
 	"time"
 
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryhttp"
+	"github.com/normahq/balda/sessionmemory"
 	"github.com/rs/zerolog"
 )
 

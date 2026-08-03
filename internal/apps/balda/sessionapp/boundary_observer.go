@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 // SessionBoundaryObserverAdapter maps the session lifecycle port to the

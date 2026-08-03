@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 func TestExportRoundTrip(t *testing.T) {

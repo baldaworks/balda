@@ -10,9 +10,9 @@ import (
 	"time"
 
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemory"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryhttp"
+	"github.com/normahq/balda/sessionmemory"
 )
 
 const (
