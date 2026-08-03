@@ -30,6 +30,20 @@ const (
 	CodePermanent ErrorCode = "permanent"
 	// CodeShuttingDown means the integration is no longer accepting work.
 	CodeShuttingDown ErrorCode = "shutting_down"
+	// CodeInvalidDerived means derived memory or provenance is malformed.
+	CodeInvalidDerived ErrorCode = "invalid_derived"
+	// CodeConflict means optimistic concurrency or revision state changed.
+	CodeConflict ErrorCode = "conflict"
+	// CodeNotFound means a requested source or revision does not exist.
+	CodeNotFound ErrorCode = "not_found"
+	// CodeForgotten means content was removed by a forgetting operation.
+	CodeForgotten ErrorCode = "forgotten"
+	// CodeLimitExceeded means a derived-memory hard bound was exceeded.
+	CodeLimitExceeded ErrorCode = "limit_exceeded"
+	// CodeStoreFailure means the persistence port failed.
+	CodeStoreFailure ErrorCode = "store_failure"
+	// CodeModelFailure means a model port failed.
+	CodeModelFailure ErrorCode = "model_failure"
 )
 
 // ErrorClass controls whether a failed operation may be retried.
