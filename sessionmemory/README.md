@@ -50,7 +50,7 @@ A Store must atomically enforce idempotency, CAS, revision transitions, and reve
 
 ## Retrieval and trust
 
-`Engine.Search` and `Engine.Trace` are bounded, explicit, on-demand reads. The engine validates all Store output for exact scope, active state, filters, graph closure, cycles, and response bounds. Results carry `ReferenceTrustUntrusted`; they are reference data, not executable instructions. The package has no automatic prompt-injection API.
+`Engine.Search` and `Engine.Trace` are bounded, explicit, on-demand reads. Search validates exact scope, active state, filters, deterministic result shape, and response bounds. Trace additionally requires a closed, acyclic provenance graph with no forgotten source content. Results carry `ReferenceTrustUntrusted`; they are reference data, not executable instructions. The package has no automatic prompt-injection API.
 
 ## Forgetting
 
