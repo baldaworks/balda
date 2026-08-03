@@ -27,6 +27,12 @@ components:
     in:
       - internal/apps/balda/sessionmemorytest
 
+  # Vendor-neutral HTTP provider adapter; it may depend only on the portable
+  # core and standard-library HTTP primitives.
+  session_memory_http:
+    in:
+      - internal/apps/balda/sessionmemoryhttp
+
   # Generic, reusable building blocks that must stay free of Balda product policy.
   foundation:
     in:
@@ -138,6 +144,11 @@ deps:
     anyVendorDeps: false
 
   session_memory_testkit:
+    mayDependOn:
+      - session_memory_core
+    anyVendorDeps: false
+
+  session_memory_http:
     mayDependOn:
       - session_memory_core
     anyVendorDeps: false
