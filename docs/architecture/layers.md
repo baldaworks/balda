@@ -18,6 +18,7 @@ This document defines layer ownership for the Balda application. The goal is to 
 | `github.com/baldaworks/go-actorlayer` | generic actor runtime primitives, envelopes, transport-facing contracts, retry/error helpers | Balda product policy |
 | `internal/apps/balda/execution` | Balda runtime policy, host lifecycle, lane policy, dead-letter behavior, runtime wiring | feature semantics, ingress behavior |
 | `internal/apps/balda/handlers` | ingress parsing, auth/session checks, publishing work into actor/runtime system | feature execution logic, provider settlement policy |
+| `internal/apps/balda/handlersfx` | composition-root adapters that bind ingress-owned ports to concrete provider runtimes | ingress policy, turn execution, reusable transport behavior |
 | `internal/apps/balda/actors` | product actor behavior and feature-owned orchestration | transport parsing, generic runtime policy |
 | `internal/apps/balda/actors/goalkeeper` | goal feature actor behavior, goal run lifecycle, goal progress/outcome assembly | generic runtime policy, provider-specific delivery logic |
 | `internal/apps/balda/jobs` | durable job state, events, projection-oriented application services | ingress behavior, transport execution |
@@ -27,6 +28,7 @@ This document defines layer ownership for the Balda application. The goal is to 
 ## Dependency rules
 
 - `handlers` may depend on contracts and application services, but should not depend on actor implementation details unless they are publishing actor-owned commands.
+- `handlersfx` may bind concrete runtimes to small ingress ports, but should not become a second ingress or delivery owner.
 - `execution` may wire product behavior, but should not become the owner of feature contracts.
 - `actors` may use jobs/session/application services, but should not absorb provider adapter details.
 - `channel/*` packages should not know product workflow steps.

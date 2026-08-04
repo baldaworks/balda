@@ -14,6 +14,34 @@ presentation markup must remain literal.
 This setting is Telegram-specific. Slack uses its native `mrkdwn` route and
 Zulip uses its native Markdown route.
 
+## Configuration and migration
+
+Configure the mode in YAML or with its environment override:
+
+```yaml
+balda:
+  telegram:
+    formatting_mode: rich_markdown
+```
+
+```bash
+BALDA_TELEGRAM_FORMATTING_MODE=rich_markdown
+```
+
+The supported values are a hard-cut contract. Replace an older `markdownv2`
+value with `rich_markdown` (or `none`) and an older `html` value with
+`rich_html` (or `none`) before deploying this version. There is no transitional
+decoder for old configuration values or already-enqueued delivery payloads.
+For an upgrade with pending work, stop old ingress and drain the existing
+actor-command backlog before starting the new version. Unsupported values and
+incomplete format registries fail during startup, before provider ingress is
+ready.
+
+Balda persists only the transport capability on turn and delivery commands.
+At startup, one immutable registry resolves that capability to both the agent
+prompt instructions and the process-local formatter. This keeps generated and
+delivered formatting on the same route without persisting formatter internals.
+
 ## Rich Markdown
 
 Use `rich_markdown` when agents should write natural Markdown. Balda preserves

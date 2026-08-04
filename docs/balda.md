@@ -18,7 +18,7 @@ Architecture contracts are maintained in:
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.
 - Output streaming:
   - Progress updates: non-terminal provider progress emits channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders.
-  - Final assistant response uses `balda.telegram.formatting_mode` (`rich_markdown|rich_html|markdownv2|html|none`; default `rich_markdown`).
+  - Final assistant response uses `balda.telegram.formatting_mode` (`rich_markdown|rich_html|none`; default `rich_markdown`; `none` is literal plain text).
 - Auth model: one-time owner authorization with startup-generated token.
 
 ## User Onboarding Reference
@@ -208,7 +208,8 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/sessionturn`: queued-turn restoration behind a narrow executor port.
 - `internal/apps/balda/sessionturnapp`: queued turn execution wiring, provider execution, progress dispatch, and turn-specific adapters.
 - `internal/apps/balda/internalmcp`: bundled MCP construction and lifecycle.
-- `internal/apps/balda/handlers`: transport ingress only. It parses Telegram/Slack/Zulip/webhook/scheduler input, checks auth/session rules, and publishes actor work. It must not own product actors or direct transport settlement policy.
+- `internal/apps/balda/handlers`: transport ingress only. It normalizes Telegram/Slack/Zulip/webhook/scheduler input, checks auth/session rules, and publishes actor work. It must not own product actors, provider-turn execution, or delivery policy.
+- `internal/apps/balda/handlersfx`: composition-root adapters that bind handler-owned ports to concrete provider runtimes without moving ingress policy into wiring.
 - `internal/apps/balda/channel/*` and `internal/apps/balda/messenger`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
 - `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, memory, scheduler state, job tables, and delivery idempotency state.
 
@@ -238,7 +239,8 @@ Balda's actorlayer integration is intentionally direct:
 
 - `internal/apps/balda/execution/host.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
 - `internal/apps/balda/actors`: defines Balda product actors for session, job, goal, delivery, control, and memory command contracts.
-- `internal/apps/balda/handlers`: owns ingress, command parsing, and dispatching actor command envelopes.
+- `internal/apps/balda/handlers`: owns ingress normalization, command parsing, precondition checks, and durable actor-command publication.
+- `internal/apps/balda/handlersfx`: binds handler-owned ports to concrete provider runtimes at the composition root.
 - `internal/apps/balda/sessionturn`: owns queued session restore/create and delegates the provider iteration to the executor adapter.
 - `internal/apps/balda/actorcmd`: owns product command/event wire constants shared by actors, runtime, jobs, and ingress.
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
@@ -254,13 +256,15 @@ and Balda keeps product policy in Balda.
 
 Balda startup order is strict:
 
-1. Load runtime + balda config.
+1. Load runtime + Balda config, then construct and validate the immutable delivery-format registry.
 2. Start internal MCP lifecycle manager.
 3. Start Balda provider runtime via `RuntimeManager.EnsureRuntime(...)`.
 4. Start session/mailbox and durable actor infrastructure: event projector, job-event outbox publisher, and actor host.
 5. Bootstrap Telegram owner state, then start scheduler, inbound webhooks, Zulip, Slack, and Telegram ingress.
 
-One composition-root coordinator owns this order. Shutdown runs the same stages in reverse, so ingress stops before actor/provider/MCP resources.
+One composition-root coordinator owns this order. Configuration or registry
+errors fail before any ingress stage can become ready. Shutdown runs the same
+stages in reverse, so ingress stops before actor/provider/MCP resources.
 
 Internal MCP v1 scope is config + lifecycle plumbing; server implementations can be added incrementally.
 
@@ -571,14 +575,14 @@ balda:
     - balda config file key `balda.telegram.token`
   - when `.env` storage is selected, existing `.env` content is preserved and `BALDA_TELEGRAM_TOKEN` is upserted
 - `balda.telegram.formatting_mode`: final assistant response format mode.
-  - allowed values: `rich_markdown`, `rich_html`, `markdownv2`, `html`, `none`
+  - allowed values: `rich_markdown`, `rich_html`, `none`
   - default: `rich_markdown`
   - `rich_markdown` accepts Markdown/plain text from the model and sends it with Telegram rich messages
   - `rich_html` accepts rich-message HTML from the model and sends it with Telegram rich messages
-  - `markdownv2` is the legacy mode that converts normal Markdown/plain text to Telegram MarkdownV2
-  - `html` is the legacy mode that sends Telegram HTML with `parse_mode=HTML`
-  - `none` is the legacy mode that sends raw text with no formatting mode
+  - `none` sends literal plain text without Telegram `parse_mode`
   - invalid values fail startup
+  - migration is a hard cut: replace an older `markdownv2` value with `rich_markdown` (or `none`) and an older `html` value with `rich_html` (or `none`); no compatibility aliases are accepted
+  - before a mixed-version upgrade, stop old ingress and drain pending actor commands so old delivery payloads do not cross the format-contract boundary
   - see [Telegram Message Formatting](telegram-formatting.md) for supported tags, unsupported tags, and escaping behavior
 - `balda.telegram.plan_updates`: control visibility of work-plan progress in Telegram (default: `true`)
   - `true`: DM chats replace generic thinking placeholders with plan snapshots when the provider emits plan updates
@@ -1080,18 +1084,24 @@ This story does not vendor a memory SDK or move `pack/callee/**`.
 
 ### Delivery formatting
 
-Balda actor commands carry a request-scoped delivery format so session, goal,
-and job-result replies render consistently across transports.
+Turn and delivery commands persist only a transport capability. One immutable
+startup registry resolves that capability to both agent prompt instructions and
+a process-local formatter, so generation and delivery use the same route.
 
-| Delivery format | Meaning | Telegram | Slack | Zulip |
-| --- | --- | --- | --- | --- |
-| `auto` | Use the target channel default | configured `balda.telegram.formatting_mode` | Markdown-style text | Markdown-style text |
-| `markdown` | Channel-native Markdown-style formatting | configured Telegram Markdown-capable mode | Slack `mrkdwn` | Zulip Markdown |
-| `html` | Channel-native HTML where supported | Telegram HTML-capable mode | unsupported | unsupported |
-| `plain` | No markup | no Telegram `parse_mode` | Slack `mrkdwn=false` | plain-text fallback |
+| Transport | Durable capability | Registered formatter | Delivery behavior |
+| --- | --- | --- | --- |
+| Telegram | `rich_markdown` | `telegram_rich_markdown` | Telegram rich Markdown |
+| Telegram | `rich_html` | `telegram_rich_html` | sanitized Telegram Rich HTML |
+| Telegram | `none` | `plain_text` | literal text without `parse_mode` |
+| Slack / Slack Agent | `mrkdwn` | `slack_mrkdwn` | Slack `mrkdwn` |
+| Slack / Slack Agent | `none` | `plain_text` | literal plain text |
+| Zulip | `markdown` | `zulip_markdown` | Zulip Markdown |
+| Zulip | `none` | `plain_text` | literal plain text |
 
-The public Telegram config remains `balda.telegram.formatting_mode`; Slack and
-Zulip do not use Telegram formatting mode names.
+Registered formatter names are process-local implementation details and never
+enter the durable wire contract. The public Telegram setting selects one of
+its three capabilities; Slack and Zulip do not use Telegram mode names. A
+missing capability route, prompt definition, or formatter is a startup error.
 
 ## Session Model
 
@@ -1110,9 +1120,9 @@ By default, Balda also persists session history and state in `state.db` until th
 Ordinary conversational chat transports follow the same runtime model.
 
 1. User sends a chat message through Telegram, Slack, or Zulip.
-2. The channel handler resolves the Balda session locator for that chat/thread/topic.
+2. The ingress handler normalizes provider data and resolves the Balda session locator for that chat/thread/topic.
 3. If the session is missing in memory, Balda attempts lazy restore from persisted metadata.
-4. Conversational ingress publishes a durable `balda.v1.cmd.session` envelope directly to the session actor lane.
+4. Conversational ingress publishes exactly one durable `balda.v1.cmd.session` envelope directly to the session actor lane for the normalized inbound item.
 5. The session actor runs the configured provider runtime for that session and emits separate delivery envelopes for progress/final replies.
 
 Telegram-specific message selection rules:
@@ -1129,10 +1139,8 @@ Per model turn:
 2. Final assistant text uses `balda.telegram.formatting_mode`:
    - `rich_markdown`: model writes Markdown/plain text; Balda sends Telegram rich Markdown.
    - `rich_html`: model writes rich-message HTML; Balda sends Telegram rich HTML.
-   - `markdownv2`: model writes Markdown/plain text; Balda converts it to Telegram MarkdownV2.
-   - `html`: model writes Telegram HTML; Balda escapes unsafe raw text and preserves supported Telegram HTML tags.
-   - `none`: Balda sends raw text with no formatting mode.
-3. If rich-message delivery fails at transport or formatting-validation level, balda retries once using the legacy path for that mode.
+   - `none`: Balda sends literal text without Telegram `parse_mode`.
+3. If Telegram explicitly rejects rich formatting, Balda makes at most one parse-mode-free plain send. Ambiguous transport failures, timeouts, authentication errors, rate limits, and provider errors do not trigger presentation fallback.
 
 ## Slack Chat Messaging Behavior
 
@@ -1552,7 +1560,7 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 - If that sync conflicts, balda recreates a clean worktree on the persisted session branch, restores the session anyway, and sends a short warning that the workspace was reset to the saved session-branch state and Balda can retry the sync later.
 - If no persisted session metadata exists, balda creates a new regular session using label `auto`.
 - Public-channel welcome banners always display `Name: balda` to keep app identity stable, even when the internal persisted session label differs.
-- Welcome message uses a user-friendly MarkdownV2 format:
+- Welcome messages use the current transport formatting route:
   - Example:
     🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `opencode/big-pickle` • **Type:** `opencode_acp` • **MCP:** `balda`
 
@@ -1605,7 +1613,7 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 7. Restart clears active process sessions; persisted non-owner sessions are lazy-restored from metadata when addressed again, while the owner main-DM session is bootstrapped during startup.
 8. Polling mode resumes from persisted Telegram offset in balda state DB.
 9. Non-terminal session progress always emits progress activity; Telegram sends typing indicators in DM and public chats for that activity, while only visible progress renders as drafts/messages. Thinking placeholders remain DM-only.
-10. Final assistant response uses configured `balda.telegram.formatting_mode`; `rich_markdown` retries once as plain text on rich-message delivery errors, and `rich_html` retries once through the legacy HTML path.
+10. Final assistant response uses configured `balda.telegram.formatting_mode`; `none` is literal plain text, while rich modes make at most one parse-mode-free plain send only after an explicit Telegram formatting rejection.
 11. `/reset` and `/restart` cancel current session work, clear history, and immediately start a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
 12. `/locator` returns the current session locator in the config form `<channel_type>:<address_key>`.
 13. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.

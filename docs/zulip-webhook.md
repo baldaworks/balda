@@ -19,9 +19,9 @@ User → Zulip stream/topic or DM
 Balda maps Zulip stream+topic pairs to separate agent sessions (equivalent to
 Telegram forum topics), and Zulip DMs to a personal DM session.
 
-Zulip replies use Balda's shared delivery format. The `markdown` and `auto`
-formats are sent as Zulip Markdown; `plain` uses Balda's plain-text fallback;
-`html` is not supported for Zulip delivery.
+Zulip replies use Balda's shared delivery registry. The `markdown` capability
+routes to Zulip Markdown, while `none` routes to literal plain text. Telegram
+format names are not valid Zulip capabilities.
 
 ## Setup
 
@@ -131,7 +131,7 @@ starting with `/`, for example `/zulip/webhook`.
 | Ingress | Polling or webhook | Outgoing webhook only |
 | Topic creation | `/topic <name>` command | Native Zulip topics |
 | Topic close | Removes forum topic | Resets session history |
-| Message formatting | MarkdownV2 / HTML / plain | Standard Markdown |
+| Message formatting | Rich Markdown / Rich HTML / plain | Standard Markdown / plain |
 | Plan update drafts | Edits-in-place (`SendDraftPlain`) | No-op (not supported) |
 | Progress typing | Typing indicator | Typing indicator |
 

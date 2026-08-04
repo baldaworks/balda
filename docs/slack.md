@@ -21,9 +21,9 @@ Slack Events API / slash command
 Balda maps Slack DMs to personal sessions and Slack channel threads to isolated
 topic sessions.
 
-Slack replies use Balda's shared delivery format. The `markdown` and `auto`
-formats are sent as Slack `mrkdwn`; `plain` disables `mrkdwn`; `html` is not
-supported for Slack delivery.
+Slack replies use Balda's shared delivery registry. The `mrkdwn` capability
+routes to Slack `mrkdwn`, while `none` routes to literal plain text. Telegram
+format names are not valid Slack capabilities.
 
 ## Slack App Setup
 

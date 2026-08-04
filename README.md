@@ -257,6 +257,8 @@ Common settings:
 
 - `balda.provider` — which configured provider runtime to use
 - `balda.telegram.token` — Telegram bot token
+- `balda.telegram.formatting_mode` — Telegram output mode: `rich_markdown`
+  (default), `rich_html`, or `none` for literal plain text
 - `balda.zulip.*` — Zulip outgoing webhook bot credentials and receiver config
 - `balda.slack.*` — Slack bot token, signing secret, and HTTP receiver config
 - `balda.webhooks.*` — optional inbound webhook routes
@@ -270,6 +272,14 @@ Common settings:
 agent tool call is trusted. Production chat deployments should normally set
 `BALDA_PERMISSIONS_MODE=ask`; unsupported channels, missing requester context,
 cancellation, and timeout fail closed.
+
+Set `BALDA_TELEGRAM_FORMATTING_MODE` to override the Telegram mode. Existing
+`markdownv2` configurations must move to `rich_markdown` (or `none`), and
+existing `html` configurations must move to `rich_html` (or `none`). Balda does
+not accept compatibility aliases: an unsupported value fails startup before
+ingress begins accepting messages. See the
+[Telegram formatting guide](docs/telegram-formatting.md) for rollout and
+fallback details.
 
 For complete configuration, examples, and provider-specific details, see
 [docs/balda.md](docs/balda.md).
