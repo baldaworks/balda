@@ -66,13 +66,14 @@ const (
 )
 
 type TurnExecutionService struct {
-	dispatcher   actortransport.Dispatcher
-	jobEvents    jobEventAppender
-	sessions     runtimeStateReader
-	turnCapture  CompletedTurnCapture
-	logger       zerolog.Logger
-	autoMaxTurns int
-	now          func() time.Time
+	dispatcher     actortransport.Dispatcher
+	jobEvents      jobEventAppender
+	sessions       runtimeStateReader
+	turnCapture    CompletedTurnCapture
+	formatComposer *FormatPromptComposer
+	logger         zerolog.Logger
+	autoMaxTurns   int
+	now            func() time.Time
 }
 
 func (s *TurnExecutionService) currentTime() time.Time {
@@ -122,14 +123,42 @@ func NewTurnExecutionServiceWithJobEventsAndCapture(
 	autoMaxTurns int,
 	turnCapture CompletedTurnCapture,
 ) *TurnExecutionService {
+	return NewTurnExecutionServiceWithFormats(
+		dispatcher,
+		jobEvents,
+		sessions,
+		logger,
+		autoMaxTurns,
+		turnCapture,
+		nil,
+	)
+}
+
+// NewTurnExecutionServiceWithFormats creates a turn executor with optional
+// completed-turn capture and turn-aware message-format prompt composition.
+func NewTurnExecutionServiceWithFormats(
+	dispatcher actortransport.Dispatcher,
+	jobEvents jobEventAppender,
+	sessions runtimeStateReader,
+	logger zerolog.Logger,
+	autoMaxTurns int,
+	turnCapture CompletedTurnCapture,
+	registry messageFormatRegistry,
+) *TurnExecutionService {
+	var formatComposer *FormatPromptComposer
+	if registry != nil {
+		state, _ := sessions.(runtimeStateStore)
+		formatComposer = NewFormatPromptComposer(registry, state)
+	}
 	return &TurnExecutionService{
-		dispatcher:   dispatcher,
-		jobEvents:    jobEvents,
-		sessions:     sessions,
-		turnCapture:  turnCapture,
-		logger:       logger.With().Str("component", "balda.turn_execution").Logger(),
-		autoMaxTurns: automode.NormalizeMaxTurns(autoMaxTurns),
-		now:          time.Now,
+		dispatcher:     dispatcher,
+		jobEvents:      jobEvents,
+		sessions:       sessions,
+		turnCapture:    turnCapture,
+		formatComposer: formatComposer,
+		logger:         logger.With().Str("component", "balda.turn_execution").Logger(),
+		autoMaxTurns:   automode.NormalizeMaxTurns(autoMaxTurns),
+		now:            time.Now,
 	}
 }
 
@@ -189,12 +218,28 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		topicID = address.TopicID
 	}
 
-	userContent, err := buildUserContent(req.Text, req.Attachments)
+	req.DeliveryOptions = deliveryfmt.NormalizeOptions(req.DeliveryOptions)
+	providerText := req.Text
+	var (
+		formatState *formatStateChange
+		err         error
+	)
+	if s.formatComposer != nil {
+		providerText, formatState, err = s.formatComposer.Compose(
+			ctx,
+			req.Locator,
+			req.DeliveryOptions.DeliveryFormat,
+			req.Text,
+		)
+		if err != nil {
+			return fmt.Errorf("compose message format prompt: %w", err)
+		}
+	}
+	userContent, err := buildUserContent(providerText, req.Attachments)
 	if err != nil {
 		return fmt.Errorf("build user content: %w", err)
 	}
 	jobBackedDelivery := req.Deliver && strings.TrimSpace(req.JobID) != "" && s.dispatcher != nil
-	req.DeliveryOptions = deliveryfmt.NormalizeOptions(req.DeliveryOptions)
 	progressPolicy := req.DeliveryOptions.ProgressPolicy
 	deliveryFormat := req.DeliveryOptions.DeliveryFormat
 
@@ -477,6 +522,11 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			sawTurnComplete = true
 			responseText := streamedText.String()
 			memoryResponseText := memoryStreamedText.String()
+			if formatState != nil && successfulFormatTurn(ev, responseText) {
+				if err := s.formatComposer.Commit(ctx, req.Locator, *formatState); err != nil {
+					return err
+				}
+			}
 			if s.turnCapture != nil && strings.TrimSpace(req.Text) != "" && strings.TrimSpace(memoryResponseText) != "" {
 				if sourceTurnID := completedTurnSourceID(req); sourceTurnID != "" {
 					captureErr := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{
@@ -612,6 +662,16 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	}
 
 	return nil
+}
+
+func successfulFormatTurn(event *adksession.Event, responseText string) bool {
+	if event == nil || !event.TurnComplete || event.Interrupted {
+		return false
+	}
+	if strings.TrimSpace(event.ErrorCode) != "" || strings.TrimSpace(event.ErrorMessage) != "" {
+		return false
+	}
+	return strings.TrimSpace(responseText) != ""
 }
 
 func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req ExecutionRequest) error {

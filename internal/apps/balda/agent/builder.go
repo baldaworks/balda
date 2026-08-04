@@ -13,7 +13,6 @@ import (
 	"text/template"
 
 	"github.com/normahq/balda/internal/apps/balda/paths"
-	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
@@ -53,7 +52,6 @@ type Builder struct {
 	workspaceEnabled       bool
 	workspaceBaseBranch    string
 	baldaGlobalInstruction string
-	telegramFormattingMode string
 	sessionSvc             adksession.Service
 	memoryEnabled          bool
 	memorySnapshotReader   MemorySnapshotReader
@@ -87,9 +85,6 @@ type baldaPromptData struct {
 	WorkspaceMode     string
 	BaseBranch        string
 	RepoBranchAtStart string
-	FormattingMode    string
-	FormattingRule    string
-	FormattingExample string
 	MemoryEnabled     bool
 	GlobalInstruction string
 	Instruction       string
@@ -140,12 +135,6 @@ func (b *Builder) buildBaldaInstruction(
 		RepoBranchAtStart: repoBranch,
 		MemoryEnabled:     b.memoryEnabled,
 	}
-	mode := telegramfmt.NormalizeMode(b.telegramFormattingMode)
-	rule, example := telegramfmt.PromptRuleAndExample(mode)
-	data.FormattingMode = mode
-	data.FormattingRule = rule
-	data.FormattingExample = example
-
 	agentInstruction := ""
 	if agentCfg, ok := b.normaCfg.Providers[normalizedAgentName]; ok {
 		agentInstruction = agentCfg.SystemInstructions
@@ -170,7 +159,6 @@ type BuilderParams struct {
 	WorkspaceEnabled       bool               `name:"balda_workspace_enabled"`
 	WorkspaceBaseBranch    string             `name:"balda_workspace_base_branch"`
 	BaldaGlobalInstruction string             `name:"balda_global_instruction"`
-	TelegramFormattingMode string             `name:"balda_telegram_formatting_mode"`
 	SessionService         adksession.Service `name:"balda_runtime_session_service"`
 	MemoryEnabled          bool               `name:"balda_memory_enabled"`
 	MemorySnapshotReader   MemorySnapshotReader
@@ -185,7 +173,6 @@ func NewBuilder(params BuilderParams) *Builder {
 		workspaceEnabled:       params.WorkspaceEnabled,
 		workspaceBaseBranch:    strings.TrimSpace(params.WorkspaceBaseBranch),
 		baldaGlobalInstruction: strings.TrimSpace(params.BaldaGlobalInstruction),
-		telegramFormattingMode: telegramfmt.NormalizeMode(params.TelegramFormattingMode),
 		sessionSvc:             params.SessionService,
 		memoryEnabled:          params.MemoryEnabled,
 		memorySnapshotReader:   params.MemorySnapshotReader,

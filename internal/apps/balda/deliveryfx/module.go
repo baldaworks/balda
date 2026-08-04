@@ -19,6 +19,7 @@ import (
 
 var Module = fx.Module("balda_deliveryfx",
 	fx.Provide(
+		newMessageFormatRegistry,
 		fx.Annotate(
 			func(
 				tgClient client.ClientWithResponsesInterface,

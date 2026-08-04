@@ -5,6 +5,7 @@ import (
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/appports"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
@@ -39,13 +40,14 @@ func newTurnExecutionServiceWithCapture(
 	logger zerolog.Logger,
 	autoMaxTurns int,
 	capture CompletedTurnCapture,
+	registry *deliveryfmt.Registry,
 ) *TurnExecutionService {
-	return NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, jobEvents, sessions, logger, autoMaxTurns, capture)
+	return NewTurnExecutionServiceWithFormats(dispatcher, jobEvents, sessions, logger, autoMaxTurns, capture, registry)
 }
 
 var Module = fx.Module("balda_sessionturnapp",
 	fx.Provide(
-		fx.Annotate(newTurnExecutionServiceWithCapture, fx.ParamTags(``, ``, ``, ``, `name:"balda_automode_max_turns"`, ``)),
+		fx.Annotate(newTurnExecutionServiceWithCapture, fx.ParamTags(``, ``, ``, ``, `name:"balda_automode_max_turns"`, ``, ``)),
 		fx.Annotate(
 			func(capture *sessionmemoryapp.TurnCapture) CompletedTurnCapture {
 				return completedTurnCaptureAdapter{capture: capture}
