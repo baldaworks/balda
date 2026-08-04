@@ -218,16 +218,6 @@ func (h *BaldaHandler) getProviderName() string {
 	return providerName
 }
 
-func (h *BaldaHandler) welcomeDisplayName(messageCtx baldatelegram.MessageContext, ts *baldasession.TopicSession) string {
-	if !messageCtx.IsDM {
-		return ownerSessionLabel
-	}
-	if ts == nil {
-		return ""
-	}
-	return ts.GetAgentName()
-}
-
 func (h *BaldaHandler) getBotIdentity() (int64, string) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

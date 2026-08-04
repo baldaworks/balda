@@ -84,6 +84,51 @@ func TestMessageContextFromEvent_MapsMediaGroupID(t *testing.T) {
 	}
 }
 
+func TestNormalizeInboundUsesStableLogicalTelegramIdentity(t *testing.T) {
+	t.Parallel()
+
+	adapter := &Adapter{}
+	message := MessageContext{
+		Locator:          NewLocator(-1001, 77),
+		ChatID:           -1001,
+		TopicID:          77,
+		MessageID:        101,
+		ReplyToMessageID: 90,
+		UserID:           22,
+		MediaGroupID:     " album-42 ",
+		Attachments: []attachment.Descriptor{
+			{Kind: attachment.KindPhoto, FileID: "first"},
+			{Kind: attachment.KindDocument, FileID: "second"},
+		},
+		DeliveryOptions: deliveryfmt.Options{
+			DeliveryFormat: deliveryfmt.DeliveryFormatRichHTML,
+			ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true},
+		},
+	}
+	receivedAt := time.Date(2026, time.August, 4, 10, 30, 0, 0, time.UTC)
+
+	first := adapter.NormalizeInbound(message, "one caption", receivedAt)
+	message.MessageID = 102
+	redelivered := adapter.NormalizeInbound(message, "one caption", receivedAt)
+
+	const wantID = "telegram:-1001:77:user:22:media-group:album-42"
+	if string(first.ID) != wantID || redelivered.ID != first.ID {
+		t.Fatalf("logical identities = %q and %q, want %q", first.ID, redelivered.ID, wantID)
+	}
+	if first.ProviderMessageID != "album-42" {
+		t.Fatalf("provider message ID = %q, want album-42", first.ProviderMessageID)
+	}
+	if first.UserID != "tg-22" || first.TopicID != 77 || first.ReplyToMessageID != 90 {
+		t.Fatalf("normalized metadata = %+v", first)
+	}
+	if first.DeliveryFormat != deliveryfmt.DeliveryFormatRichHTML || !first.ProgressPolicy.Typing || !first.ProgressPolicy.PlanUpdates {
+		t.Fatalf("delivery capability = %+v, want rich HTML with progress policy", first)
+	}
+	if len(first.Attachments) != 2 || first.Attachments[0].FileID != "first" || first.Attachments[1].FileID != "second" {
+		t.Fatalf("attachments = %+v, want deterministic input order", first.Attachments)
+	}
+}
+
 func TestCollectMediaGroupCombinesAttachmentsInMessageOrder(t *testing.T) {
 	adapter := &Adapter{mediaGroups: newMediaGroupCollector(10 * time.Millisecond)}
 	grouped := make(chan MessageContext, 2)
@@ -100,6 +145,7 @@ func TestCollectMediaGroupCombinesAttachmentsInMessageOrder(t *testing.T) {
 			Kind:   attachment.KindDocument,
 			FileID: "document-2",
 		}},
+		Text: "later caption",
 	}
 	first := MessageContext{
 		ChatID:       11,
@@ -110,6 +156,7 @@ func TestCollectMediaGroupCombinesAttachmentsInMessageOrder(t *testing.T) {
 			Kind:   attachment.KindPhoto,
 			FileID: "photo-1",
 		}},
+		Text: "first caption",
 	}
 
 	if !adapter.CollectMediaGroup(second, dispatch) {
@@ -129,6 +176,9 @@ func TestCollectMediaGroupCombinesAttachmentsInMessageOrder(t *testing.T) {
 		}
 		if got.Attachments[0].FileID != "photo-1" || got.Attachments[1].FileID != "document-2" {
 			t.Errorf("attachment file IDs = [%q, %q], want [photo-1, document-2]", got.Attachments[0].FileID, got.Attachments[1].FileID)
+		}
+		if got.Text != "first caption" {
+			t.Errorf("group text = %q, want first caption in message order", got.Text)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for combined media group")

@@ -74,8 +74,13 @@ func TestNormalizedInboundCarriesOneOrderedAttachmentSetThroughDurableTurn(t *te
 		},
 		ProviderMessageID: "17",
 		UserID:            "101",
+		MessageID:         41,
+		ReplyToMessageID:  40,
+		TopicID:           77,
 		ReceivedAt:        "2026-08-04T09:00:00Z",
 		DeliveryFormat:    deliveryfmt.DeliveryFormatRichMarkdown,
+		ProgressPolicy:    deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true},
+		Direct:            true,
 		Source:            SourceTelegram,
 	}
 
@@ -88,6 +93,12 @@ func TestNormalizedInboundCarriesOneOrderedAttachmentSetThroughDurableTurn(t *te
 	}
 	if !payload.Deliver {
 		t.Fatal("normalized inbound turn deliver = false, want user-facing delivery")
+	}
+	if payload.MessageID != 41 || payload.ReplyToMessageID != 40 || payload.TopicID != 77 {
+		t.Fatalf("message metadata = %+v, want normalized values", payload)
+	}
+	if !payload.ProgressPolicy.Typing || !payload.ProgressPolicy.PlanUpdates {
+		t.Fatalf("progress policy = %+v, want normalized values", payload.ProgressPolicy)
 	}
 	if len(payload.Attachments) != 2 || payload.Attachments[0].FileID != firstFileID || payload.Attachments[1].FileID != "second" {
 		t.Fatalf("attachments = %+v, want original order", payload.Attachments)

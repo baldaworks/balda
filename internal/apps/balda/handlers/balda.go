@@ -11,7 +11,6 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
 	"github.com/normahq/balda/internal/apps/balda/auth"
@@ -25,7 +24,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
-	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
@@ -51,7 +49,6 @@ type BaldaHandler struct {
 	collaboratorStore  *auth.CollaboratorStore
 	channel            *baldatelegram.Adapter
 	sessionManager     *baldasession.Manager
-	turnDispatcher     appports.TurnQueue
 	actorDispatcher    actortransport.Dispatcher
 	jobEvents          jobEventAppender
 	messenger          *messenger.Messenger
@@ -82,7 +79,6 @@ type baldaHandlerDeps struct {
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           *baldatelegram.Adapter
 	SessionManager    *baldasession.Manager
-	TurnDispatcher    appports.TurnQueue
 	Dispatcher        actortransport.Dispatcher
 	JobEvents         *baldajobs.JobEventsService `optional:"true"`
 	Messenger         *messenger.Messenger
@@ -124,19 +120,17 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		Interface("raw_transport_message", event.Message).
 		Msg("received inbound telegram transport message")
 
-	ownerID := h.getOwnerID()
-	chatID := h.getChatID()
-
-	if ownerID == 0 {
+	if h.getOwnerID() == 0 {
 		return nil
 	}
-
-	// RBAC check: owner or collaborator
-	if !h.canAccessCollaboratorScope(ctx, messageCtx.UserID) {
-		return nil // Silent drop for unknown users
+	allowed, err := h.accessCollaboratorScope(ctx, messageCtx.UserID)
+	if err != nil {
+		return err
 	}
-
-	if chatID == 0 {
+	if !allowed {
+		return nil
+	}
+	if h.getChatID() == 0 {
 		h.setChatID(messageCtx.ChatID)
 		log.Info().Int64("chat_id", messageCtx.ChatID).Msg("Chat ID set from message")
 	}
@@ -174,7 +168,6 @@ func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx bal
 		return nil
 	}
 
-	topicID := messageCtx.TopicID
 	var text string
 	if messageCtx.IsDM {
 		text = h.normalizeDMText(messageCtx)
@@ -189,145 +182,40 @@ func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx bal
 		return nil
 	}
 
-	locator := messageCtx.Locator
-	transportUserID := baldatelegram.UserID(messageCtx.UserID)
-	ownerID := h.getOwnerID()
-
-	log.Info().Int64("user_id", ownerID).Int("topic_id", topicID).Msg("Forwarding message to balda agent")
-
-	var ts *baldasession.TopicSession
-	var err error
-
-	if messageCtx.IsDM && topicID == 0 {
-		existingSession, _ := h.sessionManager.GetSession(locator)
-		sendOwnerWelcome := existingSession == nil
-		baldaProviderName := h.getProviderName()
-		if baldaProviderName == "" {
-			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Balda is not ready right now. Please close this chat and try again.")
-			return nil
-		}
-		ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-			Locator: locator,
-			UserID:  transportUserID,
-		}, ownerSessionLabel)
-		if err != nil {
-			log.Error().Err(err).Str("agent", baldaProviderName).Msg("failed to ensure main dm session")
-			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Could not start this session. Please close this chat and try again.")
-			return nil
-		}
-		if sendOwnerWelcome {
-			metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
-			welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
-			_ = sendMarkdown(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, welcomeMsg)
-			h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-		}
-	} else {
-		ts, err = h.sessionManager.GetSession(locator)
-		if err != nil {
-			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Restoring agent session...")
-			ts, err = h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
-				Locator:                    locator,
-				UserID:                     transportUserID,
-				AllowBaldaProviderFallback: false,
-			})
-			if err != nil {
-				if errors.Is(err, baldasession.ErrNoPersistedSession) {
-					baldaProviderName := h.getProviderName()
-					if baldaProviderName == "" {
-						_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Balda is not ready right now. Please close this chat topic and try again.")
-						return nil
-					}
-					ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-						Locator: locator,
-						UserID:  transportUserID,
-					}, autoSessionLabel)
-					if err != nil {
-						log.Error().Err(err).Str("agent", baldaProviderName).Int("topic_id", topicID).Msg("failed to create session")
-						_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Could not start this session. Please close this chat topic and create a new one.")
-						return nil
-					}
-				} else {
-					log.Warn().Err(err).Int("topic_id", topicID).Msg("failed to restore session")
-					_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Could not restore this session. Please close this chat topic and create a new one.")
-					return nil
-				}
-			}
-			if ts != nil {
-				baldaProviderID := h.getProviderName()
-				metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
-				welcomeName := h.welcomeDisplayName(messageCtx, ts)
-				welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
-				_ = sendMarkdown(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, welcomeMsg)
-				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
-			}
-		}
-	}
-
-	if err := h.enqueueTurn(
-		ctx,
-		text,
-		messageCtx.Attachments,
-		ts,
-		locator,
-		messageCtx.MessageID,
-		messageCtx.ReplyToMessageID,
-		topicID,
-		messageCtx.DeliveryOptions,
-		messageCtx.ProgressPolicy,
-		baldatelegram.UserID(messageCtx.UserID),
-	); err != nil {
-		if baldaexecution.IsCommandQueueFull(err) {
-			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Session command queue is full. Please wait or use /cancel.")
-			return nil
-		}
-
-		log.Error().Err(err).Int("topic_id", topicID).Msg("failed to publish balda session command")
-		_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, locator, "Failed to publish your message for processing. Please try again.")
-	}
-
-	return nil
-}
-
-func (h *BaldaHandler) enqueueTurn(
-	ctx context.Context,
-	text string,
-	attachments []attachment.Descriptor,
-	ts *baldasession.TopicSession,
-	locator baldasession.SessionLocator,
-	messageID int,
-	replyToMessageID int,
-	topicID int,
-	deliveryOptions deliveryfmt.Options,
-	progressPolicy baldachannel.ProgressPolicy,
-	requesterUserID string,
-) error {
-	if ts == nil {
-		return fmt.Errorf("topic session is required")
-	}
-
 	receivedAtNow := time.Now
-	if h != nil && h.now != nil {
+	if h.now != nil {
 		receivedAtNow = h.now
 	}
-	_, err := h.submitSessionTurn(ctx, turncmd.SessionTurnPayload{
-		Text:             appendAttachmentSummary(text, attachments),
-		Attachments:      attachment.NormalizeList(attachments),
-		Locator:          locator,
-		UserID:           ts.GetUserID(),
-		RequesterUserID:  strings.TrimSpace(requesterUserID),
-		AgentSessionID:   ts.GetAgentSessionID(),
-		MessageID:        messageID,
-		ReplyToMessageID: replyToMessageID,
-		ReceivedAt:       receivedAtNow().UTC().Format(time.RFC3339),
-		TopicID:          topicID,
-		DeliveryFormat:   deliveryOptions.DeliveryFormat,
-		ProgressPolicy:   progressPolicy,
-		Deliver:          true,
-		Source:           "telegram",
-	})
+	inbound := h.channel.NormalizeInbound(
+		messageCtx,
+		appendAttachmentSummary(text, messageCtx.Attachments),
+		receivedAtNow(),
+	)
+	service, err := h.telegramIngressService()
 	if err != nil {
 		return err
 	}
+	result, err := service.Process(ctx, inbound)
+	if err != nil && result.Settlement.Outcome == turncmd.InboundRetry {
+		if baldaexecution.IsCommandQueueFull(err) {
+			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, messageCtx.Locator, "Session command queue is full. Please wait or use /cancel.")
+		} else {
+			h.logger.Error().Err(err).
+				Str("session_id", messageCtx.Locator.SessionID).
+				Str("inbound_id", string(result.InboundID)).
+				Msg("failed to durably accept inbound telegram message")
+			_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, messageCtx.Locator, "Failed to publish your message for processing. Please try again.")
+		}
+		return err
+	}
+	if err != nil {
+		h.logger.Warn().Err(err).
+			Str("session_id", messageCtx.Locator.SessionID).
+			Str("inbound_id", string(result.InboundID)).
+			Str("settlement", string(result.Settlement.Outcome)).
+			Msg("terminal inbound telegram message failure")
+	}
+
 	return nil
 }
 
@@ -458,18 +346,6 @@ func (h *BaldaHandler) onForumTopicLifecycle(ctx context.Context, event *events.
 	}
 
 	return nil
-}
-
-func (h *BaldaHandler) canAccessCollaboratorScope(ctx context.Context, userID int64) bool {
-	if h.ownerStore.IsOwner(userID) {
-		return true
-	}
-
-	collab, found, err := h.collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
-	if err != nil || !found {
-		return false
-	}
-	return collab != nil
 }
 
 func (h *BaldaHandler) runTurnWithDelivery(

@@ -35,12 +35,25 @@ type InboundContext struct {
 	AddressKey  string
 	AddressJSON string
 	UserID      string
+	TopicID     int
+	Direct      bool
 	Source      string
 }
 
 // Authorizer checks whether one normalized inbound item may enter a session.
 type Authorizer interface {
 	Authorize(ctx context.Context, inbound InboundContext) (Authorization, error)
+}
+
+// AuthorizerFunc adapts a consumer-owned authorization function to Authorizer.
+type AuthorizerFunc func(ctx context.Context, inbound InboundContext) (Authorization, error)
+
+// Authorize implements Authorizer.
+func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (Authorization, error) {
+	if f == nil {
+		return Authorization{}, fmt.Errorf("conversational ingress authorization function is required")
+	}
+	return f(ctx, inbound)
 }
 
 // SessionPreparation contains runtime session identity established before
@@ -60,9 +73,31 @@ type SessionPreparer interface {
 	Prepare(ctx context.Context, inbound InboundContext) (SessionPreparation, error)
 }
 
+// SessionPreparerFunc adapts a consumer-owned session preparation function to SessionPreparer.
+type SessionPreparerFunc func(ctx context.Context, inbound InboundContext) (SessionPreparation, error)
+
+// Prepare implements SessionPreparer.
+func (f SessionPreparerFunc) Prepare(ctx context.Context, inbound InboundContext) (SessionPreparation, error) {
+	if f == nil {
+		return SessionPreparation{}, fmt.Errorf("conversational ingress session preparation function is required")
+	}
+	return f(ctx, inbound)
+}
+
 // Dispatcher durably publishes one SessionActor envelope.
 type Dispatcher interface {
 	Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error)
+}
+
+// DispatcherFunc adapts a consumer-owned durable dispatch function to Dispatcher.
+type DispatcherFunc func(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error)
+
+// Dispatch implements Dispatcher.
+func (f DispatcherFunc) Dispatch(ctx context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
+	if f == nil {
+		return nil, fmt.Errorf("conversational ingress dispatch function is required")
+	}
+	return f(ctx, env)
 }
 
 // Result describes provider-neutral intake settlement and durable acceptance.
@@ -159,6 +194,8 @@ func inboundContext(inbound turncmd.NormalizedInbound) InboundContext {
 		AddressKey:  strings.TrimSpace(inbound.Locator.AddressKey),
 		AddressJSON: strings.TrimSpace(inbound.Locator.AddressJSON),
 		UserID:      strings.TrimSpace(inbound.UserID),
+		TopicID:     inbound.TopicID,
+		Direct:      inbound.Direct,
 		Source:      strings.TrimSpace(inbound.Source),
 	}
 }

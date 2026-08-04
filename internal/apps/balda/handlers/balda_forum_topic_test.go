@@ -128,7 +128,6 @@ func TestBaldaHandlerOnForumTopicLifecycle_ClosedStopsTopicSession(t *testing.T)
 		logger:          zerolog.Nop(),
 		channel:         newBaldaTestTelegramAdapter(),
 		sessionManager:  sessionManager,
-		turnDispatcher:  turnDispatcher,
 		actorDispatcher: turnDispatcher,
 	}
 	handler.setChatID(9001)
@@ -312,6 +311,52 @@ func TestBaldaHandlerOnMessage_DMNonMentionAllowed(t *testing.T) {
 	}
 	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
+	}
+}
+
+func TestBaldaHandlerOnMessage_UnauthorizedUserRemainsSilent(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
+
+	text := "try to enter the owner session"
+	event := &events.MessageEvent{
+		Type: messagetype.Text,
+		Message: &client.Message{
+			Chat:      client.Chat{Id: 9001, Type: "private"},
+			MessageId: 55,
+			Text:      &text,
+			From:      &client.User{Id: 202},
+		},
+	}
+
+	if err := handler.onMessage(t.Context(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if got := len(turns.commandSnapshot()); got != 0 {
+		t.Fatalf("published commands = %d, want 0", got)
+	}
+}
+
+func TestBaldaHandlerOnMessage_CommandRemainsOnCommandPath(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
+
+	text := "/reset"
+	entities := []client.MessageEntity{{Type: "bot_command", Offset: 0, Length: len(text)}}
+	event := &events.MessageEvent{
+		Type: messagetype.Text,
+		Message: &client.Message{
+			Chat:      client.Chat{Id: 9001, Type: "private"},
+			MessageId: 56,
+			Text:      &text,
+			Entities:  &entities,
+			From:      &client.User{Id: 101},
+		},
+	}
+
+	if err := handler.onMessage(t.Context(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if got := len(turns.commandSnapshot()); got != 0 {
+		t.Fatalf("published conversational commands = %d, want 0", got)
 	}
 }
 
@@ -699,6 +744,10 @@ func TestBaldaHandlerOnMessage_CoalescesTelegramMediaGroupIntoOneTurn(t *testing
 	if got := baldaexecution.EnvelopeSessionID(commands[0]); got != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
+	const wantDedupeKey = "telegram:9001:0:user:101:media-group:album-42"
+	if commands[0].DedupeKey != wantDedupeKey {
+		t.Fatalf("command dedupe key = %q, want %q", commands[0].DedupeKey, wantDedupeKey)
+	}
 	var payload actors.SessionTurnPayload
 	if err := actorlayer.UnmarshalPayload(commands[0].Payload, &payload); err != nil {
 		t.Fatalf("decode session turn payload: %v", err)
@@ -714,6 +763,9 @@ func TestBaldaHandlerOnMessage_CoalescesTelegramMediaGroupIntoOneTurn(t *testing
 	}
 	if !strings.Contains(payload.Text, "caption: "+caption) {
 		t.Fatalf("payload text = %q, want media-group caption", payload.Text)
+	}
+	if payload.DedupeKey != wantDedupeKey || payload.RequesterUserID != "tg-101" {
+		t.Fatalf("payload identity = %+v, want stable group identity and requester", payload)
 	}
 }
 
@@ -920,7 +972,6 @@ func newBaldaMessageHandlerHarness(t *testing.T, topicID int) (*BaldaHandler, *f
 		ownerStore:      ownerStore,
 		channel:         newBaldaTestTelegramAdapter(),
 		sessionManager:  sessionManager,
-		turnDispatcher:  turnDispatcher,
 		actorDispatcher: turnDispatcher,
 		logger:          zerolog.Nop(),
 	}

@@ -69,8 +69,13 @@ type NormalizedInbound struct {
 	Locator           baldasession.SessionLocator `json:"locator"`
 	ProviderMessageID string                      `json:"provider_message_id,omitempty"`
 	UserID            string                      `json:"user_id,omitempty"`
+	MessageID         int                         `json:"message_id,omitempty"`
+	ReplyToMessageID  int                         `json:"reply_to_message_id,omitempty"`
+	TopicID           int                         `json:"topic_id,omitempty"`
 	ReceivedAt        string                      `json:"received_at,omitempty"`
 	DeliveryFormat    deliveryfmt.DeliveryFormat  `json:"delivery_format"`
+	ProgressPolicy    deliveryfmt.ProgressPolicy  `json:"progress_policy,omitempty"`
+	Direct            bool                        `json:"direct,omitempty"`
 	Source            string                      `json:"source"`
 }
 
@@ -90,15 +95,19 @@ func (m NormalizedInbound) SessionTurn() (SessionTurnPayload, error) {
 		return SessionTurnPayload{}, fmt.Errorf("inbound source is required")
 	}
 	return SessionTurnPayload{
-		Text:           m.Text,
-		Attachments:    attachment.NormalizeList(m.Attachments),
-		Locator:        m.Locator,
-		UserID:         strings.TrimSpace(m.UserID),
-		ReceivedAt:     strings.TrimSpace(m.ReceivedAt),
-		DeliveryFormat: deliveryfmt.NormalizeDeliveryFormat(m.DeliveryFormat),
-		Deliver:        true,
-		Source:         strings.TrimSpace(m.Source),
-		DedupeKey:      id,
+		Text:             m.Text,
+		Attachments:      attachment.NormalizeList(m.Attachments),
+		Locator:          m.Locator,
+		UserID:           strings.TrimSpace(m.UserID),
+		MessageID:        m.MessageID,
+		ReplyToMessageID: m.ReplyToMessageID,
+		ReceivedAt:       strings.TrimSpace(m.ReceivedAt),
+		TopicID:          m.TopicID,
+		DeliveryFormat:   deliveryfmt.NormalizeDeliveryFormat(m.DeliveryFormat),
+		ProgressPolicy:   m.ProgressPolicy,
+		Deliver:          true,
+		Source:           strings.TrimSpace(m.Source),
+		DedupeKey:        id,
 	}, nil
 }
 

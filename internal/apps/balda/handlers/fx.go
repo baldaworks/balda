@@ -111,7 +111,6 @@ func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
 		collaboratorStore:  deps.CollaboratorStore,
 		channel:            deps.Channel,
 		sessionManager:     deps.SessionManager,
-		turnDispatcher:     deps.TurnDispatcher,
 		actorDispatcher:    deps.Dispatcher,
 		jobEvents:          deps.JobEvents,
 		messenger:          deps.Messenger,

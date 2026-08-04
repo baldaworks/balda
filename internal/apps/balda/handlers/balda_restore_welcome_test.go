@@ -209,7 +209,6 @@ func TestBaldaHandlerOnMessage_CollaboratorDMCreateFailureUsesGenericSessionMess
 		collaboratorStore: collaboratorStore,
 		channel:           adapter,
 		sessionManager:    sessionManager,
-		turnDispatcher:    turnDispatcher,
 		actorDispatcher:   turnDispatcher,
 		logger:            zerolog.Nop(),
 	}
@@ -327,7 +326,6 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 		ownerStore:      ownerStore,
 		channel:         adapter,
 		sessionManager:  sessionManager,
-		turnDispatcher:  turnDispatcher,
 		actorDispatcher: turnDispatcher,
 		logger:          zerolog.Nop(),
 	}
@@ -396,7 +394,6 @@ func newBaldaRestoreHandlerHarness(t *testing.T, store *fakeBaldaRestoreSessionS
 		ownerStore:      ownerStore,
 		channel:         adapter,
 		sessionManager:  sessionManager,
-		turnDispatcher:  turnDispatcher,
 		actorDispatcher: turnDispatcher,
 		logger:          zerolog.Nop(),
 	}
