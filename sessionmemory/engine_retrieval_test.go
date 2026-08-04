@@ -193,6 +193,12 @@ func TestTraceRejectsForgottenMissingAndExtraNodes(t *testing.T) {
 		ForgottenAt:   &forgottenAt,
 	}
 	extra := derivedTestAtom(t, turn.Scope)
+	invalidated := atom
+	invalidated.Meta.State = RevisionStateInvalidated
+	scenario := boundaryTestScenario(t, turn.Scope, atom)
+	profile := boundaryTestProfile(t, turn.Scope, scenario)
+	cyclicScenario := scenario
+	cyclicScenario.Meta.Provenance = Provenance{ParentRevisions: []RevisionRef{revisionRef(profile.Meta)}}
 	tests := []struct {
 		name     string
 		graph    TraceGraph
@@ -206,6 +212,17 @@ func TestTraceRejectsForgottenMissingAndExtraNodes(t *testing.T) {
 				Root:          revisionRef(atom.Meta),
 				Revisions:     []SearchHit{{Atom: &atom}},
 				Sources:       []SourceRecord{forgotten},
+			},
+			wantCode: CodeForgotten,
+		},
+		{
+			name: "invalidated revision",
+			graph: TraceGraph{
+				SchemaVersion: DerivedSchemaVersionV1,
+				Scope:         turn.Scope,
+				Root:          revisionRef(invalidated.Meta),
+				Revisions:     []SearchHit{{Atom: &invalidated}},
+				Sources:       []SourceRecord{source},
 			},
 			wantCode: CodeForgotten,
 		},
@@ -227,6 +244,19 @@ func TestTraceRejectsForgottenMissingAndExtraNodes(t *testing.T) {
 				Root:          revisionRef(atom.Meta),
 				Revisions:     []SearchHit{{Atom: &atom}, {Atom: &extra}},
 				Sources:       []SourceRecord{source},
+			},
+			wantCode: CodeInvalidDerived,
+		},
+		{
+			name: "cyclic provenance",
+			graph: TraceGraph{
+				SchemaVersion: DerivedSchemaVersionV1,
+				Scope:         turn.Scope,
+				Root:          revisionRef(profile.Meta),
+				Revisions: []SearchHit{
+					{Profile: &profile},
+					{Scenario: &cyclicScenario},
+				},
 			},
 			wantCode: CodeInvalidDerived,
 		},

@@ -45,9 +45,25 @@ func TestHeaderSessionResolverRequiresActiveBrokerBinding(t *testing.T) {
 		t.Fatalf("Resolve(bound) = %+v, want %+v", got, current)
 	}
 
-	injected.Set(HeaderSessionLocator, `{"channel_type":"telegram","address_key":"-100:77"}`)
-	if _, err := resolver.Resolve(context.Background(), request); err == nil {
-		t.Fatal("Resolve(tampered locator) error = nil, want authentication failure")
+	for _, test := range []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{name: "locator", header: HeaderSessionLocator, value: `{"channel_type":"telegram","address_key":"-100:77"}`},
+		{name: "session", header: HeaderSessionID, value: "attacker-session"},
+		{name: "agent session", header: HeaderAgentSessionID, value: "attacker-agent"},
+		{name: "lineage", header: HeaderLineageID, value: "attacker-lineage"},
+		{name: "binding", header: HeaderSessionBinding, value: "attacker-binding"},
+	} {
+		t.Run("rejects tampered "+test.name, func(t *testing.T) {
+			tampered := injected.Clone()
+			tampered.Set(test.header, test.value)
+			tamperedRequest := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: tampered}}
+			if _, err := resolver.Resolve(context.Background(), tamperedRequest); err == nil {
+				t.Fatalf("Resolve(tampered %s) error = nil, want authentication failure", test.name)
+			}
+		})
 	}
 	if _, err := (HeaderSessionResolver{}).Resolve(context.Background(), request); err == nil {
 		t.Fatal("Resolve(without broker) error = nil, want authentication failure")

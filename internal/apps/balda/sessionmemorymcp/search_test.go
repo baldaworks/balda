@@ -467,7 +467,9 @@ func TestTraceToolRejectsForeignGraphAndForgottenContent(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("foreign trace unexpectedly succeeded")
 	}
-	assertErrorCode(t, structuredResultMap(t, result), string(sessionmemory.CodeScopeViolation))
+	foreignPayload := structuredResultMap(t, result)
+	assertErrorCode(t, foreignPayload, string(sessionmemory.CodeScopeViolation))
+	assertEmptyTracePayload(t, foreignPayload)
 
 	searcher.traceResponse = forgottenTraceResponse(scopeFromCurrent(t, current), currentRoot)
 	result, err = client.CallTool(ctx, &mcp.CallToolParams{
@@ -479,6 +481,21 @@ func TestTraceToolRejectsForeignGraphAndForgottenContent(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Fatal("forgotten trace unexpectedly succeeded")
+	}
+	forgottenPayload := structuredResultMap(t, result)
+	assertErrorCode(t, forgottenPayload, string(sessionmemory.CodeForgotten))
+	assertEmptyTracePayload(t, forgottenPayload)
+}
+
+func assertEmptyTracePayload(t *testing.T, payload map[string]any) {
+	t.Helper()
+	revisions, revisionsOK := payload["revisions"].([]any)
+	sources, sourcesOK := payload["sources"].([]any)
+	if !revisionsOK || !sourcesOK || len(revisions) != 0 || len(sources) != 0 {
+		t.Fatalf("rejected trace returned graph content: revisions %d sources %d", len(revisions), len(sources))
+	}
+	if payload["data_classification"] != "none" {
+		t.Fatalf("rejected trace data classification = %q, want none", payload["data_classification"])
 	}
 }
 
