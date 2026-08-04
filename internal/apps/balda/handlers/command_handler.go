@@ -10,12 +10,10 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/automode"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	"github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
+	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
@@ -33,12 +31,12 @@ type commandSessionManager interface {
 	TakeStartupNotice(sessionID string) string
 }
 
-type goalJobService interface {
-	ListActiveGoalJobsBySession(ctx context.Context, sessionID string) ([]baldastate.JobRecord, error)
-}
-
 type sessionWorkCanceller interface {
 	CancelWork(ctx context.Context, locator session.SessionLocator, actor string, reason string) error
+}
+
+type goalJobService interface {
+	HasActiveGoalJob(ctx context.Context, sessionID string) (bool, error)
 }
 
 const (
@@ -67,11 +65,11 @@ const (
 type CommandHandler struct {
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore
-	channel           *baldatelegram.Adapter
+	channel           TelegramChannel
 	sessionManager    commandSessionManager
 	workCanceller     sessionWorkCanceller
 	actorDispatcher   actortransport.Dispatcher
-	jobService        goalJobService
+	goalJobs          goalJobService
 	goalMaxIterations int
 	autoMaxTurns      int
 	userHandler       *userHandler
@@ -82,7 +80,7 @@ type commandHandlerParams struct {
 
 	OwnerStore        *auth.OwnerStore
 	CollaboratorStore *auth.CollaboratorStore
-	Channel           *baldatelegram.Adapter
+	Channel           TelegramChannel
 	SessionManager    *session.Manager
 	WorkCanceller     appports.SessionWorkCanceller `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
@@ -93,7 +91,7 @@ type commandHandlerParams struct {
 }
 
 // Register registers the handler with the registry.
-func (h *CommandHandler) Register(registry tgbotkit.Registry) {
+func (h *CommandHandler) Register(registry TelegramRegistry) {
 	registry.OnCommand(h.onCommand)
 }
 
@@ -130,7 +128,7 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 	}
 }
 
-func (h *CommandHandler) onHelpCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onHelpCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if strings.TrimSpace(commandCtx.Args) != "" {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Usage: /help")
 	}
@@ -169,7 +167,7 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 	return strings.Join(lines, "\n")
 }
 
-func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command.")
 	}
@@ -203,7 +201,7 @@ func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx baldatele
 	}
 }
 
-func (h *CommandHandler) onUsageCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onUsageCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -229,7 +227,7 @@ func (h *CommandHandler) onUsageCommand(ctx context.Context, commandCtx baldatel
 	return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, renderUsageSnapshot(snapshot))
 }
 
-func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -251,7 +249,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatele
 			}
 			return nil
 		}
-		if err := submitGoalClearControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "goal cleared by user", true); err != nil {
+		if err := submitGoalClearControl(ctx, h.actorDispatcher, commandCtx.Locator, telegramref.UserID(commandCtx.UserID), "goal cleared by user", true); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish goal clear command")
 			if sendErr := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not clear goal run."); sendErr != nil {
 				return sendErr
@@ -260,7 +258,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatele
 		return nil
 	}
 
-	started, err := h.submitGoalJobWithOptions(ctx, commandCtx.Locator, commandCtx.DeliveryOptions, objective, baldatelegram.UserID(commandCtx.UserID))
+	started, err := h.submitGoalJobWithOptions(ctx, commandCtx.Locator, commandCtx.DeliveryOptions, objective, telegramref.UserID(commandCtx.UserID))
 	if err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to start /goalkeeper run")
 		if sendErr := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not start goal run."); sendErr != nil {
@@ -278,7 +276,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, commandCtx baldatele
 	return nil
 }
 
-func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onResetCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	commandName := commandCtx.Command
 	if commandName == "" {
 		commandName = commandReset
@@ -356,7 +354,7 @@ func (h *CommandHandler) sendSessionStartupNotice(ctx context.Context, locator s
 	}
 }
 
-func restartSessionLabel(commandCtx baldatelegram.CommandContext, info session.TopicSessionInfo) string {
+func restartSessionLabel(commandCtx TelegramCommandContext, info session.TopicSessionInfo) string {
 	if label := strings.TrimSpace(info.AgentName); label != "" {
 		return label
 	}
@@ -366,21 +364,21 @@ func restartSessionLabel(commandCtx baldatelegram.CommandContext, info session.T
 	return autoSessionLabel
 }
 
-func restartSessionUserID(commandCtx baldatelegram.CommandContext, info session.TopicSessionInfo) string {
+func restartSessionUserID(commandCtx TelegramCommandContext, info session.TopicSessionInfo) string {
 	if userID := strings.TrimSpace(info.UserID); userID != "" {
 		return userID
 	}
-	return baldatelegram.UserID(commandCtx.UserID)
+	return telegramref.UserID(commandCtx.UserID)
 }
 
-func restartWelcomeDisplayName(commandCtx baldatelegram.CommandContext, label string) string {
+func restartWelcomeDisplayName(commandCtx TelegramCommandContext, label string) string {
 	if !commandCtx.IsDM {
 		return ownerSessionLabel
 	}
 	return label
 }
 
-func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -426,7 +424,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatel
 	}
 	if err := h.sessionManager.CreateSession(ctx, session.SessionContext{
 		Locator: topicLocator,
-		UserID:  baldatelegram.UserID(commandCtx.UserID),
+		UserID:  telegramref.UserID(commandCtx.UserID),
 	}, topicName); err != nil {
 		log.Error().Err(err).Str("topic_name", topicName).Msg("failed to create topic session after topic creation")
 		_ = h.channel.Close(ctx, topicLocator)
@@ -447,7 +445,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, commandCtx baldatel
 	return nil
 }
 
-func (h *CommandHandler) onLocatorCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onLocatorCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -467,7 +465,7 @@ func (h *CommandHandler) onLocatorCommand(ctx context.Context, commandCtx baldat
 	return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, message)
 }
 
-func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -490,7 +488,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatel
 	}
 
 	if commandCtx.TopicID > 0 {
-		if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "session canceled by close command", false); err != nil {
+		if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, telegramref.UserID(commandCtx.UserID), "session canceled by close command", false); err != nil {
 			log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish /close cancel control command")
 		}
 		if err := resetSessionWithReason(ctx, h.sessionManager, commandCtx.Locator, session.BoundaryReasonClose); err != nil {
@@ -509,7 +507,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatel
 		return nil
 	}
 
-	if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "session canceled by close command", false); err != nil {
+	if err := submitSessionCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, telegramref.UserID(commandCtx.UserID), "session canceled by close command", false); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish /close cancel control command")
 	}
 	if err := resetSessionWithReason(ctx, h.sessionManager, commandCtx.Locator, session.BoundaryReasonClose); err != nil {
@@ -525,7 +523,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, commandCtx baldatel
 	return nil
 }
 
-func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldatelegram.CommandContext) error {
+func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
 	if !h.canUseSessionCommand(ctx, commandCtx.UserID) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -546,7 +544,7 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, commandCtx baldate
 		}
 		return nil
 	}
-	if err := submitSessionTurnCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, baldatelegram.UserID(commandCtx.UserID), "session turn canceled by user", true); err != nil {
+	if err := submitSessionTurnCancelControl(ctx, h.actorDispatcher, commandCtx.Locator, telegramref.UserID(commandCtx.UserID), "session turn canceled by user", true); err != nil {
 		log.Warn().Err(err).Str("session_id", commandCtx.Locator.SessionID).Msg("failed to publish cancel command")
 		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not request cancel."); sendErr != nil {
 			return sendErr

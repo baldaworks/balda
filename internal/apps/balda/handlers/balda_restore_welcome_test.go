@@ -14,6 +14,7 @@ import (
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/sessionapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -311,8 +312,8 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWarnsWhenWorkspaceSyncSkipped(t
 	setUnexportedField(t, sessionManager, "runtimeManager", runtimeManager)
 	setUnexportedField(t, sessionManager, "baldaProviderName", "balda-provider")
 	setUnexportedField(t, sessionManager, "workingDir", workingDir)
-	setUnexportedField(t, sessionManager, "workspaces", sessionWorkspaceManagerAdapter{
-		manager: baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baldaRestoreCurrentBranch(t, ctx, workingDir), ""),
+	setUnexportedField(t, sessionManager, "workspaces", sessionapp.SessionWorkspaceManagerAdapter{
+		Manager: baldaagent.NewWorkspaceManagerWithSessionsDir(workingDir, stateDir, baldaRestoreCurrentBranch(t, ctx, workingDir), ""),
 	})
 	setUnexportedField(t, sessionManager, "workspaceEnabled", true)
 	setUnexportedField(t, sessionManager, "sessionStore", store)

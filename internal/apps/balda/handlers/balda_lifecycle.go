@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog/log"
 )
@@ -38,8 +38,8 @@ func (h *BaldaHandler) bootstrapOwnerSession(ctx context.Context, ownerID, chatI
 		return fmt.Errorf("balda provider is not configured")
 	}
 
-	locator := baldatelegram.NewLocator(chatID, 0)
-	transportUserID := baldatelegram.UserID(ownerID)
+	locator := telegramref.NewLocator(chatID, 0)
+	transportUserID := telegramref.UserID(ownerID)
 
 	ts, err := h.sessionManager.GetSession(locator)
 	if err != nil {
@@ -131,13 +131,13 @@ func (h *BaldaHandler) onStart(ctx context.Context) error {
 
 	if err := h.bootstrapOwnerSession(ctx, owner.UserID, owner.ChatID); err != nil {
 		h.logger.Error().Err(err).Int64("owner_id", owner.UserID).Msg("failed to bootstrap owner session during startup")
-		if sendErr := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, baldatelegram.NewLocator(owner.UserID, 0), "Could not start owner session. Please try again."); sendErr != nil {
+		if sendErr := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, telegramref.NewLocator(owner.UserID, 0), "Could not start owner session. Please try again."); sendErr != nil {
 			h.logger.Warn().Err(sendErr).Msg("failed to send owner session failure message")
 		}
 		return fmt.Errorf("bootstrap owner session during startup: %w", err)
 	}
 
-	if err := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, baldatelegram.NewLocator(owner.UserID, 0), "Boss, I'm online and ready to work."); err != nil {
+	if err := sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, telegramref.NewLocator(owner.UserID, 0), "Boss, I'm online and ready to work."); err != nil {
 		h.logger.Warn().Err(err).Int64("owner_id", owner.UserID).Msg("failed to send startup ready message to owner")
 		return nil
 	}

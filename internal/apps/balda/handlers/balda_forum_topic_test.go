@@ -27,10 +27,32 @@ import (
 
 var _ tgbotkit.Registry = (*fakeBaldaRegistry)(nil)
 
+const testTelegramMediaGroupID = "album-42"
+
 type fakeBaldaRegistry struct {
 	onMessageCalls   int
 	callbackCalls    int
 	messageTypeCalls []messagetype.MessageType
+}
+
+type testBaldaRegistry struct {
+	registry *fakeBaldaRegistry
+}
+
+func (r testBaldaRegistry) OnCommand(handler func(context.Context, *events.CommandEvent) error) {
+	r.registry.OnCommand(rtHandlers.CommandHandler(handler))
+}
+
+func (r testBaldaRegistry) OnMessage(handler func(context.Context, *events.MessageEvent) error) {
+	r.registry.OnMessage(rtHandlers.MessageHandler(handler))
+}
+
+func (r testBaldaRegistry) OnMessageType(messageType messagetype.MessageType, handler func(context.Context, *events.MessageEvent) error) {
+	r.registry.OnMessageType(messageType, rtHandlers.MessageHandler(handler))
+}
+
+func (r testBaldaRegistry) OnCallbackDataPrefix(prefix string, handler func(context.Context, *events.CallbackQueryEvent) error) {
+	r.registry.OnCallbackDataPrefix(prefix, rtHandlers.CallbackQueryHandler(handler))
 }
 
 func (f *fakeBaldaRegistry) OnUpdate(rtHandlers.UpdateHandler) eventemitter.UnsubscribeFunc {
@@ -60,7 +82,7 @@ func TestBaldaHandlerRegister_RegistersForumTopicMessageTypes(t *testing.T) {
 	registry := &fakeBaldaRegistry{}
 	handler := &BaldaHandler{logger: zerolog.Nop(), channel: newBaldaTestTelegramAdapter()}
 
-	handler.Register(registry)
+	handler.Register(testBaldaRegistry{registry})
 
 	if registry.onMessageCalls != 1 {
 		t.Fatalf("OnMessage calls = %d, want 1", registry.onMessageCalls)
@@ -682,7 +704,7 @@ func TestBaldaHandlerOnMessage_CoalescesTelegramMediaGroupIntoOneTurn(t *testing
 	attachmentStore := &recordingTelegramAttachmentStore{}
 	handler.attachmentStore = attachmentStore
 
-	mediaGroupID := "album-42"
+	mediaGroupID := testTelegramMediaGroupID
 	caption := "review both files"
 	photoSize := 1024
 	photoEvent := &events.MessageEvent{
@@ -781,7 +803,7 @@ func (s *recordingTelegramAttachmentStore) PersistTelegram(_ context.Context, in
 func TestBaldaHandlerOnMessage_FlushesMediaGroupBeforeFollowingMessage(t *testing.T) {
 	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
 
-	mediaGroupID := "album-42"
+	mediaGroupID := testTelegramMediaGroupID
 	photoEvent := &events.MessageEvent{
 		Type: messagetype.Photo,
 		Message: &client.Message{
@@ -943,14 +965,14 @@ func TestBaldaHandlerOnMessage_ChannelReplyToDifferentBotIgnored(t *testing.T) {
 	}
 }
 
-func newBaldaTestTelegramAdapter() *baldatelegram.Adapter {
+func newBaldaTestTelegramAdapter() *testTelegramChannel {
 	tgClient := &fakeTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
-	return baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+	return &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
-	})
+	})}
 }
 
 func newBaldaMessageHandlerHarness(t *testing.T, topicID int) (*BaldaHandler, *fakeTurnDispatcher, baldasession.SessionLocator) {

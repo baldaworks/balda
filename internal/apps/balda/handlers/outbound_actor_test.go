@@ -8,24 +8,35 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 )
 
-func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, formattingMode string) *baldatelegram.Adapter {
+func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, formattingMode string) *testTelegramChannel {
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	if strings.TrimSpace(formattingMode) != "" {
 		msg.SetAgentReplyFormattingMode(formattingMode)
 	}
-	return baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+	return &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
-	})
+	})}
 }
 
-func handleDeliveryCommandForTest(ctx context.Context, adapter *baldatelegram.Adapter, env actorlayer.Envelope) error {
+type testDeliveryAdapter interface {
+	SendAgentReplyWithProviderMessageIDAndFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) (string, error)
+	SendPlain(ctx context.Context, locator deliverycmd.Locator, text string) error
+	SendMarkdownWithFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) error
+	SendDraftPlain(ctx context.Context, locator deliverycmd.Locator, draftID int, text string) error
+	SendTyping(ctx context.Context, locator deliverycmd.Locator) error
+	SendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error
+}
+
+func handleDeliveryCommandForTest(ctx context.Context, adapter testDeliveryAdapter, env actorlayer.Envelope) error {
 	if adapter == nil {
 		return fmt.Errorf("delivery adapter is required")
 	}

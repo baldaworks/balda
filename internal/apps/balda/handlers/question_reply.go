@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,10 +9,9 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/tgbotkit/runtime/events"
 )
 
@@ -53,7 +51,7 @@ func (h *BaldaHandler) onQuestionCallback(ctx context.Context, event *events.Cal
 		QuestionID:        callback.QuestionID,
 		ProviderMessageID: callback.ProviderMessageID,
 		User: questioncmd.UserRef{
-			UserID: baldatelegram.UserID(callback.UserID),
+			UserID: telegramref.UserID(callback.UserID),
 		},
 		OptionIndex: callback.OptionIndex,
 		ReceivedAt:  receivedAt,
@@ -75,13 +73,13 @@ func (h *BaldaHandler) onQuestionCallback(ctx context.Context, event *events.Cal
 	if !result.Settled {
 		return ackErr
 	}
-	if dispatchErr := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Record); dispatchErr != nil {
+	if dispatchErr := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); dispatchErr != nil {
 		return dispatchErr
 	}
 	return ackErr
 }
 
-func (h *BaldaHandler) handleQuestionReply(ctx context.Context, messageCtx baldatelegram.MessageContext) (bool, error) {
+func (h *BaldaHandler) handleQuestionReply(ctx context.Context, messageCtx TelegramMessageContext) (bool, error) {
 	text := messageCtx.Text
 	if h == nil || h.questionService == nil || messageCtx.ReplyToMessageID <= 0 || strings.TrimSpace(text) == "" {
 		return false, nil
@@ -97,7 +95,7 @@ func (h *BaldaHandler) handleQuestionReply(ctx context.Context, messageCtx balda
 		ReplyToMessageID: strconv.Itoa(messageCtx.ReplyToMessageID),
 		MessageID:        strconv.Itoa(messageCtx.MessageID),
 		User: questioncmd.UserRef{
-			UserID: baldatelegram.UserID(messageCtx.UserID),
+			UserID: telegramref.UserID(messageCtx.UserID),
 		},
 		Text:       text,
 		ReceivedAt: receivedAt,
@@ -108,32 +106,16 @@ func (h *BaldaHandler) handleQuestionReply(ctx context.Context, messageCtx balda
 	if !result.Settled {
 		return true, nil
 	}
-	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Record); err != nil {
+	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); err != nil {
 		return true, err
 	}
 	return true, nil
 }
 
-func dispatchQuestionContinuation(ctx context.Context, dispatcher actortransport.Dispatcher, record baldastate.QuestionRecord) error {
-	var interaction questioncmd.InteractionContext
-	if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
-		return err
-	}
-	var resume questioncmd.ResumeTarget
-	if err := json.Unmarshal([]byte(record.ResumeJSON), &resume); err != nil {
-		return err
-	}
-	var answer questioncmd.Answer
-	if err := json.Unmarshal([]byte(record.AnswerJSON), &answer); err != nil {
-		return err
-	}
-	env, err := questioncmd.AnsweredEnvelope(resume, interaction, answer, record.QuestionID)
-	if err != nil {
-		return err
-	}
+func dispatchQuestionContinuation(ctx context.Context, dispatcher actortransport.Dispatcher, env actorlayer.Envelope) error {
 	if dispatcher == nil {
 		return actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
 	}
-	_, err = dispatcher.Dispatch(ctx, env)
+	_, err := dispatcher.Dispatch(ctx, env)
 	return err
 }

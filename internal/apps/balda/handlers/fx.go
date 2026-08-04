@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/automode"
-	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
 )
 
@@ -62,7 +61,7 @@ var Module = fx.Module("balda_handlers",
 				sessionManager:    params.SessionManager,
 				workCanceller:     params.WorkCanceller,
 				actorDispatcher:   params.Dispatcher,
-				jobService:        params.GoalJobs,
+				goalJobs:          params.GoalJobs,
 				goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
 				autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
 				userHandler:       params.UserHandler,
@@ -73,26 +72,10 @@ var Module = fx.Module("balda_handlers",
 				ownerStore:        params.OwnerStore,
 				inviteStore:       params.InviteStore,
 				collaboratorStore: params.CollaboratorStore,
-				channel:           params.Channel,
 				actorDispatcher:   params.Dispatcher,
 				tgClient:          params.TGClient,
 			}
 		},
-		fx.Annotate(
-			func(h *StartHandler) tgbotkit.Handler { return h },
-			fx.As(new(tgbotkit.Handler)),
-			fx.ResultTags(`group:"bot_handlers"`),
-		),
-		fx.Annotate(
-			func(h *BaldaHandler) tgbotkit.Handler { return h },
-			fx.As(new(tgbotkit.Handler)),
-			fx.ResultTags(`group:"bot_handlers"`),
-		),
-		fx.Annotate(
-			func(h *CommandHandler) tgbotkit.Handler { return h },
-			fx.As(new(tgbotkit.Handler)),
-			fx.ResultTags(`group:"bot_handlers"`),
-		),
 	),
 	fx.Invoke(
 		func(start *StartHandler, balda *BaldaHandler) {
@@ -113,14 +96,12 @@ func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
 		sessionManager:     deps.SessionManager,
 		actorDispatcher:    deps.Dispatcher,
 		jobEvents:          deps.JobEvents,
-		messenger:          deps.Messenger,
 		tgClient:           deps.TGClient,
 		authToken:          strings.TrimSpace(deps.AuthToken),
 		baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
 		telegramEnabled:    deps.TelegramEnabled,
 		telegramConfigured: true,
 		logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
-		turnExecution:      deps.TurnExecution,
 		questionService:    deps.QuestionService,
 		attachmentStore:    deps.AttachmentStore,
 		now:                time.Now,

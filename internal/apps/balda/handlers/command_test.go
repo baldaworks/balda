@@ -842,7 +842,7 @@ func TestCommandHandlerOnCommand_GoalClearExtraStartsGoal(t *testing.T) {
 
 func TestCommandHandlerOnCommand_GoalRejectsWhenActiveGoalExists(t *testing.T) {
 	handler, _, _, tgClient := newCommandHandlerTestHarness(t)
-	handler.jobService = &fakeGoalJobService{
+	handler.goalJobs = &fakeGoalJobService{
 		active: []baldastate.JobRecord{{
 			ID:        "goal-1",
 			SessionID: "tg-9001-0",
@@ -870,7 +870,7 @@ func TestCommandHandlerSubmitGoalJob_RejectsWhenActiveGoalExists(t *testing.T) {
 	handler := &CommandHandler{
 		actorDispatcher:   bus,
 		goalMaxIterations: 7,
-		jobService: &fakeGoalJobService{
+		goalJobs: &fakeGoalJobService{
 			active: []baldastate.JobRecord{{
 				ID:        "goal-active",
 				SessionID: locator.SessionID,
@@ -995,11 +995,11 @@ func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 	tgClient := &fakeTelegramClient{}
 	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+	channel := &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
-	})
+	})}
 	bus := &recordingHandlerCommandBus{deliveryAdapter: channel}
 	handler := &CommandHandler{
 		ownerStore:        ownerStore,
@@ -1010,7 +1010,6 @@ func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 			ownerStore:        ownerStore,
 			inviteStore:       inviteStore,
 			collaboratorStore: collaboratorStore,
-			channel:           channel,
 			actorDispatcher:   bus,
 			tgClient:          tgClient,
 		},
@@ -1148,6 +1147,18 @@ func (f *fakeGoalJobService) ListActiveGoalJobsBySession(_ context.Context, sess
 	return out, nil
 }
 
+func (f *fakeGoalJobService) HasActiveGoalJob(_ context.Context, sessionID string) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	for _, task := range f.active {
+		if task.SessionID == sessionID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (f *fakeCommandSessionManager) CreateSession(_ context.Context, sessionCtx session.SessionContext, agentName string) error {
 	f.createCalls = append(f.createCalls, createSessionCall{
 		SessionID: sessionCtx.Locator.SessionID,
@@ -1221,7 +1232,7 @@ type fakeTurnDispatcher struct {
 	commandSignal    chan struct{}
 	deliveryCommands []actorlayer.Envelope
 	cancelCalls      []cancelSessionCall
-	deliveryAdapter  *baldatelegram.Adapter
+	deliveryAdapter  testDeliveryAdapter
 	stateManager     interface {
 		UpdateRuntimeState(ctx context.Context, locator session.SessionLocator, state map[string]any) error
 	}
@@ -1354,14 +1365,13 @@ func newCommandHandlerTestHarnessWithFormatting(t *testing.T, formattingMode str
 		sessionManager:    sessionManager,
 		workCanceller:     turnDispatcher,
 		actorDispatcher:   turnDispatcher,
-		jobService:        &fakeGoalJobService{},
+		goalJobs:          &fakeGoalJobService{},
 		goalMaxIterations: normalizeGoalMaxIterations(0),
 		autoMaxTurns:      automode.DefaultMaxTurns,
 		userHandler: &userHandler{
 			ownerStore:        ownerStore,
 			inviteStore:       inviteStore,
 			collaboratorStore: collaboratorStore,
-			channel:           adapter,
 			actorDispatcher:   turnDispatcher,
 			tgClient:          tgClient,
 		},
@@ -1375,7 +1385,7 @@ type recordingHandlerCommandBus struct {
 	eventSubjects   []string
 	eventEnvs       []actorlayer.Envelope
 	eventErrs       []error
-	deliveryAdapter *baldatelegram.Adapter
+	deliveryAdapter testDeliveryAdapter
 }
 
 func (b *recordingHandlerCommandBus) Dispatch(_ context.Context, env actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {

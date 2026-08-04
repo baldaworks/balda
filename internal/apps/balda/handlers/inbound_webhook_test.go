@@ -10,10 +10,10 @@ import (
 	"testing"
 	"text/template"
 
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	"github.com/normahq/balda/internal/apps/balda/envelopetarget"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 

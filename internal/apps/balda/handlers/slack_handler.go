@@ -22,7 +22,6 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/automode"
-	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/normahq/balda/internal/apps/balda/ingressapp"
@@ -57,6 +56,12 @@ type SlackChatConfig struct {
 	EventsPath             string
 	CommandsPath           string
 	IncludePrivateChannels bool
+}
+
+// SlackChatClient is the provider API surface needed by Slack ingress.
+type SlackChatClient interface {
+	AuthTest(ctx context.Context) (teamID string, userID string, err error)
+	PostMessage(ctx context.Context, channel, threadTS, text string, mrkdwn bool) (string, error)
 }
 
 type slackEventEnvelope struct {
@@ -99,7 +104,7 @@ type SlackChatHandler struct {
 	sessionManager    *baldasession.Manager
 	actorDispatcher   actortransport.Dispatcher
 	goalJobs          goalJobService
-	client            *baldaslack.Client
+	client            SlackChatClient
 	config            SlackChatConfig
 	authToken         string
 	baldaProviderName string
@@ -126,7 +131,7 @@ type slackHandlerParams struct {
 	SessionManager    *baldasession.Manager
 	Dispatcher        actortransport.Dispatcher
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
-	SlackClient       *baldaslack.Client
+	SlackClient       SlackChatClient
 	SlackChatConfig   SlackChatConfig
 	AuthToken         string `name:"balda_auth_token"`
 	BaldaProviderID   string `name:"balda_provider"`
@@ -386,7 +391,7 @@ func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEve
 	teamID := firstNonEmpty(env.TeamID, h.getBotTeamID())
 	switch event.Type {
 	case "app_mention":
-		locator := baldaslack.NewThreadLocator(teamID, event.Channel, firstNonEmpty(event.ThreadTS, event.TS))
+		locator := slackThreadLocator(teamID, event.Channel, firstNonEmpty(event.ThreadTS, event.TS))
 		text := stripSlackBotMentions(event.Text, h.getBotUserID())
 		return h.handleMessage(ctx, locator, teamID, event.User, event.TS, text, false, true)
 	case "message":
@@ -395,11 +400,11 @@ func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEve
 		}
 		switch event.ChannelType {
 		case "im":
-			locator := baldaslack.NewDMLocator(teamID, event.Channel)
+			locator := slackDMLocator(teamID, event.Channel)
 			if strings.TrimSpace(event.ThreadTS) != "" {
 				// A Slack DM thread is still personal, but must get its own
 				// exact locator rather than collapsing into the DM root.
-				locator = baldaslack.NewThreadLocator(teamID, event.Channel, event.ThreadTS)
+				locator = slackThreadLocator(teamID, event.Channel, event.ThreadTS)
 			}
 			return h.handleMessage(ctx, locator, teamID, event.User, event.TS, event.Text, true, true)
 		case "channel", "group":
@@ -409,7 +414,7 @@ func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEve
 			if strings.TrimSpace(event.ThreadTS) == "" {
 				return terminalInbound(), nil
 			}
-			locator := baldaslack.NewThreadLocator(teamID, event.Channel, event.ThreadTS)
+			locator := slackThreadLocator(teamID, event.Channel, event.ThreadTS)
 			if _, err := h.sessionManager.GetSession(locator); err != nil {
 				return terminalInbound(), nil
 			}
@@ -434,7 +439,7 @@ func (h *SlackChatHandler) processSlashCommand(requestCtx context.Context, cmd s
 		}
 		return
 	}
-	locator := baldaslack.NewDMLocator(cmd.TeamID, cmd.ChannelID)
+	locator := slackDMLocator(cmd.TeamID, cmd.ChannelID)
 	h.handleCommandText(ctx, locator, cmd.TeamID, cmd.UserID, strings.TrimSpace(cmd.Text), true)
 }
 
@@ -453,7 +458,7 @@ func (h *SlackChatHandler) handleCommandText(ctx context.Context, locator baldas
 	if len(fields) > 1 {
 		args = strings.Join(fields[1:], " ")
 	}
-	subject := baldaslack.UserID(teamID, userID)
+	subject := slackUserID(teamID, userID)
 	if cmd != commandStart && !h.canAccessSubject(ctx, subject) {
 		_ = h.sendPlain(ctx, locator, "Only the bot owner or collaborators can use this bot.")
 		return
@@ -669,7 +674,7 @@ func (h *SlackChatHandler) handleTopicCommand(ctx context.Context, locator balda
 }
 
 func (h *SlackChatHandler) handleTopicSlashCommand(ctx context.Context, cmd slackSlashCommand, args string) {
-	subject := baldaslack.UserID(cmd.TeamID, cmd.UserID)
+	subject := slackUserID(cmd.TeamID, cmd.UserID)
 	if !h.canAccessSubject(ctx, subject) {
 		if _, err := h.client.PostMessage(ctx, cmd.ChannelID, "", "Only the bot owner or collaborators can use this bot.", true); err != nil {
 			h.logger.Warn().Err(err).Str("channel", cmd.ChannelID).Msg("failed to send slack access denial")
@@ -688,7 +693,7 @@ func (h *SlackChatHandler) handleTopicSlashCommand(ctx context.Context, cmd slac
 		h.logger.Warn().Err(err).Str("channel", cmd.ChannelID).Msg("failed to create slack topic seed message")
 		return
 	}
-	locator := baldaslack.NewThreadLocator(cmd.TeamID, cmd.ChannelID, seedTS)
+	locator := slackThreadLocator(cmd.TeamID, cmd.ChannelID, seedTS)
 	if err := h.sessionManager.CreateSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject}, topicName); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to create slack topic session")
 		if _, sendErr := h.client.PostMessage(ctx, cmd.ChannelID, seedTS, "Could not create topic session.", true); sendErr != nil {
@@ -713,12 +718,12 @@ func (h *SlackChatHandler) handleGoalCommand(ctx context.Context, locator baldas
 		return
 	}
 	if h.goalJobs != nil {
-		activeGoals, err := h.goalJobs.ListActiveGoalJobsBySession(ctx, locator.SessionID)
+		active, err := h.goalJobs.HasActiveGoalJob(ctx, locator.SessionID)
 		if err != nil {
 			_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 			return
 		}
-		if len(activeGoals) > 0 {
+		if active {
 			_ = h.sendPlain(ctx, locator, "A goal run is already active for this session.")
 			return
 		}
@@ -826,7 +831,7 @@ func (h *SlackChatHandler) handleUserCommand(ctx context.Context, locator baldas
 }
 
 func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, messageID, text string, isDM bool, createIfMissing bool) (turncmd.InboundSettlement, error) {
-	subject := baldaslack.UserID(teamID, userID)
+	subject := slackUserID(teamID, userID)
 	if h.ownerStore == nil || !h.ownerStore.HasOwner() {
 		return terminalInbound(), nil
 	}
@@ -839,7 +844,7 @@ func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasessi
 	if strings.TrimSpace(text) == "" {
 		return terminalInbound(), nil
 	}
-	inbound := baldaslack.NormalizeInbound(baldaslack.InboundMessage{
+	inbound := normalizeSlackInbound(slackInboundMessage{
 		Locator:           locator,
 		ProviderMessageID: messageID,
 		UserID:            subject,

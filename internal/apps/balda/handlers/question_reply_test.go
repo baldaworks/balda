@@ -86,7 +86,7 @@ func TestHandleQuestionReplyEnqueuesContinuationTurn(t *testing.T) {
 		questionService: questions.New(store, nil, zerolog.Nop()),
 		now:             func() time.Time { return time.Date(2026, 7, 14, 6, 0, 0, 0, time.UTC) },
 	}
-	handled, err := handler.handleQuestionReply(context.Background(), baldatelegram.MessageContext{
+	handled, err := handler.handleQuestionReply(context.Background(), TelegramMessageContext{
 		Locator:          baldasession.SessionLocator{SessionID: "tg-1-0", ChannelType: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1,"topic_id":0}`},
 		TopicID:          0,
 		MessageID:        43,
@@ -122,6 +122,10 @@ type callbackMessenger struct {
 	alerts  []bool
 }
 
+func newQuestionTelegramChannel(messenger baldatelegram.TelegramMessenger) *testTelegramChannel {
+	return &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})}
+}
+
 func (m *callbackMessenger) AnswerCallbackQuery(_ context.Context, _ string, text string, showAlert bool) error {
 	m.answers = append(m.answers, text)
 	m.alerts = append(m.alerts, showAlert)
@@ -148,7 +152,7 @@ func TestHandleQuestionCallbackSettlesAndDispatchesContinuation(t *testing.T) {
 	store := &fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}
 	dispatcher := &fakeTurnDispatcher{}
 	messenger := &callbackMessenger{}
-	channel := baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
+	channel := newQuestionTelegramChannel(messenger)
 	ownerStore, collaboratorStore := questionCallbackAuthStores(t)
 	handler := &BaldaHandler{
 		ownerStore:        ownerStore,
@@ -185,7 +189,7 @@ func TestHandleQuestionCallbackSettlesPrivateTopic(t *testing.T) {
 	handler := &BaldaHandler{
 		ownerStore:        ownerStore,
 		collaboratorStore: collaboratorStore,
-		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		channel:           newQuestionTelegramChannel(messenger),
 		actorDispatcher:   dispatcher,
 		questionService:   questions.New(store, nil, zerolog.Nop()),
 	}
@@ -209,7 +213,7 @@ func TestHandleQuestionCallbackRejectsDifferentPrivateTopic(t *testing.T) {
 	handler := &BaldaHandler{
 		ownerStore:        ownerStore,
 		collaboratorStore: collaboratorStore,
-		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		channel:           newQuestionTelegramChannel(messenger),
 		actorDispatcher:   dispatcher,
 		questionService:   questions.New(store, nil, zerolog.Nop()),
 	}
@@ -233,7 +237,7 @@ func TestHandleQuestionCallbackAcknowledgesStaleSelection(t *testing.T) {
 	handler := &BaldaHandler{
 		ownerStore:        ownerStore,
 		collaboratorStore: collaboratorStore,
-		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		channel:           newQuestionTelegramChannel(messenger),
 		actorDispatcher:   dispatcher,
 		questionService:   questions.New(store, nil, zerolog.Nop()),
 	}
@@ -252,7 +256,7 @@ func TestHandleQuestionCallbackAcknowledgesStaleSelection(t *testing.T) {
 func TestHandleQuestionCallbackFailsClosedWithoutAuthorizationStores(t *testing.T) {
 	messenger := &callbackMessenger{}
 	handler := &BaldaHandler{
-		channel:         baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		channel:         newQuestionTelegramChannel(messenger),
 		questionService: questions.New(&fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}, nil, zerolog.Nop()),
 	}
 	if err := handler.onQuestionCallback(context.Background(), questionCallbackEvent(testQuestionCallbackAllowData)); err != nil {
@@ -272,7 +276,7 @@ func TestHandleQuestionCallbackRejectsAuthenticatedNonRequester(t *testing.T) {
 	handler := &BaldaHandler{
 		ownerStore:        ownerStore,
 		collaboratorStore: collaboratorStore,
-		channel:           baldatelegram.NewAdapter(baldatelegram.AdapterParams{Messenger: messenger, Logger: zerolog.Nop()}),
+		channel:           newQuestionTelegramChannel(messenger),
 		questionService:   questions.New(&fakeQuestionStore{record: callbackQuestionRecord(questioncmd.StatusPending)}, nil, zerolog.Nop()),
 	}
 	if err := handler.onQuestionCallback(context.Background(), questionCallbackEventForUser(testQuestionCallbackAllowData, 202)); err != nil {

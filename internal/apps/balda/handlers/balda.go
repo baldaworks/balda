@@ -2,26 +2,16 @@ package handlers
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
 	"github.com/normahq/balda/internal/apps/balda/auth"
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	"github.com/normahq/balda/internal/apps/balda/messenger"
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/sessionturnapp"
-	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -29,7 +19,6 @@ import (
 	"github.com/tgbotkit/runtime/events"
 	"github.com/tgbotkit/runtime/messagetype"
 	"go.uber.org/fx"
-	"google.golang.org/adk/v2/runner"
 )
 
 const (
@@ -46,22 +35,18 @@ type jobEventAppender interface {
 type BaldaHandler struct {
 	ownerStore         *auth.OwnerStore
 	collaboratorStore  *auth.CollaboratorStore
-	channel            *baldatelegram.Adapter
+	channel            TelegramChannel
 	sessionManager     *baldasession.Manager
 	actorDispatcher    actortransport.Dispatcher
 	jobEvents          jobEventAppender
-	messenger          *messenger.Messenger
 	tgClient           client.ClientWithResponsesInterface
 	authToken          string
 	baldaProviderName  string
 	telegramEnabled    bool
 	telegramConfigured bool
 	logger             zerolog.Logger
-	outboundFrom       actorlayer.ActorAddress
-	progressEmitter    sessionturnapp.SessionProgressEmitter
-	turnExecution      *sessionturnapp.TurnExecutionService
 	questionService    *questions.Service
-	attachmentStore    attachmentstore.Store
+	attachmentStore    TelegramAttachmentStore
 
 	mu          sync.RWMutex
 	ownerID     int64
@@ -76,19 +61,17 @@ type baldaHandlerDeps struct {
 
 	OwnerStore        *auth.OwnerStore
 	CollaboratorStore *auth.CollaboratorStore
-	Channel           *baldatelegram.Adapter
+	Channel           TelegramChannel
 	SessionManager    *baldasession.Manager
 	Dispatcher        actortransport.Dispatcher
 	JobEvents         *baldajobs.JobEventsService `optional:"true"`
-	Messenger         *messenger.Messenger
 	TGClient          client.ClientWithResponsesInterface
 	AuthToken         string `name:"balda_auth_token"`
 	BaldaProviderID   string `name:"balda_provider"`
 	TelegramEnabled   bool   `name:"balda_telegram_enabled"`
 	Logger            zerolog.Logger
-	TurnExecution     *sessionturnapp.TurnExecutionService
-	QuestionService   *questions.Service    `optional:"true"`
-	AttachmentStore   attachmentstore.Store `optional:"true"`
+	QuestionService   *questions.Service      `optional:"true"`
+	AttachmentStore   TelegramAttachmentStore `optional:"true"`
 }
 
 // Start validates the Telegram identity and bootstraps owner state.
@@ -97,9 +80,9 @@ func (h *BaldaHandler) Start(ctx context.Context) error {
 }
 
 // Register registers the handler with the registry.
-func (h *BaldaHandler) Register(registry tgbotkit.Registry) {
+func (h *BaldaHandler) Register(registry TelegramRegistry) {
 	registry.OnMessage(h.onMessage)
-	registry.OnCallbackDataPrefix(baldatelegram.QuestionCallbackPrefix, h.onQuestionCallback)
+	registry.OnCallbackDataPrefix(telegramQuestionCallbackPrefix, h.onQuestionCallback)
 	registry.OnMessageType(messagetype.ForumTopicCreated, h.onForumTopicLifecycle)
 	registry.OnMessageType(messagetype.ForumTopicEdited, h.onForumTopicLifecycle)
 	registry.OnMessageType(messagetype.ForumTopicClosed, h.onForumTopicLifecycle)
@@ -136,7 +119,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	if messageCtx.HasCommand {
 		return nil
 	}
-	if h.channel.CollectMediaGroup(messageCtx, func(groupCtx context.Context, grouped baldatelegram.MessageContext) {
+	if h.channel.CollectMediaGroup(messageCtx, func(groupCtx context.Context, grouped TelegramMessageContext) {
 		if err := h.handleAcceptedMessage(groupCtx, grouped); err != nil {
 			h.logger.Error().Err(err).
 				Str("session_id", grouped.Locator.SessionID).
@@ -149,7 +132,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	return h.handleAcceptedMessage(ctx, messageCtx)
 }
 
-func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx baldatelegram.MessageContext) error {
+func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx TelegramMessageContext) error {
 	if h.attachmentStore != nil && len(messageCtx.Attachments) > 0 {
 		persisted, err := h.attachmentStore.PersistTelegram(ctx, messageCtx.Attachments)
 		if err != nil {
@@ -184,7 +167,7 @@ func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx bal
 	if h.now != nil {
 		receivedAtNow = h.now
 	}
-	inbound := h.channel.NormalizeInbound(
+	inbound := normalizeTelegramInbound(
 		messageCtx,
 		appendAttachmentSummary(text, messageCtx.Attachments),
 		receivedAtNow(),
@@ -215,83 +198,6 @@ func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx bal
 	}
 
 	return nil
-}
-
-func (h *BaldaHandler) outboundActorAddress(sessionID string) actorlayer.ActorAddress {
-	if h != nil && strings.TrimSpace(h.outboundFrom.Target) != "" {
-		return h.outboundFrom
-	}
-	return baldaHandlerActorAddress
-}
-
-func (h *BaldaHandler) runTurnJobWithDelivery(
-	ctx context.Context,
-	text string,
-	r *runner.Runner,
-	userID string,
-	sessionID string,
-	jobID string,
-	agentSessionID string,
-	locator baldasession.SessionLocator,
-	messageID int,
-	topicID int,
-	progressPolicy baldachannel.ProgressPolicy,
-	deliver bool,
-) error {
-	return h.runTurnJobWithDeliveryOptions(ctx, text, r, userID, sessionID, jobID, agentSessionID, locator, messageID, topicID, deliveryfmt.Options{ProgressPolicy: progressPolicy}, deliver)
-}
-
-func (h *BaldaHandler) runTurnJobWithDeliveryOptions(
-	ctx context.Context,
-	text string,
-	r *runner.Runner,
-	userID string,
-	sessionID string,
-	jobID string,
-	agentSessionID string,
-	locator baldasession.SessionLocator,
-	messageID int,
-	topicID int,
-	deliveryOptions deliveryfmt.Options,
-	deliver bool,
-	runOpts ...runner.RunOption,
-) error {
-	if !deliver {
-		deliveryOptions.ProgressPolicy = deliveryfmt.ProgressPolicy{}
-	}
-	err := h.runTurnWithDeliveryOptions(ctx, text, r, userID, sessionID, jobID, agentSessionID, locator, messageID, deliveryOptions, deliver, runOpts...)
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, context.Canceled) {
-		h.logger.Info().
-			Str("session_id", sessionID).
-			Int("topic_id", topicID).
-			Msg("balda turn canceled")
-		return err
-	}
-	if _, getErr := h.sessionManager.GetSession(locator); getErr != nil {
-		h.logger.Debug().
-			Str("session_id", sessionID).
-			Int("topic_id", topicID).
-			Msg("suppressing balda turn error for inactive session")
-		return nil
-	}
-	if !deliver {
-		h.logger.Warn().
-			Err(err).
-			Str("session_id", sessionID).
-			Int("topic_id", topicID).
-			Msg("fire-and-forget balda turn failed")
-		return err
-	}
-
-	log.Error().Err(err).Int("topic_id", topicID).Msg("agent execution failed")
-	errText := "Agent execution failed. Use /reset or /restart to restart this session."
-	if sendErr := sendPlain(context.Background(), h.actorDispatcher, baldaHandlerActorAddress, locator, errText); sendErr != nil {
-		log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda error message")
-	}
-	return err
 }
 
 func (h *BaldaHandler) onForumTopicLifecycle(ctx context.Context, event *events.MessageEvent) error {
@@ -344,55 +250,4 @@ func (h *BaldaHandler) onForumTopicLifecycle(ctx context.Context, event *events.
 	}
 
 	return nil
-}
-
-func (h *BaldaHandler) runTurnWithDelivery(
-	ctx context.Context,
-	text string,
-	r *runner.Runner,
-	userID string,
-	sessionID string,
-	jobID string,
-	agentSessionID string,
-	locator baldasession.SessionLocator,
-	messageID int,
-	progressPolicy baldachannel.ProgressPolicy,
-	deliver bool,
-) error {
-	return h.runTurnWithDeliveryOptions(ctx, text, r, userID, sessionID, jobID, agentSessionID, locator, messageID, deliveryfmt.Options{ProgressPolicy: progressPolicy}, deliver)
-}
-
-func (h *BaldaHandler) runTurnWithDeliveryOptions(
-	ctx context.Context,
-	text string,
-	r *runner.Runner,
-	userID string,
-	sessionID string,
-	jobID string,
-	agentSessionID string,
-	locator baldasession.SessionLocator,
-	messageID int,
-	deliveryOptions deliveryfmt.Options,
-	deliver bool,
-	runOpts ...runner.RunOption,
-) error {
-	execution := h.turnExecution
-	if execution == nil {
-		return fmt.Errorf("turn execution service is not configured")
-	}
-	return execution.Execute(ctx, sessionturnapp.ExecutionRequest{
-		Text:            text,
-		Runner:          r,
-		UserID:          userID,
-		SessionID:       sessionID,
-		JobID:           jobID,
-		AgentSessionID:  agentSessionID,
-		Locator:         locator,
-		MessageID:       messageID,
-		DeliveryOptions: deliveryOptions,
-		Deliver:         deliver,
-		ProgressEmitter: h.progressEmitter,
-		OutboundFrom:    h.outboundActorAddress(sessionID),
-		RunOptions:      runOpts,
-	})
 }

@@ -14,8 +14,7 @@ import (
 
 	"github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
-	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
-	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/ingressapp"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questions"
@@ -222,18 +221,18 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 	teamID := firstNonEmpty(event.TeamID, env.TeamID)
 	var locator baldasession.SessionLocator
 	if strings.TrimSpace(event.ThreadID) != "" {
-		locator = baldaslackagent.NewThreadLocator(teamID, event.ConversationID, event.ThreadID)
+		locator = slackAgentThreadLocator(teamID, event.ConversationID, event.ThreadID)
 	} else {
-		locator = baldaslackagent.NewConversationLocator(teamID, event.ConversationID)
+		locator = slackAgentConversationLocator(teamID, event.ConversationID)
 	}
-	subject := baldaslack.UserID(teamID, event.UserID)
+	subject := slackUserID(teamID, event.UserID)
 	if handled, err := h.handleQuestionReply(ctx, locator, subject, event); err != nil {
 		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to handle slack agent question reply")
 		return retryInbound(), err
 	} else if handled {
 		return terminalInbound(), nil
 	}
-	inbound := baldaslackagent.NormalizeInbound(baldaslackagent.InboundMessage{
+	inbound := normalizeSlackAgentInbound(slackAgentInboundMessage{
 		Locator:          locator,
 		EventID:          env.EventID,
 		MessageID:        event.MessageID,
@@ -298,7 +297,7 @@ func (h *SlackAgentHandler) handleQuestionReply(ctx context.Context, locator bal
 		return false, nil
 	}
 	result, err := h.questionService.ResolveReplyDetailed(ctx, questioncmd.InboundReply{
-		Provider:         baldaslackagent.ChannelType,
+		Provider:         string(deliverycmd.ChannelTypeSlackAgent),
 		SessionID:        locator.SessionID,
 		ConversationKey:  locator.AddressKey,
 		ReplyToMessageID: strings.TrimSpace(event.ReplyToMessageID),
@@ -313,7 +312,7 @@ func (h *SlackAgentHandler) handleQuestionReply(ctx context.Context, locator bal
 	if !result.Settled {
 		return true, nil
 	}
-	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Record); err != nil {
+	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); err != nil {
 		return true, err
 	}
 	return true, nil

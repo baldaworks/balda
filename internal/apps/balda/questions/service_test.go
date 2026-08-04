@@ -221,6 +221,8 @@ func TestServiceResolveReplySettlesPendingQuestion(t *testing.T) {
 			Provider:          "telegram",
 			ConversationKey:   "1:0",
 			ProviderMessageID: "42",
+			InteractionJSON:   mustJSON(questioncmd.InteractionContext{SessionID: "tg-1-0", Locator: deliverycmd.Locator{SessionID: "tg-1-0"}}),
+			ResumeJSON:        mustJSON(questioncmd.ResumeTarget{To: "permission:review-1"}),
 		},
 	}
 	svc := New(store, nil, zerolog.Nop())
@@ -277,6 +279,8 @@ func TestServiceResolveReplyMapsOptionNumber(t *testing.T) {
 		Provider:          "telegram",
 		ConversationKey:   "1:0",
 		ProviderMessageID: "42",
+		InteractionJSON:   mustJSON(questioncmd.InteractionContext{SessionID: "tg-1-0", Locator: deliverycmd.Locator{SessionID: "tg-1-0"}}),
+		ResumeJSON:        mustJSON(questioncmd.ResumeTarget{To: "permission:review-1"}),
 		RequestJSON: mustJSON(questioncmd.Request{Options: []questioncmd.Option{
 			{ID: "allow", Label: "Allow once"},
 			{ID: "reject", Label: "Reject once"},
@@ -293,6 +297,9 @@ func TestServiceResolveReplyMapsOptionNumber(t *testing.T) {
 	}
 	if !result.Settled {
 		t.Fatalf("resolution = %+v, want settled", result)
+	}
+	if result.Continuation.DedupeKey != "question:question-1:answered" {
+		t.Fatalf("continuation dedupe key = %q", result.Continuation.DedupeKey)
 	}
 	var answer questioncmd.Answer
 	if err := json.Unmarshal([]byte(result.Record.AnswerJSON), &answer); err != nil {

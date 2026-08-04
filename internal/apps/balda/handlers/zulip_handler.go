@@ -18,7 +18,6 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/automode"
-	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
@@ -739,7 +738,7 @@ func (h *ZulipBaldaHandler) handleResetCommand(
 	if infoErr != nil {
 		h.logger.Debug().Err(infoErr).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: session info unavailable before restart")
 	}
-	transportUserID := baldazulip.UserID(senderID)
+	transportUserID := zulipUserID(senderID)
 	reason := fmt.Sprintf("session canceled by %s command", cmd)
 	if submitErr := submitSessionCancelControl(
 		ctx, h.actorDispatcher, locator, transportUserID, reason, false,
@@ -786,7 +785,7 @@ func zulipRestartSessionUserID(senderID int, info baldasession.TopicSessionInfo)
 	if userID := strings.TrimSpace(info.UserID); userID != "" {
 		return userID
 	}
-	return baldazulip.UserID(senderID)
+	return zulipUserID(senderID)
 }
 
 func zulipRestartWelcomeDisplayName(isDM bool, label string) string {
@@ -810,7 +809,7 @@ func (h *ZulipBaldaHandler) handleCancelCommand(
 		_ = h.sendPlain(ctx, locator, "Cancel is unavailable right now. Please try again.")
 		return
 	}
-	transportUserID := baldazulip.UserID(senderID)
+	transportUserID := zulipUserID(senderID)
 	if err := submitSessionTurnCancelControl(
 		ctx, h.actorDispatcher, locator, transportUserID, "session turn canceled by user", true,
 	); err != nil {
@@ -877,7 +876,7 @@ func (h *ZulipBaldaHandler) handleCloseCommand(
 		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
 		return
 	}
-	transportUserID := baldazulip.UserID(senderID)
+	transportUserID := zulipUserID(senderID)
 	if submitErr := submitSessionCancelControl(
 		ctx, h.actorDispatcher, locator, transportUserID, "session canceled by close command", false,
 	); submitErr != nil {
@@ -1036,14 +1035,14 @@ func (h *ZulipBaldaHandler) handleGoalCommand(
 			return
 		}
 		if err := submitGoalClearControl(
-			ctx, h.actorDispatcher, locator, baldazulip.UserID(senderID), "goal cleared by user", true,
+			ctx, h.actorDispatcher, locator, zulipUserID(senderID), "goal cleared by user", true,
 		); err != nil {
 			h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to submit goal clear control")
 			_ = h.sendPlain(ctx, locator, "Could not clear goal run.")
 		}
 		return
 	}
-	started, err := h.submitGoalJob(ctx, locator, objective, baldazulip.UserID(senderID))
+	started, err := h.submitGoalJob(ctx, locator, objective, zulipUserID(senderID))
 	if err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to start /goalkeeper run")
 		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
@@ -1061,11 +1060,11 @@ func (h *ZulipBaldaHandler) submitGoalJob(
 	transportUserID string,
 ) (bool, error) {
 	if h.goalJobs != nil {
-		activeGoals, err := h.goalJobs.ListActiveGoalJobsBySession(ctx, locator.SessionID)
+		active, err := h.goalJobs.HasActiveGoalJob(ctx, locator.SessionID)
 		if err != nil {
 			return false, fmt.Errorf("list active goal jobs: %w", err)
 		}
-		if len(activeGoals) > 0 {
+		if active {
 			return false, nil
 		}
 	}
@@ -1109,7 +1108,7 @@ func (h *ZulipBaldaHandler) handleTopicCommand(
 		return
 	}
 
-	streamID, ok := baldazulip.StreamIDFromLocator(locator)
+	streamID, ok := locatorref.ZulipStreamID(locator)
 	if !ok {
 		_ = h.sendPlain(ctx, locator, "Could not determine stream ID from current context.")
 		return
@@ -1121,8 +1120,8 @@ func (h *ZulipBaldaHandler) handleTopicCommand(
 		Str("topic_name", topicName).
 		Msg("creating zulip topic session")
 
-	topicLocator := baldazulip.NewStreamLocator(streamID, topicName)
-	transportUserID := baldazulip.UserID(senderID)
+	topicLocator := zulipStreamLocator(streamID, topicName)
+	transportUserID := zulipUserID(senderID)
 	if err := h.sessionManager.CreateSession(ctx, baldasession.SessionContext{
 		Locator: topicLocator,
 		UserID:  transportUserID,
@@ -1158,8 +1157,8 @@ func (h *ZulipBaldaHandler) handleMessage(
 		return terminalInbound(), nil
 	}
 
-	transportUserID := baldazulip.UserID(senderID)
-	inbound := baldazulip.NormalizeInbound(baldazulip.InboundMessage{
+	transportUserID := zulipUserID(senderID)
+	inbound := normalizeZulipInbound(zulipInboundMessage{
 		Locator:    locator,
 		MessageID:  messageID,
 		UserID:     transportUserID,
@@ -1191,7 +1190,7 @@ func (h *ZulipBaldaHandler) handleMessage(
 }
 
 func (h *ZulipBaldaHandler) authorizeZulipInbound(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.Authorization, error) {
-	userID, err := baldazulip.ParseUserID(inbound.UserID)
+	userID, err := parseZulipUserID(inbound.UserID)
 	if err != nil {
 		return ingressapp.Authorization{Reason: ingressapp.ReasonUnauthorized}, nil
 	}
@@ -1354,7 +1353,7 @@ func (h *ZulipBaldaHandler) sendSessionStartupNotice(ctx context.Context, locato
 
 func (h *ZulipBaldaHandler) locatorFromPayload(payload zulipWebhookPayload) baldasession.SessionLocator {
 	if payload.Message.Type == chatTypePrivate {
-		return baldazulip.NewDMLocator(payload.Message.SenderID)
+		return zulipDMLocator(payload.Message.SenderID)
 	}
-	return baldazulip.NewStreamLocator(payload.Message.StreamID, payload.Message.Subject)
+	return zulipStreamLocator(payload.Message.StreamID, payload.Message.Subject)
 }

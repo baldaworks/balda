@@ -84,6 +84,16 @@ func (s *JobLifecycleService) ListActiveGoalJobsBySession(ctx context.Context, s
 	return out, nil
 }
 
+// HasActiveGoalJob reports whether the session already has an active
+// GoalKeeper job without exposing durable job records to ingress callers.
+func (s *JobLifecycleService) HasActiveGoalJob(ctx context.Context, sessionID string) (bool, error) {
+	records, err := s.ListActiveGoalJobsBySession(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	return len(records) > 0, nil
+}
+
 func (s *JobLifecycleService) MarkStatus(ctx context.Context, jobID string, status string, actor string, messageID string, reason string, payload any) error {
 	if s == nil {
 		return nil

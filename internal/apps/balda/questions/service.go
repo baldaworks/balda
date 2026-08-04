@@ -166,10 +166,11 @@ func (s *Service) ResolveReply(ctx context.Context, in questioncmd.InboundReply)
 }
 
 type ReplyResolution struct {
-	Record  baldastate.QuestionRecord
-	Matched bool
-	Settled bool
-	Invalid bool
+	Record       baldastate.QuestionRecord
+	Continuation actorlayer.Envelope
+	Matched      bool
+	Settled      bool
+	Invalid      bool
 }
 
 func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.InboundReply) (ReplyResolution, error) {
@@ -205,6 +206,11 @@ func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.Inbou
 	updated, settled, err := s.store.MarkQuestionAnswered(ctx, record.QuestionID, answer)
 	if err == nil && settled {
 		s.clearControls(ctx, updated)
+		continuation, continuationErr := answeredContinuation(updated)
+		if continuationErr != nil {
+			return ReplyResolution{Record: updated, Matched: true, Settled: true}, continuationErr
+		}
+		return ReplyResolution{Record: updated, Continuation: continuation, Matched: true, Settled: true}, nil
 	}
 	return ReplyResolution{Record: updated, Matched: true, Settled: settled}, err
 }
@@ -212,11 +218,12 @@ func (s *Service) ResolveReplyDetailed(ctx context.Context, in questioncmd.Inbou
 // SelectionResolution reports whether a structured selection matched and
 // durably settled a question.
 type SelectionResolution struct {
-	Record   baldastate.QuestionRecord
-	Matched  bool
-	Settled  bool
-	Invalid  bool
-	Inactive bool
+	Record       baldastate.QuestionRecord
+	Continuation actorlayer.Envelope
+	Matched      bool
+	Settled      bool
+	Invalid      bool
+	Inactive     bool
 }
 
 // ResolveSelectionDetailed validates and settles a channel-independent option
@@ -263,11 +270,32 @@ func (s *Service) ResolveSelectionDetailed(ctx context.Context, in questioncmd.I
 	if err == nil {
 		if settled {
 			s.clearControls(ctx, updated)
+			continuation, continuationErr := answeredContinuation(updated)
+			if continuationErr != nil {
+				return SelectionResolution{Record: updated, Matched: true, Settled: true}, continuationErr
+			}
+			return SelectionResolution{Record: updated, Continuation: continuation, Matched: true, Settled: true}, nil
 		} else {
 			s.clearControls(ctx, record)
 		}
 	}
 	return SelectionResolution{Record: updated, Matched: true, Settled: settled, Inactive: err == nil && !settled}, err
+}
+
+func answeredContinuation(record baldastate.QuestionRecord) (actorlayer.Envelope, error) {
+	var interaction questioncmd.InteractionContext
+	if err := json.Unmarshal([]byte(record.InteractionJSON), &interaction); err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("decode question interaction: %w", err)
+	}
+	var resume questioncmd.ResumeTarget
+	if err := json.Unmarshal([]byte(record.ResumeJSON), &resume); err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("decode question resume target: %w", err)
+	}
+	var answer questioncmd.Answer
+	if err := json.Unmarshal([]byte(record.AnswerJSON), &answer); err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("decode question answer: %w", err)
+	}
+	return questioncmd.AnsweredEnvelope(resume, interaction, answer, record.QuestionID)
 }
 
 func decodeRequest(record baldastate.QuestionRecord) (questioncmd.Request, error) {

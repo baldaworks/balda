@@ -107,11 +107,21 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			},
 		},
 		{
-			name: "ingress wires the queued turn use case",
+			name: "ingress normalizes and publishes turn commands",
 			dir:  "handlers",
 			requires: []string{
-				baldaImportPrefix + "sessionturnapp",
 				baldaImportPrefix + "deliverycmd",
+				baldaImportPrefix + "ingressapp",
+				baldaImportPrefix + "turncmd",
+			},
+		},
+		{
+			name: "ingress composition binds consumer ports to provider adapters",
+			dir:  "handlersfx",
+			requires: []string{
+				baldaImportPrefix + "handlers",
+				baldaImportPrefix + "channel/telegram",
+				baldaImportPrefix + "tgbotkit",
 			},
 		},
 		{

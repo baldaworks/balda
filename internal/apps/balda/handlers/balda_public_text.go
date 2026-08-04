@@ -5,11 +5,10 @@ import (
 	"sort"
 	"strings"
 
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/tgbotkit/client"
 )
 
-func (h *BaldaHandler) normalizePublicText(messageCtx baldatelegram.MessageContext) (string, bool) {
+func (h *BaldaHandler) normalizePublicText(messageCtx TelegramMessageContext) (string, bool) {
 	botUserID, botUsername := h.getBotIdentity()
 	replyContent := strings.TrimSpace(messageCtx.ReplyContent)
 	forwardedContent := strings.TrimSpace(messageCtx.ForwardedContent)
@@ -37,7 +36,7 @@ func (h *BaldaHandler) normalizePublicText(messageCtx baldatelegram.MessageConte
 	return composeContextAwareInput(strings.TrimSpace(messageCtx.Text), replyContent, forwardedContent)
 }
 
-func (h *BaldaHandler) normalizeDMText(messageCtx baldatelegram.MessageContext) string {
+func (h *BaldaHandler) normalizeDMText(messageCtx TelegramMessageContext) string {
 	if !messageCtx.IsReply && !messageCtx.IsForwarded {
 		return messageCtx.Text
 	}

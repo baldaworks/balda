@@ -26,6 +26,7 @@ import (
 	natsbus "github.com/normahq/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/handlers"
+	"github.com/normahq/balda/internal/apps/balda/handlersfx"
 	"github.com/normahq/balda/internal/apps/balda/internalmcp"
 	"github.com/normahq/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
@@ -612,6 +613,7 @@ func Module(
 		actors.Module,
 		scheduledjobs.Module,
 		handlers.Module,
+		handlersfx.Module,
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,
 		),

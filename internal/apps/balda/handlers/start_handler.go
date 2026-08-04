@@ -6,10 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -53,11 +52,11 @@ type startCommandArgs struct {
 }
 
 func (h *StartHandler) sendPlain(ctx context.Context, chatID int64, text string) error {
-	return sendPlain(ctx, h.actorDispatcher, startHandlerActorAddress, baldatelegram.NewLocator(chatID, 0), text)
+	return sendPlain(ctx, h.actorDispatcher, startHandlerActorAddress, telegramref.NewLocator(chatID, 0), text)
 }
 
 // Register registers the handler with the registry.
-func (h *StartHandler) Register(registry tgbotkit.Registry) {
+func (h *StartHandler) Register(registry TelegramRegistry) {
 	registry.OnCommand(h.onCommand)
 }
 
@@ -134,7 +133,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			Int64("user_id", userID).
 			Int64("chat_id", chatID).
 			Msg("Malformed /start argument")
-		if err := sendPlain(ctx, h.actorDispatcher, startHandlerActorAddress, baldatelegram.NewLocator(chatID, 0), "Invalid /start format. Use one of:\n• /start owner=<your_owner_token>\n• /start invite=<your_invite_token>\n\nIf using a link, use one of:\n• https://t.me/<bot_username>?start=owner_<your_owner_token>\n• https://t.me/<bot_username>?start=invite_<your_invite_token>"); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, startHandlerActorAddress, telegramref.NewLocator(chatID, 0), "Invalid /start format. Use one of:\n• /start owner=<your_owner_token>\n• /start invite=<your_invite_token>\n\nIf using a link, use one of:\n• https://t.me/<bot_username>?start=owner_<your_owner_token>\n• https://t.me/<bot_username>?start=invite_<your_invite_token>"); err != nil {
 			return err
 		}
 		return nil

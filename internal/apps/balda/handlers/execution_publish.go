@@ -42,12 +42,12 @@ func (h *CommandHandler) submitGoalJob(ctx context.Context, locator baldasession
 }
 
 func (h *CommandHandler) submitGoalJobWithOptions(ctx context.Context, locator baldasession.SessionLocator, deliveryOptions deliveryfmt.Options, objective string, transportUserID string) (bool, error) {
-	if h.jobService != nil {
-		activeGoals, err := h.jobService.ListActiveGoalJobsBySession(ctx, locator.SessionID)
+	if h.goalJobs != nil {
+		active, err := h.goalJobs.HasActiveGoalJob(ctx, locator.SessionID)
 		if err != nil {
 			return false, fmt.Errorf("list active goal jobs: %w", err)
 		}
-		if len(activeGoals) > 0 {
+		if active {
 			return false, nil
 		}
 	}

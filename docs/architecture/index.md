@@ -31,6 +31,7 @@ Use this map to find the authoritative runtime contracts.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, formatting profile, progress policy, delivery payloads, and adapter-facing delivery operations.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.
 - `channel/*` packages are concrete transport adapters only. They must not define shared cross-transport contracts and must not import Balda application/session internals for convenience.
+- `handlers` owns ingress normalization, authorization/session preconditions, and durable publish; `handlersfx` is the composition boundary that binds its local ports to concrete provider runtimes.
 - `locatorref` owns the public `<channel_type>:<address_key>` reference form and must stay independent from concrete transport adapter packages.
 - Use-case packages such as `sessionturn` and MCP surfaces own local ports and depend on small interfaces; composition/wiring code provides concrete adapters.
 - `sessionturn` owns queued-turn restoration and delegates provider iteration through a narrow executor port.
@@ -61,6 +62,7 @@ Telegram/Zulip/Slack chat/Slack agent/webhook/scheduler ingress -> actorlayer tr
 - `internal/apps/balda/sessionturn`
 - `internal/apps/balda/internalmcp`
 - `internal/apps/balda/handlers`
+- `internal/apps/balda/handlersfx`
 - `internal/apps/balda/agent`
 - `internal/apps/balda/session`
 - `internal/apps/balda/state`

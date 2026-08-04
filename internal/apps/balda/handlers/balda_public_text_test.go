@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/tgbotkit/client"
 )
 
@@ -13,7 +12,7 @@ func TestNormalizePublicText_MentionEntityAnywhereBuildsStructuredInputWithReply
 	setUnexportedField(t, h, "botUsername", "testbot")
 
 	text := "please @testbot review this"
-	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(TelegramMessageContext{
 		Text:         text,
 		ReplyContent: "previous message body",
 		Entities: []client.MessageEntity{
@@ -39,7 +38,7 @@ func TestNormalizePublicText_MentionOnlyWithReplyContentIsProcessed(t *testing.T
 	h := &BaldaHandler{}
 	setUnexportedField(t, h, "botUsername", "testbot")
 
-	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(TelegramMessageContext{
 		Text:         "@testbot",
 		ReplyContent: "quoted context",
 		Entities: []client.MessageEntity{
@@ -60,7 +59,7 @@ func TestNormalizePublicText_MentionOnlyWithoutReplyContentIsIgnored(t *testing.
 	h := &BaldaHandler{}
 	setUnexportedField(t, h, "botUsername", "testbot")
 
-	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(TelegramMessageContext{
 		Text: "@testbot",
 		Entities: []client.MessageEntity{
 			{Type: "mention", Offset: 0, Length: len("@testbot")},
@@ -77,7 +76,7 @@ func TestNormalizePublicText_DirectReplyToBotIncludesReplyContext(t *testing.T) 
 	setUnexportedField(t, h, "botUserID", int64(4242))
 	setUnexportedField(t, h, "botUsername", "testbot")
 
-	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(TelegramMessageContext{
 		Text:          "follow up message",
 		IsReply:       true,
 		ReplyToIsBot:  true,
@@ -98,7 +97,7 @@ func TestNormalizePublicText_ForwardedBotMessageIncludesForwardedContext(t *test
 	h := &BaldaHandler{}
 	setUnexportedField(t, h, "botUserID", int64(4242))
 
-	normalized, ok := h.normalizePublicText(baldatelegram.MessageContext{
+	normalized, ok := h.normalizePublicText(TelegramMessageContext{
 		Text:             "bot previous response",
 		IsForwarded:      true,
 		ForwardedFromBot: true,

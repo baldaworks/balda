@@ -87,6 +87,63 @@ func telegramLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, erro
 	)
 }
 
+// NewSlackDMLocator builds a canonical Slack chat direct-message locator.
+func NewSlackDMLocator(teamID, channelID string) (deliverycmd.Locator, error) {
+	return slackLocatorFromAddressKey(fmt.Sprintf("dm:%s:%s", strings.TrimSpace(teamID), strings.TrimSpace(channelID)))
+}
+
+// NewSlackThreadLocator builds a canonical Slack chat thread locator.
+func NewSlackThreadLocator(teamID, channelID, threadTS string) (deliverycmd.Locator, error) {
+	return slackLocatorFromAddressKey(fmt.Sprintf(
+		"t:%s:%s:%s",
+		strings.TrimSpace(teamID),
+		strings.TrimSpace(channelID),
+		strings.TrimSpace(threadTS),
+	))
+}
+
+// NewSlackAgentConversationLocator builds a canonical Slack Agent conversation locator.
+func NewSlackAgentConversationLocator(teamID, conversationID string) (deliverycmd.Locator, error) {
+	return slackAgentLocatorFromAddressKey(fmt.Sprintf(
+		"c:%s:%s",
+		strings.TrimSpace(teamID),
+		strings.TrimSpace(conversationID),
+	))
+}
+
+// NewSlackAgentThreadLocator builds a canonical Slack Agent thread locator.
+func NewSlackAgentThreadLocator(teamID, conversationID, threadID string) (deliverycmd.Locator, error) {
+	return slackAgentLocatorFromAddressKey(fmt.Sprintf(
+		"t:%s:%s:%s",
+		strings.TrimSpace(teamID),
+		strings.TrimSpace(conversationID),
+		strings.TrimSpace(threadID),
+	))
+}
+
+// NewZulipStreamLocator builds a canonical Zulip stream-topic locator.
+func NewZulipStreamLocator(streamID int, topic string) (deliverycmd.Locator, error) {
+	return zulipLocatorFromAddressKey(fmt.Sprintf("s:%d:%s", streamID, url.PathEscape(topic)))
+}
+
+// NewZulipDMLocator builds a canonical Zulip direct-message locator.
+func NewZulipDMLocator(userID int) (deliverycmd.Locator, error) {
+	return zulipLocatorFromAddressKey(fmt.Sprintf("dm:%d", userID))
+}
+
+// ZulipStreamID returns the stream ID encoded by a canonical Zulip locator.
+func ZulipStreamID(locator deliverycmd.Locator) (int, bool) {
+	if strings.TrimSpace(locator.ChannelType) != channelTypeZulip {
+		return 0, false
+	}
+	parts := strings.SplitN(strings.TrimSpace(locator.AddressKey), ":", 3)
+	if len(parts) != 3 || parts[0] != "s" {
+		return 0, false
+	}
+	streamID, err := strconv.Atoi(parts[1])
+	return streamID, err == nil && streamID > 0
+}
+
 func slackLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	parts := strings.Split(strings.TrimSpace(addressKey), ":")
 	switch {
@@ -195,7 +252,7 @@ func zulipLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) 
 		if err != nil {
 			return deliverycmd.Locator{}, fmt.Errorf("unescape zulip topic from %q: %w", addressKey, err)
 		}
-		raw, _ := json.Marshal(map[string]any{"type": "stream", "stream_id": streamID, "topic": topic})
+		raw, _ := json.Marshal(zulipLocatorAddress{Type: "stream", StreamID: streamID, Topic: topic})
 		topicHash := sha256.Sum256([]byte(topic))
 		return deliverycmd.NewLocator(
 			channelTypeZulip,
@@ -213,7 +270,7 @@ func zulipLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) 
 		if userID <= 0 {
 			return deliverycmd.Locator{}, fmt.Errorf("zulip user_id from %q must be positive", addressKey)
 		}
-		raw, _ := json.Marshal(map[string]any{"type": "dm", "user_id": userID})
+		raw, _ := json.Marshal(zulipLocatorAddress{Type: "dm", UserID: userID})
 		return deliverycmd.NewLocator(
 			channelTypeZulip,
 			fmt.Sprintf("dm:%d", userID),
@@ -222,4 +279,11 @@ func zulipLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) 
 		)
 	}
 	return deliverycmd.Locator{}, fmt.Errorf("zulip address key %q must start with \"s:\" (stream) or \"dm:\" (direct message)", addressKey)
+}
+
+type zulipLocatorAddress struct {
+	Type     string `json:"type"`
+	StreamID int    `json:"stream_id,omitempty"`
+	Topic    string `json:"topic"`
+	UserID   int    `json:"user_id,omitempty"`
 }

@@ -83,6 +83,7 @@ components:
       - internal/apps/balda/sessionturn
       - internal/apps/balda/sessionturnapp
       - internal/apps/balda/sessionmemoryapp
+      - internal/apps/balda/welcome
 
   # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
   domain:
@@ -101,6 +102,11 @@ components:
     in:
       - internal/apps/balda/handlers
 
+  # Composition adapters bind ingress-owned ports to concrete provider runtimes.
+  ingress_wiring:
+    in:
+      - internal/apps/balda/handlersfx
+
   # Transport-neutral delivery use case and consumer-owned ports. Concrete
   # channel routing is composed in deliveryfx and must not leak back here.
   delivery_usecase:
@@ -116,7 +122,6 @@ components:
       - internal/apps/balda/goaldelivery
       - internal/apps/balda/messenger
       - internal/apps/balda/tgbotkit
-      - internal/apps/balda/welcome
 
   # Storage and adapter-heavy infrastructure that does not fit a narrower semantic layer.
   infrastructure:
@@ -206,12 +211,17 @@ deps:
     anyVendorDeps: true
 
   ingress:
-    # Transitional note: ingress still reaches some delivery-side helpers and a
-    # few infrastructure entrypoints. The target shape is foundation+contracts+application only.
     mayDependOn:
       - foundation
       - contracts
       - application
+
+    anyVendorDeps: true
+
+  ingress_wiring:
+    mayDependOn:
+      - contracts
+      - ingress
       - delivery
       - infrastructure
     anyVendorDeps: true
