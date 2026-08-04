@@ -320,13 +320,10 @@ func (h *BaldaHandler) enqueueTurn(
 		ReplyToMessageID: replyToMessageID,
 		ReceivedAt:       receivedAtNow().UTC().Format(time.RFC3339),
 		TopicID:          topicID,
-		DeliveryOptions: deliveryfmt.Options{
-			Profile:        deliveryOptions.Profile,
-			ProgressPolicy: progressPolicy,
-		},
-		ProgressPolicy: progressPolicy,
-		Deliver:        true,
-		Source:         "telegram",
+		DeliveryFormat:   deliveryOptions.DeliveryFormat,
+		ProgressPolicy:   progressPolicy,
+		Deliver:          true,
+		Source:           "telegram",
 	})
 	if err != nil {
 		return err

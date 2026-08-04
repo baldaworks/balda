@@ -1074,7 +1074,7 @@ func (h *ZulipBaldaHandler) submitGoalJob(
 		}
 	}
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalkeepercmd.JobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}}, objective, transportUserID, maxIterations)
+	env, err := goalkeepercmd.JobEnvelopeWithOptions(locator, deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}}, objective, transportUserID, maxIterations)
 	if err != nil {
 		return false, err
 	}
@@ -1275,13 +1275,10 @@ func (h *ZulipBaldaHandler) enqueueTurn(
 		AgentSessionID:  ts.GetAgentSessionID(),
 		MessageID:       messageID,
 		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
-		DeliveryOptions: deliveryfmt.Options{
-			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
-			ProgressPolicy: progressPolicy,
-		},
-		ProgressPolicy: progressPolicy,
-		Deliver:        true,
-		Source:         "zulip",
+		DeliveryFormat:  deliveryfmt.DeliveryFormatMarkdown,
+		ProgressPolicy:  progressPolicy,
+		Deliver:         true,
+		Source:          "zulip",
 	}
 	if messageID > 0 {
 		payload.DedupeKey = fmt.Sprintf("zulip:%d", messageID)

@@ -85,8 +85,8 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 		MaxIterations:   3,
 		Logger:          zerolog.Nop(),
 	})
-	profile := deliveryfmt.Profile{Format: deliveryfmt.FormatAuto, TelegramMode: "rich_markdown"}
-	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: profile}, "ship release", "101", 3)
+	format := deliveryfmt.DeliveryFormatRichMarkdown
+	env, err := goalkeeper.GoalJobEnvelopeWithOptions(locator, deliveryfmt.Options{DeliveryFormat: format}, "ship release", "101", 3)
 	if err != nil {
 		t.Fatalf("GoalJobEnvelope() error = %v", err)
 	}
@@ -126,8 +126,8 @@ func TestGoalKeeperActorCompletesPassingRun(t *testing.T) {
 		if payload.Mode != DeliveryModeAgentReply {
 			t.Fatalf("delivery payload mode = %q, want %q", payload.Mode, DeliveryModeAgentReply)
 		}
-		if string(payload.Profile.Format) != string(profile.Format) || payload.Profile.TelegramMode != profile.TelegramMode {
-			t.Fatalf("delivery profile = %+v, want %+v", payload.Profile, profile)
+		if payload.DeliveryFormat != format {
+			t.Fatalf("delivery format = %q, want %q", payload.DeliveryFormat, format)
 		}
 	}
 }

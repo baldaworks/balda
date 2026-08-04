@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 )
 
 type GoalProgressKind string
@@ -16,17 +17,17 @@ const (
 )
 
 type GoalProgressUpdate struct {
-	JobID         string
-	Locator       Locator
-	Profile       Profile
-	Policy        ProgressPolicy
-	Step          string
-	Iteration     int
-	MaxIterations int
-	Kind          GoalProgressKind
-	Text          string
-	Plan          *PlanSnapshot
-	Sequence      int
+	JobID          string
+	Locator        Locator
+	DeliveryFormat deliveryfmt.DeliveryFormat
+	Policy         ProgressPolicy
+	Step           string
+	Iteration      int
+	MaxIterations  int
+	Kind           GoalProgressKind
+	Text           string
+	Plan           *PlanSnapshot
+	Sequence       int
 }
 
 func GoalProgressEnvelope(update GoalProgressUpdate) (actorlayer.Envelope, error) {
@@ -52,11 +53,11 @@ func GoalProgressEnvelope(update GoalProgressUpdate) (actorlayer.Envelope, error
 		if message == "" {
 			return actorlayer.Envelope{}, nil
 		}
-		return AgentReplyEnvelopeWithProfile(
+		return AgentReplyEnvelopeWithFormat(
 			strings.TrimSpace(update.JobID),
 			from,
 			update.Locator,
-			update.Profile,
+			update.DeliveryFormat,
 			message,
 			goalProgressDedupeSuffix(update),
 		)

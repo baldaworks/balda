@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -98,7 +99,7 @@ func (m *recordingQuestionMessenger) SendEphemeralAgentReplyWithInlineKeyboardLa
 func TestSendPrivateGroupQuestionUsesEphemeralDelivery(t *testing.T) {
 	messenger := &recordingQuestionMessenger{}
 	adapter := NewAdapter(AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
-	messageID, err := adapter.SendAgentReplyWithQuestion(context.Background(), NewLocator(-1001, 77), deliverycmd.Profile{}, "Approve?", &deliverycmd.Question{
+	messageID, err := adapter.SendAgentReplyWithQuestion(context.Background(), NewLocator(-1001, 77), deliveryfmt.DeliveryFormatRichMarkdown, "Approve?", &deliverycmd.Question{
 		ID:       "question-1",
 		Audience: deliverycmd.QuestionAudience{Visibility: deliverycmd.QuestionVisibilityPrivate, UserID: "tg-101"},
 		Options:  []deliverycmd.QuestionOption{{ID: "allow", Label: "Allow"}, {ID: "deny", Label: "Deny"}},
@@ -185,7 +186,7 @@ func (m *recordingQuestionMessenger) SendAgentReplyWithInlineKeyboardLastMessage
 func TestSendAgentReplyWithQuestionBuildsOneButtonPerRow(t *testing.T) {
 	messenger := &recordingQuestionMessenger{}
 	adapter := NewAdapter(AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
-	messageID, err := adapter.SendAgentReplyWithQuestion(context.Background(), NewLocator(1, 0), deliverycmd.Profile{}, "Choose", &deliverycmd.Question{
+	messageID, err := adapter.SendAgentReplyWithQuestion(context.Background(), NewLocator(1, 0), deliveryfmt.DeliveryFormatRichMarkdown, "Choose", &deliverycmd.Question{
 		ID: "question-1",
 		Options: []deliverycmd.QuestionOption{
 			{ID: "allow", Label: "Allow"},

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 )
 
 func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {
@@ -11,7 +12,7 @@ func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {
 		"",
 		actorlayer.SystemAddress("test"),
 		testLocator(),
-		Profile{Format: FormatMarkdown},
+		deliveryfmt.DeliveryFormatRichMarkdown,
 		SettlementOutbox,
 		"Choose",
 		"question-1",
@@ -34,6 +35,30 @@ func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {
 	}
 	if payload.Refs["question_id"] != "question-1" {
 		t.Fatalf("refs = %+v", payload.Refs)
+	}
+}
+
+func TestAgentReplyEnvelopeCarriesOnlyDeliveryFormat(t *testing.T) {
+	t.Parallel()
+
+	env, err := AgentReplyEnvelopeWithFormat(
+		"",
+		actorlayer.SystemAddress("test"),
+		testLocator(),
+		deliveryfmt.DeliveryFormatRichHTML,
+		"hello",
+		"test",
+	)
+	if err != nil {
+		t.Fatalf("AgentReplyEnvelopeWithFormat() error = %v", err)
+	}
+
+	var payload Payload
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.DeliveryFormat != deliveryfmt.DeliveryFormatRichHTML {
+		t.Errorf("DeliveryFormat = %q, want %q", payload.DeliveryFormat, deliveryfmt.DeliveryFormatRichHTML)
 	}
 }
 

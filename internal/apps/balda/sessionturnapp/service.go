@@ -147,18 +147,14 @@ func (s *TurnExecutionService) dispatchJobDelivery(
 	jobID string,
 	locator baldasession.SessionLocator,
 	sessionID string,
-	profile deliveryfmt.Profile,
+	format deliveryfmt.DeliveryFormat,
 	text string,
 	dedupeSuffix string,
 ) error {
 	if s == nil || s.dispatcher == nil {
 		return fmt.Errorf("runtime is unavailable")
 	}
-	env, err := deliverycmd.AgentReplyEnvelopeWithProfileAndSettlement(jobID, actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: sessionID}, locator, deliverycmd.Profile{
-		Format:         deliverycmd.Format(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}, deliverycmd.SettlementOutbox, text, dedupeSuffix)
+	env, err := deliverycmd.AgentReplyEnvelopeWithFormatAndSettlement(jobID, actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: sessionID}, locator, format, deliverycmd.SettlementOutbox, text, dedupeSuffix)
 	if err != nil {
 		return err
 	}
@@ -200,7 +196,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 	jobBackedDelivery := req.Deliver && strings.TrimSpace(req.JobID) != "" && s.dispatcher != nil
 	req.DeliveryOptions = deliveryfmt.NormalizeOptions(req.DeliveryOptions)
 	progressPolicy := req.DeliveryOptions.ProgressPolicy
-	deliveryProfile := req.DeliveryOptions.Profile
+	deliveryFormat := req.DeliveryOptions.DeliveryFormat
 
 	runCtx := zerolog.Ctx(ctx).With().
 		Str("channel_type", req.Locator.ChannelType).
@@ -538,7 +534,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					}
 				}
 				if jobBackedDelivery {
-					if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryProfile, responseText, "final"); err != nil {
+					if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, responseText, "final"); err != nil {
 						return err
 					}
 					if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
@@ -550,7 +546,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					if responseSource == responseSourceNone {
 						responseSource = "streamed_text"
 					}
-				} else if sendErr := sendAgentReplyWithProfile(ctx, s.dispatcher, req.OutboundFrom, req.Locator, deliveryProfile, responseText); sendErr != nil {
+				} else if sendErr := sendAgentReplyWithFormat(ctx, s.dispatcher, req.OutboundFrom, req.Locator, deliveryFormat, responseText); sendErr != nil {
 					log.Warn().Err(sendErr).Int("topic_id", topicID).Msg("failed to send balda response")
 				} else {
 					responseEmitted = true
@@ -574,7 +570,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if terminalMessage != "" {
 					if jobBackedDelivery {
-						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryProfile, terminalMessage, "terminal"); err != nil {
+						if err := s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, deliveryFormat, terminalMessage, "terminal"); err != nil {
 							return err
 						}
 						if err := s.appendJobEvent(ctx, req.JobID, baldajobs.JobEventAgentResult, "session.actor", "", map[string]any{
@@ -745,9 +741,9 @@ func (s *TurnExecutionService) notifyAutoStateChange(ctx context.Context, req Ex
 	}
 	text := automode.RenderCompactStatusMarkdown(status)
 	if req.JobID != "" {
-		return s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, req.DeliveryOptions.Profile, text, "auto-status")
+		return s.dispatchJobDelivery(ctx, req.JobID, req.Locator, req.SessionID, req.DeliveryOptions.DeliveryFormat, text, "auto-status")
 	}
-	return sendAgentReplyWithProfile(ctx, s.dispatcher, req.OutboundFrom, req.Locator, req.DeliveryOptions.Profile, text)
+	return sendAgentReplyWithFormat(ctx, s.dispatcher, req.OutboundFrom, req.Locator, req.DeliveryOptions.DeliveryFormat, text)
 }
 
 func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req ExecutionRequest, responseSource string, visibleOutput string) error {
@@ -850,7 +846,8 @@ func (s *TurnExecutionService) maybeScheduleAutoTurn(ctx context.Context, req Ex
 		Deliver:         true,
 		Source:          turncmd.SourceAuto,
 		DedupeKey:       autoTurnDedupeKey(req.Locator.SessionID, req.DedupeKey, nextCount),
-		DeliveryOptions: req.DeliveryOptions,
+		DeliveryFormat:  req.DeliveryOptions.DeliveryFormat,
+		ProgressPolicy:  req.DeliveryOptions.ProgressPolicy,
 	})
 	if err != nil {
 		return err

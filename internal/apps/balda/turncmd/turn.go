@@ -6,8 +6,8 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	"github.com/normahq/balda/internal/apps/balda/attachment"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 )
@@ -20,27 +20,86 @@ const (
 )
 
 type SessionTurnPayload struct {
-	JobID            string                        `json:"job_id,omitempty"`
-	Text             string                        `json:"text"`
-	Attachments      []attachment.Descriptor       `json:"attachments,omitempty"`
-	Locator          baldasession.SessionLocator   `json:"locator"`
-	ReportTo         *baldasession.SessionLocator  `json:"report_to,omitempty"`
-	ParentJobID      string                        `json:"parent_job_id,omitempty"`
-	UserID           string                        `json:"user_id,omitempty"`
-	RequesterUserID  string                        `json:"requester_user_id,omitempty"`
-	AgentSessionID   string                        `json:"agent_session_id,omitempty"`
-	ScheduledJobID   string                        `json:"scheduled_job_id,omitempty"`
-	MessageID        int                           `json:"message_id,omitempty"`
-	ReplyToMessageID int                           `json:"reply_to_message_id,omitempty"`
-	ReceivedAt       string                        `json:"received_at,omitempty"`
-	SteeringMessages []SteeringMessage             `json:"steering_messages,omitempty"`
-	TopicID          int                           `json:"topic_id,omitempty"`
-	DeliveryOptions  deliveryfmt.Options           `json:"delivery_options,omitempty,omitzero"`
-	ProgressPolicy   deliveryfmt.ProgressPolicy    `json:"progress_policy,omitempty"`
-	Deliver          bool                          `json:"deliver"`
-	Source           string                        `json:"source,omitempty"`
-	DedupeKey        string                        `json:"dedupe_key,omitempty"`
-	QuestionID       string                        `json:"question_id,omitempty"`
+	JobID            string                       `json:"job_id,omitempty"`
+	Text             string                       `json:"text"`
+	Attachments      []attachment.Descriptor      `json:"attachments,omitempty"`
+	Locator          baldasession.SessionLocator  `json:"locator"`
+	ReportTo         *baldasession.SessionLocator `json:"report_to,omitempty"`
+	ParentJobID      string                       `json:"parent_job_id,omitempty"`
+	UserID           string                       `json:"user_id,omitempty"`
+	RequesterUserID  string                       `json:"requester_user_id,omitempty"`
+	AgentSessionID   string                       `json:"agent_session_id,omitempty"`
+	ScheduledJobID   string                       `json:"scheduled_job_id,omitempty"`
+	MessageID        int                          `json:"message_id,omitempty"`
+	ReplyToMessageID int                          `json:"reply_to_message_id,omitempty"`
+	ReceivedAt       string                       `json:"received_at,omitempty"`
+	SteeringMessages []SteeringMessage            `json:"steering_messages,omitempty"`
+	TopicID          int                          `json:"topic_id,omitempty"`
+	DeliveryFormat   deliveryfmt.DeliveryFormat   `json:"delivery_format,omitempty"`
+	ProgressPolicy   deliveryfmt.ProgressPolicy   `json:"progress_policy,omitempty"`
+	Deliver          bool                         `json:"deliver"`
+	Source           string                       `json:"source,omitempty"`
+	DedupeKey        string                       `json:"dedupe_key,omitempty"`
+	QuestionID       string                       `json:"question_id,omitempty"`
+}
+
+// InboundID is the stable provider identity of one logical inbound message.
+type InboundID string
+
+// InboundOutcome describes how a provider adapter should settle intake.
+type InboundOutcome string
+
+const (
+	InboundAccepted InboundOutcome = "accepted"
+	InboundRetry    InboundOutcome = "retry"
+	InboundTerminal InboundOutcome = "terminal"
+)
+
+// InboundSettlement is the provider-neutral result of processing inbound work.
+type InboundSettlement struct {
+	Outcome InboundOutcome `json:"outcome"`
+	Reason  string         `json:"reason,omitempty"`
+}
+
+// NormalizedInbound represents one logical message after provider grouping.
+type NormalizedInbound struct {
+	ID                InboundID                   `json:"id"`
+	Text              string                      `json:"text"`
+	Attachments       []attachment.Descriptor     `json:"attachments,omitempty"`
+	Locator           baldasession.SessionLocator `json:"locator"`
+	ProviderMessageID string                      `json:"provider_message_id,omitempty"`
+	UserID            string                      `json:"user_id,omitempty"`
+	ReceivedAt        string                      `json:"received_at,omitempty"`
+	DeliveryFormat    deliveryfmt.DeliveryFormat  `json:"delivery_format"`
+	Source            string                      `json:"source"`
+}
+
+// SessionTurn converts a normalized logical message into the durable turn wire.
+func (m NormalizedInbound) SessionTurn() (SessionTurnPayload, error) {
+	id := strings.TrimSpace(string(m.ID))
+	if id == "" {
+		return SessionTurnPayload{}, fmt.Errorf("inbound id is required")
+	}
+	if strings.TrimSpace(m.Locator.SessionID) == "" {
+		return SessionTurnPayload{}, fmt.Errorf("session id is required")
+	}
+	if strings.TrimSpace(m.Locator.ChannelType) == "" {
+		return SessionTurnPayload{}, fmt.Errorf("channel type is required")
+	}
+	if strings.TrimSpace(m.Source) == "" {
+		return SessionTurnPayload{}, fmt.Errorf("inbound source is required")
+	}
+	return SessionTurnPayload{
+		Text:           m.Text,
+		Attachments:    append([]attachment.Descriptor(nil), m.Attachments...),
+		Locator:        m.Locator,
+		UserID:         strings.TrimSpace(m.UserID),
+		ReceivedAt:     strings.TrimSpace(m.ReceivedAt),
+		DeliveryFormat: deliveryfmt.NormalizeDeliveryFormat(m.DeliveryFormat),
+		Deliver:        true,
+		Source:         strings.TrimSpace(m.Source),
+		DedupeKey:      id,
+	}, nil
 }
 
 type SteeringMessage struct {
@@ -210,11 +269,10 @@ func ScheduledJobEnvelope(
 }
 
 func NormalizeSessionDeliveryOptions(payload SessionTurnPayload) deliveryfmt.Options {
-	options := deliveryfmt.NormalizeOptions(payload.DeliveryOptions)
-	if !options.ProgressPolicy.Typing && !options.ProgressPolicy.Thinking {
-		options.ProgressPolicy = payload.ProgressPolicy
-	}
-	return deliveryfmt.NormalizeOptions(options)
+	return deliveryfmt.NormalizeOptions(deliveryfmt.Options{
+		DeliveryFormat: payload.DeliveryFormat,
+		ProgressPolicy: payload.ProgressPolicy,
+	})
 }
 
 func firstNonEmpty(values ...string) string {

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/baldaworks/go-actorlayer"
 )
 
 // lifecycle.go owns goal job/session lifecycle helpers used by the actor coordinator.
@@ -108,7 +108,7 @@ func (c *coordinator) ensureNoOtherActiveGoal(ctx context.Context, jobID string,
 		}), baldastate.JobStatusCanceled, actorName, reason); setErr != nil {
 			return false, actorlayer.TransientError(setErr)
 		}
-		if err := progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "A goal run is already active for this session."), "already-active"); err != nil {
+		if err := progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryFormat(payload), "A goal run is already active for this session."), "already-active"); err != nil {
 			return false, err
 		}
 		return true, nil

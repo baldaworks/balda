@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
 
 func TestRenderGoalStartedMessagePlainMatchesLegacyText(t *testing.T) {
 	t.Parallel()
 
-	got := RenderStartedMessage(deliverycmd.Profile{}, 25, "count total go lines")
+	got := RenderStartedMessage(deliveryfmt.DeliveryFormatNone, 25, "count total go lines")
 	want := "Goal run started. Max iterations: 25.\n\nObjective: count total go lines"
 	if got != want {
 		t.Fatalf("RenderStartedMessage() = %q, want %q", got, want)
@@ -24,7 +24,7 @@ func TestRenderGoalStepMessageMarkdownFormatsHeaderAndPreservesBody(t *testing.T
 
 	body := "worker update\n---\n![bad](http://invalid/image.png)"
 	got := RenderStepMessage(
-		deliverycmd.Profile{FormattingMode: "rich_markdown"},
+		deliveryfmt.DeliveryFormatRichMarkdown,
 		1,
 		25,
 		"worker",
@@ -44,7 +44,7 @@ func TestRenderGoalStartedMessageHTMLEscapesSystemFields(t *testing.T) {
 	t.Parallel()
 
 	got := RenderStartedMessage(
-		deliverycmd.Profile{FormattingMode: "rich_html"},
+		deliveryfmt.DeliveryFormatRichHTML,
 		3,
 		"ship <release> & verify",
 	)
@@ -61,7 +61,7 @@ func TestRenderGoalStartedMessageHTMLEscapesSystemFields(t *testing.T) {
 func TestRenderGoalStartedMessageMarkdownUsesBlockSafeLayout(t *testing.T) {
 	t.Parallel()
 
-	got := RenderStartedMessage(deliverycmd.Profile{FormattingMode: "rich_markdown"}, 25, "count total go lines")
+	got := RenderStartedMessage(deliveryfmt.DeliveryFormatRichMarkdown, 25, "count total go lines")
 	for _, want := range []string{
 		"**Goal run started**",
 		"- **Max iterations:** 25",
@@ -81,7 +81,7 @@ func TestRenderGoalStepMessageHTMLPreservesBody(t *testing.T) {
 
 	body := "<b>validator</b>\n---\nplain"
 	got := RenderStepMessage(
-		deliverycmd.Profile{FormattingMode: "html"},
+		deliveryfmt.DeliveryFormatRichHTML,
 		2,
 		5,
 		"validator",
@@ -99,7 +99,7 @@ func TestRenderGoalStepMessageHTMLPreservesBody(t *testing.T) {
 func TestRenderGoalStatusMessageUnknownModeFallsBackToPlain(t *testing.T) {
 	t.Parallel()
 
-	got := RenderStatusMessage(deliverycmd.Profile{FormattingMode: "unknown"}, "Goal run canceled.")
+	got := RenderStatusMessage(deliveryfmt.DeliveryFormat("unknown"), "Goal run canceled.")
 	if got != "Goal run canceled." {
 		t.Fatalf("RenderStatusMessage() = %q, want plain fallback", got)
 	}
@@ -108,7 +108,7 @@ func TestRenderGoalStatusMessageUnknownModeFallsBackToPlain(t *testing.T) {
 func TestRenderReviewableOutcomeOmitsSuccessfulExportDefaults(t *testing.T) {
 	t.Parallel()
 
-	got := RenderReviewableOutcome(deliverycmd.Profile{}, taskRecordWithResult(t, true, GoalExportStatusExported, "", "", DefaultNotVerifiedText, DefaultExportedNextAction))
+	got := RenderReviewableOutcome(deliveryfmt.DeliveryFormatNone, taskRecordWithResult(t, true, GoalExportStatusExported, "", "", DefaultNotVerifiedText, DefaultExportedNextAction))
 	for _, notWant := range []string{
 		"Not verified:",
 		"Next action:",
@@ -135,7 +135,7 @@ func TestRenderReviewableOutcomeMarkdownSuccessfulExportIsConciseAndConsistent(t
 		"next_action":           DefaultExportedNextAction,
 	})
 
-	got := RenderReviewableOutcome(deliverycmd.Profile{FormattingMode: "rich_markdown"}, task)
+	got := RenderReviewableOutcome(deliveryfmt.DeliveryFormatRichMarkdown, task)
 	for _, want := range []string{
 		"**Result:** Goal completed.",
 		"Result: 50,528 total lines across 218 *.go files.",
@@ -171,7 +171,7 @@ func TestRenderReviewableOutcomeNotExportedSuccessHidesExportNoise(t *testing.T)
 		"export_reason":         goalExportReasonDisabled,
 	})
 
-	got := RenderReviewableOutcome(deliverycmd.Profile{}, task)
+	got := RenderReviewableOutcome(deliveryfmt.DeliveryFormatNone, task)
 	for _, want := range []string{
 		"Result: Goal completed.",
 		"Result: direct workspace complete.",
@@ -203,7 +203,7 @@ func TestRenderReviewableOutcomeFailureKeepsEvidence(t *testing.T) {
 		"next_action":           "Review failure evidence and rerun /goalkeeper or assign a narrower follow-up task.",
 	})
 
-	got := RenderReviewableOutcome(deliverycmd.Profile{FormattingMode: "rich_markdown"}, task)
+	got := RenderReviewableOutcome(deliveryfmt.DeliveryFormatRichMarkdown, task)
 	for _, want := range []string{
 		"Evidence: worker command output",
 		"Evidence: mismatch found",
@@ -242,7 +242,7 @@ func TestRenderReviewableOutcomeKeepsActionableNextActions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := RenderReviewableOutcome(deliverycmd.Profile{}, taskRecordWithResult(t, tt.goalReached, tt.exportStatus, "", "", DefaultNotVerifiedText, tt.nextAction))
+			got := RenderReviewableOutcome(deliveryfmt.DeliveryFormatNone, taskRecordWithResult(t, tt.goalReached, tt.exportStatus, "", "", DefaultNotVerifiedText, tt.nextAction))
 			if !strings.Contains(got, "Next action: "+tt.nextAction) {
 				t.Fatalf("RenderReviewableOutcome() = %q, want next action %q", got, tt.nextAction)
 			}
@@ -253,7 +253,7 @@ func TestRenderReviewableOutcomeKeepsActionableNextActions(t *testing.T) {
 func TestRenderReviewableOutcomeKeepsExplicitNotVerified(t *testing.T) {
 	t.Parallel()
 
-	got := RenderReviewableOutcome(deliverycmd.Profile{}, taskRecordWithResult(t, true, GoalExportStatusExported, "logs were not inspected", "", "manual log review remains", DefaultExportedNextAction))
+	got := RenderReviewableOutcome(deliveryfmt.DeliveryFormatNone, taskRecordWithResult(t, true, GoalExportStatusExported, "logs were not inspected", "", "manual log review remains", DefaultExportedNextAction))
 	if !strings.Contains(got, "Not verified: manual log review remains") {
 		t.Fatalf("RenderReviewableOutcome() = %q, want explicit not verified", got)
 	}

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	deliverycmd "github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	"github.com/normahq/balda/internal/apps/balda/progress"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 // events.go owns goal progress envelope shaping and event payload helpers.
@@ -23,17 +23,17 @@ func newGoalProgressUpdate(
 	sequence int,
 ) deliverycmd.GoalProgressUpdate {
 	return deliverycmd.GoalProgressUpdate{
-		JobID:         strings.TrimSpace(payload.JobID),
-		Locator:       normalizeGoalDeliveryLocator(payload.Locator),
-		Profile:       goalDeliveryProfile(payload),
-		Policy:        goalProgressPolicy(payload),
-		Step:          strings.TrimSpace(step),
-		Iteration:     normalizeGoalIteration(iteration),
-		MaxIterations: normalizeGoalMaxIterations(payload.MaxIterations),
-		Kind:          kind,
-		Text:          strings.TrimSpace(text),
-		Plan:          goalProgressPlanSnapshot(plan),
-		Sequence:      sequence,
+		JobID:          strings.TrimSpace(payload.JobID),
+		Locator:        normalizeGoalDeliveryLocator(payload.Locator),
+		DeliveryFormat: goalDeliveryFormat(payload),
+		Policy:         goalProgressPolicy(payload),
+		Step:           strings.TrimSpace(step),
+		Iteration:      normalizeGoalIteration(iteration),
+		MaxIterations:  normalizeGoalMaxIterations(payload.MaxIterations),
+		Kind:           kind,
+		Text:           strings.TrimSpace(text),
+		Plan:           goalProgressPlanSnapshot(plan),
+		Sequence:       sequence,
 	}
 }
 
@@ -68,7 +68,7 @@ func goalProgressEventPayload(update deliverycmd.GoalProgressUpdate) map[string]
 
 func renderGoalProgressText(update deliverycmd.GoalProgressUpdate) string {
 	body := redactSecrets(strings.TrimSpace(update.Text))
-	return goaldelivery.RenderStepMessage(update.Profile, update.Iteration, update.MaxIterations, update.Step, renderGoalProgressAction(update.Kind), body)
+	return goaldelivery.RenderStepMessage(update.DeliveryFormat, update.Iteration, update.MaxIterations, update.Step, renderGoalProgressAction(update.Kind), body)
 }
 
 func renderGoalProgressAction(kind deliverycmd.GoalProgressKind) string {

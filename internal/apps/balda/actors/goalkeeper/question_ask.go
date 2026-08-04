@@ -77,7 +77,7 @@ func (c *coordinator) askQuestion(ctx context.Context, payload goalJobPayload, p
 			jobID,
 			actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
 			normalizeGoalDeliveryLocator(payload.Locator),
-			goalDeliveryProfile(payload),
+			goalDeliveryFormat(payload),
 			deliverycmd.SettlementOutbox,
 			record.Prompt,
 			record.QuestionID,
@@ -86,11 +86,11 @@ func (c *coordinator) askQuestion(ctx context.Context, payload goalJobPayload, p
 			deliverycmd.QuestionAudience{},
 		)
 	} else {
-		env, err = deliverycmd.AgentReplyEnvelopeWithProfileAndSettlementAndRefs(
+		env, err = deliverycmd.AgentReplyEnvelopeWithFormatAndSettlementAndRefs(
 			jobID,
 			actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
 			normalizeGoalDeliveryLocator(payload.Locator),
-			goalDeliveryProfile(payload),
+			goalDeliveryFormat(payload),
 			deliverycmd.SettlementOutbox,
 			record.Prompt,
 			"question:"+record.QuestionID,

@@ -6,14 +6,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/progress"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 // progress_emitter.go owns goal progress side effects: delivery and job events.
@@ -48,7 +48,7 @@ func (e goalProgressEmitter) recordStepStarted(ctx context.Context, payload goal
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	return e.deliver(ctx, payload.JobID, payload, goaldelivery.RenderStepMessage(goalDeliveryProfile(payload), iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "started", ""), "started:"+step+":"+strconv.Itoa(iteration))
+	return e.deliver(ctx, payload.JobID, payload, goaldelivery.RenderStepMessage(goalDeliveryFormat(payload), iteration, normalizeGoalMaxIterations(payload.MaxIterations), step, "started", ""), "started:"+step+":"+strconv.Itoa(iteration))
 }
 
 func (e goalProgressEmitter) recordStepCompleted(
@@ -151,11 +151,11 @@ func (e goalProgressEmitter) deliver(
 	if message == "" {
 		return nil
 	}
-	env, err := deliverycmd.AgentReplyEnvelopeWithProfile(
+	env, err := deliverycmd.AgentReplyEnvelopeWithFormat(
 		strings.TrimSpace(jobID),
 		actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
 		normalizeGoalDeliveryLocator(payload.Locator),
-		goalDeliveryProfile(payload),
+		goalDeliveryFormat(payload),
 		message,
 		dedupeSuffix,
 	)

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 type Service struct {
@@ -133,12 +132,10 @@ func (s *Service) StartScheduledJob(ctx context.Context, env actorlayer.Envelope
 		UserID:         payload.UserID,
 		ScheduledJobID: payload.JobID,
 		TopicID:        payload.TopicID,
-		DeliveryOptions: deliveryfmt.Options{
-			Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatAuto},
-		},
-		Deliver:   payload.ReportTo != nil,
-		Source:    turncmd.SourceSchedule,
-		DedupeKey: firstNonEmpty(env.DedupeKey, jobID) + ":session",
+		DeliveryFormat: "",
+		Deliver:        payload.ReportTo != nil,
+		Source:         turncmd.SourceSchedule,
+		DedupeKey:      firstNonEmpty(env.DedupeKey, jobID) + ":session",
 	}
 	sessionEnv, err := turncmd.SessionTurnEnvelope(sessionPayload)
 	if err != nil {

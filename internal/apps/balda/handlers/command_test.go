@@ -755,8 +755,8 @@ func TestCommandHandlerSubmitGoalJob_PublishesDurableCommandOnly(t *testing.T) {
 	bus := &recordingHandlerCommandBus{}
 	handler := &CommandHandler{actorDispatcher: bus, goalMaxIterations: 7}
 
-	profile := deliveryfmt.Profile{Format: deliveryfmt.FormatAuto, TelegramMode: "rich_markdown"}
-	started, err := handler.submitGoalJobWithOptions(ctx, locator, deliveryfmt.Options{Profile: profile}, "deploy release", testTelegramUserID101)
+	format := deliveryfmt.DeliveryFormatRichMarkdown
+	started, err := handler.submitGoalJobWithOptions(ctx, locator, deliveryfmt.Options{DeliveryFormat: format}, "deploy release", testTelegramUserID101)
 	if err != nil {
 		t.Fatalf("submitGoalJob() error = %v", err)
 	}
@@ -778,8 +778,8 @@ func TestCommandHandlerSubmitGoalJob_PublishesDurableCommandOnly(t *testing.T) {
 	if payload.Goal == nil || payload.Goal.MaxIterations != 7 {
 		t.Fatalf("goalkeeper payload = %+v, want max_iterations=7 from config", payload.Goal)
 	}
-	if payload.Goal.DeliveryOptions.Profile.Format != profile.Format || payload.Goal.DeliveryOptions.Profile.TelegramMode != profile.TelegramMode {
-		t.Fatalf("delivery options profile = %+v, want %+v", payload.Goal.DeliveryOptions.Profile, profile)
+	if payload.Goal.DeliveryOptions.DeliveryFormat != format {
+		t.Fatalf("delivery format = %q, want %q", payload.Goal.DeliveryOptions.DeliveryFormat, format)
 	}
 }
 

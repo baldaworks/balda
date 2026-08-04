@@ -722,7 +722,7 @@ func (h *SlackChatHandler) handleGoalCommand(ctx context.Context, locator baldas
 			return
 		}
 	}
-	env, err := goalkeepercmd.JobEnvelopeWithOptions(locator, deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown}, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}}, objective, subject, h.goalMaxIterations)
+	env, err := goalkeepercmd.JobEnvelopeWithOptions(locator, deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}}, objective, subject, h.goalMaxIterations)
 	if err != nil {
 		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
 		return
@@ -854,14 +854,11 @@ func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasessi
 		AgentSessionID:  ts.GetAgentSessionID(),
 		MessageID:       slackMessageID(messageID),
 		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
-		DeliveryOptions: deliveryfmt.Options{
-			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
-			ProgressPolicy: progressPolicy,
-		},
-		ProgressPolicy: progressPolicy,
-		Deliver:        true,
-		Source:         "slack",
-		DedupeKey:      "slack:" + strings.TrimSpace(messageID),
+		DeliveryFormat:  deliveryfmt.DeliveryFormatMrkdwn,
+		ProgressPolicy:  progressPolicy,
+		Deliver:         true,
+		Source:          "slack",
+		DedupeKey:       "slack:" + strings.TrimSpace(messageID),
 	}
 	env, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {

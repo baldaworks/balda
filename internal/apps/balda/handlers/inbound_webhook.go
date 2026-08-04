@@ -18,14 +18,13 @@ import (
 	"text/template"
 	"time"
 
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/envelopetarget"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -576,19 +575,12 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	}
 	dedupeKey := strings.Join([]string{"webhook", strings.TrimSpace(route.Name), dedupeBase}, ":")
 	payload := turncmd.SessionTurnPayload{
-		Text:     prompt,
-		Locator:  target.Locator,
-		ReportTo: reportTo,
-		UserID:   target.UserID,
-		TopicID:  target.TopicID,
-		DeliveryOptions: deliveryfmt.Options{
-			Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatAuto},
-			ProgressPolicy: deliveryfmt.ProgressPolicy{
-				Typing:      false,
-				Thinking:    false,
-				PlanUpdates: true,
-			},
-		},
+		Text:           prompt,
+		Locator:        target.Locator,
+		ReportTo:       reportTo,
+		UserID:         target.UserID,
+		TopicID:        target.TopicID,
+		DeliveryFormat: "",
 		ProgressPolicy: baldachannel.ProgressPolicy{
 			Typing:      false,
 			Thinking:    false,

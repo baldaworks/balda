@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
 	"github.com/normahq/balda/internal/git"
 	adksession "google.golang.org/adk/v2/session"
@@ -72,15 +72,15 @@ func (a goalOutcomeAssembler) toJobResult(r goalRunResult, goalReached bool, art
 	}
 }
 
-func (a goalOutcomeAssembler) renderJobOutcome(ctx context.Context, jobID string, profile deliverycmd.Profile, fallback string) string {
+func (a goalOutcomeAssembler) renderJobOutcome(ctx context.Context, jobID string, format deliveryfmt.DeliveryFormat, fallback string) string {
 	if a.jobs == nil {
-		return goaldelivery.RenderStatusMessage(profile, fallback)
+		return goaldelivery.RenderStatusMessage(format, fallback)
 	}
 	task, ok, err := a.jobs.Get(ctx, jobID)
 	if err != nil || !ok {
-		return goaldelivery.RenderStatusMessage(profile, fallback)
+		return goaldelivery.RenderStatusMessage(format, fallback)
 	}
-	return goaldelivery.RenderReviewableOutcome(profile, task)
+	return goaldelivery.RenderReviewableOutcome(format, task)
 }
 
 func (r GoalFinalizationResult) toJobExportResult() *goalExportResultV1 {

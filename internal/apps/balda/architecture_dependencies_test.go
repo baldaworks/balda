@@ -122,10 +122,10 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			},
 		},
 		{
-			name: "goal delivery rendering consumes delivery contracts",
+			name: "goal delivery rendering consumes formatting contracts",
 			dir:  "goaldelivery",
 			requires: []string{
-				baldaImportPrefix + "deliverycmd",
+				baldaImportPrefix + "deliveryfmt",
 			},
 		},
 		{

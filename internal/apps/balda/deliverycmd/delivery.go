@@ -6,25 +6,26 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 )
 
 const jobPayloadKindDelivery = "delivery"
 
 type Payload struct {
-	JobID      string            `json:"job_id,omitempty"`
-	Locator    Locator           `json:"locator"`
-	Profile    Profile           `json:"profile,omitempty,omitzero"`
-	Mode       Mode              `json:"mode"`
-	Settlement SettlementPolicy  `json:"settlement,omitempty"`
-	Refs       map[string]string `json:"refs,omitempty"`
-	Question   *Question         `json:"question,omitempty"`
-	Text       string            `json:"text,omitempty"`
-	DraftID    int               `json:"draft_id,omitempty"`
-	Action     string            `json:"action,omitempty"`
-	MessageID  string            `json:"message_id,omitempty"`
-	Handle     string            `json:"handle,omitempty"`
-	Progress   *Progress         `json:"progress,omitempty"`
-	Media      *Media            `json:"media,omitempty"`
+	JobID          string                     `json:"job_id,omitempty"`
+	Locator        Locator                    `json:"locator"`
+	DeliveryFormat deliveryfmt.DeliveryFormat `json:"delivery_format,omitempty"`
+	Mode           Mode                       `json:"mode"`
+	Settlement     SettlementPolicy           `json:"settlement,omitempty"`
+	Refs           map[string]string          `json:"refs,omitempty"`
+	Question       *Question                  `json:"question,omitempty"`
+	Text           string                     `json:"text,omitempty"`
+	DraftID        int                        `json:"draft_id,omitempty"`
+	Action         string                     `json:"action,omitempty"`
+	MessageID      string                     `json:"message_id,omitempty"`
+	Handle         string                     `json:"handle,omitempty"`
+	Progress       *Progress                  `json:"progress,omitempty"`
+	Media          *Media                     `json:"media,omitempty"`
 }
 
 type Mode string
@@ -32,21 +33,6 @@ type Mode string
 type SettlementPolicy string
 
 type ProgressKind string
-
-type Format string
-
-const (
-	FormatAuto     Format = "auto"
-	FormatMarkdown Format = "markdown"
-	FormatHTML     Format = "html"
-	FormatPlain    Format = "plain"
-)
-
-type Profile struct {
-	Format         Format `json:"format,omitempty"`
-	TelegramMode   string `json:"telegram_mode,omitempty"`
-	FormattingMode string `json:"formatting_mode,omitempty"`
-}
 
 type ProgressPolicy struct {
 	Typing      bool `json:"typing,omitempty"`
@@ -121,43 +107,43 @@ const (
 )
 
 func AgentReplyEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return AgentReplyEnvelopeWithProfile(jobID, from, locator, Profile{}, text, dedupeSuffix)
+	return AgentReplyEnvelopeWithFormat(jobID, from, locator, "", text, dedupeSuffix)
 }
 
 func AgentReplyEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return AgentReplyEnvelopeWithProfileAndSettlement(jobID, from, locator, Profile{}, settlement, text, dedupeSuffix)
+	return AgentReplyEnvelopeWithFormatAndSettlement(jobID, from, locator, "", settlement, text, dedupeSuffix)
 }
 
-func AgentReplyEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return AgentReplyEnvelopeWithProfileAndSettlement(jobID, from, locator, profile, SettlementAuto, text, dedupeSuffix)
+func AgentReplyEnvelopeWithFormat(jobID string, from actorlayer.ActorAddress, locator Locator, format deliveryfmt.DeliveryFormat, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return AgentReplyEnvelopeWithFormatAndSettlement(jobID, from, locator, format, SettlementAuto, text, dedupeSuffix)
 }
 
-func AgentReplyEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return AgentReplyEnvelopeWithProfileAndSettlementAndRefs(jobID, from, locator, profile, settlement, text, dedupeSuffix, nil)
+func AgentReplyEnvelopeWithFormatAndSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, format deliveryfmt.DeliveryFormat, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return AgentReplyEnvelopeWithFormatAndSettlementAndRefs(jobID, from, locator, format, settlement, text, dedupeSuffix, nil)
 }
 
-func AgentReplyEnvelopeWithProfileAndSettlementAndRefs(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string, refs map[string]string) (actorlayer.Envelope, error) {
+func AgentReplyEnvelopeWithFormatAndSettlementAndRefs(jobID string, from actorlayer.ActorAddress, locator Locator, format deliveryfmt.DeliveryFormat, settlement SettlementPolicy, text string, dedupeSuffix string, refs map[string]string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
-		JobID:      strings.TrimSpace(jobID),
-		Locator:    locator,
-		Profile:    normalizeProfile(profile),
-		Mode:       ModeAgentReply,
-		Settlement: normalizeSettlementPolicy(settlement),
-		Refs:       refs,
-		Text:       strings.TrimSpace(text),
+		JobID:          strings.TrimSpace(jobID),
+		Locator:        locator,
+		DeliveryFormat: deliveryfmt.NormalizeDeliveryFormat(format),
+		Mode:           ModeAgentReply,
+		Settlement:     normalizeSettlementPolicy(settlement),
+		Refs:           refs,
+		Text:           strings.TrimSpace(text),
 	}, dedupeSuffix)
 }
 
 // QuestionEnvelope builds an agent-reply delivery carrying generic selectable options.
-func QuestionEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text, questionID, dedupeSuffix string, options []QuestionOption, audience QuestionAudience) (actorlayer.Envelope, error) {
+func QuestionEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, format deliveryfmt.DeliveryFormat, settlement SettlementPolicy, text, questionID, dedupeSuffix string, options []QuestionOption, audience QuestionAudience) (actorlayer.Envelope, error) {
 	questionID = strings.TrimSpace(questionID)
 	return envelope(jobID, from, Payload{
-		JobID:      strings.TrimSpace(jobID),
-		Locator:    locator,
-		Profile:    normalizeProfile(profile),
-		Mode:       ModeAgentReply,
-		Settlement: normalizeSettlementPolicy(settlement),
-		Refs:       map[string]string{"question_id": questionID},
+		JobID:          strings.TrimSpace(jobID),
+		Locator:        locator,
+		DeliveryFormat: deliveryfmt.NormalizeDeliveryFormat(format),
+		Mode:           ModeAgentReply,
+		Settlement:     normalizeSettlementPolicy(settlement),
+		Refs:           map[string]string{"question_id": questionID},
 		Question: &Question{
 			ID:       questionID,
 			Options:  append([]QuestionOption(nil), options...),
@@ -208,22 +194,13 @@ func PlainEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, loc
 }
 
 func MarkdownEnvelope(jobID string, from actorlayer.ActorAddress, locator Locator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return MarkdownEnvelopeWithProfile(jobID, from, locator, Profile{}, text, dedupeSuffix)
+	return MarkdownEnvelopeWithSettlement(jobID, from, locator, SettlementAuto, text, dedupeSuffix)
 }
 
 func MarkdownEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return MarkdownEnvelopeWithProfileAndSettlement(jobID, from, locator, Profile{}, settlement, text, dedupeSuffix)
-}
-
-func MarkdownEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return MarkdownEnvelopeWithProfileAndSettlement(jobID, from, locator, profile, SettlementAuto, text, dedupeSuffix)
-}
-
-func MarkdownEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, profile Profile, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
 		JobID:      strings.TrimSpace(jobID),
 		Locator:    locator,
-		Profile:    normalizeProfile(profile),
 		Mode:       ModeMarkdown,
 		Settlement: normalizeSettlementPolicy(settlement),
 		Text:       strings.TrimSpace(text),
@@ -343,33 +320,6 @@ func ProgressPlanUpdateEnvelope(jobID string, from actorlayer.ActorAddress, loca
 			Policy:  policy,
 		},
 	}, dedupeSuffix)
-}
-
-func normalizeProfile(profile Profile) Profile {
-	format := Format(strings.ToLower(strings.TrimSpace(string(profile.Format))))
-	telegramMode := strings.ToLower(strings.TrimSpace(profile.TelegramMode))
-	legacy := strings.ToLower(strings.TrimSpace(profile.FormattingMode))
-
-	if format == "" && legacy != "" {
-		switch legacy {
-		case "auto", "markdown", "html", "plain":
-			format = Format(legacy)
-		default:
-			format = FormatAuto
-			telegramMode = legacy
-		}
-	}
-	if format == "" {
-		format = FormatAuto
-	}
-	if telegramMode == "" && legacy != "" && legacy != "auto" && legacy != "markdown" && legacy != "html" && legacy != "plain" {
-		telegramMode = legacy
-	}
-
-	return Profile{
-		Format:       format,
-		TelegramMode: telegramMode,
-	}
 }
 
 func normalizeSettlementPolicy(policy SettlementPolicy) SettlementPolicy {

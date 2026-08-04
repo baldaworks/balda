@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
 
@@ -52,17 +52,16 @@ func TestAdapterSendAgentReplyFallsBackToPlainTextOnContentRejection(t *testing.
 	}
 }
 
-func TestAdapterFormattingProfileMapsMarkdownAndPlain(t *testing.T) {
+func TestAdapterDeliveryFormatMapsMarkdownAndPlain(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		profile deliverycmd.Profile
-		want    string
+		name   string
+		format deliveryfmt.DeliveryFormat
+		want   string
 	}{
-		{name: "auto uses markdown content", profile: deliverycmd.Profile{Format: deliverycmd.FormatAuto}, want: "**hello**"},
-		{name: "markdown uses markdown content", profile: deliverycmd.Profile{Format: deliverycmd.FormatMarkdown}, want: "**hello**"},
-		{name: "plain strips markdown content", profile: deliverycmd.Profile{Format: deliverycmd.FormatPlain}, want: "hello"},
+		{name: "markdown preserves content", format: deliveryfmt.DeliveryFormatMarkdown, want: "**hello**"},
+		{name: "none strips markdown content", format: deliveryfmt.DeliveryFormatNone, want: "hello"},
 	}
 
 	for _, tt := range tests {
@@ -80,28 +79,13 @@ func TestAdapterFormattingProfileMapsMarkdownAndPlain(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			adapter := NewAdapter(NewClient(server.URL, "bot@example.com", "api-key"), zerolog.Nop())
-			if _, err := adapter.SendAgentReplyWithProviderMessageIDAndProfile(context.Background(), NewStreamLocator(42, "ops"), tt.profile, "**hello**"); err != nil {
-				t.Fatalf("SendAgentReplyWithProviderMessageIDAndProfile() error = %v", err)
+			if _, err := adapter.SendAgentReplyWithProviderMessageIDAndFormat(context.Background(), NewStreamLocator(42, "ops"), tt.format, "**hello**"); err != nil {
+				t.Fatalf("SendAgentReplyWithProviderMessageIDAndFormat() error = %v", err)
 			}
 			if got != tt.want {
 				t.Fatalf("content = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestAdapterRejectsHTMLFormatting(t *testing.T) {
-	t.Parallel()
-
-	adapter := NewAdapter(NewClient("http://127.0.0.1", "bot@example.com", "api-key"), zerolog.Nop())
-	_, err := adapter.SendAgentReplyWithProviderMessageIDAndProfile(
-		context.Background(),
-		NewStreamLocator(42, "ops"),
-		deliverycmd.Profile{Format: deliverycmd.FormatHTML},
-		"hello",
-	)
-	if err == nil {
-		t.Fatal("SendAgentReplyWithProviderMessageIDAndProfile() error = nil, want unsupported html")
 	}
 }
 

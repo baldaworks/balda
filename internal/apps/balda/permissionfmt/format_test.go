@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 )
@@ -23,8 +24,8 @@ func TestRenderTelegramUsesStructuredContentAndOmitsOpaqueInput(t *testing.T) {
 		},
 		Options: []permissioncmd.Option{{ID: "opt-1", Name: "Allow once"}, {ID: "opt-2", Name: "Cancel"}},
 	})
-	if presentation.Profile.Format != deliverycmd.FormatMarkdown {
-		t.Fatalf("profile = %+v", presentation.Profile)
+	if presentation.DeliveryFormat != deliveryfmt.DeliveryFormatRichMarkdown {
+		t.Fatalf("delivery format = %q", presentation.DeliveryFormat)
 	}
 	for _, want := range []string{"**Permission required**", "Run the test.", "```sh\nid\n```", "`/workspace`"} {
 		if !strings.Contains(presentation.Prompt, want) {
@@ -76,8 +77,8 @@ func TestRenderFallbackIsPlain(t *testing.T) {
 		},
 		Options: []permissioncmd.Option{{ID: "yes", Name: "Allow"}},
 	})
-	if presentation.Profile.Format != deliverycmd.FormatPlain {
-		t.Fatalf("profile = %+v", presentation.Profile)
+	if presentation.DeliveryFormat != deliveryfmt.DeliveryFormatNone {
+		t.Fatalf("delivery format = %q", presentation.DeliveryFormat)
 	}
 	if strings.Contains(presentation.Prompt, "**") || !strings.Contains(presentation.Prompt, "Inspect config") || !strings.Contains(presentation.Prompt, "1. Allow") {
 		t.Fatalf("prompt = %q", presentation.Prompt)

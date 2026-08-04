@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
 
@@ -42,17 +42,16 @@ func TestAdapterSendsThreadReply(t *testing.T) {
 	}
 }
 
-func TestAdapterFormattingProfileMapsMarkdownAndPlain(t *testing.T) {
+func TestAdapterDeliveryFormatMapsRichAndPlain(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name       string
-		profile    deliverycmd.Profile
+		format     deliveryfmt.DeliveryFormat
 		wantMrkdwn bool
 	}{
-		{name: "auto uses mrkdwn", profile: deliverycmd.Profile{Format: deliverycmd.FormatAuto}, wantMrkdwn: true},
-		{name: "markdown uses mrkdwn", profile: deliverycmd.Profile{Format: deliverycmd.FormatMarkdown}, wantMrkdwn: true},
-		{name: "plain disables mrkdwn", profile: deliverycmd.Profile{Format: deliverycmd.FormatPlain}, wantMrkdwn: false},
+		{name: "mrkdwn enables rich text", format: deliveryfmt.DeliveryFormatMrkdwn, wantMrkdwn: true},
+		{name: "none disables rich text", format: deliveryfmt.DeliveryFormatNone, wantMrkdwn: false},
 	}
 
 	for _, tt := range tests {
@@ -69,27 +68,12 @@ func TestAdapterFormattingProfileMapsMarkdownAndPlain(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			adapter := NewAdapter(NewClientWithBaseURL(server.URL, "xoxb-token"), zerolog.Nop())
-			if _, err := adapter.SendAgentReplyWithProviderMessageIDAndProfile(context.Background(), NewThreadLocator("T123", "C456", threadTS), tt.profile, "hello"); err != nil {
-				t.Fatalf("SendAgentReplyWithProviderMessageIDAndProfile() error = %v", err)
+			if _, err := adapter.SendAgentReplyWithProviderMessageIDAndFormat(context.Background(), NewThreadLocator("T123", "C456", threadTS), tt.format, "hello"); err != nil {
+				t.Fatalf("SendAgentReplyWithProviderMessageIDAndFormat() error = %v", err)
 			}
 			if got.Mrkdwn != tt.wantMrkdwn {
 				t.Fatalf("mrkdwn = %v, want %v", got.Mrkdwn, tt.wantMrkdwn)
 			}
 		})
-	}
-}
-
-func TestAdapterRejectsHTMLFormatting(t *testing.T) {
-	t.Parallel()
-
-	adapter := NewAdapter(NewClientWithBaseURL("http://127.0.0.1", "xoxb-token"), zerolog.Nop())
-	_, err := adapter.SendAgentReplyWithProviderMessageIDAndProfile(
-		context.Background(),
-		NewThreadLocator("T123", "C456", threadTS),
-		deliverycmd.Profile{Format: deliverycmd.FormatHTML},
-		"hello",
-	)
-	if err == nil {
-		t.Fatal("SendAgentReplyWithProviderMessageIDAndProfile() error = nil, want unsupported html")
 	}
 }

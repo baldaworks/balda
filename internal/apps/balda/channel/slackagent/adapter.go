@@ -40,7 +40,7 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		_, err = a.send(ctx, locator, operation.Text, false)
 	case deliverycmd.OperationMarkdown:
-		if deliveryfmt.NormalizeProfile(slackAgentDeliveryProfile(operation.Profile)).Format == deliveryfmt.FormatPlain {
+		if deliveryfmt.NormalizeDeliveryFormat(operation.DeliveryFormat) == deliveryfmt.DeliveryFormatNone {
 			_, err = a.send(ctx, locator, operation.Text, false)
 		} else {
 			_, err = a.send(ctx, locator, operation.Text, true)
@@ -118,12 +118,4 @@ func appendSuggestedPrompts(text string) string {
 		trimmed = "Done."
 	}
 	return trimmed + "\n\nTry next:\n- Continue\n- Summarize\n- Suggest next steps"
-}
-
-func slackAgentDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
-	return deliveryfmt.Profile{
-		Format:         deliveryfmt.Presentation(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}
 }

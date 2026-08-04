@@ -168,9 +168,9 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
 	case deliverycmd.OperationMarkdown:
-		err = a.SendMarkdownWithProfile(ctx, locator, operation.Profile, operation.Text)
+		err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 	case deliverycmd.OperationAgentReply:
-		result.ProviderMessageID, err = a.SendAgentReplyWithQuestion(ctx, locator, operation.Profile, operation.Text, operation.Question)
+		result.ProviderMessageID, err = a.SendAgentReplyWithQuestion(ctx, locator, operation.DeliveryFormat, operation.Text, operation.Question)
 	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
 	case deliverycmd.OperationTyping:
@@ -305,10 +305,7 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		Attachments:      attachments,
 		HasCommand:       hasCommand,
 		DeliveryOptions: deliveryfmt.Options{
-			Profile: deliveryfmt.Profile{
-				Format:       deliveryfmt.FormatAuto,
-				TelegramMode: a.telegramFormattingMode(),
-			},
+			DeliveryFormat: deliveryfmt.DeliveryFormat(a.telegramFormattingMode()),
 			ProgressPolicy: deliveryfmt.ProgressPolicy{
 				Typing:      true,
 				Thinking:    event.Message.Chat.Type == chatTypePrivate,
@@ -658,10 +655,7 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	return CommandContext{
 		Locator: NewLocator(event.Message.Chat.Id, topicID),
 		DeliveryOptions: deliveryfmt.Options{
-			Profile: deliveryfmt.Profile{
-				Format:       deliveryfmt.FormatAuto,
-				TelegramMode: a.telegramFormattingMode(),
-			},
+			DeliveryFormat: deliveryfmt.DeliveryFormat(a.telegramFormattingMode()),
 			ProgressPolicy: deliveryfmt.ProgressPolicy{
 				Typing:      true,
 				Thinking:    event.Message.Chat.Type == chatTypePrivate,
@@ -766,16 +760,16 @@ func (a *Adapter) SendPlain(ctx context.Context, locator deliverycmd.Locator, te
 
 // SendMarkdown sends a Markdown reply to the locator.
 func (a *Adapter) SendMarkdown(ctx context.Context, locator deliverycmd.Locator, text string) error {
-	return a.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return a.SendMarkdownWithFormat(ctx, locator, "", text)
 }
 
-// SendMarkdownWithProfile sends a Markdown reply using a request-scoped formatting profile.
-func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) error {
+// SendMarkdownWithFormat sends a Markdown reply using a request-scoped delivery capability.
+func (a *Adapter) SendMarkdownWithFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return err
 	}
-	mode := deliveryfmt.EffectiveTelegramMode(telegramDeliveryProfile(profile), a.telegramFormattingMode())
+	mode := effectiveTelegramMode(format, a.telegramFormattingMode())
 	return a.messenger.SendMarkdownWithMode(ctx, chatID, text, topicID, mode)
 }
 
@@ -790,22 +784,22 @@ func (a *Adapter) SendAgentReply(ctx context.Context, locator deliverycmd.Locato
 
 // SendAgentReplyWithProviderMessageID sends final agent output and returns the provider message ID when available.
 func (a *Adapter) SendAgentReplyWithProviderMessageID(ctx context.Context, locator deliverycmd.Locator, text string) (string, error) {
-	return a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, "", text)
 }
 
-// SendAgentReplyWithProviderMessageIDAndProfile sends final agent output using a request-scoped formatting profile.
-func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) (string, error) {
-	return a.SendAgentReplyWithQuestion(ctx, locator, profile, text, nil)
+// SendAgentReplyWithProviderMessageIDAndFormat sends final agent output using a request-scoped delivery capability.
+func (a *Adapter) SendAgentReplyWithProviderMessageIDAndFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) (string, error) {
+	return a.SendAgentReplyWithQuestion(ctx, locator, format, text, nil)
 }
 
 // SendAgentReplyWithQuestion projects generic question options into Telegram
 // inline controls while preserving a text-only fallback.
-func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string, question *deliverycmd.Question) (string, error) {
+func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string, question *deliverycmd.Question) (string, error) {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return "", err
 	}
-	mode := deliveryfmt.EffectiveTelegramMode(telegramDeliveryProfile(profile), a.telegramFormattingMode())
+	mode := effectiveTelegramMode(format, a.telegramFormattingMode())
 	var lastMessageID int
 	switch {
 	case question == nil:
@@ -1069,12 +1063,12 @@ func telegramTuple(locator deliverycmd.Locator) (int64, int, error) {
 	return address.ChatID, address.TopicID, nil
 }
 
-func telegramDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
-	return deliveryfmt.Profile{
-		Format:         deliveryfmt.Presentation(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
+func effectiveTelegramMode(format deliveryfmt.DeliveryFormat, fallback string) string {
+	normalized := deliveryfmt.NormalizeDeliveryFormat(format)
+	if normalized == "" {
+		return normalizeTelegramMode(fallback)
 	}
+	return normalizeTelegramMode(string(normalized))
 }
 
 func normalizeTelegramMode(mode string) string {

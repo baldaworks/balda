@@ -33,15 +33,21 @@ type Profile struct {
 }
 
 type Options struct {
-	Profile        Profile        `json:"profile,omitempty,omitzero"`
+	DeliveryFormat DeliveryFormat `json:"delivery_format,omitempty"`
 	ProgressPolicy ProgressPolicy `json:"progress_policy,omitempty,omitzero"`
 }
 
 func NormalizeOptions(options Options) Options {
 	return Options{
-		Profile:        NormalizeProfile(options.Profile),
+		DeliveryFormat: NormalizeDeliveryFormat(options.DeliveryFormat),
 		ProgressPolicy: options.ProgressPolicy,
 	}
+}
+
+// NormalizeDeliveryFormat normalizes an opaque delivery capability without
+// interpreting or defaulting it.
+func NormalizeDeliveryFormat(format DeliveryFormat) DeliveryFormat {
+	return DeliveryFormat(strings.ToLower(strings.TrimSpace(string(format))))
 }
 
 func NormalizeProfile(profile Profile) Profile {

@@ -33,9 +33,9 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
 	case deliverycmd.OperationMarkdown:
-		err = a.SendMarkdownWithProfile(ctx, locator, operation.Profile, operation.Text)
+		err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 	case deliverycmd.OperationAgentReply:
-		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, operation.Profile, operation.Text)
+		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
 	case deliverycmd.OperationTyping:
@@ -56,15 +56,12 @@ func (a *Adapter) SendPlain(ctx context.Context, locator deliverycmd.Locator, te
 
 // SendMarkdown sends a Slack chat mrkdwn message.
 func (a *Adapter) SendMarkdown(ctx context.Context, locator deliverycmd.Locator, text string) error {
-	return a.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return a.SendMarkdownWithFormat(ctx, locator, "", text)
 }
 
-// SendMarkdownWithProfile sends a Slack chat message using the requested formatting profile.
-func (a *Adapter) SendMarkdownWithProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) error {
-	if deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile)).Format == deliveryfmt.FormatHTML {
-		return fmt.Errorf("slack delivery does not support html formatting")
-	}
-	if deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile)).Format == deliveryfmt.FormatPlain {
+// SendMarkdownWithFormat sends a Slack chat message using the requested delivery capability.
+func (a *Adapter) SendMarkdownWithFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) error {
+	if deliveryfmt.NormalizeDeliveryFormat(format) == deliveryfmt.DeliveryFormatNone {
 		return a.SendPlain(ctx, locator, text)
 	}
 	_, err := a.send(ctx, locator, text, true)
@@ -79,16 +76,12 @@ func (a *Adapter) SendAgentReply(ctx context.Context, locator deliverycmd.Locato
 
 // SendAgentReplyWithProviderMessageID sends agent output and returns the Slack chat message timestamp.
 func (a *Adapter) SendAgentReplyWithProviderMessageID(ctx context.Context, locator deliverycmd.Locator, text string) (string, error) {
-	return a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, "", text)
 }
 
-// SendAgentReplyWithProviderMessageIDAndProfile sends agent output using Slack chat mrkdwn unless plain is requested.
-func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) (string, error) {
-	normalized := deliveryfmt.NormalizeProfile(slackDeliveryProfile(profile))
-	if normalized.Format == deliveryfmt.FormatHTML {
-		return "", fmt.Errorf("slack delivery does not support html formatting")
-	}
-	mrkdwn := normalized.Format != deliveryfmt.FormatPlain
+// SendAgentReplyWithProviderMessageIDAndFormat sends agent output using Slack mrkdwn unless plain is requested.
+func (a *Adapter) SendAgentReplyWithProviderMessageIDAndFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) (string, error) {
+	mrkdwn := deliveryfmt.NormalizeDeliveryFormat(format) != deliveryfmt.DeliveryFormatNone
 	return a.send(ctx, locator, text, mrkdwn)
 }
 
@@ -133,12 +126,4 @@ func (a *Adapter) send(ctx context.Context, locator deliverycmd.Locator, text st
 		threadTS = address.ThreadTS
 	}
 	return a.client.PostMessage(ctx, address.Channel, threadTS, text, mrkdwn)
-}
-
-func slackDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
-	return deliveryfmt.Profile{
-		Format:         deliveryfmt.Presentation(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}
 }

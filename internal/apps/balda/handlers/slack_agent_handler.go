@@ -241,22 +241,19 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 	}
 	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
 	payload := turncmd.SessionTurnPayload{
-		Text:            strings.TrimSpace(event.Text),
-		Locator:         locator,
-		UserID:          ts.GetUserID(),
-		RequesterUserID: subject,
-		AgentSessionID:  ts.GetAgentSessionID(),
-		MessageID:       slackMessageID(firstNonEmpty(event.MessageID, env.EventID)),
+		Text:             strings.TrimSpace(event.Text),
+		Locator:          locator,
+		UserID:           ts.GetUserID(),
+		RequesterUserID:  subject,
+		AgentSessionID:   ts.GetAgentSessionID(),
+		MessageID:        slackMessageID(firstNonEmpty(event.MessageID, env.EventID)),
 		ReplyToMessageID: slackMessageID(event.ReplyToMessageID),
-		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
-		DeliveryOptions: deliveryfmt.Options{
-			Profile:        deliveryfmt.Profile{Format: deliveryfmt.FormatMarkdown},
-			ProgressPolicy: progressPolicy,
-		},
-		ProgressPolicy: progressPolicy,
-		Deliver:        true,
-		Source:         "slack_agent",
-		DedupeKey:      "slack_agent:" + firstNonEmpty(env.EventID, event.MessageID),
+		ReceivedAt:       time.Now().UTC().Format(time.RFC3339),
+		DeliveryFormat:   deliveryfmt.DeliveryFormatMrkdwn,
+		ProgressPolicy:   progressPolicy,
+		Deliver:          true,
+		Source:           "slack_agent",
+		DedupeKey:        "slack_agent:" + firstNonEmpty(env.EventID, event.MessageID),
 	}
 	envelope, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {

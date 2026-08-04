@@ -90,7 +90,7 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	if err := progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStartedMessage(goalDeliveryProfile(payload), maxIterations, objective), "started"); err != nil {
+	if err := progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStartedMessage(goalDeliveryFormat(payload), maxIterations, objective), "started"); err != nil {
 		return err
 	}
 
@@ -140,7 +140,7 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 			if setErr := c.jobs.SetResult(ctx, jobID, outcomes.toJobResult(result, false, artifacts, &goalExportResultV1{Status: "canceled"}), baldastate.JobStatusCanceled, actorName, "goal run canceled"); setErr != nil {
 				return actorlayer.TransientError(setErr)
 			}
-			return progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "Goal run canceled."), "canceled")
+			return progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryFormat(payload), "Goal run canceled."), "canceled")
 		}
 		reason := redactSecrets(err.Error())
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
@@ -149,7 +149,7 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 		if setErr := c.jobs.SetResult(ctx, jobID, outcomes.toJobResult(result, false, artifacts, &goalExportResultV1{Status: "failed", Error: reason}), baldastate.JobStatusFailed, actorName, reason); setErr != nil {
 			return actorlayer.TransientError(setErr)
 		}
-		return progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryProfile(payload), "Goal run failed: "+reason), "failed")
+		return progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStatusMessage(goalDeliveryFormat(payload), "Goal run failed: "+reason), "failed")
 	}
 	if reviewerPassed(result.latestValidatorOutput) {
 		finalization, exportErr := goalRun.Finalize(runCtx, payload.Objective, result.latestWorkerOutput, result.latestValidatorOutput)
@@ -165,7 +165,7 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 			if setErr := c.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, exportSummary.Error); setErr != nil {
 				return actorlayer.TransientError(setErr)
 			}
-			return progressEmitter.deliver(ctx, jobID, payload, outcomes.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal validation passed, but export failed."), "export-failed")
+			return progressEmitter.deliver(ctx, jobID, payload, outcomes.renderJobOutcome(ctx, jobID, goalDeliveryFormat(payload), "Goal validation passed, but export failed."), "export-failed")
 		}
 		jobResult := outcomes.toJobResult(result, true, artifacts, exportSummary)
 		if err := c.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusCompleted, actorName, ""); err != nil {
@@ -174,7 +174,7 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 		if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 			c.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup completed goal run")
 		}
-		return progressEmitter.deliver(ctx, jobID, payload, outcomes.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal run completed."), "completed")
+		return progressEmitter.deliver(ctx, jobID, payload, outcomes.renderJobOutcome(ctx, jobID, goalDeliveryFormat(payload), "Goal run completed."), "completed")
 	}
 	if cleanupErr := goalRun.CleanupResources(ctx); cleanupErr != nil {
 		c.logger.Warn().Err(cleanupErr).Str("job_id", jobID).Msg("failed to cleanup max-iteration goal run")
@@ -183,7 +183,7 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 	if err := c.jobs.SetResult(ctx, jobID, jobResult, baldastate.JobStatusFailed, actorName, "max iterations reached"); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	return progressEmitter.deliver(ctx, jobID, payload, outcomes.renderJobOutcome(ctx, jobID, goalDeliveryProfile(payload), "Goal run reached max iterations without passing validation."), "max-iterations")
+	return progressEmitter.deliver(ctx, jobID, payload, outcomes.renderJobOutcome(ctx, jobID, goalDeliveryFormat(payload), "Goal run reached max iterations without passing validation."), "max-iterations")
 }
 
 func (c *coordinator) jobStatusIs(ctx context.Context, jobID string, statuses ...string) bool {

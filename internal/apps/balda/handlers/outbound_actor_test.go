@@ -35,12 +35,12 @@ func handleDeliveryCommandForTest(ctx context.Context, adapter *baldatelegram.Ad
 	}
 	switch payload.Mode {
 	case actors.DeliveryModeAgentReply:
-		_, err := adapter.SendAgentReplyWithProviderMessageIDAndProfile(ctx, payload.Locator, payload.Profile, payload.Text)
+		_, err := adapter.SendAgentReplyWithProviderMessageIDAndFormat(ctx, payload.Locator, payload.DeliveryFormat, payload.Text)
 		return err
 	case actors.DeliveryModePlain:
 		return adapter.SendPlain(ctx, payload.Locator, payload.Text)
 	case actors.DeliveryModeMarkdown:
-		return adapter.SendMarkdownWithProfile(ctx, payload.Locator, payload.Profile, payload.Text)
+		return adapter.SendMarkdownWithFormat(ctx, payload.Locator, payload.DeliveryFormat, payload.Text)
 	case actors.DeliveryModeDraftPlain:
 		return adapter.SendDraftPlain(ctx, payload.Locator, payload.DraftID, payload.Text)
 	case actors.DeliveryModeChatAction:

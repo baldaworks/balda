@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 var (
@@ -43,21 +43,13 @@ func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, fro
 }
 
 func sendAgentReply(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
-	return sendAgentReplyWithProfile(ctx, dispatcher, from, locator, deliveryfmt.Profile{}, text)
+	return sendAgentReplyWithFormat(ctx, dispatcher, from, locator, "", text)
 }
 
-func sendAgentReplyWithProfile(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, text string) error {
-	env, err := deliverycmd.AgentReplyEnvelopeWithProfileAndSettlement("", from, locator, handlerDeliveryProfile(profile), deliverycmd.SettlementBypass, text, "")
+func sendAgentReplyWithFormat(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, format deliveryfmt.DeliveryFormat, text string) error {
+	env, err := deliverycmd.AgentReplyEnvelopeWithFormatAndSettlement("", from, locator, format, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}
 	return dispatchOutbound(ctx, dispatcher, env)
-}
-
-func handlerDeliveryProfile(profile deliveryfmt.Profile) deliverycmd.Profile {
-	return deliverycmd.Profile{
-		Format:         deliverycmd.Format(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}
 }

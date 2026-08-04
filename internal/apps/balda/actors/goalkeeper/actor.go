@@ -252,13 +252,8 @@ func goalDeliveryOptions(payload goalJobPayload) deliveryfmt.Options {
 	return normalizeGoalDeliveryOptions(payload.DeliveryOptions)
 }
 
-func goalDeliveryProfile(payload goalJobPayload) deliverycmd.Profile {
-	profile := goalDeliveryOptions(payload).Profile
-	return deliverycmd.Profile{
-		Format:         deliverycmd.Format(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}
+func goalDeliveryFormat(payload goalJobPayload) deliveryfmt.DeliveryFormat {
+	return goalDeliveryOptions(payload).DeliveryFormat
 }
 
 func goalProgressPolicy(payload goalJobPayload) deliverycmd.ProgressPolicy {

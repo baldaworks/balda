@@ -451,9 +451,7 @@ func TestBaldaSessionTurnRunner_DirectTelegramProgressDeliveriesComeFromSessionA
 		AgentSessionID: sessionID,
 		MessageID:      41,
 		TopicID:        77,
-		DeliveryOptions: deliveryfmt.Options{
-			ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
-		},
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
 		ProgressPolicy: baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
 		Deliver:        true,
 		Source:         "telegram",
@@ -637,7 +635,7 @@ func TestRunTurn_TaskBackedVisibleOutputOnlySendsFinalReply(t *testing.T) {
 		return []*adksession.Event{partialOne, partialTwo, partialThree, done}
 	})
 	locator := baldatelegram.NewLocator(9001, 77)
-	options := deliveryfmt.Options{Profile: deliveryfmt.Profile{Format: deliveryfmt.FormatAuto, TelegramMode: "markdownv2"}}
+	options := deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}
 	if err := h.runTurnWithDeliveryOptions(context.Background(), "hello", adkRunner, "tg-101", sessionID, "task-2", sessionID, locator, 41, options, true); err != nil {
 		t.Fatalf("runTurnWithDeliveryOptions() error = %v", err)
 	}
@@ -658,8 +656,8 @@ func TestRunTurn_TaskBackedVisibleOutputOnlySendsFinalReply(t *testing.T) {
 	if err := actorlayer.UnmarshalPayload(bus.commands[len(bus.commands)-1].Payload, &payload); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
-	if string(payload.Profile.Format) != string(options.Profile.Format) || payload.Profile.TelegramMode != options.Profile.TelegramMode {
-		t.Fatalf("delivery profile = %+v, want %+v", payload.Profile, options.Profile)
+	if payload.DeliveryFormat != options.DeliveryFormat {
+		t.Fatalf("delivery format = %q, want %q", payload.DeliveryFormat, options.DeliveryFormat)
 	}
 }
 

@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"google.golang.org/genai"
 )
 
@@ -20,12 +20,8 @@ func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from a
 	return dispatchOutbound(ctx, dispatcher, env)
 }
 
-func sendAgentReplyWithProfile(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, text string) error {
-	env, err := deliverycmd.AgentReplyEnvelopeWithProfileAndSettlement("", from, locator, deliverycmd.Profile{
-		Format:         deliverycmd.Format(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}, deliverycmd.SettlementBypass, text, "")
+func sendAgentReplyWithFormat(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, format deliveryfmt.DeliveryFormat, text string) error {
+	env, err := deliverycmd.AgentReplyEnvelopeWithFormatAndSettlement("", from, locator, format, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
 	}

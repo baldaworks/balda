@@ -10,6 +10,7 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 )
@@ -30,7 +31,7 @@ type SessionRequest struct {
 	AllowFreeText   bool
 	Timeout         time.Duration
 	Audience        deliverycmd.QuestionAudience
-	Profile         deliverycmd.Profile
+	DeliveryFormat  deliveryfmt.DeliveryFormat
 	Metadata        map[string]string
 }
 
@@ -215,9 +216,9 @@ func buildSessionDeliveryEnvelope(questionID string, req SessionRequest, options
 	}
 	dedupeSuffix := "question:" + questionID
 	if len(options) > 0 {
-		return deliverycmd.QuestionEnvelope("", from, req.Interaction.Locator, req.Profile, deliverycmd.SettlementOutbox, strings.TrimSpace(req.Prompt), questionID, dedupeSuffix, options, req.Audience)
+		return deliverycmd.QuestionEnvelope("", from, req.Interaction.Locator, req.DeliveryFormat, deliverycmd.SettlementOutbox, strings.TrimSpace(req.Prompt), questionID, dedupeSuffix, options, req.Audience)
 	}
-	return deliverycmd.AgentReplyEnvelopeWithProfileAndSettlementAndRefs("", from, req.Interaction.Locator, req.Profile, deliverycmd.SettlementOutbox, strings.TrimSpace(req.Prompt), dedupeSuffix, map[string]string{"question_id": questionID})
+	return deliverycmd.AgentReplyEnvelopeWithFormatAndSettlementAndRefs("", from, req.Interaction.Locator, req.DeliveryFormat, deliverycmd.SettlementOutbox, strings.TrimSpace(req.Prompt), dedupeSuffix, map[string]string{"question_id": questionID})
 }
 
 func responderForSessionAudience(req SessionRequest) string {

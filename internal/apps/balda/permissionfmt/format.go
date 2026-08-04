@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
 )
 
@@ -17,18 +18,18 @@ const (
 )
 
 type Presentation struct {
-	Prompt  string
-	Profile deliverycmd.Profile
+	Prompt         string
+	DeliveryFormat deliveryfmt.DeliveryFormat
 }
 
 func Render(request permissioncmd.Request) Presentation {
 	switch strings.ToLower(strings.TrimSpace(request.Interaction.Locator.ChannelType)) {
 	case string(deliverycmd.ChannelTypeTelegram):
-		return Presentation{Prompt: renderTelegramMarkdown(request), Profile: deliverycmd.Profile{Format: deliverycmd.FormatMarkdown}}
+		return Presentation{Prompt: renderTelegramMarkdown(request), DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}
 	case string(deliverycmd.ChannelTypeSlackAgent):
-		return Presentation{Prompt: renderMarkdown(request), Profile: deliverycmd.Profile{Format: deliverycmd.FormatMarkdown}}
+		return Presentation{Prompt: renderMarkdown(request), DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn}
 	default:
-		return Presentation{Prompt: renderPlain(request), Profile: deliverycmd.Profile{Format: deliverycmd.FormatPlain}}
+		return Presentation{Prompt: renderPlain(request), DeliveryFormat: deliveryfmt.DeliveryFormatNone}
 	}
 }
 

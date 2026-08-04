@@ -1,11 +1,11 @@
 package actors
 
 import (
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/progress"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/baldaworks/go-actorlayer"
 )
 
 func DeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
@@ -20,12 +20,12 @@ func AgentReplyDeliveryEnvelopeWithSettlement(jobID string, from actorlayer.Acto
 	return deliverycmd.AgentReplyEnvelopeWithSettlement(jobID, from, locator, settlement, text, dedupeSuffix)
 }
 
-func AgentReplyDeliveryEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return deliverycmd.AgentReplyEnvelopeWithProfile(jobID, from, locator, actorDeliveryProfile(profile), text, dedupeSuffix)
+func AgentReplyDeliveryEnvelopeWithFormat(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, format deliveryfmt.DeliveryFormat, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return deliverycmd.AgentReplyEnvelopeWithFormat(jobID, from, locator, format, text, dedupeSuffix)
 }
 
-func AgentReplyDeliveryEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, settlement deliverycmd.SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return deliverycmd.AgentReplyEnvelopeWithProfileAndSettlement(jobID, from, locator, actorDeliveryProfile(profile), settlement, text, dedupeSuffix)
+func AgentReplyDeliveryEnvelopeWithFormatAndSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, format deliveryfmt.DeliveryFormat, settlement deliverycmd.SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return deliverycmd.AgentReplyEnvelopeWithFormatAndSettlement(jobID, from, locator, format, settlement, text, dedupeSuffix)
 }
 
 func PlainDeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
@@ -42,14 +42,6 @@ func MarkdownDeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locato
 
 func MarkdownDeliveryEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, settlement deliverycmd.SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return deliverycmd.MarkdownEnvelopeWithSettlement(jobID, from, locator, settlement, text, dedupeSuffix)
-}
-
-func MarkdownDeliveryEnvelopeWithProfile(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return deliverycmd.MarkdownEnvelopeWithProfile(jobID, from, locator, actorDeliveryProfile(profile), text, dedupeSuffix)
-}
-
-func MarkdownDeliveryEnvelopeWithProfileAndSettlement(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, profile deliveryfmt.Profile, settlement deliverycmd.SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
-	return deliverycmd.MarkdownEnvelopeWithProfileAndSettlement(jobID, from, locator, actorDeliveryProfile(profile), settlement, text, dedupeSuffix)
 }
 
 func DraftPlainDeliveryEnvelope(jobID string, from actorlayer.ActorAddress, locator baldasession.SessionLocator, draftID int, text string) (actorlayer.Envelope, error) {
@@ -84,14 +76,6 @@ func deliveryPlanSnapshot(plan *progress.PlanSnapshot) *deliverycmd.PlanSnapshot
 		})
 	}
 	return out
-}
-
-func actorDeliveryProfile(profile deliveryfmt.Profile) deliverycmd.Profile {
-	return deliverycmd.Profile{
-		Format:         deliverycmd.Format(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}
 }
 
 func actorProgressPolicy(policy deliveryfmt.ProgressPolicy) deliverycmd.ProgressPolicy {

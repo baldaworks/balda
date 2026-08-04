@@ -249,11 +249,8 @@ func TestMessageContextFromEvent_SnapshotsDeliveryOptions(t *testing.T) {
 	if !ok {
 		t.Fatal("MessageContextFromEvent() ok = false, want true")
 	}
-	if got.DeliveryOptions.Profile.Format != deliveryfmt.FormatAuto {
-		t.Fatalf("delivery profile format = %q, want %q", got.DeliveryOptions.Profile.Format, deliveryfmt.FormatAuto)
-	}
-	if got.DeliveryOptions.Profile.TelegramMode != telegramfmt.ModeMarkdownV2 {
-		t.Fatalf("delivery telegram mode = %q, want %q", got.DeliveryOptions.Profile.TelegramMode, telegramfmt.ModeMarkdownV2)
+	if got.DeliveryOptions.DeliveryFormat != deliveryfmt.DeliveryFormat(telegramfmt.ModeMarkdownV2) {
+		t.Fatalf("delivery format = %q, want %q", got.DeliveryOptions.DeliveryFormat, telegramfmt.ModeMarkdownV2)
 	}
 	if !got.DeliveryOptions.ProgressPolicy.Typing || !got.DeliveryOptions.ProgressPolicy.Thinking {
 		t.Fatalf("delivery progress policy = %+v, want typing and thinking", got.DeliveryOptions.ProgressPolicy)

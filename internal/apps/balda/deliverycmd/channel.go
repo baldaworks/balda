@@ -1,6 +1,10 @@
 package deliverycmd
 
-import "context"
+import (
+	"context"
+
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+)
 
 // ChannelType identifies the transport backing a delivery locator.
 type ChannelType string
@@ -28,15 +32,15 @@ const (
 
 // Operation describes one transport-neutral delivery side effect.
 type Operation struct {
-	Kind      OperationKind
-	Profile   Profile
-	Text      string
-	DraftID   int
-	Progress  Progress
-	Question  *Question
-	MessageID string
-	Handle    string
-	Media     *Media
+	Kind           OperationKind
+	DeliveryFormat deliveryfmt.DeliveryFormat
+	Text           string
+	DraftID        int
+	Progress       Progress
+	Question       *Question
+	MessageID      string
+	Handle         string
+	Media          *Media
 }
 
 type Media struct {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 )
 
 // Router routes outbound channel operations to the correct ChannelAdapter
@@ -33,15 +34,15 @@ func (r *Router) SendPlain(ctx context.Context, locator deliverycmd.Locator, tex
 }
 
 func (r *Router) SendMarkdown(ctx context.Context, locator deliverycmd.Locator, text string) error {
-	return r.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return r.SendMarkdownWithFormat(ctx, locator, "", text)
 }
 
-func (r *Router) SendMarkdownWithProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) error {
+func (r *Router) SendMarkdownWithFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) error {
 	adapter, err := r.adapterFor(locator)
 	if err != nil {
 		return err
 	}
-	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{Kind: deliverycmd.OperationMarkdown, Profile: profile, Text: text})
+	_, err = adapter.Deliver(ctx, locator, deliverycmd.Operation{Kind: deliverycmd.OperationMarkdown, DeliveryFormat: format, Text: text})
 	return err
 }
 
@@ -55,19 +56,19 @@ func (r *Router) SendAgentReply(ctx context.Context, locator deliverycmd.Locator
 }
 
 func (r *Router) SendAgentReplyWithProviderMessageID(ctx context.Context, locator deliverycmd.Locator, text string) (string, error) {
-	return r.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return r.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, "", text)
 }
 
-func (r *Router) SendAgentReplyWithProviderMessageIDAndProfile(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string) (string, error) {
-	return r.SendAgentReplyWithQuestion(ctx, locator, profile, text, nil)
+func (r *Router) SendAgentReplyWithProviderMessageIDAndFormat(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string) (string, error) {
+	return r.SendAgentReplyWithQuestion(ctx, locator, format, text, nil)
 }
 
-func (r *Router) SendAgentReplyWithQuestion(ctx context.Context, locator deliverycmd.Locator, profile deliverycmd.Profile, text string, question *deliverycmd.Question) (string, error) {
+func (r *Router) SendAgentReplyWithQuestion(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string, question *deliverycmd.Question) (string, error) {
 	adapter, err := r.adapterFor(locator)
 	if err != nil {
 		return "", err
 	}
-	result, err := adapter.Deliver(ctx, locator, deliverycmd.Operation{Kind: deliverycmd.OperationAgentReply, Profile: profile, Text: text, Question: question})
+	result, err := adapter.Deliver(ctx, locator, deliverycmd.Operation{Kind: deliverycmd.OperationAgentReply, DeliveryFormat: format, Text: text, Question: question})
 	return result.ProviderMessageID, err
 }
 

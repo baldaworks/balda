@@ -109,13 +109,13 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 	}
 	presentation := permissionfmt.Render(request)
 	result, err := s.questions.AskSession(ctx, s.dispatcher, questions.SessionRequest{
-		Interaction: interaction,
-		Resume:      sessionquestionResumeTarget(interaction),
-		Prompt:      presentation.Prompt,
-		Options:     options,
-		Timeout:     s.config.Timeout,
-		Audience:    permissionQuestionAudience(interaction),
-		Profile:     presentation.Profile,
+		Interaction:    interaction,
+		Resume:         sessionquestionResumeTarget(interaction),
+		Prompt:         presentation.Prompt,
+		Options:        options,
+		Timeout:        s.config.Timeout,
+		Audience:       permissionQuestionAudience(interaction),
+		DeliveryFormat: presentation.DeliveryFormat,
 	})
 	if err != nil {
 		return fallback, fmt.Errorf("run permission question: %w", err)

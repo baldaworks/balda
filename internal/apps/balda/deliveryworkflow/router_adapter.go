@@ -24,11 +24,11 @@ func (d channelRouterDispatcher) Dispatch(ctx context.Context, payload deliveryc
 	}
 	switch payload.Mode {
 	case deliverycmd.ModeAgentReply:
-		return d.router.SendAgentReplyWithQuestion(ctx, payload.Locator, payload.Profile, payload.Text, payload.Question)
+		return d.router.SendAgentReplyWithQuestion(ctx, payload.Locator, payload.DeliveryFormat, payload.Text, payload.Question)
 	case deliverycmd.ModePlain:
 		return "", d.router.SendPlain(ctx, payload.Locator, payload.Text)
 	case deliverycmd.ModeMarkdown:
-		return "", d.router.SendMarkdownWithProfile(ctx, payload.Locator, payload.Profile, payload.Text)
+		return "", d.router.SendMarkdownWithFormat(ctx, payload.Locator, payload.DeliveryFormat, payload.Text)
 	case deliverycmd.ModeDraftPlain:
 		return "", d.router.SendDraftPlain(ctx, payload.Locator, payload.DraftID, payload.Text)
 	case deliverycmd.ModeChatAction:

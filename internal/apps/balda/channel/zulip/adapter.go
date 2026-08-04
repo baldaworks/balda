@@ -51,9 +51,9 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
 	case deliverycmd.OperationMarkdown:
-		err = a.SendMarkdownWithProfile(ctx, locator, operation.Profile, operation.Text)
+		err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 	case deliverycmd.OperationAgentReply:
-		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, operation.Profile, operation.Text)
+		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
 	case deliverycmd.OperationTyping:
@@ -112,21 +112,17 @@ func (a *Adapter) SendMarkdown(
 	locator deliverycmd.Locator,
 	text string,
 ) error {
-	return a.SendMarkdownWithProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return a.SendMarkdownWithFormat(ctx, locator, "", text)
 }
 
-// SendMarkdownWithProfile sends a Markdown message using Zulip's target formatting profile.
-func (a *Adapter) SendMarkdownWithProfile(
+// SendMarkdownWithFormat sends a Markdown message using Zulip's delivery capability.
+func (a *Adapter) SendMarkdownWithFormat(
 	ctx context.Context,
 	locator deliverycmd.Locator,
-	profile deliverycmd.Profile,
+	format deliveryfmt.DeliveryFormat,
 	text string,
 ) error {
-	normalized := deliveryfmt.NormalizeProfile(zulipDeliveryProfile(profile))
-	if normalized.Format == deliveryfmt.FormatHTML {
-		return fmt.Errorf("zulip delivery does not support html formatting")
-	}
-	if normalized.Format == deliveryfmt.FormatPlain {
+	if deliveryfmt.NormalizeDeliveryFormat(format) == deliveryfmt.DeliveryFormatNone {
 		return a.SendPlain(ctx, locator, plainTextFallback(text))
 	}
 	_, err := a.sendWithPlainFallback(ctx, locator, text)
@@ -150,21 +146,17 @@ func (a *Adapter) SendAgentReplyWithProviderMessageID(
 	locator deliverycmd.Locator,
 	text string,
 ) (string, error) {
-	return a.SendAgentReplyWithProviderMessageIDAndProfile(ctx, locator, deliverycmd.Profile{}, text)
+	return a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, "", text)
 }
 
-// SendAgentReplyWithProviderMessageIDAndProfile sends agent output using Zulip's target formatting profile.
-func (a *Adapter) SendAgentReplyWithProviderMessageIDAndProfile(
+// SendAgentReplyWithProviderMessageIDAndFormat sends agent output using Zulip's delivery capability.
+func (a *Adapter) SendAgentReplyWithProviderMessageIDAndFormat(
 	ctx context.Context,
 	locator deliverycmd.Locator,
-	profile deliverycmd.Profile,
+	format deliveryfmt.DeliveryFormat,
 	text string,
 ) (string, error) {
-	normalized := deliveryfmt.NormalizeProfile(zulipDeliveryProfile(profile))
-	if normalized.Format == deliveryfmt.FormatHTML {
-		return "", fmt.Errorf("zulip delivery does not support html formatting")
-	}
-	if normalized.Format == deliveryfmt.FormatPlain {
+	if deliveryfmt.NormalizeDeliveryFormat(format) == deliveryfmt.DeliveryFormatNone {
 		msgID, err := a.send(ctx, locator, plainTextFallback(text))
 		if err != nil {
 			return "", err
@@ -299,14 +291,6 @@ func (a *Adapter) sendWithPlainFallback(
 		)
 	}
 	return msgID, nil
-}
-
-func zulipDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
-	return deliveryfmt.Profile{
-		Format:         deliveryfmt.Presentation(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	}
 }
 
 func plainTextFallback(text string) string {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/redaction"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -77,22 +76,22 @@ func mustTemplates(style messageStyle, sources map[messageTemplate]string) map[m
 	return out
 }
 
-func RenderStartedMessage(profile deliverycmd.Profile, maxIterations int, objective string) string {
-	style := messageStyleForProfile(profile)
+func RenderStartedMessage(format deliveryfmt.DeliveryFormat, maxIterations int, objective string) string {
+	style := messageStyleForFormat(format)
 	return renderTemplate(style, templateStarted, messageData{MaxIterations: maxIterations, Objective: systemText(style, objective)})
 }
 
-func RenderStepMessage(profile deliverycmd.Profile, iteration int, maxIterations int, step string, action string, body string) string {
-	style := messageStyleForProfile(profile)
+func RenderStepMessage(format deliveryfmt.DeliveryFormat, iteration int, maxIterations int, step string, action string, body string) string {
+	style := messageStyleForFormat(format)
 	return renderTemplate(style, templateStep, messageData{MaxIterations: maxIterations, Iteration: iteration, Step: systemText(style, step), Action: systemText(style, action), Body: strings.TrimSpace(body)})
 }
 
-func RenderStatusMessage(profile deliverycmd.Profile, text string) string {
-	style := messageStyleForProfile(profile)
+func RenderStatusMessage(format deliveryfmt.DeliveryFormat, text string) string {
+	style := messageStyleForFormat(format)
 	return renderTemplate(style, templateStatus, messageData{Text: systemText(style, text)})
 }
 
-func RenderReviewableOutcome(profile deliverycmd.Profile, task baldastate.JobRecord) string {
+func RenderReviewableOutcome(format deliveryfmt.DeliveryFormat, task baldastate.JobRecord) string {
 	var result map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(task.Result)), &result); err != nil {
 		result = nil
@@ -164,38 +163,38 @@ func RenderReviewableOutcome(profile deliverycmd.Profile, task baldastate.JobRec
 
 	var parts []string
 	if goalReached {
-		parts = append(parts, outcomeLine(profile, "Result", "Goal completed."))
+		parts = append(parts, outcomeLine(format, "Result", "Goal completed."))
 	} else {
-		parts = append(parts, outcomeLine(profile, "Result", "Goal not completed."))
+		parts = append(parts, outcomeLine(format, "Result", "Goal not completed."))
 	}
 	if goalReached && exportStatus != "" {
 		switch exportStatus {
 		case GoalExportStatusExported:
 		case GoalExportStatusNotExported:
 		case GoalExportStatusFailed:
-			parts = append(parts, outcomeLine(profile, "Export", "failed: "+systemText(messageStyleForProfile(profile), firstNonEmpty(exportError, exportReason, "unknown error"))))
+			parts = append(parts, outcomeLine(format, "Export", "failed: "+systemText(messageStyleForFormat(format), firstNonEmpty(exportError, exportReason, "unknown error"))))
 		default:
-			parts = append(parts, outcomeLine(profile, "Export", systemText(messageStyleForProfile(profile), exportStatus)+"."))
+			parts = append(parts, outcomeLine(format, "Export", systemText(messageStyleForFormat(format), exportStatus)+"."))
 		}
 	}
 	if whatWasDone != "" {
 		if routineSuccessfulOutcome {
 			parts = append(parts, strings.TrimSpace(whatWasDone))
 		} else {
-			parts = append(parts, outcomeBlock(profile, "What was done", whatWasDone))
+			parts = append(parts, outcomeBlock(format, "What was done", whatWasDone))
 		}
 	}
 	if renderValidation && validation != "" {
-		parts = append(parts, outcomeBlock(profile, "Validation", validation))
+		parts = append(parts, outcomeBlock(format, "Validation", validation))
 	}
 	if renderVerified && verified != "" {
-		parts = append(parts, outcomeLine(profile, "Verified", verified))
+		parts = append(parts, outcomeLine(format, "Verified", verified))
 	}
 	if renderNotVerified && notVerified != "" {
-		parts = append(parts, outcomeLine(profile, "Not verified", notVerified))
+		parts = append(parts, outcomeLine(format, "Not verified", notVerified))
 	}
 	if renderNextAction && nextAction != "" {
-		parts = append(parts, outcomeLine(profile, "Next action", nextAction))
+		parts = append(parts, outcomeLine(format, "Next action", nextAction))
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
@@ -204,22 +203,11 @@ func RedactSecrets(raw string) string {
 	return redaction.Secrets(raw)
 }
 
-func messageStyleForProfile(profile deliverycmd.Profile) messageStyle {
-	normalized := deliveryfmt.NormalizeProfile(deliveryfmt.Profile{
-		Format:         deliveryfmt.Presentation(profile.Format),
-		TelegramMode:   profile.TelegramMode,
-		FormattingMode: profile.FormattingMode,
-	})
-	switch normalized.Format {
-	case deliveryfmt.FormatMarkdown:
+func messageStyleForFormat(format deliveryfmt.DeliveryFormat) messageStyle {
+	switch deliveryfmt.NormalizeDeliveryFormat(format) {
+	case deliveryfmt.DeliveryFormatRichMarkdown, deliveryfmt.DeliveryFormatMrkdwn, deliveryfmt.DeliveryFormatMarkdown:
 		return messageStyleMarkdown
-	case deliveryfmt.FormatHTML:
-		return messageStyleHTML
-	}
-	switch normalized.TelegramMode {
-	case telegramfmt.ModeRichMarkdown, telegramfmt.ModeMarkdownV2:
-		return messageStyleMarkdown
-	case telegramfmt.ModeRichHTML, telegramfmt.ModeHTML:
+	case deliveryfmt.DeliveryFormatRichHTML:
 		return messageStyleHTML
 	default:
 		return messageStylePlain
@@ -250,12 +238,12 @@ func systemText(style messageStyle, text string) string {
 	return text
 }
 
-func outcomeLine(profile deliverycmd.Profile, label string, value string) string {
+func outcomeLine(format deliveryfmt.DeliveryFormat, label string, value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
 	}
-	style := messageStyleForProfile(profile)
+	style := messageStyleForFormat(format)
 	switch style {
 	case messageStyleMarkdown:
 		return fmt.Sprintf("**%s:** %s", label, value)
@@ -266,12 +254,12 @@ func outcomeLine(profile deliverycmd.Profile, label string, value string) string
 	}
 }
 
-func outcomeBlock(profile deliverycmd.Profile, label string, body string) string {
+func outcomeBlock(format deliveryfmt.DeliveryFormat, label string, body string) string {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return ""
 	}
-	style := messageStyleForProfile(profile)
+	style := messageStyleForFormat(format)
 	switch style {
 	case messageStyleMarkdown:
 		return fmt.Sprintf("**%s:**\n%s", label, body)
