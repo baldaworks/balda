@@ -3,19 +3,169 @@ package deliveryworkflow
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 
+const testProviderMessageID = "message-42"
+
 type testDispatcher struct{}
 
-func (testDispatcher) Dispatch(context.Context, deliverycmd.Payload) (string, error) {
-	return "message-42", nil
+func (testDispatcher) Dispatch(context.Context, Delivery) (string, error) {
+	return testProviderMessageID, nil
+}
+
+type recordingFormattedDispatcher struct {
+	deliveries []Delivery
+}
+
+func (d *recordingFormattedDispatcher) Dispatch(_ context.Context, delivery Delivery) (string, error) {
+	d.deliveries = append(d.deliveries, delivery)
+	return testProviderMessageID, nil
+}
+
+type recordingDeliveryStore struct {
+	reserveCalls int
+}
+
+func (s *recordingDeliveryStore) ReserveDelivery(_ context.Context, record baldastate.DeliveryRecord) (baldastate.DeliveryRecord, bool, error) {
+	s.reserveCalls++
+	return record, true, nil
+}
+
+func (*recordingDeliveryStore) MarkDeliverySending(context.Context, string) error { return nil }
+func (*recordingDeliveryStore) MarkDeliveryFailed(context.Context, string, string) error {
+	return nil
+}
+func (*recordingDeliveryStore) MarkDeliverySent(context.Context, string, string) error { return nil }
+
+type workflowTestFormatter struct {
+	name       deliveryfmt.Name
+	resultName deliveryfmt.Name
+	err        error
+}
+
+func (f workflowTestFormatter) Name() deliveryfmt.Name { return f.name }
+
+func (f workflowTestFormatter) Format(text string) (deliveryfmt.Message, error) {
+	if f.err != nil {
+		return deliveryfmt.Message{}, f.err
+	}
+	name := f.resultName
+	if name == "" {
+		name = f.name
+	}
+	return deliveryfmt.Message{Name: name, Text: "formatted:" + text, PlainFallback: text}, nil
+}
+
+func TestHandleResolvesFormattedDeliveryBeforeOutboxAndProvider(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		format        deliveryfmt.DeliveryFormat
+		formatter     workflowTestFormatter
+		registerRoute bool
+		wantPermanent bool
+		wantCalls     int
+		wantText      string
+	}{
+		{name: "valid route", format: deliveryfmt.DeliveryFormatRichMarkdown, formatter: workflowTestFormatter{name: deliveryfmt.NameTelegramRichMarkdown}, registerRoute: true, wantCalls: 1, wantText: "formatted:hello"},
+		{name: "unknown route", format: "unknown", formatter: workflowTestFormatter{name: deliveryfmt.NameTelegramRichMarkdown}, registerRoute: true, wantPermanent: true},
+		{name: "formatter failure", format: deliveryfmt.DeliveryFormatRichMarkdown, formatter: workflowTestFormatter{name: deliveryfmt.NameTelegramRichMarkdown, err: errors.New("invalid format")}, registerRoute: true, wantPermanent: true},
+		{name: "formatter name mismatch", format: deliveryfmt.DeliveryFormatRichMarkdown, formatter: workflowTestFormatter{name: deliveryfmt.NameTelegramRichMarkdown, resultName: deliveryfmt.NamePlainText}, registerRoute: true, wantPermanent: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			registry := workflowTestRegistry(t, test.formatter, test.registerRoute)
+			dispatcher := &recordingFormattedDispatcher{}
+			outbox := &recordingDeliveryStore{}
+			service := NewWithRegistry(dispatcher, registry, outbox, nil, nil, nil, zerolog.Nop())
+			payload := deliverycmd.Payload{
+				Locator:        deliverycmd.Locator{ChannelType: deliveryfmt.TransportTelegram, AddressKey: "1:0", SessionID: "tg-1-0"},
+				Mode:           deliverycmd.ModeAgentReply,
+				Settlement:     deliverycmd.SettlementOutbox,
+				DeliveryFormat: test.format,
+				Text:           "hello",
+			}
+			err := service.Handle(context.Background(), actorlayer.Envelope{ID: "delivery-1"}, payload)
+			if test.wantPermanent {
+				if actorlayer.ClassifyError(err) != actorlayer.ErrorKindPermanent {
+					t.Fatalf("Handle() error kind = %q, want permanent: %v", actorlayer.ClassifyError(err), err)
+				}
+			} else if err != nil {
+				t.Fatalf("Handle() error = %v", err)
+			}
+			if len(dispatcher.deliveries) != test.wantCalls {
+				t.Fatalf("provider calls = %d, want %d", len(dispatcher.deliveries), test.wantCalls)
+			}
+			if outbox.reserveCalls != test.wantCalls {
+				t.Fatalf("outbox reservations = %d, want %d", outbox.reserveCalls, test.wantCalls)
+			}
+			if test.wantCalls == 1 {
+				message := dispatcher.deliveries[0].Message
+				if message == nil || message.Name != deliveryfmt.NameTelegramRichMarkdown || message.Text != test.wantText {
+					t.Fatalf("typed message = %+v, want Telegram rich Markdown %q", message, test.wantText)
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareDeliveryFormatsProgressAndMediaCaptions(t *testing.T) {
+	t.Parallel()
+
+	registry := workflowTestRegistry(t, workflowTestFormatter{name: deliveryfmt.NameTelegramRichMarkdown}, true)
+	service := NewWithRegistry(nil, registry, nil, nil, nil, nil, zerolog.Nop())
+	for _, test := range []struct {
+		name    string
+		payload deliverycmd.Payload
+	}{
+		{
+			name: "visible progress",
+			payload: deliverycmd.Payload{Locator: deliverycmd.Locator{ChannelType: deliveryfmt.TransportTelegram}, Mode: deliverycmd.ModeProgress, DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+				Progress: &deliverycmd.Progress{Visible: true, Text: "plan"}},
+		},
+		{
+			name: "media caption",
+			payload: deliverycmd.Payload{Locator: deliverycmd.Locator{ChannelType: deliveryfmt.TransportTelegram}, Mode: deliverycmd.ModePhoto, DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+				Media: &deliverycmd.Media{Caption: "caption"}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			delivery, err := service.prepareDelivery(test.payload)
+			if err != nil {
+				t.Fatalf("prepareDelivery() error = %v", err)
+			}
+			if delivery.Message == nil || !strings.HasPrefix(delivery.Message.Text, "formatted:") {
+				t.Fatalf("typed message = %+v, want formatted content", delivery.Message)
+			}
+		})
+	}
+}
+
+func workflowTestRegistry(t *testing.T, formatter workflowTestFormatter, registerRoute bool) *deliveryfmt.Registry {
+	t.Helper()
+	routes := []deliveryfmt.Route{}
+	if registerRoute {
+		routes = append(routes, deliveryfmt.Route{Transport: deliveryfmt.TransportTelegram, DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown, RegisteredName: deliveryfmt.NameTelegramRichMarkdown})
+	}
+	registry, err := deliveryfmt.NewRegistry(
+		[]deliveryfmt.Format{{Name: deliveryfmt.NameTelegramRichMarkdown, Instructions: "Use rich Markdown.", Example: "**Hello**"}},
+		[]deliveryfmt.FormatterRegistration{{Name: deliveryfmt.NameTelegramRichMarkdown, Formatter: formatter}},
+		routes,
+	)
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	return registry
 }
 
 type failingDeliveryDispatcher struct {
@@ -23,7 +173,7 @@ type failingDeliveryDispatcher struct {
 	err   error
 }
 
-func (d *failingDeliveryDispatcher) Dispatch(context.Context, deliverycmd.Payload) (string, error) {
+func (d *failingDeliveryDispatcher) Dispatch(context.Context, Delivery) (string, error) {
 	d.calls++
 	if d.err != nil {
 		return "", d.err
@@ -175,7 +325,7 @@ func TestHandleBindsQuestionToProviderMessage(t *testing.T) {
 	if err := service.Handle(context.Background(), actorlayer.Envelope{ID: "delivery-1"}, payload); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if binder.questionID != "question-1" || binder.ref.ProviderMessageID != "message-42" || binder.ref.Provider != "telegram" {
+	if binder.questionID != "question-1" || binder.ref.ProviderMessageID != testProviderMessageID || binder.ref.Provider != "telegram" {
 		t.Fatalf("binding = %q %+v", binder.questionID, binder.ref)
 	}
 }

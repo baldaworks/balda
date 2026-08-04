@@ -2,7 +2,7 @@ package deliveryworkflow
 
 import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -10,9 +10,6 @@ import (
 
 var Module = fx.Module("balda_deliveryworkflow",
 	fx.Provide(
-		fx.Annotate(
-			func(r *baldachannel.Router) Dispatcher { return channelRouterDispatcher{router: r} },
-		),
 		fx.Annotate(
 			func(s *baldajobs.DeliveryService) DeliveryStore { return s },
 		),
@@ -24,14 +21,16 @@ var Module = fx.Module("balda_deliveryworkflow",
 				fx.In
 
 				Dispatcher Dispatcher
+				Registry   *deliveryfmt.Registry
 				Outbox     DeliveryStore
 				Events     JobEvents
 				Questions  QuestionDeliveryBinder `optional:"true"`
 				Actor      actortransport.Dispatcher
 				Logger     zerolog.Logger
 			}) *Service {
-				return New(
+				return NewWithRegistry(
 					params.Dispatcher,
+					params.Registry,
 					params.Outbox,
 					params.Events,
 					params.Questions,

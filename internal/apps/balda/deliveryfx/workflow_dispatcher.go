@@ -1,4 +1,4 @@
-package deliveryworkflow
+package deliveryfx
 
 import (
 	"context"
@@ -6,22 +6,25 @@ import (
 
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
 )
 
 type channelRouterDispatcher struct {
 	router *baldachannel.Router
 }
 
-var _ Dispatcher = channelRouterDispatcher{}
+var _ deliveryworkflow.Dispatcher = channelRouterDispatcher{}
 
-func NewChannelDispatcher(router *baldachannel.Router) Dispatcher {
+func NewChannelDispatcher(router *baldachannel.Router) deliveryworkflow.Dispatcher {
 	return channelRouterDispatcher{router: router}
 }
 
-func (d channelRouterDispatcher) Dispatch(ctx context.Context, payload deliverycmd.Payload) (string, error) {
+func (d channelRouterDispatcher) Dispatch(ctx context.Context, delivery deliveryworkflow.Delivery) (string, error) {
 	if d.router == nil {
 		return "", fmt.Errorf("channel router is required")
 	}
+	payload := applyFormattedMessage(delivery.Payload, delivery.Message)
 	switch payload.Mode {
 	case deliverycmd.ModeAgentReply:
 		return d.router.SendAgentReplyWithQuestion(ctx, payload.Locator, payload.DeliveryFormat, payload.Text, payload.Question)
@@ -53,4 +56,27 @@ func (d channelRouterDispatcher) Dispatch(ctx context.Context, payload deliveryc
 	default:
 		return "", fmt.Errorf("unsupported delivery mode %q", payload.Mode)
 	}
+}
+
+func applyFormattedMessage(payload deliverycmd.Payload, message *deliveryfmt.Message) deliverycmd.Payload {
+	if message == nil {
+		return payload
+	}
+	switch payload.Mode {
+	case deliverycmd.ModeAgentReply, deliverycmd.ModeMarkdown:
+		payload.Text = message.Text
+	case deliverycmd.ModeProgress:
+		if payload.Progress != nil {
+			progress := *payload.Progress
+			progress.Text = message.Text
+			payload.Progress = &progress
+		}
+	case deliverycmd.ModePhoto, deliverycmd.ModeDocument:
+		if payload.Media != nil {
+			media := *payload.Media
+			media.Caption = message.Text
+			payload.Media = &media
+		}
+	}
+	return payload
 }

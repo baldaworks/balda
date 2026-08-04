@@ -15,6 +15,7 @@ import (
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfx"
 	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
@@ -263,7 +264,7 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliver
 		baldatelegram.ChannelType: tgAdapter,
 	})
 	return &jobDeliveryActor{
-		service: deliveryworkflow.New(deliveryworkflow.NewChannelDispatcher(router), tasks, tasks, nil, dispatcher, zerolog.Nop()),
+		service: deliveryworkflow.New(deliveryfx.NewChannelDispatcher(router), tasks, tasks, nil, dispatcher, zerolog.Nop()),
 	}, tasks, tgClient, bus
 }
 

@@ -101,13 +101,18 @@ components:
     in:
       - internal/apps/balda/handlers
 
+  # Transport-neutral delivery use case and consumer-owned ports. Concrete
+  # channel routing is composed in deliveryfx and must not leak back here.
+  delivery_usecase:
+    in:
+      - internal/apps/balda/deliveryworkflow
+
   # Provider-facing delivery and rendering adapters.
   delivery:
     in:
       - internal/apps/balda/channel
       - internal/apps/balda/channel/**
       - internal/apps/balda/deliveryfx
-      - internal/apps/balda/deliveryworkflow
       - internal/apps/balda/goaldelivery
       - internal/apps/balda/messenger
       - internal/apps/balda/tgbotkit
@@ -188,6 +193,7 @@ deps:
       - application
       - domain
       - runtime
+      - delivery_usecase
       - delivery
       - infrastructure
     anyVendorDeps: true
@@ -210,11 +216,20 @@ deps:
       - infrastructure
     anyVendorDeps: true
 
+  delivery_usecase:
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - infrastructure
+    anyVendorDeps: true
+
   delivery:
     mayDependOn:
       - foundation
       - contracts
       - application
+      - delivery_usecase
       - delivery
       - runtime
       - infrastructure

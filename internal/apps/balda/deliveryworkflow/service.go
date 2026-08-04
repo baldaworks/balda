@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
@@ -36,6 +37,7 @@ type QuestionDeliveryBinder interface {
 
 type Service struct {
 	dispatcher Dispatcher
+	registry   *deliveryfmt.Registry
 	outbox     DeliveryStore
 	events     JobEvents
 	questions  QuestionDeliveryBinder
@@ -44,7 +46,11 @@ type Service struct {
 }
 
 func New(dispatcher Dispatcher, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, actor actortransport.Dispatcher, logger zerolog.Logger) *Service {
-	return &Service{dispatcher: dispatcher, outbox: outbox, events: events, questions: questions, actor: actor, logger: logger}
+	return NewWithRegistry(dispatcher, nil, outbox, events, questions, actor, logger)
+}
+
+func NewWithRegistry(dispatcher Dispatcher, registry *deliveryfmt.Registry, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, actor actortransport.Dispatcher, logger zerolog.Logger) *Service {
+	return &Service{dispatcher: dispatcher, registry: registry, outbox: outbox, events: events, questions: questions, actor: actor, logger: logger}
 }
 
 func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload deliverycmd.Payload) error {
@@ -69,6 +75,10 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 		return actorlayer.PolicyError(fmt.Errorf("delivery payload job id is required when envelope job scope is set"))
 	case envelopeJobID != payloadJobID:
 		return actorlayer.PolicyError(fmt.Errorf("delivery job scope mismatch: envelope=%q payload=%q", envelopeJobID, payloadJobID))
+	}
+	delivery, err := s.prepareDelivery(payload)
+	if err != nil {
+		return actorlayer.PermanentError(err)
 	}
 	durable := RequiresOutbox(payload)
 	deliveryKey := strings.TrimSpace(env.DedupeKey)
@@ -124,7 +134,7 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 			Int("sequence", payload.Progress.Sequence).
 			Msg("dispatching thinking progress delivery")
 	}
-	providerMessageID, err := s.dispatcher.Dispatch(ctx, payload)
+	providerMessageID, err := s.dispatcher.Dispatch(ctx, delivery)
 	if err != nil {
 		deliveryErrorKind, classified := deliverycmd.ClassifyError(err)
 		retryable := classified && deliveryErrorKind == deliverycmd.ErrorKindRetryable
@@ -177,6 +187,49 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 		}
 	}
 	return nil
+}
+
+func (s *Service) prepareDelivery(payload deliverycmd.Payload) (Delivery, error) {
+	delivery := Delivery{Payload: payload}
+	text, formatted := formattedText(payload)
+	if !formatted {
+		return delivery, nil
+	}
+	if s.registry == nil {
+		return Delivery{}, fmt.Errorf("message format registry is required")
+	}
+	name, _, formatter, err := s.registry.Resolve(payload.Locator.ChannelType, payload.DeliveryFormat)
+	if err != nil {
+		return Delivery{}, fmt.Errorf("resolve delivery message format: %w", err)
+	}
+	message, err := formatter.Format(text)
+	if err != nil {
+		return Delivery{}, fmt.Errorf("format delivery message %q: %w", name, err)
+	}
+	if message.Name != name {
+		return Delivery{}, fmt.Errorf("format delivery message %q: formatter returned name %q", name, message.Name)
+	}
+	delivery.Message = &message
+	return delivery, nil
+}
+
+func formattedText(payload deliverycmd.Payload) (string, bool) {
+	if deliveryfmt.NormalizeDeliveryFormat(payload.DeliveryFormat) == "" {
+		return "", false
+	}
+	switch payload.Mode {
+	case deliverycmd.ModeAgentReply, deliverycmd.ModeMarkdown:
+		return payload.Text, true
+	case deliverycmd.ModeProgress:
+		if payload.Progress != nil && payload.Progress.Visible && strings.TrimSpace(payload.Progress.Text) != "" {
+			return payload.Progress.Text, true
+		}
+	case deliverycmd.ModePhoto, deliverycmd.ModeDocument:
+		if payload.Media != nil && strings.TrimSpace(payload.Media.Caption) != "" {
+			return payload.Media.Caption, true
+		}
+	}
+	return "", false
 }
 
 func (s *Service) resumeSettledQuestionDelivery(ctx context.Context, payload deliverycmd.Payload) (bool, error) {

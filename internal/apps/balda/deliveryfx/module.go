@@ -55,6 +55,7 @@ var Module = fx.Module("balda_deliveryfx",
 				string(deliverycmd.ChannelTypeSlackAgent): sla,
 			})
 		},
+		NewChannelDispatcher,
 		fx.Annotate(
 			func(dispatcher actortransport.Dispatcher) questions.ControlPublisher {
 				return questionControlPublisher{dispatcher: dispatcher}
