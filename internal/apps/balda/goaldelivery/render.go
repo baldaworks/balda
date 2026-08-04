@@ -206,7 +206,7 @@ func RedactSecrets(raw string) string {
 
 func messageStyleForProfile(profile deliverycmd.Profile) messageStyle {
 	normalized := deliveryfmt.NormalizeProfile(deliveryfmt.Profile{
-		Format:         deliveryfmt.Format(profile.Format),
+		Format:         deliveryfmt.Presentation(profile.Format),
 		TelegramMode:   profile.TelegramMode,
 		FormattingMode: profile.FormattingMode,
 	})

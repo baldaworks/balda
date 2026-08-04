@@ -41,8 +41,6 @@ func TestValidateMode(t *testing.T) {
 		{name: "default for empty", in: "", want: ModeRichMarkdown},
 		{name: "rich_markdown", in: "rich_markdown", want: ModeRichMarkdown},
 		{name: "rich_html", in: "rich_html", want: ModeRichHTML},
-		{name: "markdownv2", in: "markdownv2", want: ModeMarkdownV2},
-		{name: "trim and lowercase", in: "  HTml ", want: ModeHTML},
 		{name: "none", in: "none", want: ModeNone},
 		{name: "invalid", in: "md", wantErr: true},
 	}

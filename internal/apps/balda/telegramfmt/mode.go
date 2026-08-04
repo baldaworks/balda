@@ -61,16 +61,14 @@ func NormalizeMode(raw string) string {
 func ValidateMode(raw string) (string, error) {
 	mode := NormalizeMode(raw)
 	switch mode {
-	case ModeRichMarkdown, ModeRichHTML, ModeMarkdownV2, ModeHTML, ModeNone:
+	case ModeRichMarkdown, ModeRichHTML, ModeNone:
 		return mode, nil
 	default:
 		return "", fmt.Errorf(
-			"invalid balda.telegram.formatting_mode %q: allowed values are %q, %q, %q, %q, %q",
+			"invalid balda.telegram.formatting_mode %q: allowed values are %q, %q, %q",
 			strings.TrimSpace(raw),
 			ModeRichMarkdown,
 			ModeRichHTML,
-			ModeMarkdownV2,
-			ModeHTML,
 			ModeNone,
 		)
 	}

@@ -5,17 +5,19 @@ import (
 	"strings"
 )
 
-type Format string
+// Presentation is the legacy transport-neutral presentation hint carried by
+// delivery profiles. New formatted conversational output uses DeliveryFormat.
+type Presentation string
 
 const (
-	FormatAuto               Format = "auto"
-	FormatMarkdown           Format = "markdown"
-	FormatHTML               Format = "html"
-	FormatPlain              Format = "plain"
-	TelegramModeRichMarkdown        = "rich_markdown"
-	TelegramModeRichHTML            = "rich_html"
-	TelegramModeMarkdownV2          = "markdownv2"
-	TelegramModeNone                = "none"
+	FormatAuto               Presentation = "auto"
+	FormatMarkdown           Presentation = "markdown"
+	FormatHTML               Presentation = "html"
+	FormatPlain              Presentation = "plain"
+	TelegramModeRichMarkdown              = "rich_markdown"
+	TelegramModeRichHTML                  = "rich_html"
+	TelegramModeMarkdownV2                = "markdownv2"
+	TelegramModeNone                      = "none"
 )
 
 type ProgressPolicy struct {
@@ -25,9 +27,9 @@ type ProgressPolicy struct {
 }
 
 type Profile struct {
-	Format         Format `json:"format,omitempty"`
-	TelegramMode   string `json:"telegram_mode,omitempty"`
-	FormattingMode string `json:"formatting_mode,omitempty"`
+	Format         Presentation `json:"format,omitempty"`
+	TelegramMode   string       `json:"telegram_mode,omitempty"`
+	FormattingMode string       `json:"formatting_mode,omitempty"`
 }
 
 type Options struct {
@@ -43,7 +45,7 @@ func NormalizeOptions(options Options) Options {
 }
 
 func NormalizeProfile(profile Profile) Profile {
-	format := Format(strings.ToLower(strings.TrimSpace(string(profile.Format))))
+	format := Presentation(strings.ToLower(strings.TrimSpace(string(profile.Format))))
 	telegramMode := strings.ToLower(strings.TrimSpace(profile.TelegramMode))
 	legacy := strings.ToLower(strings.TrimSpace(profile.FormattingMode))
 
@@ -52,7 +54,7 @@ func NormalizeProfile(profile Profile) Profile {
 			format = FormatAuto
 			telegramMode = legacy
 		} else if isDeliveryFormat(legacy) {
-			format = Format(legacy)
+			format = Presentation(legacy)
 		}
 	}
 	if format == "" {

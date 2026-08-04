@@ -1071,7 +1071,7 @@ func telegramTuple(locator deliverycmd.Locator) (int64, int, error) {
 
 func telegramDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
 	return deliveryfmt.Profile{
-		Format:         deliveryfmt.Format(profile.Format),
+		Format:         deliveryfmt.Presentation(profile.Format),
 		TelegramMode:   profile.TelegramMode,
 		FormattingMode: profile.FormattingMode,
 	}

@@ -122,7 +122,7 @@ func appendSuggestedPrompts(text string) string {
 
 func slackAgentDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
 	return deliveryfmt.Profile{
-		Format:         deliveryfmt.Format(profile.Format),
+		Format:         deliveryfmt.Presentation(profile.Format),
 		TelegramMode:   profile.TelegramMode,
 		FormattingMode: profile.FormattingMode,
 	}

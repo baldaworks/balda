@@ -137,7 +137,7 @@ func (a *Adapter) send(ctx context.Context, locator deliverycmd.Locator, text st
 
 func slackDeliveryProfile(profile deliverycmd.Profile) deliveryfmt.Profile {
 	return deliveryfmt.Profile{
-		Format:         deliveryfmt.Format(profile.Format),
+		Format:         deliveryfmt.Presentation(profile.Format),
 		TelegramMode:   profile.TelegramMode,
 		FormattingMode: profile.FormattingMode,
 	}
