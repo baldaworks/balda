@@ -59,3 +59,24 @@ atomically replace raw content with identity-only tombstones, invalidate the
 complete dependent revision closure, and preserve unrelated scopes and global
 fact KV. They are not implicit reset/close behavior and are not model-invocable
 destructive MCP tools.
+
+## Verification and operations
+
+The authoritative [operator verification runbook](../balda.md#operator-verification-runbook)
+owns rollout, bounded backlog observation, reset/restart recall, foreign-scope
+isolation, recovery, rollback, and safe evidence requirements. Operator
+evidence is metadata-only; transport bodies, recalled text, credentials, and
+broker capability URLs do not belong in logs or verification records.
+
+The repository-level restart and scope proofs are:
+
+- `internal/apps/balda/session_memory_runtime_integration_test.go` for the
+  PubAck-to-reopen durability boundary; and
+- `internal/apps/balda/session_memory_recall_integration_test.go` for
+  broker-authenticated MCP recall, exact-locator isolation, provenance, and
+  SQLite reopen behavior.
+
+Core behavior remains owned and tested by `sessionmemory`, while worker and MCP
+adapter behavior remains owned and tested by `sessionmemoryapp` and
+`sessionmemorymcp`. The runbook composes those proofs with live transport
+verification; it does not move operational policy into those packages.

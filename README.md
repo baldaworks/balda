@@ -134,6 +134,11 @@ balda:
     consumer: BALDA_SESSION_MEMORY_WORKER
 ```
 
+Before enabling it in an existing deployment, back up `balda.state_dir` and
+confirm that the configured Balda provider, channel, and NATS endpoint are
+available. Session memory remains distinct from global `balda.memory.*` fact
+memory; enabling or disabling one does not change the other.
+
 Exports are keyed by the exact transport-neutral locator
 `<channel_type>:<address_key>`. A personal conversation, a personal topic, a
 group, and a group topic are different scopes; topic/thread identity is
@@ -148,9 +153,10 @@ The handoff uses the file-backed JetStream stream
 `BALDA_SESSION_MEMORY_WORKER`, so provider latency does not delay a chat reply.
 JetStream `PubAck` is the durability boundary; a process crash before that ack
 can still lose an export because Balda deliberately does not add a SQLite
-session-memory outbox. See the [session-memory operator and extraction guide](docs/balda.md#durable-session-memory)
-for the native contract, retries/DLQ, shutdown behavior, privacy boundary, and
-the path to a standalone package or skill.
+session-memory outbox. Follow the [operator verification runbook](docs/balda.md#operator-verification-runbook)
+for a bounded rollout check. The surrounding durable-session-memory guide
+defines the native contract, retries/DLQ, shutdown behavior, privacy boundary,
+and path to a standalone package or skill.
 
 ## Supported chat providers
 

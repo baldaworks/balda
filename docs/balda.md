@@ -874,6 +874,187 @@ serialized memory worker drain/close the native processor. The drain is bounded 
 observable in the worker shutdown report. A slow derivation therefore cannot
 hold the process indefinitely or block the final chat response.
 
+### Operator verification runbook
+
+Use this runbook after a configuration change and before treating session
+memory as available to users. It separates deterministic, credential-free
+proof from a live provider/channel smoke test. The deterministic proof is
+required evidence. The live tier is `EXECUTED`, `FAILED`, or `UNEXECUTED`; a
+missing provider credential, channel credential, second authorized locator, or
+NATS CLI is a reason to record `UNEXECUTED`, never a pass.
+
+Do not copy credentials, capability-bearing MCP URLs, message bodies, recalled
+text, or DLQ payloads into verification evidence. Use only synthetic,
+non-sensitive markers and metadata such as scope key, item/revision IDs,
+counts, classifications, stream/consumer names, and bounded error codes.
+
+#### 1. Preflight and deterministic proof
+
+Stop Balda before changing or copying its state. Back up the configured
+`balda.state_dir`, then set `balda.state_dir` to a dedicated empty directory for
+the live smoke test. Keep that directory on the same class of persistent,
+access-controlled storage intended for production. Do not reuse a production
+state directory, and abort if the proposed verification directory is not
+empty. In `.config/balda/config.yaml`, enable session memory with the minimal
+configuration above and retain the shipped stream and consumer names unless
+the deployment intentionally uses different non-colliding names.
+
+The live tier also requires:
+
+- one configured Balda provider and one configured chat channel, supplied by
+  the normal protected config or environment path rather than command-line
+  arguments;
+- two authenticated test locators, A and B, where B is a genuinely different
+  root/topic/thread scope from A;
+- `nats`, `jq`, and `timeout`, with `NATS_URL` set to the runtime's NATS
+  endpoint (the embedded development default is `nats://127.0.0.1:4222`); and
+- two terminals: one for Balda and one for metadata observation.
+
+First run the credential-free restart and isolation proofs from the repository
+root. Bound each command to five minutes:
+
+```bash
+timeout 5m go test -race ./internal/apps/balda -run 'Test(SessionMemoryRuntime|RestoredSessionMemoryRecall)' -count=5
+timeout 5m go test -race ./sessionmemory/... ./internal/apps/balda/sessionmemoryapp/... ./internal/apps/balda/sessionmemorymcp/...
+```
+
+Pass only if both commands exit zero before their timeout. A failure or timeout
+is a hard abort for the live tier. These tests exercise a real broker-wrapped
+MCP surface, file-backed SQLite reopen, restart recall, exact-scope isolation,
+authorization failures, provenance, and safe output without provider/channel
+credentials.
+
+#### 2. Start an isolated live runtime
+
+Start Balda in terminal A through the supported embedded-runtime launcher; it
+loads `.config/balda/config.yaml` and the repository `.env` in the normal way:
+
+```bash
+./scripts/dev/run-balda-embedded-runtime.sh
+```
+
+Allow at most 60 seconds for startup. Pass when logs show the configured
+channel ready and no session-memory, migration, stream, consumer, provider, or
+channel initialization error. Abort on any initialization error, missing
+credential, stream/consumer collision, unwritable state directory, or startup
+timeout. Record only component names and stable error codes/classes, not
+configuration values.
+
+In terminal B, confirm the expected resources without reading messages:
+
+```bash
+export NATS_URL="nats://127.0.0.1:4222"
+nats --server "$NATS_URL" stream info BALDA_SESSION_MEMORY --json | jq '{name:.config.name, messages:.state.messages}'
+nats --server "$NATS_URL" consumer info BALDA_SESSION_MEMORY BALDA_SESSION_MEMORY_WORKER --json | jq '{name:.name, pending:.num_pending, ack_pending:.num_ack_pending, redelivered:.num_redelivered}'
+nats --server "$NATS_URL" stream info BALDA_DLQ --json | jq '{name:.config.name, messages:.state.messages}'
+```
+
+If the deployment uses configured non-default names, substitute those exact
+names. Pass when all three commands finish within 15 seconds, the expected
+names exist, the session-memory consumer has at most one ack-pending delivery,
+and the DLQ count has not increased. Abort if a resource is absent, metadata
+cannot be read, `ack_pending` exceeds one, or the DLQ count rises unexpectedly.
+Record the initial counts as the baseline.
+
+#### 3. Capture and settle one safe marker
+
+In locator A, send `/locator` and record its public
+`<channel_type>:<address_key>` value. Create a unique non-sensitive marker
+locally and send it once as an ordinary eligible turn whose assistant response
+also contains visible final text:
+
+```bash
+MARKER="balda-memory-smoke-$(date -u +%Y%m%dT%H%M%SZ)-${RANDOM}"
+printf '%s\n' "$MARKER"
+```
+
+For example, send `Remember this verification marker as conversation context:
+<MARKER>. Reply with marker received.` Do not use a real user statement, secret,
+or production identifier.
+
+For at most 60 seconds, rerun only the three metadata commands from step 2 at
+intervals no shorter than two seconds. Pass when the session-memory stream and
+consumer settle to `messages=0`, `pending=0`, and `ack_pending=0`, with no DLQ
+increase. A nonzero redelivery count is acceptable only if it stops increasing
+and the backlog still settles within the bound. Abort on a rising DLQ count,
+an ack-pending value above one, a counter that grows without bound, or the
+60-second deadline. Do not inspect stream or consumer message bodies.
+
+#### 4. Prove reset recall and provenance
+
+In locator A, send `/reset` and allow at most 60 seconds for the fresh runtime
+session notice. Then make one request that tells Balda to call
+`balda.session_memory.search` for the exact marker and report only the returned
+scope key, result count, classification, item ID, and revision ID. In the same
+locator, ask it to call `balda.session_memory.trace` for that item/revision and
+report only node count plus item/revision IDs. Do not ask it to repeat recalled
+text in the evidence.
+
+Allow at most the configured `search_timeout` plus 15 seconds for each chat
+request. Pass when search returns at least one `untrusted_reference`, the scope
+equals locator A exactly, and trace closes entirely within that same scope.
+Abort on `invalid_scope`, timeout, foreign scope, missing provenance, a result
+classified as instructions, or any unexpected content execution. Wait up to
+60 seconds for the post-reset boundary/turn backlog to settle as in step 3
+before stopping the process.
+
+#### 5. Prove clean restart recall
+
+Send `SIGTERM` (normally Ctrl-C) to terminal A. Allow at most the configured
+`retry.shutdown_timeout` plus 15 seconds for exit. Pass when the process exits
+cleanly and no new ingress is accepted after shutdown begins. If it exceeds the
+bound, preserve the state directory and metadata for diagnosis; do not force a
+destructive cleanup or claim a clean drain.
+
+Restart with the same command, config, and isolated state directory. Allow at
+most 60 seconds for readiness. From locator A, repeat the metadata-only search
+and trace request from step 4. Pass when the same exact scope can recall and
+trace the marker after the SQLite and JetStream reopen. Abort on startup error,
+missing recall, changed/foreign scope, or provenance failure.
+
+#### 6. Prove foreign-locator isolation
+
+In locator B, send `/locator` and confirm its public value differs from locator
+A. Make exactly one search request for the marker and require metadata-only
+output. Do not repeat this query: its own completed turn can later become valid
+memory for locator B. Root/topic/thread and personal/group scopes never inherit
+from one another; every distinct canonical locator is foreign to locator A.
+
+Pass when that first search returns zero results (or the stable fail-closed
+scope error appropriate to an unsupported locator) and never returns locator
+A's item/revision IDs. Abort on any cross-scope result, locator inheritance, or
+fallback. Settle the final backlog for at most 60 seconds using metadata only.
+
+#### 7. Triage, recovery, rollback, and cleanup
+
+Use the following checkpoints; preserve the isolated state directory until the
+cause and evidence status are recorded.
+
+| Condition | Safe evidence | Required action | Maximum wait / outcome |
+|---|---|---|---|
+| Pre-`PubAck` publish failure | Capture error code/class and unchanged metadata counts | Correct NATS/config availability, then submit a new reviewed synthetic turn | The configured `publish_timeout` multiplied by `publish_attempts`, plus 15 seconds; the failed export may be lost because there is no SQLite outbox. |
+| Transient processor failure | Pending/ack-pending/redelivery counters and redacted component error class | Keep the runtime available while bounded retry and `InProgress` heartbeats run | 60 seconds for this smoke; pass only if counters settle and DLQ does not rise. |
+| Permanent or exhausted failure | DLQ count increase and redacted diagnostic code/class | Fix the processor/configuration before any replay | Abort the smoke immediately; do not read or copy the DLQ body. |
+| Reviewed replay is required | Export ID and redacted diagnostic metadata from a trusted restricted system | Use a trusted operator-controlled source to replay the original envelope with its stable export ID, or submit a new reviewed turn and accept that it is a new export | No automatic replay exists; verify one action at a time and settle within 60 seconds. |
+| Shutdown exceeds its bound | Process state plus stream/consumer counts | Preserve state and diagnose; never delete the state directory to clear a backlog | `retry.shutdown_timeout` plus 15 seconds, then mark the live tier `FAILED`. |
+
+To roll back availability, set `balda.session_memory.enabled=false` and restart
+Balda. This prevents new session-memory capture, processing, and MCP bindings
+but does not delete native session-memory tables, global fact memory, session
+history, or the isolated state directory. Confirm the ordinary channel/session
+flow still works within 60 seconds. Retain or dispose of the verification
+directory only under the deployment's data-retention procedure after Balda is
+stopped and the path has been independently checked; the marker is
+conversation data.
+
+Record the live result as `EXECUTED` only when every applicable checkpoint
+passes, `FAILED` with the first failed checkpoint and safe metadata, or
+`UNEXECUTED` with the missing prerequisite and next operator action. Always
+record the exact tested revision, configuration profile name (not values),
+deterministic command outcomes, locator *kinds* (not private addresses), and
+whether cleanup or retention remains. Never infer a live pass from the
+credential-free integration suite.
+
 ### Extraction path
 
 The implementation is intentionally split for a later package/skill/repository
