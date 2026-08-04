@@ -59,11 +59,12 @@ func TestNormalizedInboundCarriesOneOrderedAttachmentSetThroughDurableTurn(t *te
 	t.Parallel()
 
 	const firstFileID = "first"
+	firstBlob := &attachment.BlobRef{Store: "files", Key: "first-key"}
 	inbound := NormalizedInbound{
 		ID:   " telegram:9001:media-group-17 ",
 		Text: "two files",
 		Attachments: []attachment.Descriptor{
-			{Kind: attachment.KindDocument, FileID: firstFileID, FileName: "a.txt"},
+			{Kind: attachment.KindDocument, FileID: firstFileID, FileName: "a.txt", Blob: firstBlob},
 			{Kind: attachment.KindDocument, FileID: "second", FileName: "b.txt"},
 		},
 		Locator: baldasession.SessionLocator{
@@ -93,8 +94,12 @@ func TestNormalizedInboundCarriesOneOrderedAttachmentSetThroughDurableTurn(t *te
 	}
 
 	inbound.Attachments[0].FileID = "changed-after-conversion"
+	firstBlob.Key = "changed-after-conversion"
 	if payload.Attachments[0].FileID != firstFileID {
 		t.Fatalf("payload attachment changed through source alias: %+v", payload.Attachments[0])
+	}
+	if payload.Attachments[0].Blob == nil || payload.Attachments[0].Blob.Key != "first-key" {
+		t.Fatalf("payload blob changed through source alias: %+v", payload.Attachments[0].Blob)
 	}
 
 	env, err := SessionTurnEnvelope(payload)

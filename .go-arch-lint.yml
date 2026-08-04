@@ -73,6 +73,7 @@ components:
       - internal/apps/balda/envelopetarget
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
+      - internal/apps/balda/ingressapp
       - internal/apps/balda/memory
       - internal/apps/balda/questions
       - internal/apps/balda/permissions

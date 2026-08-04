@@ -22,6 +22,7 @@ New code should attach to one of these zones deliberately instead of landing in
 | Turn execution | queued turn restoration, provider turn execution, turn progress/final reply orchestration | `sessionturn`, `sessionturnapp` | general session lifecycle, generic job persistence |
 | Job lifecycle | durable job records, job events, delivery persistence, projections, scheduled durable work execution | `jobs`, `jobexec`, `scheduledjobs` | transport adapters, ingress parsing, conversational session ownership |
 | Control and access | operator-driven cancel/clear/restart/wait flows, owner/collaborator/channel auth state | `controlapp`, `auth` | feature actor behavior, transport-specific command handling |
+| Conversational ingress | provider-neutral authorization/session preconditions, one durable SessionActor publish attempt, accepted/retry/terminal settlement | `ingressapp`; concrete mapping and settlement adapters in `handlers` | provider protocols, channel delivery, provider turn execution |
 | Interactive questions | session-scoped user questions, pending-question lifecycle, reply settlement, timeout orchestration, actor resume targeting | `questions` | transport adapters, generic session lifecycle, hidden suspended runtime frames |
 | Agent permissions | transport-neutral agent permission policy, interactive permission review, fail-closed settlement | `permissions`, ADK-facing adapter in `agent`, channel presentation in `permissionfmt` | provider protocol types, transport-specific reply parsing, general question lifecycle |
 | Application support | small app-facing ports and support helpers used by the zones above | `appports`, `envelopetarget`, `memory` | broad workflow orchestration, feature-specific business logic |
@@ -93,6 +94,20 @@ This zone owns operator-facing control semantics and access state:
 
 Do not mix feature behavior into this zone. It should express "who may do what"
 and "how operator actions settle", not product actor workflows.
+
+### Conversational ingress
+
+This zone owns the provider-neutral acceptance boundary for ordinary chat work:
+
+- authorization through a small consuming-package port;
+- session create/restore preconditions through a small consuming-package port;
+- exactly one durable SessionActor publish attempt per processing attempt;
+- accepted, retry, and terminal settlement classification with stable identity.
+
+Provider parsing, polling/webhook acknowledgement, and provider settlement calls
+remain concrete in `handlers`. Model execution and channel delivery remain outside
+this zone. A rejected or ignored inbound item terminates before turn creation; a
+transient failure before a dispatch receipt retains the same dedupe identity.
 
 ### Interactive questions
 

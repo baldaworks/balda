@@ -182,6 +182,26 @@ func TestDeliveryCommandPackageRemainsAContractLeaf(t *testing.T) {
 	}
 }
 
+func TestConversationalIngressConsumesOnlyTheNormalizedTurnContract(t *testing.T) {
+	t.Parallel()
+
+	imports := productionImports(t, "ingressapp")
+	want := baldaImportPrefix + "turncmd"
+	projectImports := 0
+	for path := range imports {
+		if !strings.HasPrefix(path, baldaImportPrefix) {
+			continue
+		}
+		projectImports++
+		if path != want {
+			t.Errorf("ingressapp project import = %q, want only %q", path, want)
+		}
+	}
+	if projectImports != 1 {
+		t.Errorf("ingressapp Balda import count = %d, want exactly the normalized turn contract", projectImports)
+	}
+}
+
 func productionImports(t *testing.T, relativeDir string) map[string]struct{} {
 	t.Helper()
 	entries, err := filepath.Glob(filepath.Join(relativeDir, "*.go"))

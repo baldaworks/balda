@@ -91,7 +91,7 @@ func (m NormalizedInbound) SessionTurn() (SessionTurnPayload, error) {
 	}
 	return SessionTurnPayload{
 		Text:           m.Text,
-		Attachments:    append([]attachment.Descriptor(nil), m.Attachments...),
+		Attachments:    attachment.NormalizeList(m.Attachments),
 		Locator:        m.Locator,
 		UserID:         strings.TrimSpace(m.UserID),
 		ReceivedAt:     strings.TrimSpace(m.ReceivedAt),
