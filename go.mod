@@ -210,7 +210,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
-	github.com/normahq/go-adk-acpagent/v2 v2.2.2-0.20260715140226-b5b2a500a67f
+	github.com/normahq/go-adk-acpagent/v2 v2.2.2-0.20260804055927-77963f1ff010
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
 	github.com/oapi-codegen/runtime v1.1.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
@@ -279,10 +279,10 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
-	go.opentelemetry.io/otel v1.43.0 // indirect
+	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/log v0.19.0 // indirect
-	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	go.opentelemetry.io/otel/trace v1.43.0 // indirect
+	go.opentelemetry.io/otel/metric v1.44.0 // indirect
+	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
