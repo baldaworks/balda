@@ -1,8 +1,10 @@
 package ingressapp
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
@@ -11,6 +13,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/rs/zerolog"
 )
 
 type stubAuthorizer struct {
@@ -264,6 +267,95 @@ func TestProcessDuplicateReceiptStillAcceptsStableIdentity(t *testing.T) {
 	}
 	if len(dispatcher.envelopes) != 1 || dispatcher.envelopes[0].DedupeKey != "provider:duplicate" {
 		t.Fatalf("dispatched envelopes = %+v, want one stable identity", dispatcher.envelopes)
+	}
+}
+
+func TestProcessLogsSafeSettlementDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bodySecret       = "BODY-SENTINEL-93f5"
+		credentialSecret = "https://hooks.example.invalid/CREDENTIAL-SENTINEL"
+		providerSecret   = "PROVIDER-ERROR-SENTINEL"
+	)
+	tests := []struct {
+		name          string
+		authorization Authorization
+		authorizeErr  error
+		preparation   SessionPreparation
+		receipt       *actortransport.DispatchReceipt
+		wantOutcome   turncmd.InboundOutcome
+		wantStage     string
+		wantClass     string
+	}{
+		{
+			name:          "accepted",
+			authorization: Authorization{Allowed: true},
+			preparation:   SessionPreparation{Ready: true},
+			receipt:       &actortransport.DispatchReceipt{MsgID: "accepted"},
+			wantOutcome:   turncmd.InboundAccepted,
+			wantStage:     ReasonAccepted,
+			wantClass:     "none",
+		},
+		{
+			name:         "pre-acceptance retry",
+			authorizeErr: actorlayer.TransientError(errors.New(providerSecret)),
+			wantOutcome:  turncmd.InboundRetry,
+			wantStage:    ReasonUnauthorized,
+			wantClass:    string(actorlayer.ErrorKindTransient),
+		},
+		{
+			name:          "terminal rejection",
+			authorization: Authorization{Allowed: false, Reason: providerSecret},
+			wantOutcome:   turncmd.InboundTerminal,
+			wantStage:     ReasonUnauthorized,
+			wantClass:     "none",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var logs bytes.Buffer
+			service, err := NewWithLogger(
+				&stubAuthorizer{result: test.authorization, err: test.authorizeErr},
+				&stubSessionPreparer{result: test.preparation},
+				&recordingDispatcher{receipt: test.receipt},
+				zerolog.New(&logs),
+			)
+			if err != nil {
+				t.Fatalf("NewWithLogger() error = %v", err)
+			}
+			inbound := validInbound("provider:safe-diagnostics")
+			inbound.Text = bodySecret
+			inbound.Locator.AddressJSON = credentialSecret
+			inbound.Attachments = []attachment.Descriptor{{
+				Kind: attachment.KindDocument,
+				Blob: &attachment.BlobRef{URL: credentialSecret},
+			}}
+
+			result, _ := service.Process(context.Background(), inbound)
+			if result.Settlement.Outcome != test.wantOutcome {
+				t.Fatalf("settlement outcome = %q, want %q", result.Settlement.Outcome, test.wantOutcome)
+			}
+			got := logs.String()
+			for _, secret := range []string{bodySecret, credentialSecret, providerSecret} {
+				if strings.Contains(got, secret) {
+					t.Fatalf("settlement diagnostics contain sentinel %q: %s", secret, got)
+				}
+			}
+			for _, field := range []string{
+				`"transport":"telegram"`,
+				`"settlement_outcome":"` + string(test.wantOutcome) + `"`,
+				`"settlement_stage":"` + test.wantStage + `"`,
+				`"error_class":"` + test.wantClass + `"`,
+			} {
+				if !strings.Contains(got, field) {
+					t.Fatalf("settlement diagnostics missing %s: %s", field, got)
+				}
+			}
+		})
 	}
 }
 

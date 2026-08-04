@@ -469,17 +469,19 @@ func TestSendAgentReply_RichMarkdownPreservesStandaloneSeparator(t *testing.T) {
 func TestSendAgentReply_RichMarkdownFallsBackToPlainText(t *testing.T) {
 	t.Parallel()
 
+	const providerSecret = "TELEGRAM-PROVIDER-ERROR-SENTINEL"
 	tgClient := &fakeChatActionClient{
 		sendRichResults: []sendRichMessageResult{
 			{
 				resp: &client.SendRichMessageResponse{
 					HTTPResponse: &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request"},
-					JSON400:      &client.ErrorResponse{Description: "Bad Request: can't parse entities"},
+					JSON400:      &client.ErrorResponse{Description: "Bad Request: can't parse entities " + providerSecret},
 				},
 			},
 		},
 	}
-	m := NewMessenger(tgClient, zerolog.Nop())
+	var logs bytes.Buffer
+	m := NewMessenger(tgClient, zerolog.New(&logs))
 
 	const input = "**final**\n\n---\n\n![bad](https://example.invalid/missing.png)"
 	result, err := m.SendAgentReplyWithResult(context.Background(), 9001, input, 77)
@@ -501,6 +503,21 @@ func TestSendAgentReply_RichMarkdownFallsBackToPlainText(t *testing.T) {
 	}
 	if result.FirstMessageID != 1 || result.LastMessageID != 1 || result.MessageCount != 1 {
 		t.Fatalf("result = %+v, want fallback message metadata", result)
+	}
+	gotLogs := logs.String()
+	for _, secret := range []string{input, providerSecret} {
+		if strings.Contains(gotLogs, secret) {
+			t.Fatalf("fallback diagnostics contain sentinel %q: %s", secret, gotLogs)
+		}
+	}
+	for _, field := range []string{
+		`"settlement_class":"format_rejected"`,
+		`"fallback":"plain"`,
+		`"http_status":400`,
+	} {
+		if !strings.Contains(gotLogs, field) {
+			t.Fatalf("fallback diagnostics missing %s: %s", field, gotLogs)
+		}
 	}
 }
 

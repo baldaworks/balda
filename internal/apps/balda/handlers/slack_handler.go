@@ -847,12 +847,13 @@ func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasessi
 		Direct:            isDM,
 		ReceivedAt:        time.Now(),
 	})
-	service, err := ingressapp.New(
+	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeSlackInbound),
 		ingressapp.SessionPreparerFunc(func(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
 			return h.prepareSlackSession(ctx, inbound, createIfMissing)
 		}),
 		h.actorDispatcher,
+		h.logger,
 	)
 	if err != nil {
 		return retryInbound(), err

@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -113,10 +114,16 @@ type Service struct {
 	authorizer Authorizer
 	sessions   SessionPreparer
 	dispatcher Dispatcher
+	logger     zerolog.Logger
 }
 
 // New constructs a provider-neutral conversational ingress service.
 func New(authorizer Authorizer, sessions SessionPreparer, dispatcher Dispatcher) (*Service, error) {
+	return NewWithLogger(authorizer, sessions, dispatcher, zerolog.Nop())
+}
+
+// NewWithLogger constructs conversational ingress with safe settlement diagnostics.
+func NewWithLogger(authorizer Authorizer, sessions SessionPreparer, dispatcher Dispatcher, logger zerolog.Logger) (*Service, error) {
 	if authorizer == nil {
 		return nil, fmt.Errorf("conversational ingress authorizer is required")
 	}
@@ -126,11 +133,12 @@ func New(authorizer Authorizer, sessions SessionPreparer, dispatcher Dispatcher)
 	if dispatcher == nil {
 		return nil, fmt.Errorf("conversational ingress dispatcher is required")
 	}
-	return &Service{authorizer: authorizer, sessions: sessions, dispatcher: dispatcher}, nil
+	return &Service{authorizer: authorizer, sessions: sessions, dispatcher: dispatcher, logger: logger}, nil
 }
 
 // Process performs at most one durable SessionActor publish attempt.
 func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound) (Result, error) {
+	logContext := inboundContext(inbound)
 	stableID := strings.TrimSpace(string(inbound.ID))
 	result := Result{
 		InboundID: turncmd.InboundID(stableID),
@@ -138,27 +146,29 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 	}
 	payload, err := inbound.SessionTurn()
 	if err != nil {
-		return terminalResult(result, ReasonInvalidInbound), actorlayer.DecodeError(err)
+		return s.finish(logContext, terminalResult(result, ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))
 	}
 	if strings.TrimSpace(payload.Text) == "" && len(payload.Attachments) == 0 {
-		return terminalResult(result, ReasonEmptyInbound), nil
+		return s.finish(logContext, terminalResult(result, ReasonEmptyInbound), ReasonEmptyInbound, nil)
 	}
-	portContext := inboundContext(inbound)
+	portContext := logContext
 
 	authorization, err := s.authorizer.Authorize(ctx, portContext)
 	if err != nil {
-		return errorResult(result, ReasonUnauthorized, err)
+		settled, resultErr := errorResult(result, ReasonUnauthorized, err)
+		return s.finish(logContext, settled, ReasonUnauthorized, resultErr)
 	}
 	if !authorization.Allowed {
-		return terminalResult(result, firstNonEmpty(authorization.Reason, ReasonUnauthorized)), nil
+		return s.finish(logContext, terminalResult(result, firstNonEmpty(authorization.Reason, ReasonUnauthorized)), ReasonUnauthorized, nil)
 	}
 
 	preparation, err := s.sessions.Prepare(ctx, portContext)
 	if err != nil {
-		return errorResult(result, ReasonSessionRejected, err)
+		settled, resultErr := errorResult(result, ReasonSessionRejected, err)
+		return s.finish(logContext, settled, ReasonSessionRejected, resultErr)
 	}
 	if !preparation.Ready {
-		return terminalResult(result, firstNonEmpty(preparation.Reason, ReasonSessionRejected)), nil
+		return s.finish(logContext, terminalResult(result, firstNonEmpty(preparation.Reason, ReasonSessionRejected)), ReasonSessionRejected, nil)
 	}
 
 	payload.UserID = firstNonEmpty(preparation.UserID, payload.UserID)
@@ -167,15 +177,16 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 	payload.TopicID = preparation.TopicID
 	envelope, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {
-		return terminalResult(result, ReasonInvalidInbound), actorlayer.DecodeError(err)
+		return s.finish(logContext, terminalResult(result, ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))
 	}
 	receipt, err := s.dispatcher.Dispatch(ctx, envelope)
 	if err != nil {
-		return errorResult(result, ReasonDispatchFailed, err)
+		settled, resultErr := errorResult(result, ReasonDispatchFailed, err)
+		return s.finish(logContext, settled, ReasonDispatchFailed, resultErr)
 	}
 	if receipt == nil {
 		err = actorlayer.TransientError(fmt.Errorf("session dispatch returned no receipt"))
-		return retryResult(result, ReasonDispatchFailed), err
+		return s.finish(logContext, retryResult(result, ReasonDispatchFailed), ReasonDispatchFailed, err)
 	}
 
 	result.Receipt = receipt
@@ -183,7 +194,34 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 		Outcome: turncmd.InboundAccepted,
 		Reason:  ReasonAccepted,
 	}
-	return result, nil
+	return s.finish(logContext, result, ReasonAccepted, nil)
+}
+
+func (s *Service) finish(inbound InboundContext, result Result, stage string, resultErr error) (Result, error) {
+	event := s.logger.Debug()
+	switch result.Settlement.Outcome {
+	case turncmd.InboundRetry:
+		event = s.logger.Warn()
+	case turncmd.InboundAccepted:
+		event = s.logger.Info()
+	}
+	errorClass := "none"
+	if resultErr != nil {
+		errorClass = string(actorlayer.ClassifyError(resultErr))
+		if errorClass == "" {
+			errorClass = "unclassified"
+		}
+	}
+	event.
+		Str("transport", strings.TrimSpace(inbound.ChannelType)).
+		Str("source", strings.TrimSpace(inbound.Source)).
+		Str("session_id", strings.TrimSpace(inbound.SessionID)).
+		Str("inbound_id", strings.TrimSpace(string(result.InboundID))).
+		Str("settlement_outcome", string(result.Settlement.Outcome)).
+		Str("settlement_stage", strings.TrimSpace(stage)).
+		Str("error_class", errorClass).
+		Msg("conversational ingress settled")
+	return result, resultErr
 }
 
 func inboundContext(inbound turncmd.NormalizedInbound) InboundContext {

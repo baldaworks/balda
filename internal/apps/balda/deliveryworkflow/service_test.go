@@ -1,8 +1,11 @@
 package deliveryworkflow
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -34,6 +37,7 @@ func (d *recordingFormattedDispatcher) Dispatch(_ context.Context, delivery Deli
 
 type recordingDeliveryStore struct {
 	reserveCalls int
+	failedReason string
 }
 
 func (s *recordingDeliveryStore) ReserveDelivery(_ context.Context, record baldastate.DeliveryRecord) (baldastate.DeliveryRecord, bool, error) {
@@ -42,7 +46,8 @@ func (s *recordingDeliveryStore) ReserveDelivery(_ context.Context, record balda
 }
 
 func (*recordingDeliveryStore) MarkDeliverySending(context.Context, string) error { return nil }
-func (*recordingDeliveryStore) MarkDeliveryFailed(context.Context, string, string) error {
+func (s *recordingDeliveryStore) MarkDeliveryFailed(_ context.Context, _ string, reason string) error {
+	s.failedReason = reason
 	return nil
 }
 func (*recordingDeliveryStore) MarkDeliverySent(context.Context, string, string) error { return nil }
@@ -151,6 +156,48 @@ func TestPrepareDeliveryFormatsProgressAndMediaCaptions(t *testing.T) {
 	}
 }
 
+func TestHandleLogsFormatterFailureWithoutMessageOrErrorContent(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bodySecret      = "FORMATTER-BODY-SENTINEL"
+		formatterSecret = "FORMATTER-ERROR-SENTINEL"
+	)
+	var logs bytes.Buffer
+	registry := workflowTestRegistry(t, workflowTestFormatter{
+		name: deliveryfmt.NameTelegramRichMarkdown,
+		err:  errors.New(formatterSecret),
+	}, true)
+	service := NewWithRegistry(
+		&recordingFormattedDispatcher{},
+		registry,
+		nil,
+		nil,
+		nil,
+		nil,
+		zerolog.New(&logs),
+	)
+	err := service.Handle(context.Background(), actorlayer.Envelope{ID: "formatter-safe-diagnostics"}, deliverycmd.Payload{
+		Locator:        deliverycmd.Locator{ChannelType: deliveryfmt.TransportTelegram, SessionID: "tg--1001-77"},
+		Mode:           deliverycmd.ModeAgentReply,
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+		Text:           bodySecret,
+	})
+	if actorlayer.ClassifyError(err) != actorlayer.ErrorKindPermanent {
+		t.Fatalf("Handle() error kind = %q, want permanent: %v", actorlayer.ClassifyError(err), err)
+	}
+	got := logs.String()
+	for _, secret := range []string{bodySecret, formatterSecret} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("formatter diagnostics contain sentinel %q: %s", secret, got)
+		}
+	}
+	if !strings.Contains(got, `"resolution_outcome":"formatter_failed"`) ||
+		!strings.Contains(got, `"settlement_class":"permanent"`) {
+		t.Fatalf("formatter diagnostics = %s, want formatter failure and permanent settlement", got)
+	}
+}
+
 func workflowTestRegistry(t *testing.T, formatter workflowTestFormatter, registerRoute bool) *deliveryfmt.Registry {
 	t.Helper()
 	routes := []deliveryfmt.Route{}
@@ -171,6 +218,15 @@ func workflowTestRegistry(t *testing.T, formatter workflowTestFormatter, registe
 type failingDeliveryDispatcher struct {
 	calls int
 	err   error
+}
+
+type recordingJobEvents struct {
+	payload any
+}
+
+func (e *recordingJobEvents) AppendEvent(_ context.Context, _ string, _ string, _ string, _ string, payload any) error {
+	e.payload = payload
+	return nil
 }
 
 func (d *failingDeliveryDispatcher) Dispatch(context.Context, Delivery) (string, error) {
@@ -262,6 +318,71 @@ func TestHandleRetriesQuestionWhenProviderDeliveryFailureIsRetryable(t *testing.
 	}
 	if len(actor.envelopes) != 0 {
 		t.Fatalf("continuations = %+v, want none before retry exhaustion or timeout", actor.envelopes)
+	}
+}
+
+func TestHandleRecordsSafeDeliveryFailureDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bodySecret       = "DELIVERY-BODY-SENTINEL"
+		credentialSecret = "https://hooks.example.invalid/DELIVERY-CAPABILITY-SENTINEL"
+		providerSecret   = "DELIVERY-PROVIDER-ERROR-SENTINEL"
+	)
+	var logs bytes.Buffer
+	outbox := &recordingDeliveryStore{}
+	events := &recordingJobEvents{}
+	service := New(
+		&failingDeliveryDispatcher{err: deliverycmd.PermanentError(errors.New(providerSecret))},
+		outbox,
+		events,
+		nil,
+		nil,
+		zerolog.New(&logs),
+	)
+	payload := deliverycmd.Payload{
+		Locator: deliverycmd.Locator{
+			ChannelType: deliveryfmt.TransportTelegram,
+			AddressKey:  "-1001:77",
+			AddressJSON: credentialSecret,
+			SessionID:   "tg--1001-77",
+		},
+		Mode:       deliverycmd.ModeAgentReply,
+		Settlement: deliverycmd.SettlementOutbox,
+		JobID:      "job-safe-diagnostics",
+		Text:       bodySecret,
+		Action:     credentialSecret,
+		Refs:       map[string]string{"capability_url": credentialSecret},
+	}
+	err := service.Handle(context.Background(), actorlayer.Envelope{
+		ID:   "delivery-safe-diagnostics",
+		Meta: map[string]string{"job_id": payload.JobID},
+	}, payload)
+	if actorlayer.ClassifyError(err) != actorlayer.ErrorKindPermanent {
+		t.Fatalf("Handle() error kind = %q, want permanent: %v", actorlayer.ClassifyError(err), err)
+	}
+	if outbox.failedReason != "permanent" {
+		t.Fatalf("outbox failure reason = %q, want permanent", outbox.failedReason)
+	}
+	eventData, err := json.Marshal(events.payload)
+	if err != nil {
+		t.Fatalf("marshal event diagnostics: %v", err)
+	}
+	diagnostics := logs.String() + string(eventData) + outbox.failedReason
+	for _, secret := range []string{bodySecret, credentialSecret, providerSecret} {
+		if strings.Contains(diagnostics, secret) {
+			t.Fatalf("delivery diagnostics contain sentinel %q: %s", secret, diagnostics)
+		}
+	}
+	for _, field := range []string{
+		`"resolution_outcome":"resolved"`,
+		`"settlement_class":"permanent"`,
+		`"error_class":"permanent"`,
+		`"text_char_count":` + fmt.Sprint(len(bodySecret)),
+	} {
+		if !strings.Contains(diagnostics, field) {
+			t.Fatalf("delivery diagnostics missing %s: %s", field, diagnostics)
+		}
 	}
 }
 

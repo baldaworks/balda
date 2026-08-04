@@ -242,12 +242,13 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 		Text:             event.Text,
 		ReceivedAt:       time.Now(),
 	})
-	service, err := ingressapp.New(
+	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.Authorization, error) {
 			return ingressapp.Authorization{Allowed: true}, nil
 		}),
 		ingressapp.SessionPreparerFunc(h.prepareSlackAgentSession),
 		h.actorDispatcher,
+		h.logger,
 	)
 	if err != nil {
 		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to construct slack agent ingress")

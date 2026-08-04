@@ -1167,10 +1167,11 @@ func (h *ZulipBaldaHandler) handleMessage(
 		Direct:     isDM,
 		ReceivedAt: time.Now(),
 	})
-	service, err := ingressapp.New(
+	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeZulipInbound),
 		ingressapp.SessionPreparerFunc(h.prepareZulipSession),
 		h.actorDispatcher,
+		h.logger,
 	)
 	if err != nil {
 		return retryInbound(), err

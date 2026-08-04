@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -78,6 +79,7 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	}
 	delivery, err := s.prepareDelivery(payload)
 	if err != nil {
+		s.logSettlement(payload, env.ID, env.Attempt+1, preparationFailureStage(err), "permanent")
 		return actorlayer.PermanentError(err)
 	}
 	durable := RequiresOutbox(payload)
@@ -138,17 +140,22 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	if err != nil {
 		deliveryErrorKind, classified := deliverycmd.ClassifyError(err)
 		retryable := classified && deliveryErrorKind == deliverycmd.ErrorKindRetryable
+		settlementClass := deliveryFailureClass(err)
+		s.logSettlement(payload, env.ID, env.Attempt+1, "resolved", settlementClass)
 		if durable && s.outbox != nil {
-			_ = s.outbox.MarkDeliveryFailed(ctx, deliveryKey, err.Error())
+			_ = s.outbox.MarkDeliveryFailed(ctx, deliveryKey, settlementClass)
 			if !retryable && strings.TrimSpace(payload.JobID) != "" {
 				if s.events != nil {
 					if appendErr := s.events.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
-						"text":   strings.TrimSpace(payload.Text),
-						"action": strings.TrimSpace(payload.Action),
-						"mode":   payload.Mode,
-						"reason": err.Error(),
+						"mode":            payload.Mode,
+						"text_char_count": len(strings.TrimSpace(payload.Text)),
+						"has_action":      strings.TrimSpace(payload.Action) != "",
+						"error_class":     settlementClass,
 					}); appendErr != nil {
-						s.logger.Warn().Err(appendErr).Str("job_id", payload.JobID).Msg("failed to record job delivery failure event")
+						s.logger.Warn().
+							Str("job_id", payload.JobID).
+							Str("error_class", "event_write_failed").
+							Msg("failed to record job delivery failure event")
 					}
 				}
 			}
@@ -176,18 +183,30 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	}
 	if durable && s.events != nil && strings.TrimSpace(payload.JobID) != "" {
 		if err := s.events.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliverySent, "delivery.actor", env.ID, map[string]any{
-			"text":                strings.TrimSpace(payload.Text),
 			"mode":                payload.Mode,
 			"provider":            strings.TrimSpace(payload.Locator.ChannelType),
 			"conversation_key":    strings.TrimSpace(payload.Locator.AddressKey),
 			"provider_message_id": strings.TrimSpace(providerMessageID),
-			"refs":                payload.Refs,
+			"text_char_count":     len(strings.TrimSpace(payload.Text)),
+			"refs_count":          len(payload.Refs),
 		}); err != nil {
-			s.logger.Warn().Err(err).Str("job_id", payload.JobID).Msg("failed to record job delivery event")
+			s.logger.Warn().
+				Str("job_id", payload.JobID).
+				Str("error_class", "event_write_failed").
+				Msg("failed to record job delivery event")
 		}
 	}
+	s.logSettlement(payload, env.ID, env.Attempt+1, "resolved", "success")
 	return nil
 }
+
+type preparationError struct {
+	stage string
+	err   error
+}
+
+func (e *preparationError) Error() string { return e.err.Error() }
+func (e *preparationError) Unwrap() error { return e.err }
 
 func (s *Service) prepareDelivery(payload deliverycmd.Payload) (Delivery, error) {
 	delivery := Delivery{Payload: payload}
@@ -196,21 +215,54 @@ func (s *Service) prepareDelivery(payload deliverycmd.Payload) (Delivery, error)
 		return delivery, nil
 	}
 	if s.registry == nil {
-		return Delivery{}, fmt.Errorf("message format registry is required")
+		return Delivery{}, &preparationError{stage: "registry_unavailable", err: fmt.Errorf("message format registry is required")}
 	}
 	name, _, formatter, err := s.registry.Resolve(payload.Locator.ChannelType, payload.DeliveryFormat)
 	if err != nil {
-		return Delivery{}, fmt.Errorf("resolve delivery message format: %w", err)
+		return Delivery{}, &preparationError{stage: "route_resolution_failed", err: fmt.Errorf("resolve delivery message format: %w", err)}
 	}
 	message, err := formatter.Format(text)
 	if err != nil {
-		return Delivery{}, fmt.Errorf("format delivery message %q: %w", name, err)
+		return Delivery{}, &preparationError{stage: "formatter_failed", err: fmt.Errorf("format delivery message %q: %w", name, err)}
 	}
 	if message.Name != name {
-		return Delivery{}, fmt.Errorf("format delivery message %q: formatter returned name %q", name, message.Name)
+		return Delivery{}, &preparationError{stage: "formatter_contract_failed", err: fmt.Errorf("format delivery message %q: formatter returned name %q", name, message.Name)}
 	}
 	delivery.Message = &message
 	return delivery, nil
+}
+
+func preparationFailureStage(err error) string {
+	var preparationErr *preparationError
+	if errors.As(err, &preparationErr) && strings.TrimSpace(preparationErr.stage) != "" {
+		return preparationErr.stage
+	}
+	return "preparation_failed"
+}
+
+func deliveryFailureClass(err error) string {
+	kind, classified := deliverycmd.ClassifyError(err)
+	if !classified {
+		return "ambiguous"
+	}
+	return string(kind)
+}
+
+func (s *Service) logSettlement(payload deliverycmd.Payload, envelopeID string, attempt int, resolutionOutcome, settlementClass string) {
+	event := s.logger.Debug()
+	if settlementClass != "success" {
+		event = s.logger.Warn()
+	}
+	event.
+		Str("transport", strings.TrimSpace(payload.Locator.ChannelType)).
+		Str("session_id", strings.TrimSpace(payload.Locator.SessionID)).
+		Str("delivery_format", string(deliveryfmt.NormalizeDeliveryFormat(payload.DeliveryFormat))).
+		Str("operation", string(payload.Mode)).
+		Str("envelope_id", strings.TrimSpace(envelopeID)).
+		Int("attempt", attempt).
+		Str("resolution_outcome", strings.TrimSpace(resolutionOutcome)).
+		Str("settlement_class", strings.TrimSpace(settlementClass)).
+		Msg("delivery settled")
 }
 
 func formattedText(payload deliverycmd.Payload) (string, bool) {
@@ -258,7 +310,7 @@ func (s *Service) failQuestionDelivery(ctx context.Context, payload deliverycmd.
 	}
 	envelope, failed, err := s.questions.FailDelivery(ctx, questionID, questioncmd.Failure{
 		Code:     "delivery_failed",
-		Message:  deliveryErr.Error(),
+		Message:  "delivery failed: " + deliveryFailureClass(deliveryErr),
 		FailedAt: time.Now().UTC(),
 	})
 	if err != nil || !failed {

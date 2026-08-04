@@ -234,34 +234,36 @@ func (b *Bus) PublishEvent(ctx context.Context, subject string, env actorlayer.E
 }
 
 func (b *Bus) publishDLQ(ctx context.Context, env actorlayer.Envelope, reason string, emitEvent bool) error {
-	msg, err := messageFromEnvelope(baldaexecution.SubjectDLQCommand, env)
+	dlqEnv := diagnosticDLQEnvelope(env)
+	safeReason := sanitizeReason(reason)
+	msg, err := messageFromEnvelope(baldaexecution.SubjectDLQCommand, dlqEnv)
 	if err != nil {
 		return err
 	}
-	msg.Header.Set("Balda-DLQ-Reason", reason)
-	if env.Meta != nil {
-		if value := strings.TrimSpace(env.Meta[dlqMetaErrorClass]); value != "" {
+	msg.Header.Set("Balda-DLQ-Reason", safeReason)
+	if dlqEnv.Meta != nil {
+		if value := strings.TrimSpace(dlqEnv.Meta[dlqMetaErrorClass]); value != "" {
 			msg.Header.Set("Balda-DLQ-Error-Class", value)
 		}
-		if value := strings.TrimSpace(env.Meta[dlqMetaSourceStream]); value != "" {
+		if value := strings.TrimSpace(dlqEnv.Meta[dlqMetaSourceStream]); value != "" {
 			msg.Header.Set("Balda-DLQ-Source-Stream", value)
 		}
-		if value := strings.TrimSpace(env.Meta[dlqMetaSourceCns]); value != "" {
+		if value := strings.TrimSpace(dlqEnv.Meta[dlqMetaSourceCns]); value != "" {
 			msg.Header.Set("Balda-DLQ-Source-Consumer", value)
 		}
-		if value := strings.TrimSpace(env.Meta[dlqMetaSourceSubj]); value != "" {
+		if value := strings.TrimSpace(dlqEnv.Meta[dlqMetaSourceSubj]); value != "" {
 			msg.Header.Set("Balda-DLQ-Source-Subject", value)
 		}
-		if value := strings.TrimSpace(env.Meta[dlqMetaDelivered]); value != "" {
+		if value := strings.TrimSpace(dlqEnv.Meta[dlqMetaDelivered]); value != "" {
 			msg.Header.Set("Balda-DLQ-Num-Delivered", value)
 		}
 	}
-	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Execution.DLQ.Stream), jetstream.WithMsgID(actorlayer.DedupeKeyOrID(env)+":dlq"))
+	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Execution.DLQ.Stream), jetstream.WithMsgID(actorlayer.DedupeKeyOrID(dlqEnv)+":dlq"))
 	if err != nil {
 		return fmt.Errorf("publish dlq: %w", err)
 	}
 	if emitEvent {
-		if err := b.PublishEvent(ctx, baldaexecution.SubjectEventCommandDeadLettered, commandEventEnvelope(env, nil, "deadlettered", reason, nil)); err != nil {
+		if err := b.PublishEvent(ctx, baldaexecution.SubjectEventCommandDeadLettered, commandEventEnvelope(dlqEnv, nil, "deadlettered", safeReason, nil)); err != nil {
 			logEvt := b.logger.Warn().
 				Err(err).
 				Str("envelope_id", env.ID).

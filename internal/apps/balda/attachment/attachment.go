@@ -1,7 +1,6 @@
 package attachment
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -82,53 +81,4 @@ func Normalize(in Descriptor) (Descriptor, bool) {
 		in.SizeBytes = 0
 	}
 	return in, true
-}
-
-func LogFields(in []Descriptor) []map[string]any {
-	in = NormalizeList(in)
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]map[string]any, 0, len(in))
-	for _, item := range in {
-		entry := map[string]any{
-			"kind":               string(item.Kind),
-			"file_id":            item.FileID,
-			"file_unique_id":     item.FileUniqueID,
-			"size_bytes":         item.SizeBytes,
-			"has_caption":        item.Caption != "",
-			"has_blob_ref":       item.Blob != nil,
-			"blob_store":         "",
-			"blob_key":           "",
-			"blob_path":          "",
-			"blob_url_present":   false,
-			"blob_sha256_prefix": "",
-		}
-		if item.FileName != "" {
-			entry["file_name"] = item.FileName
-		}
-		if item.MIMEType != "" {
-			entry["mime_type"] = item.MIMEType
-		}
-		if item.Blob != nil {
-			entry["blob_store"] = item.Blob.Store
-			entry["blob_key"] = item.Blob.Key
-			entry["blob_path"] = item.Blob.Path
-			entry["blob_url_present"] = item.Blob.URL != ""
-			entry["blob_sha256_prefix"] = truncateForLog(item.Blob.SHA256, 12)
-		}
-		out = append(out, entry)
-	}
-	return out
-}
-
-func truncateForLog(value string, limit int) string {
-	value = strings.TrimSpace(value)
-	if value == "" || limit <= 0 {
-		return ""
-	}
-	if len(value) <= limit {
-		return value
-	}
-	return fmt.Sprintf("%s…", value[:limit])
 }

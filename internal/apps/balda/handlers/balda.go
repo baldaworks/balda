@@ -11,7 +11,6 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
@@ -113,11 +112,10 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 		return nil
 	}
 	h.logger.Info().
+		Str("transport", "telegram").
 		Str("message_type", string(event.Type)).
-		Str("media_group_id", messageCtx.MediaGroupID).
+		Bool("media_group", strings.TrimSpace(messageCtx.MediaGroupID) != "").
 		Int("attachments_count", len(messageCtx.Attachments)).
-		Interface("attachments", attachment.LogFields(messageCtx.Attachments)).
-		Interface("raw_transport_message", event.Message).
 		Msg("received inbound telegram transport message")
 
 	if h.getOwnerID() == 0 {

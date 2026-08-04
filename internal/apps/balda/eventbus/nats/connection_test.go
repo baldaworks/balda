@@ -2,6 +2,7 @@ package natsbus
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actorengine "github.com/baldaworks/go-actorlayer/engine"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
@@ -299,6 +301,7 @@ func TestBus_CommandRetryingEventFailureStillRedeliversAndSettles(t *testing.T) 
 }
 
 func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
+	const retrySecret = "RETRY-PROVIDER-ERROR-SENTINEL"
 	bus, err := newStartedBus(t, Params{
 		LC:     fxtest.NewLifecycle(t),
 		Config: baldaeventbus.Config{Embedded: true},
@@ -325,7 +328,7 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 	go func() {
 		_ = bus.Run(ctx, func(context.Context, actorengine.Delivery) error {
 			if calls.Add(1) == 1 {
-				return actorlayer.TransientError(errors.New("retry please"))
+				return actorlayer.TransientError(errors.New(retrySecret))
 			}
 			done <- struct{}{}
 			return nil
@@ -375,6 +378,12 @@ func TestBus_CommandRetryingEventIncludesNextAttemptMetadata(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339Nano, nextAttemptAt); err != nil {
 		t.Fatalf("next_attempt_at parse error = %v", err)
+	}
+	if payload["reason"] != "retrying:transient" {
+		t.Fatalf("retry reason = %v, want retrying:transient", payload["reason"])
+	}
+	if strings.Contains(string(msg.Data()), retrySecret) {
+		t.Fatalf("retry event contains provider error sentinel: %s", string(msg.Data()))
 	}
 	if err := msg.DoubleAck(context.Background()); err != nil {
 		t.Fatalf("DoubleAck(command.retrying event) error = %v", err)
@@ -661,6 +670,10 @@ func TestBus_CommandWorkerLimitUsesFetchBatch(t *testing.T) {
 }
 
 func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
+	const (
+		payloadSecret = "POISON-PAYLOAD-SENTINEL"
+		headerSecret  = "POISON-AUTH-HEADER-SENTINEL"
+	)
 	bus, err := newStartedBus(t, Params{
 		LC:        fxtest.NewLifecycle(t),
 		Config:    baldaeventbus.Config{Embedded: true},
@@ -673,7 +686,12 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	}
 	defer func() { _ = bus.Drain(context.Background()) }()
 
-	if err := bus.conn.Publish(baldaexecution.SubjectCommandJob, []byte("{not-json")); err != nil {
+	rawMessage := &nats.Msg{
+		Subject: baldaexecution.SubjectCommandJob,
+		Header:  nats.Header{"Authorization": []string{"Bearer " + headerSecret}},
+		Data:    []byte(`{"secret":"` + payloadSecret),
+	}
+	if err := bus.conn.PublishMsg(rawMessage); err != nil {
 		t.Fatalf("raw publish command: %v", err)
 	}
 	if err := bus.conn.Flush(); err != nil {
@@ -734,6 +752,43 @@ func TestBus_CommandDecodeFailurePublishesRawDLQAndDecodeEvent(t *testing.T) {
 	}
 	if err := msg.DoubleAck(context.Background()); err != nil {
 		t.Fatalf("DoubleAck(decode_failed event) error = %v", err)
+	}
+	dlqConsumer, err := bus.js.CreateOrUpdateConsumer(context.Background(), baldaexecution.DefaultDLQStream, jetstream.ConsumerConfig{
+		Durable:       "poison-diagnostics-inspector",
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		FilterSubject: baldaexecution.SubjectDLQCommand,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrUpdateConsumer(poison-diagnostics-inspector) error = %v", err)
+	}
+	dlqBatch, err := dlqConsumer.Fetch(1, jetstream.FetchMaxWait(2*time.Second))
+	if err != nil {
+		t.Fatalf("Fetch(poison diagnostics) error = %v", err)
+	}
+	dlqMessage, ok := <-dlqBatch.Messages()
+	if !ok {
+		t.Fatal("poison diagnostics message not found")
+	}
+	encoded := string(dlqMessage.Data())
+	for _, secret := range []string{payloadSecret, headerSecret} {
+		if strings.Contains(encoded, secret) {
+			t.Fatalf("poison diagnostics contain sentinel %q: %s", secret, encoded)
+		}
+	}
+	dlqEnvelope, err := actorlayer.DecodeEnvelope(encoded)
+	if err != nil {
+		t.Fatalf("DecodeEnvelope(poison diagnostics) error = %v", err)
+	}
+	var diagnostics map[string]any
+	if err := json.Unmarshal(dlqEnvelope.Payload.Data, &diagnostics); err != nil {
+		t.Fatalf("decode poison diagnostics payload: %v", err)
+	}
+	if diagnostics["payload_sha256"] == "" || diagnostics["header_count"] != float64(1) {
+		t.Fatalf("poison diagnostics = %+v, want payload hash and header count", diagnostics)
+	}
+	if err := dlqMessage.DoubleAck(context.Background()); err != nil {
+		t.Fatalf("DoubleAck(poison diagnostics) error = %v", err)
 	}
 	cancel()
 	<-done
@@ -891,7 +946,7 @@ func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
 			t.Fatalf("DLQ stream status: %v", err)
 		}
 		if status.Messages == 1 {
-			return
+			break
 		}
 		select {
 		case <-ctx.Done():
@@ -899,9 +954,32 @@ func TestBus_RetryExhaustionPublishesDLQ(t *testing.T) {
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
+	dlqConsumer, err := bus.js.CreateOrUpdateConsumer(context.Background(), baldaexecution.DefaultDLQStream, jetstream.ConsumerConfig{
+		Durable:       "retry-exhaustion-inspector",
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		FilterSubject: baldaexecution.SubjectDLQCommand,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrUpdateConsumer(retry-exhaustion-inspector) error = %v", err)
+	}
+	batch, err := dlqConsumer.Fetch(1, jetstream.FetchMaxWait(2*time.Second))
+	if err != nil {
+		t.Fatalf("Fetch(retry exhaustion DLQ) error = %v", err)
+	}
+	msg, ok := <-batch.Messages()
+	if !ok {
+		t.Fatal("retry exhaustion DLQ message not found")
+	}
+	if got := msg.Headers().Get("Balda-DLQ-Reason"); got != "retry_exhausted:transient" {
+		t.Fatalf("retry exhaustion reason = %q, want retry_exhausted:transient", got)
+	}
+	if err := msg.DoubleAck(context.Background()); err != nil {
+		t.Fatalf("DoubleAck(retry exhaustion DLQ) error = %v", err)
+	}
 }
 
-func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
+func TestBus_PublishDLQIncludesSafeDiagnosticsWithoutOriginalPayload(t *testing.T) {
 	bus, err := newStartedBus(t, Params{
 		LC:        fxtest.NewLifecycle(t),
 		Config:    baldaeventbus.Config{Embedded: true},
@@ -914,8 +992,15 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 	}
 	defer func() { _ = bus.Drain(context.Background()) }()
 
+	const (
+		payloadSecret    = "DLQ-PAYLOAD-SENTINEL"
+		capabilitySecret = "https://hooks.example.invalid/DLQ-CAPABILITY-SENTINEL"
+		providerSecret   = "DLQ-PROVIDER-ERROR-SENTINEL"
+	)
 	env := commandTestEnvelope("dlq-shape")
-	reason := "permanent failure: policy denied"
+	env.Payload = actorlayer.Payload{Encoding: actorlayer.EncodingJSON, Data: []byte(`{"secret":"` + payloadSecret + `"}`)}
+	env.Meta["capability_url"] = capabilitySecret
+	reason := "permanent failure: " + providerSecret
 	if err := bus.publishDLQ(context.Background(), env, reason, true); err != nil {
 		t.Fatalf("publishDLQ() error = %v", err)
 	}
@@ -947,11 +1032,27 @@ func TestBus_PublishDLQIncludesOriginalEnvelopeAndReason(t *testing.T) {
 	if got.From != env.From || got.To != env.To {
 		t.Fatalf("dlq envelope routing = from:%+v to:%+v, want from:%+v to:%+v", got.From, got.To, env.From, env.To)
 	}
-	if baldaexecution.EnvelopeJobID(got) != baldaexecution.EnvelopeJobID(env) || got.Payload.String() != env.Payload.String() {
-		t.Fatalf("dlq envelope payload = task:%q payload:%q, want task:%q payload:%q", baldaexecution.EnvelopeJobID(got), got.Payload.String(), baldaexecution.EnvelopeJobID(env), env.Payload.String())
+	if baldaexecution.EnvelopeJobID(got) != baldaexecution.EnvelopeJobID(env) {
+		t.Fatalf("dlq task = %q, want %q", baldaexecution.EnvelopeJobID(got), baldaexecution.EnvelopeJobID(env))
 	}
-	if gotReason := msg.Headers().Get("Balda-DLQ-Reason"); gotReason != reason {
-		t.Fatalf("dlq header reason = %q, want %q", gotReason, reason)
+	var diagnostics map[string]any
+	if err := json.Unmarshal(got.Payload.Data, &diagnostics); err != nil {
+		t.Fatalf("decode DLQ diagnostics: %v", err)
+	}
+	if diagnostics["original_kind"] != env.Kind || diagnostics["payload_sha256"] == "" {
+		t.Fatalf("DLQ diagnostics = %+v, want original kind and payload hash", diagnostics)
+	}
+	if gotBytes, ok := diagnostics["payload_bytes"].(float64); !ok || int(gotBytes) != len(env.Payload.Data) {
+		t.Fatalf("DLQ payload_bytes = %v, want %d", diagnostics["payload_bytes"], len(env.Payload.Data))
+	}
+	encoded := string(msg.Data())
+	for _, secret := range []string{payloadSecret, capabilitySecret, providerSecret} {
+		if strings.Contains(encoded, secret) {
+			t.Fatalf("DLQ diagnostics contain sentinel %q: %s", secret, encoded)
+		}
+	}
+	if gotReason := msg.Headers().Get("Balda-DLQ-Reason"); gotReason != "terminal:unclassified" {
+		t.Fatalf("dlq header reason = %q, want %q", gotReason, "terminal:unclassified")
 	}
 	if err := msg.DoubleAck(context.Background()); err != nil {
 		t.Fatalf("DoubleAck(dlq message) error = %v", err)

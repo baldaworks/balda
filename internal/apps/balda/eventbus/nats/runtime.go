@@ -2,6 +2,8 @@ package natsbus
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -21,6 +23,8 @@ import (
 
 const commandSettlementTimeout = 5 * time.Second
 const unknownDecodeTarget = "unknown"
+const settlementStageTerminal = "terminal"
+const settlementTerminalUnclassified = settlementStageTerminal + ":unclassified"
 
 const (
 	dlqMetaErrorClass   = "dlq_error_class"
@@ -69,6 +73,7 @@ func (m *commandMessage) Ack(ctx context.Context) error {
 
 func (m *commandMessage) Retry(ctx context.Context, delay time.Duration, reason string) error {
 	return m.settle(func() error {
+		safeReason := sanitizeReasonForStage(reason, "retrying")
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
 		if err := m.msg.NakWithDelay(delay); err != nil {
@@ -78,29 +83,35 @@ func (m *commandMessage) Retry(ctx context.Context, delay time.Duration, reason 
 			"retry_delay_ms":  delay.Milliseconds(),
 			"next_attempt_at": time.Now().UTC().Add(delay).Format(time.RFC3339Nano),
 		}
-		if err := m.bus.PublishEvent(settleCtx, baldaexecution.SubjectEventCommandRetrying, commandEventEnvelope(m.env, nil, "retrying", reason, eventExtras)); err != nil {
+		if err := m.bus.PublishEvent(settleCtx, baldaexecution.SubjectEventCommandRetrying, commandEventEnvelope(m.env, nil, "retrying", safeReason, eventExtras)); err != nil {
 			m.bus.logger.Warn().
 				Err(err).
 				Str("envelope_id", m.env.ID).
 				Msg("failed to publish command retrying event")
 		}
-		commandLogEnvelope(commandLogEvent(m.bus.logger.Warn(), m.msg), m.env).Str("retry_reason", reason).Dur("retry_delay", delay).Msg("command failed with retryable error")
+		commandLogEnvelope(commandLogEvent(m.bus.logger.Warn(), m.msg), m.env).
+			Str("settlement_class", safeReason).
+			Dur("retry_delay", delay).
+			Msg("command failed with retryable error")
 		return nil
 	})
 }
 
 func (m *commandMessage) DeadLetter(ctx context.Context, reason string) error {
 	return m.settle(func() error {
+		safeReason := sanitizeReason(reason)
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
-		if err := m.bus.publishDLQ(settleCtx, m.env, reason, false); err != nil {
+		if err := m.bus.publishDLQ(settleCtx, m.env, safeReason, false); err != nil {
 			return err
 		}
-		if err := m.msg.TermWithReason(reason); err != nil {
+		if err := m.msg.TermWithReason(safeReason); err != nil {
 			return err
 		}
-		m.bus.publishCommandEventBestEffort(settleCtx, baldaexecution.SubjectEventCommandDeadLettered, m.env, "deadlettered", reason)
-		commandLogEnvelope(commandLogEvent(m.bus.logger.Warn(), m.msg), m.env).Str("reason", reason).Msg("command deadlettered")
+		m.bus.publishCommandEventBestEffort(settleCtx, baldaexecution.SubjectEventCommandDeadLettered, m.env, "deadlettered", safeReason)
+		commandLogEnvelope(commandLogEvent(m.bus.logger.Warn(), m.msg), m.env).
+			Str("settlement_class", safeReason).
+			Msg("command deadlettered")
 		return nil
 	})
 }
@@ -217,11 +228,7 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler acto
 				toKey = unknownDecodeTarget
 			}
 		}
-		payload, _ := json.Marshal(map[string]any{
-			"subject": msg.Subject(),
-			"reason":  "decode failed: " + err.Error(),
-			"payload": string(msg.Data()),
-		})
+		payload, _ := json.Marshal(payloadDiagnostics(msg.Data(), "decode_failed", ""))
 		decodeFailureEnv := actorlayer.Envelope{
 			ID:        id,
 			Namespace: namespace,
@@ -235,10 +242,12 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler acto
 		}
 		settleCtx, settleCancel := settlementContext(ctx)
 		defer settleCancel()
-		_ = b.publishRawDLQ(settleCtx, msg, "decode failed: "+err.Error())
-		b.publishCommandEventBestEffort(settleCtx, baldaexecution.SubjectEventCommandDecodeFailed, decodeFailureEnv, "decode_failed", err.Error())
-		_ = msg.TermWithReason("decode failed: " + err.Error())
-		commandLogEvent(b.logger.Warn(), msg).Err(err).Msg("failed to decode command envelope; moved to dlq")
+		_ = b.publishRawDLQ(settleCtx, msg, "decode_failed")
+		b.publishCommandEventBestEffort(settleCtx, baldaexecution.SubjectEventCommandDecodeFailed, decodeFailureEnv, "decode_failed", "decode_failed")
+		_ = msg.TermWithReason("decode_failed")
+		commandLogEvent(b.logger.Warn(), msg).
+			Str("settlement_class", "decode_failed").
+			Msg("failed to decode command envelope; moved to dlq")
 		return err
 	}
 	numDelivered := messageDeliveryAttempt(msg)
@@ -264,15 +273,16 @@ func (b *Bus) handleMessage(ctx context.Context, msg jetstream.Msg, handler acto
 	}
 	if actorlayer.IsRetryableError(err) {
 		if actorlayer.RetryExhausted(numDelivered, b.cfg.Execution.Commands.MaxDeliver) {
-			reason := "retry exhausted: " + err.Error()
+			reason := safeReason("retry_exhausted", actorlayer.ClassifyError(err))
 			cmd.env = decorateDLQEnvelope(cmd.env, reason, actorlayer.ClassifyError(err), b.cfg.Execution.Commands.Stream, b.cfg.Execution.Commands.Consumer, msg.Subject(), numDelivered)
 			return cmd.DeadLetter(settleCtx, reason)
 		}
 		delay := actorlayer.RetryDelay(env.Attempt)
-		return cmd.Retry(settleCtx, delay, err.Error())
+		return cmd.Retry(settleCtx, delay, safeReason("retrying", actorlayer.ClassifyError(err)))
 	}
-	cmd.env = decorateDLQEnvelope(cmd.env, err.Error(), actorlayer.ClassifyError(err), b.cfg.Execution.Commands.Stream, b.cfg.Execution.Commands.Consumer, msg.Subject(), numDelivered)
-	return cmd.DeadLetter(settleCtx, err.Error())
+	reason := safeReason(settlementStageTerminal, actorlayer.ClassifyError(err))
+	cmd.env = decorateDLQEnvelope(cmd.env, reason, actorlayer.ClassifyError(err), b.cfg.Execution.Commands.Stream, b.cfg.Execution.Commands.Consumer, msg.Subject(), numDelivered)
+	return cmd.DeadLetter(settleCtx, reason)
 }
 
 func settlementContext(parent context.Context) (context.Context, context.CancelFunc) {
@@ -324,8 +334,8 @@ func (b *Bus) RunEventConsumer(ctx context.Context, handler actortransport.Event
 func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler actortransport.EventHandler) error {
 	env, err := actorlayer.DecodeEnvelope(string(msg.Data()))
 	if err != nil {
-		_ = b.publishRawDLQ(ctx, msg, "decode failed: "+err.Error())
-		_ = msg.TermWithReason("decode failed: " + err.Error())
+		_ = b.publishRawDLQ(ctx, msg, "decode_failed")
+		_ = msg.TermWithReason("decode_failed")
 		return err
 	}
 	if err := handler(ctx, msg.Subject(), env); err != nil {
@@ -333,7 +343,7 @@ func (b *Bus) handleEventMessage(ctx context.Context, msg jetstream.Msg, handler
 		if actorlayer.IsRetryableError(err) && !actorlayer.RetryExhausted(numDelivered, b.cfg.Execution.Commands.MaxDeliver) {
 			return msg.NakWithDelay(actorlayer.RetryDelay(numDelivered - 1))
 		}
-		reason := "event projection failed: " + err.Error()
+		reason := safeReason("event_projection_failed", actorlayer.ClassifyError(err))
 		dlqEnv := decorateDLQEnvelope(env, reason, actorlayer.ClassifyError(err), b.cfg.Execution.Events.Stream, baldaexecution.DefaultEventProjectorConsumer, msg.Subject(), numDelivered)
 		_ = b.publishDLQ(ctx, dlqEnv, reason, false)
 		return msg.TermWithReason(reason)
@@ -387,17 +397,10 @@ func streamConfig(name string, subjects []string, retention jetstream.RetentionP
 }
 
 func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason string) error {
-	headers := make(map[string][]string, len(source.Headers()))
-	for key, values := range source.Headers() {
-		headers[key] = append([]string(nil), values...)
-	}
-	payload := map[string]any{
-		"subject":     source.Subject(),
-		"reason":      reason,
-		"headers":     headers,
-		"payload":     string(source.Data()),
-		"error_class": actorlayer.ErrorKindDecode,
-	}
+	payload := payloadDiagnostics(source.Data(), "poison_message", string(actorlayer.ErrorKindDecode))
+	payload["subject"] = source.Subject()
+	payload["reason"] = sanitizeReason(reason)
+	payload["header_count"] = len(source.Headers())
 	if md, err := source.Metadata(); err == nil {
 		payload["source_stream"] = strings.TrimSpace(md.Stream)
 		payload["source_consumer"] = strings.TrimSpace(md.Consumer)
@@ -422,7 +425,7 @@ func (b *Bus) publishRawDLQ(ctx context.Context, source jetstream.Msg, reason st
 	if err != nil {
 		return err
 	}
-	msg.Header.Set("Balda-DLQ-Reason", reason)
+	msg.Header.Set("Balda-DLQ-Reason", sanitizeReason(reason))
 	_, err = b.js.PublishMsg(ctx, msg, jetstream.WithExpectStream(b.cfg.Execution.DLQ.Stream), jetstream.WithMsgID(env.ID))
 	if err != nil {
 		return fmt.Errorf("publish raw dlq: %w", err)
@@ -451,8 +454,8 @@ func commandEventEnvelope(env actorlayer.Envelope, result *actortransport.Dispat
 		payload["msg_id"] = result.MsgID
 		payload["duplicate"] = result.Duplicate
 	}
-	if strings.TrimSpace(reason) != "" {
-		payload["reason"] = reason
+	if safeEventReason := commandEventReason(status, reason); safeEventReason != "" {
+		payload["reason"] = safeEventReason
 	}
 	for key, value := range extra {
 		if strings.TrimSpace(key) == "" {
@@ -470,8 +473,9 @@ func commandEventEnvelope(env actorlayer.Envelope, result *actortransport.Dispat
 		Data:     data,
 	}
 	out.DedupeKey = out.ID
+	out.Meta = safeCommandMeta(env.Meta)
 	if out.Meta == nil {
-		out.Meta = map[string]string{}
+		out.Meta = make(map[string]string)
 	}
 	out.Meta["event_type"] = "command." + strings.TrimSpace(status)
 	if out.From.Target == "" {
@@ -503,10 +507,135 @@ func decorateDLQEnvelope(env actorlayer.Envelope, reason string, class actorlaye
 	if numDelivered > 0 {
 		out.Meta[dlqMetaDelivered] = strconv.Itoa(numDelivered)
 	}
-	if trimmed := strings.TrimSpace(reason); trimmed != "" && strings.TrimSpace(out.Meta["reason"]) == "" {
+	if trimmed := sanitizeReason(reason); trimmed != "" {
 		out.Meta["reason"] = trimmed
 	}
 	return out
+}
+
+func diagnosticDLQEnvelope(env actorlayer.Envelope) actorlayer.Envelope {
+	out := env
+	out.DedupeKey = strings.TrimSpace(env.ID)
+	out.Meta = safeDLQMeta(env.Meta)
+	data, _ := json.Marshal(payloadDiagnostics(env.Payload.Data, env.Kind, strings.TrimSpace(out.Meta[dlqMetaErrorClass])))
+	out.Payload = actorlayer.Payload{Encoding: actorlayer.EncodingJSON, Data: data}
+	return out
+}
+
+func safeDLQMeta(meta map[string]string) map[string]string {
+	if len(meta) == 0 {
+		return nil
+	}
+	safe := make(map[string]string)
+	for _, key := range []string{
+		"job_id",
+		"session_id",
+		dlqMetaSourceStream,
+		dlqMetaSourceCns,
+		dlqMetaSourceSubj,
+		dlqMetaDelivered,
+	} {
+		if value := strings.TrimSpace(meta[key]); value != "" {
+			safe[key] = value
+		}
+	}
+	if value := strings.TrimSpace(meta[dlqMetaErrorClass]); knownErrorClass(value) {
+		safe[dlqMetaErrorClass] = value
+	}
+	if value := strings.TrimSpace(meta["reason"]); value != "" {
+		safe["reason"] = sanitizeReason(value)
+	}
+	return safe
+}
+
+func safeCommandMeta(meta map[string]string) map[string]string {
+	if len(meta) == 0 {
+		return nil
+	}
+	safe := make(map[string]string)
+	for _, key := range []string{"job_id", "session_id"} {
+		if value := strings.TrimSpace(meta[key]); value != "" {
+			safe[key] = value
+		}
+	}
+	return safe
+}
+
+func payloadDiagnostics(data []byte, originalKind, errorClass string) map[string]any {
+	sum := sha256.Sum256(data)
+	payload := map[string]any{
+		"original_kind":  strings.TrimSpace(originalKind),
+		"payload_bytes":  len(data),
+		"payload_sha256": hex.EncodeToString(sum[:]),
+	}
+	if trimmed := strings.TrimSpace(errorClass); trimmed != "" {
+		payload["error_class"] = trimmed
+	}
+	return payload
+}
+
+func safeReason(stage string, class actorlayer.ErrorKind) string {
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		stage = settlementStageTerminal
+	}
+	className := strings.TrimSpace(string(class))
+	if className == "" {
+		className = "unclassified"
+	}
+	return stage + ":" + className
+}
+
+func sanitizeReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	parts := strings.Split(reason, ":")
+	if len(parts) == 2 && knownSettlementStage(parts[0]) && knownErrorClass(parts[1]) {
+		return parts[0] + ":" + parts[1]
+	}
+	if knownSettlementStage(reason) {
+		return reason
+	}
+	return settlementTerminalUnclassified
+}
+
+func sanitizeReasonForStage(reason, fallbackStage string) string {
+	sanitized := sanitizeReason(reason)
+	if sanitized != settlementTerminalUnclassified || strings.TrimSpace(fallbackStage) == settlementStageTerminal {
+		return sanitized
+	}
+	return safeReason(fallbackStage, "")
+}
+
+func commandEventReason(status, reason string) string {
+	if strings.TrimSpace(reason) == "" {
+		return ""
+	}
+	if strings.TrimSpace(status) == "noop" {
+		return "duplicate publish suppressed"
+	}
+	return sanitizeReason(reason)
+}
+
+func knownSettlementStage(value string) bool {
+	switch value {
+	case "decode_failed", "event_projection_failed", "retry_exhausted", "retrying", settlementStageTerminal:
+		return true
+	default:
+		return false
+	}
+}
+
+func knownErrorClass(value string) bool {
+	switch actorlayer.ErrorKind(value) {
+	case actorlayer.ErrorKindTransient,
+		actorlayer.ErrorKindPolicy,
+		actorlayer.ErrorKindPermanent,
+		actorlayer.ErrorKindDecode,
+		actorlayer.ErrorKindExternalDelivery:
+		return true
+	default:
+		return value == "unclassified"
+	}
 }
 
 func commandLogEvent(evt *zerolog.Event, msg jetstream.Msg) *zerolog.Event {

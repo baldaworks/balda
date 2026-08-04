@@ -624,7 +624,7 @@ func (m *Messenger) SendAgentReplyMessageWithInlineKeyboardLastMessageID(
 	if !shouldFallbackRichSend(ctx, err) {
 		return 0, err
 	}
-	m.logger.Warn().Err(err).Int64("chat_id", chatID).Msg("send telegram question controls failed, retrying with text choices")
+	m.logRichFallback(chatID, "question_controls")
 	messageID, fallbackErr := m.sendPlainLegacy(ctx, chatID, fallbackText, topicID)
 	if fallbackErr != nil {
 		return 0, fmt.Errorf("send telegram question controls: %v; text fallback: %w", err, fallbackErr)
@@ -939,7 +939,7 @@ func (m *Messenger) sendRichDraftWithFallback(
 	if !shouldFallbackRichSend(ctx, err) {
 		return err
 	}
-	m.logger.Warn().Err(err).Int64("chat_id", chatID).Msg("send rich draft failed, retrying with legacy draft")
+	m.logRichFallback(chatID, "draft")
 	return m.sendDraftPlainLegacy(ctx, chatID, draftID, legacyText, topicID)
 }
 
@@ -994,8 +994,19 @@ func (m *Messenger) sendRichMessageWithFallback(
 	if !shouldFallbackRichSend(ctx, err) {
 		return 0, err
 	}
-	m.logger.Warn().Err(err).Int64("chat_id", chatID).Msg("send rich message failed, retrying with legacy message")
+	m.logRichFallback(chatID, "message")
 	return fallback(ctx)
+}
+
+func (m *Messenger) logRichFallback(chatID int64, operation string) {
+	m.logger.Warn().
+		Str("transport", "telegram").
+		Int64("chat_id", chatID).
+		Str("operation", operation).
+		Str("settlement_class", "format_rejected").
+		Str("fallback", "plain").
+		Int("http_status", http.StatusBadRequest).
+		Msg("telegram rich format rejected; retrying as plain text")
 }
 
 func (m *Messenger) sendRichMessage(ctx context.Context, chatID int64, rich client.InputRichMessage, topicID int) (int, error) {

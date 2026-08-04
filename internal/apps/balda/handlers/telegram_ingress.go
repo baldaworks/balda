@@ -152,10 +152,11 @@ func (h *BaldaHandler) telegramIngressService() (*ingressapp.Service, error) {
 	if h == nil {
 		return nil, fmt.Errorf("balda handler is required")
 	}
-	return ingressapp.New(
+	return ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(h.authorizeTelegramInbound),
 		ingressapp.SessionPreparerFunc(h.prepareTelegramSession),
 		ingressapp.DispatcherFunc(h.dispatchTelegramInbound),
+		h.logger,
 	)
 }
 
