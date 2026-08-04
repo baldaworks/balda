@@ -12,7 +12,6 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
-	"github.com/tgbotkit/runtime/updatepoller"
 )
 
 func TestNewUpdateSource_WebhookDisabledSkipsWebhookValidation(t *testing.T) {
@@ -32,8 +31,8 @@ func TestNewUpdateSource_WebhookDisabledSkipsWebhookValidation(t *testing.T) {
 		t.Fatalf("NewUpdateSource() error = %v", err)
 	}
 
-	if _, ok := src.(*updatepoller.Poller); !ok {
-		t.Fatalf("update source type = %T, want *updatepoller.Poller fallback", src)
+	if _, ok := src.(*settlementPoller); !ok {
+		t.Fatalf("update source type = %T, want settlement-aware polling source", src)
 	}
 }
 

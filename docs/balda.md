@@ -593,6 +593,12 @@ balda:
 - `balda.telegram.webhook.auth_token`: webhook auth token required when `balda.telegram.webhook.enabled=true`; Telegram sends it as `X-Telegram-Bot-Api-Secret-Token`
 - `balda.telegram.webhook.listen_addr`: local webhook listen address (default: `0.0.0.0:8080`)
 - `balda.telegram.webhook.path`: local webhook path (default: `/telegram/webhook`)
+- Telegram polling holds the persisted update offset until the provider event
+  has completed runtime settlement. Accepted and terminal events advance the
+  offset; retryable handler failures leave it unchanged so Telegram replays the
+  same update ID. Polling retries are bounded and then become terminal to avoid
+  a poison-update loop. Webhook delivery keeps its existing request settlement
+  and does not use the polling offset gate.
 - `balda.zulip.bot_email`: Zulip outgoing webhook bot email (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_BOT_EMAIL`)
 - `balda.zulip.api_key`: Zulip bot API key used for REST replies (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_API_KEY`)
 - `balda.zulip.server_url`: Zulip server base URL, absolute `http://` or `https://` (required when `balda.zulip.webhook.enabled=true`; env: `BALDA_ZULIP_SERVER_URL`)
@@ -1612,6 +1618,9 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 6. `/topic` without name returns usage error.
 7. Restart clears active process sessions; persisted non-owner sessions are lazy-restored from metadata when addressed again, while the owner main-DM session is bootstrapped during startup.
 8. Polling mode resumes from persisted Telegram offset in balda state DB.
+   Retryable polling intake failures leave that offset unchanged and replay the
+   same provider update after restart or the next poll cycle; accepted and
+   terminal outcomes advance it.
 9. Non-terminal session progress always emits progress activity; Telegram sends typing indicators in DM and public chats for that activity, while only visible progress renders as drafts/messages. Thinking placeholders remain DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode`; `none` is literal plain text, while rich modes make at most one parse-mode-free plain send only after an explicit Telegram formatting rejection.
 11. `/reset` and `/restart` cancel current session work, clear history, and immediately start a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.

@@ -75,6 +75,9 @@ func NewBot(
 		runtime.WithClient(client),
 		runtime.WithLogger(newRedactingRuntimeLogger(logger.NewZerolog(l))),
 	}
+	if source, ok := updateSource.(*settlementPoller); ok {
+		opts = append(opts, runtime.WithEventEmitter(source.emitter))
+	}
 	if strings.TrimSpace(cfg.Token) == "" {
 		// Skip GetMe API call when Telegram is not configured.
 		opts = append(opts, runtime.WithDefaultListenersEnabled(false))
@@ -138,13 +141,19 @@ func NewUpdateSource(
 	if offsetStore == nil {
 		offsetStore = offsetstore.NewInMemoryOffsetStore(0)
 	}
-	opts := updatepoller.NewOptions(
+	gate := newPollingSettlementGate(l)
+	settlementStore := settlementOffsetStore{store: offsetStore, gate: gate}
+	settlementOpts := updatepoller.NewOptions(
 		client,
-		updatepoller.WithOffsetStore(offsetStore),
+		updatepoller.WithOffsetStore(settlementStore),
 		updatepoller.WithLogger(newRedactingRuntimeLogger(logger.NewZerolog(l))),
 		updatepoller.WithAllowedUpdates(telegramAllowedUpdates),
 	)
-	return updatepoller.NewPoller(opts)
+	settlementPoller, err := updatepoller.NewPoller(settlementOpts)
+	if err != nil {
+		return nil, err
+	}
+	return newSettlementPoller(settlementPoller, gate)
 }
 
 type webhookUpdateSource struct {
