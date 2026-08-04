@@ -67,6 +67,143 @@ func TestMessageContextFromEvent_MapsVoiceAttachment(t *testing.T) {
 	}
 }
 
+func TestMessageContextFromEvent_MapsMediaGroupID(t *testing.T) {
+	mediaGroupID := "album-42"
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			Chat:         client.Chat{Id: 11, Type: "private"},
+			From:         &client.User{Id: 22},
+			MediaGroupId: &mediaGroupID,
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if got.MediaGroupID != mediaGroupID {
+		t.Fatalf("MediaGroupID = %q, want %q", got.MediaGroupID, mediaGroupID)
+	}
+}
+
+func TestCollectMediaGroupCombinesAttachmentsInMessageOrder(t *testing.T) {
+	adapter := &Adapter{mediaGroups: newMediaGroupCollector(10 * time.Millisecond)}
+	grouped := make(chan MessageContext, 2)
+	dispatch := func(_ context.Context, message MessageContext) {
+		grouped <- message
+	}
+
+	second := MessageContext{
+		ChatID:       11,
+		UserID:       22,
+		MessageID:    102,
+		MediaGroupID: "album-42",
+		Attachments: []attachment.Descriptor{{
+			Kind:   attachment.KindDocument,
+			FileID: "document-2",
+		}},
+	}
+	first := MessageContext{
+		ChatID:       11,
+		UserID:       22,
+		MessageID:    101,
+		MediaGroupID: "album-42",
+		Attachments: []attachment.Descriptor{{
+			Kind:   attachment.KindPhoto,
+			FileID: "photo-1",
+		}},
+	}
+
+	if !adapter.CollectMediaGroup(second, dispatch) {
+		t.Fatal("CollectMediaGroup(second) = false, want true")
+	}
+	if !adapter.CollectMediaGroup(first, dispatch) {
+		t.Fatal("CollectMediaGroup(first) = false, want true")
+	}
+
+	select {
+	case got := <-grouped:
+		if got.MessageID != first.MessageID {
+			t.Errorf("MessageID = %d, want %d", got.MessageID, first.MessageID)
+		}
+		if len(got.Attachments) != 2 {
+			t.Fatalf("attachments = %d, want 2", len(got.Attachments))
+		}
+		if got.Attachments[0].FileID != "photo-1" || got.Attachments[1].FileID != "document-2" {
+			t.Errorf("attachment file IDs = [%q, %q], want [photo-1, document-2]", got.Attachments[0].FileID, got.Attachments[1].FileID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for combined media group")
+	}
+
+	select {
+	case duplicate := <-grouped:
+		t.Fatalf("unexpected second dispatch: %+v", duplicate)
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
+func TestCollectMediaGroupDoesNotBufferOrdinaryMessage(t *testing.T) {
+	adapter := &Adapter{mediaGroups: newMediaGroupCollector(10 * time.Millisecond)}
+	dispatched := false
+	if adapter.CollectMediaGroup(MessageContext{ChatID: 11}, func(context.Context, MessageContext) {
+		dispatched = true
+	}) {
+		t.Fatal("CollectMediaGroup(ordinary message) = true, want false")
+	}
+	if dispatched {
+		t.Fatal("ordinary message was dispatched by media group collector")
+	}
+}
+
+func TestCollectMediaGroupKeepsTransportBoundariesIsolated(t *testing.T) {
+	testCases := []struct {
+		name   string
+		second MessageContext
+	}{
+		{name: "chat", second: MessageContext{ChatID: 12, TopicID: 33, UserID: 22}},
+		{name: "topic", second: MessageContext{ChatID: 11, TopicID: 34, UserID: 22}},
+		{name: "user", second: MessageContext{ChatID: 11, TopicID: 33, UserID: 23}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := &Adapter{mediaGroups: newMediaGroupCollector(10 * time.Millisecond)}
+			grouped := make(chan MessageContext, 2)
+			dispatch := func(_ context.Context, message MessageContext) {
+				grouped <- message
+			}
+			first := MessageContext{
+				ChatID:       11,
+				TopicID:      33,
+				UserID:       22,
+				MessageID:    101,
+				MediaGroupID: "album-42",
+				Attachments:  []attachment.Descriptor{{Kind: attachment.KindPhoto, FileID: "first"}},
+			}
+			second := tc.second
+			second.MessageID = 102
+			second.MediaGroupID = first.MediaGroupID
+			second.Attachments = []attachment.Descriptor{{Kind: attachment.KindPhoto, FileID: "second"}}
+
+			if !adapter.CollectMediaGroup(first, dispatch) {
+				t.Fatal("CollectMediaGroup(first) = false, want true")
+			}
+			if !adapter.CollectMediaGroup(second, dispatch) {
+				t.Fatal("CollectMediaGroup(second) = false, want true")
+			}
+
+			for range 2 {
+				select {
+				case got := <-grouped:
+					if len(got.Attachments) != 1 {
+						t.Fatalf("attachments = %d, want isolated group with 1", len(got.Attachments))
+					}
+				case <-time.After(time.Second):
+					t.Fatal("timed out waiting for isolated media groups")
+				}
+			}
+		})
+	}
+}
+
 func TestMessageContextFromEvent_MapsVoiceWithoutOptionalMetadata(t *testing.T) {
 	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
 		Message: &client.Message{

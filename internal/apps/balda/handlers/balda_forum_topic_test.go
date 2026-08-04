@@ -5,10 +5,12 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/normahq/balda/internal/apps/balda/actors"
+	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
@@ -626,6 +628,153 @@ func TestBaldaHandlerOnMessage_PublishesAttachmentOnlySessionTurn(t *testing.T) 
 	}
 	if !strings.Contains(payload.Text, "kind: photo") {
 		t.Fatalf("payload text = %q, want photo attachment metadata", payload.Text)
+	}
+}
+
+func TestBaldaHandlerOnMessage_CoalescesTelegramMediaGroupIntoOneTurn(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
+	turns.commandSignal = make(chan struct{}, 2)
+	attachmentStore := &recordingTelegramAttachmentStore{}
+	handler.attachmentStore = attachmentStore
+
+	mediaGroupID := "album-42"
+	caption := "review both files"
+	photoSize := 1024
+	photoEvent := &events.MessageEvent{
+		Type: messagetype.Photo,
+		Message: &client.Message{
+			Chat:         client.Chat{Id: 9001, Type: "private"},
+			From:         &client.User{Id: 101},
+			MessageId:    101,
+			MediaGroupId: &mediaGroupID,
+			Caption:      &caption,
+			Photo: &[]client.PhotoSize{{
+				FileId:       "photo-file-id",
+				FileUniqueId: "photo-unique-id",
+				FileSize:     &photoSize,
+			}},
+		},
+	}
+	documentName := "notes.txt"
+	documentEvent := &events.MessageEvent{
+		Type: messagetype.Document,
+		Message: &client.Message{
+			Chat:         client.Chat{Id: 9001, Type: "private"},
+			From:         &client.User{Id: 101},
+			MessageId:    102,
+			MediaGroupId: &mediaGroupID,
+			Document: &client.Document{
+				FileId:       "document-file-id",
+				FileUniqueId: "document-unique-id",
+				FileName:     &documentName,
+			},
+		},
+	}
+
+	if err := handler.onMessage(t.Context(), photoEvent); err != nil {
+		t.Fatalf("onMessage(photo) error = %v", err)
+	}
+	if err := handler.onMessage(t.Context(), documentEvent); err != nil {
+		t.Fatalf("onMessage(document) error = %v", err)
+	}
+	if got := len(turns.commandSnapshot()); got != 0 {
+		t.Fatalf("published commands before media-group flush = %d, want 0", got)
+	}
+
+	select {
+	case <-turns.commandSignal:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for media-group turn")
+	}
+	select {
+	case <-turns.commandSignal:
+		t.Fatal("media group published more than one turn")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	commands := turns.commandSnapshot()
+	if len(commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(commands))
+	}
+	if got := baldaexecution.EnvelopeSessionID(commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
+	}
+	var payload actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if len(payload.Attachments) != 2 {
+		t.Fatalf("attachments = %d, want 2", len(payload.Attachments))
+	}
+	if len(attachmentStore.calls) != 1 || len(attachmentStore.calls[0]) != 2 {
+		t.Fatalf("attachment persistence calls = %+v, want one call with complete media group", attachmentStore.calls)
+	}
+	if payload.Attachments[0].FileID != "photo-file-id" || payload.Attachments[1].FileID != "document-file-id" {
+		t.Fatalf("attachments = %+v, want photo then document", payload.Attachments)
+	}
+	if !strings.Contains(payload.Text, "caption: "+caption) {
+		t.Fatalf("payload text = %q, want media-group caption", payload.Text)
+	}
+}
+
+type recordingTelegramAttachmentStore struct {
+	calls [][]attachment.Descriptor
+}
+
+func (s *recordingTelegramAttachmentStore) PersistTelegram(_ context.Context, in []attachment.Descriptor) ([]attachment.Descriptor, error) {
+	s.calls = append(s.calls, append([]attachment.Descriptor(nil), in...))
+	return attachment.NormalizeList(in), nil
+}
+
+func TestBaldaHandlerOnMessage_FlushesMediaGroupBeforeFollowingMessage(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
+
+	mediaGroupID := "album-42"
+	photoEvent := &events.MessageEvent{
+		Type: messagetype.Photo,
+		Message: &client.Message{
+			Chat:         client.Chat{Id: 9001, Type: "private"},
+			From:         &client.User{Id: 101},
+			MessageId:    101,
+			MediaGroupId: &mediaGroupID,
+			Photo:        &[]client.PhotoSize{{FileId: "photo-file-id"}},
+		},
+	}
+	text := "use the attached file"
+	textEvent := &events.MessageEvent{
+		Type: messagetype.Text,
+		Message: &client.Message{
+			Chat:      client.Chat{Id: 9001, Type: "private"},
+			From:      &client.User{Id: 101},
+			MessageId: 102,
+			Text:      &text,
+		},
+	}
+
+	if err := handler.onMessage(t.Context(), photoEvent); err != nil {
+		t.Fatalf("onMessage(photo) error = %v", err)
+	}
+	if err := handler.onMessage(t.Context(), textEvent); err != nil {
+		t.Fatalf("onMessage(text) error = %v", err)
+	}
+
+	commands := turns.commandSnapshot()
+	if len(commands) != 2 {
+		t.Fatalf("published commands = %d, want media group then text", len(commands))
+	}
+	var first actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(commands[0].Payload, &first); err != nil {
+		t.Fatalf("decode first session turn payload: %v", err)
+	}
+	var second actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(commands[1].Payload, &second); err != nil {
+		t.Fatalf("decode second session turn payload: %v", err)
+	}
+	if len(first.Attachments) != 1 || first.Attachments[0].FileID != "photo-file-id" {
+		t.Fatalf("first turn attachments = %+v, want media group", first.Attachments)
+	}
+	if second.Text != text || len(second.Attachments) != 0 {
+		t.Fatalf("second turn = %+v, want following text without attachments", second)
 	}
 }
 

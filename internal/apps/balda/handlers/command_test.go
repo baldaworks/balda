@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
@@ -1216,7 +1217,9 @@ func (f *fakeCommandSessionManager) TakeStartupNotice(sessionID string) string {
 }
 
 type fakeTurnDispatcher struct {
+	commandsMu       sync.Mutex
 	commands         []actorlayer.Envelope
+	commandSignal    chan struct{}
 	deliveryCommands []actorlayer.Envelope
 	cancelCalls      []cancelSessionCall
 	deliveryAdapter  *baldatelegram.Adapter
@@ -1254,13 +1257,28 @@ func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope
 			MsgID:    actorlayer.DedupeKeyOrID(env),
 		}, nil
 	}
+	f.commandsMu.Lock()
 	f.commands = append(f.commands, env)
+	sequence := uint64(len(f.commands))
+	f.commandsMu.Unlock()
+	if f.commandSignal != nil {
+		select {
+		case f.commandSignal <- struct{}{}:
+		default:
+		}
+	}
 	return &actortransport.DispatchReceipt{
 		Stream:   baldaexecution.DefaultCommandStream,
-		Sequence: uint64(len(f.commands)),
+		Sequence: sequence,
 		Subject:  baldaexecution.SubjectForEnvelope(env),
 		MsgID:    actorlayer.DedupeKeyOrID(env),
 	}, nil
+}
+
+func (f *fakeTurnDispatcher) commandSnapshot() []actorlayer.Envelope {
+	f.commandsMu.Lock()
+	defer f.commandsMu.Unlock()
+	return append([]actorlayer.Envelope(nil), f.commands...)
 }
 
 func (*fakeTurnDispatcher) PublishEvent(context.Context, string, actorlayer.Envelope) error {

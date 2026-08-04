@@ -11,9 +11,9 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
-	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
@@ -92,7 +92,7 @@ type baldaHandlerDeps struct {
 	TelegramEnabled   bool   `name:"balda_telegram_enabled"`
 	Logger            zerolog.Logger
 	TurnExecution     *sessionturnapp.TurnExecutionService
-	QuestionService   *questions.Service `optional:"true"`
+	QuestionService   *questions.Service    `optional:"true"`
 	AttachmentStore   attachmentstore.Store `optional:"true"`
 }
 
@@ -116,17 +116,9 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	if !ok {
 		return nil
 	}
-	if h.attachmentStore != nil && len(messageCtx.Attachments) > 0 {
-		persisted, err := h.attachmentStore.PersistTelegram(ctx, messageCtx.Attachments)
-		if err != nil {
-			h.logger.Warn().Err(err).Msg("failed to persist inbound telegram attachments")
-		} else {
-			messageCtx.Attachments = persisted
-		}
-	}
-
 	h.logger.Info().
 		Str("message_type", string(event.Type)).
+		Str("media_group_id", messageCtx.MediaGroupID).
 		Int("attachments_count", len(messageCtx.Attachments)).
 		Interface("attachments", attachment.LogFields(messageCtx.Attachments)).
 		Interface("raw_transport_message", event.Message).
@@ -152,7 +144,28 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 	if messageCtx.HasCommand {
 		return nil
 	}
+	if h.channel.CollectMediaGroup(messageCtx, func(groupCtx context.Context, grouped baldatelegram.MessageContext) {
+		if err := h.handleAcceptedMessage(groupCtx, grouped); err != nil {
+			h.logger.Error().Err(err).
+				Str("session_id", grouped.Locator.SessionID).
+				Str("media_group_id", grouped.MediaGroupID).
+				Msg("failed to handle inbound telegram media group")
+		}
+	}) {
+		return nil
+	}
+	return h.handleAcceptedMessage(ctx, messageCtx)
+}
 
+func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx baldatelegram.MessageContext) error {
+	if h.attachmentStore != nil && len(messageCtx.Attachments) > 0 {
+		persisted, err := h.attachmentStore.PersistTelegram(ctx, messageCtx.Attachments)
+		if err != nil {
+			h.logger.Warn().Err(err).Msg("failed to persist inbound telegram attachments")
+		} else {
+			messageCtx.Attachments = persisted
+		}
+	}
 	if handled, err := h.handleQuestionReply(ctx, messageCtx); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", messageCtx.Locator.SessionID).Msg("failed to handle question reply")
 		_ = sendPlain(ctx, h.actorDispatcher, baldaHandlerActorAddress, messageCtx.Locator, "Could not process this reply right now. Please try again.")
@@ -178,6 +191,7 @@ func (h *BaldaHandler) onMessage(ctx context.Context, event *events.MessageEvent
 
 	locator := messageCtx.Locator
 	transportUserID := baldatelegram.UserID(messageCtx.UserID)
+	ownerID := h.getOwnerID()
 
 	log.Info().Int64("user_id", ownerID).Int("topic_id", topicID).Msg("Forwarding message to balda agent")
 
@@ -306,7 +320,7 @@ func (h *BaldaHandler) enqueueTurn(
 		ReplyToMessageID: replyToMessageID,
 		ReceivedAt:       receivedAtNow().UTC().Format(time.RFC3339),
 		TopicID:          topicID,
-		DeliveryOptions:  deliveryfmt.Options{
+		DeliveryOptions: deliveryfmt.Options{
 			Profile:        deliveryOptions.Profile,
 			ProgressPolicy: progressPolicy,
 		},

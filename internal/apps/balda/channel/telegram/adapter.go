@@ -65,6 +65,8 @@ type Adapter struct {
 	progressMu          sync.Mutex
 	progressDrafts      map[string]int
 	nextProgressDraftID int
+
+	mediaGroups *mediaGroupCollector
 }
 
 // MessageContext is the balda-facing Telegram message shape.
@@ -89,6 +91,7 @@ type MessageContext struct {
 	DeliveryOptions  deliveryfmt.Options
 	ProgressPolicy   deliveryfmt.ProgressPolicy
 	IsDM             bool
+	MediaGroupID     string
 }
 
 // CommandContext is the balda-facing Telegram command shape.
@@ -133,7 +136,19 @@ func NewAdapter(params AdapterParams) *Adapter {
 		now:                 time.Now,
 		progressDrafts:      make(map[string]int),
 		nextProgressDraftID: 1,
+		mediaGroups:         newMediaGroupCollector(defaultMediaGroupFlushDelay),
 	}
+}
+
+// CollectMediaGroup buffers a Telegram media-group item and dispatches one
+// combined message context after the group has been quiet for the flush delay.
+// Dispatch runs asynchronously with a bounded context. The method returns false
+// for ordinary messages, which callers should handle directly.
+func (a *Adapter) CollectMediaGroup(message MessageContext, dispatch func(context.Context, MessageContext)) bool {
+	if a == nil || a.mediaGroups == nil {
+		return false
+	}
+	return a.mediaGroups.collect(message, dispatch)
 }
 
 func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
@@ -305,8 +320,16 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 			Thinking:    event.Message.Chat.Type == chatTypePrivate,
 			PlanUpdates: a.planUpdatesEnabled,
 		},
-		IsDM: event.Message.Chat.Type == chatTypePrivate,
+		IsDM:         event.Message.Chat.Type == chatTypePrivate,
+		MediaGroupID: mediaGroupID(event.Message),
 	}, true
+}
+
+func mediaGroupID(message *client.Message) string {
+	if message == nil || message.MediaGroupId == nil {
+		return ""
+	}
+	return strings.TrimSpace(*message.MediaGroupId)
 }
 
 func attachmentsFromMessage(message *client.Message) []attachment.Descriptor {
