@@ -12,6 +12,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/attachment"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -26,6 +27,8 @@ const (
 	chatTypePrivate     = "private"
 	defaultTypingAction = "typing"
 	modeRichMarkdown    = "rich_markdown"
+	modeRichHTML        = "rich_html"
+	modeNone            = "none"
 )
 
 type TelegramMessenger interface {
@@ -33,9 +36,9 @@ type TelegramMessenger interface {
 	SendPlain(ctx context.Context, chatID int64, text string, topicID int) error
 	SendMarkdownWithMode(ctx context.Context, chatID int64, text string, topicID int, mode string) error
 	SendAgentReply(ctx context.Context, chatID int64, text string, topicID int) error
-	SendAgentReplyLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string) (int, error)
-	SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup, fallbackText string) (int, error)
-	SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(ctx context.Context, chatID, receiverUserID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error)
+	SendAgentReplyMessageLastMessageID(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int) (int, error)
+	SendAgentReplyMessageWithInlineKeyboardLastMessageID(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int, keyboard client.InlineKeyboardMarkup, fallbackText string) (int, error)
+	SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID(ctx context.Context, chatID, receiverUserID int64, message deliveryfmt.Message, topicID int, keyboard client.InlineKeyboardMarkup) (int, error)
 	SendPlainReply(ctx context.Context, chatID int64, text string, topicID, replyToMessageID int) error
 	ClearInlineKeyboard(ctx context.Context, chatID int64, messageID int) error
 	DeleteMessage(ctx context.Context, chatID int64, messageID int) error
@@ -168,15 +171,23 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
 	case deliverycmd.OperationMarkdown:
-		err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		if operation.Message != nil {
+			err = a.SendMessage(ctx, locator, *operation.Message)
+		} else {
+			err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		}
 	case deliverycmd.OperationAgentReply:
-		result.ProviderMessageID, err = a.SendAgentReplyWithQuestion(ctx, locator, operation.DeliveryFormat, operation.Text, operation.Question)
+		if operation.Message != nil {
+			result.ProviderMessageID, err = a.SendAgentReplyMessageWithQuestion(ctx, locator, *operation.Message, operation.Question)
+		} else {
+			result.ProviderMessageID, err = a.SendAgentReplyWithQuestion(ctx, locator, operation.DeliveryFormat, operation.Text, operation.Question)
+		}
 	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
 	case deliverycmd.OperationTyping:
 		err = a.SendTyping(ctx, locator)
 	case deliverycmd.OperationProgress:
-		err = a.SendProgress(ctx, locator, operation.Progress)
+		err = a.SendProgressMessage(ctx, locator, operation.Progress, operation.Message)
 	case deliverycmd.OperationClearQuestionControls:
 		err = a.SettleQuestionControls(ctx, locator, operation.MessageID, operation.Handle, operation.Text)
 	case deliverycmd.OperationPhoto:
@@ -773,6 +784,16 @@ func (a *Adapter) SendMarkdownWithFormat(ctx context.Context, locator deliverycm
 	return a.messenger.SendMarkdownWithMode(ctx, chatID, text, topicID, mode)
 }
 
+// SendMessage delivers one registry-formatted Telegram message.
+func (a *Adapter) SendMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) error {
+	chatID, topicID, err := telegramTuple(locator)
+	if err != nil {
+		return err
+	}
+	_, err = a.messenger.SendAgentReplyMessageLastMessageID(ctx, chatID, message, topicID)
+	return err
+}
+
 // SendAgentReply sends final agent output for the locator using configured formatting mode.
 func (a *Adapter) SendAgentReply(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	chatID, topicID, err := telegramTuple(locator)
@@ -795,15 +816,33 @@ func (a *Adapter) SendAgentReplyWithProviderMessageIDAndFormat(ctx context.Conte
 // SendAgentReplyWithQuestion projects generic question options into Telegram
 // inline controls while preserving a text-only fallback.
 func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator deliverycmd.Locator, format deliveryfmt.DeliveryFormat, text string, question *deliverycmd.Question) (string, error) {
+	mode := effectiveTelegramMode(format, a.telegramFormattingMode())
+	message := deliveryfmt.Message{Name: deliveryfmt.NameTelegramRichMarkdown, Text: text, PlainFallback: text}
+	switch mode {
+	case modeRichHTML:
+		message.Name = deliveryfmt.NameTelegramRichHTML
+		message.Text = telegramfmt.HTML(text)
+		message.PlainFallback = telegramfmt.HTMLPlainText(text)
+	case modeNone:
+		message.Name = deliveryfmt.NamePlainText
+	case modeRichMarkdown:
+	default:
+		return "", fmt.Errorf("unsupported telegram formatting mode %q", mode)
+	}
+	return a.SendAgentReplyMessageWithQuestion(ctx, locator, message, question)
+}
+
+// SendAgentReplyMessageWithQuestion projects generic question options into
+// Telegram controls while preserving the registry-derived safe plain fallback.
+func (a *Adapter) SendAgentReplyMessageWithQuestion(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message, question *deliverycmd.Question) (string, error) {
 	chatID, topicID, err := telegramTuple(locator)
 	if err != nil {
 		return "", err
 	}
-	mode := effectiveTelegramMode(format, a.telegramFormattingMode())
 	var lastMessageID int
 	switch {
 	case question == nil:
-		lastMessageID, err = a.messenger.SendAgentReplyLastMessageIDAndMode(ctx, chatID, text, topicID, mode)
+		lastMessageID, err = a.messenger.SendAgentReplyMessageLastMessageID(ctx, chatID, message, topicID)
 	case question.Audience.Visibility == deliverycmd.QuestionVisibilityPrivate:
 		receiverUserID, parseErr := telegramref.ParseUserID(question.Audience.UserID)
 		if parseErr != nil {
@@ -814,13 +853,13 @@ func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator delive
 			return "", fmt.Errorf("build private telegram question controls: %w", keyboardErr)
 		}
 		if chatID == receiverUserID {
-			lastMessageID, err = a.messenger.SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
-				ctx, chatID, text, topicID, mode, keyboard, questionTextFallback(text, *question),
+			lastMessageID, err = a.messenger.SendAgentReplyMessageWithInlineKeyboardLastMessageID(
+				ctx, chatID, message, topicID, keyboard, questionTextFallback(message.PlainFallback, *question),
 			)
 		} else {
 			var ephemeralMessageID int
-			ephemeralMessageID, err = a.messenger.SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(
-				ctx, chatID, receiverUserID, text, topicID, mode, keyboard,
+			ephemeralMessageID, err = a.messenger.SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID(
+				ctx, chatID, receiverUserID, message, topicID, keyboard,
 			)
 			if err == nil {
 				return ephemeralProviderMessageID(receiverUserID, ephemeralMessageID), nil
@@ -830,16 +869,20 @@ func (a *Adapter) SendAgentReplyWithQuestion(ctx context.Context, locator delive
 		keyboard, keyboardErr := questionInlineKeyboard(*question)
 		if keyboardErr != nil {
 			a.logger.Warn().Err(keyboardErr).Str("question_id", question.ID).Msg("build telegram question controls failed, using text choices")
-			lastMessageID, err = a.messenger.SendAgentReplyLastMessageIDAndMode(ctx, chatID, questionTextFallback(text, *question), topicID, mode)
+			plain := deliveryfmt.Message{
+				Name:          deliveryfmt.NamePlainText,
+				Text:          questionTextFallback(message.PlainFallback, *question),
+				PlainFallback: questionTextFallback(message.PlainFallback, *question),
+			}
+			lastMessageID, err = a.messenger.SendAgentReplyMessageLastMessageID(ctx, chatID, plain, topicID)
 		} else {
-			lastMessageID, err = a.messenger.SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+			lastMessageID, err = a.messenger.SendAgentReplyMessageWithInlineKeyboardLastMessageID(
 				ctx,
 				chatID,
-				text,
+				message,
 				topicID,
-				mode,
 				keyboard,
-				questionTextFallback(text, *question),
+				questionTextFallback(message.PlainFallback, *question),
 			)
 		}
 	}
@@ -917,6 +960,16 @@ func (a *Adapter) SendTyping(ctx context.Context, locator deliverycmd.Locator) e
 
 // SendProgress renders a semantic conversational progress update for Telegram.
 func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress) error {
+	return a.SendProgressMessage(ctx, locator, progress, nil)
+}
+
+// SendProgressMessage renders progress with the resolved message format when
+// the durable delivery workflow supplied one.
+func (a *Adapter) SendProgressMessage(ctx context.Context, locator deliverycmd.Locator, progress deliverycmd.Progress, message *deliveryfmt.Message) error {
+	richMarkdown := telegramRichMarkdownEnabled(a.telegramFormattingMode())
+	if message != nil {
+		richMarkdown = message.Name == deliveryfmt.NameTelegramRichMarkdown
+	}
 	if progress.Policy.Typing {
 		if err := a.SendTyping(ctx, locator); err != nil {
 			a.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("telegram typing progress sugar failed")
@@ -948,9 +1001,9 @@ func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator,
 		a.logger.Debug().
 			Str("session_id", locator.SessionID).
 			Int("draft_id", draftID).
-			Bool("rich_markdown", telegramRichMarkdownEnabled(a.telegramFormattingMode())).
+			Bool("rich_markdown", richMarkdown).
 			Msg("telegram rendering thinking progress")
-		if telegramRichMarkdownEnabled(a.telegramFormattingMode()) {
+		if richMarkdown {
 			return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, draftID, telegramReasoningMarkdown(progress.Text), topicID, modeRichMarkdown)
 		}
 		return a.messenger.SendDraftPlain(ctx, chatID, draftID, progress.Text, topicID)
@@ -959,7 +1012,7 @@ func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator,
 		if err != nil {
 			return err
 		}
-		if telegramRichMarkdownEnabled(a.telegramFormattingMode()) {
+		if richMarkdown {
 			markdown := telegramPlanUpdateMarkdown(progress)
 			if progress.Policy.Thinking {
 				return a.messenger.SendDraftMarkdownWithMode(ctx, chatID, a.progressDraftID(locator), markdown, topicID, modeRichMarkdown)
@@ -1072,19 +1125,18 @@ func effectiveTelegramMode(format deliveryfmt.DeliveryFormat, fallback string) s
 }
 
 func normalizeTelegramMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
+	normalized := strings.ToLower(strings.TrimSpace(mode))
+	switch normalized {
+	case "":
+		return modeRichMarkdown
 	case modeRichMarkdown:
 		return modeRichMarkdown
-	case "rich_html":
-		return "rich_html"
-	case "markdownv2":
-		return "markdownv2"
-	case string(deliveryfmt.FormatHTML):
-		return string(deliveryfmt.FormatHTML)
-	case "none":
-		return "none"
+	case modeRichHTML:
+		return modeRichHTML
+	case modeNone:
+		return modeNone
 	default:
-		return modeRichMarkdown
+		return normalized
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/redaction"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -82,8 +83,28 @@ func richNoResponseError(action string, chatID int64) error {
 func richFallbackError(action string, chatID int64, description string) error {
 	return &richDeliveryError{
 		err:      telegramHTTPError(action, chatID, http.StatusBadRequest, description),
-		fallback: true,
+		fallback: richFormattingRejected(description),
 	}
+}
+
+func richFormattingRejected(description string) bool {
+	description = strings.ToLower(strings.TrimSpace(description))
+	if description == "" {
+		return false
+	}
+	if strings.Contains(description, "can't parse") ||
+		strings.Contains(description, "cant parse") ||
+		strings.Contains(description, "parse entities") ||
+		strings.Contains(description, "unsupported tag") ||
+		strings.Contains(description, "invalid html") ||
+		strings.Contains(description, "invalid markdown") {
+		return true
+	}
+	return strings.Contains(description, "rich message") &&
+		(strings.Contains(description, "invalid") ||
+			strings.Contains(description, "malformed") ||
+			strings.Contains(description, "rejected") ||
+			strings.Contains(description, "unsupported"))
 }
 
 func richHTTPError(action string, chatID int64, statusCode int, description string) error {
@@ -120,17 +141,6 @@ func telegramHTTPError(action string, chatID int64, statusCode int, description 
 func retryableTelegramHTTPStatus(statusCode int) bool {
 	return statusCode == 0 || statusCode == http.StatusRequestTimeout || statusCode == http.StatusTooEarly ||
 		statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
-}
-
-func telegramParseError(resp *client.SendMessageResponse) bool {
-	if resp == nil || resp.JSON400 == nil {
-		return false
-	}
-	description := strings.ToLower(strings.TrimSpace(resp.JSON400.Description))
-	return description != "" &&
-		(strings.Contains(description, "can't parse entities") ||
-			strings.Contains(description, "cant parse entities") ||
-			(strings.Contains(description, "parse entities") && strings.Contains(description, "entity")))
 }
 
 // AgentReplyResult carries provider delivery metadata for a final agent reply.
@@ -170,9 +180,6 @@ func (m *Messenger) TelegramFormattingMode() string {
 
 // SendDraftPlain sends a plain-text draft (no parse_mode).
 func (m *Messenger) SendDraftPlain(ctx context.Context, chatID int64, draftID int, text string, topicID int) error {
-	if m.richMessagesEnabled() {
-		return m.sendRichDraftWithFallback(ctx, chatID, draftID, richPlain(text), topicID, text)
-	}
 	return m.sendDraftPlainLegacy(ctx, chatID, draftID, text, topicID)
 }
 
@@ -224,20 +231,16 @@ func (m *Messenger) SendDraftMarkdownWithMode(ctx context.Context, chatID int64,
 	case telegramfmt.ModeRichMarkdown:
 		return m.sendRichDraftWithFallback(ctx, chatID, draftID, richMarkdown(text), topicID, text)
 	case telegramfmt.ModeRichHTML:
-		return m.sendRichDraftWithFallback(ctx, chatID, draftID, richHTML(telegramfmt.HTML(text)), topicID, text)
-	default:
+		return m.sendRichDraftWithFallback(ctx, chatID, draftID, richHTML(telegramfmt.HTML(text)), topicID, telegramfmt.HTMLPlainText(text))
+	case telegramfmt.ModeNone:
 		return m.sendDraftPlainLegacy(ctx, chatID, draftID, text, topicID)
+	default:
+		return fmt.Errorf("unsupported telegram formatting mode %q", mode)
 	}
 }
 
 // SendPlain sends a plain-text message.
 func (m *Messenger) SendPlain(ctx context.Context, chatID int64, text string, topicID int) error {
-	if m.richMessagesEnabled() {
-		_, err := m.sendRichMessageWithFallback(ctx, chatID, richPlain(text), topicID, func(ctx context.Context) (int, error) {
-			return m.sendPlainLegacy(ctx, chatID, text, topicID)
-		})
-		return err
-	}
 	_, err := m.sendPlainLegacy(ctx, chatID, text, topicID)
 	return err
 }
@@ -290,34 +293,30 @@ func (m *Messenger) sendPlainLegacy(ctx context.Context, chatID int64, text stri
 	return msg.MessageId, nil
 }
 
-// SendMarkdown converts standard Markdown to Telegram MarkdownV2 and sends.
+// SendMarkdown sends Markdown using the configured current Telegram mode.
 func (m *Messenger) SendMarkdown(ctx context.Context, chatID int64, text string, topicID int) error {
 	return m.SendMarkdownWithMode(ctx, chatID, text, topicID, m.TelegramFormattingMode())
 }
 
 // SendMarkdownWithMode sends Markdown using the supplied formatting mode without mutating messenger state.
 func (m *Messenger) SendMarkdownWithMode(ctx context.Context, chatID int64, text string, topicID int, mode string) error {
-	if telegramRichMessagesEnabled(mode) {
+	switch telegramfmt.NormalizeMode(mode) {
+	case telegramfmt.ModeRichMarkdown:
 		_, err := m.sendRichMessageWithFallback(ctx, chatID, richMarkdown(text), topicID, func(ctx context.Context) (int, error) {
-			return m.sendMarkdownLegacy(ctx, chatID, text, topicID)
+			return m.sendPlainLegacy(ctx, chatID, text, topicID)
 		})
 		return err
+	case telegramfmt.ModeRichHTML:
+		_, err := m.sendRichMessageWithFallback(ctx, chatID, richHTML(telegramfmt.HTML(text)), topicID, func(ctx context.Context) (int, error) {
+			return m.sendPlainLegacy(ctx, chatID, telegramfmt.HTMLPlainText(text), topicID)
+		})
+		return err
+	case telegramfmt.ModeNone:
+		_, err := m.sendPlainLegacy(ctx, chatID, text, topicID)
+		return err
+	default:
+		return fmt.Errorf("unsupported telegram formatting mode %q", mode)
 	}
-	_, err := m.sendMarkdown(ctx, chatID, text, topicID)
-	return err
-}
-
-func (m *Messenger) sendMarkdown(ctx context.Context, chatID int64, text string, topicID int) (int, error) {
-	return m.sendMarkdownLegacy(ctx, chatID, text, topicID)
-}
-
-func (m *Messenger) sendMarkdownLegacy(ctx context.Context, chatID int64, text string, topicID int) (int, error) {
-	payload, err := telegramfmt.MarkdownV2(text)
-	if err != nil {
-		m.logger.Warn().Err(err).Msg("failed to convert markdown to telegram format, falling back to escaped literal")
-		payload = telegramfmt.EscapeMarkdownV2(text)
-	}
-	return m.sendMessageWithMode(ctx, chatID, payload, topicID, "MarkdownV2", "send message with MarkdownV2")
 }
 
 // SendAgentReply sends final model output with balda.telegram.formatting_mode.
@@ -333,54 +332,71 @@ func (m *Messenger) SendAgentReplyWithResult(ctx context.Context, chatID int64, 
 
 // SendAgentReplyWithResultAndMode sends final model output using the supplied formatting mode without mutating messenger state.
 func (m *Messenger) SendAgentReplyWithResultAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string) (AgentReplyResult, error) {
-	var result AgentReplyResult
-	switch telegramfmt.NormalizeMode(mode) {
-	case telegramfmt.ModeRichHTML:
-		messageID, err := m.sendRichMessageWithFallback(ctx, chatID, richHTML(telegramfmt.HTML(text)), topicID, func(ctx context.Context) (int, error) {
-			return m.sendMessageWithMode(ctx, chatID, telegramfmt.HTML(text), topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeHTML), "send message with HTML")
+	message, err := telegramMessageForMode(text, mode)
+	if err != nil {
+		return AgentReplyResult{}, err
+	}
+	return m.SendAgentReplyMessageWithResult(ctx, chatID, message, topicID)
+}
+
+// SendAgentReplyMessageWithResult sends one registry-formatted Telegram message.
+func (m *Messenger) SendAgentReplyMessageWithResult(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int) (AgentReplyResult, error) {
+	switch message.Name {
+	case deliveryfmt.NameTelegramRichHTML:
+		messageID, err := m.sendRichMessageWithFallback(ctx, chatID, richHTML(message.Text), topicID, func(ctx context.Context) (int, error) {
+			return m.sendPlainLegacy(ctx, chatID, message.PlainFallback, topicID)
 		})
 		if err != nil {
 			return AgentReplyResult{}, err
 		}
 		return AgentReplyResult{FirstMessageID: messageID, LastMessageID: messageID, MessageCount: 1}, nil
-	case telegramfmt.ModeRichMarkdown:
-		messageID, err := m.sendRichMessageWithFallback(ctx, chatID, richMarkdown(text), topicID, func(ctx context.Context) (int, error) {
-			return m.sendPlainLegacy(ctx, chatID, text, topicID)
+	case deliveryfmt.NameTelegramRichMarkdown:
+		messageID, err := m.sendRichMessageWithFallback(ctx, chatID, richMarkdown(message.Text), topicID, func(ctx context.Context) (int, error) {
+			return m.sendPlainLegacy(ctx, chatID, message.PlainFallback, topicID)
 		})
 		if err != nil {
 			return AgentReplyResult{}, err
 		}
 		return AgentReplyResult{FirstMessageID: messageID, LastMessageID: messageID, MessageCount: 1}, nil
-	case telegramfmt.ModeHTML:
-		messageID, err := m.sendMessageWithMode(ctx, chatID, telegramfmt.HTML(text), topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeHTML), "send message with HTML")
-		if err != nil {
-			return AgentReplyResult{}, err
-		}
-		return AgentReplyResult{FirstMessageID: messageID, LastMessageID: messageID, MessageCount: 1}, nil
-	case telegramfmt.ModeNone:
-		messageID, err := m.sendMessageWithMode(ctx, chatID, text, topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeNone), "send message without parse_mode")
+	case deliveryfmt.NamePlainText:
+		messageID, err := m.sendPlainLegacy(ctx, chatID, message.Text, topicID)
 		if err != nil {
 			return AgentReplyResult{}, err
 		}
 		return AgentReplyResult{FirstMessageID: messageID, LastMessageID: messageID, MessageCount: 1}, nil
 	default:
-		for _, chunk := range telegramfmt.SplitMarkdownMessageChunks(text) {
-			messageID, err := m.sendMarkdown(ctx, chatID, chunk, topicID)
-			if err != nil {
-				return AgentReplyResult{}, err
-			}
-			if result.MessageCount == 0 {
-				result.FirstMessageID = messageID
-			}
-			result.LastMessageID = messageID
-			result.MessageCount++
-		}
-		return result, nil
+		return AgentReplyResult{}, fmt.Errorf("unsupported telegram message format %q", message.Name)
+	}
+}
+
+func telegramMessageForMode(text, mode string) (deliveryfmt.Message, error) {
+	switch telegramfmt.NormalizeMode(mode) {
+	case telegramfmt.ModeRichMarkdown:
+		return deliveryfmt.Message{Name: deliveryfmt.NameTelegramRichMarkdown, Text: text, PlainFallback: text}, nil
+	case telegramfmt.ModeRichHTML:
+		return deliveryfmt.Message{
+			Name:          deliveryfmt.NameTelegramRichHTML,
+			Text:          telegramfmt.HTML(text),
+			PlainFallback: telegramfmt.HTMLPlainText(text),
+		}, nil
+	case telegramfmt.ModeNone:
+		return deliveryfmt.Message{Name: deliveryfmt.NamePlainText, Text: text, PlainFallback: text}, nil
+	default:
+		return deliveryfmt.Message{}, fmt.Errorf("unsupported telegram formatting mode %q", mode)
 	}
 }
 
 func (m *Messenger) SendAgentReplyLastMessageIDAndMode(ctx context.Context, chatID int64, text string, topicID int, mode string) (int, error) {
 	result, err := m.SendAgentReplyWithResultAndMode(ctx, chatID, text, topicID, mode)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastMessageID, nil
+}
+
+// SendAgentReplyMessageLastMessageID sends one registry-formatted message.
+func (m *Messenger) SendAgentReplyMessageLastMessageID(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int) (int, error) {
+	result, err := m.SendAgentReplyMessageWithResult(ctx, chatID, message, topicID)
 	if err != nil {
 		return 0, err
 	}
@@ -583,7 +599,25 @@ func (m *Messenger) SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
 	keyboard client.InlineKeyboardMarkup,
 	fallbackText string,
 ) (int, error) {
-	messageID, err := m.sendAgentReplyWithInlineKeyboard(ctx, chatID, text, topicID, mode, keyboard)
+	message, err := telegramMessageForMode(text, mode)
+	if err != nil {
+		return 0, err
+	}
+	return m.SendAgentReplyMessageWithInlineKeyboardLastMessageID(ctx, chatID, message, topicID, keyboard, fallbackText)
+}
+
+// SendAgentReplyMessageWithInlineKeyboardLastMessageID sends a typed message
+// with controls and performs one parse-mode-free fallback only when Telegram
+// explicitly rejects rich formatting.
+func (m *Messenger) SendAgentReplyMessageWithInlineKeyboardLastMessageID(
+	ctx context.Context,
+	chatID int64,
+	message deliveryfmt.Message,
+	topicID int,
+	keyboard client.InlineKeyboardMarkup,
+	fallbackText string,
+) (int, error) {
+	messageID, err := m.sendAgentReplyMessageWithInlineKeyboard(ctx, chatID, message, topicID, keyboard)
 	if err == nil {
 		return messageID, nil
 	}
@@ -591,11 +625,11 @@ func (m *Messenger) SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
 		return 0, err
 	}
 	m.logger.Warn().Err(err).Int64("chat_id", chatID).Msg("send telegram question controls failed, retrying with text choices")
-	result, fallbackErr := m.SendAgentReplyWithResultAndMode(ctx, chatID, fallbackText, topicID, mode)
+	messageID, fallbackErr := m.sendPlainLegacy(ctx, chatID, fallbackText, topicID)
 	if fallbackErr != nil {
 		return 0, fmt.Errorf("send telegram question controls: %v; text fallback: %w", err, fallbackErr)
 	}
-	return result.LastMessageID, nil
+	return messageID, nil
 }
 
 // SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode sends a
@@ -609,41 +643,43 @@ func (m *Messenger) SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMod
 	mode string,
 	keyboard client.InlineKeyboardMarkup,
 ) (int, error) {
+	message, err := telegramMessageForMode(text, mode)
+	if err != nil {
+		return 0, err
+	}
+	return m.SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID(ctx, chatID, receiverUserID, message, topicID, keyboard)
+}
+
+// SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID sends the
+// provider's ephemeral question route as plain text because that route does
+// not support Telegram rich messages.
+func (m *Messenger) SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID(
+	ctx context.Context,
+	chatID, receiverUserID int64,
+	message deliveryfmt.Message,
+	topicID int,
+	keyboard client.InlineKeyboardMarkup,
+) (int, error) {
 	if receiverUserID <= 0 {
 		return 0, fmt.Errorf("ephemeral telegram receiver is required")
 	}
-	switch telegramfmt.NormalizeMode(mode) {
-	case telegramfmt.ModeRichHTML, telegramfmt.ModeHTML:
-		return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, telegramfmt.HTML(text), topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeHTML), keyboard)
-	case telegramfmt.ModeNone:
-		return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, text, topicID, "", keyboard)
-	case telegramfmt.ModeRichMarkdown:
-		fallthrough
-	default:
-		payload, err := telegramfmt.MarkdownV2(text)
-		if err != nil {
-			payload = telegramfmt.EscapeMarkdownV2(text)
-		}
-		return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, payload, topicID, "MarkdownV2", keyboard)
+	text := message.PlainFallback
+	if message.Name == deliveryfmt.NamePlainText {
+		text = message.Text
 	}
+	return m.sendEphemeralMessageWithInlineKeyboard(ctx, chatID, receiverUserID, text, topicID, "", keyboard)
 }
 
-func (m *Messenger) sendAgentReplyWithInlineKeyboard(ctx context.Context, chatID int64, text string, topicID int, mode string, keyboard client.InlineKeyboardMarkup) (int, error) {
-	switch telegramfmt.NormalizeMode(mode) {
-	case telegramfmt.ModeRichHTML:
-		return m.sendRichMessageWithInlineKeyboard(ctx, chatID, richHTML(telegramfmt.HTML(text)), topicID, keyboard)
-	case telegramfmt.ModeRichMarkdown:
-		return m.sendRichMessageWithInlineKeyboard(ctx, chatID, richMarkdown(text), topicID, keyboard)
-	case telegramfmt.ModeHTML:
-		return m.sendMessageWithInlineKeyboard(ctx, chatID, telegramfmt.HTML(text), topicID, telegramfmt.TelegramParseMode(telegramfmt.ModeHTML), keyboard)
-	case telegramfmt.ModeNone:
-		return m.sendMessageWithInlineKeyboard(ctx, chatID, text, topicID, "", keyboard)
+func (m *Messenger) sendAgentReplyMessageWithInlineKeyboard(ctx context.Context, chatID int64, message deliveryfmt.Message, topicID int, keyboard client.InlineKeyboardMarkup) (int, error) {
+	switch message.Name {
+	case deliveryfmt.NameTelegramRichHTML:
+		return m.sendRichMessageWithInlineKeyboard(ctx, chatID, richHTML(message.Text), topicID, keyboard)
+	case deliveryfmt.NameTelegramRichMarkdown:
+		return m.sendRichMessageWithInlineKeyboard(ctx, chatID, richMarkdown(message.Text), topicID, keyboard)
+	case deliveryfmt.NamePlainText:
+		return m.sendMessageWithInlineKeyboard(ctx, chatID, message.Text, topicID, "", keyboard)
 	default:
-		payload, err := telegramfmt.MarkdownV2(text)
-		if err != nil {
-			payload = telegramfmt.EscapeMarkdownV2(text)
-		}
-		return m.sendMessageWithInlineKeyboard(ctx, chatID, payload, topicID, "MarkdownV2", keyboard)
+		return 0, fmt.Errorf("unsupported telegram message format %q", message.Name)
 	}
 }
 
@@ -876,27 +912,6 @@ func (m *Messenger) AnswerCallbackQuery(ctx context.Context, callbackQueryID, te
 	return nil
 }
 
-func (m *Messenger) richMessagesEnabled() bool {
-	return telegramRichMessagesEnabled(m.TelegramFormattingMode())
-}
-
-func telegramRichMessagesEnabled(mode string) bool {
-	switch telegramfmt.NormalizeMode(mode) {
-	case telegramfmt.ModeRichMarkdown, telegramfmt.ModeRichHTML:
-		return true
-	default:
-		return false
-	}
-}
-
-func richPlain(text string) client.InputRichMessage {
-	skipEntityDetection := true
-	return client.InputRichMessage{
-		Html:                stringPtr(telegramfmt.HTML(text)),
-		SkipEntityDetection: &skipEntityDetection,
-	}
-}
-
 func richMarkdown(text string) client.InputRichMessage {
 	return client.InputRichMessage{Markdown: stringPtr(text)}
 }
@@ -1041,53 +1056,6 @@ func shouldFallbackRichSend(ctx context.Context, err error) bool {
 		return false
 	}
 	return deliveryErr.fallback
-}
-
-func (m *Messenger) sendMessageWithMode(ctx context.Context, chatID int64, text string, topicID int, mode, logMsg string) (int, error) {
-	m.logger.Debug().
-		Int64("chat_id", chatID).
-		Str("mode", mode).
-		Int("telegram_payload_bytes", len(text)).
-		Msg("sending telegram message")
-	req := client.SendMessageJSONRequestBody{
-		ChatId: chatID,
-		Text:   text,
-	}
-	if mode != "" {
-		req.ParseMode = &mode
-	}
-	if topicID != 0 {
-		req.MessageThreadId = &topicID
-	}
-	sendCtx, cancel := telegramSendContext(ctx)
-	defer cancel()
-
-	resp, err := m.client.SendMessageWithResponse(sendCtx, req)
-	if err != nil {
-		return 0, telegramTransportError(logMsg, chatID, err)
-	}
-	retryWithoutParseMode := strings.TrimSpace(mode) != "" && telegramParseError(resp)
-	if retryWithoutParseMode {
-		m.logger.Warn().Int64("chat_id", chatID).Str("retry_reason", "telegram parse error").Msg(logMsg + " failed, retrying without parse_mode")
-		req.ParseMode = nil
-		resp, err = m.client.SendMessageWithResponse(sendCtx, req)
-		if err != nil {
-			return 0, telegramTransportError(logMsg, chatID, err)
-		}
-	}
-	if resp == nil {
-		return 0, telegramNoResponseError(logMsg, chatID)
-	}
-	if resp.JSON400 != nil {
-		return 0, telegramHTTPError(logMsg, chatID, http.StatusBadRequest, resp.JSON400.Description)
-	}
-	if resp.JSON401 != nil {
-		return 0, telegramHTTPError(logMsg, chatID, http.StatusUnauthorized, resp.JSON401.Description)
-	}
-	if resp.JSON200 == nil {
-		return 0, telegramHTTPError(logMsg, chatID, resp.StatusCode(), "")
-	}
-	return resp.JSON200.Result.MessageId, nil
 }
 
 // SendChatAction sends a chat action (e.g., "typing").

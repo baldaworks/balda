@@ -208,8 +208,8 @@ func TestTaskDeliveryActorSendsDraftWithoutPersistingDelivery(t *testing.T) {
 	if err := actor.Handle(ctx, env); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if got := len(tgClient.richDrafts); got != 1 {
-		t.Fatalf("sent rich telegram drafts = %d, want 1", got)
+	if got := len(tgClient.drafts); got != 1 {
+		t.Fatalf("sent plain telegram drafts = %d, want 1", got)
 	}
 	payload := DeliveryPayload{JobID: "task-1", Locator: locator, Mode: DeliveryModeDraftPlain, Text: "draft text", DraftID: 7}
 	record, created, err := tasks.ReserveDelivery(ctx, deliveryRecordForTest(env, payload, baldastate.DeliveryStatusPending))

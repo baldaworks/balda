@@ -40,17 +40,31 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		_, err = a.send(ctx, locator, operation.Text, false)
 	case deliverycmd.OperationMarkdown:
-		if deliveryfmt.NormalizeDeliveryFormat(operation.DeliveryFormat) == deliveryfmt.DeliveryFormatNone {
+		switch {
+		case operation.Message != nil:
+			_, err = a.sendMessage(ctx, locator, *operation.Message)
+		case deliveryfmt.NormalizeDeliveryFormat(operation.DeliveryFormat) == deliveryfmt.DeliveryFormatNone:
 			_, err = a.send(ctx, locator, operation.Text, false)
-		} else {
+		default:
 			_, err = a.send(ctx, locator, operation.Text, true)
 		}
 	case deliverycmd.OperationAgentReply:
 		text := operation.Text
+		mrkdwn := true
+		if operation.Message != nil {
+			text = operation.Message.Text
+			switch operation.Message.Name {
+			case deliveryfmt.NameSlackMrkdwn:
+			case deliveryfmt.NamePlainText:
+				mrkdwn = false
+			default:
+				return deliverycmd.Result{}, fmt.Errorf("unsupported slack agent message format %q", operation.Message.Name)
+			}
+		}
 		if a.suggestedPrompts {
 			text = appendSuggestedPrompts(text)
 		}
-		result.ProviderMessageID, err = a.send(ctx, locator, text, true)
+		result.ProviderMessageID, err = a.send(ctx, locator, text, mrkdwn)
 	case deliverycmd.OperationTyping:
 		err = a.sendThinking(ctx, locator)
 	case deliverycmd.OperationProgress:
@@ -61,6 +75,17 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		err = fmt.Errorf("unsupported slack agent delivery operation %q", operation.Kind)
 	}
 	return result, err
+}
+
+func (a *Adapter) sendMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) (string, error) {
+	switch message.Name {
+	case deliveryfmt.NameSlackMrkdwn:
+		return a.send(ctx, locator, message.Text, true)
+	case deliveryfmt.NamePlainText:
+		return a.send(ctx, locator, message.Text, false)
+	default:
+		return "", fmt.Errorf("unsupported slack agent message format %q", message.Name)
+	}
 }
 
 func (a *Adapter) send(ctx context.Context, locator deliverycmd.Locator, text string, mrkdwn bool) (string, error) {

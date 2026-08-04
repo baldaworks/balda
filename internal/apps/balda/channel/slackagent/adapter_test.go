@@ -8,6 +8,7 @@ import (
 
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
 
@@ -30,8 +31,8 @@ func TestAdapterDeliverAgentReplyReturnsProviderMessageID(t *testing.T) {
 	locator := NewThreadLocator("T123", "C456", "thread-789")
 
 	result, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{
-		Kind: deliverycmd.OperationAgentReply,
-		Text: "hello",
+		Kind:    deliverycmd.OperationAgentReply,
+		Message: &deliveryfmt.Message{Name: deliveryfmt.NameSlackMrkdwn, Text: "hello"},
 	})
 	if err != nil {
 		t.Fatalf("Deliver() error = %v", err)

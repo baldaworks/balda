@@ -1,50 +1,24 @@
 # Telegram Message Formatting
 
-Balda sends final assistant responses to Telegram with the configured
-`balda.telegram.formatting_mode`.
+Balda sends formatted assistant output according to
+`balda.telegram.formatting_mode`. Telegram supports exactly three values:
 
-This page is Telegram-specific. Other transports use Balda's shared delivery
-formats and map `markdown` to their own channel-native dialects, such as Slack
-`mrkdwn` and Zulip Markdown.
+- `rich_markdown` (default): natural Markdown sent through Telegram rich messages.
+- `rich_html`: sanitized Telegram Rich HTML sent through Telegram rich messages.
+- `none`: literal plain text sent without `parse_mode`.
 
-Allowed values:
+An unsupported value fails configuration validation. Choose `rich_markdown` or
+`rich_html` when migrating an older formatted configuration, or `none` when
+presentation markup must remain literal.
 
-- `rich_markdown` (default): agent output is Markdown or plain text. Balda sends it with Telegram rich messages.
-- `rich_html`: agent output is rich-message HTML. Balda sends it with Telegram rich messages.
-- `markdownv2`: legacy mode where agent output is normal Markdown or plain text. Balda converts it to Telegram MarkdownV2 and sends with `parse_mode=MarkdownV2`.
-- `html`: legacy mode where agent output is Telegram HTML. Balda escapes unsafe raw text while preserving supported Telegram HTML tags and sends with `parse_mode=HTML`.
-- `none`: legacy mode where Balda sends raw text without `parse_mode`.
+This setting is Telegram-specific. Slack uses its native `mrkdwn` route and
+Zulip uses its native Markdown route.
 
-Balda follows Telegram Bot API formatting rules:
-<https://core.telegram.org/bots/api#formatting-options>
+## Rich Markdown
 
-## Rich Markdown Mode
-
-Use `rich_markdown` when agents should write natural Markdown. This is the default and recommended mode.
-
-Supported input:
-
-- plain text and paragraphs
-- headings
-- bold, italic, strike, and inline code
-- fenced code blocks
-- links
-- blockquotes
-- unordered, nested, and ordered lists
-
-Balda behavior:
-
-- Sends Markdown/plain text with Telegram rich messages.
-- Preserves fenced code block content.
-- Preserves standalone `---` separator lines for Telegram rich-message handling.
-- Retries as plain text with no `parse_mode` if rich-message delivery fails.
-
-Not supported or not recommended:
-
-- Do not ask agents to write raw Telegram MarkdownV2 syntax.
-- Do not pre-escape Telegram MarkdownV2 reserved characters in agent instructions.
-- Do not rely on exact rendered bullet glyphs; Balda may normalize list markers for Telegram.
-- Do not rely on raw Telegram entity syntax in Markdown mode.
+Use `rich_markdown` when agents should write natural Markdown. Balda preserves
+the model output and sends it as one Telegram rich-message payload, including
+standalone `---` separators and fenced code blocks.
 
 Example model output:
 
@@ -59,53 +33,35 @@ go test ./...
 ```
 ~~~
 
-Separator example:
+If Telegram explicitly rejects the rich formatting, Balda makes at most one
+parse-mode-free plain send. Ambiguous transport errors, timeouts, ordinary
+request errors, authentication errors, rate limits, and provider failures do
+not trigger a presentation fallback.
 
-~~~markdown
-First section.
+## Rich HTML
 
----
+Use `rich_html` when agents should write Telegram Rich HTML directly. Before
+delivery, Balda preserves supported tags, drops unsupported attributes from
+supported tags, and escapes unsafe raw markup.
 
-Second section.
-~~~
+Supported tags and attributes include:
 
-## Rich HTML Mode
-
-Use `rich_html` when agents should write rich-message HTML directly. Balda sanitizes supported Telegram HTML before sending it as a Telegram rich message.
-
-Supported tags and attributes:
-
-- `<b>`, `<strong>`
-- `<i>`, `<em>`
-- `<u>`, `<ins>`
-- `<s>`, `<strike>`, `<del>`
-- `<tg-spoiler>`
-- `<span class="tg-spoiler">`
+- `<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<ins>`, `<s>`, `<strike>`, `<del>`
+- `<tg-spoiler>` and `<span class="tg-spoiler">`
 - `<a href="...">`
 - `<code>`
-- `<pre>`
 - `<pre><code class="language-...">...</code></pre>`
 - `<blockquote>` and `<blockquote expandable>`
 - `<tg-emoji emoji-id="...">`
 - `<tg-time unix="..." format="...">`; `format` is optional
 
-Balda behavior:
+Balda preserves `&lt;`, `&gt;`, `&amp;`, `&quot;`, decimal numeric entities,
+and hex numeric entities. Arbitrary HTML such as `<div>` and `<script>`, event
+handlers, styles, and `<tg-time datetime="...">` are not supported.
 
-- Preserves supported Telegram HTML tags.
-- Preserves only supported attributes for supported tags.
-- Drops unsupported attributes on supported tags.
-- Escapes unsupported tags as visible text.
-- Escapes raw `<`, `>`, and `&` in text.
-- Preserves Telegram-supported entities: `&lt;`, `&gt;`, `&amp;`, `&quot;`, decimal numeric entities, and hex numeric entities.
-- Retries with legacy HTML delivery if rich-message delivery fails.
-
-Not supported:
-
-- Arbitrary HTML tags such as `<div>`, `<script>`, tables, images, and styles.
-- Event handlers, CSS classes other than supported Telegram classes, inline styles, and custom attributes.
-- Standalone `<code class="language-...">`; language classes are preserved only inside `<pre>`.
-- `<tg-time datetime="...">`; use `unix` and optional `format`.
-- Custom named HTML entities such as `&copy;`; use numeric entities when needed.
+For an explicit rich-format rejection, Balda derives one deterministic plain
+fallback: tags are removed, entities are decoded, and no `parse_mode` is sent.
+The fallback therefore cannot expose active or literal unsafe HTML markup.
 
 Example model output:
 
@@ -116,24 +72,7 @@ Run <code>balda start</code>.
 <pre><code class="language-bash">go test ./...</code></pre>
 ```
 
-## Legacy MarkdownV2 Mode
+## Plain Text
 
-Use `markdownv2` only when you need the older Telegram `parse_mode=MarkdownV2` path.
-Balda converts Markdown/plain text to MarkdownV2, escapes reserved characters, normalizes list indentation, and trims converter-added leading/trailing newlines.
-Standalone `---` separator lines outside fenced code blocks split final agent replies into multiple Telegram messages in this legacy mode.
-
-## Legacy HTML Mode
-
-Use `html` only when you need the older Telegram `parse_mode=HTML` path. Balda applies the same HTML sanitizer as rich HTML mode before sending.
-
-## None Mode
-
-Use `none` when the response must be delivered exactly as raw text.
-
-Balda behavior:
-
-- Omits Telegram `parse_mode`.
-- Does not escape Markdown or HTML.
-- Does not preserve formatting semantics.
-
-This mode is useful for debugging malformed payloads or sending literal markup.
+Use `none` when the response must be delivered as literal text. Balda does not
+interpret or escape Markdown or HTML and omits Telegram `parse_mode`.

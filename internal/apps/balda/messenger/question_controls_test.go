@@ -114,7 +114,7 @@ func TestSendAgentReplyWithInlineKeyboardFallsBackToTextChoices(t *testing.T) {
 	tgClient := &inlineKeyboardClient{
 		richBodyResponse: &client.SendRichMessageResponse{
 			HTTPResponse: &http.Response{StatusCode: http.StatusBadRequest, Status: "400 Bad Request"},
-			JSON400:      &client.ErrorResponse{Description: "reply markup rejected"},
+			JSON400:      &client.ErrorResponse{Description: "Bad Request: can't parse rich message entities"},
 		},
 	}
 	messenger := NewMessenger(tgClient, zerolog.Nop())
@@ -126,12 +126,11 @@ func TestSendAgentReplyWithInlineKeyboardFallsBackToTextChoices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendAgentReplyWithInlineKeyboardLastMessageIDAndMode() error = %v", err)
 	}
-	if messageID != 43 || len(tgClient.richFallback) != 1 {
-		t.Fatalf("message id = %d, fallback requests = %d", messageID, len(tgClient.richFallback))
+	if messageID != 44 || len(tgClient.messages) != 1 {
+		t.Fatalf("message id = %d, plain fallback requests = %d", messageID, len(tgClient.messages))
 	}
-	markdown := tgClient.richFallback[0].RichMessage.Markdown
-	if markdown == nil || *markdown != "Choose\n\n1. Allow" {
-		t.Fatalf("fallback markdown = %v", markdown)
+	if got := tgClient.messages[0]; got.Text != "Choose\n\n1. Allow" || got.ParseMode != nil {
+		t.Fatalf("plain fallback = %+v", got)
 	}
 }
 

@@ -33,9 +33,17 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
 	case deliverycmd.OperationMarkdown:
-		err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		if operation.Message != nil {
+			err = a.sendMessage(ctx, locator, *operation.Message)
+		} else {
+			err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		}
 	case deliverycmd.OperationAgentReply:
-		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		if operation.Message != nil {
+			result.ProviderMessageID, err = a.sendAgentMessage(ctx, locator, *operation.Message)
+		} else {
+			result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		}
 	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
 	case deliverycmd.OperationTyping:
@@ -46,6 +54,22 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		err = fmt.Errorf("unsupported slack delivery operation %q", operation.Kind)
 	}
 	return result, err
+}
+
+func (a *Adapter) sendMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) error {
+	_, err := a.sendAgentMessage(ctx, locator, message)
+	return err
+}
+
+func (a *Adapter) sendAgentMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) (string, error) {
+	switch message.Name {
+	case deliveryfmt.NameSlackMrkdwn:
+		return a.send(ctx, locator, message.Text, true)
+	case deliveryfmt.NamePlainText:
+		return a.send(ctx, locator, message.Text, false)
+	default:
+		return "", fmt.Errorf("unsupported slack message format %q", message.Name)
+	}
 }
 
 // SendPlain sends a plain text Slack chat message.

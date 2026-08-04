@@ -38,3 +38,83 @@ func TestMessageFormatRegistryProvidesCurrentPromptRoutes(t *testing.T) {
 		})
 	}
 }
+
+func TestMessageFormatRegistryFormatsCurrentRoutes(t *testing.T) {
+	t.Parallel()
+
+	registry, err := newMessageFormatRegistry()
+	if err != nil {
+		t.Fatalf("newMessageFormatRegistry() error = %v", err)
+	}
+	tests := []struct {
+		name            string
+		transport       string
+		deliveryFormat  deliveryfmt.DeliveryFormat
+		input           string
+		wantText        string
+		wantPlain       string
+		wantMessageName deliveryfmt.Name
+	}{
+		{
+			name:            "telegram rich markdown",
+			transport:       deliveryfmt.TransportTelegram,
+			deliveryFormat:  deliveryfmt.DeliveryFormatRichMarkdown,
+			input:           "**Build:** passed",
+			wantText:        "**Build:** passed",
+			wantPlain:       "**Build:** passed",
+			wantMessageName: deliveryfmt.NameTelegramRichMarkdown,
+		},
+		{
+			name:            "telegram rich html",
+			transport:       deliveryfmt.TransportTelegram,
+			deliveryFormat:  deliveryfmt.DeliveryFormatRichHTML,
+			input:           `<b>Build</b> <script>alert(1)</script> &amp; done`,
+			wantText:        `<b>Build</b> &lt;script&gt;alert(1)&lt;/script&gt; &amp; done`,
+			wantPlain:       "Build alert(1) & done",
+			wantMessageName: deliveryfmt.NameTelegramRichHTML,
+		},
+		{
+			name:            "telegram plain",
+			transport:       deliveryfmt.TransportTelegram,
+			deliveryFormat:  deliveryfmt.DeliveryFormatNone,
+			input:           "<b>literal</b>",
+			wantText:        "<b>literal</b>",
+			wantPlain:       "<b>literal</b>",
+			wantMessageName: deliveryfmt.NamePlainText,
+		},
+		{
+			name:            "slack native",
+			transport:       deliveryfmt.TransportSlack,
+			deliveryFormat:  deliveryfmt.DeliveryFormatMrkdwn,
+			input:           "*Build:* passed",
+			wantText:        "*Build:* passed",
+			wantPlain:       "*Build:* passed",
+			wantMessageName: deliveryfmt.NameSlackMrkdwn,
+		},
+		{
+			name:            "zulip native",
+			transport:       deliveryfmt.TransportZulip,
+			deliveryFormat:  deliveryfmt.DeliveryFormatMarkdown,
+			input:           "**Build:** passed",
+			wantText:        "**Build:** passed",
+			wantPlain:       "Build: passed",
+			wantMessageName: deliveryfmt.NameZulipMarkdown,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, formatter, err := registry.Resolve(test.transport, test.deliveryFormat)
+			if err != nil {
+				t.Fatalf("Resolve() error = %v", err)
+			}
+			message, err := formatter.Format(test.input)
+			if err != nil {
+				t.Fatalf("Format() error = %v", err)
+			}
+			if message.Name != test.wantMessageName || message.Text != test.wantText || message.PlainFallback != test.wantPlain {
+				t.Fatalf("Format() = %+v, want name=%q text=%q plain=%q", message, test.wantMessageName, test.wantText, test.wantPlain)
+			}
+		})
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
@@ -42,16 +43,16 @@ func TestAdapterSendsThreadReply(t *testing.T) {
 	}
 }
 
-func TestAdapterDeliveryFormatMapsRichAndPlain(t *testing.T) {
+func TestAdapterDeliversTypedRichAndPlainMessages(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name       string
-		format     deliveryfmt.DeliveryFormat
+		message    deliveryfmt.Message
 		wantMrkdwn bool
 	}{
-		{name: "mrkdwn enables rich text", format: deliveryfmt.DeliveryFormatMrkdwn, wantMrkdwn: true},
-		{name: "none disables rich text", format: deliveryfmt.DeliveryFormatNone, wantMrkdwn: false},
+		{name: "mrkdwn enables rich text", message: deliveryfmt.Message{Name: deliveryfmt.NameSlackMrkdwn, Text: "hello"}, wantMrkdwn: true},
+		{name: "plain disables rich text", message: deliveryfmt.Message{Name: deliveryfmt.NamePlainText, Text: "hello"}, wantMrkdwn: false},
 	}
 
 	for _, tt := range tests {
@@ -68,8 +69,8 @@ func TestAdapterDeliveryFormatMapsRichAndPlain(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			adapter := NewAdapter(NewClientWithBaseURL(server.URL, "xoxb-token"), zerolog.Nop())
-			if _, err := adapter.SendAgentReplyWithProviderMessageIDAndFormat(context.Background(), NewThreadLocator("T123", "C456", threadTS), tt.format, "hello"); err != nil {
-				t.Fatalf("SendAgentReplyWithProviderMessageIDAndFormat() error = %v", err)
+			if _, err := adapter.Deliver(context.Background(), NewThreadLocator("T123", "C456", threadTS), deliverycmd.Operation{Kind: deliverycmd.OperationAgentReply, Message: &tt.message}); err != nil {
+				t.Fatalf("Deliver() error = %v", err)
 			}
 			if got.Mrkdwn != tt.wantMrkdwn {
 				t.Fatalf("mrkdwn = %v, want %v", got.Mrkdwn, tt.wantMrkdwn)

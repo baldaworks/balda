@@ -24,59 +24,65 @@ func (d channelRouterDispatcher) Dispatch(ctx context.Context, delivery delivery
 	if d.router == nil {
 		return "", fmt.Errorf("channel router is required")
 	}
-	payload := applyFormattedMessage(delivery.Payload, delivery.Message)
-	switch payload.Mode {
-	case deliverycmd.ModeAgentReply:
-		return d.router.SendAgentReplyWithQuestion(ctx, payload.Locator, payload.DeliveryFormat, payload.Text, payload.Question)
-	case deliverycmd.ModePlain:
-		return "", d.router.SendPlain(ctx, payload.Locator, payload.Text)
-	case deliverycmd.ModeMarkdown:
-		return "", d.router.SendMarkdownWithFormat(ctx, payload.Locator, payload.DeliveryFormat, payload.Text)
-	case deliverycmd.ModeDraftPlain:
-		return "", d.router.SendDraftPlain(ctx, payload.Locator, payload.DraftID, payload.Text)
-	case deliverycmd.ModeChatAction:
-		return "", d.router.SendTyping(ctx, payload.Locator)
-	case deliverycmd.ModeProgress:
-		if payload.Progress == nil {
-			return "", fmt.Errorf("progress payload is required")
-		}
-		return "", d.router.SendProgress(ctx, payload.Locator, *payload.Progress)
-	case deliverycmd.ModeClearQuestionControls:
-		return "", d.router.SettleQuestionControls(ctx, payload.Locator, payload.MessageID, payload.Handle, payload.Text)
-	case deliverycmd.ModePhoto:
-		if payload.Media == nil {
-			return "", fmt.Errorf("photo payload is required")
-		}
-		return "", d.router.SendPhotoMedia(ctx, payload.Locator, *payload.Media)
-	case deliverycmd.ModeDocument:
-		if payload.Media == nil {
-			return "", fmt.Errorf("document payload is required")
-		}
-		return "", d.router.SendDocumentMedia(ctx, payload.Locator, *payload.Media)
-	default:
-		return "", fmt.Errorf("unsupported delivery mode %q", payload.Mode)
+	operation, err := channelOperation(delivery.Payload, delivery.Message)
+	if err != nil {
+		return "", err
 	}
+	result, err := d.router.Deliver(ctx, delivery.Payload.Locator, operation)
+	return result.ProviderMessageID, err
 }
 
-func applyFormattedMessage(payload deliverycmd.Payload, message *deliveryfmt.Message) deliverycmd.Payload {
-	if message == nil {
-		return payload
+func channelOperation(payload deliverycmd.Payload, message *deliveryfmt.Message) (deliverycmd.Operation, error) {
+	operation := deliverycmd.Operation{
+		DeliveryFormat: payload.DeliveryFormat,
+		Message:        message,
+		Text:           payload.Text,
+		DraftID:        payload.DraftID,
+		Question:       payload.Question,
+		MessageID:      payload.MessageID,
+		Handle:         payload.Handle,
 	}
 	switch payload.Mode {
-	case deliverycmd.ModeAgentReply, deliverycmd.ModeMarkdown:
-		payload.Text = message.Text
+	case deliverycmd.ModeAgentReply:
+		operation.Kind = deliverycmd.OperationAgentReply
+	case deliverycmd.ModePlain:
+		operation.Kind = deliverycmd.OperationPlain
+	case deliverycmd.ModeMarkdown:
+		operation.Kind = deliverycmd.OperationMarkdown
+	case deliverycmd.ModeDraftPlain:
+		operation.Kind = deliverycmd.OperationDraft
+	case deliverycmd.ModeChatAction:
+		operation.Kind = deliverycmd.OperationTyping
 	case deliverycmd.ModeProgress:
-		if payload.Progress != nil {
-			progress := *payload.Progress
-			progress.Text = message.Text
-			payload.Progress = &progress
+		if payload.Progress == nil {
+			return deliverycmd.Operation{}, fmt.Errorf("progress payload is required")
 		}
+		operation.Kind = deliverycmd.OperationProgress
+		operation.Progress = *payload.Progress
+		if message != nil {
+			operation.Progress.Text = message.Text
+		}
+	case deliverycmd.ModeClearQuestionControls:
+		operation.Kind = deliverycmd.OperationClearQuestionControls
 	case deliverycmd.ModePhoto, deliverycmd.ModeDocument:
-		if payload.Media != nil {
-			media := *payload.Media
-			media.Caption = message.Text
-			payload.Media = &media
+		if payload.Media == nil {
+			return deliverycmd.Operation{}, fmt.Errorf("%s payload is required", payload.Mode)
 		}
+		media := *payload.Media
+		if message != nil {
+			media.Caption = message.Text
+		}
+		operation.Media = &media
+		if payload.Mode == deliverycmd.ModePhoto {
+			operation.Kind = deliverycmd.OperationPhoto
+		} else {
+			operation.Kind = deliverycmd.OperationDocument
+		}
+	default:
+		return deliverycmd.Operation{}, fmt.Errorf("unsupported delivery mode %q", payload.Mode)
 	}
-	return payload
+	if message != nil && (payload.Mode == deliverycmd.ModeAgentReply || payload.Mode == deliverycmd.ModeMarkdown) {
+		operation.Text = message.Text
+	}
+	return operation, nil
 }

@@ -51,9 +51,17 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationPlain:
 		err = a.SendPlain(ctx, locator, operation.Text)
 	case deliverycmd.OperationMarkdown:
-		err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		if operation.Message != nil {
+			_, err = a.sendMessage(ctx, locator, *operation.Message)
+		} else {
+			err = a.SendMarkdownWithFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		}
 	case deliverycmd.OperationAgentReply:
-		result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		if operation.Message != nil {
+			result.ProviderMessageID, err = a.sendMessage(ctx, locator, *operation.Message)
+		} else {
+			result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
+		}
 	case deliverycmd.OperationDraft:
 		err = a.SendDraftPlain(ctx, locator, operation.DraftID, operation.Text)
 	case deliverycmd.OperationTyping:
@@ -64,6 +72,25 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		err = fmt.Errorf("unsupported zulip delivery operation %q", operation.Kind)
 	}
 	return result, err
+}
+
+func (a *Adapter) sendMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) (string, error) {
+	var (
+		messageID int
+		err       error
+	)
+	switch message.Name {
+	case deliveryfmt.NameZulipMarkdown:
+		messageID, err = a.sendWithPlainFallback(ctx, locator, message.Text, message.PlainFallback)
+	case deliveryfmt.NamePlainText:
+		messageID, err = a.send(ctx, locator, message.Text)
+	default:
+		return "", fmt.Errorf("unsupported zulip message format %q", message.Name)
+	}
+	if err != nil || messageID <= 0 {
+		return "", err
+	}
+	return strconv.Itoa(messageID), nil
 }
 
 func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
@@ -125,7 +152,7 @@ func (a *Adapter) SendMarkdownWithFormat(
 	if deliveryfmt.NormalizeDeliveryFormat(format) == deliveryfmt.DeliveryFormatNone {
 		return a.SendPlain(ctx, locator, plainTextFallback(text))
 	}
-	_, err := a.sendWithPlainFallback(ctx, locator, text)
+	_, err := a.sendWithPlainFallback(ctx, locator, text, plainTextFallback(text))
 	return err
 }
 
@@ -135,7 +162,7 @@ func (a *Adapter) SendAgentReply(
 	locator deliverycmd.Locator,
 	text string,
 ) error {
-	_, err := a.sendWithPlainFallback(ctx, locator, text)
+	_, err := a.sendWithPlainFallback(ctx, locator, text, plainTextFallback(text))
 	return err
 }
 
@@ -166,7 +193,7 @@ func (a *Adapter) SendAgentReplyWithProviderMessageIDAndFormat(
 		}
 		return strconv.Itoa(msgID), nil
 	}
-	msgID, err := a.sendWithPlainFallback(ctx, locator, text)
+	msgID, err := a.sendWithPlainFallback(ctx, locator, text, plainTextFallback(text))
 	if err != nil {
 		return "", err
 	}
@@ -270,6 +297,7 @@ func (a *Adapter) sendWithPlainFallback(
 	ctx context.Context,
 	locator deliverycmd.Locator,
 	text string,
+	plainFallback string,
 ) (int, error) {
 	msgID, err := a.send(ctx, locator, text)
 	if err == nil {
@@ -278,7 +306,7 @@ func (a *Adapter) sendWithPlainFallback(
 	if !isContentRejectedError(err) {
 		return 0, err
 	}
-	fallback := plainTextFallback(text)
+	fallback := strings.TrimSpace(plainFallback)
 	if strings.TrimSpace(fallback) == "" || fallback == text {
 		return 0, err
 	}

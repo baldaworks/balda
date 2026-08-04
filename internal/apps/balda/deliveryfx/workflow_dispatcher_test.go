@@ -7,7 +7,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 )
 
-func TestApplyFormattedMessageTargetsOnlyFormattedContent(t *testing.T) {
+func TestChannelOperationCarriesTypedFormattedContent(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -18,41 +18,41 @@ func TestApplyFormattedMessageTargetsOnlyFormattedContent(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		payload deliverycmd.Payload
-		assert  func(*testing.T, deliverycmd.Payload)
+		assert  func(*testing.T, deliverycmd.Operation)
 	}{
 		{
 			name:    "agent reply",
 			payload: deliverycmd.Payload{Mode: deliverycmd.ModeAgentReply, Text: rawText},
-			assert: func(t *testing.T, payload deliverycmd.Payload) {
-				if payload.Text != formattedText {
-					t.Fatalf("text = %q, want formatted", payload.Text)
+			assert: func(t *testing.T, operation deliverycmd.Operation) {
+				if operation.Text != formattedText || operation.Message != message {
+					t.Fatalf("operation = %+v, want typed formatted message", operation)
 				}
 			},
 		},
 		{
 			name:    "progress",
 			payload: deliverycmd.Payload{Mode: deliverycmd.ModeProgress, Progress: &deliverycmd.Progress{Text: rawText}},
-			assert: func(t *testing.T, payload deliverycmd.Payload) {
-				if payload.Progress == nil || payload.Progress.Text != formattedText {
-					t.Fatalf("progress = %+v, want formatted", payload.Progress)
+			assert: func(t *testing.T, operation deliverycmd.Operation) {
+				if operation.Progress.Text != formattedText || operation.Message != message {
+					t.Fatalf("operation = %+v, want typed formatted progress", operation)
 				}
 			},
 		},
 		{
 			name:    "caption",
 			payload: deliverycmd.Payload{Mode: deliverycmd.ModeDocument, Media: &deliverycmd.Media{Caption: rawText}},
-			assert: func(t *testing.T, payload deliverycmd.Payload) {
-				if payload.Media == nil || payload.Media.Caption != formattedText {
-					t.Fatalf("media = %+v, want formatted caption", payload.Media)
+			assert: func(t *testing.T, operation deliverycmd.Operation) {
+				if operation.Media == nil || operation.Media.Caption != formattedText || operation.Message != message {
+					t.Fatalf("operation = %+v, want typed formatted caption", operation)
 				}
 			},
 		},
 		{
 			name:    "plain operational message",
 			payload: deliverycmd.Payload{Mode: deliverycmd.ModePlain, Text: rawText},
-			assert: func(t *testing.T, payload deliverycmd.Payload) {
-				if payload.Text != rawText {
-					t.Fatalf("plain text = %q, want raw operational text", payload.Text)
+			assert: func(t *testing.T, operation deliverycmd.Operation) {
+				if operation.Text != rawText {
+					t.Fatalf("plain text = %q, want raw operational text", operation.Text)
 				}
 			},
 		},
@@ -60,7 +60,10 @@ func TestApplyFormattedMessageTargetsOnlyFormattedContent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			originalProgress := test.payload.Progress
 			originalMedia := test.payload.Media
-			got := applyFormattedMessage(test.payload, message)
+			got, err := channelOperation(test.payload, message)
+			if err != nil {
+				t.Fatalf("channelOperation() error = %v", err)
+			}
 			test.assert(t, got)
 			if originalProgress != nil && originalProgress.Text != rawText {
 				t.Fatalf("original progress mutated: %+v", originalProgress)

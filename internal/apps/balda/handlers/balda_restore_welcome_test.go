@@ -53,8 +53,8 @@ func TestBaldaHandlerOnMessage_PublicTopicRestoreWelcomeUsesBaldaName(t *testing
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	assertLastSentContains(t, tgClient, "***Name:*** `balda`")
-	if strings.Contains(lastSentText(t, tgClient), "***Name:*** `codex`") {
+	assertLastSentContains(t, tgClient, "**Name:** `balda`")
+	if strings.Contains(lastSentText(t, tgClient), "**Name:** `codex`") {
 		t.Fatalf("last message unexpectedly contains persisted label: %q", lastSentText(t, tgClient))
 	}
 	if got := store.lastUpsert.AgentName; got != "codex" {
@@ -78,8 +78,8 @@ func TestBaldaHandlerOnMessage_PublicTopicAutoCreateWelcomeUsesBaldaName(t *test
 	if len(turns.commands) != 1 {
 		t.Fatalf("published commands = %d, want 1", len(turns.commands))
 	}
-	assertLastSentContains(t, tgClient, "***Name:*** `balda`")
-	if strings.Contains(lastSentText(t, tgClient), "***Name:*** `auto`") {
+	assertLastSentContains(t, tgClient, "**Name:** `balda`")
+	if strings.Contains(lastSentText(t, tgClient), "**Name:** `auto`") {
 		t.Fatalf("last message unexpectedly contains auto label: %q", lastSentText(t, tgClient))
 	}
 	if got := store.lastUpsert.AgentName; got != "auto" {
@@ -107,7 +107,7 @@ func TestBaldaHandlerOnMessage_PublicMainChatAutoCreateEnqueuesTurn(t *testing.T
 	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
-	assertLastSentContains(t, tgClient, "***Name:*** `balda`")
+	assertLastSentContains(t, tgClient, "**Name:** `balda`")
 	if got := store.lastUpsert.AgentName; got != "auto" {
 		t.Fatalf("persisted label = %q, want auto", got)
 	}
@@ -164,7 +164,7 @@ func TestBaldaHandlerOnMessage_OwnerDMCreatesOwnerSession(t *testing.T) {
 	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
 		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
 	}
-	assertLastSentContains(t, tgClient, "***Name:*** `balda`")
+	assertLastSentContains(t, tgClient, "**Name:** `balda`")
 	if got := store.lastUpsert.AgentName; got != "balda" {
 		t.Fatalf("persisted label = %q, want balda", got)
 	}

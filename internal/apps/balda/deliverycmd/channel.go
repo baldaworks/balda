@@ -34,6 +34,7 @@ const (
 type Operation struct {
 	Kind           OperationKind
 	DeliveryFormat deliveryfmt.DeliveryFormat
+	Message        *deliveryfmt.Message
 	Text           string
 	DraftID        int
 	Progress       Progress

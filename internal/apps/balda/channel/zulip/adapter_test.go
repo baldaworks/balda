@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
@@ -52,16 +53,16 @@ func TestAdapterSendAgentReplyFallsBackToPlainTextOnContentRejection(t *testing.
 	}
 }
 
-func TestAdapterDeliveryFormatMapsMarkdownAndPlain(t *testing.T) {
+func TestAdapterDeliversTypedMarkdownAndPlainMessages(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		format deliveryfmt.DeliveryFormat
-		want   string
+		name    string
+		message deliveryfmt.Message
+		want    string
 	}{
-		{name: "markdown preserves content", format: deliveryfmt.DeliveryFormatMarkdown, want: "**hello**"},
-		{name: "none strips markdown content", format: deliveryfmt.DeliveryFormatNone, want: "hello"},
+		{name: "markdown preserves content", message: deliveryfmt.Message{Name: deliveryfmt.NameZulipMarkdown, Text: "**hello**", PlainFallback: "hello"}, want: "**hello**"},
+		{name: "plain preserves literal content", message: deliveryfmt.Message{Name: deliveryfmt.NamePlainText, Text: "hello", PlainFallback: "hello"}, want: "hello"},
 	}
 
 	for _, tt := range tests {
@@ -79,8 +80,8 @@ func TestAdapterDeliveryFormatMapsMarkdownAndPlain(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			adapter := NewAdapter(NewClient(server.URL, "bot@example.com", "api-key"), zerolog.Nop())
-			if _, err := adapter.SendAgentReplyWithProviderMessageIDAndFormat(context.Background(), NewStreamLocator(42, "ops"), tt.format, "**hello**"); err != nil {
-				t.Fatalf("SendAgentReplyWithProviderMessageIDAndFormat() error = %v", err)
+			if _, err := adapter.Deliver(context.Background(), NewStreamLocator(42, "ops"), deliverycmd.Operation{Kind: deliverycmd.OperationAgentReply, Message: &tt.message}); err != nil {
+				t.Fatalf("Deliver() error = %v", err)
 			}
 			if got != tt.want {
 				t.Fatalf("content = %q, want %q", got, tt.want)

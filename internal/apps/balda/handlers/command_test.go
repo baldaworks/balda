@@ -28,7 +28,6 @@ import (
 const (
 	testProviderAlpha     = "alpha"
 	testTelegramUserID101 = "tg-101"
-	testParseModeMarkdown = "MarkdownV2"
 	testRootSessionID     = "tg-9001-0"
 	testTopicSessionID    = "tg-9001-123"
 )
@@ -105,7 +104,7 @@ func TestCommandHandlerOnCommand_ResetTopicRestartsSessionWithoutClosingTopic(t 
 		t.Fatalf("ResetSession call = %+v, want session=tg-9001-123", sm.resetCalls[0])
 	}
 	assertLastSentContains(t, tgClient, "Session Started")
-	assertLastSentContains(t, tgClient, "`topic\\-alpha`")
+	assertLastSentContains(t, tgClient, "`topic-alpha`")
 }
 
 func TestCommandHandlerOnCommand_ResetRootRestartsSessionHistory(t *testing.T) {
@@ -658,7 +657,7 @@ func TestCommandHandlerOnCommand_TopicCreatesTopicSession(t *testing.T) {
 	}
 	assertLastSentContains(t, tgClient, "Name")
 	assertLastSentContains(t, tgClient, "alpha")
-	assertLastSentContains(t, tgClient, "tg\\-9001\\-456")
+	assertLastSentContains(t, tgClient, "tg-9001-456")
 }
 
 func TestCommandHandlerOnCommand_TopicCollaboratorAllowed(t *testing.T) {

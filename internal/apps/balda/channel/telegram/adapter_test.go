@@ -282,7 +282,7 @@ func TestMessageContextFromEvent_MapsVoiceWithoutOptionalMetadata(t *testing.T) 
 
 func TestMessageContextFromEvent_SnapshotsDeliveryOptions(t *testing.T) {
 	msg := messenger.NewMessenger(nil, zerolog.Nop())
-	msg.SetTelegramFormattingMode(telegramfmt.ModeMarkdownV2)
+	msg.SetTelegramFormattingMode(telegramfmt.ModeRichHTML)
 	adapter := NewAdapter(AdapterParams{Messenger: msg, Logger: zerolog.Nop()})
 
 	got, ok := adapter.MessageContextFromEvent(&events.MessageEvent{
@@ -299,8 +299,8 @@ func TestMessageContextFromEvent_SnapshotsDeliveryOptions(t *testing.T) {
 	if !ok {
 		t.Fatal("MessageContextFromEvent() ok = false, want true")
 	}
-	if got.DeliveryOptions.DeliveryFormat != deliveryfmt.DeliveryFormat(telegramfmt.ModeMarkdownV2) {
-		t.Fatalf("delivery format = %q, want %q", got.DeliveryOptions.DeliveryFormat, telegramfmt.ModeMarkdownV2)
+	if got.DeliveryOptions.DeliveryFormat != deliveryfmt.DeliveryFormatRichHTML {
+		t.Fatalf("delivery format = %q, want %q", got.DeliveryOptions.DeliveryFormat, deliveryfmt.DeliveryFormatRichHTML)
 	}
 	if !got.DeliveryOptions.ProgressPolicy.Typing || !got.DeliveryOptions.ProgressPolicy.Thinking {
 		t.Fatalf("delivery progress policy = %+v, want typing and thinking", got.DeliveryOptions.ProgressPolicy)

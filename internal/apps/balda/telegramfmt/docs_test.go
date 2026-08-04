@@ -13,22 +13,19 @@ func TestTelegramFormattingDocsCoverFormatterContract(t *testing.T) {
 	for _, want := range []string{
 		"`rich_markdown` (default)",
 		"`rich_html`",
-		"`markdownv2`",
 		"`none`",
-		"agent output is Markdown or plain text",
-		"Balda sends it with Telegram rich messages",
-		"Preserves standalone `---` separator lines for Telegram rich-message handling.",
-		"Retries as plain text with no `parse_mode` if rich-message delivery fails.",
-		"Standalone `---` separator lines outside fenced code blocks split final agent replies into multiple Telegram messages in this legacy mode.",
-		"Do not pre-escape Telegram MarkdownV2 reserved characters",
-		"Balda sanitizes supported Telegram HTML before sending it as a Telegram rich message",
+		"fails configuration validation",
+		"at most one",
+		"Ambiguous transport errors",
+		"authentication errors",
+		"rate limits",
+		"deterministic plain",
+		"no `parse_mode`",
 		`<blockquote expandable>`,
 		`<tg-time unix="..." format="...">`,
 		`<pre><code class="language-...">...</code></pre>`,
 		`<tg-time datetime="...">`,
-		"Standalone",
 		`<code class="language-...">`,
-		"Arbitrary HTML tags",
 		`<div>`,
 		`<script>`,
 		`&lt;`, `&gt;`, `&amp;`, `&quot;`,
@@ -37,27 +34,6 @@ func TestTelegramFormattingDocsCoverFormatterContract(t *testing.T) {
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("telegram formatting docs missing %q", want)
-		}
-	}
-}
-
-func TestUserDocsDocumentSharedDeliveryFormatting(t *testing.T) {
-	t.Parallel()
-
-	doc := readRepoDoc(t, "docs/balda.md")
-	for _, want := range []string{
-		"### Delivery formatting",
-		"`auto`",
-		"`markdown`",
-		"`html`",
-		"`plain`",
-		"Slack `mrkdwn`",
-		"Zulip Markdown",
-		"Slack and",
-		"Zulip do not use Telegram formatting mode names",
-	} {
-		if !strings.Contains(doc, want) {
-			t.Fatalf("docs/balda.md does not document %q", want)
 		}
 	}
 }

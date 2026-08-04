@@ -136,3 +136,29 @@ func TestHTMLHelpers(t *testing.T) {
 		t.Fatalf("splitHTMLAttrValue(unterminated) = (%q, %q), want unterminated empty", value, rest)
 	}
 }
+
+func TestHTMLPlainText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "nested supported markup", in: `<p><b>Build</b> <i>passed</i></p>`, want: "Build passed"},
+		{name: "entities", in: `A &lt; B &amp;&amp; C &#35;1`, want: "A < B && C #1"},
+		{name: "unsafe markup", in: `<script>alert(1)</script><b>safe</b>`, want: "alert(1)safe"},
+		{name: "encoded unsafe markup", in: `&lt;script&gt;alert(1)&lt;/script&gt;`, want: "alert(1)"},
+		{name: "malformed opener", in: `safe <script`, want: "safe"},
+		{name: "ordinary comparison", in: `p95 < 250ms`, want: "p95 < 250ms"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := HTMLPlainText(tt.in); got != tt.want {
+				t.Fatalf("HTMLPlainText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

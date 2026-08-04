@@ -32,6 +32,7 @@ type recordingQuestionMessenger struct {
 	replyTopicID            int
 	replyToMessageID        int
 	replyText               string
+	typedMessage            deliveryfmt.Message
 }
 
 func (m *recordingQuestionMessenger) DeleteMessage(_ context.Context, chatID int64, messageID int) error {
@@ -81,12 +82,11 @@ func (m *recordingQuestionMessenger) SendDocumentByPath(context.Context, int64, 
 	return nil
 }
 
-func (m *recordingQuestionMessenger) SendEphemeralAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+func (m *recordingQuestionMessenger) SendEphemeralAgentReplyMessageWithInlineKeyboardLastMessageID(
 	_ context.Context,
 	chatID, receiverUserID int64,
-	_ string,
+	_ deliveryfmt.Message,
 	topicID int,
-	_ string,
 	keyboard client.InlineKeyboardMarkup,
 ) (int, error) {
 	m.ephemeralChatID = chatID
@@ -169,15 +169,15 @@ func TestClearFreeTextQuestionPreservesPromptWithoutFollowUp(t *testing.T) {
 	}
 }
 
-func (m *recordingQuestionMessenger) SendAgentReplyWithInlineKeyboardLastMessageIDAndMode(
+func (m *recordingQuestionMessenger) SendAgentReplyMessageWithInlineKeyboardLastMessageID(
 	_ context.Context,
 	_ int64,
-	_ string,
+	message deliveryfmt.Message,
 	_ int,
-	_ string,
 	keyboard client.InlineKeyboardMarkup,
 	fallbackText string,
 ) (int, error) {
+	m.typedMessage = message
 	m.keyboard = keyboard
 	m.fallbackText = fallbackText
 	return 42, nil
@@ -186,7 +186,8 @@ func (m *recordingQuestionMessenger) SendAgentReplyWithInlineKeyboardLastMessage
 func TestSendAgentReplyWithQuestionBuildsOneButtonPerRow(t *testing.T) {
 	messenger := &recordingQuestionMessenger{}
 	adapter := NewAdapter(AdapterParams{Messenger: messenger, Logger: zerolog.Nop()})
-	messageID, err := adapter.SendAgentReplyWithQuestion(context.Background(), NewLocator(1, 0), deliveryfmt.DeliveryFormatRichMarkdown, "Choose", &deliverycmd.Question{
+	typed := deliveryfmt.Message{Name: deliveryfmt.NameTelegramRichMarkdown, Text: "Choose", PlainFallback: "Choose"}
+	messageID, err := adapter.SendAgentReplyMessageWithQuestion(context.Background(), NewLocator(1, 0), typed, &deliverycmd.Question{
 		ID: "question-1",
 		Options: []deliverycmd.QuestionOption{
 			{ID: "allow", Label: "Allow"},
@@ -194,7 +195,7 @@ func TestSendAgentReplyWithQuestionBuildsOneButtonPerRow(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("SendAgentReplyWithQuestion() error = %v", err)
+		t.Fatalf("SendAgentReplyMessageWithQuestion() error = %v", err)
 	}
 	if messageID != "42" {
 		t.Fatalf("message id = %q, want 42", messageID)
@@ -207,6 +208,9 @@ func TestSendAgentReplyWithQuestionBuildsOneButtonPerRow(t *testing.T) {
 	}
 	if messenger.fallbackText != "Choose\n\nChoose:\n1. Allow\n2. Cancel\n\nReply with the number or option name." {
 		t.Fatalf("fallback = %q", messenger.fallbackText)
+	}
+	if messenger.typedMessage != typed {
+		t.Fatalf("typed message = %+v, want %+v", messenger.typedMessage, typed)
 	}
 }
 

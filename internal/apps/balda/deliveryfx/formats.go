@@ -1,23 +1,66 @@
 package deliveryfx
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
 )
 
-type passthroughFormatter struct {
+var (
+	markdownImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
+	markdownLinkPattern  = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+)
+
+type identityFormatter struct {
 	name deliveryfmt.Name
 }
 
-func (f passthroughFormatter) Name() deliveryfmt.Name {
+func (f identityFormatter) Name() deliveryfmt.Name {
 	return f.name
 }
 
-func (f passthroughFormatter) Format(text string) (deliveryfmt.Message, error) {
+func (f identityFormatter) Format(text string) (deliveryfmt.Message, error) {
 	return deliveryfmt.Message{
 		Name:          f.name,
 		Text:          text,
 		PlainFallback: text,
+	}, nil
+}
+
+type telegramHTMLFormatter struct{}
+
+func (telegramHTMLFormatter) Name() deliveryfmt.Name {
+	return deliveryfmt.NameTelegramRichHTML
+}
+
+type zulipMarkdownFormatter struct{}
+
+func (zulipMarkdownFormatter) Name() deliveryfmt.Name {
+	return deliveryfmt.NameZulipMarkdown
+}
+
+func (zulipMarkdownFormatter) Format(text string) (deliveryfmt.Message, error) {
+	return deliveryfmt.Message{
+		Name:          deliveryfmt.NameZulipMarkdown,
+		Text:          text,
+		PlainFallback: markdownPlainText(text),
+	}, nil
+}
+
+func markdownPlainText(text string) string {
+	plain := markdownImagePattern.ReplaceAllString(text, "$1: $2")
+	plain = markdownLinkPattern.ReplaceAllString(plain, "$1 ($2)")
+	plain = strings.NewReplacer("**", "", "__", "", "`", "").Replace(plain)
+	return strings.TrimSpace(plain)
+}
+
+func (telegramHTMLFormatter) Format(text string) (deliveryfmt.Message, error) {
+	return deliveryfmt.Message{
+		Name:          deliveryfmt.NameTelegramRichHTML,
+		Text:          telegramfmt.HTML(text),
+		PlainFallback: telegramfmt.HTMLPlainText(text),
 	}, nil
 }
 
@@ -33,9 +76,16 @@ func newMessageFormatRegistry() (*deliveryfmt.Registry, error) {
 	}
 	formatters := make([]deliveryfmt.FormatterRegistration, 0, len(formats))
 	for _, format := range formats {
+		formatter := deliveryfmt.Formatter(identityFormatter{name: format.Name})
+		switch format.Name {
+		case deliveryfmt.NameTelegramRichHTML:
+			formatter = telegramHTMLFormatter{}
+		case deliveryfmt.NameZulipMarkdown:
+			formatter = zulipMarkdownFormatter{}
+		}
 		formatters = append(formatters, deliveryfmt.FormatterRegistration{
 			Name:      format.Name,
-			Formatter: passthroughFormatter{name: format.Name},
+			Formatter: formatter,
 		})
 	}
 	return deliveryfmt.NewRegistry(formats, formatters, deliveryfmt.BuiltinRoutes())

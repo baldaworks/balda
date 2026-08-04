@@ -6,6 +6,11 @@ import (
 	"unicode"
 )
 
+const (
+	htmlTagBlockquote = "blockquote"
+	htmlTagPre        = "pre"
+)
+
 // HTML escapes unsafe raw text while preserving Telegram-supported HTML tags.
 func HTML(text string) string {
 	var out strings.Builder
@@ -64,6 +69,42 @@ func HTML(text string) string {
 	return out.String()
 }
 
+// HTMLPlainText derives a deterministic parse-mode-free fallback from model
+// HTML. Tag-shaped input is removed before entities are decoded so raw and
+// entity-encoded markup cannot become active or visible markup in fallback.
+func HTMLPlainText(text string) string {
+	text = gohtml.UnescapeString(text)
+	var out strings.Builder
+	for i := 0; i < len(text); {
+		if text[i] != '<' || i+1 >= len(text) || !isHTMLTagStart(text[i+1]) {
+			out.WriteByte(text[i])
+			i++
+			continue
+		}
+		end := findHTMLTagEnd(text[i:])
+		if end < 0 {
+			break
+		}
+		if isHTMLBlockTag(text[i:i+end+1]) && out.Len() > 0 {
+			out.WriteByte('\n')
+		}
+		i += end + 1
+	}
+	return strings.TrimSpace(gohtml.UnescapeString(out.String()))
+}
+
+func isHTMLBlockTag(raw string) bool {
+	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw, "<"), ">"))
+	body = strings.TrimPrefix(body, "/")
+	name, _ := splitHTMLTagName(strings.TrimSpace(body))
+	switch strings.ToLower(strings.TrimSuffix(name, "/")) {
+	case htmlTagBlockquote, "br", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "p", htmlTagPre:
+		return true
+	default:
+		return false
+	}
+}
+
 func telegramHTMLTag(raw, parent string) (tag string, name string, closing bool, ok bool) {
 	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw, "<"), ">"))
 	if body == "" {
@@ -108,7 +149,7 @@ func splitHTMLTagName(body string) (name string, rest string) {
 
 func isTelegramHTMLTag(name string) bool {
 	switch name {
-	case "b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "a", "code", "pre", "blockquote", "tg-emoji", "tg-time", "span":
+	case "b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "a", "code", htmlTagPre, htmlTagBlockquote, "tg-emoji", "tg-time", "span":
 		return true
 	default:
 		return false
@@ -123,11 +164,11 @@ func telegramHTMLAttrs(name, raw, parent string) (string, bool) {
 			return ` href="` + gohtml.EscapeString(href) + `"`, true
 		}
 	case "code":
-		if class, ok := attrs["class"]; ok && parent == "pre" && strings.HasPrefix(class, "language-") {
+		if class, ok := attrs["class"]; ok && parent == htmlTagPre && strings.HasPrefix(class, "language-") {
 			return ` class="` + gohtml.EscapeString(class) + `"`, true
 		}
 		return "", true
-	case "blockquote":
+	case htmlTagBlockquote:
 		if _, ok := attrs["expandable"]; ok {
 			return " expandable", true
 		}

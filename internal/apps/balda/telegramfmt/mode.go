@@ -8,15 +8,13 @@ import (
 const (
 	ModeRichMarkdown = "rich_markdown"
 	ModeRichHTML     = "rich_html"
-	ModeMarkdownV2   = "markdownv2"
-	ModeHTML         = "html"
 	ModeNone         = "none"
 
 	RichMessagesDocsURL = "https://core.telegram.org/bots/api#rich-messages"
 )
 
 const (
-	richMarkdownPromptRule = "Use Telegram Rich Markdown, following " + RichMessagesDocsURL + ". Balda sends it through Telegram rich messages. Do not write Telegram MarkdownV2 syntax. Do not pre-escape Telegram MarkdownV2 reserved characters."
+	richMarkdownPromptRule = "Use Telegram Rich Markdown, following " + RichMessagesDocsURL + ". Balda sends it through Telegram rich messages. Write natural Markdown and do not pre-escape punctuation."
 	richHTMLPromptRule     = "Use Telegram Rich HTML, following " + RichMessagesDocsURL + ". Balda sends it through Telegram rich messages. Balda escapes unsafe raw <, >, & while preserving supported rich HTML tags."
 	richMarkdownExample    = "" +
 		"# Release notes\n\n" +
@@ -74,19 +72,6 @@ func ValidateMode(raw string) (string, error) {
 	}
 }
 
-// TelegramParseMode returns the Telegram parse_mode value for normalized mode.
-// Empty string means parse_mode should be omitted.
-func TelegramParseMode(mode string) string {
-	switch NormalizeMode(mode) {
-	case ModeHTML:
-		return "HTML"
-	case ModeNone, ModeRichMarkdown, ModeRichHTML:
-		return ""
-	default:
-		return "MarkdownV2"
-	}
-}
-
 // PromptRuleAndExample returns concise mode-specific instruction text.
 func PromptRuleAndExample(mode string) (rule string, example string) {
 	switch NormalizeMode(mode) {
@@ -94,10 +79,6 @@ func PromptRuleAndExample(mode string) (rule string, example string) {
 		return richMarkdownPromptRule, richMarkdownExample
 	case ModeRichHTML:
 		return richHTMLPromptRule, "<h2>Build</h2><p><b>Status:</b> success</p><p>Run <code>balda start</code>.</p>"
-	case ModeMarkdownV2:
-		return "Write normal Markdown or plain text. Balda converts it to Telegram MarkdownV2; use Markdown blank lines or lists for structure, and do not pre-escape Telegram MarkdownV2 reserved characters.", "**Build:** success. Run `balda start`."
-	case ModeHTML:
-		return "Use Telegram HTML parse mode. Supported tags: b/strong, i/em, u/ins, s/strike/del, tg-spoiler or span class=\"tg-spoiler\", a href, code, pre with nested code class=\"language-...\", blockquote expandable, tg-emoji emoji-id, tg-time unix/format. Balda escapes unsafe raw <, >, & while preserving supported Telegram HTML tags.", "<b>Build:</b> success. Run <code>balda start</code>."
 	case ModeNone:
 		return "Use plain text only. Do not use Markdown or HTML markup.", "Build: success. Run balda start."
 	default:

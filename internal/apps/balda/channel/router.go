@@ -24,6 +24,15 @@ func (r *Router) adapterFor(locator deliverycmd.Locator) (deliverycmd.Adapter, e
 	return adapter, nil
 }
 
+// Deliver routes one typed transport operation and returns provider metadata.
+func (r *Router) Deliver(ctx context.Context, locator deliverycmd.Locator, operation deliverycmd.Operation) (deliverycmd.Result, error) {
+	adapter, err := r.adapterFor(locator)
+	if err != nil {
+		return deliverycmd.Result{}, err
+	}
+	return adapter.Deliver(ctx, locator, operation)
+}
+
 func (r *Router) SendPlain(ctx context.Context, locator deliverycmd.Locator, text string) error {
 	adapter, err := r.adapterFor(locator)
 	if err != nil {
