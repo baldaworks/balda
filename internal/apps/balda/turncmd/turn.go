@@ -13,10 +13,13 @@ import (
 )
 
 const (
-	SourceTelegram = "telegram"
-	SourceWebhook  = "webhook"
-	SourceSchedule = "schedule"
-	SourceAuto     = "auto"
+	SourceTelegram   = "telegram"
+	SourceSlack      = "slack"
+	SourceSlackAgent = "slack_agent"
+	SourceZulip      = "zulip"
+	SourceWebhook    = "webhook"
+	SourceSchedule   = "schedule"
+	SourceAuto       = "auto"
 )
 
 type SessionTurnPayload struct {

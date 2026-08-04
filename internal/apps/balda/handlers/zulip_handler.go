@@ -16,14 +16,13 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/appports"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/automode"
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
+	"github.com/normahq/balda/internal/apps/balda/ingressapp"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -76,7 +75,6 @@ type ZulipBaldaHandler struct {
 	collaboratorStore *auth.CollaboratorStore
 	channelAuth       *auth.ChannelAuthService
 	sessionManager    zulipSessionManager
-	turnDispatcher    appports.TurnQueue
 	actorDispatcher   actortransport.Dispatcher
 	goalJobs          goalJobService
 	memoryStore       *memory.Store
@@ -120,7 +118,6 @@ type zulipBaldaHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
-	TurnDispatcher    appports.TurnQueue
 	Dispatcher        actortransport.Dispatcher
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	MemoryStore       *memory.Store
@@ -143,7 +140,6 @@ func NewZulipBaldaHandler(params zulipBaldaHandlerParams) *ZulipBaldaHandler {
 		collaboratorStore: params.CollaboratorStore,
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
-		turnDispatcher:    params.TurnDispatcher,
 		actorDispatcher:   params.Dispatcher,
 		goalJobs:          params.GoalJobs,
 		memoryStore:       params.MemoryStore,
@@ -352,18 +348,16 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Respond immediately; process asynchronously.
+	defer release()
+	settlement, err := h.processWebhookPayload(context.WithoutCancel(r.Context()), payload)
+	if err != nil && settlement.Outcome == turncmd.InboundRetry {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeZulipWebhookNoResponse(w)
-
-	h.processWG.Add(1)
-	go func() {
-		defer h.processWG.Done()
-		defer release()
-		h.processWebhookPayload(r.Context(), payload)
-	}()
 }
 
-func (h *ZulipBaldaHandler) processWebhookPayload(requestCtx context.Context, payload zulipWebhookPayload) {
+func (h *ZulipBaldaHandler) processWebhookPayload(requestCtx context.Context, payload zulipWebhookPayload) (settlement turncmd.InboundSettlement, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			h.logger.Error().
@@ -371,11 +365,13 @@ func (h *ZulipBaldaHandler) processWebhookPayload(requestCtx context.Context, pa
 				Int("sender_id", payload.Message.SenderID).
 				Str("session_id", h.locatorFromPayload(payload).SessionID).
 				Msg("zulip webhook processing panic recovered")
+			settlement = retryInbound()
+			err = fmt.Errorf("zulip webhook processing panic: %v", recovered)
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(requestCtx), zulipWebhookProcessingTimeout)
 	defer cancel()
-	h.processMessage(ctx, payload)
+	return h.processMessage(ctx, payload)
 }
 
 func writeZulipWebhookNoResponse(w http.ResponseWriter) {
@@ -423,7 +419,7 @@ func validateZulipWebhookPayload(payload zulipWebhookPayload) error {
 	return nil
 }
 
-func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWebhookPayload) {
+func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWebhookPayload) (turncmd.InboundSettlement, error) {
 	locator := h.locatorFromPayload(payload)
 	senderID := payload.Message.SenderID
 	text := normalizeZulipMessageText(payload)
@@ -437,16 +433,16 @@ func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWeb
 
 	if strings.HasPrefix(text, "/") {
 		h.handleCommand(ctx, locator, senderID, text, isDM)
-		return
+		return terminalInbound(), nil
 	}
 	if isDM {
 		if token, ok := firstFieldToken(text); ok {
 			h.handleOwnerBindToken(ctx, locator, senderID, token)
-			return
+			return terminalInbound(), nil
 		}
 	}
 
-	h.handleMessage(ctx, locator, senderID, payload.Message.ID, text, isDM)
+	return h.handleMessage(ctx, locator, senderID, payload.Message.ID, text, isDM)
 }
 
 func normalizeZulipMessageText(payload zulipWebhookPayload) string {
@@ -1154,33 +1150,65 @@ func (h *ZulipBaldaHandler) handleMessage(
 	messageID int,
 	text string,
 	isDM bool,
-) {
+) (turncmd.InboundSettlement, error) {
 	if h.getOwnerID() == 0 {
-		return
-	}
-	if !h.canAccessCollaboratorScope(ctx, int64(senderID)) {
-		return
+		return terminalInbound(), nil
 	}
 	if strings.TrimSpace(text) == "" {
-		return
+		return terminalInbound(), nil
 	}
 
 	transportUserID := baldazulip.UserID(senderID)
-	providerName := h.getProviderName()
-
-	ts, err := h.getOrCreateSession(ctx, locator, transportUserID, providerName, isDM)
+	inbound := baldazulip.NormalizeInbound(baldazulip.InboundMessage{
+		Locator:    locator,
+		MessageID:  messageID,
+		UserID:     transportUserID,
+		Text:       text,
+		Direct:     isDM,
+		ReceivedAt: time.Now(),
+	})
+	service, err := ingressapp.New(
+		ingressapp.AuthorizerFunc(h.authorizeZulipInbound),
+		ingressapp.SessionPreparerFunc(h.prepareZulipSession),
+		h.actorDispatcher,
+	)
 	if err != nil {
-		return
+		return retryInbound(), err
 	}
-
-	if err := h.enqueueTurn(ctx, text, ts, locator, messageID, baldazulip.UserID(senderID), isDM); err != nil {
+	result, err := service.Process(ctx, inbound)
+	if err != nil && result.Settlement.Outcome == turncmd.InboundRetry {
 		if baldaexecution.IsCommandQueueFull(err) {
 			_ = h.sendPlain(ctx, locator, "Session command queue is full. Please wait or use /cancel.")
-			return
+			return result.Settlement, err
 		}
 		h.logger.Error().Err(err).Str("session_id", locator.SessionID).Msg("zulip: failed to enqueue turn")
-		_ = h.sendPlain(ctx, locator, "Failed to publish your message for processing. Please try again.")
+		if result.Settlement.Reason != ingressapp.ReasonSessionRejected {
+			_ = h.sendPlain(ctx, locator, "Failed to publish your message for processing. Please try again.")
+		}
 	}
+	return result.Settlement, err
+}
+
+func (h *ZulipBaldaHandler) authorizeZulipInbound(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.Authorization, error) {
+	userID, err := baldazulip.ParseUserID(inbound.UserID)
+	if err != nil {
+		return ingressapp.Authorization{Reason: ingressapp.ReasonUnauthorized}, nil
+	}
+	allowed, err := h.accessCollaboratorScope(ctx, int64(userID))
+	return ingressapp.Authorization{Allowed: allowed, Reason: ingressapp.ReasonUnauthorized}, err
+}
+
+func (h *ZulipBaldaHandler) prepareZulipSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+	ts, err := h.getOrCreateSession(ctx, inboundLocator(inbound), inbound.UserID, h.getProviderName(), inbound.Direct)
+	if err != nil {
+		return ingressapp.SessionPreparation{}, err
+	}
+	return ingressapp.SessionPreparation{
+		Ready:           true,
+		UserID:          ts.GetUserID(),
+		RequesterUserID: inbound.UserID,
+		AgentSessionID:  ts.GetAgentSessionID(),
+	}, nil
 }
 
 func (h *ZulipBaldaHandler) getOrCreateSession(
@@ -1251,46 +1279,6 @@ func (h *ZulipBaldaHandler) sendSessionWelcome(
 	_ = h.sendPlain(ctx, locator, welcomeMsg)
 }
 
-func (h *ZulipBaldaHandler) enqueueTurn(
-	ctx context.Context,
-	text string,
-	ts *baldasession.TopicSession,
-	locator baldasession.SessionLocator,
-	messageID int,
-	requesterUserID string,
-	isDM bool,
-) error {
-	if ts == nil {
-		return fmt.Errorf("topic session is required")
-	}
-	if h.actorDispatcher == nil {
-		return fmt.Errorf("runtime is unavailable")
-	}
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true}
-	payload := turncmd.SessionTurnPayload{
-		Text:            text,
-		Locator:         locator,
-		UserID:          ts.GetUserID(),
-		RequesterUserID: strings.TrimSpace(requesterUserID),
-		AgentSessionID:  ts.GetAgentSessionID(),
-		MessageID:       messageID,
-		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
-		DeliveryFormat:  deliveryfmt.DeliveryFormatMarkdown,
-		ProgressPolicy:  progressPolicy,
-		Deliver:         true,
-		Source:          "zulip",
-	}
-	if messageID > 0 {
-		payload.DedupeKey = fmt.Sprintf("zulip:%d", messageID)
-	}
-	env, err := turncmd.SessionTurnEnvelope(payload)
-	if err != nil {
-		return err
-	}
-	_, err = h.actorDispatcher.Dispatch(ctx, env)
-	return err
-}
-
 func (h *ZulipBaldaHandler) sendZulipAgentReply(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
@@ -1308,17 +1296,19 @@ func (h *ZulipBaldaHandler) sendZulipAgentReply(
 }
 
 func (h *ZulipBaldaHandler) canAccessCollaboratorScope(ctx context.Context, userID int64) bool {
+	allowed, err := h.accessCollaboratorScope(ctx, userID)
+	return err == nil && allowed
+}
+
+func (h *ZulipBaldaHandler) accessCollaboratorScope(ctx context.Context, userID int64) (bool, error) {
 	if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(int(userID))) {
-		return true
+		return true, nil
 	}
 	if h.collaboratorStore == nil {
-		return false
+		return false, nil
 	}
 	_, found, err := h.collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
-	if err != nil || !found {
-		return false
-	}
-	return true
+	return found, err
 }
 
 func (h *ZulipBaldaHandler) getProviderName() string {

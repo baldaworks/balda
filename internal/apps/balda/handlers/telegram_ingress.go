@@ -9,7 +9,6 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/ingressapp"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
@@ -43,12 +42,7 @@ func (h *BaldaHandler) prepareTelegramSession(
 	ctx context.Context,
 	inbound ingressapp.InboundContext,
 ) (ingressapp.SessionPreparation, error) {
-	locator := deliverycmd.Locator{
-		ChannelType: inbound.ChannelType,
-		AddressKey:  inbound.AddressKey,
-		AddressJSON: inbound.AddressJSON,
-		SessionID:   inbound.SessionID,
-	}
+	locator := inboundLocator(inbound)
 	transportUserID := strings.TrimSpace(inbound.UserID)
 
 	var ts *baldasession.TopicSession

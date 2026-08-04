@@ -210,3 +210,20 @@ func StreamIDFromLocator(locator deliverycmd.Locator) (int, bool) {
 func UserID(userID int) string {
 	return fmt.Sprintf("%s-%d", zulipSessionIDPrefix, userID)
 }
+
+// ParseUserID decodes a canonical Zulip transport user identifier.
+func ParseUserID(value string) (int, error) {
+	prefix := zulipSessionIDPrefix + "-"
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return 0, fmt.Errorf("zulip user id %q must start with %q", value, prefix)
+	}
+	userID, err := strconv.Atoi(strings.TrimPrefix(trimmed, prefix))
+	if err != nil {
+		return 0, fmt.Errorf("parse zulip user id %q: %w", value, err)
+	}
+	if userID <= 0 {
+		return 0, fmt.Errorf("zulip user id %q must be positive", value)
+	}
+	return userID, nil
+}

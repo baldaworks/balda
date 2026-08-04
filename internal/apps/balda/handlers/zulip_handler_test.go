@@ -20,6 +20,7 @@ import (
 	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 
@@ -328,6 +329,46 @@ func TestZulipBaldaHandlerReturnsBusyWhenProcessingSlotsFull(t *testing.T) {
 	}
 }
 
+func TestZulipHandlerHTTPSettlementWaitsForDurableAcceptance(t *testing.T) {
+	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
+		t.Fatalf("RegisterOwnerSubject() error = %v", err)
+	}
+	body := `{"token":"expected-token","message":{"id":42,"sender_id":101,"sender_email":"owner@example.com","type":"private","content":"hello"}}`
+
+	for _, test := range []struct {
+		name        string
+		dispatchErr error
+		wantStatus  int
+	}{
+		{name: "accepted", wantStatus: http.StatusOK},
+		{name: "retry", dispatchErr: actorlayer.TransientError(errors.New("temporary dispatch failure")), wantStatus: http.StatusServiceUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := &ZulipBaldaHandler{
+				ownerStore:      ownerStore,
+				sessionManager:  &fakeZulipSessionManager{baldaProvider: "alpha"},
+				actorDispatcher: &recordingZulipDispatcher{err: test.dispatchErr},
+				webhookToken:    "expected-token",
+				processSem:      make(chan struct{}, 1),
+				logger:          zerolog.Nop(),
+				ownerID:         101,
+			}
+			req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(body))
+			rec := httptest.NewRecorder()
+
+			handler.handleWebhook(rec, req)
+
+			if rec.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, test.wantStatus)
+			}
+		})
+	}
+}
+
 func TestZulipBaldaHandlerIgnoresBotEchoBeforeProcessingQueue(t *testing.T) {
 	handler := &ZulipBaldaHandler{
 		webhookToken: "expected-token",
@@ -560,7 +601,7 @@ func TestZulipBaldaHandlerMentionCommandUsesCommandText(t *testing.T) {
 				ownerID:         101,
 			}
 
-			handler.processMessage(context.Background(), zulipWebhookPayload{
+			settlement, processErr := handler.processMessage(context.Background(), zulipWebhookPayload{
 				Data:    tt.data,
 				Trigger: "mention",
 				Message: zulipMessage{
@@ -571,6 +612,9 @@ func TestZulipBaldaHandlerMentionCommandUsesCommandText(t *testing.T) {
 					Subject:     "ops",
 				},
 			})
+			if processErr != nil || settlement.Outcome != turncmd.InboundTerminal {
+				t.Fatalf("processMessage() settlement = %+v, error = %v", settlement, processErr)
+			}
 
 			payloads := zulipDeliveryPayloads(t, dispatcher.commands)
 			if len(payloads) != 1 {
@@ -600,7 +644,7 @@ func TestZulipBaldaHandlerUsesMessageContentWhenDataEmpty(t *testing.T) {
 		ownerID:         101,
 	}
 
-	handler.processMessage(context.Background(), zulipWebhookPayload{
+	settlement, processErr := handler.processMessage(context.Background(), zulipWebhookPayload{
 		Message: zulipMessage{
 			SenderID:    101,
 			SenderEmail: "owner@example.com",
@@ -610,6 +654,9 @@ func TestZulipBaldaHandlerUsesMessageContentWhenDataEmpty(t *testing.T) {
 			Content:     "/locator",
 		},
 	})
+	if processErr != nil || settlement.Outcome != turncmd.InboundTerminal {
+		t.Fatalf("processMessage() settlement = %+v, error = %v", settlement, processErr)
+	}
 
 	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
 	if len(payloads) != 1 {
@@ -895,7 +942,10 @@ func TestZulipBaldaHandlerMessagePublishesDirectSessionTurn(t *testing.T) {
 		ownerID:         101,
 	}
 
-	handler.handleMessage(context.Background(), locator, 101, 42, "hello", true)
+	settlement, err := handler.handleMessage(context.Background(), locator, 101, 42, "hello", true)
+	if err != nil || settlement.Outcome != turncmd.InboundAccepted {
+		t.Fatalf("handleMessage() settlement = %+v, error = %v", settlement, err)
+	}
 
 	var env actorlayer.Envelope
 	found := false
@@ -945,7 +995,10 @@ func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 		ownerID:         101,
 	}
 
-	handler.handleMessage(context.Background(), locator, 101, 0, "hello", true)
+	settlement, err := handler.handleMessage(context.Background(), locator, 101, 43, "hello", true)
+	if err == nil || settlement.Outcome != turncmd.InboundRetry {
+		t.Fatalf("handleMessage() settlement = %+v, error = %v; want retry", settlement, err)
+	}
 
 	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
 	if len(payloads) != 1 {

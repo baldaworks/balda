@@ -14,10 +14,9 @@ import (
 
 	"github.com/baldaworks/go-actorlayer/transport"
 	"github.com/normahq/balda/internal/apps/balda/actorcmd"
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/normahq/balda/internal/apps/balda/ingressapp"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -168,13 +167,13 @@ func (h *SlackAgentHandler) handleEvents(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "busy", http.StatusServiceUnavailable)
 		return
 	}
+	defer release()
+	settlement, err := h.processEvent(context.WithoutCancel(r.Context()), env)
+	if err != nil && settlement.Outcome == turncmd.InboundRetry {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	h.processWG.Add(1)
-	go func() {
-		defer h.processWG.Done()
-		defer release()
-		h.processEvent(context.WithoutCancel(r.Context()), env)
-	}()
 }
 
 func (h *SlackAgentHandler) readAndVerifySlackRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
@@ -213,12 +212,12 @@ func (h *SlackAgentHandler) acquireProcessSlot() (func(), bool) {
 	}
 }
 
-func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAgentEnvelope) {
+func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAgentEnvelope) (turncmd.InboundSettlement, error) {
 	ctx, cancel := context.WithTimeout(requestCtx, slackWebhookProcessingTimeout)
 	defer cancel()
 	event := env.Event
 	if strings.TrimSpace(event.Text) == "" || strings.TrimSpace(event.UserID) == "" {
-		return
+		return terminalInbound(), nil
 	}
 	teamID := firstNonEmpty(event.TeamID, env.TeamID)
 	var locator baldasession.SessionLocator
@@ -230,43 +229,53 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 	subject := baldaslack.UserID(teamID, event.UserID)
 	if handled, err := h.handleQuestionReply(ctx, locator, subject, event); err != nil {
 		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to handle slack agent question reply")
-		return
+		return retryInbound(), err
 	} else if handled {
-		return
+		return terminalInbound(), nil
 	}
-	ts, err := h.getOrCreateSession(ctx, locator, subject)
-	if err != nil {
-		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to get or create slack agent session")
-		return
-	}
-	progressPolicy := baldachannel.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true}
-	payload := turncmd.SessionTurnPayload{
-		Text:             strings.TrimSpace(event.Text),
+	inbound := baldaslackagent.NormalizeInbound(baldaslackagent.InboundMessage{
 		Locator:          locator,
-		UserID:           ts.GetUserID(),
-		RequesterUserID:  subject,
-		AgentSessionID:   ts.GetAgentSessionID(),
-		MessageID:        slackMessageID(firstNonEmpty(event.MessageID, env.EventID)),
-		ReplyToMessageID: slackMessageID(event.ReplyToMessageID),
-		ReceivedAt:       time.Now().UTC().Format(time.RFC3339),
-		DeliveryFormat:   deliveryfmt.DeliveryFormatMrkdwn,
-		ProgressPolicy:   progressPolicy,
-		Deliver:          true,
-		Source:           "slack_agent",
-		DedupeKey:        "slack_agent:" + firstNonEmpty(env.EventID, event.MessageID),
-	}
-	envelope, err := turncmd.SessionTurnEnvelope(payload)
+		EventID:          env.EventID,
+		MessageID:        event.MessageID,
+		ReplyToMessageID: event.ReplyToMessageID,
+		UserID:           subject,
+		Text:             event.Text,
+		ReceivedAt:       time.Now(),
+	})
+	service, err := ingressapp.New(
+		ingressapp.AuthorizerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.Authorization, error) {
+			return ingressapp.Authorization{Allowed: true}, nil
+		}),
+		ingressapp.SessionPreparerFunc(h.prepareSlackAgentSession),
+		h.actorDispatcher,
+	)
 	if err != nil {
-		h.logger.Warn().Err(err).Msg("failed to build slack agent session turn envelope")
-		return
+		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to construct slack agent ingress")
+		return retryInbound(), err
 	}
-	if _, err := h.actorDispatcher.Dispatch(ctx, envelope); err != nil {
-		if actorcmd.IsCommandQueueFull(err) {
-			h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("slack agent session command queue full")
-			return
-		}
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to dispatch slack agent session turn")
+	result, err := service.Process(ctx, inbound)
+	if err == nil || result.Settlement.Outcome != turncmd.InboundRetry {
+		return result.Settlement, err
 	}
+	if actorcmd.IsCommandQueueFull(err) {
+		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("slack agent session command queue full")
+		return result.Settlement, err
+	}
+	h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to dispatch slack agent session turn")
+	return result.Settlement, err
+}
+
+func (h *SlackAgentHandler) prepareSlackAgentSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+	ts, err := h.getOrCreateSession(ctx, inboundLocator(inbound), inbound.UserID)
+	if err != nil {
+		return ingressapp.SessionPreparation{}, err
+	}
+	return ingressapp.SessionPreparation{
+		Ready:           true,
+		UserID:          ts.GetUserID(),
+		RequesterUserID: inbound.UserID,
+		AgentSessionID:  ts.GetAgentSessionID(),
+	}, nil
 }
 
 func (h *SlackAgentHandler) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string) (*baldasession.TopicSession, error) {

@@ -5,6 +5,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +18,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 
@@ -78,7 +83,10 @@ func TestSlackChatHandlerHandleMessagePublishesDirectSessionTurn(t *testing.T) {
 		logger:          zerolog.Nop(),
 	}
 
-	handler.handleMessage(context.Background(), locator, "T123", "U456", "1712345678.1234", "hello", true, true)
+	settlement, err := handler.handleMessage(context.Background(), locator, "T123", "U456", "1712345678.1234", "hello", true, true)
+	if err != nil || settlement.Outcome != turncmd.InboundAccepted {
+		t.Fatalf("handleMessage() settlement = %+v, error = %v", settlement, err)
+	}
 
 	var envFound bool
 	var envPayload actors.SessionTurnPayload
@@ -101,7 +109,7 @@ func TestSlackChatHandlerHandleMessagePublishesDirectSessionTurn(t *testing.T) {
 	if envPayload.Source != "slack" || !envPayload.Deliver {
 		t.Fatalf("session turn payload = %+v, want slack deliver=true", envPayload)
 	}
-	if got, want := envPayload.MessageID, slackMessageID("1712345678.1234"); got != want {
+	if got, want := envPayload.MessageID, 1712345678; got != want {
 		t.Fatalf("payload message_id = %d, want %d", got, want)
 	}
 	if got, want := envPayload.DedupeKey, "slack:1712345678.1234"; got != want {
@@ -110,4 +118,64 @@ func TestSlackChatHandlerHandleMessagePublishesDirectSessionTurn(t *testing.T) {
 	if got, want := envPayload.UserID, "slack:T123:U456"; got != want {
 		t.Fatalf("payload user_id = %q, want %q", got, want)
 	}
+}
+
+func TestSlackChatHandlerHTTPSettlementWaitsForDurableAcceptance(t *testing.T) {
+	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	if _, err := ownerStore.RegisterOwnerSubject("slack:T123:U456"); err != nil {
+		t.Fatalf("RegisterOwnerSubject() error = %v", err)
+	}
+	locator := baldaslack.NewDMLocator("T123", "D123")
+	ts := newBaldaTopicSession(t, locator.SessionID)
+	setUnexportedField(t, ts, "userID", "slack:T123:U456")
+	sessionManager := newBaldaSessionManagerWithSession(t, locator, ts)
+	body := []byte(`{"type":"event_callback","team_id":"T123","event":{"type":"message","channel_type":"im","channel":"D123","user":"U456","text":"hello","ts":"1712345678.1234"}}`)
+
+	for _, test := range []struct {
+		name        string
+		dispatchErr error
+		wantStatus  int
+	}{
+		{name: "accepted", wantStatus: http.StatusOK},
+		{name: "retry", dispatchErr: actorlayer.TransientError(errors.New("temporary dispatch failure")), wantStatus: http.StatusServiceUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dispatcher := &recordingHandlerCommandBus{}
+			if test.dispatchErr != nil {
+				dispatcher.commandErrs = []error{test.dispatchErr, nil}
+			}
+			handler := &SlackChatHandler{
+				ownerStore:      ownerStore,
+				sessionManager:  sessionManager,
+				actorDispatcher: dispatcher,
+				config:          SlackChatConfig{SigningSecret: "secret"},
+				logger:          zerolog.Nop(),
+				processSem:      make(chan struct{}, 1),
+			}
+			req := signedSlackRequest(t, "/slack/events", "secret", body)
+			rec := httptest.NewRecorder()
+
+			handler.handleEvents(rec, req)
+
+			if rec.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, test.wantStatus)
+			}
+		})
+	}
+}
+
+func signedSlackRequest(t *testing.T, path, secret string, body []byte) *http.Request {
+	t.Helper()
+	timestamp := fmt.Sprintf("%d", time.Now().Unix())
+	base := slackSignatureVersion + ":" + timestamp + ":" + string(body)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(base))
+	signature := slackSignatureVersion + "=" + hex.EncodeToString(mac.Sum(nil))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(body)))
+	req.Header.Set("X-Slack-Request-Timestamp", timestamp)
+	req.Header.Set("X-Slack-Signature", signature)
+	return req
 }

@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
@@ -11,6 +14,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 
@@ -27,7 +31,7 @@ func TestSlackAgentHandlerProcessEventPublishesDirectSessionTurn(t *testing.T) {
 		logger:          zerolog.Nop(),
 	}
 
-	handler.processEvent(context.Background(), slackAgentEnvelope{
+	settlement, err := handler.processEvent(context.Background(), slackAgentEnvelope{
 		EventID: "evt-123",
 		TeamID:  "T123",
 		Event: slackAgentEvent{
@@ -37,6 +41,9 @@ func TestSlackAgentHandlerProcessEventPublishesDirectSessionTurn(t *testing.T) {
 			MessageID:      "msg-123",
 		},
 	})
+	if err != nil || settlement.Outcome != turncmd.InboundAccepted {
+		t.Fatalf("processEvent() settlement = %+v, error = %v", settlement, err)
+	}
 
 	var envFound bool
 	var envPayload actors.SessionTurnPayload
@@ -64,6 +71,45 @@ func TestSlackAgentHandlerProcessEventPublishesDirectSessionTurn(t *testing.T) {
 	}
 	if got, want := envPayload.UserID, "slack:T123:U456"; got != want {
 		t.Fatalf("payload user_id = %q, want %q", got, want)
+	}
+}
+
+func TestSlackAgentHandlerHTTPSettlementWaitsForDurableAcceptance(t *testing.T) {
+	locator := baldaslackagent.NewConversationLocator("T123", "C456")
+	ts := newBaldaTopicSession(t, locator.SessionID)
+	setUnexportedField(t, ts, "userID", "slack:T123:U456")
+	sessionManager := newBaldaSessionManagerWithSession(t, locator, ts)
+	body := []byte(`{"type":"event_callback","event_id":"evt-123","team_id":"T123","event":{"type":"message","user_id":"U456","text":"hello","conversation_id":"C456","message_id":"msg-123"}}`)
+
+	for _, test := range []struct {
+		name        string
+		dispatchErr error
+		wantStatus  int
+	}{
+		{name: "accepted", wantStatus: http.StatusOK},
+		{name: "retry", dispatchErr: actorlayer.TransientError(errors.New("temporary dispatch failure")), wantStatus: http.StatusServiceUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dispatcher := &recordingHandlerCommandBus{}
+			if test.dispatchErr != nil {
+				dispatcher.commandErrs = []error{test.dispatchErr}
+			}
+			handler := &SlackAgentHandler{
+				sessionManager:  sessionManager,
+				actorDispatcher: dispatcher,
+				config:          SlackAgentConfig{SigningSecret: "secret"},
+				logger:          zerolog.Nop(),
+				processSem:      make(chan struct{}, 1),
+			}
+			req := signedSlackRequest(t, "/slack/agent/events", "secret", body)
+			rec := httptest.NewRecorder()
+
+			handler.handleEvents(rec, req)
+
+			if rec.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, test.wantStatus)
+			}
+		})
 	}
 }
 

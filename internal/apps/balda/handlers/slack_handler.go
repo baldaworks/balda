@@ -22,10 +22,10 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/automode"
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
 	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
+	"github.com/normahq/balda/internal/apps/balda/ingressapp"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
@@ -279,13 +279,13 @@ func (h *SlackChatHandler) handleEvents(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "busy", http.StatusServiceUnavailable)
 		return
 	}
+	defer release()
+	settlement, err := h.processEvent(context.WithoutCancel(r.Context()), env)
+	if err != nil && settlement.Outcome == turncmd.InboundRetry {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	h.processWG.Add(1)
-	go func() {
-		defer h.processWG.Done()
-		defer release()
-		h.processEvent(context.WithoutCancel(r.Context()), env)
-	}()
 }
 
 func (h *SlackChatHandler) handleCommand(w http.ResponseWriter, r *http.Request) {
@@ -379,7 +379,7 @@ func (h *SlackChatHandler) acquireProcessSlot() (func(), bool) {
 	}
 }
 
-func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEventEnvelope) {
+func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEventEnvelope) (turncmd.InboundSettlement, error) {
 	ctx, cancel := context.WithTimeout(requestCtx, slackWebhookProcessingTimeout)
 	defer cancel()
 	event := env.Event
@@ -388,10 +388,10 @@ func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEve
 	case "app_mention":
 		locator := baldaslack.NewThreadLocator(teamID, event.Channel, firstNonEmpty(event.ThreadTS, event.TS))
 		text := stripSlackBotMentions(event.Text, h.getBotUserID())
-		h.handleMessage(ctx, locator, teamID, event.User, event.TS, text, false, true)
+		return h.handleMessage(ctx, locator, teamID, event.User, event.TS, text, false, true)
 	case "message":
 		if event.Subtype != "" || event.BotID != "" {
-			return
+			return terminalInbound(), nil
 		}
 		switch event.ChannelType {
 		case "im":
@@ -401,21 +401,22 @@ func (h *SlackChatHandler) processEvent(requestCtx context.Context, env slackEve
 				// exact locator rather than collapsing into the DM root.
 				locator = baldaslack.NewThreadLocator(teamID, event.Channel, event.ThreadTS)
 			}
-			h.handleMessage(ctx, locator, teamID, event.User, event.TS, event.Text, true, true)
+			return h.handleMessage(ctx, locator, teamID, event.User, event.TS, event.Text, true, true)
 		case "channel", "group":
 			if event.ChannelType == "group" && !h.config.IncludePrivateChannels {
-				return
+				return terminalInbound(), nil
 			}
 			if strings.TrimSpace(event.ThreadTS) == "" {
-				return
+				return terminalInbound(), nil
 			}
 			locator := baldaslack.NewThreadLocator(teamID, event.Channel, event.ThreadTS)
 			if _, err := h.sessionManager.GetSession(locator); err != nil {
-				return
+				return terminalInbound(), nil
 			}
-			h.handleMessage(ctx, locator, teamID, event.User, event.TS, event.Text, false, false)
+			return h.handleMessage(ctx, locator, teamID, event.User, event.TS, event.Text, false, false)
 		}
 	}
+	return terminalInbound(), nil
 }
 
 func (h *SlackChatHandler) processSlashCommand(requestCtx context.Context, cmd slackSlashCommand) {
@@ -824,54 +825,75 @@ func (h *SlackChatHandler) handleUserCommand(ctx context.Context, locator baldas
 	}
 }
 
-func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, messageID, text string, isDM bool, createIfMissing bool) {
+func (h *SlackChatHandler) handleMessage(ctx context.Context, locator baldasession.SessionLocator, teamID, userID, messageID, text string, isDM bool, createIfMissing bool) (turncmd.InboundSettlement, error) {
 	subject := baldaslack.UserID(teamID, userID)
 	if h.ownerStore == nil || !h.ownerStore.HasOwner() {
-		return
+		return terminalInbound(), nil
 	}
 	if isDM {
 		if token, ok := firstFieldToken(text); ok {
 			h.handleOwnerBindToken(ctx, locator, subject, token)
-			return
+			return terminalInbound(), nil
 		}
-	}
-	if !h.canAccessSubject(ctx, subject) {
-		return
 	}
 	if strings.TrimSpace(text) == "" {
-		return
+		return terminalInbound(), nil
 	}
-	ts, err := h.getOrCreateSession(ctx, locator, subject, isDM, createIfMissing)
+	inbound := baldaslack.NormalizeInbound(baldaslack.InboundMessage{
+		Locator:           locator,
+		ProviderMessageID: messageID,
+		UserID:            subject,
+		Text:              text,
+		Direct:            isDM,
+		ReceivedAt:        time.Now(),
+	})
+	service, err := ingressapp.New(
+		ingressapp.AuthorizerFunc(h.authorizeSlackInbound),
+		ingressapp.SessionPreparerFunc(func(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+			return h.prepareSlackSession(ctx, inbound, createIfMissing)
+		}),
+		h.actorDispatcher,
+	)
 	if err != nil {
-		return
+		return retryInbound(), err
 	}
-	progressPolicy := baldachannel.ProgressPolicy{Typing: false, Thinking: false, PlanUpdates: true}
-	payload := turncmd.SessionTurnPayload{
-		Text:            text,
-		Locator:         locator,
-		UserID:          ts.GetUserID(),
-		RequesterUserID: subject,
-		AgentSessionID:  ts.GetAgentSessionID(),
-		MessageID:       slackMessageID(messageID),
-		ReceivedAt:      time.Now().UTC().Format(time.RFC3339),
-		DeliveryFormat:  deliveryfmt.DeliveryFormatMrkdwn,
-		ProgressPolicy:  progressPolicy,
-		Deliver:         true,
-		Source:          "slack",
-		DedupeKey:       "slack:" + strings.TrimSpace(messageID),
+	result, err := service.Process(ctx, inbound)
+	if err == nil || result.Settlement.Outcome != turncmd.InboundRetry {
+		return result.Settlement, err
 	}
-	env, err := turncmd.SessionTurnEnvelope(payload)
-	if err != nil {
+	if baldaexecution.IsCommandQueueFull(err) {
+		_ = h.sendPlain(ctx, locator, "Session command queue is full. Please wait or use /balda cancel.")
+	} else if result.Settlement.Reason != ingressapp.ReasonSessionRejected {
 		_ = h.sendPlain(ctx, locator, "Failed to publish your message for processing. Please try again.")
-		return
 	}
-	if _, err := h.actorDispatcher.Dispatch(ctx, env); err != nil {
-		if baldaexecution.IsCommandQueueFull(err) {
-			_ = h.sendPlain(ctx, locator, "Session command queue is full. Please wait or use /balda cancel.")
-			return
+	return result.Settlement, err
+}
+
+func (h *SlackChatHandler) authorizeSlackInbound(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.Authorization, error) {
+	allowed, err := h.accessSubject(ctx, inbound.UserID)
+	return ingressapp.Authorization{Allowed: allowed, Reason: ingressapp.ReasonUnauthorized}, err
+}
+
+func (h *SlackChatHandler) prepareSlackSession(ctx context.Context, inbound ingressapp.InboundContext, createIfMissing bool) (ingressapp.SessionPreparation, error) {
+	ts, err := h.getOrCreateSession(
+		ctx,
+		inboundLocator(inbound),
+		inbound.UserID,
+		inbound.Direct,
+		createIfMissing,
+	)
+	if err != nil {
+		if errors.Is(err, baldasession.ErrNoPersistedSession) && !createIfMissing {
+			return ingressapp.SessionPreparation{Reason: ingressapp.ReasonSessionRejected}, nil
 		}
-		_ = h.sendPlain(ctx, locator, "Failed to publish your message for processing. Please try again.")
+		return ingressapp.SessionPreparation{}, err
 	}
+	return ingressapp.SessionPreparation{
+		Ready:           true,
+		UserID:          ts.GetUserID(),
+		RequesterUserID: inbound.UserID,
+		AgentSessionID:  ts.GetAgentSessionID(),
+	}, nil
 }
 
 func (h *SlackChatHandler) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string, isDM bool, createIfMissing bool) (*baldasession.TopicSession, error) {
@@ -914,14 +936,19 @@ func (h *SlackChatHandler) sendSessionWelcome(ctx context.Context, locator balda
 }
 
 func (h *SlackChatHandler) canAccessSubject(ctx context.Context, subject string) bool {
+	allowed, err := h.accessSubject(ctx, subject)
+	return err == nil && allowed
+}
+
+func (h *SlackChatHandler) accessSubject(ctx context.Context, subject string) (bool, error) {
 	if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(subject) {
-		return true
+		return true, nil
 	}
 	if h.collaboratorStore == nil {
-		return false
+		return false, nil
 	}
 	_, found, err := h.collaboratorStore.GetCollaborator(ctx, subject)
-	return err == nil && found
+	return found, err
 }
 
 func (h *SlackChatHandler) getProviderName() string {
@@ -977,19 +1004,6 @@ func stripSlackBotMentions(text string, botUserID string) string {
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, mention))
 	}
 	return trimmed
-}
-
-func slackMessageID(ts string) int {
-	var out int
-	for _, r := range strings.TrimSpace(ts) {
-		if r >= '0' && r <= '9' {
-			out = out*10 + int(r-'0')
-			if out > 1_000_000_000 {
-				return out
-			}
-		}
-	}
-	return out
 }
 
 func firstNonEmpty(values ...string) string {
