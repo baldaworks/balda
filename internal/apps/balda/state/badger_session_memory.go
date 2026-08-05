@@ -18,8 +18,9 @@ import (
 // are added alongside the v2 canonical mutation contract; construction is kept
 // separate so directory locking and durability defaults are testable now.
 type BadgerSessionMemoryStore struct {
-	db   *badger.DB
-	gcMu sync.Mutex
+	db                            *badger.DB
+	gcMu                          sync.Mutex
+	beforeCanonicalMutationCommit func() error // test fault-injection seam; nil in production.
 }
 
 var _ sessionmemory.CanonicalSourceForgetStore = (*BadgerSessionMemoryStore)(nil)
@@ -220,7 +221,13 @@ func (s *BadgerSessionMemoryStore) ApplyCanonicalMutation(ctx context.Context, m
 		if err := putBadgerSessionMemoryRecord(txn, scopeKey, badgerRecordScope, state); err != nil {
 			return err
 		}
-		return putBadgerSessionMemoryRecord(txn, operationKey, badgerRecordOperation, badgerCanonicalOperation{Fingerprint: mutation.Operation.Fingerprint, Outcome: outcome})
+		if err := putBadgerSessionMemoryRecord(txn, operationKey, badgerRecordOperation, badgerCanonicalOperation{Fingerprint: mutation.Operation.Fingerprint, Outcome: outcome}); err != nil {
+			return err
+		}
+		if s.beforeCanonicalMutationCommit != nil {
+			return s.beforeCanonicalMutationCommit()
+		}
+		return nil
 	})
 	if err != nil {
 		return sessionmemory.CanonicalMutationOutcome{}, badgerSessionMemoryError("apply canonical mutation", err)
