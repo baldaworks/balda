@@ -102,6 +102,37 @@ func TestBadgerSessionMemoryStorePersistsEncryptedPayloadSeparately(t *testing.T
 	}
 }
 
+func TestBadgerSessionMemoryStoreDeniesSourceByExactScope(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "memory.badger")
+	store, err := OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	scope := sessionmemory.Scope{Key: "canonical:deny-a", Kind: sessionmemory.ScopeKindPersonal}
+	if err := store.DenySource(context.Background(), scope, "source-1", time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("DenySource() error = %v", err)
+	}
+	denied, err := store.IsSourceDenied(context.Background(), scope, "source-1")
+	if err != nil || !denied {
+		t.Fatalf("IsSourceDenied() = %t, error = %v", denied, err)
+	}
+	otherScope := sessionmemory.Scope{Key: "canonical:deny-b", Kind: sessionmemory.ScopeKindPersonal}
+	if denied, err := store.IsSourceDenied(context.Background(), otherScope, "source-1"); err != nil || denied {
+		t.Fatalf("other scope IsSourceDenied() = %t, error = %v", denied, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	store, err = OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("reopen error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if denied, err := store.IsSourceDenied(context.Background(), scope, "source-1"); err != nil || !denied {
+		t.Fatalf("reopened IsSourceDenied() = %t, error = %v", denied, err)
+	}
+}
+
 func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "memory.badger")
 	store, err := OpenBadgerSessionMemoryStore(directory)
