@@ -65,6 +65,10 @@ type badgerDeniedRevision struct {
 	DeniedAt   time.Time `json:"denied_at"`
 }
 
+type badgerProjectionActive struct {
+	GenerationID string `json:"generation_id"`
+}
+
 func putBadgerSessionMemoryRecord(txn *badger.Txn, key []byte, recordType string, value any) error {
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -540,14 +544,14 @@ func (s *BadgerSessionMemoryStore) ScanActiveHeads(ctx context.Context, request 
 	return heads, nil
 }
 
-func (s *BadgerSessionMemoryStore) LoadProjectionManifest(ctx context.Context, scope sessionmemory.Scope, projectionID string) (sessionmemory.ProjectionManifest, bool, error) {
+func (s *BadgerSessionMemoryStore) LoadProjectionManifest(ctx context.Context, scope sessionmemory.Scope, projectionID, generationID string) (sessionmemory.ProjectionManifest, bool, error) {
 	if err := sessionMemoryContextError(ctx); err != nil {
 		return sessionmemory.ProjectionManifest{}, false, err
 	}
-	if err := scope.Validate(); err != nil || strings.TrimSpace(projectionID) == "" {
+	if err := scope.Validate(); err != nil || strings.TrimSpace(projectionID) == "" || strings.TrimSpace(generationID) == "" {
 		return sessionmemory.ProjectionManifest{}, false, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "projection manifest lookup is invalid", err)
 	}
-	key, err := badgerSessionMemoryKey(scope, badgerRecordProjectionManifest, projectionID)
+	key, err := badgerProjectionManifestKey(scope, projectionID, generationID)
 	if err != nil {
 		return sessionmemory.ProjectionManifest{}, false, err
 	}
@@ -561,8 +565,36 @@ func (s *BadgerSessionMemoryStore) LoadProjectionManifest(ctx context.Context, s
 	if err != nil {
 		return sessionmemory.ProjectionManifest{}, false, badgerSessionMemoryError("load projection manifest", err)
 	}
-	if err := manifest.Validate(); err != nil || manifest.Scope != scope || manifest.ProjectionID != projectionID {
+	if err := manifest.Validate(); err != nil || manifest.Scope != scope || manifest.ProjectionID != projectionID || manifest.GenerationID != generationID {
 		return sessionmemory.ProjectionManifest{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored projection manifest is invalid", err)
+	}
+	return manifest, true, nil
+}
+
+func (s *BadgerSessionMemoryStore) LoadActiveProjectionManifest(ctx context.Context, scope sessionmemory.Scope, projectionID string) (sessionmemory.ProjectionManifest, bool, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return sessionmemory.ProjectionManifest{}, false, err
+	}
+	if err := scope.Validate(); err != nil || strings.TrimSpace(projectionID) == "" {
+		return sessionmemory.ProjectionManifest{}, false, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "active projection lookup is invalid", err)
+	}
+	activeKey, err := badgerSessionMemoryKey(scope, badgerRecordProjectionActive, projectionID)
+	if err != nil {
+		return sessionmemory.ProjectionManifest{}, false, err
+	}
+	var active badgerProjectionActive
+	err = s.db.View(func(txn *badger.Txn) error {
+		return getBadgerSessionMemoryRecord(txn, activeKey, badgerRecordProjectionActive, &active)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return sessionmemory.ProjectionManifest{}, false, nil
+	}
+	if err != nil {
+		return sessionmemory.ProjectionManifest{}, false, badgerSessionMemoryError("load active projection", err)
+	}
+	manifest, found, err := s.LoadProjectionManifest(ctx, scope, projectionID, active.GenerationID)
+	if err != nil || !found || manifest.Status != sessionmemory.ProjectionGenerationActive {
+		return sessionmemory.ProjectionManifest{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "active projection manifest is invalid", err)
 	}
 	return manifest, true, nil
 }
@@ -575,7 +607,7 @@ func (s *BadgerSessionMemoryStore) MarkProjectionDirty(ctx context.Context, mani
 		return err
 	}
 	manifest.Status = sessionmemory.ProjectionGenerationDirty
-	key, err := badgerSessionMemoryKey(manifest.Scope, badgerRecordProjectionManifest, manifest.ProjectionID)
+	key, err := badgerProjectionManifestKey(manifest.Scope, manifest.ProjectionID, manifest.GenerationID)
 	if err != nil {
 		return err
 	}
@@ -598,13 +630,57 @@ func (s *BadgerSessionMemoryStore) AdvanceProjectionWatermark(ctx context.Contex
 }
 
 func (s *BadgerSessionMemoryStore) ActivateProjectionGeneration(ctx context.Context, manifest sessionmemory.ProjectionManifest, updatedAt time.Time) error {
-	return s.updateProjectionManifest(ctx, manifest, updatedAt, func(stored *sessionmemory.ProjectionManifest) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := manifest.Validate(); err != nil || updatedAt.IsZero() {
+		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "projection activation is invalid", err)
+	}
+	manifestKey, err := badgerProjectionManifestKey(manifest.Scope, manifest.ProjectionID, manifest.GenerationID)
+	if err != nil {
+		return err
+	}
+	activeKey, err := badgerSessionMemoryKey(manifest.Scope, badgerRecordProjectionActive, manifest.ProjectionID)
+	if err != nil {
+		return err
+	}
+	err = s.db.Update(func(txn *badger.Txn) error {
+		var stored sessionmemory.ProjectionManifest
+		if err := getBadgerSessionMemoryRecord(txn, manifestKey, badgerRecordProjectionManifest, &stored); err != nil {
+			return err
+		}
 		if stored.Status != sessionmemory.ProjectionGenerationDirty {
 			return sessionmemory.PermanentError(sessionmemory.CodeConflict, "projection generation is not dirty", nil)
 		}
+		var previous badgerProjectionActive
+		if err := getBadgerSessionMemoryRecord(txn, activeKey, badgerRecordProjectionActive, &previous); err == nil && previous.GenerationID != stored.GenerationID {
+			previousKey, keyErr := badgerProjectionManifestKey(manifest.Scope, manifest.ProjectionID, previous.GenerationID)
+			if keyErr != nil {
+				return keyErr
+			}
+			var old sessionmemory.ProjectionManifest
+			if err := getBadgerSessionMemoryRecord(txn, previousKey, badgerRecordProjectionManifest, &old); err != nil {
+				return err
+			}
+			old.Status = sessionmemory.ProjectionGenerationSuperseded
+			old.UpdatedAt = updatedAt.UTC()
+			if err := putBadgerSessionMemoryRecord(txn, previousKey, badgerRecordProjectionManifest, old); err != nil {
+				return err
+			}
+		} else if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
 		stored.Status = sessionmemory.ProjectionGenerationActive
-		return nil
+		stored.UpdatedAt = updatedAt.UTC()
+		if err := putBadgerSessionMemoryRecord(txn, manifestKey, badgerRecordProjectionManifest, stored); err != nil {
+			return err
+		}
+		return putBadgerSessionMemoryRecord(txn, activeKey, badgerRecordProjectionActive, badgerProjectionActive{GenerationID: stored.GenerationID})
 	})
+	if err != nil {
+		return badgerSessionMemoryError("activate projection generation", err)
+	}
+	return nil
 }
 
 func (s *BadgerSessionMemoryStore) updateProjectionManifest(ctx context.Context, manifest sessionmemory.ProjectionManifest, updatedAt time.Time, update func(*sessionmemory.ProjectionManifest) error) error {
@@ -614,7 +690,7 @@ func (s *BadgerSessionMemoryStore) updateProjectionManifest(ctx context.Context,
 	if err := manifest.Validate(); err != nil || updatedAt.IsZero() {
 		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "projection manifest update is invalid", err)
 	}
-	key, err := badgerSessionMemoryKey(manifest.Scope, badgerRecordProjectionManifest, manifest.ProjectionID)
+	key, err := badgerProjectionManifestKey(manifest.Scope, manifest.ProjectionID, manifest.GenerationID)
 	if err != nil {
 		return err
 	}

@@ -27,6 +27,7 @@ const (
 	badgerRecordDeniedSource            = "denied-source"
 	badgerRecordDeniedRevision          = "denied-revision"
 	badgerRecordProjectionManifest      = "projection-manifest"
+	badgerRecordProjectionActive        = "projection-active"
 )
 
 func badgerScopeKey(scope sessionmemory.Scope) ([]byte, error) {
@@ -62,6 +63,13 @@ func badgerSessionMemoryKey(scope sessionmemory.Scope, recordType string, id str
 		return nil, err
 	}
 	return sessionmemory.TupleKey(badgerSessionMemoryNamespace, badgerSessionMemoryVersion, recordType, scope.Key, string(scope.Kind), id)
+}
+
+func badgerProjectionManifestKey(scope sessionmemory.Scope, projectionID, generationID string) ([]byte, error) {
+	if err := scope.Validate(); err != nil {
+		return nil, err
+	}
+	return sessionmemory.TupleKey(badgerSessionMemoryNamespace, badgerSessionMemoryVersion, badgerRecordProjectionManifest, scope.Key, string(scope.Kind), projectionID, generationID)
 }
 
 func badgerSessionMemoryPrefix(scope sessionmemory.Scope, recordType string) ([]byte, error) {

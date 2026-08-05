@@ -452,7 +452,7 @@ func TestBadgerSessionMemoryStoreProjectionManifestFailsClosedUntilActivation(t 
 	if err := store.MarkProjectionDirty(context.Background(), manifest); err != nil {
 		t.Fatalf("MarkProjectionDirty() error = %v", err)
 	}
-	stored, found, err := store.LoadProjectionManifest(context.Background(), manifest.Scope, manifest.ProjectionID)
+	stored, found, err := store.LoadProjectionManifest(context.Background(), manifest.Scope, manifest.ProjectionID, manifest.GenerationID)
 	if err != nil || !found || stored.Status != sessionmemory.ProjectionGenerationDirty {
 		t.Fatalf("LoadProjectionManifest(dirty) = %#v, %t, %v", stored, found, err)
 	}
@@ -462,9 +462,49 @@ func TestBadgerSessionMemoryStoreProjectionManifestFailsClosedUntilActivation(t 
 	if err := store.ActivateProjectionGeneration(context.Background(), manifest, now.Add(2*time.Second)); err != nil {
 		t.Fatalf("ActivateProjectionGeneration() error = %v", err)
 	}
-	stored, found, err = store.LoadProjectionManifest(context.Background(), manifest.Scope, manifest.ProjectionID)
+	stored, found, err = store.LoadProjectionManifest(context.Background(), manifest.Scope, manifest.ProjectionID, manifest.GenerationID)
 	if err != nil || !found || stored.Status != sessionmemory.ProjectionGenerationActive || stored.Watermark != 7 {
 		t.Fatalf("LoadProjectionManifest(active) = %#v, %t, %v", stored, found, err)
+	}
+	active, found, err := store.LoadActiveProjectionManifest(context.Background(), manifest.Scope, manifest.ProjectionID)
+	if err != nil || !found || active.GenerationID != manifest.GenerationID {
+		t.Fatalf("LoadActiveProjectionManifest() = %#v, %t, %v", active, found, err)
+	}
+}
+
+func TestBadgerSessionMemoryStoreAtomicallySwitchesActiveProjectionGeneration(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Date(2026, time.August, 6, 0, 0, 0, 0, time.UTC)
+	scope := sessionmemory.Scope{Key: "canonical:projection-switch", Kind: sessionmemory.ScopeKindPersonal}
+	first := sessionmemory.ProjectionManifest{Scope: scope, ProjectionID: "bleve", GenerationID: "generation-1", Status: sessionmemory.ProjectionGenerationBuilding, UpdatedAt: now}
+	if err := store.MarkProjectionDirty(context.Background(), first); err != nil {
+		t.Fatalf("MarkProjectionDirty(first) error = %v", err)
+	}
+	if err := store.ActivateProjectionGeneration(context.Background(), first, now.Add(time.Second)); err != nil {
+		t.Fatalf("ActivateProjectionGeneration(first) error = %v", err)
+	}
+	second := sessionmemory.ProjectionManifest{Scope: scope, ProjectionID: "bleve", GenerationID: "generation-2", Status: sessionmemory.ProjectionGenerationBuilding, UpdatedAt: now.Add(2 * time.Second)}
+	if err := store.MarkProjectionDirty(context.Background(), second); err != nil {
+		t.Fatalf("MarkProjectionDirty(second) error = %v", err)
+	}
+	active, found, err := store.LoadActiveProjectionManifest(context.Background(), scope, "bleve")
+	if err != nil || !found || active.GenerationID != first.GenerationID {
+		t.Fatalf("active before switch = %#v, %t, %v", active, found, err)
+	}
+	if err := store.ActivateProjectionGeneration(context.Background(), second, now.Add(3*time.Second)); err != nil {
+		t.Fatalf("ActivateProjectionGeneration(second) error = %v", err)
+	}
+	active, found, err = store.LoadActiveProjectionManifest(context.Background(), scope, "bleve")
+	if err != nil || !found || active.GenerationID != second.GenerationID {
+		t.Fatalf("active after switch = %#v, %t, %v", active, found, err)
+	}
+	old, found, err := store.LoadProjectionManifest(context.Background(), scope, "bleve", first.GenerationID)
+	if err != nil || !found || old.Status != sessionmemory.ProjectionGenerationSuperseded {
+		t.Fatalf("old generation = %#v, %t, %v", old, found, err)
 	}
 }
 
