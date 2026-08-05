@@ -30,6 +30,9 @@ require (
 require (
 	cloud.google.com/go/logging v1.18.0 // indirect
 	github.com/coder/acp-go-sdk v0.13.5 // indirect
+	github.com/dgraph-io/badger/v4 v4.9.6 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
+	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 )
 
 require (
