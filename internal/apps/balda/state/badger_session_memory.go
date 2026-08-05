@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/normahq/balda/sessionmemory"
@@ -16,7 +17,25 @@ import (
 // are added alongside the v2 canonical mutation contract; construction is kept
 // separate so directory locking and durability defaults are testable now.
 type BadgerSessionMemoryStore struct {
-	db *badger.DB
+	db   *badger.DB
+	gcMu sync.Mutex
+}
+
+// RunValueLogGC performs at most one non-destructive Badger value-log cleanup.
+// A skipped/rejected GC is normal when no reclaimable log exists.
+func (s *BadgerSessionMemoryStore) RunValueLogGC(discardRatio float64) error {
+	if s == nil || s.db == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	if discardRatio <= 0 || discardRatio >= 1 {
+		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "badger GC discard ratio is invalid", nil)
+	}
+	s.gcMu.Lock()
+	defer s.gcMu.Unlock()
+	if err := s.db.RunValueLogGC(discardRatio); err != nil && !errors.Is(err, badger.ErrNoRewrite) {
+		return badgerSessionMemoryError("run canonical badger value-log GC", err)
+	}
+	return nil
 }
 
 var _ sessionmemory.CanonicalStore = (*BadgerSessionMemoryStore)(nil)

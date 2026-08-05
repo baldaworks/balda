@@ -65,6 +65,20 @@ func TestBadgerSessionMemoryStoreRequiresDirectory(t *testing.T) {
 	}
 }
 
+func TestBadgerSessionMemoryStoreValueLogGCValidation(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.RunValueLogGC(0); err == nil {
+		t.Fatal("RunValueLogGC(0) succeeded")
+	}
+	if err := store.RunValueLogGC(0.5); err != nil {
+		t.Fatalf("RunValueLogGC() error = %v", err)
+	}
+}
+
 func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "memory.badger")
 	store, err := OpenBadgerSessionMemoryStore(directory)
