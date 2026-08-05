@@ -2,7 +2,9 @@ package state
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,6 +236,77 @@ func TestBadgerSessionMemoryStoreClaimsAndRecoversDeliveryLease(t *testing.T) {
 	recovered, err := store.ClaimDeliveryOutbox(context.Background(), request)
 	if err != nil || len(recovered) != 1 || recovered[0].Claim.Attempts != 2 {
 		t.Fatalf("recovered ClaimDeliveryOutbox() = %#v, error = %v", recovered, err)
+	}
+}
+
+func TestBadgerSessionMemoryStoreRestoresReplayAndScopeState(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "memory.badger")
+	store, err := OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	scope := sessionmemory.Scope{Key: "canonical:restart", Kind: sessionmemory.ScopeKindPersonal}
+	mutation := canonicalRevisionMutation(scope, 0, "operation-1", canonicalRevision("revision-1", "item-1"))
+	first, err := store.ApplyCanonicalMutation(context.Background(), mutation)
+	if err != nil {
+		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	store, err = OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("reopen error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	replayed, err := store.ApplyCanonicalMutation(context.Background(), mutation)
+	if err != nil || replayed.ScopeVersion != first.ScopeVersion || replayed.ChangeSeq != first.ChangeSeq {
+		t.Fatalf("replay after reopen = %#v, error = %v", replayed, err)
+	}
+	state, err := store.LoadScopeState(context.Background(), scope)
+	if err != nil || state.Version != first.ScopeVersion || state.ChangeSeq != first.ChangeSeq {
+		t.Fatalf("state after reopen = %#v, error = %v", state, err)
+	}
+}
+
+func TestBadgerSessionMemoryStoreRejectsStaleCASAndAllowsIndependentScopes(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := sessionmemory.Scope{Key: "canonical:cas", Kind: sessionmemory.ScopeKindPersonal}
+	if _, err := store.ApplyCanonicalMutation(context.Background(), canonicalRevisionMutation(scope, 0, "operation-1", canonicalRevision("revision-1", "item-1"))); err != nil {
+		t.Fatalf("first ApplyCanonicalMutation() error = %v", err)
+	}
+	if _, err := store.ApplyCanonicalMutation(context.Background(), canonicalRevisionMutation(scope, 0, "operation-2", canonicalRevision("revision-2", "item-2"))); err == nil {
+		t.Fatal("stale CAS mutation succeeded")
+	}
+	var group sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, key := range []string{"canonical:independent-a", "canonical:independent-b"} {
+		group.Add(1)
+		go func(key string) {
+			defer group.Done()
+			scope := sessionmemory.Scope{Key: key, Kind: sessionmemory.ScopeKindPersonal}
+			_, err := store.ApplyCanonicalMutation(context.Background(), canonicalRevisionMutation(scope, 0, "operation-1", canonicalRevision(key+"-revision", key+"-item")))
+			errs <- err
+		}(key)
+	}
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("independent scope mutation error = %v", err)
+		}
+	}
+}
+
+func TestBadgerSessionMemoryErrorMapsTxnTooBig(t *testing.T) {
+	err := badgerSessionMemoryError("test", badger.ErrTxnTooBig)
+	var memoryErr *sessionmemory.Error
+	if !errors.As(err, &memoryErr) || memoryErr.Code != sessionmemory.CodeLimitExceeded {
+		t.Fatalf("badgerSessionMemoryError() = %#v", err)
 	}
 }
 
