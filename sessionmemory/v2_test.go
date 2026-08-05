@@ -126,6 +126,23 @@ func TestV2TrustedToolEvidenceRequiresToolRole(t *testing.T) {
 	}
 }
 
+func TestNewEvidenceRefUsesUTF8ByteOffsetsAndMessageDigest(t *testing.T) {
+	text := "Привет world"
+	evidence, err := NewEvidenceRef("source-1", "message-1", MessageRoleUser, text, 0, 12, AssertionModeUser)
+	if err != nil {
+		t.Fatalf("NewEvidenceRef() error = %v", err)
+	}
+	if evidence.TextDigest == "" || evidence.StartByte != 0 || evidence.EndByte != 12 {
+		t.Fatalf("evidence = %+v", evidence)
+	}
+	if _, err := NewEvidenceRef("source-1", "message-1", MessageRoleUser, text, 1, 12, AssertionModeUser); err == nil {
+		t.Fatal("NewEvidenceRef() accepted a byte offset inside a UTF-8 rune")
+	}
+	if _, err := NewEvidenceRef("source-1", "message-1", MessageRoleUser, text, 0, 99, AssertionModeUser); err == nil {
+		t.Fatal("NewEvidenceRef() accepted an out-of-range byte span")
+	}
+}
+
 func FuzzTupleKey(f *testing.F) {
 	f.Add("scope-1", "item-1")
 	f.Add("", "item-1")
