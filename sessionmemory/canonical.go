@@ -15,6 +15,8 @@ const maxCanonicalMutationRecords = 512
 
 const maxCanonicalDeliveryClaims = 128
 
+const maxCanonicalReadRecords = 256
+
 // ScopeState is the small mutable record for one exact memory scope.
 // All memory content is stored in immutable records referenced by this state.
 type ScopeState struct {
@@ -28,6 +30,14 @@ type ScopeState struct {
 type ItemHead struct {
 	ItemID     string `json:"item_id"`
 	RevisionID string `json:"revision_id"`
+}
+
+// Validate verifies an engine-owned active revision pointer.
+func (h ItemHead) Validate() error {
+	if !isCanonicalID(h.ItemID) || !isCanonicalID(h.RevisionID) {
+		return invalidDerived("canonical item head is invalid")
+	}
+	return nil
 }
 
 // OperationRecord preserves exact replay identity and its committed outcome.
@@ -127,6 +137,22 @@ type CanonicalMutationOutcome struct {
 	RevisionIDs  []string `json:"revision_ids,omitempty"`
 }
 
+// CanonicalRevisionReadRequest hydrates a bounded, exact-scope set of
+// immutable revisions. Callers provide IDs from a change log or a bounded
+// projection candidate set; implementations must not scan a whole scope.
+type CanonicalRevisionReadRequest struct {
+	Scope       Scope
+	RevisionIDs []string
+}
+
+// ActiveHeadScanRequest pages the mutable active-head index in deterministic
+// item-ID order. It is the bounded rebuild primitive for projections.
+type ActiveHeadScanRequest struct {
+	Scope       Scope
+	AfterItemID string
+	Limit       uint32
+}
+
 // CanonicalStore is the storage-neutral incremental v2 persistence port.
 // Implementations must atomically enforce ScopeState CAS and operation
 // fingerprint replay, and must not read or rewrite full scope history to
@@ -135,8 +161,43 @@ type CanonicalStore interface {
 	LoadScopeState(ctx context.Context, scope Scope) (ScopeState, error)
 	ApplyCanonicalMutation(ctx context.Context, mutation CanonicalMutation) (CanonicalMutationOutcome, error)
 	ScanScopeChanges(ctx context.Context, scope Scope, after uint64, limit uint32) ([]ScopeChange, error)
+	LoadCanonicalRevisions(ctx context.Context, request CanonicalRevisionReadRequest) ([]MemoryRevision, error)
+	ScanActiveHeads(ctx context.Context, request ActiveHeadScanRequest) ([]ItemHead, error)
 	ClaimDeliveryOutbox(ctx context.Context, request DeliveryClaimRequest) ([]ClaimedDelivery, error)
 	SettleDeliveryOutbox(ctx context.Context, request DeliverySettlementRequest) error
+}
+
+func (r CanonicalRevisionReadRequest) Validate() error {
+	if err := r.Scope.Validate(); err != nil {
+		return err
+	}
+	if len(r.RevisionIDs) == 0 || len(r.RevisionIDs) > maxCanonicalReadRecords {
+		return limitExceeded("canonical revision read size is invalid")
+	}
+	seen := make(map[string]struct{}, len(r.RevisionIDs))
+	for _, id := range r.RevisionIDs {
+		if !isCanonicalID(id) {
+			return invalidDerived("canonical revision id is invalid")
+		}
+		if _, ok := seen[id]; ok {
+			return invalidDerived("canonical revision read contains duplicates")
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+func (r ActiveHeadScanRequest) Validate() error {
+	if err := r.Scope.Validate(); err != nil {
+		return err
+	}
+	if r.AfterItemID != "" && !isCanonicalID(r.AfterItemID) {
+		return invalidDerived("canonical active-head cursor is invalid")
+	}
+	if r.Limit == 0 || r.Limit > maxCanonicalReadRecords {
+		return limitExceeded("canonical active-head scan limit is invalid")
+	}
+	return nil
 }
 
 func (c DeliveryClaim) Validate() error {

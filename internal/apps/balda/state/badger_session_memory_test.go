@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -413,6 +414,33 @@ func TestBadgerSessionMemoryStoreRestoresReplayAndScopeState(t *testing.T) {
 	}
 }
 
+func TestBadgerSessionMemoryStoreProvidesBoundedRevisionAndHeadReads(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := sessionmemory.Scope{Key: "canonical:projection-read", Kind: sessionmemory.ScopeKindPersonal}
+	for index := 1; index <= 2; index++ {
+		id := fmt.Sprintf("%d", index)
+		if _, err := store.ApplyCanonicalMutation(context.Background(), canonicalRevisionMutation(scope, uint64(index-1), "operation-"+id, canonicalRevision("revision-"+id, "item-"+id))); err != nil {
+			t.Fatalf("ApplyCanonicalMutation(%d) error = %v", index, err)
+		}
+	}
+	revisions, err := store.LoadCanonicalRevisions(context.Background(), sessionmemory.CanonicalRevisionReadRequest{Scope: scope, RevisionIDs: []string{"revision-2", "revision-1"}})
+	if err != nil || len(revisions) != 2 || revisions[0].RevisionID != "revision-2" || revisions[1].RevisionID != "revision-1" {
+		t.Fatalf("LoadCanonicalRevisions() = %#v, error %v", revisions, err)
+	}
+	heads, err := store.ScanActiveHeads(context.Background(), sessionmemory.ActiveHeadScanRequest{Scope: scope, Limit: 1})
+	if err != nil || len(heads) != 1 || heads[0].ItemID != "item-1" {
+		t.Fatalf("ScanActiveHeads(first) = %#v, error %v", heads, err)
+	}
+	heads, err = store.ScanActiveHeads(context.Background(), sessionmemory.ActiveHeadScanRequest{Scope: scope, AfterItemID: heads[0].ItemID, Limit: 1})
+	if err != nil || len(heads) != 1 || heads[0].ItemID != "item-2" {
+		t.Fatalf("ScanActiveHeads(next) = %#v, error %v", heads, err)
+	}
+}
+
 func TestBadgerSessionMemoryStoreFaultBeforeCommitLeavesNoPartialMutationAfterReopen(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "memory.badger")
 	store, err := OpenBadgerSessionMemoryStore(directory)
@@ -516,6 +544,7 @@ func canonicalRevisionMutation(scope sessionmemory.Scope, expectedVersion uint64
 		},
 		Items:     []sessionmemory.MemoryItem{canonicalItem(scope, revision.ItemID)},
 		Revisions: []sessionmemory.MemoryRevision{revision},
+		Heads:     []sessionmemory.ItemHead{{ItemID: revision.ItemID, RevisionID: revision.RevisionID}},
 	}
 }
 

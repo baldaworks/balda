@@ -460,6 +460,85 @@ func (s *BadgerSessionMemoryStore) ScanScopeChanges(ctx context.Context, scope s
 	return changes, nil
 }
 
+func (s *BadgerSessionMemoryStore) LoadCanonicalRevisions(ctx context.Context, request sessionmemory.CanonicalRevisionReadRequest) ([]sessionmemory.MemoryRevision, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return nil, err
+	}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	revisions := make([]sessionmemory.MemoryRevision, 0, len(request.RevisionIDs))
+	err := s.db.View(func(txn *badger.Txn) error {
+		for _, revisionID := range request.RevisionIDs {
+			key, err := badgerSessionMemoryKey(request.Scope, badgerRecordRevision, revisionID)
+			if err != nil {
+				return err
+			}
+			var revision sessionmemory.MemoryRevision
+			if err := getBadgerSessionMemoryRecord(txn, key, badgerRecordRevision, &revision); err != nil {
+				if errors.Is(err, badger.ErrKeyNotFound) {
+					return sessionmemory.PermanentError(sessionmemory.CodeNotFound, "canonical revision is missing", nil)
+				}
+				return err
+			}
+			if err := revision.Validate(); err != nil {
+				return err
+			}
+			revisions = append(revisions, revision)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, badgerSessionMemoryError("load canonical revisions", err)
+	}
+	return revisions, nil
+}
+
+func (s *BadgerSessionMemoryStore) ScanActiveHeads(ctx context.Context, request sessionmemory.ActiveHeadScanRequest) ([]sessionmemory.ItemHead, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return nil, err
+	}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	prefix, err := badgerSessionMemoryPrefix(request.Scope, badgerRecordHead)
+	if err != nil {
+		return nil, err
+	}
+	heads := make([]sessionmemory.ItemHead, 0, request.Limit)
+	err = s.db.View(func(txn *badger.Txn) error {
+		options := badger.DefaultIteratorOptions
+		options.Prefix = prefix
+		iterator := txn.NewIterator(options)
+		defer iterator.Close()
+		start := prefix
+		if request.AfterItemID != "" {
+			start, err = badgerSessionMemoryKey(request.Scope, badgerRecordHead, request.AfterItemID)
+			if err != nil {
+				return err
+			}
+		}
+		for iterator.Seek(start); iterator.ValidForPrefix(prefix) && uint32(len(heads)) < request.Limit; iterator.Next() {
+			var head sessionmemory.ItemHead
+			if err := getBadgerSessionMemoryRecord(txn, iterator.Item().Key(), badgerRecordHead, &head); err != nil {
+				return err
+			}
+			if request.AfterItemID != "" && head.ItemID <= request.AfterItemID {
+				continue
+			}
+			if err := head.Validate(); err != nil {
+				return err
+			}
+			heads = append(heads, head)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, badgerSessionMemoryError("scan canonical active heads", err)
+	}
+	return heads, nil
+}
+
 // ClaimDeliveryOutbox atomically leases pending or expired exact-scope
 // deliveries. Immutable records are never modified while delivery state moves.
 func (s *BadgerSessionMemoryStore) ClaimDeliveryOutbox(ctx context.Context, request sessionmemory.DeliveryClaimRequest) ([]sessionmemory.ClaimedDelivery, error) {
