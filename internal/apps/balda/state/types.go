@@ -7,6 +7,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/normahq/balda/sessionmemory"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
@@ -88,10 +89,22 @@ type Provider interface {
 	// SessionMemoryStore returns the durable exact-scope session-memory store.
 	// It owns memory data only; JetStream remains the handoff mechanism.
 	SessionMemoryStore() sessionmemory.Store
+	// SessionMemoryIngressOutbox returns producer-local exports awaiting
+	// JetStream PubAck. It is distinct from canonical memory delivery state.
+	SessionMemoryIngressOutbox() SessionMemoryIngressOutboxStore
 	Jobs() JobStore
 	PollingOffsetStore() updatepoller.OffsetStore
 	Collaborators() CollaboratorStore
 	Close() error
+}
+
+// SessionMemoryIngressOutboxStore persists producer-local session-memory
+// exports before publication. Records are claimed in exact-scope FIFO order.
+type SessionMemoryIngressOutboxStore interface {
+	EnqueueSessionMemoryIngress(ctx context.Context, record sessionmemorycmd.IngressRecord) (sessionmemorycmd.IngressRecord, bool, error)
+	ClaimSessionMemoryIngress(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]sessionmemorycmd.IngressRecord, error)
+	MarkSessionMemoryIngressPublished(ctx context.Context, exportID, owner string, publishedAt time.Time) error
+	ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, updatedAt time.Time) error
 }
 
 // KVStore stores string and JSON key/value records.

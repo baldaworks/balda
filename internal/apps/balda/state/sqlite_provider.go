@@ -24,6 +24,7 @@ type sqliteProvider struct {
 	questions      *sqliteQuestionStore
 	sessionMemory  *sqliteSessionMemoryStore
 	runtime        *sqliteJobStore
+	ingress        *sqliteSessionMemoryIngressOutboxStore
 	offset         *sqliteOffsetStore
 }
 
@@ -164,6 +165,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		questions:      &sqliteQuestionStore{db: db},
 		sessionMemory:  &sqliteSessionMemoryStore{db: db},
 		runtime:        &sqliteJobStore{db: db},
+		ingress:        &sqliteSessionMemoryIngressOutboxStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
 	}
 	return provider, nil
@@ -195,6 +197,10 @@ func (p *sqliteProvider) Questions() QuestionStore {
 
 func (p *sqliteProvider) SessionMemoryStore() sessionmemory.Store {
 	return p.sessionMemory
+}
+
+func (p *sqliteProvider) SessionMemoryIngressOutbox() SessionMemoryIngressOutboxStore {
+	return p.ingress
 }
 
 func (p *sqliteProvider) Jobs() JobStore {
