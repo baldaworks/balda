@@ -15,6 +15,7 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/normahq/balda/sessionmemory"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
@@ -232,6 +233,84 @@ func TestSessionMemoryRuntimePersistsPubAckedExportsAcrossRestart(t *testing.T) 
 	if reopenedFacts != wantFacts {
 		t.Fatalf("global memory snapshot changed after reopen: version %d, want %d", reopenedFacts.Version, wantFacts.Version)
 	}
+}
+
+func TestSessionMemoryIngressOutboxRepublishesAfterRestartBeforePubAck(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stateDir := t.TempDir()
+	now := time.Date(2026, time.August, 5, 13, 0, 0, 0, time.UTC)
+	turn, err := sessionmemory.NewTurn(
+		sessionmemory.Scope{Key: "telegram:ingress-restart", Kind: sessionmemory.ScopeKindPersonal},
+		sessionmemory.SessionRef{SessionID: "session-restart", AgentSessionID: "agent-restart"},
+		"turn-restart", now, "remember restart", "restart is durable",
+	)
+	if err != nil {
+		t.Fatalf("NewTurn() error = %v", err)
+	}
+	export, err := sessionmemorycmd.NewTurn(turn)
+	if err != nil {
+		t.Fatalf("NewTurn() export error = %v", err)
+	}
+
+	stateA, err := openBaldaStateProvider(ctx, stateDir)
+	if err != nil {
+		t.Fatalf("openBaldaStateProvider(boot A) error = %v", err)
+	}
+	publisherA, err := sessionmemoryapp.NewIngressOutboxPublisher(stateA.SessionMemoryIngressOutbox(), failingSessionMemoryExportPublisher{}, sessionmemoryapp.IngressOutboxConfig{
+		Enabled: true, WorkerID: "boot-a", RetryBaseDelay: time.Millisecond, RetryMaxDelay: time.Millisecond,
+	}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("NewIngressOutboxPublisher(boot A) error = %v", err)
+	}
+	if err := publisherA.Publish(ctx, export); err != nil {
+		t.Fatalf("Publish(boot A) error = %v", err)
+	}
+	if err := stateA.Close(); err != nil {
+		t.Fatalf("state provider Close(boot A) error = %v", err)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	stateB, err := openBaldaStateProvider(ctx, stateDir)
+	if err != nil {
+		t.Fatalf("openBaldaStateProvider(boot B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = stateB.Close() })
+	bus := startSessionMemoryRuntimeBus(t, stateDir)
+	publisherB, err := sessionmemoryapp.NewIngressOutboxPublisher(stateB.SessionMemoryIngressOutbox(), bus.SessionMemoryExportPublisher(), sessionmemoryapp.IngressOutboxConfig{
+		Enabled: true, WorkerID: "boot-b", RetryBaseDelay: time.Millisecond, RetryMaxDelay: time.Millisecond,
+	}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("NewIngressOutboxPublisher(boot B) error = %v", err)
+	}
+	if err := publisherB.Flush(ctx); err != nil {
+		t.Fatalf("Flush(boot B) error = %v", err)
+	}
+	delivery, err := bus.SessionMemoryTransport().Fetch(ctx)
+	if err != nil {
+		t.Fatalf("Fetch(republished export) error = %v", err)
+	}
+	got, err := delivery.Export()
+	if err != nil || got.ExportID() != export.ExportID() {
+		t.Fatalf("republished export = %q, error %v; want %q", got.ExportID(), err, export.ExportID())
+	}
+	if err := delivery.Ack(ctx); err != nil {
+		t.Fatalf("Ack(republished export) error = %v", err)
+	}
+	record, err := sessionmemorycmd.NewIngressRecord(export, now)
+	if err != nil {
+		t.Fatalf("NewIngressRecord(replay) error = %v", err)
+	}
+	stored, created, err := stateB.SessionMemoryIngressOutbox().EnqueueSessionMemoryIngress(ctx, record)
+	if err != nil || created || stored.State != sessionmemorycmd.IngressStatePublished {
+		t.Fatalf("EnqueueSessionMemoryIngress(replay) = %#v, created %v, error %v", stored, created, err)
+	}
+}
+
+type failingSessionMemoryExportPublisher struct{}
+
+func (failingSessionMemoryExportPublisher) Publish(context.Context, sessionmemorycmd.Export) error {
+	return fmt.Errorf("simulated process stop before JetStream PubAck")
 }
 
 func startSessionMemoryRuntimeBus(t *testing.T, stateDir string) *natsbus.Bus {
