@@ -441,6 +441,33 @@ func TestBadgerSessionMemoryStoreProvidesBoundedRevisionAndHeadReads(t *testing.
 	}
 }
 
+func TestBadgerSessionMemoryStoreProjectionManifestFailsClosedUntilActivation(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Date(2026, time.August, 6, 0, 0, 0, 0, time.UTC)
+	manifest := sessionmemory.ProjectionManifest{Scope: sessionmemory.Scope{Key: "canonical:projection-manifest", Kind: sessionmemory.ScopeKindPersonal}, ProjectionID: "bleve", GenerationID: "generation-1", Status: sessionmemory.ProjectionGenerationBuilding, UpdatedAt: now}
+	if err := store.MarkProjectionDirty(context.Background(), manifest); err != nil {
+		t.Fatalf("MarkProjectionDirty() error = %v", err)
+	}
+	stored, found, err := store.LoadProjectionManifest(context.Background(), manifest.Scope, manifest.ProjectionID)
+	if err != nil || !found || stored.Status != sessionmemory.ProjectionGenerationDirty {
+		t.Fatalf("LoadProjectionManifest(dirty) = %#v, %t, %v", stored, found, err)
+	}
+	if err := store.AdvanceProjectionWatermark(context.Background(), manifest, 7, now.Add(time.Second)); err != nil {
+		t.Fatalf("AdvanceProjectionWatermark() error = %v", err)
+	}
+	if err := store.ActivateProjectionGeneration(context.Background(), manifest, now.Add(2*time.Second)); err != nil {
+		t.Fatalf("ActivateProjectionGeneration() error = %v", err)
+	}
+	stored, found, err = store.LoadProjectionManifest(context.Background(), manifest.Scope, manifest.ProjectionID)
+	if err != nil || !found || stored.Status != sessionmemory.ProjectionGenerationActive || stored.Watermark != 7 {
+		t.Fatalf("LoadProjectionManifest(active) = %#v, %t, %v", stored, found, err)
+	}
+}
+
 func TestBadgerSessionMemoryStoreFaultBeforeCommitLeavesNoPartialMutationAfterReopen(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "memory.badger")
 	store, err := OpenBadgerSessionMemoryStore(directory)

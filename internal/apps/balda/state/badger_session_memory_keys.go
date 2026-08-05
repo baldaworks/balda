@@ -7,25 +7,26 @@ import (
 )
 
 const (
-	badgerSessionMemoryNamespace  byte = 0x53
-	badgerSessionMemoryVersion    byte = 1
-	badgerRecordScope                  = "scope"
-	badgerRecordOperation              = "operation"
-	badgerRecordSource                 = "source"
-	badgerRecordMessage                = "message"
-	badgerRecordItem                   = "item"
-	badgerRecordRevision               = "revision"
-	badgerRecordLifecycle              = "lifecycle"
-	badgerRecordHead                   = "head"
-	badgerRecordChange                 = "change"
-	badgerRecordDelivery               = "delivery"
-	badgerRecordDeliveryClaim          = "delivery-claim"
-	badgerRecordPayload                = "payload"
-	badgerRecordProvenanceForward      = "provenance-forward"
-	badgerRecordProvenanceReverse      = "provenance-reverse"
-	badgerRecordSourceRevision         = "source-revision"
-	badgerRecordDeniedSource           = "denied-source"
-	badgerRecordDeniedRevision         = "denied-revision"
+	badgerSessionMemoryNamespace   byte = 0x53
+	badgerSessionMemoryVersion     byte = 1
+	badgerRecordScope                   = "scope"
+	badgerRecordOperation               = "operation"
+	badgerRecordSource                  = "source"
+	badgerRecordMessage                 = "message"
+	badgerRecordItem                    = "item"
+	badgerRecordRevision                = "revision"
+	badgerRecordLifecycle               = "lifecycle"
+	badgerRecordHead                    = "head"
+	badgerRecordChange                  = "change"
+	badgerRecordDelivery                = "delivery"
+	badgerRecordDeliveryClaim           = "delivery-claim"
+	badgerRecordPayload                 = "payload"
+	badgerRecordProvenanceForward       = "provenance-forward"
+	badgerRecordProvenanceReverse       = "provenance-reverse"
+	badgerRecordSourceRevision          = "source-revision"
+	badgerRecordDeniedSource            = "denied-source"
+	badgerRecordDeniedRevision          = "denied-revision"
+	badgerRecordProjectionManifest      = "projection-manifest"
 )
 
 func badgerScopeKey(scope sessionmemory.Scope) ([]byte, error) {

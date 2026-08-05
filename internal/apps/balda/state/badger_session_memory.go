@@ -43,6 +43,7 @@ func (s *BadgerSessionMemoryStore) RunValueLogGC(discardRatio float64) error {
 }
 
 var _ sessionmemory.CanonicalStore = (*BadgerSessionMemoryStore)(nil)
+var _ sessionmemory.ProjectionCheckpointStore = (*BadgerSessionMemoryStore)(nil)
 
 type badgerCanonicalOperation struct {
 	Fingerprint string                                 `json:"fingerprint"`
@@ -537,6 +538,104 @@ func (s *BadgerSessionMemoryStore) ScanActiveHeads(ctx context.Context, request 
 		return nil, badgerSessionMemoryError("scan canonical active heads", err)
 	}
 	return heads, nil
+}
+
+func (s *BadgerSessionMemoryStore) LoadProjectionManifest(ctx context.Context, scope sessionmemory.Scope, projectionID string) (sessionmemory.ProjectionManifest, bool, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return sessionmemory.ProjectionManifest{}, false, err
+	}
+	if err := scope.Validate(); err != nil || strings.TrimSpace(projectionID) == "" {
+		return sessionmemory.ProjectionManifest{}, false, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "projection manifest lookup is invalid", err)
+	}
+	key, err := badgerSessionMemoryKey(scope, badgerRecordProjectionManifest, projectionID)
+	if err != nil {
+		return sessionmemory.ProjectionManifest{}, false, err
+	}
+	var manifest sessionmemory.ProjectionManifest
+	err = s.db.View(func(txn *badger.Txn) error {
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionManifest, &manifest)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return sessionmemory.ProjectionManifest{}, false, nil
+	}
+	if err != nil {
+		return sessionmemory.ProjectionManifest{}, false, badgerSessionMemoryError("load projection manifest", err)
+	}
+	if err := manifest.Validate(); err != nil || manifest.Scope != scope || manifest.ProjectionID != projectionID {
+		return sessionmemory.ProjectionManifest{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored projection manifest is invalid", err)
+	}
+	return manifest, true, nil
+}
+
+func (s *BadgerSessionMemoryStore) MarkProjectionDirty(ctx context.Context, manifest sessionmemory.ProjectionManifest) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := manifest.Validate(); err != nil {
+		return err
+	}
+	manifest.Status = sessionmemory.ProjectionGenerationDirty
+	key, err := badgerSessionMemoryKey(manifest.Scope, badgerRecordProjectionManifest, manifest.ProjectionID)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Update(func(txn *badger.Txn) error {
+		return putBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionManifest, manifest)
+	}); err != nil {
+		return badgerSessionMemoryError("mark projection generation dirty", err)
+	}
+	return nil
+}
+
+func (s *BadgerSessionMemoryStore) AdvanceProjectionWatermark(ctx context.Context, manifest sessionmemory.ProjectionManifest, watermark uint64, updatedAt time.Time) error {
+	return s.updateProjectionManifest(ctx, manifest, updatedAt, func(stored *sessionmemory.ProjectionManifest) error {
+		if stored.Status != sessionmemory.ProjectionGenerationDirty || watermark < stored.Watermark {
+			return sessionmemory.PermanentError(sessionmemory.CodeConflict, "projection watermark cannot advance", nil)
+		}
+		stored.Watermark = watermark
+		return nil
+	})
+}
+
+func (s *BadgerSessionMemoryStore) ActivateProjectionGeneration(ctx context.Context, manifest sessionmemory.ProjectionManifest, updatedAt time.Time) error {
+	return s.updateProjectionManifest(ctx, manifest, updatedAt, func(stored *sessionmemory.ProjectionManifest) error {
+		if stored.Status != sessionmemory.ProjectionGenerationDirty {
+			return sessionmemory.PermanentError(sessionmemory.CodeConflict, "projection generation is not dirty", nil)
+		}
+		stored.Status = sessionmemory.ProjectionGenerationActive
+		return nil
+	})
+}
+
+func (s *BadgerSessionMemoryStore) updateProjectionManifest(ctx context.Context, manifest sessionmemory.ProjectionManifest, updatedAt time.Time, update func(*sessionmemory.ProjectionManifest) error) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := manifest.Validate(); err != nil || updatedAt.IsZero() {
+		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "projection manifest update is invalid", err)
+	}
+	key, err := badgerSessionMemoryKey(manifest.Scope, badgerRecordProjectionManifest, manifest.ProjectionID)
+	if err != nil {
+		return err
+	}
+	err = s.db.Update(func(txn *badger.Txn) error {
+		var stored sessionmemory.ProjectionManifest
+		if err := getBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionManifest, &stored); err != nil {
+			return err
+		}
+		if stored.Scope != manifest.Scope || stored.ProjectionID != manifest.ProjectionID || stored.GenerationID != manifest.GenerationID {
+			return sessionmemory.PermanentError(sessionmemory.CodeConflict, "projection generation changed", nil)
+		}
+		if err := update(&stored); err != nil {
+			return err
+		}
+		stored.UpdatedAt = updatedAt.UTC()
+		return putBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionManifest, stored)
+	})
+	if err != nil {
+		return badgerSessionMemoryError("update projection manifest", err)
+	}
+	return nil
 }
 
 // ClaimDeliveryOutbox atomically leases pending or expired exact-scope
