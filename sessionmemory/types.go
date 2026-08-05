@@ -59,6 +59,16 @@ const (
 	MessageRoleTool MessageRole = "tool"
 )
 
+// TurnTerminalStatus identifies how the provider turn ended. Empty is
+// accepted only for legacy successful exports and normalizes to success.
+type TurnTerminalStatus string
+
+const (
+	TurnTerminalStatusSuccess     TurnTerminalStatus = "success"
+	TurnTerminalStatusFailed      TurnTerminalStatus = "failed"
+	TurnTerminalStatusInterrupted TurnTerminalStatus = "interrupted"
+)
+
 // Message is one text-only conversational message in a completed turn.
 type Message struct {
 	Role MessageRole `json:"role"`
@@ -69,13 +79,14 @@ type Message struct {
 // user input and may omit assistant text when the provider terminally fails or
 // is interrupted before producing a visible response.
 type Turn struct {
-	SchemaVersion string     `json:"schema_version"`
-	ExportID      string     `json:"export_id"`
-	Scope         Scope      `json:"scope"`
-	Session       SessionRef `json:"session"`
-	SourceTurnID  string     `json:"source_turn_id"`
-	CompletedAt   time.Time  `json:"completed_at"`
-	Messages      []Message  `json:"messages"`
+	SchemaVersion  string             `json:"schema_version"`
+	ExportID       string             `json:"export_id"`
+	Scope          Scope              `json:"scope"`
+	Session        SessionRef         `json:"session"`
+	SourceTurnID   string             `json:"source_turn_id"`
+	CompletedAt    time.Time          `json:"completed_at"`
+	TerminalStatus TurnTerminalStatus `json:"terminal_status,omitempty"`
+	Messages       []Message          `json:"messages"`
 }
 
 // BoundaryReason identifies a session lifecycle transition.
@@ -114,6 +125,12 @@ type Provider interface {
 
 // NewTurn builds and validates an idempotent completed-turn export.
 func NewTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt time.Time, userText, assistantText string) (Turn, error) {
+	return NewTerminalTurn(scope, session, sourceTurnID, completedAt, userText, assistantText, TurnTerminalStatusSuccess)
+}
+
+// NewTerminalTurn builds one idempotent terminal export. A user-only export is
+// valid solely for a failed or interrupted provider turn.
+func NewTerminalTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt time.Time, userText, assistantText string, terminalStatus TurnTerminalStatus) (Turn, error) {
 	exportID, err := TurnExportID(scope, session, sourceTurnID)
 	if err != nil {
 		return Turn{}, err
@@ -123,13 +140,14 @@ func NewTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt t
 		messages = append(messages, Message{Role: MessageRoleAssistant, Text: assistantText})
 	}
 	turn := Turn{
-		SchemaVersion: SchemaVersionV1,
-		ExportID:      exportID,
-		Scope:         scope,
-		Session:       session,
-		SourceTurnID:  strings.TrimSpace(sourceTurnID),
-		CompletedAt:   completedAt,
-		Messages:      messages,
+		SchemaVersion:  SchemaVersionV1,
+		ExportID:       exportID,
+		Scope:          scope,
+		Session:        session,
+		SourceTurnID:   strings.TrimSpace(sourceTurnID),
+		CompletedAt:    completedAt,
+		TerminalStatus: terminalStatus,
+		Messages:       messages,
 	}
 	if err := turn.Validate(); err != nil {
 		return Turn{}, err

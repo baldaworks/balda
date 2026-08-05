@@ -133,7 +133,7 @@ func TestTurnCapturePublishesUserOnlyTerminalTurn(t *testing.T) {
 	})
 	capture := NewTurnCapture(publisher, resolver)
 	result, err := capture.Capture(context.Background(), CaptureRequest{
-		UserText: "question", Locator: testCaptureLocator(t, "telegram", "123:0", "tg-123-0"), SourceTurnID: "turn-failed",
+		UserText: "question", Locator: testCaptureLocator(t, "telegram", "123:0", "tg-123-0"), SourceTurnID: "turn-failed", TerminalStatus: sessionmemory.TurnTerminalStatusFailed,
 	})
 	if err != nil || !result.Attempted || len(publisher.exports) != 1 {
 		t.Fatalf("Capture() = %+v, %v; exports = %d", result, err, len(publisher.exports))

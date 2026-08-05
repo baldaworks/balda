@@ -61,6 +61,15 @@ func (t Turn) Validate() error {
 	if t.CompletedAt.IsZero() {
 		return PermanentError(CodePermanent, "turn completion time is required", nil)
 	}
+	status := t.TerminalStatus
+	if status == "" {
+		status = TurnTerminalStatusSuccess
+	}
+	switch status {
+	case TurnTerminalStatusSuccess, TurnTerminalStatusFailed, TurnTerminalStatusInterrupted:
+	default:
+		return PermanentError(CodePermanent, "turn terminal status is invalid", nil)
+	}
 	if len(t.Messages) != 1 && len(t.Messages) != 2 {
 		return PermanentError(CodePermanent, "turn must contain one user message and at most one assistant message", nil)
 	}
@@ -71,6 +80,8 @@ func (t Turn) Validate() error {
 		if err := validateMessage(t.Messages[1], MessageRoleAssistant); err != nil {
 			return err
 		}
+	} else if status == TurnTerminalStatusSuccess {
+		return PermanentError(CodePermanent, "successful turn requires assistant text", nil)
 	}
 	return nil
 }

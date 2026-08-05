@@ -119,6 +119,7 @@ type CaptureRequest struct {
 	PreviousSessionID string
 	SourceTurnID      string
 	CompletedAt       time.Time
+	TerminalStatus    sessionmemory.TurnTerminalStatus
 }
 
 // CaptureResult describes whether a durable handoff was attempted.
@@ -182,13 +183,14 @@ func (c *TurnCapture) Capture(ctx context.Context, req CaptureRequest) (CaptureR
 		completedAt = c.currentTime()
 	}
 	completedAt = completedAt.UTC()
-	turn, err := sessionmemory.NewTurn(
+	turn, err := sessionmemory.NewTerminalTurn(
 		scope,
 		session,
 		strings.TrimSpace(req.SourceTurnID),
 		completedAt,
 		userText,
 		assistantText,
+		req.TerminalStatus,
 	)
 	if err != nil {
 		return CaptureResult{}, err

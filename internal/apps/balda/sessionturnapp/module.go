@@ -10,6 +10,7 @@ import (
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/internal/apps/balda/sessionturn"
+	"github.com/normahq/balda/sessionmemory"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -30,6 +31,7 @@ func (a completedTurnCaptureAdapter) CaptureCompletedTurn(ctx context.Context, t
 		AgentSessionID: turn.AgentSessionID,
 		SourceTurnID:   turn.SourceTurnID,
 		CompletedAt:    turn.CompletedAt,
+		TerminalStatus: sessionmemory.TurnTerminalStatus(turn.TerminalStatus),
 	})
 }
 

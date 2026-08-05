@@ -154,7 +154,7 @@ func TestExecuteCapturesUserOnlyTerminalProviderFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if len(hook.turns) != 1 || hook.turns[0].UserText != "user question" || hook.turns[0].AssistantText != "" {
+	if len(hook.turns) != 1 || hook.turns[0].UserText != "user question" || hook.turns[0].AssistantText != "" || hook.turns[0].TerminalStatus != TerminalStatusFailed {
 		t.Fatalf("captured turns = %+v, want one user-only terminal turn", hook.turns)
 	}
 }

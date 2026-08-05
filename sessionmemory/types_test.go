@@ -63,6 +63,17 @@ func TestTurnValidateRejectsNonTextShapeAndChangedIdentity(t *testing.T) {
 	}
 }
 
+func TestNewTerminalTurnAllowsUserOnlyFailureButNotSuccess(t *testing.T) {
+	scope, session := testIdentity()
+	failed, err := NewTerminalTurn(scope, session, "turn-failed", time.Now().UTC(), "user", "", TurnTerminalStatusFailed)
+	if err != nil || len(failed.Messages) != 1 || failed.TerminalStatus != TurnTerminalStatusFailed {
+		t.Fatalf("NewTerminalTurn(failed) = %+v, %v", failed, err)
+	}
+	if _, err := NewTerminalTurn(scope, session, "turn-success", time.Now().UTC(), "user", "", TurnTerminalStatusSuccess); err == nil {
+		t.Fatal("NewTerminalTurn(success without assistant) error = nil")
+	}
+}
+
 func TestNewBoundaryBuildsStableExport(t *testing.T) {
 	t.Parallel()
 

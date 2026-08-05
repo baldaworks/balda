@@ -50,7 +50,18 @@ type CompletedTurn struct {
 	AgentSessionID string
 	SourceTurnID   string
 	CompletedAt    time.Time
+	TerminalStatus TerminalStatus
 }
+
+// TerminalStatus is the provider-terminal outcome exposed through the capture
+// port. The composition adapter translates it to the session-memory contract.
+type TerminalStatus string
+
+const (
+	TerminalStatusSuccess     TerminalStatus = "success"
+	TerminalStatusFailed      TerminalStatus = "failed"
+	TerminalStatusInterrupted TerminalStatus = "interrupted"
+)
 
 // CompletedTurnCapture is a small consuming-package port. Capture failures
 // are reported to the caller but must never change the user-facing delivery
@@ -537,6 +548,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						AgentSessionID: req.AgentSessionID,
 						SourceTurnID:   sourceTurnID,
 						CompletedAt:    s.currentTime().UTC(),
+						TerminalStatus: terminalTurnStatus(ev),
 					})
 					if captureErr != nil {
 						zerolog.Ctx(runCtx).Warn().
@@ -682,6 +694,16 @@ func shouldCaptureTerminalTurn(event *adksession.Event, userText, assistantText 
 		return true
 	}
 	return event.Interrupted || strings.TrimSpace(event.ErrorCode) != "" || strings.TrimSpace(event.ErrorMessage) != ""
+}
+
+func terminalTurnStatus(event *adksession.Event) TerminalStatus {
+	if event != nil && event.Interrupted {
+		return TerminalStatusInterrupted
+	}
+	if event != nil && (strings.TrimSpace(event.ErrorCode) != "" || strings.TrimSpace(event.ErrorMessage) != "") {
+		return TerminalStatusFailed
+	}
+	return TerminalStatusSuccess
 }
 
 func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req ExecutionRequest) error {
