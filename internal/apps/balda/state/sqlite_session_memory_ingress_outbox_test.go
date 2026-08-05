@@ -94,6 +94,47 @@ func TestSQLiteSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSe
 	}
 }
 
+func TestSQLiteSessionMemoryIngressOutboxReplaysTerminalWithAuditAndStats(t *testing.T) {
+	ctx := context.Background()
+	provider, err := NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	store := provider.SessionMemoryIngressOutbox()
+	now := time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)
+	stored, _, err := store.EnqueueSessionMemoryIngress(ctx, testIngressRecord(t, "turn-terminal", now))
+	if err != nil {
+		t.Fatalf("EnqueueSessionMemoryIngress() error = %v", err)
+	}
+	if _, err := store.ClaimSessionMemoryIngress(ctx, "worker-1", now, now.Add(time.Minute), 1); err != nil {
+		t.Fatalf("ClaimSessionMemoryIngress() error = %v", err)
+	}
+	if err := store.ReleaseSessionMemoryIngress(ctx, stored.ExportID(), "worker-1", "limit reached", true, nil, now.Add(time.Second)); err != nil {
+		t.Fatalf("ReleaseSessionMemoryIngress() error = %v", err)
+	}
+	stats, err := store.SessionMemoryIngressStats(ctx, now.Add(2*time.Minute))
+	if err != nil || stats.PendingCount != 0 || stats.TerminalCount != 1 {
+		t.Fatalf("SessionMemoryIngressStats() = %#v, error %v", stats, err)
+	}
+	if err := store.ReplaySessionMemoryIngress(ctx, stored.ExportID(), "operator-1", "fixed transport", now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("ReplaySessionMemoryIngress() error = %v", err)
+	}
+	stats, err = store.SessionMemoryIngressStats(ctx, now.Add(2*time.Minute))
+	if err != nil || stats.PendingCount != 1 || stats.TerminalCount != 0 || stats.OldestPendingAge != 2*time.Minute {
+		t.Fatalf("SessionMemoryIngressStats() after replay = %#v, error %v", stats, err)
+	}
+	claimed, err := store.ClaimSessionMemoryIngress(ctx, "worker-2", now.Add(2*time.Minute), now.Add(3*time.Minute), 1)
+	if err != nil || len(claimed) != 1 || claimed[0].Attempts != 1 {
+		t.Fatalf("replayed ClaimSessionMemoryIngress() = %#v, error %v", claimed, err)
+	}
+	concrete := provider.(*sqliteProvider)
+	var auditCount int
+	if err := concrete.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM session_memory_ingress_audit WHERE export_id = ? AND action = 'replay_terminal' AND actor = 'operator-1'`, stored.ExportID()).Scan(&auditCount); err != nil || auditCount != 1 {
+		t.Fatalf("replay audit count = %d, error %v", auditCount, err)
+	}
+}
+
 func testIngressRecord(t *testing.T, sourceTurnID string, completedAt time.Time) sessionmemorycmd.IngressRecord {
 	t.Helper()
 	turn, err := sessionmemory.NewTurn(

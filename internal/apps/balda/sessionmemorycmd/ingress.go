@@ -39,6 +39,15 @@ type IngressRecord struct {
 	PublishedAt   *time.Time   `json:"published_at,omitempty"`
 }
 
+// IngressOutboxStats is the bounded operational view of a producer-local
+// outbox. It deliberately exposes no export payloads.
+type IngressOutboxStats struct {
+	PendingCount     uint64
+	TerminalCount    uint64
+	OldestPendingAt  *time.Time
+	OldestPendingAge time.Duration
+}
+
 // NewIngressRecord creates the pending durable handoff for one validated
 // export. The storage adapter assigns ScopeSequence atomically per scope.
 func NewIngressRecord(export Export, createdAt time.Time) (IngressRecord, error) {

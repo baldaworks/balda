@@ -185,6 +185,72 @@ func (s *sqliteSessionMemoryIngressOutboxStore) settleSessionMemoryIngress(ctx c
 	return nil
 }
 
+func (s *sqliteSessionMemoryIngressOutboxStore) ReplaySessionMemoryIngress(ctx context.Context, exportID, actor, reason string, replayedAt time.Time) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("session-memory ingress outbox is unavailable")
+	}
+	exportID, actor, reason = strings.TrimSpace(exportID), strings.TrimSpace(actor), strings.TrimSpace(reason)
+	if exportID == "" || actor == "" || reason == "" || len(actor) > 128 || len(reason) > 512 || strings.ContainsAny(actor+reason, "\r\n") || replayedAt.IsZero() {
+		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "session-memory ingress replay is invalid", nil)
+	}
+	replayedAt = replayedAt.UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin session-memory ingress replay: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE session_memory_ingress_outbox
+		SET state = ?, attempts = 0, lease_owner = '', lease_until = '', next_attempt_at = '', last_error = '', updated_at = ?
+		WHERE export_id = ? AND state = ?`, ingressStatePending, ingressTimestamp(replayedAt), exportID, ingressStateTerminal)
+	if err != nil {
+		return fmt.Errorf("replay session-memory ingress record: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return sessionmemory.PermanentError(sessionmemory.CodeConflict, "session-memory ingress record is not terminal", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO session_memory_ingress_audit (export_id, action, actor, reason, occurred_at) VALUES (?, 'replay_terminal', ?, ?, ?)`, exportID, actor, reason, ingressTimestamp(replayedAt)); err != nil {
+		return fmt.Errorf("audit session-memory ingress replay: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit session-memory ingress replay: %w", err)
+	}
+	return nil
+}
+
+func (s *sqliteSessionMemoryIngressOutboxStore) SessionMemoryIngressStats(ctx context.Context, now time.Time) (sessionmemorycmd.IngressOutboxStats, error) {
+	if s == nil || s.db == nil {
+		return sessionmemorycmd.IngressOutboxStats{}, fmt.Errorf("session-memory ingress outbox is unavailable")
+	}
+	if now.IsZero() {
+		return sessionmemorycmd.IngressOutboxStats{}, sessionmemory.PermanentError(sessionmemory.CodePermanent, "session-memory ingress stats time is required", nil)
+	}
+	var pending, terminal uint64
+	var oldest string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(MIN(CASE WHEN state = ? THEN created_at END), '')
+		FROM session_memory_ingress_outbox`, ingressStatePending, ingressStateTerminal, ingressStatePending).Scan(&pending, &terminal, &oldest); err != nil {
+		return sessionmemorycmd.IngressOutboxStats{}, fmt.Errorf("query session-memory ingress stats: %w", err)
+	}
+	stats := sessionmemorycmd.IngressOutboxStats{PendingCount: pending, TerminalCount: terminal}
+	if oldest == "" {
+		return stats, nil
+	}
+	value, err := parseIngressTimestamp(oldest)
+	if err != nil {
+		return sessionmemorycmd.IngressOutboxStats{}, err
+	}
+	stats.OldestPendingAt = &value
+	if now.UTC().After(value) {
+		stats.OldestPendingAge = now.UTC().Sub(value)
+	}
+	return stats, nil
+}
+
 func validateNewIngressRecord(record sessionmemorycmd.IngressRecord) error {
 	if record.SchemaVersion != sessionmemorycmd.IngressSchemaVersionV1 || record.ScopeSequence != 0 || record.State != sessionmemorycmd.IngressStatePending || record.Attempts != 0 || record.LeaseOwner != "" || record.LeaseUntil != nil || record.NextAttemptAt != nil || record.PublishedAt != nil || record.LastError != "" || record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "new session-memory ingress record is invalid", nil)

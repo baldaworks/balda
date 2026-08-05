@@ -36,6 +36,7 @@ var requiredBaldaSQLiteTables = []string{
 	"session_memory_operations",
 	"session_memory_forgets",
 	"session_memory_ingress_outbox",
+	"session_memory_ingress_audit",
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

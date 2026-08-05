@@ -28,6 +28,8 @@ type IngressOutboxStore interface {
 	ClaimSessionMemoryIngress(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]sessionmemorycmd.IngressRecord, error)
 	MarkSessionMemoryIngressPublished(ctx context.Context, exportID, owner string, publishedAt time.Time) error
 	ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, nextAttemptAt *time.Time, updatedAt time.Time) error
+	ReplaySessionMemoryIngress(ctx context.Context, exportID, actor, reason string, replayedAt time.Time) error
+	SessionMemoryIngressStats(ctx context.Context, now time.Time) (sessionmemorycmd.IngressOutboxStats, error)
 }
 
 // IngressOutboxConfig controls the bounded background publisher.
@@ -241,6 +243,25 @@ func (p *IngressOutboxPublisher) Flush(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("publish session-memory ingress %s: %w", record.ExportID(), err))
 	}
 	return errors.Join(errs...)
+}
+
+// ReplayTerminal restores one terminal export to pending state after an
+// operator supplies an auditable actor and reason. It does not publish inline;
+// the normal FIFO worker claims it on the next flush.
+func (p *IngressOutboxPublisher) ReplayTerminal(ctx context.Context, exportID, actor, reason string) error {
+	if p == nil || !p.config.Enabled {
+		return sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory ingress outbox is disabled", nil)
+	}
+	return p.store.ReplaySessionMemoryIngress(ctx, exportID, actor, reason, p.currentTime().UTC())
+}
+
+// Stats returns count/age observability without exposing queued conversation
+// content to callers or logs.
+func (p *IngressOutboxPublisher) Stats(ctx context.Context) (sessionmemorycmd.IngressOutboxStats, error) {
+	if p == nil {
+		return sessionmemorycmd.IngressOutboxStats{}, fmt.Errorf("session-memory ingress outbox publisher is required")
+	}
+	return p.store.SessionMemoryIngressStats(ctx, p.currentTime().UTC())
 }
 
 func (p *IngressOutboxPublisher) retryDelay(attempts uint32) time.Duration {

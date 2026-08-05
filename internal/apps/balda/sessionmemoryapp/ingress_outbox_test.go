@@ -151,6 +151,14 @@ func (s *fakeIngressOutboxStore) ReleaseSessionMemoryIngress(_ context.Context, 
 	return nil
 }
 
+func (s *fakeIngressOutboxStore) ReplaySessionMemoryIngress(context.Context, string, string, string, time.Time) error {
+	return nil
+}
+
+func (s *fakeIngressOutboxStore) SessionMemoryIngressStats(context.Context, time.Time) (sessionmemorycmd.IngressOutboxStats, error) {
+	return sessionmemorycmd.IngressOutboxStats{}, nil
+}
+
 func (s *fakeIngressOutboxStore) enqueueCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
