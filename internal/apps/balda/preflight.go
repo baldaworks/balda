@@ -165,9 +165,15 @@ func PreflightRuntime(
 				)
 			},
 			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
+				if !cfg.Balda.SessionMemory.Enabled {
+					return sessionmemoryapp.NewTurnCapture(nil, resolver)
+				}
 				return sessionmemoryapp.NewTurnCapture(publisher, resolver)
 			},
 			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.BoundaryCapture {
+				if !cfg.Balda.SessionMemory.Enabled {
+					return sessionmemoryapp.NewBoundaryCapture(nil, resolver)
+				}
 				return sessionmemoryapp.NewBoundaryCapture(publisher, resolver)
 			},
 			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver, broker *sessionmemorymcp.ContextBroker) sessionmemorymcp.Config {

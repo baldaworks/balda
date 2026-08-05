@@ -69,6 +69,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"provider runtime",
 		"session manager",
 		"durable transport",
+		"session-memory ingress outbox",
 		"session memory",
 		"turn dispatcher",
 		"question delivery binding projector",

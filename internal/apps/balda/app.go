@@ -269,9 +269,15 @@ func Module(
 				)
 			},
 			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
+				if !cfg.Balda.SessionMemory.Enabled {
+					return sessionmemoryapp.NewTurnCapture(nil, resolver)
+				}
 				return sessionmemoryapp.NewTurnCapture(publisher, resolver)
 			},
 			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.BoundaryCapture {
+				if !cfg.Balda.SessionMemory.Enabled {
+					return sessionmemoryapp.NewBoundaryCapture(nil, resolver)
+				}
 				return sessionmemoryapp.NewBoundaryCapture(publisher, resolver)
 			},
 			func(bus *natsbus.Bus, provider sessionmemory.Provider) (*sessionmemoryapp.Worker, error) {
