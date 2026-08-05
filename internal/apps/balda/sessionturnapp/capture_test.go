@@ -138,6 +138,27 @@ func TestShouldCaptureTerminalTurnIncludesUserOnlyFailures(t *testing.T) {
 	}
 }
 
+func TestExecuteCapturesUserOnlyTerminalProviderFailure(t *testing.T) {
+	hook := &captureHook{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(nil, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns, hook)
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		failed := adksession.NewEvent(context.Background(), invocationID)
+		failed.TurnComplete = true
+		failed.ErrorCode = "provider_failure"
+		return []*adksession.Event{failed}
+	})
+	err := service.Execute(context.Background(), ExecutionRequest{
+		Text: "user question", Runner: adkRunner, UserID: "tg-101", SessionID: "balda-session-1", AgentSessionID: agentSessionID,
+		Locator: baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0", SessionID: "tg-123-0"}, Deliver: false, DedupeKey: "telegram:message:failed",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(hook.turns) != 1 || hook.turns[0].UserText != "user question" || hook.turns[0].AssistantText != "" {
+		t.Fatalf("captured turns = %+v, want one user-only terminal turn", hook.turns)
+	}
+}
+
 func TestExecuteCaptureFailureDoesNotSuppressResponse(t *testing.T) {
 	t.Parallel()
 
