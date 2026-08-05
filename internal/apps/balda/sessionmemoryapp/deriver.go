@@ -63,6 +63,7 @@ func NewDeriver(invoker StructuredInvoker) (*Deriver, error) {
 	return &Deriver{invoker: invoker}, nil
 }
 
+//nolint:dupl // The typed public model-port methods deliberately preserve distinct contracts.
 func (d *Deriver) ExtractAtoms(ctx context.Context, request sessionmemory.AtomExtractionRequest) ([]sessionmemory.AtomCandidate, error) {
 	if d == nil || d.invoker == nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "session-memory deriver is unavailable", nil)
@@ -89,6 +90,7 @@ func (d *Deriver) ExtractAtoms(ctx context.Context, request sessionmemory.AtomEx
 	return output.Output, nil
 }
 
+//nolint:dupl // The typed public model-port methods deliberately preserve distinct contracts.
 func (d *Deriver) SynthesizeScenarios(ctx context.Context, request sessionmemory.ScenarioSynthesisRequest) ([]sessionmemory.ScenarioCandidate, error) {
 	if d == nil || d.invoker == nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "session-memory deriver is unavailable", nil)

@@ -112,16 +112,16 @@ func (p PolicyRegistry) ReconcileActive(scope Scope, candidate SemanticCandidate
 			if match != nil {
 				return Reconciliation{}, invalidDerived("reconciliation has ambiguous active state matches")
 			}
-			copy := existing.Item
-			match = &copy
+			matched := existing.Item
+			match = &matched
 		}
 		if candidate.Kind == MemoryKindEvent && sameEventEvidence(existing.Evidence, candidate.Memory.Evidence) {
 			if match != nil {
 				return Reconciliation{}, invalidDerived("reconciliation has ambiguous active event matches")
 			}
 			item.ItemID = existing.Item.ItemID
-			copy := existing.Item
-			match = &copy
+			matched := existing.Item
+			match = &matched
 		}
 	}
 	revisionID := reconciliationID("revision", item.ItemID, candidate.Memory.Evidence[0].SourceID, candidate.Memory.Evidence[0].MessageID, candidate.Memory.Statement)

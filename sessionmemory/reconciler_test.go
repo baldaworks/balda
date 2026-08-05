@@ -54,6 +54,52 @@ func TestPolicyRegistryRejectsForeignAndAmbiguousActiveItems(t *testing.T) {
 	if _, err := policy.Reconcile(scope, candidate, []MemoryItem{foreign}); err == nil {
 		t.Fatal("foreign active item was accepted")
 	}
+	first, err := policy.Reconcile(scope, candidate, nil)
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if _, err := policy.Reconcile(scope, candidate, []MemoryItem{first.Item, first.Item}); err == nil {
+		t.Fatal("ambiguous active state matches were accepted")
+	}
+}
+
+func TestPolicyRegistryRejectsInvalidEvidenceAndTime(t *testing.T) {
+	t.Parallel()
+
+	policy := PolicyRegistry{Version: "policy-v1"}
+	scope := Scope{Key: "telegram:1:0", Kind: ScopeKindPersonal}
+	candidate := reconciliationCandidate(MemoryKindState, "Ada", "Lives In", []string{"Bishkek"})
+	candidate.Memory.Evidence[0].Role = MessageRoleAssistant
+	if _, err := policy.Reconcile(scope, candidate, nil); err == nil {
+		t.Fatal("assistant-only evidence was accepted")
+	}
+	candidate = reconciliationCandidate(MemoryKindState, "Ada", "Lives In", []string{"Bishkek"})
+	from := candidate.Memory.Temporal.ObservedAt.Add(time.Hour)
+	until := candidate.Memory.Temporal.ObservedAt
+	candidate.Memory.Temporal.ValidFrom = &from
+	candidate.Memory.Temporal.ValidUntil = &until
+	if _, err := policy.Reconcile(scope, candidate, nil); err == nil {
+		t.Fatal("inverted temporal interval was accepted")
+	}
+}
+
+func TestPolicyRegistryIsRepeatable(t *testing.T) {
+	t.Parallel()
+
+	policy := PolicyRegistry{Version: "policy-v1"}
+	scope := Scope{Key: "telegram:1:0", Kind: ScopeKindPersonal}
+	candidate := reconciliationCandidate(MemoryKindState, "Ada", "Lives In", []string{"Bishkek"})
+	first, err := policy.Reconcile(scope, candidate, nil)
+	if err != nil {
+		t.Fatalf("first Reconcile() error = %v", err)
+	}
+	second, err := policy.Reconcile(scope, candidate, nil)
+	if err != nil {
+		t.Fatalf("second Reconcile() error = %v", err)
+	}
+	if first.Item != second.Item || first.RevisionID != second.RevisionID || first.Lifecycle != second.Lifecycle {
+		t.Fatalf("reconciliation is not repeatable: %+v != %+v", first, second)
+	}
 }
 
 func reconciliationCandidate(kind MemoryKind, subject, predicate string, qualifiers []string) SemanticCandidate {

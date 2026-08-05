@@ -14,6 +14,8 @@ type scriptedStructuredInvoker struct {
 	last   StructuredInvocation
 }
 
+const legacyDerivationVersion = "legacy-v1"
+
 func (s *scriptedStructuredInvoker) Invoke(_ context.Context, request StructuredInvocation) ([]byte, error) {
 	s.last = request
 	return append([]byte(nil), s.output...), nil
@@ -52,8 +54,8 @@ func TestDeriverExtractAtomsUsesTypedEnvelope(t *testing.T) {
 		t.Fatalf("input JSON error = %v", err)
 	}
 	derivation, ok := encoded["derivation"].(map[string]any)
-	if !ok || derivation["pipeline"] != "legacy-v1" || derivation["policy"] != "legacy-v1" ||
-		derivation["prompt"] != "legacy-v1" || derivation["model"] != "legacy-v1" {
+	if !ok || derivation["pipeline"] != legacyDerivationVersion || derivation["policy"] != legacyDerivationVersion ||
+		derivation["prompt"] != legacyDerivationVersion || derivation["model"] != legacyDerivationVersion {
 		t.Fatalf("encoded derivation = %#v", encoded["derivation"])
 	}
 }
