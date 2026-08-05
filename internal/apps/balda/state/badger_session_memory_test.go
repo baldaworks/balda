@@ -174,6 +174,42 @@ func TestBadgerSessionMemoryStoreRejectsInvalidProvenanceAtomically(t *testing.T
 	}
 }
 
+func TestBadgerSessionMemoryStoreClaimsAndRecoversDeliveryLease(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := sessionmemory.Scope{Key: "canonical:delivery", Kind: sessionmemory.ScopeKindPersonal}
+	mutation := sessionmemory.CanonicalMutation{
+		SchemaVersion: sessionmemory.CanonicalSchemaVersionV1,
+		Scope:         scope,
+		Operation:     sessionmemory.OperationRecord{OperationID: "operation-1", Fingerprint: "fingerprint-1", CommittedAt: time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)},
+		Delivery: []sessionmemory.DeliveryOutboxRecord{{
+			DeliveryID: "delivery-1", OperationID: "operation-1", CreatedAt: time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC),
+			PayloadRef: sessionmemory.PayloadRef{KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
+		}},
+	}
+	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err != nil {
+		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
+	}
+	now := time.Date(2026, time.August, 5, 12, 1, 0, 0, time.UTC)
+	request := sessionmemory.DeliveryClaimRequest{Scope: scope, LeaseOwner: "worker-1", Now: now, LeaseUntil: now.Add(time.Minute), Limit: 1}
+	first, err := store.ClaimDeliveryOutbox(context.Background(), request)
+	if err != nil || len(first) != 1 || first[0].Claim.Attempts != 1 {
+		t.Fatalf("first ClaimDeliveryOutbox() = %#v, error = %v", first, err)
+	}
+	if claimed, err := store.ClaimDeliveryOutbox(context.Background(), request); err != nil || len(claimed) != 0 {
+		t.Fatalf("active lease claim = %#v, error = %v", claimed, err)
+	}
+	request.Now = request.LeaseUntil.Add(time.Second)
+	request.LeaseUntil = request.Now.Add(time.Minute)
+	recovered, err := store.ClaimDeliveryOutbox(context.Background(), request)
+	if err != nil || len(recovered) != 1 || recovered[0].Claim.Attempts != 2 {
+		t.Fatalf("recovered ClaimDeliveryOutbox() = %#v, error = %v", recovered, err)
+	}
+}
+
 func canonicalRevisionMutation(scope sessionmemory.Scope, expectedVersion uint64, operationID string, revision sessionmemory.MemoryRevision) sessionmemory.CanonicalMutation {
 	return sessionmemory.CanonicalMutation{
 		SchemaVersion:        sessionmemory.CanonicalSchemaVersionV1,

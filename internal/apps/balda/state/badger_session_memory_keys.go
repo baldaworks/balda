@@ -19,6 +19,7 @@ const (
 	badgerRecordHead                   = "head"
 	badgerRecordChange                 = "change"
 	badgerRecordDelivery               = "delivery"
+	badgerRecordDeliveryClaim          = "delivery-claim"
 	badgerRecordProvenanceForward      = "provenance-forward"
 	badgerRecordProvenanceReverse      = "provenance-reverse"
 )
@@ -49,6 +50,13 @@ func badgerSessionMemoryKey(scope sessionmemory.Scope, recordType string, id str
 		return nil, err
 	}
 	return sessionmemory.TupleKey(badgerSessionMemoryNamespace, badgerSessionMemoryVersion, recordType, scope.Key, string(scope.Kind), id)
+}
+
+func badgerSessionMemoryPrefix(scope sessionmemory.Scope, recordType string) ([]byte, error) {
+	if err := scope.Validate(); err != nil {
+		return nil, err
+	}
+	return sessionmemory.TupleKey(badgerSessionMemoryNamespace, badgerSessionMemoryVersion, recordType, scope.Key, string(scope.Kind))
 }
 
 func badgerScopeChangePrefix(scope sessionmemory.Scope) ([]byte, error) {

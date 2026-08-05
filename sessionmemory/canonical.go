@@ -13,6 +13,8 @@ const CanonicalSchemaVersionV1 = "session-memory-canonical/v1"
 
 const maxCanonicalMutationRecords = 512
 
+const maxCanonicalDeliveryClaims = 128
+
 // ScopeState is the small mutable record for one exact memory scope.
 // All memory content is stored in immutable records referenced by this state.
 type ScopeState struct {
@@ -55,6 +57,42 @@ type DeliveryOutboxRecord struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
+// DeliveryStatus captures the mutable delivery lifecycle for an immutable
+// outbox record.
+type DeliveryStatus string
+
+const (
+	DeliveryStatusPending   DeliveryStatus = "pending"
+	DeliveryStatusLeased    DeliveryStatus = "leased"
+	DeliveryStatusDelivered DeliveryStatus = "delivered"
+	DeliveryStatusTerminal  DeliveryStatus = "terminal"
+)
+
+// DeliveryClaim is the mutable lease state attached to one immutable outbox
+// record. Lease expiry permits deterministic recovery after worker failure.
+type DeliveryClaim struct {
+	DeliveryID string         `json:"delivery_id"`
+	Status     DeliveryStatus `json:"status"`
+	LeaseOwner string         `json:"lease_owner,omitempty"`
+	LeaseUntil *time.Time     `json:"lease_until,omitempty"`
+	Attempts   uint32         `json:"attempts"`
+}
+
+// DeliveryClaimRequest requests a bounded exact-scope outbox lease batch.
+type DeliveryClaimRequest struct {
+	Scope      Scope     `json:"scope"`
+	LeaseOwner string    `json:"lease_owner"`
+	Now        time.Time `json:"now"`
+	LeaseUntil time.Time `json:"lease_until"`
+	Limit      uint32    `json:"limit"`
+}
+
+// ClaimedDelivery joins immutable delivery data to its newly acquired lease.
+type ClaimedDelivery struct {
+	Record DeliveryOutboxRecord `json:"record"`
+	Claim  DeliveryClaim        `json:"claim"`
+}
+
 // CanonicalMutation is the bounded atomic v2 persistence unit. Records are
 // append-only except Heads and ScopeState, which are the only mutable indexes.
 type CanonicalMutation struct {
@@ -87,6 +125,36 @@ type CanonicalStore interface {
 	LoadScopeState(ctx context.Context, scope Scope) (ScopeState, error)
 	ApplyCanonicalMutation(ctx context.Context, mutation CanonicalMutation) (CanonicalMutationOutcome, error)
 	ScanScopeChanges(ctx context.Context, scope Scope, after uint64, limit uint32) ([]ScopeChange, error)
+	ClaimDeliveryOutbox(ctx context.Context, request DeliveryClaimRequest) ([]ClaimedDelivery, error)
+}
+
+func (c DeliveryClaim) Validate() error {
+	if !isCanonicalID(c.DeliveryID) {
+		return invalidDerived("delivery claim is invalid")
+	}
+	switch c.Status {
+	case DeliveryStatusPending, DeliveryStatusDelivered, DeliveryStatusTerminal:
+		if c.LeaseOwner != "" || c.LeaseUntil != nil {
+			return invalidDerived("settled delivery claim has a lease")
+		}
+	case DeliveryStatusLeased:
+		if !isCanonicalID(c.LeaseOwner) || c.LeaseUntil == nil || c.LeaseUntil.IsZero() {
+			return invalidDerived("leased delivery claim is invalid")
+		}
+	default:
+		return invalidDerived("delivery claim status is invalid")
+	}
+	return nil
+}
+
+func (r DeliveryClaimRequest) Validate() error {
+	if err := r.Scope.Validate(); err != nil {
+		return err
+	}
+	if !isCanonicalID(r.LeaseOwner) || r.Now.IsZero() || !r.LeaseUntil.After(r.Now) || r.Limit == 0 || r.Limit > maxCanonicalDeliveryClaims {
+		return invalidDerived("delivery claim request is invalid")
+	}
+	return nil
 }
 
 func (s ScopeState) Validate() error {

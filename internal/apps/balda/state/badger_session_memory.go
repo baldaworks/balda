@@ -364,6 +364,58 @@ func (s *BadgerSessionMemoryStore) ScanScopeChanges(ctx context.Context, scope s
 	return changes, nil
 }
 
+// ClaimDeliveryOutbox atomically leases pending or expired exact-scope
+// deliveries. Immutable records are never modified while delivery state moves.
+func (s *BadgerSessionMemoryStore) ClaimDeliveryOutbox(ctx context.Context, request sessionmemory.DeliveryClaimRequest) ([]sessionmemory.ClaimedDelivery, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return nil, err
+	}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	prefix, err := badgerSessionMemoryPrefix(request.Scope, badgerRecordDelivery)
+	if err != nil {
+		return nil, err
+	}
+	claimed := make([]sessionmemory.ClaimedDelivery, 0, request.Limit)
+	err = s.db.Update(func(txn *badger.Txn) error {
+		options := badger.DefaultIteratorOptions
+		options.Prefix = prefix
+		iterator := txn.NewIterator(options)
+		defer iterator.Close()
+		for iterator.Rewind(); iterator.ValidForPrefix(prefix) && uint32(len(claimed)) < request.Limit; iterator.Next() {
+			var record sessionmemory.DeliveryOutboxRecord
+			if err := getBadgerSessionMemoryRecord(txn, iterator.Item().Key(), badgerRecordDelivery, &record); err != nil {
+				return err
+			}
+			claimKey, err := badgerSessionMemoryKey(request.Scope, badgerRecordDeliveryClaim, record.DeliveryID)
+			if err != nil {
+				return err
+			}
+			claim := sessionmemory.DeliveryClaim{DeliveryID: record.DeliveryID, Status: sessionmemory.DeliveryStatusPending}
+			err = getBadgerSessionMemoryRecord(txn, claimKey, badgerRecordDeliveryClaim, &claim)
+			if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+				return err
+			}
+			if claim.Status == sessionmemory.DeliveryStatusDelivered || claim.Status == sessionmemory.DeliveryStatusTerminal ||
+				(claim.Status == sessionmemory.DeliveryStatusLeased && claim.LeaseUntil != nil && claim.LeaseUntil.After(request.Now)) {
+				continue
+			}
+			leaseUntil := request.LeaseUntil
+			claim = sessionmemory.DeliveryClaim{DeliveryID: record.DeliveryID, Status: sessionmemory.DeliveryStatusLeased, LeaseOwner: request.LeaseOwner, LeaseUntil: &leaseUntil, Attempts: claim.Attempts + 1}
+			if err := putBadgerSessionMemoryRecord(txn, claimKey, badgerRecordDeliveryClaim, claim); err != nil {
+				return err
+			}
+			claimed = append(claimed, sessionmemory.ClaimedDelivery{Record: record, Claim: claim})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, badgerSessionMemoryError("claim canonical delivery outbox", err)
+	}
+	return claimed, nil
+}
+
 func badgerSessionMemoryError(operation string, err error) error {
 	if errors.Is(err, badger.ErrTxnTooBig) {
 		return sessionmemory.PermanentError(sessionmemory.CodeLimitExceeded, operation, err)
