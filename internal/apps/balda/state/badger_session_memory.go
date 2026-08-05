@@ -617,7 +617,7 @@ func (s *BadgerSessionMemoryStore) DenySource(ctx context.Context, scope session
 	}
 	denied := badgerDeniedSource{SourceID: sourceID, DeniedAt: deniedAt.UTC()}
 	if err := s.db.Update(func(txn *badger.Txn) error {
-		return putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordDeniedSource, denied)
+		return putBadgerDenyRecord(txn, key, badgerRecordDeniedSource, denied)
 	}); err != nil {
 		return badgerSessionMemoryError("deny canonical source", err)
 	}
@@ -663,11 +663,20 @@ func (s *BadgerSessionMemoryStore) DenyRevision(ctx context.Context, scope sessi
 	}
 	denied := badgerDeniedRevision{RevisionID: revisionID, DeniedAt: deniedAt.UTC()}
 	if err := s.db.Update(func(txn *badger.Txn) error {
-		return putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordDeniedRevision, denied)
+		return putBadgerDenyRecord(txn, key, badgerRecordDeniedRevision, denied)
 	}); err != nil {
 		return badgerSessionMemoryError("deny canonical revision", err)
 	}
 	return nil
+}
+
+func putBadgerDenyRecord(txn *badger.Txn, key []byte, recordType string, value any) error {
+	if _, err := txn.Get(key); err == nil {
+		return nil
+	} else if !errors.Is(err, badger.ErrKeyNotFound) {
+		return err
+	}
+	return putBadgerSessionMemoryRecord(txn, key, recordType, value)
 }
 
 // IsRevisionDenied lets recall fail closed while physical scrub is pending.

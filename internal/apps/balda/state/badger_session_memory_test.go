@@ -112,6 +112,9 @@ func TestBadgerSessionMemoryStoreDeniesSourceByExactScope(t *testing.T) {
 	if err := store.DenySource(context.Background(), scope, "source-1", time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("DenySource() error = %v", err)
 	}
+	if err := store.DenySource(context.Background(), scope, "source-1", time.Date(2026, time.August, 5, 12, 1, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("DenySource() retry error = %v", err)
+	}
 	denied, err := store.IsSourceDenied(context.Background(), scope, "source-1")
 	if err != nil || !denied {
 		t.Fatalf("IsSourceDenied() = %t, error = %v", denied, err)
