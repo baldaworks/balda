@@ -94,6 +94,12 @@ func TestBadgerSessionMemoryStorePersistsEncryptedPayloadSeparately(t *testing.T
 	if err != nil || string(got.Ciphertext) != string(encrypted.Ciphertext) {
 		t.Fatalf("LoadEncryptedPayload() = %#v, error = %v", got, err)
 	}
+	if err := store.DeleteEncryptedPayload(context.Background(), "payload-1"); err != nil {
+		t.Fatalf("DeleteEncryptedPayload() error = %v", err)
+	}
+	if _, err := store.LoadEncryptedPayload(context.Background(), "payload-1", ref); err == nil {
+		t.Fatal("LoadEncryptedPayload() succeeded after scrub")
+	}
 }
 
 func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {

@@ -559,6 +559,25 @@ func (s *BadgerSessionMemoryStore) LoadEncryptedPayload(ctx context.Context, pay
 	return encrypted, nil
 }
 
+// DeleteEncryptedPayload irreversibly removes an encrypted payload blob after
+// its logical forget state has committed. Structural tombstones remain intact.
+func (s *BadgerSessionMemoryStore) DeleteEncryptedPayload(ctx context.Context, payloadID string) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payloadID) != payloadID || payloadID == "" {
+		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "payload identity is invalid", nil)
+	}
+	key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, payloadID)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Update(func(txn *badger.Txn) error { return txn.Delete(key) }); err != nil {
+		return badgerSessionMemoryError("delete encrypted payload", err)
+	}
+	return nil
+}
+
 func isBadgerPayloadValid(payloadID string, encrypted sessionmemory.EncryptedPayload, ref sessionmemory.PayloadRef) bool {
 	return payloadID != "" && ref.Validate() == nil && encrypted.KeyID == ref.KeyID && encrypted.PayloadHash == ref.Digest && len(encrypted.Nonce) > 0 && len(encrypted.Ciphertext) > 0 && len(encrypted.DEKNonce) > 0 && len(encrypted.WrappedDEK) > 0
 }
