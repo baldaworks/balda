@@ -553,6 +553,55 @@ func (s *BadgerSessionMemoryStore) ScanActiveHeads(ctx context.Context, request 
 	return heads, nil
 }
 
+// ScanActiveMemory returns a bounded reconciler view without scanning historic
+// revisions. Scope-level CAS on the subsequent mutation handles concurrent
+// changes after this read.
+func (s *BadgerSessionMemoryStore) ScanActiveMemory(ctx context.Context, request sessionmemory.ActiveMemoryScanRequest) ([]sessionmemory.ActiveCanonicalMemory, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return nil, err
+	}
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	heads, err := s.ScanActiveHeads(ctx, sessionmemory.ActiveHeadScanRequest(request))
+	if err != nil {
+		return nil, err
+	}
+	active := make([]sessionmemory.ActiveCanonicalMemory, 0, len(heads))
+	err = s.db.View(func(txn *badger.Txn) error {
+		for _, head := range heads {
+			itemKey, keyErr := badgerSessionMemoryKey(request.Scope, badgerRecordItem, head.ItemID)
+			if keyErr != nil {
+				return keyErr
+			}
+			revisionKey, keyErr := badgerSessionMemoryKey(request.Scope, badgerRecordRevision, head.RevisionID)
+			if keyErr != nil {
+				return keyErr
+			}
+			var item sessionmemory.MemoryItem
+			if err := getBadgerSessionMemoryRecord(txn, itemKey, badgerRecordItem, &item); err != nil {
+				return err
+			}
+			var revision sessionmemory.MemoryRevision
+			if err := getBadgerSessionMemoryRecord(txn, revisionKey, badgerRecordRevision, &revision); err != nil {
+				return err
+			}
+			if err := item.Validate(); err != nil {
+				return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored active canonical item is invalid", err)
+			}
+			if item.Scope != request.Scope || revision.ItemID != item.ItemID {
+				return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored active canonical memory is invalid", nil)
+			}
+			active = append(active, sessionmemory.ActiveCanonicalMemory{Item: item, Evidence: append([]sessionmemory.EvidenceRef(nil), revision.Evidence...)})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, badgerSessionMemoryError("scan active canonical memory", err)
+	}
+	return active, nil
+}
+
 func (s *BadgerSessionMemoryStore) LoadProjectionManifest(ctx context.Context, scope sessionmemory.Scope, projectionID, generationID string) (sessionmemory.ProjectionManifest, bool, error) {
 	if err := sessionMemoryContextError(ctx); err != nil {
 		return sessionmemory.ProjectionManifest{}, false, err

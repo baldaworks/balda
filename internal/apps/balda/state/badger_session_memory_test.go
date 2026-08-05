@@ -446,6 +446,10 @@ func TestBadgerSessionMemoryStoreProvidesBoundedRevisionAndHeadReads(t *testing.
 	if err != nil || len(heads) != 1 || heads[0].ItemID != "item-2" {
 		t.Fatalf("ScanActiveHeads(next) = %#v, error %v", heads, err)
 	}
+	active, err := store.ScanActiveMemory(context.Background(), sessionmemory.ActiveMemoryScanRequest{Scope: scope, Limit: 1})
+	if err != nil || len(active) != 1 || active[0].Item.ItemID != "item-1" || len(active[0].Evidence) != 1 {
+		t.Fatalf("ScanActiveMemory() = %#v, error %v", active, err)
+	}
 }
 
 func TestBadgerSessionMemoryStoreProjectionManifestFailsClosedUntilActivation(t *testing.T) {

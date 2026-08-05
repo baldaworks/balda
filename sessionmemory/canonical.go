@@ -162,6 +162,22 @@ type ActiveHeadScanRequest struct {
 	Limit       uint32
 }
 
+// ActiveMemoryScanRequest pages active item metadata and the evidence of each
+// active revision in deterministic item-ID order. It is the bounded context
+// read used by the reconciler; implementations must not load full history.
+type ActiveMemoryScanRequest struct {
+	Scope       Scope
+	AfterItemID string
+	Limit       uint32
+}
+
+// ActiveCanonicalMemory joins an active item to its current revision evidence.
+// It intentionally excludes payload content and other historic revisions.
+type ActiveCanonicalMemory struct {
+	Item     MemoryItem
+	Evidence []EvidenceRef
+}
+
 // CanonicalStore is the storage-neutral incremental v2 persistence port.
 // Implementations must atomically enforce ScopeState CAS and operation
 // fingerprint replay, and must not read or rewrite full scope history to
@@ -172,6 +188,7 @@ type CanonicalStore interface {
 	ScanScopeChanges(ctx context.Context, scope Scope, after uint64, limit uint32) ([]ScopeChange, error)
 	LoadCanonicalRevisions(ctx context.Context, request CanonicalRevisionReadRequest) ([]MemoryRevision, error)
 	ScanActiveHeads(ctx context.Context, request ActiveHeadScanRequest) ([]ItemHead, error)
+	ScanActiveMemory(ctx context.Context, request ActiveMemoryScanRequest) ([]ActiveCanonicalMemory, error)
 	ClaimDeliveryOutbox(ctx context.Context, request DeliveryClaimRequest) ([]ClaimedDelivery, error)
 	SettleDeliveryOutbox(ctx context.Context, request DeliverySettlementRequest) error
 }
@@ -207,6 +224,10 @@ func (r ActiveHeadScanRequest) Validate() error {
 		return limitExceeded("canonical active-head scan limit is invalid")
 	}
 	return nil
+}
+
+func (r ActiveMemoryScanRequest) Validate() error {
+	return ActiveHeadScanRequest(r).Validate()
 }
 
 func (c DeliveryClaim) Validate() error {
