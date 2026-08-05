@@ -2,6 +2,7 @@ package sessionmemory
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -18,6 +19,7 @@ func TestV2CandidateAndEnvelopeAreDeterministic(t *testing.T) {
 			StartByte: 1, EndByte: 4, AssertionMode: AssertionModeUser,
 		}},
 		Sensitivity: SensitivityStandard,
+		Retention:   RetentionClassStandard,
 	}
 	if err := candidate.Validate(); err != nil {
 		t.Fatalf("candidate.Validate() error = %v", err)
@@ -32,6 +34,17 @@ func TestV2CandidateAndEnvelopeAreDeterministic(t *testing.T) {
 	}
 	if !bytes.Equal(first, second) {
 		t.Fatalf("envelope is not deterministic: %x != %x", first, second)
+	}
+	envelope, err := UnmarshalRecordEnvelope(first)
+	if err != nil {
+		t.Fatalf("UnmarshalRecordEnvelope() error = %v", err)
+	}
+	if envelope.RecordType != "memory_revision" || !bytes.Equal(envelope.Payload, []byte("payload")) {
+		t.Fatalf("decoded envelope = %+v", envelope)
+	}
+	first[len(first)-1] ^= 1
+	if _, err := UnmarshalRecordEnvelope(first); err == nil {
+		t.Fatal("tampered envelope decoded successfully")
 	}
 }
 
@@ -49,4 +62,71 @@ func TestTupleKeyUsesUnambiguousLengthPrefixes(t *testing.T) {
 	if bytes.Equal(left, right) {
 		t.Fatalf("ambiguous tuple keys: %x", left)
 	}
+	if got, want := left, []byte{1, 1, 0, 2, 'a', 'b', 0, 1, 'c'}; !bytes.Equal(got, want) {
+		t.Fatalf("tuple key = %x, want %x", got, want)
+	}
+}
+
+func TestV2RecordsRoundTripJSONAndRejectDuplicateEvidence(t *testing.T) {
+	t.Parallel()
+
+	revision := MemoryRevision{
+		SchemaVersion: MemorySchemaVersionV2,
+		RevisionID:    "revision-1",
+		ItemID:        "item-1",
+		Revision:      1,
+		Temporal:      Temporal{ObservedAt: time.Date(2026, time.August, 5, 0, 0, 0, 0, time.UTC)},
+		Evidence: []EvidenceRef{{
+			SourceID: "source-1", MessageID: "message-1", Role: MessageRoleUser,
+			StartByte: 1, EndByte: 4, AssertionMode: AssertionModeUser,
+		}},
+		Sensitivity: SensitivityStandard,
+		Retention:   RetentionClassStandard,
+		Payload:     PayloadRef{KeyID: "key-1", Digest: "digest-1", ByteSize: 7},
+	}
+	encoded, err := json.Marshal(revision)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var decoded MemoryRevision
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("decoded.Validate() error = %v", err)
+	}
+	decoded.Evidence = append(decoded.Evidence, decoded.Evidence[0])
+	if err := decoded.Validate(); err == nil {
+		t.Fatal("duplicate evidence validated")
+	}
+}
+
+func TestV2TrustedToolEvidenceRequiresToolRole(t *testing.T) {
+	t.Parallel()
+
+	evidence := EvidenceRef{
+		SourceID: "source-1", MessageID: "message-1", Role: MessageRoleTool,
+		StartByte: 1, EndByte: 4, AssertionMode: AssertionModeTrustedTool,
+	}
+	if err := evidence.Validate(); err != nil {
+		t.Fatalf("tool evidence.Validate() error = %v", err)
+	}
+	evidence.Role = MessageRoleAssistant
+	if err := evidence.Validate(); err == nil {
+		t.Fatal("assistant evidence was accepted as a trusted tool")
+	}
+}
+
+func FuzzTupleKey(f *testing.F) {
+	f.Add("scope-1", "item-1")
+	f.Add("", "item-1")
+	f.Fuzz(func(t *testing.T, first, second string) {
+		key, err := TupleKey(1, 1, first, second)
+		if err != nil {
+			return
+		}
+		if len(key) < 6 || key[0] != 1 || key[1] != 1 {
+			t.Fatalf("tuple key = %x", key)
+		}
+	})
 }

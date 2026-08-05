@@ -55,6 +55,8 @@ const (
 	MessageRoleUser MessageRole = "user"
 	// MessageRoleAssistant identifies final visible assistant output.
 	MessageRoleAssistant MessageRole = "assistant"
+	// MessageRoleTool identifies allowlisted typed tool evidence.
+	MessageRoleTool MessageRole = "tool"
 )
 
 // Message is one text-only conversational message in a completed turn.

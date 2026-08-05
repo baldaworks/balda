@@ -22,6 +22,9 @@ const (
 	MemoryKindEvent MemoryKind = "event"
 )
 
+// MemoryKey is an engine-derived stable semantic identity for state memory.
+type MemoryKey string
+
 // AssertionMode identifies the evidence authority used for a memory revision.
 type AssertionMode string
 
@@ -36,6 +39,14 @@ type Sensitivity string
 const (
 	SensitivityStandard  Sensitivity = "standard"
 	SensitivitySensitive Sensitivity = "sensitive"
+)
+
+// RetentionClass controls lifecycle handling for stored payloads.
+type RetentionClass string
+
+const (
+	RetentionClassStandard  RetentionClass = "standard"
+	RetentionClassEphemeral RetentionClass = "ephemeral"
 )
 
 // Temporal records the interpreted time semantics without discarding source text.
@@ -62,9 +73,11 @@ type EvidenceRef struct {
 
 // SourceRecordV2 identifies one durable source independently of its payload.
 type SourceRecordV2 struct {
-	SourceID string     `json:"source_id"`
-	Scope    Scope      `json:"scope"`
-	Payload  PayloadRef `json:"payload"`
+	SourceID    string         `json:"source_id"`
+	Scope       Scope          `json:"scope"`
+	Sensitivity Sensitivity    `json:"sensitivity"`
+	Retention   RetentionClass `json:"retention"`
+	Payload     PayloadRef     `json:"payload"`
 }
 
 // MessageRecord identifies one role-bearing UTF-8 message in a source.
@@ -96,11 +109,12 @@ type LifecycleEvent struct {
 // MemoryCandidate is untrusted derivation output. It deliberately has no
 // persistent item, revision, scope, or lifecycle identifiers.
 type MemoryCandidate struct {
-	Kind        MemoryKind    `json:"kind"`
-	Statement   string        `json:"statement"`
-	Temporal    Temporal      `json:"temporal"`
-	Evidence    []EvidenceRef `json:"evidence"`
-	Sensitivity Sensitivity   `json:"sensitivity"`
+	Kind        MemoryKind     `json:"kind"`
+	Statement   string         `json:"statement"`
+	Temporal    Temporal       `json:"temporal"`
+	Evidence    []EvidenceRef  `json:"evidence"`
+	Sensitivity Sensitivity    `json:"sensitivity"`
+	Retention   RetentionClass `json:"retention"`
 }
 
 // RecordEnvelope is the deterministic protobuf-wire envelope for a portable
@@ -124,19 +138,20 @@ type MemoryItem struct {
 	ItemID    string     `json:"item_id"`
 	Scope     Scope      `json:"scope"`
 	Kind      MemoryKind `json:"kind"`
-	MemoryKey string     `json:"memory_key,omitempty"`
+	MemoryKey MemoryKey  `json:"memory_key,omitempty"`
 }
 
 // MemoryRevision is immutable canonical metadata for one memory change.
 type MemoryRevision struct {
-	SchemaVersion string        `json:"schema_version"`
-	RevisionID    string        `json:"revision_id"`
-	ItemID        string        `json:"item_id"`
-	Revision      uint64        `json:"revision"`
-	Temporal      Temporal      `json:"temporal"`
-	Evidence      []EvidenceRef `json:"evidence"`
-	Sensitivity   Sensitivity   `json:"sensitivity"`
-	Payload       PayloadRef    `json:"payload"`
+	SchemaVersion string         `json:"schema_version"`
+	RevisionID    string         `json:"revision_id"`
+	ItemID        string         `json:"item_id"`
+	Revision      uint64         `json:"revision"`
+	Temporal      Temporal       `json:"temporal"`
+	Evidence      []EvidenceRef  `json:"evidence"`
+	Sensitivity   Sensitivity    `json:"sensitivity"`
+	Retention     RetentionClass `json:"retention"`
+	Payload       PayloadRef     `json:"payload"`
 }
 
 // Validate verifies a portable v2 item does not accept model-owned identity.
@@ -149,7 +164,7 @@ func (i MemoryItem) Validate() error {
 	}
 	switch i.Kind {
 	case MemoryKindState:
-		if !isCanonicalID(i.MemoryKey) {
+		if !isCanonicalID(string(i.MemoryKey)) {
 			return invalidDerived("state memory key is required")
 		}
 	case MemoryKindEvent:
@@ -184,7 +199,7 @@ func (e EvidenceRef) Validate() error {
 	if e.AssertionMode == AssertionModeUser && e.Role != MessageRoleUser {
 		return invalidDerived("user evidence must have user role")
 	}
-	if e.AssertionMode == AssertionModeTrustedTool && e.Role != MessageRoleAssistant {
+	if e.AssertionMode == AssertionModeTrustedTool && e.Role != MessageRoleTool {
 		return invalidDerived("trusted tool evidence role is invalid")
 	}
 	if e.AssertionMode != AssertionModeUser && e.AssertionMode != AssertionModeTrustedTool {
@@ -200,6 +215,9 @@ func (s SourceRecordV2) Validate() error {
 	if err := s.Scope.Validate(); err != nil {
 		return err
 	}
+	if err := validateSensitivityRetention(s.Sensitivity, s.Retention); err != nil {
+		return err
+	}
 	return s.Payload.Validate()
 }
 
@@ -207,7 +225,7 @@ func (m MessageRecord) Validate() error {
 	if !isCanonicalID(m.MessageID) || !isCanonicalID(m.SourceID) {
 		return invalidDerived("message identity is invalid")
 	}
-	if m.Role != MessageRoleUser && m.Role != MessageRoleAssistant {
+	if m.Role != MessageRoleUser && m.Role != MessageRoleAssistant && m.Role != MessageRoleTool {
 		return invalidDerived("message role is invalid")
 	}
 	return m.Payload.Validate()
@@ -238,15 +256,10 @@ func (c MemoryCandidate) Validate() error {
 	if len(c.Evidence) == 0 || len(c.Evidence) > MaxSourcesPerRevision {
 		return invalidDerived("memory candidate evidence is invalid")
 	}
-	for _, evidence := range c.Evidence {
-		if err := evidence.Validate(); err != nil {
-			return err
-		}
+	if err := validateEvidenceRefs(c.Evidence); err != nil {
+		return err
 	}
-	if c.Sensitivity != SensitivityStandard && c.Sensitivity != SensitivitySensitive {
-		return invalidDerived("unsupported memory sensitivity")
-	}
-	return nil
+	return validateSensitivityRetention(c.Sensitivity, c.Retention)
 }
 
 func (p PayloadRef) Validate() error {
@@ -267,15 +280,37 @@ func (r MemoryRevision) Validate() error {
 	if len(r.Evidence) == 0 || len(r.Evidence) > MaxSourcesPerRevision {
 		return invalidDerived("memory revision evidence is invalid")
 	}
-	for _, evidence := range r.Evidence {
-		if err := evidence.Validate(); err != nil {
-			return err
-		}
+	if err := validateEvidenceRefs(r.Evidence); err != nil {
+		return err
 	}
-	if r.Sensitivity != SensitivityStandard && r.Sensitivity != SensitivitySensitive {
-		return invalidDerived("unsupported memory sensitivity")
+	if err := validateSensitivityRetention(r.Sensitivity, r.Retention); err != nil {
+		return err
 	}
 	return r.Payload.Validate()
+}
+
+func validateSensitivityRetention(sensitivity Sensitivity, retention RetentionClass) error {
+	if sensitivity != SensitivityStandard && sensitivity != SensitivitySensitive {
+		return invalidDerived("unsupported memory sensitivity")
+	}
+	if retention != RetentionClassStandard && retention != RetentionClassEphemeral {
+		return invalidDerived("unsupported memory retention")
+	}
+	return nil
+}
+
+func validateEvidenceRefs(evidence []EvidenceRef) error {
+	seen := make(map[EvidenceRef]struct{}, len(evidence))
+	for _, ref := range evidence {
+		if err := ref.Validate(); err != nil {
+			return err
+		}
+		if _, exists := seen[ref]; exists {
+			return invalidDerived("memory evidence contains a duplicate reference")
+		}
+		seen[ref] = struct{}{}
+	}
+	return nil
 }
 
 // MarshalRecordEnvelope returns a deterministic protobuf-wire envelope.
@@ -284,8 +319,49 @@ func MarshalRecordEnvelope(recordType string, payload []byte) ([]byte, error) {
 		return nil, invalidDerived("record envelope is invalid")
 	}
 	digest := sha256.Sum256(payload)
-	envelope := RecordEnvelope{MemorySchemaVersionV2, recordType, hex.EncodeToString(digest[:]), payload}
+	envelope := RecordEnvelope{
+		SchemaVersion: MemorySchemaVersionV2,
+		RecordType:    recordType,
+		PayloadSHA256: hex.EncodeToString(digest[:]),
+		Payload:       payload,
+	}
 	return marshalEnvelope(envelope), nil
+}
+
+// UnmarshalRecordEnvelope validates and decodes the portable protobuf-wire envelope.
+func UnmarshalRecordEnvelope(encoded []byte) (RecordEnvelope, error) {
+	fields := make(map[uint64][]byte, 4)
+	for offset := 0; offset < len(encoded); {
+		tag, next, ok := readProtoVarint(encoded, offset)
+		if !ok || tag>>3 < 1 || tag>>3 > 4 || tag&7 != 2 {
+			return RecordEnvelope{}, invalidDerived("record envelope is malformed")
+		}
+		length, valueOffset, ok := readProtoVarint(encoded, next)
+		if !ok || length > uint64(len(encoded)-valueOffset) {
+			return RecordEnvelope{}, invalidDerived("record envelope payload is malformed")
+		}
+		field := tag >> 3
+		if _, exists := fields[field]; exists {
+			return RecordEnvelope{}, invalidDerived("record envelope contains duplicate field")
+		}
+		end := valueOffset + int(length)
+		fields[field] = append([]byte(nil), encoded[valueOffset:end]...)
+		offset = end
+	}
+	envelope := RecordEnvelope{
+		SchemaVersion: string(fields[1]),
+		RecordType:    string(fields[2]),
+		PayloadSHA256: string(fields[3]),
+		Payload:       fields[4],
+	}
+	if envelope.SchemaVersion != MemorySchemaVersionV2 || !isCanonicalID(envelope.RecordType) || len(envelope.Payload) == 0 {
+		return RecordEnvelope{}, invalidDerived("record envelope is invalid")
+	}
+	want := sha256.Sum256(envelope.Payload)
+	if envelope.PayloadSHA256 != hex.EncodeToString(want[:]) {
+		return RecordEnvelope{}, invalidDerived("record envelope checksum does not match payload")
+	}
+	return envelope, nil
 }
 
 func marshalEnvelope(envelope RecordEnvelope) []byte {
@@ -308,6 +384,19 @@ func appendProtoBytes(dst []byte, field byte, value []byte) []byte {
 		dst = append(dst, part|0x80)
 	}
 	return append(dst, value...)
+}
+
+func readProtoVarint(encoded []byte, offset int) (uint64, int, bool) {
+	var value uint64
+	for shift := uint(0); offset < len(encoded) && shift < 64; shift += 7 {
+		part := encoded[offset]
+		offset++
+		value |= uint64(part&0x7f) << shift
+		if part < 0x80 {
+			return value, offset, true
+		}
+	}
+	return 0, offset, false
 }
 
 // TupleKey encodes application-owned components without backend-native keys.
