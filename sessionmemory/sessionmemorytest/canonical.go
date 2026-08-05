@@ -3,6 +3,7 @@ package sessionmemorytest
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,12 @@ func RunCanonicalStoreContract(t *testing.T, factory CanonicalStoreFactory) {
 	})
 	t.Run("invalid_mutation_is_atomic", func(t *testing.T) {
 		runCanonicalInvalidMutationContract(t, factory(t))
+	})
+	t.Run("cyclic_provenance_is_atomic", func(t *testing.T) {
+		runCanonicalCycleContract(t, factory(t))
+	})
+	t.Run("independent_scopes_commit_concurrently", func(t *testing.T) {
+		runCanonicalConcurrentScopesContract(t, factory(t))
 	})
 	t.Run("delivery_lease_settlement_and_recovery", func(t *testing.T) {
 		runCanonicalDeliveryContract(t, factory(t))
@@ -109,6 +116,54 @@ func runCanonicalInvalidMutationContract(t *testing.T, store sessionmemory.Canon
 	}
 }
 
+func runCanonicalCycleContract(t *testing.T, store sessionmemory.CanonicalStore) {
+	t.Helper()
+	scope := canonicalScope("contract:canonical-cycle")
+	mutation := canonicalMutation(scope, 0, "operation-1", "revision-1", "item-1")
+	second := canonicalRevision("revision-2", "item-2", mutation.Operation.CommittedAt)
+	mutation.Items = append(mutation.Items, sessionmemory.MemoryItem{ItemID: second.ItemID, Scope: scope, Kind: sessionmemory.MemoryKindEvent})
+	mutation.Revisions[0].Parents = []string{second.RevisionID}
+	second.Parents = []string{mutation.Revisions[0].RevisionID}
+	mutation.Revisions = append(mutation.Revisions, second)
+	mutation.Heads = append(mutation.Heads, sessionmemory.ItemHead{ItemID: second.ItemID, RevisionID: second.RevisionID})
+	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err == nil {
+		t.Fatal("cyclic provenance mutation succeeded")
+	}
+	state, err := store.LoadScopeState(context.Background(), scope)
+	if err != nil || state.Version != 0 || state.ChangeSeq != 0 {
+		t.Fatalf("state after rejected cycle = %#v, error = %v", state, err)
+	}
+}
+
+func runCanonicalConcurrentScopesContract(t *testing.T, store sessionmemory.CanonicalStore) {
+	t.Helper()
+	keys := []string{"contract:canonical-concurrent-a", "contract:canonical-concurrent-b"}
+	errs := make(chan error, len(keys))
+	var group sync.WaitGroup
+	for _, key := range keys {
+		group.Add(1)
+		go func(key string) {
+			defer group.Done()
+			scope := canonicalScope(key)
+			_, err := store.ApplyCanonicalMutation(context.Background(), canonicalMutation(scope, 0, "operation-1", "revision-1", "item-1"))
+			errs <- err
+		}(key)
+	}
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("independent scope mutation error = %v", err)
+		}
+	}
+	for _, key := range keys {
+		state, err := store.LoadScopeState(context.Background(), canonicalScope(key))
+		if err != nil || state.Version != 1 || state.ChangeSeq != 1 {
+			t.Fatalf("scope %q state = %#v, error = %v", key, state, err)
+		}
+	}
+}
+
 func runCanonicalDeliveryContract(t *testing.T, store sessionmemory.CanonicalStore) {
 	t.Helper()
 	scope := canonicalScope("contract:canonical-delivery")
@@ -171,14 +226,18 @@ func canonicalMutation(scope sessionmemory.Scope, expectedVersion uint64, operat
 		ExpectedScopeVersion: expectedVersion,
 		Operation:            sessionmemory.OperationRecord{OperationID: operationID, Fingerprint: operationID + "-fingerprint", CommittedAt: committedAt},
 		Items:                []sessionmemory.MemoryItem{{ItemID: itemID, Scope: scope, Kind: sessionmemory.MemoryKindEvent}},
-		Revisions: []sessionmemory.MemoryRevision{{
-			SchemaVersion: sessionmemory.MemorySchemaVersionV2, RevisionID: revisionID, ItemID: itemID, Revision: 1,
-			Temporal:    sessionmemory.Temporal{ObservedAt: committedAt},
-			Evidence:    []sessionmemory.EvidenceRef{{SourceID: "source-1", MessageID: "message-1", Role: sessionmemory.MessageRoleUser, StartByte: 1, EndByte: 2, AssertionMode: sessionmemory.AssertionModeUser}},
-			Sensitivity: sessionmemory.SensitivityStandard, Retention: sessionmemory.RetentionClassStandard,
-			Payload: sessionmemory.PayloadRef{KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
-		}},
-		Heads: []sessionmemory.ItemHead{{ItemID: itemID, RevisionID: revisionID}},
+		Revisions:            []sessionmemory.MemoryRevision{canonicalRevision(revisionID, itemID, committedAt)},
+		Heads:                []sessionmemory.ItemHead{{ItemID: itemID, RevisionID: revisionID}},
+	}
+}
+
+func canonicalRevision(revisionID, itemID string, observedAt time.Time) sessionmemory.MemoryRevision {
+	return sessionmemory.MemoryRevision{
+		SchemaVersion: sessionmemory.MemorySchemaVersionV2, RevisionID: revisionID, ItemID: itemID, Revision: 1,
+		Temporal:    sessionmemory.Temporal{ObservedAt: observedAt},
+		Evidence:    []sessionmemory.EvidenceRef{{SourceID: "source-1", MessageID: "message-1", Role: sessionmemory.MessageRoleUser, StartByte: 1, EndByte: 2, AssertionMode: sessionmemory.AssertionModeUser}},
+		Sensitivity: sessionmemory.SensitivityStandard, Retention: sessionmemory.RetentionClassStandard,
+		Payload: sessionmemory.PayloadRef{KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
 	}
 }
 
