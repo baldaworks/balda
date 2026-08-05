@@ -10,7 +10,19 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/normahq/balda/sessionmemory"
+	"github.com/normahq/balda/sessionmemory/sessionmemorytest"
 )
+
+func TestBadgerSessionMemoryStoreCanonicalContract(t *testing.T) {
+	sessionmemorytest.RunCanonicalStoreContract(t, func(t *testing.T) sessionmemory.CanonicalStore {
+		store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+		if err != nil {
+			t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+		}
+		t.Cleanup(func() { _ = store.Close() })
+		return store
+	})
+}
 
 func TestBadgerSessionMemoryStoreOwnsOneWritableDirectory(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "memory.badger")
