@@ -56,6 +56,11 @@ type badgerDeniedSource struct {
 	DeniedAt time.Time `json:"denied_at"`
 }
 
+type badgerDeniedRevision struct {
+	RevisionID string    `json:"revision_id"`
+	DeniedAt   time.Time `json:"denied_at"`
+}
+
 func putBadgerSessionMemoryRecord(txn *badger.Txn, key []byte, recordType string, value any) error {
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -637,6 +642,52 @@ func (s *BadgerSessionMemoryStore) IsSourceDenied(ctx context.Context, scope ses
 	}
 	if err != nil {
 		return false, badgerSessionMemoryError("read canonical source deny", err)
+	}
+	return true, nil
+}
+
+// DenyRevision commits a fail-closed cascade result for one revision.
+func (s *BadgerSessionMemoryStore) DenyRevision(ctx context.Context, scope sessionmemory.Scope, revisionID string, deniedAt time.Time) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := scope.Validate(); err != nil {
+		return err
+	}
+	if revisionID == "" || deniedAt.IsZero() {
+		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "revision deny request is invalid", nil)
+	}
+	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedRevision, revisionID)
+	if err != nil {
+		return err
+	}
+	denied := badgerDeniedRevision{RevisionID: revisionID, DeniedAt: deniedAt.UTC()}
+	if err := s.db.Update(func(txn *badger.Txn) error {
+		return putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordDeniedRevision, denied)
+	}); err != nil {
+		return badgerSessionMemoryError("deny canonical revision", err)
+	}
+	return nil
+}
+
+// IsRevisionDenied lets recall fail closed while physical scrub is pending.
+func (s *BadgerSessionMemoryStore) IsRevisionDenied(ctx context.Context, scope sessionmemory.Scope, revisionID string) (bool, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return false, err
+	}
+	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedRevision, revisionID)
+	if err != nil {
+		return false, err
+	}
+	err = s.db.View(func(txn *badger.Txn) error {
+		var denied badgerDeniedRevision
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordDeniedRevision, &denied)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, badgerSessionMemoryError("read canonical revision deny", err)
 	}
 	return true, nil
 }

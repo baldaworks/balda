@@ -25,6 +25,7 @@ const (
 	badgerRecordProvenanceReverse      = "provenance-reverse"
 	badgerRecordSourceRevision         = "source-revision"
 	badgerRecordDeniedSource           = "denied-source"
+	badgerRecordDeniedRevision         = "denied-revision"
 )
 
 func badgerScopeKey(scope sessionmemory.Scope) ([]byte, error) {
