@@ -641,6 +641,49 @@ func (s *BadgerSessionMemoryStore) IsSourceDenied(ctx context.Context, scope ses
 	return true, nil
 }
 
+// SourceRevisionBatch returns a bounded, resumable source-provenance batch.
+// The next cursor is the final revision ID returned; an empty cursor means
+// the source has no further indexed descendants in this batch direction.
+func (s *BadgerSessionMemoryStore) SourceRevisionBatch(ctx context.Context, scope sessionmemory.Scope, sourceID, afterRevisionID string, limit uint32) ([]string, string, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return nil, "", err
+	}
+	if err := scope.Validate(); err != nil {
+		return nil, "", err
+	}
+	if sourceID == "" || limit == 0 || limit > 512 {
+		return nil, "", sessionmemory.PermanentError(sessionmemory.CodeLimitExceeded, "source provenance batch limit is invalid", nil)
+	}
+	prefix, err := badgerProvenancePrefix(scope, badgerRecordSourceRevision, sourceID)
+	if err != nil {
+		return nil, "", err
+	}
+	results := make([]string, 0, limit)
+	err = s.db.View(func(txn *badger.Txn) error {
+		options := badger.DefaultIteratorOptions
+		options.Prefix = prefix
+		iterator := txn.NewIterator(options)
+		defer iterator.Close()
+		for iterator.Rewind(); iterator.ValidForPrefix(prefix) && uint32(len(results)) < limit; iterator.Next() {
+			var edge badgerProvenanceEdge
+			if err := getBadgerSessionMemoryRecord(txn, iterator.Item().Key(), badgerRecordSourceRevision, &edge); err != nil {
+				return err
+			}
+			if edge.ChildRevisionID > afterRevisionID {
+				results = append(results, edge.ChildRevisionID)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, "", badgerSessionMemoryError("scan source provenance", err)
+	}
+	if len(results) == 0 {
+		return results, "", nil
+	}
+	return results, results[len(results)-1], nil
+}
+
 func isBadgerPayloadValid(payloadID string, encrypted sessionmemory.EncryptedPayload, ref sessionmemory.PayloadRef) bool {
 	return payloadID != "" && ref.Validate() == nil && encrypted.KeyID == ref.KeyID && encrypted.PayloadHash == ref.Digest && len(encrypted.Nonce) > 0 && len(encrypted.Ciphertext) > 0 && len(encrypted.DEKNonce) > 0 && len(encrypted.WrappedDEK) > 0
 }

@@ -41,6 +41,13 @@ func badgerProvenanceKey(scope sessionmemory.Scope, recordType, revisionID, rela
 	return sessionmemory.TupleKey(badgerSessionMemoryNamespace, badgerSessionMemoryVersion, recordType, scope.Key, string(scope.Kind), revisionID, relatedRevisionID)
 }
 
+func badgerProvenancePrefix(scope sessionmemory.Scope, recordType, revisionID string) ([]byte, error) {
+	if err := scope.Validate(); err != nil {
+		return nil, err
+	}
+	return sessionmemory.TupleKey(badgerSessionMemoryNamespace, badgerSessionMemoryVersion, recordType, scope.Key, string(scope.Kind), revisionID)
+}
+
 func badgerOperationKey(scope sessionmemory.Scope, operationID string) ([]byte, error) {
 	if err := scope.Validate(); err != nil {
 		return nil, err
