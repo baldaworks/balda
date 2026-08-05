@@ -95,13 +95,15 @@ func TestSessionMemoryWorkerConfigUsesApplicationRetryPort(t *testing.T) {
 			FetchErrorDelay:  "50ms",
 			ShutdownTimeout:  "10s",
 		},
+		MaxConcurrentScopes: 6,
+		MaxQueuedPerScope:   17,
 	}
 	got, err := sessionMemoryWorkerConfig(cfg)
 	if err != nil {
 		t.Fatalf("sessionMemoryWorkerConfig() error = %v", err)
 	}
 	want := sessionmemoryapp.Config{Enabled: true, MaxAttempts: 7}
-	if got.Enabled != want.Enabled || got.MaxAttempts != want.MaxAttempts || got.RetryBaseDelay.String() != "100ms" || got.RetryMaxDelay.String() != "1s" || got.ProgressInterval.String() != "2s" || got.FetchErrorDelay.String() != "50ms" || got.ShutdownTimeout.String() != "10s" {
+	if got.Enabled != want.Enabled || got.MaxAttempts != want.MaxAttempts || got.RetryBaseDelay.String() != "100ms" || got.RetryMaxDelay.String() != "1s" || got.ProgressInterval.String() != "2s" || got.FetchErrorDelay.String() != "50ms" || got.ShutdownTimeout.String() != "10s" || got.MaxConcurrentScopes != 6 || got.MaxQueuedPerScope != 17 {
 		t.Fatalf("worker config = %+v, want configured retry values", got)
 	}
 }

@@ -157,19 +157,21 @@ type MemoryConfig struct {
 // integration. It is separate from MemoryConfig, which remains Balda's
 // existing global fact KV capability.
 type SessionMemoryConfig struct {
-	Enabled         bool                          `mapstructure:"enabled"`
-	Derivation      SessionMemoryDerivationConfig `mapstructure:"derivation"`
-	Stream          string                        `mapstructure:"stream"`
-	Consumer        string                        `mapstructure:"consumer"`
-	AckWait         string                        `mapstructure:"ack_wait"`
-	FetchWait       string                        `mapstructure:"fetch_wait"`
-	PublishTimeout  string                        `mapstructure:"publish_timeout"`
-	PublishAttempts int                           `mapstructure:"publish_attempts"`
-	MaxAge          string                        `mapstructure:"max_age"`
-	MaxBytes        string                        `mapstructure:"max_bytes"`
-	MaxMsgSize      string                        `mapstructure:"max_msg_size"`
-	Retry           SessionMemoryRetryConfig      `mapstructure:"retry"`
-	SearchTimeout   string                        `mapstructure:"search_timeout"`
+	Enabled             bool                          `mapstructure:"enabled"`
+	Derivation          SessionMemoryDerivationConfig `mapstructure:"derivation"`
+	Stream              string                        `mapstructure:"stream"`
+	Consumer            string                        `mapstructure:"consumer"`
+	AckWait             string                        `mapstructure:"ack_wait"`
+	FetchWait           string                        `mapstructure:"fetch_wait"`
+	PublishTimeout      string                        `mapstructure:"publish_timeout"`
+	PublishAttempts     int                           `mapstructure:"publish_attempts"`
+	MaxAge              string                        `mapstructure:"max_age"`
+	MaxBytes            string                        `mapstructure:"max_bytes"`
+	MaxMsgSize          string                        `mapstructure:"max_msg_size"`
+	MaxConcurrentScopes int                           `mapstructure:"max_concurrent_scopes"`
+	MaxQueuedPerScope   int                           `mapstructure:"max_queued_per_scope"`
+	Retry               SessionMemoryRetryConfig      `mapstructure:"retry"`
+	SearchTimeout       string                        `mapstructure:"search_timeout"`
 }
 
 // SessionMemoryDerivationConfig controls the dedicated Norma derivation call.

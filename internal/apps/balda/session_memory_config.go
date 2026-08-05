@@ -66,6 +66,12 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 	if cfg.Retry.MaxAttempts < 0 {
 		return fmt.Errorf("balda.session_memory.retry.max_attempts must be non-negative")
 	}
+	if cfg.MaxConcurrentScopes < 0 || cfg.MaxConcurrentScopes > 128 {
+		return fmt.Errorf("balda.session_memory.max_concurrent_scopes must be between 0 and 128")
+	}
+	if cfg.MaxQueuedPerScope < 0 || cfg.MaxQueuedPerScope > 1024 {
+		return fmt.Errorf("balda.session_memory.max_queued_per_scope must be between 0 and 1024")
+	}
 	for field, raw := range map[string]string{
 		"balda.session_memory.stream":   cfg.Stream,
 		"balda.session_memory.consumer": cfg.Consumer,
@@ -178,13 +184,15 @@ func sessionMemoryWorkerConfig(cfg SessionMemoryConfig) (sessionmemoryapp.Config
 		return sessionmemoryapp.Config{}, fmt.Errorf("balda.session_memory.retry.shutdown_timeout: %w", err)
 	}
 	return sessionmemoryapp.Config{
-		Enabled:          cfg.Enabled,
-		MaxAttempts:      cfg.Retry.MaxAttempts,
-		RetryBaseDelay:   baseDelay,
-		RetryMaxDelay:    maxDelay,
-		ProgressInterval: progressInterval,
-		FetchErrorDelay:  fetchErrorDelay,
-		ShutdownTimeout:  shutdownTimeout,
+		Enabled:             cfg.Enabled,
+		MaxAttempts:         cfg.Retry.MaxAttempts,
+		RetryBaseDelay:      baseDelay,
+		RetryMaxDelay:       maxDelay,
+		ProgressInterval:    progressInterval,
+		FetchErrorDelay:     fetchErrorDelay,
+		ShutdownTimeout:     shutdownTimeout,
+		MaxConcurrentScopes: cfg.MaxConcurrentScopes,
+		MaxQueuedPerScope:   cfg.MaxQueuedPerScope,
 	}, nil
 }
 

@@ -148,15 +148,14 @@ revision identity and node bound. The current authenticated session supplies
 the locator. Recalled text is untrusted reference data, never an instruction
 or command.
 
-The handoff uses the file-backed JetStream stream
-`BALDA_SESSION_MEMORY` and the serialized consumer
-`BALDA_SESSION_MEMORY_WORKER`, so provider latency does not delay a chat reply.
-JetStream `PubAck` is the durability boundary; a process crash before that ack
-can still lose an export because Balda deliberately does not add a SQLite
-session-memory outbox. Follow the [operator verification runbook](docs/balda.md#operator-verification-runbook)
-for a bounded rollout check. The surrounding durable-session-memory guide
-defines the native contract, retries/DLQ, shutdown behavior, privacy boundary,
-and path to a standalone package or skill.
+Capture first persists into a producer-local SQLite ingress outbox, then
+publishes to the file-backed JetStream stream `BALDA_SESSION_MEMORY`.
+JetStream `PubAck` settles the local record; a restart before PubAck resumes
+publication with the same export identity. The worker preserves FIFO in each
+exact scope while allowing a bounded number of unrelated scopes to progress,
+so provider latency does not delay a chat reply. Follow the [operator
+verification runbook](docs/balda.md#operator-verification-runbook) for a
+bounded rollout check.
 
 ## Supported chat providers
 

@@ -172,8 +172,8 @@ balda:
 
   # Optional native durable session-memory export/search integration. This is
   # independent from the global fact memory above and remains disabled unless
-  # explicitly enabled. Memory data is stored in state.db; JetStream is the
-  # only handoff queue and Norma performs bounded isolated derivation.
+  # explicitly enabled. Producer ingress is persisted in state.db before
+  # JetStream PubAck; Norma performs bounded isolated derivation.
   session_memory:
     enabled: false
     derivation:
@@ -188,6 +188,8 @@ balda:
     max_age: "7d"
     max_bytes: "-1"
     max_msg_size: "-1"
+    max_concurrent_scopes: 4
+    max_queued_per_scope: 32
     search_timeout: "5s"
     retry:
       max_attempts: 5

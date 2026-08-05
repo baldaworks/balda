@@ -21,17 +21,21 @@ const (
 	defaultProgressPeriod  = 30 * time.Second
 	defaultFetchErrorDelay = 100 * time.Millisecond
 	defaultShutdownTimeout = 30 * time.Second
+	defaultMaxScopes       = 4
+	defaultQueuedPerScope  = 32
 )
 
 // Config controls the serialized provider consumer.
 type Config struct {
-	Enabled          bool
-	MaxAttempts      int
-	RetryBaseDelay   time.Duration
-	RetryMaxDelay    time.Duration
-	ProgressInterval time.Duration
-	FetchErrorDelay  time.Duration
-	ShutdownTimeout  time.Duration
+	Enabled             bool
+	MaxAttempts         int
+	RetryBaseDelay      time.Duration
+	RetryMaxDelay       time.Duration
+	ProgressInterval    time.Duration
+	FetchErrorDelay     time.Duration
+	ShutdownTimeout     time.Duration
+	MaxConcurrentScopes int
+	MaxQueuedPerScope   int
 }
 
 // Normalized supplies safe defaults and rejects invalid retry/lifecycle
@@ -59,6 +63,15 @@ func (c Config) Normalized() (Config, error) {
 	if out.ShutdownTimeout <= 0 {
 		out.ShutdownTimeout = defaultShutdownTimeout
 	}
+	if out.MaxConcurrentScopes <= 0 {
+		out.MaxConcurrentScopes = defaultMaxScopes
+	}
+	if out.MaxQueuedPerScope <= 0 {
+		out.MaxQueuedPerScope = defaultQueuedPerScope
+	}
+	if out.MaxConcurrentScopes > 128 || out.MaxQueuedPerScope > 1024 {
+		return Config{}, fmt.Errorf("session-memory lane limits exceed safe bounds")
+	}
 	return out, nil
 }
 
@@ -82,7 +95,19 @@ type Worker struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	report  ShutdownReport
+
+	lanes       map[string]*memoryLane
+	laneChanged chan struct{}
+	laneWG      sync.WaitGroup
+	semaphore   chan struct{}
 }
+
+type laneWork struct {
+	delivery Delivery
+	export   sessionmemorycmd.Export
+}
+
+type memoryLane struct{ pending []laneWork }
 
 // NewWorker constructs a lifecycle-managed serialized consumer.
 func NewWorker(transport Transport, provider sessionmemory.Provider, config Config, logger zerolog.Logger) (*Worker, error) {
@@ -97,10 +122,13 @@ func NewWorker(transport Transport, provider sessionmemory.Provider, config Conf
 		return nil, fmt.Errorf("session-memory provider is required when enabled")
 	}
 	return &Worker{
-		transport: transport,
-		provider:  provider,
-		config:    normalized,
-		logger:    logger.With().Str("component", "balda.session_memory_worker").Logger(),
+		transport:   transport,
+		provider:    provider,
+		config:      normalized,
+		logger:      logger.With().Str("component", "balda.session_memory_worker").Logger(),
+		lanes:       make(map[string]*memoryLane),
+		laneChanged: make(chan struct{}),
+		semaphore:   make(chan struct{}, normalized.MaxConcurrentScopes),
 	}, nil
 }
 
@@ -190,6 +218,9 @@ func (w *Worker) Stop(ctx context.Context) error {
 	w.started = false
 	w.cancel = nil
 	w.done = nil
+	w.lanes = make(map[string]*memoryLane)
+	w.laneChanged = make(chan struct{})
+	w.semaphore = make(chan struct{}, w.config.MaxConcurrentScopes)
 	w.report = report
 	w.mu.Unlock()
 
@@ -213,6 +244,7 @@ func closedDone() chan struct{} {
 }
 
 func (w *Worker) run(ctx context.Context) {
+	defer w.laneWG.Wait()
 	for {
 		delivery, err := w.transport.Fetch(ctx)
 		if err != nil {
@@ -232,24 +264,115 @@ func (w *Worker) run(ctx context.Context) {
 			w.logger.Warn().Str("operation", "fetch").Msg("session-memory transport returned an empty delivery")
 			continue
 		}
-		if err := w.process(ctx, delivery); err != nil && ctx.Err() == nil {
-			w.logger.Warn().Str("operation", "process").Msg("session-memory delivery remains unresolved")
-			if !waitContext(ctx, w.config.FetchErrorDelay) {
+		export, err := delivery.Export()
+		if err == nil {
+			err = export.Validate()
+		}
+		if err != nil {
+			if err := w.deadLetter(ctx, delivery, sessionmemorycmd.Export{}, sessionmemory.CodePermanent, sessionmemory.ErrorClassPermanent, "invalid session-memory export"); err != nil && ctx.Err() == nil {
+				w.logger.Warn().Err(err).Str("operation", "dead_letter").Msg("invalid session-memory delivery remains unresolved")
+			}
+			continue
+		}
+		scopeKey := exportScopeKey(export)
+		if scopeKey == "" {
+			if err := w.deadLetter(ctx, delivery, export, sessionmemory.CodePermanent, sessionmemory.ErrorClassPermanent, "session-memory export has no exact scope"); err != nil && ctx.Err() == nil {
+				w.logger.Warn().Err(err).Str("operation", "dead_letter").Msg("scope-less session-memory delivery remains unresolved")
+			}
+			continue
+		}
+		if err := w.enqueue(ctx, scopeKey, laneWork{delivery: delivery, export: export}); err != nil {
+			if ctx.Err() != nil {
 				return
 			}
+			w.logger.Warn().Err(err).Str("operation", "enqueue").Msg("session-memory lane enqueue failed")
 		}
 	}
 }
 
-func (w *Worker) process(ctx context.Context, delivery Delivery) error {
-	export, err := delivery.Export()
-	if err != nil {
-		return w.deadLetter(ctx, delivery, sessionmemorycmd.Export{}, sessionmemory.CodePermanent, sessionmemory.ErrorClassPermanent, "invalid session-memory export")
+func exportScopeKey(export sessionmemorycmd.Export) string {
+	switch export.Kind {
+	case sessionmemorycmd.KindTurn:
+		if export.Turn != nil {
+			return export.Turn.Scope.Key
+		}
+	case sessionmemorycmd.KindBoundary:
+		if export.Boundary != nil {
+			return export.Boundary.Scope.Key
+		}
 	}
-	if err := export.Validate(); err != nil {
-		return w.deadLetter(ctx, delivery, sessionmemorycmd.Export{}, sessionmemory.CodePermanent, sessionmemory.ErrorClassPermanent, "invalid session-memory export")
-	}
+	return ""
+}
 
+func (w *Worker) enqueue(ctx context.Context, scopeKey string, work laneWork) error {
+	for {
+		w.mu.Lock()
+		lane := w.lanes[scopeKey]
+		if lane == nil {
+			lane = &memoryLane{}
+			w.lanes[scopeKey] = lane
+		}
+		if len(lane.pending) < w.config.MaxQueuedPerScope {
+			lane.pending = append(lane.pending, work)
+			if len(lane.pending) == 1 {
+				w.laneWG.Add(1)
+				go w.runLane(ctx, scopeKey, lane)
+			}
+			w.signalLaneChangeLocked()
+			w.mu.Unlock()
+			return nil
+		}
+		changed := w.laneChanged
+		w.mu.Unlock()
+		if err := work.delivery.InProgress(ctx); err != nil && ctx.Err() == nil {
+			w.logger.Warn().Err(err).Str("operation", "queue_progress_ack").Msg("session-memory queue progress acknowledgement failed")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
+func (w *Worker) runLane(ctx context.Context, scopeKey string, lane *memoryLane) {
+	defer w.laneWG.Done()
+	for {
+		w.mu.Lock()
+		if len(lane.pending) == 0 {
+			if w.lanes[scopeKey] == lane {
+				delete(w.lanes, scopeKey)
+			}
+			w.signalLaneChangeLocked()
+			w.mu.Unlock()
+			return
+		}
+		work := lane.pending[0]
+		lane.pending[0] = laneWork{}
+		lane.pending = lane.pending[1:]
+		w.signalLaneChangeLocked()
+		w.mu.Unlock()
+
+		select {
+		case w.semaphore <- struct{}{}:
+			err := w.processExport(ctx, work.delivery, work.export)
+			<-w.semaphore
+			if err != nil && ctx.Err() == nil {
+				w.logger.Warn().Err(err).Str("operation", "process").Str("scope", scopeKey).Msg("session-memory delivery remains unresolved")
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (w *Worker) signalLaneChangeLocked() {
+	close(w.laneChanged)
+	w.laneChanged = make(chan struct{})
+}
+
+func (w *Worker) processExport(ctx context.Context, delivery Delivery, export sessionmemorycmd.Export) error {
+	var err error
 	for attempt := 1; ; attempt++ {
 		err = w.syncWithProgress(ctx, delivery, export)
 		if err == nil {

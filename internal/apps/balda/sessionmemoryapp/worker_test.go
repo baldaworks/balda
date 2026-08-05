@@ -69,6 +69,48 @@ func TestWorkerSerializesTurnAndBoundaryWithRetry(t *testing.T) {
 	}
 }
 
+func TestWorkerAllowsIndependentScopesWhileOneScopeIsBlocked(t *testing.T) {
+	transport := newTestTransport(2)
+	blocked := newTestDelivery(testTurnExportForScope(t, "turn-blocked", "telegram:blocked"))
+	independent := newTestDelivery(testTurnExportForScope(t, "turn-independent", "telegram:independent"))
+	transport.push(blocked)
+	transport.push(independent)
+	blockedStarted := make(chan struct{})
+	releaseBlocked := make(chan struct{})
+	provider := &sessionmemorytest.Provider{
+		SyncTurnFunc: func(ctx context.Context, turn sessionmemory.Turn) error {
+			if turn.Scope.Key != "telegram:blocked" {
+				return nil
+			}
+			close(blockedStarted)
+			select {
+			case <-releaseBlocked:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}
+	worker := newTestWorker(t, transport, provider, Config{Enabled: true, MaxConcurrentScopes: 2, ProgressInterval: time.Millisecond})
+	if err := worker.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	select {
+	case <-blockedStarted:
+	case <-time.After(time.Second):
+		t.Fatal("blocked scope did not start")
+	}
+	waitFor(t, time.Second, independent.acked)
+	if blocked.acked() {
+		t.Fatal("blocked scope completed before release")
+	}
+	close(releaseBlocked)
+	waitFor(t, time.Second, blocked.acked)
+	if err := worker.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
 func TestWorkerProgressAcknowledgesLongProviderCall(t *testing.T) {
 	transport := newTestTransport(1)
 	delivery := newTestDelivery(testTurnExport(t, "turn-progress"))
@@ -387,9 +429,13 @@ func (o *testOrder) snapshot() []string {
 }
 
 func testTurnExport(t *testing.T, sourceID string) sessionmemorycmd.Export {
+	return testTurnExportForScope(t, sourceID, "telegram:1:0")
+}
+
+func testTurnExportForScope(t *testing.T, sourceID, scopeKey string) sessionmemorycmd.Export {
 	t.Helper()
 	turn, err := sessionmemory.NewTurn(
-		sessionmemory.Scope{Key: "telegram:1:0", Kind: sessionmemory.ScopeKindPersonal},
+		sessionmemory.Scope{Key: scopeKey, Kind: sessionmemory.ScopeKindPersonal},
 		sessionmemory.SessionRef{SessionID: "session-1", AgentSessionID: "agent-1"},
 		sourceID,
 		time.Now().UTC(),

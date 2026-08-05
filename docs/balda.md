@@ -744,6 +744,7 @@ defaults are:
 | `ack_wait` / `fetch_wait` | `5m` / `1s` | JetStream acknowledgement deadline and worker fetch wait. |
 | `publish_timeout` / `publish_attempts` | `2s` / `3` | Bounded pre-PubAck handoff retry. |
 | `max_age` / `max_bytes` / `max_msg_size` | `7d` / `-1` / `-1` | Stream retention; `-1` means unlimited for byte/message limits. |
+| `max_concurrent_scopes` / `max_queued_per_scope` | `4` / `32` | Maximum independent provider lanes and unresolved exports buffered per exact scope. |
 | `search_timeout` | `5s` | MCP search deadline. |
 | `retry.max_attempts` | `5` | Provider attempts per export before DLQ. |
 | `retry.base_delay` / `max_delay` | `250ms` / `5s` | Exponential retry delay bounds. |
