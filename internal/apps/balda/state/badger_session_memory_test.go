@@ -110,3 +110,97 @@ func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 		t.Fatal("operation fingerprint collision succeeded")
 	}
 }
+
+func TestBadgerSessionMemoryStorePersistsBidirectionalProvenance(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := sessionmemory.Scope{Key: "canonical:provenance", Kind: sessionmemory.ScopeKindPersonal}
+	first := canonicalRevision("revision-1", "item-1")
+	if _, err := store.ApplyCanonicalMutation(context.Background(), canonicalRevisionMutation(scope, 0, "operation-1", first)); err != nil {
+		t.Fatalf("first ApplyCanonicalMutation() error = %v", err)
+	}
+	second := canonicalRevision("revision-2", "item-2")
+	second.Parents = []string{first.RevisionID}
+	if _, err := store.ApplyCanonicalMutation(context.Background(), canonicalRevisionMutation(scope, 1, "operation-2", second)); err != nil {
+		t.Fatalf("second ApplyCanonicalMutation() error = %v", err)
+	}
+	forwardKey, err := badgerProvenanceKey(scope, badgerRecordProvenanceForward, second.RevisionID, first.RevisionID)
+	if err != nil {
+		t.Fatalf("badgerProvenanceKey() error = %v", err)
+	}
+	reverseKey, err := badgerProvenanceKey(scope, badgerRecordProvenanceReverse, first.RevisionID, second.RevisionID)
+	if err != nil {
+		t.Fatalf("badgerProvenanceKey() error = %v", err)
+	}
+	if err := store.db.View(func(txn *badger.Txn) error {
+		var forward, reverse badgerProvenanceEdge
+		if err := getBadgerSessionMemoryRecord(txn, forwardKey, badgerRecordProvenanceForward, &forward); err != nil {
+			return err
+		}
+		if err := getBadgerSessionMemoryRecord(txn, reverseKey, badgerRecordProvenanceReverse, &reverse); err != nil {
+			return err
+		}
+		if forward != reverse || forward.ChildRevisionID != second.RevisionID || forward.ParentRevisionID != first.RevisionID {
+			t.Fatalf("provenance edges = %#v / %#v", forward, reverse)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("read provenance edges: %v", err)
+	}
+}
+
+func TestBadgerSessionMemoryStoreRejectsInvalidProvenanceAtomically(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := sessionmemory.Scope{Key: "canonical:provenance-invalid", Kind: sessionmemory.ScopeKindPersonal}
+	first := canonicalRevision("revision-1", "item-1")
+	second := canonicalRevision("revision-2", "item-2")
+	first.Parents = []string{second.RevisionID}
+	second.Parents = []string{first.RevisionID}
+	mutation := canonicalRevisionMutation(scope, 0, "operation-cycle", first)
+	mutation.Revisions = append(mutation.Revisions, second)
+	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err == nil {
+		t.Fatal("cyclic provenance mutation succeeded")
+	}
+	state, err := store.LoadScopeState(context.Background(), scope)
+	if err != nil || state.Version != 0 || state.ChangeSeq != 0 {
+		t.Fatalf("state after rejected mutation = %#v, error = %v", state, err)
+	}
+}
+
+func canonicalRevisionMutation(scope sessionmemory.Scope, expectedVersion uint64, operationID string, revision sessionmemory.MemoryRevision) sessionmemory.CanonicalMutation {
+	return sessionmemory.CanonicalMutation{
+		SchemaVersion:        sessionmemory.CanonicalSchemaVersionV1,
+		Scope:                scope,
+		ExpectedScopeVersion: expectedVersion,
+		Operation: sessionmemory.OperationRecord{
+			OperationID: operationID,
+			Fingerprint: operationID + "-fingerprint",
+			CommittedAt: time.Date(2026, time.August, 5, 12, 0, int(expectedVersion), 0, time.UTC),
+		},
+		Revisions: []sessionmemory.MemoryRevision{revision},
+	}
+}
+
+func canonicalRevision(revisionID, itemID string) sessionmemory.MemoryRevision {
+	return sessionmemory.MemoryRevision{
+		SchemaVersion: sessionmemory.MemorySchemaVersionV2,
+		RevisionID:    revisionID,
+		ItemID:        itemID,
+		Revision:      1,
+		Temporal:      sessionmemory.Temporal{ObservedAt: time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)},
+		Evidence: []sessionmemory.EvidenceRef{{
+			SourceID: "source-1", MessageID: "message-1", Role: sessionmemory.MessageRoleUser,
+			StartByte: 1, EndByte: 2, AssertionMode: sessionmemory.AssertionModeUser,
+		}},
+		Sensitivity: sessionmemory.SensitivityStandard,
+		Retention:   sessionmemory.RetentionClassStandard,
+		Payload:     sessionmemory.PayloadRef{KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
+	}
+}

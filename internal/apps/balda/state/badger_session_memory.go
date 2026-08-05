@@ -26,6 +26,11 @@ type badgerCanonicalOperation struct {
 	Outcome     sessionmemory.CanonicalMutationOutcome `json:"outcome"`
 }
 
+type badgerProvenanceEdge struct {
+	ChildRevisionID  string `json:"child_revision_id"`
+	ParentRevisionID string `json:"parent_revision_id"`
+}
+
 func putBadgerSessionMemoryRecord(txn *badger.Txn, key []byte, recordType string, value any) error {
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -192,6 +197,9 @@ func (s *BadgerSessionMemoryStore) ApplyCanonicalMutation(ctx context.Context, m
 }
 
 func (s *BadgerSessionMemoryStore) putCanonicalMutationRecords(txn *badger.Txn, mutation sessionmemory.CanonicalMutation) error {
+	if err := validateBadgerMutationProvenance(txn, mutation); err != nil {
+		return err
+	}
 	for _, source := range mutation.Sources {
 		if err := putBadgerCanonicalRecord(txn, mutation.Scope, badgerRecordSource, source.SourceID, source); err != nil {
 			return err
@@ -211,6 +219,23 @@ func (s *BadgerSessionMemoryStore) putCanonicalMutationRecords(txn *badger.Txn, 
 		if err := putBadgerCanonicalRecord(txn, mutation.Scope, badgerRecordRevision, revision.RevisionID, revision); err != nil {
 			return err
 		}
+		for _, parentID := range revision.Parents {
+			edge := badgerProvenanceEdge{ChildRevisionID: revision.RevisionID, ParentRevisionID: parentID}
+			forwardKey, err := badgerProvenanceKey(mutation.Scope, badgerRecordProvenanceForward, revision.RevisionID, parentID)
+			if err != nil {
+				return err
+			}
+			if err := putBadgerSessionMemoryImmutableRecord(txn, forwardKey, badgerRecordProvenanceForward, edge); err != nil {
+				return err
+			}
+			reverseKey, err := badgerProvenanceKey(mutation.Scope, badgerRecordProvenanceReverse, parentID, revision.RevisionID)
+			if err != nil {
+				return err
+			}
+			if err := putBadgerSessionMemoryImmutableRecord(txn, reverseKey, badgerRecordProvenanceReverse, edge); err != nil {
+				return err
+			}
+		}
 	}
 	for _, lifecycle := range mutation.Lifecycle {
 		if err := putBadgerCanonicalRecord(txn, mutation.Scope, badgerRecordLifecycle, lifecycle.EventID, lifecycle); err != nil {
@@ -228,6 +253,57 @@ func (s *BadgerSessionMemoryStore) putCanonicalMutationRecords(txn *badger.Txn, 
 	}
 	for _, delivery := range mutation.Delivery {
 		if err := putBadgerCanonicalRecord(txn, mutation.Scope, badgerRecordDelivery, delivery.DeliveryID, delivery); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateBadgerMutationProvenance(txn *badger.Txn, mutation sessionmemory.CanonicalMutation) error {
+	revisions := make(map[string]sessionmemory.MemoryRevision, len(mutation.Revisions))
+	for _, revision := range mutation.Revisions {
+		revisions[revision.RevisionID] = revision
+	}
+	for _, revision := range mutation.Revisions {
+		for _, parentID := range revision.Parents {
+			if _, exists := revisions[parentID]; exists {
+				continue
+			}
+			parentKey, err := badgerSessionMemoryKey(mutation.Scope, badgerRecordRevision, parentID)
+			if err != nil {
+				return err
+			}
+			if _, err := txn.Get(parentKey); errors.Is(err, badger.ErrKeyNotFound) {
+				return sessionmemory.PermanentError(sessionmemory.CodeConflict, "canonical provenance parent does not exist", nil)
+			} else if err != nil {
+				return err
+			}
+		}
+	}
+	colors := make(map[string]uint8, len(revisions))
+	var visit func(string) error
+	visit = func(revisionID string) error {
+		switch colors[revisionID] {
+		case 1:
+			return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "canonical provenance cycle", nil)
+		case 2:
+			return nil
+		}
+		revision, exists := revisions[revisionID]
+		if !exists {
+			return nil
+		}
+		colors[revisionID] = 1
+		for _, parentID := range revision.Parents {
+			if err := visit(parentID); err != nil {
+				return err
+			}
+		}
+		colors[revisionID] = 2
+		return nil
+	}
+	for revisionID := range revisions {
+		if err := visit(revisionID); err != nil {
 			return err
 		}
 	}
