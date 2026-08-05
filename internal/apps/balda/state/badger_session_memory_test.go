@@ -83,6 +83,8 @@ func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 		},
 		Heads: []sessionmemory.ItemHead{{ItemID: "item-1", RevisionID: "revision-1"}},
 	}
+	mutation.Items = []sessionmemory.MemoryItem{canonicalItem(scope, "item-1")}
+	mutation.Revisions = []sessionmemory.MemoryRevision{canonicalRevision("revision-1", "item-1")}
 	first, err := store.ApplyCanonicalMutation(context.Background(), mutation)
 	if err != nil {
 		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
@@ -173,6 +175,28 @@ func TestBadgerSessionMemoryStoreRejectsInvalidProvenanceAtomically(t *testing.T
 	state, err := store.LoadScopeState(context.Background(), scope)
 	if err != nil || state.Version != 0 || state.ChangeSeq != 0 {
 		t.Fatalf("state after rejected mutation = %#v, error = %v", state, err)
+	}
+}
+
+func TestBadgerSessionMemoryStoreRejectsDanglingHeadAtomically(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := sessionmemory.Scope{Key: "canonical:dangling-head", Kind: sessionmemory.ScopeKindPersonal}
+	mutation := sessionmemory.CanonicalMutation{
+		SchemaVersion: sessionmemory.CanonicalSchemaVersionV1,
+		Scope:         scope,
+		Operation:     sessionmemory.OperationRecord{OperationID: "operation-1", Fingerprint: "fingerprint-1", CommittedAt: time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)},
+		Heads:         []sessionmemory.ItemHead{{ItemID: "item-1", RevisionID: "missing-revision"}},
+	}
+	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err == nil {
+		t.Fatal("dangling head mutation succeeded")
+	}
+	state, err := store.LoadScopeState(context.Background(), scope)
+	if err != nil || state.Version != 0 {
+		t.Fatalf("state after rejected dangling head = %#v, error = %v", state, err)
 	}
 }
 
@@ -320,8 +344,13 @@ func canonicalRevisionMutation(scope sessionmemory.Scope, expectedVersion uint64
 			Fingerprint: operationID + "-fingerprint",
 			CommittedAt: time.Date(2026, time.August, 5, 12, 0, int(expectedVersion), 0, time.UTC),
 		},
+		Items:     []sessionmemory.MemoryItem{canonicalItem(scope, revision.ItemID)},
 		Revisions: []sessionmemory.MemoryRevision{revision},
 	}
+}
+
+func canonicalItem(scope sessionmemory.Scope, itemID string) sessionmemory.MemoryItem {
+	return sessionmemory.MemoryItem{ItemID: itemID, Scope: scope, Kind: sessionmemory.MemoryKindEvent}
 }
 
 func canonicalRevision(revisionID, itemID string) sessionmemory.MemoryRevision {
