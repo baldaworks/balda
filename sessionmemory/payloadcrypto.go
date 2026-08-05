@@ -68,14 +68,14 @@ func SealPayload(ctx context.Context, provider PayloadKeyProvider, payloadID str
 		return EncryptedPayload{}, PayloadRef{}, err
 	}
 	digest := sha256.Sum256(plaintext)
-	ref := PayloadRef{KeyID: key.ID, Digest: hex.EncodeToString(digest[:]), ByteSize: uint32(len(plaintext))}
+	ref := PayloadRef{ID: payloadID, KeyID: key.ID, Digest: hex.EncodeToString(digest[:]), ByteSize: uint32(len(plaintext))}
 	return EncryptedPayload{KeyID: key.ID, Nonce: nonce, Ciphertext: ciphertext, DEKNonce: dekNonce, WrappedDEK: wrappedDEK, PayloadHash: ref.Digest}, ref, nil
 }
 
 // OpenPayload decrypts a payload only if its KEK is available and every
 // integrity check succeeds. Missing key material fails closed.
 func OpenPayload(ctx context.Context, provider PayloadKeyProvider, payloadID string, encrypted EncryptedPayload, ref PayloadRef) ([]byte, error) {
-	if ctx == nil || provider == nil || !isCanonicalID(payloadID) || encrypted.KeyID != ref.KeyID || encrypted.PayloadHash != ref.Digest {
+	if ctx == nil || provider == nil || !isCanonicalID(payloadID) || payloadID != ref.ID || ref.Validate() != nil || encrypted.KeyID != ref.KeyID || encrypted.PayloadHash != ref.Digest {
 		return nil, PermanentError(CodeStoreFailure, "encrypted payload metadata is invalid", nil)
 	}
 	key, err := provider.PayloadKey(ctx, encrypted.KeyID)
@@ -103,7 +103,7 @@ func OpenPayload(ctx context.Context, provider PayloadKeyProvider, payloadID str
 // RewrapPayloadDEK rotates the KEK wrapping a payload's DEK without reading
 // the payload plaintext or changing its ciphertext/digest.
 func RewrapPayloadDEK(ctx context.Context, provider PayloadKeyProvider, encrypted EncryptedPayload, ref PayloadRef) (EncryptedPayload, PayloadRef, error) {
-	if ctx == nil || provider == nil || encrypted.KeyID != ref.KeyID || encrypted.PayloadHash != ref.Digest {
+	if ctx == nil || provider == nil || ref.Validate() != nil || encrypted.KeyID != ref.KeyID || encrypted.PayloadHash != ref.Digest {
 		return EncryptedPayload{}, PayloadRef{}, PermanentError(CodeStoreFailure, "encrypted payload metadata is invalid", nil)
 	}
 	oldKey, err := provider.PayloadKey(ctx, encrypted.KeyID)

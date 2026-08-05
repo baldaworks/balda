@@ -20,12 +20,18 @@ func TestPayloadEncryptionRoundTripAndMissingKeyFailsClosed(t *testing.T) {
 	if string(encrypted.Ciphertext) == testPrivatePayload || encrypted.PayloadHash != ref.Digest {
 		t.Fatalf("encrypted payload = %#v", encrypted)
 	}
+	if ref.ID != "payload-1" {
+		t.Fatalf("payload ref ID = %q, want payload-1", ref.ID)
+	}
 	plaintext, err := OpenPayload(context.Background(), provider, "payload-1", encrypted, ref)
 	if err != nil || string(plaintext) != testPrivatePayload {
 		t.Fatalf("OpenPayload() = %q, error = %v", plaintext, err)
 	}
 	if _, err := OpenPayload(context.Background(), testPayloadKeyProvider{}, "payload-1", encrypted, ref); err == nil {
 		t.Fatal("OpenPayload() succeeded without a KEK")
+	}
+	if _, err := OpenPayload(context.Background(), provider, "payload-2", encrypted, ref); err == nil {
+		t.Fatal("OpenPayload() succeeded with a different payload identity")
 	}
 }
 

@@ -171,7 +171,7 @@ func runCanonicalDeliveryContract(t *testing.T, store sessionmemory.CanonicalSto
 	mutation := canonicalMutation(scope, 0, "operation-1", "revision-1", "item-1")
 	mutation.Delivery = []sessionmemory.DeliveryOutboxRecord{{
 		DeliveryID: "delivery-1", OperationID: mutation.Operation.OperationID, CreatedAt: now,
-		PayloadRef: sessionmemory.PayloadRef{KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
+		PayloadRef: sessionmemory.PayloadRef{ID: "payload-1", KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
 	}}
 	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err != nil {
 		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
@@ -197,7 +197,7 @@ func runCanonicalDeliveryContract(t *testing.T, store sessionmemory.CanonicalSto
 	second := canonicalMutation(scope, 1, "operation-2", "revision-2", "item-2")
 	second.Delivery = []sessionmemory.DeliveryOutboxRecord{{
 		DeliveryID: "delivery-2", OperationID: second.Operation.OperationID, CreatedAt: now,
-		PayloadRef: sessionmemory.PayloadRef{KeyID: "key-1", Digest: "digest-2", ByteSize: 1},
+		PayloadRef: sessionmemory.PayloadRef{ID: "payload-2", KeyID: "key-1", Digest: "digest-2", ByteSize: 1},
 	}}
 	if _, err := store.ApplyCanonicalMutation(context.Background(), second); err != nil {
 		t.Fatalf("second ApplyCanonicalMutation() error = %v", err)
@@ -237,7 +237,7 @@ func canonicalRevision(revisionID, itemID string, observedAt time.Time) sessionm
 		Temporal:    sessionmemory.Temporal{ObservedAt: observedAt},
 		Evidence:    []sessionmemory.EvidenceRef{{SourceID: "source-1", MessageID: "message-1", Role: sessionmemory.MessageRoleUser, StartByte: 1, EndByte: 2, AssertionMode: sessionmemory.AssertionModeUser}},
 		Sensitivity: sessionmemory.SensitivityStandard, Retention: sessionmemory.RetentionClassStandard,
-		Payload: sessionmemory.PayloadRef{KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
+		Payload: sessionmemory.PayloadRef{ID: "payload-1", KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
 	}
 }
 

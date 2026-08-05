@@ -128,6 +128,7 @@ type RecordEnvelope struct {
 
 // PayloadRef separates structural records from encrypted content storage.
 type PayloadRef struct {
+	ID       string `json:"id"`
 	KeyID    string `json:"key_id"`
 	Digest   string `json:"digest"`
 	ByteSize uint32 `json:"byte_size"`
@@ -264,7 +265,7 @@ func (c MemoryCandidate) Validate() error {
 }
 
 func (p PayloadRef) Validate() error {
-	if !isCanonicalID(p.KeyID) || !isCanonicalID(p.Digest) || p.ByteSize == 0 {
+	if !isCanonicalID(p.ID) || !isCanonicalID(p.KeyID) || !isCanonicalID(p.Digest) || p.ByteSize == 0 {
 		return invalidDerived("memory payload reference is invalid")
 	}
 	return nil
