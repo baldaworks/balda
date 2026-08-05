@@ -264,6 +264,16 @@ func (s *BadgerSessionMemoryStore) putCanonicalMutationRecords(txn *badger.Txn, 
 				return err
 			}
 		}
+		for _, evidence := range revision.Evidence {
+			key, err := badgerProvenanceKey(mutation.Scope, badgerRecordSourceRevision, evidence.SourceID, revision.RevisionID)
+			if err != nil {
+				return err
+			}
+			edge := badgerProvenanceEdge{ChildRevisionID: revision.RevisionID, ParentRevisionID: evidence.SourceID}
+			if err := putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordSourceRevision, edge); err != nil {
+				return err
+			}
+		}
 	}
 	for _, lifecycle := range mutation.Lifecycle {
 		if err := putBadgerCanonicalRecord(txn, mutation.Scope, badgerRecordLifecycle, lifecycle.EventID, lifecycle); err != nil {

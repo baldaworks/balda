@@ -23,6 +23,7 @@ const (
 	badgerRecordPayload                = "payload"
 	badgerRecordProvenanceForward      = "provenance-forward"
 	badgerRecordProvenanceReverse      = "provenance-reverse"
+	badgerRecordSourceRevision         = "source-revision"
 	badgerRecordDeniedSource           = "denied-source"
 )
 

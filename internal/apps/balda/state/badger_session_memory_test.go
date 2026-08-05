@@ -222,6 +222,16 @@ func TestBadgerSessionMemoryStorePersistsBidirectionalProvenance(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("read provenance edges: %v", err)
 	}
+	sourceKey, err := badgerProvenanceKey(scope, badgerRecordSourceRevision, "source-1", first.RevisionID)
+	if err != nil {
+		t.Fatalf("source provenance key error = %v", err)
+	}
+	if err := store.db.View(func(txn *badger.Txn) error {
+		var edge badgerProvenanceEdge
+		return getBadgerSessionMemoryRecord(txn, sourceKey, badgerRecordSourceRevision, &edge)
+	}); err != nil {
+		t.Fatalf("read source provenance edge: %v", err)
+	}
 }
 
 func TestBadgerSessionMemoryStoreRejectsInvalidProvenanceAtomically(t *testing.T) {
