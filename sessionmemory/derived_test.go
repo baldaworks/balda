@@ -270,7 +270,7 @@ func TestModelCandidatesFailClosed(t *testing.T) {
 		AtomCandidate{Category: AtomCategoryDecision, Text: "Ship it", Relation: CandidateRelationSupersede, Target: &ref},
 		AtomCandidate{Category: AtomCategoryDecision, Text: "Do not ship it", Relation: CandidateRelationCoexist, Target: &ref},
 		ScenarioCandidate{TopicKey: "release", Title: "Release", Summary: "Release context", Atoms: []RevisionRef{ref}},
-		ProfileCandidate{Summary: "Long-lived context", Scenarios: []RevisionRef{ref}},
+		ProfileCandidate{Disposition: ProfileDispositionUpsert, Summary: "Long-lived context", Scenarios: []RevisionRef{ref}},
 	}
 	for index, candidate := range valid {
 		if err := candidate.Validate(); err != nil {
@@ -283,9 +283,9 @@ func TestModelCandidatesFailClosed(t *testing.T) {
 		AtomCandidate{Category: AtomCategoryFact, Text: "missing target", Relation: CandidateRelationCoexist},
 		AtomCandidate{Category: AtomCategoryFact, Text: "unexpected target", Relation: CandidateRelationNew, Target: &ref},
 		ScenarioCandidate{TopicKey: "release", Title: "Release", Summary: "missing atoms"},
-		ProfileCandidate{Summary: "missing parents"},
-		ProfileCandidate{Summary: strings.Repeat("x", MaxDerivedTextBytes+1), Atoms: []RevisionRef{ref}},
-		ProfileCandidate{Summary: strings.Repeat(" ", MaxDerivedTextBytes+1), Atoms: []RevisionRef{ref}},
+		ProfileCandidate{Disposition: ProfileDispositionUpsert, Summary: "missing parents"},
+		ProfileCandidate{Disposition: ProfileDispositionUpsert, Summary: strings.Repeat("x", MaxDerivedTextBytes+1), Atoms: []RevisionRef{ref}},
+		ProfileCandidate{Disposition: ProfileDispositionUpsert, Summary: strings.Repeat(" ", MaxDerivedTextBytes+1), Atoms: []RevisionRef{ref}},
 	}
 	for index, candidate := range invalid {
 		err := candidate.Validate()
@@ -296,6 +296,42 @@ func TestModelCandidatesFailClosed(t *testing.T) {
 		if !ok || (code != CodeInvalidDerived && code != CodeLimitExceeded) {
 			t.Fatalf("invalid candidate %d error = %v, code = %q", index, err, code)
 		}
+	}
+}
+
+func TestProcessingOperationIDUsesDerivationVersion(t *testing.T) {
+	t.Parallel()
+
+	legacy, err := ProcessingOperationID(OperationStageAtoms, "export-1")
+	if err != nil {
+		t.Fatalf("ProcessingOperationID() error = %v", err)
+	}
+	explicitLegacy, err := ProcessingOperationID(OperationStageAtoms, "export-1", LegacyDerivationRef())
+	if err != nil {
+		t.Fatalf("ProcessingOperationID() explicit legacy error = %v", err)
+	}
+	if legacy != explicitLegacy {
+		t.Fatalf("legacy operation IDs differ: %q != %q", legacy, explicitLegacy)
+	}
+	versioned := DerivationRef{Pipeline: "pipeline-v2", Policy: "policy-v2", Prompt: "prompt-v2", Model: "model-v2"}
+	got, err := ProcessingOperationID(OperationStageAtoms, "export-1", versioned)
+	if err != nil {
+		t.Fatalf("ProcessingOperationID() versioned error = %v", err)
+	}
+	if got == legacy {
+		t.Fatal("versioned derivation reused the legacy operation ID")
+	}
+}
+
+func TestProfileCandidateSkipIsStrictAndRevisionFree(t *testing.T) {
+	t.Parallel()
+
+	skip := ProfileCandidate{Disposition: ProfileDispositionSkip}
+	if err := skip.Validate(); err != nil {
+		t.Fatalf("skip.Validate() error = %v", err)
+	}
+	if err := (ProfileCandidate{Disposition: ProfileDispositionSkip, Summary: "must not write"}).Validate(); err == nil {
+		t.Fatal("populated skip candidate validated")
 	}
 }
 

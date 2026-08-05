@@ -36,7 +36,7 @@ func (e *Engine) ProcessBoundary(ctx context.Context, boundary Boundary) (Bounda
 }
 
 func (e *Engine) processScenarioStage(ctx context.Context, boundary Boundary) (OperationOutcome, error) {
-	operationID, err := ProcessingOperationID(OperationStageScenarios, boundary.ExportID)
+	operationID, err := ProcessingOperationID(OperationStageScenarios, boundary.ExportID, e.config.Derivation)
 	if err != nil {
 		return OperationOutcome{}, err
 	}
@@ -66,6 +66,7 @@ func (e *Engine) processScenarioStage(ctx context.Context, boundary Boundary) (O
 	}
 	candidates, err := e.scenarioSynthesizer.SynthesizeScenarios(ctx, ScenarioSynthesisRequest{
 		SchemaVersion: DerivedSchemaVersionV1,
+		Derivation:    e.config.Derivation,
 		Boundary:      boundary,
 		View:          scopeViewFromSnapshot(snapshot),
 	})
@@ -95,7 +96,7 @@ func (e *Engine) processScenarioStage(ctx context.Context, boundary Boundary) (O
 }
 
 func (e *Engine) processProfileStage(ctx context.Context, boundary Boundary) (OperationOutcome, error) {
-	operationID, err := ProcessingOperationID(OperationStageProfile, boundary.ExportID)
+	operationID, err := ProcessingOperationID(OperationStageProfile, boundary.ExportID, e.config.Derivation)
 	if err != nil {
 		return OperationOutcome{}, err
 	}
@@ -125,6 +126,7 @@ func (e *Engine) processProfileStage(ctx context.Context, boundary Boundary) (Op
 	}
 	candidate, err := e.profileSynthesizer.SynthesizeProfile(ctx, ProfileSynthesisRequest{
 		SchemaVersion: DerivedSchemaVersionV1,
+		Derivation:    e.config.Derivation,
 		Boundary:      boundary,
 		View:          scopeViewFromSnapshot(snapshot),
 	})
@@ -322,6 +324,12 @@ func (e *Engine) groundProfileCandidate(
 	candidate *ProfileCandidate,
 ) ([]Profile, []RevisionTransition, error) {
 	if candidate == nil {
+		return nil, nil, nil
+	}
+	if candidate.Disposition == ProfileDispositionSkip {
+		if err := candidate.Validate(); err != nil {
+			return nil, nil, err
+		}
 		return nil, nil, nil
 	}
 	if len(candidate.Summary) > e.config.MaxDerivedTextBytes {

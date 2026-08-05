@@ -96,6 +96,37 @@ const (
 	OperationStageProfile OperationStage = "profile"
 )
 
+// DerivationRef identifies the versioned policy used to derive one operation.
+// Its values are stable, content-free fingerprints selected by the application,
+// not model-provided identifiers.
+type DerivationRef struct {
+	Pipeline string `json:"pipeline"`
+	Policy   string `json:"policy"`
+	Prompt   string `json:"prompt"`
+	Model    string `json:"model"`
+}
+
+// LegacyDerivationRef identifies the pre-versioned derivation behavior. It is
+// retained so persisted v1 inputs replay with their original operation IDs.
+func LegacyDerivationRef() DerivationRef {
+	return DerivationRef{
+		Pipeline: "legacy-v1",
+		Policy:   "legacy-v1",
+		Prompt:   "legacy-v1",
+		Model:    "legacy-v1",
+	}
+}
+
+// ProfileDisposition controls whether profile synthesis writes a revision.
+type ProfileDisposition string
+
+const (
+	// ProfileDispositionSkip records a successful synthesis with no profile change.
+	ProfileDispositionSkip ProfileDisposition = "skip"
+	// ProfileDispositionUpsert writes a profile revision.
+	ProfileDispositionUpsert ProfileDisposition = "upsert"
+)
+
 // SourceRef identifies one immutable raw turn source.
 type SourceRef struct {
 	Scope        Scope  `json:"scope"`
@@ -173,10 +204,11 @@ type ScenarioCandidate struct {
 
 // ProfileCandidate is untrusted model output for one proposed profile.
 type ProfileCandidate struct {
-	Summary    string        `json:"summary"`
-	Atoms      []RevisionRef `json:"atoms,omitempty"`
-	Scenarios  []RevisionRef `json:"scenarios,omitempty"`
-	Supersedes *RevisionRef  `json:"supersedes,omitempty"`
+	Disposition ProfileDisposition `json:"disposition"`
+	Summary     string             `json:"summary"`
+	Atoms       []RevisionRef      `json:"atoms,omitempty"`
+	Scenarios   []RevisionRef      `json:"scenarios,omitempty"`
+	Supersedes  *RevisionRef       `json:"supersedes,omitempty"`
 }
 
 // OperationOutcome is the durable result of one idempotent processing stage.

@@ -89,23 +89,26 @@ type Store interface {
 
 // AtomExtractionRequest is bounded input for atom extraction.
 type AtomExtractionRequest struct {
-	SchemaVersion string    `json:"schema_version"`
-	Turn          Turn      `json:"turn"`
-	View          ScopeView `json:"view"`
+	SchemaVersion string        `json:"schema_version"`
+	Derivation    DerivationRef `json:"derivation"`
+	Turn          Turn          `json:"turn"`
+	View          ScopeView     `json:"view"`
 }
 
 // ScenarioSynthesisRequest is bounded input for scenario synthesis.
 type ScenarioSynthesisRequest struct {
-	SchemaVersion string    `json:"schema_version"`
-	Boundary      Boundary  `json:"boundary"`
-	View          ScopeView `json:"view"`
+	SchemaVersion string        `json:"schema_version"`
+	Derivation    DerivationRef `json:"derivation"`
+	Boundary      Boundary      `json:"boundary"`
+	View          ScopeView     `json:"view"`
 }
 
 // ProfileSynthesisRequest is bounded input for profile synthesis.
 type ProfileSynthesisRequest struct {
-	SchemaVersion string    `json:"schema_version"`
-	Boundary      Boundary  `json:"boundary"`
-	View          ScopeView `json:"view"`
+	SchemaVersion string        `json:"schema_version"`
+	Derivation    DerivationRef `json:"derivation"`
+	Boundary      Boundary      `json:"boundary"`
+	View          ScopeView     `json:"view"`
 }
 
 // AtomExtractor converts one completed turn into untrusted atom candidates.

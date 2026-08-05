@@ -62,6 +62,26 @@ func (s OperationStage) Validate() error {
 	}
 }
 
+// Validate verifies a complete, content-free derivation identity.
+func (r DerivationRef) Validate() error {
+	for _, field := range []string{r.Pipeline, r.Policy, r.Prompt, r.Model} {
+		if !isCanonicalID(field) {
+			return invalidDerived("derivation fingerprint is required")
+		}
+	}
+	return nil
+}
+
+// Validate verifies a supported profile synthesis disposition.
+func (d ProfileDisposition) Validate() error {
+	switch d {
+	case ProfileDispositionSkip, ProfileDispositionUpsert:
+		return nil
+	default:
+		return invalidDerived("unsupported profile candidate disposition")
+	}
+}
+
 // Validate verifies a complete exact-scope raw source identity.
 func (r SourceRef) Validate() error {
 	if err := r.Scope.Validate(); err != nil {
@@ -260,6 +280,15 @@ func (c ScenarioCandidate) Validate() error {
 
 // Validate verifies syntactically grounded profile candidate output.
 func (c ProfileCandidate) Validate() error {
+	if err := c.Disposition.Validate(); err != nil {
+		return err
+	}
+	if c.Disposition == ProfileDispositionSkip {
+		if c.Summary != "" || len(c.Atoms) != 0 || len(c.Scenarios) != 0 || c.Supersedes != nil {
+			return invalidDerived("skipped profile candidate cannot contain a revision")
+		}
+		return nil
+	}
 	if _, err := validateDerivedText("profile candidate summary", c.Summary); err != nil {
 		return err
 	}

@@ -3,14 +3,27 @@ package sessionmemory
 import "context"
 
 // ProcessingOperationID derives a stable idempotency key for one processing stage.
-func ProcessingOperationID(stage OperationStage, exportID string) (string, error) {
+func ProcessingOperationID(stage OperationStage, exportID string, derivations ...DerivationRef) (string, error) {
 	if err := stage.Validate(); err != nil {
 		return "", err
 	}
 	if !isCanonicalID(exportID) {
 		return "", invalidDerived("processing export id is required")
 	}
-	return derivedStableID("operation", string(stage), exportID), nil
+	derivation := LegacyDerivationRef()
+	if len(derivations) > 1 {
+		return "", invalidDerived("one derivation reference is allowed")
+	}
+	if len(derivations) == 1 {
+		derivation = derivations[0]
+	}
+	if err := derivation.Validate(); err != nil {
+		return "", err
+	}
+	if derivation == LegacyDerivationRef() {
+		return derivedStableID("operation", string(stage), exportID), nil
+	}
+	return derivedStableID("operation", string(stage), exportID, derivation.Pipeline, derivation.Policy, derivation.Prompt, derivation.Model), nil
 }
 
 // ProcessTurn extracts and atomically commits atoms for one completed raw turn.
@@ -27,7 +40,7 @@ func (e *Engine) ProcessTurn(ctx context.Context, turn Turn) (OperationOutcome, 
 	if turnTextExceeds(turn, e.config.MaxTurnTextBytes) {
 		return OperationOutcome{}, limitExceeded("raw turn text exceeds the derived processing limit")
 	}
-	operationID, err := ProcessingOperationID(OperationStageAtoms, turn.ExportID)
+	operationID, err := ProcessingOperationID(OperationStageAtoms, turn.ExportID, e.config.Derivation)
 	if err != nil {
 		return OperationOutcome{}, err
 	}
@@ -72,6 +85,7 @@ func (e *Engine) ProcessTurn(ctx context.Context, turn Turn) (OperationOutcome, 
 
 	request := AtomExtractionRequest{
 		SchemaVersion: DerivedSchemaVersionV1,
+		Derivation:    e.config.Derivation,
 		Turn:          cloneTurn(turn),
 		View:          scopeViewFromSnapshot(snapshot),
 	}

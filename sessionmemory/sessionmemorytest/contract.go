@@ -78,8 +78,9 @@ func runWorkflowContract(t *testing.T, store sessionmemory.Store) {
 	}}, nil)
 	scenarioRef := contractScenarioRef(t, boundary, atomOutcome.Revisions[0])
 	models.SetProfile(&sessionmemory.ProfileCandidate{
-		Summary:   "Durable locator profile",
-		Scenarios: []sessionmemory.RevisionRef{scenarioRef},
+		Disposition: sessionmemory.ProfileDispositionUpsert,
+		Summary:     "Durable locator profile",
+		Scenarios:   []sessionmemory.RevisionRef{scenarioRef},
 	}, nil)
 	boundaryOutcome, err := engine.ProcessBoundary(context.Background(), boundary)
 	if err != nil {
@@ -441,8 +442,9 @@ func runConcurrentLifecycleContract(t *testing.T, store sessionmemory.Store) {
 	}}, nil)
 	scenarioRef := concurrentScenarioRef(t, boundary, sharedAtom.Revisions[0])
 	models.SetProfile(&sessionmemory.ProfileCandidate{
-		Summary:   "Concurrent lifecycle profile",
-		Scenarios: []sessionmemory.RevisionRef{scenarioRef},
+		Disposition: sessionmemory.ProfileDispositionUpsert,
+		Summary:     "Concurrent lifecycle profile",
+		Scenarios:   []sessionmemory.RevisionRef{scenarioRef},
 	}, nil)
 	sharedForget := sessionmemory.ForgetSourceCommand{
 		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,

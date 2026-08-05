@@ -34,8 +34,9 @@ func TestProcessBoundaryCommitsStagesAndReplaysWithoutModels(t *testing.T) {
 			t.Fatalf("profile model scenarios = %+v", request.View.Scenarios)
 		}
 		return &ProfileCandidate{
-			Summary:   "Prefers portable packages",
-			Scenarios: []RevisionRef{revisionRef(request.View.Scenarios[0].Meta)},
+			Disposition: ProfileDispositionUpsert,
+			Summary:     "Prefers portable packages",
+			Scenarios:   []RevisionRef{revisionRef(request.View.Scenarios[0].Meta)},
 		}, nil
 	})
 	engine := newEngineForBoundaryTest(t, store, scenarios, profiles)
@@ -90,8 +91,9 @@ func TestProcessBoundaryResumesAfterProfileFailure(t *testing.T) {
 			return nil, errors.New("temporary model failure")
 		}
 		return &ProfileCandidate{
-			Summary:   "Release profile",
-			Scenarios: []RevisionRef{revisionRef(request.View.Scenarios[0].Meta)},
+			Disposition: ProfileDispositionUpsert,
+			Summary:     "Release profile",
+			Scenarios:   []RevisionRef{revisionRef(request.View.Scenarios[0].Meta)},
 		}, nil
 	})
 	engine := newEngineForBoundaryTest(t, store, scenarios, profiles)
@@ -150,9 +152,10 @@ func TestProcessBoundarySupersedesCurrentScenarioAndProfile(t *testing.T) {
 			}
 		}
 		return &ProfileCandidate{
-			Summary:    "Updated release profile",
-			Scenarios:  []RevisionRef{activeScenario},
-			Supersedes: &prior,
+			Disposition: ProfileDispositionUpsert,
+			Summary:     "Updated release profile",
+			Scenarios:   []RevisionRef{activeScenario},
+			Supersedes:  &prior,
 		}, nil
 	})
 	engine := newEngineForBoundaryTest(t, store, scenarios, profiles)
@@ -219,8 +222,9 @@ func TestProcessBoundaryProfileConflictDoesNotRetry(t *testing.T) {
 	profiles := engineProfileSynthesizerFunc(func(_ context.Context, request ProfileSynthesisRequest) (*ProfileCandidate, error) {
 		profileCalls++
 		return &ProfileCandidate{
-			Summary:   "Release profile",
-			Scenarios: []RevisionRef{revisionRef(request.View.Scenarios[0].Meta)},
+			Disposition: ProfileDispositionUpsert,
+			Summary:     "Release profile",
+			Scenarios:   []RevisionRef{revisionRef(request.View.Scenarios[0].Meta)},
 		}, nil
 	})
 	engine := newEngineForBoundaryTest(t, store, scenarios, profiles)
@@ -231,6 +235,23 @@ func TestProcessBoundaryProfileConflictDoesNotRetry(t *testing.T) {
 	}
 	if scenarioCalls != 1 || profileCalls != 1 || store.commitCalls != 2 {
 		t.Fatalf("conflict calls = %d scenario, %d profile, %d commit; want 1, 1, 2", scenarioCalls, profileCalls, store.commitCalls)
+	}
+}
+
+func TestGroundProfileCandidateSkipProducesNoRevision(t *testing.T) {
+	t.Parallel()
+
+	profiles, transitions, err := (&Engine{}).groundProfileCandidate(
+		Boundary{},
+		"operation-1",
+		ScopeSnapshot{},
+		&ProfileCandidate{Disposition: ProfileDispositionSkip},
+	)
+	if err != nil {
+		t.Fatalf("groundProfileCandidate() error = %v", err)
+	}
+	if len(profiles) != 0 || len(transitions) != 0 {
+		t.Fatalf("skip profile mutation = profiles=%+v transitions=%+v", profiles, transitions)
 	}
 }
 

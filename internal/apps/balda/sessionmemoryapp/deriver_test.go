@@ -40,12 +40,21 @@ func TestDeriverExtractAtomsUsesTypedEnvelope(t *testing.T) {
 	if len(atoms) != 1 || atoms[0].Category != sessionmemory.AtomCategoryFact || atoms[0].Text != "JetStream is durable" {
 		t.Fatalf("atoms = %#v", atoms)
 	}
-	if invoker.last.Stage != string(sessionmemory.OperationStageAtoms) || invoker.last.OperationID != turn.ExportID || len(invoker.last.InputJSON) == 0 {
+	wantOperationID, err := sessionmemory.ProcessingOperationID(sessionmemory.OperationStageAtoms, turn.ExportID)
+	if err != nil {
+		t.Fatalf("ProcessingOperationID() error = %v", err)
+	}
+	if invoker.last.Stage != string(sessionmemory.OperationStageAtoms) || invoker.last.OperationID != wantOperationID || len(invoker.last.InputJSON) == 0 {
 		t.Fatalf("invocation = %#v", invoker.last)
 	}
 	var encoded map[string]any
 	if err := json.Unmarshal(invoker.last.InputJSON, &encoded); err != nil {
 		t.Fatalf("input JSON error = %v", err)
+	}
+	derivation, ok := encoded["derivation"].(map[string]any)
+	if !ok || derivation["pipeline"] != "legacy-v1" || derivation["policy"] != "legacy-v1" ||
+		derivation["prompt"] != "legacy-v1" || derivation["model"] != "legacy-v1" {
+		t.Fatalf("encoded derivation = %#v", encoded["derivation"])
 	}
 }
 

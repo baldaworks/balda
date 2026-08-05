@@ -3,6 +3,7 @@ package sessionmemory
 // Config lowers derived processing bounds. Zero values select hard defaults.
 // A caller cannot raise a bound above the package hard ceiling.
 type Config struct {
+	Derivation             DerivationRef
 	MaxTurnTextBytes       int
 	MaxCandidateCount      int
 	MaxSourcesPerRevision  int
@@ -16,6 +17,7 @@ type Config struct {
 // DefaultConfig returns all package hard ceilings.
 func DefaultConfig() Config {
 	return Config{
+		Derivation:             LegacyDerivationRef(),
 		MaxTurnTextBytes:       MaxDerivedTurnTextBytes,
 		MaxCandidateCount:      MaxCandidateCount,
 		MaxSourcesPerRevision:  MaxSourcesPerRevision,
@@ -35,6 +37,12 @@ func (c Config) Validate() error {
 }
 
 func normalizeConfig(config Config) (Config, error) {
+	if config.Derivation == (DerivationRef{}) {
+		config.Derivation = LegacyDerivationRef()
+	}
+	if err := config.Derivation.Validate(); err != nil {
+		return Config{}, err
+	}
 	defaults := DefaultConfig()
 	fields := []struct {
 		name         string

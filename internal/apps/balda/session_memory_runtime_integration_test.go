@@ -308,8 +308,9 @@ func (i *runtimeDurabilityInvoker) Invoke(_ context.Context, invocation sessionm
 		}
 		ref := request.View.Atoms[0].Meta
 		return json.Marshal(map[string]any{"output": sessionmemory.ProfileCandidate{
-			Summary: "durable release profile",
-			Atoms:   []sessionmemory.RevisionRef{{ItemID: ref.ItemID, RevisionID: ref.RevisionID}},
+			Disposition: sessionmemory.ProfileDispositionUpsert,
+			Summary:     "durable release profile",
+			Atoms:       []sessionmemory.RevisionRef{{ItemID: ref.ItemID, RevisionID: ref.RevisionID}},
 		}})
 	default:
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, fmt.Sprintf("scripted stage %q is unsupported", invocation.Stage), nil)

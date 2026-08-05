@@ -67,13 +67,18 @@ func (d *Deriver) ExtractAtoms(ctx context.Context, request sessionmemory.AtomEx
 	if d == nil || d.invoker == nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "session-memory deriver is unavailable", nil)
 	}
+	request.Derivation = normalizeDerivation(request.Derivation)
 	input, err := json.Marshal(request)
 	if err != nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "encode atom derivation request", err)
 	}
 	var output atomsOutput
+	operationID, err := operationID(sessionmemory.OperationStageAtoms, request.Turn.ExportID, request.Derivation)
+	if err != nil {
+		return nil, err
+	}
 	if err := d.invoke(ctx, StructuredInvocation{
-		OperationID:  request.Turn.ExportID,
+		OperationID:  operationID,
 		Stage:        string(sessionmemory.OperationStageAtoms),
 		Instruction:  memoryDerivationInstruction + " Extract only grounded atom candidates from this completed turn.",
 		InputJSON:    input,
@@ -88,13 +93,18 @@ func (d *Deriver) SynthesizeScenarios(ctx context.Context, request sessionmemory
 	if d == nil || d.invoker == nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "session-memory deriver is unavailable", nil)
 	}
+	request.Derivation = normalizeDerivation(request.Derivation)
 	input, err := json.Marshal(request)
 	if err != nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "encode scenario derivation request", err)
 	}
 	var output scenariosOutput
+	operationID, err := operationID(sessionmemory.OperationStageScenarios, request.Boundary.ExportID, request.Derivation)
+	if err != nil {
+		return nil, err
+	}
 	if err := d.invoke(ctx, StructuredInvocation{
-		OperationID:  request.Boundary.ExportID,
+		OperationID:  operationID,
 		Stage:        string(sessionmemory.OperationStageScenarios),
 		Instruction:  memoryDerivationInstruction + " Synthesize same-scope topic scenarios from the active view.",
 		InputJSON:    input,
@@ -109,13 +119,18 @@ func (d *Deriver) SynthesizeProfile(ctx context.Context, request sessionmemory.P
 	if d == nil || d.invoker == nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "session-memory deriver is unavailable", nil)
 	}
+	request.Derivation = normalizeDerivation(request.Derivation)
 	input, err := json.Marshal(request)
 	if err != nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "encode profile derivation request", err)
 	}
 	var output profileOutput
+	operationID, err := operationID(sessionmemory.OperationStageProfile, request.Boundary.ExportID, request.Derivation)
+	if err != nil {
+		return nil, err
+	}
 	if err := d.invoke(ctx, StructuredInvocation{
-		OperationID:  request.Boundary.ExportID,
+		OperationID:  operationID,
 		Stage:        string(sessionmemory.OperationStageProfile),
 		Instruction:  memoryDerivationInstruction + " Synthesize one same-scope long-lived profile.",
 		InputJSON:    input,
@@ -124,6 +139,17 @@ func (d *Deriver) SynthesizeProfile(ctx context.Context, request sessionmemory.P
 		return nil, err
 	}
 	return &output.Output, nil
+}
+
+func operationID(stage sessionmemory.OperationStage, exportID string, derivation sessionmemory.DerivationRef) (string, error) {
+	return sessionmemory.ProcessingOperationID(stage, exportID, normalizeDerivation(derivation))
+}
+
+func normalizeDerivation(derivation sessionmemory.DerivationRef) sessionmemory.DerivationRef {
+	if derivation == (sessionmemory.DerivationRef{}) {
+		return sessionmemory.LegacyDerivationRef()
+	}
+	return derivation
 }
 
 func (d *Deriver) invoke(ctx context.Context, request StructuredInvocation, output any) error {
