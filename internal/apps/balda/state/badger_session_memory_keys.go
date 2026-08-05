@@ -20,6 +20,7 @@ const (
 	badgerRecordChange                 = "change"
 	badgerRecordDelivery               = "delivery"
 	badgerRecordDeliveryClaim          = "delivery-claim"
+	badgerRecordPayload                = "payload"
 	badgerRecordProvenanceForward      = "provenance-forward"
 	badgerRecordProvenanceReverse      = "provenance-reverse"
 )

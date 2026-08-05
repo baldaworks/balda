@@ -517,6 +517,52 @@ func (s *BadgerSessionMemoryStore) SettleDeliveryOutbox(ctx context.Context, req
 	return nil
 }
 
+// PutEncryptedPayload persists an encrypted blob outside structural canonical
+// records. The caller must have produced the payload with SealPayload.
+func (s *BadgerSessionMemoryStore) PutEncryptedPayload(ctx context.Context, payloadID string, encrypted sessionmemory.EncryptedPayload, ref sessionmemory.PayloadRef) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if !isBadgerPayloadValid(payloadID, encrypted, ref) {
+		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "encrypted payload is invalid", nil)
+	}
+	key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, payloadID)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Update(func(txn *badger.Txn) error {
+		return putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordPayload, encrypted)
+	}); err != nil {
+		return badgerSessionMemoryError("store encrypted payload", err)
+	}
+	return nil
+}
+
+// LoadEncryptedPayload reads a content-free reference's encrypted blob.
+func (s *BadgerSessionMemoryStore) LoadEncryptedPayload(ctx context.Context, payloadID string, ref sessionmemory.PayloadRef) (sessionmemory.EncryptedPayload, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return sessionmemory.EncryptedPayload{}, err
+	}
+	key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, payloadID)
+	if err != nil {
+		return sessionmemory.EncryptedPayload{}, err
+	}
+	var encrypted sessionmemory.EncryptedPayload
+	if err := s.db.View(func(txn *badger.Txn) error {
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordPayload, &encrypted)
+	}); err != nil {
+		return sessionmemory.EncryptedPayload{}, badgerSessionMemoryError("load encrypted payload", err)
+	}
+	if !isBadgerPayloadValid(payloadID, encrypted, ref) {
+		return sessionmemory.EncryptedPayload{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored encrypted payload is invalid", nil)
+	}
+	return encrypted, nil
+}
+
+func isBadgerPayloadValid(payloadID string, encrypted sessionmemory.EncryptedPayload, ref sessionmemory.PayloadRef) bool {
+	return payloadID != "" && ref.Validate() == nil && encrypted.KeyID == ref.KeyID && encrypted.PayloadHash == ref.Digest && len(encrypted.Nonce) > 0 && len(encrypted.Ciphertext) > 0 && len(encrypted.DEKNonce) > 0 && len(encrypted.WrappedDEK) > 0
+}
+
 func badgerSessionMemoryError(operation string, err error) error {
 	if errors.Is(err, badger.ErrTxnTooBig) {
 		return sessionmemory.PermanentError(sessionmemory.CodeLimitExceeded, operation, err)

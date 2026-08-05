@@ -79,6 +79,23 @@ func TestBadgerSessionMemoryStoreValueLogGCValidation(t *testing.T) {
 	}
 }
 
+func TestBadgerSessionMemoryStorePersistsEncryptedPayloadSeparately(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ref := sessionmemory.PayloadRef{KeyID: "kek-1", Digest: "digest-1", ByteSize: 1}
+	encrypted := sessionmemory.EncryptedPayload{KeyID: ref.KeyID, PayloadHash: ref.Digest, Nonce: []byte{1}, Ciphertext: []byte{2}, DEKNonce: []byte{3}, WrappedDEK: []byte{4}}
+	if err := store.PutEncryptedPayload(context.Background(), "payload-1", encrypted, ref); err != nil {
+		t.Fatalf("PutEncryptedPayload() error = %v", err)
+	}
+	got, err := store.LoadEncryptedPayload(context.Background(), "payload-1", ref)
+	if err != nil || string(got.Ciphertext) != string(encrypted.Ciphertext) {
+		t.Fatalf("LoadEncryptedPayload() = %#v, error = %v", got, err)
+	}
+}
+
 func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "memory.badger")
 	store, err := OpenBadgerSessionMemoryStore(directory)
