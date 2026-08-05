@@ -121,6 +121,23 @@ func TestExecuteCapturesExactlyOneEligibleTurnBeforeDelivery(t *testing.T) {
 	}
 }
 
+func TestShouldCaptureTerminalTurnIncludesUserOnlyFailures(t *testing.T) {
+	failed := adksession.NewEvent(context.Background(), "invocation-failed")
+	failed.TurnComplete = true
+	failed.ErrorCode = "provider_failure"
+	if !shouldCaptureTerminalTurn(failed, "user question", "") {
+		t.Fatal("user-only failed terminal turn was not eligible")
+	}
+	success := adksession.NewEvent(context.Background(), "invocation-success")
+	success.TurnComplete = true
+	if shouldCaptureTerminalTurn(success, "user question", "") {
+		t.Fatal("empty successful terminal turn was eligible")
+	}
+	if shouldCaptureTerminalTurn(failed, "", "") {
+		t.Fatal("failed terminal turn without user text was eligible")
+	}
+}
+
 func TestExecuteCaptureFailureDoesNotSuppressResponse(t *testing.T) {
 	t.Parallel()
 

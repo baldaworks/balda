@@ -527,7 +527,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 					return err
 				}
 			}
-			if s.turnCapture != nil && strings.TrimSpace(req.Text) != "" && strings.TrimSpace(memoryResponseText) != "" {
+			if s.turnCapture != nil && shouldCaptureTerminalTurn(ev, req.Text, memoryResponseText) {
 				if sourceTurnID := completedTurnSourceID(req); sourceTurnID != "" {
 					captureErr := s.turnCapture.CaptureCompletedTurn(ctx, CompletedTurn{
 						UserText:       req.Text,
@@ -672,6 +672,16 @@ func successfulFormatTurn(event *adksession.Event, responseText string) bool {
 		return false
 	}
 	return strings.TrimSpace(responseText) != ""
+}
+
+func shouldCaptureTerminalTurn(event *adksession.Event, userText, assistantText string) bool {
+	if event == nil || !event.TurnComplete || strings.TrimSpace(userText) == "" {
+		return false
+	}
+	if strings.TrimSpace(assistantText) != "" {
+		return true
+	}
+	return event.Interrupted || strings.TrimSpace(event.ErrorCode) != "" || strings.TrimSpace(event.ErrorMessage) != ""
 }
 
 func (s *TurnExecutionService) startAutoCycleIfNeeded(ctx context.Context, req ExecutionRequest) error {

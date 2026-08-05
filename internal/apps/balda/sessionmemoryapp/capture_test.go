@@ -98,10 +98,7 @@ func TestTurnCaptureExcludesIneligibleTextAndAmbiguousScope(t *testing.T) {
 	capture := NewTurnCapture(publisher, resolver)
 	locator := testCaptureLocator(t, "telegram", "123:0", "tg-123-0")
 
-	for _, req := range []CaptureRequest{
-		{AssistantText: "answer", Locator: locator, SourceTurnID: "turn-1"},
-		{UserText: "question", Locator: locator, SourceTurnID: "turn-2"},
-	} {
+	for _, req := range []CaptureRequest{{AssistantText: "answer", Locator: locator, SourceTurnID: "turn-1"}} {
 		result, err := capture.Capture(context.Background(), req)
 		if err != nil {
 			t.Fatalf("ineligible Capture() error = %v", err)
@@ -124,6 +121,25 @@ func TestTurnCaptureExcludesIneligibleTextAndAmbiguousScope(t *testing.T) {
 	}
 	if len(publisher.exports) != 0 {
 		t.Fatalf("published exports = %d, want 0", len(publisher.exports))
+	}
+}
+
+func TestTurnCapturePublishesUserOnlyTerminalTurn(t *testing.T) {
+	publisher := &capturePublisher{}
+	resolver := NewScopeResolver(map[string]ScopeClassifier{
+		"telegram": func(deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+			return deliverycmd.LocatorScopePersonal, nil
+		},
+	})
+	capture := NewTurnCapture(publisher, resolver)
+	result, err := capture.Capture(context.Background(), CaptureRequest{
+		UserText: "question", Locator: testCaptureLocator(t, "telegram", "123:0", "tg-123-0"), SourceTurnID: "turn-failed",
+	})
+	if err != nil || !result.Attempted || len(publisher.exports) != 1 {
+		t.Fatalf("Capture() = %+v, %v; exports = %d", result, err, len(publisher.exports))
+	}
+	if turn := publisher.exports[0].Turn; turn == nil || len(turn.Messages) != 1 || turn.Messages[0].Role != sessionmemory.MessageRoleUser {
+		t.Fatalf("user-only turn = %+v", turn)
 	}
 }
 

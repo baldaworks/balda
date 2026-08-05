@@ -46,7 +46,7 @@ func TestTurnValidateRejectsNonTextShapeAndChangedIdentity(t *testing.T) {
 		name   string
 		mutate func(*Turn)
 	}{
-		{name: "missing assistant", mutate: func(turn *Turn) { turn.Messages = turn.Messages[:1] }},
+		{name: "extra message", mutate: func(turn *Turn) { turn.Messages = append(turn.Messages, Message{Role: MessageRoleTool, Text: "tool"}) }},
 		{name: "wrong role", mutate: func(turn *Turn) { turn.Messages[1].Role = MessageRoleUser }},
 		{name: "empty user", mutate: func(turn *Turn) { turn.Messages[0].Text = "  " }},
 		{name: "changed source identity", mutate: func(turn *Turn) { turn.SourceTurnID = "turn-2" }},

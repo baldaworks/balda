@@ -40,7 +40,7 @@ func (s SessionRef) Validate() error {
 	return nil
 }
 
-// Validate verifies a completed, text-only, idempotent turn export.
+// Validate verifies a terminal, text-only, idempotent turn export.
 func (t Turn) Validate() error {
 	if t.SchemaVersion != SchemaVersionV1 {
 		return PermanentError(CodePermanent, "unsupported turn schema version", nil)
@@ -61,14 +61,16 @@ func (t Turn) Validate() error {
 	if t.CompletedAt.IsZero() {
 		return PermanentError(CodePermanent, "turn completion time is required", nil)
 	}
-	if len(t.Messages) != 2 {
-		return PermanentError(CodePermanent, "turn must contain one user and one assistant message", nil)
+	if len(t.Messages) != 1 && len(t.Messages) != 2 {
+		return PermanentError(CodePermanent, "turn must contain one user message and at most one assistant message", nil)
 	}
 	if err := validateMessage(t.Messages[0], MessageRoleUser); err != nil {
 		return err
 	}
-	if err := validateMessage(t.Messages[1], MessageRoleAssistant); err != nil {
-		return err
+	if len(t.Messages) == 2 {
+		if err := validateMessage(t.Messages[1], MessageRoleAssistant); err != nil {
+			return err
+		}
 	}
 	return nil
 }

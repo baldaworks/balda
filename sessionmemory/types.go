@@ -65,7 +65,9 @@ type Message struct {
 	Text string      `json:"text"`
 }
 
-// Turn is an idempotent completed-turn export.
+// Turn is an idempotent terminal-turn export. It always contains normalized
+// user input and may omit assistant text when the provider terminally fails or
+// is interrupted before producing a visible response.
 type Turn struct {
 	SchemaVersion string     `json:"schema_version"`
 	ExportID      string     `json:"export_id"`
@@ -116,6 +118,10 @@ func NewTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt t
 	if err != nil {
 		return Turn{}, err
 	}
+	messages := []Message{{Role: MessageRoleUser, Text: strings.TrimSpace(userText)}}
+	if assistantText = strings.TrimSpace(assistantText); assistantText != "" {
+		messages = append(messages, Message{Role: MessageRoleAssistant, Text: assistantText})
+	}
 	turn := Turn{
 		SchemaVersion: SchemaVersionV1,
 		ExportID:      exportID,
@@ -123,10 +129,7 @@ func NewTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt t
 		Session:       session,
 		SourceTurnID:  strings.TrimSpace(sourceTurnID),
 		CompletedAt:   completedAt,
-		Messages: []Message{
-			{Role: MessageRoleUser, Text: strings.TrimSpace(userText)},
-			{Role: MessageRoleAssistant, Text: strings.TrimSpace(assistantText)},
-		},
+		Messages:      messages,
 	}
 	if err := turn.Validate(); err != nil {
 		return Turn{}, err

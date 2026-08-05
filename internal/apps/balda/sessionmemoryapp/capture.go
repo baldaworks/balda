@@ -106,7 +106,7 @@ func scopeKindFromLocatorKind(kind deliverycmd.LocatorScopeKind) (sessionmemory.
 	}
 }
 
-// CaptureRequest contains only text that is eligible for a completed-turn
+// CaptureRequest contains only text that is eligible for a terminal-turn
 // export. Attachments, thoughts, tool payloads, and partial provider events do
 // not cross this boundary.
 type CaptureRequest struct {
@@ -153,7 +153,7 @@ func (c *TurnCapture) Capture(ctx context.Context, req CaptureRequest) (CaptureR
 	}
 	userText := strings.TrimSpace(req.UserText)
 	assistantText := strings.TrimSpace(req.AssistantText)
-	if userText == "" || assistantText == "" {
+	if userText == "" {
 		return CaptureResult{}, nil
 	}
 	if err := ctx.Err(); err != nil {
