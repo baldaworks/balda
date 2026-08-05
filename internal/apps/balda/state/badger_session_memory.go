@@ -735,6 +735,25 @@ func (s *BadgerSessionMemoryStore) SourceRevisionBatch(ctx context.Context, scop
 	return results, results[len(results)-1], nil
 }
 
+// DenySourceRevisionBatch performs one resumable logical-forget batch. The
+// source deny commits first, ensuring recall is fail-closed even if a later
+// cascade batch is interrupted.
+func (s *BadgerSessionMemoryStore) DenySourceRevisionBatch(ctx context.Context, scope sessionmemory.Scope, sourceID, afterRevisionID string, limit uint32, deniedAt time.Time) ([]string, string, error) {
+	if err := s.DenySource(ctx, scope, sourceID, deniedAt); err != nil {
+		return nil, "", err
+	}
+	revisionIDs, cursor, err := s.SourceRevisionBatch(ctx, scope, sourceID, afterRevisionID, limit)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, revisionID := range revisionIDs {
+		if err := s.DenyRevision(ctx, scope, revisionID, deniedAt); err != nil {
+			return nil, "", err
+		}
+	}
+	return revisionIDs, cursor, nil
+}
+
 func isBadgerPayloadValid(payloadID string, encrypted sessionmemory.EncryptedPayload, ref sessionmemory.PayloadRef) bool {
 	return payloadID != "" && ref.Validate() == nil && encrypted.KeyID == ref.KeyID && encrypted.PayloadHash == ref.Digest && len(encrypted.Nonce) > 0 && len(encrypted.Ciphertext) > 0 && len(encrypted.DEKNonce) > 0 && len(encrypted.WrappedDEK) > 0
 }
