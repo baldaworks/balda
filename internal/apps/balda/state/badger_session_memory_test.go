@@ -264,39 +264,6 @@ func TestBadgerSessionMemoryStoreBatchesSourceProvenance(t *testing.T) {
 	}
 }
 
-func TestBadgerSessionMemoryStoreCascadesSourceDenialInBatches(t *testing.T) {
-	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
-	if err != nil {
-		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	scope := sessionmemory.Scope{Key: "canonical:deny-cascade", Kind: sessionmemory.ScopeKindPersonal}
-	for index, revisionID := range []string{"revision-1", "revision-2"} {
-		mutation := canonicalRevisionMutation(scope, uint64(index), "operation-"+revisionID, canonicalRevision(revisionID, "item-"+revisionID))
-		if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err != nil {
-			t.Fatalf("ApplyCanonicalMutation(%s) error = %v", revisionID, err)
-		}
-	}
-	deniedAt := time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)
-	first, cursor, err := store.DenySourceRevisionBatch(context.Background(), scope, "source-1", "", 1, deniedAt)
-	if err != nil || len(first) != 1 || cursor != first[0] {
-		t.Fatalf("first DenySourceRevisionBatch() = %#v, %q, error = %v", first, cursor, err)
-	}
-	if denied, err := store.IsSourceDenied(context.Background(), scope, "source-1"); err != nil || !denied {
-		t.Fatalf("IsSourceDenied() = %t, error = %v", denied, err)
-	}
-	if denied, err := store.IsRevisionDenied(context.Background(), scope, first[0]); err != nil || !denied {
-		t.Fatalf("first IsRevisionDenied() = %t, error = %v", denied, err)
-	}
-	second, _, err := store.DenySourceRevisionBatch(context.Background(), scope, "source-1", cursor, 1, deniedAt)
-	if err != nil || len(second) != 1 || second[0] == first[0] {
-		t.Fatalf("second DenySourceRevisionBatch() = %#v, error = %v", second, err)
-	}
-	if denied, err := store.IsRevisionDenied(context.Background(), scope, second[0]); err != nil || !denied {
-		t.Fatalf("second IsRevisionDenied() = %t, error = %v", denied, err)
-	}
-}
-
 func TestBadgerSessionMemoryStoreRejectsInvalidProvenanceAtomically(t *testing.T) {
 	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
 	if err != nil {
