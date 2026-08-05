@@ -71,8 +71,9 @@ const (
 
 // Message is one text-only conversational message in a completed turn.
 type Message struct {
-	Role MessageRole `json:"role"`
-	Text string      `json:"text"`
+	MessageID string      `json:"message_id,omitempty"`
+	Role      MessageRole `json:"role"`
+	Text      string      `json:"text"`
 }
 
 // Turn is an idempotent terminal-turn export. It always contains normalized
@@ -84,6 +85,7 @@ type Turn struct {
 	Scope          Scope              `json:"scope"`
 	Session        SessionRef         `json:"session"`
 	SourceTurnID   string             `json:"source_turn_id"`
+	SourceID       string             `json:"source_id,omitempty"`
 	CompletedAt    time.Time          `json:"completed_at"`
 	TerminalStatus TurnTerminalStatus `json:"terminal_status,omitempty"`
 	Messages       []Message          `json:"messages"`
@@ -135,9 +137,9 @@ func NewTerminalTurn(scope Scope, session SessionRef, sourceTurnID string, compl
 	if err != nil {
 		return Turn{}, err
 	}
-	messages := []Message{{Role: MessageRoleUser, Text: strings.TrimSpace(userText)}}
+	messages := []Message{{MessageID: TurnMessageID(exportID, MessageRoleUser), Role: MessageRoleUser, Text: strings.TrimSpace(userText)}}
 	if assistantText = strings.TrimSpace(assistantText); assistantText != "" {
-		messages = append(messages, Message{Role: MessageRoleAssistant, Text: assistantText})
+		messages = append(messages, Message{MessageID: TurnMessageID(exportID, MessageRoleAssistant), Role: MessageRoleAssistant, Text: assistantText})
 	}
 	turn := Turn{
 		SchemaVersion:  SchemaVersionV1,
@@ -145,6 +147,7 @@ func NewTerminalTurn(scope Scope, session SessionRef, sourceTurnID string, compl
 		Scope:          scope,
 		Session:        session,
 		SourceTurnID:   strings.TrimSpace(sourceTurnID),
+		SourceID:       TurnSourceID(exportID),
 		CompletedAt:    completedAt,
 		TerminalStatus: terminalStatus,
 		Messages:       messages,
@@ -153,6 +156,18 @@ func NewTerminalTurn(scope Scope, session SessionRef, sourceTurnID string, compl
 		return Turn{}, err
 	}
 	return turn, nil
+}
+
+// TurnSourceID derives the stable content-free source identifier for one turn
+// export. It is safe to persist beside the source metadata.
+func TurnSourceID(exportID string) string {
+	return stableExportID("source", strings.TrimSpace(exportID))
+}
+
+// TurnMessageID derives the stable content-free message identifier for one
+// role in a turn export. A turn has at most one message for each allowed role.
+func TurnMessageID(exportID string, role MessageRole) string {
+	return stableExportID("message", strings.TrimSpace(exportID), string(role))
 }
 
 // NewBoundary builds and validates an idempotent lifecycle export.

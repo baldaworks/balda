@@ -23,14 +23,17 @@ func TestNewTurnBuildsStableTextOnlyExport(t *testing.T) {
 	if first.ExportID != second.ExportID {
 		t.Fatalf("ExportID = %q, want stable %q", second.ExportID, first.ExportID)
 	}
-	if first.Messages[0] != (Message{Role: MessageRoleUser, Text: "hello"}) {
+	if first.Messages[0] != (Message{MessageID: TurnMessageID(first.ExportID, MessageRoleUser), Role: MessageRoleUser, Text: "hello"}) {
 		t.Fatalf("user message = %+v", first.Messages[0])
 	}
-	if first.Messages[1] != (Message{Role: MessageRoleAssistant, Text: "world"}) {
+	if first.Messages[1] != (Message{MessageID: TurnMessageID(first.ExportID, MessageRoleAssistant), Role: MessageRoleAssistant, Text: "world"}) {
 		t.Fatalf("assistant message = %+v", first.Messages[1])
 	}
 	if err := first.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+	if first.SourceID != TurnSourceID(first.ExportID) {
+		t.Fatalf("source id = %q, want deterministic id", first.SourceID)
 	}
 }
 
@@ -49,6 +52,8 @@ func TestTurnValidateRejectsNonTextShapeAndChangedIdentity(t *testing.T) {
 		{name: "extra message", mutate: func(turn *Turn) { turn.Messages = append(turn.Messages, Message{Role: MessageRoleTool, Text: "tool"}) }},
 		{name: "wrong role", mutate: func(turn *Turn) { turn.Messages[1].Role = MessageRoleUser }},
 		{name: "empty user", mutate: func(turn *Turn) { turn.Messages[0].Text = "  " }},
+		{name: "changed message id", mutate: func(turn *Turn) { turn.Messages[0].MessageID = "other-message" }},
+		{name: "changed source id", mutate: func(turn *Turn) { turn.SourceID = "other-source" }},
 		{name: "changed source identity", mutate: func(turn *Turn) { turn.SourceTurnID = "turn-2" }},
 	}
 	for _, tt := range tests {

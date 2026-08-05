@@ -58,6 +58,9 @@ func (t Turn) Validate() error {
 	if t.ExportID != expectedID {
 		return PermanentError(CodePermanent, "turn export id does not match its stable identity", nil)
 	}
+	if t.SourceID != "" && t.SourceID != TurnSourceID(t.ExportID) {
+		return PermanentError(CodePermanent, "turn source id does not match turn identity", nil)
+	}
 	if t.CompletedAt.IsZero() {
 		return PermanentError(CodePermanent, "turn completion time is required", nil)
 	}
@@ -73,11 +76,11 @@ func (t Turn) Validate() error {
 	if len(t.Messages) != 1 && len(t.Messages) != 2 {
 		return PermanentError(CodePermanent, "turn must contain one user message and at most one assistant message", nil)
 	}
-	if err := validateMessage(t.Messages[0], MessageRoleUser); err != nil {
+	if err := validateMessage(t.Messages[0], t.ExportID, MessageRoleUser); err != nil {
 		return err
 	}
 	if len(t.Messages) == 2 {
-		if err := validateMessage(t.Messages[1], MessageRoleAssistant); err != nil {
+		if err := validateMessage(t.Messages[1], t.ExportID, MessageRoleAssistant); err != nil {
 			return err
 		}
 	} else if status == TurnTerminalStatusSuccess {
@@ -115,12 +118,15 @@ func (b Boundary) Validate() error {
 	return nil
 }
 
-func validateMessage(message Message, role MessageRole) error {
+func validateMessage(message Message, exportID string, role MessageRole) error {
 	if message.Role != role {
 		return PermanentError(CodePermanent, fmt.Sprintf("turn message role must be %s", role), nil)
 	}
 	if strings.TrimSpace(message.Text) == "" {
 		return PermanentError(CodePermanent, fmt.Sprintf("%s message text is required", role), nil)
+	}
+	if message.MessageID != "" && message.MessageID != TurnMessageID(exportID, role) {
+		return PermanentError(CodePermanent, fmt.Sprintf("%s message id does not match turn identity", role), nil)
 	}
 	return nil
 }
