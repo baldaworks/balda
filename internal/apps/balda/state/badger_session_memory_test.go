@@ -234,6 +234,33 @@ func TestBadgerSessionMemoryStorePersistsBidirectionalProvenance(t *testing.T) {
 	}
 }
 
+func TestBadgerSessionMemoryStoreBatchesSourceProvenance(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := sessionmemory.Scope{Key: "canonical:source-batch", Kind: sessionmemory.ScopeKindPersonal}
+	for index, revisionID := range []string{"revision-1", "revision-2"} {
+		mutation := canonicalRevisionMutation(scope, uint64(index), "operation-"+revisionID, canonicalRevision(revisionID, "item-"+revisionID))
+		if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err != nil {
+			t.Fatalf("ApplyCanonicalMutation(%s) error = %v", revisionID, err)
+		}
+	}
+	first, cursor, err := store.SourceRevisionBatch(context.Background(), scope, "source-1", "", 1)
+	if err != nil || len(first) != 1 || cursor != first[0] {
+		t.Fatalf("first SourceRevisionBatch() = %#v, %q, error = %v", first, cursor, err)
+	}
+	second, cursor, err := store.SourceRevisionBatch(context.Background(), scope, "source-1", cursor, 1)
+	if err != nil || len(second) != 1 || second[0] == first[0] || cursor != second[0] {
+		t.Fatalf("second SourceRevisionBatch() = %#v, %q, error = %v", second, cursor, err)
+	}
+	last, cursor, err := store.SourceRevisionBatch(context.Background(), scope, "source-1", cursor, 1)
+	if err != nil || len(last) != 0 || cursor != "" {
+		t.Fatalf("final SourceRevisionBatch() = %#v, %q, error = %v", last, cursor, err)
+	}
+}
+
 func TestBadgerSessionMemoryStoreRejectsInvalidProvenanceAtomically(t *testing.T) {
 	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
 	if err != nil {
