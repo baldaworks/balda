@@ -100,6 +100,44 @@ func OpenPayload(ctx context.Context, provider PayloadKeyProvider, payloadID str
 	return plaintext, nil
 }
 
+// RewrapPayloadDEK rotates the KEK wrapping a payload's DEK without reading
+// the payload plaintext or changing its ciphertext/digest.
+func RewrapPayloadDEK(ctx context.Context, provider PayloadKeyProvider, encrypted EncryptedPayload, ref PayloadRef) (EncryptedPayload, PayloadRef, error) {
+	if ctx == nil || provider == nil || encrypted.KeyID != ref.KeyID || encrypted.PayloadHash != ref.Digest {
+		return EncryptedPayload{}, PayloadRef{}, PermanentError(CodeStoreFailure, "encrypted payload metadata is invalid", nil)
+	}
+	oldKey, err := provider.PayloadKey(ctx, encrypted.KeyID)
+	if err != nil {
+		return EncryptedPayload{}, PayloadRef{}, PermanentError(CodeStoreFailure, "required payload key is unavailable", err)
+	}
+	if err := oldKey.validate(); err != nil || oldKey.ID != encrypted.KeyID {
+		return EncryptedPayload{}, PayloadRef{}, PermanentError(CodeStoreFailure, "required payload key is invalid", err)
+	}
+	activeKey, err := provider.ActivePayloadKey(ctx)
+	if err != nil {
+		return EncryptedPayload{}, PayloadRef{}, RetryableError(CodeStoreFailure, "load active payload key", err)
+	}
+	if err := activeKey.validate(); err != nil {
+		return EncryptedPayload{}, PayloadRef{}, err
+	}
+	if activeKey.ID == oldKey.ID {
+		return encrypted, ref, nil
+	}
+	dek, err := openAESGCM(oldKey.Material, encrypted.DEKNonce, encrypted.WrappedDEK, []byte(oldKey.ID))
+	if err != nil {
+		return EncryptedPayload{}, PayloadRef{}, PermanentError(CodeStoreFailure, "unwrap payload DEK", err)
+	}
+	dekNonce, wrappedDEK, err := sealAESGCM(activeKey.Material, dek, []byte(activeKey.ID))
+	if err != nil {
+		return EncryptedPayload{}, PayloadRef{}, err
+	}
+	encrypted.KeyID = activeKey.ID
+	encrypted.DEKNonce = dekNonce
+	encrypted.WrappedDEK = wrappedDEK
+	ref.KeyID = activeKey.ID
+	return encrypted, ref, nil
+}
+
 func sealAESGCM(key, plaintext, additionalData []byte) ([]byte, []byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
