@@ -99,6 +99,15 @@ func TestV2RecordsRoundTripJSONAndRejectDuplicateEvidence(t *testing.T) {
 	if err := decoded.Validate(); err == nil {
 		t.Fatal("duplicate evidence validated")
 	}
+	decoded.Evidence = decoded.Evidence[:1]
+	decoded.Parents = []string{decoded.RevisionID}
+	if err := decoded.Validate(); err == nil {
+		t.Fatal("self-parenting revision validated")
+	}
+	decoded.Parents = []string{"parent-1", "parent-1"}
+	if err := decoded.Validate(); err == nil {
+		t.Fatal("duplicate revision parents validated")
+	}
 }
 
 func TestV2TrustedToolEvidenceRequiresToolRole(t *testing.T) {

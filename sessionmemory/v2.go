@@ -147,6 +147,7 @@ type MemoryRevision struct {
 	RevisionID    string         `json:"revision_id"`
 	ItemID        string         `json:"item_id"`
 	Revision      uint64         `json:"revision"`
+	Parents       []string       `json:"parents,omitempty"`
 	Temporal      Temporal       `json:"temporal"`
 	Evidence      []EvidenceRef  `json:"evidence"`
 	Sensitivity   Sensitivity    `json:"sensitivity"`
@@ -283,10 +284,32 @@ func (r MemoryRevision) Validate() error {
 	if err := validateEvidenceRefs(r.Evidence); err != nil {
 		return err
 	}
+	if err := validateUniqueMemoryIDs(r.Parents, "memory revision parent"); err != nil {
+		return err
+	}
+	for _, parent := range r.Parents {
+		if parent == r.RevisionID {
+			return invalidDerived("memory revision cannot parent itself")
+		}
+	}
 	if err := validateSensitivityRetention(r.Sensitivity, r.Retention); err != nil {
 		return err
 	}
 	return r.Payload.Validate()
+}
+
+func validateUniqueMemoryIDs(ids []string, name string) error {
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if !isCanonicalID(id) {
+			return invalidDerived(name + " is invalid")
+		}
+		if _, exists := seen[id]; exists {
+			return invalidDerived(name + " is duplicated")
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }
 
 func validateSensitivityRetention(sensitivity Sensitivity, retention RetentionClass) error {
