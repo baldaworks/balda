@@ -257,6 +257,10 @@ func Module(
 				return newSessionMemoryProvider(cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
+				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)
+				if err != nil {
+					return nil, err
+				}
 				var downstream sessionmemoryapp.ExportPublisher
 				if cfg.Balda.SessionMemory.Enabled {
 					downstream = bus.SessionMemoryExportPublisher()
@@ -264,7 +268,7 @@ func Module(
 				return sessionmemoryapp.NewIngressOutboxPublisher(
 					provider.SessionMemoryIngressOutbox(),
 					downstream,
-					sessionmemoryapp.IngressOutboxConfig{Enabled: cfg.Balda.SessionMemory.Enabled},
+					outboxCfg,
 					logger,
 				)
 			},

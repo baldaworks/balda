@@ -79,8 +79,18 @@ func TestSQLiteSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSe
 	if err != nil || len(claimed) != 1 || claimed[0].Attempts != 2 || claimed[0].LeaseOwner != "worker-2" {
 		t.Fatalf("recovered ClaimSessionMemoryIngress() = %#v, error %v", claimed, err)
 	}
-	if err := store.ReleaseSessionMemoryIngress(ctx, stored.ExportID(), "worker-2", "temporary", false, now.Add(time.Minute+2*time.Second)); err != nil {
+	releasedAt := now.Add(time.Minute + 2*time.Second)
+	retryAt := releasedAt.Add(10 * time.Second)
+	if err := store.ReleaseSessionMemoryIngress(ctx, stored.ExportID(), "worker-2", "temporary", false, &retryAt, releasedAt); err != nil {
 		t.Fatalf("ReleaseSessionMemoryIngress() error = %v", err)
+	}
+	claimed, err = store.ClaimSessionMemoryIngress(ctx, "worker-3", retryAt.Add(-time.Nanosecond), retryAt.Add(time.Minute), 1)
+	if err != nil || len(claimed) != 0 {
+		t.Fatalf("early ClaimSessionMemoryIngress() = %#v, error %v", claimed, err)
+	}
+	claimed, err = store.ClaimSessionMemoryIngress(ctx, "worker-3", retryAt, retryAt.Add(time.Minute), 1)
+	if err != nil || len(claimed) != 1 || claimed[0].Attempts != 3 {
+		t.Fatalf("retry ClaimSessionMemoryIngress() = %#v, error %v", claimed, err)
 	}
 }
 

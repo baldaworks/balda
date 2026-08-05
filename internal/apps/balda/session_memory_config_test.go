@@ -3,6 +3,7 @@ package balda
 import (
 	"strings"
 	"testing"
+	"time"
 
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
@@ -102,5 +103,19 @@ func TestSessionMemoryWorkerConfigUsesApplicationRetryPort(t *testing.T) {
 	want := sessionmemoryapp.Config{Enabled: true, MaxAttempts: 7}
 	if got.Enabled != want.Enabled || got.MaxAttempts != want.MaxAttempts || got.RetryBaseDelay.String() != "100ms" || got.RetryMaxDelay.String() != "1s" || got.ProgressInterval.String() != "2s" || got.FetchErrorDelay.String() != "50ms" || got.ShutdownTimeout.String() != "10s" {
 		t.Fatalf("worker config = %+v, want configured retry values", got)
+	}
+}
+
+func TestSessionMemoryIngressOutboxConfigUsesBoundedRetry(t *testing.T) {
+	cfg := SessionMemoryConfig{
+		Enabled: true,
+		Retry:   SessionMemoryRetryConfig{MaxAttempts: 7, BaseDelay: "100ms", MaxDelay: "1s"},
+	}
+	got, err := sessionMemoryIngressOutboxConfig(cfg)
+	if err != nil {
+		t.Fatalf("sessionMemoryIngressOutboxConfig() error = %v", err)
+	}
+	if !got.Enabled || got.MaxAttempts != 7 || got.RetryBaseDelay != 100*time.Millisecond || got.RetryMaxDelay != time.Second {
+		t.Fatalf("ingress config = %+v, want configured retry values", got)
 	}
 }

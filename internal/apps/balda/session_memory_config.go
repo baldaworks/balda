@@ -188,6 +188,29 @@ func sessionMemoryWorkerConfig(cfg SessionMemoryConfig) (sessionmemoryapp.Config
 	}, nil
 }
 
+func sessionMemoryIngressOutboxConfig(cfg SessionMemoryConfig) (sessionmemoryapp.IngressOutboxConfig, error) {
+	if err := validateSessionMemoryConfig(cfg); err != nil {
+		return sessionmemoryapp.IngressOutboxConfig{}, err
+	}
+	if !cfg.Enabled {
+		return sessionmemoryapp.IngressOutboxConfig{}, nil
+	}
+	baseDelay, err := optionalSessionMemoryDuration(cfg.Retry.BaseDelay)
+	if err != nil {
+		return sessionmemoryapp.IngressOutboxConfig{}, fmt.Errorf("balda.session_memory.retry.base_delay: %w", err)
+	}
+	maxDelay, err := optionalSessionMemoryDuration(cfg.Retry.MaxDelay)
+	if err != nil {
+		return sessionmemoryapp.IngressOutboxConfig{}, fmt.Errorf("balda.session_memory.retry.max_delay: %w", err)
+	}
+	return sessionmemoryapp.IngressOutboxConfig{
+		Enabled:        true,
+		MaxAttempts:    cfg.Retry.MaxAttempts,
+		RetryBaseDelay: baseDelay,
+		RetryMaxDelay:  maxDelay,
+	}, nil
+}
+
 func sessionMemorySearchTimeout(cfg SessionMemoryConfig) (time.Duration, error) {
 	if !cfg.Enabled {
 		return defaultSessionMemorySearchTimeout, nil

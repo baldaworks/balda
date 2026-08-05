@@ -13,7 +13,10 @@ import (
 
 type sqliteSessionMemoryIngressOutboxStore struct{ db *sql.DB }
 
-const ingressStateTerminal = "terminal"
+const (
+	ingressStatePending  = DeliveryStatusPending
+	ingressStateTerminal = "terminal"
+)
 
 var _ SessionMemoryIngressOutboxStore = (*sqliteSessionMemoryIngressOutboxStore)(nil)
 
@@ -62,8 +65,8 @@ func (s *sqliteSessionMemoryIngressOutboxStore) EnqueueSessionMemoryIngress(ctx 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO session_memory_ingress_outbox (
 			export_id, scope_key, scope_kind, scope_sequence, subject, envelope_json,
-			state, attempts, lease_owner, lease_until, last_error, created_at, updated_at, published_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, '')`,
+			state, attempts, lease_owner, lease_until, next_attempt_at, last_error, created_at, updated_at, published_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '', ?, ?, '')`,
 		record.ExportID(), scope.Key, scope.Kind, record.ScopeSequence, record.Export.Subject(), string(envelope),
 		record.State, record.Attempts, ingressTimestamp(record.CreatedAt), ingressTimestamp(record.UpdatedAt)); err != nil {
 		return sessionmemorycmd.IngressRecord{}, false, fmt.Errorf("insert session-memory ingress record: %w", err)
@@ -90,9 +93,10 @@ func (s *sqliteSessionMemoryIngressOutboxStore) ClaimSessionMemoryIngress(ctx co
 	defer func() { _ = tx.Rollback() }()
 	rows, err := tx.QueryContext(ctx, `
 		SELECT export_id, scope_key, scope_kind, scope_sequence, envelope_json, state, attempts,
-			lease_owner, lease_until, last_error, created_at, updated_at, published_at
+			lease_owner, lease_until, next_attempt_at, last_error, created_at, updated_at, published_at
 		FROM session_memory_ingress_outbox AS candidate
-		WHERE (candidate.state = 'pending' OR (candidate.state = 'leased' AND candidate.lease_until <= ?))
+		WHERE ((candidate.state = 'pending' AND (candidate.next_attempt_at = '' OR candidate.next_attempt_at <= ?))
+			OR (candidate.state = 'leased' AND candidate.lease_until <= ?))
 			AND NOT EXISTS (
 				SELECT 1 FROM session_memory_ingress_outbox AS prior
 				WHERE prior.scope_key = candidate.scope_key
@@ -100,7 +104,7 @@ func (s *sqliteSessionMemoryIngressOutboxStore) ClaimSessionMemoryIngress(ctx co
 					AND prior.state NOT IN ('published', 'terminal')
 			)
 		ORDER BY candidate.created_at, candidate.scope_key, candidate.scope_sequence
-		LIMIT ?`, ingressTimestamp(now), limit)
+		LIMIT ?`, ingressTimestamp(now), ingressTimestamp(now), limit)
 	if err != nil {
 		return nil, fmt.Errorf("query session-memory ingress claims: %w", err)
 	}
@@ -112,9 +116,9 @@ func (s *sqliteSessionMemoryIngressOutboxStore) ClaimSessionMemoryIngress(ctx co
 		candidate := &candidates[index]
 		result, updateErr := tx.ExecContext(ctx, `
 			UPDATE session_memory_ingress_outbox
-			SET state = 'leased', attempts = attempts + 1, lease_owner = ?, lease_until = ?, updated_at = ?
-			WHERE export_id = ? AND (state = 'pending' OR (state = 'leased' AND lease_until <= ?))`,
-			owner, ingressTimestamp(leaseUntil), ingressTimestamp(now), candidate.ExportID(), ingressTimestamp(now))
+			SET state = 'leased', attempts = attempts + 1, lease_owner = ?, lease_until = ?, next_attempt_at = '', updated_at = ?
+			WHERE export_id = ? AND ((state = 'pending' AND (next_attempt_at = '' OR next_attempt_at <= ?)) OR (state = 'leased' AND lease_until <= ?))`,
+			owner, ingressTimestamp(leaseUntil), ingressTimestamp(now), candidate.ExportID(), ingressTimestamp(now), ingressTimestamp(now))
 		if updateErr != nil {
 			return nil, fmt.Errorf("lease session-memory ingress record: %w", updateErr)
 		}
@@ -135,35 +139,42 @@ func (s *sqliteSessionMemoryIngressOutboxStore) ClaimSessionMemoryIngress(ctx co
 }
 
 func (s *sqliteSessionMemoryIngressOutboxStore) MarkSessionMemoryIngressPublished(ctx context.Context, exportID, owner string, publishedAt time.Time) error {
-	return s.settleSessionMemoryIngress(ctx, exportID, owner, "published", "", publishedAt)
+	return s.settleSessionMemoryIngress(ctx, exportID, owner, "published", "", nil, publishedAt)
 }
 
-func (s *sqliteSessionMemoryIngressOutboxStore) ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, updatedAt time.Time) error {
-	state := "pending"
+func (s *sqliteSessionMemoryIngressOutboxStore) ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, nextAttemptAt *time.Time, updatedAt time.Time) error {
+	state := ingressStatePending
 	if terminal {
 		state = ingressStateTerminal
 	}
-	return s.settleSessionMemoryIngress(ctx, exportID, owner, state, reason, updatedAt)
+	return s.settleSessionMemoryIngress(ctx, exportID, owner, state, reason, nextAttemptAt, updatedAt)
 }
 
-func (s *sqliteSessionMemoryIngressOutboxStore) settleSessionMemoryIngress(ctx context.Context, exportID, owner, state, reason string, at time.Time) error {
+func (s *sqliteSessionMemoryIngressOutboxStore) settleSessionMemoryIngress(ctx context.Context, exportID, owner, state, reason string, nextAttemptAt *time.Time, at time.Time) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("session-memory ingress outbox is unavailable")
 	}
 	exportID, owner, reason = strings.TrimSpace(exportID), strings.TrimSpace(owner), strings.TrimSpace(reason)
-	if exportID == "" || owner == "" || at.IsZero() || (state != "published" && state != "pending" && state != ingressStateTerminal) || (state == ingressStateTerminal && reason == "") || len(reason) > 512 || strings.ContainsAny(reason, "\r\n") {
+	if exportID == "" || owner == "" || at.IsZero() || (state != "published" && state != ingressStatePending && state != ingressStateTerminal) || (state == ingressStateTerminal && reason == "") || (state != ingressStatePending && nextAttemptAt != nil) || len(reason) > 512 || strings.ContainsAny(reason, "\r\n") {
 		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "session-memory ingress settlement is invalid", nil)
 	}
 	at = at.UTC()
 	publishedAt := ""
+	retryAt := ""
 	if state == "published" {
 		publishedAt = ingressTimestamp(at)
 	}
+	if nextAttemptAt != nil {
+		if nextAttemptAt.IsZero() || nextAttemptAt.Before(at) {
+			return sessionmemory.PermanentError(sessionmemory.CodePermanent, "session-memory ingress retry time is invalid", nil)
+		}
+		retryAt = ingressTimestamp(*nextAttemptAt)
+	}
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE session_memory_ingress_outbox
-		SET state = ?, lease_owner = '', lease_until = '', last_error = ?, updated_at = ?, published_at = ?
+		SET state = ?, lease_owner = '', lease_until = '', next_attempt_at = ?, last_error = ?, updated_at = ?, published_at = ?
 		WHERE export_id = ? AND state = 'leased' AND lease_owner = ?`,
-		state, reason, ingressTimestamp(at), publishedAt, exportID, owner)
+		state, retryAt, reason, ingressTimestamp(at), publishedAt, exportID, owner)
 	if err != nil {
 		return fmt.Errorf("settle session-memory ingress record: %w", err)
 	}
@@ -175,7 +186,7 @@ func (s *sqliteSessionMemoryIngressOutboxStore) settleSessionMemoryIngress(ctx c
 }
 
 func validateNewIngressRecord(record sessionmemorycmd.IngressRecord) error {
-	if record.SchemaVersion != sessionmemorycmd.IngressSchemaVersionV1 || record.ScopeSequence != 0 || record.State != sessionmemorycmd.IngressStatePending || record.Attempts != 0 || record.LeaseOwner != "" || record.LeaseUntil != nil || record.PublishedAt != nil || record.LastError != "" || record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
+	if record.SchemaVersion != sessionmemorycmd.IngressSchemaVersionV1 || record.ScopeSequence != 0 || record.State != sessionmemorycmd.IngressStatePending || record.Attempts != 0 || record.LeaseOwner != "" || record.LeaseUntil != nil || record.NextAttemptAt != nil || record.PublishedAt != nil || record.LastError != "" || record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "new session-memory ingress record is invalid", nil)
 	}
 	return record.Export.Validate()
@@ -184,7 +195,7 @@ func validateNewIngressRecord(record sessionmemorycmd.IngressRecord) error {
 func loadIngressRecord(ctx context.Context, queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }, exportID string) (sessionmemorycmd.IngressRecord, bool, error) {
-	row := queryer.QueryRowContext(ctx, `SELECT export_id, scope_key, scope_kind, scope_sequence, envelope_json, state, attempts, lease_owner, lease_until, last_error, created_at, updated_at, published_at FROM session_memory_ingress_outbox WHERE export_id = ?`, exportID)
+	row := queryer.QueryRowContext(ctx, `SELECT export_id, scope_key, scope_kind, scope_sequence, envelope_json, state, attempts, lease_owner, lease_until, next_attempt_at, last_error, created_at, updated_at, published_at FROM session_memory_ingress_outbox WHERE export_id = ?`, exportID)
 	record, err := scanIngressRecord(row.Scan)
 	if err == sql.ErrNoRows {
 		return sessionmemorycmd.IngressRecord{}, false, nil
@@ -212,10 +223,10 @@ func scanIngressRecords(rows *sql.Rows) ([]sessionmemorycmd.IngressRecord, error
 }
 
 func scanIngressRecord(scan func(...any) error) (sessionmemorycmd.IngressRecord, error) {
-	var exportID, scopeKey, scopeKind, envelope, state, leaseOwner, leaseUntil, lastError, createdAt, updatedAt, publishedAt string
+	var exportID, scopeKey, scopeKind, envelope, state, leaseOwner, leaseUntil, nextAttemptAt, lastError, createdAt, updatedAt, publishedAt string
 	var sequence uint64
 	var attempts uint32
-	if err := scan(&exportID, &scopeKey, &scopeKind, &sequence, &envelope, &state, &attempts, &leaseOwner, &leaseUntil, &lastError, &createdAt, &updatedAt, &publishedAt); err != nil {
+	if err := scan(&exportID, &scopeKey, &scopeKind, &sequence, &envelope, &state, &attempts, &leaseOwner, &leaseUntil, &nextAttemptAt, &lastError, &createdAt, &updatedAt, &publishedAt); err != nil {
 		return sessionmemorycmd.IngressRecord{}, err
 	}
 	export, err := sessionmemorycmd.Unmarshal([]byte(envelope))
@@ -240,6 +251,13 @@ func scanIngressRecord(scan func(...any) error) (sessionmemorycmd.IngressRecord,
 			return sessionmemorycmd.IngressRecord{}, parseErr
 		}
 		record.LeaseUntil = &lease
+	}
+	if nextAttemptAt != "" {
+		nextAttempt, parseErr := parseIngressTimestamp(nextAttemptAt)
+		if parseErr != nil {
+			return sessionmemorycmd.IngressRecord{}, parseErr
+		}
+		record.NextAttemptAt = &nextAttempt
 	}
 	if publishedAt != "" {
 		published, parseErr := parseIngressTimestamp(publishedAt)

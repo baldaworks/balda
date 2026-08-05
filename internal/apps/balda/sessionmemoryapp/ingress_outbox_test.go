@@ -33,6 +33,9 @@ func TestIngressOutboxPublisherPersistsBeforeTransientPublishFailure(t *testing.
 	if got := store.publishedCount(); got != 0 {
 		t.Fatalf("published count = %d, want 0", got)
 	}
+	if got := store.lastRetryAt(); !got.Equal(time.Date(2026, 8, 5, 12, 0, 0, int((250 * time.Millisecond).Nanoseconds()), time.UTC)) {
+		t.Fatalf("retry time = %v, want exponential base delay", got)
+	}
 }
 
 func TestIngressOutboxPublisherSettlesOnlyAfterPubAck(t *testing.T) {
@@ -57,6 +60,26 @@ func TestIngressOutboxPublisherSettlesOnlyAfterPubAck(t *testing.T) {
 	}
 	if got := store.releaseCount(); got != 0 {
 		t.Fatalf("release count = %d, want 0", got)
+	}
+}
+
+func TestIngressOutboxPublisherTerminalsAfterBoundedAttempts(t *testing.T) {
+	t.Parallel()
+	record, err := sessionmemorycmd.NewIngressRecord(testIngressExport(t), time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("NewIngressRecord() error = %v", err)
+	}
+	record.Attempts = 2
+	store := &fakeIngressOutboxStore{records: []sessionmemorycmd.IngressRecord{record}}
+	publisher, err := NewIngressOutboxPublisher(store, &fakeExportPublisher{err: errors.New("unavailable")}, IngressOutboxConfig{Enabled: true, WorkerID: "test-worker", MaxAttempts: 2}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("NewIngressOutboxPublisher() error = %v", err)
+	}
+	if err := publisher.Flush(context.Background()); err == nil {
+		t.Fatal("Flush() error = nil, want downstream failure")
+	}
+	if !store.lastTerminal() {
+		t.Fatal("terminal release = false, want true after maximum attempts")
 	}
 }
 
@@ -90,6 +113,8 @@ type fakeIngressOutboxStore struct {
 	enqueues  int
 	published int
 	released  int
+	retryAt   *time.Time
+	terminal  bool
 }
 
 func (s *fakeIngressOutboxStore) EnqueueSessionMemoryIngress(_ context.Context, record sessionmemorycmd.IngressRecord) (sessionmemorycmd.IngressRecord, bool, error) {
@@ -114,10 +139,15 @@ func (s *fakeIngressOutboxStore) MarkSessionMemoryIngressPublished(_ context.Con
 	return nil
 }
 
-func (s *fakeIngressOutboxStore) ReleaseSessionMemoryIngress(_ context.Context, _ string, _ string, _ string, _ bool, _ time.Time) error {
+func (s *fakeIngressOutboxStore) ReleaseSessionMemoryIngress(_ context.Context, _ string, _ string, _ string, terminal bool, retryAt *time.Time, _ time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.released++
+	s.terminal = terminal
+	if retryAt != nil {
+		value := *retryAt
+		s.retryAt = &value
+	}
 	return nil
 }
 
@@ -135,4 +165,19 @@ func (s *fakeIngressOutboxStore) releaseCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.released
+}
+
+func (s *fakeIngressOutboxStore) lastRetryAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.retryAt == nil {
+		return time.Time{}
+	}
+	return *s.retryAt
+}
+
+func (s *fakeIngressOutboxStore) lastTerminal() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.terminal
 }

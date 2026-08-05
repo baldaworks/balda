@@ -104,7 +104,7 @@ type SessionMemoryIngressOutboxStore interface {
 	EnqueueSessionMemoryIngress(ctx context.Context, record sessionmemorycmd.IngressRecord) (sessionmemorycmd.IngressRecord, bool, error)
 	ClaimSessionMemoryIngress(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]sessionmemorycmd.IngressRecord, error)
 	MarkSessionMemoryIngressPublished(ctx context.Context, exportID, owner string, publishedAt time.Time) error
-	ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, updatedAt time.Time) error
+	ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, nextAttemptAt *time.Time, updatedAt time.Time) error
 }
 
 // KVStore stores string and JSON key/value records.

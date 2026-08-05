@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -26,16 +27,19 @@ type IngressOutboxStore interface {
 	EnqueueSessionMemoryIngress(ctx context.Context, record sessionmemorycmd.IngressRecord) (sessionmemorycmd.IngressRecord, bool, error)
 	ClaimSessionMemoryIngress(ctx context.Context, owner string, now, leaseUntil time.Time, limit int) ([]sessionmemorycmd.IngressRecord, error)
 	MarkSessionMemoryIngressPublished(ctx context.Context, exportID, owner string, publishedAt time.Time) error
-	ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, updatedAt time.Time) error
+	ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, nextAttemptAt *time.Time, updatedAt time.Time) error
 }
 
 // IngressOutboxConfig controls the bounded background publisher.
 type IngressOutboxConfig struct {
-	Enabled       bool
-	LeaseDuration time.Duration
-	PollInterval  time.Duration
-	BatchSize     int
-	WorkerID      string
+	Enabled        bool
+	LeaseDuration  time.Duration
+	PollInterval   time.Duration
+	BatchSize      int
+	MaxAttempts    int
+	RetryBaseDelay time.Duration
+	RetryMaxDelay  time.Duration
+	WorkerID       string
 }
 
 func (c IngressOutboxConfig) normalized() (IngressOutboxConfig, error) {
@@ -51,6 +55,18 @@ func (c IngressOutboxConfig) normalized() (IngressOutboxConfig, error) {
 	}
 	if out.BatchSize > 256 {
 		return IngressOutboxConfig{}, fmt.Errorf("session-memory ingress batch size must be at most 256")
+	}
+	if out.MaxAttempts <= 0 {
+		out.MaxAttempts = defaultRetryAttempts
+	}
+	if out.RetryBaseDelay <= 0 {
+		out.RetryBaseDelay = defaultRetryBaseDelay
+	}
+	if out.RetryMaxDelay <= 0 {
+		out.RetryMaxDelay = defaultRetryMaxDelay
+	}
+	if out.RetryMaxDelay < out.RetryBaseDelay {
+		return IngressOutboxConfig{}, fmt.Errorf("session-memory ingress retry max delay must be at least retry base delay")
 	}
 	if strings.TrimSpace(out.WorkerID) == "" {
 		out.WorkerID = "session-memory-ingress-" + uuid.NewString()
@@ -208,18 +224,38 @@ func (p *IngressOutboxPublisher) Flush(ctx context.Context) error {
 		if err == nil {
 			continue
 		}
-		terminal := false
+		terminal := record.Attempts >= uint32(p.config.MaxAttempts)
 		if _, class, ok := sessionmemory.ClassifyError(err); ok && class == sessionmemory.ErrorClassPermanent {
 			terminal = true
 		}
 		reason := ingressFailureReason(err)
-		if releaseErr := p.store.ReleaseSessionMemoryIngress(ctx, record.ExportID(), p.config.WorkerID, reason, terminal, p.currentTime().UTC()); releaseErr != nil {
+		var retryAt *time.Time
+		if !terminal {
+			value := p.currentTime().UTC().Add(p.retryDelay(record.Attempts))
+			retryAt = &value
+		}
+		if releaseErr := p.store.ReleaseSessionMemoryIngress(ctx, record.ExportID(), p.config.WorkerID, reason, terminal, retryAt, p.currentTime().UTC()); releaseErr != nil {
 			errs = append(errs, fmt.Errorf("settle session-memory ingress %s: %w", record.ExportID(), releaseErr))
 			continue
 		}
 		errs = append(errs, fmt.Errorf("publish session-memory ingress %s: %w", record.ExportID(), err))
 	}
 	return errors.Join(errs...)
+}
+
+func (p *IngressOutboxPublisher) retryDelay(attempts uint32) time.Duration {
+	if p == nil {
+		return defaultRetryBaseDelay
+	}
+	if attempts > 0 {
+		attempts--
+	}
+	shift := min(attempts, uint32(62))
+	delay := float64(p.config.RetryBaseDelay) * math.Pow(2, float64(shift))
+	if delay >= float64(p.config.RetryMaxDelay) {
+		return p.config.RetryMaxDelay
+	}
+	return time.Duration(delay)
 }
 
 func (p *IngressOutboxPublisher) currentTime() time.Time {

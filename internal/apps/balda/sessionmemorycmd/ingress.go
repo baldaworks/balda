@@ -32,6 +32,7 @@ type IngressRecord struct {
 	Attempts      uint32       `json:"attempts"`
 	LeaseOwner    string       `json:"lease_owner,omitempty"`
 	LeaseUntil    *time.Time   `json:"lease_until,omitempty"`
+	NextAttemptAt *time.Time   `json:"next_attempt_at,omitempty"`
 	LastError     string       `json:"last_error,omitempty"`
 	CreatedAt     time.Time    `json:"created_at"`
 	UpdatedAt     time.Time    `json:"updated_at"`
@@ -101,16 +102,19 @@ func (r IngressRecord) Validate() error {
 		if r.LeaseOwner != "" || r.LeaseUntil != nil || r.PublishedAt != nil {
 			return sessionmemory.PermanentError(sessionmemory.CodePermanent, "pending ingress record has a lease or publish time", nil)
 		}
+		if r.NextAttemptAt != nil && r.NextAttemptAt.IsZero() {
+			return sessionmemory.PermanentError(sessionmemory.CodePermanent, "pending ingress record has an invalid retry time", nil)
+		}
 	case IngressStateLeased:
-		if strings.TrimSpace(r.LeaseOwner) == "" || r.LeaseUntil == nil || r.LeaseUntil.IsZero() || r.PublishedAt != nil {
+		if strings.TrimSpace(r.LeaseOwner) == "" || r.LeaseUntil == nil || r.LeaseUntil.IsZero() || r.NextAttemptAt != nil || r.PublishedAt != nil {
 			return sessionmemory.PermanentError(sessionmemory.CodePermanent, "leased ingress record is invalid", nil)
 		}
 	case IngressStatePublished:
-		if r.LeaseOwner != "" || r.LeaseUntil != nil || r.PublishedAt == nil || r.PublishedAt.IsZero() {
+		if r.LeaseOwner != "" || r.LeaseUntil != nil || r.NextAttemptAt != nil || r.PublishedAt == nil || r.PublishedAt.IsZero() {
 			return sessionmemory.PermanentError(sessionmemory.CodePermanent, "published ingress record is invalid", nil)
 		}
 	case IngressStateTerminal:
-		if r.LeaseOwner != "" || r.LeaseUntil != nil || r.PublishedAt != nil || strings.TrimSpace(r.LastError) == "" {
+		if r.LeaseOwner != "" || r.LeaseUntil != nil || r.NextAttemptAt != nil || r.PublishedAt != nil || strings.TrimSpace(r.LastError) == "" {
 			return sessionmemory.PermanentError(sessionmemory.CodePermanent, "terminal ingress record is invalid", nil)
 		}
 	default:
