@@ -23,6 +23,7 @@ const (
 	badgerRecordPayload                = "payload"
 	badgerRecordProvenanceForward      = "provenance-forward"
 	badgerRecordProvenanceReverse      = "provenance-reverse"
+	badgerRecordDeniedSource           = "denied-source"
 )
 
 func badgerScopeKey(scope sessionmemory.Scope) ([]byte, error) {

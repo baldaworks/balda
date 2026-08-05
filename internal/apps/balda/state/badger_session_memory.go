@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/normahq/balda/sessionmemory"
@@ -48,6 +49,11 @@ type badgerCanonicalOperation struct {
 type badgerProvenanceEdge struct {
 	ChildRevisionID  string `json:"child_revision_id"`
 	ParentRevisionID string `json:"parent_revision_id"`
+}
+
+type badgerDeniedSource struct {
+	SourceID string    `json:"source_id"`
+	DeniedAt time.Time `json:"denied_at"`
 }
 
 func putBadgerSessionMemoryRecord(txn *badger.Txn, key []byte, recordType string, value any) error {
@@ -576,6 +582,53 @@ func (s *BadgerSessionMemoryStore) DeleteEncryptedPayload(ctx context.Context, p
 		return badgerSessionMemoryError("delete encrypted payload", err)
 	}
 	return nil
+}
+
+// DenySource commits the fail-closed logical forget marker before any
+// asynchronous provenance traversal or payload scrubbing begins.
+func (s *BadgerSessionMemoryStore) DenySource(ctx context.Context, scope sessionmemory.Scope, sourceID string, deniedAt time.Time) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := scope.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(sourceID) != sourceID || sourceID == "" || deniedAt.IsZero() {
+		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "source deny request is invalid", nil)
+	}
+	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedSource, sourceID)
+	if err != nil {
+		return err
+	}
+	denied := badgerDeniedSource{SourceID: sourceID, DeniedAt: deniedAt.UTC()}
+	if err := s.db.Update(func(txn *badger.Txn) error {
+		return putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordDeniedSource, denied)
+	}); err != nil {
+		return badgerSessionMemoryError("deny canonical source", err)
+	}
+	return nil
+}
+
+// IsSourceDenied lets recall and traversal fail closed before physical scrub.
+func (s *BadgerSessionMemoryStore) IsSourceDenied(ctx context.Context, scope sessionmemory.Scope, sourceID string) (bool, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return false, err
+	}
+	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedSource, sourceID)
+	if err != nil {
+		return false, err
+	}
+	err = s.db.View(func(txn *badger.Txn) error {
+		var denied badgerDeniedSource
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordDeniedSource, &denied)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, badgerSessionMemoryError("read canonical source deny", err)
+	}
+	return true, nil
 }
 
 func isBadgerPayloadValid(payloadID string, encrypted sessionmemory.EncryptedPayload, ref sessionmemory.PayloadRef) bool {
