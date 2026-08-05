@@ -13,6 +13,8 @@ import (
 
 type sqliteSessionMemoryIngressOutboxStore struct{ db *sql.DB }
 
+const ingressStateTerminal = "terminal"
+
 var _ SessionMemoryIngressOutboxStore = (*sqliteSessionMemoryIngressOutboxStore)(nil)
 
 func (s *sqliteSessionMemoryIngressOutboxStore) EnqueueSessionMemoryIngress(ctx context.Context, record sessionmemorycmd.IngressRecord) (sessionmemorycmd.IngressRecord, bool, error) {
@@ -139,7 +141,7 @@ func (s *sqliteSessionMemoryIngressOutboxStore) MarkSessionMemoryIngressPublishe
 func (s *sqliteSessionMemoryIngressOutboxStore) ReleaseSessionMemoryIngress(ctx context.Context, exportID, owner, reason string, terminal bool, updatedAt time.Time) error {
 	state := "pending"
 	if terminal {
-		state = "terminal"
+		state = ingressStateTerminal
 	}
 	return s.settleSessionMemoryIngress(ctx, exportID, owner, state, reason, updatedAt)
 }
@@ -149,7 +151,7 @@ func (s *sqliteSessionMemoryIngressOutboxStore) settleSessionMemoryIngress(ctx c
 		return fmt.Errorf("session-memory ingress outbox is unavailable")
 	}
 	exportID, owner, reason = strings.TrimSpace(exportID), strings.TrimSpace(owner), strings.TrimSpace(reason)
-	if exportID == "" || owner == "" || at.IsZero() || (state != "published" && state != "pending" && state != "terminal") || (state == "terminal" && reason == "") || len(reason) > 512 || strings.ContainsAny(reason, "\r\n") {
+	if exportID == "" || owner == "" || at.IsZero() || (state != "published" && state != "pending" && state != ingressStateTerminal) || (state == ingressStateTerminal && reason == "") || len(reason) > 512 || strings.ContainsAny(reason, "\r\n") {
 		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "session-memory ingress settlement is invalid", nil)
 	}
 	at = at.UTC()
@@ -180,7 +182,7 @@ func validateNewIngressRecord(record sessionmemorycmd.IngressRecord) error {
 }
 
 func loadIngressRecord(ctx context.Context, queryer interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }, exportID string) (sessionmemorycmd.IngressRecord, bool, error) {
 	row := queryer.QueryRowContext(ctx, `SELECT export_id, scope_key, scope_kind, scope_sequence, envelope_json, state, attempts, lease_owner, lease_until, last_error, created_at, updated_at, published_at FROM session_memory_ingress_outbox WHERE export_id = ?`, exportID)
 	record, err := scanIngressRecord(row.Scan)

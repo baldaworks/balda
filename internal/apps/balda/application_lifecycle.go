@@ -133,26 +133,27 @@ func (t *telegramLifecycle) Stop(ctx context.Context) error {
 type applicationLifecycleParams struct {
 	fx.In
 
-	LC                  fx.Lifecycle
-	Logger              zerolog.Logger
-	MCP                 *internalmcp.InternalMCPManager
-	Runtime             *baldaagent.RuntimeManager
-	Sessions            *session.Manager
-	Bus                 *natsbus.Bus
-	SessionMemoryWorker *sessionmemoryapp.Worker
-	QuestionProjector   *questions.DeliveryBindingProjector
-	Projector           *baldajobs.EventProjector
-	OutboxPublisher     *baldajobs.OutboxPublisher
-	ActorHost           *baldaexecution.ActorHost
-	TurnDispatcher      *actors.TurnDispatcher
-	BaldaHandler        *handlers.BaldaHandler
-	Scheduler           *scheduledjobs.ScheduledJobScheduler
-	InboundWebhook      *handlers.InboundWebhookReceiver
-	Zulip               *handlers.ZulipBaldaHandler
-	SlackChat           *handlers.SlackChatHandler
-	SlackAgent          *handlers.SlackAgentHandler
-	TelegramBot         *runtime.Bot
-	TelegramEnabled     bool `name:"balda_telegram_enabled"`
+	LC                   fx.Lifecycle
+	Logger               zerolog.Logger
+	MCP                  *internalmcp.InternalMCPManager
+	Runtime              *baldaagent.RuntimeManager
+	Sessions             *session.Manager
+	Bus                  *natsbus.Bus
+	SessionMemoryIngress *sessionmemoryapp.IngressOutboxPublisher
+	SessionMemoryWorker  *sessionmemoryapp.Worker
+	QuestionProjector    *questions.DeliveryBindingProjector
+	Projector            *baldajobs.EventProjector
+	OutboxPublisher      *baldajobs.OutboxPublisher
+	ActorHost            *baldaexecution.ActorHost
+	TurnDispatcher       *actors.TurnDispatcher
+	BaldaHandler         *handlers.BaldaHandler
+	Scheduler            *scheduledjobs.ScheduledJobScheduler
+	InboundWebhook       *handlers.InboundWebhookReceiver
+	Zulip                *handlers.ZulipBaldaHandler
+	SlackChat            *handlers.SlackChatHandler
+	SlackAgent           *handlers.SlackAgentHandler
+	TelegramBot          *runtime.Bot
+	TelegramEnabled      bool `name:"balda_telegram_enabled"`
 }
 
 func registerApplicationLifecycle(p applicationLifecycleParams) {
@@ -171,11 +172,12 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "provider runtime", start: p.Runtime.EnsureRuntime, stop: p.Runtime.Stop},
 		{name: "session manager", start: p.Sessions.Start, stop: p.Sessions.Stop},
 		{name: "durable transport", start: p.Bus.Start, stop: p.Bus.Drain},
+		{name: "session-memory ingress outbox", start: p.SessionMemoryIngress.Start, stop: p.SessionMemoryIngress.Stop},
 		{name: "session memory", start: p.SessionMemoryWorker.Start, stop: func(ctx context.Context) error {
-			// Publish the final boundary while the durable transport is still
-			// live, then drain the serialized provider consumer. This stage is
-			// intentionally before the stop-only turn dispatcher so reverse
-			// shutdown stops turn production first.
+			// Persist the final boundary while the ingress publisher and durable
+			// transport are still live, then drain the serialized provider
+			// consumer. This stage is intentionally before the stop-only turn
+			// dispatcher so reverse shutdown stops turn production first.
 			return errors.Join(p.Sessions.PublishShutdownBoundaries(ctx), p.SessionMemoryWorker.Stop(ctx))
 		}},
 		{name: "turn dispatcher", stop: p.TurnDispatcher.Shutdown},

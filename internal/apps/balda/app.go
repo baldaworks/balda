@@ -256,18 +256,22 @@ func Module(
 			func(provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
 				return newSessionMemoryProvider(cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir)
 			},
-			func(bus *natsbus.Bus, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
-				var publisher sessionmemoryapp.ExportPublisher
+			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
+				var downstream sessionmemoryapp.ExportPublisher
 				if cfg.Balda.SessionMemory.Enabled {
-					publisher = bus.SessionMemoryExportPublisher()
+					downstream = bus.SessionMemoryExportPublisher()
 				}
+				return sessionmemoryapp.NewIngressOutboxPublisher(
+					provider.SessionMemoryIngressOutbox(),
+					downstream,
+					sessionmemoryapp.IngressOutboxConfig{Enabled: cfg.Balda.SessionMemory.Enabled},
+					logger,
+				)
+			},
+			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
 				return sessionmemoryapp.NewTurnCapture(publisher, resolver)
 			},
-			func(bus *natsbus.Bus, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.BoundaryCapture {
-				var publisher sessionmemoryapp.ExportPublisher
-				if cfg.Balda.SessionMemory.Enabled {
-					publisher = bus.SessionMemoryExportPublisher()
-				}
+			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.BoundaryCapture {
 				return sessionmemoryapp.NewBoundaryCapture(publisher, resolver)
 			},
 			func(bus *natsbus.Bus, provider sessionmemory.Provider) (*sessionmemoryapp.Worker, error) {
