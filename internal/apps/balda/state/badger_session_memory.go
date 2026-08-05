@@ -22,6 +22,8 @@ type BadgerSessionMemoryStore struct {
 	gcMu sync.Mutex
 }
 
+var _ sessionmemory.CanonicalSourceForgetStore = (*BadgerSessionMemoryStore)(nil)
+
 // RunValueLogGC performs at most one non-destructive Badger value-log cleanup.
 // A skipped/rejected GC is normal when no reclaimable log exists.
 func (s *BadgerSessionMemoryStore) RunValueLogGC(discardRatio float64) error {
