@@ -326,6 +326,22 @@ func TestBadgerSessionMemoryStoreRejectsStaleCASAndAllowsIndependentScopes(t *te
 	}
 }
 
+func TestBadgerSessionMemoryStoreIsolatesEqualIDsAcrossScopes(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	for _, scope := range []sessionmemory.Scope{
+		{Key: "canonical:scope-a", Kind: sessionmemory.ScopeKindPersonal},
+		{Key: "canonical:scope-b", Kind: sessionmemory.ScopeKindPersonal},
+	} {
+		if _, err := store.ApplyCanonicalMutation(context.Background(), canonicalRevisionMutation(scope, 0, "operation-1", canonicalRevision("revision-1", "item-1"))); err != nil {
+			t.Fatalf("ApplyCanonicalMutation(%q) error = %v", scope.Key, err)
+		}
+	}
+}
+
 func TestBadgerSessionMemoryErrorMapsTxnTooBig(t *testing.T) {
 	err := badgerSessionMemoryError("test", badger.ErrTxnTooBig)
 	var memoryErr *sessionmemory.Error
