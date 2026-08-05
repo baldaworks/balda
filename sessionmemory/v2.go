@@ -1,7 +1,9 @@
 package sessionmemory
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"strings"
 	"time"
 )
@@ -56,6 +58,58 @@ type EvidenceRef struct {
 	StartByte     uint32        `json:"start_byte"`
 	EndByte       uint32        `json:"end_byte"`
 	AssertionMode AssertionMode `json:"assertion_mode"`
+}
+
+// SourceRecordV2 identifies one durable source independently of its payload.
+type SourceRecordV2 struct {
+	SourceID string     `json:"source_id"`
+	Scope    Scope      `json:"scope"`
+	Payload  PayloadRef `json:"payload"`
+}
+
+// MessageRecord identifies one role-bearing UTF-8 message in a source.
+type MessageRecord struct {
+	MessageID string      `json:"message_id"`
+	SourceID  string      `json:"source_id"`
+	Role      MessageRole `json:"role"`
+	Payload   PayloadRef  `json:"payload"`
+}
+
+// LifecycleEventType records immutable item lifecycle transitions.
+type LifecycleEventType string
+
+const (
+	LifecycleEventActivate   LifecycleEventType = "activate"
+	LifecycleEventSupersede  LifecycleEventType = "supersede"
+	LifecycleEventInvalidate LifecycleEventType = "invalidate"
+	LifecycleEventForget     LifecycleEventType = "forget"
+)
+
+// LifecycleEvent records an engine-owned lifecycle change for one revision.
+type LifecycleEvent struct {
+	EventID    string             `json:"event_id"`
+	RevisionID string             `json:"revision_id"`
+	Type       LifecycleEventType `json:"type"`
+	OccurredAt time.Time          `json:"occurred_at"`
+}
+
+// MemoryCandidate is untrusted derivation output. It deliberately has no
+// persistent item, revision, scope, or lifecycle identifiers.
+type MemoryCandidate struct {
+	Kind        MemoryKind    `json:"kind"`
+	Statement   string        `json:"statement"`
+	Temporal    Temporal      `json:"temporal"`
+	Evidence    []EvidenceRef `json:"evidence"`
+	Sensitivity Sensitivity   `json:"sensitivity"`
+}
+
+// RecordEnvelope is the deterministic protobuf-wire envelope for a portable
+// v2 record. Payload encoding remains owned by the corresponding contract.
+type RecordEnvelope struct {
+	SchemaVersion string `json:"schema_version"`
+	RecordType    string `json:"record_type"`
+	PayloadSHA256 string `json:"payload_sha256"`
+	Payload       []byte `json:"payload"`
 }
 
 // PayloadRef separates structural records from encrypted content storage.
@@ -127,11 +181,77 @@ func (e EvidenceRef) Validate() error {
 	if !isCanonicalID(e.SourceID) || !isCanonicalID(e.MessageID) || e.EndByte <= e.StartByte {
 		return invalidDerived("evidence reference is invalid")
 	}
-	if e.Role != MessageRoleUser {
-		return invalidDerived("personal memory evidence must be user or trusted tool")
+	if e.AssertionMode == AssertionModeUser && e.Role != MessageRoleUser {
+		return invalidDerived("user evidence must have user role")
+	}
+	if e.AssertionMode == AssertionModeTrustedTool && e.Role != MessageRoleAssistant {
+		return invalidDerived("trusted tool evidence role is invalid")
 	}
 	if e.AssertionMode != AssertionModeUser && e.AssertionMode != AssertionModeTrustedTool {
 		return invalidDerived("unsupported evidence assertion mode")
+	}
+	return nil
+}
+
+func (s SourceRecordV2) Validate() error {
+	if !isCanonicalID(s.SourceID) {
+		return invalidDerived("source id is required")
+	}
+	if err := s.Scope.Validate(); err != nil {
+		return err
+	}
+	return s.Payload.Validate()
+}
+
+func (m MessageRecord) Validate() error {
+	if !isCanonicalID(m.MessageID) || !isCanonicalID(m.SourceID) {
+		return invalidDerived("message identity is invalid")
+	}
+	if m.Role != MessageRoleUser && m.Role != MessageRoleAssistant {
+		return invalidDerived("message role is invalid")
+	}
+	return m.Payload.Validate()
+}
+
+func (l LifecycleEvent) Validate() error {
+	if !isCanonicalID(l.EventID) || !isCanonicalID(l.RevisionID) || l.OccurredAt.IsZero() {
+		return invalidDerived("lifecycle event identity is invalid")
+	}
+	switch l.Type {
+	case LifecycleEventActivate, LifecycleEventSupersede, LifecycleEventInvalidate, LifecycleEventForget:
+		return nil
+	default:
+		return invalidDerived("unsupported lifecycle event")
+	}
+}
+
+func (c MemoryCandidate) Validate() error {
+	if c.Kind != MemoryKindState && c.Kind != MemoryKindEvent {
+		return invalidDerived("unsupported memory candidate kind")
+	}
+	if strings.TrimSpace(c.Statement) != c.Statement || c.Statement == "" || len(c.Statement) > maxMemoryTextBytes {
+		return invalidDerived("memory candidate statement is invalid")
+	}
+	if err := c.Temporal.Validate(); err != nil {
+		return err
+	}
+	if len(c.Evidence) == 0 || len(c.Evidence) > MaxSourcesPerRevision {
+		return invalidDerived("memory candidate evidence is invalid")
+	}
+	for _, evidence := range c.Evidence {
+		if err := evidence.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.Sensitivity != SensitivityStandard && c.Sensitivity != SensitivitySensitive {
+		return invalidDerived("unsupported memory sensitivity")
+	}
+	return nil
+}
+
+func (p PayloadRef) Validate() error {
+	if !isCanonicalID(p.KeyID) || !isCanonicalID(p.Digest) || p.ByteSize == 0 {
+		return invalidDerived("memory payload reference is invalid")
 	}
 	return nil
 }
@@ -155,10 +275,39 @@ func (r MemoryRevision) Validate() error {
 	if r.Sensitivity != SensitivityStandard && r.Sensitivity != SensitivitySensitive {
 		return invalidDerived("unsupported memory sensitivity")
 	}
-	if !isCanonicalID(r.Payload.KeyID) || !isCanonicalID(r.Payload.Digest) || r.Payload.ByteSize == 0 {
-		return invalidDerived("memory payload reference is invalid")
+	return r.Payload.Validate()
+}
+
+// MarshalRecordEnvelope returns a deterministic protobuf-wire envelope.
+func MarshalRecordEnvelope(recordType string, payload []byte) ([]byte, error) {
+	if !isCanonicalID(recordType) || len(payload) == 0 {
+		return nil, invalidDerived("record envelope is invalid")
 	}
-	return nil
+	digest := sha256.Sum256(payload)
+	envelope := RecordEnvelope{MemorySchemaVersionV2, recordType, hex.EncodeToString(digest[:]), payload}
+	return marshalEnvelope(envelope), nil
+}
+
+func marshalEnvelope(envelope RecordEnvelope) []byte {
+	encoded := make([]byte, 0, len(envelope.Payload)+128)
+	encoded = appendProtoBytes(encoded, 1, []byte(envelope.SchemaVersion))
+	encoded = appendProtoBytes(encoded, 2, []byte(envelope.RecordType))
+	encoded = appendProtoBytes(encoded, 3, []byte(envelope.PayloadSHA256))
+	encoded = appendProtoBytes(encoded, 4, envelope.Payload)
+	return encoded
+}
+
+func appendProtoBytes(dst []byte, field byte, value []byte) []byte {
+	dst = append(dst, field<<3|2)
+	for length := uint64(len(value)); ; length >>= 7 {
+		part := byte(length & 0x7f)
+		if length < 0x80 {
+			dst = append(dst, part)
+			break
+		}
+		dst = append(dst, part|0x80)
+	}
+	return append(dst, value...)
 }
 
 // TupleKey encodes application-owned components without backend-native keys.
