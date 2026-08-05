@@ -3,6 +3,7 @@ package sessionmemoryapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -108,6 +109,70 @@ func TestWorkerAllowsIndependentScopesWhileOneScopeIsBlocked(t *testing.T) {
 	waitFor(t, time.Second, blocked.acked)
 	if err := worker.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestWorkerBoundsConcurrencyAcross128IndependentScopes(t *testing.T) {
+	const (
+		scopes      = 128
+		concurrency = 4
+	)
+	transport := newTestTransport(scopes)
+	deliveries := make([]*testDelivery, 0, scopes)
+	for index := 0; index < scopes; index++ {
+		delivery := newTestDelivery(testTurnExportForScope(t, fmt.Sprintf("turn-%03d", index), fmt.Sprintf("telegram:scope-%03d", index)))
+		deliveries = append(deliveries, delivery)
+		transport.push(delivery)
+	}
+	var mu sync.Mutex
+	running, maximum := 0, 0
+	limitReached := make(chan struct{})
+	var closeOnce sync.Once
+	release := make(chan struct{})
+	provider := &sessionmemorytest.Provider{
+		SyncTurnFunc: func(context.Context, sessionmemory.Turn) error {
+			mu.Lock()
+			running++
+			if running > maximum {
+				maximum = running
+			}
+			if running >= concurrency {
+				closeOnce.Do(func() { close(limitReached) })
+			}
+			mu.Unlock()
+			<-release
+			mu.Lock()
+			running--
+			mu.Unlock()
+			return nil
+		},
+	}
+	worker := newTestWorker(t, transport, provider, Config{Enabled: true, MaxConcurrentScopes: concurrency, MaxQueuedPerScope: 1})
+	if err := worker.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	select {
+	case <-limitReached:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not reach configured concurrency")
+	}
+	close(release)
+	waitFor(t, 5*time.Second, func() bool {
+		for _, delivery := range deliveries {
+			if !delivery.acked() {
+				return false
+			}
+		}
+		return true
+	})
+	if err := worker.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	mu.Lock()
+	gotMaximum := maximum
+	mu.Unlock()
+	if gotMaximum != concurrency {
+		t.Fatalf("maximum concurrent provider calls = %d, want %d", gotMaximum, concurrency)
 	}
 }
 
