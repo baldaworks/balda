@@ -127,6 +127,15 @@ type CanonicalMutation struct {
 	Lifecycle            []LifecycleEvent       `json:"lifecycle,omitempty"`
 	Heads                []ItemHead             `json:"heads,omitempty"`
 	Delivery             []DeliveryOutboxRecord `json:"delivery,omitempty"`
+	Payloads             []CanonicalPayload     `json:"payloads,omitempty"`
+}
+
+// CanonicalPayload couples an encrypted blob to the content-free structural
+// reference that names it. A canonical store must persist this pair in the
+// same transaction as the mutation that first references it.
+type CanonicalPayload struct {
+	Ref       PayloadRef       `json:"ref"`
+	Encrypted EncryptedPayload `json:"encrypted"`
 }
 
 // CanonicalMutationOutcome is returned for both a new commit and an exact
@@ -262,7 +271,7 @@ func (m CanonicalMutation) Validate() error {
 	if err := validateUniqueCanonicalIDs(m.Operation.Outcome, "canonical operation outcome"); err != nil {
 		return err
 	}
-	count := len(m.Sources) + len(m.Messages) + len(m.Items) + len(m.Revisions) + len(m.Lifecycle) + len(m.Heads) + len(m.Delivery)
+	count := len(m.Sources) + len(m.Messages) + len(m.Items) + len(m.Revisions) + len(m.Lifecycle) + len(m.Heads) + len(m.Delivery) + len(m.Payloads)
 	if count == 0 || count > maxCanonicalMutationRecords {
 		return invalidDerived("canonical mutation record count is invalid")
 	}
@@ -339,7 +348,29 @@ func (m CanonicalMutation) Validate() error {
 		}
 		deliveryIDs = append(deliveryIDs, delivery.DeliveryID)
 	}
-	return validateUniqueCanonicalIDs(deliveryIDs, "canonical delivery outbox")
+	if err := validateUniqueCanonicalIDs(deliveryIDs, "canonical delivery outbox"); err != nil {
+		return err
+	}
+	payloadIDs := make([]string, 0, len(m.Payloads))
+	for _, payload := range m.Payloads {
+		if err := payload.Validate(); err != nil {
+			return err
+		}
+		payloadIDs = append(payloadIDs, payload.Ref.ID)
+	}
+	return validateUniqueCanonicalIDs(payloadIDs, "canonical payload")
+}
+
+// Validate verifies a payload blob can safely be persisted atomically with a
+// canonical mutation. Cryptographic opening remains the key-provider's job.
+func (p CanonicalPayload) Validate() error {
+	if err := p.Ref.Validate(); err != nil {
+		return err
+	}
+	if p.Encrypted.KeyID != p.Ref.KeyID || p.Encrypted.PayloadHash != p.Ref.Digest || len(p.Encrypted.Nonce) == 0 || len(p.Encrypted.Ciphertext) == 0 || len(p.Encrypted.DEKNonce) == 0 || len(p.Encrypted.WrappedDEK) == 0 {
+		return invalidDerived("canonical encrypted payload is invalid")
+	}
+	return nil
 }
 
 func validateUniqueCanonicalIDs(ids []string, name string) error {

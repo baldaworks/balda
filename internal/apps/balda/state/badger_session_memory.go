@@ -247,6 +247,15 @@ func (s *BadgerSessionMemoryStore) putCanonicalMutationRecords(txn *badger.Txn, 
 	if err := validateBadgerMutationProvenance(txn, mutation); err != nil {
 		return err
 	}
+	for _, payload := range mutation.Payloads {
+		key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, payload.Ref.ID)
+		if err != nil {
+			return err
+		}
+		if err := putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordPayload, payload.Encrypted); err != nil {
+			return err
+		}
+	}
 	for _, source := range mutation.Sources {
 		if err := putBadgerCanonicalRecord(txn, mutation.Scope, badgerRecordSource, source.SourceID, source); err != nil {
 			return err

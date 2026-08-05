@@ -169,12 +169,19 @@ func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 	}
 	mutation.Items = []sessionmemory.MemoryItem{canonicalItem(scope, "item-1")}
 	mutation.Revisions = []sessionmemory.MemoryRevision{canonicalRevision("revision-1", "item-1")}
+	mutation.Payloads = []sessionmemory.CanonicalPayload{{
+		Ref:       mutation.Revisions[0].Payload,
+		Encrypted: sessionmemory.EncryptedPayload{KeyID: "key-1", PayloadHash: "digest-1", Nonce: []byte{1}, Ciphertext: []byte{2}, DEKNonce: []byte{3}, WrappedDEK: []byte{4}},
+	}}
 	first, err := store.ApplyCanonicalMutation(context.Background(), mutation)
 	if err != nil {
 		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
 	}
 	if first.ScopeVersion != 1 || first.ChangeSeq != 1 {
 		t.Fatalf("outcome = %#v", first)
+	}
+	if _, err := store.LoadEncryptedPayload(context.Background(), mutation.Payloads[0].Ref); err != nil {
+		t.Fatalf("LoadEncryptedPayload() error = %v", err)
 	}
 	replayed, err := store.ApplyCanonicalMutation(context.Background(), mutation)
 	if err != nil || replayed.ScopeVersion != first.ScopeVersion || replayed.ChangeSeq != first.ChangeSeq {
