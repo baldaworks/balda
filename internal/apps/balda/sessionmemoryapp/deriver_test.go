@@ -60,6 +60,33 @@ func TestDeriverExtractAtomsUsesTypedEnvelope(t *testing.T) {
 	}
 }
 
+func TestDeriverExtractCanonicalSemanticsUsesDistinctOperation(t *testing.T) {
+	invoker := &scriptedStructuredInvoker{output: []byte(`{"output":[{"Kind":"state","Subject":"Ada","Predicate":"Lives In","Qualifiers":["Bishkek"],"Memory":{"Kind":"state","Statement":"Ada lives in Bishkek","Temporal":{"ObservedAt":"2026-08-03T16:00:00Z"},"Evidence":[{"SourceID":"source-1","MessageID":"message-1","Role":"user","StartByte":0,"EndByte":3,"AssertionMode":"user"}],"Sensitivity":"standard","Retention":"standard"}}]}`)}
+	deriver, err := NewDeriver(invoker)
+	if err != nil {
+		t.Fatalf("NewDeriver() error = %v", err)
+	}
+	scope := sessionmemory.Scope{Key: "test:personal:topic:1", Kind: sessionmemory.ScopeKindPersonal}
+	turn, err := sessionmemory.NewTurn(scope, sessionmemory.SessionRef{SessionID: "session-1", AgentSessionID: "agent-1"}, "turn-1", testDeriverTime(), "remember", "Ada lives in Bishkek")
+	if err != nil {
+		t.Fatalf("NewTurn() error = %v", err)
+	}
+	candidates, err := deriver.ExtractCanonicalSemantics(context.Background(), sessionmemory.CanonicalExtractionRequest{SchemaVersion: sessionmemory.CanonicalSchemaVersionV1, Turn: turn})
+	if err != nil {
+		t.Fatalf("ExtractCanonicalSemantics() error = %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Kind != sessionmemory.MemoryKindState {
+		t.Fatalf("candidates = %#v", candidates)
+	}
+	wantOperationID, err := sessionmemory.CanonicalSemanticOperationID(turn.ExportID, sessionmemory.LegacyDerivationRef())
+	if err != nil {
+		t.Fatalf("CanonicalSemanticOperationID() error = %v", err)
+	}
+	if invoker.last.Stage != "canonical_semantics" || invoker.last.OperationID != wantOperationID {
+		t.Fatalf("invocation = %#v", invoker.last)
+	}
+}
+
 func TestDeriverRejectsMalformedTypedOutput(t *testing.T) {
 	invoker := &scriptedStructuredInvoker{output: []byte(`not-json`)}
 	deriver, err := NewDeriver(invoker)

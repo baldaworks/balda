@@ -52,6 +52,7 @@ type Deriver struct {
 }
 
 var _ sessionmemory.AtomExtractor = (*Deriver)(nil)
+var _ sessionmemory.CanonicalSemanticExtractor = (*Deriver)(nil)
 var _ sessionmemory.ScenarioSynthesizer = (*Deriver)(nil)
 var _ sessionmemory.ProfileSynthesizer = (*Deriver)(nil)
 
@@ -84,6 +85,38 @@ func (d *Deriver) ExtractAtoms(ctx context.Context, request sessionmemory.AtomEx
 		Instruction:  memoryDerivationInstruction + " Extract only grounded atom candidates from this completed turn.",
 		InputJSON:    input,
 		OutputSchema: atomsOutputSchema,
+	}, &output); err != nil {
+		return nil, err
+	}
+	return output.Output, nil
+}
+
+// ExtractCanonicalSemantics implements the v2 model port used by the
+// canonical processor during migration/cutover. Persistent identity and
+// lifecycle values are deliberately absent from SemanticCandidate.
+func (d *Deriver) ExtractCanonicalSemantics(ctx context.Context, request sessionmemory.CanonicalExtractionRequest) ([]sessionmemory.SemanticCandidate, error) {
+	if d == nil || d.invoker == nil {
+		return nil, sessionmemory.PermanentError(sessionmemory.CodeModelFailure, "session-memory deriver is unavailable", nil)
+	}
+	request.Derivation = normalizeDerivation(request.Derivation)
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	input, err := json.Marshal(request)
+	if err != nil {
+		return nil, sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "encode canonical semantic derivation request", err)
+	}
+	operationID, err := sessionmemory.CanonicalSemanticOperationID(request.Turn.ExportID, request.Derivation)
+	if err != nil {
+		return nil, err
+	}
+	var output canonicalSemanticsOutput
+	if err := d.invoke(ctx, StructuredInvocation{
+		OperationID:  operationID,
+		Stage:        "canonical_semantics",
+		Instruction:  memoryDerivationInstruction + " Extract only grounded v2 semantic candidates with message-level evidence.",
+		InputJSON:    input,
+		OutputSchema: canonicalSemanticsOutputSchema,
 	}, &output); err != nil {
 		return nil, err
 	}
@@ -191,6 +224,10 @@ type atomsOutput struct {
 	Output []sessionmemory.AtomCandidate `json:"output"`
 }
 
+type canonicalSemanticsOutput struct {
+	Output []sessionmemory.SemanticCandidate `json:"output"`
+}
+
 type scenariosOutput struct {
 	Output []sessionmemory.ScenarioCandidate `json:"output"`
 }
@@ -202,6 +239,7 @@ type profileOutput struct {
 // Schemas intentionally validate the envelope and collection shape. The core
 // performs the semantic validation, identity binding and provenance checks.
 const atomsOutputSchema = `{"type":"object","properties":{"output":{"type":"array","items":{"type":"object"}}},"required":["output"],"additionalProperties":false}`
+const canonicalSemanticsOutputSchema = `{"type":"object","properties":{"output":{"type":"array","items":{"type":"object"}}},"required":["output"],"additionalProperties":false}`
 const scenariosOutputSchema = `{"type":"object","properties":{"output":{"type":"array","items":{"type":"object"}}},"required":["output"],"additionalProperties":false}`
 const profileOutputSchema = `{"type":"object","properties":{"output":{"type":"object"}},"required":["output"],"additionalProperties":false}`
 
