@@ -87,6 +87,16 @@ type DeliveryClaimRequest struct {
 	Limit      uint32    `json:"limit"`
 }
 
+// DeliverySettlementRequest finishes a lease after an external delivery
+// attempt. Only the current lease owner may settle an active lease.
+type DeliverySettlementRequest struct {
+	Scope       Scope          `json:"scope"`
+	DeliveryID  string         `json:"delivery_id"`
+	LeaseOwner  string         `json:"lease_owner"`
+	Status      DeliveryStatus `json:"status"`
+	CompletedAt time.Time      `json:"completed_at"`
+}
+
 // ClaimedDelivery joins immutable delivery data to its newly acquired lease.
 type ClaimedDelivery struct {
 	Record DeliveryOutboxRecord `json:"record"`
@@ -126,6 +136,7 @@ type CanonicalStore interface {
 	ApplyCanonicalMutation(ctx context.Context, mutation CanonicalMutation) (CanonicalMutationOutcome, error)
 	ScanScopeChanges(ctx context.Context, scope Scope, after uint64, limit uint32) ([]ScopeChange, error)
 	ClaimDeliveryOutbox(ctx context.Context, request DeliveryClaimRequest) ([]ClaimedDelivery, error)
+	SettleDeliveryOutbox(ctx context.Context, request DeliverySettlementRequest) error
 }
 
 func (c DeliveryClaim) Validate() error {
@@ -153,6 +164,19 @@ func (r DeliveryClaimRequest) Validate() error {
 	}
 	if !isCanonicalID(r.LeaseOwner) || r.Now.IsZero() || !r.LeaseUntil.After(r.Now) || r.Limit == 0 || r.Limit > maxCanonicalDeliveryClaims {
 		return invalidDerived("delivery claim request is invalid")
+	}
+	return nil
+}
+
+func (r DeliverySettlementRequest) Validate() error {
+	if err := r.Scope.Validate(); err != nil {
+		return err
+	}
+	if !isCanonicalID(r.DeliveryID) || !isCanonicalID(r.LeaseOwner) || r.CompletedAt.IsZero() {
+		return invalidDerived("delivery settlement request is invalid")
+	}
+	if r.Status != DeliveryStatusDelivered && r.Status != DeliveryStatusTerminal {
+		return invalidDerived("delivery settlement status is invalid")
 	}
 	return nil
 }

@@ -416,6 +416,41 @@ func (s *BadgerSessionMemoryStore) ClaimDeliveryOutbox(ctx context.Context, requ
 	return claimed, nil
 }
 
+// SettleDeliveryOutbox marks an active exact-worker lease as delivered or
+// terminal. A stale or foreign worker cannot settle another worker's lease.
+func (s *BadgerSessionMemoryStore) SettleDeliveryOutbox(ctx context.Context, request sessionmemory.DeliverySettlementRequest) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	claimKey, err := badgerSessionMemoryKey(request.Scope, badgerRecordDeliveryClaim, request.DeliveryID)
+	if err != nil {
+		return err
+	}
+	err = s.db.Update(func(txn *badger.Txn) error {
+		var claim sessionmemory.DeliveryClaim
+		if err := getBadgerSessionMemoryRecord(txn, claimKey, badgerRecordDeliveryClaim, &claim); err != nil {
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				return sessionmemory.PermanentError(sessionmemory.CodeNotFound, "canonical delivery claim does not exist", nil)
+			}
+			return err
+		}
+		if claim.Status != sessionmemory.DeliveryStatusLeased || claim.LeaseOwner != request.LeaseOwner {
+			return sessionmemory.PermanentError(sessionmemory.CodeConflict, "canonical delivery lease is not owned by this worker", nil)
+		}
+		claim.Status = request.Status
+		claim.LeaseOwner = ""
+		claim.LeaseUntil = nil
+		return putBadgerSessionMemoryRecord(txn, claimKey, badgerRecordDeliveryClaim, claim)
+	})
+	if err != nil {
+		return badgerSessionMemoryError("settle canonical delivery outbox", err)
+	}
+	return nil
+}
+
 func badgerSessionMemoryError(operation string, err error) error {
 	if errors.Is(err, badger.ErrTxnTooBig) {
 		return sessionmemory.PermanentError(sessionmemory.CodeLimitExceeded, operation, err)

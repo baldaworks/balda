@@ -202,6 +202,33 @@ func TestBadgerSessionMemoryStoreClaimsAndRecoversDeliveryLease(t *testing.T) {
 	if claimed, err := store.ClaimDeliveryOutbox(context.Background(), request); err != nil || len(claimed) != 0 {
 		t.Fatalf("active lease claim = %#v, error = %v", claimed, err)
 	}
+	if err := store.SettleDeliveryOutbox(context.Background(), sessionmemory.DeliverySettlementRequest{
+		Scope: scope, DeliveryID: "delivery-1", LeaseOwner: "worker-2", Status: sessionmemory.DeliveryStatusDelivered, CompletedAt: now,
+	}); err == nil {
+		t.Fatal("foreign worker settled an active lease")
+	}
+	if err := store.SettleDeliveryOutbox(context.Background(), sessionmemory.DeliverySettlementRequest{
+		Scope: scope, DeliveryID: "delivery-1", LeaseOwner: "worker-1", Status: sessionmemory.DeliveryStatusDelivered, CompletedAt: now,
+	}); err != nil {
+		t.Fatalf("SettleDeliveryOutbox() error = %v", err)
+	}
+	if claimed, err := store.ClaimDeliveryOutbox(context.Background(), request); err != nil || len(claimed) != 0 {
+		t.Fatalf("settled delivery claim = %#v, error = %v", claimed, err)
+	}
+	// Use a distinct delivery to cover lease recovery without disturbing the
+	// delivered record above.
+	mutation.Operation.OperationID = "operation-2"
+	mutation.Operation.Fingerprint = "fingerprint-2"
+	mutation.Operation.CommittedAt = now
+	mutation.ExpectedScopeVersion = 1
+	mutation.Delivery[0].DeliveryID = "delivery-2"
+	mutation.Delivery[0].OperationID = "operation-2"
+	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err != nil {
+		t.Fatalf("second ApplyCanonicalMutation() error = %v", err)
+	}
+	if claimed, err := store.ClaimDeliveryOutbox(context.Background(), request); err != nil || len(claimed) != 1 || claimed[0].Record.DeliveryID != "delivery-2" {
+		t.Fatalf("second delivery claim = %#v, error = %v", claimed, err)
+	}
 	request.Now = request.LeaseUntil.Add(time.Second)
 	request.LeaseUntil = request.Now.Add(time.Minute)
 	recovered, err := store.ClaimDeliveryOutbox(context.Background(), request)
