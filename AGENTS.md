@@ -39,6 +39,7 @@ go tool golangci-lint run
 - Do not add or maintain tests whose primary purpose is checking deprecated, legacy, removed, or unsupported surfaces by name.
 - Do not add blacklist-style tests or command/config tables that only assert old names stay gone.
 - Prefer positive tests of the current contract and behavior.
+- Never write or maintain tests for removed functionality. Test only the current supported contract and behavior.
 
 ## Architecture Audit Standard
 
