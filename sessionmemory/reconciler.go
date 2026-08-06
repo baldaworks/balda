@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// ReconciliationAction describes the engine-owned mutation selected for a candidate.
+// ReconciliationAction describes the application-owned mutation selected for a candidate.
 type ReconciliationAction string
 
 const (
@@ -31,7 +31,7 @@ type PolicyRegistry struct {
 	Version string
 }
 
-// Reconciliation is the deterministic, engine-owned result of one candidate.
+// Reconciliation is the deterministic, application-owned result of one candidate.
 type Reconciliation struct {
 	Action     ReconciliationAction
 	Item       MemoryItem

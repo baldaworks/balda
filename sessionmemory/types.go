@@ -1,7 +1,6 @@
 package sessionmemory
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -119,15 +118,6 @@ type Boundary struct {
 	OccurredAt    time.Time      `json:"occurred_at"`
 }
 
-// Provider synchronizes completed conversation data and lifecycle boundaries.
-// Native retrieval and forgetting are exposed through the derived application
-// port rather than a remote-provider compatibility contract.
-type Provider interface {
-	SyncTurn(ctx context.Context, turn Turn) error
-	OnSessionBoundary(ctx context.Context, boundary Boundary) error
-	Close(ctx context.Context) error
-}
-
 // NewTurn builds and validates an idempotent completed-turn export.
 func NewTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt time.Time, userText, assistantText string) (Turn, error) {
 	return NewTerminalTurn(scope, session, sourceTurnID, completedAt, userText, assistantText, TurnTerminalStatusSuccess)
@@ -140,7 +130,7 @@ func NewTerminalTurn(scope Scope, session SessionRef, sourceTurnID string, compl
 }
 
 // NewTerminalTurnWithTools builds a terminal export with already allowlisted,
-// typed tool evidence. Tool identities are engine-derived; callers cannot
+// typed tool evidence. Tool identities are application-derived; callers cannot
 // supply durable message IDs.
 func NewTerminalTurnWithTools(scope Scope, session SessionRef, sourceTurnID string, completedAt time.Time, userText, assistantText string, tools []Message, terminalStatus TurnTerminalStatus) (Turn, error) {
 	exportID, err := TurnExportID(scope, session, sourceTurnID)

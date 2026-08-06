@@ -7,23 +7,23 @@ import (
 	"github.com/normahq/balda/sessionmemory"
 )
 
-// Provider is a concurrency-safe, callback-configurable in-process fake.
+// Provider is a concurrency-safe, callback-configurable in-process ingest
+// capability fake for worker tests. Runtime lifecycle is intentionally not
+// part of this delivery test double.
 type Provider struct {
-	SyncTurnFunc func(context.Context, sessionmemory.Turn) error
-	BoundaryFunc func(context.Context, sessionmemory.Boundary) error
-	CloseFunc    func(context.Context) error
+	IngestTurnFunc    func(context.Context, sessionmemory.Turn) error
+	ApplyBoundaryFunc func(context.Context, sessionmemory.Boundary) error
 
 	mu         sync.Mutex
 	turns      []sessionmemory.Turn
 	boundaries []sessionmemory.Boundary
-	closeCalls int
 }
 
-// SyncTurn records turn and invokes SyncTurnFunc when configured.
-func (p *Provider) SyncTurn(ctx context.Context, turn sessionmemory.Turn) error {
+// IngestTurn records turn and invokes IngestTurnFunc when configured.
+func (p *Provider) IngestTurn(ctx context.Context, turn sessionmemory.Turn) error {
 	p.mu.Lock()
 	p.turns = append(p.turns, cloneTurn(turn))
-	fn := p.SyncTurnFunc
+	fn := p.IngestTurnFunc
 	p.mu.Unlock()
 	if fn == nil {
 		return nil
@@ -31,28 +31,16 @@ func (p *Provider) SyncTurn(ctx context.Context, turn sessionmemory.Turn) error 
 	return fn(ctx, turn)
 }
 
-// OnSessionBoundary records boundary and invokes BoundaryFunc when configured.
-func (p *Provider) OnSessionBoundary(ctx context.Context, boundary sessionmemory.Boundary) error {
+// ApplyBoundary records boundary and invokes ApplyBoundaryFunc when configured.
+func (p *Provider) ApplyBoundary(ctx context.Context, boundary sessionmemory.Boundary) error {
 	p.mu.Lock()
 	p.boundaries = append(p.boundaries, boundary)
-	fn := p.BoundaryFunc
+	fn := p.ApplyBoundaryFunc
 	p.mu.Unlock()
 	if fn == nil {
 		return nil
 	}
 	return fn(ctx, boundary)
-}
-
-// Close records the call and invokes CloseFunc when configured.
-func (p *Provider) Close(ctx context.Context) error {
-	p.mu.Lock()
-	p.closeCalls++
-	fn := p.CloseFunc
-	p.mu.Unlock()
-	if fn == nil {
-		return nil
-	}
-	return fn(ctx)
 }
 
 // Turns returns a snapshot of recorded completed turns.
@@ -71,13 +59,6 @@ func (p *Provider) Boundaries() []sessionmemory.Boundary {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]sessionmemory.Boundary(nil), p.boundaries...)
-}
-
-// CloseCalls returns the number of recorded Close calls.
-func (p *Provider) CloseCalls() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.closeCalls
 }
 
 func cloneTurn(turn sessionmemory.Turn) sessionmemory.Turn {

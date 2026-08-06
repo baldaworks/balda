@@ -23,7 +23,7 @@ const (
 	MemoryKindEvent MemoryKind = "event"
 )
 
-// MemoryKey is an engine-derived stable semantic identity for state memory.
+// MemoryKey is an application-derived stable semantic identity for state memory.
 type MemoryKey string
 
 // AssertionMode identifies the evidence authority used for a memory revision.
@@ -100,7 +100,7 @@ const (
 	LifecycleEventForget     LifecycleEventType = "forget"
 )
 
-// LifecycleEvent records an engine-owned lifecycle change for one revision.
+// LifecycleEvent records an application-owned lifecycle change for one revision.
 type LifecycleEvent struct {
 	EventID    string             `json:"event_id"`
 	RevisionID string             `json:"revision_id"`
@@ -137,7 +137,7 @@ type PayloadRef struct {
 	ByteSize uint32 `json:"byte_size"`
 }
 
-// MemoryItem is an engine-owned logical identity. Callers never supply its ID.
+// MemoryItem is an application-owned logical identity. Callers never supply its ID.
 type MemoryItem struct {
 	ItemID    string     `json:"item_id"`
 	Scope     Scope      `json:"scope"`

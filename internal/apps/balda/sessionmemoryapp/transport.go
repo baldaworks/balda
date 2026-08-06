@@ -12,7 +12,7 @@ import (
 var (
 	// ErrNoMessages tells a worker that the bounded fetch wait elapsed.
 	ErrNoMessages = errors.New("no session-memory messages available")
-	// ErrWorkerDisabled means the optional session-memory provider is disabled.
+	// ErrWorkerDisabled means the optional session-memory capability is disabled.
 	ErrWorkerDisabled = errors.New("session-memory worker is disabled")
 	// ErrWorkerStarted means a worker cannot be started twice concurrently.
 	ErrWorkerStarted = errors.New("session-memory worker is already started")
@@ -44,7 +44,7 @@ type BacklogStats struct {
 	OldestPendingAt time.Time
 }
 
-// DeadLetter is a redacted diagnostic. Export text and provider response
+// DeadLetter is a redacted diagnostic. Export text and capability response
 // bodies must never cross this boundary.
 type DeadLetter struct {
 	ExportID         string

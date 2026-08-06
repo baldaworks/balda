@@ -18,7 +18,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/internal/apps/balda/shutdown"
-	"github.com/normahq/balda/sessionmemory"
+	portableapp "github.com/normahq/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/runtime"
 	"go.uber.org/fx"
@@ -134,28 +134,28 @@ func (t *telegramLifecycle) Stop(ctx context.Context) error {
 type applicationLifecycleParams struct {
 	fx.In
 
-	LC                    fx.Lifecycle
-	Logger                zerolog.Logger
-	MCP                   *internalmcp.InternalMCPManager
-	Runtime               *baldaagent.RuntimeManager
-	Sessions              *session.Manager
-	Bus                   *natsbus.Bus
-	SessionMemoryIngress  *sessionmemoryapp.IngressOutboxPublisher
-	SessionMemoryWorker   *sessionmemoryapp.Worker
-	SessionMemoryProvider sessionmemory.Provider
-	QuestionProjector     *questions.DeliveryBindingProjector
-	Projector             *baldajobs.EventProjector
-	OutboxPublisher       *baldajobs.OutboxPublisher
-	ActorHost             *baldaexecution.ActorHost
-	TurnDispatcher        *actors.TurnDispatcher
-	BaldaHandler          *handlers.BaldaHandler
-	Scheduler             *scheduledjobs.ScheduledJobScheduler
-	InboundWebhook        *handlers.InboundWebhookReceiver
-	Zulip                 *handlers.ZulipBaldaHandler
-	SlackChat             *handlers.SlackChatHandler
-	SlackAgent            *handlers.SlackAgentHandler
-	TelegramBot           *runtime.Bot
-	TelegramEnabled       bool `name:"balda_telegram_enabled"`
+	LC                   fx.Lifecycle
+	Logger               zerolog.Logger
+	MCP                  *internalmcp.InternalMCPManager
+	Runtime              *baldaagent.RuntimeManager
+	Sessions             *session.Manager
+	Bus                  *natsbus.Bus
+	SessionMemoryIngress *sessionmemoryapp.IngressOutboxPublisher
+	SessionMemoryWorker  *sessionmemoryapp.Worker
+	SessionMemoryRuntime *portableapp.Runtime
+	QuestionProjector    *questions.DeliveryBindingProjector
+	Projector            *baldajobs.EventProjector
+	OutboxPublisher      *baldajobs.OutboxPublisher
+	ActorHost            *baldaexecution.ActorHost
+	TurnDispatcher       *actors.TurnDispatcher
+	BaldaHandler         *handlers.BaldaHandler
+	Scheduler            *scheduledjobs.ScheduledJobScheduler
+	InboundWebhook       *handlers.InboundWebhookReceiver
+	Zulip                *handlers.ZulipBaldaHandler
+	SlackChat            *handlers.SlackChatHandler
+	SlackAgent           *handlers.SlackAgentHandler
+	TelegramBot          *runtime.Bot
+	TelegramEnabled      bool `name:"balda_telegram_enabled"`
 }
 
 func registerApplicationLifecycle(p applicationLifecycleParams) {
@@ -172,9 +172,9 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 	return []lifecycleStage{
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
-			return startSessionMemoryRuntime(ctx, p.SessionMemoryProvider)
+			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}, stop: func(ctx context.Context) error {
-			return closeSessionMemoryRuntime(ctx, p.SessionMemoryProvider)
+			return closeSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}},
 		{name: "provider runtime", start: p.Runtime.EnsureRuntime, stop: p.Runtime.Stop},
 		{name: "session manager", start: p.Sessions.Start, stop: p.Sessions.Stop},
@@ -207,17 +207,15 @@ type sessionMemoryRuntime interface {
 	Close(ctx context.Context) error
 }
 
-func startSessionMemoryRuntime(ctx context.Context, provider sessionmemory.Provider) error {
-	runtime, ok := provider.(sessionMemoryRuntime)
-	if !ok || runtime == nil {
+func startSessionMemoryRuntime(ctx context.Context, runtime sessionMemoryRuntime) error {
+	if runtime == nil {
 		return nil
 	}
 	return runtime.Start(ctx)
 }
 
-func closeSessionMemoryRuntime(ctx context.Context, provider sessionmemory.Provider) error {
-	runtime, ok := provider.(sessionMemoryRuntime)
-	if !ok || runtime == nil {
+func closeSessionMemoryRuntime(ctx context.Context, runtime sessionMemoryRuntime) error {
+	if runtime == nil {
 		return nil
 	}
 	return runtime.Close(ctx)

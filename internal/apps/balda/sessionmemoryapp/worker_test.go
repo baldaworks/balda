@@ -27,7 +27,7 @@ func TestWorkerSerializesTurnAndBoundaryWithRetry(t *testing.T) {
 	var calls []string
 	attempts := 0
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(context.Context, sessionmemory.Turn) error {
+		IngestTurnFunc: func(context.Context, sessionmemory.Turn) error {
 			mu.Lock()
 			defer mu.Unlock()
 			attempts++
@@ -37,7 +37,7 @@ func TestWorkerSerializesTurnAndBoundaryWithRetry(t *testing.T) {
 			}
 			return nil
 		},
-		BoundaryFunc: func(context.Context, sessionmemory.Boundary) error {
+		ApplyBoundaryFunc: func(context.Context, sessionmemory.Boundary) error {
 			mu.Lock()
 			calls = append(calls, "boundary")
 			mu.Unlock()
@@ -79,7 +79,7 @@ func TestWorkerAllowsIndependentScopesWhileOneScopeIsBlocked(t *testing.T) {
 	blockedStarted := make(chan struct{})
 	releaseBlocked := make(chan struct{})
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(ctx context.Context, turn sessionmemory.Turn) error {
+		IngestTurnFunc: func(ctx context.Context, turn sessionmemory.Turn) error {
 			if turn.Scope.Key != "telegram:blocked" {
 				return nil
 			}
@@ -130,7 +130,7 @@ func TestWorkerBoundsConcurrencyAcross128IndependentScopes(t *testing.T) {
 	var closeOnce sync.Once
 	release := make(chan struct{})
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(context.Context, sessionmemory.Turn) error {
+		IngestTurnFunc: func(context.Context, sessionmemory.Turn) error {
 			mu.Lock()
 			running++
 			if running > maximum {
@@ -172,7 +172,7 @@ func TestWorkerBoundsConcurrencyAcross128IndependentScopes(t *testing.T) {
 	gotMaximum := maximum
 	mu.Unlock()
 	if gotMaximum != concurrency {
-		t.Fatalf("maximum concurrent provider calls = %d, want %d", gotMaximum, concurrency)
+		t.Fatalf("maximum concurrent capability calls = %d, want %d", gotMaximum, concurrency)
 	}
 }
 
@@ -183,7 +183,7 @@ func TestWorkerProgressAcknowledgesLongProviderCall(t *testing.T) {
 	providerStarted := make(chan struct{})
 	releaseProvider := make(chan struct{})
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(ctx context.Context, _ sessionmemory.Turn) error {
+		IngestTurnFunc: func(ctx context.Context, _ sessionmemory.Turn) error {
 			close(providerStarted)
 			select {
 			case <-releaseProvider:
@@ -220,7 +220,7 @@ func TestWorkerPublishesRedactedDLQBeforeTerminatingPermanentFailure(t *testing.
 	delivery.order = transport.order
 	transport.push(delivery)
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(context.Context, sessionmemory.Turn) error {
+		IngestTurnFunc: func(context.Context, sessionmemory.Turn) error {
 			return sessionmemory.PermanentError(sessionmemory.CodeScopeViolation, "provider response contains another scope", errors.New("secret body"))
 		},
 	}
@@ -261,7 +261,7 @@ func TestWorkerExhaustsRetryBudgetBeforeDLQ(t *testing.T) {
 	transport.push(delivery)
 	attempts := 0
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(context.Context, sessionmemory.Turn) error {
+		IngestTurnFunc: func(context.Context, sessionmemory.Turn) error {
 			attempts++
 			return sessionmemory.RetryableError(sessionmemory.CodeUnavailable, "temporary", nil)
 		},
@@ -290,7 +290,7 @@ func TestWorkerExhaustsRetryBudgetBeforeDLQ(t *testing.T) {
 	}
 }
 
-func TestWorkerDisabledDoesNotFetchOrCloseProvider(t *testing.T) {
+func TestWorkerDisabledDoesNotFetchOrInspectCapabilities(t *testing.T) {
 	transport := newTestTransport(1)
 	worker := newTestWorker(t, transport, nil, Config{})
 	if err := worker.Start(context.Background()); err != nil {
@@ -304,7 +304,7 @@ func TestWorkerDisabledDoesNotFetchOrCloseProvider(t *testing.T) {
 	}
 }
 
-func TestWorkerStopClosesProviderAndReportsBacklog(t *testing.T) {
+func TestWorkerStopReportsBacklog(t *testing.T) {
 	transport := newTestTransport(1)
 	transport.stats = BacklogStats{Messages: 3, Pending: 2, Acknowledging: 1, OldestPendingAt: time.Unix(10, 0).UTC()}
 	provider := &sessionmemorytest.Provider{}
@@ -315,20 +315,17 @@ func TestWorkerStopClosesProviderAndReportsBacklog(t *testing.T) {
 	if err := worker.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
-	if provider.CloseCalls() != 1 {
-		t.Fatalf("provider close calls = %d, want 1", provider.CloseCalls())
-	}
 	report := worker.ShutdownReport()
 	if report.Stats != transport.stats {
 		t.Fatalf("shutdown stats = %+v, want %+v", report.Stats, transport.stats)
 	}
 }
 
-func newTestWorker(t *testing.T, transport *testTransport, provider sessionmemory.Provider, config Config) *Worker {
+func newTestWorker(t *testing.T, transport *testTransport, provider *sessionmemorytest.Provider, config Config) *Worker {
 	t.Helper()
-	worker, err := NewWorker(transport, provider, config, zerolog.Nop())
+	worker, err := NewCapabilityWorker(transport, provider, provider, config, zerolog.Nop())
 	if err != nil {
-		t.Fatalf("NewWorker() error = %v", err)
+		t.Fatalf("NewCapabilityWorker() error = %v", err)
 	}
 	t.Cleanup(func() { _ = worker.Stop(context.Background()) })
 	return worker

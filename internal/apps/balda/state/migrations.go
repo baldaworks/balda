@@ -29,12 +29,6 @@ var requiredBaldaSQLiteTables = []string{
 	"execution_delivery_outbox",
 	"execution_agent_steps",
 	"balda_questions",
-	"session_memory_scopes",
-	"session_memory_sources",
-	"session_memory_revisions",
-	"session_memory_provenance",
-	"session_memory_operations",
-	"session_memory_forgets",
 	"session_memory_ingress_outbox",
 	"session_memory_ingress_audit",
 }

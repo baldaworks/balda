@@ -4,15 +4,15 @@ import "context"
 
 // ProcessBoundary synthesizes scenarios and then the exact-scope profile as
 // two independently idempotent stages.
-func (e *Engine) ProcessBoundary(ctx context.Context, boundary Boundary) (BoundaryOutcome, error) {
+func (e *BoundaryProcessor) ProcessBoundary(ctx context.Context, boundary Boundary) (BoundaryOutcome, error) {
 	partial := BoundaryOutcome{
 		SchemaVersion: DerivedSchemaVersionV1,
 		Scope:         boundary.Scope,
 	}
 	if e == nil {
-		return partial, invalidDerived("derived memory engine is required")
+		return partial, invalidDerived("boundary processor is required")
 	}
-	if err := checkContext(ctx); err != nil {
+	if err := checkBoundaryContext(ctx); err != nil {
 		return partial, err
 	}
 	if err := boundary.Validate(); err != nil {
@@ -35,7 +35,7 @@ func (e *Engine) ProcessBoundary(ctx context.Context, boundary Boundary) (Bounda
 	return partial, nil
 }
 
-func (e *Engine) processScenarioStage(ctx context.Context, boundary Boundary) (OperationOutcome, error) {
+func (e *BoundaryProcessor) processScenarioStage(ctx context.Context, boundary Boundary) (OperationOutcome, error) {
 	operationID, err := ProcessingOperationID(OperationStageScenarios, boundary.ExportID, e.config.Derivation)
 	if err != nil {
 		return OperationOutcome{}, err
@@ -48,9 +48,9 @@ func (e *Engine) processScenarioStage(ctx context.Context, boundary Boundary) (O
 	}
 	prior, err := e.store.LookupOperation(ctx, lookup)
 	if err != nil {
-		return OperationOutcome{}, storePortFailure(ctx, err)
+		return OperationOutcome{}, boundaryStoreFailure(ctx, err)
 	}
-	if err := checkContext(ctx); err != nil {
+	if err := checkBoundaryContext(ctx); err != nil {
 		return OperationOutcome{}, err
 	}
 	if err := prior.Validate(lookup); err != nil {
@@ -71,9 +71,9 @@ func (e *Engine) processScenarioStage(ctx context.Context, boundary Boundary) (O
 		View:          scopeViewFromSnapshot(snapshot),
 	})
 	if err != nil {
-		return OperationOutcome{}, modelPortFailure(ctx, err)
+		return OperationOutcome{}, boundaryModelFailure(ctx, err)
 	}
-	if err := checkContext(ctx); err != nil {
+	if err := checkBoundaryContext(ctx); err != nil {
 		return OperationOutcome{}, err
 	}
 	if len(candidates) > e.config.MaxCandidateCount {
@@ -95,7 +95,7 @@ func (e *Engine) processScenarioStage(ctx context.Context, boundary Boundary) (O
 	return e.commitBoundaryStage(ctx, commit)
 }
 
-func (e *Engine) processProfileStage(ctx context.Context, boundary Boundary) (OperationOutcome, error) {
+func (e *BoundaryProcessor) processProfileStage(ctx context.Context, boundary Boundary) (OperationOutcome, error) {
 	operationID, err := ProcessingOperationID(OperationStageProfile, boundary.ExportID, e.config.Derivation)
 	if err != nil {
 		return OperationOutcome{}, err
@@ -108,9 +108,9 @@ func (e *Engine) processProfileStage(ctx context.Context, boundary Boundary) (Op
 	}
 	prior, err := e.store.LookupOperation(ctx, lookup)
 	if err != nil {
-		return OperationOutcome{}, storePortFailure(ctx, err)
+		return OperationOutcome{}, boundaryStoreFailure(ctx, err)
 	}
-	if err := checkContext(ctx); err != nil {
+	if err := checkBoundaryContext(ctx); err != nil {
 		return OperationOutcome{}, err
 	}
 	if err := prior.Validate(lookup); err != nil {
@@ -131,9 +131,9 @@ func (e *Engine) processProfileStage(ctx context.Context, boundary Boundary) (Op
 		View:          scopeViewFromSnapshot(snapshot),
 	})
 	if err != nil {
-		return OperationOutcome{}, modelPortFailure(ctx, err)
+		return OperationOutcome{}, boundaryModelFailure(ctx, err)
 	}
-	if err := checkContext(ctx); err != nil {
+	if err := checkBoundaryContext(ctx); err != nil {
 		return OperationOutcome{}, err
 	}
 	profiles, transitions, err := e.groundProfileCandidate(boundary, operationID, snapshot, candidate)
@@ -152,12 +152,12 @@ func (e *Engine) processProfileStage(ctx context.Context, boundary Boundary) (Op
 	return e.commitBoundaryStage(ctx, commit)
 }
 
-func (e *Engine) loadBoundarySnapshot(ctx context.Context, scope Scope) (ScopeSnapshot, error) {
+func (e *BoundaryProcessor) loadBoundarySnapshot(ctx context.Context, scope Scope) (ScopeSnapshot, error) {
 	snapshot, err := e.store.LoadScope(ctx, scope)
 	if err != nil {
-		return ScopeSnapshot{}, storePortFailure(ctx, err)
+		return ScopeSnapshot{}, boundaryStoreFailure(ctx, err)
 	}
-	if err := checkContext(ctx); err != nil {
+	if err := checkBoundaryContext(ctx); err != nil {
 		return ScopeSnapshot{}, err
 	}
 	snapshot = cloneScopeSnapshot(snapshot)
@@ -170,15 +170,15 @@ func (e *Engine) loadBoundarySnapshot(ctx context.Context, scope Scope) (ScopeSn
 	return snapshot, nil
 }
 
-func (e *Engine) commitBoundaryStage(ctx context.Context, request CommitRequest) (OperationOutcome, error) {
+func (e *BoundaryProcessor) commitBoundaryStage(ctx context.Context, request CommitRequest) (OperationOutcome, error) {
 	if err := request.Validate(); err != nil {
 		return OperationOutcome{}, err
 	}
 	outcome, err := e.store.Commit(ctx, cloneCommitRequest(request))
 	if err != nil {
-		return OperationOutcome{}, storePortFailure(ctx, err)
+		return OperationOutcome{}, boundaryStoreFailure(ctx, err)
 	}
-	if err := checkContext(ctx); err != nil {
+	if err := checkBoundaryContext(ctx); err != nil {
 		return OperationOutcome{}, err
 	}
 	if err := validateCommittedOutcome(request, outcome); err != nil {
@@ -187,7 +187,7 @@ func (e *Engine) commitBoundaryStage(ctx context.Context, request CommitRequest)
 	return cloneOperationOutcome(outcome), nil
 }
 
-func (e *Engine) groundScenarioCandidates(
+func (e *BoundaryProcessor) groundScenarioCandidates(
 	boundary Boundary,
 	operationID string,
 	snapshot ScopeSnapshot,
@@ -317,7 +317,7 @@ func (e *Engine) groundScenarioCandidates(
 	return scenarios, transitions, nil
 }
 
-func (e *Engine) groundProfileCandidate(
+func (e *BoundaryProcessor) groundProfileCandidate(
 	boundary Boundary,
 	operationID string,
 	snapshot ScopeSnapshot,

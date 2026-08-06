@@ -21,7 +21,7 @@ type projectionRebuildStarter interface {
 }
 
 // ProjectionRuntime owns the rebuildable Bleve projection lifecycle for the
-// canonical provider. Every sync builds a fresh generation from canonical
+// canonical storage. Every sync builds a fresh generation from canonical
 // changes, commits it, advances the durable watermark, and activates it only
 // after the commit. Canonical state remains authoritative if projection work
 // fails.

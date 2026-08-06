@@ -70,36 +70,11 @@ type CommitRequest struct {
 	Transitions          []RevisionTransition `json:"transitions,omitempty"`
 }
 
-// Store is the atomic persistence port required by derived processing.
-// Implementations must be concurrency-safe and enforce operation idempotency
-// plus optimistic concurrency at the exact Scope boundary. ForgetSource and
-// ForgetScope must atomically verify the supplied complete cascade, replace raw
-// content with identity-only tombstones, invalidate readable revisions, and
-// persist their outcome; no partial mutation may be visible on failure.
-type Store interface {
-	LookupOperation(ctx context.Context, lookup OperationLookup) (OperationLookupResult, error)
-	LookupForget(ctx context.Context, lookup ForgetLookup) (ForgetLookupResult, error)
-	LoadScope(ctx context.Context, scope Scope) (ScopeSnapshot, error)
-	Commit(ctx context.Context, request CommitRequest) (OperationOutcome, error)
-	ForgetSource(ctx context.Context, request ForgetSourceRequest) (ForgetOutcome, error)
-	ForgetScope(ctx context.Context, request ForgetScopeRequest) (ForgetOutcome, error)
-	Search(ctx context.Context, request DerivedSearchRequest) ([]SearchHit, error)
-	Trace(ctx context.Context, request TraceRequest) (TraceGraph, error)
-}
-
 // ScopeChangeSequenceReader is an optional consistency port for providers
 // that can expose the canonical change watermark. Derived v1 stores may omit
 // it; a caller that requests MinScopeChangeSeq then fails closed.
 type ScopeChangeSequenceReader interface {
 	CurrentScopeChangeSeq(ctx context.Context, scope Scope) (uint64, error)
-}
-
-// LegacyOperationSource exposes the durable v1 operation outcomes needed by
-// the maintenance-mode migration. It is deliberately separate from Store so
-// normal v1 processing and the canonical v2 port do not acquire a migration
-// dependency.
-type LegacyOperationSource interface {
-	LoadOperationOutcomes(ctx context.Context, scope Scope) ([]OperationOutcome, error)
 }
 
 // AtomExtractionRequest is bounded input for atom extraction.

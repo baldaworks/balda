@@ -7,16 +7,17 @@ import (
 	"time"
 
 	"github.com/normahq/balda/sessionmemory"
+	portableapp "github.com/normahq/balda/sessionmemory/app"
 )
 
 type scriptedStructuredInvoker struct {
 	output []byte
-	last   StructuredInvocation
+	last   portableapp.StructuredInvocation
 }
 
 const legacyDerivationVersion = "legacy-v1"
 
-func (s *scriptedStructuredInvoker) Invoke(_ context.Context, request StructuredInvocation) ([]byte, error) {
+func (s *scriptedStructuredInvoker) Invoke(_ context.Context, request portableapp.StructuredInvocation) ([]byte, error) {
 	s.last = request
 	return append([]byte(nil), s.output...), nil
 }
@@ -26,7 +27,7 @@ func (s *scriptedStructuredInvoker) Close(context.Context) error { return nil }
 func TestDeriverExtractAtomsUsesTypedEnvelope(t *testing.T) {
 	invoker := &scriptedStructuredInvoker{}
 	invoker.output = []byte(`{"output":[{"category":"fact","text":"JetStream is durable","relation":"new"}]}`)
-	deriver, err := NewDeriver(invoker)
+	deriver, err := portableapp.NewDeriver(invoker)
 	if err != nil {
 		t.Fatalf("NewDeriver() error = %v", err)
 	}
@@ -62,7 +63,7 @@ func TestDeriverExtractAtomsUsesTypedEnvelope(t *testing.T) {
 
 func TestDeriverExtractCanonicalSemanticsUsesDistinctOperation(t *testing.T) {
 	invoker := &scriptedStructuredInvoker{output: []byte(`{"output":[{"Kind":"state","Subject":"Ada","Predicate":"Lives In","Qualifiers":["Bishkek"],"Memory":{"Kind":"state","Statement":"Ada lives in Bishkek","Temporal":{"ObservedAt":"2026-08-03T16:00:00Z"},"Evidence":[{"SourceID":"source-1","MessageID":"message-1","Role":"user","StartByte":0,"EndByte":3,"AssertionMode":"user"}],"Sensitivity":"standard","Retention":"standard"}}]}`)}
-	deriver, err := NewDeriver(invoker)
+	deriver, err := portableapp.NewDeriver(invoker)
 	if err != nil {
 		t.Fatalf("NewDeriver() error = %v", err)
 	}
@@ -89,7 +90,7 @@ func TestDeriverExtractCanonicalSemanticsUsesDistinctOperation(t *testing.T) {
 
 func TestDeriverRejectsMalformedTypedOutput(t *testing.T) {
 	invoker := &scriptedStructuredInvoker{output: []byte(`not-json`)}
-	deriver, err := NewDeriver(invoker)
+	deriver, err := portableapp.NewDeriver(invoker)
 	if err != nil {
 		t.Fatalf("NewDeriver() error = %v", err)
 	}

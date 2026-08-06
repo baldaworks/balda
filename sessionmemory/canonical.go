@@ -34,7 +34,7 @@ type ItemHead struct {
 	RevisionID string `json:"revision_id"`
 }
 
-// Validate verifies an engine-owned active revision pointer.
+// Validate verifies an application-owned active revision pointer.
 func (h ItemHead) Validate() error {
 	if !isCanonicalID(h.ItemID) || !isCanonicalID(h.RevisionID) {
 		return invalidDerived("canonical item head is invalid")
@@ -49,36 +49,6 @@ type OperationRecord struct {
 	Fingerprint string    `json:"fingerprint"`
 	Outcome     []string  `json:"outcome"`
 	CommittedAt time.Time `json:"committed_at"`
-}
-
-// CanonicalImportedOperationSchemaVersion identifies the portable imported
-// operation record format.
-const CanonicalImportedOperationSchemaVersion = "session-memory-canonical-imported-operation/v1"
-
-// CanonicalImportedOperation preserves a v1 idempotent operation outcome
-// while the canonical records are being migrated. The nested legacy outcome
-// is intentionally retained verbatim: aggregate v1 stages may reference
-// rebuildable projections that do not yet have a v2 revision mapping.
-type CanonicalImportedOperation struct {
-	SchemaVersion string           `json:"schema_version"`
-	Outcome       OperationOutcome `json:"outcome"`
-}
-
-// Validate verifies one imported operation belongs to the enclosing scope.
-func (o CanonicalImportedOperation) Validate(scope Scope) error {
-	if o.SchemaVersion != CanonicalImportedOperationSchemaVersion {
-		return invalidDerived("unsupported imported operation schema version")
-	}
-	if err := scope.Validate(); err != nil {
-		return err
-	}
-	if err := o.Outcome.Validate(); err != nil {
-		return err
-	}
-	if o.Outcome.Scope != scope {
-		return PermanentError(CodeScopeViolation, "imported operation scope does not match mutation", nil)
-	}
-	return nil
 }
 
 // ScopeChange is an ordered, immutable projection-replay entry.
@@ -148,19 +118,18 @@ type ClaimedDelivery struct {
 // CanonicalMutation is the bounded atomic v2 persistence unit. Records are
 // append-only except Heads and ScopeState, which are the only mutable indexes.
 type CanonicalMutation struct {
-	SchemaVersion        string                       `json:"schema_version"`
-	Scope                Scope                        `json:"scope"`
-	ExpectedScopeVersion uint64                       `json:"expected_scope_version"`
-	Operation            OperationRecord              `json:"operation"`
-	ImportedOperations   []CanonicalImportedOperation `json:"imported_operations,omitempty"`
-	Sources              []SourceRecordV2             `json:"sources,omitempty"`
-	Messages             []MessageRecord              `json:"messages,omitempty"`
-	Items                []MemoryItem                 `json:"items,omitempty"`
-	Revisions            []MemoryRevision             `json:"revisions,omitempty"`
-	Lifecycle            []LifecycleEvent             `json:"lifecycle,omitempty"`
-	Heads                []ItemHead                   `json:"heads,omitempty"`
-	Delivery             []DeliveryOutboxRecord       `json:"delivery,omitempty"`
-	Payloads             []CanonicalPayload           `json:"payloads,omitempty"`
+	SchemaVersion        string                 `json:"schema_version"`
+	Scope                Scope                  `json:"scope"`
+	ExpectedScopeVersion uint64                 `json:"expected_scope_version"`
+	Operation            OperationRecord        `json:"operation"`
+	Sources              []SourceRecordV2       `json:"sources,omitempty"`
+	Messages             []MessageRecord        `json:"messages,omitempty"`
+	Items                []MemoryItem           `json:"items,omitempty"`
+	Revisions            []MemoryRevision       `json:"revisions,omitempty"`
+	Lifecycle            []LifecycleEvent       `json:"lifecycle,omitempty"`
+	Heads                []ItemHead             `json:"heads,omitempty"`
+	Delivery             []DeliveryOutboxRecord `json:"delivery,omitempty"`
+	Payloads             []CanonicalPayload     `json:"payloads,omitempty"`
 }
 
 // CanonicalPayload couples payload bytes to the structural reference that
@@ -181,7 +150,7 @@ type CanonicalMutationOutcome struct {
 
 // CanonicalOperationRecord is the durable replay record for one canonical
 // mutation. It is optional at the portable boundary so application adapters
-// can preserve established stage outcomes without consulting a legacy store.
+// can preserve established stage outcomes without consulting an older format.
 type CanonicalOperationRecord struct {
 	Fingerprint string
 	Outcome     CanonicalMutationOutcome
@@ -278,13 +247,6 @@ type CanonicalStore interface {
 	ScanActiveMemory(ctx context.Context, request ActiveMemoryScanRequest) ([]ActiveCanonicalMemory, error)
 	ClaimDeliveryOutbox(ctx context.Context, request DeliveryClaimRequest) ([]ClaimedDelivery, error)
 	SettleDeliveryOutbox(ctx context.Context, request DeliverySettlementRequest) error
-}
-
-// CanonicalImportedOperationStore is an optional read port for migration
-// diagnostics and replay tooling. Regular v2 processing does not depend on
-// legacy operation records.
-type CanonicalImportedOperationStore interface {
-	LoadCanonicalImportedOperation(ctx context.Context, scope Scope, operationID string) (CanonicalImportedOperation, bool, error)
 }
 
 func (r CanonicalRevisionReadRequest) Validate() error {
@@ -386,19 +348,9 @@ func (m CanonicalMutation) Validate() error {
 	if err := validateUniqueCanonicalIDs(m.Operation.Outcome, "canonical operation outcome"); err != nil {
 		return err
 	}
-	count := len(m.ImportedOperations) + len(m.Sources) + len(m.Messages) + len(m.Items) + len(m.Revisions) + len(m.Lifecycle) + len(m.Heads) + len(m.Delivery) + len(m.Payloads)
+	count := len(m.Sources) + len(m.Messages) + len(m.Items) + len(m.Revisions) + len(m.Lifecycle) + len(m.Heads) + len(m.Delivery) + len(m.Payloads)
 	if count == 0 || count > maxCanonicalMutationRecords {
 		return invalidDerived("canonical mutation record count is invalid")
-	}
-	importedOperationIDs := make([]string, 0, len(m.ImportedOperations))
-	for _, imported := range m.ImportedOperations {
-		if err := imported.Validate(m.Scope); err != nil {
-			return err
-		}
-		importedOperationIDs = append(importedOperationIDs, imported.Outcome.OperationID)
-	}
-	if err := validateUniqueCanonicalIDs(importedOperationIDs, "canonical imported operation"); err != nil {
-		return err
 	}
 	sourceIDs := make([]string, 0, len(m.Sources))
 	for _, source := range m.Sources {

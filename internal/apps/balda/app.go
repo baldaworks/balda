@@ -44,7 +44,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
 	"github.com/normahq/balda/internal/apps/sessionmcp"
 	"github.com/normahq/balda/internal/git"
-	"github.com/normahq/balda/sessionmemory"
+	portableapp "github.com/normahq/balda/sessionmemory/app"
+	portmcp "github.com/normahq/balda/sessionmemory/mcp"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -72,16 +73,6 @@ const (
 var configIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 const defaultWorkspaceSessionsDirName = "sessions"
-
-func nativeDerivedSearcher(provider sessionmemory.Provider) sessionmemorymcp.DerivedSearcher {
-	derived, _ := provider.(sessionmemorymcp.DerivedSearcher)
-	return derived
-}
-
-func nativeRecallSearcher(provider sessionmemory.Provider) sessionmemorymcp.RecallSearcher {
-	recall, _ := provider.(sessionmemorymcp.RecallSearcher)
-	return recall
-}
 
 type memorySnapshotReaderAdapter struct {
 	store *memory.Store
@@ -258,8 +249,8 @@ func Module(
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
 				})
 			},
-			func(provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
-				return newCanonicalSessionMemoryProvider(cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
+			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
+				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
 				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)
@@ -293,21 +284,20 @@ func Module(
 				}
 				return sessionmemoryapp.NewBoundaryCapture(publisher, resolver)
 			},
-			func(bus *natsbus.Bus, provider sessionmemory.Provider) (*sessionmemoryapp.Worker, error) {
+			func(bus *natsbus.Bus, runtime *portableapp.Runtime) (*sessionmemoryapp.Worker, error) {
 				workerCfg, workerErr := sessionMemoryWorkerConfig(cfg.Balda.SessionMemory)
 				if workerErr != nil {
 					return nil, workerErr
 				}
-				return sessionmemoryapp.NewWorker(bus.SessionMemoryTransport(), provider, workerCfg, logger)
+				return sessionmemoryapp.NewCapabilityWorker(bus.SessionMemoryTransport(), runtime, runtime, workerCfg, logger)
 			},
-			func(provider sessionmemory.Provider, resolver sessionmemoryapp.ScopeResolver, broker *sessionmemorymcp.ContextBroker) sessionmemorymcp.Config {
-				return sessionmemorymcp.Config{
-					Enabled:         cfg.Balda.SessionMemory.Enabled,
-					DerivedSearcher: nativeDerivedSearcher(provider),
-					RecallSearcher:  nativeRecallSearcher(provider),
-					SessionResolver: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
-					ScopeResolver:   resolver,
-					Timeout:         sessionMemorySearchTimeout,
+			func(runtime *portableapp.Runtime, resolver sessionmemoryapp.ScopeResolver, broker *sessionmemorymcp.ContextBroker) portmcp.Config {
+				return portmcp.Config{
+					Enabled:       cfg.Balda.SessionMemory.Enabled,
+					Searcher:      runtime,
+					Tracer:        runtime,
+					ScopeResolver: sessionmemorymcp.ScopeResolverAdapter{Session: sessionmemorymcp.HeaderSessionResolver{Broker: broker}, Locator: resolver},
+					Timeout:       sessionMemorySearchTimeout,
 				}
 			},
 			fx.Annotate(

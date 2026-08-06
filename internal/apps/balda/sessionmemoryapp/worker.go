@@ -11,6 +11,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/normahq/balda/sessionmemory"
+	portableapp "github.com/normahq/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
 )
 
@@ -25,7 +26,7 @@ const (
 	defaultQueuedPerScope  = 32
 )
 
-// Config controls the serialized provider consumer.
+// Config controls the serialized memory capability consumer.
 type Config struct {
 	Enabled             bool
 	MaxAttempts         int
@@ -77,16 +78,17 @@ func (c Config) Normalized() (Config, error) {
 
 // ShutdownReport records the last bounded stop attempt.
 type ShutdownReport struct {
-	Stats         BacklogStats
-	StatsErr      error
-	ProviderError error
-	StoppedAt     time.Time
+	Stats     BacklogStats
+	StatsErr  error
+	StopError error
+	StoppedAt time.Time
 }
 
-// Worker serializes all provider calls behind one durable queue delivery.
+// Worker serializes all memory capability calls behind one durable queue delivery.
 type Worker struct {
 	transport Transport
-	provider  sessionmemory.Provider
+	turn      portableapp.TurnIngestor
+	boundary  portableapp.BoundaryIngestor
 	config    Config
 	logger    zerolog.Logger
 
@@ -109,8 +111,10 @@ type laneWork struct {
 
 type memoryLane struct{ pending []laneWork }
 
-// NewWorker constructs a lifecycle-managed serialized consumer.
-func NewWorker(transport Transport, provider sessionmemory.Provider, config Config, logger zerolog.Logger) (*Worker, error) {
+// NewCapabilityWorker constructs the production worker over narrow portable
+// ingest capabilities. Runtime lifecycle is owned by the Balda composition
+// root and is deliberately not closed by this delivery worker.
+func NewCapabilityWorker(transport Transport, turn portableapp.TurnIngestor, boundary portableapp.BoundaryIngestor, config Config, logger zerolog.Logger) (*Worker, error) {
 	if transport == nil {
 		return nil, fmt.Errorf("session-memory transport is required")
 	}
@@ -118,12 +122,13 @@ func NewWorker(transport Transport, provider sessionmemory.Provider, config Conf
 	if err != nil {
 		return nil, err
 	}
-	if normalized.Enabled && provider == nil {
-		return nil, fmt.Errorf("session-memory provider is required when enabled")
+	if normalized.Enabled && (turn == nil || boundary == nil) {
+		return nil, fmt.Errorf("session-memory ingest capabilities are required when enabled")
 	}
 	return &Worker{
 		transport:   transport,
-		provider:    provider,
+		turn:        turn,
+		boundary:    boundary,
 		config:      normalized,
 		logger:      logger.With().Str("component", "balda.session_memory_worker").Logger(),
 		lanes:       make(map[string]*memoryLane),
@@ -133,7 +138,7 @@ func NewWorker(transport Transport, provider sessionmemory.Provider, config Conf
 }
 
 // Start launches the worker away from the user-response goroutine. Disabled
-// workers deliberately create no fetch loop and require no provider.
+// workers deliberately create no fetch loop and require no capability.
 func (w *Worker) Start(parent context.Context) error {
 	if w == nil {
 		return fmt.Errorf("session-memory worker is required")
@@ -162,7 +167,8 @@ func (w *Worker) Start(parent context.Context) error {
 }
 
 // Stop cancels new fetches, waits for the current message to settle or the
-// supplied bounded deadline, records backlog state, and closes the provider.
+// supplied bounded deadline, and records backlog state. Runtime capability
+// lifecycle remains owned by the composition root.
 func (w *Worker) Stop(ctx context.Context) error {
 	if w == nil {
 		return nil
@@ -199,9 +205,9 @@ func (w *Worker) Stop(ctx context.Context) error {
 	report := ShutdownReport{StoppedAt: time.Now().UTC()}
 	if stopErr != nil {
 		// Keep the lifecycle state until the worker actually exits. A later Stop
-		// call can finish the drain and close the provider without racing an
-		// in-flight provider operation.
-		report.ProviderError = stopErr
+		// call can finish the drain without racing an in-flight capability
+		// operation.
+		report.StopError = stopErr
 		w.mu.Lock()
 		w.report = report
 		w.mu.Unlock()
@@ -209,9 +215,6 @@ func (w *Worker) Stop(ctx context.Context) error {
 	}
 	if w.config.Enabled {
 		report.Stats, report.StatsErr = w.transport.Stats(stopCtx)
-	}
-	if w.config.Enabled && w.provider != nil {
-		report.ProviderError = w.provider.Close(stopCtx)
 	}
 
 	w.mu.Lock()
@@ -224,7 +227,7 @@ func (w *Worker) Stop(ctx context.Context) error {
 	w.report = report
 	w.mu.Unlock()
 
-	return errors.Join(stopErr, report.StatsErr, report.ProviderError)
+	return errors.Join(stopErr, report.StatsErr, report.StopError)
 }
 
 // ShutdownReport returns a snapshot of the last stop outcome.
@@ -386,10 +389,10 @@ func (w *Worker) processExport(ctx context.Context, delivery Delivery, export se
 		}
 		code, class := classifyProviderFailure(err)
 		if class == sessionmemory.ErrorClassPermanent {
-			return w.deadLetter(ctx, delivery, export, code, class, "provider permanently rejected session-memory export")
+			return w.deadLetter(ctx, delivery, export, code, class, "memory capability permanently rejected session-memory export")
 		}
 		if attempt >= w.config.MaxAttempts {
-			return w.deadLetter(ctx, delivery, export, code, class, "session-memory provider retry limit exhausted")
+			return w.deadLetter(ctx, delivery, export, code, class, "session-memory capability retry limit exhausted")
 		}
 		if !w.waitRetry(ctx, delivery, attempt) {
 			return ctx.Err()
@@ -420,17 +423,19 @@ func (w *Worker) syncWithProgress(ctx context.Context, delivery Delivery, export
 }
 
 func (w *Worker) sync(ctx context.Context, export sessionmemorycmd.Export) error {
-	if w.provider == nil {
-		return sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory provider is disabled", nil)
-	}
 	switch export.Kind {
 	case sessionmemorycmd.KindTurn:
-		return w.provider.SyncTurn(ctx, *export.Turn)
+		if w.turn != nil {
+			return w.turn.IngestTurn(ctx, *export.Turn)
+		}
 	case sessionmemorycmd.KindBoundary:
-		return w.provider.OnSessionBoundary(ctx, *export.Boundary)
+		if w.boundary != nil {
+			return w.boundary.ApplyBoundary(ctx, *export.Boundary)
+		}
 	default:
 		return sessionmemory.PermanentError(sessionmemory.CodePermanent, "unsupported session-memory export", nil)
 	}
+	return sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory ingest is unavailable", nil)
 }
 
 func (w *Worker) waitRetry(ctx context.Context, delivery Delivery, attempt int) bool {

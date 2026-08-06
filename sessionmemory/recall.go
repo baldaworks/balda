@@ -20,8 +20,8 @@ const (
 )
 
 // RecallRequest is the storage-neutral, exact-scope retrieval request. It is
-// intentionally separate from the legacy derived search request so canonical
-// v2 retrieval can evolve without widening the old Store contract.
+// intentionally separate from other application capabilities so canonical
+// retrieval can evolve without widening unrelated contracts.
 type RecallRequest struct {
 	SchemaVersion     string        `json:"schema_version"`
 	Scope             Scope         `json:"scope"`

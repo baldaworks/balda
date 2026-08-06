@@ -2,7 +2,7 @@ version: 3
 workdir: .
 
 allow:
-  depOnAnyVendor: true
+  depOnAnyVendor: false
 
 excludeFiles:
   - "^.*_test\\.go$"
@@ -11,13 +11,38 @@ exclude:
   - .config
 
 components:
-  # Extraction-ready session-memory values and provider API. This package may
+  # Extraction-ready session-memory values and semantic API. This package may
   # use only the standard library and must remain independent of Balda policy.
   session_memory_core:
     in:
       - sessionmemory
 
-  # Public deterministic test support and reusable Store conformance suite.
+  # Portable application use cases and consumer-owned capability ports. This
+  # package may depend on the core only and must remain free of Balda policy
+  # and vendor runtime imports.
+  session_memory_app:
+    in:
+      - sessionmemory/app
+
+  # Canonical Badger truth and lifecycle adapter. The host supplies paths;
+  # this component must not depend on Balda application policy.
+  session_memory_badger:
+    in:
+      - sessionmemory/store/badger
+
+  # Disposable lexical recall projection.  Bleve and its analyzers are
+  # isolated here; canonical hydration and consistency policy remain in app.
+  session_memory_bleve:
+    in:
+      - sessionmemory/index/bleve
+
+  # Neutral MCP search/trace surface.  Scope resolution and authenticated
+  # host context are injected; Balda transport policy stays outside.
+  session_memory_mcp:
+    in:
+      - sessionmemory/mcp
+
+  # Public deterministic test support for canonical adapter contracts.
   session_memory_contract_testkit:
     in:
       - sessionmemory/sessionmemorytest
@@ -147,11 +172,41 @@ deps:
   session_memory_core:
     mayDependOn:
       - session_memory_core
-    # The core receives application-owned model ports through NewEngine. The
+    # The core receives application-owned model ports through canonical
+    # processor constructors. The
     # import boundary remains stdlib-only; deep-scan's constructor injection
     # report would invert that intentional dependency-injection direction.
     deepScan: false
     anyVendorDeps: false
+
+  session_memory_app:
+    mayDependOn:
+      - session_memory_core
+      - session_memory_app
+    # Hosts inject provider implementations through the portable invoker
+    # interface at the composition root; deep-scan must not invert that port.
+    deepScan: false
+    anyVendorDeps: false
+
+  session_memory_badger:
+    mayDependOn:
+      - session_memory_core
+      - session_memory_app
+      - session_memory_badger
+    anyVendorDeps: true
+
+  session_memory_bleve:
+    mayDependOn:
+      - session_memory_core
+      - session_memory_app
+      - session_memory_bleve
+    anyVendorDeps: true
+
+  session_memory_mcp:
+    mayDependOn:
+      - session_memory_core
+      - session_memory_mcp
+    anyVendorDeps: true
 
   session_memory_contract_testkit:
     mayDependOn:
@@ -186,6 +241,10 @@ deps:
       - foundation
       - contracts
       - session_memory_core
+      - session_memory_app
+      - session_memory_badger
+      - session_memory_bleve
+      - session_memory_mcp
       - session_memory_contracts
       - application
       - infrastructure

@@ -17,15 +17,16 @@
 //
 // Every derived revision has immutable Provenance. Change is append-only:
 // revisions may coexist, supersede prior revisions, or become invalidated, but
-// prior evidence is never silently overwritten. Engine uses stable operation
-// identities and exact-scope optimistic concurrency. It checks durable outcomes
-// before model calls and does not implicitly retry a model after a CAS conflict.
+// prior evidence is never silently overwritten. Canonical processing uses stable
+// operation identities and exact-scope optimistic concurrency. It checks durable
+// outcomes before model calls and does not implicitly retry a model after a CAS
+// conflict.
 //
-// Store owns atomic persistence, idempotency, reverse-provenance indexes,
-// bounded search, trace, and forgetting. Model behavior is supplied through the
-// typed AtomExtractor, ScenarioSynthesizer, and ProfileSynthesizer ports. Engine
-// validates model and Store output as hostile input and owns stable identities,
-// scope, timestamps, lifecycle state, and provenance grounding.
+// Canonical storage owns atomic persistence, idempotency, reverse-provenance
+// indexes, bounded search, trace, and forgetting. Model behavior is supplied
+// through typed extraction and synthesis ports. The application layer validates
+// model and storage output as hostile input and owns stable identities, scope,
+// timestamps, lifecycle state, and provenance grounding.
 //
 // Search and Trace are explicit, on-demand operations. Returned content is
 // marked ReferenceTrustUntrusted and is never injected into a prompt by this
@@ -33,10 +34,10 @@
 // atomically invalidates every transitive dependent revision. ForgetScope does
 // the same for one exact locator. Forgetting performs no model synthesis.
 //
-// This package intentionally contains no production Store, model client,
+// This package intentionally contains no production storage adapter, model client,
 // embedding or ranking implementation, service, HTTP or MCP surface, JetStream
 // wiring, automatic prompt injection, Wiki, document store, or integration with
 // Balda's separate global explicit fact memory. The core imports only the Go
-// standard library. Package sessionmemorytest provides a deterministic test
-// Store, scripted models, and a reusable Store conformance suite for adapters.
+// standard library. Package sessionmemorytest provides a deterministic canonical
+// storage contract for adapters.
 package sessionmemory

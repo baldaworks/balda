@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/sessionmemory"
+	blevestore "github.com/normahq/balda/sessionmemory/index/bleve"
+	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
 )
 
 func TestCanonicalForgetScrubsPayloadMessagesAndBleveAndReplays(t *testing.T) {
-	store, err := state.OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "canonical.badger"))
+	store, err := badgerstore.OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "canonical.badger"))
 	if err != nil {
 		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
 	}
@@ -69,11 +70,11 @@ func TestCanonicalForgetScrubsPayloadMessagesAndBleveAndReplays(t *testing.T) {
 		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
 	}
 
-	reader, err := state.NewCanonicalReader(store)
+	reader, err := badgerstore.NewCanonicalReader(store)
 	if err != nil {
 		t.Fatalf("NewCanonicalReader() error = %v", err)
 	}
-	projection, err := state.NewBleveRecallProjection(filepath.Join(t.TempDir(), "bleve"))
+	projection, err := blevestore.Open(filepath.Join(t.TempDir(), "bleve"))
 	if err != nil {
 		t.Fatalf("NewBleveRecallProjection() error = %v", err)
 	}
@@ -100,7 +101,7 @@ func TestCanonicalForgetScrubsPayloadMessagesAndBleveAndReplays(t *testing.T) {
 	if err := projection.ActivateGeneration(context.Background(), "forget-seed-generation"); err != nil {
 		t.Fatalf("ActivateGeneration() error = %v", err)
 	}
-	applier, err := state.NewBleveCanonicalApplier(projection, reader)
+	applier, err := blevestore.NewBleveCanonicalApplier(projection, reader)
 	if err != nil {
 		t.Fatalf("NewBleveCanonicalApplier() error = %v", err)
 	}

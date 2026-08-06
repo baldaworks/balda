@@ -2,7 +2,6 @@ package balda
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/sessionmemory/sessionmemorytest"
+	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
 )
 
 func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
@@ -26,9 +25,6 @@ func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	if err := validateSessionMemoryConfig(cfg); err != nil {
 		t.Fatalf("validateSessionMemoryConfig() error = %v, want nil while disabled", err)
 	}
-	if _, err := newSessionMemoryProvider(cfg, nil, nil, "", ""); err != nil {
-		t.Fatalf("newSessionMemoryProvider() error = %v, want nil while disabled", err)
-	}
 	workerCfg, err := sessionMemoryWorkerConfig(cfg)
 	if err != nil {
 		t.Fatalf("sessionMemoryWorkerConfig() error = %v, want nil while disabled", err)
@@ -38,49 +34,31 @@ func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	}
 }
 
-func TestCanonicalSessionMemoryProviderDisabledDoesNotOpenCanonicalStore(t *testing.T) {
+func TestCanonicalSessionMemoryRuntimeComposesPortableCapabilities(t *testing.T) {
 	stateDir := t.TempDir()
-	provider, err := newCanonicalSessionMemoryProvider(SessionMemoryConfig{}, nil, nil, "", "", stateDir)
+	runtime, err := newCanonicalSessionMemoryRuntime(SessionMemoryConfig{Enabled: true}, &baldaagent.Builder{}, "provider", t.TempDir(), stateDir)
 	if err != nil {
-		t.Fatalf("newCanonicalSessionMemoryProvider() error = %v", err)
+		t.Fatalf("newCanonicalSessionMemoryRuntime() error = %v", err)
 	}
-	if _, ok := provider.(sessionmemoryapp.DisabledProvider); !ok {
-		t.Fatalf("disabled provider type = %T, want sessionmemoryapp.DisabledProvider", provider)
+	if runtime == nil {
+		t.Fatal("newCanonicalSessionMemoryRuntime() returned nil runtime")
 	}
-	if _, err := os.Stat(baldastate.SessionMemoryCanonicalPath(stateDir)); !os.IsNotExist(err) {
-		t.Fatalf("canonical path stat error = %v, want unopened path", err)
+	if err := runtime.Start(context.Background()); err != nil {
+		t.Fatalf("portable runtime Start() error = %v", err)
 	}
-}
-
-func TestCanonicalSessionMemoryProviderOwnsBadgerLifecycle(t *testing.T) {
-	stateDir := t.TempDir()
-	provider, err := newCanonicalSessionMemoryProvider(SessionMemoryConfig{Enabled: true}, sessionmemorytest.NewStore(), &baldaagent.Builder{}, "provider", t.TempDir(), stateDir)
+	if err := runtime.Close(context.Background()); err != nil {
+		t.Fatalf("portable runtime Close() error = %v", err)
+	}
+	store, err := badgerstore.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir))
 	if err != nil {
-		t.Fatalf("newCanonicalSessionMemoryProvider() error = %v", err)
+		t.Fatalf("canonical store did not reopen after portable runtime close: %v", err)
 	}
-	canonical, ok := provider.(*sessionmemoryapp.CanonicalProvider)
-	if !ok {
-		t.Fatalf("enabled provider type = %T, want *sessionmemoryapp.CanonicalProvider", provider)
-	}
-	if _, err := baldastate.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir)); err == nil {
-		t.Fatal("second canonical Badger owner opened while composition owner was active")
-	}
-	if err := canonical.Start(context.Background()); err != nil {
-		t.Fatalf("canonical Start() error = %v", err)
-	}
-	if err := canonical.Close(context.Background()); err != nil {
-		t.Fatalf("canonical Close() error = %v", err)
-	}
-	reopened, err := baldastate.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir))
-	if err != nil {
-		t.Fatalf("canonical store did not reopen after OnStop(): %v", err)
-	}
-	if err := reopened.Close(); err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatalf("reopened canonical store Close() error = %v", err)
 	}
 }
 
-func TestSessionMemoryConfigEnabledUsesNativeProvider(t *testing.T) {
+func TestSessionMemoryConfigValidationRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
 		name string
 		cfg  SessionMemoryConfig

@@ -182,12 +182,19 @@ flowchart TB
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram message adapter | messenger, session |
 | `handlers` | `internal/apps/balda/handlers` | Transport ingress, command publishing, and ingress-side session/control orchestration | actorcmd, agent, auth, channel, jobs, messenger, session, sessionturnapp, tgbotkit, welcome |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
-| `memory` | `internal/apps/balda/memory` | Structured memory store and recall helpers | (standalone) |
+| `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
 | `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `sessionturn` | `internal/apps/balda/sessionturn` | Queued-turn restoration and execution orchestration | memory, session |
 | `sessionturnapp` | `internal/apps/balda/sessionturnapp` | Queued turn execution wiring, provider-turn execution, progress dispatch, and turn-facing adapters | jobs, memory, session, sessionturn, `github.com/baldaworks/go-actorlayer` |
 | `state` | `internal/apps/balda/state` | SQLite state persistence | `modernc.org/sqlite`, `updatepoller` |
+| `sessionmemory` | `sessionmemory` | Portable session-memory semantic core and canonical contracts | standard library |
+| `sessionmemory/app` | `sessionmemory/app` | Portable runtime, typed ingest, recall, trace, forget, and lifecycle ports | `sessionmemory` |
+| `sessionmemory/store/badger` | `sessionmemory/store/badger` | Canonical Badger persistence and maintenance | `sessionmemory`, `sessionmemory/app`, Badger |
+| `sessionmemory/index/bleve` | `sessionmemory/index/bleve` | Rebuildable lexical projection | `sessionmemory`, `sessionmemory/app`, Bleve |
+| `sessionmemory/mcp` | `sessionmemory/mcp` | Neutral `session_memory.search` and `session_memory.trace` adapter | `sessionmemory`, MCP SDK |
+| `sessionmemoryapp` | `internal/apps/balda/sessionmemoryapp` | Balda capture, redaction, ingress outbox, worker, and host adapters | public session-memory packages, Balda transport ports |
+| `sessionmemorymcp` | `internal/apps/balda/sessionmemorymcp` | Authenticated broker/context bridge for neutral MCP | Balda session/locator contracts |
 | `runtime` | `internal/apps/balda/execution` | Actor runtime host, lane policy, retry/dead-letter policy, and delivery wrapping | actorcmd, `github.com/baldaworks/go-actorlayer` |
 | `jobs` | `internal/apps/balda/jobs` | Durable job service, transactional event outbox, and read-model projection | actorcmd, state, `github.com/baldaworks/go-actorlayer` |
 | `tgbotkit` | `internal/apps/balda/tgbotkit` | Telegram bot runtime | `tgbotkit/*` |
@@ -211,7 +218,11 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/handlers`: transport ingress only. It normalizes Telegram/Slack/Zulip/webhook/scheduler input, checks auth/session rules, and publishes actor work. It must not own product actors, provider-turn execution, or delivery policy.
 - `internal/apps/balda/handlersfx`: composition-root adapters that bind handler-owned ports to concrete provider runtimes without moving ingress policy into wiring.
 - `internal/apps/balda/channel/*` and `internal/apps/balda/messenger`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
-- `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, memory, scheduler state, job tables, and delivery idempotency state.
+- `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
+- `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). It is not the session-memory subsystem.
+- `sessionmemory` and `sessionmemory/app`: portable semantic ownership and capability orchestration for exact-scope session memory.
+- `sessionmemory/store/badger`: canonical session-memory state; `sessionmemory/index/bleve`: rebuildable lexical projection.
+- `sessionmemory/mcp`: neutral search/trace tools; Balda's `sessionmemorymcp` supplies authenticated scope context and no transport locator is accepted from tool input.
 
 - `balda.provider` selects one app-scoped provider runtime for all Balda sessions and `/goalkeeper` worker-validator runs in the process. `/goalkeeper` still creates isolated worker/validator ADK sessions and workspace state, but it reuses the same provider runtime/client ownership as normal session turns.
 - Actorlayer owns generic actor mechanics: registration, addressing, envelopes, retry/error helpers, lane execution, lifecycle state, and transport-facing contracts.
@@ -246,7 +257,8 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent`: owns the single app-scoped provider runtime selected by `balda.provider`, root runtime construction, isolated goal runtime preparation, and runtime-adjacent workspace support.
 - `internal/apps/balda/session`: owns per-session lifecycle state, restore/ensure semantics, and runtime/session binding.
-- `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, jobs, projections, memory, and delivery outbox rows.
+- `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, jobs, projections, global-memory KV, delivery outbox rows, and session-memory ingress/audit rows. Canonical session-memory records live in the public Badger adapter.
+- `sessionmemory/app` and `internal/apps/balda/sessionmemoryapp`: own typed semantic processing versus Balda capture/redaction/outbox/worker wiring respectively.
 
 Do not add extra Balda-local actor adapter packages or execution/delivery selector
 layers around the runtime. The generic actor runtime lives in `github.com/baldaworks/go-actorlayer`,
@@ -258,9 +270,10 @@ Balda startup order is strict:
 
 1. Load runtime + Balda config, then construct and validate the immutable delivery-format registry.
 2. Start internal MCP lifecycle manager.
-3. Start Balda provider runtime via `RuntimeManager.EnsureRuntime(...)`.
-4. Start session/mailbox and durable actor infrastructure: event projector, job-event outbox publisher, and actor host.
-5. Bootstrap Telegram owner state, then start scheduler, inbound webhooks, Zulip, Slack, and Telegram ingress.
+3. Start the enabled portable session-memory runtime (canonical Badger, Bleve projection, and model lifecycle).
+4. Start Balda provider runtime via `RuntimeManager.EnsureRuntime(...)`.
+5. Start session/mailbox and durable actor infrastructure: event projector, job-event outbox publisher, and actor host.
+6. Bootstrap Telegram owner state, then start scheduler, inbound webhooks, Zulip, Slack, and Telegram ingress.
 
 One composition-root coordinator owns this order. Configuration or registry
 errors fail before any ingress stage can become ready. Shutdown runs the same
@@ -646,7 +659,7 @@ balda:
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
 - `balda.session_memory`: optional durable conversation-memory integration (default disabled)
-  - `enabled`: starts the serialized JetStream consumer and enables the native locator-scoped `balda.session_memory.search` and `.trace` tools.
+  - `enabled`: starts the serialized JetStream consumer and enables the neutral locator-scoped `session_memory.search` and `session_memory.trace` tools.
   - `derivation.timeout` / `derivation.max_output_bytes`: bounds the isolated Norma derivation runtime.
   - completed text-only turns and session reset/close/rotation/shutdown boundaries are published to the dedicated `BALDA_SESSION_MEMORY` stream.
   - `stream` / `consumer`, timeout, retry, and retention fields are validated and must not collide with command/event/DLQ names.
@@ -709,8 +722,16 @@ balda:
 replacement for the existing fact store: `balda.memory.read` and
 `balda.memory.remember` remain global-per-instance KV operations in
 `${balda.state_dir}/state.db`. Session memory sends eligible conversation text
-to the canonical Badger Store and recalls it through rebuildable projections
-only on demand.
+through `sessionmemory/app` to the public canonical Badger adapter and recalls
+it through a rebuildable Bleve projection only on demand. This is an in-process
+extraction boundary, not a remote service.
+
+The canonical Badger path is authoritative and remains stable across restart.
+If it does not exist, enabled session memory starts empty. The removed SQLite
+session-memory domain tables are not imported; migration `00033` drops those
+six legacy tables while preserving the ingress outbox and audit tables from
+migrations `00030`–`00032`. The migration `Down` section recreates an empty
+legacy schema, but dropped rows cannot be recovered.
 
 ### Enablement and configuration
 
@@ -749,7 +770,7 @@ defaults are:
 | `max_age` / `max_bytes` / `max_msg_size` | `7d` / `-1` / `-1` | Stream retention; `-1` means unlimited for byte/message limits. |
 | `max_concurrent_scopes` / `max_queued_per_scope` | `4` / `32` | Maximum independent provider lanes and unresolved exports buffered per exact scope. |
 | `search_timeout` | `5s` | MCP search deadline. |
-| `retry.max_attempts` | `5` | Provider attempts per export before DLQ. |
+| `retry.max_attempts` | `5` | Worker attempts per export before DLQ. |
 | `retry.base_delay` / `max_delay` | `250ms` / `5s` | Exponential retry delay bounds. |
 | `retry.progress_interval` | `30s` | `InProgress` heartbeat while native derivation or retry is running. |
 | `retry.fetch_error_delay` | `100ms` | Delay after a transport fetch error. |
@@ -772,7 +793,7 @@ bounded diagnostic and does not suppress the already completed user-facing
 reply.
 
 The exact canonical locator string, produced by `locatorref`, is the canonical
-Store partition and authorization key:
+Badger partition and authorization key:
 
 ```text
 <channel_type>:<address_key>
@@ -785,7 +806,7 @@ partitions. Topic identity is orthogonal to audience. There is no
 owner, collaborator, channel-type, chat-ID, or topic inheritance, and no
 cross-scope fallback. Ambiguous or unsupported locator classification fails
 closed. Group conversation text is sent only to the exact group locator's
-trusted canonical Store scope.
+trusted canonical scope.
 
 Session reset, close, rotation, and bounded application shutdown also publish a
 boundary export with the old session identity before that identity is removed
@@ -795,7 +816,7 @@ cannot overtake an unresolved earlier export.
 ### Search and trace MCP contract
 
 When enabled, the bundled MCP server registers
-`balda.session_memory.search` and `balda.session_memory.trace`. Search input
+`session_memory.search` and `session_memory.trace`. Search input
 keeps the original query/limit contract and accepts additive filters:
 
 ```json
@@ -814,7 +835,7 @@ tool schema. The response echoes the exact scope and returns bounded
 references. Each reference is explicitly `untrusted_reference` data. Balda
 does not execute recalled text, turn it into a prompt/system instruction, or
 interpret it as a transport/command request. Invalid query/scope, unsupported
-scope, disabled service, timeout, unavailable canonical Store, and foreign results
+ scope, disabled service, timeout, unavailable canonical store, and foreign results
 produce stable structured tool errors without leaking raw memory content.
 
 The resolver is fail-closed: a request without an active broker capability gets
@@ -869,11 +890,11 @@ and a safe reason—never conversation text or model response bodies. After
 fixing the processor/configuration, replay must be an explicit operator action
 from a trusted source (or re-run the source turn); there is no automatic DLQ
 replay that could duplicate unreviewed conversation data. Stable export IDs
-make a reviewed replay idempotent at the canonical Store/processor boundary.
+make a reviewed replay idempotent at the canonical Badger/processor boundary.
 
 ### Privacy, trust, and shutdown
 
-The canonical Badger Store is a raw conversation-data trust boundary. Restrict
+The canonical Badger store is a raw conversation-data trust boundary. Restrict
 access to the Balda state directory and configure state/JetStream retention to
 match the deployment's policy. Balda minimizes the payload to visible text,
 bounds model/retrieval outputs, and redacts worker/DLQ diagnostics. ForgetSource
@@ -926,18 +947,21 @@ The live tier also requires:
 - two terminals: one for Balda and one for metadata observation.
 
 First run the credential-free restart and isolation proofs from the repository
-root. Bound each command to five minutes:
+root. Bound each command to five minutes. Use the current positive package
+contracts; the removed runtime and recall integration tests are not part of the
+supported suite:
 
 ```bash
-timeout 5m go test -race ./internal/apps/balda -run 'Test(SessionMemoryRuntime|RestoredSessionMemoryRecall)' -count=5
 timeout 5m go test -race ./sessionmemory/... ./internal/apps/balda/sessionmemoryapp/... ./internal/apps/balda/sessionmemorymcp/...
+timeout 5m go test -race ./internal/apps/balda/state -run 'TestSQLiteSessionMemoryIngressOutbox'
 ```
 
 Pass only if both commands exit zero before their timeout. A failure or timeout
-is a hard abort for the live tier. These tests exercise a real broker-wrapped
-MCP surface, canonical-store reopen, restart recall, exact-scope isolation,
-authorization failures, provenance, and safe output without provider/channel
-credentials.
+is a hard abort for the live tier. These tests cover portable canonical
+processing, public MCP contracts, Balda broker/context unit behavior, Badger
+reopen/recall positives, and ingress outbox durability. They do not prove
+live provider/channel behavior or restart recall; those require the live tier
+below and must not be inferred from this deterministic suite.
 
 #### 2. Start an isolated live runtime
 
@@ -999,9 +1023,9 @@ an ack-pending value above one, a counter that grows without bound, or the
 
 In locator A, send `/reset` and allow at most 60 seconds for the fresh runtime
 session notice. Then make one request that tells Balda to call
-`balda.session_memory.search` for the exact marker and report only the returned
+`session_memory.search` for the exact marker and report only the returned
 scope key, result count, classification, item ID, and revision ID. In the same
-locator, ask it to call `balda.session_memory.trace` for that item/revision and
+locator, ask it to call `session_memory.trace` for that item/revision and
 report only node count plus item/revision IDs. Do not ask it to repeat recalled
 text in the evidence.
 
@@ -1055,9 +1079,10 @@ cause and evidence status are recorded.
 
 To roll back availability, set `balda.session_memory.enabled=false` and restart
 Balda. This prevents new session-memory capture, processing, and MCP bindings
-but does not delete native session-memory tables, global fact memory, session
-history, or the isolated state directory. Confirm the ordinary channel/session
-flow still works within 60 seconds. Retain or dispose of the verification
+but preserves the canonical Badger directory, rebuildable projection, ingress
+outbox/audit state, global fact memory, session history, and the isolated state
+directory. Confirm the ordinary channel/session flow still works within 60
+seconds. Retain or dispose of the verification
 directory only under the deployment's data-retention procedure after Balda is
 stopped and the path has been independently checked; the marker is
 conversation data.
@@ -1072,26 +1097,28 @@ credential-free integration suite.
 
 ### Extraction path
 
-The implementation is intentionally split for a later package/skill/repository
-release:
+The extraction-ready implementation is split into public packages and Balda
+host adapters:
 
-1. `sessionmemory` is the portable versioned core (`Scope`, `SessionRef`,
-   `Turn`, `Boundary`, search contracts, validation, error classes, and the
-   small `Provider` port). It imports no Balda transport, MCP, Fx, NATS, or
-   SQLite package.
-2. `sessionmemorycmd` owns neutral `turn.v1`/`boundary.v1` export envelopes and
-   subjects; it has no queue client or provider SDK.
-3. `sessionmemoryapp` connects Balda turn/session lifecycle to the core, owns
-   the serialized JetStream worker, and exposes canonical Store search/trace/
-   forgetting through application ports. Derivation uses an isolated Norma
-   runtime and remains an in-process native processor.
-4. Balda-only integrations remain at the composition root: JetStream transport,
-   channel-owned locator classifiers, and the MCP search surface. The existing
-   global fact-memory package is not part of the extraction.
+1. `sessionmemory` owns portable records, semantic validation, canonical
+   extraction/reconciliation, temporal state, provenance, recall, trace, and
+   forget contracts. It imports no Balda transport, MCP, Fx, NATS, or SQLite.
+2. `sessionmemory/app` owns the portable `Runtime`, `Deriver`, typed turn and
+   boundary orchestration, canonical hydration, projection coordination, and
+   lifecycle ports.
+3. `sessionmemory/store/badger` owns canonical Badger persistence and
+   `sessionmemory/index/bleve` owns the rebuildable lexical projection.
+4. `sessionmemory/mcp` registers only the neutral `session_memory.search` and
+   `session_memory.trace` tools. An injected resolver supplies exact
+   authenticated scope; no locator is accepted from tool arguments.
+5. Balda-only integrations remain in `internal/apps/balda`: `sessionmemorycmd`
+   envelopes, `sessionmemoryapp` capture/redaction/outbox/worker wiring,
+   `sessionmemorymcp` broker context, and `eventbus/nats` delivery policy.
 
-A future Go module can publish steps 1–2 and a standalone package can publish
-the native Store/derivation ports without carrying Balda transport policy.
-This story does not vendor a memory SDK or move `pack/callee/**`.
+A later story may move the public subtree into a separate module or service
+adapter. This story intentionally ships no remote service, vector/Vecgo index,
+encryption, or memory SDK, and does not move `pack/callee/**`. The global
+fact-memory package remains outside the extraction.
 
 ### Delivery formatting
 
@@ -1293,8 +1320,9 @@ session/job/goal/delivery/memory"]
   - Actorlayer `Source`/`Delivery`/dispatch contracts are the boundary consumed
     by runtime, handlers, and product actors.
   - SQLite owns product state/read models (`execution_jobs`, projected
-    `execution_job_events`, job-event and delivery outbox records, session metadata, memory
-    state, scheduler metadata).
+    `execution_job_events`, job-event and delivery outbox records, session metadata,
+    global fact-memory KV, scheduler metadata, and session-memory ingress/audit
+    rows). Canonical session-memory records are owned by the public Badger adapter.
   - Projections are derived views; projection lag/failure never blocks command
     settlement.
 - Command lifecycle events (`command.accepted`, `command.running`,
@@ -1335,7 +1363,7 @@ session/job/goal/delivery/memory"]
     `BALDA_EVENTS` into SQLite read models. Permanent projection failures are
     terminated to `BALDA_DLQ`; transient failures retry with bounded delivery.
   - `BALDA_SESSION_MEMORY_WORKER` (when enabled): one-at-a-time explicit-ack
-    consumer on `BALDA_SESSION_MEMORY`; provider retries retain ordering and
+    consumer on `BALDA_SESSION_MEMORY`; worker retries retain ordering and
     publish a redacted diagnostic to `BALDA_DLQ` before termination.
 
 #### Stream/consumer table
@@ -1348,7 +1376,7 @@ session/job/goal/delivery/memory"]
 | `BALDA_WORKER_COMMANDS` | command worker consumer (on `BALDA_COMMANDS`) | `balda.v1.cmd.>` | deliver-all + explicit ack | `ack_wait`, `max_deliver`, `max_ack_pending`, `fetch_batch`, `fetch_wait` |
 | `BALDA_EVENT_PROJECTOR` | event projector consumer (on `BALDA_EVENTS`) | `balda.v1.evt.>` | deliver-all + explicit ack | same retry/backpressure knobs as command consumer; projector applies idempotent read-model updates |
 | `BALDA_SESSION_MEMORY` | session-memory export stream (optional) | `balda.v1.session_memory.>` | work-queue retention, `DiscardNew` | `max_age`, `max_bytes`, `max_msg_size` |
-| `BALDA_SESSION_MEMORY_WORKER` | session-memory consumer (optional) | `balda.v1.session_memory.>` | deliver-all + explicit ack, serialized | `ack_wait`, `fetch_wait`, provider retry and bounded shutdown |
+| `BALDA_SESSION_MEMORY_WORKER` | session-memory consumer (optional) | `balda.v1.session_memory.>` | deliver-all + explicit ack, serialized | `ack_wait`, `fetch_wait`, worker retry and bounded shutdown |
 
 - Stable subjects:
   - Commands: `balda.v1.cmd.session`, `balda.v1.cmd.job`,

@@ -47,7 +47,7 @@ func TestBus_SessionMemoryWorkerProcessesOrderedExportsAndRetries(t *testing.T) 
 	var calls []string
 	turnAttempts := 0
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(context.Context, sessionmemory.Turn) error {
+		IngestTurnFunc: func(context.Context, sessionmemory.Turn) error {
 			mu.Lock()
 			defer mu.Unlock()
 			calls = append(calls, "turn")
@@ -57,14 +57,14 @@ func TestBus_SessionMemoryWorkerProcessesOrderedExportsAndRetries(t *testing.T) 
 			}
 			return nil
 		},
-		BoundaryFunc: func(context.Context, sessionmemory.Boundary) error {
+		ApplyBoundaryFunc: func(context.Context, sessionmemory.Boundary) error {
 			mu.Lock()
 			calls = append(calls, "boundary")
 			mu.Unlock()
 			return nil
 		},
 	}
-	worker, err := sessionmemoryapp.NewWorker(h.Bus.SessionMemoryTransport(), provider, sessionmemoryapp.Config{
+	worker, err := sessionmemoryapp.NewCapabilityWorker(h.Bus.SessionMemoryTransport(), provider, provider, sessionmemoryapp.Config{
 		Enabled:          true,
 		MaxAttempts:      2,
 		RetryBaseDelay:   10 * time.Millisecond,
@@ -72,7 +72,7 @@ func TestBus_SessionMemoryWorkerProcessesOrderedExportsAndRetries(t *testing.T) 
 		ProgressInterval: 5 * time.Millisecond,
 	}, zerolog.Nop())
 	if err != nil {
-		t.Fatalf("NewWorker() error = %v", err)
+		t.Fatalf("NewCapabilityWorker() error = %v", err)
 	}
 	if err := worker.Start(context.Background()); err != nil {
 		t.Fatalf("worker.Start() error = %v", err)
@@ -101,15 +101,15 @@ func TestBus_SessionMemoryWorkerPublishesDLQBeforeTerm(t *testing.T) {
 		t.Fatalf("PublishSessionMemory() error = %v", err)
 	}
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(context.Context, sessionmemory.Turn) error {
+		IngestTurnFunc: func(context.Context, sessionmemory.Turn) error {
 			return sessionmemory.PermanentError(sessionmemory.CodeScopeViolation, "scope rejected", errors.New("secret provider body"))
 		},
 	}
-	worker, err := sessionmemoryapp.NewWorker(h.Bus.SessionMemoryTransport(), provider, sessionmemoryapp.Config{
+	worker, err := sessionmemoryapp.NewCapabilityWorker(h.Bus.SessionMemoryTransport(), provider, provider, sessionmemoryapp.Config{
 		Enabled: true,
 	}, zerolog.Nop())
 	if err != nil {
-		t.Fatalf("NewWorker() error = %v", err)
+		t.Fatalf("NewCapabilityWorker() error = %v", err)
 	}
 	if err := worker.Start(context.Background()); err != nil {
 		t.Fatalf("worker.Start() error = %v", err)
@@ -150,18 +150,18 @@ func TestBus_SessionMemoryWorkerCancellationLeavesExportForRedelivery(t *testing
 	}
 	started := make(chan struct{})
 	provider := &sessionmemorytest.Provider{
-		SyncTurnFunc: func(ctx context.Context, _ sessionmemory.Turn) error {
+		IngestTurnFunc: func(ctx context.Context, _ sessionmemory.Turn) error {
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
 		},
 	}
-	worker, err := sessionmemoryapp.NewWorker(firstBus.SessionMemoryTransport(), provider, sessionmemoryapp.Config{
+	worker, err := sessionmemoryapp.NewCapabilityWorker(firstBus.SessionMemoryTransport(), provider, provider, sessionmemoryapp.Config{
 		Enabled:         true,
 		ShutdownTimeout: time.Second,
 	}, zerolog.Nop())
 	if err != nil {
-		t.Fatalf("first NewWorker() error = %v", err)
+		t.Fatalf("first NewCapabilityWorker() error = %v", err)
 	}
 	if err := worker.Start(context.Background()); err != nil {
 		t.Fatalf("first worker.Start() error = %v", err)

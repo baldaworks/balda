@@ -1,52 +1,73 @@
-# Session-memory v2 acceptance and operations
+# Session-memory acceptance and operations
 
-This matrix records evidence for the approved v2 design. It is a verification
-map, not a claim that environment-dependent latency targets have already been
-measured. The current scope covers logical fail-closed forgetting, retention,
-projection removal, canonical Badger state, and Bleve lexical retrieval. This
-matrix records only the current logical forgetting, retention, projection, and
-canonical-storage contracts.
+This matrix records positive evidence for the approved extraction-ready
+session-memory design. It is not a plan for a remote service. No test is added
+to assert that removed symbols, old table names, or legacy MCP names are absent.
 
 ## Ownership and restart invariants
 
 | Contract | Owner | Positive evidence |
 | --- | --- | --- |
-| Exact locator and personal/group isolation | `sessionmemory`, `locatorref`, `sessionmemoryapp` | Scope validation, broker-bound MCP tests, foreign-scope recall rejection |
-| Canonical identity, CAS, idempotent outcome, provenance | `state` Badger adapter | Canonical mutation, replay, integrity, provenance, and reopen tests |
-| Durable ingress before publish | `sessionmemoryapp` ingress outbox + NATS adapter | Ingress outbox restart and PubAck integration tests |
-| Mandatory lexical candidates | `state.BleveRecallProjection` | Russian/English analyzer, metadata filter, generation switch, reopen tests |
-| Canonical recall truth | `sessionmemoryapp.RecallService` | Hydration, active/lifecycle, as-of/expiry, sensitivity, evidence, scope, and lag checks |
-| User-facing boundary | `sessionmemorymcp` | Additive filters, compact evidence/explain, separate Trace, untrusted reference marker |
+| Exact locator and personal/group isolation | `sessionmemory`, Balda `locatorref`, `sessionmemoryapp` | Scope validation, broker-bound context tests, and foreign-scope recall rejection |
+| Canonical identity, CAS, idempotent outcome, provenance | `sessionmemory` + `sessionmemory/store/badger` | Canonical processor, operation, reader, replay, integrity, and reopen tests |
+| Durable ingress before publish | Balda `sessionmemoryapp` + `eventbus/nats` | Ingress outbox FIFO/lease/audit tests and existing worker contract tests |
+| Rebuildable lexical candidates | `sessionmemory/index/bleve` | Projection apply, metadata filtering, generation/reopen tests |
+| Canonical recall truth | `sessionmemory/app` | Hydration, active/lifecycle, as-of/expiry, sensitivity, evidence, scope, and lag tests |
+| User-facing boundary | `sessionmemory/mcp` | Neutral tool registration, bounded inputs/outputs, scope injection, and untrusted-reference tests |
+| Authenticated Balda context | `internal/apps/balda/sessionmemorymcp` | Broker binding, header overwrite, and invalid-context tests |
+| Global explicit facts | `internal/apps/balda/memory` | Positive `balda.memory.read`/`balda.memory.remember` store and MCP tests |
 
 ## Requirement evidence
 
-| Requirement family | Evidence location | Gate |
+| Requirement | Evidence location | Gate |
 | --- | --- | --- |
-| State/event identity and temporal validity | `sessionmemory/v2.go`, reconciler and canonical tests | `go test -race ./sessionmemory/...` |
-| Evidence and failed-turn capture | `sessionmemory/derived_validation.go`, capture and worker tests | focused session-memory race suite |
-| Incremental canonical mutation and migration | `internal/apps/balda/state/badger_session_memory*.go` | Badger integrity, migration, replay, and reopen tests |
-| Ordered processing and ingress durability | `sessionmemoryapp`, NATS adapter, runtime integration tests | `go test -race ./internal/apps/balda/...` |
-| Bounded retrieval and structured filters | `sessionmemory/recall.go`, `sessionmemoryapp/recall.go`, Bleve adapter, MCP tests | recall race suite and full test gate |
-| Rebuildable views and projection checkpoints | `sessionmemory/projection*.go`, Badger checkpoint tests | projection coordinator and checkpoint tests |
-| Logical forget/retention and stale-hit fail-closed behavior | canonical logical/forget tests and RecallService tests | positive active/forgotten/sensitivity/scope gates |
-| Untrusted recall and global-fact separation | MCP contract and global memory tests | MCP schema and architecture gates |
+| REQ-OWN-001 semantic ownership | `sessionmemory` canonical processor and `sessionmemory/app` turn/boundary services | `go test -race ./sessionmemory/...` |
+| REQ-API-002 narrow capabilities | `sessionmemory/app/ports.go`, `runtime.go`, Balda composition | full race test and architecture lint |
+| REQ-STO-003 independent adapters | `sessionmemory/store/badger`, `sessionmemory/index/bleve` | adapter race tests and Badger reopen/Bleve rebuild positives |
+| REQ-MCP-004 neutral search/trace | `sessionmemory/mcp/mcp.go`, `mcp_test.go` | MCP contract tests |
+| REQ-HOST-005 host delivery ownership | Balda `sessionmemorycmd`, `sessionmemoryapp`, `eventbus/nats`, and state ingress outbox | Balda race tests and outbox positives |
+| REQ-LEG-006 legacy removal and migration | `state/migrations/00033_drop_legacy_session_memory.sql`, public runtime composition | positive ingress/audit migration tests and architecture lint |
+| REQ-DOC-007 package and compatibility docs | this matrix, `README.md`, `docs/balda.md`, `session-memory-native.md` | documentation review |
+| REQ-IND-008 portable dependency boundary | `.go-arch-lint.yml`, public package imports | `go tool go-arch-lint check --project-path .` |
+| REQ-COMP-009 canonical behavior continuity | core, app, Badger, Bleve, forget, recall, and lifecycle tests | `go test -race ./...` |
+| REQ-ENF-010 component enforcement | `.go-arch-lint.yml` session-memory components and vendor policy | architecture lint |
+| REQ-QUAL-011 current positive contract only | repository test suite; no blacklist/compatibility tests | all required gates |
+
+## Data and lifecycle invariants
+
+- Badger is the canonical source of truth. Bleve is a disposable lexical
+  projection and may be rebuilt without changing logical memory state.
+- `balda.session_memory` configuration, canonical/projection paths, NATS
+  subjects, and startup ordering remain stable.
+- SQLite migrations `00030`–`00032` continue to support ingress outbox and
+  audit behavior. Migration `00033` targets only the six unsupported `00029`
+  domain tables, drops them child-first, and recreates them empty only in
+  `Down`; dropped rows are unrecoverable.
+- The migration does not touch `internal/apps/balda/memory`, generic SQLite KV
+  state, `memory/global`, `MEMORY.md` import, or ingress/audit tables.
+- If canonical Badger state is absent, the enabled runtime opens empty. No
+  SQLite-to-Badger importer or migration coordinator runs.
+- Forget remains a trusted Go capability. Logical denial precedes projection
+  cleanup, and recall rejects denied, stale, foreign, or out-of-scope records.
+- The bundled MCP server exposes only `session_memory.search` and
+  `session_memory.trace`; it does not expose ingest or forget mutation tools.
 
 ## Operational sequence
 
-Startup follows the repository lifecycle: load configuration, start bundled
-MCP lifecycle, open the single canonical Badger owner and rebuildable
-projection handles, then start the Balda provider and channel runtime. Disabled
-session memory opens no stream, worker, or projection files.
+Startup follows the repository lifecycle: load configuration, start the bundled
+MCP lifecycle, start the enabled session-memory runtime, start the Balda
+provider, then start channel and other ingress runtimes. Disabled session memory
+opens no canonical, projection, stream, or worker resource.
 
-Shutdown stops ingress, drains per-scope work, commits pending projection
-batches, records watermarks only after commit, closes projections, then closes
-the canonical owner. A dirty generation is never activated after reopen; it is
-discarded or rebuilt from canonical changes.
+Shutdown stops ingress and durable transport in the existing order, publishes
+required session boundaries while transport is live, drains per-scope work,
+then closes projection, canonical Badger, and model resources. Projection files
+are rebuildable maintenance state and are not logical export/import data.
 
-For rollback, disable the Bleve projection or the whole session-memory feature
-and restart. Canonical records and the global fact KV are not deleted.
-Projection files are rebuildable maintenance state and are not part of logical
-export/import.
+The operator runbook in [`docs/balda.md`](../balda.md#operator-verification-runbook)
+uses metadata-only live checks when credentials and a real deployment are
+available. It does not replace the deterministic repository gates and must not
+record message bodies, recalled text, credentials, or capability URLs.
 
 ## Required checks
 
@@ -57,21 +78,19 @@ go test -race ./...
 go tool golangci-lint run
 go tool go-arch-lint check --project-path .
 git diff --check
+bd lint
 ```
 
-Focused positive checks used for the current increment:
+Focused positive checks for the session-memory increment are:
 
 ```text
-go test -race -count=1 ./sessionmemory ./internal/apps/balda/sessionmemoryapp ./internal/apps/balda/sessionmemorymcp ./internal/apps/balda/state
-go test ./...
+go test -race ./sessionmemory/...
+go test -race ./internal/apps/balda/sessionmemoryapp/...
+go test -race ./internal/apps/balda/sessionmemorymcp/...
+go test -race ./internal/apps/balda/state -run 'TestSQLiteSessionMemoryIngressOutbox'
+go test -race ./internal/apps/balda/memory/...
 ```
 
-The 2026-08-06 local benchmark shape recorded 100,000 one-scope commits at
-approximately 2.515 ms/commit. The initial 50,000-mutation/128-scope run
-recorded apply p95 759.7 ms and p99 879.7 ms. After the safe RW-gate tuning in
-commit `92fecd6`, the run recorded p95 270.3 ms and p99 294.1 ms. The explicit
-requirement review approved revised reference-profile targets of p95 ≤ 300 ms
-and p99 ≤ 350 ms; the tuned run passes those targets without weakening
-SyncWrites, scope correctness, idempotency, or one-owner semantics. Projection
-lag and restore-drill targets still require a dedicated reference environment
-and remain unmeasured.
+These checks validate current canonical, adapter, ingress, authentication, and
+global-fact behavior. They do not test a remote session-memory service because
+no such service is part of this story.

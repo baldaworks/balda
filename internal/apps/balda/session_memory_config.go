@@ -14,6 +14,9 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/sessionmemory"
+	portableapp "github.com/normahq/balda/sessionmemory/app"
+	blevestore "github.com/normahq/balda/sessionmemory/index/bleve"
+	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
 )
 
 const (
@@ -151,15 +154,7 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 	return nil
 }
 
-func newSessionMemoryProvider(cfg SessionMemoryConfig, store sessionmemory.Store, builder *baldaagent.Builder, providerID, workingDir string) (sessionmemory.Provider, error) {
-	if !cfg.Enabled {
-		return sessionmemoryapp.DisabledProvider{}, nil
-	}
-	provider, _, err := newNativeSessionMemoryComponents(cfg, store, builder, providerID, workingDir)
-	return provider, err
-}
-
-func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder *baldaagent.Builder, providerID, workingDir string) (*sessionmemoryapp.Deriver, sessionmemoryapp.StructuredInvoker, error) {
+func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder *baldaagent.Builder, providerID, workingDir string) (*portableapp.Deriver, portableapp.StructuredInvoker, error) {
 	if err := validateSessionMemoryConfig(cfg); err != nil {
 		return nil, nil, err
 	}
@@ -177,7 +172,7 @@ func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder *baldaagent.Builde
 	if err != nil {
 		return nil, nil, err
 	}
-	deriver, err := sessionmemoryapp.NewDeriver(invoker)
+	deriver, err := portableapp.NewDeriver(invoker)
 	if err != nil {
 		_ = invoker.Close(context.Background())
 		return nil, nil, err
@@ -185,39 +180,75 @@ func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder *baldaagent.Builde
 	return deriver, invoker, nil
 }
 
-func newNativeSessionMemoryComponents(cfg SessionMemoryConfig, store sessionmemory.Store, builder *baldaagent.Builder, providerID, workingDir string) (*sessionmemoryapp.NativeProvider, *sessionmemoryapp.Deriver, error) {
-	deriver, invoker, err := newSessionMemoryDeriver(cfg, builder, providerID, workingDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	provider, err := sessionmemoryapp.NewNativeProvider(store, deriver, invoker)
-	if err != nil {
-		_ = invoker.Close(context.Background())
-		return nil, nil, err
-	}
-	return provider, deriver, nil
+// projectionSyncAdapter keeps projection coordination behind the portable
+// application port while the composition root owns shutdown ordering.
+type projectionSyncAdapter struct {
+	runtime *portableapp.ProjectionRuntime
 }
 
-func newCanonicalSessionMemoryProvider(cfg SessionMemoryConfig, legacyStore sessionmemory.Store, builder *baldaagent.Builder, providerID, workingDir, stateDir string) (sessionmemory.Provider, error) {
+func (a projectionSyncAdapter) Sync(ctx context.Context, scope sessionmemory.Scope) error {
+	if a.runtime == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeDisabled, "session-memory projection is unavailable", nil)
+	}
+	return a.runtime.Sync(ctx, scope)
+}
+
+// canonicalRuntimeResources is one composition-root lifecycle owner for the
+// projection coordinator, Bleve adapter, Badger maintenance/store, and Norma
+// invoker. Keeping these resources together prevents Runtime.Close from
+// closing canonical storage before in-flight projection work has drained.
+type canonicalRuntimeResources struct {
+	projection  *portableapp.ProjectionRuntime
+	applier     *blevestore.BleveCanonicalApplier
+	maintenance *badgerstore.CanonicalMaintenance
+	invoker     portableapp.StructuredInvoker
+}
+
+func (r *canonicalRuntimeResources) Start(ctx context.Context) error {
+	if r == nil || r.maintenance == nil {
+		return nil
+	}
+	return r.maintenance.Start(ctx)
+}
+
+func (r *canonicalRuntimeResources) Close(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	var errs []error
+	if r.projection != nil {
+		errs = append(errs, r.projection.Close(ctx))
+	}
+	if r.applier != nil {
+		errs = append(errs, r.applier.Close())
+	}
+	if r.maintenance != nil {
+		errs = append(errs, r.maintenance.Close(ctx))
+	}
+	if r.invoker != nil {
+		errs = append(errs, r.invoker.Close(ctx))
+	}
+	return errors.Join(errs...)
+}
+
+// newCanonicalSessionMemoryRuntime composes the supported portable runtime.
+// Balda contributes only the Norma invoker, paths, redaction/delivery seams,
+// and the authenticated locator adapter; canonical semantics and capability
+// ownership remain in sessionmemory/app and its public adapters.
+func newCanonicalSessionMemoryRuntime(cfg SessionMemoryConfig, builder *baldaagent.Builder, providerID, workingDir, stateDir string) (*portableapp.Runtime, error) {
 	if !cfg.Enabled {
-		return sessionmemoryapp.DisabledProvider{}, nil
+		return portableapp.NewRuntime(portableapp.RuntimeConfig{})
 	}
 	deriver, invoker, err := newSessionMemoryDeriver(cfg, builder, providerID, workingDir)
 	if err != nil {
 		return nil, err
 	}
-	canonicalStore, err := baldastate.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir))
+	canonicalStore, err := badgerstore.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir))
 	if err != nil {
 		_ = invoker.Close(context.Background())
 		return nil, fmt.Errorf("open canonical session-memory store: %w", err)
 	}
-	reader, err := baldastate.NewCanonicalReader(canonicalStore)
-	if err != nil {
-		_ = canonicalStore.Close()
-		_ = invoker.Close(context.Background())
-		return nil, err
-	}
-	processor, err := sessionmemory.NewCanonicalTurnProcessor(canonicalStore, deriver, sessionmemory.PolicyRegistry{Version: "policy-v1"})
+	reader, err := badgerstore.NewCanonicalReader(canonicalStore)
 	if err != nil {
 		_ = canonicalStore.Close()
 		_ = invoker.Close(context.Background())
@@ -229,36 +260,33 @@ func newCanonicalSessionMemoryProvider(cfg SessionMemoryConfig, legacyStore sess
 		_ = invoker.Close(context.Background())
 		return nil, err
 	}
-	projection, err := baldastate.NewBleveRecallProjection(baldastate.SessionMemoryProjectionPath(stateDir))
+	projection, err := blevestore.Open(baldastate.SessionMemoryProjectionPath(stateDir))
 	if err != nil {
 		_ = canonicalStore.Close()
 		_ = invoker.Close(context.Background())
 		return nil, err
 	}
-	applier, err := baldastate.NewBleveCanonicalApplier(projection, reader)
+	var projectionReader sessionmemory.RecallCanonicalReader = reader
+	applier, err := blevestore.NewBleveCanonicalApplier(projection, projectionReader)
 	if err != nil {
 		_ = projection.Close()
 		_ = canonicalStore.Close()
 		_ = invoker.Close(context.Background())
 		return nil, err
 	}
-	projectionRuntime, err := sessionmemoryapp.NewProjectionRuntime(canonicalStore, canonicalStore, applier, "bleve", 0)
+	var projectionCanonical sessionmemory.CanonicalStore = canonicalStore
+	var projectionCheckpoints sessionmemory.ProjectionCheckpointStore = canonicalStore
+	var projectionApplier sessionmemory.ProjectionApplier = applier
+	projectionRuntime, err := portableapp.NewProjectionRuntime(projectionCanonical, projectionCheckpoints, projectionApplier, "bleve", 0)
 	if err != nil {
 		_ = applier.Close()
 		_ = canonicalStore.Close()
 		_ = invoker.Close(context.Background())
 		return nil, err
 	}
-	recall, err := sessionmemoryapp.NewRecallService(reader, projection)
+	maintenance, err := badgerstore.NewCanonicalMaintenance(canonicalStore, badgerstore.CanonicalMaintenanceConfig{})
 	if err != nil {
-		_ = applier.Close()
-		projectionRuntime.Close()
-		_ = canonicalStore.Close()
-		_ = invoker.Close(context.Background())
-		return nil, err
-	}
-	migration, err := sessionmemoryapp.NewMigrationCoordinator(legacyStore, canonicalStore, canonicalStore)
-	if err != nil {
+		_ = projectionRuntime.Close(context.Background())
 		_ = applier.Close()
 		_ = canonicalStore.Close()
 		_ = invoker.Close(context.Background())
@@ -266,38 +294,31 @@ func newCanonicalSessionMemoryProvider(cfg SessionMemoryConfig, legacyStore sess
 	}
 	forget, err := sessionmemoryapp.NewCanonicalForgetService(canonicalStore, canonicalStore, canonicalStore, canonicalStore, scrubbers{canonical: canonicalStore, projection: applier})
 	if err != nil {
+		_ = projectionRuntime.Close(context.Background())
 		_ = applier.Close()
-		_ = canonicalStore.Close()
+		_ = maintenance.Close(context.Background())
 		_ = invoker.Close(context.Background())
 		return nil, err
 	}
-	maintenance, err := baldastate.NewCanonicalMaintenance(canonicalStore, baldastate.CanonicalMaintenanceConfig{})
-	if err != nil {
-		_ = applier.Close()
-		_ = canonicalStore.Close()
-		_ = invoker.Close(context.Background())
-		return nil, err
-	}
-	startRuntime := func(ctx context.Context) error {
-		if err := maintenance.Start(ctx); err != nil {
-			_ = maintenance.Stop(context.Background())
-			return err
-		}
-		return nil
-	}
-	closeRuntime := func(ctx context.Context) error {
-		projectionRuntime.Close()
-		return errors.Join(maintenance.Stop(ctx), applier.Close(), invoker.Close(ctx), canonicalStore.Close())
-	}
-	canonical, err := sessionmemoryapp.NewCanonicalProviderWithRuntime(sessionmemoryapp.CanonicalProviderConfig{
-		Processor: processor, Boundary: boundary, Derived: reader, Recall: recall, Forget: forget,
-		Before: migration.MigrateScope, Project: projectionRuntime.Sync, Start: startRuntime, Close: closeRuntime, Derivation: sessionmemory.LegacyDerivationRef(),
+	resources := &canonicalRuntimeResources{projection: projectionRuntime, applier: applier, maintenance: maintenance, invoker: invoker}
+	runtime, err := portableapp.NewRuntime(portableapp.RuntimeConfig{
+		CanonicalStore:   canonicalStore,
+		Extractor:        deriver,
+		Policy:           sessionmemory.PolicyRegistry{Version: "policy-v1"},
+		Derivation:       sessionmemory.LegacyDerivationRef(),
+		Boundary:         boundary,
+		RecallCanonical:  reader,
+		RecallProjection: projection,
+		CanonicalDerived: reader,
+		Forget:           forget,
+		Project:          projectionSyncAdapter{runtime: projectionRuntime},
+		Lifecycle:        []portableapp.Lifecycle{resources},
 	})
 	if err != nil {
-		_ = closeRuntime(context.Background())
+		_ = resources.Close(context.Background())
 		return nil, err
 	}
-	return canonical, nil
+	return runtime, nil
 }
 
 func sessionMemoryWorkerConfig(cfg SessionMemoryConfig) (sessionmemoryapp.Config, error) {

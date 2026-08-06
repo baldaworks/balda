@@ -116,17 +116,16 @@ automation, and agent execution instead of separate bots and scripts.
 
 ### 5. Durable session memory
 
-Balda can optionally persist completed, text-only turns in its canonical
-Badger-backed session-memory Store with a rebuildable Bleve lexical projection
-and expose exact-scope recall through
-`balda.session_memory.search` and provenance through
-`balda.session_memory.trace`. This is separate from the existing global fact
+Balda can optionally persist completed, text-only turns in the extraction-ready
+`sessionmemory/app` runtime. Canonical state is stored by the public
+`sessionmemory/store/badger` adapter and recalled through the rebuildable
+`sessionmemory/index/bleve` lexical projection. The bundled MCP server exposes
+the neutral tools `session_memory.search` and `session_memory.trace` within the
+authenticated exact scope. This is separate from the existing global fact
 memory (`balda.memory.*`), which remains in `state.db` and keeps its current
 contract.
 
-The feature is disabled by default. Enable it with the JetStream handoff; an
-existing SQLite session-memory store is imported through the bounded migration
-gate before canonical reads are advertised:
+The feature is disabled by default. Enable it with the JetStream handoff:
 
 ```yaml
 balda:
@@ -142,8 +141,11 @@ balda:
 
 Before enabling it in an existing deployment, back up `balda.state_dir` and
 confirm that the configured Balda provider, channel, and NATS endpoint are
-available. Session memory remains distinct from global `balda.memory.*` fact
-memory; enabling or disabling one does not change the other.
+available. Existing canonical Badger state is reused when present; an absent
+canonical path starts empty. The release does not import the removed SQLite
+session-memory domain tables. Session memory remains distinct from global
+`balda.memory.*` fact memory; enabling or disabling one does not change the
+other.
 
 Exports are keyed by the exact transport-neutral locator
 `<channel_type>:<address_key>`. A personal conversation, a personal topic, a

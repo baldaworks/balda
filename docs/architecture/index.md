@@ -36,12 +36,31 @@ Use this map to find the authoritative runtime contracts.
 - `locatorref` owns the public `<channel_type>:<address_key>` reference form and must stay independent from concrete transport adapter packages.
 - Use-case packages such as `sessionturn` and MCP surfaces own local ports and depend on small interfaces; composition/wiring code provides concrete adapters.
 - `sessionturn` owns queued-turn restoration and delegates provider iteration through a narrow executor port.
+- Session memory is split into public `sessionmemory` core/application, Badger,
+  Bleve, and neutral MCP packages. Balda retains only host adapters for
+  capture, locator/authentication, ingress outbox, JetStream delivery, Norma,
+  and lifecycle wiring.
+- `sessionmemory/store/badger` is canonical truth and
+  `sessionmemory/index/bleve` is a rebuildable projection. Neither adapter
+  owns Balda transport or global fact-memory policy.
+- `internal/apps/balda/memory` remains the separate owner of global
+  `balda.memory.read` and `balda.memory.remember`; session-memory migration
+  work must not move or delete that subsystem.
+- The neutral bundled MCP names are `session_memory.search` and
+  `session_memory.trace`. Scope is injected by Balda's authenticated context;
+  locators are not tool arguments.
 - One composition-root lifecycle coordinator starts durable infrastructure before every ingress and stops it in reverse order.
 - Actor execution contract is split: core actor mechanics in Norma; Balda owns product actors, the configured provider runtime, command runtime adapter policy, and all queue/retry/dead-letter policy.
 
 ## Runtime Flow
 
 Telegram/Zulip/Slack chat/Slack agent/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
+
+Completed turns and session boundaries additionally flow through Balda redaction
+and the SQLite ingress outbox, JetStream/PubAck, a bounded per-scope worker,
+typed `sessionmemory/app` ingestion, canonical Badger mutation, and a
+rebuildable Bleve sync. Recall then hydrates candidates canonically before the
+neutral MCP adapter returns bounded untrusted references.
 
 ## Related tests
 
@@ -67,10 +86,14 @@ Telegram/Zulip/Slack chat/Slack agent/webhook/scheduler ingress -> actorlayer tr
 - `internal/apps/balda/agent`
 - `internal/apps/balda/session`
 - `internal/apps/balda/state`
-- `internal/apps/balda/sessionmemory`
 - `internal/apps/balda/sessionmemorycmd`
 - `internal/apps/balda/sessionmemoryapp`
 - `internal/apps/balda/sessionmemorymcp`
+- `sessionmemory`
+- `sessionmemory/app`
+- `sessionmemory/store/badger`
+- `sessionmemory/index/bleve`
+- `sessionmemory/mcp`
 
 ## Update triggers
 

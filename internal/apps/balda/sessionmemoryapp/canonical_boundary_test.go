@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/sessionmemory"
+	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
 )
 
 func TestCanonicalBoundaryProcessorPersistsBothStagesAndReplays(t *testing.T) {
-	store, err := state.OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "canonical.badger"))
+	store, err := badgerstore.OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "canonical.badger"))
 	if err != nil {
 		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
 	}
@@ -81,7 +81,7 @@ func TestCanonicalBoundaryProcessorPersistsBothStagesAndReplays(t *testing.T) {
 	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err != nil {
 		t.Fatalf("seed ApplyCanonicalMutation() error = %v", err)
 	}
-	reader, err := state.NewCanonicalReader(store)
+	reader, err := badgerstore.NewCanonicalReader(store)
 	if err != nil {
 		t.Fatalf("NewCanonicalReader() error = %v", err)
 	}

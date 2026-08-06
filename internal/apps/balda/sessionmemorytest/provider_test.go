@@ -22,17 +22,14 @@ func TestProviderRecordsCallsAndUsesCallbacks(t *testing.T) {
 		t.Fatalf("NewBoundary() error = %v", err)
 	}
 	provider := &Provider{}
-	if err := provider.SyncTurn(context.Background(), turn); err != nil {
-		t.Fatalf("SyncTurn() error = %v", err)
+	if err := provider.IngestTurn(context.Background(), turn); err != nil {
+		t.Fatalf("IngestTurn() error = %v", err)
 	}
-	if err := provider.OnSessionBoundary(context.Background(), boundary); err != nil {
-		t.Fatalf("OnSessionBoundary() error = %v", err)
+	if err := provider.ApplyBoundary(context.Background(), boundary); err != nil {
+		t.Fatalf("ApplyBoundary() error = %v", err)
 	}
-	if err := provider.Close(context.Background()); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	if len(provider.Turns()) != 1 || len(provider.Boundaries()) != 1 || provider.CloseCalls() != 1 {
-		t.Fatalf("recorded calls = turns:%d boundaries:%d close:%d", len(provider.Turns()), len(provider.Boundaries()), provider.CloseCalls())
+	if len(provider.Turns()) != 1 || len(provider.Boundaries()) != 1 {
+		t.Fatalf("recorded calls = turns:%d boundaries:%d", len(provider.Turns()), len(provider.Boundaries()))
 	}
 	recorded := provider.Turns()
 	recorded[0].Messages[0].Text = "mutated snapshot"
@@ -40,5 +37,3 @@ func TestProviderRecordsCallsAndUsesCallbacks(t *testing.T) {
 		t.Fatalf("stored turn text = %q after snapshot mutation, want hello", got)
 	}
 }
-
-var _ sessionmemory.Provider = (*Provider)(nil)

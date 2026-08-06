@@ -1,23 +1,53 @@
-# Session memory core
+# Session memory
 
-`github.com/normahq/balda/sessionmemory` is an extraction-ready Go library for durable, provenance-grounded session memory. It is currently versioned with Balda; it is not yet a separately released module or service.
+`github.com/normahq/balda/sessionmemory` is the extraction-ready, storage-neutral
+core for durable, provenance-grounded session memory. It is versioned with
+Balda in this repository; this story does not create a nested module, a remote
+service, or a network control API.
 
-The library owns two related contract families:
+The core owns the semantic contract after a host supplies a validated turn or
+boundary:
 
-- raw completed turns and lifecycle boundaries (`session-memory/v1`);
-- derived atoms, scenarios, profiles, processing, retrieval, and forgetting (`session-memory-derived/v1`).
+- candidate extraction and evidence grounding;
+- temporal interpretation and state/event reconciliation;
+- exact-scope identity, idempotent operation outcomes, and provenance;
+- bounded recall and trace validation; and
+- source/scope forgetting with fail-closed logical denial.
 
-It depends only on the Go standard library. Consumers provide persistence and model adapters through public ports.
+The core imports only the Go standard library. Transport parsing, authentication,
+delivery, provider credentials, and persistence paths stay in host adapters.
 
-## Isolation model
+## Package ownership
 
-`Scope` is the only ownership and concurrency boundary. Personal conversations,
-personal topics, group chats, and individual group topics must have different
-canonical scope keys. Topic/thread identity is orthogonal to the personal/group
-audience. The core never inherits or shares memory between scopes, even when
-session IDs, source turn IDs, or human participants collide.
+| Package | Responsibility |
+| --- | --- |
+| `sessionmemory` | Portable records, validation, canonical processors, recall/trace/forget contracts, and semantic policy. |
+| `sessionmemory/app` | Portable `Runtime`, `Deriver`, turn/boundary orchestration, projection coordination, recall, trace, and Go-only forget capabilities. |
+| `sessionmemory/store/badger` | Canonical Badger implementation and maintenance lifecycle. Badger is authoritative. |
+| `sessionmemory/index/bleve` | Rebuildable Bleve lexical projection. It never becomes the source of truth. |
+| `sessionmemory/mcp` | Neutral `session_memory.search` and `session_memory.trace` adapter with injected exact-scope resolution. |
+| `sessionmemory/sessionmemorytest` | Positive canonical test support for adapter consumers; it is not the removed legacy Store conformance suite. |
 
-Transport-specific locator parsing stays outside this package. A future adapter maps its authenticated locator to:
+Balda-specific adapters remain under `internal/apps/balda`:
+
+- `sessionmemorycmd` defines the `turn.v1` and `boundary.v1` export envelopes;
+- `sessionmemoryapp` owns redaction, locator classification, SQLite ingress
+  outbox, worker lanes, Norma wiring, and Balda lifecycle integration;
+- `sessionmemorymcp` owns the authenticated broker/context bridge; and
+- `eventbus/nats` owns JetStream publication, acknowledgement, retry, and DLQ
+  behavior.
+
+These host packages depend on the public packages. The public packages do not
+import Balda application, transport, Fx, NATS, or channel packages.
+
+## Isolation and temporal model
+
+`Scope` is the ownership and concurrency boundary. A personal conversation, a
+personal topic, a group conversation, and a group topic have different exact
+scope keys. Topic/thread identity is orthogonal to audience; there is no
+inheritance, promotion, participant merge, or cross-scope fallback.
+
+The host maps an authenticated transport locator to a canonical scope:
 
 ```go
 sessionmemory.Scope{
@@ -26,63 +56,62 @@ sessionmemory.Scope{
 }
 ```
 
-A topic is represented by its exact topic locator in `Key`; it does not inherit the containing group's derived memory.
+The semantic pipeline derives atoms from completed turns, then can synthesize
+scenario and profile records at a boundary. Revisions are append-only and carry
+immutable source or parent provenance. Scope, stable IDs, timestamps, lifecycle
+state, temporal validity, and provenance checks are owned by the application,
+not delegated to a model response.
 
-## Derived model
+## Application capabilities
 
-The engine produces three append-only layers:
+Hosts compose `sessionmemory/app.Runtime` from narrow capabilities:
 
-1. Atoms classify precise facts, preferences, constraints, decisions, and events from completed turns.
-2. Scenarios summarize topic or project context from active same-scope atoms.
-3. A profile summarizes long-lived context for one exact locator from active same-scope atoms or scenarios.
+- `IngestTurn` accepts a validated terminal turn and commits canonical state;
+- `ApplyBoundary` runs boundary synthesis through the same semantic layer;
+- `Search` performs bounded exact-scope recall, hydrating projection candidates
+  against canonical state;
+- `Trace` validates a bounded provenance closure; and
+- `ForgetSource` / `ForgetScope` are explicit Go capabilities and are not MCP
+  mutation tools.
 
-Every revision carries immutable raw-source and/or parent-revision provenance. Updates use explicit coexistence, supersession, and invalidation states. The engine, rather than a model adapter, owns scope, stable IDs, timestamps, revision state, operation identity, and provenance validation.
+`Runtime.Start` and `Runtime.Close` provide ordered lifecycle handling for
+projection, model, and host-supplied resources. A missing capability returns a
+stable disabled error rather than widening another capability's authority.
 
-## Ports and consistency
+## Canonical and projection storage
 
-`NewEngine` accepts:
+`sessionmemory/store/badger` is the authoritative canonical store. It preserves
+the existing `balda.session_memory` path and can be opened directly by another
+in-process host. If the path has no canonical records, the runtime starts with
+empty session memory. `sessionmemory/index/bleve` is a disposable lexical
+projection that can be rebuilt from canonical records; recall never trusts
+projection text without canonical hydration and exact-scope validation.
 
-- a concurrency-safe `Store`;
-- `AtomExtractor`;
-- `ScenarioSynthesizer`;
-- `ProfileSynthesizer`;
-- optional lower hard bounds in `Config`.
+The Balda host retains SQLite only for the durable ingress outbox and audit
+records introduced after the old domain schema. Migration `00033` drops the six
+unsupported legacy SQLite session-memory domain tables in foreign-key-safe
+order. Its `Down` section recreates empty tables for binary rollback, but the
+dropped rows are not recoverable. The global fact-memory subsystem is outside
+this migration and remains in `internal/apps/balda/memory` and `memory/global`.
 
-Processing uses stable operation IDs and exact-scope optimistic concurrency. Replay first asks the Store for a durable outcome, so an already committed stage does not call a model again. A same-scope CAS conflict is returned to the caller; the engine does not rerun potentially nondeterministic model output implicitly. Scenario and profile boundary stages are independently durable, so replay resumes after a partial boundary failure.
+## Neutral MCP surface
 
-A Store must atomically enforce idempotency, CAS, revision transitions, and reverse provenance. The library deliberately ships no production database, filesystem, vector index, or network backend.
+`sessionmemory/mcp` registers only:
 
-## Retrieval and trust
+- `session_memory.search`; and
+- `session_memory.trace`.
 
-`Engine.Search` and `Engine.Trace` are bounded, explicit, on-demand reads. Search validates exact scope, active state, filters, deterministic result shape, and response bounds. Trace additionally requires a closed, acyclic provenance graph with no forgotten source content. Results carry `ReferenceTrustUntrusted`; they are reference data, not executable instructions. The package has no automatic prompt-injection API.
+The caller cannot provide a locator in tool arguments. A host-injected
+authenticated resolver supplies the exact current scope. Results are bounded
+and marked `untrusted_reference`; recalled text is data, never an instruction,
+prompt, or command. Forget remains a trusted in-process Go operation and no
+MCP ingest or forget endpoint is shipped.
 
-## Forgetting
+## Non-goals
 
-`Engine.ForgetSource` calculates the complete reverse-provenance closure, including superseded history. In one atomic Store operation it requires the raw turn text to become an identity-only tombstone and every active or superseded dependent revision to become invalidated. `Engine.ForgetScope` applies the same rule to all readable content in one exact locator.
-
-Forgetting is model-independent: it does not regenerate summaries. It never reads or mutates Balda's separate global explicit fact memory.
-
-## Testing a Store adapter
-
-The `sessionmemory/sessionmemorytest` package includes a deterministic in-memory Store, scripted typed models, and a reusable conformance runner:
-
-```go
-func TestMyStore(t *testing.T) {
-    sessionmemorytest.RunStoreContract(t, func() sessionmemory.Store {
-        return newMyStoreForTest(t)
-    })
-}
-```
-
-The suite exercises end-to-end derivation, replay, CAS atomicity, revision history, reverse provenance, retrieval, forgetting, locator collisions, malformed input, and concurrent same-scope operations under the race detector.
-
-## Explicit non-goals
-
-This package does not provide or change:
-
-- Balda runtime, HTTP, MCP, JetStream, command, or configuration wiring;
-- a production Store, model client, embedding provider, daemon, or separate service;
-- automatic recall or prompt injection;
-- cross-locator sharing or promotion;
-- global explicit fact memory;
-- LLM Wiki, documents, CodeGraph, skills, or an asset control plane.
+This extraction increment does not add a standalone service, remote API, vector
+search/Vecgo, encryption, or a second global-memory implementation. It does not
+move or rename `balda.memory.read`, `balda.memory.remember`, `MEMORY.md` import,
+`memory/global`, or generic SQLite KV state. The removed Engine/Store runtime,
+NativeProvider, importer, migration coordinator, and SQLite domain adapter have
+no compatibility aliases.

@@ -1,2 +1,2 @@
-// Package sessionmemorytest supplies an in-process session-memory Provider fake.
+// Package sessionmemorytest supplies in-process typed ingest capability fakes.
 package sessionmemorytest

@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
+	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/normahq/balda/sessionmemory"
 )
 
@@ -19,6 +20,20 @@ const (
 	HeaderLineageID      = "X-Balda-Session-Lineage-ID"
 	HeaderSessionBinding = "X-Balda-Session-Binding"
 )
+
+// CurrentSession is the authenticated identity attached to one MCP call.
+// The neutral MCP adapter receives only the locator-derived scope; Balda
+// keeps the provider session identity here for binding and authentication.
+type CurrentSession struct {
+	Locator deliverycmd.Locator
+	Session sessionmemory.SessionRef
+}
+
+// SessionResolver supplies the authenticated current identity out of band.
+// Tool arguments are never consulted for scope selection.
+type SessionResolver interface {
+	Resolve(ctx context.Context, req *mcp.CallToolRequest) (CurrentSession, error)
+}
 
 // HeaderSessionResolver is the composition boundary for runtimes that can
 // attach the current Balda session to an MCP HTTP request. The ContextBroker
@@ -67,3 +82,22 @@ func (r HeaderSessionResolver) Resolve(_ context.Context, req *mcp.CallToolReque
 }
 
 var _ SessionResolver = HeaderSessionResolver{}
+
+// ScopeResolverAdapter keeps authenticated Balda context and transport
+// locator classification in the host while satisfying the neutral public MCP
+// port. Tool arguments are never consulted to resolve the scope.
+type ScopeResolverAdapter struct {
+	Session SessionResolver
+	Locator sessionmemoryapp.ScopeResolver
+}
+
+func (a ScopeResolverAdapter) Resolve(ctx context.Context, req *mcp.CallToolRequest) (sessionmemory.Scope, error) {
+	if a.Session == nil {
+		return sessionmemory.Scope{}, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "current session scope is unavailable", nil)
+	}
+	current, err := a.Session.Resolve(ctx, req)
+	if err != nil {
+		return sessionmemory.Scope{}, err
+	}
+	return a.Locator.Resolve(current.Locator)
+}

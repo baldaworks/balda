@@ -11,12 +11,10 @@ import (
 	"github.com/normahq/balda/sessionmemory"
 )
 
-// CanonicalBoundaryProcessor adapts the existing versioned Scenario/Profile
-// model ports to canonical v2 mutations. The temporary Engine facade below is
-// a storage-neutral compatibility adapter; it never owns or writes a legacy
-// Store.
+// CanonicalBoundaryProcessor adapts the memory-owned boundary processor to
+// canonical Badger view and mutation ports through the current narrow APIs.
 type CanonicalBoundaryProcessor struct {
-	engine *sessionmemory.Engine
+	processor *sessionmemory.BoundaryProcessor
 }
 
 func NewCanonicalBoundaryProcessor(canonical sessionmemory.CanonicalStore, view sessionmemory.CanonicalBoundaryViewReader, scenarios sessionmemory.ScenarioSynthesizer, profiles sessionmemory.ProfileSynthesizer, derivation sessionmemory.DerivationRef) (*CanonicalBoundaryProcessor, error) {
@@ -27,30 +25,22 @@ func NewCanonicalBoundaryProcessor(canonical sessionmemory.CanonicalStore, view 
 		return nil, err
 	}
 	store := &canonicalBoundaryStore{canonical: canonical, view: view}
-	engine, err := sessionmemory.NewEngine(store, noopAtomExtractor{}, scenarios, profiles, sessionmemory.Config{Derivation: derivation})
+	processor, err := sessionmemory.NewBoundaryProcessor(store, scenarios, profiles, derivation)
 	if err != nil {
 		return nil, err
 	}
-	return &CanonicalBoundaryProcessor{engine: engine}, nil
+	return &CanonicalBoundaryProcessor{processor: processor}, nil
 }
 
 // ProcessBoundary returns both independently durable stages. A profile/model
 // failure leaves the scenario outcome intact, matching the worker retry
 // contract.
 func (p *CanonicalBoundaryProcessor) ProcessBoundary(ctx context.Context, boundary sessionmemory.Boundary) (sessionmemory.BoundaryOutcome, error) {
-	if p == nil || p.engine == nil {
+	if p == nil || p.processor == nil {
 		return sessionmemory.BoundaryOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical boundary processor is unavailable", nil)
 	}
-	return p.engine.ProcessBoundary(ctx, boundary)
+	return p.processor.ProcessBoundary(ctx, boundary)
 }
-
-type noopAtomExtractor struct{}
-
-func (noopAtomExtractor) ExtractAtoms(context.Context, sessionmemory.AtomExtractionRequest) ([]sessionmemory.AtomCandidate, error) {
-	return nil, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical boundary atom extraction is not used", nil)
-}
-
-var _ sessionmemory.AtomExtractor = noopAtomExtractor{}
 
 type canonicalBoundaryStore struct {
 	canonical sessionmemory.CanonicalStore
@@ -65,7 +55,7 @@ type canonicalCompatibilityReader interface {
 	LoadCanonicalCompatibility(ctx context.Context, scope sessionmemory.Scope, revisionID string) (sessionmemory.CanonicalCompatibilityPayload, bool, error)
 }
 
-var _ sessionmemory.Store = (*canonicalBoundaryStore)(nil)
+var _ sessionmemory.BoundaryStore = (*canonicalBoundaryStore)(nil)
 
 func (s *canonicalBoundaryStore) LookupOperation(ctx context.Context, lookup sessionmemory.OperationLookup) (sessionmemory.OperationLookupResult, error) {
 	if err := lookup.Validate(); err != nil {
@@ -307,22 +297,6 @@ func (s *canonicalBoundaryStore) appendAggregate(mutation *sessionmemory.Canonic
 	mutation.Heads = append(mutation.Heads, sessionmemory.ItemHead{ItemID: item.ItemID, RevisionID: meta.RevisionID})
 	mutation.Payloads = append(mutation.Payloads, payload)
 	return canonicalBoundaryRef{legacy: sessionmemory.RevisionRef{ItemID: meta.ItemID, RevisionID: meta.RevisionID}, canonical: sessionmemory.RevisionRef{ItemID: item.ItemID, RevisionID: meta.RevisionID}}, nil
-}
-
-func (s *canonicalBoundaryStore) LookupForget(context.Context, sessionmemory.ForgetLookup) (sessionmemory.ForgetLookupResult, error) {
-	return sessionmemory.ForgetLookupResult{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "legacy forget lookup is not a canonical boundary operation", nil)
-}
-func (s *canonicalBoundaryStore) ForgetSource(context.Context, sessionmemory.ForgetSourceRequest) (sessionmemory.ForgetOutcome, error) {
-	return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "legacy forget is not a canonical boundary operation", nil)
-}
-func (s *canonicalBoundaryStore) ForgetScope(context.Context, sessionmemory.ForgetScopeRequest) (sessionmemory.ForgetOutcome, error) {
-	return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "legacy forget is not a canonical boundary operation", nil)
-}
-func (s *canonicalBoundaryStore) Search(context.Context, sessionmemory.DerivedSearchRequest) ([]sessionmemory.SearchHit, error) {
-	return nil, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "legacy search is not a canonical boundary operation", nil)
-}
-func (s *canonicalBoundaryStore) Trace(context.Context, sessionmemory.TraceRequest) (sessionmemory.TraceGraph, error) {
-	return sessionmemory.TraceGraph{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "legacy trace is not a canonical boundary operation", nil)
 }
 
 func boundaryFingerprint(request sessionmemory.CommitRequest) string {
