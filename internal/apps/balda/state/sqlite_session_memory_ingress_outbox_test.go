@@ -55,6 +55,47 @@ func TestSQLiteSessionMemoryIngressOutboxPersistsFIFOClaimsAcrossRestart(t *test
 	}
 }
 
+func TestSQLiteSessionMemoryIngressOutboxReplaysTypedToolEvidenceWithoutDuplication(t *testing.T) {
+	ctx := context.Background()
+	provider, err := NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	completedAt := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	turn, err := sessionmemory.NewTerminalTurnWithTools(
+		sessionmemory.Scope{Key: "telegram:ingress-tools:0", Kind: sessionmemory.ScopeKindPersonal},
+		sessionmemory.SessionRef{SessionID: "session-tools", AgentSessionID: "agent-tools"},
+		"turn-tools", completedAt, "question", "answer",
+		[]sessionmemory.Message{{ToolName: "calendar.lookup", ToolCallID: "call-1", Text: "2026-08-06"}},
+		sessionmemory.TurnTerminalStatusSuccess,
+	)
+	if err != nil {
+		t.Fatalf("NewTerminalTurnWithTools() error = %v", err)
+	}
+	export, err := sessionmemorycmd.NewTurn(turn)
+	if err != nil {
+		t.Fatalf("NewTurn() error = %v", err)
+	}
+	record, err := sessionmemorycmd.NewIngressRecord(export, completedAt)
+	if err != nil {
+		t.Fatalf("NewIngressRecord() error = %v", err)
+	}
+	store := provider.SessionMemoryIngressOutbox()
+	stored, created, err := store.EnqueueSessionMemoryIngress(ctx, record)
+	if err != nil || !created {
+		t.Fatalf("first EnqueueSessionMemoryIngress() = %#v, created %t, error %v", stored, created, err)
+	}
+	replay, created, err := store.EnqueueSessionMemoryIngress(ctx, record)
+	if err != nil || created || replay.ScopeSequence != stored.ScopeSequence || replay.Export.Turn == nil || len(replay.Export.Turn.Messages) != 3 {
+		t.Fatalf("replay EnqueueSessionMemoryIngress() = %#v, created %t, error %v", replay, created, err)
+	}
+	tool := replay.Export.Turn.Messages[2]
+	if tool.Role != sessionmemory.MessageRoleTool || tool.MessageID != sessionmemory.TurnToolMessageID(turn.ExportID, "calendar.lookup", "call-1") || tool.Text != "2026-08-06" {
+		t.Fatalf("replayed tool evidence = %#v", tool)
+	}
+}
+
 func TestSQLiteSessionMemoryIngressOutboxRecoversExpiredLeaseAndRejectsForeignSettlement(t *testing.T) {
 	ctx := context.Background()
 	provider, err := NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
