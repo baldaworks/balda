@@ -20,6 +20,7 @@ import (
 type BadgerSessionMemoryStore struct {
 	db                            *badger.DB
 	gcMu                          sync.Mutex
+	maintenanceMu                 sync.Mutex
 	beforeCanonicalMutationCommit func() error // test fault-injection seam; nil in production.
 }
 
@@ -36,6 +37,8 @@ func (s *BadgerSessionMemoryStore) RunValueLogGC(discardRatio float64) error {
 	}
 	s.gcMu.Lock()
 	defer s.gcMu.Unlock()
+	s.maintenanceMu.Lock()
+	defer s.maintenanceMu.Unlock()
 	if err := s.db.RunValueLogGC(discardRatio); err != nil && !errors.Is(err, badger.ErrNoRewrite) {
 		return badgerSessionMemoryError("run canonical badger value-log GC", err)
 	}
@@ -166,6 +169,14 @@ func (s *BadgerSessionMemoryStore) ApplyCanonicalMutation(ctx context.Context, m
 	}
 	if err := mutation.Validate(); err != nil {
 		return sessionmemory.CanonicalMutationOutcome{}, err
+	}
+	if s == nil {
+		return sessionmemory.CanonicalMutationOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.Lock()
+	defer s.maintenanceMu.Unlock()
+	if s.db == nil {
+		return sessionmemory.CanonicalMutationOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
 	scopeKey, err := badgerScopeKey(mutation.Scope)
 	if err != nil {
@@ -1112,6 +1123,8 @@ func (s *BadgerSessionMemoryStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+	s.maintenanceMu.Lock()
+	defer s.maintenanceMu.Unlock()
 	if err := s.db.Sync(); err != nil {
 		return fmt.Errorf("sync canonical badger session-memory store: %w", err)
 	}

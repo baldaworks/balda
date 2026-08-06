@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -418,6 +419,83 @@ func TestBadgerSessionMemoryStoreRestoresReplayAndScopeState(t *testing.T) {
 	state, err := store.LoadScopeState(context.Background(), scope)
 	if err != nil || state.Version != first.ScopeVersion || state.ChangeSeq != first.ChangeSeq {
 		t.Fatalf("state after reopen = %#v, error = %v", state, err)
+	}
+}
+
+func TestBadgerSessionMemoryStoreBackupRestoreAndIntegrityVerification(t *testing.T) {
+	ctx := context.Background()
+	sourceDir := filepath.Join(t.TempDir(), "source.badger")
+	source, err := OpenBadgerSessionMemoryStore(sourceDir)
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore(source) error = %v", err)
+	}
+	scope := sessionmemory.Scope{Key: "canonical:backup", Kind: sessionmemory.ScopeKindPersonal}
+	mutation := canonicalRevisionMutation(scope, 0, "operation-backup", canonicalRevision("revision-backup", "item-backup"))
+	if _, err := source.ApplyCanonicalMutation(ctx, mutation); err != nil {
+		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
+	}
+	var backup bytes.Buffer
+	version, err := source.WriteCanonicalBackup(ctx, &backup, 0)
+	if err != nil || version == 0 || backup.Len() == 0 {
+		t.Fatalf("WriteCanonicalBackup() version=%d bytes=%d error=%v", version, backup.Len(), err)
+	}
+	if err := source.Close(); err != nil {
+		t.Fatalf("source Close() error = %v", err)
+	}
+
+	restored, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "restored.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore(restored) error = %v", err)
+	}
+	t.Cleanup(func() { _ = restored.Close() })
+	if err := restored.RestoreCanonicalBackup(ctx, bytes.NewReader(backup.Bytes()), 0); err != nil {
+		t.Fatalf("RestoreCanonicalBackup() error = %v", err)
+	}
+	if err := restored.VerifyCanonicalIntegrity(ctx); err != nil {
+		t.Fatalf("VerifyCanonicalIntegrity() error = %v", err)
+	}
+	replayed, err := restored.ApplyCanonicalMutation(ctx, mutation)
+	if err != nil || replayed.ScopeVersion != 1 || len(replayed.RevisionIDs) != 1 {
+		t.Fatalf("replayed restored mutation = %+v, error = %v", replayed, err)
+	}
+}
+
+func TestBadgerSessionMemoryStoreLogicalExportImportRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	source, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "source.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore(source) error = %v", err)
+	}
+	scope := sessionmemory.Scope{Key: "canonical:logical-export", Kind: sessionmemory.ScopeKindPersonal}
+	mutation := canonicalRevisionMutation(scope, 0, "operation-logical", canonicalRevision("revision-logical", "item-logical"))
+	if _, err := source.ApplyCanonicalMutation(ctx, mutation); err != nil {
+		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
+	}
+	var encoded bytes.Buffer
+	if err := source.ExportCanonicalLogical(ctx, &encoded); err != nil {
+		t.Fatalf("ExportCanonicalLogical() error = %v", err)
+	}
+	if encoded.Len() == 0 || !bytes.Contains(encoded.Bytes(), []byte("session-memory-logical-export/v1")) {
+		t.Fatalf("logical export = %q", encoded.String())
+	}
+	if err := source.Close(); err != nil {
+		t.Fatalf("source Close() error = %v", err)
+	}
+
+	destination, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "destination.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore(destination) error = %v", err)
+	}
+	t.Cleanup(func() { _ = destination.Close() })
+	if err := destination.ImportCanonicalLogical(ctx, bytes.NewReader(encoded.Bytes())); err != nil {
+		t.Fatalf("ImportCanonicalLogical() error = %v", err)
+	}
+	if err := destination.VerifyCanonicalIntegrity(ctx); err != nil {
+		t.Fatalf("VerifyCanonicalIntegrity() error = %v", err)
+	}
+	replayed, err := destination.ApplyCanonicalMutation(ctx, mutation)
+	if err != nil || replayed.ScopeVersion != 1 || len(replayed.RevisionIDs) != 1 {
+		t.Fatalf("logical replay = %+v, error = %v", replayed, err)
 	}
 }
 
