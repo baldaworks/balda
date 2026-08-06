@@ -724,6 +724,8 @@ The smallest enabled configuration is:
 balda:
   session_memory:
     enabled: true
+    trusted_tools:
+      - calendar.lookup
     derivation:
       timeout: 30s
       max_output_bytes: 262144

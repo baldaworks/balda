@@ -11,6 +11,10 @@ import (
 
 const maxToolErrorLogLength = 2048
 
+const trustedToolEvidenceSchema = "session-memory-tool-evidence/v1"
+
+const maxTrustedToolEvidence = 16
+
 type toolFailure struct {
 	ToolName string
 	Server   string
@@ -37,6 +41,21 @@ func toolFailureFromFunctionResponse(response *genai.FunctionResponse) (toolFail
 	failure.Code, failure.Message = toolErrorFields(errorValue)
 	failure.Message = truncateToolError(redaction.Secrets(failure.Message))
 	return failure, true
+}
+
+func trustedToolEvidenceFromFunctionResponse(response *genai.FunctionResponse) (TrustedToolEvidence, bool) {
+	if response == nil || strings.TrimSpace(response.Name) == "" || strings.TrimSpace(response.ID) == "" {
+		return TrustedToolEvidence{}, false
+	}
+	evidence, ok := mapValue(response.Response["memory_evidence"])
+	if !ok || stringValue(evidence["schema"]) != trustedToolEvidenceSchema {
+		return TrustedToolEvidence{}, false
+	}
+	text := strings.TrimSpace(redaction.Secrets(stringValue(evidence["text"])))
+	if text == "" {
+		return TrustedToolEvidence{}, false
+	}
+	return TrustedToolEvidence{Name: strings.TrimSpace(response.Name), CallID: strings.TrimSpace(response.ID), Text: text}, true
 }
 
 func toolErrorFields(value any) (string, string) {

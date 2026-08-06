@@ -272,11 +272,15 @@ func Module(
 					logger,
 				)
 			},
-			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.TurnCapture {
+			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) (*sessionmemoryapp.TurnCapture, error) {
 				if !cfg.Balda.SessionMemory.Enabled {
-					return sessionmemoryapp.NewTurnCapture(nil, resolver)
+					return sessionmemoryapp.NewTurnCapture(nil, resolver), nil
 				}
-				return sessionmemoryapp.NewTurnCapture(publisher, resolver)
+				policy, err := sessionmemoryapp.NewTrustedToolPolicy(cfg.Balda.SessionMemory.TrustedTools)
+				if err != nil {
+					return nil, err
+				}
+				return sessionmemoryapp.NewTurnCaptureWithToolPolicy(publisher, resolver, policy), nil
 			},
 			func(publisher *sessionmemoryapp.IngressOutboxPublisher, resolver sessionmemoryapp.ScopeResolver) *sessionmemoryapp.BoundaryCapture {
 				if !cfg.Balda.SessionMemory.Enabled {

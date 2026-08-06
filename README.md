@@ -130,6 +130,10 @@ Store and JetStream handoff:
 balda:
   session_memory:
     enabled: true
+
+    # Only explicitly typed responses from these tools may be captured.
+    trusted_tools:
+      - calendar.lookup
     stream: BALDA_SESSION_MEMORY
     consumer: BALDA_SESSION_MEMORY_WORKER
 ```

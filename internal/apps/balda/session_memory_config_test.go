@@ -42,6 +42,7 @@ func TestSessionMemoryConfigEnabledUsesNativeProvider(t *testing.T) {
 		{name: "bad retention", cfg: SessionMemoryConfig{Enabled: true, MaxBytes: "zero"}, want: "max_bytes"},
 		{name: "bad derivation timeout", cfg: SessionMemoryConfig{Enabled: true, Derivation: SessionMemoryDerivationConfig{Timeout: "bad"}}, want: "derivation.timeout"},
 		{name: "bad stream name", cfg: SessionMemoryConfig{Enabled: true, Stream: "memory stream"}, want: "stream"},
+		{name: "bad trusted tool", cfg: SessionMemoryConfig{Enabled: true, TrustedTools: []string{"calendar lookup"}}, want: "trusted_tools"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -32,7 +32,16 @@ func (a completedTurnCaptureAdapter) CaptureCompletedTurn(ctx context.Context, t
 		SourceTurnID:   turn.SourceTurnID,
 		CompletedAt:    turn.CompletedAt,
 		TerminalStatus: sessionmemory.TurnTerminalStatus(turn.TerminalStatus),
+		TrustedTools:   trustedToolEvidenceForCapture(turn.TrustedTools),
 	})
+}
+
+func trustedToolEvidenceForCapture(evidence []TrustedToolEvidence) []sessionmemoryapp.TrustedToolEvidence {
+	tools := make([]sessionmemoryapp.TrustedToolEvidence, 0, len(evidence))
+	for _, tool := range evidence {
+		tools = append(tools, sessionmemoryapp.TrustedToolEvidence{Name: tool.Name, CallID: tool.CallID, Text: tool.Text})
+	}
+	return tools
 }
 
 func newTurnExecutionServiceWithCapture(

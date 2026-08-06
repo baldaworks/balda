@@ -170,6 +170,7 @@ type SessionMemoryConfig struct {
 	MaxMsgSize          string                        `mapstructure:"max_msg_size"`
 	MaxConcurrentScopes int                           `mapstructure:"max_concurrent_scopes"`
 	MaxQueuedPerScope   int                           `mapstructure:"max_queued_per_scope"`
+	TrustedTools        []string                      `mapstructure:"trusted_tools"`
 	Retry               SessionMemoryRetryConfig      `mapstructure:"retry"`
 	SearchTimeout       string                        `mapstructure:"search_timeout"`
 }

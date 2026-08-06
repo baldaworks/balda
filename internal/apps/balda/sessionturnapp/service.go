@@ -51,6 +51,16 @@ type CompletedTurn struct {
 	SourceTurnID   string
 	CompletedAt    time.Time
 	TerminalStatus TerminalStatus
+	TrustedTools   []TrustedToolEvidence
+}
+
+// TrustedToolEvidence is a typed provider-tool response explicitly marked as
+// eligible for session-memory capture. The downstream capture policy still
+// enforces its own tool-name allowlist before durable ingress.
+type TrustedToolEvidence struct {
+	Name   string
+	CallID string
+	Text   string
 }
 
 // TerminalStatus is the provider-terminal outcome exposed through the capture
@@ -335,6 +345,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 
 	var streamedText strings.Builder
 	var memoryStreamedText strings.Builder
+	var trustedTools []TrustedToolEvidence
 	sawTurnComplete := false
 	var terminalFinishReason genai.FinishReason
 	terminalErrorCode := ""
@@ -450,6 +461,9 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if part.FunctionResponse != nil {
 					functionResponsePartCount++
+					if evidence, ok := trustedToolEvidenceFromFunctionResponse(part.FunctionResponse); ok && len(trustedTools) < maxTrustedToolEvidence {
+						trustedTools = append(trustedTools, evidence)
+					}
 					if failure, ok := toolFailureFromFunctionResponse(part.FunctionResponse); ok {
 						zerolog.Ctx(runCtx).Warn().
 							Str("tool_name", failure.ToolName).
@@ -549,6 +563,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 						SourceTurnID:   sourceTurnID,
 						CompletedAt:    s.currentTime().UTC(),
 						TerminalStatus: terminalTurnStatus(ev),
+						TrustedTools:   append([]TrustedToolEvidence(nil), trustedTools...),
 					})
 					if captureErr != nil {
 						zerolog.Ctx(runCtx).Warn().

@@ -39,6 +39,9 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 	if !cfg.Enabled {
 		return nil
 	}
+	if _, err := sessionmemoryapp.NewTrustedToolPolicy(cfg.TrustedTools); err != nil {
+		return fmt.Errorf("balda.session_memory.trusted_tools: %w", err)
+	}
 
 	if cfg.Derivation.MaxOutputBytes < 0 {
 		return fmt.Errorf("balda.session_memory.derivation.max_output_bytes must be non-negative")

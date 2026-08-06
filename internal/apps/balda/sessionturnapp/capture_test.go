@@ -81,11 +81,13 @@ func TestExecuteCapturesExactlyOneEligibleTurnBeforeDelivery(t *testing.T) {
 	service := NewTurnExecutionServiceWithJobEventsAndCapture(nil, nil, nil, zerolog.Nop(), automode.DefaultMaxTurns, hook)
 	service.now = func() time.Time { return time.Date(2026, 8, 3, 5, 6, 7, 0, time.UTC) }
 	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		tool := adksession.NewEvent(context.Background(), invocationID)
+		tool.Content = &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{FunctionResponse: &genai.FunctionResponse{Name: "calendar.lookup", ID: "call-1", Response: map[string]any{"memory_evidence": map[string]any{"schema": trustedToolEvidenceSchema, "text": "2026-08-06"}}}}}}
 		answer := adksession.NewEvent(context.Background(), invocationID)
 		answer.Content = genai.NewContentFromText("visible answer", genai.RoleModel)
 		done := adksession.NewEvent(context.Background(), invocationID)
 		done.TurnComplete = true
-		return []*adksession.Event{answer, done}
+		return []*adksession.Event{tool, answer, done}
 	})
 	locator := baldasession.SessionLocator{
 		ChannelType: "telegram",
@@ -118,6 +120,9 @@ func TestExecuteCapturesExactlyOneEligibleTurnBeforeDelivery(t *testing.T) {
 	}
 	if !turn.CompletedAt.Equal(time.Date(2026, 8, 3, 5, 6, 7, 0, time.UTC)) {
 		t.Fatalf("captured completion = %s", turn.CompletedAt)
+	}
+	if len(turn.TrustedTools) != 1 || turn.TrustedTools[0] != (TrustedToolEvidence{Name: "calendar.lookup", CallID: "call-1", Text: "2026-08-06"}) {
+		t.Fatalf("captured trusted tools = %#v", turn.TrustedTools)
 	}
 }
 

@@ -176,6 +176,8 @@ balda:
   # JetStream PubAck; Norma performs bounded isolated derivation.
   session_memory:
     enabled: false
+    # Explicit typed provider-tool names eligible for durable capture.
+    trusted_tools: []
     derivation:
       timeout: "30s"
       max_output_bytes: 262144

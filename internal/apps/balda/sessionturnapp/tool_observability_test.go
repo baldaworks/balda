@@ -100,3 +100,18 @@ func TestToolFailureFromFunctionResponseReadsTopLevelErrorFallback(t *testing.T)
 		t.Fatalf("toolFailureFromFunctionResponse() = %+v", got)
 	}
 }
+
+func TestTrustedToolEvidenceFromFunctionResponseAcceptsExplicitTypedSchema(t *testing.T) {
+	t.Parallel()
+	evidence, ok := trustedToolEvidenceFromFunctionResponse(&genai.FunctionResponse{
+		Name: "calendar.lookup",
+		ID:   "call-1",
+		Response: map[string]any{"memory_evidence": map[string]any{
+			"schema": trustedToolEvidenceSchema,
+			"text":   "2026-08-06",
+		}},
+	})
+	if !ok || evidence != (TrustedToolEvidence{Name: "calendar.lookup", CallID: "call-1", Text: "2026-08-06"}) {
+		t.Fatalf("trustedToolEvidenceFromFunctionResponse() = %#v, %t", evidence, ok)
+	}
+}
