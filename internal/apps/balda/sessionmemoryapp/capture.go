@@ -120,6 +120,34 @@ type CaptureRequest struct {
 	SourceTurnID      string
 	CompletedAt       time.Time
 	TerminalStatus    sessionmemory.TurnTerminalStatus
+	TrustedTools      []TrustedToolEvidence
+}
+
+// TrustedToolEvidence is one typed tool response eligible for capture only
+// when its tool name is explicitly allowed by the application policy.
+type TrustedToolEvidence struct {
+	Name   string
+	CallID string
+	Text   string
+}
+
+// TrustedToolPolicy owns the explicit tool allowlist at the capture boundary.
+// An empty policy safely excludes every tool response.
+type TrustedToolPolicy struct {
+	names map[string]struct{}
+}
+
+// NewTrustedToolPolicy validates and copies allowed typed tool names.
+func NewTrustedToolPolicy(names []string) (TrustedToolPolicy, error) {
+	policy := TrustedToolPolicy{names: make(map[string]struct{}, len(names))}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if !isTrustedToolName(name) {
+			return TrustedToolPolicy{}, sessionmemory.PermanentError(sessionmemory.CodePermanent, "trusted tool name is invalid", nil)
+		}
+		policy.names[name] = struct{}{}
+	}
+	return policy, nil
 }
 
 // CaptureResult describes whether a durable handoff was attempted.
@@ -133,15 +161,23 @@ type CaptureResult struct {
 type TurnCapture struct {
 	publisher ExportPublisher
 	resolver  ScopeResolver
+	tools     TrustedToolPolicy
 	now       func() time.Time
 }
 
 // NewTurnCapture creates a completed-turn capture service. A nil publisher is
 // a deterministic disabled-mode no-op.
 func NewTurnCapture(publisher ExportPublisher, resolver ScopeResolver) *TurnCapture {
+	return NewTurnCaptureWithToolPolicy(publisher, resolver, TrustedToolPolicy{})
+}
+
+// NewTurnCaptureWithToolPolicy creates a capture service with an explicit
+// typed-tool allowlist. A zero policy excludes all tool responses.
+func NewTurnCaptureWithToolPolicy(publisher ExportPublisher, resolver ScopeResolver, tools TrustedToolPolicy) *TurnCapture {
 	return &TurnCapture{
 		publisher: publisher,
 		resolver:  resolver,
+		tools:     tools,
 		now:       time.Now,
 	}
 }
@@ -183,13 +219,14 @@ func (c *TurnCapture) Capture(ctx context.Context, req CaptureRequest) (CaptureR
 		completedAt = c.currentTime()
 	}
 	completedAt = completedAt.UTC()
-	turn, err := sessionmemory.NewTerminalTurn(
+	turn, err := sessionmemory.NewTerminalTurnWithTools(
 		scope,
 		session,
 		strings.TrimSpace(req.SourceTurnID),
 		completedAt,
 		userText,
 		assistantText,
+		c.trustedToolMessages(req.TrustedTools),
 		req.TerminalStatus,
 	)
 	if err != nil {
@@ -204,6 +241,30 @@ func (c *TurnCapture) Capture(ctx context.Context, req CaptureRequest) (CaptureR
 		return result, err
 	}
 	return result, nil
+}
+
+func (c *TurnCapture) trustedToolMessages(evidence []TrustedToolEvidence) []sessionmemory.Message {
+	if c == nil || len(c.tools.names) == 0 {
+		return nil
+	}
+	messages := make([]sessionmemory.Message, 0, len(evidence))
+	for _, tool := range evidence {
+		name := strings.TrimSpace(tool.Name)
+		if _, allowed := c.tools.names[name]; !allowed {
+			continue
+		}
+		callID := strings.TrimSpace(tool.CallID)
+		text := strings.TrimSpace(tool.Text)
+		if !isTrustedToolName(name) || !isTrustedToolName(callID) || text == "" {
+			continue
+		}
+		messages = append(messages, sessionmemory.Message{Role: sessionmemory.MessageRoleTool, ToolName: name, ToolCallID: callID, Text: text})
+	}
+	return messages
+}
+
+func isTrustedToolName(value string) bool {
+	return value != "" && strings.TrimSpace(value) == value && !strings.ContainsAny(value, "\r\n\t")
 }
 
 // CaptureCompletedTurn is the error-only form convenient for composition-root

@@ -20,6 +20,7 @@ const (
 	MaxSearchLimit = 100
 	// MaxSearchQueryBytes bounds a UTF-8 search query at the provider boundary.
 	MaxSearchQueryBytes = 4096
+	maxTurnToolMessages = 16
 )
 
 // ScopeKind classifies a locator without changing its isolation boundary.
@@ -71,9 +72,11 @@ const (
 
 // Message is one text-only conversational message in a completed turn.
 type Message struct {
-	MessageID string      `json:"message_id,omitempty"`
-	Role      MessageRole `json:"role"`
-	Text      string      `json:"text"`
+	MessageID  string      `json:"message_id,omitempty"`
+	Role       MessageRole `json:"role"`
+	Text       string      `json:"text"`
+	ToolName   string      `json:"tool_name,omitempty"`
+	ToolCallID string      `json:"tool_call_id,omitempty"`
 }
 
 // Turn is an idempotent terminal-turn export. It always contains normalized
@@ -133,6 +136,13 @@ func NewTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt t
 // NewTerminalTurn builds one idempotent terminal export. A user-only export is
 // valid solely for a failed or interrupted provider turn.
 func NewTerminalTurn(scope Scope, session SessionRef, sourceTurnID string, completedAt time.Time, userText, assistantText string, terminalStatus TurnTerminalStatus) (Turn, error) {
+	return NewTerminalTurnWithTools(scope, session, sourceTurnID, completedAt, userText, assistantText, nil, terminalStatus)
+}
+
+// NewTerminalTurnWithTools builds a terminal export with already allowlisted,
+// typed tool evidence. Tool identities are engine-derived; callers cannot
+// supply durable message IDs.
+func NewTerminalTurnWithTools(scope Scope, session SessionRef, sourceTurnID string, completedAt time.Time, userText, assistantText string, tools []Message, terminalStatus TurnTerminalStatus) (Turn, error) {
 	exportID, err := TurnExportID(scope, session, sourceTurnID)
 	if err != nil {
 		return Turn{}, err
@@ -140,6 +150,14 @@ func NewTerminalTurn(scope Scope, session SessionRef, sourceTurnID string, compl
 	messages := []Message{{MessageID: TurnMessageID(exportID, MessageRoleUser), Role: MessageRoleUser, Text: strings.TrimSpace(userText)}}
 	if assistantText = strings.TrimSpace(assistantText); assistantText != "" {
 		messages = append(messages, Message{MessageID: TurnMessageID(exportID, MessageRoleAssistant), Role: MessageRoleAssistant, Text: assistantText})
+	}
+	for _, tool := range tools {
+		tool.Role = MessageRoleTool
+		tool.MessageID = TurnToolMessageID(exportID, tool.ToolName, tool.ToolCallID)
+		tool.Text = strings.TrimSpace(tool.Text)
+		tool.ToolName = strings.TrimSpace(tool.ToolName)
+		tool.ToolCallID = strings.TrimSpace(tool.ToolCallID)
+		messages = append(messages, tool)
 	}
 	turn := Turn{
 		SchemaVersion:  SchemaVersionV1,
@@ -168,6 +186,12 @@ func TurnSourceID(exportID string) string {
 // role in a turn export. A turn has at most one message for each allowed role.
 func TurnMessageID(exportID string, role MessageRole) string {
 	return stableExportID("message", strings.TrimSpace(exportID), string(role))
+}
+
+// TurnToolMessageID derives a stable content-free identity for one typed tool
+// response within a terminal turn.
+func TurnToolMessageID(exportID, toolName, toolCallID string) string {
+	return stableExportID("tool-message", strings.TrimSpace(exportID), strings.TrimSpace(toolName), strings.TrimSpace(toolCallID))
 }
 
 // NewBoundary builds and validates an idempotent lifecycle export.

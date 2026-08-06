@@ -79,6 +79,23 @@ func TestNewTerminalTurnAllowsUserOnlyFailureButNotSuccess(t *testing.T) {
 	}
 }
 
+func TestNewTerminalTurnWithToolsBuildsStableTypedMessages(t *testing.T) {
+	t.Parallel()
+	scope := Scope{Key: "telegram:tools", Kind: ScopeKindPersonal}
+	session := SessionRef{SessionID: "session-tools", AgentSessionID: "agent-tools"}
+	turn, err := NewTerminalTurnWithTools(scope, session, "turn-tools", time.Now().UTC(), "question", "answer", []Message{{ToolName: "calendar.lookup", ToolCallID: "call-1", Text: "2026-08-06"}}, TurnTerminalStatusSuccess)
+	if err != nil {
+		t.Fatalf("NewTerminalTurnWithTools() error = %v", err)
+	}
+	if len(turn.Messages) != 3 {
+		t.Fatalf("messages = %#v", turn.Messages)
+	}
+	tool := turn.Messages[2]
+	if tool.Role != MessageRoleTool || tool.MessageID != TurnToolMessageID(turn.ExportID, "calendar.lookup", "call-1") || tool.Text != "2026-08-06" {
+		t.Fatalf("tool message = %#v", tool)
+	}
+}
+
 func TestNewBoundaryBuildsStableExport(t *testing.T) {
 	t.Parallel()
 

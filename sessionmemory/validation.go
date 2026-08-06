@@ -73,18 +73,34 @@ func (t Turn) Validate() error {
 	default:
 		return PermanentError(CodePermanent, "turn terminal status is invalid", nil)
 	}
-	if len(t.Messages) != 1 && len(t.Messages) != 2 {
-		return PermanentError(CodePermanent, "turn must contain one user message and at most one assistant message", nil)
+	if len(t.Messages) == 0 {
+		return PermanentError(CodePermanent, "turn requires a user message", nil)
 	}
 	if err := validateMessage(t.Messages[0], t.ExportID, MessageRoleUser); err != nil {
 		return err
 	}
-	if len(t.Messages) == 2 {
-		if err := validateMessage(t.Messages[1], t.ExportID, MessageRoleAssistant); err != nil {
+	next := 1
+	if next < len(t.Messages) && t.Messages[next].Role == MessageRoleAssistant {
+		if err := validateMessage(t.Messages[next], t.ExportID, MessageRoleAssistant); err != nil {
 			return err
 		}
+		next++
 	} else if status == TurnTerminalStatusSuccess {
 		return PermanentError(CodePermanent, "successful turn requires assistant text", nil)
+	}
+	seenTools := make(map[string]struct{}, len(t.Messages)-next)
+	if len(t.Messages)-next > maxTurnToolMessages {
+		return PermanentError(CodePermanent, "turn tool message count exceeds the limit", nil)
+	}
+	for ; next < len(t.Messages); next++ {
+		message := t.Messages[next]
+		if err := validateToolMessage(message, t.ExportID); err != nil {
+			return err
+		}
+		if _, exists := seenTools[message.MessageID]; exists {
+			return PermanentError(CodePermanent, "turn tool message identity is duplicated", nil)
+		}
+		seenTools[message.MessageID] = struct{}{}
 	}
 	return nil
 }
@@ -127,6 +143,19 @@ func validateMessage(message Message, exportID string, role MessageRole) error {
 	}
 	if message.MessageID != "" && message.MessageID != TurnMessageID(exportID, role) {
 		return PermanentError(CodePermanent, fmt.Sprintf("%s message id does not match turn identity", role), nil)
+	}
+	if message.ToolName != "" || message.ToolCallID != "" {
+		return PermanentError(CodePermanent, "non-tool message contains tool identity", nil)
+	}
+	return nil
+}
+
+func validateToolMessage(message Message, exportID string) error {
+	if message.Role != MessageRoleTool || strings.TrimSpace(message.Text) == "" || !isCanonicalID(message.ToolName) || !isCanonicalID(message.ToolCallID) {
+		return PermanentError(CodePermanent, "turn tool message is invalid", nil)
+	}
+	if message.MessageID != TurnToolMessageID(exportID, message.ToolName, message.ToolCallID) {
+		return PermanentError(CodePermanent, "tool message id does not match turn identity", nil)
 	}
 	return nil
 }

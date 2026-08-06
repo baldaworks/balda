@@ -143,6 +143,35 @@ func TestTurnCapturePublishesUserOnlyTerminalTurn(t *testing.T) {
 	}
 }
 
+func TestTurnCapturePersistsOnlyExplicitlyTrustedToolEvidence(t *testing.T) {
+	t.Parallel()
+	policy, err := NewTrustedToolPolicy([]string{"calendar.lookup"})
+	if err != nil {
+		t.Fatalf("NewTrustedToolPolicy() error = %v", err)
+	}
+	publisher := &capturePublisher{}
+	resolver := NewScopeResolver(map[string]ScopeClassifier{
+		"telegram": func(deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+			return deliverycmd.LocatorScopePersonal, nil
+		},
+	})
+	capture := NewTurnCaptureWithToolPolicy(publisher, resolver, policy)
+	_, err = capture.Capture(context.Background(), CaptureRequest{
+		UserText: "question", AssistantText: "answer", Locator: testCaptureLocator(t, "telegram", "123:0", "tg-123-0"), SourceTurnID: "turn-tools",
+		TrustedTools: []TrustedToolEvidence{{Name: "calendar.lookup", CallID: "call-1", Text: "2026-08-06"}, {Name: "untrusted.tool", CallID: "call-2", Text: "must not persist"}},
+	})
+	if err != nil {
+		t.Fatalf("Capture() error = %v", err)
+	}
+	if len(publisher.exports) != 1 || publisher.exports[0].Turn == nil {
+		t.Fatalf("exports = %#v", publisher.exports)
+	}
+	messages := publisher.exports[0].Turn.Messages
+	if len(messages) != 3 || messages[2].Role != sessionmemory.MessageRoleTool || messages[2].ToolName != "calendar.lookup" || messages[2].Text != "2026-08-06" {
+		t.Fatalf("captured messages = %#v", messages)
+	}
+}
+
 func TestTurnCapturePublishFailureIsReturnedAfterLocalAttempt(t *testing.T) {
 	t.Parallel()
 
