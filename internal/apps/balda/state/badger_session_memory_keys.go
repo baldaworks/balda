@@ -7,27 +7,28 @@ import (
 )
 
 const (
-	badgerSessionMemoryNamespace   byte = 0x53
-	badgerSessionMemoryVersion     byte = 1
-	badgerRecordScope                   = "scope"
-	badgerRecordOperation               = "operation"
-	badgerRecordSource                  = "source"
-	badgerRecordMessage                 = "message"
-	badgerRecordItem                    = "item"
-	badgerRecordRevision                = "revision"
-	badgerRecordLifecycle               = "lifecycle"
-	badgerRecordHead                    = "head"
-	badgerRecordChange                  = "change"
-	badgerRecordDelivery                = "delivery"
-	badgerRecordDeliveryClaim           = "delivery-claim"
-	badgerRecordPayload                 = "payload"
-	badgerRecordProvenanceForward       = "provenance-forward"
-	badgerRecordProvenanceReverse       = "provenance-reverse"
-	badgerRecordSourceRevision          = "source-revision"
-	badgerRecordDeniedSource            = "denied-source"
-	badgerRecordDeniedRevision          = "denied-revision"
-	badgerRecordProjectionManifest      = "projection-manifest"
-	badgerRecordProjectionActive        = "projection-active"
+	badgerSessionMemoryNamespace    byte = 0x53
+	badgerSessionMemoryVersion      byte = 1
+	badgerRecordScope                    = "scope"
+	badgerRecordOperation                = "operation"
+	badgerRecordSource                   = "source"
+	badgerRecordMessage                  = "message"
+	badgerRecordItem                     = "item"
+	badgerRecordRevision                 = "revision"
+	badgerRecordLifecycle                = "lifecycle"
+	badgerRecordHead                     = "head"
+	badgerRecordChange                   = "change"
+	badgerRecordDelivery                 = "delivery"
+	badgerRecordDeliveryClaim            = "delivery-claim"
+	badgerRecordPayload                  = "payload"
+	badgerRecordProvenanceForward        = "provenance-forward"
+	badgerRecordProvenanceReverse        = "provenance-reverse"
+	badgerRecordSourceRevision           = "source-revision"
+	badgerRecordDeniedSource             = "denied-source"
+	badgerRecordDeniedRevision           = "denied-revision"
+	badgerRecordMigrationCheckpoint      = "migration-checkpoint"
+	badgerRecordProjectionManifest       = "projection-manifest"
+	badgerRecordProjectionActive         = "projection-active"
 )
 
 func badgerScopeKey(scope sessionmemory.Scope) ([]byte, error) {
@@ -56,6 +57,10 @@ func badgerOperationKey(scope sessionmemory.Scope, operationID string) ([]byte, 
 		return nil, err
 	}
 	return badgerSessionMemoryKey(scope, badgerRecordOperation, operationID)
+}
+
+func badgerMigrationCheckpointKey(scope sessionmemory.Scope, snapshotVersion string) ([]byte, error) {
+	return badgerSessionMemoryKey(scope, badgerRecordMigrationCheckpoint, snapshotVersion)
 }
 
 func badgerSessionMemoryKey(scope sessionmemory.Scope, recordType string, id string) ([]byte, error) {

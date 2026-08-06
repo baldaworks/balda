@@ -79,6 +79,42 @@ func TestBadgerSessionMemoryStoreRequiresDirectory(t *testing.T) {
 	}
 }
 
+func TestBadgerSessionMemoryStoreMigrationCheckpointIsMonotonic(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	scope := sessionmemory.Scope{Key: "telegram:1:0", Kind: sessionmemory.ScopeKindPersonal}
+	checkpoint := sessionmemory.CanonicalMigrationCheckpoint{
+		SchemaVersion:    "session-memory-migration-checkpoint/v1",
+		Scope:            scope,
+		SnapshotVersion:  4,
+		SourceCount:      3,
+		AtomCount:        5,
+		NextSourceOffset: 2,
+		NextAtomOffset:   0,
+	}
+	if err := store.SaveCanonicalMigrationCheckpoint(ctx, checkpoint); err != nil {
+		t.Fatalf("SaveCanonicalMigrationCheckpoint() error = %v", err)
+	}
+	got, found, err := store.LoadCanonicalMigrationCheckpoint(ctx, scope, checkpoint.SnapshotVersion)
+	if err != nil {
+		t.Fatalf("LoadCanonicalMigrationCheckpoint() error = %v", err)
+	}
+	if !found || got != checkpoint {
+		t.Fatalf("LoadCanonicalMigrationCheckpoint() = %+v, found %v; want %+v, true", got, found, checkpoint)
+	}
+	if err := store.SaveCanonicalMigrationCheckpoint(ctx, checkpoint); err != nil {
+		t.Fatalf("SaveCanonicalMigrationCheckpoint(replay) error = %v", err)
+	}
+	checkpoint.NextSourceOffset = 1
+	if err := store.SaveCanonicalMigrationCheckpoint(ctx, checkpoint); err == nil {
+		t.Fatal("SaveCanonicalMigrationCheckpoint() accepted a backwards cursor")
+	}
+}
+
 func TestBadgerSessionMemoryStoreValueLogGCValidation(t *testing.T) {
 	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
 	if err != nil {

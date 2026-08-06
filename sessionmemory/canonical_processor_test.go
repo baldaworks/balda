@@ -186,7 +186,11 @@ func (s *processorTestStore) ApplyCanonicalMutation(_ context.Context, mutation 
 		}
 		s.active = []ActiveCanonicalMemory{{Item: item, RevisionID: revision.RevisionID, Revision: revision.Revision, Evidence: revision.Evidence}}
 	}
-	return CanonicalMutationOutcome{ScopeVersion: s.state.Version, ChangeSeq: s.state.ChangeSeq, RevisionIDs: []string{mutation.Revisions[0].RevisionID}}, nil
+	outcome := CanonicalMutationOutcome{ScopeVersion: s.state.Version, ChangeSeq: s.state.ChangeSeq}
+	for _, revision := range mutation.Revisions {
+		outcome.RevisionIDs = append(outcome.RevisionIDs, revision.RevisionID)
+	}
+	return outcome, nil
 }
 
 func (s *processorTestStore) ScanScopeChanges(context.Context, Scope, uint64, uint32) ([]ScopeChange, error) {
