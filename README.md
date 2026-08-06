@@ -116,15 +116,17 @@ automation, and agent execution instead of separate bots and scripts.
 
 ### 5. Durable session memory
 
-Balda can optionally persist completed, text-only turns in its native
-session-memory Store and expose exact-scope recall through
+Balda can optionally persist completed, text-only turns in its canonical
+Badger-backed session-memory Store with a rebuildable Bleve lexical projection
+and expose exact-scope recall through
 `balda.session_memory.search` and provenance through
 `balda.session_memory.trace`. This is separate from the existing global fact
 memory (`balda.memory.*`), which remains in `state.db` and keeps its current
 contract.
 
-The feature is disabled by default. Enable it with the native SQLite-backed
-Store and JetStream handoff:
+The feature is disabled by default. Enable it with the JetStream handoff; an
+existing SQLite session-memory store is imported through the bounded migration
+gate before canonical reads are advertised:
 
 ```yaml
 balda:
@@ -147,10 +149,10 @@ Exports are keyed by the exact transport-neutral locator
 `<channel_type>:<address_key>`. A personal conversation, a personal topic, a
 group, and a group topic are different scopes; topic/thread identity is
 orthogonal to the audience and there is no implicit inheritance between them.
-Search accepts only a query and optional result limit; trace accepts only a
-revision identity and node bound. The current authenticated session supplies
-the locator. Recalled text is untrusted reference data, never an instruction
-or command.
+Search accepts a query, optional result limit, and bounded current-contract
+filters; trace accepts only a revision identity and node bound. The current
+authenticated session supplies the locator. Recalled text is untrusted
+reference data, never an instruction or command.
 
 Capture first persists into a producer-local SQLite ingress outbox, then
 publishes to the file-backed JetStream stream `BALDA_SESSION_MEMORY`.

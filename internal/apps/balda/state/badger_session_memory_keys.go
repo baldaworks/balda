@@ -28,10 +28,12 @@ const (
 	badgerRecordDeniedSource              = "denied-source"
 	badgerRecordDeniedRevision            = "denied-revision"
 	badgerRecordMigrationCheckpoint       = "migration-checkpoint"
+	badgerRecordMigrationReady            = "migration-ready"
 	badgerRecordProjectionManifest        = "projection-manifest"
 	badgerRecordProjectionActive          = "projection-active"
 	badgerRecordProjectionRetention       = "projection-retention"
 	badgerRecordProjectionCheckpoint      = "projection-checkpoint"
+	badgerRecordForgetOutcome             = "forget-outcome"
 )
 
 func badgerScopeKey(scope sessionmemory.Scope) ([]byte, error) {
@@ -68,6 +70,14 @@ func badgerImportedOperationKey(scope sessionmemory.Scope, operationID string) (
 
 func badgerMigrationCheckpointKey(scope sessionmemory.Scope, snapshotVersion string) ([]byte, error) {
 	return badgerSessionMemoryKey(scope, badgerRecordMigrationCheckpoint, snapshotVersion)
+}
+
+func badgerMigrationReadyKey(scope sessionmemory.Scope) ([]byte, error) {
+	return badgerSessionMemoryKey(scope, badgerRecordMigrationReady, "ready")
+}
+
+func badgerForgetOutcomeKey(scope sessionmemory.Scope, kind sessionmemory.ForgetKind, operationID string) ([]byte, error) {
+	return badgerSessionMemoryKey(scope, badgerRecordForgetOutcome, string(kind)+"\x00"+operationID)
 }
 
 func badgerSessionMemoryKey(scope sessionmemory.Scope, recordType string, id string) ([]byte, error) {

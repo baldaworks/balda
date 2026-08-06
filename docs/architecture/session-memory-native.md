@@ -9,11 +9,10 @@ locator `<channel_type>:<address_key>`.
 - `sessionmemory` is the storage-neutral portable core: scopes, canonical v2
   records, evidence, temporal validation, forgetting state, bounded recall
   contracts, projection watermarks, and local ports. It imports no Badger,
-  Bleve, Vecgo, MCP, transport, or Fx package.
+  Bleve, MCP, transport, or Fx package.
 - `internal/apps/balda/state` owns durable infrastructure. Badger is the
   canonical source of truth; Bleve is the mandatory rebuildable lexical
-  projection; Vecgo is an optional local vector projection. Numeric backend
-  identifiers never cross the adapter boundary.
+  projection. Numeric backend identifiers never cross the adapter boundary.
 - `internal/apps/balda/sessionmemoryapp` owns capture, ingress-outbox/worker
   lifecycle, canonical hydration, fail-closed recall policy, and the isolated
   structured deriver. It composes ports; it does not own backend records.
@@ -35,17 +34,16 @@ completed turn/boundary
 
 canonical active revisions
   -> Bleve lexical generation (mandatory)
-  -> optional Vecgo vector generation (disabled by default)
-  -> RecallService RRF/final ranking
+  -> RecallService lexical ranking
   -> canonical hydration and fail-closed validation
   -> bounded untrusted MCP reference
 ```
 
-Canonical Badger records and operation outcomes are authoritative. Bleve and
-Vecgo generations are disposable materialized views: a generation is dirty
-before writes, committed explicitly, and advertised only after its watermark
-is durable. A missing or dirty generation falls back to a bounded canonical
-tail; it never causes a full-scope read.
+Canonical Badger records and operation outcomes are authoritative. Bleve
+generations are disposable materialized views: a generation is dirty before
+writes, committed explicitly, and advertised only after its watermark is
+durable. A missing or dirty generation falls back to a bounded canonical tail;
+it never causes a full-scope read.
 
 ## Isolation and logical forgetting
 
@@ -79,8 +77,7 @@ proofs include:
   authenticated MCP recall, exact-locator isolation, and provenance;
 - `internal/apps/balda/state/badger_session_memory_test.go` for canonical
   mutation, checkpoints, migration, backup/integrity, and reopen behavior;
-- `internal/apps/balda/state/bleve_session_memory_test.go` and
-  `internal/apps/balda/state/vecgo_session_memory_test.go` for disposable
+- `internal/apps/balda/state/bleve_session_memory_test.go` for disposable
   projection generations and recovery markers.
 
 Core behavior remains owned and tested by `sessionmemory`; worker, recall, and

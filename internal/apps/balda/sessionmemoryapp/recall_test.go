@@ -82,50 +82,11 @@ func TestRecallServiceRejectsForeignProjectionScopeAndConsistencyLag(t *testing.
 	}
 }
 
-func TestRecallServiceFusesOptionalVectorCandidatesWithoutChangingCanonicalTruth(t *testing.T) {
-	t.Parallel()
-	scope := sessionmemory.Scope{Key: "telegram:hybrid", Kind: sessionmemory.ScopeKindPersonal}
-	now := time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)
-	reader := &fakeRecallReader{current: 8, records: []sessionmemory.RecallRecord{
-		validRecallRecord(scope, "item-a", "revision-a", "deploy decision", now, 8),
-		validRecallRecord(scope, "item-b", "revision-b", "release preference", now.Add(-time.Minute), 8),
-	}}
-	lexical := fakeRecallProjection{hits: []sessionmemory.RecallProjectionHit{{Scope: scope, ItemID: "item-a", RevisionID: "revision-a", Revision: 1, Score: 1, ScopeChangeSeq: 8}}}
-	vector := fakeVectorProjection{hits: []sessionmemory.RecallProjectionHit{{Scope: scope, ItemID: "item-b", RevisionID: "revision-b", Revision: 1, Score: 0.9, ScopeChangeSeq: 8}}}
-	service, err := NewHybridRecallService(reader, lexical, vector)
-	if err != nil {
-		t.Fatalf("NewHybridRecallService() error = %v", err)
-	}
-	service.now = func() time.Time { return now }
-	response, err := service.Search(context.Background(), sessionmemory.RecallRequest{Scope: scope, Query: "deploy", Limit: 2, Embedding: []float32{1, 0}})
-	if err != nil {
-		t.Fatalf("Search(hybrid) error = %v", err)
-	}
-	if len(response.Results) != 2 {
-		t.Fatalf("Search(hybrid) results = %#v, want both lexical and vector candidates", response.Results)
-	}
-	seen := map[string]bool{}
-	for _, result := range response.Results {
-		seen[result.RevisionID] = true
-	}
-	if !seen["revision-a"] || !seen["revision-b"] {
-		t.Fatalf("Search(hybrid) results = %#v, want canonical revisions from both candidate lists", response.Results)
-	}
-}
-
 type fakeRecallProjection struct {
 	hits []sessionmemory.RecallProjectionHit
 }
 
 func (f fakeRecallProjection) SearchRecall(context.Context, sessionmemory.RecallRequest) ([]sessionmemory.RecallProjectionHit, error) {
-	return append([]sessionmemory.RecallProjectionHit(nil), f.hits...), nil
-}
-
-type fakeVectorProjection struct {
-	hits []sessionmemory.RecallProjectionHit
-}
-
-func (f fakeVectorProjection) SearchVector(context.Context, sessionmemory.RecallRequest, []float32) ([]sessionmemory.RecallProjectionHit, error) {
 	return append([]sessionmemory.RecallProjectionHit(nil), f.hits...), nil
 }
 

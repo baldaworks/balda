@@ -771,7 +771,7 @@ completion time, and the two text messages. A native processor failure is logged
 bounded diagnostic and does not suppress the already completed user-facing
 reply.
 
-The exact canonical locator string, produced by `locatorref`, is the native
+The exact canonical locator string, produced by `locatorref`, is the canonical
 Store partition and authorization key:
 
 ```text
@@ -785,7 +785,7 @@ partitions. Topic identity is orthogonal to audience. There is no
 owner, collaborator, channel-type, chat-ID, or topic inheritance, and no
 cross-scope fallback. Ambiguous or unsupported locator classification fails
 closed. Group conversation text is sent only to the exact group locator's
-trusted native Store scope.
+trusted canonical Store scope.
 
 Session reset, close, rotation, and bounded application shutdown also publish a
 boundary export with the old session identity before that identity is removed
@@ -799,7 +799,7 @@ When enabled, the bundled MCP server registers
 keeps the original query/limit contract and accepts additive filters:
 
 ```json
-{"query":"release checklist","limit":10,"kind":"state","category":"decision","as_of":"2026-08-06T10:00:00Z"}
+{"query":"release checklist","limit":10,"memory_kind":"state","category":"decision","as_of":"2026-08-06T10:00:00Z"}
 ```
 
 Trace input is only a native revision identity and a bounded node count:
@@ -814,7 +814,7 @@ tool schema. The response echoes the exact scope and returns bounded
 references. Each reference is explicitly `untrusted_reference` data. Balda
 does not execute recalled text, turn it into a prompt/system instruction, or
 interpret it as a transport/command request. Invalid query/scope, unsupported
-scope, disabled service, timeout, unavailable native Store, and foreign results
+scope, disabled service, timeout, unavailable canonical Store, and foreign results
 produce stable structured tool errors without leaking raw memory content.
 
 The resolver is fail-closed: a request without an active broker capability gets
@@ -869,7 +869,7 @@ and a safe reason—never conversation text or model response bodies. After
 fixing the processor/configuration, replay must be an explicit operator action
 from a trusted source (or re-run the source turn); there is no automatic DLQ
 replay that could duplicate unreviewed conversation data. Stable export IDs
-make a reviewed replay idempotent at the native Store/processor boundary.
+make a reviewed replay idempotent at the canonical Store/processor boundary.
 
 ### Privacy, trust, and shutdown
 
@@ -1082,7 +1082,7 @@ release:
 2. `sessionmemorycmd` owns neutral `turn.v1`/`boundary.v1` export envelopes and
    subjects; it has no queue client or provider SDK.
 3. `sessionmemoryapp` connects Balda turn/session lifecycle to the core, owns
-   the serialized JetStream worker, and exposes native Store search/trace/
+   the serialized JetStream worker, and exposes canonical Store search/trace/
    forgetting through application ports. Derivation uses an isolated Norma
    runtime and remains an in-process native processor.
 4. Balda-only integrations remain at the composition root: JetStream transport,

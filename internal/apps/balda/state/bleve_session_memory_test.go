@@ -8,6 +8,8 @@ import (
 	"github.com/normahq/balda/sessionmemory"
 )
 
+const stateTestRevisionOneID = "revision-1"
+
 func TestBleveRecallProjectionIndexesRussianAndEnglishWithGenerationSwitch(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -99,6 +101,62 @@ func TestBleveRecallProjectionIndexesRussianAndEnglishWithGenerationSwitch(t *te
 	reopenedHits, err := reopened.SearchRecall(context.Background(), sessionmemory.RecallRequest{Scope: scope, Query: "canonical", Limit: 10})
 	if err != nil || len(reopenedHits) != 1 || reopenedHits[0].RevisionID != "revision-3" {
 		t.Fatalf("SearchRecall(reopened) = %#v, error %v", reopenedHits, err)
+	}
+}
+
+func TestBleveRecallProjectionScopedGenerationsSurviveIndependentActivation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	projection, err := NewBleveRecallProjection(root)
+	if err != nil {
+		t.Fatalf("NewBleveRecallProjection() error = %v", err)
+	}
+	defer func() { _ = projection.Close() }()
+	now := time.Date(2026, time.August, 6, 11, 0, 0, 0, time.UTC)
+	scopes := []sessionmemory.Scope{
+		{Key: "telegram:scope-a", Kind: sessionmemory.ScopeKindPersonal},
+		{Key: "telegram:scope-b", Kind: sessionmemory.ScopeKindPersonal},
+	}
+	for index, scope := range scopes {
+		generationID := "scoped-generation-" + string(rune('a'+index))
+		generation, err := projection.NewGeneration(generationID)
+		if err != nil {
+			t.Fatalf("NewGeneration(%s) error = %v", generationID, err)
+		}
+		if err := generation.Index(context.Background(), recallProjectionDocument(scope, "item-"+string(rune('a'+index)), "scoped-revision-"+string(rune('a'+index)), "independent scope memory", now, 1)); err != nil {
+			t.Fatalf("Index(%s) error = %v", generationID, err)
+		}
+		if err := generation.Commit(context.Background()); err != nil {
+			t.Fatalf("Commit(%s) error = %v", generationID, err)
+		}
+		if err := generation.Close(); err != nil {
+			t.Fatalf("Close(%s) error = %v", generationID, err)
+		}
+		if err := projection.ActivateGenerationForScope(context.Background(), scope, generationID); err != nil {
+			t.Fatalf("ActivateGenerationForScope(%s) error = %v", generationID, err)
+		}
+	}
+	for index, scope := range scopes {
+		hits, err := projection.SearchRecall(context.Background(), sessionmemory.RecallRequest{Scope: scope, Query: "independent", Limit: 10})
+		want := "scoped-revision-" + string(rune('a'+index))
+		if err != nil || len(hits) != 1 || hits[0].RevisionID != want {
+			t.Fatalf("SearchRecall(%s) = %#v, error %v; want %s", scope.Key, hits, err, want)
+		}
+	}
+	if err := projection.Close(); err != nil {
+		t.Fatalf("Close(projection) error = %v", err)
+	}
+	reopened, err := NewBleveRecallProjection(root)
+	if err != nil {
+		t.Fatalf("reopen projection error = %v", err)
+	}
+	defer func() { _ = reopened.Close() }()
+	for index, scope := range scopes {
+		hits, err := reopened.SearchRecall(context.Background(), sessionmemory.RecallRequest{Scope: scope, Query: "independent", Limit: 10})
+		want := "scoped-revision-" + string(rune('a'+index))
+		if err != nil || len(hits) != 1 || hits[0].RevisionID != want {
+			t.Fatalf("SearchRecall(reopened %s) = %#v, error %v; want %s", scope.Key, hits, err, want)
+		}
 	}
 }
 

@@ -50,6 +50,15 @@ type ProjectionApplier interface {
 	Commit(ctx context.Context, scope Scope, generationID string) error
 }
 
+// ProjectionGenerationActivator is an optional applier extension used by
+// projections with an explicit disposable-generation marker (for example
+// Bleve). The coordinator invokes it only after the canonical watermark has
+// been durably advanced, so a committed but dirty generation is never
+// advertised.
+type ProjectionGenerationActivator interface {
+	Activate(ctx context.Context, scope Scope, generationID string) error
+}
+
 // ProjectionCoordinator replays canonical changes into one disposable
 // projection generation. It never mutates canonical memory and never exposes a
 // generation until the projection engine committed the corresponding watermark.
@@ -152,6 +161,14 @@ func (c *ProjectionCoordinator) Sync(ctx context.Context, scope Scope, projectio
 	}
 	if err := c.checkpoints.ActivateProjectionGeneration(ctx, manifest, c.currentTime().UTC()); err != nil {
 		return manifest, err
+	}
+	if activator, ok := c.applier.(ProjectionGenerationActivator); ok {
+		if err := activator.Activate(ctx, scope, generationID); err != nil {
+			// The durable checkpoint is already active. The previous physical
+			// generation remains safe to serve until the adapter completes its
+			// marker switch; a retry can reconcile the disposable projection.
+			return manifest, err
+		}
 	}
 	manifest.Status = ProjectionGenerationActive
 	return manifest, nil

@@ -12,16 +12,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/sessionmemory/sessionmemorytest"
-	"go.uber.org/fx"
 )
-
-type recordingLifecycle struct {
-	hooks []fx.Hook
-}
-
-func (l *recordingLifecycle) Append(hook fx.Hook) {
-	l.hooks = append(l.hooks, hook)
-}
 
 func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	cfg := SessionMemoryConfig{
@@ -49,8 +40,7 @@ func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 
 func TestCanonicalSessionMemoryProviderDisabledDoesNotOpenCanonicalStore(t *testing.T) {
 	stateDir := t.TempDir()
-	lifecycle := &recordingLifecycle{}
-	provider, err := newCanonicalSessionMemoryProvider(lifecycle, SessionMemoryConfig{}, nil, nil, "", "", stateDir)
+	provider, err := newCanonicalSessionMemoryProvider(SessionMemoryConfig{}, nil, nil, "", "", stateDir)
 	if err != nil {
 		t.Fatalf("newCanonicalSessionMemoryProvider() error = %v", err)
 	}
@@ -60,29 +50,26 @@ func TestCanonicalSessionMemoryProviderDisabledDoesNotOpenCanonicalStore(t *test
 	if _, err := os.Stat(baldastate.SessionMemoryCanonicalPath(stateDir)); !os.IsNotExist(err) {
 		t.Fatalf("canonical path stat error = %v, want unopened path", err)
 	}
-	if len(lifecycle.hooks) != 0 {
-		t.Fatalf("disabled provider registered %d lifecycle hooks", len(lifecycle.hooks))
-	}
 }
 
 func TestCanonicalSessionMemoryProviderOwnsBadgerLifecycle(t *testing.T) {
 	stateDir := t.TempDir()
-	lifecycle := &recordingLifecycle{}
-	provider, err := newCanonicalSessionMemoryProvider(lifecycle, SessionMemoryConfig{Enabled: true}, sessionmemorytest.NewStore(), &baldaagent.Builder{}, "provider", t.TempDir(), stateDir)
+	provider, err := newCanonicalSessionMemoryProvider(SessionMemoryConfig{Enabled: true}, sessionmemorytest.NewStore(), &baldaagent.Builder{}, "provider", t.TempDir(), stateDir)
 	if err != nil {
 		t.Fatalf("newCanonicalSessionMemoryProvider() error = %v", err)
 	}
-	if _, ok := provider.(*sessionmemoryapp.CanonicalProvider); !ok {
+	canonical, ok := provider.(*sessionmemoryapp.CanonicalProvider)
+	if !ok {
 		t.Fatalf("enabled provider type = %T, want *sessionmemoryapp.CanonicalProvider", provider)
-	}
-	if len(lifecycle.hooks) != 1 || lifecycle.hooks[0].OnStop == nil {
-		t.Fatalf("registered lifecycle hooks = %+v, want one OnStop hook", lifecycle.hooks)
 	}
 	if _, err := baldastate.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir)); err == nil {
 		t.Fatal("second canonical Badger owner opened while composition owner was active")
 	}
-	if err := lifecycle.hooks[0].OnStop(context.Background()); err != nil {
-		t.Fatalf("canonical OnStop() error = %v", err)
+	if err := canonical.Start(context.Background()); err != nil {
+		t.Fatalf("canonical Start() error = %v", err)
+	}
+	if err := canonical.Close(context.Background()); err != nil {
+		t.Fatalf("canonical Close() error = %v", err)
 	}
 	reopened, err := baldastate.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir))
 	if err != nil {

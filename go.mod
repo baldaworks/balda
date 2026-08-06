@@ -6,7 +6,6 @@ require (
 	github.com/blevesearch/bleve/v2 v2.4.0
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/google/uuid v1.6.0
-	github.com/hupe1980/vecgo v0.0.15
 	github.com/ipfans/fxlogger v0.2.0
 	github.com/joho/godotenv v1.5.1
 	github.com/metalagman/appkit v0.1.0
@@ -32,7 +31,6 @@ require (
 require (
 	cloud.google.com/go/logging v1.18.0 // indirect
 	github.com/RoaringBitmap/roaring v1.2.3 // indirect
-	github.com/RoaringBitmap/roaring/v2 v2.14.4 // indirect
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
 	github.com/blevesearch/bleve_index_api v1.1.6 // indirect
 	github.com/blevesearch/geo v0.1.20 // indirect

@@ -8,30 +8,22 @@ import (
 	"github.com/normahq/balda/sessionmemory"
 )
 
-// RecallService owns canonical hydration and fail-closed validation around a
-// disposable lexical or hybrid projection. The projection is never trusted
+// RecallService owns canonical hydration and fail-closed validation around the
+// disposable lexical projection. The projection is never trusted
 // with scope, lifecycle, temporal, sensitivity, or payload truth.
 type RecallService struct {
 	canonical  sessionmemory.RecallCanonicalReader
 	projection sessionmemory.RecallProjection
-	vector     sessionmemory.VectorRecallProjection
 	now        func() time.Time
 }
 
 // NewRecallService constructs the bounded canonical recall use case. A nil
 // projection is valid and selects the bounded canonical-tail fallback.
 func NewRecallService(canonical sessionmemory.RecallCanonicalReader, projection sessionmemory.RecallProjection) (*RecallService, error) {
-	return NewHybridRecallService(canonical, projection, nil)
-}
-
-// NewHybridRecallService wires optional semantic candidates beside the
-// mandatory lexical projection. A nil vector projection keeps the complete
-// Bleve-only path and requires no data migration when semantic recall is off.
-func NewHybridRecallService(canonical sessionmemory.RecallCanonicalReader, projection sessionmemory.RecallProjection, vector sessionmemory.VectorRecallProjection) (*RecallService, error) {
 	if canonical == nil {
 		return nil, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "recall canonical reader is required", nil)
 	}
-	return &RecallService{canonical: canonical, projection: projection, vector: vector, now: time.Now}, nil
+	return &RecallService{canonical: canonical, projection: projection, now: time.Now}, nil
 }
 
 // Search executes one exact-scope recall. Candidate IDs are always hydrated
@@ -69,17 +61,6 @@ func (s *RecallService) Search(ctx context.Context, request sessionmemory.Recall
 			return sessionmemory.RecallResponse{}, sessionmemory.PermanentError(sessionmemory.CodeLimitExceeded, "recall projection candidate bound exceeded", nil)
 		}
 	}
-	if s.vector != nil && len(normalized.Embedding) > 0 {
-		vectorHits, vectorErr := s.vector.SearchVector(ctx, normalized, normalized.Embedding)
-		if vectorErr != nil {
-			return sessionmemory.RecallResponse{}, vectorErr
-		}
-		hits, err = sessionmemory.FuseRecallProjectionHits(normalized.Scope, hits, vectorHits, sessionmemory.MaxRecallCandidates)
-		if err != nil {
-			return sessionmemory.RecallResponse{}, err
-		}
-	}
-
 	// A missing/empty generation is a safe diagnostic fallback, not a full
 	// scope scan. The canonical reader owns the bounded tail implementation.
 	if len(hits) == 0 {

@@ -6,10 +6,18 @@ import (
 )
 
 const sessionMemoryCanonicalDirName = "session-memory.badger"
+const sessionMemoryProjectionDirName = "session-memory-bleve"
 
 // SessionMemoryCanonicalPath returns the state-owned path for the canonical
 // session-memory directory. Composition roots use this instead of inventing a
 // backend path in application code.
 func SessionMemoryCanonicalPath(stateDir string) string {
 	return filepath.Join(strings.TrimSpace(stateDir), sessionMemoryCanonicalDirName)
+}
+
+// SessionMemoryProjectionPath returns the disposable Bleve generation root.
+// It is separate from the canonical Badger owner and can be rebuilt without
+// changing logical memory state.
+func SessionMemoryProjectionPath(stateDir string) string {
+	return filepath.Join(strings.TrimSpace(stateDir), sessionMemoryProjectionDirName)
 }

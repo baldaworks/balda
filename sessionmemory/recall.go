@@ -34,14 +34,11 @@ type RecallRequest struct {
 	SessionID         string        `json:"session_id,omitempty"`
 	MemoryKey         MemoryKey     `json:"memory_key,omitempty"`
 	MinScopeChangeSeq uint64        `json:"min_scope_change_seq,omitempty"`
-	// Embedding is an optional application-supplied query vector. It is not a
-	// public wire field; an empty vector preserves complete Bleve-only recall.
-	Embedding []float32 `json:"-"`
 }
 
-// RecallProjectionDocument is the rebuildable input to a lexical or hybrid
-// projection. Text is disposable projection material; canonical state remains
-// authoritative and is always hydrated before a result is returned.
+// RecallProjectionDocument is the rebuildable input to the lexical projection.
+// Text is disposable projection material; canonical state remains authoritative
+// and is always hydrated before a result is returned.
 type RecallProjectionDocument struct {
 	Scope          Scope
 	ItemID         string
@@ -75,21 +72,33 @@ type RecallProjectionHit struct {
 // RecallRecord is one canonical record hydrated for recall. Implementations
 // must not return a record from another scope or a non-active revision.
 type RecallRecord struct {
-	Scope          Scope
-	ItemID         string
-	RevisionID     string
-	Revision       uint64
-	Kind           MemoryKind
-	Category       *AtomCategory
-	MemoryKey      MemoryKey
-	Text           string
-	State          RevisionState
-	CreatedAt      time.Time
-	Temporal       Temporal
-	Sensitivity    Sensitivity
-	Retention      RetentionClass
-	Evidence       []EvidenceRef
-	SourceIDs      []string
+	Scope             Scope
+	ItemID            string
+	RevisionID        string
+	Revision          uint64
+	Kind              MemoryKind
+	Category          *AtomCategory
+	LegacyKind        *DerivedKind
+	LegacyItemID      string
+	LegacyRevisionID  string
+	LegacyOperationID string
+	LegacySupersedes  *RevisionRef
+	LegacyParents     []RevisionRef
+	TopicKey          string
+	Title             string
+	MemoryKey         MemoryKey
+	Text              string
+	State             RevisionState
+	CreatedAt         time.Time
+	Temporal          Temporal
+	Sensitivity       Sensitivity
+	Retention         RetentionClass
+	Evidence          []EvidenceRef
+	SourceIDs         []string
+	// SourceRefs retains the transport-neutral source identities needed by
+	// compatibility adapters. SourceIDs remains the canonical evidence filter
+	// surface; implementations may omit SourceRefs when only recall is needed.
+	SourceRefs     []SourceRef
 	SessionIDs     []string
 	ScopeChangeSeq uint64
 }
@@ -103,7 +112,7 @@ type RecallCanonicalReader interface {
 	CurrentScopeChangeSeq(ctx context.Context, scope Scope) (uint64, error)
 }
 
-// RecallProjection is implemented by rebuildable lexical/vector projections.
+// RecallProjection is implemented by the rebuildable lexical projection.
 type RecallProjection interface {
 	SearchRecall(ctx context.Context, request RecallRequest) ([]RecallProjectionHit, error)
 }
@@ -215,14 +224,6 @@ func (r RecallRequest) Validate() error {
 	if r.AsOf != nil && r.AsOf.IsZero() {
 		return PermanentError(CodeInvalidQuery, "recall as_of is invalid", nil)
 	}
-	if len(r.Embedding) > MaxVectorDimensions {
-		return PermanentError(CodeInvalidQuery, "recall embedding exceeds the allowed dimension bound", nil)
-	}
-	for _, value := range r.Embedding {
-		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-			return PermanentError(CodeInvalidQuery, "recall embedding contains a non-finite value", nil)
-		}
-	}
 	return nil
 }
 
@@ -274,6 +275,27 @@ func (r RecallRecord) Validate(request RecallRequest, now time.Time) error {
 	if !isCanonicalID(r.ItemID) || !isCanonicalID(r.RevisionID) || r.Revision == 0 || r.State != RevisionStateActive {
 		return PermanentError(CodeForgotten, "recall record is not active", nil)
 	}
+	if r.LegacyKind != nil {
+		if err := r.LegacyKind.Validate(); err != nil {
+			return err
+		}
+		if !isCanonicalID(r.LegacyItemID) || !isCanonicalID(r.LegacyRevisionID) || !isCanonicalID(r.LegacyOperationID) {
+			return invalidDerived("recall compatibility identity is invalid")
+		}
+		if r.LegacySupersedes != nil {
+			if err := r.LegacySupersedes.Validate(); err != nil {
+				return err
+			}
+		}
+		if len(r.LegacyParents) > MaxSourcesPerRevision {
+			return limitExceeded("recall compatibility parent bound exceeded")
+		}
+		for _, parent := range r.LegacyParents {
+			if err := parent.Validate(); err != nil {
+				return err
+			}
+		}
+	}
 	switch r.Kind {
 	case MemoryKindState, MemoryKindEvent:
 	default:
@@ -311,6 +333,14 @@ func (r RecallRecord) Validate(request RecallRequest, now time.Time) error {
 	for _, sourceID := range r.SourceIDs {
 		if !isCanonicalID(sourceID) {
 			return invalidDerived("recall source identity is invalid")
+		}
+	}
+	for _, source := range r.SourceRefs {
+		if err := source.Validate(); err != nil {
+			return err
+		}
+		if source.Scope != r.Scope {
+			return PermanentError(CodeScopeViolation, "recall source reference scope does not match", nil)
 		}
 	}
 	for _, sessionID := range r.SessionIDs {

@@ -2,6 +2,7 @@ package sessionmemory
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -76,6 +77,67 @@ func TestMigrateV1ScopeSnapshotPreservesGroundedRecordsAndPayloads(t *testing.T)
 	}
 	if mutation.Operation.CommittedAt != completedAt {
 		t.Fatalf("migration committed_at = %s, want %s", mutation.Operation.CommittedAt, completedAt)
+	}
+}
+
+func TestMigrateV1ScopeSnapshotPreservesScenarioAndProfileLayers(t *testing.T) {
+	t.Parallel()
+
+	scope := Scope{Key: "telegram:layers", Kind: ScopeKindPersonal}
+	completedAt := time.Date(2026, time.August, 6, 4, 5, 6, 0, time.UTC)
+	turn, err := NewTerminalTurn(scope, SessionRef{SessionID: "session-layers", AgentSessionID: "agent-layers"}, "turn-layers", completedAt, "layer source", "ack", TurnTerminalStatusSuccess)
+	if err != nil {
+		t.Fatalf("NewTerminalTurn() error = %v", err)
+	}
+	sourceRef := sourceRefFromTurn(turn)
+	provenance := Provenance{RawSources: []SourceRef{sourceRef}}
+	atomItemID, err := AtomItemID(scope, AtomCategoryFact, "layer fact")
+	if err != nil {
+		t.Fatalf("AtomItemID() error = %v", err)
+	}
+	atomRevisionID, err := DerivedRevisionID(scope, atomItemID, "legacy-atoms", []string{"fact", "layer fact", "new"}, provenance, nil)
+	if err != nil {
+		t.Fatalf("atom DerivedRevisionID() error = %v", err)
+	}
+	atom := Atom{Meta: RevisionMeta{SchemaVersion: DerivedSchemaVersionV1, Kind: DerivedKindAtom, ItemID: atomItemID, RevisionID: atomRevisionID, Revision: 1, OperationID: "legacy-atoms", Scope: scope, State: RevisionStateActive, Provenance: provenance, CreatedAt: completedAt}, Category: AtomCategoryFact, Text: "layer fact", Relation: CandidateRelationNew}
+	scenarioItemID, err := ScenarioItemID(scope, "layers")
+	if err != nil {
+		t.Fatalf("ScenarioItemID() error = %v", err)
+	}
+	scenarioProvenance := Provenance{RawSources: []SourceRef{sourceRef}, ParentRevisions: []RevisionRef{{ItemID: atomItemID, RevisionID: atomRevisionID}}}
+	scenarioRevisionID, err := DerivedRevisionID(scope, scenarioItemID, "legacy-scenarios", []string{"layers", "Layer title", "Layer summary"}, scenarioProvenance, nil)
+	if err != nil {
+		t.Fatalf("scenario DerivedRevisionID() error = %v", err)
+	}
+	scenario := Scenario{Meta: RevisionMeta{SchemaVersion: DerivedSchemaVersionV1, Kind: DerivedKindScenario, ItemID: scenarioItemID, RevisionID: scenarioRevisionID, Revision: 1, OperationID: "legacy-scenarios", Scope: scope, State: RevisionStateActive, Provenance: scenarioProvenance, CreatedAt: completedAt}, TopicKey: "layers", Title: "Layer title", Summary: "Layer summary"}
+	profileItemID, err := ProfileItemID(scope)
+	if err != nil {
+		t.Fatalf("ProfileItemID() error = %v", err)
+	}
+	profileProvenance := Provenance{RawSources: []SourceRef{sourceRef}, ParentRevisions: []RevisionRef{{ItemID: scenarioItemID, RevisionID: scenarioRevisionID}}}
+	profileRevisionID, err := DerivedRevisionID(scope, profileItemID, "legacy-profile", []string{"Layer profile"}, profileProvenance, nil)
+	if err != nil {
+		t.Fatalf("profile DerivedRevisionID() error = %v", err)
+	}
+	profile := Profile{Meta: RevisionMeta{SchemaVersion: DerivedSchemaVersionV1, Kind: DerivedKindProfile, ItemID: profileItemID, RevisionID: profileRevisionID, Revision: 1, OperationID: "legacy-profile", Scope: scope, State: RevisionStateActive, Provenance: profileProvenance, CreatedAt: completedAt}, Summary: "Layer profile"}
+	store := &processorTestStore{state: ScopeState{SchemaVersion: CanonicalSchemaVersionV1, Scope: scope}}
+	if _, err := MigrateV1ScopeSnapshot(context.Background(), store, ScopeSnapshot{SchemaVersion: DerivedSchemaVersionV1, Scope: scope, Version: 8, Sources: []SourceRecord{{SchemaVersion: DerivedSchemaVersionV1, Ref: sourceRef, State: SourceStateActive, Turn: &turn}}, Atoms: []Atom{atom}, Scenarios: []Scenario{scenario}, Profiles: []Profile{profile}}, CanonicalMigrationConfig{MaxMutationRecords: 128}); err != nil {
+		t.Fatalf("MigrateV1ScopeSnapshot() error = %v", err)
+	}
+	if len(store.mutation.Items) != 3 || len(store.mutation.Revisions) != 3 || len(store.mutation.Heads) != 3 {
+		t.Fatalf("layer migration shape: items=%d revisions=%d heads=%d", len(store.mutation.Items), len(store.mutation.Revisions), len(store.mutation.Heads))
+	}
+	compatKinds := make(map[DerivedKind]bool)
+	for _, payload := range store.mutation.Payloads {
+		var compatibility CanonicalCompatibilityPayload
+		if err := json.Unmarshal(payload.Data, &compatibility); err == nil && compatibility.SchemaVersion == CanonicalCompatibilitySchemaVersion {
+			compatKinds[compatibility.Kind] = true
+		}
+	}
+	for _, kind := range []DerivedKind{DerivedKindAtom, DerivedKindScenario, DerivedKindProfile} {
+		if !compatKinds[kind] {
+			t.Fatalf("migration compatibility payload missing kind %q: %#v", kind, compatKinds)
+		}
 	}
 }
 

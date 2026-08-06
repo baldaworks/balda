@@ -195,3 +195,29 @@ func TestBadgerSessionMemoryStorePreservesV1OperationOutcomes(t *testing.T) {
 		t.Fatalf("second imported logical operation = %+v, found %v, error %v; want %+v", importedSecond, found, err, legacySecond)
 	}
 }
+
+func TestBadgerSessionMemoryStorePersistsMigrationReadiness(t *testing.T) {
+	ctx := context.Background()
+	scope := sessionmemory.Scope{Key: "telegram:ready", Kind: sessionmemory.ScopeKindPersonal}
+	directory := t.TempDir() + "/memory.badger"
+	store, err := OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	readiness := sessionmemory.CanonicalMigrationReadiness{SchemaVersion: sessionmemory.CanonicalMigrationReadinessSchemaVersion, Scope: scope, SnapshotVersion: 7, ReadyAt: time.Date(2026, time.August, 6, 15, 0, 0, 0, time.UTC)}
+	if err := store.SaveCanonicalMigrationReadiness(ctx, readiness); err != nil {
+		t.Fatalf("SaveCanonicalMigrationReadiness() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	reopened, err := OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("reopen error = %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	got, found, err := reopened.LoadCanonicalMigrationReadiness(ctx, scope)
+	if err != nil || !found || got != readiness {
+		t.Fatalf("LoadCanonicalMigrationReadiness() = %#v, found %v, error %v; want %#v, true", got, found, err, readiness)
+	}
+}

@@ -344,7 +344,7 @@ func canonicalLogicalComponentCount(recordType string) (int, bool) {
 		return 3, recordType == badgerRecordChange
 	case badgerRecordProvenanceForward, badgerRecordProvenanceReverse, badgerRecordSourceRevision, badgerRecordProjectionManifest:
 		return 5, false
-	case badgerRecordOperation, badgerRecordImportedOperation, badgerRecordSource, badgerRecordMessage, badgerRecordItem, badgerRecordRevision, badgerRecordLifecycle, badgerRecordHead, badgerRecordDelivery, badgerRecordDeliveryClaim, badgerRecordPayload, badgerRecordDeniedSource, badgerRecordDeniedRevision, badgerRecordMigrationCheckpoint, badgerRecordProjectionActive, badgerRecordProjectionRetention, badgerRecordProjectionCheckpoint:
+	case badgerRecordOperation, badgerRecordImportedOperation, badgerRecordSource, badgerRecordMessage, badgerRecordItem, badgerRecordRevision, badgerRecordLifecycle, badgerRecordHead, badgerRecordDelivery, badgerRecordDeliveryClaim, badgerRecordPayload, badgerRecordDeniedSource, badgerRecordDeniedRevision, badgerRecordMigrationCheckpoint, badgerRecordMigrationReady, badgerRecordProjectionActive, badgerRecordProjectionRetention, badgerRecordProjectionCheckpoint:
 		return 4, false
 	default:
 		return 0, false

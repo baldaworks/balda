@@ -54,10 +54,136 @@ var _ sessionmemory.ProjectionCheckpointStore = (*BadgerSessionMemoryStore)(nil)
 var _ sessionmemory.ProjectionRetentionFloorWriter = (*BadgerSessionMemoryStore)(nil)
 var _ sessionmemory.ScopeCheckpointStore = (*BadgerSessionMemoryStore)(nil)
 var _ sessionmemory.CanonicalImportedOperationStore = (*BadgerSessionMemoryStore)(nil)
+var _ sessionmemory.CanonicalOperationReader = (*BadgerSessionMemoryStore)(nil)
+var _ sessionmemory.CanonicalOperationCommitter = (*BadgerSessionMemoryStore)(nil)
 
 type badgerCanonicalOperation struct {
 	Fingerprint string                                 `json:"fingerprint"`
 	Outcome     sessionmemory.CanonicalMutationOutcome `json:"outcome"`
+}
+
+// LoadCanonicalOperation reads one exact-scope v2 mutation replay record.
+func (s *BadgerSessionMemoryStore) LoadCanonicalOperation(ctx context.Context, scope sessionmemory.Scope, operationID string) (sessionmemory.CanonicalOperationRecord, bool, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, err
+	}
+	if err := scope.Validate(); err != nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, err
+	}
+	if err := (sessionmemory.RevisionRef{ItemID: operationID, RevisionID: operationID}).Validate(); err != nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "canonical operation id is invalid", nil)
+	}
+	if s == nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	key, err := badgerOperationKey(scope, operationID)
+	if err != nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, err
+	}
+	var stored badgerCanonicalOperation
+	err = s.db.View(func(txn *badger.Txn) error {
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordOperation, &stored)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return sessionmemory.CanonicalOperationRecord{}, false, nil
+	}
+	if err != nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, badgerSessionMemoryError("load canonical operation", err)
+	}
+	record := sessionmemory.CanonicalOperationRecord{Fingerprint: stored.Fingerprint, Outcome: stored.Outcome}
+	if err := record.Validate(); err != nil {
+		return sessionmemory.CanonicalOperationRecord{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored canonical operation outcome is invalid", err)
+	}
+	return record, true, nil
+}
+
+// CommitCanonicalOperation durably advances one scope for an operation that
+// has no revision records while preserving replay and CAS semantics.
+func (s *BadgerSessionMemoryStore) CommitCanonicalOperation(ctx context.Context, request sessionmemory.CanonicalOperationCommitRequest) (sessionmemory.CanonicalMutationOutcome, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return sessionmemory.CanonicalMutationOutcome{}, err
+	}
+	if err := request.Validate(); err != nil {
+		return sessionmemory.CanonicalMutationOutcome{}, err
+	}
+	if s == nil {
+		return sessionmemory.CanonicalMutationOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return sessionmemory.CanonicalMutationOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	operationKey, err := badgerOperationKey(request.Scope, request.OperationID)
+	if err != nil {
+		return sessionmemory.CanonicalMutationOutcome{}, err
+	}
+	scopeKey, err := badgerScopeKey(request.Scope)
+	if err != nil {
+		return sessionmemory.CanonicalMutationOutcome{}, err
+	}
+	var outcome sessionmemory.CanonicalMutationOutcome
+	err = s.db.Update(func(txn *badger.Txn) error {
+		var stored badgerCanonicalOperation
+		lookupErr := getBadgerSessionMemoryRecord(txn, operationKey, badgerRecordOperation, &stored)
+		if lookupErr == nil {
+			if stored.Fingerprint != request.Fingerprint {
+				return sessionmemory.PermanentError(sessionmemory.CodeConflict, "canonical operation identity was reused", nil)
+			}
+			if err := stored.Outcome.Validate(); err != nil {
+				return err
+			}
+			outcome = stored.Outcome
+			return nil
+		}
+		if !errors.Is(lookupErr, badger.ErrKeyNotFound) {
+			return lookupErr
+		}
+		state := sessionmemory.ScopeState{SchemaVersion: sessionmemory.CanonicalSchemaVersionV1, Scope: request.Scope}
+		stateErr := getBadgerSessionMemoryRecord(txn, scopeKey, badgerRecordScope, &state)
+		if stateErr != nil && !errors.Is(stateErr, badger.ErrKeyNotFound) {
+			return stateErr
+		}
+		if err := state.Validate(); err != nil || state.Scope != request.Scope {
+			return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored canonical scope state is invalid", err)
+		}
+		if state.Version != request.ExpectedScopeVersion {
+			return sessionmemory.PermanentError(sessionmemory.CodeConflict, "canonical scope version changed", nil)
+		}
+		state.Version++
+		state.ChangeSeq++
+		outcome = sessionmemory.CanonicalMutationOutcome{ScopeVersion: state.Version, ChangeSeq: state.ChangeSeq}
+		if err := outcome.Validate(); err != nil {
+			return err
+		}
+		changeKey, keyErr := badgerScopeChangeKey(request.Scope, state.ChangeSeq)
+		if keyErr != nil {
+			return keyErr
+		}
+		change := sessionmemory.ScopeChange{Sequence: state.ChangeSeq, OperationID: request.OperationID, OccurredAt: request.CommittedAt}
+		if err := putBadgerSessionMemoryRecord(txn, changeKey, badgerRecordChange, change); err != nil {
+			return err
+		}
+		if err := putBadgerSessionMemoryRecord(txn, scopeKey, badgerRecordScope, state); err != nil {
+			return err
+		}
+		if err := putBadgerSessionMemoryRecord(txn, operationKey, badgerRecordOperation, badgerCanonicalOperation{Fingerprint: request.Fingerprint, Outcome: outcome}); err != nil {
+			return err
+		}
+		if s.beforeCanonicalMutationCommit != nil {
+			return s.beforeCanonicalMutationCommit()
+		}
+		return nil
+	})
+	if err != nil {
+		return sessionmemory.CanonicalMutationOutcome{}, badgerSessionMemoryError("commit canonical operation", err)
+	}
+	return outcome, nil
 }
 
 type badgerProvenanceEdge struct {
@@ -150,6 +276,14 @@ func (s *BadgerSessionMemoryStore) LoadScopeState(ctx context.Context, scope ses
 	}
 	if err := scope.Validate(); err != nil {
 		return sessionmemory.ScopeState{}, err
+	}
+	if s == nil {
+		return sessionmemory.ScopeState{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return sessionmemory.ScopeState{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
 	key, err := badgerScopeKey(scope)
 	if err != nil {
@@ -1003,7 +1137,7 @@ func (s *BadgerSessionMemoryStore) ClaimDeliveryOutbox(ctx context.Context, requ
 		options.Prefix = prefix
 		iterator := txn.NewIterator(options)
 		defer iterator.Close()
-		for iterator.Rewind(); iterator.ValidForPrefix(prefix) && uint32(len(claimed)) < request.Limit; iterator.Next() {
+		for iterator.Seek(prefix); iterator.ValidForPrefix(prefix) && uint32(len(claimed)) < request.Limit; iterator.Next() {
 			var record sessionmemory.DeliveryOutboxRecord
 			if err := getBadgerSessionMemoryRecord(txn, iterator.Item().Key(), badgerRecordDelivery, &record); err != nil {
 				return err
@@ -1079,6 +1213,14 @@ func (s *BadgerSessionMemoryStore) PutPayload(ctx context.Context, data []byte, 
 	if !isBadgerPayloadValid(data, ref) {
 		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "payload is invalid", nil)
 	}
+	if s == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
 	key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, ref.ID)
 	if err != nil {
 		return err
@@ -1098,6 +1240,14 @@ func (s *BadgerSessionMemoryStore) LoadPayload(ctx context.Context, ref sessionm
 	}
 	if err := ref.Validate(); err != nil {
 		return nil, err
+	}
+	if s == nil {
+		return nil, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return nil, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
 	key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, ref.ID)
 	if err != nil {
@@ -1124,6 +1274,14 @@ func (s *BadgerSessionMemoryStore) DeletePayload(ctx context.Context, ref sessio
 	if err := ref.Validate(); err != nil {
 		return err
 	}
+	if s == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
 	key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, ref.ID)
 	if err != nil {
 		return err
@@ -1146,6 +1304,14 @@ func (s *BadgerSessionMemoryStore) DenySource(ctx context.Context, scope session
 	if strings.TrimSpace(sourceID) != sourceID || sourceID == "" || deniedAt.IsZero() {
 		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "source deny request is invalid", nil)
 	}
+	if s == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
 	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedSource, sourceID)
 	if err != nil {
 		return err
@@ -1161,24 +1327,8 @@ func (s *BadgerSessionMemoryStore) DenySource(ctx context.Context, scope session
 
 // IsSourceDenied lets recall and traversal fail closed before physical scrub.
 func (s *BadgerSessionMemoryStore) IsSourceDenied(ctx context.Context, scope sessionmemory.Scope, sourceID string) (bool, error) {
-	if err := sessionMemoryContextError(ctx); err != nil {
-		return false, err
-	}
-	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedSource, sourceID)
-	if err != nil {
-		return false, err
-	}
-	err = s.db.View(func(txn *badger.Txn) error {
-		var denied badgerDeniedSource
-		return getBadgerSessionMemoryRecord(txn, key, badgerRecordDeniedSource, &denied)
-	})
-	if errors.Is(err, badger.ErrKeyNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, badgerSessionMemoryError("read canonical source deny", err)
-	}
-	return true, nil
+	var denied badgerDeniedSource
+	return s.isDenied(ctx, scope, sourceID, badgerRecordDeniedSource, "read canonical source deny", &denied)
 }
 
 // DenyRevision commits a fail-closed cascade result for one revision.
@@ -1191,6 +1341,14 @@ func (s *BadgerSessionMemoryStore) DenyRevision(ctx context.Context, scope sessi
 	}
 	if revisionID == "" || deniedAt.IsZero() {
 		return sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "revision deny request is invalid", nil)
+	}
+	if s == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
 	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedRevision, revisionID)
 	if err != nil {
@@ -1216,22 +1374,34 @@ func putBadgerDenyRecord(txn *badger.Txn, key []byte, recordType string, value a
 
 // IsRevisionDenied lets recall fail closed while physical scrub is pending.
 func (s *BadgerSessionMemoryStore) IsRevisionDenied(ctx context.Context, scope sessionmemory.Scope, revisionID string) (bool, error) {
+	var denied badgerDeniedRevision
+	return s.isDenied(ctx, scope, revisionID, badgerRecordDeniedRevision, "read canonical revision deny", &denied)
+}
+
+func (s *BadgerSessionMemoryStore) isDenied(ctx context.Context, scope sessionmemory.Scope, id, recordType, operation string, denied any) (bool, error) {
 	if err := sessionMemoryContextError(ctx); err != nil {
 		return false, err
 	}
-	key, err := badgerSessionMemoryKey(scope, badgerRecordDeniedRevision, revisionID)
+	if s == nil {
+		return false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	key, err := badgerSessionMemoryKey(scope, recordType, id)
 	if err != nil {
 		return false, err
 	}
 	err = s.db.View(func(txn *badger.Txn) error {
-		var denied badgerDeniedRevision
-		return getBadgerSessionMemoryRecord(txn, key, badgerRecordDeniedRevision, &denied)
+		return getBadgerSessionMemoryRecord(txn, key, recordType, denied)
 	})
 	if errors.Is(err, badger.ErrKeyNotFound) {
 		return false, nil
 	}
 	if err != nil {
-		return false, badgerSessionMemoryError("read canonical revision deny", err)
+		return false, badgerSessionMemoryError(operation, err)
 	}
 	return true, nil
 }
@@ -1249,6 +1419,14 @@ func (s *BadgerSessionMemoryStore) SourceRevisionBatch(ctx context.Context, scop
 	if sourceID == "" || limit == 0 || limit > 512 {
 		return nil, "", sessionmemory.PermanentError(sessionmemory.CodeLimitExceeded, "source provenance batch limit is invalid", nil)
 	}
+	if s == nil {
+		return nil, "", sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
+	if s.db == nil {
+		return nil, "", sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
 	prefix, err := badgerProvenancePrefix(scope, badgerRecordSourceRevision, sourceID)
 	if err != nil {
 		return nil, "", err
@@ -1259,7 +1437,7 @@ func (s *BadgerSessionMemoryStore) SourceRevisionBatch(ctx context.Context, scop
 		options.Prefix = prefix
 		iterator := txn.NewIterator(options)
 		defer iterator.Close()
-		for iterator.Rewind(); iterator.ValidForPrefix(prefix) && uint32(len(results)) < limit; iterator.Next() {
+		for iterator.Seek(prefix); iterator.ValidForPrefix(prefix) && uint32(len(results)) < limit; iterator.Next() {
 			var edge badgerProvenanceEdge
 			if err := getBadgerSessionMemoryRecord(txn, iterator.Item().Key(), badgerRecordSourceRevision, &edge); err != nil {
 				return err

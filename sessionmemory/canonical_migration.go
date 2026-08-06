@@ -19,10 +19,16 @@ type CanonicalMigrationConfig struct {
 	SourceLimit          int
 	AtomOffset           int
 	AtomLimit            int
+	ScenarioOffset       int
+	ScenarioLimit        int
+	ProfileOffset        int
+	ProfileLimit         int
 	OperationOffset      int
 	OperationLimit       int
 	SkipSourceRecords    bool
 	SkipAtomRecords      bool
+	SkipScenarioRecords  bool
+	SkipProfileRecords   bool
 	SkipOperationRecords bool
 	LegacyOperations     []OperationOutcome
 }
@@ -37,9 +43,13 @@ type CanonicalMigrationCheckpoint struct {
 	SnapshotVersion     uint64 `json:"snapshot_version"`
 	SourceCount         uint32 `json:"source_count"`
 	AtomCount           uint32 `json:"atom_count"`
+	ScenarioCount       uint32 `json:"scenario_count"`
+	ProfileCount        uint32 `json:"profile_count"`
 	OperationCount      uint32 `json:"operation_count"`
 	NextSourceOffset    uint32 `json:"next_source_offset"`
 	NextAtomOffset      uint32 `json:"next_atom_offset"`
+	NextScenarioOffset  uint32 `json:"next_scenario_offset"`
+	NextProfileOffset   uint32 `json:"next_profile_offset"`
 	NextOperationOffset uint32 `json:"next_operation_offset"`
 	Completed           bool   `json:"completed"`
 }
@@ -55,10 +65,10 @@ func (c CanonicalMigrationCheckpoint) Validate() error {
 	if err := c.Scope.Validate(); err != nil {
 		return err
 	}
-	if c.NextSourceOffset > c.SourceCount || c.NextAtomOffset > c.AtomCount || c.NextOperationOffset > c.OperationCount {
+	if c.NextSourceOffset > c.SourceCount || c.NextAtomOffset > c.AtomCount || c.NextScenarioOffset > c.ScenarioCount || c.NextProfileOffset > c.ProfileCount || c.NextOperationOffset > c.OperationCount {
 		return invalidDerived("canonical migration checkpoint cursor exceeds its snapshot")
 	}
-	if c.Completed && (c.NextSourceOffset != c.SourceCount || c.NextAtomOffset != c.AtomCount || c.NextOperationOffset != c.OperationCount) {
+	if c.Completed && (c.NextSourceOffset != c.SourceCount || c.NextAtomOffset != c.AtomCount || c.NextScenarioOffset != c.ScenarioCount || c.NextProfileOffset != c.ProfileCount || c.NextOperationOffset != c.OperationCount) {
 		return invalidDerived("completed canonical migration checkpoint is not at the snapshot end")
 	}
 	return nil
@@ -70,6 +80,32 @@ func (c CanonicalMigrationCheckpoint) Validate() error {
 type CanonicalMigrationCheckpointStore interface {
 	LoadCanonicalMigrationCheckpoint(ctx context.Context, scope Scope, snapshotVersion uint64) (CanonicalMigrationCheckpoint, bool, error)
 	SaveCanonicalMigrationCheckpoint(ctx context.Context, checkpoint CanonicalMigrationCheckpoint) error
+}
+
+// CanonicalMigrationReadiness is the durable cutover gate for one exact
+// scope.  It contains no legacy payload; the snapshot version only identifies
+// which validated source was migrated.
+type CanonicalMigrationReadiness struct {
+	SchemaVersion   string    `json:"schema_version"`
+	Scope           Scope     `json:"scope"`
+	SnapshotVersion uint64    `json:"snapshot_version"`
+	ReadyAt         time.Time `json:"ready_at"`
+}
+
+const CanonicalMigrationReadinessSchemaVersion = "session-memory-migration-readiness/v1"
+
+func (r CanonicalMigrationReadiness) Validate() error {
+	if r.SchemaVersion != CanonicalMigrationReadinessSchemaVersion || r.ReadyAt.IsZero() {
+		return invalidDerived("canonical migration readiness is invalid")
+	}
+	return r.Scope.Validate()
+}
+
+// CanonicalMigrationReadinessStore persists the explicit per-scope cutover
+// gate so a reopened process never advertises an unproven legacy scope.
+type CanonicalMigrationReadinessStore interface {
+	LoadCanonicalMigrationReadiness(ctx context.Context, scope Scope) (CanonicalMigrationReadiness, bool, error)
+	SaveCanonicalMigrationReadiness(ctx context.Context, readiness CanonicalMigrationReadiness) error
 }
 
 // MigrateV1ScopeSnapshot converts one validated v1 exact-scope snapshot into a
@@ -100,6 +136,16 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 	if err != nil {
 		return CanonicalMutationOutcome{}, err
 	}
+	scenarioStart, scenarioEnd, err := migrationRange(len(snapshot.Scenarios), config.ScenarioOffset, config.ScenarioLimit)
+	if err != nil {
+		return CanonicalMutationOutcome{}, err
+	}
+	profileStart, profileEnd, err := migrationRange(len(snapshot.Profiles), config.ProfileOffset, config.ProfileLimit)
+	if err != nil {
+		return CanonicalMutationOutcome{}, err
+	}
+	nextSourceOffset, nextAtomOffset := sourceStart, atomStart
+	nextScenarioOffset, nextProfileOffset := scenarioStart, profileStart
 	legacyOperations := make([]OperationOutcome, len(config.LegacyOperations))
 	for index, operation := range config.LegacyOperations {
 		legacyOperations[index] = cloneOperationOutcome(operation)
@@ -128,6 +174,18 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		}
 		atomStart, atomEnd = 0, 0
 	}
+	if config.SkipScenarioRecords {
+		if config.ScenarioOffset != 0 || config.ScenarioLimit != 0 {
+			return CanonicalMutationOutcome{}, invalidDerived("canonical migration cannot skip a selected scenario range")
+		}
+		scenarioStart, scenarioEnd = 0, 0
+	}
+	if config.SkipProfileRecords {
+		if config.ProfileOffset != 0 || config.ProfileLimit != 0 {
+			return CanonicalMutationOutcome{}, invalidDerived("canonical migration cannot skip a selected profile range")
+		}
+		profileStart, profileEnd = 0, 0
+	}
 	if config.SkipOperationRecords {
 		if config.OperationOffset != 0 || config.OperationLimit != 0 {
 			return CanonicalMutationOutcome{}, invalidDerived("canonical migration cannot skip a selected operation range")
@@ -137,17 +195,33 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 	if config.SkipSourceRecords {
 		sourceStart, sourceEnd = len(snapshot.Sources), len(snapshot.Sources)
 	}
+	if config.SkipScenarioRecords {
+		scenarioStart, scenarioEnd = len(snapshot.Scenarios), len(snapshot.Scenarios)
+	}
+	if config.SkipProfileRecords {
+		profileStart, profileEnd = len(snapshot.Profiles), len(snapshot.Profiles)
+	}
 	if config.SkipOperationRecords {
 		operationStart, operationEnd = len(legacyOperations), len(legacyOperations)
 	}
-	if sourceStart == sourceEnd && atomStart == atomEnd && operationStart == operationEnd {
+	if sourceStart == sourceEnd && atomStart == atomEnd && scenarioStart == scenarioEnd && profileStart == profileEnd && operationStart == operationEnd {
 		return CanonicalMutationOutcome{}, invalidDerived("canonical migration batch is empty")
 	}
-	if atomStart != atomEnd && !config.SkipSourceRecords && (sourceStart != 0 || sourceEnd != len(snapshot.Sources)) {
+	if (atomStart != atomEnd || scenarioStart != scenarioEnd || profileStart != profileEnd) && !config.SkipSourceRecords && (sourceStart != 0 || sourceEnd != len(snapshot.Sources)) {
 		return CanonicalMutationOutcome{}, invalidDerived("canonical migration atom batch must include every source or resume after source completion")
 	}
 	if atomStart != atomEnd {
-		if err := validateMigrationAtomRange(snapshot.Atoms, atomStart, atomEnd); err != nil {
+		if err := validateMigrationAtomRange(snapshot, atomStart, atomEnd); err != nil {
+			return CanonicalMutationOutcome{}, err
+		}
+	}
+	if scenarioStart != scenarioEnd {
+		if err := validateMigrationScenarioRange(snapshot, scenarioStart, scenarioEnd); err != nil {
+			return CanonicalMutationOutcome{}, err
+		}
+	}
+	if profileStart != profileEnd {
+		if err := validateMigrationProfileRange(snapshot, profileStart, profileEnd); err != nil {
 			return CanonicalMutationOutcome{}, err
 		}
 	}
@@ -162,7 +236,7 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		return CanonicalMutationOutcome{}, PermanentError(CodeScopeViolation, "canonical migration scope state does not match snapshot", nil)
 	}
 
-	operationID := reconciliationID("migration", canonicalMigrationSchemaVersion, snapshot.Scope.Key, string(snapshot.Scope.Kind), formatUint(snapshot.Version), formatUint(uint64(sourceStart)), formatUint(uint64(sourceEnd)), formatUint(uint64(atomStart)), formatUint(uint64(atomEnd)), formatUint(uint64(operationStart)), formatUint(uint64(operationEnd)), formatBool(config.SkipSourceRecords), formatBool(config.SkipAtomRecords), formatBool(config.SkipOperationRecords))
+	operationID := reconciliationID("migration", canonicalMigrationSchemaVersion, snapshot.Scope.Key, string(snapshot.Scope.Kind), formatUint(snapshot.Version), formatUint(uint64(sourceStart)), formatUint(uint64(sourceEnd)), formatUint(uint64(atomStart)), formatUint(uint64(atomEnd)), formatUint(uint64(scenarioStart)), formatUint(uint64(scenarioEnd)), formatUint(uint64(profileStart)), formatUint(uint64(profileEnd)), formatUint(uint64(operationStart)), formatUint(uint64(operationEnd)), formatBool(config.SkipSourceRecords), formatBool(config.SkipAtomRecords), formatBool(config.SkipScenarioRecords), formatBool(config.SkipProfileRecords), formatBool(config.SkipOperationRecords))
 	mutation := CanonicalMutation{
 		SchemaVersion:        CanonicalSchemaVersionV1,
 		Scope:                snapshot.Scope,
@@ -188,101 +262,104 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 	mutation.Messages = messages
 	mutation.Payloads = append(mutation.Payloads, payloads...)
 
-	legacyRevisions := make(map[RevisionRef]string, len(snapshot.Atoms))
+	legacyRevisions := make(map[RevisionRef]string, len(snapshot.Atoms)+len(snapshot.Scenarios)+len(snapshot.Profiles))
 	for _, atom := range snapshot.Atoms {
 		legacyRevisions[RevisionRef{ItemID: atom.Meta.ItemID, RevisionID: atom.Meta.RevisionID}] = migrationRevisionID(snapshot.Scope, atom.Meta.RevisionID)
 	}
-	items := make(map[string]MemoryItem, len(snapshot.Atoms))
-	knownItems := make(map[string]MemoryKind, atomStart)
+	for _, scenario := range snapshot.Scenarios {
+		legacyRevisions[RevisionRef{ItemID: scenario.Meta.ItemID, RevisionID: scenario.Meta.RevisionID}] = migrationRevisionID(snapshot.Scope, scenario.Meta.RevisionID)
+	}
+	for _, profile := range snapshot.Profiles {
+		legacyRevisions[RevisionRef{ItemID: profile.Meta.ItemID, RevisionID: profile.Meta.RevisionID}] = migrationRevisionID(snapshot.Scope, profile.Meta.RevisionID)
+	}
+	items := make(map[string]MemoryItem, len(snapshot.Atoms)+len(snapshot.Scenarios)+len(snapshot.Profiles))
+	knownItems := make(map[string]MemoryKind, len(snapshot.Atoms)+len(snapshot.Scenarios)+len(snapshot.Profiles))
 	for _, atom := range snapshot.Atoms[:atomStart] {
-		itemID := migrationItemID(snapshot.Scope, atom.Meta.ItemID)
-		kind := MemoryKindState
-		if atom.Category == AtomCategoryEvent {
-			kind = MemoryKindEvent
+		if err := rememberMigrationItem(items, knownItems, snapshot.Scope, atom.Meta, migrationMemoryKind(atom.Category)); err != nil {
+			return CanonicalMutationOutcome{}, err
 		}
-		if existing, ok := knownItems[itemID]; ok && existing != kind {
-			return CanonicalMutationOutcome{}, invalidDerived("v1 migration maps one item to multiple memory kinds")
+	}
+	for _, scenario := range snapshot.Scenarios[:scenarioStart] {
+		if err := rememberMigrationItem(items, knownItems, snapshot.Scope, scenario.Meta, MemoryKindState); err != nil {
+			return CanonicalMutationOutcome{}, err
 		}
-		knownItems[itemID] = kind
+	}
+	for _, profile := range snapshot.Profiles[:profileStart] {
+		if err := rememberMigrationItem(items, knownItems, snapshot.Scope, profile.Meta, MemoryKindState); err != nil {
+			return CanonicalMutationOutcome{}, err
+		}
 	}
 	activeHeads := make(map[string]MemoryRevision)
-	for _, atom := range snapshot.Atoms[atomStart:atomEnd] {
+	appendRevision := func(meta RevisionMeta, kind MemoryKind, category *AtomCategory, topicKey, title, text string) error {
 		if err := checkContext(ctx); err != nil {
-			return CanonicalMutationOutcome{}, err
+			return err
 		}
-		evidence, err := migrationEvidence(snapshot.Scope, atom.Meta.Provenance.RawSources, sourceIDs, sourceMessages)
+		evidence, err := migrationEvidence(snapshot.Scope, meta.Provenance.RawSources, sourceIDs, sourceMessages)
 		if err != nil {
-			return CanonicalMutationOutcome{}, err
+			return err
 		}
-		kind := MemoryKindState
-		if atom.Category == AtomCategoryEvent {
-			kind = MemoryKindEvent
+		itemID := migrationItemID(snapshot.Scope, meta.ItemID)
+		if err := rememberMigrationItem(items, knownItems, snapshot.Scope, meta, kind); err != nil {
+			return err
 		}
-		itemID := migrationItemID(snapshot.Scope, atom.Meta.ItemID)
-		item := MemoryItem{ItemID: itemID, Scope: snapshot.Scope, Kind: kind}
-		if kind == MemoryKindState {
-			item.MemoryKey = MemoryKey(reconciliationID("legacy-key", snapshot.Scope.Key, atom.Meta.ItemID))
+		compat := CanonicalCompatibilityPayload{SchemaVersion: CanonicalCompatibilitySchemaVersion, Kind: migrationDerivedKind(kind, category, topicKey, title), Category: category, TopicKey: topicKey, Title: title, Text: text, LegacyItemID: meta.ItemID, LegacyRevisionID: meta.RevisionID, LegacyOperationID: meta.OperationID, LegacyParents: append([]RevisionRef(nil), meta.Provenance.ParentRevisions...)}
+		if meta.Supersedes != nil {
+			copyOf := *meta.Supersedes
+			compat.Supersedes = &copyOf
 		}
-		if existing, ok := items[itemID]; ok && existing.Kind != item.Kind {
-			return CanonicalMutationOutcome{}, invalidDerived("v1 migration maps one item to multiple memory kinds")
+		compatBytes, err := json.Marshal(compat)
+		if err != nil {
+			return PermanentError(CodeInvalidDerived, "encode v1 migration compatibility payload", err)
 		}
-		if knownKind, ok := knownItems[itemID]; ok {
-			if knownKind != item.Kind {
-				return CanonicalMutationOutcome{}, invalidDerived("v1 migration maps one item to multiple memory kinds")
-			}
-		} else {
-			items[itemID] = item
-			knownItems[itemID] = item.Kind
+		revisionID := migrationRevisionID(snapshot.Scope, meta.RevisionID)
+		revisionPayload, revisionRef, err := canonicalMigrationPayload(canonicalPayloadID("migration-revision", revisionID), compatBytes)
+		if err != nil {
+			return err
 		}
-
-		parents := make([]string, 0, len(atom.Meta.Provenance.ParentRevisions)+1)
-		for _, parent := range atom.Meta.Provenance.ParentRevisions {
+		parents := make([]string, 0, len(meta.Provenance.ParentRevisions)+1)
+		for _, parent := range meta.Provenance.ParentRevisions {
 			mapped, ok := legacyRevisions[parent]
 			if !ok {
-				return CanonicalMutationOutcome{}, invalidDerived("v1 migration references a revision outside the snapshot")
+				return invalidDerived("v1 migration references a revision outside the snapshot")
 			}
 			parents = appendUniqueCanonicalID(parents, mapped)
 		}
-		if atom.Meta.Supersedes != nil {
-			mapped, ok := legacyRevisions[RevisionRef{ItemID: atom.Meta.Supersedes.ItemID, RevisionID: atom.Meta.Supersedes.RevisionID}]
+		if meta.Supersedes != nil {
+			mapped, ok := legacyRevisions[RevisionRef{ItemID: meta.Supersedes.ItemID, RevisionID: meta.Supersedes.RevisionID}]
 			if !ok {
-				return CanonicalMutationOutcome{}, invalidDerived("v1 migration supersedes a revision outside the snapshot")
+				return invalidDerived("v1 migration supersedes a revision outside the snapshot")
 			}
 			parents = appendUniqueCanonicalID(parents, mapped)
 		}
-		revisionID := migrationRevisionID(snapshot.Scope, atom.Meta.RevisionID)
-		revisionPayload, revisionRef, err := canonicalMigrationPayload(canonicalPayloadID("migration-revision", revisionID), []byte(atom.Text))
-		if err != nil {
-			return CanonicalMutationOutcome{}, err
-		}
-		revision := MemoryRevision{
-			SchemaVersion: MemorySchemaVersionV2,
-			RevisionID:    revisionID,
-			ItemID:        itemID,
-			Revision:      atom.Meta.Revision,
-			Parents:       parents,
-			Temporal:      Temporal{ObservedAt: atom.Meta.CreatedAt},
-			Evidence:      evidence,
-			Sensitivity:   SensitivityStandard,
-			Retention:     RetentionClassStandard,
-			Payload:       revisionRef,
-		}
+		revision := MemoryRevision{SchemaVersion: MemorySchemaVersionV2, RevisionID: revisionID, ItemID: itemID, Revision: meta.Revision, Parents: parents, Temporal: Temporal{ObservedAt: meta.CreatedAt}, Evidence: evidence, Sensitivity: SensitivityStandard, Retention: RetentionClassStandard, Payload: revisionRef}
 		if err := revision.Validate(); err != nil {
-			return CanonicalMutationOutcome{}, err
+			return err
 		}
 		mutation.Revisions = append(mutation.Revisions, revision)
-		mutation.Lifecycle = append(mutation.Lifecycle, LifecycleEvent{
-			EventID:    reconciliationID("legacy-lifecycle", revisionID, string(atom.Meta.State)),
-			RevisionID: revisionID,
-			Type:       migrationLifecycleType(atom.Meta.State),
-			OccurredAt: atom.Meta.CreatedAt,
-		})
+		mutation.Lifecycle = append(mutation.Lifecycle, LifecycleEvent{EventID: reconciliationID("legacy-lifecycle", revisionID, string(meta.State)), RevisionID: revisionID, Type: migrationLifecycleType(meta.State), OccurredAt: meta.CreatedAt})
 		mutation.Payloads = append(mutation.Payloads, revisionPayload)
 		mutation.Operation.Outcome = append(mutation.Operation.Outcome, revisionID)
-		if atom.Meta.State == RevisionStateActive {
+		if meta.State == RevisionStateActive {
 			if current, ok := activeHeads[itemID]; !ok || current.Revision < revision.Revision || (current.Revision == revision.Revision && revision.RevisionID < current.RevisionID) {
 				activeHeads[itemID] = revision
 			}
+		}
+		return nil
+	}
+	for _, atom := range snapshot.Atoms[atomStart:atomEnd] {
+		category := atom.Category
+		if err := appendRevision(atom.Meta, migrationMemoryKind(atom.Category), &category, "", "", atom.Text); err != nil {
+			return CanonicalMutationOutcome{}, err
+		}
+	}
+	for _, scenario := range snapshot.Scenarios[scenarioStart:scenarioEnd] {
+		if err := appendRevision(scenario.Meta, MemoryKindState, nil, scenario.TopicKey, scenario.Title, scenario.Summary); err != nil {
+			return CanonicalMutationOutcome{}, err
+		}
+	}
+	for _, profile := range snapshot.Profiles[profileStart:profileEnd] {
+		if err := appendRevision(profile.Meta, MemoryKindState, nil, "", "", profile.Summary); err != nil {
+			return CanonicalMutationOutcome{}, err
 		}
 	}
 	for _, item := range items {
@@ -326,11 +403,15 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		SnapshotVersion:     snapshot.Version,
 		SourceCount:         uint32(len(snapshot.Sources)),
 		AtomCount:           uint32(len(snapshot.Atoms)),
+		ScenarioCount:       uint32(len(snapshot.Scenarios)),
+		ProfileCount:        uint32(len(snapshot.Profiles)),
 		OperationCount:      uint32(len(legacyOperations)),
-		NextSourceOffset:    uint32(sourceEnd),
-		NextAtomOffset:      uint32(atomEnd),
-		NextOperationOffset: uint32(operationEnd),
-		Completed:           sourceEnd == len(snapshot.Sources) && atomEnd == len(snapshot.Atoms) && operationEnd == len(legacyOperations),
+		NextSourceOffset:    uint32(nextMigrationOffset(config.SkipSourceRecords, nextSourceOffset, sourceEnd)),
+		NextAtomOffset:      uint32(nextMigrationOffset(config.SkipAtomRecords, nextAtomOffset, atomEnd)),
+		NextScenarioOffset:  uint32(nextMigrationOffset(config.SkipScenarioRecords, nextScenarioOffset, scenarioEnd)),
+		NextProfileOffset:   uint32(nextMigrationOffset(config.SkipProfileRecords, nextProfileOffset, profileEnd)),
+		NextOperationOffset: uint32(nextMigrationOffset(config.SkipOperationRecords, config.OperationOffset, operationEnd)),
+		Completed:           nextMigrationOffset(config.SkipSourceRecords, nextSourceOffset, sourceEnd) == len(snapshot.Sources) && nextMigrationOffset(config.SkipAtomRecords, nextAtomOffset, atomEnd) == len(snapshot.Atoms) && nextMigrationOffset(config.SkipScenarioRecords, nextScenarioOffset, scenarioEnd) == len(snapshot.Scenarios) && nextMigrationOffset(config.SkipProfileRecords, nextProfileOffset, profileEnd) == len(snapshot.Profiles) && nextMigrationOffset(config.SkipOperationRecords, config.OperationOffset, operationEnd) == len(legacyOperations),
 	}
 	if checkpointStore, ok := store.(CanonicalMigrationCheckpointStore); ok {
 		if err := checkpointStore.SaveCanonicalMigrationCheckpoint(ctx, checkpoint); err != nil {
@@ -494,6 +575,16 @@ func migrationCommittedAt(snapshot ScopeSnapshot) time.Time {
 			latest = atom.Meta.CreatedAt
 		}
 	}
+	for _, scenario := range snapshot.Scenarios {
+		if scenario.Meta.CreatedAt.After(latest) {
+			latest = scenario.Meta.CreatedAt
+		}
+	}
+	for _, profile := range snapshot.Profiles {
+		if profile.Meta.CreatedAt.After(latest) {
+			latest = profile.Meta.CreatedAt
+		}
+	}
 	if latest.IsZero() {
 		// Operation-only batches have no source timestamp. Use a stable,
 		// non-zero sentinel required by the canonical operation contract.
@@ -525,33 +616,114 @@ func migrationRange(total, offset, limit int) (int, int, error) {
 	return offset, end, nil
 }
 
-func validateMigrationAtomRange(atoms []Atom, start, end int) error {
-	indices := make(map[RevisionRef]int, len(atoms))
-	for index, atom := range atoms {
-		indices[RevisionRef{ItemID: atom.Meta.ItemID, RevisionID: atom.Meta.RevisionID}] = index
+func nextMigrationOffset(skipped bool, cursor, end int) int {
+	if skipped {
+		return cursor
 	}
-	for _, atom := range atoms[start:end] {
-		for _, parent := range atom.Meta.Provenance.ParentRevisions {
+	return end
+}
+
+func rememberMigrationItem(items map[string]MemoryItem, known map[string]MemoryKind, scope Scope, meta RevisionMeta, kind MemoryKind) error {
+	itemID := migrationItemID(scope, meta.ItemID)
+	if existing, ok := known[itemID]; ok && existing != kind {
+		return invalidDerived("v1 migration maps one item to multiple memory kinds")
+	}
+	known[itemID] = kind
+	if existing, ok := items[itemID]; ok {
+		if existing.Kind != kind || existing.Scope != scope {
+			return invalidDerived("v1 migration maps one item to multiple memory kinds")
+		}
+		return nil
+	}
+	item := MemoryItem{ItemID: itemID, Scope: scope, Kind: kind}
+	if kind == MemoryKindState {
+		item.MemoryKey = MemoryKey(reconciliationID("legacy-key", scope.Key, meta.ItemID))
+	}
+	items[itemID] = item
+	return nil
+}
+
+func migrationMemoryKind(category AtomCategory) MemoryKind {
+	if category == AtomCategoryEvent {
+		return MemoryKindEvent
+	}
+	return MemoryKindState
+}
+
+func migrationDerivedKind(kind MemoryKind, category *AtomCategory, topicKey, title string) DerivedKind {
+	if category != nil {
+		return DerivedKindAtom
+	}
+	if topicKey != "" || title != "" {
+		return DerivedKindScenario
+	}
+	return DerivedKindProfile
+}
+
+type migrationRevisionRecord struct {
+	ref        RevisionRef
+	parents    []RevisionRef
+	supersedes *RevisionRef
+}
+
+func migrationRevisionRecords(snapshot ScopeSnapshot) []migrationRevisionRecord {
+	records := make([]migrationRevisionRecord, 0, len(snapshot.Atoms)+len(snapshot.Scenarios)+len(snapshot.Profiles))
+	for _, atom := range snapshot.Atoms {
+		records = append(records, migrationRevisionRecord{ref: RevisionRef{ItemID: atom.Meta.ItemID, RevisionID: atom.Meta.RevisionID}, parents: atom.Meta.Provenance.ParentRevisions, supersedes: atom.Meta.Supersedes})
+	}
+	for _, scenario := range snapshot.Scenarios {
+		records = append(records, migrationRevisionRecord{ref: RevisionRef{ItemID: scenario.Meta.ItemID, RevisionID: scenario.Meta.RevisionID}, parents: scenario.Meta.Provenance.ParentRevisions, supersedes: scenario.Meta.Supersedes})
+	}
+	for _, profile := range snapshot.Profiles {
+		records = append(records, migrationRevisionRecord{ref: RevisionRef{ItemID: profile.Meta.ItemID, RevisionID: profile.Meta.RevisionID}, parents: profile.Meta.Provenance.ParentRevisions, supersedes: profile.Meta.Supersedes})
+	}
+	return records
+}
+
+func validateMigrationRevisionRange(snapshot ScopeSnapshot, absoluteStart, absoluteEnd int) error {
+	records := migrationRevisionRecords(snapshot)
+	if absoluteStart < 0 || absoluteEnd < absoluteStart || absoluteEnd > len(records) {
+		return limitExceeded("v1 migration revision range is outside the snapshot")
+	}
+	indices := make(map[RevisionRef]int, len(records))
+	for index, record := range records {
+		indices[record.ref] = index
+	}
+	for _, record := range records[absoluteStart:absoluteEnd] {
+		for _, parent := range record.parents {
 			index, ok := indices[parent]
 			if !ok {
 				return invalidDerived("v1 migration references a revision outside the snapshot")
 			}
-			if index >= end {
+			if index >= absoluteEnd {
 				return invalidDerived("v1 migration batch references a revision from a later batch")
 			}
 		}
-		if atom.Meta.Supersedes != nil {
-			ref := *atom.Meta.Supersedes
-			index, ok := indices[ref]
+		if record.supersedes != nil {
+			index, ok := indices[*record.supersedes]
 			if !ok {
 				return invalidDerived("v1 migration supersedes a revision outside the snapshot")
 			}
-			if index >= end {
+			if index >= absoluteEnd {
 				return invalidDerived("v1 migration batch supersedes a revision from a later batch")
 			}
 		}
 	}
 	return nil
+}
+
+func validateMigrationAtomRange(snapshot ScopeSnapshot, start, end int) error {
+	return validateMigrationRevisionRange(snapshot, start, end)
+}
+
+func validateMigrationScenarioRange(snapshot ScopeSnapshot, start, end int) error {
+	base := len(snapshot.Atoms)
+	return validateMigrationRevisionRange(snapshot, base+start, base+end)
+}
+
+func validateMigrationProfileRange(snapshot ScopeSnapshot, start, end int) error {
+	base := len(snapshot.Atoms) + len(snapshot.Scenarios)
+	return validateMigrationRevisionRange(snapshot, base+start, base+end)
 }
 
 func validateMigrationOperations(scope Scope, operations []OperationOutcome) error {

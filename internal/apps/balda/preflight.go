@@ -149,8 +149,8 @@ func PreflightRuntime(
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
 				})
 			},
-			func(lc fx.Lifecycle, provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
-				return newCanonicalSessionMemoryProvider(lc, cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
+			func(provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
+				return newCanonicalSessionMemoryProvider(cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
 				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)
@@ -184,6 +184,7 @@ func PreflightRuntime(
 				return sessionmemorymcp.Config{
 					Enabled:         cfg.Balda.SessionMemory.Enabled,
 					DerivedSearcher: nativeDerivedSearcher(provider),
+					RecallSearcher:  nativeRecallSearcher(provider),
 					SessionResolver: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
 					ScopeResolver:   resolver,
 					Timeout:         sessionMemorySearchTimeout,
@@ -304,17 +305,24 @@ func PreflightRuntime(
 		natsbus.Module,
 		questions.Module,
 		fx.Populate(&runtimeManager, &mcpManager),
-		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager) {
+		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, memoryProvider sessionmemory.Provider) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
 				if err := manager.EnsureStarted(ctx); err != nil {
+					_ = manager.Stop(context.Background())
 					return fmt.Errorf("start bundled internal MCP servers: %w", err)
 				}
+				if err := startSessionMemoryRuntime(ctx, memoryProvider); err != nil {
+					_ = manager.Stop(context.Background())
+					return fmt.Errorf("start session-memory runtime: %w", err)
+				}
 				if err := runtimeManager.EnsureRuntime(ctx); err != nil {
+					_ = closeSessionMemoryRuntime(context.Background(), memoryProvider)
+					_ = manager.Stop(context.Background())
 					return fmt.Errorf("start Balda provider runtime: %w", err)
 				}
 				return nil
 			}, OnStop: func(ctx context.Context) error {
-				return errors.Join(runtimeManager.Stop(ctx), manager.Stop(ctx))
+				return errors.Join(runtimeManager.Stop(ctx), closeSessionMemoryRuntime(ctx, memoryProvider), manager.Stop(ctx))
 			}})
 		}),
 	)

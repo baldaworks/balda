@@ -78,6 +78,11 @@ func nativeDerivedSearcher(provider sessionmemory.Provider) sessionmemorymcp.Der
 	return derived
 }
 
+func nativeRecallSearcher(provider sessionmemory.Provider) sessionmemorymcp.RecallSearcher {
+	recall, _ := provider.(sessionmemorymcp.RecallSearcher)
+	return recall
+}
+
 type memorySnapshotReaderAdapter struct {
 	store *memory.Store
 }
@@ -253,8 +258,8 @@ func Module(
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
 				})
 			},
-			func(lc fx.Lifecycle, provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
-				return newCanonicalSessionMemoryProvider(lc, cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
+			func(provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
+				return newCanonicalSessionMemoryProvider(cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
 				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)
@@ -299,6 +304,7 @@ func Module(
 				return sessionmemorymcp.Config{
 					Enabled:         cfg.Balda.SessionMemory.Enabled,
 					DerivedSearcher: nativeDerivedSearcher(provider),
+					RecallSearcher:  nativeRecallSearcher(provider),
 					SessionResolver: sessionmemorymcp.HeaderSessionResolver{Broker: broker},
 					ScopeResolver:   resolver,
 					Timeout:         sessionMemorySearchTimeout,
