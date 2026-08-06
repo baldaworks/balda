@@ -47,6 +47,7 @@ func (s *BadgerSessionMemoryStore) RunValueLogGC(discardRatio float64) error {
 
 var _ sessionmemory.CanonicalStore = (*BadgerSessionMemoryStore)(nil)
 var _ sessionmemory.ProjectionCheckpointStore = (*BadgerSessionMemoryStore)(nil)
+var _ sessionmemory.CanonicalImportedOperationStore = (*BadgerSessionMemoryStore)(nil)
 
 type badgerCanonicalOperation struct {
 	Fingerprint string                                 `json:"fingerprint"`
@@ -258,6 +259,15 @@ func (s *BadgerSessionMemoryStore) putCanonicalMutationRecords(txn *badger.Txn, 
 	if err := validateBadgerMutationProvenance(txn, mutation); err != nil {
 		return err
 	}
+	for _, imported := range mutation.ImportedOperations {
+		key, err := badgerImportedOperationKey(mutation.Scope, imported.Outcome.OperationID)
+		if err != nil {
+			return err
+		}
+		if err := putBadgerSessionMemoryImmutableRecord(txn, key, badgerRecordImportedOperation, imported); err != nil {
+			return err
+		}
+	}
 	for _, payload := range mutation.Payloads {
 		key, err := badgerSessionMemoryKey(sessionmemory.Scope{Key: "internal:payload", Kind: sessionmemory.ScopeKindPersonal}, badgerRecordPayload, payload.Ref.ID)
 		if err != nil {
@@ -334,6 +344,47 @@ func (s *BadgerSessionMemoryStore) putCanonicalMutationRecords(txn *badger.Txn, 
 		}
 	}
 	return nil
+}
+
+// LoadCanonicalImportedOperation reads one exact-scope v1 operation outcome
+// retained during migration. It is intentionally an optional port so normal
+// canonical processing never depends on legacy operation semantics.
+func (s *BadgerSessionMemoryStore) LoadCanonicalImportedOperation(ctx context.Context, scope sessionmemory.Scope, operationID string) (sessionmemory.CanonicalImportedOperation, bool, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return sessionmemory.CanonicalImportedOperation{}, false, err
+	}
+	if err := scope.Validate(); err != nil {
+		return sessionmemory.CanonicalImportedOperation{}, false, err
+	}
+	if strings.TrimSpace(operationID) == "" || strings.TrimSpace(operationID) != operationID || strings.ContainsAny(operationID, "\r\n\t") {
+		return sessionmemory.CanonicalImportedOperation{}, false, sessionmemory.PermanentError(sessionmemory.CodeInvalidDerived, "canonical imported operation id is invalid", nil)
+	}
+	if s == nil {
+		return sessionmemory.CanonicalImportedOperation{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	s.maintenanceMu.Lock()
+	defer s.maintenanceMu.Unlock()
+	if s.db == nil {
+		return sessionmemory.CanonicalImportedOperation{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	key, err := badgerImportedOperationKey(scope, operationID)
+	if err != nil {
+		return sessionmemory.CanonicalImportedOperation{}, false, err
+	}
+	var imported sessionmemory.CanonicalImportedOperation
+	err = s.db.View(func(txn *badger.Txn) error {
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordImportedOperation, &imported)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return sessionmemory.CanonicalImportedOperation{}, false, nil
+	}
+	if err != nil {
+		return sessionmemory.CanonicalImportedOperation{}, false, badgerSessionMemoryError("load canonical imported operation", err)
+	}
+	if err := imported.Validate(scope); err != nil || imported.Outcome.OperationID != operationID {
+		return sessionmemory.CanonicalImportedOperation{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored canonical imported operation is invalid", err)
+	}
+	return imported, true, nil
 }
 
 func validateBadgerMutationReferences(txn *badger.Txn, mutation sessionmemory.CanonicalMutation) error {

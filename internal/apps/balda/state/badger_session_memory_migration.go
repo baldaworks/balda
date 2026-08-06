@@ -77,13 +77,13 @@ func (s *BadgerSessionMemoryStore) SaveCanonicalMigrationCheckpoint(ctx context.
 			if err := existing.Validate(); err != nil {
 				return err
 			}
-			if existing.Scope != checkpoint.Scope || existing.SnapshotVersion != checkpoint.SnapshotVersion || existing.SourceCount != checkpoint.SourceCount || existing.AtomCount != checkpoint.AtomCount {
+			if existing.Scope != checkpoint.Scope || existing.SnapshotVersion != checkpoint.SnapshotVersion || existing.SourceCount != checkpoint.SourceCount || existing.AtomCount != checkpoint.AtomCount || existing.OperationCount != checkpoint.OperationCount {
 				return sessionmemory.PermanentError(sessionmemory.CodeConflict, "canonical migration checkpoint identity was reused", nil)
 			}
-			if existing.NextSourceOffset > checkpoint.NextSourceOffset || existing.NextAtomOffset > checkpoint.NextAtomOffset {
+			if existing.NextSourceOffset > checkpoint.NextSourceOffset || existing.NextAtomOffset > checkpoint.NextAtomOffset || existing.NextOperationOffset > checkpoint.NextOperationOffset {
 				return sessionmemory.PermanentError(sessionmemory.CodeConflict, "canonical migration checkpoint moved backwards", nil)
 			}
-			if existing.NextSourceOffset == checkpoint.NextSourceOffset && existing.NextAtomOffset == checkpoint.NextAtomOffset && existing.Completed == checkpoint.Completed {
+			if existing.NextSourceOffset == checkpoint.NextSourceOffset && existing.NextAtomOffset == checkpoint.NextAtomOffset && existing.NextOperationOffset == checkpoint.NextOperationOffset && existing.Completed == checkpoint.Completed {
 				return nil
 			}
 		} else if !errors.Is(readErr, badger.ErrKeyNotFound) {

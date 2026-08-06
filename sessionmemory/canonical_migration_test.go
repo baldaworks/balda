@@ -127,3 +127,37 @@ func TestMigrateV1ScopeSnapshotFailsClosedForForgottenEvidence(t *testing.T) {
 		t.Fatalf("migration applied partial mutation: %+v", store.mutation)
 	}
 }
+
+func TestMigrateV1ScopeSnapshotPreservesOperationOutcomes(t *testing.T) {
+	t.Parallel()
+
+	scope := Scope{Key: "telegram:operation-migration", Kind: ScopeKindPersonal}
+	legacy := OperationOutcome{
+		SchemaVersion: DerivedSchemaVersionV1,
+		OperationID:   "legacy-operation-1",
+		Stage:         OperationStageAtoms,
+		Scope:         scope,
+		ScopeVersion:  17,
+		Revisions:     []RevisionRef{{ItemID: "legacy-item-1", RevisionID: "legacy-revision-1"}},
+	}
+	store := &processorTestStore{state: ScopeState{SchemaVersion: CanonicalSchemaVersionV1, Scope: scope}}
+	if _, err := MigrateV1ScopeSnapshot(context.Background(), store, ScopeSnapshot{
+		SchemaVersion: DerivedSchemaVersionV1,
+		Scope:         scope,
+		Version:       17,
+	}, CanonicalMigrationConfig{
+		SkipSourceRecords: true,
+		SkipAtomRecords:   true,
+		OperationLimit:    1,
+		LegacyOperations:  []OperationOutcome{legacy},
+	}); err != nil {
+		t.Fatalf("MigrateV1ScopeSnapshot(operation batch) error = %v", err)
+	}
+	if len(store.mutation.ImportedOperations) != 1 {
+		t.Fatalf("imported operation count = %d, want 1", len(store.mutation.ImportedOperations))
+	}
+	imported := store.mutation.ImportedOperations[0]
+	if imported.SchemaVersion != CanonicalImportedOperationSchemaVersion || imported.Outcome.OperationID != legacy.OperationID || imported.Outcome.ScopeVersion != legacy.ScopeVersion || len(imported.Outcome.Revisions) != 1 || imported.Outcome.Revisions[0] != legacy.Revisions[0] {
+		t.Fatalf("imported operation = %+v, want exact legacy outcome", imported)
+	}
+}

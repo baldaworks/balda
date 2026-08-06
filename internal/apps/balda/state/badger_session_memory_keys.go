@@ -11,6 +11,7 @@ const (
 	badgerSessionMemoryVersion      byte = 1
 	badgerRecordScope                    = "scope"
 	badgerRecordOperation                = "operation"
+	badgerRecordImportedOperation        = "imported-operation"
 	badgerRecordSource                   = "source"
 	badgerRecordMessage                  = "message"
 	badgerRecordItem                     = "item"
@@ -57,6 +58,10 @@ func badgerOperationKey(scope sessionmemory.Scope, operationID string) ([]byte, 
 		return nil, err
 	}
 	return badgerSessionMemoryKey(scope, badgerRecordOperation, operationID)
+}
+
+func badgerImportedOperationKey(scope sessionmemory.Scope, operationID string) ([]byte, error) {
+	return badgerSessionMemoryKey(scope, badgerRecordImportedOperation, operationID)
 }
 
 func badgerMigrationCheckpointKey(scope sessionmemory.Scope, snapshotVersion string) ([]byte, error) {

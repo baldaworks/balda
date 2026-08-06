@@ -22,6 +22,7 @@ type sqliteSessionMemoryStore struct {
 }
 
 var _ sessionmemory.Store = (*sqliteSessionMemoryStore)(nil)
+var _ sessionmemory.LegacyOperationSource = (*sqliteSessionMemoryStore)(nil)
 
 func (s *sqliteSessionMemoryStore) LookupOperation(
 	ctx context.Context,
@@ -61,6 +62,49 @@ func (s *sqliteSessionMemoryStore) LookupOperation(
 	}
 	_ = requestJSON // retained for commit replay identity checks
 	return sessionmemory.OperationLookupResult{Found: true, Outcome: outcome}, nil
+}
+
+// LoadOperationOutcomes returns the durable v1 idempotency outcomes for one
+// exact scope. The migration worker consumes this optional port in bounded
+// batches; normal Store processing remains unchanged.
+func (s *sqliteSessionMemoryStore) LoadOperationOutcomes(ctx context.Context, scope sessionmemory.Scope) ([]sessionmemory.OperationOutcome, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return nil, err
+	}
+	if err := scope.Validate(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT outcome_json
+		FROM session_memory_operations
+		WHERE scope_key = ?
+		ORDER BY operation_id`, scope.Key)
+	if err != nil {
+		return nil, sessionMemoryStoreError("load session-memory operation outcomes", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var outcomes []sessionmemory.OperationOutcome
+	for rows.Next() {
+		var encoded string
+		if err := rows.Scan(&encoded); err != nil {
+			return nil, sessionMemoryStoreError("scan session-memory operation outcome", err)
+		}
+		var outcome sessionmemory.OperationOutcome
+		if err := json.Unmarshal([]byte(encoded), &outcome); err != nil {
+			return nil, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored operation outcome is invalid", err)
+		}
+		if err := outcome.Validate(); err != nil {
+			return nil, err
+		}
+		if outcome.Scope != scope {
+			return nil, sessionmemory.PermanentError(sessionmemory.CodeScopeViolation, "stored operation outcome scope does not match scope", nil)
+		}
+		outcomes = append(outcomes, outcome)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, sessionMemoryStoreError("iterate session-memory operation outcomes", err)
+	}
+	return outcomes, nil
 }
 
 func (s *sqliteSessionMemoryStore) LookupForget(

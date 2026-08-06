@@ -1,9 +1,11 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"reflect"
 	"testing"
 	"time"
 
@@ -98,6 +100,68 @@ func TestBadgerSessionMemoryStoreResumesV1MigrationFromCheckpoint(t *testing.T) 
 	}
 	if len(active) != 1 || active[0].RevisionID == "" {
 		t.Fatalf("active migrated memory = %+v", active)
+	}
+}
+
+func TestBadgerSessionMemoryStorePreservesV1OperationOutcomes(t *testing.T) {
+	ctx := context.Background()
+	scope := sessionmemory.Scope{Key: "telegram:operation-migration", Kind: sessionmemory.ScopeKindPersonal}
+	legacy := sessionmemory.OperationOutcome{
+		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
+		OperationID:   "legacy-operation-1",
+		Stage:         sessionmemory.OperationStageAtoms,
+		Scope:         scope,
+		ScopeVersion:  17,
+		Revisions:     []sessionmemory.RevisionRef{{ItemID: "legacy-item-1", RevisionID: "legacy-revision-1"}},
+	}
+	directory := t.TempDir() + "/memory.badger"
+	store, err := OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	if _, err := sessionmemory.MigrateV1ScopeSnapshot(ctx, store, sessionmemory.ScopeSnapshot{
+		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
+		Scope:         scope,
+		Version:       17,
+	}, sessionmemory.CanonicalMigrationConfig{
+		SkipSourceRecords: true,
+		SkipAtomRecords:   true,
+		OperationLimit:    1,
+		LegacyOperations:  []sessionmemory.OperationOutcome{legacy},
+	}); err != nil {
+		_ = store.Close()
+		t.Fatalf("MigrateV1ScopeSnapshot(operation batch) error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	reopened, err := OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("reopen OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	imported, found, err := reopened.LoadCanonicalImportedOperation(ctx, scope, legacy.OperationID)
+	if err != nil || !found {
+		t.Fatalf("LoadCanonicalImportedOperation() = %+v, found %v, error %v", imported, found, err)
+	}
+	if imported.Outcome.OperationID != legacy.OperationID || imported.Outcome.Stage != legacy.Stage || imported.Outcome.Scope != legacy.Scope || imported.Outcome.ScopeVersion != legacy.ScopeVersion || len(imported.Outcome.Revisions) != 1 || imported.Outcome.Revisions[0] != legacy.Revisions[0] {
+		t.Fatalf("imported operation = %+v, want exact legacy outcome", imported)
+	}
+	var exported bytes.Buffer
+	if err := reopened.ExportCanonicalLogical(ctx, &exported); err != nil {
+		t.Fatalf("ExportCanonicalLogical() error = %v", err)
+	}
+	destination, err := OpenBadgerSessionMemoryStore(t.TempDir() + "/destination.badger")
+	if err != nil {
+		t.Fatalf("destination OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = destination.Close() })
+	if err := destination.ImportCanonicalLogical(ctx, bytes.NewReader(exported.Bytes())); err != nil {
+		t.Fatalf("ImportCanonicalLogical() error = %v", err)
+	}
+	imported, found, err = destination.LoadCanonicalImportedOperation(ctx, scope, legacy.OperationID)
+	if err != nil || !found || !reflect.DeepEqual(imported.Outcome, legacy) {
+		t.Fatalf("imported logical operation = %+v, found %v, error %v; want %+v", imported, found, err, legacy)
 	}
 }
 

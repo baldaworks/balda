@@ -87,6 +87,14 @@ type Store interface {
 	Trace(ctx context.Context, request TraceRequest) (TraceGraph, error)
 }
 
+// LegacyOperationSource exposes the durable v1 operation outcomes needed by
+// the maintenance-mode migration. It is deliberately separate from Store so
+// normal v1 processing and the canonical v2 port do not acquire a migration
+// dependency.
+type LegacyOperationSource interface {
+	LoadOperationOutcomes(ctx context.Context, scope Scope) ([]OperationOutcome, error)
+}
+
 // AtomExtractionRequest is bounded input for atom extraction.
 type AtomExtractionRequest struct {
 	SchemaVersion string        `json:"schema_version"`

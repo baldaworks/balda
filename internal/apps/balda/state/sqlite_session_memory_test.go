@@ -61,6 +61,17 @@ func TestSQLiteSessionMemoryStorePersistsAcrossProviderRestart(t *testing.T) {
 	if err != nil || len(search) != 1 {
 		t.Fatalf("reopened search = %#v, error = %v", search, err)
 	}
+	operationSource, ok := reopened.(sessionmemory.LegacyOperationSource)
+	if !ok {
+		t.Fatal("reopened session-memory store does not expose legacy operation migration source")
+	}
+	operations, err := operationSource.LoadOperationOutcomes(ctx, scope)
+	if err != nil || len(operations) != 1 {
+		t.Fatalf("reopened operation outcomes = %#v, error = %v", operations, err)
+	}
+	if operations[0].Scope != scope || operations[0].ScopeVersion == 0 {
+		t.Fatalf("reopened operation outcome = %+v", operations[0])
+	}
 }
 
 func TestSQLiteSessionMemoryForgetLeavesGlobalFactMemoryUntouched(t *testing.T) {

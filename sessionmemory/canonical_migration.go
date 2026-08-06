@@ -9,31 +9,39 @@ import (
 
 const canonicalMigrationSchemaVersion = "session-memory-migration/v1-to-v2"
 
-// CanonicalMigrationConfig supplies the application-owned payload sealer and
-// the bounded mutation size for one v1 snapshot batch.
+// CanonicalMigrationConfig supplies the application-owned payload sealer,
+// bounded mutation size, and independent source/atom/operation ranges for one
+// v1 snapshot batch. Operation-only batches do not require a payload sealer.
 type CanonicalMigrationConfig struct {
-	Sealer             CanonicalPayloadSealer
-	MaxMutationRecords int
-	SourceOffset       int
-	SourceLimit        int
-	AtomOffset         int
-	AtomLimit          int
-	SkipSourceRecords  bool
-	SkipAtomRecords    bool
+	Sealer               CanonicalPayloadSealer
+	MaxMutationRecords   int
+	SourceOffset         int
+	SourceLimit          int
+	AtomOffset           int
+	AtomLimit            int
+	OperationOffset      int
+	OperationLimit       int
+	SkipSourceRecords    bool
+	SkipAtomRecords      bool
+	SkipOperationRecords bool
+	LegacyOperations     []OperationOutcome
 }
 
 // CanonicalMigrationCheckpoint is the durable cursor for one v1 snapshot.
-// Source and atom batches advance independently so an interrupted migration
-// can replay the last committed operation without duplicating records.
+// Source, atom, and operation batches advance independently so an interrupted
+// migration can replay the last committed operation without duplicating
+// records.
 type CanonicalMigrationCheckpoint struct {
-	SchemaVersion    string `json:"schema_version"`
-	Scope            Scope  `json:"scope"`
-	SnapshotVersion  uint64 `json:"snapshot_version"`
-	SourceCount      uint32 `json:"source_count"`
-	AtomCount        uint32 `json:"atom_count"`
-	NextSourceOffset uint32 `json:"next_source_offset"`
-	NextAtomOffset   uint32 `json:"next_atom_offset"`
-	Completed        bool   `json:"completed"`
+	SchemaVersion       string `json:"schema_version"`
+	Scope               Scope  `json:"scope"`
+	SnapshotVersion     uint64 `json:"snapshot_version"`
+	SourceCount         uint32 `json:"source_count"`
+	AtomCount           uint32 `json:"atom_count"`
+	OperationCount      uint32 `json:"operation_count"`
+	NextSourceOffset    uint32 `json:"next_source_offset"`
+	NextAtomOffset      uint32 `json:"next_atom_offset"`
+	NextOperationOffset uint32 `json:"next_operation_offset"`
+	Completed           bool   `json:"completed"`
 }
 
 const canonicalMigrationCheckpointSchemaVersion = "session-memory-migration-checkpoint/v1"
@@ -47,10 +55,10 @@ func (c CanonicalMigrationCheckpoint) Validate() error {
 	if err := c.Scope.Validate(); err != nil {
 		return err
 	}
-	if c.NextSourceOffset > c.SourceCount || c.NextAtomOffset > c.AtomCount {
+	if c.NextSourceOffset > c.SourceCount || c.NextAtomOffset > c.AtomCount || c.NextOperationOffset > c.OperationCount {
 		return invalidDerived("canonical migration checkpoint cursor exceeds its snapshot")
 	}
-	if c.Completed && (c.NextSourceOffset != c.SourceCount || c.NextAtomOffset != c.AtomCount) {
+	if c.Completed && (c.NextSourceOffset != c.SourceCount || c.NextAtomOffset != c.AtomCount || c.NextOperationOffset != c.OperationCount) {
 		return invalidDerived("completed canonical migration checkpoint is not at the snapshot end")
 	}
 	return nil
@@ -71,7 +79,7 @@ type CanonicalMigrationCheckpointStore interface {
 // checkpoints and composition-root cutover remain outside this portable batch
 // transformer.
 func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot ScopeSnapshot, config CanonicalMigrationConfig) (CanonicalMutationOutcome, error) {
-	if ctx == nil || store == nil || config.Sealer == nil {
+	if ctx == nil || store == nil {
 		return CanonicalMutationOutcome{}, PermanentError(CodeStoreFailure, "canonical migration dependencies are required", nil)
 	}
 	if err := snapshot.Validate(MaxSnapshotItems); err != nil {
@@ -92,6 +100,23 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 	if err != nil {
 		return CanonicalMutationOutcome{}, err
 	}
+	legacyOperations := make([]OperationOutcome, len(config.LegacyOperations))
+	for index, operation := range config.LegacyOperations {
+		legacyOperations[index] = cloneOperationOutcome(operation)
+	}
+	sort.Slice(legacyOperations, func(left, right int) bool {
+		if legacyOperations[left].OperationID != legacyOperations[right].OperationID {
+			return legacyOperations[left].OperationID < legacyOperations[right].OperationID
+		}
+		return legacyOperations[left].Stage < legacyOperations[right].Stage
+	})
+	if err := validateMigrationOperations(snapshot.Scope, legacyOperations); err != nil {
+		return CanonicalMutationOutcome{}, err
+	}
+	operationStart, operationEnd, err := migrationRange(len(legacyOperations), config.OperationOffset, config.OperationLimit)
+	if err != nil {
+		return CanonicalMutationOutcome{}, err
+	}
 	if config.SkipSourceRecords {
 		if sourceStart != len(snapshot.Sources) || sourceEnd != len(snapshot.Sources) {
 			return CanonicalMutationOutcome{}, invalidDerived("canonical migration cannot skip an unprocessed source range")
@@ -103,11 +128,23 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		}
 		atomStart, atomEnd = 0, 0
 	}
+	if config.SkipOperationRecords {
+		if config.OperationOffset != 0 || config.OperationLimit != 0 {
+			return CanonicalMutationOutcome{}, invalidDerived("canonical migration cannot skip a selected operation range")
+		}
+		operationStart, operationEnd = 0, 0
+	}
 	if config.SkipSourceRecords {
 		sourceStart, sourceEnd = len(snapshot.Sources), len(snapshot.Sources)
 	}
-	if sourceStart == sourceEnd && atomStart == atomEnd {
+	if config.SkipOperationRecords {
+		operationStart, operationEnd = len(legacyOperations), len(legacyOperations)
+	}
+	if sourceStart == sourceEnd && atomStart == atomEnd && operationStart == operationEnd {
 		return CanonicalMutationOutcome{}, invalidDerived("canonical migration batch is empty")
+	}
+	if config.Sealer == nil && (sourceStart != sourceEnd || atomStart != atomEnd) {
+		return CanonicalMutationOutcome{}, PermanentError(CodeStoreFailure, "canonical migration payload sealer is required for source or atom records", nil)
 	}
 	if atomStart != atomEnd && !config.SkipSourceRecords && (sourceStart != 0 || sourceEnd != len(snapshot.Sources)) {
 		return CanonicalMutationOutcome{}, invalidDerived("canonical migration atom batch must include every source or resume after source completion")
@@ -128,16 +165,22 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		return CanonicalMutationOutcome{}, PermanentError(CodeScopeViolation, "canonical migration scope state does not match snapshot", nil)
 	}
 
-	operationID := reconciliationID("migration", canonicalMigrationSchemaVersion, snapshot.Scope.Key, string(snapshot.Scope.Kind), formatUint(snapshot.Version), formatUint(uint64(sourceStart)), formatUint(uint64(sourceEnd)), formatUint(uint64(atomStart)), formatUint(uint64(atomEnd)), formatBool(config.SkipSourceRecords), formatBool(config.SkipAtomRecords))
+	operationID := reconciliationID("migration", canonicalMigrationSchemaVersion, snapshot.Scope.Key, string(snapshot.Scope.Kind), formatUint(snapshot.Version), formatUint(uint64(sourceStart)), formatUint(uint64(sourceEnd)), formatUint(uint64(atomStart)), formatUint(uint64(atomEnd)), formatUint(uint64(operationStart)), formatUint(uint64(operationEnd)), formatBool(config.SkipSourceRecords), formatBool(config.SkipAtomRecords), formatBool(config.SkipOperationRecords))
 	mutation := CanonicalMutation{
 		SchemaVersion:        CanonicalSchemaVersionV1,
 		Scope:                snapshot.Scope,
 		ExpectedScopeVersion: state.Version,
 		Operation: OperationRecord{
 			OperationID: operationID,
-			Fingerprint: reconciliationID("migration-fingerprint", operationID, snapshot.SchemaVersion),
+			Fingerprint: reconciliationID("migration-fingerprint", operationID, snapshot.SchemaVersion, migrationOperationsFingerprint(legacyOperations[operationStart:operationEnd])),
 			CommittedAt: migrationCommittedAt(snapshot),
 		},
+	}
+	for _, legacy := range legacyOperations[operationStart:operationEnd] {
+		mutation.ImportedOperations = append(mutation.ImportedOperations, CanonicalImportedOperation{
+			SchemaVersion: CanonicalImportedOperationSchemaVersion,
+			Outcome:       cloneOperationOutcome(legacy),
+		})
 	}
 
 	sources, messages, payloads, sourceIDs, sourceMessages, err := migrationSources(ctx, snapshot, config.Sealer, sourceStart, sourceEnd, !config.SkipSourceRecords)
@@ -270,7 +313,7 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 			mutation.Operation.Outcome = append(mutation.Operation.Outcome, revision.RevisionID)
 		}
 	}
-	if recordCount := len(mutation.Sources) + len(mutation.Messages) + len(mutation.Items) + len(mutation.Revisions) + len(mutation.Lifecycle) + len(mutation.Heads) + len(mutation.Payloads); recordCount > maxRecords {
+	if recordCount := len(mutation.ImportedOperations) + len(mutation.Sources) + len(mutation.Messages) + len(mutation.Items) + len(mutation.Revisions) + len(mutation.Lifecycle) + len(mutation.Heads) + len(mutation.Payloads); recordCount > maxRecords {
 		return CanonicalMutationOutcome{}, limitExceeded("v1 migration batch exceeds the configured mutation bound")
 	}
 	if err := mutation.Validate(); err != nil {
@@ -281,14 +324,16 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		return CanonicalMutationOutcome{}, err
 	}
 	checkpoint := CanonicalMigrationCheckpoint{
-		SchemaVersion:    canonicalMigrationCheckpointSchemaVersion,
-		Scope:            snapshot.Scope,
-		SnapshotVersion:  snapshot.Version,
-		SourceCount:      uint32(len(snapshot.Sources)),
-		AtomCount:        uint32(len(snapshot.Atoms)),
-		NextSourceOffset: uint32(sourceEnd),
-		NextAtomOffset:   uint32(atomEnd),
-		Completed:        sourceEnd == len(snapshot.Sources) && atomEnd == len(snapshot.Atoms),
+		SchemaVersion:       canonicalMigrationCheckpointSchemaVersion,
+		Scope:               snapshot.Scope,
+		SnapshotVersion:     snapshot.Version,
+		SourceCount:         uint32(len(snapshot.Sources)),
+		AtomCount:           uint32(len(snapshot.Atoms)),
+		OperationCount:      uint32(len(legacyOperations)),
+		NextSourceOffset:    uint32(sourceEnd),
+		NextAtomOffset:      uint32(atomEnd),
+		NextOperationOffset: uint32(operationEnd),
+		Completed:           sourceEnd == len(snapshot.Sources) && atomEnd == len(snapshot.Atoms) && operationEnd == len(legacyOperations),
 	}
 	if checkpointStore, ok := store.(CanonicalMigrationCheckpointStore); ok {
 		if err := checkpointStore.SaveCanonicalMigrationCheckpoint(ctx, checkpoint); err != nil {
@@ -456,6 +501,11 @@ func migrationCommittedAt(snapshot ScopeSnapshot) time.Time {
 			latest = atom.Meta.CreatedAt
 		}
 	}
+	if latest.IsZero() {
+		// Operation-only batches have no source timestamp. Use a stable,
+		// non-zero sentinel required by the canonical operation contract.
+		return time.Unix(0, 0).UTC()
+	}
 	return latest
 }
 
@@ -509,6 +559,31 @@ func validateMigrationAtomRange(atoms []Atom, start, end int) error {
 		}
 	}
 	return nil
+}
+
+func validateMigrationOperations(scope Scope, operations []OperationOutcome) error {
+	seen := make(map[string]struct{}, len(operations))
+	for _, operation := range operations {
+		if err := operation.Validate(); err != nil {
+			return err
+		}
+		if operation.Scope != scope {
+			return PermanentError(CodeScopeViolation, "v1 migration operation scope does not match snapshot", nil)
+		}
+		if _, exists := seen[operation.OperationID]; exists {
+			return invalidDerived("v1 migration contains duplicate operation outcomes")
+		}
+		seen[operation.OperationID] = struct{}{}
+	}
+	return nil
+}
+
+func migrationOperationsFingerprint(operations []OperationOutcome) string {
+	encoded, err := json.Marshal(operations)
+	if err != nil {
+		return "invalid"
+	}
+	return reconciliationID("migration-operations", string(encoded))
 }
 
 func formatUint(value uint64) string {
