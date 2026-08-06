@@ -2,6 +2,7 @@ package balda
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -11,7 +12,9 @@ import (
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
 	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
+	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	"github.com/normahq/balda/sessionmemory"
+	"go.uber.org/fx"
 )
 
 const (
@@ -134,12 +137,17 @@ func newSessionMemoryProvider(cfg SessionMemoryConfig, store sessionmemory.Store
 	if !cfg.Enabled {
 		return sessionmemoryapp.DisabledProvider{}, nil
 	}
+	provider, _, err := newNativeSessionMemoryComponents(cfg, store, builder, providerID, workingDir)
+	return provider, err
+}
+
+func newNativeSessionMemoryComponents(cfg SessionMemoryConfig, store sessionmemory.Store, builder *baldaagent.Builder, providerID, workingDir string) (*sessionmemoryapp.NativeProvider, *sessionmemoryapp.Deriver, error) {
 	if err := validateSessionMemoryConfig(cfg); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	derivationTimeout, err := optionalSessionMemoryDuration(cfg.Derivation.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("balda.session_memory.derivation.timeout: %w", err)
+		return nil, nil, fmt.Errorf("balda.session_memory.derivation.timeout: %w", err)
 	}
 	invoker, err := sessionmemoryapp.NewNormaInvoker(sessionmemoryapp.NormaInvokerConfig{
 		Builder:    builder,
@@ -149,14 +157,50 @@ func newSessionMemoryProvider(cfg SessionMemoryConfig, store sessionmemory.Store
 		Timeout:    derivationTimeout,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	deriver, err := sessionmemoryapp.NewDeriver(invoker)
 	if err != nil {
 		_ = invoker.Close(context.Background())
+		return nil, nil, err
+	}
+	provider, err := sessionmemoryapp.NewNativeProvider(store, deriver, invoker)
+	if err != nil {
+		_ = invoker.Close(context.Background())
+		return nil, nil, err
+	}
+	return provider, deriver, nil
+}
+
+func newCanonicalSessionMemoryProvider(lc fx.Lifecycle, cfg SessionMemoryConfig, legacyStore sessionmemory.Store, builder *baldaagent.Builder, providerID, workingDir, stateDir string) (sessionmemory.Provider, error) {
+	if !cfg.Enabled {
+		return sessionmemoryapp.DisabledProvider{}, nil
+	}
+	legacy, deriver, err := newNativeSessionMemoryComponents(cfg, legacyStore, builder, providerID, workingDir)
+	if err != nil {
 		return nil, err
 	}
-	return sessionmemoryapp.NewNativeProvider(store, deriver, invoker)
+	canonicalStore, err := baldastate.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir))
+	if err != nil {
+		_ = legacy.Close(context.Background())
+		return nil, fmt.Errorf("open canonical session-memory store: %w", err)
+	}
+	processor, err := sessionmemory.NewCanonicalTurnProcessor(canonicalStore, deriver, sessionmemory.PolicyRegistry{Version: "policy-v1"})
+	if err != nil {
+		_ = canonicalStore.Close()
+		_ = legacy.Close(context.Background())
+		return nil, err
+	}
+	canonical, err := sessionmemoryapp.NewCanonicalProvider(processor, legacy, sessionmemory.LegacyDerivationRef())
+	if err != nil {
+		_ = canonicalStore.Close()
+		_ = legacy.Close(context.Background())
+		return nil, err
+	}
+	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
+		return errors.Join(canonical.Close(ctx), canonicalStore.Close())
+	}})
+	return canonical, nil
 }
 
 func sessionMemoryWorkerConfig(cfg SessionMemoryConfig) (sessionmemoryapp.Config, error) {

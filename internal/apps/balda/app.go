@@ -253,8 +253,8 @@ func Module(
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
 				})
 			},
-			func(provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
-				return newSessionMemoryProvider(cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir)
+			func(lc fx.Lifecycle, provider baldastate.Provider, builder *baldaagent.Builder) (sessionmemory.Provider, error) {
+				return newCanonicalSessionMemoryProvider(lc, cfg.Balda.SessionMemory, provider.SessionMemoryStore(), builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
 				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)
