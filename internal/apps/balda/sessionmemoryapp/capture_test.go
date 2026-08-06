@@ -172,6 +172,26 @@ func TestTurnCapturePersistsOnlyExplicitlyTrustedToolEvidence(t *testing.T) {
 	}
 }
 
+func TestTurnCaptureRedactsCredentialShapedTextBeforePublishing(t *testing.T) {
+	t.Parallel()
+	publisher := &capturePublisher{}
+	resolver := NewScopeResolver(map[string]ScopeClassifier{
+		"telegram": func(deliverycmd.Locator) (deliverycmd.LocatorScopeKind, error) {
+			return deliverycmd.LocatorScopePersonal, nil
+		},
+	})
+	_, err := NewTurnCapture(publisher, resolver).Capture(context.Background(), CaptureRequest{
+		UserText: "token=private-value", AssistantText: "Authorization: Bearer private-reply", Locator: testCaptureLocator(t, "telegram", "123:0", "tg-123-0"), SourceTurnID: "turn-redacted",
+	})
+	if err != nil || len(publisher.exports) != 1 || publisher.exports[0].Turn == nil {
+		t.Fatalf("Capture() error = %v, exports = %#v", err, publisher.exports)
+	}
+	turn := publisher.exports[0].Turn
+	if turn.Messages[0].Text != "token=[REDACTED]" || turn.Messages[1].Text != "Authorization: Bearer [REDACTED]" {
+		t.Fatalf("captured redacted messages = %#v", turn.Messages)
+	}
+}
+
 func TestTurnCapturePublishFailureIsReturnedAfterLocalAttempt(t *testing.T) {
 	t.Parallel()
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
+	"github.com/normahq/balda/internal/apps/balda/redaction"
 	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/normahq/balda/sessionmemory"
 )
@@ -188,8 +189,8 @@ func (c *TurnCapture) Capture(ctx context.Context, req CaptureRequest) (CaptureR
 	if c == nil || c.publisher == nil {
 		return CaptureResult{}, nil
 	}
-	userText := strings.TrimSpace(req.UserText)
-	assistantText := strings.TrimSpace(req.AssistantText)
+	userText := redaction.Secrets(req.UserText)
+	assistantText := redaction.Secrets(req.AssistantText)
 	if userText == "" {
 		return CaptureResult{}, nil
 	}
@@ -254,7 +255,7 @@ func (c *TurnCapture) trustedToolMessages(evidence []TrustedToolEvidence) []sess
 			continue
 		}
 		callID := strings.TrimSpace(tool.CallID)
-		text := strings.TrimSpace(tool.Text)
+		text := redaction.Secrets(tool.Text)
 		if !isTrustedToolName(name) || !isTrustedToolName(callID) || text == "" {
 			continue
 		}
