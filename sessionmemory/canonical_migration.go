@@ -153,6 +153,18 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		legacyRevisions[RevisionRef{ItemID: atom.Meta.ItemID, RevisionID: atom.Meta.RevisionID}] = migrationRevisionID(snapshot.Scope, atom.Meta.RevisionID)
 	}
 	items := make(map[string]MemoryItem, len(snapshot.Atoms))
+	knownItems := make(map[string]MemoryKind, atomStart)
+	for _, atom := range snapshot.Atoms[:atomStart] {
+		itemID := migrationItemID(snapshot.Scope, atom.Meta.ItemID)
+		kind := MemoryKindState
+		if atom.Category == AtomCategoryEvent {
+			kind = MemoryKindEvent
+		}
+		if existing, ok := knownItems[itemID]; ok && existing != kind {
+			return CanonicalMutationOutcome{}, invalidDerived("v1 migration maps one item to multiple memory kinds")
+		}
+		knownItems[itemID] = kind
+	}
 	activeHeads := make(map[string]MemoryRevision)
 	for _, atom := range snapshot.Atoms[atomStart:atomEnd] {
 		if err := checkContext(ctx); err != nil {
@@ -174,7 +186,14 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		if existing, ok := items[itemID]; ok && existing.Kind != item.Kind {
 			return CanonicalMutationOutcome{}, invalidDerived("v1 migration maps one item to multiple memory kinds")
 		}
-		items[itemID] = item
+		if knownKind, ok := knownItems[itemID]; ok {
+			if knownKind != item.Kind {
+				return CanonicalMutationOutcome{}, invalidDerived("v1 migration maps one item to multiple memory kinds")
+			}
+		} else {
+			items[itemID] = item
+			knownItems[itemID] = item.Kind
+		}
 
 		parents := make([]string, 0, len(atom.Meta.Provenance.ParentRevisions)+1)
 		for _, parent := range atom.Meta.Provenance.ParentRevisions {
