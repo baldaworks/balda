@@ -82,7 +82,7 @@ func TestV2RecordsRoundTripJSONAndRejectDuplicateEvidence(t *testing.T) {
 		}},
 		Sensitivity: SensitivityStandard,
 		Retention:   RetentionClassStandard,
-		Payload:     PayloadRef{ID: "payload-1", KeyID: "key-1", Digest: "digest-1", ByteSize: 7},
+		Payload:     PayloadRef{ID: "payload-1", Digest: "digest-1", ByteSize: 7},
 	}
 	encoded, err := json.Marshal(revision)
 	if err != nil {

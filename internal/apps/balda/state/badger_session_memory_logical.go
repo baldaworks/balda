@@ -32,8 +32,8 @@ type CanonicalLogicalExportHeader struct {
 }
 
 // CanonicalLogicalExportRecord is one portable tuple-key record. Envelope is
-// retained as opaque validated bytes so encrypted payloads never become
-// plaintext during export/import.
+// retained as opaque validated bytes so storage encoding stays independent of
+// the logical payload representation during export/import.
 type CanonicalLogicalExportRecord struct {
 	Kind       string   `json:"kind"`
 	RecordType string   `json:"record_type"`
@@ -53,7 +53,7 @@ type CanonicalLogicalExportFooter struct {
 
 // ExportCanonicalLogical writes a deterministic, backend-neutral JSONL
 // export. It excludes disposable projection-generation records and includes
-// encrypted payload blobs as opaque validated envelopes.
+// payload blobs as opaque validated envelopes.
 func (s *BadgerSessionMemoryStore) ExportCanonicalLogical(ctx context.Context, destination io.Writer) error {
 	if err := validateCanonicalMaintenance(ctx, destination); err != nil {
 		return err

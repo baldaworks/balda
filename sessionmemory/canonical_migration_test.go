@@ -49,7 +49,7 @@ func TestMigrateV1ScopeSnapshotPreservesGroundedRecordsAndPayloads(t *testing.T)
 		Version:       7,
 		Sources:       []SourceRecord{source},
 		Atoms:         []Atom{atom},
-	}, CanonicalMigrationConfig{Sealer: processorTestSealer{}})
+	}, CanonicalMigrationConfig{})
 	if err != nil {
 		t.Fatalf("MigrateV1ScopeSnapshot() error = %v", err)
 	}
@@ -67,8 +67,8 @@ func TestMigrateV1ScopeSnapshotPreservesGroundedRecordsAndPayloads(t *testing.T)
 		if err := payload.Validate(); err != nil {
 			t.Fatalf("migration payload %q invalid: %v", payload.Ref.ID, err)
 		}
-		if string(payload.Encrypted.Ciphertext) == "" || payload.Encrypted.Ciphertext[0] != 2 {
-			t.Fatalf("migration payload %q was not returned by the sealer: %+v", payload.Ref.ID, payload.Encrypted)
+		if len(payload.Data) == 0 || payload.Ref.ByteSize != uint32(len(payload.Data)) {
+			t.Fatalf("migration payload %q has invalid bytes: %+v", payload.Ref.ID, payload)
 		}
 	}
 	if mutation.Revisions[0].Evidence[0].SourceID != mutation.Sources[0].SourceID {
@@ -116,7 +116,7 @@ func TestMigrateV1ScopeSnapshotFailsClosedForForgottenEvidence(t *testing.T) {
 			Text:     "forgotten fact",
 			Relation: CandidateRelationNew,
 		}},
-	}, CanonicalMigrationConfig{Sealer: processorTestSealer{}})
+	}, CanonicalMigrationConfig{})
 	if err == nil {
 		t.Fatal("MigrateV1ScopeSnapshot() accepted evidence grounded in a forgotten source")
 	}

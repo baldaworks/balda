@@ -2,6 +2,8 @@ package sessionmemory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"sort"
 	"time"
@@ -9,11 +11,9 @@ import (
 
 const canonicalMigrationSchemaVersion = "session-memory-migration/v1-to-v2"
 
-// CanonicalMigrationConfig supplies the application-owned payload sealer,
-// bounded mutation size, and independent source/atom/operation ranges for one
-// v1 snapshot batch. Operation-only batches do not require a payload sealer.
+// CanonicalMigrationConfig supplies the bounded mutation size and independent
+// source/atom/operation ranges for one v1 snapshot batch.
 type CanonicalMigrationConfig struct {
-	Sealer               CanonicalPayloadSealer
 	MaxMutationRecords   int
 	SourceOffset         int
 	SourceLimit          int
@@ -143,9 +143,6 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 	if sourceStart == sourceEnd && atomStart == atomEnd && operationStart == operationEnd {
 		return CanonicalMutationOutcome{}, invalidDerived("canonical migration batch is empty")
 	}
-	if config.Sealer == nil && (sourceStart != sourceEnd || atomStart != atomEnd) {
-		return CanonicalMutationOutcome{}, PermanentError(CodeStoreFailure, "canonical migration payload sealer is required for source or atom records", nil)
-	}
 	if atomStart != atomEnd && !config.SkipSourceRecords && (sourceStart != 0 || sourceEnd != len(snapshot.Sources)) {
 		return CanonicalMutationOutcome{}, invalidDerived("canonical migration atom batch must include every source or resume after source completion")
 	}
@@ -183,7 +180,7 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 		})
 	}
 
-	sources, messages, payloads, sourceIDs, sourceMessages, err := migrationSources(ctx, snapshot, config.Sealer, sourceStart, sourceEnd, !config.SkipSourceRecords)
+	sources, messages, payloads, sourceIDs, sourceMessages, err := migrationSources(ctx, snapshot, sourceStart, sourceEnd, !config.SkipSourceRecords)
 	if err != nil {
 		return CanonicalMutationOutcome{}, err
 	}
@@ -254,7 +251,7 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 			parents = appendUniqueCanonicalID(parents, mapped)
 		}
 		revisionID := migrationRevisionID(snapshot.Scope, atom.Meta.RevisionID)
-		revisionPayload, revisionRef, err := sealCanonicalMigrationPayload(ctx, config.Sealer, canonicalPayloadID("migration-revision", revisionID), []byte(atom.Text))
+		revisionPayload, revisionRef, err := canonicalMigrationPayload(canonicalPayloadID("migration-revision", revisionID), []byte(atom.Text))
 		if err != nil {
 			return CanonicalMutationOutcome{}, err
 		}
@@ -348,7 +345,7 @@ type migrationSourceMessage struct {
 	Message  Message
 }
 
-func migrationSources(ctx context.Context, snapshot ScopeSnapshot, sealer CanonicalPayloadSealer, sourceStart, sourceEnd int, emitRecords bool) ([]SourceRecordV2, []MessageRecord, []CanonicalPayload, map[string]string, map[string]migrationSourceMessage, error) {
+func migrationSources(ctx context.Context, snapshot ScopeSnapshot, sourceStart, sourceEnd int, emitRecords bool) ([]SourceRecordV2, []MessageRecord, []CanonicalPayload, map[string]string, map[string]migrationSourceMessage, error) {
 	sources := make([]SourceRecordV2, 0, sourceEnd-sourceStart)
 	messages := make([]MessageRecord, 0)
 	payloads := make([]CanonicalPayload, 0)
@@ -388,15 +385,15 @@ func migrationSources(ctx context.Context, snapshot ScopeSnapshot, sealer Canoni
 		}
 		if source.Turn != nil {
 			for _, message := range normalizedTurnMessages(*source.Turn) {
-				messagePayload, messageRef, sealErr := sealCanonicalMigrationPayload(ctx, sealer, canonicalPayloadID("migration-message", message.MessageID), []byte(message.Text))
-				if sealErr != nil {
-					return nil, nil, nil, nil, nil, sealErr
+				messagePayload, messageRef, payloadErr := canonicalMigrationPayload(canonicalPayloadID("migration-message", message.MessageID), []byte(message.Text))
+				if payloadErr != nil {
+					return nil, nil, nil, nil, nil, payloadErr
 				}
 				messages = append(messages, MessageRecord{MessageID: message.MessageID, SourceID: sourceID, Role: message.Role, Payload: messageRef})
 				payloads = append(payloads, messagePayload)
 			}
 		}
-		sourcePayload, sourceRef, err := sealCanonicalMigrationPayload(ctx, sealer, canonicalPayloadID("migration-source", sourceID), plaintext)
+		sourcePayload, sourceRef, err := canonicalMigrationPayload(canonicalPayloadID("migration-source", sourceID), plaintext)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
@@ -453,21 +450,17 @@ func migrationEvidence(scope Scope, refs []SourceRef, sourceIDs map[string]strin
 	return evidence, nil
 }
 
-func sealCanonicalMigrationPayload(ctx context.Context, sealer CanonicalPayloadSealer, payloadID string, plaintext []byte) (CanonicalPayload, PayloadRef, error) {
+func canonicalMigrationPayload(payloadID string, plaintext []byte) (CanonicalPayload, PayloadRef, error) {
 	if len(plaintext) == 0 {
 		return CanonicalPayload{}, PayloadRef{}, invalidDerived("v1 migration payload is empty")
 	}
-	payload, err := sealer.SealCanonicalPayload(ctx, payloadID, plaintext)
-	if err != nil {
-		return CanonicalPayload{}, PayloadRef{}, err
-	}
-	if payload.Ref.ID != payloadID {
-		return CanonicalPayload{}, PayloadRef{}, invalidDerived("v1 migration sealer changed payload identity")
-	}
+	digest := sha256.Sum256(plaintext)
+	ref := PayloadRef{ID: payloadID, Digest: hex.EncodeToString(digest[:]), ByteSize: uint32(len(plaintext))}
+	payload := CanonicalPayload{Ref: ref, Data: append([]byte(nil), plaintext...)}
 	if err := payload.Validate(); err != nil {
 		return CanonicalPayload{}, PayloadRef{}, err
 	}
-	return payload, payload.Ref, nil
+	return payload, ref, nil
 }
 
 func migrationItemID(scope Scope, oldItemID string) string {

@@ -300,7 +300,7 @@ func projectionViewRevision(revisionID, itemID string, revision uint64) MemoryRe
 		Evidence:      []EvidenceRef{{SourceID: "source-1", MessageID: "message-1", Role: MessageRoleUser, StartByte: 0, EndByte: 1, AssertionMode: AssertionModeUser}},
 		Sensitivity:   SensitivityStandard,
 		Retention:     RetentionClassStandard,
-		Payload:       PayloadRef{ID: "payload-" + revisionID, KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
+		Payload:       PayloadRef{ID: "payload-" + revisionID, Digest: "digest-1", ByteSize: 1},
 	}
 }
 

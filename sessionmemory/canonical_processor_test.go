@@ -2,24 +2,21 @@ package sessionmemory
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"testing"
 	"time"
 )
 
 func TestNewCanonicalTurnProcessorRequiresAllCutoverPorts(t *testing.T) {
-	if _, err := NewCanonicalTurnProcessor(nil, nil, nil, PolicyRegistry{Version: "policy-v1"}); err == nil {
+	if _, err := NewCanonicalTurnProcessor(nil, nil, PolicyRegistry{Version: "policy-v1"}); err == nil {
 		t.Fatal("NewCanonicalTurnProcessor() accepted missing ports")
 	}
-	if _, err := NewCanonicalTurnProcessor(testCanonicalStore{}, testCanonicalExtractor{}, testCanonicalSealer{}, PolicyRegistry{}); err == nil {
+	if _, err := NewCanonicalTurnProcessor(testCanonicalStore{}, testCanonicalExtractor{}, PolicyRegistry{}); err == nil {
 		t.Fatal("NewCanonicalTurnProcessor() accepted empty policy version")
 	}
 }
 
 type testCanonicalStore struct{ CanonicalStore }
 type testCanonicalExtractor struct{ CanonicalSemanticExtractor }
-type testCanonicalSealer struct{ CanonicalPayloadSealer }
 
 func TestCanonicalTurnProcessorPersistsGroundedFailedTurn(t *testing.T) {
 	t.Parallel()
@@ -52,7 +49,7 @@ func TestCanonicalTurnProcessorPersistsGroundedFailedTurn(t *testing.T) {
 		}}, nil
 	})
 	store := &processorTestStore{state: ScopeState{SchemaVersion: CanonicalSchemaVersionV1, Scope: scope}}
-	processor, err := NewCanonicalTurnProcessor(store, extractor, processorTestSealer{}, PolicyRegistry{Version: "policy-v1"})
+	processor, err := NewCanonicalTurnProcessor(store, extractor, PolicyRegistry{Version: "policy-v1"})
 	if err != nil {
 		t.Fatalf("NewCanonicalTurnProcessor() error = %v", err)
 	}
@@ -93,7 +90,7 @@ func TestCanonicalTurnProcessorAdvancesActiveRevision(t *testing.T) {
 			Memory: MemoryCandidate{Kind: MemoryKindState, Statement: message.Text, Temporal: Temporal{ObservedAt: request.Turn.CompletedAt}, Evidence: []EvidenceRef{evidence}, Sensitivity: SensitivityStandard, Retention: RetentionClassStandard},
 		}}, nil
 	})
-	processor, err := NewCanonicalTurnProcessor(store, extractor, processorTestSealer{}, PolicyRegistry{Version: "policy-v1"})
+	processor, err := NewCanonicalTurnProcessor(store, extractor, PolicyRegistry{Version: "policy-v1"})
 	if err != nil {
 		t.Fatalf("NewCanonicalTurnProcessor() error = %v", err)
 	}
@@ -127,24 +124,6 @@ type canonicalExtractorFunc func(context.Context, CanonicalExtractionRequest) ([
 
 func (f canonicalExtractorFunc) ExtractCanonicalSemantics(ctx context.Context, request CanonicalExtractionRequest) ([]SemanticCandidate, error) {
 	return f(ctx, request)
-}
-
-type processorTestSealer struct{}
-
-func (processorTestSealer) SealCanonicalPayload(_ context.Context, payloadID string, plaintext []byte) (CanonicalPayload, error) {
-	digest := sha256.Sum256(plaintext)
-	ref := PayloadRef{ID: payloadID, KeyID: "test-key", Digest: hex.EncodeToString(digest[:]), ByteSize: uint32(len(plaintext))}
-	return CanonicalPayload{
-		Ref: ref,
-		Encrypted: EncryptedPayload{
-			KeyID:       ref.KeyID,
-			Nonce:       []byte{1},
-			Ciphertext:  []byte{2},
-			DEKNonce:    []byte{3},
-			WrappedDEK:  []byte{4},
-			PayloadHash: ref.Digest,
-		},
-	}, nil
 }
 
 type processorTestStore struct {

@@ -2,16 +2,12 @@ package sessionmemory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"time"
 )
-
-// CanonicalPayloadSealer encrypts one payload and returns the pair that must
-// be committed with the structural mutation that references it.
-type CanonicalPayloadSealer interface {
-	SealCanonicalPayload(ctx context.Context, payloadID string, plaintext []byte) (CanonicalPayload, error)
-}
 
 // CanonicalTurnProcessor owns the v2 turn-processing dependencies. Its
 // implementation is introduced separately so composition can cut over from
@@ -19,19 +15,18 @@ type CanonicalPayloadSealer interface {
 type CanonicalTurnProcessor struct {
 	store     CanonicalStore
 	extractor CanonicalSemanticExtractor
-	sealer    CanonicalPayloadSealer
 	policy    PolicyRegistry
 }
 
 // NewCanonicalTurnProcessor validates the mandatory cutover dependencies.
-func NewCanonicalTurnProcessor(store CanonicalStore, extractor CanonicalSemanticExtractor, sealer CanonicalPayloadSealer, policy PolicyRegistry) (*CanonicalTurnProcessor, error) {
-	if store == nil || extractor == nil || sealer == nil {
+func NewCanonicalTurnProcessor(store CanonicalStore, extractor CanonicalSemanticExtractor, policy PolicyRegistry) (*CanonicalTurnProcessor, error) {
+	if store == nil || extractor == nil {
 		return nil, PermanentError(CodeStoreFailure, "canonical processor dependencies are required", nil)
 	}
 	if !isCanonicalID(policy.Version) {
 		return nil, invalidDerived("canonical reconciliation policy version is required")
 	}
-	return &CanonicalTurnProcessor{store: store, extractor: extractor, sealer: sealer, policy: policy}, nil
+	return &CanonicalTurnProcessor{store: store, extractor: extractor, policy: policy}, nil
 }
 
 // ProcessTurn extracts bounded semantics from one terminal turn and commits
@@ -39,7 +34,7 @@ func NewCanonicalTurnProcessor(store CanonicalStore, extractor CanonicalSemantic
 // model supplies only semantic fields and evidence claims; all identities,
 // payload references, revision numbers, and scope state are derived here.
 func (p *CanonicalTurnProcessor) ProcessTurn(ctx context.Context, turn Turn, derivation DerivationRef) (CanonicalMutationOutcome, error) {
-	if p == nil || p.store == nil || p.extractor == nil || p.sealer == nil {
+	if p == nil || p.store == nil || p.extractor == nil {
 		return CanonicalMutationOutcome{}, PermanentError(CodeDisabled, "canonical turn processor is unavailable", nil)
 	}
 	if ctx == nil {
@@ -156,7 +151,7 @@ func (p *CanonicalTurnProcessor) buildCanonicalMutation(ctx context.Context, tur
 		},
 	}
 
-	sourcePayloadRecord, sourceRef, err := p.seal(ctx, canonicalPayloadID("source", sourceID), sourcePayload)
+	sourcePayloadRecord, sourceRef, err := p.payload(canonicalPayloadID("source", sourceID), sourcePayload)
 	if err != nil {
 		return CanonicalMutation{}, err
 	}
@@ -172,9 +167,9 @@ func (p *CanonicalTurnProcessor) buildCanonicalMutation(ctx context.Context, tur
 			return CanonicalMutation{}, invalidDerived("canonical turn message identity is duplicated")
 		}
 		messageByID[message.MessageID] = message
-		payload, payloadRef, sealErr := p.seal(ctx, canonicalPayloadID("message", message.MessageID), []byte(message.Text))
-		if sealErr != nil {
-			return CanonicalMutation{}, sealErr
+		payload, payloadRef, payloadErr := p.payload(canonicalPayloadID("message", message.MessageID), []byte(message.Text))
+		if payloadErr != nil {
+			return CanonicalMutation{}, payloadErr
 		}
 		mutation.Messages = append(mutation.Messages, MessageRecord{MessageID: message.MessageID, SourceID: sourceID, Role: message.Role, Payload: payloadRef})
 		mutation.Payloads = append(mutation.Payloads, payload)
@@ -204,7 +199,7 @@ func (p *CanonicalTurnProcessor) buildCanonicalMutation(ctx context.Context, tur
 		if err != nil {
 			return CanonicalMutation{}, err
 		}
-		revisionPayload, revisionRef, err := p.seal(ctx, canonicalPayloadID("revision", reconciliation.RevisionID), []byte(canonicalCandidate.Memory.Statement))
+		revisionPayload, revisionRef, err := p.payload(canonicalPayloadID("revision", reconciliation.RevisionID), []byte(canonicalCandidate.Memory.Statement))
 		if err != nil {
 			return CanonicalMutation{}, err
 		}
@@ -248,21 +243,17 @@ type canonicalTurnSourcePayload struct {
 	TerminalStatus TurnTerminalStatus `json:"terminal_status"`
 }
 
-func (p *CanonicalTurnProcessor) seal(ctx context.Context, payloadID string, plaintext []byte) (CanonicalPayload, PayloadRef, error) {
+func (p *CanonicalTurnProcessor) payload(payloadID string, plaintext []byte) (CanonicalPayload, PayloadRef, error) {
 	if len(plaintext) == 0 {
 		return CanonicalPayload{}, PayloadRef{}, invalidDerived("canonical payload is empty")
 	}
-	payload, err := p.sealer.SealCanonicalPayload(ctx, payloadID, plaintext)
-	if err != nil {
-		return CanonicalPayload{}, PayloadRef{}, err
-	}
-	if payload.Ref.ID != payloadID {
-		return CanonicalPayload{}, PayloadRef{}, invalidDerived("canonical payload sealer changed payload identity")
-	}
+	digest := sha256.Sum256(plaintext)
+	ref := PayloadRef{ID: payloadID, Digest: hex.EncodeToString(digest[:]), ByteSize: uint32(len(plaintext))}
+	payload := CanonicalPayload{Ref: ref, Data: append([]byte(nil), plaintext...)}
 	if err := payload.Validate(); err != nil {
 		return CanonicalPayload{}, PayloadRef{}, err
 	}
-	return payload, payload.Ref, nil
+	return payload, ref, nil
 }
 
 func canonicalizeCandidate(sourceID string, messages map[string]Message, candidate SemanticCandidate) (SemanticCandidate, error) {

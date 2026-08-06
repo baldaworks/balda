@@ -2,6 +2,8 @@ package sessionmemory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 )
 
@@ -161,12 +163,12 @@ type CanonicalMutation struct {
 	Payloads             []CanonicalPayload           `json:"payloads,omitempty"`
 }
 
-// CanonicalPayload couples an encrypted blob to the content-free structural
-// reference that names it. A canonical store must persist this pair in the
-// same transaction as the mutation that first references it.
+// CanonicalPayload couples payload bytes to the structural reference that
+// names them. A canonical store must persist this pair in the same transaction
+// as the mutation that first references it.
 type CanonicalPayload struct {
-	Ref       PayloadRef       `json:"ref"`
-	Encrypted EncryptedPayload `json:"encrypted"`
+	Ref  PayloadRef `json:"ref"`
+	Data []byte     `json:"data"`
 }
 
 // CanonicalMutationOutcome is returned for both a new commit and an exact
@@ -433,13 +435,18 @@ func (m CanonicalMutation) Validate() error {
 }
 
 // Validate verifies a payload blob can safely be persisted atomically with a
-// canonical mutation. Cryptographic opening remains the key-provider's job.
+// canonical mutation. Digest checking is an integrity/identity check; payload
+// protection is deliberately outside this contract.
 func (p CanonicalPayload) Validate() error {
 	if err := p.Ref.Validate(); err != nil {
 		return err
 	}
-	if p.Encrypted.KeyID != p.Ref.KeyID || p.Encrypted.PayloadHash != p.Ref.Digest || len(p.Encrypted.Nonce) == 0 || len(p.Encrypted.Ciphertext) == 0 || len(p.Encrypted.DEKNonce) == 0 || len(p.Encrypted.WrappedDEK) == 0 {
-		return invalidDerived("canonical encrypted payload is invalid")
+	if len(p.Data) == 0 || len(p.Data) != int(p.Ref.ByteSize) {
+		return invalidDerived("canonical payload bytes are invalid")
+	}
+	digest := sha256.Sum256(p.Data)
+	if hex.EncodeToString(digest[:]) != p.Ref.Digest {
+		return invalidDerived("canonical payload digest does not match bytes")
 	}
 	return nil
 }

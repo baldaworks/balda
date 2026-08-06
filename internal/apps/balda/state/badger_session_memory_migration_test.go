@@ -3,8 +3,6 @@ package state
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"reflect"
 	"testing"
 	"time"
@@ -60,7 +58,6 @@ func TestBadgerSessionMemoryStoreResumesV1MigrationFromCheckpoint(t *testing.T) 
 	t.Cleanup(func() { _ = store.Close() })
 
 	if _, err := sessionmemory.MigrateV1ScopeSnapshot(ctx, store, snapshot, sessionmemory.CanonicalMigrationConfig{
-		Sealer:             migrationTestSealer{},
 		SourceLimit:        1,
 		SkipAtomRecords:    true,
 		MaxMutationRecords: 128,
@@ -82,7 +79,6 @@ func TestBadgerSessionMemoryStoreResumesV1MigrationFromCheckpoint(t *testing.T) 
 		t.Fatalf("source batch wrote atom records before their checkpoint: %+v", active)
 	}
 	if _, err := sessionmemory.MigrateV1ScopeSnapshot(ctx, store, snapshot, sessionmemory.CanonicalMigrationConfig{
-		Sealer:             migrationTestSealer{},
 		SourceOffset:       1,
 		SkipSourceRecords:  true,
 		AtomLimit:          1,
@@ -198,22 +194,4 @@ func TestBadgerSessionMemoryStorePreservesV1OperationOutcomes(t *testing.T) {
 	if err != nil || !found || !reflect.DeepEqual(importedSecond.Outcome, legacySecond) {
 		t.Fatalf("second imported logical operation = %+v, found %v, error %v; want %+v", importedSecond, found, err, legacySecond)
 	}
-}
-
-type migrationTestSealer struct{}
-
-func (migrationTestSealer) SealCanonicalPayload(_ context.Context, payloadID string, plaintext []byte) (sessionmemory.CanonicalPayload, error) {
-	digest := sha256.Sum256(plaintext)
-	ref := sessionmemory.PayloadRef{ID: payloadID, KeyID: "migration-test-key", Digest: hex.EncodeToString(digest[:]), ByteSize: uint32(len(plaintext))}
-	return sessionmemory.CanonicalPayload{
-		Ref: ref,
-		Encrypted: sessionmemory.EncryptedPayload{
-			KeyID:       ref.KeyID,
-			PayloadHash: ref.Digest,
-			Nonce:       []byte{1},
-			Ciphertext:  []byte{2},
-			DEKNonce:    []byte{3},
-			WrappedDEK:  []byte{4},
-		},
-	}, nil
 }

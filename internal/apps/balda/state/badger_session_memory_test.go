@@ -3,6 +3,8 @@ package state
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -129,29 +131,6 @@ func TestBadgerSessionMemoryStoreValueLogGCValidation(t *testing.T) {
 	}
 }
 
-func TestBadgerSessionMemoryStorePersistsEncryptedPayloadSeparately(t *testing.T) {
-	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
-	if err != nil {
-		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	ref := sessionmemory.PayloadRef{ID: "payload-1", KeyID: "kek-1", Digest: "digest-1", ByteSize: 1}
-	encrypted := sessionmemory.EncryptedPayload{KeyID: ref.KeyID, PayloadHash: ref.Digest, Nonce: []byte{1}, Ciphertext: []byte{2}, DEKNonce: []byte{3}, WrappedDEK: []byte{4}}
-	if err := store.PutEncryptedPayload(context.Background(), encrypted, ref); err != nil {
-		t.Fatalf("PutEncryptedPayload() error = %v", err)
-	}
-	got, err := store.LoadEncryptedPayload(context.Background(), ref)
-	if err != nil || string(got.Ciphertext) != string(encrypted.Ciphertext) {
-		t.Fatalf("LoadEncryptedPayload() = %#v, error = %v", got, err)
-	}
-	if err := store.DeleteEncryptedPayload(context.Background(), ref); err != nil {
-		t.Fatalf("DeleteEncryptedPayload() error = %v", err)
-	}
-	if _, err := store.LoadEncryptedPayload(context.Background(), ref); err == nil {
-		t.Fatal("LoadEncryptedPayload() succeeded after scrub")
-	}
-}
-
 func TestBadgerSessionMemoryStoreDeniesSourceByExactScope(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "memory.badger")
 	store, err := OpenBadgerSessionMemoryStore(directory)
@@ -206,10 +185,11 @@ func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 	}
 	mutation.Items = []sessionmemory.MemoryItem{canonicalItem(scope, "item-1")}
 	mutation.Revisions = []sessionmemory.MemoryRevision{canonicalRevision("revision-1", "item-1")}
-	mutation.Payloads = []sessionmemory.CanonicalPayload{{
-		Ref:       mutation.Revisions[0].Payload,
-		Encrypted: sessionmemory.EncryptedPayload{KeyID: "key-1", PayloadHash: "digest-1", Nonce: []byte{1}, Ciphertext: []byte{2}, DEKNonce: []byte{3}, WrappedDEK: []byte{4}},
-	}}
+	payloadData := []byte("canonical payload")
+	payloadDigest := sha256.Sum256(payloadData)
+	payloadRef := sessionmemory.PayloadRef{ID: "payload-1", Digest: hex.EncodeToString(payloadDigest[:]), ByteSize: uint32(len(payloadData))}
+	mutation.Revisions[0].Payload = payloadRef
+	mutation.Payloads = []sessionmemory.CanonicalPayload{{Ref: payloadRef, Data: payloadData}}
 	first, err := store.ApplyCanonicalMutation(context.Background(), mutation)
 	if err != nil {
 		t.Fatalf("ApplyCanonicalMutation() error = %v", err)
@@ -217,8 +197,9 @@ func TestBadgerSessionMemoryStoreAppliesCanonicalMutation(t *testing.T) {
 	if first.ScopeVersion != 1 || first.ChangeSeq != 1 {
 		t.Fatalf("outcome = %#v", first)
 	}
-	if _, err := store.LoadEncryptedPayload(context.Background(), mutation.Payloads[0].Ref); err != nil {
-		t.Fatalf("LoadEncryptedPayload() error = %v", err)
+	gotPayload, err := store.LoadPayload(context.Background(), mutation.Payloads[0].Ref)
+	if err != nil || string(gotPayload) != string(payloadData) {
+		t.Fatalf("LoadPayload() = %q, error = %v", gotPayload, err)
 	}
 	replayed, err := store.ApplyCanonicalMutation(context.Background(), mutation)
 	if err != nil || replayed.ScopeVersion != first.ScopeVersion || replayed.ChangeSeq != first.ChangeSeq {
@@ -378,7 +359,7 @@ func TestBadgerSessionMemoryStoreClaimsAndRecoversDeliveryLease(t *testing.T) {
 		Operation:     sessionmemory.OperationRecord{OperationID: "operation-1", Fingerprint: "fingerprint-1", CommittedAt: time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)},
 		Delivery: []sessionmemory.DeliveryOutboxRecord{{
 			DeliveryID: "delivery-1", OperationID: "operation-1", CreatedAt: time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC),
-			PayloadRef: sessionmemory.PayloadRef{ID: "payload-1", KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
+			PayloadRef: sessionmemory.PayloadRef{ID: "payload-1", Digest: "digest-1", ByteSize: 1},
 		}},
 	}
 	if _, err := store.ApplyCanonicalMutation(context.Background(), mutation); err != nil {
@@ -835,6 +816,6 @@ func canonicalRevision(revisionID, itemID string) sessionmemory.MemoryRevision {
 		}},
 		Sensitivity: sessionmemory.SensitivityStandard,
 		Retention:   sessionmemory.RetentionClassStandard,
-		Payload:     sessionmemory.PayloadRef{ID: "payload-1", KeyID: "key-1", Digest: "digest-1", ByteSize: 1},
+		Payload:     sessionmemory.PayloadRef{ID: "payload-1", Digest: "digest-1", ByteSize: 1},
 	}
 }
