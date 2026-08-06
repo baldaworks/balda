@@ -709,7 +709,8 @@ balda:
 replacement for the existing fact store: `balda.memory.read` and
 `balda.memory.remember` remain global-per-instance KV operations in
 `${balda.state_dir}/state.db`. Session memory sends eligible conversation text
-to the native SQLite-backed Store and recalls it only on demand.
+to the canonical Badger Store and recalls it through rebuildable projections
+only on demand.
 
 ### Enablement and configuration
 
@@ -794,10 +795,11 @@ cannot overtake an unresolved earlier export.
 ### Search and trace MCP contract
 
 When enabled, the bundled MCP server registers
-`balda.session_memory.search` and `balda.session_memory.trace`. Search input is only:
+`balda.session_memory.search` and `balda.session_memory.trace`. Search input
+keeps the original query/limit contract and accepts additive filters:
 
 ```json
-{"query":"release checklist","limit":10}
+{"query":"release checklist","limit":10,"kind":"state","category":"decision","as_of":"2026-08-06T10:00:00Z"}
 ```
 
 Trace input is only a native revision identity and a bounded node count:
@@ -824,10 +826,11 @@ forgotten sources, cycles, foreign scopes, and over-bound graphs.
 
 ### JetStream durability, retry, and operations
 
-Session-memory transport is deliberately JetStream-only. It does not add a
-second SQLite transport outbox, export-status table, lease table, or
-`state.Provider` surface. The native Store still uses the ordinary Balda state
-migrations for its durable memory tables. When enabled, Balda creates:
+Session-memory transport uses a producer-local durable ingress outbox before
+JetStream publish and a separate canonical post-mutation delivery outbox. It
+does not add a transport-owned `state.Provider` surface. The canonical Badger
+Store owns memory records, operation outcomes, projection checkpoints, and
+delivery state. When enabled, Balda creates:
 
 - file-backed work-queue stream `BALDA_SESSION_MEMORY` for
   `balda.v1.session_memory.turn` and `balda.v1.session_memory.boundary`;
@@ -838,16 +841,15 @@ migrations for its durable memory tables. When enabled, Balda creates:
 - terminal diagnostics on `BALDA_DLQ` before the source message is
   `Term`-inated.
 
-The capture path publishes a stable `export_id` with a JetStream message ID
-and waits for `PubAck`. A successful `PubAck` is the durability boundary: the
-export survives a Balda restart and an unresolved delivery is redelivered.
-Duplicate publication with the same ID is safe. The worker retries transient
-native processor failures in place, sends `InProgress` heartbeats during slow calls and
-backoff, acknowledges only after processor success, and publishes a redacted
-diagnostic before terminating permanent or exhausted failures. Because there
-is intentionally no SQLite outbox, a process crash after capture but before
-`PubAck` can lose that one export; this integration does not claim zero-loss
-semantics before the acknowledgement.
+The capture path first persists a stable `export_id` in the ingress outbox,
+publishes it with a JetStream message ID, and settles the outbox only after
+`PubAck`. A crash before acknowledgement leaves the same export available for
+retry after restart; duplicate publication with the same ID is safe. The
+worker retries transient native processor failures in place, sends `InProgress`
+heartbeats during slow calls and backoff, acknowledges only after processor
+success, and publishes a redacted diagnostic before terminating permanent or
+exhausted failures. Canonical post-mutation delivery uses its own bounded
+outbox and does not change the user-visible reply boundary.
 
 Operators can inspect backlog without reading message bodies by pointing the
 NATS CLI at the running runtime:
@@ -871,12 +873,12 @@ make a reviewed replay idempotent at the native Store/processor boundary.
 
 ### Privacy, trust, and shutdown
 
-The native SQLite Store is a raw conversation-data trust boundary. Restrict
+The canonical Badger Store is a raw conversation-data trust boundary. Restrict
 access to the Balda state directory and configure state/JetStream retention to
-match the deployment's privacy policy. Balda minimizes the payload to visible
-text, keeps credentials out of durable envelopes, bounds model/retrieval
-outputs, and redacts worker/DLQ diagnostics. ForgetSource and ForgetScope
-replace source content with identity-only tombstones and invalidate all
+match the deployment's policy. Balda minimizes the payload to visible text,
+bounds model/retrieval outputs, and redacts worker/DLQ diagnostics. ForgetSource
+and ForgetScope replace source content with identity-only tombstones, deny
+recall immediately, remove matching projection candidates, and invalidate all
 dependent revisions in the exact scope; global fact KV remains separate.
 
 Shutdown preserves ordering: channel ingress stops accepting new work, the
@@ -933,7 +935,7 @@ timeout 5m go test -race ./sessionmemory/... ./internal/apps/balda/sessionmemory
 
 Pass only if both commands exit zero before their timeout. A failure or timeout
 is a hard abort for the live tier. These tests exercise a real broker-wrapped
-MCP surface, file-backed SQLite reopen, restart recall, exact-scope isolation,
+MCP surface, canonical-store reopen, restart recall, exact-scope isolation,
 authorization failures, provenance, and safe output without provider/channel
 credentials.
 
@@ -1022,7 +1024,7 @@ destructive cleanup or claim a clean drain.
 Restart with the same command, config, and isolated state directory. Allow at
 most 60 seconds for readiness. From locator A, repeat the metadata-only search
 and trace request from step 4. Pass when the same exact scope can recall and
-trace the marker after the SQLite and JetStream reopen. Abort on startup error,
+trace the marker after the canonical store and JetStream reopen. Abort on startup error,
 missing recall, changed/foreign scope, or provenance failure.
 
 #### 6. Prove foreign-locator isolation
@@ -1045,7 +1047,7 @@ cause and evidence status are recorded.
 
 | Condition | Safe evidence | Required action | Maximum wait / outcome |
 |---|---|---|---|
-| Pre-`PubAck` publish failure | Capture error code/class and unchanged metadata counts | Correct NATS/config availability, then submit a new reviewed synthetic turn | The configured `publish_timeout` multiplied by `publish_attempts`, plus 15 seconds; the failed export may be lost because there is no SQLite outbox. |
+| Pre-`PubAck` publish failure | Capture error code/class and unchanged metadata counts | Correct NATS/config availability, then let the ingress outbox retry the same export | The configured `publish_timeout` multiplied by `publish_attempts`, plus the worker retry bound. |
 | Transient processor failure | Pending/ack-pending/redelivery counters and redacted component error class | Keep the runtime available while bounded retry and `InProgress` heartbeats run | 60 seconds for this smoke; pass only if counters settle and DLQ does not rise. |
 | Permanent or exhausted failure | DLQ count increase and redacted diagnostic code/class | Fix the processor/configuration before any replay | Abort the smoke immediately; do not read or copy the DLQ body. |
 | Reviewed replay is required | Export ID and redacted diagnostic metadata from a trusted restricted system | Use a trusted operator-controlled source to replay the original envelope with its stable export ID, or submit a new reviewed turn and accept that it is a new export | No automatic replay exists; verify one action at a time and settle within 60 seconds. |

@@ -21,6 +21,7 @@ Use this map to find the authoritative runtime contracts.
 - [Reliability](reliability.md)
 - [Testing and evals](testing-and-evals.md)
 - [Native session memory](session-memory-native.md)
+- [Session-memory v2 acceptance and operations](session-memory-v2-acceptance.md)
 
 ## Invariants
 

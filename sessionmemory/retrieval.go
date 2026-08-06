@@ -12,12 +12,17 @@ const (
 
 // DerivedSearchRequest asks for bounded memory in one exact scope.
 type DerivedSearchRequest struct {
-	SchemaVersion string        `json:"schema_version"`
-	Scope         Scope         `json:"scope"`
-	Query         string        `json:"query"`
-	Kind          *DerivedKind  `json:"kind,omitempty"`
-	Category      *AtomCategory `json:"category,omitempty"`
-	Limit         int           `json:"limit"`
+	SchemaVersion     string        `json:"schema_version"`
+	Scope             Scope         `json:"scope"`
+	Query             string        `json:"query"`
+	Kind              *DerivedKind  `json:"kind,omitempty"`
+	Category          *AtomCategory `json:"category,omitempty"`
+	Limit             int           `json:"limit"`
+	AsOf              *time.Time    `json:"as_of,omitempty"`
+	SourceID          string        `json:"source_id,omitempty"`
+	SessionID         string        `json:"session_id,omitempty"`
+	MemoryKey         string        `json:"memory_key,omitempty"`
+	MinScopeChangeSeq uint64        `json:"min_scope_change_seq,omitempty"`
 }
 
 // SearchHit is one full Store-owned revision plus an optional relevance score.

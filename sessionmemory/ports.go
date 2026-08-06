@@ -87,6 +87,13 @@ type Store interface {
 	Trace(ctx context.Context, request TraceRequest) (TraceGraph, error)
 }
 
+// ScopeChangeSequenceReader is an optional consistency port for providers
+// that can expose the canonical change watermark. Derived v1 stores may omit
+// it; a caller that requests MinScopeChangeSeq then fails closed.
+type ScopeChangeSequenceReader interface {
+	CurrentScopeChangeSeq(ctx context.Context, scope Scope) (uint64, error)
+}
+
 // LegacyOperationSource exposes the durable v1 operation outcomes needed by
 // the maintenance-mode migration. It is deliberately separate from Store so
 // normal v1 processing and the canonical v2 port do not acquire a migration

@@ -47,6 +47,8 @@ func (s *BadgerSessionMemoryStore) RunValueLogGC(discardRatio float64) error {
 
 var _ sessionmemory.CanonicalStore = (*BadgerSessionMemoryStore)(nil)
 var _ sessionmemory.ProjectionCheckpointStore = (*BadgerSessionMemoryStore)(nil)
+var _ sessionmemory.ProjectionRetentionFloorWriter = (*BadgerSessionMemoryStore)(nil)
+var _ sessionmemory.ScopeCheckpointStore = (*BadgerSessionMemoryStore)(nil)
 var _ sessionmemory.CanonicalImportedOperationStore = (*BadgerSessionMemoryStore)(nil)
 
 type badgerCanonicalOperation struct {
@@ -71,6 +73,10 @@ type badgerDeniedRevision struct {
 
 type badgerProjectionActive struct {
 	GenerationID string `json:"generation_id"`
+}
+
+type badgerProjectionRetention struct {
+	Floor uint64 `json:"floor"`
 }
 
 func putBadgerSessionMemoryRecord(txn *badger.Txn, key []byte, recordType string, value any) error {
@@ -835,6 +841,141 @@ func (s *BadgerSessionMemoryStore) updateProjectionManifest(ctx context.Context,
 	})
 	if err != nil {
 		return badgerSessionMemoryError("update projection manifest", err)
+	}
+	return nil
+}
+
+// LoadProjectionRetentionFloor returns the minimum watermark that remains safe
+// for incremental replay after retention removed older change records. A
+// missing floor means that all canonical changes are still available and is
+// represented as zero.
+func (s *BadgerSessionMemoryStore) LoadProjectionRetentionFloor(ctx context.Context, scope sessionmemory.Scope, projectionID string) (uint64, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return 0, err
+	}
+	if err := scope.Validate(); err != nil || strings.TrimSpace(projectionID) == "" {
+		return 0, sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "projection retention lookup is invalid", err)
+	}
+	key, err := badgerProjectionRetentionKey(scope, projectionID)
+	if err != nil {
+		return 0, err
+	}
+	var retention badgerProjectionRetention
+	err = s.db.View(func(txn *badger.Txn) error {
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionRetention, &retention)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, badgerSessionMemoryError("load projection retention floor", err)
+	}
+	return retention.Floor, nil
+}
+
+// SetProjectionRetentionFloor records a verified maintenance cursor. The
+// floor is monotonic and is intentionally separate from disposable index
+// files, so a projector can detect when incremental replay is no longer safe.
+func (s *BadgerSessionMemoryStore) SetProjectionRetentionFloor(ctx context.Context, scope sessionmemory.Scope, projectionID string, floor uint64) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := scope.Validate(); err != nil || strings.TrimSpace(projectionID) == "" {
+		return sessionmemory.PermanentError(sessionmemory.CodeInvalidScope, "projection retention update is invalid", err)
+	}
+	key, err := badgerProjectionRetentionKey(scope, projectionID)
+	if err != nil {
+		return err
+	}
+	s.maintenanceMu.Lock()
+	defer s.maintenanceMu.Unlock()
+	if s.db == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	err = s.db.Update(func(txn *badger.Txn) error {
+		var current badgerProjectionRetention
+		err := getBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionRetention, &current)
+		if err == nil && floor < current.Floor {
+			return sessionmemory.PermanentError(sessionmemory.CodeConflict, "projection retention floor moved backwards", nil)
+		}
+		if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+		return putBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionRetention, badgerProjectionRetention{Floor: floor})
+	})
+	if err != nil {
+		return badgerSessionMemoryError("set projection retention floor", err)
+	}
+	return nil
+}
+
+// LoadScopeCheckpoint loads the latest cursor for one trigger kind.
+func (s *BadgerSessionMemoryStore) LoadScopeCheckpoint(ctx context.Context, scope sessionmemory.Scope, kind sessionmemory.ScopeCheckpointKind) (sessionmemory.ScopeCheckpoint, bool, error) {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return sessionmemory.ScopeCheckpoint{}, false, err
+	}
+	if err := scope.Validate(); err != nil {
+		return sessionmemory.ScopeCheckpoint{}, false, err
+	}
+	if err := kind.Validate(); err != nil {
+		return sessionmemory.ScopeCheckpoint{}, false, err
+	}
+	key, err := badgerProjectionCheckpointKey(scope, kind)
+	if err != nil {
+		return sessionmemory.ScopeCheckpoint{}, false, err
+	}
+	var checkpoint sessionmemory.ScopeCheckpoint
+	err = s.db.View(func(txn *badger.Txn) error {
+		return getBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionCheckpoint, &checkpoint)
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return sessionmemory.ScopeCheckpoint{}, false, nil
+	}
+	if err != nil {
+		return sessionmemory.ScopeCheckpoint{}, false, badgerSessionMemoryError("load scope checkpoint", err)
+	}
+	if err := checkpoint.Validate(); err != nil || checkpoint.Scope != scope || checkpoint.Kind != kind {
+		return sessionmemory.ScopeCheckpoint{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored scope checkpoint is invalid", err)
+	}
+	return checkpoint, true, nil
+}
+
+// SaveScopeCheckpoint persists one latest-per-kind cursor and rejects stale
+// writes. The maintenance mutex serializes this update with canonical
+// lifecycle work in the same Badger owner.
+func (s *BadgerSessionMemoryStore) SaveScopeCheckpoint(ctx context.Context, checkpoint sessionmemory.ScopeCheckpoint) error {
+	if err := sessionMemoryContextError(ctx); err != nil {
+		return err
+	}
+	if err := checkpoint.Validate(); err != nil {
+		return err
+	}
+	key, err := badgerProjectionCheckpointKey(checkpoint.Scope, checkpoint.Kind)
+	if err != nil {
+		return err
+	}
+	s.maintenanceMu.Lock()
+	defer s.maintenanceMu.Unlock()
+	if s.db == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
+	}
+	err = s.db.Update(func(txn *badger.Txn) error {
+		var current sessionmemory.ScopeCheckpoint
+		err := getBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionCheckpoint, &current)
+		if err == nil {
+			if current.ScopeVersion > checkpoint.ScopeVersion || current.ChangeSeq > checkpoint.ChangeSeq || current.OccurredAt.After(checkpoint.OccurredAt) {
+				return sessionmemory.PermanentError(sessionmemory.CodeConflict, "scope checkpoint moved backwards", nil)
+			}
+			if current.ScopeVersion == checkpoint.ScopeVersion && current.ChangeSeq == checkpoint.ChangeSeq && current.CheckpointID == checkpoint.CheckpointID {
+				return nil
+			}
+		} else if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+		return putBadgerSessionMemoryRecord(txn, key, badgerRecordProjectionCheckpoint, checkpoint)
+	})
+	if err != nil {
+		return badgerSessionMemoryError("save scope checkpoint", err)
 	}
 	return nil
 }

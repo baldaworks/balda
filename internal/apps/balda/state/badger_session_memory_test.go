@@ -548,8 +548,8 @@ func TestBadgerSessionMemoryStoreProvidesBoundedRevisionAndHeadReads(t *testing.
 			t.Fatalf("ApplyCanonicalMutation(%d) error = %v", index, err)
 		}
 	}
-	revisions, err := store.LoadCanonicalRevisions(context.Background(), sessionmemory.CanonicalRevisionReadRequest{Scope: scope, RevisionIDs: []string{"revision-2", "revision-1"}})
-	if err != nil || len(revisions) != 2 || revisions[0].RevisionID != "revision-2" || revisions[1].RevisionID != "revision-1" {
+	revisions, err := store.LoadCanonicalRevisions(context.Background(), sessionmemory.CanonicalRevisionReadRequest{Scope: scope, RevisionIDs: []string{"revision-2", stateTestRevisionOneID}})
+	if err != nil || len(revisions) != 2 || revisions[0].RevisionID != "revision-2" || revisions[1].RevisionID != stateTestRevisionOneID {
 		t.Fatalf("LoadCanonicalRevisions() = %#v, error %v", revisions, err)
 	}
 	heads, err := store.ScanActiveHeads(context.Background(), sessionmemory.ActiveHeadScanRequest{Scope: scope, Limit: 1})
@@ -630,6 +630,84 @@ func TestBadgerSessionMemoryStoreAtomicallySwitchesActiveProjectionGeneration(t 
 	old, found, err := store.LoadProjectionManifest(context.Background(), scope, "bleve", first.GenerationID)
 	if err != nil || !found || old.Status != sessionmemory.ProjectionGenerationSuperseded {
 		t.Fatalf("old generation = %#v, %t, %v", old, found, err)
+	}
+}
+
+func TestBadgerSessionMemoryStorePersistsProjectionRetentionAndScopeCheckpoints(t *testing.T) {
+	store, err := OpenBadgerSessionMemoryStore(filepath.Join(t.TempDir(), "memory.badger"))
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	scope := sessionmemory.Scope{Key: "canonical:projection-checkpoint", Kind: sessionmemory.ScopeKindPersonal}
+	if err := store.SetProjectionRetentionFloor(ctx, scope, "bleve", 7); err != nil {
+		t.Fatalf("SetProjectionRetentionFloor() error = %v", err)
+	}
+	floor, err := store.LoadProjectionRetentionFloor(ctx, scope, "bleve")
+	if err != nil || floor != 7 {
+		t.Fatalf("LoadProjectionRetentionFloor() = %d, error %v", floor, err)
+	}
+	if err := store.SetProjectionRetentionFloor(ctx, scope, "bleve", 6); err == nil {
+		t.Fatal("SetProjectionRetentionFloor() accepted a backwards floor")
+	}
+	checkpoint := sessionmemory.ScopeCheckpoint{
+		SchemaVersion: sessionmemory.ScopeCheckpointSchemaVersion,
+		Scope:         scope,
+		Kind:          sessionmemory.ScopeCheckpointBoundary,
+		CheckpointID:  "boundary-1",
+		ScopeVersion:  3,
+		ChangeSeq:     7,
+		OccurredAt:    time.Date(2026, time.August, 6, 1, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, time.August, 6, 1, 0, 1, 0, time.UTC),
+	}
+	if err := store.SaveScopeCheckpoint(ctx, checkpoint); err != nil {
+		t.Fatalf("SaveScopeCheckpoint() error = %v", err)
+	}
+	if err := store.SaveScopeCheckpoint(ctx, checkpoint); err != nil {
+		t.Fatalf("SaveScopeCheckpoint(replay) error = %v", err)
+	}
+	got, found, err := store.LoadScopeCheckpoint(ctx, scope, sessionmemory.ScopeCheckpointBoundary)
+	if err != nil || !found || got != checkpoint {
+		t.Fatalf("LoadScopeCheckpoint() = %+v, found %v, error %v; want %+v, true", got, found, err, checkpoint)
+	}
+	checkpoint.ChangeSeq = 6
+	if err := store.SaveScopeCheckpoint(ctx, checkpoint); err == nil {
+		t.Fatal("SaveScopeCheckpoint() accepted a backwards cursor")
+	}
+}
+
+func TestBadgerSessionMemoryStoreReopensScopeCheckpoint(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "memory.badger")
+	store, err := OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
+	}
+	scope := sessionmemory.Scope{Key: "canonical:checkpoint-reopen", Kind: sessionmemory.ScopeKindPersonal}
+	checkpoint := sessionmemory.ScopeCheckpoint{
+		SchemaVersion: sessionmemory.ScopeCheckpointSchemaVersion,
+		Scope:         scope,
+		Kind:          sessionmemory.ScopeCheckpointTime,
+		CheckpointID:  "timer-1",
+		ScopeVersion:  1,
+		ChangeSeq:     1,
+		OccurredAt:    time.Date(2026, time.August, 6, 2, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, time.August, 6, 2, 0, 1, 0, time.UTC),
+	}
+	if err := store.SaveScopeCheckpoint(context.Background(), checkpoint); err != nil {
+		t.Fatalf("SaveScopeCheckpoint() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	store, err = OpenBadgerSessionMemoryStore(directory)
+	if err != nil {
+		t.Fatalf("reopen error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	got, found, err := store.LoadScopeCheckpoint(context.Background(), scope, sessionmemory.ScopeCheckpointTime)
+	if err != nil || !found || got != checkpoint {
+		t.Fatalf("LoadScopeCheckpoint(after reopen) = %+v, found %v, error %v; want %+v, true", got, found, err, checkpoint)
 	}
 }
 

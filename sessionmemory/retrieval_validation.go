@@ -50,6 +50,14 @@ func (r DerivedSearchRequest) Validate() error {
 			return PermanentError(CodeInvalidQuery, "atom category filter requires atom kind", nil)
 		}
 	}
+	for name, value := range map[string]string{"source": r.SourceID, "session": r.SessionID, "memory key": r.MemoryKey} {
+		if value != "" && !isCanonicalID(value) {
+			return PermanentError(CodeInvalidQuery, name+" filter is invalid", nil)
+		}
+	}
+	if r.AsOf != nil && r.AsOf.IsZero() {
+		return PermanentError(CodeInvalidQuery, "derived search as_of is invalid", nil)
+	}
 	return nil
 }
 

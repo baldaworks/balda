@@ -21,6 +21,19 @@ func (e *Engine) Search(ctx context.Context, request DerivedSearchRequest) (Deri
 	if normalized.Limit > e.config.MaxSearchResults {
 		return DerivedSearchResponse{}, limitExceeded("derived search limit exceeds the configured bound")
 	}
+	if normalized.MinScopeChangeSeq > 0 {
+		watermarks, ok := e.store.(ScopeChangeSequenceReader)
+		if !ok {
+			return DerivedSearchResponse{}, PermanentError(CodeUnavailable, "store does not expose the requested scope consistency watermark", nil)
+		}
+		current, err := watermarks.CurrentScopeChangeSeq(ctx, normalized.Scope)
+		if err != nil {
+			return DerivedSearchResponse{}, storePortFailure(ctx, err)
+		}
+		if current < normalized.MinScopeChangeSeq {
+			return DerivedSearchResponse{}, RetryableError(CodeConflict, "scope consistency watermark has not caught up", nil)
+		}
+	}
 	hits, err := e.store.Search(ctx, cloneDerivedSearchRequest(normalized))
 	if err != nil {
 		return DerivedSearchResponse{}, storePortFailure(ctx, err)
@@ -43,6 +56,9 @@ func (e *Engine) Search(ctx context.Context, request DerivedSearchRequest) (Deri
 		}
 		if meta.State != RevisionStateActive {
 			return DerivedSearchResponse{}, invalidDerived("Store search hit is not active")
+		}
+		if !matchesDerivedSearchFilters(normalized, meta) {
+			continue
 		}
 		reference := derivedReferenceFromHit(hit, meta)
 		if normalized.Kind != nil && reference.Kind != *normalized.Kind {
@@ -70,6 +86,30 @@ func (e *Engine) Search(ctx context.Context, request DerivedSearchRequest) (Deri
 		return DerivedSearchResponse{}, err
 	}
 	return response, nil
+}
+
+func matchesDerivedSearchFilters(request DerivedSearchRequest, meta RevisionMeta) bool {
+	if request.AsOf != nil && meta.CreatedAt.After(request.AsOf.UTC()) {
+		return false
+	}
+	if request.SourceID != "" || request.SessionID != "" {
+		sourceMatch := request.SourceID == ""
+		sessionMatch := request.SessionID == ""
+		for _, source := range meta.Provenance.RawSources {
+			if request.SourceID != "" && source.ExportID == request.SourceID {
+				sourceMatch = true
+			}
+			if request.SessionID != "" && source.SessionID == request.SessionID {
+				sessionMatch = true
+			}
+		}
+		if !sourceMatch || !sessionMatch {
+			return false
+		}
+	}
+	// Legacy derived revisions do not carry the canonical MemoryKey. A
+	// requested key must therefore fail closed until a v2 provider handles it.
+	return request.MemoryKey == ""
 }
 
 // Trace returns one validated closed provenance graph marked as untrusted data.
@@ -270,6 +310,10 @@ func cloneDerivedSearchRequest(request DerivedSearchRequest) DerivedSearchReques
 	if request.Category != nil {
 		category := *request.Category
 		request.Category = &category
+	}
+	if request.AsOf != nil {
+		asOf := *request.AsOf
+		request.AsOf = &asOf
 	}
 	return request
 }

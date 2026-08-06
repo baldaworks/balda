@@ -59,15 +59,12 @@ func TestSearchToolSchemaBindsNoCallerScope(t *testing.T) {
 	if !ok {
 		t.Fatalf("input schema properties = %#v", schema["properties"])
 	}
-	if len(properties) != 2 {
-		t.Fatalf("input schema properties = %#v, want query and limit only", properties)
-	}
-	for _, name := range []string{"query", "limit"} {
+	for _, name := range []string{"query", "limit", "kind", "memory_kind", "category", "as_of", "source_id", "session_id", "memory_key", "min_scope_change_seq"} {
 		if _, ok := properties[name]; !ok {
 			t.Fatalf("input schema missing %q: %#v", name, properties)
 		}
 	}
-	for _, forbidden := range []string{"locator", "scope", "session", "session_id", "channel_type", "address_key"} {
+	for _, forbidden := range []string{"locator", "scope", "session", "channel_type", "address_key"} {
 		if _, ok := properties[forbidden]; ok {
 			t.Fatalf("input schema exposes caller-controlled scope field %q", forbidden)
 		}
@@ -128,6 +125,45 @@ func TestSearchToolUsesServerBoundScopeAndUntrustedResults(t *testing.T) {
 	}
 	if got := searcher.lastRequest(); got.Scope.Key != testPersonalScopeKey {
 		t.Fatalf("provider scope changed after caller-supplied locator: %+v", got.Scope)
+	}
+}
+
+func TestSearchToolPassesAdditiveRecallFiltersWithoutChangingBoundScope(t *testing.T) {
+	t.Parallel()
+	current := testCurrentSession(t, false)
+	searcher := &fakeRecallSearcher{}
+	service := New(Config{
+		Enabled:         true,
+		RecallSearcher:  searcher,
+		SessionResolver: staticResolver(current),
+		ScopeResolver:   testScopeResolver(),
+	})
+	ctx, cleanup, client := newTestSession(t, service)
+	defer cleanup()
+
+	result := callTool(t, ctx, client, map[string]any{
+		"query":                "deploy",
+		"limit":                2,
+		"memory_kind":          "state",
+		"category":             "decision",
+		"as_of":                "2026-08-06T10:00:00Z",
+		"source_id":            "source-1",
+		"session_id":           "session-1",
+		"memory_key":           "decision-key",
+		"min_scope_change_seq": 4,
+	})
+	if result.IsError {
+		t.Fatalf("CallTool() returned error: %#v", result)
+	}
+	received := searcher.lastRequest()
+	if received.Scope != (sessionmemory.Scope{Key: testPersonalScopeKey, Kind: sessionmemory.ScopeKindPersonal}) || received.Query != "deploy" || received.Limit != 2 {
+		t.Fatalf("Recall request identity = %+v", received)
+	}
+	if received.Kind == nil || *received.Kind != sessionmemory.MemoryKindState || received.Category == nil || *received.Category != sessionmemory.AtomCategoryDecision || received.SourceID != "source-1" || received.SessionID != "session-1" || received.MemoryKey != "decision-key" || received.MinScopeChangeSeq != 4 {
+		t.Fatalf("Recall request filters = %+v", received)
+	}
+	if received.AsOf == nil || !received.AsOf.Equal(time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("Recall request as_of = %v", received.AsOf)
 	}
 }
 
@@ -507,6 +543,42 @@ type fakeDerivedSearcher struct {
 	traceResponse  sessionmemory.TraceResponse
 	err            error
 	waitForContext bool
+}
+
+type fakeRecallSearcher struct {
+	mu      sync.Mutex
+	request sessionmemory.RecallRequest
+}
+
+func (f *fakeRecallSearcher) Search(_ context.Context, request sessionmemory.RecallRequest) (sessionmemory.RecallResponse, error) {
+	f.mu.Lock()
+	f.request = request
+	f.mu.Unlock()
+	return sessionmemory.RecallResponse{
+		SchemaVersion:  sessionmemory.RecallSchemaVersionV1,
+		Trust:          sessionmemory.ReferenceTrustUntrusted,
+		Scope:          request.Scope,
+		ScopeChangeSeq: request.MinScopeChangeSeq,
+		Results: []sessionmemory.RecallReference{{
+			SchemaVersion: sessionmemory.RecallSchemaVersionV1,
+			Trust:         sessionmemory.ReferenceTrustUntrusted,
+			Scope:         request.Scope,
+			ItemID:        "item-1",
+			RevisionID:    "revision-1",
+			Revision:      1,
+			Kind:          sessionmemory.MemoryKindState,
+			State:         sessionmemory.RevisionStateActive,
+			Text:          "deploy decision",
+			CreatedAt:     time.Date(2026, time.August, 6, 9, 0, 0, 0, time.UTC),
+			Score:         2,
+		}},
+	}, nil
+}
+
+func (f *fakeRecallSearcher) lastRequest() sessionmemory.RecallRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.request
 }
 
 func (f *fakeDerivedSearcher) SearchDerived(ctx context.Context, request sessionmemory.DerivedSearchRequest) (sessionmemory.DerivedSearchResponse, error) {
