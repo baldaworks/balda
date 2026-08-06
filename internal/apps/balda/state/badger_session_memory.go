@@ -592,7 +592,12 @@ func (s *BadgerSessionMemoryStore) ScanActiveMemory(ctx context.Context, request
 			if item.Scope != request.Scope || revision.ItemID != item.ItemID {
 				return sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "stored active canonical memory is invalid", nil)
 			}
-			active = append(active, sessionmemory.ActiveCanonicalMemory{Item: item, Evidence: append([]sessionmemory.EvidenceRef(nil), revision.Evidence...)})
+			active = append(active, sessionmemory.ActiveCanonicalMemory{
+				Item:       item,
+				RevisionID: revision.RevisionID,
+				Revision:   revision.Revision,
+				Evidence:   append([]sessionmemory.EvidenceRef(nil), revision.Evidence...),
+			})
 		}
 		return nil
 	})

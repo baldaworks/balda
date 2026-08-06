@@ -15,6 +15,45 @@ type NativeProvider struct {
 	invoker StructuredInvoker
 }
 
+// CanonicalProvider is the composition-root adapter for the v2 turn
+// processor. Retrieval, trace, and lifecycle operations remain delegated to
+// the existing provider until their canonical ports are cut over; completed
+// turns are committed through the storage-neutral canonical processor.
+type CanonicalProvider struct {
+	processor  *sessionmemory.CanonicalTurnProcessor
+	delegate   CanonicalProviderDelegate
+	derivation sessionmemory.DerivationRef
+}
+
+// CanonicalProviderDelegate is the consuming-package port for read/lifecycle
+// operations that are not part of the turn-processing cutover yet.
+type CanonicalProviderDelegate interface {
+	sessionmemory.Provider
+	SearchDerived(ctx context.Context, request sessionmemory.DerivedSearchRequest) (sessionmemory.DerivedSearchResponse, error)
+	Trace(ctx context.Context, request sessionmemory.TraceRequest) (sessionmemory.TraceResponse, error)
+	ForgetSource(ctx context.Context, command sessionmemory.ForgetSourceCommand) (sessionmemory.ForgetOutcome, error)
+	ForgetScope(ctx context.Context, command sessionmemory.ForgetScopeCommand) (sessionmemory.ForgetOutcome, error)
+}
+
+// NewCanonicalProvider wires canonical v2 turn processing without exposing a
+// backend type to the portable sessionmemory package. The delegate preserves
+// the existing application ports while their canonical implementations are
+// migrated independently.
+func NewCanonicalProvider(processor *sessionmemory.CanonicalTurnProcessor, delegate CanonicalProviderDelegate, derivation sessionmemory.DerivationRef) (*CanonicalProvider, error) {
+	if processor == nil {
+		return nil, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical turn processor is required", nil)
+	}
+	if delegate == nil {
+		return nil, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical provider delegate is required", nil)
+	}
+	if err := derivation.Validate(); err != nil {
+		return nil, err
+	}
+	return &CanonicalProvider{processor: processor, delegate: delegate, derivation: derivation}, nil
+}
+
+var _ sessionmemory.Provider = (*CanonicalProvider)(nil)
+
 // NewNativeProvider constructs the production in-process provider.
 func NewNativeProvider(store sessionmemory.Store, deriver *Deriver, invoker StructuredInvoker) (*NativeProvider, error) {
 	if store == nil {
@@ -38,6 +77,59 @@ func (p *NativeProvider) SyncTurn(ctx context.Context, turn sessionmemory.Turn) 
 	}
 	_, err := p.engine.ProcessTurn(ctx, turn)
 	return err
+}
+
+func (p *CanonicalProvider) SyncTurn(ctx context.Context, turn sessionmemory.Turn) error {
+	if p == nil || p.processor == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical session-memory provider is unavailable", nil)
+	}
+	_, err := p.processor.ProcessTurn(ctx, turn, p.derivation)
+	return err
+}
+
+func (p *CanonicalProvider) OnSessionBoundary(ctx context.Context, boundary sessionmemory.Boundary) error {
+	if p == nil || p.delegate == nil {
+		return sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical session-memory provider is unavailable", nil)
+	}
+	return p.delegate.OnSessionBoundary(ctx, boundary)
+}
+
+func (p *CanonicalProvider) SearchDerived(ctx context.Context, request sessionmemory.DerivedSearchRequest) (sessionmemory.DerivedSearchResponse, error) {
+	if p == nil || p.delegate == nil {
+		return sessionmemory.DerivedSearchResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical session-memory provider is unavailable", nil)
+	}
+	return p.delegate.SearchDerived(ctx, request)
+}
+
+func (p *CanonicalProvider) Trace(ctx context.Context, request sessionmemory.TraceRequest) (sessionmemory.TraceResponse, error) {
+	if p == nil || p.delegate == nil {
+		return sessionmemory.TraceResponse{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical session-memory provider is unavailable", nil)
+	}
+	return p.delegate.Trace(ctx, request)
+}
+
+func (p *CanonicalProvider) ForgetSource(ctx context.Context, command sessionmemory.ForgetSourceCommand) (sessionmemory.ForgetOutcome, error) {
+	if p == nil || p.delegate == nil {
+		return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical session-memory provider is unavailable", nil)
+	}
+	return p.delegate.ForgetSource(ctx, command)
+}
+
+func (p *CanonicalProvider) ForgetScope(ctx context.Context, command sessionmemory.ForgetScopeCommand) (sessionmemory.ForgetOutcome, error) {
+	if p == nil || p.delegate == nil {
+		return sessionmemory.ForgetOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeDisabled, "canonical session-memory provider is unavailable", nil)
+	}
+	return p.delegate.ForgetScope(ctx, command)
+}
+
+func (p *CanonicalProvider) Close(ctx context.Context) error {
+	if p == nil {
+		return nil
+	}
+	if p.delegate != nil {
+		return p.delegate.Close(ctx)
+	}
+	return nil
 }
 
 func (p *NativeProvider) OnSessionBoundary(ctx context.Context, boundary sessionmemory.Boundary) error {

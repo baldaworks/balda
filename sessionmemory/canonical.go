@@ -174,8 +174,10 @@ type ActiveMemoryScanRequest struct {
 // ActiveCanonicalMemory joins an active item to its current revision evidence.
 // It intentionally excludes payload content and other historic revisions.
 type ActiveCanonicalMemory struct {
-	Item     MemoryItem
-	Evidence []EvidenceRef
+	Item       MemoryItem
+	RevisionID string
+	Revision   uint64
+	Evidence   []EvidenceRef
 }
 
 // CanonicalStore is the storage-neutral incremental v2 persistence port.
