@@ -114,23 +114,50 @@ func TestBadgerSessionMemoryStorePreservesV1OperationOutcomes(t *testing.T) {
 		ScopeVersion:  17,
 		Revisions:     []sessionmemory.RevisionRef{{ItemID: "legacy-item-1", RevisionID: "legacy-revision-1"}},
 	}
+	legacySecond := sessionmemory.OperationOutcome{
+		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
+		OperationID:   "legacy-operation-2",
+		Stage:         sessionmemory.OperationStageProfile,
+		Scope:         scope,
+		ScopeVersion:  18,
+	}
 	directory := t.TempDir() + "/memory.badger"
 	store, err := OpenBadgerSessionMemoryStore(directory)
 	if err != nil {
 		t.Fatalf("OpenBadgerSessionMemoryStore() error = %v", err)
 	}
-	if _, err := sessionmemory.MigrateV1ScopeSnapshot(ctx, store, sessionmemory.ScopeSnapshot{
+	snapshot := sessionmemory.ScopeSnapshot{
 		SchemaVersion: sessionmemory.DerivedSchemaVersionV1,
 		Scope:         scope,
 		Version:       17,
-	}, sessionmemory.CanonicalMigrationConfig{
+	}
+	operations := []sessionmemory.OperationOutcome{legacy, legacySecond}
+	if _, err := sessionmemory.MigrateV1ScopeSnapshot(ctx, store, snapshot, sessionmemory.CanonicalMigrationConfig{
 		SkipSourceRecords: true,
 		SkipAtomRecords:   true,
 		OperationLimit:    1,
-		LegacyOperations:  []sessionmemory.OperationOutcome{legacy},
+		LegacyOperations:  operations,
 	}); err != nil {
 		_ = store.Close()
 		t.Fatalf("MigrateV1ScopeSnapshot(operation batch) error = %v", err)
+	}
+	checkpoint, found, err := store.LoadCanonicalMigrationCheckpoint(ctx, scope, snapshot.Version)
+	if err != nil || !found || checkpoint.NextOperationOffset != 1 || checkpoint.Completed {
+		t.Fatalf("operation checkpoint after first batch = %+v, found %v, error %v", checkpoint, found, err)
+	}
+	if _, err := sessionmemory.MigrateV1ScopeSnapshot(ctx, store, snapshot, sessionmemory.CanonicalMigrationConfig{
+		SkipSourceRecords: true,
+		SkipAtomRecords:   true,
+		OperationOffset:   1,
+		OperationLimit:    1,
+		LegacyOperations:  operations,
+	}); err != nil {
+		_ = store.Close()
+		t.Fatalf("MigrateV1ScopeSnapshot(operation resume) error = %v", err)
+	}
+	checkpoint, found, err = store.LoadCanonicalMigrationCheckpoint(ctx, scope, snapshot.Version)
+	if err != nil || !found || checkpoint.NextOperationOffset != 2 || !checkpoint.Completed {
+		t.Fatalf("operation checkpoint after resume = %+v, found %v, error %v", checkpoint, found, err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
@@ -147,6 +174,10 @@ func TestBadgerSessionMemoryStorePreservesV1OperationOutcomes(t *testing.T) {
 	if imported.Outcome.OperationID != legacy.OperationID || imported.Outcome.Stage != legacy.Stage || imported.Outcome.Scope != legacy.Scope || imported.Outcome.ScopeVersion != legacy.ScopeVersion || len(imported.Outcome.Revisions) != 1 || imported.Outcome.Revisions[0] != legacy.Revisions[0] {
 		t.Fatalf("imported operation = %+v, want exact legacy outcome", imported)
 	}
+	importedSecond, found, err := reopened.LoadCanonicalImportedOperation(ctx, scope, legacySecond.OperationID)
+	if err != nil || !found || importedSecond.Outcome.OperationID != legacySecond.OperationID || importedSecond.Outcome.Stage != legacySecond.Stage || importedSecond.Outcome.ScopeVersion != legacySecond.ScopeVersion {
+		t.Fatalf("second imported operation = %+v, found %v, error %v", importedSecond, found, err)
+	}
 	var exported bytes.Buffer
 	if err := reopened.ExportCanonicalLogical(ctx, &exported); err != nil {
 		t.Fatalf("ExportCanonicalLogical() error = %v", err)
@@ -162,6 +193,10 @@ func TestBadgerSessionMemoryStorePreservesV1OperationOutcomes(t *testing.T) {
 	imported, found, err = destination.LoadCanonicalImportedOperation(ctx, scope, legacy.OperationID)
 	if err != nil || !found || !reflect.DeepEqual(imported.Outcome, legacy) {
 		t.Fatalf("imported logical operation = %+v, found %v, error %v; want %+v", imported, found, err, legacy)
+	}
+	importedSecond, found, err = destination.LoadCanonicalImportedOperation(ctx, scope, legacySecond.OperationID)
+	if err != nil || !found || !reflect.DeepEqual(importedSecond.Outcome, legacySecond) {
+		t.Fatalf("second imported logical operation = %+v, found %v, error %v; want %+v", importedSecond, found, err, legacySecond)
 	}
 }
 
