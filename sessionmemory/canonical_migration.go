@@ -149,12 +149,12 @@ func MigrateV1ScopeSnapshot(ctx context.Context, store CanonicalStore, snapshot 
 	mutation.Payloads = append(mutation.Payloads, payloads...)
 
 	legacyRevisions := make(map[RevisionRef]string, len(snapshot.Atoms))
-	for _, atom := range snapshot.Atoms[atomStart:atomEnd] {
+	for _, atom := range snapshot.Atoms {
 		legacyRevisions[RevisionRef{ItemID: atom.Meta.ItemID, RevisionID: atom.Meta.RevisionID}] = migrationRevisionID(snapshot.Scope, atom.Meta.RevisionID)
 	}
 	items := make(map[string]MemoryItem, len(snapshot.Atoms))
 	activeHeads := make(map[string]MemoryRevision)
-	for _, atom := range snapshot.Atoms {
+	for _, atom := range snapshot.Atoms[atomStart:atomEnd] {
 		if err := checkContext(ctx); err != nil {
 			return CanonicalMutationOutcome{}, err
 		}

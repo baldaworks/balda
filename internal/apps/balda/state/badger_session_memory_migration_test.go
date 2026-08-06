@@ -72,6 +72,13 @@ func TestBadgerSessionMemoryStoreResumesV1MigrationFromCheckpoint(t *testing.T) 
 	if checkpoint.Completed || checkpoint.NextSourceOffset != 1 || checkpoint.NextAtomOffset != 0 {
 		t.Fatalf("source checkpoint = %+v", checkpoint)
 	}
+	active, err := store.ScanActiveMemory(ctx, sessionmemory.ActiveMemoryScanRequest{Scope: scope, Limit: 10})
+	if err != nil {
+		t.Fatalf("ScanActiveMemory(after source batch) error = %v", err)
+	}
+	if len(active) != 0 {
+		t.Fatalf("source batch wrote atom records before their checkpoint: %+v", active)
+	}
 	if _, err := sessionmemory.MigrateV1ScopeSnapshot(ctx, store, snapshot, sessionmemory.CanonicalMigrationConfig{
 		Sealer:             migrationTestSealer{},
 		SourceOffset:       1,
@@ -85,7 +92,7 @@ func TestBadgerSessionMemoryStoreResumesV1MigrationFromCheckpoint(t *testing.T) 
 	if err != nil || !found || !checkpoint.Completed {
 		t.Fatalf("LoadCanonicalMigrationCheckpoint(after atom) = %+v, found %v, error %v", checkpoint, found, err)
 	}
-	active, err := store.ScanActiveMemory(ctx, sessionmemory.ActiveMemoryScanRequest{Scope: scope, Limit: 10})
+	active, err = store.ScanActiveMemory(ctx, sessionmemory.ActiveMemoryScanRequest{Scope: scope, Limit: 10})
 	if err != nil {
 		t.Fatalf("ScanActiveMemory() error = %v", err)
 	}
