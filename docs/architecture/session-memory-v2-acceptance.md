@@ -4,8 +4,8 @@ This matrix records evidence for the approved v2 design. It is a verification
 map, not a claim that environment-dependent latency targets have already been
 measured. The current scope covers logical fail-closed forgetting, retention,
 projection removal, canonical Badger state, Bleve retrieval, and optional local
-Vecgo retrieval. Removed key-management and encryption surfaces are not part
-of this matrix.
+Vecgo retrieval. This matrix records only the current logical forgetting,
+retention, projection, and canonical-storage contracts.
 
 ## Ownership and restart invariants
 
