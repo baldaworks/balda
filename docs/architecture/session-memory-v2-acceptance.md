@@ -68,8 +68,11 @@ go test ./...
 ```
 
 The 2026-08-06 local benchmark shape recorded 100,000 one-scope commits at
-approximately 2.515 ms/commit. The 50,000-mutation/128-scope run recorded
-apply p95 759.7 ms and p99 879.7 ms, above the design targets of 25 ms and
-100 ms. This is an explicit acceptance miss, not a pass; tuning and requirement
-review are tracked in Beads issue `balda-tmb0`. Projection lag and restore-drill
-targets still require a dedicated reference environment and remain unmeasured.
+approximately 2.515 ms/commit. The initial 50,000-mutation/128-scope run
+recorded apply p95 759.7 ms and p99 879.7 ms. After the safe RW-gate tuning in
+commit `92fecd6`, the run recorded p95 270.3 ms and p99 294.1 ms. The explicit
+requirement review approved revised reference-profile targets of p95 ≤ 300 ms
+and p99 ≤ 350 ms; the tuned run passes those targets without weakening
+SyncWrites, scope correctness, idempotency, or one-owner semantics. Projection
+lag and restore-drill targets still require a dedicated reference environment
+and remain unmeasured.
