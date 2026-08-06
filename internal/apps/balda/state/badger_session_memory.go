@@ -20,9 +20,11 @@ import (
 // are added alongside the v2 canonical mutation contract; construction is kept
 // separate so directory locking and durability defaults are testable now.
 type BadgerSessionMemoryStore struct {
-	db                            *badger.DB
-	gcMu                          sync.Mutex
-	maintenanceMu                 sync.Mutex
+	db   *badger.DB
+	gcMu sync.Mutex
+	// maintenanceMu excludes lifecycle/maintenance operations while allowing
+	// independent canonical mutations to use Badger's own concurrency control.
+	maintenanceMu                 sync.RWMutex
 	beforeCanonicalMutationCommit func() error // test fault-injection seam; nil in production.
 }
 
@@ -182,8 +184,8 @@ func (s *BadgerSessionMemoryStore) ApplyCanonicalMutation(ctx context.Context, m
 	if s == nil {
 		return sessionmemory.CanonicalMutationOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
-	s.maintenanceMu.Lock()
-	defer s.maintenanceMu.Unlock()
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
 	if s.db == nil {
 		return sessionmemory.CanonicalMutationOutcome{}, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
@@ -370,8 +372,8 @@ func (s *BadgerSessionMemoryStore) LoadCanonicalImportedOperation(ctx context.Co
 	if s == nil {
 		return sessionmemory.CanonicalImportedOperation{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
-	s.maintenanceMu.Lock()
-	defer s.maintenanceMu.Unlock()
+	s.maintenanceMu.RLock()
+	defer s.maintenanceMu.RUnlock()
 	if s.db == nil {
 		return sessionmemory.CanonicalImportedOperation{}, false, sessionmemory.PermanentError(sessionmemory.CodeStoreFailure, "canonical badger store is closed", nil)
 	}
