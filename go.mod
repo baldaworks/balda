@@ -239,7 +239,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
-	github.com/normahq/go-adk-acpagent/v2 v2.2.2-0.20260804055927-77963f1ff010
+	github.com/normahq/go-adk-acpagent/v2 v2.2.2
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
