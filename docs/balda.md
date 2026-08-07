@@ -648,10 +648,11 @@ balda:
 ### Attachment prompt representation
 
 Telegram documents, photos, and voice messages are persisted under
-`balda.state_dir` before the provider turn. For every non-empty regular file,
-Balda supplies an ADK `FileData` part with an absolute, escaped `file://` URI,
-the persisted display name, and the preserved or detected MIME type. Metadata
-remains an adjacent text part and does not replace a valid file reference.
+`balda.state_dir` before the provider turn. For every non-empty regular file
+with a preserved or detected MIME type, Balda supplies an ADK `FileData` part
+with an absolute, escaped `file://` URI and the persisted display name.
+Metadata remains an adjacent text part and does not replace a valid file
+reference.
 
 The ACP adapter, not Balda, selects native `Image`/`Audio` or baseline
 `ResourceLink` from the server's initialize capabilities. `ResourceLink` does
