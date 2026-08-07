@@ -654,9 +654,10 @@ with an absolute, escaped `file://` URI and the persisted display name.
 Metadata remains an adjacent text part and does not replace a valid file
 reference.
 
-The ACP adapter, not Balda, selects native `Image`/`Audio` or baseline
-`ResourceLink` from the server's initialize capabilities. `ResourceLink` does
-not require a separate capability flag. Balda does not inline-read or size-limit
+The ACP adapter maps every persisted `FileData` to baseline `ResourceLink`,
+regardless of the server's optional image/audio capabilities. Native `Image`
+and `Audio` blocks are reserved for inline bytes; `ResourceLink` does not
+require a separate capability flag. Balda does not inline-read or size-limit
 persisted files for this conversion, and it does not create temporary files.
 Missing or empty blobs retain the deterministic metadata fallback; unreadable
 or non-regular paths return a stable build error.
