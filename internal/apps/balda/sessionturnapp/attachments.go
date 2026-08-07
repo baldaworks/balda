@@ -2,7 +2,8 @@ package sessionturnapp
 
 import (
 	"fmt"
-	"net/http"
+	"mime"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,6 @@ import (
 	"google.golang.org/genai"
 )
 
-const maxInlineAttachmentBytes = 20 << 20
-
 func buildUserContent(text string, attachments []attachment.Descriptor) (*genai.Content, error) {
 	attachments = attachment.NormalizeList(attachments)
 	parts := make([]*genai.Part, 0, 1+len(attachments)*2)
@@ -20,15 +19,15 @@ func buildUserContent(text string, attachments []attachment.Descriptor) (*genai.
 		parts = append(parts, genai.NewPartFromText(trimmed))
 	}
 	for _, item := range attachments {
-		inlinePart, fallbackText, err := buildAttachmentPart(item)
+		filePart, fallbackText, err := buildAttachmentPart(item)
 		if err != nil {
 			return nil, err
 		}
 		if fallbackText != "" {
 			parts = append(parts, genai.NewPartFromText(fallbackText))
 		}
-		if inlinePart != nil {
-			parts = append(parts, inlinePart)
+		if filePart != nil {
+			parts = append(parts, filePart)
 		}
 	}
 	if len(parts) == 0 {
@@ -42,18 +41,39 @@ func buildAttachmentPart(item attachment.Descriptor) (*genai.Part, string, error
 	if item.Blob == nil || strings.TrimSpace(item.Blob.Path) == "" {
 		return nil, fallback, nil
 	}
-	data, err := os.ReadFile(item.Blob.Path)
-	if err != nil {
-		return nil, "", fmt.Errorf("read attachment blob %q: %w", item.Blob.Path, err)
+	path := strings.TrimSpace(item.Blob.Path)
+	if !filepath.IsAbs(path) {
+		return nil, "", fmt.Errorf("attachment blob path must be absolute: %q", path)
 	}
-	if len(data) == 0 || len(data) > maxInlineAttachmentBytes {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("open attachment blob %q: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, "", fmt.Errorf("stat attachment blob %q: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, "", fmt.Errorf("attachment blob %q is not a regular file", path)
+	}
+	if info.Size() == 0 {
 		return nil, fallback, nil
 	}
-	mimeType := detectAttachmentMIMEType(item, data)
+	mimeType := detectAttachmentMIMEType(item)
 	if mimeType == "" {
 		return nil, fallback, nil
 	}
-	return genai.NewPartFromBytes(data, mimeType), fallback, nil
+	uri := (&url.URL{Scheme: "file", Path: path}).String()
+	part := genai.NewPartFromURI(uri, mimeType)
+	if part.FileData != nil {
+		displayName := strings.TrimSpace(item.FileName)
+		if displayName == "" {
+			displayName = filepath.Base(path)
+		}
+		part.FileData.DisplayName = displayName
+	}
+	return part, fallback, nil
 }
 
 func attachmentFallbackText(item attachment.Descriptor) string {
@@ -85,28 +105,20 @@ func attachmentFallbackText(item attachment.Descriptor) string {
 	return strings.Join(lines, "\n")
 }
 
-func detectAttachmentMIMEType(item attachment.Descriptor, data []byte) string {
+func detectAttachmentMIMEType(item attachment.Descriptor) string {
 	if mimeType := strings.TrimSpace(item.MIMEType); mimeType != "" {
 		return mimeType
 	}
+	if ext := strings.ToLower(filepath.Ext(item.FileName)); ext != "" {
+		if detected := mime.TypeByExtension(ext); detected != "" {
+			return detected
+		}
+	}
 	switch item.Kind {
 	case attachment.KindPhoto:
-		if detected := http.DetectContentType(data); strings.HasPrefix(detected, "image/") {
-			return detected
-		}
 		return "image/jpeg"
 	case attachment.KindDocument:
-		if detected := http.DetectContentType(data); detected != "" && detected != "application/octet-stream" {
-			return detected
-		}
-		switch strings.ToLower(filepath.Ext(item.FileName)) {
-		case ".pdf":
-			return "application/pdf"
-		case ".png":
-			return "image/png"
-		case ".jpg", ".jpeg":
-			return "image/jpeg"
-		}
+		return ""
 	case attachment.KindVoice:
 		return "audio/ogg"
 	}

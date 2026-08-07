@@ -645,6 +645,21 @@ balda:
     - `source`: `request_id` (default), `header`, or `body_sha256`
     - `header` required for `source=header`
 
+### Attachment prompt representation
+
+Telegram documents, photos, and voice messages are persisted under
+`balda.state_dir` before the provider turn. For every non-empty regular file,
+Balda supplies an ADK `FileData` part with an absolute, escaped `file://` URI,
+the persisted display name, and the preserved or detected MIME type. Metadata
+remains an adjacent text part and does not replace a valid file reference.
+
+The ACP adapter, not Balda, selects native `Image`/`Audio` or baseline
+`ResourceLink` from the server's initialize capabilities. `ResourceLink` does
+not require a separate capability flag. Balda does not inline-read or size-limit
+persisted files for this conversion, and it does not create temporary files.
+Missing or empty blobs retain the deterministic metadata fallback; unreadable
+or non-regular paths return a stable build error.
+
 ### Balda settings
 
 - `balda.working_dir`: optional balda working directory (defaults to process CWD)
