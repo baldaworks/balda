@@ -698,6 +698,48 @@ func TestBaldaHandlerOnMessage_PublishesAttachmentOnlySessionTurn(t *testing.T) 
 	}
 }
 
+func TestBaldaHandlerOnMessage_PublicAttachmentBypassesMentionGate(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 77)
+
+	topicID := 77
+	isTopicMessage := true
+	fileName := "context.json"
+	event := &events.MessageEvent{
+		Type: messagetype.Document,
+		Message: &client.Message{
+			Chat:            client.Chat{Id: 9001, Type: "supergroup"},
+			MessageThreadId: &topicID,
+			IsTopicMessage:  &isTopicMessage,
+			From:            &client.User{Id: 101},
+			Document: &client.Document{
+				FileId:   "document-file-id",
+				FileName: &fileName,
+			},
+		},
+	}
+
+	if err := handler.onMessage(t.Context(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
+	}
+
+	var payload actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(turns.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if len(payload.Attachments) != 1 || payload.Attachments[0].Kind != "document" {
+		t.Fatalf("attachments = %+v, want one document", payload.Attachments)
+	}
+	if !strings.Contains(payload.Text, "Attachment manifest:") || !strings.Contains(payload.Text, "name: "+fileName) {
+		t.Fatalf("payload text = %q, want document attachment manifest", payload.Text)
+	}
+}
+
 func TestBaldaHandlerOnMessage_CoalescesTelegramMediaGroupIntoOneTurn(t *testing.T) {
 	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
 	turns.commandSignal = make(chan struct{}, 2)
