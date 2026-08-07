@@ -726,12 +726,25 @@ through `sessionmemory/app` to the public canonical Badger adapter and recalls
 it through a rebuildable Bleve projection only on demand. This is an in-process
 extraction boundary, not a remote service.
 
+Session-memory backend state is grouped below `balda.state_dir`:
+
+```text
+${balda.state_dir}/session-memory/
+├── badger/       # authoritative canonical state
+└── bleve/        # rebuildable search projection
+```
+
 The canonical Badger path is authoritative and remains stable across restart.
-If it does not exist, enabled session memory starts empty. The removed SQLite
-session-memory domain tables are not imported; migration `00033` drops those
-six legacy tables while preserving the ingress outbox and audit tables from
-migrations `00030`–`00032`. The migration `Down` section recreates an empty
-legacy schema, but dropped rows cannot be recovered.
+On upgrade, the old direct-child paths
+`${balda.state_dir}/session-memory.badger` and
+`${balda.state_dir}/session-memory-bleve` are relocated into this subtree
+before session memory opens. The local move is idempotent and preserves
+canonical data; an old/new path conflict fails closed rather than silently
+shadowing data. If no canonical path exists, enabled session memory starts
+empty. The removed SQLite session-memory domain tables are not imported;
+migration `00033` drops those six legacy tables while preserving the ingress
+outbox and audit tables from migrations `00030`–`00032`. The migration `Down`
+section recreates an empty legacy schema, but dropped rows cannot be recovered.
 
 ### Enablement and configuration
 

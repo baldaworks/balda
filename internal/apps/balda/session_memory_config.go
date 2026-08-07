@@ -243,7 +243,12 @@ func newCanonicalSessionMemoryRuntime(cfg SessionMemoryConfig, builder *baldaage
 	if err != nil {
 		return nil, err
 	}
-	canonicalStore, err := badgerstore.OpenBadgerSessionMemoryStore(baldastate.SessionMemoryCanonicalPath(stateDir))
+	if err := baldastate.MigrateSessionMemoryLayout(stateDir); err != nil {
+		_ = invoker.Close(context.Background())
+		return nil, fmt.Errorf("migrate session-memory layout: %w", err)
+	}
+	paths := baldastate.SessionMemoryPaths(stateDir)
+	canonicalStore, err := badgerstore.OpenBadgerSessionMemoryStore(paths.Canonical)
 	if err != nil {
 		_ = invoker.Close(context.Background())
 		return nil, fmt.Errorf("open canonical session-memory store: %w", err)
@@ -260,7 +265,7 @@ func newCanonicalSessionMemoryRuntime(cfg SessionMemoryConfig, builder *baldaage
 		_ = invoker.Close(context.Background())
 		return nil, err
 	}
-	projection, err := blevestore.Open(baldastate.SessionMemoryProjectionPath(stateDir))
+	projection, err := blevestore.Open(paths.Projection)
 	if err != nil {
 		_ = canonicalStore.Close()
 		_ = invoker.Close(context.Background())

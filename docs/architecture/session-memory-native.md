@@ -19,7 +19,8 @@ encryption layer, or MCP ingest/forget endpoint.
   capabilities. `Deriver` validates structured model output; it does not choose
   scope or assign durable identity.
 - `sessionmemory/store/badger` owns the canonical Badger adapter and maintenance
-  lifecycle. Badger is authoritative and preserves the existing canonical path.
+  lifecycle. Badger is authoritative and lives at the state-owned
+  `${balda.state_dir}/session-memory/badger` path.
 - `sessionmemory/index/bleve` owns the disposable Bleve lexical projection.
   Projection generations are rebuildable and never replace canonical truth.
 - `sessionmemory/mcp` owns the neutral `session_memory.search` and
@@ -95,8 +96,21 @@ returned as stable safe tool errors.
 
 ## Storage migration and compatibility
 
-Canonical Badger and Bleve paths under `balda.session_memory` are unchanged.
-If canonical Badger state is absent, startup creates an empty store; no SQLite
+Session-memory backend paths are grouped below the configured state directory:
+
+```text
+${balda.state_dir}/session-memory/
+├── badger/       # canonical state
+└── bleve/        # rebuildable projection
+```
+
+At startup, old direct-child directories
+`${balda.state_dir}/session-memory.badger` and
+`${balda.state_dir}/session-memory-bleve` are relocated into this subtree
+before either backend opens. The relocation is local and idempotent; existing
+canonical records are preserved. If an old and grouped directory coexist, the
+runtime fails closed instead of selecting one or starting an empty store. If
+neither canonical path exists, enabled session memory starts empty; no SQLite
 domain import runs. Goose migrations `00030` through `00032` continue to own
 the SQLite ingress outbox and audit records. New migration `00033` drops only
 the six unsupported domain tables created by `00029`, in child-first order.

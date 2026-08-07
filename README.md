@@ -141,11 +141,15 @@ balda:
 
 Before enabling it in an existing deployment, back up `balda.state_dir` and
 confirm that the configured Balda provider, channel, and NATS endpoint are
-available. Existing canonical Badger state is reused when present; an absent
-canonical path starts empty. The release does not import the removed SQLite
-session-memory domain tables. Session memory remains distinct from global
-`balda.memory.*` fact memory; enabling or disabling one does not change the
-other.
+available. Session-memory backend state is grouped under the configured state
+directory: `${balda.state_dir}/session-memory/badger` is canonical and
+`${balda.state_dir}/session-memory/bleve` is a rebuildable projection. Existing
+direct-child backend directories are relocated into this subtree before open;
+the move preserves canonical state, is idempotent, and fails closed on an
+old/new conflict. If no canonical path exists, enabled session memory starts
+empty. The release does not import the removed SQLite session-memory domain
+tables. Session memory remains distinct from global `balda.memory.*` fact
+memory; enabling or disabling one does not change the other.
 
 Exports are keyed by the exact transport-neutral locator
 `<channel_type>:<address_key>`. A personal conversation, a personal topic, a
