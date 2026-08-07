@@ -1,7 +1,7 @@
 package sessionturnapp
 
 import (
-	"bytes"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,9 +10,12 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/attachment"
 )
 
-const testJPEGMIMEType = "image/jpeg"
+const (
+	testJPEGMIMEType  = "image/jpeg"
+	testVoiceMIMEType = "audio/ogg"
+)
 
-func TestBuildUserContent_InlinesVoiceAttachment(t *testing.T) {
+func TestBuildUserContent_LinksVoiceAttachment(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -33,14 +36,14 @@ func TestBuildUserContent_InlinesVoiceAttachment(t *testing.T) {
 	if len(content.Parts) != 3 {
 		t.Fatalf("parts = %d, want 3", len(content.Parts))
 	}
-	if content.Parts[2].InlineData == nil {
-		t.Fatal("voice inline data = nil, want bytes")
+	if content.Parts[2].FileData == nil {
+		t.Fatal("voice file data = nil, want resource link source")
 	}
-	if got := content.Parts[2].InlineData.MIMEType; got != "audio/ogg" {
-		t.Fatalf("voice MIME type = %q, want audio/ogg", got)
+	if got := content.Parts[2].FileData.MIMEType; got != testVoiceMIMEType {
+		t.Fatalf("voice MIME type = %q, want %s", got, testVoiceMIMEType)
 	}
-	if !bytes.Equal(content.Parts[2].InlineData.Data, data) {
-		t.Fatalf("voice inline bytes = %q, want %q", content.Parts[2].InlineData.Data, data)
+	if got := content.Parts[2].FileData.FileURI; got != (&url.URL{Scheme: "file", Path: path}).String() {
+		t.Fatalf("voice URI = %q, want file URI for %q", got, path)
 	}
 }
 
@@ -61,7 +64,7 @@ func TestBuildUserContent_PreservesExplicitVoiceMIME(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildUserContent() error = %v", err)
 	}
-	if got := content.Parts[2].InlineData.MIMEType; got != "audio/opus" {
+	if got := content.Parts[2].FileData.MIMEType; got != "audio/opus" {
 		t.Fatalf("voice MIME type = %q, want audio/opus", got)
 	}
 }
@@ -102,11 +105,11 @@ func TestBuildUserContent_InlinesPhotoAttachment(t *testing.T) {
 	}
 }
 
-func TestBuildUserContent_InlinesDocumentAttachment(t *testing.T) {
+func TestBuildUserContent_LinksDocumentAttachment(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "doc.pdf")
+	path := filepath.Join(dir, "doc report.pdf")
 	data := []byte("%PDF-1.4\n%test\n")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -114,7 +117,7 @@ func TestBuildUserContent_InlinesDocumentAttachment(t *testing.T) {
 
 	content, err := buildUserContent("", []attachment.Descriptor{{
 		Kind:      attachment.KindDocument,
-		FileName:  "doc.pdf",
+		FileName:  "doc report.pdf",
 		SizeBytes: int64(len(data)),
 		Blob:      &attachment.BlobRef{Path: path},
 	}})
@@ -127,11 +130,48 @@ func TestBuildUserContent_InlinesDocumentAttachment(t *testing.T) {
 	if got := content.Parts[0].Text; !strings.Contains(got, "Attachment: kind=document") {
 		t.Fatalf("part[0].text = %q, want document fallback metadata", got)
 	}
-	if content.Parts[1].InlineData == nil {
-		t.Fatal("part[1].inline_data = nil, want bytes")
+	if content.Parts[1].FileData == nil {
+		t.Fatal("part[1].file_data = nil, want resource link source")
 	}
-	if got := content.Parts[1].InlineData.MIMEType; got != "application/pdf" {
-		t.Fatalf("part[1].inline_data.mime_type = %q, want application/pdf", got)
+	if got := content.Parts[1].FileData.MIMEType; got != "application/pdf" {
+		t.Fatalf("part[1].file_data.mime_type = %q, want application/pdf", got)
+	}
+	if got := content.Parts[1].FileData.DisplayName; got != "doc report.pdf" {
+		t.Fatalf("part[1].file_data.display_name = %q, want doc report.pdf", got)
+	}
+	if got := content.Parts[1].FileData.FileURI; got != (&url.URL{Scheme: "file", Path: path}).String() {
+		t.Fatalf("part[1].file_data.file_uri = %q, want escaped URI for %q", got, path)
+	}
+}
+
+func TestBuildUserContent_LinksOversizedDocument(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "large.json")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if err := file.Truncate(maxInlineAttachmentBytes + 1); err != nil {
+		_ = file.Close()
+		t.Fatalf("Truncate() error = %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	content, err := buildUserContent("inspect", []attachment.Descriptor{{
+		Kind:      attachment.KindDocument,
+		FileName:  "large.json",
+		MIMEType:  "application/json",
+		SizeBytes: maxInlineAttachmentBytes + 1,
+		Blob:      &attachment.BlobRef{Path: path},
+	}})
+	if err != nil {
+		t.Fatalf("buildUserContent() error = %v", err)
+	}
+	if len(content.Parts) != 3 || content.Parts[2].FileData == nil {
+		t.Fatalf("parts = %#v, want text, fallback, and file data", content.Parts)
 	}
 }
 
