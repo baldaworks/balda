@@ -154,7 +154,10 @@ func (h *BaldaHandler) handleAcceptedMessage(ctx context.Context, messageCtx Tel
 		text = h.normalizeDMText(messageCtx)
 	} else {
 		normalized, ok := h.normalizePublicText(messageCtx)
-		if !ok {
+		// An attachment is an explicit interaction on its own. Telegram users
+		// cannot mention the bot outside an attachment caption, so requiring the
+		// public text gate here would silently discard attachment-only messages.
+		if !ok && len(messageCtx.Attachments) == 0 {
 			return nil
 		}
 		text = normalized

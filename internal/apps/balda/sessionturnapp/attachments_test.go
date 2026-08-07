@@ -122,7 +122,7 @@ func TestBuildUserContent_UsesFileDataForDocumentAttachment(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "doc.pdf")
+	path := filepath.Join(dir, "doc report.pdf")
 	data := []byte("%PDF-1.4\n%test\n")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -130,7 +130,7 @@ func TestBuildUserContent_UsesFileDataForDocumentAttachment(t *testing.T) {
 
 	content, err := buildUserContent("", []attachment.Descriptor{{
 		Kind:      attachment.KindDocument,
-		FileName:  "doc.pdf",
+		FileName:  "doc report.pdf",
 		SizeBytes: int64(len(data)),
 		Blob:      &attachment.BlobRef{Path: path},
 	}})
@@ -152,35 +152,43 @@ func TestBuildUserContent_UsesFileDataForDocumentAttachment(t *testing.T) {
 	if got := content.Parts[1].FileData.FileURI; got != wantFileURI(path) {
 		t.Fatalf("part[1].file_data.file_uri = %q, want %q", got, wantFileURI(path))
 	}
+	if got := content.Parts[1].FileData.DisplayName; got != "doc report.pdf" {
+		t.Fatalf("part[1].file_data.display_name = %q, want doc report.pdf", got)
+	}
 }
 
 func TestBuildUserContent_UsesFileDataForLargeAttachment(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "large.jpg")
-	data := make([]byte, 25<<20)
-	data[0], data[1], data[2] = 0xff, 0xd8, 0xff
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
+	path := filepath.Join(t.TempDir(), "large.json")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	const size = 25 << 20
+	if err := file.Truncate(size); err != nil {
+		_ = file.Close()
+		t.Fatalf("Truncate() error = %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 
-	content, err := buildUserContent("hello", []attachment.Descriptor{{
-		Kind:      attachment.KindPhoto,
-		SizeBytes: int64(len(data)),
+	content, err := buildUserContent("inspect", []attachment.Descriptor{{
+		Kind:      attachment.KindDocument,
+		FileName:  "large.json",
+		MIMEType:  "application/json",
+		SizeBytes: size,
 		Blob:      &attachment.BlobRef{Path: path},
 	}})
 	if err != nil {
 		t.Fatalf("buildUserContent() error = %v", err)
 	}
-	if len(content.Parts) != 3 {
-		t.Fatalf("parts = %d, want 3", len(content.Parts))
-	}
-	if content.Parts[2].FileData == nil {
-		t.Fatal("part[2].file_data = nil, want large persisted file reference")
+	if len(content.Parts) != 3 || content.Parts[2].FileData == nil {
+		t.Fatalf("parts = %#v, want text, fallback, and file data", content.Parts)
 	}
 	if got := content.Parts[2].FileData.FileURI; got != wantFileURI(path) {
-		t.Fatalf("part[2].file_data.file_uri = %q, want %q", got, wantFileURI(path))
+		t.Fatalf("large file URI = %q, want %q", got, wantFileURI(path))
 	}
 }
 
