@@ -2,7 +2,10 @@ package sessionturnapp
 
 import (
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +45,13 @@ func buildAttachmentPart(item attachment.Descriptor) (*genai.Part, string, error
 	if item.Blob == nil || strings.TrimSpace(item.Blob.Path) == "" {
 		return nil, fallback, nil
 	}
+	if item.Kind != attachment.KindPhoto {
+		part, err := buildFileDataPart(item)
+		if err != nil {
+			return nil, "", err
+		}
+		return part, fallback, nil
+	}
 	data, err := os.ReadFile(item.Blob.Path)
 	if err != nil {
 		return nil, "", fmt.Errorf("read attachment blob %q: %w", item.Blob.Path, err)
@@ -54,6 +64,74 @@ func buildAttachmentPart(item attachment.Descriptor) (*genai.Part, string, error
 		return nil, fallback, nil
 	}
 	return genai.NewPartFromBytes(data, mimeType), fallback, nil
+}
+
+func buildFileDataPart(item attachment.Descriptor) (*genai.Part, error) {
+	path, err := filepath.Abs(item.Blob.Path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve attachment blob path %q: %w", item.Blob.Path, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat attachment blob %q: %w", path, err)
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return nil, nil
+	}
+
+	mimeType, err := detectFileAttachmentMIMEType(item, path)
+	if err != nil {
+		return nil, err
+	}
+	if mimeType == "" {
+		return nil, nil
+	}
+	displayName := strings.TrimSpace(item.FileName)
+	if displayName == "" {
+		displayName = filepath.Base(path)
+	}
+	return &genai.Part{FileData: &genai.FileData{
+		DisplayName: displayName,
+		FileURI:     (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String(),
+		MIMEType:    mimeType,
+	}}, nil
+}
+
+func detectFileAttachmentMIMEType(item attachment.Descriptor, path string) (string, error) {
+	if mimeType := strings.TrimSpace(item.MIMEType); mimeType != "" {
+		return mimeType, nil
+	}
+	if item.Kind == attachment.KindVoice {
+		return "audio/ogg", nil
+	}
+	extension := filepath.Ext(item.FileName)
+	if extension == "" {
+		extension = filepath.Ext(path)
+	}
+	if mimeType := mime.TypeByExtension(strings.ToLower(extension)); mimeType != "" {
+		if base, _, ok := strings.Cut(mimeType, ";"); ok {
+			return strings.TrimSpace(base), nil
+		}
+		return mimeType, nil
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open attachment blob %q: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	sample, err := io.ReadAll(io.LimitReader(file, 512))
+	if err != nil {
+		return "", fmt.Errorf("read attachment blob sample %q: %w", path, err)
+	}
+	if len(sample) == 0 {
+		return "", nil
+	}
+	detected := http.DetectContentType(sample)
+	if detected == "application/octet-stream" {
+		return "", nil
+	}
+	return detected, nil
 }
 
 func attachmentFallbackText(item attachment.Descriptor) string {
