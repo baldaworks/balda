@@ -318,6 +318,9 @@ runtime:
   mcp_servers: {}
 balda:
   provider: <provider_id>
+  session_memory:
+    enabled: true
+    provider: ""  # optional extraction provider; empty falls back to balda.provider
   telegram:
     token: ""
     formatting_mode: "rich_markdown"
@@ -677,6 +680,7 @@ or non-regular paths return a stable build error.
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
 - `balda.session_memory`: optional durable conversation-memory integration (default disabled)
   - `enabled`: starts the serialized JetStream consumer and enables the neutral locator-scoped `session_memory.search` and `session_memory.trace` tools.
+  - `provider`: optional ID from `runtime.providers` for isolated extraction; empty falls back to `balda.provider` while enabled.
   - `derivation.timeout` / `derivation.max_output_bytes`: bounds the isolated Norma derivation runtime.
   - completed text-only turns and session reset/close/rotation/shutdown boundaries are published to the dedicated `BALDA_SESSION_MEMORY` stream.
   - `stream` / `consumer`, timeout, retry, and retention fields are validated and must not collide with command/event/DLQ names.
@@ -689,7 +693,7 @@ or non-regular paths return a stable build error.
   - invalid values are clamped to `25`.
 - `runtime.providers.<provider_id>.codex_acp.reasoning_effort`: optional Codex reasoning effort.
   - allowed values: `minimal`, `low`, `medium`, `high`, `xhigh`
-  - Balda passes the value through to Norma, which maps it to Codex ACP session startup/recovery metadata
+  - Balda passes the selected provider's value through to the isolated session-memory runtime (or chat runtime for `balda.provider`); it is not inherited across providers.
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
 - `balda.nats.host` / `port`: embedded listener address (default `127.0.0.1:-1`, random local port)
 - embedded NATS transport files live under `${balda.state_dir}/nats`
@@ -776,6 +780,8 @@ The smallest enabled configuration is:
 balda:
   session_memory:
     enabled: true
+    # Empty uses balda.provider; set memory_fast as shown below for a separate model.
+    provider: ""
     trusted_tools:
       - calendar.lookup
     derivation:
@@ -787,6 +793,37 @@ balda:
 
 All `balda.session_memory.*` keys also accept the corresponding
 `BALDA_SESSION_MEMORY_*` environment override (nested keys use underscores).
+
+`balda.session_memory.provider` references an entry in `runtime.providers` and
+controls only the isolated fact/semantic extraction runtime. `balda.provider`
+continues to own chat and GoalKeeper. If the session-memory selector is empty,
+enabled memory uses `balda.provider` for backwards compatibility; if both are
+empty, startup fails. The selected provider's existing `model` and
+`reasoning_effort` settings are applied without copying chat settings. Omit
+`reasoning_effort` to make no explicit reasoning request. Resolution and
+provider schema/factory validation are local and structural; the provider
+process remains lazy and no remote probe is performed.
+
+Example with a cheaper extraction model and no explicit reasoning:
+
+```yaml
+runtime:
+  providers:
+    codex:
+      type: codex_acp
+      codex_acp: {}
+    memory_fast:
+      type: codex_acp
+      codex_acp:
+        model: gpt-5-mini
+        # reasoning_effort intentionally omitted
+
+balda:
+  provider: codex
+  session_memory:
+    enabled: true
+    provider: memory_fast
+```
 
 The shipped example in `cmd/balda/balda.yaml` lists every default. The enabled
 defaults are:
@@ -967,9 +1004,10 @@ the deployment intentionally uses different non-colliding names.
 
 The live tier also requires:
 
-- one configured Balda provider and one configured chat channel, supplied by
-  the normal protected config or environment path rather than command-line
-  arguments;
+- one configured Balda chat provider (and, when selected, one configured
+  session-memory extraction provider) plus one configured chat channel,
+  supplied by the normal protected config or environment path rather than
+  command-line arguments;
 - two authenticated test locators, A and B, where B is a genuinely different
   root/topic/thread scope from A;
 - `nats`, `jq`, and `timeout`, with `NATS_URL` set to the runtime's NATS
@@ -1223,7 +1261,10 @@ See [Slack Integration](slack.md) for current Slack chat setup details.
 
 ## Topic Sessions
 
-Balda runs with a single provider per process (`balda.provider`).
+Balda chat runs with a single app-scoped provider per process
+(`balda.provider`). Enabled session memory may use a separate provider from
+`runtime.providers` for extraction; that provider never changes chat or
+GoalKeeper sessions.
 
 - The provider is initialized before message handling.
 - The owner main-DM session (`topic_id=0` in the owner DM) is bootstrapped for the owner chat during activation.

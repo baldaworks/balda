@@ -28,7 +28,9 @@ encryption layer, or MCP ingest/forget endpoint.
   through a resolver and never parses transport locators.
 - `internal/apps/balda/sessionmemoryapp` owns Balda capture, redaction, locator
   classification, ingress outbox, worker lanes, Norma invocation, and host
-  lifecycle wiring.
+  lifecycle wiring. Its extraction provider ID is resolved by the Balda
+  composition root from `balda.session_memory.provider` and the existing
+  `runtime.providers` registry; it does not own provider schema or lookup.
 - `internal/apps/balda/sessionmemorymcp` owns the Balda broker/context bridge;
   `internal/apps/balda/sessionmemorycmd` owns export envelopes; and
   `internal/apps/balda/eventbus/nats` owns JetStream delivery, acknowledgement,
@@ -48,6 +50,7 @@ eligible completed turn or session boundary
   -> SQLite ingress outbox
   -> JetStream publish and PubAck
   -> bounded per-scope worker
+  -> isolated Norma runtime using the resolved extraction provider
   -> sessionmemory/app typed ingest
   -> sessionmemory semantic extraction/reconciliation
   -> canonical Badger commit
@@ -58,6 +61,41 @@ canonical active revisions
   -> app RecallService canonical hydration and fail-closed validation
   -> sessionmemory/mcp bounded untrusted reference
 ```
+
+### Extraction provider selection
+
+`balda.provider` remains the provider for ordinary chat and GoalKeeper. An
+enabled session-memory runtime may select a separate provider ID from
+`runtime.providers`:
+
+```yaml
+runtime:
+  providers:
+    codex:
+      type: codex_acp
+      codex_acp: {}
+    memory_fast:
+      type: codex_acp
+      codex_acp:
+        model: gpt-5-mini
+        # reasoning_effort intentionally omitted
+
+balda:
+  provider: codex
+  session_memory:
+    enabled: true
+    provider: memory_fast
+```
+
+The explicit selector wins. When it is empty, session memory falls back to
+`balda.provider` for compatibility; when both are empty while enabled, startup
+fails. The selected provider's model, type, and `reasoning_effort` are resolved
+by runtime/v2 and are not inherited from chat. An omitted `reasoning_effort`
+means no explicit reasoning request. Balda validates the local registry and
+factory shape before worker processing, but keeps provider process startup lazy.
+The selector changes only extraction model calls: canonical Badger/Bleve state,
+SQLite ingress/audit, NATS delivery, MCP scope/trust, global `balda.memory.*`,
+and portable semantic contracts are unchanged.
 
 The host owns delivery durability and provider credentials. The memory layer
 owns semantic idempotency and exact-scope state. A projection failure cannot

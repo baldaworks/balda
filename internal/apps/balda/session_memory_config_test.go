@@ -11,11 +11,14 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
 	baldastate "github.com/normahq/balda/internal/apps/balda/state"
 	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
+	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/normahq/runtime/v2/agentfactory"
 )
 
 func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	cfg := SessionMemoryConfig{
 		Enabled:       false,
+		Provider:      "missing-provider",
 		MaxAge:        "not-a-duration",
 		MaxBytes:      "not-bytes",
 		MaxMsgSize:    "not-bytes",
@@ -31,6 +34,157 @@ func TestSessionMemoryConfigDisabledIgnoresOptionalValues(t *testing.T) {
 	}
 	if workerCfg.Enabled {
 		t.Fatal("disabled worker config unexpectedly enabled")
+	}
+}
+
+func TestResolveSessionMemoryProviderIDPrefersDedicatedProvider(t *testing.T) {
+	providers := map[string]agentconfig.Config{
+		"chat":   sessionMemoryTestProviderConfig("chat-model"),
+		"memory": sessionMemoryTestProviderConfig("memory-model"),
+	}
+	factory := agentfactory.New(providers, nil)
+
+	providerID, err := validateSessionMemoryProviderConfig(
+		SessionMemoryConfig{Enabled: true, Provider: " memory "},
+		"chat",
+		providers,
+		factory,
+	)
+	if err != nil {
+		t.Fatalf("validateSessionMemoryProviderConfig() error = %v", err)
+	}
+	if providerID != "memory" {
+		t.Fatalf("selected provider = %q, want memory", providerID)
+	}
+}
+
+func TestResolveSessionMemoryProviderIDFallsBackToBaldaProvider(t *testing.T) {
+	providers := map[string]agentconfig.Config{
+		"chat": sessionMemoryTestProviderConfig("chat-model"),
+	}
+	providerID, err := validateSessionMemoryProviderConfig(
+		SessionMemoryConfig{Enabled: true},
+		" chat ",
+		providers,
+		agentfactory.New(providers, nil),
+	)
+	if err != nil {
+		t.Fatalf("validateSessionMemoryProviderConfig() error = %v", err)
+	}
+	if providerID != "chat" {
+		t.Fatalf("fallback provider = %q, want chat", providerID)
+	}
+}
+
+func TestValidateSessionMemoryProviderConfigRejectsMissingProvider(t *testing.T) {
+	providers := map[string]agentconfig.Config{
+		"chat": sessionMemoryTestProviderConfig("chat-model"),
+	}
+	_, err := validateSessionMemoryProviderConfig(
+		SessionMemoryConfig{Enabled: true, Provider: "memory"},
+		"chat",
+		providers,
+		agentfactory.New(providers, nil),
+	)
+	if err == nil || !strings.Contains(err.Error(), `balda.session_memory.provider "memory"`) {
+		t.Fatalf("validateSessionMemoryProviderConfig() error = %v, want missing provider field", err)
+	}
+}
+
+func TestValidateSessionMemoryProviderConfigRequiresProviderWhenEnabled(t *testing.T) {
+	_, err := validateSessionMemoryProviderConfig(
+		SessionMemoryConfig{Enabled: true},
+		" ",
+		nil,
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "balda.session_memory.provider") {
+		t.Fatalf("validateSessionMemoryProviderConfig() error = %v, want provider requirement", err)
+	}
+}
+
+func TestValidateSessionMemoryProviderConfigDisabledIsInert(t *testing.T) {
+	providerID, err := validateSessionMemoryProviderConfig(
+		SessionMemoryConfig{Provider: "missing-provider"},
+		" ",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validateSessionMemoryProviderConfig() error = %v, want nil while disabled", err)
+	}
+	if providerID != "" {
+		t.Fatalf("disabled provider ID = %q, want empty", providerID)
+	}
+}
+
+func TestValidateSessionMemoryProviderConfigRejectsInvalidProviderConfig(t *testing.T) {
+	providers := map[string]agentconfig.Config{
+		"memory": {
+			Type:   "unsupported",
+			OpenAI: &agentconfig.LocalAPIConfig{APIKey: "session-memory-secret", Model: "fast-model"},
+		},
+	}
+	_, err := validateSessionMemoryProviderConfig(
+		SessionMemoryConfig{Enabled: true, Provider: "memory"},
+		"chat",
+		providers,
+		agentfactory.New(providers, nil),
+	)
+	if err == nil || !strings.Contains(err.Error(), "invalid provider configuration") {
+		t.Fatalf("validateSessionMemoryProviderConfig() error = %v, want invalid provider configuration", err)
+	}
+	if strings.Contains(err.Error(), "session-memory-secret") {
+		t.Fatalf("validateSessionMemoryProviderConfig() leaked provider secret: %v", err)
+	}
+}
+
+func TestSessionMemoryProviderSettingsComeOnlyFromSelectedEntry(t *testing.T) {
+	providers := map[string]agentconfig.Config{
+		"chat": {
+			Type:     agentconfig.AgentTypeCodexACP,
+			CodexACP: &agentconfig.ACPConfig{Model: "chat-expensive", ReasoningEffort: "high"},
+		},
+		"memory": {
+			Type:     agentconfig.AgentTypeCodexACP,
+			CodexACP: &agentconfig.ACPConfig{Model: "memory-fast"},
+		},
+	}
+	factory := agentfactory.New(providers, nil)
+	providerID, err := validateSessionMemoryProviderConfig(
+		SessionMemoryConfig{Enabled: true, Provider: "memory"},
+		"chat",
+		providers,
+		factory,
+	)
+	if err != nil {
+		t.Fatalf("validateSessionMemoryProviderConfig() error = %v", err)
+	}
+	resolved, err := agentconfig.NormalizeConfig(providers[providerID], "")
+	if err != nil {
+		t.Fatalf("agentconfig.NormalizeConfig() error = %v", err)
+	}
+	if resolved.Model != "memory-fast" {
+		t.Fatalf("selected provider model = %q, want memory-fast", resolved.Model)
+	}
+	if resolved.ReasoningEffort != "" {
+		t.Fatalf("selected provider reasoning = %q, want empty", resolved.ReasoningEffort)
+	}
+
+	providers["memory"].CodexACP.ReasoningEffort = "low"
+	resolved, err = agentconfig.NormalizeConfig(providers["memory"], "")
+	if err != nil {
+		t.Fatalf("agentconfig.NormalizeConfig() with explicit reasoning error = %v", err)
+	}
+	if resolved.ReasoningEffort != "low" {
+		t.Fatalf("selected provider reasoning = %q, want low", resolved.ReasoningEffort)
+	}
+}
+
+func sessionMemoryTestProviderConfig(model string) agentconfig.Config {
+	return agentconfig.Config{
+		Type:     agentconfig.AgentTypeCodexACP,
+		CodexACP: &agentconfig.ACPConfig{Model: model},
 	}
 }
 

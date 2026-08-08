@@ -176,6 +176,11 @@ balda:
   # JetStream PubAck; Norma performs bounded isolated derivation.
   session_memory:
     enabled: false
+    # Optional provider ID from runtime.providers for isolated fact extraction.
+    # Empty uses balda.provider for compatibility; the selected provider's
+    # model and reasoning_effort apply only to session-memory extraction.
+    # Omit reasoning_effort in that provider entry for no explicit reasoning.
+    provider: ""
     # Explicit typed provider-tool names eligible for durable capture.
     trusted_tools: []
     derivation:

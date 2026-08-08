@@ -17,6 +17,8 @@ import (
 	portableapp "github.com/normahq/balda/sessionmemory/app"
 	blevestore "github.com/normahq/balda/sessionmemory/index/bleve"
 	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
+	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/normahq/runtime/v2/agentfactory"
 )
 
 const (
@@ -152,6 +154,54 @@ func validateSessionMemoryConfig(cfg SessionMemoryConfig) error {
 		}
 	}
 	return nil
+}
+
+// resolveSessionMemoryProviderID selects the provider used by the isolated
+// session-memory derivation runtime. The explicit session-memory setting wins;
+// the Balda provider remains the backwards-compatible fallback.
+func resolveSessionMemoryProviderID(cfg SessionMemoryConfig, chatProvider string) (string, error) {
+	if !cfg.Enabled {
+		return "", nil
+	}
+	if providerID := strings.TrimSpace(cfg.Provider); providerID != "" {
+		return providerID, nil
+	}
+	if providerID := strings.TrimSpace(chatProvider); providerID != "" {
+		return providerID, nil
+	}
+	return "", fmt.Errorf("balda.session_memory.provider: provider is required when balda.provider is empty")
+}
+
+// validateSessionMemoryProviderConfig validates the selected provider without
+// starting an external model process. The runtime factory later applies that
+// provider's model and reasoning settings when the first derivation is run.
+func validateSessionMemoryProviderConfig(
+	cfg SessionMemoryConfig,
+	chatProvider string,
+	providers map[string]agentconfig.Config,
+	factory *agentfactory.Factory,
+) (string, error) {
+	providerID, err := resolveSessionMemoryProviderID(cfg, chatProvider)
+	if err != nil {
+		return "", err
+	}
+	if !cfg.Enabled {
+		return "", nil
+	}
+	providerCfg, ok := providers[providerID]
+	if !ok {
+		return "", fmt.Errorf("balda.session_memory.provider %q: provider is not configured", providerID)
+	}
+	if err := providerCfg.Validate(); err != nil {
+		return "", fmt.Errorf("balda.session_memory.provider %q: invalid provider configuration: %w", providerID, err)
+	}
+	if factory == nil {
+		return "", fmt.Errorf("balda.session_memory.provider %q: provider factory is required", providerID)
+	}
+	if err := factory.ValidateAgent(providerID); err != nil {
+		return "", fmt.Errorf("balda.session_memory.provider %q: provider is not buildable: %w", providerID, err)
+	}
+	return providerID, nil
 }
 
 func newSessionMemoryDeriver(cfg SessionMemoryConfig, builder *baldaagent.Builder, providerID, workingDir string) (*portableapp.Deriver, portableapp.StructuredInvoker, error) {

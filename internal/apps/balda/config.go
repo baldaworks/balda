@@ -157,7 +157,10 @@ type MemoryConfig struct {
 // integration. It is separate from MemoryConfig, which remains Balda's
 // existing global fact KV capability.
 type SessionMemoryConfig struct {
-	Enabled             bool                          `mapstructure:"enabled"`
+	Enabled bool `mapstructure:"enabled"`
+	// Provider selects the runtime provider used for isolated fact extraction.
+	// When empty, the configured balda.provider is used for compatibility.
+	Provider            string                        `mapstructure:"provider"`
 	Derivation          SessionMemoryDerivationConfig `mapstructure:"derivation"`
 	Stream              string                        `mapstructure:"stream"`
 	Consumer            string                        `mapstructure:"consumer"`

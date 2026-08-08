@@ -221,6 +221,15 @@ func Module(
 		mcpServers[k] = v
 	}
 	mcpReg := mcpregistry.New(mcpServers)
+	sessionMemoryProviderID, err := validateSessionMemoryProviderConfig(
+		cfg.Balda.SessionMemory,
+		cfg.Balda.Provider,
+		normaCfg.Providers,
+		agentfactory.New(normaCfg.Providers, mcpReg),
+	)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 
 	return fx.Module("balda",
 		fx.Supply(
@@ -250,7 +259,7 @@ func Module(
 				})
 			},
 			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
-				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, strings.TrimSpace(cfg.Balda.Provider), workingDir, stateDir)
+				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, sessionMemoryProviderID, workingDir, stateDir)
 			},
 			func(provider baldastate.Provider, bus *natsbus.Bus) (*sessionmemoryapp.IngressOutboxPublisher, error) {
 				outboxCfg, err := sessionMemoryIngressOutboxConfig(cfg.Balda.SessionMemory)

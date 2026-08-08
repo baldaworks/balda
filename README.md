@@ -131,6 +131,9 @@ The feature is disabled by default. Enable it with the JetStream handoff:
 balda:
   session_memory:
     enabled: true
+    # Optional runtime.providers ID for isolated fact extraction. Empty falls
+    # back to balda.provider for compatibility.
+    provider: ""
 
     # Only explicitly typed responses from these tools may be captured.
     trusted_tools:
@@ -140,8 +143,8 @@ balda:
 ```
 
 Before enabling it in an existing deployment, back up `balda.state_dir` and
-confirm that the configured Balda provider, channel, and NATS endpoint are
-available. Session-memory backend state is grouped under the configured state
+confirm that the configured chat and extraction providers, channel, and NATS
+endpoint are configured. Session-memory backend state is grouped under the configured state
 directory: `${balda.state_dir}/session-memory/badger` is canonical and
 `${balda.state_dir}/session-memory/bleve` is a rebuildable projection. Existing
 direct-child backend directories are relocated into this subtree before open;
@@ -159,6 +162,37 @@ Search accepts a query, optional result limit, and bounded current-contract
 filters; trace accepts only a revision identity and node bound. The current
 authenticated session supplies the locator. Recalled text is untrusted
 reference data, never an instruction or command.
+
+`balda.provider` remains the provider for chat and GoalKeeper. Set
+`balda.session_memory.provider` to another ID from `runtime.providers` when
+fact extraction should use a faster or cheaper model. The selected provider's
+`model` and `reasoning_effort` are used as configured; an omitted
+`reasoning_effort` means no explicit reasoning request and never inherits the
+chat provider's setting. When the selector is empty, enabled session memory
+falls back to `balda.provider` for compatibility; when both are empty, startup
+fails with a configuration error. Selection is validated against the local
+provider registry without launching a provider process or making a remote call.
+
+For example, this keeps chat on `codex` while using a smaller extraction model:
+
+```yaml
+runtime:
+  providers:
+    codex:
+      type: codex_acp
+      codex_acp: {}
+    memory_fast:
+      type: codex_acp
+      codex_acp:
+        model: gpt-5-mini
+        # reasoning_effort intentionally omitted
+
+balda:
+  provider: codex
+  session_memory:
+    enabled: true
+    provider: memory_fast
+```
 
 Capture first persists into a producer-local SQLite ingress outbox, then
 publishes to the file-backed JetStream stream `BALDA_SESSION_MEMORY`.
@@ -256,6 +290,7 @@ runtime:
   providers:
     codex:
       type: codex_acp
+      codex_acp: {}
   mcp_servers: {}
 
 balda:

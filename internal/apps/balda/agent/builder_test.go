@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"os"
 	"path/filepath"
@@ -33,6 +34,96 @@ func TestMergeMCPServerIDsWithBase(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("mergeMCPServerIDsWithBase(%#v, %#v, %#v) = %#v, want %#v", []string{"balda"}, explicit, extra, got, want)
 	}
+}
+
+func TestDedicatedRuntimeBuildRequestUsesSelectedProviderWithoutChatSettings(t *testing.T) {
+	req, err := dedicatedRuntimeBuildRequest(" memory-fast ", " /tmp/session-memory ", " derive facts ")
+	if err != nil {
+		t.Fatalf("dedicatedRuntimeBuildRequest() error = %v", err)
+	}
+	if req.AgentID != "memory-fast" {
+		t.Fatalf("dedicated runtime agent ID = %q, want memory-fast", req.AgentID)
+	}
+	if req.Name != "memory-fast-session-memory" {
+		t.Fatalf("dedicated runtime name = %q, want memory-fast-session-memory", req.Name)
+	}
+	if req.WorkingDirectory != "/tmp/session-memory" || req.Instruction != "derive facts" {
+		t.Fatalf("dedicated runtime request = %+v, want trimmed runtime fields", req)
+	}
+	if len(req.MCPServerIDs) != 0 {
+		t.Fatalf("dedicated runtime MCP IDs = %#v, want empty", req.MCPServerIDs)
+	}
+	if req.ReasoningEffort != "" {
+		t.Fatalf("dedicated runtime reasoning override = %q, want empty so provider setting is used", req.ReasoningEffort)
+	}
+}
+
+func TestNewBuilderWithNilFactoryRejectsDedicatedRuntime(t *testing.T) {
+	builder := NewBuilder(BuilderParams{})
+	_, err := builder.BuildDedicatedRuntime(context.Background(), "memory", t.TempDir(), "derive facts")
+	if err == nil || !strings.Contains(err.Error(), "agent builder is required") {
+		t.Fatalf("BuildDedicatedRuntime() error = %v, want missing builder error", err)
+	}
+}
+
+func TestBuildDedicatedRuntimeUsesSelectedProviderSettingsAndIsolation(t *testing.T) {
+	providers := map[string]agentconfig.Config{
+		"chat": {
+			Type:     agentconfig.AgentTypeCodexACP,
+			CodexACP: &agentconfig.ACPConfig{Model: "chat-expensive", ReasoningEffort: "high"},
+		},
+		"memory": {
+			Type:     agentconfig.AgentTypeCodexACP,
+			CodexACP: &agentconfig.ACPConfig{Model: "memory-fast"},
+		},
+	}
+	factory := &capturingDedicatedRuntimeFactory{providers: providers}
+	builder := &Builder{dedicatedFactory: factory}
+
+	runtime, err := builder.BuildDedicatedRuntime(context.Background(), "memory", t.TempDir(), "derive facts")
+	if err != nil {
+		t.Fatalf("BuildDedicatedRuntime() error = %v", err)
+	}
+	if runtime == nil || runtime.Agent == nil || runtime.SessionSvc == nil {
+		t.Fatalf("BuildDedicatedRuntime() = %+v, want isolated agent and session service", runtime)
+	}
+	if runtime.AppName != defaultRuntimeAppName+"-session-memory" {
+		t.Fatalf("dedicated runtime app name = %q, want isolated app name", runtime.AppName)
+	}
+	if len(factory.requests) != 1 {
+		t.Fatalf("dedicated factory requests = %d, want 1", len(factory.requests))
+	}
+	req := factory.requests[0]
+	if req.AgentID != "memory" {
+		t.Fatalf("dedicated factory agent ID = %q, want memory", req.AgentID)
+	}
+	if len(req.MCPServerIDs) != 0 || req.ReasoningEffort != "" {
+		t.Fatalf("dedicated factory request = %+v, want empty MCP/reasoning overrides", req)
+	}
+	resolved := factory.resolved[0]
+	if resolved.Model != "memory-fast" || resolved.ReasoningEffort != "" {
+		t.Fatalf("selected provider settings = model %q reasoning %q, want memory-fast/empty", resolved.Model, resolved.ReasoningEffort)
+	}
+}
+
+type capturingDedicatedRuntimeFactory struct {
+	providers map[string]agentconfig.Config
+	requests  []agentfactory.BuildRequest
+	resolved  []agentconfig.ResolvedConfig
+}
+
+func (f *capturingDedicatedRuntimeFactory) Build(_ context.Context, req agentfactory.BuildRequest) (adkagent.Agent, error) {
+	f.requests = append(f.requests, req)
+	cfg, ok := f.providers[req.AgentID]
+	if !ok {
+		return nil, fmt.Errorf("provider %q not found", req.AgentID)
+	}
+	resolved, err := agentconfig.NormalizeConfig(cfg, "")
+	if err != nil {
+		return nil, err
+	}
+	f.resolved = append(f.resolved, resolved)
+	return adkagent.New(adkagent.Config{Name: req.Name, Description: req.Description})
 }
 
 func TestBuildBaldaInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {

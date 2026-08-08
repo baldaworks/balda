@@ -47,6 +47,7 @@ const (
 
 type Builder struct {
 	factory                *agentfactory.Factory
+	dedicatedFactory       dedicatedRuntimeFactory
 	normaCfg               runtimeconfig.RuntimeConfig
 	workingDir             string
 	workspaceEnabled       bool
@@ -55,6 +56,14 @@ type Builder struct {
 	sessionSvc             adksession.Service
 	memoryEnabled          bool
 	memorySnapshotReader   MemorySnapshotReader
+}
+
+// dedicatedRuntimeFactory is the narrow provider-factory port used only by
+// the isolated session-memory runtime. The production composition root wires
+// runtime/v2's concrete Factory; keeping the port local lets boundary tests
+// observe the request without starting an external provider.
+type dedicatedRuntimeFactory interface {
+	Build(ctx context.Context, req agentfactory.BuildRequest) (agent.Agent, error)
 }
 
 type RuntimeSessionContext struct {
@@ -166,8 +175,13 @@ type BuilderParams struct {
 
 // NewBuilder creates a Builder with the given factory and config.
 func NewBuilder(params BuilderParams) *Builder {
+	var dedicatedFactory dedicatedRuntimeFactory
+	if params.Factory != nil {
+		dedicatedFactory = params.Factory
+	}
 	return &Builder{
 		factory:                params.Factory,
+		dedicatedFactory:       dedicatedFactory,
 		normaCfg:               params.NormaCfg,
 		workingDir:             strings.TrimSpace(params.WorkingDir),
 		workspaceEnabled:       params.WorkspaceEnabled,
@@ -251,24 +265,18 @@ func (b *Builder) BuildDedicatedRuntime(
 	workspaceDir string,
 	instruction string,
 ) (*BuiltRuntime, error) {
-	if b == nil || b.factory == nil {
+	if b == nil || (b.factory == nil && b.dedicatedFactory == nil) {
 		return nil, fmt.Errorf("agent builder is required")
 	}
-	if strings.TrimSpace(agentName) == "" {
-		return nil, fmt.Errorf("dedicated runtime agent is required")
+	req, err := dedicatedRuntimeBuildRequest(agentName, workspaceDir, instruction)
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(workspaceDir) == "" {
-		return nil, fmt.Errorf("dedicated runtime workspace is required")
+	dedicatedFactory := b.dedicatedFactory
+	if dedicatedFactory == nil {
+		dedicatedFactory = b.factory
 	}
-	req := agentfactory.BuildRequest{
-		AgentID:          strings.TrimSpace(agentName),
-		Name:             strings.TrimSpace(agentName) + "-session-memory",
-		Description:      "Dedicated session-memory structured derivation runtime",
-		WorkingDirectory: strings.TrimSpace(workspaceDir),
-		Instruction:      strings.TrimSpace(instruction),
-		MCPServerIDs:     []string{},
-	}
-	ag, err := b.factory.Build(ctx, req)
+	ag, err := dedicatedFactory.Build(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("creating dedicated agent %q: %w", agentName, err)
 	}
@@ -424,6 +432,25 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 		Model:      model,
 		MCPServers: mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
 	}
+}
+
+func dedicatedRuntimeBuildRequest(agentName, workspaceDir, instruction string) (agentfactory.BuildRequest, error) {
+	providerID := strings.TrimSpace(agentName)
+	if providerID == "" {
+		return agentfactory.BuildRequest{}, fmt.Errorf("dedicated runtime agent is required")
+	}
+	workingDir := strings.TrimSpace(workspaceDir)
+	if workingDir == "" {
+		return agentfactory.BuildRequest{}, fmt.Errorf("dedicated runtime workspace is required")
+	}
+	return agentfactory.BuildRequest{
+		AgentID:          providerID,
+		Name:             providerID + "-session-memory",
+		Description:      "Dedicated session-memory structured derivation runtime",
+		WorkingDirectory: workingDir,
+		Instruction:      strings.TrimSpace(instruction),
+		MCPServerIDs:     []string{},
+	}, nil
 }
 
 func (b *Builder) buildAgentMCPServerIDs(agentName string, bundled, extra []string) []string {

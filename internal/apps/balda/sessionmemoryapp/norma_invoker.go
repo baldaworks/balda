@@ -36,8 +36,9 @@ type NormaInvoker struct {
 	closed     bool
 }
 
-// NormaInvokerConfig selects the configured Balda provider and working dir for
-// an isolated memory derivation runtime.
+// NormaInvokerConfig selects the extraction provider and working dir for an
+// isolated memory derivation runtime. The provider ID is resolved by Balda's
+// composition root and remains opaque to this adapter.
 type NormaInvokerConfig struct {
 	Builder    *baldaagent.Builder
 	ProviderID string
