@@ -160,7 +160,7 @@ func TestQuestionControlLifecycleCallsTelegramAPIs(t *testing.T) {
 	if err := messenger.ClearInlineKeyboard(context.Background(), 9001, 42); err != nil {
 		t.Fatalf("ClearInlineKeyboard() error = %v", err)
 	}
-	if len(tgClient.editRequests) != 1 || tgClient.editRequests[0].ReplyMarkup != nil {
+	if len(tgClient.editRequests) != 1 || tgClient.editRequests[0].ReplyMarkup == nil || len(tgClient.editRequests[0].ReplyMarkup.InlineKeyboard) != 0 {
 		t.Fatalf("edit requests = %+v", tgClient.editRequests)
 	}
 	if err := messenger.DeleteMessage(context.Background(), 9001, 41); err != nil {

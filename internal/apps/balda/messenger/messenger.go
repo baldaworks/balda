@@ -808,7 +808,12 @@ func (m *Messenger) sendMessageWithInlineKeyboard(ctx context.Context, chatID in
 
 // ClearInlineKeyboard removes all inline controls from a Telegram message.
 func (m *Messenger) ClearInlineKeyboard(ctx context.Context, chatID int64, messageID int) error {
-	request := client.EditMessageReplyMarkupJSONRequestBody{ChatId: &chatID, MessageId: &messageID}
+	emptyMarkup := client.InlineKeyboardMarkup{}
+	request := client.EditMessageReplyMarkupJSONRequestBody{
+		ChatId:      &chatID,
+		MessageId:   &messageID,
+		ReplyMarkup: &emptyMarkup,
+	}
 	sendCtx, cancel := telegramSendContext(ctx)
 	defer cancel()
 	resp, err := m.client.EditMessageReplyMarkupWithResponse(sendCtx, request)
