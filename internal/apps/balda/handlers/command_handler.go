@@ -12,6 +12,8 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/automode"
 	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
 	"github.com/normahq/balda/internal/apps/balda/locatorref"
+	"github.com/normahq/balda/internal/apps/balda/pluginapp"
+	"github.com/normahq/balda/internal/apps/balda/plugincmd"
 	"github.com/normahq/balda/internal/apps/balda/session"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/normahq/balda/internal/apps/balda/welcome"
@@ -52,6 +54,7 @@ const (
 	commandReset    = "reset"
 	commandRestart  = "restart"
 	commandClose    = "close"
+	commandPlugins  = plugincmd.CommandPlugin
 	chatTypePrivate = "private"
 
 	userActionAdd    = "add"
@@ -73,6 +76,7 @@ type CommandHandler struct {
 	goalMaxIterations int
 	autoMaxTurns      int
 	userHandler       *userHandler
+	plugins           *pluginapp.Service
 }
 
 type commandHandlerParams struct {
@@ -88,6 +92,7 @@ type commandHandlerParams struct {
 	MaxIterations     int                            `name:"balda_goal_max_iterations"`
 	AutoMaxTurns      int                            `name:"balda_automode_max_turns"`
 	UserHandler       *userHandler
+	Plugins           *pluginapp.Service `optional:"true"`
 }
 
 // Register registers the handler with the registry.
@@ -123,6 +128,8 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 	case commandUser:
 		// Route to UserHandler
 		return h.userHandler.HandleUserCommand(ctx, commandCtx)
+	case commandPlugins:
+		return h.onPluginsCommand(ctx, commandCtx)
 	default:
 		return nil
 	}
@@ -158,6 +165,7 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 	}
 
 	if isOwner {
+		lines = append(lines, "", plugincmd.HelpMarkdown())
 		lines = append(lines, "", "## Admin", "")
 		lines = append(lines, "- `/user add` — create collaborator invite")
 		lines = append(lines, "- `/user list` — list collaborators and invites")
@@ -165,6 +173,173 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func (h *CommandHandler) onPluginsCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
+	if h.ownerStore == nil || !h.ownerStore.IsOwner(commandCtx.UserID) {
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Only the bot owner can use this command.")
+	}
+	args := strings.TrimSpace(commandCtx.Args)
+	if args == "" {
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsageMarkdown())
+	}
+	fields := strings.Fields(args)
+	if len(fields) == 0 {
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsageMarkdown())
+	}
+	switch fields[0] {
+	case plugincmd.CommandPluginsList:
+		return h.sendPluginsList(ctx, commandCtx, fields[1:])
+	case plugincmd.CommandPluginsShow, plugincmd.CommandPluginsInstall, plugincmd.CommandPluginsRemove:
+		return h.sendPluginsAction(ctx, commandCtx, fields[0], fields[1:])
+	case plugincmd.CommandPluginsMarketplace:
+		if len(fields) < 2 {
+			return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsageMarkdown())
+		}
+		switch fields[1] {
+		case plugincmd.CommandMarketplaceAdd, plugincmd.CommandMarketplaceList, plugincmd.CommandMarketplaceShow, plugincmd.CommandMarketplaceUpgrade, plugincmd.CommandMarketplaceRemove:
+			return h.sendMarketplaceAction(ctx, commandCtx, fields[1], fields[2:])
+		default:
+			return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsageMarkdown())
+		}
+	default:
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsageMarkdown())
+	}
+}
+
+func (h *CommandHandler) sendPluginsList(ctx context.Context, commandCtx TelegramCommandContext, rest []string) error {
+	available := len(rest) == 1 && (rest[0] == "--available" || rest[0] == "available")
+	if len(rest) > 1 || (len(rest) == 1 && !available) {
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+	}
+	if h.plugins == nil {
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin service is unavailable.")
+	}
+	if available {
+		plugins, err := h.plugins.ListAvailable(ctx)
+		if err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not list available plugins.")
+		}
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.RenderAvailablePluginsMarkdown(plugins))
+	}
+	plugins, err := h.plugins.ListInstalled(ctx)
+	if err != nil {
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not list installed plugins.")
+	}
+	return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.RenderInstalledPluginsMarkdown(plugins))
+}
+
+func (h *CommandHandler) sendPluginsAction(ctx context.Context, commandCtx TelegramCommandContext, action string, rest []string) error {
+	if len(rest) != 1 {
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+	}
+	switch action {
+	case plugincmd.CommandPluginsShow:
+		if h.plugins == nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin service is unavailable.")
+		}
+		name := strings.TrimSpace(strings.SplitN(rest[0], "@", 2)[0])
+		plugin, ok, err := h.plugins.GetInstalled(ctx, name)
+		if err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not load plugin details.")
+		}
+		if ok {
+			return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.RenderInstalledPluginMarkdown(plugin))
+		}
+		available, found, err := h.plugins.GetAvailable(ctx, rest[0])
+		if err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not load plugin details.")
+		}
+		if !found {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.NotImplementedMessage("/plugin show "+rest[0]))
+		}
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.RenderAvailablePluginMarkdown(available))
+	case plugincmd.CommandPluginsInstall:
+		if h.plugins == nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin service is unavailable.")
+		}
+		if err := h.plugins.Install(ctx, rest[0]); err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not install plugin.")
+		}
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin installed.")
+	case plugincmd.CommandPluginsRemove:
+		if h.plugins == nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin service is unavailable.")
+		}
+		if err := h.plugins.RemoveInstalled(ctx, rest[0]); err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not remove plugin.")
+		}
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin removed.")
+	default:
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.NotImplementedMessage("/plugin "+action+" "+rest[0]))
+	}
+}
+
+func (h *CommandHandler) sendMarketplaceAction(ctx context.Context, commandCtx TelegramCommandContext, action string, rest []string) error {
+	if h.plugins == nil {
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin service is unavailable.")
+	}
+	switch action {
+	case plugincmd.CommandMarketplaceList:
+		if len(rest) != 0 {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+		}
+		sources, err := h.plugins.ListMarketplaceStatuses(ctx)
+		if err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not list plugin marketplaces.")
+		}
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.RenderMarketplaceStatusesMarkdown(sources))
+	case plugincmd.CommandMarketplaceShow:
+		if len(rest) != 1 {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+		}
+		status, ok, err := h.plugins.GetMarketplaceStatus(ctx, rest[0])
+		if err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not load plugin marketplace.")
+		}
+		if !ok {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin marketplace not found.")
+		}
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.RenderMarketplaceStatusMarkdown(status))
+	case plugincmd.CommandMarketplaceAdd:
+		if len(rest) < 1 {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+		}
+		source := strings.TrimSpace(rest[0])
+		if source == "" {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+		}
+		if err := h.plugins.AddMarketplace(ctx, pluginapp.MarketplaceSource{
+			Name:   pluginapp.InferMarketplaceName(source),
+			Source: source,
+		}); err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not add plugin marketplace.")
+		}
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin marketplace added.")
+	case plugincmd.CommandMarketplaceUpgrade:
+		if len(rest) > 1 {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+		}
+		name := ""
+		if len(rest) == 1 {
+			name = strings.TrimSpace(rest[0])
+		}
+		results, err := h.plugins.UpgradeMarketplaces(ctx, name)
+		if err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not refresh plugin marketplaces.")
+		}
+		return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.RenderMarketplaceUpgradeMarkdown(results))
+	case plugincmd.CommandMarketplaceRemove:
+		if len(rest) != 1 {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+		}
+		if err := h.plugins.RemoveMarketplace(ctx, rest[0]); err != nil {
+			return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Could not remove plugin marketplace.")
+		}
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, "Plugin marketplace removed.")
+	default:
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, commandCtx.Locator, plugincmd.TransportUsage())
+	}
 }
 
 func (h *CommandHandler) onAutoCommand(ctx context.Context, commandCtx TelegramCommandContext) error {

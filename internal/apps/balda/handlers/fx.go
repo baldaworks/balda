@@ -65,6 +65,7 @@ var Module = fx.Module("balda_handlers",
 				goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
 				autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
 				userHandler:       params.UserHandler,
+				plugins:           params.Plugins,
 			}
 		},
 		func(params userHandlerParams) *userHandler {

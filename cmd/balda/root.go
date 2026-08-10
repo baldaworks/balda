@@ -135,6 +135,7 @@ func newRootCommand() (*cobra.Command, error) {
 	cmd.AddCommand(preflightCommand())
 	cmd.AddCommand(doctorCommand())
 	cmd.AddCommand(initCommand())
+	cmd.AddCommand(pluginsCommand())
 	cmd.AddCommand(evalFixturesCommand())
 	return cmd, nil
 }

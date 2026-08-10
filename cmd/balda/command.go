@@ -31,6 +31,7 @@ type baldaConfigDocument struct {
 
 type preparedBaldaCommand struct {
 	workingDir      string
+	stateDir        string
 	doc             baldaConfigDocument
 	baldaCfg        balda.Config
 	runtimeLoadOpts appconfig.RuntimeLoadOptions
@@ -213,6 +214,7 @@ func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
 
 	return preparedBaldaCommand{
 		workingDir:      workingDir,
+		stateDir:        stateDir,
 		doc:             doc,
 		baldaCfg:        baldaCfg,
 		runtimeLoadOpts: runtimeLoadOpts,

@@ -13,6 +13,7 @@ import (
 	"github.com/ipfans/fxlogger"
 	"github.com/normahq/balda/internal/apps/balda/actors"
 	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	"github.com/normahq/balda/internal/apps/balda/agentplugin"
 	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
 	"github.com/normahq/balda/internal/apps/balda/auth"
 	"github.com/normahq/balda/internal/apps/balda/automode"
@@ -33,6 +34,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/memory"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/normahq/balda/internal/apps/balda/permissions"
+	"github.com/normahq/balda/internal/apps/balda/pluginapp"
 	"github.com/normahq/balda/internal/apps/balda/questions"
 	"github.com/normahq/balda/internal/apps/balda/scheduledjobs"
 	"github.com/normahq/balda/internal/apps/balda/sessionapp"
@@ -245,6 +247,16 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
+			fx.Annotate(
+				func(stateDir string) (*agentplugin.Catalog, error) {
+					loader, err := agentplugin.NewLoader(stateDir)
+					if err != nil {
+						return nil, err
+					}
+					return loader.Load()
+				},
+				fx.ParamTags(`name:"balda_state_dir"`),
+			),
 			sessionmemorymcp.NewContextBroker,
 			fx.Annotate(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
@@ -624,6 +636,7 @@ func Module(
 		baldajobs.Module,
 		questions.Module,
 		permissions.Module,
+		pluginapp.Module,
 		sessionapp.Module,
 		sessionturnapp.Module,
 		controlapp.Module,

@@ -80,7 +80,7 @@ func (s *sqliteKVStore) Delete(ctx context.Context, key string) error {
 func (s *sqliteKVStore) List(ctx context.Context, prefix string) ([]string, error) {
 	args := []any{s.namespace}
 	query := `
-		SELECT key
+		SELECT key, expires_at
 		FROM balda_app_kv
 		WHERE namespace = ?`
 
@@ -100,12 +100,19 @@ func (s *sqliteKVStore) List(ctx context.Context, prefix string) ([]string, erro
 	keys := make([]string, 0)
 	for rows.Next() {
 		var key string
-		if err := rows.Scan(&key); err != nil {
+		var expiresAt sql.NullString
+		if err := rows.Scan(&key, &expiresAt); err != nil {
 			return nil, fmt.Errorf("scan key: %w", err)
 		}
 
-		// Skip expired keys
-		if s.isKeyExpired(ctx, key) {
+		if expiresAt.Valid {
+			expTime, parseErr := time.Parse(time.RFC3339, expiresAt.String)
+			if parseErr == nil && time.Now().UTC().After(expTime) {
+				continue
+			}
+		}
+
+		if strings.TrimSpace(key) == "" {
 			continue
 		}
 
@@ -115,26 +122,6 @@ func (s *sqliteKVStore) List(ctx context.Context, prefix string) ([]string, erro
 		return nil, fmt.Errorf("iterate keys: %w", err)
 	}
 	return keys, nil
-}
-
-func (s *sqliteKVStore) isKeyExpired(ctx context.Context, key string) bool {
-	var expiresAt sql.NullString
-	err := s.db.QueryRowContext(ctx, `
-		SELECT expires_at
-		FROM balda_app_kv
-		WHERE namespace = ? AND key = ?`,
-		s.namespace, key,
-	).Scan(&expiresAt)
-	if err != nil || !expiresAt.Valid {
-		return false // no expiry set
-	}
-
-	expTime, err := time.Parse(time.RFC3339, expiresAt.String)
-	if err != nil {
-		return false
-	}
-
-	return time.Now().UTC().After(expTime)
 }
 
 func (s *sqliteKVStore) Clear(ctx context.Context) error {

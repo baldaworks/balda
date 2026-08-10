@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/normahq/balda/internal/apps/balda/agentplugin"
 	"github.com/normahq/balda/internal/apps/balda/paths"
 	"github.com/normahq/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
@@ -56,6 +57,7 @@ type Builder struct {
 	sessionSvc             adksession.Service
 	memoryEnabled          bool
 	memorySnapshotReader   MemorySnapshotReader
+	pluginCatalog          *agentplugin.Catalog
 }
 
 // dedicatedRuntimeFactory is the narrow provider-factory port used only by
@@ -97,6 +99,7 @@ type baldaPromptData struct {
 	MemoryEnabled     bool
 	GlobalInstruction string
 	Instruction       string
+	PluginSkills      []agentplugin.Skill
 }
 
 func (b *Builder) buildBaldaInstruction(
@@ -150,6 +153,9 @@ func (b *Builder) buildBaldaInstruction(
 	}
 	data.GlobalInstruction = strings.TrimSpace(b.baldaGlobalInstruction)
 	data.Instruction = strings.TrimSpace(agentInstruction)
+	if b.pluginCatalog != nil {
+		data.PluginSkills = b.pluginCatalog.Skills()
+	}
 
 	var buf bytes.Buffer
 	tmpl := template.Must(template.New("balda").Parse(baldaInstructionTmpl))
@@ -171,6 +177,7 @@ type BuilderParams struct {
 	SessionService         adksession.Service `name:"balda_runtime_session_service"`
 	MemoryEnabled          bool               `name:"balda_memory_enabled"`
 	MemorySnapshotReader   MemorySnapshotReader
+	PluginCatalog          *agentplugin.Catalog `optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -190,6 +197,7 @@ func NewBuilder(params BuilderParams) *Builder {
 		sessionSvc:             params.SessionService,
 		memoryEnabled:          params.MemoryEnabled,
 		memorySnapshotReader:   params.MemorySnapshotReader,
+		pluginCatalog:          params.PluginCatalog,
 	}
 }
 

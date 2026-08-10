@@ -52,4 +52,11 @@ Global instruction:
 {{.GlobalInstruction}}{{end}}{{if .Instruction}}
 
 Instruction:
-{{.Instruction}}{{end}}
+{{.Instruction}}{{end}}{{if .PluginSkills}}
+
+Plugin skills:
+{{range .PluginSkills}}
+- `{{.PluginName}}:{{.Name}}` at `{{.Path}}`
+
+{{.Content}}
+{{end}}{{end}}
