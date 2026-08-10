@@ -80,6 +80,7 @@ components:
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
+      - internal/apps/balda/plugincmd
       - internal/apps/balda/questioncmd
       - internal/apps/balda/telegramref
       - internal/apps/balda/telegramfmt
@@ -102,6 +103,7 @@ components:
       - internal/apps/balda/memory
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
+      - internal/apps/balda/pluginapp
       - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
       - internal/apps/balda/sessionmemorymcp
@@ -158,6 +160,7 @@ components:
       - internal/apps/balda/eventbus/**
       - internal/apps/balda/internalmcp
       - internal/apps/balda/paths
+      - internal/apps/balda/agentplugin
       - internal/apps/balda/redaction
       - internal/apps/balda/shutdown
       - internal/apps/balda/state
@@ -234,6 +237,7 @@ deps:
       - contracts
       - application
       - delivery
+      - infrastructure
     anyVendorDeps: true
 
   application:
