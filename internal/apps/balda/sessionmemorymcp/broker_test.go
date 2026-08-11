@@ -16,7 +16,7 @@ func TestContextBrokerBindsConcurrentSessionsAndOverwritesCallerHeaders(t *testi
 	t.Parallel()
 
 	broker := NewContextBroker()
-	if err := broker.SetBaseURL("http://127.0.0.1:12345/mcp"); err != nil {
+	if err := broker.SetBaseURL("http://127.0.0.1:12345/mcp/balda"); err != nil {
 		t.Fatalf("SetBaseURL() error = %v", err)
 	}
 	personal := brokerTestSession(t, "telegram:101:77", "tg-101-77", "agent-personal")

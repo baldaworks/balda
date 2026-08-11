@@ -225,6 +225,30 @@ Common settings:
 - `balda.permissions.timeout` — maximum wait for an interactive permission decision (default `2m`)
 - `balda.mcp_servers` — MCP servers injected into Balda-started sessions
 
+### Knowl sidecar
+
+Run [Knowl](https://github.com/baldaworks/knowl) separately, then register its
+MCP endpoint through Balda's existing generic configuration:
+
+```yaml
+runtime:
+  mcp_servers:
+    knowl:
+      type: http
+      url: http://127.0.0.1:8080/mcp
+      headers:
+        Authorization: "Bearer ${KNOWL_TOKEN}"
+
+balda:
+  mcp_servers:
+    - knowl
+```
+
+This exposes `knowl_retrieve`, `knowl_ingest`, and `knowl_operation` to
+Balda-started sessions. Balda does not start Knowl, initialize its workspace,
+own its provider/storage configuration, or automatically ingest conversation
+turns.
+
 `allow_all` preserves historical behavior and should be used only where every
 agent tool call is trusted. Production chat deployments should normally set
 `BALDA_PERMISSIONS_MODE=ask`; unsupported channels, missing requester context,

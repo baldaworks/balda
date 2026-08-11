@@ -15,7 +15,7 @@ func TestHeaderSessionResolverRequiresActiveBrokerBinding(t *testing.T) {
 	t.Parallel()
 
 	broker := NewContextBroker()
-	if err := broker.SetBaseURL("http://127.0.0.1:12345/mcp"); err != nil {
+	if err := broker.SetBaseURL("http://127.0.0.1:12345/mcp/balda"); err != nil {
 		t.Fatalf("SetBaseURL() error = %v", err)
 	}
 	locator, err := deliverycmd.NewLocator("telegram", "101:77", `{"chat_id":101,"topic_id":77}`, "tg-101-77")

@@ -523,6 +523,32 @@ runtime:
         Authorization: "Bearer ${MCP_TOKEN}"
 ```
 
+#### Knowl sidecar
+
+Knowl is integrated as an ordinary external MCP server. Start and configure the
+Knowl service separately, including its workspace, storage, provider, listener,
+and optional operator token:
+
+```yaml
+runtime:
+  mcp_servers:
+    knowl:
+      type: http
+      url: http://127.0.0.1:8080/mcp
+      headers:
+        Authorization: "Bearer ${KNOWL_TOKEN}"
+
+balda:
+  mcp_servers:
+    - knowl
+```
+
+The server ID and tools retain Knowl naming: `knowl`, `knowl_retrieve`,
+`knowl_ingest`, and `knowl_operation`. Balda does not embed or supervise
+Knowl, initialize its workspace, or own its provider and persistence. There is
+no automatic turn or memory ingestion; content enters Knowl only through an
+explicit tool call or another operator-controlled ingest path.
+
 #### Using MCP Servers in Providers
 
 ```yaml
@@ -714,7 +740,7 @@ or non-regular paths return a stable build error.
   - if an owner is already registered, `balda start` fails fast when the owner session cannot be restored or created
 - bundled balda MCP listener always binds to local ephemeral address (`127.0.0.1:0`)
   - bundled routes on this listener:
-    - `/mcp` and `/mcp/balda` for the built-in balda MCP server
+    - `/mcp/balda` for the built-in balda MCP server
 - Balda config is edited via the config file itself, not through MCP.
   - balda agents should use the config path shown in the system instruction and edit `.config/balda/config.yaml` directly
 - `balda.mcp_servers`: extra MCP server IDs for all balda-started sessions (must reference IDs declared in `runtime.mcp_servers`)

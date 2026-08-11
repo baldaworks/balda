@@ -195,14 +195,15 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 	handlersByID := map[string]http.Handler{
 		bundledBaldaServerID: baldaHandler,
 	}
-	routes := []string{"/mcp", "/mcp/" + bundledBaldaServerID}
+	baldaRoute := bundledRoutePath(bundledBaldaServerID)
+	routes := []string{baldaRoute}
 
 	res, err := startBundledMCPHTTPServer(ctx, "127.0.0.1:0", handlersByID)
 	if err != nil {
 		return fmt.Errorf("start bundled MCP listener: %w", err)
 	}
 	if m.contextBroker != nil {
-		if err := m.contextBroker.SetBaseURL("http://" + res.Addr + "/mcp"); err != nil {
+		if err := m.contextBroker.SetBaseURL("http://" + res.Addr + baldaRoute); err != nil {
 			_ = res.Close()
 			return fmt.Errorf("configure session MCP context broker: %w", err)
 		}
@@ -211,7 +212,7 @@ func (m *InternalMCPManager) ensureBundledServers(ctx context.Context) error {
 
 	m.registry.Set(bundledBaldaServerID, agentconfig.MCPServerConfig{
 		Type: agentconfig.MCPServerTypeHTTP,
-		URL:  fmt.Sprintf("http://%s/mcp", res.Addr),
+		URL:  fmt.Sprintf("http://%s%s", res.Addr, baldaRoute),
 	})
 
 	sort.Strings(routes)
@@ -458,6 +459,10 @@ type bundledHTTPServerResult struct {
 	Close func() error
 }
 
+func bundledRoutePath(serverID string) string {
+	return "/mcp/" + serverID
+}
+
 func startBundledMCPHTTPServer(ctx context.Context, addr string, handlersByID map[string]http.Handler) (*bundledHTTPServerResult, error) {
 	mux := http.NewServeMux()
 
@@ -469,10 +474,7 @@ func startBundledMCPHTTPServer(ctx context.Context, addr string, handlersByID ma
 
 	for _, id := range ids {
 		handler := handlersByID[id]
-		mux.Handle("/mcp/"+id, handler)
-		if id == bundledBaldaServerID {
-			mux.Handle("/mcp", handler)
-		}
+		mux.Handle(bundledRoutePath(id), handler)
 	}
 
 	listener, err := net.Listen("tcp", addr)

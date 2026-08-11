@@ -312,7 +312,7 @@ func TestScheduleSessionWaitReconstructsMissingAddressJSON(t *testing.T) {
 	}
 }
 
-func TestStartBundledMCPHTTPServer_MountsRoutesAndAlias(t *testing.T) {
+func TestStartBundledMCPHTTPServer_MountsNamedRoutes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -350,7 +350,6 @@ func TestStartBundledMCPHTTPServer_MountsRoutesAndAlias(t *testing.T) {
 	}
 
 	assertBody("/mcp/balda", "balda")
-	assertBody("/mcp", "balda")
 }
 
 func TestEnsureBundledServers_RegistersSharedListenerURLs(t *testing.T) {
@@ -386,8 +385,8 @@ func TestEnsureBundledServers_RegistersSharedListenerURLs(t *testing.T) {
 	if u.Scheme != "http" {
 		t.Fatalf("balda scheme = %q, want http", u.Scheme)
 	}
-	if u.Path != "/mcp" {
-		t.Fatalf("balda path = %q, want /mcp", u.Path)
+	if u.Path != "/mcp/balda" {
+		t.Fatalf("balda path = %q, want /mcp/balda", u.Path)
 	}
 	if strings.TrimSpace(u.Host) == "" {
 		t.Fatal("shared host is empty")
