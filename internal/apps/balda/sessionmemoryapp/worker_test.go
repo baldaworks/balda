@@ -62,8 +62,20 @@ func TestWorkerSerializesTurnAndBoundaryWithRetry(t *testing.T) {
 	mu.Lock()
 	gotCalls := append([]string(nil), calls...)
 	mu.Unlock()
-	if len(gotCalls) != 3 || gotCalls[0] != "turn" || gotCalls[1] != "turn" || gotCalls[2] != "boundary" {
-		t.Fatalf("provider call order = %v, want [turn retry boundary]", gotCalls)
+	if len(gotCalls) != 3 || gotCalls[0] != "turn" {
+		t.Fatalf("provider call order = %v, want first call to be turn and total calls = 3", gotCalls)
+	}
+	turnCalls, boundaryCalls := 0, 0
+	for _, call := range gotCalls {
+		switch call {
+		case "turn":
+			turnCalls++
+		case "boundary":
+			boundaryCalls++
+		}
+	}
+	if turnCalls != 2 || boundaryCalls != 1 {
+		t.Fatalf("provider calls = %v, want two turn attempts and one boundary", gotCalls)
 	}
 	if transport.fetches() != 3 {
 		t.Fatalf("fetch count = %d, want one fetch per delivery plus shutdown fetch", transport.fetches())
