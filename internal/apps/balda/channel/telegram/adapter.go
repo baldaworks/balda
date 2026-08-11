@@ -265,12 +265,17 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	topicID := a.topicIDFromMessage(event.Message)
 
 	text := ""
+	var entities []client.MessageEntity
 	if event.Message.Text != nil {
 		text = *event.Message.Text
-	}
-	var entities []client.MessageEntity
-	if event.Message.Entities != nil {
-		entities = append(entities, (*event.Message.Entities)...)
+		if event.Message.Entities != nil {
+			entities = append(entities, (*event.Message.Entities)...)
+		}
+	} else if event.Message.Caption != nil {
+		text = *event.Message.Caption
+		if event.Message.CaptionEntities != nil {
+			entities = append(entities, (*event.Message.CaptionEntities)...)
+		}
 	}
 	isReply := event.Message.ReplyToMessage != nil || event.Message.Quote != nil || event.Message.ExternalReply != nil
 	isForwarded := event.Message.ForwardOrigin != nil
@@ -288,12 +293,10 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	attachments := attachmentsFromMessage(event.Message)
 
 	hasCommand := false
-	if event.Message.Entities != nil {
-		for _, entity := range *event.Message.Entities {
-			if entity.Type == "bot_command" && entity.Offset == 0 {
-				hasCommand = true
-				break
-			}
+	for _, entity := range entities {
+		if entity.Type == "bot_command" && entity.Offset == 0 {
+			hasCommand = true
+			break
 		}
 	}
 

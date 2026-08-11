@@ -67,6 +67,29 @@ func TestMessageContextFromEvent_MapsVoiceAttachment(t *testing.T) {
 	}
 }
 
+func TestMessageContextFromEvent_MapsCaptionAndEntitiesAsInboundText(t *testing.T) {
+	caption := "@testbot review this"
+	captionEntities := []client.MessageEntity{{Type: "mention", Offset: 0, Length: len("@testbot")}}
+
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			Chat:            client.Chat{Id: 9001, Type: "supergroup"},
+			From:            &client.User{Id: 101},
+			Caption:         &caption,
+			CaptionEntities: &captionEntities,
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if got.Text != caption {
+		t.Fatalf("text = %q, want caption %q", got.Text, caption)
+	}
+	if len(got.Entities) != 1 || got.Entities[0].Type != "mention" {
+		t.Fatalf("entities = %+v, want caption mention", got.Entities)
+	}
+}
+
 func TestMessageContextFromEvent_MapsMediaGroupID(t *testing.T) {
 	mediaGroupID := "album-42"
 	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{

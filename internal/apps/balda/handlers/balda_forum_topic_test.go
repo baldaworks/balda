@@ -698,8 +698,8 @@ func TestBaldaHandlerOnMessage_PublishesAttachmentOnlySessionTurn(t *testing.T) 
 	}
 }
 
-func TestBaldaHandlerOnMessage_PublicAttachmentBypassesMentionGate(t *testing.T) {
-	handler, turns, locator := newBaldaMessageHandlerHarness(t, 77)
+func TestBaldaHandlerOnMessage_PublicAttachmentWithoutMentionOrReplyIsIgnored(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 77)
 
 	topicID := 77
 	isTopicMessage := true
@@ -711,6 +711,38 @@ func TestBaldaHandlerOnMessage_PublicAttachmentBypassesMentionGate(t *testing.T)
 			MessageThreadId: &topicID,
 			IsTopicMessage:  &isTopicMessage,
 			From:            &client.User{Id: 101},
+			Document: &client.Document{
+				FileId:   "document-file-id",
+				FileName: &fileName,
+			},
+		},
+	}
+
+	if err := handler.onMessage(t.Context(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if len(turns.commands) != 0 {
+		t.Fatalf("published commands = %d, want 0", len(turns.commands))
+	}
+}
+
+func TestBaldaHandlerOnMessage_PublicAttachmentWithMentionPublishesTurn(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 77)
+
+	topicID := 77
+	isTopicMessage := true
+	fileName := "context.json"
+	caption := "@testbot review this"
+	captionEntities := []client.MessageEntity{{Type: "mention", Offset: 0, Length: len("@testbot")}}
+	event := &events.MessageEvent{
+		Type: messagetype.Document,
+		Message: &client.Message{
+			Chat:            client.Chat{Id: 9001, Type: "supergroup"},
+			MessageThreadId: &topicID,
+			IsTopicMessage:  &isTopicMessage,
+			From:            &client.User{Id: 101},
+			Caption:         &caption,
+			CaptionEntities: &captionEntities,
 			Document: &client.Document{
 				FileId:   "document-file-id",
 				FileName: &fileName,
@@ -735,8 +767,10 @@ func TestBaldaHandlerOnMessage_PublicAttachmentBypassesMentionGate(t *testing.T)
 	if len(payload.Attachments) != 1 || payload.Attachments[0].Kind != "document" {
 		t.Fatalf("attachments = %+v, want one document", payload.Attachments)
 	}
-	if !strings.Contains(payload.Text, "Attachment manifest:") || !strings.Contains(payload.Text, "name: "+fileName) {
-		t.Fatalf("payload text = %q, want document attachment manifest", payload.Text)
+	if !strings.Contains(payload.Text, "review this") ||
+		!strings.Contains(payload.Text, "Attachment manifest:") ||
+		!strings.Contains(payload.Text, "name: "+fileName) {
+		t.Fatalf("payload text = %q, want mention text and document attachment manifest", payload.Text)
 	}
 }
 
