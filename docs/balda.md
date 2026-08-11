@@ -526,8 +526,8 @@ runtime:
 #### Knowl sidecar
 
 Knowl is integrated as an ordinary external MCP server. Start and configure the
-Knowl service separately, including its workspace, storage, provider, listener,
-and optional operator token:
+Knowl service separately, including its workspace, storage, provider, and
+listener:
 
 ```yaml
 runtime:
@@ -535,8 +535,6 @@ runtime:
     knowl:
       type: http
       url: http://127.0.0.1:8080/mcp
-      headers:
-        Authorization: "Bearer ${KNOWL_TOKEN}"
 
 balda:
   mcp_servers:
