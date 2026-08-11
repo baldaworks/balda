@@ -11,11 +11,6 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/state"
 )
 
-const (
-	testMarketplaceName = "demo-market"
-	testPluginName      = "demo"
-)
-
 func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	t.Parallel()
 
@@ -28,7 +23,7 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 
 	marketplaceRoot := filepath.Join(t.TempDir(), "market")
 	mustMkdirAll(t, filepath.Join(marketplaceRoot, ".agents", "plugins"))
-	mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", testPluginName))
+	mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", "demo"))
 	mustWriteFile(t, filepath.Join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), `{
   "name": "demo-market",
   "interface": { "displayName": "Demo Market" },
@@ -40,7 +35,7 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
     }
   ]
 }`)
-	mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", testPluginName, "plugin.json"), `{
+	mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", "demo", "plugin.json"), `{
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "demo",
   "version": "1.2.3",
@@ -52,7 +47,7 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
-		Name:   testMarketplaceName,
+		Name:   "demo-market",
 		Source: marketplaceRoot,
 	}); err != nil {
 		t.Fatalf("AddMarketplace() error = %v", err)
@@ -62,16 +57,16 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMarketplaces() error = %v", err)
 	}
-	if len(sources) != 1 || sources[0].Name != testMarketplaceName {
-		t.Fatalf("sources = %#v, want %s", sources, testMarketplaceName)
+	if len(sources) != 1 || sources[0].Name != "demo-market" {
+		t.Fatalf("sources = %#v, want demo-market", sources)
 	}
 
 	upgrades, err := svc.UpgradeMarketplaces(context.Background(), "")
 	if err != nil {
 		t.Fatalf("UpgradeMarketplaces() error = %v", err)
 	}
-	if len(upgrades) != 1 || upgrades[0].Name != testMarketplaceName || upgrades[0].PluginCount != 1 {
-		t.Fatalf("upgrades = %#v, want %s with 1 plugin", upgrades, testMarketplaceName)
+	if len(upgrades) != 1 || upgrades[0].Name != "demo-market" || upgrades[0].PluginCount != 1 {
+		t.Fatalf("upgrades = %#v, want demo-market with 1 plugin", upgrades)
 	}
 
 	available, err := svc.ListAvailable(context.Background())
@@ -81,14 +76,14 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	if len(available) != 1 {
 		t.Fatalf("len(available) = %d, want 1", len(available))
 	}
-	if available[0].Name != testPluginName || available[0].Marketplace != testMarketplaceName || available[0].Category != "Productivity" {
+	if available[0].Name != "demo" || available[0].Marketplace != "demo-market" || available[0].Category != "Productivity" {
 		t.Fatalf("available[0] = %#v", available[0])
 	}
 
-	if err := svc.Install(context.Background(), testPluginName+"@"+testMarketplaceName); err != nil {
+	if err := svc.Install(context.Background(), "demo@demo-market"); err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "plugins", testPluginName, "plugin.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(stateDir, "plugins", "demo", "plugin.json")); err != nil {
 		t.Fatalf("installed plugin manifest missing: %v", err)
 	}
 
@@ -96,8 +91,8 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListInstalled() error = %v", err)
 	}
-	if len(installed) != 1 || installed[0].Name != testPluginName {
-		t.Fatalf("installed = %#v, want %s", installed, testPluginName)
+	if len(installed) != 1 || installed[0].Name != "demo" {
+		t.Fatalf("installed = %#v, want demo", installed)
 	}
 
 	available, err = svc.ListAvailable(context.Background())
@@ -108,10 +103,10 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 		t.Fatalf("available[0].Installed = false, want true")
 	}
 
-	if err := svc.RemoveInstalled(context.Background(), testPluginName); err != nil {
+	if err := svc.RemoveInstalled(context.Background(), "demo"); err != nil {
 		t.Fatalf("RemoveInstalled() error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "plugins", testPluginName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(stateDir, "plugins", "demo")); !os.IsNotExist(err) {
 		t.Fatalf("installed plugin dir still exists, stat err = %v", err)
 	}
 }
@@ -206,73 +201,107 @@ func TestServiceMarketplaceGitSourceFlow(t *testing.T) {
 	}
 }
 
-func TestServiceMarketplaceManifestSelection(t *testing.T) {
+func TestServiceMarketplaceReadsManifestPath(t *testing.T) {
 	t.Parallel()
 
-	testCases := []struct {
-		name         string
-		manifestPath string
-		version      string
-	}{
-		{name: "explicit_manifest_path", manifestPath: ".plugin/plugin.json", version: "1.2.3"},
-		{name: "portable_dot_plugin_default", version: "2.3.4"},
+	stateDir := t.TempDir()
+	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	defer func() { _ = provider.Close() }()
 
-			stateDir := t.TempDir()
-			provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
-			if err != nil {
-				t.Fatalf("NewSQLiteProvider() error = %v", err)
-			}
-			defer func() { _ = provider.Close() }()
-
-			marketplaceRoot := filepath.Join(t.TempDir(), "market")
-			mustMkdirAll(t, filepath.Join(marketplaceRoot, ".agents", "plugins"))
-			mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", testPluginName, ".plugin"))
-			manifestField := ""
-			if tc.manifestPath != "" {
-				manifestField = ",\n      \"manifest_path\": \"" + tc.manifestPath + "\""
-			}
-			mustWriteFile(t, filepath.Join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), `{
+	marketplaceRoot := filepath.Join(t.TempDir(), "market")
+	mustMkdirAll(t, filepath.Join(marketplaceRoot, ".agents", "plugins"))
+	mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", "demo", ".plugin"))
+	mustWriteFile(t, filepath.Join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), `{
   "name": "demo-market",
   "plugins": [
     {
       "name": "demo",
-      "source": { "source": "local", "path": "./plugins/demo" }`+manifestField+`,
+      "source": { "source": "local", "path": "./plugins/demo" },
+      "manifest_path": ".plugin/plugin.json",
       "category": "Developer Tools"
     }
   ]
 }`)
-			mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", testPluginName, ".plugin", "plugin.json"), `{
+	mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", "demo", ".plugin", "plugin.json"), `{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "demo",
-  "version": "`+tc.version+`",
+  "version": "1.2.3",
   "description": "Demo plugin"
 }`)
 
-			svc, err := New(stateDir, provider.AppKV())
-			if err != nil {
-				t.Fatalf("New() error = %v", err)
-			}
-			if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
-				Name:   testMarketplaceName,
-				Source: marketplaceRoot,
-			}); err != nil {
-				t.Fatalf("AddMarketplace() error = %v", err)
-			}
+	svc, err := New(stateDir, provider.AppKV())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
+		Name:   "demo-market",
+		Source: marketplaceRoot,
+	}); err != nil {
+		t.Fatalf("AddMarketplace() error = %v", err)
+	}
 
-			available, err := svc.ListAvailable(context.Background())
-			if err != nil {
-				t.Fatalf("ListAvailable() error = %v", err)
-			}
-			if len(available) != 1 {
-				t.Fatalf("len(available) = %d, want 1", len(available))
-			}
-			if available[0].Name != testPluginName || available[0].Version != tc.version {
-				t.Fatalf("available[0] = %#v", available[0])
-			}
-		})
+	available, err := svc.ListAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("ListAvailable() error = %v", err)
+	}
+	if len(available) != 1 {
+		t.Fatalf("len(available) = %d, want 1", len(available))
+	}
+	if available[0].Name != "demo" || available[0].Version != "1.2.3" {
+		t.Fatalf("available[0] = %#v", available[0])
+	}
+}
+
+func TestServiceMarketplaceSkipsPortableDotPluginManifestByDefault(t *testing.T) {
+	t.Parallel()
+
+	stateDir := t.TempDir()
+	provider, err := state.NewSQLiteProvider(context.Background(), filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	defer func() { _ = provider.Close() }()
+
+	marketplaceRoot := filepath.Join(t.TempDir(), "market")
+	mustMkdirAll(t, filepath.Join(marketplaceRoot, ".agents", "plugins"))
+	mustMkdirAll(t, filepath.Join(marketplaceRoot, "plugins", "demo", ".plugin"))
+	mustWriteFile(t, filepath.Join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), `{
+  "name": "demo-market",
+  "plugins": [
+    {
+      "name": "demo",
+      "source": { "source": "local", "path": "./plugins/demo" },
+      "category": "Developer Tools"
+    }
+  ]
+}`)
+	mustWriteFile(t, filepath.Join(marketplaceRoot, "plugins", "demo", ".plugin", "plugin.json"), `{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "demo",
+  "version": "2.3.4",
+  "description": "Demo plugin"
+}`)
+
+	svc, err := New(stateDir, provider.AppKV())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := svc.AddMarketplace(context.Background(), MarketplaceSource{
+		Name:   "demo-market",
+		Source: marketplaceRoot,
+	}); err != nil {
+		t.Fatalf("AddMarketplace() error = %v", err)
+	}
+
+	available, err := svc.ListAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("ListAvailable() error = %v", err)
+	}
+	if len(available) != 0 {
+		t.Fatalf("len(available) = %d, want 0", len(available))
 	}
 }
 

@@ -168,6 +168,7 @@ func (s *Service) loadCatalog() (*agentplugin.Catalog, error) {
 
 const marketplacePrefix = "plugin_marketplace:"
 const marketplaceManifestPath = ".agents/plugins/marketplace.json"
+const supportedPluginManifestSchema = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 
 type marketplaceIndex struct {
 	Name      string `json:"name"`
@@ -787,11 +788,11 @@ func checkoutGitMarketplaceRef(ctx context.Context, repoRoot string, ref string)
 
 func readPluginSummary(root string, manifestPath string) (PluginSummary, error) {
 	trimmedManifestPath := strings.TrimSpace(manifestPath)
-	candidates := make([]string, 0, 2)
+	candidates := make([]string, 0, 1)
 	if trimmedManifestPath != "" {
 		candidates = append(candidates, trimmedManifestPath)
 	} else {
-		candidates = append(candidates, "plugin.json", filepath.Join(".plugin", "plugin.json"))
+		candidates = append(candidates, "plugin.json")
 	}
 	var data []byte
 	var err error
@@ -808,12 +809,16 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 		return PluginSummary{}, err
 	}
 	var manifest struct {
+		Schema      string `json:"$schema"`
 		Name        string `json:"name"`
 		Version     string `json:"version"`
 		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return PluginSummary{}, err
+	}
+	if strings.TrimSpace(manifest.Schema) != supportedPluginManifestSchema {
+		return PluginSummary{}, fmt.Errorf("unsupported plugin schema")
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
 		return PluginSummary{}, fmt.Errorf("plugin name is required")
