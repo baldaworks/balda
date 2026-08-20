@@ -34,7 +34,7 @@ You need:
 Install:
 
 ```bash
-npm install -g -y @normahq/balda
+npm install -g -y @baldaworks/balda
 ```
 
 Initialize in your project:
@@ -301,4 +301,8 @@ For complete configuration, examples, and provider-specific details, see
 ## Release
 
 - GitHub Releases: <https://github.com/baldaworks/balda/releases>
-- npm package: <https://www.npmjs.com/package/@normahq/balda>
+- npm package: <https://www.npmjs.com/package/@baldaworks/balda>
+
+npm releases are published from Git tags through the Omnidist workflow. The
+`NPM_PUBLISH_TOKEN` repository secret must have permission to publish the public
+`@baldaworks/balda` package in the `baldaworks` npm organization.

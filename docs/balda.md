@@ -35,7 +35,7 @@ queue.
 npm remains the shortest install path:
 
 ```bash
-npm install -g -y @normahq/balda
+npm install -g -y @baldaworks/balda
 balda init
 balda start
 ```
@@ -353,7 +353,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g \
-      @normahq/balda \
+      @baldaworks/balda \
       @openai/codex \
       opencode-ai \
       @google/gemini-cli \
@@ -420,7 +420,7 @@ build args to exact npm versions: `BALDA_NPM_PACKAGE`, `CODEX_NPM_PACKAGE`,
 ### Published GHCR Image
 
 Balda also publishes an official container image at
-`ghcr.io/normahq/balda:latest`. Unlike the local Compose Dockerfile, the
+`ghcr.io/baldaworks/balda:latest`. Unlike the local Compose Dockerfile, the
 published image is built from the tagged source tree with
 `Dockerfile.release`, so the Balda binary comes from the release commit rather
 than from the npm package.
@@ -431,7 +431,7 @@ bundle provider CLIs such as `codex`, `opencode`, `copilot`, `gemini`, or
 `claude`, and it is not the documented all-in-one runtime equivalent of local
 Compose.
 
-Treat `ghcr.io/normahq/balda:latest` as a source stage for downstream bot
+Treat `ghcr.io/baldaworks/balda:latest` as a source stage for downstream bot
 images. Copy `balda` from it, then add exactly the provider CLI runtime you
 want in your own final image. A concrete Codex example:
 
@@ -439,7 +439,7 @@ want in your own final image. A concrete Codex example:
 FROM node:24-bookworm-slim AS cli-builder
 RUN npm install -g @openai/codex
 
-FROM ghcr.io/normahq/balda:latest AS balda
+FROM ghcr.io/baldaworks/balda:latest AS balda
 
 FROM node:24-bookworm-slim
 RUN apt-get update \

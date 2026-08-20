@@ -1,7 +1,7 @@
 ARG NODE_IMAGE=node:24-bookworm
 FROM ${NODE_IMAGE}
 
-ARG BALDA_NPM_PACKAGE=@normahq/balda
+ARG BALDA_NPM_PACKAGE=@baldaworks/balda
 ARG CODEX_NPM_PACKAGE=@openai/codex
 ARG OPENCODE_NPM_PACKAGE=opencode-ai
 ARG GEMINI_NPM_PACKAGE=@google/gemini-cli

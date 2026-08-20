@@ -23,7 +23,7 @@ profiles:
       cgo: false
     distributions:
       npm:
-        package: '@normahq/balda'
+        package: '@baldaworks/balda'
         registry: https://registry.npmjs.org
         access: public
         include-readme: true
