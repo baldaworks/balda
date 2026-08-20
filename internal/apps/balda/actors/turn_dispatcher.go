@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/appports"
-	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

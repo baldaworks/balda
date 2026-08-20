@@ -3,8 +3,8 @@ package actors
 import (
 	"context"
 
-	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/actors/goalkeeper"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 )
 
 type goalRunAdapter struct {

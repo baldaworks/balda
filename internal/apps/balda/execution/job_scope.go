@@ -1,7 +1,7 @@
 package execution
 
 import (
-	"github.com/normahq/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/go-actorlayer"
 )
 

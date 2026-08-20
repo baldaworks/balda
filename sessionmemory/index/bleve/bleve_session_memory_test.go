@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 const stateTestRevisionOneID = "revision-1"

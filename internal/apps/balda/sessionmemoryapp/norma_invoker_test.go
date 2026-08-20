@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 )
 
 func TestNormaInvokerUsesBoundedIsolatedConfiguration(t *testing.T) {

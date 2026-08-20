@@ -3,8 +3,8 @@ package handlers
 import (
 	"context"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/usageview"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/usageview"
 	"google.golang.org/genai"
 )
 

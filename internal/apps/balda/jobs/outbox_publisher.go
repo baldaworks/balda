@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"

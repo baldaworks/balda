@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // RecallService owns canonical hydration and fail-closed validation around the

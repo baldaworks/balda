@@ -19,12 +19,12 @@ import (
 	"time"
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/envelopetarget"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

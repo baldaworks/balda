@@ -6,8 +6,8 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
 )

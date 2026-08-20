@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/baldaworks/go-actorlayer"
-	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func (c *coordinator) handleQuestionContinuation(ctx context.Context, env actorlayer.Envelope, payload goalQuestionPayload) error {

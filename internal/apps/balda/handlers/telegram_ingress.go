@@ -8,11 +8,11 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/ingressapp"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/telegramref"
-	"github.com/normahq/balda/internal/apps/balda/welcome"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
+	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 )
 
 const (

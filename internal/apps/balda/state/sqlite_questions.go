@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 )
 
 type sqliteQuestionStore struct {

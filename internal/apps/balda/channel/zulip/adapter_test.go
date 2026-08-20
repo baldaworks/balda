@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
 

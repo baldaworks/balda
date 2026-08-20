@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
-	"github.com/normahq/balda/internal/apps/balda/shutdown"
-	"github.com/normahq/balda/internal/logging"
+	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/logging"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

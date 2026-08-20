@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/normahq/balda/internal/git"
+	"github.com/baldaworks/balda/internal/git"
 	"gopkg.in/yaml.v3"
 )
 

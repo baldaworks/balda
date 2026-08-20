@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 const (

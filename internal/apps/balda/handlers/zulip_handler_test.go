@@ -13,14 +13,14 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	"github.com/normahq/balda/internal/apps/balda/automode"
-	"github.com/normahq/balda/internal/apps/balda/automodecmd"
-	baldazulip "github.com/normahq/balda/internal/apps/balda/channel/zulip"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/actors"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
+	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 

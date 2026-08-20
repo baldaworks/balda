@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	adkrunner "google.golang.org/adk/v2/runner"
 )

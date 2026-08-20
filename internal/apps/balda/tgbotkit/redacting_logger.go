@@ -3,7 +3,7 @@ package tgbotkit
 import (
 	"fmt"
 
-	"github.com/normahq/balda/internal/apps/balda/redaction"
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
 	"github.com/tgbotkit/runtime/logger"
 )
 

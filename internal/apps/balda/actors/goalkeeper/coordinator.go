@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
-	"github.com/normahq/balda/internal/apps/balda/questions"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/goaldelivery"
+	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 

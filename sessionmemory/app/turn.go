@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // TurnProcessor owns canonical semantic processing after a host has supplied

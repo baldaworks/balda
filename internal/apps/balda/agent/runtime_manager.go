@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"

@@ -8,12 +8,12 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	"github.com/normahq/balda/internal/apps/balda/progress"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goaldelivery"
+	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/progress"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 // progress_emitter.go owns goal progress side effects: delivery and job events.

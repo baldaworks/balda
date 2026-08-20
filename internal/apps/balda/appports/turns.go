@@ -3,8 +3,8 @@ package appports
 import (
 	"context"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 type TurnTask struct {

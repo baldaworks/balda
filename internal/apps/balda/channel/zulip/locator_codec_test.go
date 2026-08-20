@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func TestLocatorFromAddressKey_RoundTripsStreamLocator(t *testing.T) {

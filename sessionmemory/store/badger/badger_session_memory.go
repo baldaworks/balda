@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // BadgerSessionMemoryStore owns one canonical Badger directory. Store methods

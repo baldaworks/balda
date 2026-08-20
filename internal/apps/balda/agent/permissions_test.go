@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	acpagent "github.com/normahq/go-adk-acpagent/v2"
 	"github.com/rs/zerolog"
 )

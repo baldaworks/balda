@@ -7,11 +7,11 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/appports"
-	"github.com/normahq/balda/internal/apps/balda/controlapp"
-	"github.com/normahq/balda/internal/apps/balda/controlcmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
+	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

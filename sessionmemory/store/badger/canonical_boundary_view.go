@@ -3,7 +3,7 @@ package badger
 import (
 	"context"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // LoadActiveRecallRecords returns a bounded active-head page suitable for the

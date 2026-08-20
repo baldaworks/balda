@@ -3,8 +3,8 @@ package automodecmd
 import (
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/actorcmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 func TestEnvelopeSatisfiesRuntimeContract(t *testing.T) {

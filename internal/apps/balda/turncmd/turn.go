@@ -6,10 +6,10 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/attachment"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 const (

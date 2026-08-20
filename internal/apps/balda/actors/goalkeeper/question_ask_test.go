@@ -8,13 +8,13 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
-	"github.com/normahq/balda/internal/apps/balda/goalresultcmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	"github.com/normahq/balda/internal/apps/balda/questions"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goalresultcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 

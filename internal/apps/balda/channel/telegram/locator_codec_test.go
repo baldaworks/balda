@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func TestNewLocator_RoundTripDecode(t *testing.T) {

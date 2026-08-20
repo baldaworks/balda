@@ -1,6 +1,6 @@
 package execution
 
-import "github.com/normahq/balda/internal/apps/balda/actorcmd"
+import "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 
 const (
 	ActorTypeSystem     = actorcmd.ActorTypeSystem

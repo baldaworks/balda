@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"

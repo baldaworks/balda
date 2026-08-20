@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // BleveCanonicalApplier adapts bounded canonical revisions to disposable

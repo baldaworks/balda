@@ -17,7 +17,7 @@ import (
 	_ "github.com/blevesearch/bleve/v2/analysis/lang/ru"
 	"github.com/blevesearch/bleve/v2/mapping"
 	"github.com/blevesearch/bleve/v2/search/query"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 const (

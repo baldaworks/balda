@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite"
 )

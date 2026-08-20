@@ -2,7 +2,7 @@ package natsbus
 
 import (
 	gnats "github.com/nats-io/nats.go"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/go-actorlayer"
 )
 

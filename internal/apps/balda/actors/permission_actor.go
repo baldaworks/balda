@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/baldaworks/go-actorlayer"
-	"github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 )
 
 type permissionDecisionSink interface {

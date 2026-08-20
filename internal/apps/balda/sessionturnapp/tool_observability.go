@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/redaction"
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
 	"google.golang.org/genai"
 )
 

@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/appports"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 

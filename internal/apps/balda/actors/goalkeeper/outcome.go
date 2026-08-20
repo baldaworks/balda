@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/goaldelivery"
-	"github.com/normahq/balda/internal/git"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/goaldelivery"
+	"github.com/baldaworks/balda/internal/git"
 	adksession "google.golang.org/adk/v2/session"
 )
 

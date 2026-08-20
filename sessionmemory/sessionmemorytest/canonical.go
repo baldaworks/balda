@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // CanonicalStoreFactory creates an empty canonical store for one contract

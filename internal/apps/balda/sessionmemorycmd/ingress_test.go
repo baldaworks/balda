@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 func TestNewIngressRecordUsesExportIdentityAndScope(t *testing.T) {

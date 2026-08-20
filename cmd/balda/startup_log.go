@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
 )

@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // ForgetService is the portable mutating application boundary.  The

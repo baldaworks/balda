@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/apps/balda/paths"
 )
 
 const testOwnerTokenPersisted = "owner-token-persisted"

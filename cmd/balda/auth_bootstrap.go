@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 const baldaOwnerAuthTokenKV = "owner_auth_token"

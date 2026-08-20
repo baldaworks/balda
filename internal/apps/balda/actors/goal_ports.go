@@ -3,9 +3,9 @@ package actors
 import (
 	"context"
 
-	"github.com/normahq/balda/internal/apps/balda/actors/goalkeeper"
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/actors/goalkeeper"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 type goalkeeperJobLifecycle interface {

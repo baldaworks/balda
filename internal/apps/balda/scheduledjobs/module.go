@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"go.uber.org/fx"
 )
 

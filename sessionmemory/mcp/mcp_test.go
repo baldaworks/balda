@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 type recallSearcherFunc func(context.Context, sessionmemory.RecallRequest) (sessionmemory.RecallResponse, error)

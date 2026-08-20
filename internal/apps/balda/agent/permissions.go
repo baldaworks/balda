@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
-	"github.com/normahq/balda/internal/apps/balda/redaction"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
 	acpagent "github.com/normahq/go-adk-acpagent/v2"
 	"github.com/rs/zerolog"
 )

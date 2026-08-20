@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 )
 
 func TestRenderTelegramUsesStructuredContentAndOmitsOpaqueInput(t *testing.T) {

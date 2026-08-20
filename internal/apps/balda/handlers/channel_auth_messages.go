@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 )
 
 const ownerAlreadyRegisteredMessage = "You are already registered as the bot owner."

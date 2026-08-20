@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 )
 
 type testWorkspaceManager struct {

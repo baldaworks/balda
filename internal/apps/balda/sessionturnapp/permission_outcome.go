@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 )
 
 type permissionOutcomeRecorder struct {

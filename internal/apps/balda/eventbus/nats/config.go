@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 )
 
 type resolvedConfig struct {

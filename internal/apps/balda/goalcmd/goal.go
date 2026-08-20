@@ -4,9 +4,9 @@ package goalcmd
 
 import (
 	"github.com/baldaworks/go-actorlayer"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 const (

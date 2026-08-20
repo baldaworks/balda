@@ -3,7 +3,7 @@ package sessionturnapp
 import (
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 )
 
 func TestPermissionOutcomeTurnMessage(t *testing.T) {

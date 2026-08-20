@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	"github.com/normahq/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

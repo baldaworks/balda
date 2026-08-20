@@ -7,10 +7,10 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"go.uber.org/fx"
 )
 

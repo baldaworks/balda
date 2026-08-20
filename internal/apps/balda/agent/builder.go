@@ -12,9 +12,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/normahq/balda/internal/apps/balda/agentplugin"
-	"github.com/normahq/balda/internal/apps/balda/paths"
-	"github.com/normahq/balda/internal/git"
+	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
+	"github.com/baldaworks/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"

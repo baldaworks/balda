@@ -9,10 +9,10 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/attachment"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 

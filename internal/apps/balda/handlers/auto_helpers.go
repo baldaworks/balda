@@ -6,8 +6,8 @@ import (
 	"time"
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/automode"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 type autoStateManager interface {

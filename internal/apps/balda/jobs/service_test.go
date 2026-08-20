@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 type recordingJobCommandBus struct {

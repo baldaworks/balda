@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 func TestSQLiteSessionMemoryIngressOutboxPersistsFIFOClaimsAcrossRestart(t *testing.T) {

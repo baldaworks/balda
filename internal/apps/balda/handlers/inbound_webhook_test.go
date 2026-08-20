@@ -11,9 +11,9 @@ import (
 	"text/template"
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	"github.com/normahq/balda/internal/apps/balda/envelopetarget"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/actors"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/rs/zerolog"
 )
 

@@ -3,7 +3,7 @@ package bleve
 import (
 	"context"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 func sessionMemoryContextError(ctx context.Context) error {

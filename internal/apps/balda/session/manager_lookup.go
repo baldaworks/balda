@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 // GetSession returns the in-memory session for the given locator.

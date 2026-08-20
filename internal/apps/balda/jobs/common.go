@@ -11,8 +11,8 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog/log"
 )
 

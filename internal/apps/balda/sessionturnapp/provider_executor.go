@@ -6,11 +6,11 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/attachment"
-	"github.com/normahq/balda/internal/apps/balda/automode"
-	"github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/sessionturn"
+	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/rs/zerolog"
 )
 

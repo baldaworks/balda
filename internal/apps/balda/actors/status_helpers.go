@@ -3,7 +3,7 @@ package actors
 import (
 	"strings"
 
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func isTerminalJobStatus(status string) bool {

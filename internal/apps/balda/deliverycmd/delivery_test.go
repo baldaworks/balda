@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 )
 
 func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {

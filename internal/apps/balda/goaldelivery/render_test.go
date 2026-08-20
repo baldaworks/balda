@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func TestRenderGoalStartedMessagePlainMatchesLegacyText(t *testing.T) {

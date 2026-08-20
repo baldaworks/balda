@@ -1,9 +1,9 @@
 package handlersfx
 
 import (
-	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
-	"github.com/normahq/balda/internal/apps/balda/handlers"
-	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
+	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
+	"github.com/baldaworks/balda/internal/apps/balda/handlers"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
 )
 

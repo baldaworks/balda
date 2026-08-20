@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/paths"
-	"github.com/normahq/balda/internal/apps/balda/pluginapp"
-	"github.com/normahq/balda/internal/apps/balda/plugincmd"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
+	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/spf13/cobra"
 )
 

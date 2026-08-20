@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/baldaworks/go-actorlayer"
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/actors"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 

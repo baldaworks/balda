@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
-	"github.com/normahq/balda/sessionmemory"
-	portableapp "github.com/normahq/balda/sessionmemory/app"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/sessionmemory"
+	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
 )
 

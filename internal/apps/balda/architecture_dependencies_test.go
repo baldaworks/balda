@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const baldaImportPrefix = "github.com/normahq/balda/internal/apps/balda/"
+const baldaImportPrefix = "github.com/baldaworks/balda/internal/apps/balda/"
 
 func TestArchitectureDependencyMap(t *testing.T) {
 	t.Parallel()

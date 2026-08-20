@@ -3,8 +3,8 @@ package main
 import (
 	"testing"
 
-	baldaapp "github.com/normahq/balda/internal/apps/balda"
-	"github.com/normahq/balda/internal/logging"
+	baldaapp "github.com/baldaworks/balda/internal/apps/balda"
+	"github.com/baldaworks/balda/internal/logging"
 	"github.com/rs/zerolog"
 )
 

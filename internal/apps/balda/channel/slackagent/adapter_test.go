@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	baldaslack "github.com/normahq/balda/internal/apps/balda/channel/slack"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
 

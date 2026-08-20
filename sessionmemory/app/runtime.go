@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // Runtime is the concrete portable session-memory application.  Consumers

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/telegramref"
-	"github.com/normahq/balda/internal/apps/balda/welcome"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
+	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog/log"
 )
 

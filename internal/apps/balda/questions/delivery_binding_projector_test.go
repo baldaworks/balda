@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/rs/zerolog"
 )
 

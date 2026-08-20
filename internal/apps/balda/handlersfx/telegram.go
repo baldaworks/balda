@@ -4,11 +4,11 @@ package handlersfx
 import (
 	"context"
 
-	"github.com/normahq/balda/internal/apps/balda/attachmentstore"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/handlers"
-	"github.com/normahq/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/handlers"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/tgbotkit/runtime/events"
 	runtimehandlers "github.com/tgbotkit/runtime/handlers"
 	"github.com/tgbotkit/runtime/messagetype"

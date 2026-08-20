@@ -10,12 +10,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
-	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorytest"
-	"github.com/normahq/balda/sessionmemory"
+	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorytest"
+	"github.com/baldaworks/balda/sessionmemory"
 	"github.com/rs/zerolog"
 )
 

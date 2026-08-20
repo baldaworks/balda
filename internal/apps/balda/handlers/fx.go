@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"go.uber.org/fx"
 )
 

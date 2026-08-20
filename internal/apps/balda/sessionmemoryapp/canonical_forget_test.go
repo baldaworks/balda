@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
-	blevestore "github.com/normahq/balda/sessionmemory/index/bleve"
-	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
+	"github.com/baldaworks/balda/sessionmemory"
+	blevestore "github.com/baldaworks/balda/sessionmemory/index/bleve"
+	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
 )
 
 func TestCanonicalForgetScrubsPayloadMessagesAndBleveAndReplays(t *testing.T) {

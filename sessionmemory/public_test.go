@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 func TestPublicPackageBuildsPortableTurn(t *testing.T) {

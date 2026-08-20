@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
 )

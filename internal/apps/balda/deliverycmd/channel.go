@@ -3,7 +3,7 @@ package deliverycmd
 import (
 	"context"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 )
 
 // ChannelType identifies the transport backing a delivery locator.

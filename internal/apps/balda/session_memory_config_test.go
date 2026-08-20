@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 )

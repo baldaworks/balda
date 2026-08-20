@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // CanonicalBoundaryProcessor adapts the memory-owned boundary processor to

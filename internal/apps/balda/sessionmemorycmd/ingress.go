@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // IngressSchemaVersionV1 identifies the durable producer-local export spool.

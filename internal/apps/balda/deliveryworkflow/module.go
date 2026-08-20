@@ -2,8 +2,8 @@ package deliveryworkflow
 
 import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

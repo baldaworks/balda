@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/normahq/balda/internal/apps/balda/memory"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/sessionturn"
+	"github.com/baldaworks/balda/internal/apps/balda/memory"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 )
 
 type sessionAccessor struct {

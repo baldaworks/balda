@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
-	portableapp "github.com/normahq/balda/sessionmemory/app"
+	"github.com/baldaworks/balda/sessionmemory"
+	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 )
 
 type scriptedStructuredInvoker struct {

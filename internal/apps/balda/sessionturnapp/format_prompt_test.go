@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/automode"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"

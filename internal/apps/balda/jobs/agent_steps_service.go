@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"go.uber.org/fx"
 )
 

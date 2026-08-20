@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	baldachannel "github.com/normahq/balda/internal/apps/balda/channel"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/deliveryworkflow"
+	baldachannel "github.com/baldaworks/balda/internal/apps/balda/channel"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
 )
 
 type channelRouterDispatcher struct {

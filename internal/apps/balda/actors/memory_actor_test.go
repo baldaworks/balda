@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/memory"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/memory"
 )
 
 func TestMemoryRememberEnvelopeRoutesToMemorySubject(t *testing.T) {

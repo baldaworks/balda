@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/normahq/balda/internal/git"
+	"github.com/baldaworks/balda/internal/git"
 	"github.com/rs/zerolog/log"
 )
 

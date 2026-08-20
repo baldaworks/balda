@@ -3,7 +3,7 @@ package badger
 import (
 	"encoding/binary"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 const (

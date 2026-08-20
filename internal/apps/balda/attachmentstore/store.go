@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 )
 
 const (

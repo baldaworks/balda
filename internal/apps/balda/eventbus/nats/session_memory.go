@@ -8,8 +8,8 @@ import (
 
 	gnats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 )
 
 const sessionMemoryRetryBaseDelay = 25 * time.Millisecond

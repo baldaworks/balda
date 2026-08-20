@@ -4,8 +4,8 @@ import (
 	"context"
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/automodecmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 func dispatchAutoStateUpdate(

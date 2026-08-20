@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/baldaworks/go-actorlayer"
-	baldaactorcmd "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	"github.com/normahq/balda/internal/apps/balda/questions"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaactorcmd "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 

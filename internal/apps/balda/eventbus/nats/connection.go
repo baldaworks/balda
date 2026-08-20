@@ -13,9 +13,9 @@ import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	gnats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
+	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/tgbotkit/runtime/events"
 )
 

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 )

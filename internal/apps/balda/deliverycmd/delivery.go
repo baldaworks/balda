@@ -6,7 +6,7 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 )
 
 const jobPayloadKindDelivery = "delivery"

@@ -3,7 +3,7 @@ package handlers
 import (
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 )
 
 const testLocatorTopicSessionID = "tg--1002667079342-8939"

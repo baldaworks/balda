@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	baldagit "github.com/normahq/balda/internal/git"
-	"github.com/normahq/balda/internal/apps/balda/agentplugin"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldagit "github.com/baldaworks/balda/internal/git"
+	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 type PluginSummary struct {

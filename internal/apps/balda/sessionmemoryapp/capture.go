@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/locatorref"
-	"github.com/normahq/balda/internal/apps/balda/redaction"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // ExportPublisher is the bounded local handoff used by turn capture. The

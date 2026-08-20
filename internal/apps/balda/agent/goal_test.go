@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/goalkeeperworkflow"
-	"github.com/normahq/balda/internal/apps/balda/goalresultcmd"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeeperworkflow"
+	"github.com/baldaworks/balda/internal/apps/balda/goalresultcmd"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"

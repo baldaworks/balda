@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/ingressapp"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 func terminalInbound() turncmd.InboundSettlement {

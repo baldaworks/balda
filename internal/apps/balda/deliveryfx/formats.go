@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 )
 
 var (

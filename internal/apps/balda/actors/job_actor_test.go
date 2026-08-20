@@ -8,11 +8,11 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/jobexec"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	"github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
+	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/session"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {

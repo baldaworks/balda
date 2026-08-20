@@ -1,6 +1,6 @@
 # Session memory
 
-`github.com/normahq/balda/sessionmemory` is the extraction-ready, storage-neutral
+`github.com/baldaworks/balda/sessionmemory` is the extraction-ready, storage-neutral
 core for durable, provenance-grounded session memory. It is versioned with
 Balda in this repository; this story does not create a nested module, a remote
 service, or a network control API.

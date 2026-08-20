@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 func TestContextBrokerBindsConcurrentSessionsAndOverwritesCallerHeaders(t *testing.T) {

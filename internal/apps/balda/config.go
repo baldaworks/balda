@@ -1,6 +1,6 @@
 package balda
 
-import baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
+import baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
 
 // Config holds the configuration for the Balda bot.
 type Config struct {

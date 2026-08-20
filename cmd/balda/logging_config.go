@@ -3,8 +3,8 @@ package main
 import (
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda"
-	"github.com/normahq/balda/internal/logging"
+	"github.com/baldaworks/balda/internal/apps/balda"
+	"github.com/baldaworks/balda/internal/logging"
 )
 
 type baldaLoggingSettings struct {

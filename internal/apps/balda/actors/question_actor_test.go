@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/baldaworks/go-actorlayer"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 const testQuestionID = "question-1"

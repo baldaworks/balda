@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/appports"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 )
 

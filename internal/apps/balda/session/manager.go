@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/git"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/git"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"google.golang.org/adk/v2/agent"

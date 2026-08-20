@@ -10,9 +10,9 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemoryapp"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 )
 
 // SessionMemoryExportPublisher adapts the JetStream PubAck publisher to the

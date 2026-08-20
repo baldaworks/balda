@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
-	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
+	"github.com/baldaworks/balda/sessionmemory"
+	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
 )
 
 func TestCanonicalBoundaryProcessorPersistsBothStagesAndReplays(t *testing.T) {

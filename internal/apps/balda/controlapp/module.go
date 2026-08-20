@@ -2,9 +2,9 @@ package controlapp
 
 import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/appports"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )

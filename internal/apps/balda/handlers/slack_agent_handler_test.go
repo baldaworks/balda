@@ -8,13 +8,13 @@ import (
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
-	"github.com/normahq/balda/internal/apps/balda/actors"
-	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	"github.com/normahq/balda/internal/apps/balda/questions"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/actors"
+	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 

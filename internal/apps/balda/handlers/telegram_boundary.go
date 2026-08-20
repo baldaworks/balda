@@ -3,9 +3,9 @@ package handlers
 import (
 	"context"
 
-	"github.com/normahq/balda/internal/apps/balda/attachment"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
 	"github.com/tgbotkit/runtime/messagetype"

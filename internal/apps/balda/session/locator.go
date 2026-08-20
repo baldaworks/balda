@@ -1,8 +1,8 @@
 package session
 
 import (
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 type SessionLocator = deliverycmd.Locator

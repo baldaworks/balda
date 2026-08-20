@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/sessionmemory"
-	badgerstore "github.com/normahq/balda/sessionmemory/store/badger"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/sessionmemory"
+	badgerstore "github.com/baldaworks/balda/sessionmemory/store/badger"
 )
 
 func TestCanonicalSessionMemoryRuntimeMigratesAndReopensGroupedStore(t *testing.T) {

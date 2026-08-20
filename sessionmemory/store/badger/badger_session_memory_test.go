@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/normahq/balda/sessionmemory"
-	"github.com/normahq/balda/sessionmemory/sessionmemorytest"
+	"github.com/baldaworks/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory/sessionmemorytest"
 )
 
 const stateTestRevisionOneID = "revision-1"

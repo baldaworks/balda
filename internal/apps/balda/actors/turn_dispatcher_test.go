@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 

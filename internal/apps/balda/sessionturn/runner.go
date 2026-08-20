@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	adkrunner "google.golang.org/adk/v2/runner"

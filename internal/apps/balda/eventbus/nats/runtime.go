@@ -16,8 +16,8 @@ import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go/jetstream"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/rs/zerolog"
 )
 

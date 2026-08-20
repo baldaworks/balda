@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	"github.com/normahq/balda/internal/apps/balda/locatorref"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	"github.com/normahq/balda/internal/apps/balda/telegramref"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 )
 
 const (

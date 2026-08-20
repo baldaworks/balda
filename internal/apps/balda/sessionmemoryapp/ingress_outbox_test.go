@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/sessionmemory"
 	"github.com/rs/zerolog"
 )
 

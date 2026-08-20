@@ -1,4 +1,4 @@
-module github.com/normahq/balda
+module github.com/baldaworks/balda
 
 go 1.26.6
 

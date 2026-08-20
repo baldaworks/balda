@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // TraceService adapts the read-only canonical derived reader to the portable

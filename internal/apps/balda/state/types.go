@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	"github.com/normahq/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 )

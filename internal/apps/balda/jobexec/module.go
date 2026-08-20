@@ -1,7 +1,7 @@
 package jobexec
 
 import (
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"go.uber.org/fx"
 )

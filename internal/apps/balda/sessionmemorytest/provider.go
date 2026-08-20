@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 // Provider is a concurrency-safe, callback-configurable in-process ingest

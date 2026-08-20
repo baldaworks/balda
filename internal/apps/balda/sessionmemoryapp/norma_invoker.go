@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	baldaagent "github.com/normahq/balda/internal/apps/balda/agent"
-	"github.com/normahq/balda/sessionmemory"
-	portableapp "github.com/normahq/balda/sessionmemory/app"
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/sessionmemory"
+	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	"github.com/normahq/runtime/v2/structuredagent"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"

@@ -15,9 +15,9 @@ import (
 	actorengine "github.com/baldaworks/go-actorlayer/engine"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	baldaeventbus "github.com/normahq/balda/internal/apps/balda/eventbus"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	baldajobs "github.com/normahq/balda/internal/apps/balda/jobs"
+	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxtest"
 )

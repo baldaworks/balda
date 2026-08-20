@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/welcome"
+	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 )
 
 func TestBuildAgentWelcomeMessage_FormatsStableKVLine(t *testing.T) {

@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/baldaworks/go-actorlayer"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/goalkeepercmd"
-	"github.com/normahq/balda/internal/apps/balda/goalresultcmd"
-	"github.com/normahq/balda/internal/apps/balda/questioncmd"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goalresultcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func (c *coordinator) askQuestion(ctx context.Context, payload goalJobPayload, prompt string, options []goalresultcmd.WorkerResultOption, timeout time.Duration) (baldastate.QuestionRecord, error) {

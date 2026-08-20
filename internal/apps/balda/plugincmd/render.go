@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/pluginapp"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 )
 
 func RenderMarketplaceStatusesPlain(statuses []pluginapp.MarketplaceStatus) string {

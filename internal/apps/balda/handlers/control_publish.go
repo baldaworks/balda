@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/controlcmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 func submitSessionCancelControl(

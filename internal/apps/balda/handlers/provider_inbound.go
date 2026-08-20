@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/attachment"
-	"github.com/normahq/balda/internal/apps/balda/deliverycmd"
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/locatorref"
-	"github.com/normahq/balda/internal/apps/balda/telegramref"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 func normalizeTelegramInbound(message TelegramMessageContext, text string, receivedAt time.Time) turncmd.NormalizedInbound {

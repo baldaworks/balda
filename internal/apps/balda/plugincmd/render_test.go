@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/pluginapp"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 )
 
 func TestRenderInstalledPluginsPlain(t *testing.T) {

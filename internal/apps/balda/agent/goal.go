@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/goalresultcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/goalresultcmd"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"

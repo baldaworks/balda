@@ -1,7 +1,7 @@
 package sessionturnapp
 
 import (
-	"github.com/normahq/balda/internal/apps/balda/progress"
+	"github.com/baldaworks/balda/internal/apps/balda/progress"
 	adksession "google.golang.org/adk/v2/session"
 )
 

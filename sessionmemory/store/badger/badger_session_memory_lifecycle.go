@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 const (

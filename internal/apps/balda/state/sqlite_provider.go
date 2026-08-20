@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver

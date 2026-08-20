@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/normahq/balda/internal/apps/balda/paths"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/paths"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/normahq/runtime/v2/appconfig"
 	"gopkg.in/yaml.v3"
 )

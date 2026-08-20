@@ -9,8 +9,8 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/automode"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/rs/zerolog"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"

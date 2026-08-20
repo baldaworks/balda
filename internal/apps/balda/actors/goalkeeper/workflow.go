@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/normahq/balda/internal/apps/balda/goalresultcmd"
-	"github.com/normahq/balda/internal/apps/balda/progress"
+	"github.com/baldaworks/balda/internal/apps/balda/goalresultcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/progress"
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/genai"
 )

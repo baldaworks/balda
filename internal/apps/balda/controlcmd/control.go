@@ -6,8 +6,8 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 const (

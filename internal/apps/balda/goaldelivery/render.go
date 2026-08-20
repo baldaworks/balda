@@ -7,10 +7,10 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
-	"github.com/normahq/balda/internal/apps/balda/redaction"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/telegramfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/redaction"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 )
 
 const (

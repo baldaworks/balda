@@ -3,7 +3,7 @@ package slack
 import (
 	"testing"
 
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 func TestThreadLocatorRoundTrip(t *testing.T) {

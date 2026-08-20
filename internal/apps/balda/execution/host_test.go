@@ -13,7 +13,7 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/baldaworks/go-actorlayer/dispatch"
 	actorengine "github.com/baldaworks/go-actorlayer/engine"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 type testActor struct {

@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	baldaslackagent "github.com/normahq/balda/internal/apps/balda/channel/slackagent"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	"github.com/normahq/balda/internal/apps/balda/controlapp"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 

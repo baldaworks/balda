@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/normahq/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 )
 
 func main() {

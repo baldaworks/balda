@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/normahq/balda/internal/apps/balda/auth"
-	baldatelegram "github.com/normahq/balda/internal/apps/balda/channel/telegram"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/execution"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
 )
 

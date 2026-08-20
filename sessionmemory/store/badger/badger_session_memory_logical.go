@@ -12,7 +12,7 @@ import (
 	"io"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/normahq/balda/sessionmemory"
+	"github.com/baldaworks/balda/sessionmemory"
 )
 
 const (

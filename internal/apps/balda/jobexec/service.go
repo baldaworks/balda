@@ -7,10 +7,10 @@ import (
 
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	baldasession "github.com/normahq/balda/internal/apps/balda/session"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
-	"github.com/normahq/balda/internal/apps/balda/turncmd"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 type Service struct {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	baldaapp "github.com/normahq/balda/internal/apps/balda"
+	baldaapp "github.com/baldaworks/balda/internal/apps/balda"
 	"github.com/normahq/runtime/v2/appconfig"
 	"github.com/spf13/cobra"
 )

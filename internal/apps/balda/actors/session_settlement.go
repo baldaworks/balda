@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	baldaexecution "github.com/normahq/balda/internal/apps/balda/actorcmd"
-	"github.com/normahq/balda/internal/apps/balda/appports"
-	baldastate "github.com/normahq/balda/internal/apps/balda/state"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/go-actorlayer"
 )
 

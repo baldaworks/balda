@@ -2,7 +2,7 @@ package permissions
 
 import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/normahq/balda/internal/apps/balda/questions"
+	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
