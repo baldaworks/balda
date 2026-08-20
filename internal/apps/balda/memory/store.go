@@ -20,6 +20,8 @@ const (
 	MemoryStateKey = "balda_memory"
 	// MemoryVersionStateKey stores the memory snapshot version in ADK session state.
 	MemoryVersionStateKey = "balda_memory_version"
+	// MemoryUpdatedAtStateKey stores the latest memory update timestamp in ADK session state.
+	MemoryUpdatedAtStateKey = "balda_memory_updated_at"
 
 	kvMemoryKey = "memory/global"
 )
@@ -30,11 +32,12 @@ type KVStore interface {
 	SetJSON(ctx context.Context, key string, value any) error
 }
 
-// Snapshot is a rendered view of the persisted memory state.
+// Snapshot is a rendered view of the persisted memory state at one update boundary.
 type Snapshot struct {
-	Content string
-	Version int64
-	Found   bool
+	Content   string
+	Version   int64
+	UpdatedAt string
+	Found     bool
 }
 
 // Store manages Balda memory persistence.
@@ -129,7 +132,7 @@ func (s *Store) Remember(ctx context.Context, fact string) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	nextVersion := rec.Version + 1
-	now := time.Now().UTC().Format(time.RFC3339Nano)
+	now := nextUpdatedAt(rec.UpdatedAt)
 	rec.Version = nextVersion
 	rec.UpdatedAt = now
 	rec.Entries = append(rec.Entries, entry{
@@ -247,7 +250,31 @@ func normalizeRecord(value any) (record, error) {
 	if rec.Version < 0 {
 		rec.Version = 0
 	}
+	if recordHasContent(rec) {
+		updatedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(rec.UpdatedAt))
+		if err != nil {
+			return record{}, fmt.Errorf("decode memory record updated_at: %w", err)
+		}
+		rec.UpdatedAt = updatedAt.UTC().Format(time.RFC3339Nano)
+	}
 	return rec, nil
+}
+
+func recordHasContent(rec record) bool {
+	for _, item := range rec.Entries {
+		if strings.TrimSpace(item.Fact) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func nextUpdatedAt(previous string) string {
+	now := time.Now().UTC()
+	if previousAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(previous)); err == nil && !now.After(previousAt) {
+		now = previousAt.Add(time.Nanosecond)
+	}
+	return now.Format(time.RFC3339Nano)
 }
 
 func snapshotFromRecord(rec record) Snapshot {
@@ -259,8 +286,9 @@ func snapshotFromRecord(rec record) Snapshot {
 	}
 	content := strings.Join(facts, "\n\n")
 	return Snapshot{
-		Content: content,
-		Version: rec.Version,
-		Found:   content != "",
+		Content:   content,
+		Version:   rec.Version,
+		UpdatedAt: rec.UpdatedAt,
+		Found:     content != "",
 	}
 }

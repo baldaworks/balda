@@ -86,8 +86,9 @@ func (a memorySnapshotReaderAdapter) Snapshot(ctx context.Context) (baldaagent.M
 		return baldaagent.MemorySnapshot{}, err
 	}
 	return baldaagent.MemorySnapshot{
-		Content: snapshot.Content,
-		Version: snapshot.Version,
+		Content:   snapshot.Content,
+		Version:   snapshot.Version,
+		UpdatedAt: snapshot.UpdatedAt,
 	}, nil
 }
 

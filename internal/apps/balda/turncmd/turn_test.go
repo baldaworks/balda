@@ -1,6 +1,8 @@
 package turncmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/baldaworks/go-actorlayer"
@@ -34,6 +36,66 @@ func TestSessionTurnEnvelopeCarriesGeneratedDedupeKeyInPayload(t *testing.T) {
 	}
 	if payload.DedupeKey != env.DedupeKey {
 		t.Fatalf("payload dedupe key = %q, want %q", payload.DedupeKey, env.DedupeKey)
+	}
+}
+
+func TestSessionTurnMetadataIsOmittedWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	for _, payload := range []SessionTurnPayload{
+		{},
+		{Metadata: &SessionTurnMetadata{}},
+	} {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+		if bytes.Contains(data, []byte(`"metadata"`)) {
+			t.Fatalf("json.Marshal() = %s, want metadata omitted", data)
+		}
+	}
+}
+
+func TestSessionTurnEnvelopePreservesMemoryMetadata(t *testing.T) {
+	t.Parallel()
+
+	const latestMemoryAt = "2026-08-20T10:00:00.123456789Z"
+	env, err := SessionTurnEnvelope(SessionTurnPayload{
+		Locator:  baldasession.SessionLocator{SessionID: "tg-1-0"},
+		Metadata: &SessionTurnMetadata{LatestMemoryAt: latestMemoryAt},
+	})
+	if err != nil {
+		t.Fatalf("SessionTurnEnvelope() error = %v", err)
+	}
+
+	var payload SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Metadata == nil || payload.Metadata.LatestMemoryAt != latestMemoryAt {
+		t.Fatalf("metadata = %+v, want latest_memory_at %q", payload.Metadata, latestMemoryAt)
+	}
+}
+
+func TestWebhookJobEnvelopePreservesNestedMemoryMetadata(t *testing.T) {
+	t.Parallel()
+
+	const latestMemoryAt = "2026-08-20T10:00:00Z"
+	env, _, err := WebhookJobEnvelope(SessionTurnPayload{
+		Locator:  baldasession.SessionLocator{SessionID: "webhook-1"},
+		Metadata: &SessionTurnMetadata{LatestMemoryAt: latestMemoryAt},
+	}, "test", "request-1")
+	if err != nil {
+		t.Fatalf("WebhookJobEnvelope() error = %v", err)
+	}
+
+	var payload jobEnvelopePayload
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		t.Fatalf("decode job payload: %v", err)
+	}
+	if payload.SessionTurn == nil || payload.SessionTurn.Metadata == nil ||
+		payload.SessionTurn.Metadata.LatestMemoryAt != latestMemoryAt {
+		t.Fatalf("nested session metadata = %+v, want latest_memory_at %q", payload.SessionTurn, latestMemoryAt)
 	}
 }
 

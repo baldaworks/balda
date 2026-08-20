@@ -71,5 +71,9 @@ func (p memoryProvider) Snapshot(ctx context.Context) (sessionturn.MemorySnapsho
 	if err != nil {
 		return sessionturn.MemorySnapshot{}, err
 	}
-	return sessionturn.MemorySnapshot{Content: snapshot.Content, Version: snapshot.Version}, nil
+	return sessionturn.MemorySnapshot{
+		Content:   snapshot.Content,
+		Version:   snapshot.Version,
+		UpdatedAt: snapshot.UpdatedAt,
+	}, nil
 }

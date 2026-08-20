@@ -44,6 +44,17 @@ type SessionTurnPayload struct {
 	Source           string                       `json:"source,omitempty"`
 	DedupeKey        string                       `json:"dedupe_key,omitempty"`
 	QuestionID       string                       `json:"question_id,omitempty"`
+	Metadata         *SessionTurnMetadata         `json:"metadata,omitempty,omitzero"`
+}
+
+// SessionTurnMetadata carries application-owned cursors through durable turn delivery.
+type SessionTurnMetadata struct {
+	LatestMemoryAt string `json:"latest_memory_at,omitempty"`
+}
+
+// IsZero reports whether metadata carries no application cursor.
+func (m *SessionTurnMetadata) IsZero() bool {
+	return m == nil || strings.TrimSpace(m.LatestMemoryAt) == ""
 }
 
 // InboundID is the stable provider identity of one logical inbound message.

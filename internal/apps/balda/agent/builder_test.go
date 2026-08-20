@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/agentplugin"
 	"github.com/normahq/balda/internal/apps/balda/memory"
@@ -489,6 +490,17 @@ func TestCreateRuntimeSession_IncludesMemorySnapshotState(t *testing.T) {
 	if gotMemory != "remember this" {
 		t.Fatalf("session state %q = %v, want remember this", memory.MemoryStateKey, gotMemory)
 	}
+	gotUpdatedAt, err := sess.State().Get(memory.MemoryUpdatedAtStateKey)
+	if err != nil {
+		t.Fatalf("session state get %q error = %v", memory.MemoryUpdatedAtStateKey, err)
+	}
+	updatedAt, ok := gotUpdatedAt.(string)
+	if !ok {
+		t.Fatalf("session state %q type = %T, want string", memory.MemoryUpdatedAtStateKey, gotUpdatedAt)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, updatedAt); err != nil {
+		t.Fatalf("session state %q = %v, want RFC3339Nano timestamp: %v", memory.MemoryUpdatedAtStateKey, gotUpdatedAt, err)
+	}
 }
 
 func TestCreateRuntimeSession_MemoryDisabledLeavesSnapshotEmpty(t *testing.T) {
@@ -501,6 +513,13 @@ func TestCreateRuntimeSession_MemoryDisabledLeavesSnapshotEmpty(t *testing.T) {
 	}
 	if gotMemory != "" {
 		t.Fatalf("session state %q = %v, want empty", memory.MemoryStateKey, gotMemory)
+	}
+	gotUpdatedAt, err := sess.State().Get(memory.MemoryUpdatedAtStateKey)
+	if err != nil {
+		t.Fatalf("session state get %q error = %v", memory.MemoryUpdatedAtStateKey, err)
+	}
+	if gotUpdatedAt != "" {
+		t.Fatalf("session state %q = %v, want empty", memory.MemoryUpdatedAtStateKey, gotUpdatedAt)
 	}
 }
 
@@ -555,8 +574,9 @@ func (r builderMemorySnapshotReader) Snapshot(ctx context.Context) (MemorySnapsh
 		return MemorySnapshot{}, err
 	}
 	return MemorySnapshot{
-		Content: snapshot.Content,
-		Version: snapshot.Version,
+		Content:   snapshot.Content,
+		Version:   snapshot.Version,
+		UpdatedAt: snapshot.UpdatedAt,
 	}, nil
 }
 

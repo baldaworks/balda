@@ -223,7 +223,19 @@ Common settings:
 - `balda.workspace.*` — workspace/worktree behavior for goal execution
 - `balda.permissions.mode` — agent permission policy: `allow_all`, `ask`, or `deny_all`
 - `balda.permissions.timeout` — maximum wait for an interactive permission decision (default `2m`)
+- `balda.memory.enabled` — enable the global explicit-fact memory store and its
+  bundled MCP tools (default `true`)
 - `balda.mcp_servers` — MCP servers injected into Balda-started sessions
+
+### Explicit fact memory
+
+The bundled `balda.memory.remember` tool stores explicit facts globally for the
+Balda instance. Each update records a latest-memory timestamp. On a subsequent
+session turn, Balda compares that timestamp with the turn's memory cursor. When
+they differ, Balda adds the complete current fact-memory snapshot to that same
+provider user prompt in a delimited application-memory block. Unchanged, empty,
+or disabled memory adds nothing to the prompt. Global fact memory is expected to
+remain small; it is separate from optional durable session memory.
 
 ### Knowl sidecar
 

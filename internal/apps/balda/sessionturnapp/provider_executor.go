@@ -89,6 +89,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		ProgressEmitter: progressEmitter,
 		OutboundFrom:    from,
 		RunOptions:      request.MemoryRunOptions,
+		MemoryRefresh:   request.MemoryRefresh,
 		TurnSource:      payload.Source,
 		DedupeKey:       payload.DedupeKey,
 	})

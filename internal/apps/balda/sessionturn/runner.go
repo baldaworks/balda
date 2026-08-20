@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/normahq/balda/internal/apps/balda/deliveryfmt"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
@@ -18,6 +19,7 @@ const ownerSessionLabel = "balda"
 const (
 	baldaMemoryStateKey        = "balda_memory"
 	baldaMemoryVersionStateKey = "balda_memory_version"
+	baldaMemoryUpdatedAtKey    = "balda_memory_updated_at"
 )
 
 // Request contains the resolved session context needed for one provider turn.
@@ -28,6 +30,7 @@ type Request struct {
 	AgentSessionID   string
 	DeliveryLocator  SessionLocator
 	DeliveryOptions  deliveryfmt.Options
+	MemoryRefresh    MemoryRefresh
 	MemoryRunOptions []adkrunner.RunOption
 }
 
@@ -63,8 +66,15 @@ type SessionAccessor interface {
 }
 
 type MemorySnapshot struct {
-	Content string
-	Version int64
+	Content   string
+	Version   int64
+	UpdatedAt string
+}
+
+// MemoryRefresh is the complete memory snapshot to add to one changed turn.
+type MemoryRefresh struct {
+	Content   string
+	UpdatedAt string
 }
 
 type MemoryStateProvider interface {
@@ -156,9 +166,12 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	if payload.ReportTo != nil {
 		deliveryLocator = *payload.ReportTo
 	}
-	runOptions, err := prepareMemoryRunOptions(ctx, r.memory, topicSession)
+	preparedMemory, err := prepareMemory(ctx, r.memory, topicSession, payload.Metadata)
 	if err != nil {
 		return err
+	}
+	if preparedMemory.updatedAt != "" {
+		payload.Metadata = &turncmd.SessionTurnMetadata{LatestMemoryAt: preparedMemory.updatedAt}
 	}
 	return r.executor.ExecuteSessionTurn(ctx, Request{
 		Payload:        payload,
@@ -172,64 +185,97 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 			AddressJSON: deliveryLocator.AddressJSON,
 		},
 		DeliveryOptions:  turncmd.NormalizeSessionDeliveryOptions(payload),
-		MemoryRunOptions: runOptions,
+		MemoryRefresh:    preparedMemory.refresh,
+		MemoryRunOptions: preparedMemory.runOptions,
 	})
 }
 
 var ErrNoPersistedSession = errors.New("no persisted session")
 
-func prepareMemoryRunOptions(
+type memoryPreparation struct {
+	refresh    MemoryRefresh
+	runOptions []adkrunner.RunOption
+	updatedAt  string
+}
+
+func prepareMemory(
 	ctx context.Context,
 	store MemoryStateProvider,
 	topicSession ActiveSession,
-) ([]adkrunner.RunOption, error) {
+	metadata *turncmd.SessionTurnMetadata,
+) (memoryPreparation, error) {
 	if store == nil || !store.Enabled() || topicSession == nil {
-		return nil, nil
+		return memoryPreparation{}, nil
 	}
 	snapshot, err := store.Snapshot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("snapshot balda memory: %w", err)
+		return memoryPreparation{}, fmt.Errorf("snapshot balda memory: %w", err)
 	}
-	seenVersion := int64(0)
-	value, ok, err := topicSession.RuntimeStateValue(ctx, baldaMemoryVersionStateKey)
+	content := strings.TrimSpace(snapshot.Content)
+	if content == "" {
+		return memoryPreparation{}, nil
+	}
+	cursor, err := memoryCursor(ctx, topicSession, metadata)
 	if err != nil {
-		return nil, fmt.Errorf("read balda memory version: %w", err)
+		return memoryPreparation{}, err
 	}
-	if ok {
-		seenVersion = versionFromState(value)
+	updatedAt, err := parseMemoryTimestamp("snapshot updated_at", snapshot.UpdatedAt)
+	if err != nil {
+		return memoryPreparation{}, err
 	}
-	if snapshot.Version <= seenVersion {
-		return nil, nil
+	canonicalUpdatedAt := updatedAt.UTC().Format(time.RFC3339Nano)
+	prepared := memoryPreparation{updatedAt: canonicalUpdatedAt}
+	if cursor != nil && cursor.Equal(updatedAt) {
+		return prepared, nil
 	}
-	return []adkrunner.RunOption{adkrunner.WithStateDelta(map[string]any{
+	prepared.refresh = MemoryRefresh{Content: snapshot.Content, UpdatedAt: canonicalUpdatedAt}
+	prepared.runOptions = []adkrunner.RunOption{adkrunner.WithStateDelta(map[string]any{
 		baldaMemoryStateKey:        strings.TrimSpace(snapshot.Content),
 		baldaMemoryVersionStateKey: versionStateValue(snapshot.Version),
-	})}, nil
+		baldaMemoryUpdatedAtKey:    canonicalUpdatedAt,
+	})}
+	return prepared, nil
 }
 
-func versionFromState(value any) int64 {
-	switch raw := value.(type) {
-	case int64:
-		return raw
-	case int:
-		return int64(raw)
-	case int32:
-		return int64(raw)
-	case float64:
-		return int64(raw)
-	case string:
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			return 0
+func memoryCursor(
+	ctx context.Context,
+	topicSession ActiveSession,
+	metadata *turncmd.SessionTurnMetadata,
+) (*time.Time, error) {
+	if metadata != nil && strings.TrimSpace(metadata.LatestMemoryAt) != "" {
+		cursor, err := parseMemoryTimestamp("turn memory cursor", metadata.LatestMemoryAt)
+		if err != nil {
+			return nil, err
 		}
-		var parsed int64
-		if _, err := fmt.Sscan(trimmed, &parsed); err != nil {
-			return 0
-		}
-		return parsed
-	default:
-		return 0
+		return &cursor, nil
 	}
+	value, ok, err := topicSession.RuntimeStateValue(ctx, baldaMemoryUpdatedAtKey)
+	if err != nil {
+		return nil, fmt.Errorf("read balda memory updated_at: %w", err)
+	}
+	if !ok {
+		return nil, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("read balda memory updated_at: expected string, got %T", value)
+	}
+	if strings.TrimSpace(text) == "" {
+		return nil, nil
+	}
+	cursor, err := parseMemoryTimestamp("session memory cursor", text)
+	if err != nil {
+		return nil, err
+	}
+	return &cursor, nil
+}
+
+func parseMemoryTimestamp(field, value string) (time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse %s: %w", field, err)
+	}
+	return parsed, nil
 }
 
 func versionStateValue(version int64) string {

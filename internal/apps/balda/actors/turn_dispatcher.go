@@ -340,10 +340,23 @@ func mergeIntoSteeringBatch(turn *queuedTurn, incoming *turncmd.SessionTurnPaylo
 	batch.Text = renderSteeringBatchText(batch.SteeringMessages)
 	batch.MessageID = incoming.MessageID
 	batch.ReplyToMessageID = incoming.ReplyToMessageID
+	batch.Metadata = reconcileSessionTurnMetadata(batch.Metadata, incoming.Metadata)
 	if strings.TrimSpace(incoming.ReceivedAt) != "" {
 		batch.ReceivedAt = incoming.ReceivedAt
 	}
 	return true
+}
+
+func reconcileSessionTurnMetadata(current, incoming *turncmd.SessionTurnMetadata) *turncmd.SessionTurnMetadata {
+	if current == nil || incoming == nil {
+		return nil
+	}
+	currentMemoryAt := strings.TrimSpace(current.LatestMemoryAt)
+	incomingMemoryAt := strings.TrimSpace(incoming.LatestMemoryAt)
+	if currentMemoryAt == "" || currentMemoryAt != incomingMemoryAt {
+		return nil
+	}
+	return current
 }
 
 func initializeSteeringBatch(payload *turncmd.SessionTurnPayload) *turncmd.SessionTurnPayload {

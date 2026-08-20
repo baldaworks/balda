@@ -44,6 +44,7 @@ const (
 
 	baldaMemoryStateKey        = "balda_memory"
 	baldaMemoryVersionStateKey = "balda_memory_version"
+	baldaMemoryUpdatedAtKey    = "balda_memory_updated_at"
 )
 
 type Builder struct {
@@ -78,8 +79,9 @@ type sessionStateFactory interface {
 }
 
 type MemorySnapshot struct {
-	Content string
-	Version int64
+	Content   string
+	Version   int64
+	UpdatedAt string
 }
 
 type MemorySnapshotReader interface {
@@ -582,6 +584,7 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 	}
 	state[baldaMemoryStateKey] = ""
 	state[baldaMemoryVersionStateKey] = ""
+	state[baldaMemoryUpdatedAtKey] = ""
 	if b.memorySnapshotReader == nil {
 		return state, nil
 	}
@@ -591,6 +594,7 @@ func (b *Builder) addMemorySnapshot(ctx context.Context, state map[string]any) (
 	}
 	state[baldaMemoryStateKey] = strings.TrimSpace(snapshot.Content)
 	state[baldaMemoryVersionStateKey] = formatMemoryVersionState(snapshot.Version)
+	state[baldaMemoryUpdatedAtKey] = strings.TrimSpace(snapshot.UpdatedAt)
 	return state, nil
 }
 

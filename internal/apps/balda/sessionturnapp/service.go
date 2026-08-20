@@ -20,6 +20,7 @@ import (
 	"github.com/normahq/balda/internal/apps/balda/progress"
 	"github.com/normahq/balda/internal/apps/balda/questioncmd"
 	baldasession "github.com/normahq/balda/internal/apps/balda/session"
+	"github.com/normahq/balda/internal/apps/balda/sessionturn"
 	"github.com/normahq/balda/internal/apps/balda/telegramref"
 	"github.com/normahq/balda/internal/apps/balda/turncmd"
 	"github.com/normahq/balda/internal/apps/balda/usageview"
@@ -120,6 +121,7 @@ type ExecutionRequest struct {
 	ProgressEmitter SessionProgressEmitter
 	OutboundFrom    actorlayer.ActorAddress
 	RunOptions      []runner.RunOption
+	MemoryRefresh   sessionturn.MemoryRefresh
 	TurnSource      string
 	DedupeKey       string
 }
@@ -256,6 +258,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			return fmt.Errorf("compose message format prompt: %w", err)
 		}
 	}
+	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh.Content)
 	userContent, err := buildUserContent(providerText, req.Attachments)
 	if err != nil {
 		return fmt.Errorf("build user content: %w", err)

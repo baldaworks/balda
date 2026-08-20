@@ -252,6 +252,7 @@ func TestTurnDispatcher_TaskContextCancellationStopsRunningTask(t *testing.T) {
 
 func TestTurnDispatcher_CoalescesSteeringRepliesForActiveTurn(t *testing.T) {
 	t.Parallel()
+	const latestMemoryAt = "2026-08-20T10:00:00Z"
 
 	dispatcher := &TurnDispatcher{
 		logger:   zerolog.Nop(),
@@ -286,12 +287,13 @@ func TestTurnDispatcher_CoalescesSteeringRepliesForActiveTurn(t *testing.T) {
 	waitForSignal(t, started, "root start")
 
 	merged := turncmd.SessionTurnPayload{
-		Locator:         root.Locator,
-		RequesterUserID: "tg-101",
-		MessageID:       101,
+		Locator:          root.Locator,
+		RequesterUserID:  "tg-101",
+		MessageID:        101,
 		ReplyToMessageID: 100,
-		ReceivedAt:      "2026-07-20T10:00:00Z",
-		Text:            "first steer",
+		ReceivedAt:       "2026-07-20T10:00:00Z",
+		Text:             "first steer",
+		Metadata:         &turncmd.SessionTurnMetadata{LatestMemoryAt: latestMemoryAt},
 	}
 	pos, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID:   root.Locator.SessionID,
@@ -310,12 +312,13 @@ func TestTurnDispatcher_CoalescesSteeringRepliesForActiveTurn(t *testing.T) {
 	}
 
 	second := turncmd.SessionTurnPayload{
-		Locator:         root.Locator,
-		RequesterUserID: "tg-101",
-		MessageID:       102,
+		Locator:          root.Locator,
+		RequesterUserID:  "tg-101",
+		MessageID:        102,
 		ReplyToMessageID: 101,
-		ReceivedAt:      "2026-07-20T10:01:00Z",
-		Text:            "second steer",
+		ReceivedAt:       "2026-07-20T10:01:00Z",
+		Text:             "second steer",
+		Metadata:         &turncmd.SessionTurnMetadata{LatestMemoryAt: latestMemoryAt},
 	}
 	pos, err = enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID:   root.Locator.SessionID,
@@ -343,6 +346,60 @@ func TestTurnDispatcher_CoalescesSteeringRepliesForActiveTurn(t *testing.T) {
 	}
 	if executed.Text == "" || executed.Text == "first steer" {
 		t.Fatalf("merged text = %q, want rendered batch", executed.Text)
+	}
+	if executed.Metadata == nil || executed.Metadata.LatestMemoryAt != latestMemoryAt {
+		t.Fatalf("merged metadata = %+v, want latest_memory_at %q", executed.Metadata, latestMemoryAt)
+	}
+}
+
+func TestReconcileSessionTurnMetadata(t *testing.T) {
+	t.Parallel()
+
+	const cursor = "2026-08-20T10:00:00Z"
+	tests := []struct {
+		name     string
+		current  *turncmd.SessionTurnMetadata
+		incoming *turncmd.SessionTurnMetadata
+		want     string
+	}{
+		{name: "all absent"},
+		{
+			name:     "equal cursors",
+			current:  &turncmd.SessionTurnMetadata{LatestMemoryAt: cursor},
+			incoming: &turncmd.SessionTurnMetadata{LatestMemoryAt: cursor},
+			want:     cursor,
+		},
+		{
+			name:     "different cursors",
+			current:  &turncmd.SessionTurnMetadata{LatestMemoryAt: cursor},
+			incoming: &turncmd.SessionTurnMetadata{LatestMemoryAt: "2026-08-20T10:01:00Z"},
+		},
+		{
+			name:     "incoming cursor absent",
+			current:  &turncmd.SessionTurnMetadata{LatestMemoryAt: cursor},
+			incoming: nil,
+		},
+		{
+			name:     "current cursor absent",
+			current:  nil,
+			incoming: &turncmd.SessionTurnMetadata{LatestMemoryAt: cursor},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := reconcileSessionTurnMetadata(test.current, test.incoming)
+			if test.want == "" {
+				if got != nil {
+					t.Fatalf("reconcileSessionTurnMetadata() = %+v, want nil", got)
+				}
+				return
+			}
+			if got == nil || got.LatestMemoryAt != test.want {
+				t.Fatalf("reconcileSessionTurnMetadata() = %+v, want %q", got, test.want)
+			}
+		})
 	}
 }
 
@@ -380,12 +437,12 @@ func TestTurnDispatcher_DoesNotCoalesceDifferentUserSteering(t *testing.T) {
 	waitForSignal(t, started, "root start")
 
 	first := turncmd.SessionTurnPayload{
-		Locator:         root.Locator,
-		RequesterUserID: "tg-101",
-		MessageID:       201,
+		Locator:          root.Locator,
+		RequesterUserID:  "tg-101",
+		MessageID:        201,
 		ReplyToMessageID: 200,
-		ReceivedAt:      "2026-07-20T10:00:00Z",
-		Text:            "first steer",
+		ReceivedAt:       "2026-07-20T10:00:00Z",
+		Text:             "first steer",
 	}
 	if _, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID:   root.Locator.SessionID,
@@ -396,12 +453,12 @@ func TestTurnDispatcher_DoesNotCoalesceDifferentUserSteering(t *testing.T) {
 	}
 
 	second := turncmd.SessionTurnPayload{
-		Locator:         root.Locator,
-		RequesterUserID: "tg-202",
-		MessageID:       202,
+		Locator:          root.Locator,
+		RequesterUserID:  "tg-202",
+		MessageID:        202,
 		ReplyToMessageID: 201,
-		ReceivedAt:      "2026-07-20T10:01:00Z",
-		Text:            "foreign steer",
+		ReceivedAt:       "2026-07-20T10:01:00Z",
+		Text:             "foreign steer",
 	}
 	pos, err := enqueueTurn(dispatcher, context.Background(), TurnTask{
 		SessionID:   root.Locator.SessionID,

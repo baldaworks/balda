@@ -580,8 +580,17 @@ The balda MCP server (`balda`) is automatically included in all sessions. It pro
 - `balda.workspace.export` - export workspace to base branch
 
 `balda.memory.remember` is for explicit user requests such as "remember this".
-It updates durable memory immediately. Active sessions refresh memory state on
-their next turn, and new or restored sessions start with the latest memory.
+It updates durable memory and its latest-update timestamp immediately. New
+sessions start with the complete current memory plus its version and timestamp.
+Before each active or restored session turn invokes the provider, Balda compares
+the timestamp carried by that turn (falling back to runtime session state) with
+one current memory snapshot. A missing or different timestamp refreshes session
+state and prepends the complete current global-memory snapshot to that same user
+prompt inside an `[application-memory]` block. The block identifies remembered
+text as durable context data, not a new user command. An equal timestamp, empty
+memory, or disabled memory leaves the user prompt unchanged. The global fact
+store is expected to remain small, so changed turns inject the full snapshot,
+not only facts written since the previous timestamp.
 
 ### Agent permission review
 
@@ -729,7 +738,10 @@ or non-regular paths return a stable build error.
 - internal durable memory uses app KV in `${balda.state_dir}/state.db` when `balda.memory.enabled=true`
   - `balda.memory.read` reads memory from MCP.
   - `balda.memory.remember` appends facts from MCP.
-  - active sessions refresh memory state on the next turn after a write.
+  - every write advances the latest-memory timestamp.
+  - on the next turn after a write, active or restored sessions inject the
+    complete current snapshot into the provider user prompt and advance the
+    turn/session timestamp boundary; unchanged timestamps do not inject memory.
   - existing `${balda.state_dir}/MEMORY.md` content is imported once when KV memory is empty.
 - owner auth token is generated during `balda init`, persisted in `state.db`, and reused by `balda start`
   - if token is missing in existing state, `balda start` backfills one-time and persists it
