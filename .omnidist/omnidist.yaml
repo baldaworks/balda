@@ -26,6 +26,8 @@ profiles:
         package: '@baldaworks/balda'
         registry: https://registry.npmjs.org
         access: public
+        publish-auth: trusted
+        repository-url: git+https://github.com/baldaworks/balda.git
         include-readme: true
         keywords:
           - ai

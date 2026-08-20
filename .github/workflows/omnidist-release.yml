@@ -5,6 +5,8 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -18,7 +20,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: "go.mod"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
       - uses: ./.github/actions/release-gate
       - name: Validate tag checkout for git-tag versioning
         shell: bash
@@ -38,7 +44,7 @@ jobs:
             exit 1
           fi
       - name: Install omnidist
-        run: npm install -g '@omnidist/omnidist@0.1.25'
+        run: npm install -g '@omnidist/omnidist@0.1.31'
       - name: Build artifacts
         run: omnidist --profile 'balda' build
       - name: Stage artifacts
@@ -64,16 +70,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+      id-token: write
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: Install npm with trusted publishing support
+        run: npm install -g 'npm@11.16.0'
       - name: Install omnidist
-        run: npm install -g '@omnidist/omnidist@0.1.25'
+        run: npm install -g '@omnidist/omnidist@0.1.31'
       - name: Download staged artifacts
         uses: actions/download-artifact@v4
         with:

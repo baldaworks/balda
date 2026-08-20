@@ -304,5 +304,6 @@ For complete configuration, examples, and provider-specific details, see
 - npm package: <https://www.npmjs.com/package/@baldaworks/balda>
 
 npm releases are published from Git tags through the Omnidist workflow. The
-`NPM_PUBLISH_TOKEN` repository secret must have permission to publish the public
-`@baldaworks/balda` package in the `baldaworks` npm organization.
+workflow uses npm trusted publishing with GitHub Actions OIDC; it does not use a
+long-lived npm publish token. Each `@baldaworks/balda*` package trusts the
+`baldaworks/balda` repository and the `omnidist-release.yml` workflow.
