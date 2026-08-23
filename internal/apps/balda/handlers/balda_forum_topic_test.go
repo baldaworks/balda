@@ -8,7 +8,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/baldaworks/go-actorlayer"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
@@ -17,6 +16,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/messenger"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/eventemitter"
@@ -925,6 +925,87 @@ func TestBaldaHandlerOnMessage_FlushesMediaGroupBeforeFollowingMessage(t *testin
 	}
 	if second.Text != text || len(second.Attachments) != 0 {
 		t.Fatalf("second turn = %+v, want following text without attachments", second)
+	}
+}
+
+func TestBaldaHandlerOnMessage_PublishesAudioOnlySessionTurn(t *testing.T) {
+	handler, turns, locator := newBaldaMessageHandlerHarness(t, 0)
+
+	fileName := "sample.mp3"
+	mimeType := "audio/mpeg"
+	size := int64(8192)
+	event := &events.MessageEvent{
+		Type: messagetype.Audio,
+		Message: &client.Message{
+			Chat: client.Chat{
+				Id:   9001,
+				Type: "private",
+			},
+			From: &client.User{Id: 101},
+			Audio: &client.Audio{
+				FileId:       "audio-file-id",
+				FileUniqueId: "audio-unique-id",
+				FileName:     &fileName,
+				MimeType:     &mimeType,
+				FileSize:     &size,
+			},
+		},
+	}
+
+	if err := handler.onMessage(context.Background(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	if got := baldaexecution.EnvelopeSessionID(turns.commands[0]); got != locator.SessionID {
+		t.Fatalf("command session = %q, want %q", got, locator.SessionID)
+	}
+	var payload actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(turns.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if len(payload.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(payload.Attachments))
+	}
+	audio := payload.Attachments[0]
+	if audio.Kind != attachment.KindDocument || audio.FileID != "audio-file-id" || audio.FileName != fileName || audio.MIMEType != mimeType || audio.SizeBytes != size {
+		t.Fatalf("audio attachment = %+v", audio)
+	}
+	if !strings.Contains(payload.Text, "Attachment manifest:") || !strings.Contains(payload.Text, "kind: document") || !strings.Contains(payload.Text, "file_name: sample.mp3") {
+		t.Fatalf("payload text = %q, want audio attachment manifest", payload.Text)
+	}
+}
+
+func TestBaldaHandlerOnMessage_PublishesCaptionAndAudioInOneSessionTurn(t *testing.T) {
+	handler, turns, _ := newBaldaMessageHandlerHarness(t, 0)
+
+	caption := "summarize this audio"
+	event := &events.MessageEvent{
+		Type: messagetype.Audio,
+		Message: &client.Message{
+			Chat:    client.Chat{Id: 9001, Type: "private"},
+			From:    &client.User{Id: 101},
+			Caption: &caption,
+			Audio:   &client.Audio{FileId: "audio-file-id"},
+		},
+	}
+
+	if err := handler.onMessage(context.Background(), event); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+	if len(turns.commands) != 1 {
+		t.Fatalf("published commands = %d, want 1", len(turns.commands))
+	}
+	var payload actors.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(turns.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("decode session turn payload: %v", err)
+	}
+	if len(payload.Attachments) != 1 || payload.Attachments[0].Kind != attachment.KindDocument {
+		t.Fatalf("attachments = %+v, want one audio document attachment", payload.Attachments)
+	}
+	if !strings.Contains(payload.Text, caption) || !strings.Contains(payload.Text, "caption: "+caption) {
+		t.Fatalf("payload text = %q, want caption and attachment manifest", payload.Text)
 	}
 }
 

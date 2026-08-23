@@ -388,6 +388,29 @@ func attachmentsFromMessage(message *client.Message) []attachment.Descriptor {
 			Caption:      caption,
 		})
 	}
+	if audio := message.Audio; audio != nil {
+		sizeBytes := int64(0)
+		if audio.FileSize != nil {
+			sizeBytes = *audio.FileSize
+		}
+		fileName := ""
+		if audio.FileName != nil {
+			fileName = strings.TrimSpace(*audio.FileName)
+		}
+		mimeType := ""
+		if audio.MimeType != nil {
+			mimeType = strings.TrimSpace(*audio.MimeType)
+		}
+		out = append(out, attachment.Descriptor{
+			Kind:         attachment.KindDocument,
+			FileID:       strings.TrimSpace(audio.FileId),
+			FileUniqueID: strings.TrimSpace(audio.FileUniqueId),
+			FileName:     fileName,
+			MIMEType:     mimeType,
+			SizeBytes:    sizeBytes,
+			Caption:      caption,
+		})
+	}
 	if voice := message.Voice; voice != nil {
 		sizeBytes := int64(0)
 		if voice.FileSize != nil {

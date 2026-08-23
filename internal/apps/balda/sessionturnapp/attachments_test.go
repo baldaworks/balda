@@ -157,6 +157,42 @@ func TestBuildUserContent_UsesFileDataForDocumentAttachment(t *testing.T) {
 	}
 }
 
+func TestBuildUserContent_UsesFileDataForMP3Document(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "sample.mp3")
+	data := []byte("mp3 bytes")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	content, err := buildUserContent("", []attachment.Descriptor{{
+		Kind:      attachment.KindDocument,
+		FileName:  "sample.mp3",
+		MIMEType:  "audio/mpeg",
+		SizeBytes: int64(len(data)),
+		Blob:      &attachment.BlobRef{Path: path},
+	}})
+	if err != nil {
+		t.Fatalf("buildUserContent() error = %v", err)
+	}
+	if len(content.Parts) != 2 {
+		t.Fatalf("parts = %d, want 2", len(content.Parts))
+	}
+	if content.Parts[1].FileData == nil {
+		t.Fatal("MP3 file data = nil, want persisted file reference")
+	}
+	if got := content.Parts[1].FileData.MIMEType; got != "audio/mpeg" {
+		t.Fatalf("MP3 MIME type = %q, want audio/mpeg", got)
+	}
+	if got := content.Parts[1].FileData.FileURI; got != wantFileURI(path) {
+		t.Fatalf("MP3 file URI = %q, want %q", got, wantFileURI(path))
+	}
+	if got := content.Parts[1].FileData.DisplayName; got != "sample.mp3" {
+		t.Fatalf("MP3 display name = %q, want sample.mp3", got)
+	}
+}
+
 func TestBuildUserContent_UsesFileDataForLargeAttachment(t *testing.T) {
 	t.Parallel()
 

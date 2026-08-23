@@ -66,6 +66,57 @@ func TestLocalStorePersistsVoiceWithOGGExtension(t *testing.T) {
 	}
 }
 
+func TestLocalStorePersistsMP3DocumentMetadata(t *testing.T) {
+	body := []byte("mp3 bytes")
+	downloader := &recordingTelegramDownloader{
+		file: DownloadedFile{
+			FileID:    "audio-file-id",
+			SizeBytes: int64(len(body)),
+			Body:      body,
+		},
+	}
+	store, err := New(Config{Engine: EngineLocal, StateDir: t.TempDir()}, downloader)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	got, err := store.PersistTelegram(context.Background(), []attachment.Descriptor{{
+		Kind:      attachment.KindDocument,
+		FileID:    "audio-file-id",
+		FileName:  "sample.mp3",
+		MIMEType:  "audio/mpeg",
+		SizeBytes: int64(len(body)),
+	}})
+	if err != nil {
+		t.Fatalf("PersistTelegram() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("persisted descriptors = %d, want 1", len(got))
+	}
+	if len(downloader.fileIDs) != 1 || downloader.fileIDs[0] != "audio-file-id" {
+		t.Fatalf("downloaded file IDs = %v, want [audio-file-id]", downloader.fileIDs)
+	}
+	if got[0].Blob == nil {
+		t.Fatal("MP3 blob = nil, want local blob reference")
+	}
+	if ext := filepath.Ext(got[0].Blob.Path); ext != ".mp3" {
+		t.Fatalf("MP3 blob extension = %q, want .mp3", ext)
+	}
+	if got[0].FileName != "sample.mp3" {
+		t.Fatalf("MP3 filename = %q, want sample.mp3", got[0].FileName)
+	}
+	if got[0].MIMEType != "audio/mpeg" {
+		t.Fatalf("MP3 MIME type = %q, want audio/mpeg", got[0].MIMEType)
+	}
+	stored, err := os.ReadFile(got[0].Blob.Path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(stored) != string(body) {
+		t.Fatalf("stored MP3 bytes = %q, want %q", stored, body)
+	}
+}
+
 func TestExtensionFromDescriptorUsesVoiceMIMEAndKindFallback(t *testing.T) {
 	for name, item := range map[string]attachment.Descriptor{
 		"explicit voice MIME": {Kind: attachment.KindVoice, MIMEType: "audio/ogg"},

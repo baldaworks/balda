@@ -16,12 +16,79 @@ import (
 	"github.com/tgbotkit/runtime/messagetype"
 )
 
-const testMessageText = "hello"
+const (
+	testMessageText    = "hello"
+	testMessageCaption = " listen to this "
+)
+
+func TestMessageContextFromEvent_MapsAudioAttachment(t *testing.T) {
+	size := int64(8192)
+	fileName := " sample.mp3 "
+	mimeType := " audio/mpeg "
+	caption := testMessageCaption
+
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			MessageId: 42,
+			Chat: client.Chat{
+				Id:   9001,
+				Type: "private",
+			},
+			From:    &client.User{Id: 101},
+			Caption: &caption,
+			Audio: &client.Audio{
+				FileId:       " audio-file-id ",
+				FileUniqueId: " audio-unique-id ",
+				FileName:     &fileName,
+				FileSize:     &size,
+				MimeType:     &mimeType,
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if len(got.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(got.Attachments))
+	}
+	audio := got.Attachments[0]
+	if audio.Kind != attachment.KindDocument {
+		t.Fatalf("attachment kind = %q, want %q", audio.Kind, attachment.KindDocument)
+	}
+	if audio.FileID != "audio-file-id" || audio.FileUniqueID != "audio-unique-id" {
+		t.Fatalf("audio file identifiers = %+v", audio)
+	}
+	if audio.FileName != "sample.mp3" || audio.MIMEType != "audio/mpeg" {
+		t.Fatalf("audio file metadata = %+v", audio)
+	}
+	if audio.SizeBytes != size {
+		t.Fatalf("audio size = %d, want %d", audio.SizeBytes, size)
+	}
+	if audio.Caption != "listen to this" || got.Text != testMessageCaption {
+		t.Fatalf("audio caption = %q, text = %q", audio.Caption, got.Text)
+	}
+}
+
+func TestMessageContextFromEvent_DropsAudioWithoutFileID(t *testing.T) {
+	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
+		Message: &client.Message{
+			Chat:  client.Chat{Id: 9001, Type: "private"},
+			From:  &client.User{Id: 101},
+			Audio: &client.Audio{},
+		},
+	})
+	if !ok {
+		t.Fatal("MessageContextFromEvent() ok = false, want true")
+	}
+	if len(got.Attachments) != 0 {
+		t.Fatalf("attachments = %+v, want none without file ID", got.Attachments)
+	}
+}
 
 func TestMessageContextFromEvent_MapsVoiceAttachment(t *testing.T) {
 	size := int64(4096)
 	mimeType := " audio/ogg "
-	caption := " listen to this "
+	caption := testMessageCaption
 
 	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
 		Message: &client.Message{
