@@ -21,16 +21,18 @@ var Module = fx.Module("balda_deliveryworkflow",
 				fx.In
 
 				Dispatcher Dispatcher
-				Registry   *deliveryfmt.Registry
+				Registry   deliveryfmt.PromptRegistry
+				Structured deliveryfmt.StructuredMessageRegistry
 				Outbox     DeliveryStore
 				Events     JobEvents
 				Questions  QuestionDeliveryBinder `optional:"true"`
 				Actor      actortransport.Dispatcher
 				Logger     zerolog.Logger
 			}) *Service {
-				return NewWithRegistry(
+				return NewWithRegistries(
 					params.Dispatcher,
 					params.Registry,
+					params.Structured,
 					params.Outbox,
 					params.Events,
 					params.Questions,

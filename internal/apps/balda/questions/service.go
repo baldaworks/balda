@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	"github.com/google/uuid"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -50,13 +51,14 @@ type ControlPublisher interface {
 }
 
 type Service struct {
-	store     Store
-	scheduled ScheduledJobStore
-	controls  ControlPublisher
-	logger    zerolog.Logger
-	now       func() time.Time
-	waitMu    sync.Mutex
-	waiters   map[string]chan SessionResult
+	store      Store
+	scheduled  ScheduledJobStore
+	controls   ControlPublisher
+	structured deliveryfmt.StructuredMessageRegistry
+	logger     zerolog.Logger
+	now        func() time.Time
+	waitMu     sync.Mutex
+	waiters    map[string]chan SessionResult
 }
 
 // SetControlPublisher attaches the optional delivery-side projection used to
@@ -74,6 +76,12 @@ func New(store Store, scheduled ScheduledJobStore, logger zerolog.Logger) *Servi
 		logger:    logger,
 		now:       time.Now,
 		waiters:   make(map[string]chan SessionResult),
+	}
+}
+
+func (s *Service) SetStructuredRegistry(reg deliveryfmt.StructuredMessageRegistry) {
+	if s != nil {
+		s.structured = reg
 	}
 }
 

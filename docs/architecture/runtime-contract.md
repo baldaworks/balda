@@ -20,8 +20,9 @@ Status: active
 - `permissions` owns provider-neutral agent permission policy and interactive review orchestration; provider protocol types stay below the `agent` adapter boundary.
 - `sessionturnapp` records failed ADK tool responses with redacted error metadata and never logs raw tool arguments or complete tool responses.
 - `github.com/baldaworks/go-actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
-- Delivery boundaries are explicit: `deliverycmd` owns transport-neutral delivery contracts, `deliveryfmt` owns the immutable format registry and transport-capability routing, `deliveryfx` supplies process-local formatter registrations, `locatorref` owns public locator parsing/formatting, and `channel/*` owns only concrete provider delivery behavior.
-- Slack mode boundaries are explicit: the current Slack compatibility path is `slack_chat`; future Slack AI Agents behavior lives in a separate `slack_agent` path with its own ingress/response contracts. See [Slack agent mode](slack-agent-mode.md).
+- Delivery boundaries are explicit: `deliverycmd` owns transport-neutral delivery contracts, `deliveryfmt` owns the immutable format registry and transport-capability routing, `deliveryfx` supplies process-local formatter registrations, `locatorref` owns public locator parsing/formatting, and `channel/*` owns concrete provider delivery and transport-local presentation behavior behind DI boundaries.
+- Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.
+- Slack mode boundaries are explicit: the current Slack compatibility path is `slack_chat`; Slack AI Agents behavior lives in a separate `slack_agent` path with its own ingress/response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slack agent mode](slack-agent-mode.md).
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 - Ingress construction is fail-fast: formatting/registry validation and all downstream runtime dependencies must resolve before any ingress lifecycle stage can accept work.
@@ -60,6 +61,8 @@ Status: active
   - Transport settlement is hidden behind actorlayer delivery methods and exposes the same lifecycle outcomes regardless of command kind.
   - Shared transport-neutral types must live in dedicated contract packages, not inside concrete adapter packages.
   - Concrete transport adapters must not import application lifecycle/use-case packages just to reuse locator/profile/progress types.
+  - Transport-specific rendering, prompt injection, and provider correlation rules must stay inside the owning `channel/*` subtree rather than in shared application presentation packages.
+  - Outer packages must not import `channel` implementation subpackages directly; composition should flow through root channel contracts and explicit DI modules such as `slackagentfx`.
   - Public locator parsing/formatting must not require importing concrete transport adapter packages.
   - Bundled session MCP tools reconstruct canonical provider address JSON from `channel_type` and `address_key`; callers do not need to supply compatibility `address_json`.
 

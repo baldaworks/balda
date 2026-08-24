@@ -92,6 +92,7 @@ type TurnExecutionService struct {
 	jobEvents      jobEventAppender
 	sessions       runtimeStateReader
 	turnCapture    CompletedTurnCapture
+	progressHook   ProgressTransportHook
 	formatComposer *FormatPromptComposer
 	logger         zerolog.Logger
 	autoMaxTurns   int
@@ -178,6 +179,7 @@ func NewTurnExecutionServiceWithFormats(
 		jobEvents:      jobEvents,
 		sessions:       sessions,
 		turnCapture:    turnCapture,
+		progressHook:   noopProgressTransportHook{},
 		formatComposer: formatComposer,
 		logger:         logger.With().Str("component", "balda.turn_execution").Logger(),
 		autoMaxTurns:   automode.NormalizeMaxTurns(autoMaxTurns),
@@ -192,6 +194,17 @@ func (s *TurnExecutionService) SetCompletedTurnCapture(capture CompletedTurnCapt
 		return
 	}
 	s.turnCapture = capture
+}
+
+func (s *TurnExecutionService) SetProgressTransportHook(hook ProgressTransportHook) {
+	if s == nil {
+		return
+	}
+	if hook == nil {
+		s.progressHook = noopProgressTransportHook{}
+		return
+	}
+	s.progressHook = hook
 }
 
 func (s *TurnExecutionService) dispatchJobDelivery(
@@ -342,6 +355,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 			topicID,
 			progressPolicy,
 			jobBackedDelivery,
+			s.progressHook,
 			zerolog.Ctx(runCtx).With().Logger(),
 		)
 	}

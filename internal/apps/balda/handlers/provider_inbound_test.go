@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 )
@@ -60,11 +61,20 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 	})
 
 	t.Run("slack agent", func(t *testing.T) {
-		got := normalizeSlackAgentInbound(slackAgentInboundMessage{
-			Locator: slackAgentConversationLocator("T123", "C456"), EventID: " evt-123 ",
-			MessageID: "msg-456", ReplyToMessageID: "msg-100", UserID: slackUserID("T123", "U789"),
-			Text: " answer ", ReceivedAt: receivedAt,
-		})
+		got := baldaslackagent.NormalizeInbound(
+			baldaslackagent.NewConversationLocator("T123", "C456"),
+			baldaslackagent.Event{
+				EventID: " evt-123 ",
+				UserID:  slackUserID("T123", "U789"),
+				Text:    " answer ",
+				Message: &baldaslackagent.MessageRef{
+					Conversation: baldaslackagent.ConversationRef{TeamID: "T123", ConversationID: "C456"},
+					MessageID:    "msg-456",
+					ThreadTS:     "msg-100",
+				},
+			},
+			receivedAt,
+		)
 		if got.ID != testSlackAgentInboundID || got.ProviderMessageID != "msg-456" || !got.ProgressPolicy.Thinking {
 			t.Fatalf("normalized Slack Agent = %+v", got)
 		}

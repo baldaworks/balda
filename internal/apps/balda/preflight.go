@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ipfans/fxlogger"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
@@ -17,6 +16,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
@@ -29,6 +29,7 @@ import (
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	portmcp "github.com/baldaworks/balda/sessionmemory/mcp"
+	"github.com/ipfans/fxlogger"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -63,7 +64,11 @@ func PreflightRuntime(
 	if err != nil {
 		return err
 	}
-	permissionReviewer := permissions.New(permissionConfig, nil, nil, logger)
+	permissionStructured, err := permissionfmt.NewStructuredRegistry()
+	if err != nil {
+		return fmt.Errorf("build permission structured registry: %w", err)
+	}
+	permissionReviewer := permissions.New(permissionConfig, nil, nil, permissionStructured, logger)
 	stateDir, err := paths.ResolveStateDir(workingDir, cfg.Balda.StateDir)
 	if err != nil {
 		return fmt.Errorf("resolve balda state_dir: %w", err)

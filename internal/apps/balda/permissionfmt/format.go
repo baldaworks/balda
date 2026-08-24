@@ -3,11 +3,11 @@
 package permissionfmt
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 )
@@ -22,15 +22,47 @@ type Presentation struct {
 	DeliveryFormat deliveryfmt.DeliveryFormat
 }
 
+var RequestDescriptor = deliveryfmt.Descriptor[permissioncmd.Request]{
+	Type: deliveryfmt.MessageTypePermissionRequest,
+}
+
+func NewStructuredRegistry() (*deliveryfmt.StructuredRegistry, error) {
+	reg := deliveryfmt.NewStructuredRegistry()
+	if err := RegisterStructuredRenderers(reg); err != nil {
+		return nil, err
+	}
+	return reg, nil
+}
+
+func RegisterStructuredRenderers(reg *deliveryfmt.StructuredRegistry) error {
+	for _, registration := range []struct {
+		transport string
+		renderer  deliveryfmt.StructuredRenderer[permissioncmd.Request]
+	}{
+		{transport: deliveryfmt.TransportTelegram, renderer: telegramRenderer{}},
+		{transport: deliveryfmt.TransportSlack, renderer: plainRenderer{}},
+		{transport: deliveryfmt.TransportZulip, renderer: plainRenderer{}},
+	} {
+		if err := deliveryfmt.RegisterStructuredRenderer(reg, registration.transport, RequestDescriptor, registration.renderer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func Render(request permissioncmd.Request) Presentation {
-	switch strings.ToLower(strings.TrimSpace(request.Interaction.Locator.ChannelType)) {
-	case string(deliverycmd.ChannelTypeTelegram):
-		return Presentation{Prompt: renderTelegramMarkdown(request), DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown}
-	case string(deliverycmd.ChannelTypeSlackAgent):
-		return Presentation{Prompt: renderMarkdown(request), DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn}
-	default:
+	reg, err := NewStructuredRegistry()
+	if err != nil {
 		return Presentation{Prompt: renderPlain(request), DeliveryFormat: deliveryfmt.DeliveryFormatNone}
 	}
+	presentation, err := deliveryfmt.RenderStructured(context.Background(), reg, strings.ToLower(strings.TrimSpace(request.Interaction.Locator.ChannelType)), deliveryfmt.StructuredEnvelope[permissioncmd.Request]{
+		Descriptor: RequestDescriptor,
+		Body:       request,
+	})
+	if err != nil {
+		return Presentation{Prompt: renderPlain(request), DeliveryFormat: deliveryfmt.DeliveryFormatNone}
+	}
+	return Presentation{Prompt: presentation.Text, DeliveryFormat: presentation.DeliveryFormat}
 }
 
 func renderTelegramMarkdown(request permissioncmd.Request) string {
@@ -185,4 +217,26 @@ func plainText(value string) string {
 	value = strings.ReplaceAll(value, "```sh\n", "")
 	value = strings.ReplaceAll(value, "```", "")
 	return strings.ReplaceAll(value, "`", "")
+}
+
+type telegramRenderer struct{}
+
+func (telegramRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           renderTelegramMarkdown(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
+}
+
+type plainRenderer struct{}
+
+func (plainRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           renderPlain(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
+	}, nil
+}
+
+func RenderMarkdown(request permissioncmd.Request) string {
+	return renderMarkdown(request)
 }

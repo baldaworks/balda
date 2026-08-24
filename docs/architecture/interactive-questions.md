@@ -137,6 +137,9 @@ Question prompts are sent through the existing delivery actor path. Concrete
 transport packages may project generic options into channel-native controls and
 extract transport-specific reply references. They must not own option validity,
 pending-question matching, responder policy, or question lifecycle rules.
+Question presentation may use deterministic structured renderers such as
+`questionfmt`, but that rendering layer must remain downstream of the persisted
+question contract in `questioncmd`.
 
 Telegram callback normalization preserves conversation topic scope in both
 private and public chats. It uses the same topic classification as message

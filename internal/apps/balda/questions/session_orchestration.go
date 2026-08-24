@@ -7,12 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 const metadataDefaultOptionID = "default_option_id"
@@ -114,6 +115,7 @@ func (s *Service) startSession(ctx context.Context, dispatcher actortransport.Di
 		options = append(options, questioncmd.Option{ID: id, Label: label})
 		deliveryOptions = append(deliveryOptions, deliverycmd.QuestionOption{ID: id, Label: label})
 	}
+	presentation := s.renderSessionQuestion(req, options)
 
 	metadata := copySessionMetadata(req.Metadata)
 	if defaultID := strings.TrimSpace(req.DefaultOptionID); defaultID != "" {
@@ -123,7 +125,7 @@ func (s *Service) startSession(ctx context.Context, dispatcher actortransport.Di
 		metadata[metadataDefaultOptionID] = defaultID
 	}
 	record, err := s.Ask(ctx, req.Interaction, req.Resume, questioncmd.Request{
-		Prompt:        strings.TrimSpace(req.Prompt),
+		Prompt:        presentation.Prompt,
 		Options:       options,
 		AllowFreeText: req.AllowFreeText,
 		Responder:     responderForSessionAudience(req),
@@ -140,7 +142,7 @@ func (s *Service) startSession(ctx context.Context, dispatcher actortransport.Di
 		s.waitMu.Unlock()
 	}
 
-	envelope, err := buildSessionDeliveryEnvelope(record.QuestionID, req, deliveryOptions)
+	envelope, err := buildSessionDeliveryEnvelope(record.QuestionID, req, presentation, deliveryOptions)
 	if err != nil {
 		s.removeSessionWaiter(record.QuestionID)
 		_, _, _ = s.Timeout(context.WithoutCancel(ctx), record.QuestionID, s.now().UTC())
@@ -209,16 +211,43 @@ func (s *Service) sessionTimeoutResult(questionID string) (SessionResult, error)
 	return result, nil
 }
 
-func buildSessionDeliveryEnvelope(questionID string, req SessionRequest, options []deliverycmd.QuestionOption) (actorlayer.Envelope, error) {
+func buildSessionDeliveryEnvelope(questionID string, req SessionRequest, presentation questionfmt.Presentation, options []deliverycmd.QuestionOption) (actorlayer.Envelope, error) {
 	from, err := questioncmd.ParseResumeAddress(req.Resume.To)
 	if err != nil {
 		return actorlayer.Envelope{}, err
 	}
 	dedupeSuffix := "question:" + questionID
 	if len(options) > 0 {
-		return deliverycmd.QuestionEnvelope("", from, req.Interaction.Locator, req.DeliveryFormat, deliverycmd.SettlementOutbox, strings.TrimSpace(req.Prompt), questionID, dedupeSuffix, options, req.Audience)
+		return deliverycmd.QuestionEnvelope("", from, req.Interaction.Locator, presentation.DeliveryFormat, deliverycmd.SettlementOutbox, strings.TrimSpace(presentation.Prompt), questionID, dedupeSuffix, options, req.Audience)
 	}
-	return deliverycmd.AgentReplyEnvelopeWithFormatAndSettlementAndRefs("", from, req.Interaction.Locator, req.DeliveryFormat, deliverycmd.SettlementOutbox, strings.TrimSpace(req.Prompt), dedupeSuffix, map[string]string{"question_id": questionID})
+	return deliverycmd.AgentReplyEnvelopeWithFormatAndSettlementAndRefs("", from, req.Interaction.Locator, presentation.DeliveryFormat, deliverycmd.SettlementOutbox, strings.TrimSpace(presentation.Prompt), dedupeSuffix, map[string]string{"question_id": questionID})
+}
+
+func (s *Service) renderSessionQuestion(req SessionRequest, options []questioncmd.Option) questionfmt.Presentation {
+	if s == nil || s.structured == nil {
+		return questionfmt.Render(questionfmt.Request{
+			Prompt:  req.Prompt,
+			Options: options,
+		}, req.Interaction.Locator.ChannelType)
+	}
+	env := deliveryfmt.StructuredEnvelope[questionfmt.Request]{
+		Descriptor: questionfmt.RequestDescriptor,
+		Body: questionfmt.Request{
+			Prompt:  req.Prompt,
+			Options: options,
+		},
+	}
+	presentation, err := s.structured.RenderStructured(context.Background(), strings.ToLower(strings.TrimSpace(req.Interaction.Locator.ChannelType)), questionfmt.RequestDescriptor.Type, env)
+	if err != nil {
+		return questionfmt.Render(questionfmt.Request{
+			Prompt:  req.Prompt,
+			Options: options,
+		}, req.Interaction.Locator.ChannelType)
+	}
+	return questionfmt.Presentation{
+		Prompt:         presentation.Text,
+		DeliveryFormat: presentation.DeliveryFormat,
+	}
 }
 
 func responderForSessionAudience(req SessionRequest) string {

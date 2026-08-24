@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -52,10 +53,11 @@ type Service struct {
 	config     Config
 	questions  *questions.Service
 	dispatcher actortransport.Dispatcher
+	structured deliveryfmt.StructuredMessageRegistry
 	logger     zerolog.Logger
 }
 
-func New(config Config, questionService *questions.Service, dispatcher actortransport.Dispatcher, logger zerolog.Logger) *Service {
+func New(config Config, questionService *questions.Service, dispatcher actortransport.Dispatcher, structured deliveryfmt.StructuredMessageRegistry, logger zerolog.Logger) *Service {
 	serviceLogger := logger.With().Str("component", "balda.permissions").Logger()
 	serviceLogger.Info().
 		Str("mode", string(config.Mode)).
@@ -67,6 +69,7 @@ func New(config Config, questionService *questions.Service, dispatcher actortran
 		config:     config,
 		questions:  questionService,
 		dispatcher: dispatcher,
+		structured: structured,
 		logger:     serviceLogger,
 	}
 }
@@ -107,7 +110,10 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 		label := strings.TrimSpace(option.Name)
 		options = append(options, questions.SessionOption{ID: id, Label: label})
 	}
-	presentation := permissionfmt.Render(request)
+	presentation, err := s.renderPermissionRequest(ctx, request)
+	if err != nil {
+		return fallback, err
+	}
 	result, err := s.questions.AskSession(ctx, s.dispatcher, questions.SessionRequest{
 		Interaction:    interaction,
 		Resume:         sessionquestionResumeTarget(interaction),
@@ -128,6 +134,21 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 		return permissioncmd.Decision{OptionID: result.OptionID, Source: firstNonEmpty(result.Source, "user")}, nil
 	}
 	return fallback, fmt.Errorf("permission response selected unknown option %q", result.OptionID)
+}
+
+func (s *Service) renderPermissionRequest(ctx context.Context, request permissioncmd.Request) (permissionfmt.Presentation, error) {
+	if s.structured == nil {
+		return permissionfmt.Render(request), nil
+	}
+	env := deliveryfmt.StructuredEnvelope[permissioncmd.Request]{Descriptor: permissionfmt.RequestDescriptor, Body: request}
+	presentation, err := s.structured.RenderStructured(ctx, strings.ToLower(strings.TrimSpace(request.Interaction.Locator.ChannelType)), permissionfmt.RequestDescriptor.Type, env)
+	if err != nil {
+		return permissionfmt.Presentation{}, fmt.Errorf("render permission request: %w", err)
+	}
+	return permissionfmt.Presentation{
+		Prompt:         presentation.Text,
+		DeliveryFormat: presentation.DeliveryFormat,
+	}, nil
 }
 
 func (s *Service) Resolve(questionID string, decision permissioncmd.Decision) {

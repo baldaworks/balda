@@ -1,10 +1,18 @@
 package deliveryfx
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/presentation"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 )
 
 func TestMessageFormatRegistryProvidesCurrentPromptRoutes(t *testing.T) {
@@ -114,6 +122,78 @@ func TestMessageFormatRegistryFormatsCurrentRoutes(t *testing.T) {
 			}
 			if message.Name != test.wantMessageName || message.Text != test.wantText || message.PlainFallback != test.wantPlain {
 				t.Fatalf("Format() = %+v, want name=%q text=%q plain=%q", message, test.wantMessageName, test.wantText, test.wantPlain)
+			}
+		})
+	}
+}
+
+func TestStructuredMessageRegistryProvidesCurrentStructuredRoutes(t *testing.T) {
+	t.Parallel()
+
+	registry, err := newStructuredMessageRegistry(structuredRegistryParams{
+		Registrars: []structuredRegistryRegistrar{
+			permissionfmt.RegisterStructuredRenderers,
+			progressfmt.RegisterStructuredRenderers,
+			questionfmt.RegisterStructuredRenderers,
+			presentation.RegisterQuestionRenderer,
+			presentation.RegisterPermissionRenderer,
+			presentation.RegisterProgressRenderer,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newStructuredMessageRegistry() error = %v", err)
+	}
+
+	for _, test := range []struct {
+		name      string
+		transport string
+		render    func(context.Context, *deliveryfmt.StructuredRegistry) (deliveryfmt.StructuredPresentation, error)
+	}{
+		{
+			name:      "permission telegram",
+			transport: deliveryfmt.TransportTelegram,
+			render: func(ctx context.Context, reg *deliveryfmt.StructuredRegistry) (deliveryfmt.StructuredPresentation, error) {
+				return deliveryfmt.RenderStructured(ctx, reg, deliveryfmt.TransportTelegram, deliveryfmt.StructuredEnvelope[permissioncmd.Request]{
+					Descriptor: permissionfmt.RequestDescriptor,
+					Body: permissioncmd.Request{
+						ToolCall: permissioncmd.ToolCall{Title: "Command approval"},
+					},
+				})
+			},
+		},
+		{
+			name:      "question slack agent",
+			transport: deliveryfmt.TransportSlackAgent,
+			render: func(ctx context.Context, reg *deliveryfmt.StructuredRegistry) (deliveryfmt.StructuredPresentation, error) {
+				return deliveryfmt.RenderStructured(ctx, reg, deliveryfmt.TransportSlackAgent, deliveryfmt.StructuredEnvelope[questionfmt.Request]{
+					Descriptor: questionfmt.RequestDescriptor,
+					Body: questionfmt.Request{
+						Prompt:  "Continue?",
+						Options: []questioncmd.Option{{ID: "yes", Label: "Yes"}},
+					},
+				})
+			},
+		},
+		{
+			name:      "progress zulip",
+			transport: deliveryfmt.TransportZulip,
+			render: func(ctx context.Context, reg *deliveryfmt.StructuredRegistry) (deliveryfmt.StructuredPresentation, error) {
+				return deliveryfmt.RenderStructured(ctx, reg, deliveryfmt.TransportZulip, deliveryfmt.StructuredEnvelope[progressfmt.Request]{
+					Descriptor: progressfmt.RequestDescriptor,
+					Body: progressfmt.Request{
+						Progress: deliverycmd.Progress{Kind: deliverycmd.ProgressPlanUpdate, Text: "plan", Visible: true},
+					},
+				})
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			presentation, err := test.render(context.Background(), registry)
+			if err != nil {
+				t.Fatalf("RenderStructured() error = %v", err)
+			}
+			if strings.TrimSpace(presentation.Text) == "" {
+				t.Fatalf("presentation = %+v, want non-empty text", presentation)
 			}
 		})
 	}

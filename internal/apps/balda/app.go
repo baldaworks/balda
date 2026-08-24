@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ipfans/fxlogger"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
@@ -19,6 +18,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
@@ -48,6 +48,7 @@ import (
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	portmcp "github.com/baldaworks/balda/sessionmemory/mcp"
+	"github.com/ipfans/fxlogger"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -86,9 +87,8 @@ func (a memorySnapshotReaderAdapter) Snapshot(ctx context.Context) (baldaagent.M
 		return baldaagent.MemorySnapshot{}, err
 	}
 	return baldaagent.MemorySnapshot{
-		Content:   snapshot.Content,
-		Version:   snapshot.Version,
-		UpdatedAt: snapshot.UpdatedAt,
+		Content: snapshot.Content,
+		Version: snapshot.Version,
 	}, nil
 }
 
@@ -595,8 +595,8 @@ func Module(
 				IncludePrivateChannels: cfg.Balda.Slack.IncludePrivateChannels,
 			}
 		}),
-		fx.Provide(func() handlers.SlackAgentConfig {
-			return handlers.SlackAgentConfig{
+		fx.Provide(func() baldaslackagent.Config {
+			return baldaslackagent.Config{
 				Enabled:       cfg.Balda.Slack.Agent.Enabled,
 				ListenAddr:    strings.TrimSpace(cfg.Balda.Slack.Agent.ListenAddr),
 				EventsPath:    strings.TrimSpace(cfg.Balda.Slack.Agent.EventsPath),
@@ -642,6 +642,7 @@ func Module(
 		sessionturnapp.Module,
 		controlapp.Module,
 		deliveryfx.Module,
+		slackagentfx.Module,
 		deliveryworkflow.Module,
 		fx.Provide(fx.Annotate(
 			func(service *questions.Service) deliveryworkflow.QuestionDeliveryBinder { return service },

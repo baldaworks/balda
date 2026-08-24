@@ -1,6 +1,9 @@
 package slackagent
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // ConversationRef is the stable identity for a Slack AI Agents conversation.
 type ConversationRef struct {
@@ -26,6 +29,20 @@ type Event struct {
 	DedupeKey    string          `json:"dedupe_key,omitempty"`
 	Conversation ConversationRef `json:"conversation"`
 	Message      *MessageRef     `json:"message,omitempty"`
+}
+
+func (e Event) ProviderMessageID() string {
+	if e.Message == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.Message.MessageID)
+}
+
+func (e Event) ReplyToMessageID() string {
+	if e.Message == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.Message.ThreadTS)
 }
 
 // Capabilities snapshots the enabled slack_agent affordances after config normalization.

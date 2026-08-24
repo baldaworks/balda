@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	baldagit "github.com/baldaworks/balda/internal/git"
 	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	baldagit "github.com/baldaworks/balda/internal/git"
 )
 
 type PluginSummary struct {
@@ -48,18 +48,18 @@ type MarketplaceSource struct {
 }
 
 type MarketplaceStatus struct {
-	Name              string
-	Source            string
-	Kind              string
-	Ref               string
-	Sparse            []string
-	CachePath         string
-	Cached            bool
-	LastRefreshedAt   string
-	ResolvedRef       string
-	ManifestPath      string
-	ManifestPresent   bool
-	AvailablePlugins  int
+	Name             string
+	Source           string
+	Kind             string
+	Ref              string
+	Sparse           []string
+	CachePath        string
+	Cached           bool
+	LastRefreshedAt  string
+	ResolvedRef      string
+	ManifestPath     string
+	ManifestPresent  bool
+	AvailablePlugins int
 }
 
 type MarketplaceUpgradeResult struct {

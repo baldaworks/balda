@@ -14,7 +14,6 @@ var Module = fx.Module("balda_handlers",
 	fx.Provide(
 		NewZulipBaldaHandler,
 		NewSlackChatHandler,
-		NewSlackAgentHandler,
 		func(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
 			normalized, err := normalizeInboundWebhookConfig(params.Config)
 			if err != nil {
@@ -85,7 +84,6 @@ var Module = fx.Module("balda_handlers",
 		func(*InboundWebhookReceiver) {},
 		func(*ZulipBaldaHandler) {},
 		func(*SlackChatHandler) {},
-		func(*SlackAgentHandler) {},
 	),
 )
 

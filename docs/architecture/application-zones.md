@@ -23,8 +23,9 @@ New code should attach to one of these zones deliberately instead of landing in
 | Job lifecycle | durable job records, job events, delivery persistence, projections, scheduled durable work execution | `jobs`, `jobexec`, `scheduledjobs` | transport adapters, ingress parsing, conversational session ownership |
 | Control and access | operator-driven cancel/clear/restart/wait flows, owner/collaborator/channel auth state | `controlapp`, `auth` | feature actor behavior, transport-specific command handling |
 | Conversational ingress | provider-neutral authorization/session preconditions, one durable SessionActor publish attempt, accepted/retry/terminal settlement | `ingressapp`; inbound normalization in `handlers`; concrete runtime bindings in `handlersfx` | channel delivery, provider turn execution |
-| Interactive questions | session-scoped user questions, pending-question lifecycle, reply settlement, timeout orchestration, actor resume targeting | `questions` | transport adapters, generic session lifecycle, hidden suspended runtime frames |
-| Agent permissions | transport-neutral agent permission policy, interactive permission review, fail-closed settlement | `permissions`, ADK-facing adapter in `agent`, channel presentation in `permissionfmt` | provider protocol types, transport-specific reply parsing, general question lifecycle |
+| Interactive questions | session-scoped user questions, pending-question lifecycle, reply settlement, timeout orchestration, actor resume targeting | `questions`, transport-neutral question contracts in `questionfmt` | transport adapters, generic session lifecycle, hidden suspended runtime frames |
+| Agent permissions | transport-neutral agent permission policy, interactive permission review, fail-closed settlement | `permissions`, ADK-facing adapter in `agent`, transport-neutral permission contracts in `permissionfmt` | provider protocol types, transport-specific reply parsing, general question lifecycle |
+| Delivery presentation | prompt-format routing for model text, structured deterministic rendering for system-authored delivery messages, transport-neutral descriptors/registration surfaces | `deliveryfmt`, `deliveryfx`, service-message contracts in `permissionfmt`, `questionfmt`, `progressfmt` | transport adapters, provider SDK types, product workflow policy |
 | Application support | small app-facing ports and support helpers used by the zones above | `appports`, `envelopetarget`, `memory` | broad workflow orchestration, feature-specific business logic |
 
 ## Zone details
@@ -133,6 +134,9 @@ Keep this zone small and explicit. If question contracts are shared across
 layers, place those contracts in a dedicated contract package rather than in
 `questions` itself.
 
+Transport-specific reply parsing, presentation, and correlation remain below
+this zone in the owning `channel/*` subtree.
+
 ### Agent permissions
 
 This zone owns application policy for sensitive actions requested during an
@@ -150,9 +154,32 @@ active agent run:
 Provider protocol SDK types must not cross that adapter boundary. The
 `permissions` package may reuse `questions`, but it does not own generic reply
 correlation, durable question state, or concrete channel delivery behavior.
-`permissionfmt` projects structured permission content into channel-appropriate
-presentation. It must not parse opaque provider input; that input remains below
-the ADK-facing adapter boundary and is never used as user-facing prompt text.
+`permissionfmt` owns transport-neutral structured permission contracts and
+registration surfaces. Concrete transport rendering belongs to the owning
+`channel/*` package. Opaque provider input remains below the ADK-facing adapter
+boundary and is never used as user-facing prompt text.
+
+### Delivery presentation
+
+This zone owns presentation routing contracts, not transport implementations.
+
+It owns:
+
+- prompt-format routing for model-authored text;
+- structured message descriptors for system-authored service messages;
+- transport-neutral registration surfaces for structured renderers and prompt
+  formatters.
+
+It does not own:
+
+- provider SDK message shapes;
+- transport-local rendering branches;
+- transport-local prompt injection text;
+- provider correlation rules.
+
+Packages such as `questionfmt`, `permissionfmt`, and `progressfmt` should stay
+transport-neutral. If a transport needs custom rendering, that renderer should
+live in the owning `channel/*` subtree and register through DI.
 
 ### Application support
 

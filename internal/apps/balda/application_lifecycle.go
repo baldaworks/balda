@@ -8,6 +8,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
@@ -153,7 +154,7 @@ type applicationLifecycleParams struct {
 	InboundWebhook       *handlers.InboundWebhookReceiver
 	Zulip                *handlers.ZulipBaldaHandler
 	SlackChat            *handlers.SlackChatHandler
-	SlackAgent           *handlers.SlackAgentHandler
+	SlackAgent           *baldaslackagent.Server
 	TelegramBot          *runtime.Bot
 	TelegramEnabled      bool `name:"balda_telegram_enabled"`
 }

@@ -30,3 +30,6 @@ type Delivery struct {
 type Dispatcher interface {
 	Dispatch(ctx context.Context, delivery Delivery) (string, error)
 }
+
+type PromptRegistry = deliveryfmt.PromptRegistry
+type StructuredMessageRegistry = deliveryfmt.StructuredMessageRegistry

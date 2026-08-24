@@ -3,15 +3,19 @@ package deliveryfx
 import (
 	"time"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldachannel "github.com/baldaworks/balda/internal/apps/balda/channel"
 	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/messenger"
+	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -20,6 +24,27 @@ import (
 var Module = fx.Module("balda_deliveryfx",
 	fx.Provide(
 		newMessageFormatRegistry,
+		newStructuredMessageRegistry,
+		fx.Annotate(
+			func() structuredRegistryRegistrar { return permissionfmt.RegisterStructuredRenderers },
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			func() structuredRegistryRegistrar { return progressfmt.RegisterStructuredRenderers },
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			func() structuredRegistryRegistrar { return questionfmt.RegisterStructuredRenderers },
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			func(reg *deliveryfmt.Registry) deliveryfmt.PromptRegistry { return reg },
+			fx.As(new(deliveryfmt.PromptRegistry)),
+		),
+		fx.Annotate(
+			func(reg *deliveryfmt.StructuredRegistry) deliveryfmt.StructuredMessageRegistry { return reg },
+			fx.As(new(deliveryfmt.StructuredMessageRegistry)),
+		),
 		fx.Annotate(
 			func(
 				tgClient client.ClientWithResponsesInterface,

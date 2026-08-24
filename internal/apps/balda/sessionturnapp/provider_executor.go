@@ -66,6 +66,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		payload.TopicID,
 		request.DeliveryOptions.ProgressPolicy,
 		strings.TrimSpace(payload.JobID) != "",
+		execution.progressHook,
 		execution.logger,
 	)
 	return execution.Execute(ctx, ExecutionRequest{

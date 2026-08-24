@@ -1,60 +1,55 @@
-package handlers
+package slackagent
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
-	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
 
-type SlackAgentConfig struct {
+const (
+	autoSessionLabel          = "auto"
+	webhookMaxBodyBytes       = 1 << 20
+	webhookReadHeaderTimeout  = 5 * time.Second
+	webhookReadTimeout        = 10 * time.Second
+	webhookWriteTimeout       = 10 * time.Second
+	webhookIdleTimeout        = 30 * time.Second
+	webhookProcessingTimeout  = 5 * time.Minute
+	webhookMaxConcurrentTasks = 16
+	signatureVersion          = "v0"
+)
+
+type Config struct {
 	Enabled       bool
 	ListenAddr    string
 	EventsPath    string
 	SigningSecret string
 }
 
-type slackAgentEnvelope struct {
-	Type      string          `json:"type"`
-	Challenge string          `json:"challenge"`
-	EventID   string          `json:"event_id"`
-	TeamID    string          `json:"team_id"`
-	Event     slackAgentEvent `json:"event"`
-}
-
-type slackAgentEvent struct {
-	Type             string `json:"type"`
-	UserID           string `json:"user_id"`
-	Text             string `json:"text"`
-	ConversationID   string `json:"conversation_id"`
-	ThreadID         string `json:"thread_id"`
-	MessageID        string `json:"message_id"`
-	ReplyToMessageID string `json:"reply_to_message_id"`
-	TeamID           string `json:"team_id"`
-}
-
-type SlackAgentHandler struct {
+type Server struct {
 	sessionManager  *baldasession.Manager
-	actorDispatcher transport.Dispatcher
+	actorDispatcher actortransport.Dispatcher
 	questionService *questions.Service
-	config          SlackAgentConfig
+	config          Config
 	logger          zerolog.Logger
 
 	server     *http.Server
@@ -63,36 +58,36 @@ type SlackAgentHandler struct {
 	processWG  sync.WaitGroup
 }
 
-type slackAgentHandlerParams struct {
+type serverParams struct {
 	fx.In
 
-	SessionManager   *baldasession.Manager
-	Dispatcher       transport.Dispatcher
-	QuestionService  *questions.Service `optional:"true"`
-	SlackAgentConfig SlackAgentConfig
-	Logger           zerolog.Logger
+	SessionManager *baldasession.Manager
+	Dispatcher     actortransport.Dispatcher
+	Question       *questions.Service `optional:"true"`
+	Config         Config
+	Logger         zerolog.Logger
 }
 
-func NewSlackAgentHandler(params slackAgentHandlerParams) *SlackAgentHandler {
-	return &SlackAgentHandler{
+func NewServer(params serverParams) *Server {
+	return &Server{
 		sessionManager:  params.SessionManager,
 		actorDispatcher: params.Dispatcher,
-		questionService: params.QuestionService,
-		config:          params.SlackAgentConfig,
-		logger:          params.Logger.With().Str("component", "balda.handler.slack_agent").Logger(),
-		processSem:      make(chan struct{}, slackWebhookMaxConcurrentTasks),
+		questionService: params.Question,
+		config:          params.Config,
+		logger:          params.Logger.With().Str("component", "balda.channel.slack_agent").Logger(),
+		processSem:      make(chan struct{}, webhookMaxConcurrentTasks),
 	}
 }
 
-func (h *SlackAgentHandler) Start(ctx context.Context) error { return h.onStart(ctx) }
-func (h *SlackAgentHandler) Stop(ctx context.Context) error  { return h.onStop(ctx) }
+func (h *Server) Start(ctx context.Context) error { return h.onStart(ctx) }
+func (h *Server) Stop(ctx context.Context) error  { return h.onStop(ctx) }
 
-func (h *SlackAgentHandler) onStart(context.Context) error {
+func (h *Server) onStart(context.Context) error {
 	if !h.config.Enabled {
 		h.logger.Debug().Msg("slack agent disabled; skipping server start")
 		return nil
 	}
-	eventsPath, err := normalizeSlackPath(h.config.EventsPath, "/slack/agent/events")
+	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
 	if err != nil {
 		return err
 	}
@@ -105,10 +100,10 @@ func (h *SlackAgentHandler) onStart(context.Context) error {
 	h.server = &http.Server{
 		Addr:              listenAddr,
 		Handler:           mux,
-		ReadHeaderTimeout: slackWebhookReadHeaderTimeout,
-		ReadTimeout:       slackWebhookReadTimeout,
-		WriteTimeout:      slackWebhookWriteTimeout,
-		IdleTimeout:       slackWebhookIdleTimeout,
+		ReadHeaderTimeout: webhookReadHeaderTimeout,
+		ReadTimeout:       webhookReadTimeout,
+		WriteTimeout:      webhookWriteTimeout,
+		IdleTimeout:       webhookIdleTimeout,
 	}
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -124,7 +119,7 @@ func (h *SlackAgentHandler) onStart(context.Context) error {
 	return nil
 }
 
-func (h *SlackAgentHandler) onStop(ctx context.Context) error {
+func (h *Server) onStop(ctx context.Context) error {
 	if h.server == nil {
 		return nil
 	}
@@ -144,13 +139,13 @@ func (h *SlackAgentHandler) onStop(ctx context.Context) error {
 	}
 }
 
-func (h *SlackAgentHandler) handleEvents(w http.ResponseWriter, r *http.Request) {
-	body, ok := h.readAndVerifySlackRequest(w, r)
+func (h *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	body, ok := h.readAndVerifyRequest(w, r)
 	if !ok {
 		return
 	}
-	var env slackAgentEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
+	env, err := DecodeIngressEnvelope(body, time.Now())
+	if err != nil {
 		h.logger.Warn().Err(err).Msg("failed to decode slack agent event payload")
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -175,23 +170,23 @@ func (h *SlackAgentHandler) handleEvents(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *SlackAgentHandler) readAndVerifySlackRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+func (h *Server) readAndVerifyRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return nil, false
 	}
 	defer func() { _ = r.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(r.Body, slackWebhookMaxBodyBytes+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, webhookMaxBodyBytes+1))
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return nil, false
 	}
-	if len(body) > slackWebhookMaxBodyBytes {
+	if len(body) > webhookMaxBodyBytes {
 		http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 		return nil, false
 	}
-	if err := verifySlackSignature(strings.TrimSpace(h.config.SigningSecret), r.Header.Get("X-Slack-Request-Timestamp"), r.Header.Get("X-Slack-Signature"), body, time.Now()); err != nil {
+	if err := verifySignature(strings.TrimSpace(h.config.SigningSecret), r.Header.Get("X-Slack-Request-Timestamp"), r.Header.Get("X-Slack-Signature"), body, time.Now()); err != nil {
 		h.logger.Warn().Err(err).Msg("slack agent signature verification failed")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return nil, false
@@ -199,7 +194,7 @@ func (h *SlackAgentHandler) readAndVerifySlackRequest(w http.ResponseWriter, r *
 	return body, true
 }
 
-func (h *SlackAgentHandler) acquireProcessSlot() (func(), bool) {
+func (h *Server) acquireProcessSlot() (func(), bool) {
 	if h.processSem == nil {
 		return func() {}, true
 	}
@@ -211,41 +206,24 @@ func (h *SlackAgentHandler) acquireProcessSlot() (func(), bool) {
 	}
 }
 
-func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAgentEnvelope) (turncmd.InboundSettlement, error) {
-	ctx, cancel := context.WithTimeout(requestCtx, slackWebhookProcessingTimeout)
+func (h *Server) processEvent(requestCtx context.Context, env IngressEnvelope) (turncmd.InboundSettlement, error) {
+	ctx, cancel := context.WithTimeout(requestCtx, webhookProcessingTimeout)
 	defer cancel()
-	event := env.Event
-	if strings.TrimSpace(event.Text) == "" || strings.TrimSpace(event.UserID) == "" {
+	if env.IgnoreEvent {
 		return terminalInbound(), nil
 	}
-	teamID := firstNonEmpty(event.TeamID, env.TeamID)
-	var locator baldasession.SessionLocator
-	if strings.TrimSpace(event.ThreadID) != "" {
-		locator = slackAgentThreadLocator(teamID, event.ConversationID, event.ThreadID)
-	} else {
-		locator = slackAgentConversationLocator(teamID, event.ConversationID)
-	}
-	subject := slackUserID(teamID, event.UserID)
-	if handled, err := h.handleQuestionReply(ctx, locator, subject, event); err != nil {
+	locator := env.Locator
+	if handled, err := h.handleQuestionReply(ctx, env); err != nil {
 		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to handle slack agent question reply")
 		return retryInbound(), err
 	} else if handled {
 		return terminalInbound(), nil
 	}
-	inbound := normalizeSlackAgentInbound(slackAgentInboundMessage{
-		Locator:          locator,
-		EventID:          env.EventID,
-		MessageID:        event.MessageID,
-		ReplyToMessageID: event.ReplyToMessageID,
-		UserID:           subject,
-		Text:             event.Text,
-		ReceivedAt:       time.Now(),
-	})
 	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.Authorization, error) {
 			return ingressapp.Authorization{Allowed: true}, nil
 		}),
-		ingressapp.SessionPreparerFunc(h.prepareSlackAgentSession),
+		ingressapp.SessionPreparerFunc(h.prepareSession),
 		h.actorDispatcher,
 		h.logger,
 	)
@@ -253,7 +231,7 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to construct slack agent ingress")
 		return retryInbound(), err
 	}
-	result, err := service.Process(ctx, inbound)
+	result, err := service.Process(ctx, env.Inbound)
 	if err == nil || result.Settlement.Outcome != turncmd.InboundRetry {
 		return result.Settlement, err
 	}
@@ -265,8 +243,8 @@ func (h *SlackAgentHandler) processEvent(requestCtx context.Context, env slackAg
 	return result.Settlement, err
 }
 
-func (h *SlackAgentHandler) prepareSlackAgentSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
-	ts, err := h.getOrCreateSession(ctx, inboundLocator(inbound), inbound.UserID)
+func (h *Server) prepareSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+	ts, err := h.getOrCreateSession(ctx, inboundContextLocator(inbound), inbound.UserID)
 	if err != nil {
 		return ingressapp.SessionPreparation{}, err
 	}
@@ -278,7 +256,7 @@ func (h *SlackAgentHandler) prepareSlackAgentSession(ctx context.Context, inboun
 	}, nil
 }
 
-func (h *SlackAgentHandler) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string) (*baldasession.TopicSession, error) {
+func (h *Server) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string) (*baldasession.TopicSession, error) {
 	if existing, _ := h.sessionManager.GetSession(locator); existing != nil {
 		return existing, nil
 	}
@@ -292,20 +270,11 @@ func (h *SlackAgentHandler) getOrCreateSession(ctx context.Context, locator bald
 	return h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject}, autoSessionLabel)
 }
 
-func (h *SlackAgentHandler) handleQuestionReply(ctx context.Context, locator baldasession.SessionLocator, subject string, event slackAgentEvent) (bool, error) {
-	if h == nil || h.questionService == nil || strings.TrimSpace(event.ReplyToMessageID) == "" || strings.TrimSpace(event.Text) == "" {
+func (h *Server) handleQuestionReply(ctx context.Context, env IngressEnvelope) (bool, error) {
+	if h == nil || h.questionService == nil || !env.HasReply {
 		return false, nil
 	}
-	result, err := h.questionService.ResolveReplyDetailed(ctx, questioncmd.InboundReply{
-		Provider:         string(deliverycmd.ChannelTypeSlackAgent),
-		SessionID:        locator.SessionID,
-		ConversationKey:  locator.AddressKey,
-		ReplyToMessageID: strings.TrimSpace(event.ReplyToMessageID),
-		MessageID:        strings.TrimSpace(event.MessageID),
-		User:             questioncmd.UserRef{UserID: subject},
-		Text:             strings.TrimSpace(event.Text),
-		ReceivedAt:       time.Now().UTC(),
-	})
+	result, err := h.questionService.ResolveReplyDetailed(ctx, env.Reply)
 	if err != nil || !result.Matched {
 		return result.Matched, err
 	}
@@ -316,4 +285,63 @@ func (h *SlackAgentHandler) handleQuestionReply(ctx context.Context, locator bal
 		return true, err
 	}
 	return true, nil
+}
+
+func normalizePath(path string, fallback string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return fallback, nil
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		return "", fmt.Errorf("slack path %q must start with /", path)
+	}
+	return trimmed, nil
+}
+
+func verifySignature(secret, timestamp, signature string, body []byte, now time.Time) error {
+	trimmedSecret := strings.TrimSpace(secret)
+	if trimmedSecret == "" {
+		return fmt.Errorf("slack signing secret is required")
+	}
+	ts, err := strconv.ParseInt(strings.TrimSpace(timestamp), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid slack request timestamp")
+	}
+	requestTime := time.Unix(ts, 0)
+	if now.Sub(requestTime) > 5*time.Minute || requestTime.Sub(now) > 5*time.Minute {
+		return fmt.Errorf("stale slack request timestamp")
+	}
+	base := signatureVersion + ":" + strings.TrimSpace(timestamp) + ":" + string(body)
+	mac := hmac.New(sha256.New, []byte(trimmedSecret))
+	_, _ = mac.Write([]byte(base))
+	expected := signatureVersion + "=" + hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(expected), []byte(strings.TrimSpace(signature))) {
+		return fmt.Errorf("slack request signature mismatch")
+	}
+	return nil
+}
+
+func dispatchQuestionContinuation(ctx context.Context, dispatcher actortransport.Dispatcher, env actorlayer.Envelope) error {
+	if dispatcher == nil {
+		return actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
+	}
+	_, err := dispatcher.Dispatch(ctx, env)
+	return err
+}
+
+func terminalInbound() turncmd.InboundSettlement {
+	return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}
+}
+
+func retryInbound() turncmd.InboundSettlement {
+	return turncmd.InboundSettlement{Outcome: turncmd.InboundRetry}
+}
+
+func inboundContextLocator(inbound ingressapp.InboundContext) baldasession.SessionLocator {
+	return baldasession.SessionLocator{
+		ChannelType: inbound.ChannelType,
+		AddressKey:  inbound.AddressKey,
+		AddressJSON: inbound.AddressJSON,
+		SessionID:   inbound.SessionID,
+	}
 }

@@ -76,44 +76,6 @@ func normalizeSlackInbound(message slackInboundMessage) turncmd.NormalizedInboun
 	}
 }
 
-type slackAgentInboundMessage struct {
-	Locator          deliverycmd.Locator
-	EventID          string
-	MessageID        string
-	ReplyToMessageID string
-	UserID           string
-	Text             string
-	ReceivedAt       time.Time
-}
-
-func normalizeSlackAgentInbound(message slackAgentInboundMessage) turncmd.NormalizedInbound {
-	eventID := strings.TrimSpace(message.EventID)
-	providerMessageID := strings.TrimSpace(message.MessageID)
-	if eventID == "" {
-		eventID = providerMessageID
-	}
-	if providerMessageID == "" {
-		providerMessageID = eventID
-	}
-	logicalID := turncmd.InboundID("")
-	if eventID != "" {
-		logicalID = turncmd.InboundID("slack_agent:" + eventID)
-	}
-	return turncmd.NormalizedInbound{
-		ID:                logicalID,
-		Text:              strings.TrimSpace(message.Text),
-		Locator:           message.Locator,
-		ProviderMessageID: providerMessageID,
-		UserID:            strings.TrimSpace(message.UserID),
-		MessageID:         providerNumericMessageID(providerMessageID),
-		ReplyToMessageID:  providerNumericMessageID(message.ReplyToMessageID),
-		ReceivedAt:        message.ReceivedAt.UTC().Format(time.RFC3339),
-		DeliveryFormat:    deliveryfmt.DeliveryFormatMrkdwn,
-		ProgressPolicy:    deliveryfmt.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
-		Source:            turncmd.SourceSlackAgent,
-	}
-}
-
 type zulipInboundMessage struct {
 	Locator    deliverycmd.Locator
 	MessageID  int
@@ -188,16 +150,6 @@ func slackDMLocator(teamID, channelID string) deliverycmd.Locator {
 
 func slackThreadLocator(teamID, channelID, threadTS string) deliverycmd.Locator {
 	locator, _ := locatorref.NewSlackThreadLocator(teamID, channelID, threadTS)
-	return locator
-}
-
-func slackAgentConversationLocator(teamID, conversationID string) deliverycmd.Locator {
-	locator, _ := locatorref.NewSlackAgentConversationLocator(teamID, conversationID)
-	return locator
-}
-
-func slackAgentThreadLocator(teamID, conversationID, threadID string) deliverycmd.Locator {
-	locator, _ := locatorref.NewSlackAgentThreadLocator(teamID, conversationID, threadID)
 	return locator
 }
 

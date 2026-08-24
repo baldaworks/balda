@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/progress"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -27,6 +26,7 @@ type sessionProgressDispatcher struct {
 	policy     deliveryfmt.ProgressPolicy
 	logger     zerolog.Logger
 	failHard   bool
+	hook       ProgressTransportHook
 
 	lastPlanText string
 	deliverySeq  int
@@ -55,8 +55,12 @@ func NewSessionProgressDispatcher(
 	topicID int,
 	policy deliveryfmt.ProgressPolicy,
 	failHard bool,
+	hook ProgressTransportHook,
 	logger zerolog.Logger,
 ) SessionProgressEmitter {
+	if hook == nil {
+		hook = noopProgressTransportHook{}
+	}
 	return &sessionProgressDispatcher{
 		dispatcher: dispatcher,
 		from:       from,
@@ -66,6 +70,7 @@ func NewSessionProgressDispatcher(
 		policy:     policy,
 		logger:     logger,
 		failHard:   failHard,
+		hook:       hook,
 	}
 }
 
@@ -107,16 +112,12 @@ func (d *sessionProgressDispatcher) HandleNonTerminal(ctx context.Context, updat
 			result.SentProgress = true
 		}
 	}
-	if d.locator.ChannelType == string(deliverycmd.ChannelTypeSlackAgent) && strings.TrimSpace(update.VisibleResponseText) != "" {
-		d.deliverySeq++
-		dedupeSuffix := fmt.Sprintf("progress:stream:%03d", d.deliverySeq)
-		if err := sendProgressThinking(ctx, d.dispatcher, d.jobID, d.from, d.locator, d.policy, true, update.VisibleResponseText, d.deliverySeq, dedupeSuffix); err != nil {
-			if dispatchErr := d.handleDispatchError(err, "failed to dispatch slack agent streaming progress delivery"); dispatchErr != nil {
-				return result, dispatchErr
-			}
-		} else {
-			result.SentProgress = true
+	if handled, err := d.dispatchVisibleResponse(ctx, update.VisibleResponseText); err != nil {
+		if dispatchErr := d.handleDispatchError(err, "failed to dispatch transport-specific visible response progress delivery"); dispatchErr != nil {
+			return result, dispatchErr
 		}
+	} else if handled {
+		result.SentProgress = true
 	}
 	if result.SentProgress {
 		return result, nil
@@ -129,6 +130,21 @@ func (d *sessionProgressDispatcher) HandleNonTerminal(ctx context.Context, updat
 		}
 	}
 	return result, nil
+}
+
+func (d *sessionProgressDispatcher) dispatchVisibleResponse(ctx context.Context, text string) (bool, error) {
+	if d == nil || d.hook == nil {
+		return false, nil
+	}
+	return d.hook.DispatchVisibleResponse(ctx, VisibleResponseRequest{
+		Locator:             d.locator,
+		VisibleResponseText: text,
+		Dispatch: func(ctx context.Context, visibleResponseText string) error {
+			d.deliverySeq++
+			dedupeSuffix := fmt.Sprintf("progress:stream:%03d", d.deliverySeq)
+			return sendProgressThinking(ctx, d.dispatcher, d.jobID, d.from, d.locator, d.policy, true, visibleResponseText, d.deliverySeq, dedupeSuffix)
+		},
+	})
 }
 
 func (d *sessionProgressDispatcher) handleDispatchError(err error, msg string) error {

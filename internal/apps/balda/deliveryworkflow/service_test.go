@@ -9,12 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -153,6 +154,37 @@ func TestPrepareDeliveryFormatsProgressAndMediaCaptions(t *testing.T) {
 				t.Fatalf("typed message = %+v, want formatted content", delivery.Message)
 			}
 		})
+	}
+}
+
+func TestPrepareDeliveryAppliesStructuredProgressPresentation(t *testing.T) {
+	t.Parallel()
+
+	registry := workflowTestRegistry(t, workflowTestFormatter{name: deliveryfmt.NameTelegramRichMarkdown}, true)
+	structured, err := progressfmt.NewStructuredRegistry()
+	if err != nil {
+		t.Fatalf("progressfmt.NewStructuredRegistry() error = %v", err)
+	}
+	service := NewWithRegistries(nil, registry, structured, nil, nil, nil, nil, zerolog.Nop())
+
+	delivery, err := service.prepareDelivery(deliverycmd.Payload{
+		Locator:        deliverycmd.Locator{ChannelType: deliveryfmt.TransportTelegram},
+		Mode:           deliverycmd.ModeProgress,
+		DeliveryFormat: "",
+		Progress: &deliverycmd.Progress{
+			Kind:    deliverycmd.ProgressPlanUpdate,
+			Text:    "plan",
+			Visible: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("prepareDelivery() error = %v", err)
+	}
+	if delivery.Payload.DeliveryFormat != deliveryfmt.DeliveryFormatRichMarkdown {
+		t.Fatalf("delivery format = %q, want rich_markdown", delivery.Payload.DeliveryFormat)
+	}
+	if delivery.Message == nil || delivery.Message.Text != "formatted:plan" {
+		t.Fatalf("typed message = %+v, want formatted progress text", delivery.Message)
 	}
 }
 

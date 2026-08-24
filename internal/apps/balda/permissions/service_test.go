@@ -5,13 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -52,6 +54,15 @@ func (d reviewDispatcher) Dispatch(_ context.Context, envelope actorlayer.Envelo
 	return &actortransport.DispatchReceipt{}, nil
 }
 
+func testStructuredRegistry(t *testing.T) *deliveryfmt.StructuredRegistry {
+	t.Helper()
+	reg, err := permissionfmt.NewStructuredRegistry()
+	if err != nil {
+		t.Fatalf("permissionfmt.NewStructuredRegistry() error = %v", err)
+	}
+	return reg
+}
+
 func TestParseConfigDefaults(t *testing.T) {
 	config, err := ParseConfig("", "")
 	if err != nil {
@@ -68,14 +79,14 @@ func TestReviewStaticPoliciesSelectByKind(t *testing.T) {
 		{ID: "always", Kind: "allow_always"},
 		{ID: "once", Kind: "allow_once"},
 	}
-	allow, err := New(Config{Mode: permissioncmd.ModeAllowAll, Timeout: time.Minute}, nil, nil, zerolog.Nop()).Review(context.Background(), permissioncmd.Request{Options: options})
+	allow, err := New(Config{Mode: permissioncmd.ModeAllowAll, Timeout: time.Minute}, nil, nil, testStructuredRegistry(t), zerolog.Nop()).Review(context.Background(), permissioncmd.Request{Options: options})
 	if err != nil {
 		t.Fatalf("allow Review() error = %v", err)
 	}
 	if allow.OptionID != "once" {
 		t.Fatalf("allow option = %q, want once", allow.OptionID)
 	}
-	deny, err := New(Config{Mode: permissioncmd.ModeDenyAll, Timeout: time.Minute}, nil, nil, zerolog.Nop()).Review(context.Background(), permissioncmd.Request{Options: options})
+	deny, err := New(Config{Mode: permissioncmd.ModeDenyAll, Timeout: time.Minute}, nil, nil, testStructuredRegistry(t), zerolog.Nop()).Review(context.Background(), permissioncmd.Request{Options: options})
 	if err != nil {
 		t.Fatalf("deny Review() error = %v", err)
 	}
@@ -85,7 +96,7 @@ func TestReviewStaticPoliciesSelectByKind(t *testing.T) {
 }
 
 func TestAskUnsupportedChannelFailsClosed(t *testing.T) {
-	service := New(Config{Mode: permissioncmd.ModeAsk, Timeout: time.Minute}, nil, nil, zerolog.Nop())
+	service := New(Config{Mode: permissioncmd.ModeAsk, Timeout: time.Minute}, nil, nil, testStructuredRegistry(t), zerolog.Nop())
 	decision, err := service.Review(context.Background(), permissioncmd.Request{
 		Interaction: questioncmd.InteractionContext{SessionID: "s1", ChannelKind: "zulip"},
 		Options: []permissioncmd.Option{
@@ -107,6 +118,7 @@ func TestAskWaitsForGenericPermissionDecision(t *testing.T) {
 		Config{Mode: permissioncmd.ModeAsk, Timeout: time.Second},
 		questions.New(&reviewQuestionStore{}, nil, zerolog.Nop()),
 		dispatcher,
+		testStructuredRegistry(t),
 		zerolog.Nop(),
 	)
 	result := make(chan permissioncmd.Decision, 1)

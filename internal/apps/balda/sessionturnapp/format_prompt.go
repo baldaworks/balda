@@ -15,7 +15,7 @@ const (
 )
 
 type messageFormatRegistry interface {
-	Resolve(transport string, format deliveryfmt.DeliveryFormat) (deliveryfmt.Name, deliveryfmt.Format, deliveryfmt.Formatter, error)
+	deliveryfmt.PromptRegistry
 }
 
 type runtimeStateStore interface {

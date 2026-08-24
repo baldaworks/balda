@@ -6,12 +6,21 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
+	"go.uber.org/fx"
 )
 
 var (
 	markdownImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
 	markdownLinkPattern  = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 )
+
+type structuredRegistryRegistrar func(*deliveryfmt.StructuredRegistry) error
+
+type structuredRegistryParams struct {
+	fx.In
+
+	Registrars []structuredRegistryRegistrar `group:"balda_delivery_structured_registrar"`
+}
 
 type identityFormatter struct {
 	name deliveryfmt.Name
@@ -89,4 +98,14 @@ func newMessageFormatRegistry() (*deliveryfmt.Registry, error) {
 		})
 	}
 	return deliveryfmt.NewRegistry(formats, formatters, deliveryfmt.BuiltinRoutes())
+}
+
+func newStructuredMessageRegistry(params structuredRegistryParams) (*deliveryfmt.StructuredRegistry, error) {
+	reg := deliveryfmt.NewStructuredRegistry()
+	for _, register := range params.Registrars {
+		if err := register(reg); err != nil {
+			return nil, err
+		}
+	}
+	return reg, nil
 }

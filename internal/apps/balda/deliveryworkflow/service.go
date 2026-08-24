@@ -9,15 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/google/uuid"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -38,7 +39,8 @@ type QuestionDeliveryBinder interface {
 
 type Service struct {
 	dispatcher Dispatcher
-	registry   *deliveryfmt.Registry
+	registry   PromptRegistry
+	structured StructuredMessageRegistry
 	outbox     DeliveryStore
 	events     JobEvents
 	questions  QuestionDeliveryBinder
@@ -47,11 +49,15 @@ type Service struct {
 }
 
 func New(dispatcher Dispatcher, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, actor actortransport.Dispatcher, logger zerolog.Logger) *Service {
-	return NewWithRegistry(dispatcher, nil, outbox, events, questions, actor, logger)
+	return NewWithRegistries(dispatcher, nil, nil, outbox, events, questions, actor, logger)
 }
 
-func NewWithRegistry(dispatcher Dispatcher, registry *deliveryfmt.Registry, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, actor actortransport.Dispatcher, logger zerolog.Logger) *Service {
-	return &Service{dispatcher: dispatcher, registry: registry, outbox: outbox, events: events, questions: questions, actor: actor, logger: logger}
+func NewWithRegistry(dispatcher Dispatcher, registry PromptRegistry, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, actor actortransport.Dispatcher, logger zerolog.Logger) *Service {
+	return NewWithRegistries(dispatcher, registry, nil, outbox, events, questions, actor, logger)
+}
+
+func NewWithRegistries(dispatcher Dispatcher, registry PromptRegistry, structured StructuredMessageRegistry, outbox DeliveryStore, events JobEvents, questions QuestionDeliveryBinder, actor actortransport.Dispatcher, logger zerolog.Logger) *Service {
+	return &Service{dispatcher: dispatcher, registry: registry, structured: structured, outbox: outbox, events: events, questions: questions, actor: actor, logger: logger}
 }
 
 func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload deliverycmd.Payload) error {
@@ -209,6 +215,7 @@ func (e *preparationError) Error() string { return e.err.Error() }
 func (e *preparationError) Unwrap() error { return e.err }
 
 func (s *Service) prepareDelivery(payload deliverycmd.Payload) (Delivery, error) {
+	payload = s.prepareStructuredPayload(payload)
 	delivery := Delivery{Payload: payload}
 	text, formatted := formattedText(payload)
 	if !formatted {
@@ -230,6 +237,28 @@ func (s *Service) prepareDelivery(payload deliverycmd.Payload) (Delivery, error)
 	}
 	delivery.Message = &message
 	return delivery, nil
+}
+
+func (s *Service) prepareStructuredPayload(payload deliverycmd.Payload) deliverycmd.Payload {
+	if s == nil || s.structured == nil || payload.Mode != deliverycmd.ModeProgress || payload.Progress == nil || !payload.Progress.Visible {
+		return payload
+	}
+	env := deliveryfmt.StructuredEnvelope[progressfmt.Request]{
+		Descriptor: progressfmt.RequestDescriptor,
+		Body:       progressfmt.Request{Progress: *payload.Progress},
+	}
+	presentation, err := s.structured.RenderStructured(context.Background(), strings.ToLower(strings.TrimSpace(payload.Locator.ChannelType)), progressfmt.RequestDescriptor.Type, env)
+	if err != nil {
+		return payload
+	}
+	updated := payload
+	progress := *payload.Progress
+	progress.Text = presentation.Text
+	updated.Progress = &progress
+	if strings.TrimSpace(string(updated.DeliveryFormat)) == "" {
+		updated.DeliveryFormat = presentation.DeliveryFormat
+	}
+	return updated
 }
 
 func preparationFailureStage(err error) string {

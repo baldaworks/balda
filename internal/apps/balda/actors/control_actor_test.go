@@ -365,6 +365,18 @@ func TestTaskControlActorSchedulesOneShotWaitForSlackAgentLocator(t *testing.T) 
 	if got, want := job.ReportToAddressKey, locator.AddressKey; got != want {
 		t.Fatalf("ReportToAddressKey = %q, want %q", got, want)
 	}
+	if got, want := job.AddressJSON, locator.AddressJSON; got != want {
+		t.Fatalf("AddressJSON = %q, want %q", got, want)
+	}
+	if got, want := job.ReportToAddressJSON, locator.AddressJSON; got != want {
+		t.Fatalf("ReportToAddressJSON = %q, want %q", got, want)
+	}
+	if got, want := job.SessionID, locator.SessionID; got != want {
+		t.Fatalf("SessionID = %q, want %q", got, want)
+	}
+	if got, want := job.ReportToSessionID, locator.SessionID; got != want {
+		t.Fatalf("ReportToSessionID = %q, want %q", got, want)
+	}
 }
 
 func waitCancelDone(t *testing.T, runCtx context.Context, label string) {

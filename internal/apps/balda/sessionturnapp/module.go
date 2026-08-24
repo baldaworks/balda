@@ -15,6 +15,13 @@ import (
 	"go.uber.org/fx"
 )
 
+type progressTransportHookParams struct {
+	fx.In
+
+	Service *TurnExecutionService
+	Hook    ProgressTransportHook `optional:"true"`
+}
+
 type completedTurnCaptureAdapter struct {
 	capture *sessionmemoryapp.TurnCapture
 }
@@ -51,7 +58,7 @@ func newTurnExecutionServiceWithCapture(
 	logger zerolog.Logger,
 	autoMaxTurns int,
 	capture CompletedTurnCapture,
-	registry *deliveryfmt.Registry,
+	registry deliveryfmt.PromptRegistry,
 ) *TurnExecutionService {
 	return NewTurnExecutionServiceWithFormats(dispatcher, jobEvents, sessions, logger, autoMaxTurns, capture, registry)
 }
@@ -70,5 +77,10 @@ var Module = fx.Module("balda_sessionturnapp",
 		NewMemoryStateProvider,
 		sessionturn.NewRunner,
 		fx.Annotate(func(r *sessionturn.Runner) appports.SessionTurnRunner { return r }),
+	),
+	fx.Invoke(
+		func(params progressTransportHookParams) {
+			params.Service.SetProgressTransportHook(params.Hook)
+		},
 	),
 )
