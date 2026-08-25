@@ -42,17 +42,17 @@ func TestParseRejectsMalformedRef(t *testing.T) {
 	}
 }
 
-func TestParseSlackThread(t *testing.T) {
+func TestParseSlackAgentConversation(t *testing.T) {
 	t.Parallel()
 
-	got, err := Parse("slack:t:T123:C456:1712345678.000100")
+	got, err := Parse("slack_agent:c:T123:C456")
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	want, err := NewSlackThreadLocator("T123", "C456", "1712345678.000100")
+	want, err := NewSlackAgentConversationLocator("T123", "C456")
 	if err != nil {
-		t.Fatalf("NewSlackThreadLocator() error = %v", err)
+		t.Fatalf("NewSlackAgentConversationLocator() error = %v", err)
 	}
 	if got != want {
 		t.Fatalf("Parse() = %+v, want %+v", got, want)

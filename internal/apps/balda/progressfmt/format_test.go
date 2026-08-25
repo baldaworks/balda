@@ -29,8 +29,8 @@ func TestTelegramUsesRichMarkdown(t *testing.T) {
 	}
 }
 
-func TestSlackUsesPlainText(t *testing.T) {
-	presentation, err := deliveryfmt.RenderStructured(t.Context(), mustRegistry(t), deliveryfmt.TransportSlack, deliveryfmt.StructuredEnvelope[Request]{
+func TestZulipUsesPlainText(t *testing.T) {
+	presentation, err := deliveryfmt.RenderStructured(t.Context(), mustRegistry(t), deliveryfmt.TransportZulip, deliveryfmt.StructuredEnvelope[Request]{
 		Descriptor: RequestDescriptor,
 		Body: Request{Progress: deliverycmd.Progress{
 			Kind:    deliverycmd.ProgressPlanUpdate,

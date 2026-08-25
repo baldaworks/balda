@@ -14,7 +14,6 @@ import (
 
 const (
 	channelTypeTelegram   = telegramref.ChannelType
-	channelTypeSlackChat  = string(deliverycmd.ChannelTypeSlackChat)
 	channelTypeSlackAgent = string(deliverycmd.ChannelTypeSlackAgent)
 	channelTypeZulip      = "zulip"
 )
@@ -55,8 +54,6 @@ func Parse(ref string) (deliverycmd.Locator, error) {
 		return telegramLocatorFromAddressKey(addressKey)
 	case channelTypeZulip:
 		return zulipLocatorFromAddressKey(addressKey)
-	case channelTypeSlackChat:
-		return slackLocatorFromAddressKey(addressKey)
 	case channelTypeSlackAgent:
 		return slackAgentLocatorFromAddressKey(addressKey)
 	default:
@@ -85,21 +82,6 @@ func telegramLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, erro
 		string(raw),
 		fmt.Sprintf("tg-%d-%d", chatID, topicID),
 	)
-}
-
-// NewSlackDMLocator builds a canonical Slack chat direct-message locator.
-func NewSlackDMLocator(teamID, channelID string) (deliverycmd.Locator, error) {
-	return slackLocatorFromAddressKey(fmt.Sprintf("dm:%s:%s", strings.TrimSpace(teamID), strings.TrimSpace(channelID)))
-}
-
-// NewSlackThreadLocator builds a canonical Slack chat thread locator.
-func NewSlackThreadLocator(teamID, channelID, threadTS string) (deliverycmd.Locator, error) {
-	return slackLocatorFromAddressKey(fmt.Sprintf(
-		"t:%s:%s:%s",
-		strings.TrimSpace(teamID),
-		strings.TrimSpace(channelID),
-		strings.TrimSpace(threadTS),
-	))
 }
 
 // NewSlackAgentConversationLocator builds a canonical Slack Agent conversation locator.
@@ -142,51 +124,6 @@ func ZulipStreamID(locator deliverycmd.Locator) (int, bool) {
 	}
 	streamID, err := strconv.Atoi(parts[1])
 	return streamID, err == nil && streamID > 0
-}
-
-func slackLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
-	parts := strings.Split(strings.TrimSpace(addressKey), ":")
-	switch {
-	case len(parts) == 3 && parts[0] == "dm":
-		if parts[1] == "" || parts[2] == "" {
-			return deliverycmd.Locator{}, fmt.Errorf("slack dm address key %q must be dm:<team_id>:<channel_id>", addressKey)
-		}
-		return newSlackLocator(slackLocatorAddress{
-			Type:    "dm",
-			TeamID:  strings.TrimSpace(parts[1]),
-			Channel: strings.TrimSpace(parts[2]),
-		}, addressKey)
-	case len(parts) == 4 && parts[0] == "t":
-		if parts[1] == "" || parts[2] == "" || parts[3] == "" {
-			return deliverycmd.Locator{}, fmt.Errorf("slack thread address key %q must be t:<team_id>:<channel_id>:<thread_ts>", addressKey)
-		}
-		return newSlackLocator(slackLocatorAddress{
-			Type:     "thread",
-			TeamID:   strings.TrimSpace(parts[1]),
-			Channel:  strings.TrimSpace(parts[2]),
-			ThreadTS: strings.TrimSpace(parts[3]),
-		}, addressKey)
-	default:
-		return deliverycmd.Locator{}, fmt.Errorf("slack address key %q must be dm:<team_id>:<channel_id> or t:<team_id>:<channel_id>:<thread_ts>", addressKey)
-	}
-}
-
-type slackLocatorAddress struct {
-	Type     string `json:"type"`
-	TeamID   string `json:"team_id"`
-	Channel  string `json:"channel"`
-	ThreadTS string `json:"thread_ts,omitempty"`
-}
-
-func newSlackLocator(address slackLocatorAddress, addressKey string) (deliverycmd.Locator, error) {
-	raw, _ := json.Marshal(address)
-	sum := sha256.Sum256([]byte(strings.TrimSpace(addressKey)))
-	return deliverycmd.NewLocator(
-		channelTypeSlackChat,
-		strings.TrimSpace(addressKey),
-		string(raw),
-		fmt.Sprintf("sl-%x", sum[:8]),
-	)
 }
 
 type slackAgentLocatorAddress struct {

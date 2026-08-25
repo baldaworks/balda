@@ -81,7 +81,6 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"scheduled jobs",
 		"inbound webhooks",
 		"zulip ingress",
-		"slack chat ingress",
 		"slack agent ingress",
 		"telegram ingress",
 	}

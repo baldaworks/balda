@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
-	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
@@ -158,7 +157,6 @@ func PreflightRuntime(
 			func() sessionmemoryapp.ScopeResolver {
 				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
 					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
-					baldaslack.ChannelType:      baldaslack.ClassifyLocatorScope,
 					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
 				})

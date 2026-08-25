@@ -153,7 +153,6 @@ type applicationLifecycleParams struct {
 	Scheduler            *scheduledjobs.ScheduledJobScheduler
 	InboundWebhook       *handlers.InboundWebhookReceiver
 	Zulip                *handlers.ZulipBaldaHandler
-	SlackChat            *handlers.SlackChatHandler
 	SlackAgent           *baldaslackagent.Server
 	TelegramBot          *runtime.Bot
 	TelegramEnabled      bool `name:"balda_telegram_enabled"`
@@ -197,7 +196,6 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "scheduled jobs", start: p.Scheduler.Start, stop: p.Scheduler.Stop},
 		{name: "inbound webhooks", start: p.InboundWebhook.Start, stop: p.InboundWebhook.Stop},
 		{name: "zulip ingress", start: p.Zulip.Start, stop: p.Zulip.Stop},
-		{name: "slack chat ingress", start: p.SlackChat.Start, stop: p.SlackChat.Stop},
 		{name: "slack agent ingress", start: p.SlackAgent.Start, stop: p.SlackAgent.Stop},
 		{name: "telegram ingress", start: telegram.Start, stop: telegram.Stop},
 	}

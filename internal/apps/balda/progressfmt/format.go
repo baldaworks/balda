@@ -36,7 +36,6 @@ func RegisterStructuredRenderers(reg *deliveryfmt.StructuredRegistry) error {
 		transport string
 		renderer  deliveryfmt.StructuredRenderer[Request]
 	}{
-		{transport: deliveryfmt.TransportSlack, renderer: plainRenderer{format: deliveryfmt.DeliveryFormatNone}},
 		{transport: deliveryfmt.TransportZulip, renderer: plainRenderer{format: deliveryfmt.DeliveryFormatNone}},
 	} {
 		if err := deliveryfmt.RegisterStructuredRenderer(reg, registration.transport, RequestDescriptor, registration.renderer); err != nil {

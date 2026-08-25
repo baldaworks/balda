@@ -40,7 +40,7 @@ func TestMessageFormatRegistryProvidesCurrentPromptRoutes(t *testing.T) {
 		{deliveryfmt.TransportTelegram, deliveryfmt.DeliveryFormatRichMarkdown, deliveryfmt.NameTelegramRichMarkdown, "Telegram Rich Markdown"},
 		{deliveryfmt.TransportTelegram, deliveryfmt.DeliveryFormatRichHTML, deliveryfmt.NameTelegramRichHTML, "Telegram Rich HTML"},
 		{deliveryfmt.TransportTelegram, deliveryfmt.DeliveryFormatNone, deliveryfmt.NamePlainText, "plain text only"},
-		{deliveryfmt.TransportSlack, deliveryfmt.DeliveryFormatMrkdwn, deliveryfmt.NameSlackMrkdwn, "Slack mrkdwn"},
+		{deliveryfmt.TransportSlackAgent, deliveryfmt.DeliveryFormatMrkdwn, deliveryfmt.NameSlackMrkdwn, "Slack mrkdwn"},
 		{deliveryfmt.TransportZulip, deliveryfmt.DeliveryFormatMarkdown, deliveryfmt.NameZulipMarkdown, "Zulip-compatible Markdown"},
 	} {
 		t.Run(test.transport+"/"+string(test.deliveryFormat), func(t *testing.T) {
@@ -104,8 +104,8 @@ func TestMessageFormatRegistryFormatsCurrentRoutes(t *testing.T) {
 			wantMessageName: deliveryfmt.NamePlainText,
 		},
 		{
-			name:            "slack native",
-			transport:       deliveryfmt.TransportSlack,
+			name:            "slack agent native",
+			transport:       deliveryfmt.TransportSlackAgent,
 			deliveryFormat:  deliveryfmt.DeliveryFormatMrkdwn,
 			input:           "*Build:* passed",
 			wantText:        "*Build:* passed",

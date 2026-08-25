@@ -3,7 +3,6 @@ package deliveryfmt
 const (
 	// Transport identifiers intentionally mirror the public locator channel type.
 	TransportTelegram   = "telegram"
-	TransportSlack      = "slack"
 	TransportSlackAgent = "slack_agent"
 	TransportZulip      = "zulip"
 
@@ -25,8 +24,6 @@ const (
 func BuiltinRoutes() []Route {
 	return []Route{
 		{Transport: TransportTelegram, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
-		{Transport: TransportSlack, DeliveryFormat: DeliveryFormatMrkdwn, RegisteredName: NameSlackMrkdwn},
-		{Transport: TransportSlack, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
 		{Transport: TransportSlackAgent, DeliveryFormat: DeliveryFormatMrkdwn, RegisteredName: NameSlackMrkdwn},
 		{Transport: TransportSlackAgent, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
 		{Transport: TransportZulip, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},

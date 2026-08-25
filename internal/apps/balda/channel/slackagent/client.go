@@ -1,4 +1,4 @@
-package slack
+package slackagent
 
 import (
 	"bytes"
@@ -18,7 +18,6 @@ const (
 	maxErrorResponseBodyText = 4096
 )
 
-// Client is a small Slack Web API client for Balda's Slack chat channel needs.
 type Client struct {
 	baseURL string
 	token   string
@@ -33,20 +32,11 @@ type postMessageRequest struct {
 }
 
 type postMessageResponse struct {
-	OK      bool   `json:"ok"`
-	Error   string `json:"error"`
-	Channel string `json:"channel"`
-	TS      string `json:"ts"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error"`
+	TS    string `json:"ts"`
 }
 
-type authTestResponse struct {
-	OK     bool   `json:"ok"`
-	Error  string `json:"error"`
-	TeamID string `json:"team_id"`
-	UserID string `json:"user_id"`
-}
-
-// APIError describes a Slack Web API error response.
 type APIError struct {
 	Method     string
 	StatusCode int
@@ -61,12 +51,10 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("slack %s returned HTTP %d: %s", e.Method, e.StatusCode, e.Message)
 }
 
-// NewClient creates a Slack Web API client.
 func NewClient(token string) *Client {
 	return NewClientWithBaseURL(defaultAPIBaseURL, token)
 }
 
-// NewClientWithBaseURL creates a Slack Web API client using a custom API base URL.
 func NewClientWithBaseURL(baseURL, token string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
@@ -75,19 +63,6 @@ func NewClientWithBaseURL(baseURL, token string) *Client {
 	}
 }
 
-// AuthTest validates the configured bot token and returns bot identity fields.
-func (c *Client) AuthTest(ctx context.Context) (teamID string, userID string, err error) {
-	var result authTestResponse
-	if err := c.postJSON(ctx, "auth.test", map[string]string{}, &result); err != nil {
-		return "", "", err
-	}
-	if !result.OK {
-		return "", "", &APIError{Method: "auth.test", StatusCode: http.StatusOK, Code: result.Error, Message: result.Error}
-	}
-	return result.TeamID, result.UserID, nil
-}
-
-// PostMessage posts a Slack message and returns the provider message timestamp.
 func (c *Client) PostMessage(ctx context.Context, channel, threadTS, text string, mrkdwn bool) (string, error) {
 	req := postMessageRequest{
 		Channel:  strings.TrimSpace(channel),

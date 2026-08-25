@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
@@ -26,7 +25,7 @@ func TestAdapterDeliverAgentReplyReturnsProviderMessageID(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	client := baldaslack.NewClientWithBaseURL(server.URL, "xoxb-token")
+	client := NewClientWithBaseURL(server.URL, "xoxb-token")
 	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
 	locator := NewThreadLocator("T123", "C456", "thread-789")
 
@@ -60,7 +59,7 @@ func TestAdapterDeliverAgentReplyAppendsSuggestedPromptsWhenEnabled(t *testing.T
 	}))
 	t.Cleanup(server.Close)
 
-	client := baldaslack.NewClientWithBaseURL(server.URL, "xoxb-token")
+	client := NewClientWithBaseURL(server.URL, "xoxb-token")
 	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{SuggestedPrompts: true})
 	locator := NewConversationLocator("T123", "C456")
 

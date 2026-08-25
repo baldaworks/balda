@@ -16,8 +16,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
-	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/slack/slackfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
@@ -268,7 +266,6 @@ func Module(
 			func() sessionmemoryapp.ScopeResolver {
 				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
 					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
-					baldaslack.ChannelType:      baldaslack.ClassifyLocatorScope,
 					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
 				})
@@ -582,21 +579,8 @@ func Module(
 				fx.ResultTags(`name:"balda_zulip_webhook_token"`),
 			),
 		),
-		// Slack chat transport
-		fx.Provide(func() *baldaslack.Client {
-			return baldaslack.NewClient(cfg.Balda.Slack.BotToken)
-		}),
-		fx.Provide(func(client *baldaslack.Client) handlers.SlackChatClient { return client }),
-		fx.Provide(func() handlers.SlackChatConfig {
-			return handlers.SlackChatConfig{
-				Enabled:                cfg.Balda.Slack.Enabled,
-				BotToken:               strings.TrimSpace(cfg.Balda.Slack.BotToken),
-				SigningSecret:          strings.TrimSpace(cfg.Balda.Slack.SigningSecret),
-				ListenAddr:             strings.TrimSpace(cfg.Balda.Slack.ListenAddr),
-				EventsPath:             strings.TrimSpace(cfg.Balda.Slack.EventsPath),
-				CommandsPath:           strings.TrimSpace(cfg.Balda.Slack.CommandsPath),
-				IncludePrivateChannels: cfg.Balda.Slack.IncludePrivateChannels,
-			}
+		fx.Provide(func() *baldaslackagent.Client {
+			return baldaslackagent.NewClient(cfg.Balda.Slack.BotToken)
 		}),
 		fx.Provide(func() baldaslackagent.Config {
 			return baldaslackagent.Config{
@@ -645,7 +629,6 @@ func Module(
 		sessionturnapp.Module,
 		controlapp.Module,
 		deliveryfx.Module,
-		slackfx.Module,
 		slackagentfx.Module,
 		telegramfx.Module,
 		zulipfx.Module,

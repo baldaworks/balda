@@ -204,8 +204,6 @@ func TestBuiltinRoutes(t *testing.T) {
 	routes := BuiltinRoutes()
 	want := map[routeKey]Name{
 		{transport: TransportTelegram, deliveryFormat: DeliveryFormatNone}:     NamePlainText,
-		{transport: TransportSlack, deliveryFormat: DeliveryFormatMrkdwn}:      NameSlackMrkdwn,
-		{transport: TransportSlack, deliveryFormat: DeliveryFormatNone}:        NamePlainText,
 		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatMrkdwn}: NameSlackMrkdwn,
 		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatNone}:   NamePlainText,
 		{transport: TransportZulip, deliveryFormat: DeliveryFormatNone}:        NamePlainText,

@@ -45,7 +45,7 @@ func TestRenderSlackAppendsOptions(t *testing.T) {
 	presentation := Render(Request{
 		Prompt:  "Continue deployment?",
 		Options: []questioncmd.Option{{ID: "yes", Label: "Yes"}, {ID: "no", Label: "No"}},
-	}, deliveryfmt.TransportSlack)
+	}, deliveryfmt.TransportSlackAgent)
 	if presentation.DeliveryFormat != deliveryfmt.DeliveryFormatNone {
 		t.Fatalf("delivery format = %q", presentation.DeliveryFormat)
 	}

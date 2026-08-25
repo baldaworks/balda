@@ -1,7 +1,6 @@
 package slackagentfx
 
 import (
-	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
@@ -12,7 +11,7 @@ var Module = fx.Module(
 	"balda_channel_slackagent_fx",
 	fx.Provide(
 		slackagent.NewServer,
-		func(client *baldaslack.Client) slackagent.MessageClient { return client },
+		func(client *slackagent.Client) slackagent.MessageClient { return client },
 		slackagent.NewAdapter,
 		fx.Annotate(
 			func(adapter *slackagent.Adapter) deliveryfx.ChannelAdapterBinding {

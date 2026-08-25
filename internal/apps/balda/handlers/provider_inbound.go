@@ -144,12 +144,7 @@ func parseZulipUserID(value string) (int, error) {
 }
 
 func slackDMLocator(teamID, channelID string) deliverycmd.Locator {
-	locator, _ := locatorref.NewSlackDMLocator(teamID, channelID)
-	return locator
-}
-
-func slackThreadLocator(teamID, channelID, threadTS string) deliverycmd.Locator {
-	locator, _ := locatorref.NewSlackThreadLocator(teamID, channelID, threadTS)
+	locator, _ := locatorref.NewSlackAgentConversationLocator(teamID, channelID)
 	return locator
 }
 
