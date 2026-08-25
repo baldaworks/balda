@@ -494,7 +494,7 @@ type fakeInboundTurnExecutor struct {
 	submitErr          error
 }
 
-func (f *fakeInboundTurnExecutor) submitWebhookTask(
+func (f *fakeInboundTurnExecutor) SubmitWebhookTask(
 	_ context.Context,
 	payload actors.SessionTurnPayload,
 	routeName string,
@@ -519,7 +519,7 @@ func (f *fakeInboundTurnExecutor) submitWebhookTask(
 	}, taskID, nil
 }
 
-func (f *fakeInboundTurnExecutor) submitSessionTurn(_ context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
+func (f *fakeInboundTurnExecutor) SubmitSessionTurn(_ context.Context, payload actors.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
 	if f.submitErr != nil {
 		return nil, f.submitErr
 	}

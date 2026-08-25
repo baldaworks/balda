@@ -134,16 +134,16 @@ type inboundWebhookDedupePolicy struct {
 	Header string
 }
 
-type inboundTurnExecutor interface {
-	submitWebhookTask(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error)
-	submitSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error)
+type InboundTurnExecutor interface {
+	SubmitWebhookTask(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error)
+	SubmitSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error)
 }
 
 type inboundWebhookParams struct {
 	fx.In
 
 	Config     InboundWebhookConfig
-	Balda      *BaldaHandler
+	Executor   InboundTurnExecutor `optional:"true"`
 	OwnerStore *auth.OwnerStore
 	Logger     zerolog.Logger
 }
@@ -154,7 +154,7 @@ type InboundWebhookReceiver struct {
 	enabled    bool
 	listenAddr string
 	routes     map[string]inboundWebhookRoute
-	balda      inboundTurnExecutor
+	balda      InboundTurnExecutor
 	owner      *auth.OwnerStore
 	logger     zerolog.Logger
 
@@ -596,9 +596,9 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		enqueueErr error
 	)
 	if route.Mode == inboundWebhookRouteModeSession {
-		result, enqueueErr = r.balda.submitSessionTurn(req.Context(), payload)
+		result, enqueueErr = r.balda.SubmitSessionTurn(req.Context(), payload)
 	} else {
-		result, taskID, enqueueErr = r.balda.submitWebhookTask(req.Context(), payload, route.Name, requestID)
+		result, taskID, enqueueErr = r.balda.SubmitWebhookTask(req.Context(), payload, route.Name, requestID)
 	}
 	if enqueueErr != nil {
 		if baldaexecution.IsCommandQueueFull(enqueueErr) {

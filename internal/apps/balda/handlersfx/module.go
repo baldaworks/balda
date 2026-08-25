@@ -1,6 +1,7 @@
 package handlersfx
 
 import (
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
@@ -9,23 +10,26 @@ import (
 // Module wires ingress-owned ports to concrete provider runtimes.
 var Module = fx.Module("balda_handlersfx",
 	fx.Provide(
+		fx.Annotate(
+			func(server *baldatelegram.Server) handlers.BaldaOwnerActivator { return server },
+		),
+		fx.Annotate(
+			func(server *baldatelegram.Server) handlers.InboundTurnExecutor { return server },
+		),
 		newTelegramChannelAdapter,
-		newTelegramAttachmentStore,
 		fx.Annotate(
 			func(handler *handlers.StartHandler) tgbotkit.Handler {
-				return newTelegramHandlerAdapter(handler)
+				return newTelegramCommandHandlerAdapter(handler)
 			},
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		fx.Annotate(
-			func(handler *handlers.BaldaHandler) tgbotkit.Handler {
-				return newTelegramHandlerAdapter(handler)
-			},
+			newTelegramServerHandlerAdapter,
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		fx.Annotate(
 			func(handler *handlers.CommandHandler) tgbotkit.Handler {
-				return newTelegramHandlerAdapter(handler)
+				return newTelegramCommandHandlerAdapter(handler)
 			},
 			fx.ResultTags(`group:"bot_handlers"`),
 		),

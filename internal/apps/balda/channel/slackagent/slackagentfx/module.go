@@ -1,6 +1,7 @@
 package slackagentfx
 
 import (
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
@@ -36,6 +37,16 @@ var Module = fx.Module(
 		),
 		fx.Annotate(
 			func() sessionturnapp.ProgressTransportHook { return progressTransportHook{} },
+		),
+		fx.Annotate(
+			func(server *slackagent.Server) appports.TransportLifecycleStage {
+				return appports.TransportLifecycleStage{
+					Name:  "slack agent ingress",
+					Start: server.Start,
+					Stop:  server.Stop,
+				}
+			},
+			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),
 		),
 	),
 )

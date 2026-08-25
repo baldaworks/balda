@@ -8,7 +8,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
-	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
@@ -149,11 +149,9 @@ type applicationLifecycleParams struct {
 	OutboxPublisher      *baldajobs.OutboxPublisher
 	ActorHost            *baldaexecution.ActorHost
 	TurnDispatcher       *actors.TurnDispatcher
-	BaldaHandler         *handlers.BaldaHandler
 	Scheduler            *scheduledjobs.ScheduledJobScheduler
 	InboundWebhook       *handlers.InboundWebhookReceiver
-	Zulip                *handlers.ZulipBaldaHandler
-	SlackAgent           *baldaslackagent.Server
+	TransportStages      []appports.TransportLifecycleStage `group:"balda_transport_lifecycle_stage"`
 	TelegramBot          *runtime.Bot
 	TelegramEnabled      bool `name:"balda_telegram_enabled"`
 }
@@ -169,7 +167,7 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 }
 
 func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegramLifecycle) []lifecycleStage {
-	return []lifecycleStage{
+	stages := []lifecycleStage{
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
 			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
@@ -192,13 +190,18 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "job event projector", start: p.Projector.Start, stop: p.Projector.Stop},
 		{name: "job event outbox", start: p.OutboxPublisher.Start, stop: p.OutboxPublisher.Stop},
 		{name: "actor host", start: p.ActorHost.Start, stop: p.ActorHost.Stop},
-		{name: "telegram bootstrap", start: p.BaldaHandler.Start},
 		{name: "scheduled jobs", start: p.Scheduler.Start, stop: p.Scheduler.Stop},
 		{name: "inbound webhooks", start: p.InboundWebhook.Start, stop: p.InboundWebhook.Stop},
-		{name: "zulip ingress", start: p.Zulip.Start, stop: p.Zulip.Stop},
-		{name: "slack agent ingress", start: p.SlackAgent.Start, stop: p.SlackAgent.Stop},
-		{name: "telegram ingress", start: telegram.Start, stop: telegram.Stop},
 	}
+	for _, stage := range p.TransportStages {
+		stages = append(stages, lifecycleStage{
+			name:  stage.Name,
+			start: stage.Start,
+			stop:  stage.Stop,
+		})
+	}
+	stages = append(stages, lifecycleStage{name: "telegram ingress", start: telegram.Start, stop: telegram.Stop})
+	return stages
 }
 
 type sessionMemoryRuntime interface {

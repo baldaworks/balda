@@ -4,7 +4,6 @@ package handlersfx
 import (
 	"context"
 
-	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
@@ -18,30 +17,12 @@ type telegramChannelAdapter struct {
 	channel *baldatelegram.Adapter
 }
 
-func (a telegramChannelAdapter) MessageContextFromEvent(event *events.MessageEvent) (handlers.TelegramMessageContext, bool) {
-	message, ok := a.channel.MessageContextFromEvent(event)
-	return handlers.TelegramMessageContext(message), ok
-}
-
-func (a telegramChannelAdapter) CommandContextFromEvent(event *events.CommandEvent) (handlers.TelegramCommandContext, bool) {
+func (a telegramChannelAdapter) CommandContextFromEvent(event *events.CommandEvent) (handlers.CommandContext, bool) {
 	command, ok := a.channel.CommandContextFromEvent(event)
-	return handlers.TelegramCommandContext(command), ok
-}
-
-func (a telegramChannelAdapter) TopicLifecycleFromEvent(event *events.MessageEvent) (handlers.TelegramTopicLifecycleContext, bool) {
-	lifecycle, ok := a.channel.TopicLifecycleFromEvent(event)
-	return handlers.TelegramTopicLifecycleContext(lifecycle), ok
-}
-
-func (a telegramChannelAdapter) CallbackContextFromEvent(event *events.CallbackQueryEvent) (handlers.TelegramCallbackContext, bool) {
-	callback, ok := a.channel.CallbackContextFromEvent(event)
-	return handlers.TelegramCallbackContext(callback), ok
-}
-
-func (a telegramChannelAdapter) CollectMediaGroup(message handlers.TelegramMessageContext, dispatch func(context.Context, handlers.TelegramMessageContext)) bool {
-	return a.channel.CollectMediaGroup(baldatelegram.MessageContext(message), func(ctx context.Context, grouped baldatelegram.MessageContext) {
-		dispatch(ctx, handlers.TelegramMessageContext(grouped))
-	})
+	if !ok {
+		return handlers.CommandContext{}, false
+	}
+	return handlers.CommandContext(command), true
 }
 
 func (a telegramChannelAdapter) CreateTopicLocator(ctx context.Context, chatID int64, topicName string) (deliverycmd.Locator, error) {
@@ -50,10 +31,6 @@ func (a telegramChannelAdapter) CreateTopicLocator(ctx context.Context, chatID i
 
 func (a telegramChannelAdapter) Close(ctx context.Context, locator deliverycmd.Locator) error {
 	return a.channel.Close(ctx, locator)
-}
-
-func (a telegramChannelAdapter) AnswerQuestionCallback(ctx context.Context, callbackQueryID, text string, showAlert bool) error {
-	return a.channel.AnswerQuestionCallback(ctx, callbackQueryID, text, showAlert)
 }
 
 type telegramRegistryAdapter struct {
@@ -76,22 +53,34 @@ func (a telegramRegistryAdapter) OnCallbackDataPrefix(prefix string, handler fun
 	a.registry.OnCallbackDataPrefix(prefix, runtimehandlers.CallbackQueryHandler(handler))
 }
 
-type telegramHandlerAdapter struct {
-	handler handlers.TelegramHandler
+type telegramCommandHandler interface {
+	Register(registry handlers.CommandRegistry)
 }
 
-func (a telegramHandlerAdapter) Register(registry tgbotkit.Registry) {
+type telegramCommandHandlerAdapter struct {
+	handler telegramCommandHandler
+}
+
+func (a telegramCommandHandlerAdapter) Register(registry tgbotkit.Registry) {
 	a.handler.Register(telegramRegistryAdapter{registry: registry})
 }
 
-func newTelegramHandlerAdapter(handler handlers.TelegramHandler) tgbotkit.Handler {
-	return telegramHandlerAdapter{handler: handler}
+func newTelegramCommandHandlerAdapter(handler telegramCommandHandler) tgbotkit.Handler {
+	return telegramCommandHandlerAdapter{handler: handler}
 }
 
-func newTelegramChannelAdapter(channel *baldatelegram.Adapter) handlers.TelegramChannel {
+type telegramServerHandlerAdapter struct {
+	server *baldatelegram.Server
+}
+
+func (a telegramServerHandlerAdapter) Register(registry tgbotkit.Registry) {
+	a.server.Register(telegramRegistryAdapter{registry: registry})
+}
+
+func newTelegramServerHandlerAdapter(server *baldatelegram.Server) tgbotkit.Handler {
+	return telegramServerHandlerAdapter{server: server}
+}
+
+func newTelegramChannelAdapter(channel *baldatelegram.Adapter) handlers.CommandChannel {
 	return telegramChannelAdapter{channel: channel}
-}
-
-func newTelegramAttachmentStore(store attachmentstore.Store) handlers.TelegramAttachmentStore {
-	return store
 }

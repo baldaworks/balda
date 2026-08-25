@@ -3,9 +3,7 @@ package handlers
 import (
 	"context"
 	"strings"
-	"time"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
@@ -65,40 +63,4 @@ func loadAutoStatusWithDefault(ctx context.Context, sessions autoStateManager, l
 		}
 	}
 	return automode.NormalizeWithDefault(status, defaultMaxTurns), nil
-}
-
-func plainAutoCommandReply(
-	ctx context.Context,
-	sessions autoStateManager,
-	dispatcher actortransport.Dispatcher,
-	locator baldasession.SessionLocator,
-	args string,
-	usage string,
-	now time.Time,
-	defaultMaxTurns int,
-) string {
-	switch strings.ToLower(strings.TrimSpace(args)) {
-	case "":
-		status, err := loadAutoStatusWithDefault(ctx, sessions, locator, defaultMaxTurns)
-		if err != nil {
-			return "Could not read auto mode status."
-		}
-		return automode.RenderStatus(status)
-	case autoActionOn:
-		if err := dispatchAutoStateUpdate(ctx, dispatcher, locator, automode.EnableStateWithMaxTurns(now, defaultMaxTurns)); err != nil {
-			return "Could not enable auto mode."
-		}
-		return automode.RenderStatus(automode.NormalizeWithDefault(automode.Status{
-			Enabled:  true,
-			State:    automode.StateIdle,
-			MaxTurns: defaultMaxTurns,
-		}, defaultMaxTurns))
-	case autoActionOff:
-		if err := dispatchAutoStateUpdate(ctx, dispatcher, locator, automode.DisableState()); err != nil {
-			return "Could not disable auto mode."
-		}
-		return automode.RenderStatus(automode.DefaultStatusWithMaxTurns(defaultMaxTurns))
-	default:
-		return usage
-	}
 }

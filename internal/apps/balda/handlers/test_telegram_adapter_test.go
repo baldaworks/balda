@@ -5,25 +5,38 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
+	"github.com/tgbotkit/runtime/events"
 )
 
-func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, formattingMode string) *testTelegramChannel {
+type testTelegramAdapter struct {
+	*baldatelegram.Adapter
+}
+
+func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, formattingMode string) *testTelegramAdapter {
 	msg := baldatelegram.NewMessenger(tgClient, zerolog.Nop())
 	if strings.TrimSpace(formattingMode) != "" {
 		msg.SetAgentReplyFormattingMode(formattingMode)
 	}
-	return &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+	return &testTelegramAdapter{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})}
+}
+
+func (a *testTelegramAdapter) CommandContextFromEvent(event *events.CommandEvent) (CommandContext, bool) {
+	command, ok := a.Adapter.CommandContextFromEvent(event)
+	if !ok {
+		return CommandContext{}, false
+	}
+	return CommandContext(command), true
 }
 
 type testDeliveryAdapter interface {

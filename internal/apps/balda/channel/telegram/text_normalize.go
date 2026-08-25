@@ -1,4 +1,4 @@
-package handlers
+package telegram
 
 import (
 	"fmt"
@@ -8,8 +8,9 @@ import (
 	"github.com/tgbotkit/client"
 )
 
-func (h *BaldaHandler) normalizePublicText(messageCtx TelegramMessageContext) (string, bool) {
-	botUserID, botUsername := h.getBotIdentity()
+const telegramMentionEntityType = "mention"
+
+func NormalizePublicText(messageCtx MessageContext, botUserID int64, botUsername string) (string, bool) {
 	replyContent := strings.TrimSpace(messageCtx.ReplyContent)
 	forwardedContent := strings.TrimSpace(messageCtx.ForwardedContent)
 
@@ -36,7 +37,7 @@ func (h *BaldaHandler) normalizePublicText(messageCtx TelegramMessageContext) (s
 	return composeContextAwareInput(strings.TrimSpace(messageCtx.Text), replyContent, forwardedContent)
 }
 
-func (h *BaldaHandler) normalizeDMText(messageCtx TelegramMessageContext) string {
+func NormalizeDMText(messageCtx MessageContext) string {
 	if !messageCtx.IsReply && !messageCtx.IsForwarded {
 		return messageCtx.Text
 	}
@@ -91,7 +92,7 @@ func botMentionEntityRanges(text string, entities []client.MessageEntity, botUse
 	expectedMention := "@" + trimmedUsername
 	ranges := make([]utf16Range, 0, len(entities))
 	for _, entity := range entities {
-		if entity.Type != "mention" {
+		if entity.Type != telegramMentionEntityType {
 			continue
 		}
 		if entity.Length <= 0 || entity.Offset < 0 {

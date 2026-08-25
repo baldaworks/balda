@@ -10,15 +10,6 @@ import (
 
 const ownerAlreadyRegisteredMessage = "You are already registered as the bot owner."
 
-func firstFieldToken(text string) (string, bool) {
-	fields := strings.Fields(strings.TrimSpace(text))
-	if len(fields) != 1 {
-		return "", false
-	}
-	token := strings.TrimSpace(fields[0])
-	return token, auth.LooksLikeChannelToken(token)
-}
-
 func ownerBindTokenBundleMessage(ctx context.Context, authService *auth.ChannelAuthService, createdBy string) (string, bool) {
 	if authService == nil {
 		return "", false

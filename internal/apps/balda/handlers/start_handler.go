@@ -23,11 +23,11 @@ type StartHandler struct {
 	channelAuth       *auth.ChannelAuthService
 	actorDispatcher   actortransport.Dispatcher
 	authToken         string
-	baldaHandler      baldaOwnerActivator
+	baldaHandler      BaldaOwnerActivator
 }
 
-type baldaOwnerActivator interface {
-	activateOwner(ctx context.Context, ownerID, chatID int64) error
+type BaldaOwnerActivator interface {
+	ActivateOwner(ctx context.Context, ownerID, chatID int64) error
 }
 
 type startHandlerParams struct {
@@ -39,6 +39,7 @@ type startHandlerParams struct {
 	ChannelAuth       *auth.ChannelAuthService
 	Dispatcher        actortransport.Dispatcher
 	AuthToken         string `name:"balda_auth_token"`
+	OwnerActivator    BaldaOwnerActivator `optional:"true"`
 }
 
 const (
@@ -56,7 +57,7 @@ func (h *StartHandler) sendPlain(ctx context.Context, chatID int64, text string)
 }
 
 // Register registers the handler with the registry.
-func (h *StartHandler) Register(registry TelegramRegistry) {
+func (h *StartHandler) Register(registry CommandRegistry) {
 	registry.OnCommand(h.onCommand)
 }
 
@@ -273,7 +274,7 @@ func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64)
 		log.Warn().Msg("balda handler is nil; skipping owner session activation")
 		return nil
 	}
-	if err := h.baldaHandler.activateOwner(ctx, ownerID, chatID); err != nil {
+	if err := h.baldaHandler.ActivateOwner(ctx, ownerID, chatID); err != nil {
 		log.Warn().
 			Err(err).
 			Int64("owner_id", ownerID).

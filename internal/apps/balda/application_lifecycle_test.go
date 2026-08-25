@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/rs/zerolog"
 )
 
@@ -58,7 +59,12 @@ func TestApplicationLifecycleStartsInOrderAndStopsInReverse(t *testing.T) {
 func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testing.T) {
 	t.Parallel()
 
-	stages := applicationLifecycleStages(applicationLifecycleParams{}, &telegramLifecycle{})
+	stages := applicationLifecycleStages(applicationLifecycleParams{
+		TransportStages: []appports.TransportLifecycleStage{
+			{Name: "zulip ingress"},
+			{Name: "slack agent ingress"},
+		},
+	}, &telegramLifecycle{})
 	names := make([]string, 0, len(stages))
 	for _, stage := range stages {
 		names = append(names, stage.name)
@@ -77,7 +83,6 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 		"job event projector",
 		"job event outbox",
 		"actor host",
-		"telegram bootstrap",
 		"scheduled jobs",
 		"inbound webhooks",
 		"zulip ingress",

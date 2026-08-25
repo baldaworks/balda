@@ -1,4 +1,4 @@
-package handlers
+package zulip
 
 import (
 	"bytes"
@@ -17,7 +17,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
-	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -25,6 +24,49 @@ import (
 )
 
 const zulipNotReadyReply = "Balda is not ready right now. Please try again."
+
+type fakeOwnerKVStore struct{}
+
+func (fakeOwnerKVStore) GetJSON(context.Context, string) (any, bool, error) { return nil, false, nil }
+func (fakeOwnerKVStore) SetJSON(context.Context, string, any) error { return nil }
+func (fakeOwnerKVStore) SetWithTTL(context.Context, string, any, time.Duration) error {
+	return nil
+}
+func (fakeOwnerKVStore) Delete(context.Context, string) error { return nil }
+func (fakeOwnerKVStore) List(context.Context, string) ([]string, error) { return nil, nil }
+
+type fakeCollaboratorBackingStore struct {
+	values map[string]auth.Collaborator
+}
+
+func (s *fakeCollaboratorBackingStore) AddCollaborator(_ context.Context, c auth.Collaborator) error {
+	if s.values == nil {
+		s.values = map[string]auth.Collaborator{}
+	}
+	s.values[c.UserID] = c
+	return nil
+}
+
+func (s *fakeCollaboratorBackingStore) RemoveCollaborator(_ context.Context, userID string) error {
+	delete(s.values, userID)
+	return nil
+}
+
+func (s *fakeCollaboratorBackingStore) GetCollaborator(_ context.Context, userID string) (*auth.Collaborator, bool, error) {
+	c, ok := s.values[userID]
+	if !ok {
+		return nil, false, nil
+	}
+	return &c, true, nil
+}
+
+func (s *fakeCollaboratorBackingStore) ListCollaborators(_ context.Context) ([]auth.Collaborator, error) {
+	out := make([]auth.Collaborator, 0, len(s.values))
+	for _, c := range s.values {
+		out = append(out, c)
+	}
+	return out, nil
+}
 
 func TestZulipBaldaHandlerRejectsInvalidWebhookToken(t *testing.T) {
 	handler := &ZulipBaldaHandler{
@@ -482,20 +524,20 @@ func TestZulipBaldaHandlerRejectsInvalidAuthenticatedPayload(t *testing.T) {
 
 func TestValidateZulipWebhookPayloadAllowsEmptyStreamSubject(t *testing.T) {
 	err := validateZulipWebhookPayload(zulipWebhookPayload{
-		Message: zulipMessage{
+		Message: zulipWebhookMessage{
 			SenderID:    101,
 			SenderEmail: "user@example.com",
-			Type:        zulipMessageTypeStream,
+			Type:        "stream",
 			StreamID:    42,
 		},
 	})
 	if err != nil {
-		t.Fatalf("validateZulipWebhookPayload() error = %v, want nil for empty Zulip topic", err)
+		t.Fatalf("ValidateWebhookPayload() error = %v, want nil for empty Zulip topic", err)
 	}
 }
 
 func TestZulipBaldaHandlerResetRecreatesSessionAndSendsWelcome(t *testing.T) {
-	locator := baldazulip.NewStreamLocator(42, "ops")
+	locator := NewStreamLocator(42, "ops")
 	manager := &fakeZulipSessionManager{
 		baldaProvider: "balda",
 		sessionInfo: map[string]session.TopicSessionInfo{
@@ -539,7 +581,7 @@ func TestZulipBaldaHandlerResetRecreatesSessionAndSendsWelcome(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerResetHandlesMissingSessionManager(t *testing.T) {
-	locator := baldazulip.NewDMLocator(101)
+	locator := NewDMLocator(101)
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		actorDispatcher: dispatcher,
@@ -564,7 +606,7 @@ func TestZulipBaldaHandlerCommandAccessHandlesMissingOwnerStore(t *testing.T) {
 		logger:          zerolog.Nop(),
 	}
 
-	handler.handleCommand(context.Background(), baldazulip.NewDMLocator(101), 101, "/locator", true)
+	handler.handleCommand(context.Background(), NewDMLocator(101), 101, "/locator", true)
 
 	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
 	if len(payloads) != 1 {
@@ -604,10 +646,10 @@ func TestZulipBaldaHandlerMentionCommandUsesCommandText(t *testing.T) {
 			settlement, processErr := handler.processMessage(context.Background(), zulipWebhookPayload{
 				Data:    tt.data,
 				Trigger: "mention",
-				Message: zulipMessage{
+				Message: zulipWebhookMessage{
 					SenderID:    101,
 					SenderEmail: "owner@example.com",
-					Type:        zulipMessageTypeStream,
+					Type:        "stream",
 					StreamID:    42,
 					Subject:     "ops",
 				},
@@ -645,10 +687,10 @@ func TestZulipBaldaHandlerUsesMessageContentWhenDataEmpty(t *testing.T) {
 	}
 
 	settlement, processErr := handler.processMessage(context.Background(), zulipWebhookPayload{
-		Message: zulipMessage{
+		Message: zulipWebhookMessage{
 			SenderID:    101,
 			SenderEmail: "owner@example.com",
-			Type:        zulipMessageTypeStream,
+			Type:        "stream",
 			StreamID:    42,
 			Subject:     "ops",
 			Content:     "/locator",
@@ -672,7 +714,7 @@ func TestZulipBaldaHandlerStartIsDirectMessageOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
-	locator := baldazulip.NewStreamLocator(42, "ops")
+	locator := NewStreamLocator(42, "ops")
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		ownerStore:      ownerStore,
@@ -696,7 +738,7 @@ func TestZulipBaldaHandlerStartIsDirectMessageOnly(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerStartOwnerHandlesMissingOwnerStore(t *testing.T) {
-	locator := baldazulip.NewDMLocator(101)
+	locator := NewDMLocator(101)
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		authToken:       "owner-token",
@@ -716,7 +758,7 @@ func TestZulipBaldaHandlerStartOwnerHandlesMissingOwnerStore(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerInviteStartHandlesMissingOwnerStore(t *testing.T) {
-	locator := baldazulip.NewDMLocator(202)
+	locator := NewDMLocator(202)
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		actorDispatcher: dispatcher,
@@ -753,7 +795,7 @@ func TestZulipBaldaHandlerInviteLookupErrorDoesNotLogToken(t *testing.T) {
 		logger:            zerolog.New(&logs),
 	}
 
-	handler.handleInviteStart(context.Background(), baldazulip.NewDMLocator(202), 202, "secret-invite-token")
+	handler.handleInviteStart(context.Background(), NewDMLocator(202), 202, "secret-invite-token")
 
 	if got := logs.String(); strings.Contains(got, "secret-invite-token") {
 		t.Fatalf("invite lookup log leaked raw token: %s", got)
@@ -761,7 +803,7 @@ func TestZulipBaldaHandlerInviteLookupErrorDoesNotLogToken(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerCloseIsDirectMessageOnly(t *testing.T) {
-	locator := baldazulip.NewStreamLocator(42, "ops")
+	locator := NewStreamLocator(42, "ops")
 	manager := &fakeZulipSessionManager{baldaProvider: "balda"}
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
@@ -785,7 +827,7 @@ func TestZulipBaldaHandlerCloseIsDirectMessageOnly(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerCloseHandlesMissingSessionManager(t *testing.T) {
-	locator := baldazulip.NewDMLocator(101)
+	locator := NewDMLocator(101)
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		actorDispatcher: dispatcher,
@@ -804,7 +846,7 @@ func TestZulipBaldaHandlerCloseHandlesMissingSessionManager(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerCancelRejectsArgsWithoutPublishingControl(t *testing.T) {
-	locator := baldazulip.NewStreamLocator(42, "ops")
+	locator := NewStreamLocator(42, "ops")
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		actorDispatcher: dispatcher,
@@ -828,7 +870,7 @@ func TestZulipBaldaHandlerCancelRejectsArgsWithoutPublishingControl(t *testing.T
 }
 
 func TestZulipBaldaHandlerLocatorRejectsArgs(t *testing.T) {
-	locator := baldazulip.NewStreamLocator(42, "ops")
+	locator := NewStreamLocator(42, "ops")
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		actorDispatcher: dispatcher,
@@ -847,7 +889,7 @@ func TestZulipBaldaHandlerLocatorRejectsArgs(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerUserCommandsHandleMissingCollaboratorStore(t *testing.T) {
-	locator := baldazulip.NewDMLocator(101)
+	locator := NewDMLocator(101)
 	tests := []struct {
 		name string
 		args string
@@ -879,7 +921,7 @@ func TestZulipBaldaHandlerUserCommandsHandleMissingCollaboratorStore(t *testing.
 }
 
 func TestZulipBaldaHandlerTopicHandlesMissingSessionManager(t *testing.T) {
-	locator := baldazulip.NewStreamLocator(42, "ops")
+	locator := NewStreamLocator(42, "ops")
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		actorDispatcher: dispatcher,
@@ -898,7 +940,7 @@ func TestZulipBaldaHandlerTopicHandlesMissingSessionManager(t *testing.T) {
 }
 
 func TestZulipBaldaHandlerTopicPublishesWelcomeAndConfirmation(t *testing.T) {
-	locator := baldazulip.NewStreamLocator(42, "ops")
+	locator := NewStreamLocator(42, "ops")
 	manager := &fakeZulipSessionManager{baldaProvider: "balda"}
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
@@ -932,7 +974,7 @@ func TestZulipBaldaHandlerMessagePublishesDirectSessionTurn(t *testing.T) {
 	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
 		t.Fatalf("RegisterOwnerSubject() error = %v", err)
 	}
-	locator := baldazulip.NewDMLocator(101)
+	locator := NewDMLocator(101)
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		ownerStore:      ownerStore,
@@ -986,7 +1028,7 @@ func TestZulipBaldaHandlerMessageHandlesMissingSessionManager(t *testing.T) {
 	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
 		t.Fatalf("RegisterOwnerSubject() error = %v", err)
 	}
-	locator := baldazulip.NewDMLocator(101)
+	locator := NewDMLocator(101)
 	dispatcher := &recordingZulipDispatcher{}
 	handler := &ZulipBaldaHandler{
 		ownerStore:      ownerStore,
@@ -1119,7 +1161,7 @@ func (f *fakeZulipSessionManager) TakeStartupNotice(sessionID string) string {
 }
 
 func TestZulipBaldaHandlerAutoCommandTogglesState(t *testing.T) {
-	locator := baldazulip.NewDMLocator(101)
+	locator := NewDMLocator(101)
 	manager := &fakeZulipSessionManager{}
 	dispatcher := &recordingZulipDispatcher{stateManager: manager}
 	handler := &ZulipBaldaHandler{

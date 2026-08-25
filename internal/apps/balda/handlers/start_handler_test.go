@@ -211,7 +211,7 @@ type activationCall struct {
 	chatID  int64
 }
 
-func (f *fakeBaldaOwnerActivator) activateOwner(_ context.Context, ownerID, chatID int64) error {
+func (f *fakeBaldaOwnerActivator) ActivateOwner(_ context.Context, ownerID, chatID int64) error {
 	f.calls = append(f.calls, activationCall{ownerID: ownerID, chatID: chatID})
 	return f.err
 }
@@ -659,7 +659,7 @@ type bootstrapCall struct {
 	chatID  int64
 }
 
-func (f *fakeBaldaHandler) activateOwner(_ context.Context, ownerID, chatID int64) error {
+func (f *fakeBaldaHandler) ActivateOwner(_ context.Context, ownerID, chatID int64) error {
 	f.ownerID = ownerID
 	f.chatID = chatID
 	if f.bootstrapErr != nil {

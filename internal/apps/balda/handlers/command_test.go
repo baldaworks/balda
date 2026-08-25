@@ -994,7 +994,7 @@ func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 	tgClient := &fakeTelegramClient{}
 	msg := baldatelegram.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
-	channel := &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
+	channel := &testTelegramAdapter{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),

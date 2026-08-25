@@ -1,8 +1,7 @@
-package handlers
+package zulip
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,8 +17,7 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
-	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+		"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
@@ -27,13 +25,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/fx"
 )
 
-var zulipHandlerActorAddress = actorlayer.ActorAddress{Target: "handler", Key: "zulip"}
+var zulipHandlerActorAddress = actorlayer.ActorAddress{Target: "channel", Key: "zulip"}
 
 const (
 	zulipWebhookMaxBodyBytes       = 1 << 20
@@ -43,29 +40,7 @@ const (
 	zulipWebhookIdleTimeout        = 30 * time.Second
 	zulipWebhookProcessingTimeout  = 5 * time.Minute
 	zulipWebhookMaxConcurrentTasks = 16
-	zulipMessageTypeStream         = "stream"
-	zulipTriggerMention            = "mention"
 )
-
-// zulipWebhookPayload is the payload Zulip sends to the webhook endpoint.
-type zulipWebhookPayload struct {
-	BotEmail string       `json:"bot_email"`
-	Data     string       `json:"data"`
-	Trigger  string       `json:"trigger"`
-	Token    string       `json:"token"`
-	Message  zulipMessage `json:"message"`
-}
-
-// zulipMessage is the message object within the Zulip webhook payload.
-type zulipMessage struct {
-	ID          int    `json:"id"`
-	SenderID    int    `json:"sender_id"`
-	SenderEmail string `json:"sender_email"`
-	Type        string `json:"type"`
-	StreamID    int    `json:"stream_id"`
-	Subject     string `json:"subject"`
-	Content     string `json:"content"`
-}
 
 // ZulipBaldaHandler handles inbound Zulip webhook messages.
 type ZulipBaldaHandler struct {
@@ -254,31 +229,14 @@ func (h *ZulipBaldaHandler) initOwnerFromStore() {
 		h.logger.Warn().Msg("zulip handler owner store is unavailable")
 		return
 	}
-	if !h.ownerStore.HasOwner() {
+	ownerID, ok := initZulipOwnerID(h.ownerStore)
+	if !ok {
 		return
-	}
-	owner := h.ownerStore.GetOwner()
-	if owner == nil {
-		return
-	}
-	for _, subject := range h.ownerStore.OwnerSubjects() {
-		value := strings.TrimPrefix(strings.TrimSpace(subject), auth.ChannelZulip+":")
-		if value == subject || value == "" {
-			continue
-		}
-		var id int
-		if _, err := fmt.Sscanf(value, "%d", &id); err == nil && id > 0 {
-			h.mu.Lock()
-			h.ownerID = int64(id)
-			h.mu.Unlock()
-			h.logger.Info().Int("owner_id", id).Msg("zulip handler owner initialized")
-			return
-		}
 	}
 	h.mu.Lock()
-	h.ownerID = owner.UserID
+	h.ownerID = ownerID
 	h.mu.Unlock()
-	h.logger.Info().Int64("owner_id", owner.UserID).Msg("zulip handler owner initialized")
+	h.logger.Info().Int64("owner_id", ownerID).Msg("zulip handler owner initialized")
 }
 
 func (h *ZulipBaldaHandler) getOwnerID() int64 {
@@ -325,7 +283,7 @@ func (h *ZulipBaldaHandler) handleWebhook(w http.ResponseWriter, r *http.Request
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(payload.Token), []byte(h.webhookToken)) != 1 {
+	if !verifyZulipWebhookToken(payload, h.webhookToken) {
 		h.logger.Warn().Str("sender", payload.Message.SenderEmail).Msg("zulip webhook token mismatch")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -379,14 +337,6 @@ func writeZulipWebhookNoResponse(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(`{"response_not_required": true}`))
 }
 
-func isZulipBotEcho(payload zulipWebhookPayload) bool {
-	botEmail := strings.TrimSpace(payload.BotEmail)
-	if botEmail == "" {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(payload.Message.SenderEmail), botEmail)
-}
-
 func (h *ZulipBaldaHandler) acquireWebhookProcessSlot() (func(), bool) {
 	if h.processSem == nil {
 		return func() {}, true
@@ -397,25 +347,6 @@ func (h *ZulipBaldaHandler) acquireWebhookProcessSlot() (func(), bool) {
 	default:
 		return nil, false
 	}
-}
-
-func validateZulipWebhookPayload(payload zulipWebhookPayload) error {
-	if payload.Message.SenderID <= 0 {
-		return fmt.Errorf("message.sender_id is required")
-	}
-	if strings.TrimSpace(payload.Message.SenderEmail) == "" {
-		return fmt.Errorf("message.sender_email is required")
-	}
-	switch strings.TrimSpace(payload.Message.Type) {
-	case zulipMessageTypeStream:
-		if payload.Message.StreamID <= 0 {
-			return fmt.Errorf("message.stream_id is required for stream messages")
-		}
-	case chatTypePrivate:
-	default:
-		return fmt.Errorf("unsupported message.type %q", payload.Message.Type)
-	}
-	return nil
 }
 
 func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWebhookPayload) (turncmd.InboundSettlement, error) {
@@ -444,50 +375,6 @@ func (h *ZulipBaldaHandler) processMessage(ctx context.Context, payload zulipWeb
 	return h.handleMessage(ctx, locator, senderID, payload.Message.ID, text, isDM)
 }
 
-func normalizeZulipMessageText(payload zulipWebhookPayload) string {
-	text := firstNonEmptyText(payload.Data, payload.Message.Content)
-	if strings.TrimSpace(payload.Trigger) != zulipTriggerMention {
-		return text
-	}
-	return stripLeadingZulipMentions(text)
-}
-
-func firstNonEmptyText(values ...string) string {
-	for _, value := range values {
-		text := strings.TrimSpace(value)
-		if text != "" {
-			return text
-		}
-	}
-	return ""
-}
-
-func stripLeadingZulipMentions(text string) string {
-	trimmed := strings.TrimSpace(text)
-	for {
-		next, ok := trimLeadingZulipMention(trimmed)
-		if !ok {
-			return trimmed
-		}
-		trimmed = strings.TrimSpace(next)
-	}
-}
-
-func trimLeadingZulipMention(text string) (string, bool) {
-	for _, prefix := range []string{"@**", "@_**"} {
-		if !strings.HasPrefix(text, prefix) {
-			continue
-		}
-		rest := text[len(prefix):]
-		end := strings.Index(rest, "**")
-		if end < 0 {
-			return text, false
-		}
-		return rest[end+len("**"):], true
-	}
-	return text, false
-}
-
 func (h *ZulipBaldaHandler) handleCommand(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
@@ -507,7 +394,7 @@ func (h *ZulipBaldaHandler) handleCommand(
 
 	transportUserID := int64(senderID)
 	if cmd != commandStart && !h.canAccessCollaboratorScope(ctx, transportUserID) {
-		_ = h.sendPlain(ctx, locator, "Only the bot owner or collaborators can use this bot.")
+		_ = h.sendPlain(ctx, locator, zulipAccessDeniedMessage())
 		return
 	}
 
@@ -542,7 +429,7 @@ func (h *ZulipBaldaHandler) handleAutoCommand(
 	locator baldasession.SessionLocator,
 	args string,
 ) {
-	_ = h.sendPlain(ctx, locator, plainAutoCommandReply(ctx, h.sessionManager, h.actorDispatcher, locator, args, "Usage: /auto [on|off]", time.Now(), h.autoMaxTurns))
+	_ = h.sendPlain(ctx, locator, PlainAutoCommandReply(ctx, h.sessionManager, h.actorDispatcher, locator, args, "Usage: /auto [on|off]", time.Now(), h.autoMaxTurns))
 }
 
 func (h *ZulipBaldaHandler) handleStartCommand(
@@ -553,61 +440,38 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 	isDM bool,
 ) {
 	if !isDM {
-		_ = h.sendPlain(ctx, locator, "This command is only available in direct messages.")
+		_ = h.sendPlain(ctx, locator, startDirectMessageOnly())
 		return
 	}
-	if args == "" {
+	if strings.TrimSpace(args) == "" {
 		ownerID := h.getOwnerID()
 		if ownerID != 0 {
 			if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(senderID)) {
 				msg := ownerAlreadyRegisteredMessage
 				if bundle, ok := ownerBindTokenBundleMessage(ctx, h.channelAuth, auth.ZulipSubject(senderID)); ok {
-					msg += "\n\n" + bundle
+					msg = startOwnerAlreadyRegisteredSelfMessage(bundle)
 				}
 				_ = h.sendPlain(ctx, locator, msg)
 			} else {
-				_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
+				_ = h.sendPlain(ctx, locator, startOwnerAlreadyRegistered())
 			}
 			return
 		}
-		_ = h.sendPlain(
-			ctx, locator,
-			"Welcome to Balda Bot!\n\nTo authenticate:\n"+
-				"• /start owner=<your_owner_token>\n"+
-				"• /start invite=<your_invite_token>",
-		)
+		_ = h.sendPlain(ctx, locator, startWelcomeMessage())
 		return
 	}
-	if token, ok := firstFieldToken(args); ok {
-		h.handleOwnerBindToken(ctx, locator, senderID, token)
+	parsed, ok := parseZulipStartArgs(args)
+	if !ok {
+		_ = h.sendPlain(ctx, locator, startInvalidFormatMessage())
 		return
 	}
-
-	key, value, ok := strings.Cut(args, "=")
-	if !ok || strings.TrimSpace(value) == "" {
-		_ = h.sendPlain(
-			ctx, locator,
-			"Invalid /start format. Use one of:\n"+
-				"• /start owner=<your_owner_token>\n"+
-				"• /start invite=<your_invite_token>",
-		)
-		return
-	}
-	mode := strings.TrimSpace(key)
-	token := strings.TrimSpace(value)
-
-	if mode == userActionInvite {
-		h.handleInviteStart(ctx, locator, senderID, token)
+	if parsed.Mode == "channel_token" {
+		h.handleOwnerBindToken(ctx, locator, senderID, parsed.Token)
 		return
 	}
 
-	if mode != startModeOwner {
-		_ = h.sendPlain(
-			ctx, locator,
-			"Invalid /start format. Use one of:\n"+
-				"• /start owner=<your_owner_token>\n"+
-				"• /start invite=<your_invite_token>",
-		)
+	if parsed.Mode == userActionInvite {
+		h.handleInviteStart(ctx, locator, senderID, parsed.Token)
 		return
 	}
 
@@ -616,54 +480,48 @@ func (h *ZulipBaldaHandler) handleStartCommand(
 		if ownerID == int64(senderID) {
 			_ = h.sendPlain(ctx, locator, ownerAlreadyRegisteredMessage)
 		} else {
-			_ = h.sendPlain(ctx, locator, "Bot owner is already registered.")
+			_ = h.sendPlain(ctx, locator, startOwnerAlreadyRegistered())
 		}
 		return
 	}
 
-	if token != h.authToken {
-		_ = h.sendPlain(ctx, locator, "Invalid authentication token. Please try again.")
-		return
-	}
-	if h.ownerStore == nil {
+	registered, err := registerZulipOwner(h.ownerStore, senderID, h.authToken, parsed.Token)
+	if err != nil {
+		if err.Error() == "invalid authentication token" {
+			_ = h.sendPlain(ctx, locator, startInvalidAuthToken())
+			return
+		}
 		h.logger.Error().Int("sender_id", senderID).Msg("zulip: owner store is unavailable during owner registration")
-		_ = h.sendPlain(ctx, locator, "Could not register owner. Ask the operator to check Balda storage configuration.")
+		_ = h.sendPlain(ctx, locator, startOwnerStoreUnavailable())
 		return
 	}
 	newOwnerID := int64(senderID)
-	registered, err := h.ownerStore.RegisterOwnerSubject(auth.ZulipSubject(senderID))
-	if err != nil {
-		log.Error().Err(err).Int("sender_id", senderID).Msg("zulip: failed to register owner")
-		_ = h.sendPlain(ctx, locator, "Failed to register owner. Please try again.")
-		return
-	}
 	if !registered {
 		_ = h.sendPlain(ctx, locator, "Owner is already registered.")
 		return
 	}
 	h.setOwnerID(newOwnerID)
 	log.Info().Int64("owner_id", newOwnerID).Msg("zulip: owner registered")
-	_ = h.sendPlain(ctx, locator, "You are now registered as the bot owner.")
+	_ = h.sendPlain(ctx, locator, startOwnerRegistered())
 }
 
 func (h *ZulipBaldaHandler) handleOwnerBindToken(ctx context.Context, locator baldasession.SessionLocator, senderID int, token string) {
 	if h.channelAuth == nil {
-		_ = h.sendPlain(ctx, locator, "Token authentication is unavailable right now.")
+		_ = h.sendPlain(ctx, locator, startOwnerBindUnavailable())
 		return
 	}
-	subject := auth.ZulipSubject(senderID)
-	consumed, err := h.channelAuth.ConsumeOwnerBind(ctx, auth.ChannelZulip, subject, token)
+	consumed, err := consumeZulipOwnerBindToken(ctx, h.channelAuth, senderID, token)
 	if err != nil {
 		h.logger.Warn().Err(err).Int("sender_id", senderID).Msg("zulip: failed to consume owner bind token")
-		_ = h.sendPlain(ctx, locator, "Failed to process token. Please try again.")
+		_ = h.sendPlain(ctx, locator, startOwnerBindFailed())
 		return
 	}
 	if !consumed {
-		_ = h.sendPlain(ctx, locator, "This token is invalid or has expired.")
+		_ = h.sendPlain(ctx, locator, startOwnerBindInvalid())
 		return
 	}
 	h.setOwnerID(int64(senderID))
-	_ = h.sendPlain(ctx, locator, "This Zulip account is now connected to the Balda owner.")
+	_ = h.sendPlain(ctx, locator, startOwnerBound())
 }
 
 func (h *ZulipBaldaHandler) handleInviteStart(
@@ -672,50 +530,16 @@ func (h *ZulipBaldaHandler) handleInviteStart(
 	senderID int,
 	token string,
 ) {
-	userIDStr := fmt.Sprintf("%d", senderID)
-	if h.ownerStore == nil {
-		h.logger.Error().Str("user_id", userIDStr).Msg("zulip: owner store is unavailable during invite registration")
-		_ = h.sendPlain(ctx, locator, "Failed to process invite. Ask the operator to check Balda storage configuration.")
-		return
-	}
-	if h.ownerStore.IsOwnerSubject(auth.ZulipSubject(senderID)) {
-		_ = h.sendPlain(ctx, locator, "You are already the bot owner.")
-		return
-	}
-	if h.collaboratorStore != nil {
-		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, userIDStr); err != nil {
-			h.logger.Warn().Err(err).Str("user_id", userIDStr).Msg("failed to check collaborator")
-		} else if ok {
-			_ = h.sendPlain(ctx, locator, "You are already a collaborator.")
-			return
-		}
-	}
-	if h.inviteStore == nil || h.collaboratorStore == nil {
-		_ = h.sendPlain(ctx, locator, "Failed to process invite. Please try again.")
-		return
-	}
-	invite, err := h.inviteStore.GetInvite(ctx, token)
+	msg, err := consumeZulipInvite(ctx, h.ownerStore, h.inviteStore, h.collaboratorStore, senderID, token)
 	if err != nil {
-		h.logger.Warn().Err(err).Str("user_id", userIDStr).Msg("zulip: failed to get invite")
-		_ = h.sendPlain(ctx, locator, "Failed to process invite. Please try again.")
+		userIDStr := fmt.Sprintf("%d", senderID)
+		h.logger.Error().Str("user_id", userIDStr).Err(err).Msg("zulip: failed to process invite")
+		_ = h.sendPlain(ctx, locator, startInviteProcessingFailed())
 		return
 	}
-	if invite == nil {
-		_ = h.sendPlain(ctx, locator, "This invite token is invalid or has expired.")
-		return
+	if msg != "" {
+		_ = h.sendPlain(ctx, locator, msg)
 	}
-	collaborator := auth.Collaborator{
-		UserID:  userIDStr,
-		AddedBy: invite.CreatedBy,
-		AddedAt: time.Now(),
-	}
-	if err := h.collaboratorStore.AddCollaborator(ctx, collaborator); err != nil {
-		h.logger.Error().Err(err).Msg("zulip: failed to add collaborator from invite")
-		_ = h.sendPlain(ctx, locator, "Failed to complete registration. Please try again.")
-		return
-	}
-	log.Info().Str("user_id", userIDStr).Str("invited_by", invite.CreatedBy).Msg("zulip: user registered as collaborator via invite")
-	_ = h.sendPlain(ctx, locator, "Welcome! You are now a bot collaborator.")
 }
 
 func (h *ZulipBaldaHandler) handleResetCommand(
@@ -727,11 +551,11 @@ func (h *ZulipBaldaHandler) handleResetCommand(
 	isDM bool,
 ) {
 	if strings.TrimSpace(args) != "" {
-		_ = h.sendPlain(ctx, locator, fmt.Sprintf("Usage: /%s", cmd))
+		_ = h.sendPlain(ctx, locator, resetUsageMessage(cmd))
 		return
 	}
 	if h.sessionManager == nil {
-		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
+		_ = h.sendPlain(ctx, locator, resetNotReadyMessage())
 		return
 	}
 	info, infoErr := h.sessionManager.GetSessionInfo(ctx, locator.SessionID)
@@ -740,59 +564,33 @@ func (h *ZulipBaldaHandler) handleResetCommand(
 	}
 	transportUserID := zulipUserID(senderID)
 	reason := fmt.Sprintf("session canceled by %s command", cmd)
-	if submitErr := submitSessionCancelControl(
+	if submitErr := SubmitSessionCancelControl(
 		ctx, h.actorDispatcher, locator, transportUserID, reason, false,
 	); submitErr != nil {
 		h.logger.Warn().Err(submitErr).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("failed to submit cancel control")
 	}
 	if err := h.sessionManager.ResetSession(ctx, locator); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to reset session")
-		_ = h.sendPlain(ctx, locator, "Could not reset this session.")
+		_ = h.sendPlain(ctx, locator, resetFailedMessage())
 		return
 	}
-	label := zulipRestartSessionLabel(isDM, info)
-	userID := zulipRestartSessionUserID(senderID, info)
+	label := restartZulipSessionLabel(isDM, info, ownerSessionLabel, autoSessionLabel)
+	userID := restartZulipSessionUserID(senderID, info)
 	if err := h.sessionManager.CreateSession(ctx, baldasession.SessionContext{
 		Locator: locator,
 		UserID:  userID,
 	}, label); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: failed to recreate session during restart command")
-		_ = h.sendPlain(ctx, locator, "Could not restart this session.")
+		_ = h.sendPlain(ctx, locator, restartFailedMessage())
 		return
 	}
 
 	providerName := strings.TrimSpace(h.sessionManager.BaldaProviderID())
-	metadata := h.sessionManager.GetAgentMetadata(providerName)
-	welcomeName := zulipRestartWelcomeDisplayName(isDM, label)
-	welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	welcomeMsg := buildZulipRestartWelcome(h.sessionManager, providerName, isDM, label, locator.SessionID, ownerSessionLabel)
 	if err := h.sendMarkdown(ctx, locator, welcomeMsg); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: failed to send restart welcome")
 	}
 	h.sendSessionStartupNotice(ctx, locator, locator.SessionID)
-}
-
-func zulipRestartSessionLabel(isDM bool, info baldasession.TopicSessionInfo) string {
-	if label := strings.TrimSpace(info.AgentName); label != "" {
-		return label
-	}
-	if isDM {
-		return ownerSessionLabel
-	}
-	return autoSessionLabel
-}
-
-func zulipRestartSessionUserID(senderID int, info baldasession.TopicSessionInfo) string {
-	if userID := strings.TrimSpace(info.UserID); userID != "" {
-		return userID
-	}
-	return zulipUserID(senderID)
-}
-
-func zulipRestartWelcomeDisplayName(isDM bool, label string) string {
-	if !isDM {
-		return ownerSessionLabel
-	}
-	return label
 }
 
 func (h *ZulipBaldaHandler) handleCancelCommand(
@@ -802,22 +600,22 @@ func (h *ZulipBaldaHandler) handleCancelCommand(
 	args string,
 ) {
 	if strings.TrimSpace(args) != "" {
-		_ = h.sendPlain(ctx, locator, "Usage: /cancel")
+		_ = h.sendPlain(ctx, locator, cancelUsageMessage())
 		return
 	}
 	if h.actorDispatcher == nil {
-		_ = h.sendPlain(ctx, locator, "Cancel is unavailable right now. Please try again.")
+		_ = h.sendPlain(ctx, locator, cancelUnavailableMessage())
 		return
 	}
 	transportUserID := zulipUserID(senderID)
-	if err := submitSessionTurnCancelControl(
+	if err := SubmitSessionTurnCancelControl(
 		ctx, h.actorDispatcher, locator, transportUserID, "session turn canceled by user", true,
 	); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to submit turn cancel control")
-		_ = h.sendPlain(ctx, locator, "Could not request cancel.")
+		_ = h.sendPlain(ctx, locator, cancelFailedMessage())
 		return
 	}
-	_ = h.sendPlain(ctx, locator, "Cancel requested.")
+	_ = h.sendPlain(ctx, locator, cancelRequestedMessage())
 }
 
 func (h *ZulipBaldaHandler) handleLocatorCommand(
@@ -826,15 +624,10 @@ func (h *ZulipBaldaHandler) handleLocatorCommand(
 	args string,
 ) {
 	if strings.TrimSpace(args) != "" {
-		_ = h.sendPlain(ctx, locator, "Usage: /locator")
+		_ = h.sendPlain(ctx, locator, locatorUsageMessage())
 		return
 	}
-	ref := locatorref.Format(locator)
-	msg := fmt.Sprintf(
-		"Transport: %s\nLocator: %s\n\nUse in scheduler/webhook config:\ntarget: locator\nkey: %s",
-		locator.ChannelType, ref, ref,
-	)
-	_ = h.sendPlain(ctx, locator, msg)
+	_ = h.sendPlain(ctx, locator, buildZulipLocatorMessage(locator))
 }
 
 func (h *ZulipBaldaHandler) handleUsageCommand(
@@ -843,18 +636,18 @@ func (h *ZulipBaldaHandler) handleUsageCommand(
 	args string,
 ) {
 	if strings.TrimSpace(args) != "" {
-		_ = h.sendPlain(ctx, locator, "Usage: /usage")
+		_ = h.sendPlain(ctx, locator, usageUsageMessage())
 		return
 	}
-	snapshot, ok, err := loadUsageSnapshot(ctx, h.sessionManager, locator)
+	snapshot, ok, err := LoadUsageSnapshot(ctx, h.sessionManager, locator)
 	if err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to load usage snapshot")
 	}
 	if err != nil || !ok {
-		_ = h.sendPlain(ctx, locator, "No provider usage has been recorded for this session yet.")
+		_ = h.sendPlain(ctx, locator, usageEmptyMessage())
 		return
 	}
-	_ = h.sendPlain(ctx, locator, renderUsageSnapshot(snapshot))
+	_ = h.sendPlain(ctx, locator, RenderUsageSnapshot(snapshot))
 }
 
 func (h *ZulipBaldaHandler) handleCloseCommand(
@@ -865,29 +658,29 @@ func (h *ZulipBaldaHandler) handleCloseCommand(
 	isDM bool,
 ) {
 	if !isDM {
-		_ = h.sendPlain(ctx, locator, "This command is only available in direct messages.")
+		_ = h.sendPlain(ctx, locator, closeDirectMessageOnly())
 		return
 	}
 	if strings.TrimSpace(args) != "" {
-		_ = h.sendPlain(ctx, locator, "Usage: /close")
+		_ = h.sendPlain(ctx, locator, closeUsageMessage())
 		return
 	}
 	if h.sessionManager == nil {
-		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
+		_ = h.sendPlain(ctx, locator, resetNotReadyMessage())
 		return
 	}
 	transportUserID := zulipUserID(senderID)
-	if submitErr := submitSessionCancelControl(
+	if submitErr := SubmitSessionCancelControl(
 		ctx, h.actorDispatcher, locator, transportUserID, "session canceled by close command", false,
 	); submitErr != nil {
 		h.logger.Warn().Err(submitErr).Str("session_id", locator.SessionID).Msg("failed to submit cancel control for /close")
 	}
-	if err := resetSessionWithReason(ctx, h.sessionManager, locator, baldasession.BoundaryReasonClose); err != nil {
+	if err := ResetSessionWithReason(ctx, h.sessionManager, locator, baldasession.BoundaryReasonClose); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to reset session for /close")
-		_ = h.sendPlain(ctx, locator, "Could not close this session.")
+		_ = h.sendPlain(ctx, locator, closeFailedMessage())
 		return
 	}
-	_ = h.sendPlain(ctx, locator, "Session history reset.")
+	_ = h.sendPlain(ctx, locator, closeResetMessage())
 }
 
 func (h *ZulipBaldaHandler) handleUserCommand(
@@ -923,11 +716,7 @@ func (h *ZulipBaldaHandler) handleUserCommand(
 }
 
 func (h *ZulipBaldaHandler) sendUserUsage(ctx context.Context, locator baldasession.SessionLocator) {
-	usage := "Usage:\n" +
-		"• /user add - Generate invite token\n" +
-		"• /user list - Show collaborators and active invites\n" +
-		"• /user remove <user_id> - Remove collaborator by ID\n"
-	_ = h.sendPlain(ctx, locator, usage)
+	_ = h.sendPlain(ctx, locator, userUsageMessage())
 }
 
 func (h *ZulipBaldaHandler) handleUserInvite(
@@ -935,66 +724,32 @@ func (h *ZulipBaldaHandler) handleUserInvite(
 	locator baldasession.SessionLocator,
 	senderID int,
 ) {
-	if h.inviteStore == nil {
-		_ = h.sendPlain(ctx, locator, "Invite store is unavailable.")
-		return
-	}
-	ownerIDStr := fmt.Sprintf("%d", senderID)
-	token, _, err := h.inviteStore.CreateInvite(ctx, ownerIDStr)
+	token, err := createZulipInviteToken(ctx, h.inviteStore, senderID)
 	if err != nil {
+		if err.Error() == "invite store is unavailable" {
+		_ = h.sendPlain(ctx, locator, "Invite store is unavailable.")
+		} else {
 		_ = h.sendPlain(ctx, locator, "Failed to create invite. Please try again.")
+		}
 		return
 	}
-	msg := fmt.Sprintf("Invite token created:\n%s\n\nHave the collaborator send:\n/start invite=%s", token, token)
-	_ = h.sendPlain(ctx, locator, msg)
+	_ = h.sendPlain(ctx, locator, userInviteMessage(token))
 }
 
 func (h *ZulipBaldaHandler) handleUserList(
 	ctx context.Context,
 	locator baldasession.SessionLocator,
 ) {
-	if h.collaboratorStore == nil {
-		_ = h.sendPlain(ctx, locator, "Collaborator store is unavailable.")
-		return
-	}
-	var lines []string
-
-	collaborators, err := h.collaboratorStore.ListCollaborators(ctx)
+	collaborators, invites, err := loadZulipUserListView(ctx, h.collaboratorStore, h.inviteStore)
 	if err != nil {
+		if err.Error() == "collaborator store is unavailable" {
+		_ = h.sendPlain(ctx, locator, "Collaborator store is unavailable.")
+		} else {
 		_ = h.sendPlain(ctx, locator, "Failed to list collaborators. Please try again.")
+		}
 		return
 	}
-	if len(collaborators) > 0 {
-		lines = append(lines, "Collaborators:")
-		for _, c := range collaborators {
-			name := "unknown"
-			if strings.TrimSpace(c.Username) != "" {
-				name = c.Username
-			} else if strings.TrimSpace(c.FirstName) != "" {
-				name = c.FirstName
-			}
-			lines = append(lines, fmt.Sprintf("• %s (%s) - added %s",
-				c.UserID, name, c.AddedAt.Format("2006-01-02 15:04")))
-		}
-	} else {
-		lines = append(lines, "No collaborators")
-	}
-
-	if h.inviteStore != nil {
-		invites, err := h.inviteStore.ListInvites(ctx)
-		if err != nil {
-			_ = h.sendPlain(ctx, locator, "Failed to list invites. Please try again.")
-			return
-		}
-		if len(invites) > 0 {
-			lines = append(lines, "", "Active Invites:")
-			for _, inv := range invites {
-				lines = append(lines, fmt.Sprintf("expires %s", inv.ExpiresAt.Format("2006-01-02 15:04")))
-			}
-		}
-	}
-
-	_ = h.sendPlain(ctx, locator, strings.Join(lines, "\n"))
+	_ = h.sendPlain(ctx, locator, userListMessage(collaborators, invites))
 }
 
 func (h *ZulipBaldaHandler) handleUserRemove(
@@ -1002,20 +757,19 @@ func (h *ZulipBaldaHandler) handleUserRemove(
 	locator baldasession.SessionLocator,
 	userID string,
 ) {
-	if h.collaboratorStore == nil {
+	err := removeZulipCollaborator(ctx, h.collaboratorStore, userID)
+	if err != nil {
+		switch err.Error() {
+		case "collaborator store is unavailable":
 		_ = h.sendPlain(ctx, locator, "Collaborator store is unavailable.")
-		return
-	}
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
+		case "user id is required":
 		_ = h.sendPlain(ctx, locator, "User ID required.")
-		return
-	}
-	if err := h.collaboratorStore.RemoveCollaborator(ctx, userID); err != nil {
+		default:
 		_ = h.sendPlain(ctx, locator, "Could not remove collaborator. Please try again.")
+		}
 		return
 	}
-	_ = h.sendPlain(ctx, locator, fmt.Sprintf("Collaborator removed: %s", userID))
+	_ = h.sendPlain(ctx, locator, userRemovedMessage(userID))
 }
 
 func (h *ZulipBaldaHandler) handleGoalCommand(
@@ -1026,30 +780,30 @@ func (h *ZulipBaldaHandler) handleGoalCommand(
 ) {
 	objective := strings.TrimSpace(args)
 	if objective == "" {
-		_ = h.sendPlain(ctx, locator, "Usage:\n/goalkeeper <objective>\n/goalkeeper clear")
+		_ = h.sendPlain(ctx, locator, goalUsageMessage())
 		return
 	}
 	if strings.EqualFold(objective, "clear") {
 		if h.actorDispatcher == nil {
-			_ = h.sendPlain(ctx, locator, "Goal control is unavailable right now. Please try again.")
+			_ = h.sendPlain(ctx, locator, goalUnavailableMessage())
 			return
 		}
-		if err := submitGoalClearControl(
+		if err := SubmitGoalClearControl(
 			ctx, h.actorDispatcher, locator, zulipUserID(senderID), "goal cleared by user", true,
 		); err != nil {
 			h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to submit goal clear control")
-			_ = h.sendPlain(ctx, locator, "Could not clear goal run.")
+			_ = h.sendPlain(ctx, locator, goalClearFailedMessage())
 		}
 		return
 	}
 	started, err := h.submitGoalJob(ctx, locator, objective, zulipUserID(senderID))
 	if err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to start /goalkeeper run")
-		_ = h.sendPlain(ctx, locator, "Could not start goal run.")
+		_ = h.sendPlain(ctx, locator, goalStartFailedMessage())
 		return
 	}
 	if !started {
-		_ = h.sendPlain(ctx, locator, "A goal run is already active for this session.")
+		_ = h.sendPlain(ctx, locator, goalAlreadyActiveMessage())
 	}
 }
 
@@ -1090,27 +844,27 @@ func (h *ZulipBaldaHandler) handleTopicCommand(
 	isDM bool,
 ) {
 	if isDM {
-		_ = h.sendPlain(ctx, locator, "This command is only available in stream messages.")
+		_ = h.sendPlain(ctx, locator, topicDirectMessageOnly())
 		return
 	}
 	topicName := strings.TrimSpace(args)
 	if topicName == "" {
-		_ = h.sendPlain(ctx, locator, "Usage: /topic <name>")
+		_ = h.sendPlain(ctx, locator, topicUsageMessage())
 		return
 	}
 	if h.sessionManager == nil {
-		_ = h.sendPlain(ctx, locator, "Balda is not ready right now.")
+		_ = h.sendPlain(ctx, locator, topicNotReadyMessage())
 		return
 	}
 	baldaProviderID := strings.TrimSpace(h.sessionManager.BaldaProviderID())
 	if baldaProviderID == "" {
-		_ = h.sendPlain(ctx, locator, "Balda is not ready right now.")
+		_ = h.sendPlain(ctx, locator, topicNotReadyMessage())
 		return
 	}
 
 	streamID, ok := locatorref.ZulipStreamID(locator)
 	if !ok {
-		_ = h.sendPlain(ctx, locator, "Could not determine stream ID from current context.")
+		_ = h.sendPlain(ctx, locator, topicStreamContextMissingMessage())
 		return
 	}
 
@@ -1120,26 +874,23 @@ func (h *ZulipBaldaHandler) handleTopicCommand(
 		Str("topic_name", topicName).
 		Msg("creating zulip topic session")
 
-	topicLocator := zulipStreamLocator(streamID, topicName)
+	topicLocator := newZulipStreamLocator(streamID, topicName)
 	transportUserID := zulipUserID(senderID)
 	if err := h.sessionManager.CreateSession(ctx, baldasession.SessionContext{
 		Locator: topicLocator,
 		UserID:  transportUserID,
 	}, topicName); err != nil {
 		h.logger.Error().Err(err).Str("topic_name", topicName).Msg("failed to create zulip topic session")
-		_ = h.sendPlain(ctx, locator, "Could not create topic session.")
+		_ = h.sendPlain(ctx, locator, topicCreateFailedMessage())
 		return
 	}
-	metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
-	welcomeMsg := welcome.BuildAgentWelcomeMessage(
-		topicName, topicLocator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers,
-	)
+	welcomeMsg := buildZulipTopicWelcome(h.sessionManager, baldaProviderID, topicName, topicLocator.SessionID)
 	if err := h.sendZulipAgentReply(ctx, topicLocator, welcomeMsg); err != nil {
 		h.logger.Warn().Err(err).Str("topic_name", topicName).Msg("failed to send welcome to new topic")
-		_ = h.sendPlain(ctx, locator, fmt.Sprintf("Session created for topic '%s'.", topicName))
+		_ = h.sendPlain(ctx, locator, topicCreatedFallbackMessage(topicName))
 		return
 	}
-	_ = h.sendPlain(ctx, locator, fmt.Sprintf("Session created. Post in topic '%s' to continue.", topicName))
+	_ = h.sendPlain(ctx, locator, topicCreatedMessage(topicName))
 }
 
 func (h *ZulipBaldaHandler) handleMessage(
@@ -1203,12 +954,7 @@ func (h *ZulipBaldaHandler) prepareZulipSession(ctx context.Context, inbound ing
 	if err != nil {
 		return ingressapp.SessionPreparation{}, err
 	}
-	return ingressapp.SessionPreparation{
-		Ready:           true,
-		UserID:          ts.GetUserID(),
-		RequesterUserID: inbound.UserID,
-		AgentSessionID:  ts.GetAgentSessionID(),
-	}, nil
+	return buildZulipSessionPreparation(ts, inbound.UserID), nil
 }
 
 func (h *ZulipBaldaHandler) getOrCreateSession(
@@ -1222,44 +968,28 @@ func (h *ZulipBaldaHandler) getOrCreateSession(
 		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
 		return nil, fmt.Errorf("session manager is unavailable")
 	}
-	existing, _ := h.sessionManager.GetSession(locator)
-	if existing != nil {
-		return existing, nil
-	}
-
-	if providerName == "" {
+	if strings.TrimSpace(providerName) == "" {
 		_ = h.sendPlain(ctx, locator, "Balda is not ready right now. Please try again.")
 		return nil, fmt.Errorf("no provider configured")
 	}
-
-	ts, err := h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{
-		Locator: locator,
-		UserID:  transportUserID,
-	})
-	if err != nil && !errors.Is(err, baldasession.ErrNoPersistedSession) {
+	ts, welcomed, err := ensureZulipSession(
+		ctx,
+		h.sessionManager,
+		locator,
+		transportUserID,
+		providerName,
+		isDM,
+		ownerSessionLabel,
+		autoSessionLabel,
+	)
+	if err != nil {
 		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("zulip: failed to restore session")
 		_ = h.sendPlain(ctx, locator, "Could not restore this session. Please try again.")
 		return nil, err
 	}
-	if err == nil && ts != nil {
+	if welcomed {
 		h.sendSessionWelcome(ctx, locator, ts, providerName, isDM)
-		return ts, nil
 	}
-
-	label := autoSessionLabel
-	if isDM {
-		label = ownerSessionLabel
-	}
-	ts, err = h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{
-		Locator: locator,
-		UserID:  transportUserID,
-	}, label)
-	if err != nil {
-		h.logger.Error().Err(err).Str("agent", providerName).Msg("zulip: failed to create session")
-		_ = h.sendPlain(ctx, locator, "Could not start this session. Please try again.")
-		return nil, err
-	}
-	h.sendSessionWelcome(ctx, locator, ts, providerName, isDM)
 	return ts, nil
 }
 
@@ -1270,12 +1000,7 @@ func (h *ZulipBaldaHandler) sendSessionWelcome(
 	providerName string,
 	isDM bool,
 ) {
-	label := autoSessionLabel
-	if isDM {
-		label = ownerSessionLabel
-	}
-	metadata := h.sessionManager.GetAgentMetadata(providerName)
-	welcomeMsg := welcome.BuildAgentWelcomeMessage(label, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+	welcomeMsg := buildZulipSessionWelcome(h.sessionManager, providerName, isDM, ts.GetSessionID(), ownerSessionLabel, autoSessionLabel)
 	_ = h.sendPlain(ctx, locator, welcomeMsg)
 }
 
@@ -1284,15 +1009,7 @@ func (h *ZulipBaldaHandler) sendZulipAgentReply(
 	locator baldasession.SessionLocator,
 	text string,
 ) error {
-	if h == nil || h.actorDispatcher == nil {
-		return fmt.Errorf("runtime is unavailable")
-	}
-	env, err := deliverycmd.AgentReplyEnvelopeWithSettlement("", zulipHandlerActorAddress, locator, deliverycmd.SettlementBypass, text, "")
-	if err != nil {
-		return err
-	}
-	_, err = h.actorDispatcher.Dispatch(ctx, env)
-	return err
+	return SendAgentReply(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
 }
 
 func (h *ZulipBaldaHandler) canAccessCollaboratorScope(ctx context.Context, userID int64) bool {
@@ -1301,14 +1018,7 @@ func (h *ZulipBaldaHandler) canAccessCollaboratorScope(ctx context.Context, user
 }
 
 func (h *ZulipBaldaHandler) accessCollaboratorScope(ctx context.Context, userID int64) (bool, error) {
-	if h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(int(userID))) {
-		return true, nil
-	}
-	if h.collaboratorStore == nil {
-		return false, nil
-	}
-	_, found, err := h.collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
-	return found, err
+	return canAccessZulipCollaboratorScope(ctx, h.ownerStore, h.collaboratorStore, userID)
 }
 
 func (h *ZulipBaldaHandler) getProviderName() string {
@@ -1327,7 +1037,7 @@ func (h *ZulipBaldaHandler) sendPlain(
 	locator baldasession.SessionLocator,
 	text string,
 ) error {
-	return sendPlain(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
+	return SendPlain(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
 }
 
 func (h *ZulipBaldaHandler) sendMarkdown(
@@ -1335,7 +1045,7 @@ func (h *ZulipBaldaHandler) sendMarkdown(
 	locator baldasession.SessionLocator,
 	text string,
 ) error {
-	return sendMarkdown(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
+	return SendMarkdown(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
 }
 
 func (h *ZulipBaldaHandler) sendSessionStartupNotice(ctx context.Context, locator baldasession.SessionLocator, sessionID string) {
@@ -1352,8 +1062,5 @@ func (h *ZulipBaldaHandler) sendSessionStartupNotice(ctx context.Context, locato
 }
 
 func (h *ZulipBaldaHandler) locatorFromPayload(payload zulipWebhookPayload) baldasession.SessionLocator {
-	if payload.Message.Type == chatTypePrivate {
-		return zulipDMLocator(payload.Message.SenderID)
-	}
-	return zulipStreamLocator(payload.Message.StreamID, payload.Message.Subject)
+	return locatorFromZulipWebhookPayload(payload)
 }

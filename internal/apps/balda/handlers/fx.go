@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"go.uber.org/fx"
@@ -12,7 +10,6 @@ import (
 // Module provides handlers for the balda bot.
 var Module = fx.Module("balda_handlers",
 	fx.Provide(
-		NewZulipBaldaHandler,
 		func(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
 			normalized, err := normalizeInboundWebhookConfig(params.Config)
 			if err != nil {
@@ -23,7 +20,7 @@ var Module = fx.Module("balda_handlers",
 				enabled:    normalized.Enabled,
 				listenAddr: normalized.ListenAddr,
 				routes:     normalized.Routes,
-				balda:      params.Balda,
+				balda:      params.Executor,
 				owner:      params.OwnerStore,
 				logger:     params.Logger.With().Str("component", "balda.inbound_webhook").Logger(),
 			}
@@ -48,9 +45,9 @@ var Module = fx.Module("balda_handlers",
 				channelAuth:       params.ChannelAuth,
 				actorDispatcher:   params.Dispatcher,
 				authToken:         params.AuthToken,
+				baldaHandler:      params.OwnerActivator,
 			}
 		},
-		newBaldaHandler,
 		func(params commandHandlerParams) *CommandHandler {
 			return &CommandHandler{
 				ownerStore:        params.OwnerStore,
@@ -77,30 +74,6 @@ var Module = fx.Module("balda_handlers",
 		},
 	),
 	fx.Invoke(
-		func(start *StartHandler, balda *BaldaHandler) {
-			start.baldaHandler = balda
-		},
 		func(*InboundWebhookReceiver) {},
-		func(*ZulipBaldaHandler) {},
 	),
 )
-
-func newBaldaHandler(deps baldaHandlerDeps) (*BaldaHandler, error) {
-	return &BaldaHandler{
-		ownerStore:         deps.OwnerStore,
-		collaboratorStore:  deps.CollaboratorStore,
-		channel:            deps.Channel,
-		sessionManager:     deps.SessionManager,
-		actorDispatcher:    deps.Dispatcher,
-		jobEvents:          deps.JobEvents,
-		tgClient:           deps.TGClient,
-		authToken:          strings.TrimSpace(deps.AuthToken),
-		baldaProviderName:  strings.TrimSpace(deps.BaldaProviderID),
-		telegramEnabled:    deps.TelegramEnabled,
-		telegramConfigured: true,
-		logger:             deps.Logger.With().Str("component", "balda.handler").Logger(),
-		questionService:    deps.QuestionService,
-		attachmentStore:    deps.AttachmentStore,
-		now:                time.Now,
-	}, nil
-}

@@ -7,6 +7,7 @@ import (
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -49,28 +50,28 @@ func (h *userHandler) getBotUsername(ctx context.Context) string {
 	return h.botUsername
 }
 
-func (h *userHandler) HandleUserCommand(ctx context.Context, commandCtx TelegramCommandContext) error {
-	if !h.ownerStore.IsOwner(commandCtx.UserID) {
-		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, "This command is only for the owner."); err != nil {
+func (h *userHandler) HandleUserCommand(ctx context.Context, req commandapp.Request) error {
+	if !h.ownerStore.IsOwner(req.UserID) {
+		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "This command is only for the owner."); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	args := strings.Fields(commandCtx.Args)
+	args := strings.Fields(req.Args)
 	if len(args) == 0 {
-		return h.sendUsage(ctx, commandCtx.Locator)
+		return h.sendUsage(ctx, req.Locator)
 	}
 
 	switch args[0] {
 	case userActionAdd:
-		return h.onAdd(ctx, commandCtx)
+		return h.onAdd(ctx, req)
 	case userActionList:
-		return h.onList(ctx, commandCtx)
+		return h.onList(ctx, req)
 	case userActionRemove:
-		return h.onRemove(ctx, commandCtx)
+		return h.onRemove(ctx, req)
 	default:
-		return h.sendUsage(ctx, commandCtx.Locator)
+		return h.sendUsage(ctx, req.Locator)
 	}
 }
 
@@ -82,12 +83,12 @@ func (h *userHandler) sendUsage(ctx context.Context, locator baldasession.Sessio
 	return sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, locator, usage)
 }
 
-func (h *userHandler) onAdd(ctx context.Context, commandCtx TelegramCommandContext) error {
-	ownerID := fmt.Sprintf("%d", commandCtx.UserID)
+func (h *userHandler) onAdd(ctx context.Context, req commandapp.Request) error {
+	ownerID := fmt.Sprintf("%d", req.UserID)
 
 	token, _, err := h.inviteStore.CreateInvite(ctx, ownerID)
 	if err != nil {
-		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, "Failed to create invite. Please try again."); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "Failed to create invite. Please try again."); err != nil {
 			return err
 		}
 		return nil
@@ -100,18 +101,18 @@ func (h *userHandler) onAdd(ctx context.Context, commandCtx TelegramCommandConte
 	inviteLink := fmt.Sprintf("https://t.me/%s?start=invite_%s", username, token)
 	message := fmt.Sprintf("Invite link created:\n%s\n\nVisit this link to become a bot collaborator", inviteLink)
 
-	if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, message); err != nil {
+	if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, message); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (h *userHandler) onList(ctx context.Context, commandCtx TelegramCommandContext) error {
+func (h *userHandler) onList(ctx context.Context, req commandapp.Request) error {
 	var lines []string
 
 	collaborators, err := h.collaboratorStore.ListCollaborators(ctx)
 	if err != nil {
-		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, "Failed to list collaborators. Please try again."); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "Failed to list collaborators. Please try again."); err != nil {
 			return err
 		}
 		return nil
@@ -135,7 +136,7 @@ func (h *userHandler) onList(ctx context.Context, commandCtx TelegramCommandCont
 
 	invites, err := h.inviteStore.ListInvites(ctx)
 	if err != nil {
-		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, "Failed to list invites. Please try again."); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "Failed to list invites. Please try again."); err != nil {
 			return err
 		}
 		return nil
@@ -149,16 +150,16 @@ func (h *userHandler) onList(ctx context.Context, commandCtx TelegramCommandCont
 	}
 
 	message := strings.Join(lines, "\n")
-	if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, message); err != nil {
+	if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, message); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (h *userHandler) onRemove(ctx context.Context, commandCtx TelegramCommandContext) error {
-	args := strings.Fields(commandCtx.Args)
+func (h *userHandler) onRemove(ctx context.Context, req commandapp.Request) error {
+	args := strings.Fields(req.Args)
 	if len(args) < 2 {
-		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, "Usage: /user remove <user_id>"); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "Usage: /user remove <user_id>"); err != nil {
 			return err
 		}
 		return nil
@@ -166,21 +167,21 @@ func (h *userHandler) onRemove(ctx context.Context, commandCtx TelegramCommandCo
 
 	userID := strings.TrimSpace(args[1])
 	if userID == "" {
-		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, "User ID required"); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "User ID required"); err != nil {
 			return err
 		}
 		return nil
 	}
 
 	if err := h.collaboratorStore.RemoveCollaborator(ctx, userID); err != nil {
-		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, "Could not remove collaborator. Please try again."); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "Could not remove collaborator. Please try again."); err != nil {
 			return err
 		}
 		return nil
 	}
 
 	message := fmt.Sprintf("Collaborator removed: %s", userID)
-	if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, commandCtx.Locator, message); err != nil {
+	if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, message); err != nil {
 		return err
 	}
 	return nil

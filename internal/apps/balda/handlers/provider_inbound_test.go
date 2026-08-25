@@ -6,6 +6,8 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 )
@@ -21,7 +23,7 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 	receivedAt := time.Date(2026, time.August, 4, 10, 0, 0, 0, time.UTC)
 
 	t.Run("telegram media group", func(t *testing.T) {
-		message := TelegramMessageContext{
+		message := baldatelegram.MessageContext{
 			Locator:          telegramref.NewLocator(-1001, 77),
 			ChatID:           -1001,
 			TopicID:          77,
@@ -38,9 +40,9 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 				ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true},
 			},
 		}
-		first := normalizeTelegramInbound(message, "one caption", receivedAt)
+		first := baldatelegram.NormalizeInbound(message, "one caption", receivedAt)
 		message.MessageID = 102
-		redelivered := normalizeTelegramInbound(message, "one caption", receivedAt)
+		redelivered := baldatelegram.NormalizeInbound(message, "one caption", receivedAt)
 		const wantID = "telegram:-1001:77:user:22:media-group:album-42"
 		if string(first.ID) != wantID || redelivered.ID != first.ID || first.ProviderMessageID != "album-42" {
 			t.Fatalf("identity = %+v redelivered = %+v", first, redelivered)
@@ -81,10 +83,14 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 	})
 
 	t.Run("zulip", func(t *testing.T) {
-		got := normalizeZulipInbound(zulipInboundMessage{
-			Locator: zulipDMLocator(101), MessageID: 42, UserID: zulipUserID(101),
-			Text: " hello ", Direct: true, ReceivedAt: receivedAt,
-		})
+		got := baldazulip.NormalizeInbound(
+			baldazulip.NewDMLocator(101),
+			42,
+			baldazulip.UserID(101),
+			" hello ",
+			true,
+			receivedAt,
+		)
 		if got.ID != testZulipInboundID || got.DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown || !got.ProgressPolicy.PlanUpdates || !got.Direct {
 			t.Fatalf("normalized Zulip = %+v", got)
 		}
