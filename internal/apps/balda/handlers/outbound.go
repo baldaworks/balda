@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	baldaHandlerActorAddress   = actorlayer.ActorAddress{Target: "handler", Key: "balda"}
 	commandHandlerActorAddress = actorlayer.ActorAddress{Target: "handler", Key: "command"}
 	userHandlerActorAddress    = actorlayer.ActorAddress{Target: "handler", Key: "user"}
 	startHandlerActorAddress   = actorlayer.ActorAddress{Target: "handler", Key: "start"}

@@ -1284,12 +1284,6 @@ func (f *fakeTurnDispatcher) Dispatch(_ context.Context, env actorlayer.Envelope
 	}, nil
 }
 
-func (f *fakeTurnDispatcher) commandSnapshot() []actorlayer.Envelope {
-	f.commandsMu.Lock()
-	defer f.commandsMu.Unlock()
-	return append([]actorlayer.Envelope(nil), f.commands...)
-}
-
 func (*fakeTurnDispatcher) PublishEvent(context.Context, string, actorlayer.Envelope) error {
 	return nil
 }

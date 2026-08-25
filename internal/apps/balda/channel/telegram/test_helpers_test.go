@@ -3,8 +3,6 @@ package telegram
 import (
 	"context"
 	"net/http"
-	"strings"
-	"testing"
 
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -121,30 +119,4 @@ func newTestAdapter(tgClient client.ClientWithResponsesInterface, formattingMode
 		TGClient:  tgClient,
 		Logger:    zerolog.Nop(),
 	})
-}
-
-func assertLastSentContains(t *testing.T, tgClient *fakeTelegramClient, wantSubstring string) {
-	t.Helper()
-	last := lastSentText(t, tgClient)
-	if !strings.Contains(last, wantSubstring) {
-		t.Fatalf("last sent text = %q, want substring %q", last, wantSubstring)
-	}
-}
-
-func lastSentText(t *testing.T, tgClient *fakeTelegramClient) string {
-	t.Helper()
-	if len(tgClient.richMessages) > 0 {
-		rich := tgClient.richMessages[len(tgClient.richMessages)-1].RichMessage
-		switch {
-		case rich.Markdown != nil:
-			return *rich.Markdown
-		case rich.Html != nil:
-			return *rich.Html
-		}
-		return ""
-	}
-	if len(tgClient.messages) == 0 {
-		t.Fatal("sent messages = 0, want at least one")
-	}
-	return tgClient.messages[len(tgClient.messages)-1].Text
 }

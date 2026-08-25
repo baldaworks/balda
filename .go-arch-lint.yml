@@ -71,6 +71,8 @@ components:
       - internal/apps/balda/actorcmd
       - internal/apps/balda/automodecmd
       - internal/apps/balda/controlcmd
+      - internal/apps/balda/chatapp
+      - internal/apps/balda/commandapp
       - internal/apps/balda/deliverycmd
       - internal/apps/balda/deliveryfmt
       - internal/apps/balda/goalcmd

@@ -18,6 +18,7 @@ import (
 const (
 	testMessageText    = "hello"
 	testMessageCaption = " listen to this "
+	testMediaGroupID   = "album-42"
 )
 
 func TestMessageContextFromEvent_MapsAudioAttachment(t *testing.T) {
@@ -157,7 +158,7 @@ func TestMessageContextFromEvent_MapsCaptionAndEntitiesAsInboundText(t *testing.
 }
 
 func TestMessageContextFromEvent_MapsMediaGroupID(t *testing.T) {
-	mediaGroupID := "album-42"
+	mediaGroupID := testMediaGroupID
 	got, ok := (&Adapter{}).MessageContextFromEvent(&events.MessageEvent{
 		Message: &client.Message{
 			Chat:         client.Chat{Id: 11, Type: "private"},
@@ -184,7 +185,7 @@ func TestCollectMediaGroupCombinesAttachmentsInMessageOrder(t *testing.T) {
 		ChatID:       11,
 		UserID:       22,
 		MessageID:    102,
-		MediaGroupID: "album-42",
+		MediaGroupID: testMediaGroupID,
 		Attachments: []attachment.Descriptor{{
 			Kind:   attachment.KindDocument,
 			FileID: "document-2",
@@ -195,7 +196,7 @@ func TestCollectMediaGroupCombinesAttachmentsInMessageOrder(t *testing.T) {
 		ChatID:       11,
 		UserID:       22,
 		MessageID:    101,
-		MediaGroupID: "album-42",
+		MediaGroupID: testMediaGroupID,
 		Attachments: []attachment.Descriptor{{
 			Kind:   attachment.KindPhoto,
 			FileID: "photo-1",
