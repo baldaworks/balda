@@ -14,6 +14,7 @@ Use this map to find the authoritative runtime contracts.
 - [Background monitors](background-monitors.md)
 - [Interactive questions](interactive-questions.md)
 - [Presentation routing](presentation-routing.md)
+- [Transport presentation boundary](transport-presentation-boundary.md)
 - [Slack agent mode](slack-agent-mode.md)
 - [Goal worker results](goal-worker-results.md)
 - [Plugin marketplace repo format](plugin-marketplace-format.md)

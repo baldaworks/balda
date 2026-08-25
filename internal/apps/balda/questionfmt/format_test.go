@@ -1,6 +1,7 @@
 package questionfmt
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -9,16 +10,35 @@ import (
 )
 
 func TestRenderTelegramKeepsPromptOnly(t *testing.T) {
-	presentation := Render(Request{
-		Prompt:  "Continue deployment?",
-		Options: []questioncmd.Option{{ID: "yes", Label: "Yes"}, {ID: "no", Label: "No"}},
-	}, deliveryfmt.TransportTelegram)
+	reg := deliveryfmt.NewStructuredRegistry()
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, RequestDescriptor, testTelegramQuestionRenderer{}); err != nil {
+		t.Fatalf("RegisterQuestionRenderer() error = %v", err)
+	}
+	presentation, err := deliveryfmt.RenderStructured(context.Background(), reg, deliveryfmt.TransportTelegram, deliveryfmt.StructuredEnvelope[Request]{
+		Descriptor: RequestDescriptor,
+		Body: Request{
+			Prompt:  "Continue deployment?",
+			Options: []questioncmd.Option{{ID: "yes", Label: "Yes"}, {ID: "no", Label: "No"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RenderStructured() error = %v", err)
+	}
 	if presentation.DeliveryFormat != deliveryfmt.DeliveryFormatRichMarkdown {
 		t.Fatalf("delivery format = %q", presentation.DeliveryFormat)
 	}
-	if presentation.Prompt != "Continue deployment?" {
-		t.Fatalf("prompt = %q", presentation.Prompt)
+	if presentation.Text != "Continue deployment?" {
+		t.Fatalf("prompt = %q", presentation.Text)
 	}
+}
+
+type testTelegramQuestionRenderer struct{}
+
+func (testTelegramQuestionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           strings.TrimSpace(env.Body.Prompt),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
 }
 
 func TestRenderSlackAppendsOptions(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/presentation"
+	telegrampresentation "github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
@@ -13,12 +14,17 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 )
 
 func TestMessageFormatRegistryProvidesCurrentPromptRoutes(t *testing.T) {
 	t.Parallel()
 
-	registry, err := newMessageFormatRegistry()
+	registry, err := newMessageFormatRegistry(promptRegistryParams{
+		Contributions: []PromptRegistryContribution{
+			telegramfxPromptContributionForTest(),
+		},
+	})
 	if err != nil {
 		t.Fatalf("newMessageFormatRegistry() error = %v", err)
 	}
@@ -50,7 +56,11 @@ func TestMessageFormatRegistryProvidesCurrentPromptRoutes(t *testing.T) {
 func TestMessageFormatRegistryFormatsCurrentRoutes(t *testing.T) {
 	t.Parallel()
 
-	registry, err := newMessageFormatRegistry()
+	registry, err := newMessageFormatRegistry(promptRegistryParams{
+		Contributions: []PromptRegistryContribution{
+			telegramfxPromptContributionForTest(),
+		},
+	})
 	if err != nil {
 		t.Fatalf("newMessageFormatRegistry() error = %v", err)
 	}
@@ -131,13 +141,12 @@ func TestStructuredMessageRegistryProvidesCurrentStructuredRoutes(t *testing.T) 
 	t.Parallel()
 
 	registry, err := newStructuredMessageRegistry(structuredRegistryParams{
-		Registrars: []structuredRegistryRegistrar{
+		Registrars: []StructuredRegistryRegistrar{
 			permissionfmt.RegisterStructuredRenderers,
 			progressfmt.RegisterStructuredRenderers,
 			questionfmt.RegisterStructuredRenderers,
-			presentation.RegisterQuestionRenderer,
-			presentation.RegisterPermissionRenderer,
-			presentation.RegisterProgressRenderer,
+			telegramfxRegisterStructuredRenderersForTest,
+			slackagentRegisterStructuredRenderersForTest,
 		},
 	})
 	if err != nil {
@@ -197,4 +206,111 @@ func TestStructuredMessageRegistryProvidesCurrentStructuredRoutes(t *testing.T) 
 			}
 		})
 	}
+}
+
+func telegramfxPromptContributionForTest() PromptRegistryContribution {
+	richMarkdownRule, richMarkdownExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichMarkdown)
+	richHTMLRule, richHTMLExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichHTML)
+	return PromptRegistryContribution{
+		Formats: []deliveryfmt.Format{
+			{Name: deliveryfmt.NameTelegramRichMarkdown, Instructions: richMarkdownRule, Example: richMarkdownExample},
+			{Name: deliveryfmt.NameTelegramRichHTML, Instructions: richHTMLRule, Example: richHTMLExample},
+		},
+		Formatters: []deliveryfmt.FormatterRegistration{
+			{Name: deliveryfmt.NameTelegramRichMarkdown, Formatter: identityFormatter{name: deliveryfmt.NameTelegramRichMarkdown}},
+			{Name: deliveryfmt.NameTelegramRichHTML, Formatter: testTelegramHTMLFormatter{}},
+		},
+		Routes: []deliveryfmt.Route{
+			{Transport: deliveryfmt.TransportTelegram, DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown, RegisteredName: deliveryfmt.NameTelegramRichMarkdown},
+			{Transport: deliveryfmt.TransportTelegram, DeliveryFormat: deliveryfmt.DeliveryFormatRichHTML, RegisteredName: deliveryfmt.NameTelegramRichHTML},
+		},
+	}
+}
+
+func telegramfxRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredRegistry) error {
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, questionfmt.RequestDescriptor, testTelegramQuestionRenderer{}); err != nil {
+		return err
+	}
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, permissionfmt.RequestDescriptor, testTelegramPermissionRenderer{}); err != nil {
+		return err
+	}
+	return deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, progressfmt.RequestDescriptor, testTelegramProgressRenderer{})
+}
+
+func slackagentRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredRegistry) error {
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportSlackAgent, questionfmt.RequestDescriptor, testSlackAgentQuestionRenderer{}); err != nil {
+		return err
+	}
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportSlackAgent, permissionfmt.RequestDescriptor, testSlackAgentPermissionRenderer{}); err != nil {
+		return err
+	}
+	return deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, testSlackAgentProgressRenderer{})
+}
+
+type testTelegramHTMLFormatter struct{}
+
+func (testTelegramHTMLFormatter) Name() deliveryfmt.Name {
+	return deliveryfmt.NameTelegramRichHTML
+}
+
+func (testTelegramHTMLFormatter) Format(text string) (deliveryfmt.Message, error) {
+	return deliveryfmt.Message{
+		Name:          deliveryfmt.NameTelegramRichHTML,
+		Text:          telegramfmt.HTML(text),
+		PlainFallback: telegramfmt.HTMLPlainText(text),
+	}, nil
+}
+
+type testTelegramQuestionRenderer struct{}
+
+func (testTelegramQuestionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[questionfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           telegrampresentation.RenderQuestion(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
+}
+
+type testTelegramPermissionRenderer struct{}
+
+func (testTelegramPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           telegrampresentation.RenderPermission(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
+}
+
+type testTelegramProgressRenderer struct{}
+
+func (testTelegramProgressRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[progressfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           telegrampresentation.RenderProgress(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
+}
+
+type testSlackAgentQuestionRenderer struct{}
+
+func (testSlackAgentQuestionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[questionfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderQuestion(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+	}, nil
+}
+
+type testSlackAgentPermissionRenderer struct{}
+
+func (testSlackAgentPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderPermission(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+	}, nil
+}
+
+type testSlackAgentProgressRenderer struct{}
+
+func (testSlackAgentProgressRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[progressfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderProgress(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
+	}, nil
 }

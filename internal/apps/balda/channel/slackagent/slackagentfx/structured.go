@@ -1,21 +1,52 @@
 package slackagentfx
 
 import (
+	"context"
+
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 )
 
-type structuredRegistryRegistrar func(*deliveryfmt.StructuredRegistry) error
+type slackAgentQuestionRenderer struct{}
 
-func registerStructuredRenderers(reg *deliveryfmt.StructuredRegistry) error {
-	for _, register := range []structuredRegistryRegistrar{
-		presentation.RegisterQuestionRenderer,
-		presentation.RegisterPermissionRenderer,
-		presentation.RegisterProgressRenderer,
-	} {
-		if err := register(reg); err != nil {
-			return err
-		}
-	}
-	return nil
+func (slackAgentQuestionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[questionfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderQuestion(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+	}, nil
+}
+
+type slackAgentPermissionRenderer struct{}
+
+func (slackAgentPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderPermission(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+	}, nil
+}
+
+type slackAgentProgressRenderer struct{}
+
+func (slackAgentProgressRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[progressfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderProgress(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
+	}, nil
+}
+
+func NewQuestionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, questionfmt.RequestDescriptor, slackAgentQuestionRenderer{})
+}
+
+func NewPermissionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, permissionfmt.RequestDescriptor, slackAgentPermissionRenderer{})
+}
+
+func NewProgressStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, slackAgentProgressRenderer{})
 }

@@ -6,5 +6,5 @@ import (
 )
 
 func RenderPermission(body permissioncmd.Request) string {
-	return permissionfmt.RenderMarkdown(body)
+	return permissionfmt.RenderTelegramMarkdown(body)
 }

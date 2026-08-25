@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	telegrampresentation "github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
@@ -60,7 +61,19 @@ func testStructuredRegistry(t *testing.T) *deliveryfmt.StructuredRegistry {
 	if err != nil {
 		t.Fatalf("permissionfmt.NewStructuredRegistry() error = %v", err)
 	}
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, permissionfmt.RequestDescriptor, permissionsTelegramPermissionRenderer{}); err != nil {
+		t.Fatalf("RegisterPermissionRenderer() error = %v", err)
+	}
 	return reg
+}
+
+type permissionsTelegramPermissionRenderer struct{}
+
+func (permissionsTelegramPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           telegrampresentation.RenderPermission(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
 }
 
 func TestParseConfigDefaults(t *testing.T) {

@@ -17,10 +17,13 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/slack/slackfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram/telegramfx"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
@@ -584,6 +587,7 @@ func Module(
 		fx.Provide(func() *baldaslack.Client {
 			return baldaslack.NewClient(cfg.Balda.Slack.BotToken)
 		}),
+		fx.Provide(func(client *baldaslack.Client) handlers.SlackChatClient { return client }),
 		fx.Provide(func() handlers.SlackChatConfig {
 			return handlers.SlackChatConfig{
 				Enabled:                cfg.Balda.Slack.Enabled,
@@ -642,7 +646,10 @@ func Module(
 		sessionturnapp.Module,
 		controlapp.Module,
 		deliveryfx.Module,
+		slackfx.Module,
 		slackagentfx.Module,
+		telegramfx.Module,
+		zulipfx.Module,
 		deliveryworkflow.Module,
 		fx.Provide(fx.Annotate(
 			func(service *questions.Service) deliveryworkflow.QuestionDeliveryBinder { return service },

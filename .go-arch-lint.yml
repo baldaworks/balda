@@ -81,7 +81,9 @@ components:
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
       - internal/apps/balda/plugincmd
+      - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
+      - internal/apps/balda/questionfmt
       - internal/apps/balda/telegramref
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd

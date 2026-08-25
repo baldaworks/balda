@@ -24,8 +24,6 @@ const (
 // Formatter and prompt registrations are supplied separately at composition time.
 func BuiltinRoutes() []Route {
 	return []Route{
-		{Transport: TransportTelegram, DeliveryFormat: DeliveryFormatRichMarkdown, RegisteredName: NameTelegramRichMarkdown},
-		{Transport: TransportTelegram, DeliveryFormat: DeliveryFormatRichHTML, RegisteredName: NameTelegramRichHTML},
 		{Transport: TransportTelegram, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
 		{Transport: TransportSlack, DeliveryFormat: DeliveryFormatMrkdwn, RegisteredName: NameSlackMrkdwn},
 		{Transport: TransportSlack, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},

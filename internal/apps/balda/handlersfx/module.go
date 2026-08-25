@@ -1,7 +1,6 @@
 package handlersfx
 
 import (
-	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
@@ -10,7 +9,6 @@ import (
 // Module wires ingress-owned ports to concrete provider runtimes.
 var Module = fx.Module("balda_handlersfx",
 	fx.Provide(
-		func(client *baldaslack.Client) handlers.SlackChatClient { return client },
 		newTelegramChannelAdapter,
 		newTelegramAttachmentStore,
 		fx.Annotate(

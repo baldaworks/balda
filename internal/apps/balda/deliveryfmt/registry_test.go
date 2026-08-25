@@ -203,15 +203,13 @@ func TestBuiltinRoutes(t *testing.T) {
 
 	routes := BuiltinRoutes()
 	want := map[routeKey]Name{
-		{transport: TransportTelegram, deliveryFormat: DeliveryFormatRichMarkdown}: NameTelegramRichMarkdown,
-		{transport: TransportTelegram, deliveryFormat: DeliveryFormatRichHTML}:     NameTelegramRichHTML,
-		{transport: TransportTelegram, deliveryFormat: DeliveryFormatNone}:         NamePlainText,
-		{transport: TransportSlack, deliveryFormat: DeliveryFormatMrkdwn}:          NameSlackMrkdwn,
-		{transport: TransportSlack, deliveryFormat: DeliveryFormatNone}:            NamePlainText,
-		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatMrkdwn}:     NameSlackMrkdwn,
-		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatNone}:       NamePlainText,
-		{transport: TransportZulip, deliveryFormat: DeliveryFormatMarkdown}:        NameZulipMarkdown,
-		{transport: TransportZulip, deliveryFormat: DeliveryFormatNone}:            NamePlainText,
+		{transport: TransportTelegram, deliveryFormat: DeliveryFormatNone}:     NamePlainText,
+		{transport: TransportSlack, deliveryFormat: DeliveryFormatMrkdwn}:      NameSlackMrkdwn,
+		{transport: TransportSlack, deliveryFormat: DeliveryFormatNone}:        NamePlainText,
+		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatMrkdwn}: NameSlackMrkdwn,
+		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatNone}:   NamePlainText,
+		{transport: TransportZulip, deliveryFormat: DeliveryFormatMarkdown}:    NameZulipMarkdown,
+		{transport: TransportZulip, deliveryFormat: DeliveryFormatNone}:        NamePlainText,
 	}
 
 	if len(routes) != len(want) {

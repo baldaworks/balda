@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	baldaslack "github.com/baldaworks/balda/internal/apps/balda/channel/slack"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
@@ -13,10 +12,14 @@ import (
 var _ deliverycmd.Adapter = (*Adapter)(nil)
 
 type Adapter struct {
-	client           *baldaslack.Client
+	client           MessageClient
 	logger           zerolog.Logger
 	enableStreaming  bool
 	suggestedPrompts bool
+}
+
+type MessageClient interface {
+	PostMessage(ctx context.Context, channel, threadTS, text string, mrkdwn bool) (string, error)
 }
 
 type AdapterConfig struct {
@@ -24,7 +27,7 @@ type AdapterConfig struct {
 	SuggestedPrompts bool
 }
 
-func NewAdapter(client *baldaslack.Client, logger zerolog.Logger, cfg AdapterConfig) *Adapter {
+func NewAdapter(client MessageClient, logger zerolog.Logger, cfg AdapterConfig) *Adapter {
 	return &Adapter{
 		client:           client,
 		logger:           logger.With().Str("component", "balda.channel.slack_agent").Logger(),

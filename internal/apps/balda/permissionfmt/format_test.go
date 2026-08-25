@@ -1,6 +1,7 @@
 package permissionfmt
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -11,30 +12,40 @@ import (
 )
 
 func TestRenderTelegramUsesStructuredContentAndOmitsOpaqueInput(t *testing.T) {
-	presentation := Render(permissioncmd.Request{
-		Interaction: questioncmd.InteractionContext{Locator: deliverycmd.Locator{ChannelType: "telegram"}},
-		ToolCall: permissioncmd.ToolCall{
-			Title:    "Command approval",
-			Kind:     "execute",
-			RawInput: `{"threadId":"internal-id","token":"secret-value"}`,
-			Content: []permissioncmd.Content{{
-				Kind: permissioncmd.ContentKindText,
-				Text: "Run the test.\n\nCommand:\n```sh\nid\n```\n\nWorking directory: `/workspace`",
-			}},
+	reg := deliveryfmt.NewStructuredRegistry()
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, RequestDescriptor, testTelegramPermissionRenderer{}); err != nil {
+		t.Fatalf("RegisterPermissionRenderer() error = %v", err)
+	}
+	presentation, err := deliveryfmt.RenderStructured(context.Background(), reg, deliveryfmt.TransportTelegram, deliveryfmt.StructuredEnvelope[permissioncmd.Request]{
+		Descriptor: RequestDescriptor,
+		Body: permissioncmd.Request{
+			Interaction: questioncmd.InteractionContext{Locator: deliverycmd.Locator{ChannelType: "telegram"}},
+			ToolCall: permissioncmd.ToolCall{
+				Title:    "Command approval",
+				Kind:     "execute",
+				RawInput: `{"threadId":"internal-id","token":"secret-value"}`,
+				Content: []permissioncmd.Content{{
+					Kind: permissioncmd.ContentKindText,
+					Text: "Run the test.\n\nCommand:\n```sh\nid\n```\n\nWorking directory: `/workspace`",
+				}},
+			},
+			Options: []permissioncmd.Option{{ID: "opt-1", Name: "Allow once"}, {ID: "opt-2", Name: "Cancel"}},
 		},
-		Options: []permissioncmd.Option{{ID: "opt-1", Name: "Allow once"}, {ID: "opt-2", Name: "Cancel"}},
 	})
+	if err != nil {
+		t.Fatalf("RenderStructured() error = %v", err)
+	}
 	if presentation.DeliveryFormat != deliveryfmt.DeliveryFormatRichMarkdown {
 		t.Fatalf("delivery format = %q", presentation.DeliveryFormat)
 	}
 	for _, want := range []string{"**Permission required**", "Run the test.", "```sh\nid\n```", "`/workspace`"} {
-		if !strings.Contains(presentation.Prompt, want) {
-			t.Fatalf("prompt missing %q: %q", want, presentation.Prompt)
+		if !strings.Contains(presentation.Text, want) {
+			t.Fatalf("prompt missing %q: %q", want, presentation.Text)
 		}
 	}
 	for _, hidden := range []string{"threadId", "internal-id", "secret-value", "opt-1", "opt-2", "RawInput", "1. Allow once", "2. Cancel", "Choose an action below"} {
-		if strings.Contains(presentation.Prompt, hidden) {
-			t.Fatalf("prompt exposed %q: %q", hidden, presentation.Prompt)
+		if strings.Contains(presentation.Text, hidden) {
+			t.Fatalf("prompt exposed %q: %q", hidden, presentation.Text)
 		}
 	}
 }
@@ -53,19 +64,38 @@ func TestRenderSlackAgentKeepsTextOptions(t *testing.T) {
 func TestRenderOmitsGenericOtherKind(t *testing.T) {
 	t.Parallel()
 
-	presentation := Render(permissioncmd.Request{
-		Interaction: questioncmd.InteractionContext{Locator: deliverycmd.Locator{ChannelType: "telegram"}},
-		ToolCall: permissioncmd.ToolCall{
-			Title: "MCP elicitation request",
-			Kind:  "other",
+	reg := deliveryfmt.NewStructuredRegistry()
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, RequestDescriptor, testTelegramPermissionRenderer{}); err != nil {
+		t.Fatalf("RegisterPermissionRenderer() error = %v", err)
+	}
+	presentation, err := deliveryfmt.RenderStructured(context.Background(), reg, deliveryfmt.TransportTelegram, deliveryfmt.StructuredEnvelope[permissioncmd.Request]{
+		Descriptor: RequestDescriptor,
+		Body: permissioncmd.Request{
+			Interaction: questioncmd.InteractionContext{Locator: deliverycmd.Locator{ChannelType: "telegram"}},
+			ToolCall: permissioncmd.ToolCall{
+				Title: "MCP elicitation request",
+				Kind:  "other",
+			},
 		},
 	})
-	if !strings.Contains(presentation.Prompt, "**Action:** MCP elicitation request") {
-		t.Fatalf("prompt = %q, want action title", presentation.Prompt)
+	if err != nil {
+		t.Fatalf("RenderStructured() error = %v", err)
 	}
-	if strings.Contains(presentation.Prompt, "other") {
-		t.Fatalf("prompt = %q, want generic kind omitted", presentation.Prompt)
+	if !strings.Contains(presentation.Text, "**Action:** MCP elicitation request") {
+		t.Fatalf("prompt = %q, want action title", presentation.Text)
 	}
+	if strings.Contains(presentation.Text, "other") {
+		t.Fatalf("prompt = %q, want generic kind omitted", presentation.Text)
+	}
+}
+
+type testTelegramPermissionRenderer struct{}
+
+func (testTelegramPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           RenderTelegramMarkdown(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
 }
 
 func TestRenderFallbackIsPlain(t *testing.T) {

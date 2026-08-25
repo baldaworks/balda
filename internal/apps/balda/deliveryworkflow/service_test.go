@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	telegrampresentation "github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
@@ -165,6 +166,9 @@ func TestPrepareDeliveryAppliesStructuredProgressPresentation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("progressfmt.NewStructuredRegistry() error = %v", err)
 	}
+	if err := deliveryfmt.RegisterStructuredRenderer(structured, deliveryfmt.TransportTelegram, progressfmt.RequestDescriptor, workflowTelegramProgressRenderer{}); err != nil {
+		t.Fatalf("RegisterProgressRenderer() error = %v", err)
+	}
 	service := NewWithRegistries(nil, registry, structured, nil, nil, nil, nil, zerolog.Nop())
 
 	delivery, err := service.prepareDelivery(deliverycmd.Payload{
@@ -186,6 +190,15 @@ func TestPrepareDeliveryAppliesStructuredProgressPresentation(t *testing.T) {
 	if delivery.Message == nil || delivery.Message.Text != "formatted:plan" {
 		t.Fatalf("typed message = %+v, want formatted progress text", delivery.Message)
 	}
+}
+
+type workflowTelegramProgressRenderer struct{}
+
+func (workflowTelegramProgressRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[progressfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           telegrampresentation.RenderProgress(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
 }
 
 func TestHandleLogsFormatterFailureWithoutMessageOrErrorContent(t *testing.T) {

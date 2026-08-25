@@ -1,6 +1,8 @@
 package progressfmt
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -50,5 +52,17 @@ func mustRegistry(t *testing.T) *deliveryfmt.StructuredRegistry {
 	if err != nil {
 		t.Fatalf("NewStructuredRegistry() error = %v", err)
 	}
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, RequestDescriptor, testTelegramProgressRenderer{}); err != nil {
+		t.Fatalf("RegisterProgressRenderer() error = %v", err)
+	}
 	return reg
+}
+
+type testTelegramProgressRenderer struct{}
+
+func (testTelegramProgressRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           strings.TrimSpace(env.Body.Progress.Text),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
 }

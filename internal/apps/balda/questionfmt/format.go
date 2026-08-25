@@ -39,7 +39,6 @@ func RegisterStructuredRenderers(reg *deliveryfmt.StructuredRegistry) error {
 		transport string
 		renderer  deliveryfmt.StructuredRenderer[Request]
 	}{
-		{transport: deliveryfmt.TransportTelegram, renderer: telegramRenderer{}},
 		{transport: deliveryfmt.TransportSlack, renderer: plainOptionsRenderer{}},
 		{transport: deliveryfmt.TransportZulip, renderer: plainOptionsRenderer{}},
 	} {
@@ -66,15 +65,6 @@ func Render(request Request, transport string) Presentation {
 		Prompt:         presentation.Text,
 		DeliveryFormat: presentation.DeliveryFormat,
 	}
-}
-
-type telegramRenderer struct{}
-
-func (telegramRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[Request]) (deliveryfmt.StructuredPresentation, error) {
-	return deliveryfmt.StructuredPresentation{
-		Text:           strings.TrimSpace(env.Body.Prompt),
-		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
-	}, nil
 }
 
 type plainOptionsRenderer struct{}

@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 	"go.uber.org/fx"
 )
 
@@ -14,12 +14,35 @@ var (
 	markdownLinkPattern  = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 )
 
-type structuredRegistryRegistrar func(*deliveryfmt.StructuredRegistry) error
+type StructuredRegistryRegistrar func(*deliveryfmt.StructuredRegistry) error
+
+type PromptRegistryContribution struct {
+	Formats    []deliveryfmt.Format
+	Formatters []deliveryfmt.FormatterRegistration
+	Routes     []deliveryfmt.Route
+}
+
+type ChannelAdapterBinding struct {
+	ChannelType string
+	Adapter     deliverycmd.Adapter
+}
 
 type structuredRegistryParams struct {
 	fx.In
 
-	Registrars []structuredRegistryRegistrar `group:"balda_delivery_structured_registrar"`
+	Registrars []StructuredRegistryRegistrar `group:"balda_delivery_structured_registrar"`
+}
+
+type promptRegistryParams struct {
+	fx.In
+
+	Contributions []PromptRegistryContribution `group:"balda_delivery_prompt_contribution"`
+}
+
+type channelAdapterBindingsParams struct {
+	fx.In
+
+	Bindings []ChannelAdapterBinding `group:"balda_delivery_channel_adapter"`
 }
 
 type identityFormatter struct {
@@ -36,12 +59,6 @@ func (f identityFormatter) Format(text string) (deliveryfmt.Message, error) {
 		Text:          text,
 		PlainFallback: text,
 	}, nil
-}
-
-type telegramHTMLFormatter struct{}
-
-func (telegramHTMLFormatter) Name() deliveryfmt.Name {
-	return deliveryfmt.NameTelegramRichHTML
 }
 
 type zulipMarkdownFormatter struct{}
@@ -65,20 +82,8 @@ func markdownPlainText(text string) string {
 	return strings.TrimSpace(plain)
 }
 
-func (telegramHTMLFormatter) Format(text string) (deliveryfmt.Message, error) {
-	return deliveryfmt.Message{
-		Name:          deliveryfmt.NameTelegramRichHTML,
-		Text:          telegramfmt.HTML(text),
-		PlainFallback: telegramfmt.HTMLPlainText(text),
-	}, nil
-}
-
-func newMessageFormatRegistry() (*deliveryfmt.Registry, error) {
-	richMarkdownRule, richMarkdownExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichMarkdown)
-	richHTMLRule, richHTMLExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichHTML)
+func newMessageFormatRegistry(params promptRegistryParams) (*deliveryfmt.Registry, error) {
 	formats := []deliveryfmt.Format{
-		{Name: deliveryfmt.NameTelegramRichMarkdown, Instructions: richMarkdownRule, Example: richMarkdownExample},
-		{Name: deliveryfmt.NameTelegramRichHTML, Instructions: richHTMLRule, Example: richHTMLExample},
 		{Name: deliveryfmt.NameSlackMrkdwn, Instructions: "Use Slack mrkdwn for presentation. Prefer short sections, bullets, links, and fenced code blocks; do not emit Telegram-specific markup.", Example: "*Status:* shipped\n• Verify the deployment\n• Watch production"},
 		{Name: deliveryfmt.NameZulipMarkdown, Instructions: "Use Zulip-compatible Markdown for presentation. Prefer short sections, bullets, links, and fenced code blocks; do not emit Telegram-specific markup.", Example: "**Status:** shipped\n\n- Verify the deployment\n- Watch production"},
 		{Name: deliveryfmt.NamePlainText, Instructions: "Use plain text only. Do not use Markdown, HTML, or provider-specific presentation markup.", Example: "Status: shipped. Verify the deployment and watch production."},
@@ -87,8 +92,6 @@ func newMessageFormatRegistry() (*deliveryfmt.Registry, error) {
 	for _, format := range formats {
 		formatter := deliveryfmt.Formatter(identityFormatter{name: format.Name})
 		switch format.Name {
-		case deliveryfmt.NameTelegramRichHTML:
-			formatter = telegramHTMLFormatter{}
 		case deliveryfmt.NameZulipMarkdown:
 			formatter = zulipMarkdownFormatter{}
 		}
@@ -97,7 +100,13 @@ func newMessageFormatRegistry() (*deliveryfmt.Registry, error) {
 			Formatter: formatter,
 		})
 	}
-	return deliveryfmt.NewRegistry(formats, formatters, deliveryfmt.BuiltinRoutes())
+	routes := deliveryfmt.BuiltinRoutes()
+	for _, contribution := range params.Contributions {
+		formats = append(formats, contribution.Formats...)
+		formatters = append(formatters, contribution.Formatters...)
+		routes = append(routes, contribution.Routes...)
+	}
+	return deliveryfmt.NewRegistry(formats, formatters, routes)
 }
 
 func newStructuredMessageRegistry(params structuredRegistryParams) (*deliveryfmt.StructuredRegistry, error) {
@@ -108,4 +117,14 @@ func newStructuredMessageRegistry(params structuredRegistryParams) (*deliveryfmt
 		}
 	}
 	return reg, nil
+}
+
+func NewStructuredRegistrar[T any](
+	transport string,
+	desc deliveryfmt.Descriptor[T],
+	renderer deliveryfmt.StructuredRenderer[T],
+) StructuredRegistryRegistrar {
+	return func(reg *deliveryfmt.StructuredRegistry) error {
+		return deliveryfmt.RegisterStructuredRenderer(reg, transport, desc, renderer)
+	}
 }
