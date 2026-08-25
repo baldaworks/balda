@@ -23,6 +23,8 @@ type jobEventAppender interface {
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
 }
 
+const startupReadyMessage = "Boss, I'm online and ready to work."
+
 // Server is the transport-owned Telegram ingress/runtime carrier.
 // The implementation is introduced incrementally while the old handlers-owned
 // carrier is being dismantled.
@@ -105,6 +107,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.logOwnerAuthIfNeeded()
 	s.restorePersistedOwner()
+	s.sendStartupReadyMessage(ctx)
 	return nil
 }
 
@@ -121,6 +124,19 @@ func (s *Server) restorePersistedOwner() {
 		Int64("owner_id", owner.UserID).
 		Int64("chat_id", owner.ChatID).
 		Msg("restored persisted telegram owner")
+}
+
+func (s *Server) sendStartupReadyMessage(ctx context.Context) {
+	ownerID := s.getOwnerID()
+	chatID := s.getChatID()
+	if ownerID == 0 || chatID == 0 {
+		return
+	}
+	if err := sendPlain(ctx, s.actorDispatcher, serverActorAddress, NewLocator(chatID, 0), startupReadyMessage); err != nil {
+		s.logger.Warn().Err(err).Int64("owner_id", ownerID).Msg("failed to send startup ready message to owner")
+		return
+	}
+	s.logger.Info().Int64("owner_id", ownerID).Msg("startup ready message sent to owner")
 }
 
 // ActivateOwner binds the owner identity to the server state.

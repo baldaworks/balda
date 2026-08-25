@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -11,10 +12,12 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -425,6 +428,7 @@ func TestServerStartRestoresPersistedOwnerForDirectMessages(t *testing.T) {
 	if err := server.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
+	assertStartupReadyDelivery(t, turns.commandSnapshot(), locator)
 
 	text := "run tests after restart"
 	event := &events.MessageEvent{
@@ -441,6 +445,66 @@ func TestServerStartRestoresPersistedOwnerForDirectMessages(t *testing.T) {
 	if _, ok := findSessionEnvelope(turns.commands, locator.SessionID); !ok {
 		t.Fatalf("session command for %q not found after restart in %+v", locator.SessionID, turns.commands)
 	}
+}
+
+func TestServerStartDoesNotFailWhenStartupReadyDeliveryFails(t *testing.T) {
+	server, _, _ := newServerMessageHarness(t, 0)
+	server.tgClient = &fakeTelegramClient{}
+	server.telegramConfigured = true
+	server.telegramEnabled = true
+	server.actorDispatcher = failingStartDispatcher{err: errors.New("telegram delivery unavailable")}
+
+	if err := server.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v, want best-effort readiness delivery", err)
+	}
+}
+
+type failingStartDispatcher struct{ err error }
+
+func (f failingStartDispatcher) Dispatch(context.Context, actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
+	return nil, f.err
+}
+
+func TestServerStartDoesNotSendReadyMessageWithoutOwner(t *testing.T) {
+	server, turns, _ := newServerMessageHarness(t, 0)
+	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	server.ownerStore = ownerStore
+	server.ownerID = 0
+	server.chatID = 0
+	server.tgClient = &fakeTelegramClient{}
+	server.telegramConfigured = true
+	server.telegramEnabled = true
+
+	if err := server.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if got := len(turns.commandSnapshot()); got != 0 {
+		t.Fatalf("startup deliveries = %d, want 0 without owner", got)
+	}
+}
+
+func assertStartupReadyDelivery(t *testing.T, commands []actorlayer.Envelope, locator baldasession.SessionLocator) {
+	t.Helper()
+	for _, env := range commands {
+		if env.To.Target != baldaexecution.ActorTypeDelivery {
+			continue
+		}
+		var payload deliverycmd.Payload
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+			t.Fatalf("decode startup delivery payload: %v", err)
+		}
+		if payload.Text != startupReadyMessage {
+			continue
+		}
+		if payload.Locator.SessionID != locator.SessionID {
+			t.Fatalf("startup delivery locator = %q, want %q", payload.Locator.SessionID, locator.SessionID)
+		}
+		return
+	}
+	t.Fatalf("startup readiness delivery not found in %+v", commands)
 }
 
 func TestServerHandleMessage_ReplyAddsReplyContextToPublishedCommand(t *testing.T) {
