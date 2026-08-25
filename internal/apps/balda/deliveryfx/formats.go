@@ -1,17 +1,9 @@
 package deliveryfx
 
 import (
-	"regexp"
-	"strings"
-
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"go.uber.org/fx"
-)
-
-var (
-	markdownImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
-	markdownLinkPattern  = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 )
 
 type StructuredRegistryRegistrar func(*deliveryfmt.StructuredRegistry) error
@@ -61,42 +53,16 @@ func (f identityFormatter) Format(text string) (deliveryfmt.Message, error) {
 	}, nil
 }
 
-type zulipMarkdownFormatter struct{}
-
-func (zulipMarkdownFormatter) Name() deliveryfmt.Name {
-	return deliveryfmt.NameZulipMarkdown
-}
-
-func (zulipMarkdownFormatter) Format(text string) (deliveryfmt.Message, error) {
-	return deliveryfmt.Message{
-		Name:          deliveryfmt.NameZulipMarkdown,
-		Text:          text,
-		PlainFallback: markdownPlainText(text),
-	}, nil
-}
-
-func markdownPlainText(text string) string {
-	plain := markdownImagePattern.ReplaceAllString(text, "$1: $2")
-	plain = markdownLinkPattern.ReplaceAllString(plain, "$1 ($2)")
-	plain = strings.NewReplacer("**", "", "__", "", "`", "").Replace(plain)
-	return strings.TrimSpace(plain)
-}
-
 func newMessageFormatRegistry(params promptRegistryParams) (*deliveryfmt.Registry, error) {
 	formats := []deliveryfmt.Format{
 		{Name: deliveryfmt.NameSlackMrkdwn, Instructions: "Use Slack mrkdwn for presentation. Prefer short sections, bullets, links, and fenced code blocks; do not emit Telegram-specific markup.", Example: "*Status:* shipped\n• Verify the deployment\n• Watch production"},
-		{Name: deliveryfmt.NameZulipMarkdown, Instructions: "Use Zulip-compatible Markdown for presentation. Prefer short sections, bullets, links, and fenced code blocks; do not emit Telegram-specific markup.", Example: "**Status:** shipped\n\n- Verify the deployment\n- Watch production"},
 		{Name: deliveryfmt.NamePlainText, Instructions: "Use plain text only. Do not use Markdown, HTML, or provider-specific presentation markup.", Example: "Status: shipped. Verify the deployment and watch production."},
 	}
 	formatters := make([]deliveryfmt.FormatterRegistration, 0, len(formats))
 	for _, format := range formats {
-		formatter := deliveryfmt.Formatter(identityFormatter{name: format.Name})
-		if format.Name == deliveryfmt.NameZulipMarkdown {
-			formatter = zulipMarkdownFormatter{}
-		}
 		formatters = append(formatters, deliveryfmt.FormatterRegistration{
 			Name:      format.Name,
-			Formatter: formatter,
+			Formatter: identityFormatter{name: format.Name},
 		})
 	}
 	routes := deliveryfmt.BuiltinRoutes()

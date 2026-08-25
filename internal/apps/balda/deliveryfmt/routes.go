@@ -29,7 +29,6 @@ func BuiltinRoutes() []Route {
 		{Transport: TransportSlack, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
 		{Transport: TransportSlackAgent, DeliveryFormat: DeliveryFormatMrkdwn, RegisteredName: NameSlackMrkdwn},
 		{Transport: TransportSlackAgent, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
-		{Transport: TransportZulip, DeliveryFormat: DeliveryFormatMarkdown, RegisteredName: NameZulipMarkdown},
 		{Transport: TransportZulip, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
 	}
 }

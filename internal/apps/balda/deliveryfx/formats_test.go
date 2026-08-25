@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/presentation"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	telegrampresentation "github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
+	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
@@ -23,6 +24,7 @@ func TestMessageFormatRegistryProvidesCurrentPromptRoutes(t *testing.T) {
 	registry, err := newMessageFormatRegistry(promptRegistryParams{
 		Contributions: []PromptRegistryContribution{
 			telegramfxPromptContributionForTest(),
+			zulipfxPromptContributionForTest(),
 		},
 	})
 	if err != nil {
@@ -59,6 +61,7 @@ func TestMessageFormatRegistryFormatsCurrentRoutes(t *testing.T) {
 	registry, err := newMessageFormatRegistry(promptRegistryParams{
 		Contributions: []PromptRegistryContribution{
 			telegramfxPromptContributionForTest(),
+			zulipfxPromptContributionForTest(),
 		},
 	})
 	if err != nil {
@@ -227,6 +230,21 @@ func telegramfxPromptContributionForTest() PromptRegistryContribution {
 	}
 }
 
+func zulipfxPromptContributionForTest() PromptRegistryContribution {
+	rule, example := baldazulip.FormattingPromptRuleAndExample()
+	return PromptRegistryContribution{
+		Formats: []deliveryfmt.Format{
+			{Name: deliveryfmt.NameZulipMarkdown, Instructions: rule, Example: example},
+		},
+		Formatters: []deliveryfmt.FormatterRegistration{
+			{Name: deliveryfmt.NameZulipMarkdown, Formatter: testZulipMarkdownFormatter{}},
+		},
+		Routes: []deliveryfmt.Route{
+			{Transport: deliveryfmt.TransportZulip, DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown, RegisteredName: deliveryfmt.NameZulipMarkdown},
+		},
+	}
+}
+
 func telegramfxRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredRegistry) error {
 	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, questionfmt.RequestDescriptor, testTelegramQuestionRenderer{}); err != nil {
 		return err
@@ -248,6 +266,20 @@ func slackagentRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredReg
 }
 
 type testTelegramHTMLFormatter struct{}
+
+type testZulipMarkdownFormatter struct{}
+
+func (testZulipMarkdownFormatter) Name() deliveryfmt.Name {
+	return deliveryfmt.NameZulipMarkdown
+}
+
+func (testZulipMarkdownFormatter) Format(text string) (deliveryfmt.Message, error) {
+	return deliveryfmt.Message{
+		Name:          deliveryfmt.NameZulipMarkdown,
+		Text:          text,
+		PlainFallback: baldazulip.MarkdownPlainText(text),
+	}, nil
+}
 
 func (testTelegramHTMLFormatter) Name() deliveryfmt.Name {
 	return deliveryfmt.NameTelegramRichHTML

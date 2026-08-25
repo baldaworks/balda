@@ -26,5 +26,9 @@ var Module = fx.Module(
 			},
 			fx.ResultTags(`group:"balda_delivery_channel_adapter"`),
 		),
+		fx.Annotate(
+			NewPromptRegistryContribution,
+			fx.ResultTags(`group:"balda_delivery_prompt_contribution"`),
+		),
 	),
 )
