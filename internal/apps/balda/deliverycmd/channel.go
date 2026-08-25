@@ -12,8 +12,7 @@ type ChannelType string
 const (
 	ChannelTypeTelegram   ChannelType = "telegram"
 	ChannelTypeZulip      ChannelType = "zulip"
-	ChannelTypeSlackChat  ChannelType = "slack"
-	ChannelTypeSlackAgent ChannelType = "slack_agent"
+	ChannelTypeSlackAgent ChannelType = "slackagent"
 )
 
 type OperationKind string

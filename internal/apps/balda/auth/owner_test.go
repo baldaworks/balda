@@ -45,14 +45,14 @@ func TestOwnerStoreSubject(t *testing.T) {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
 
-	ok, err := store.RegisterOwnerSubject("slack:T123:U456")
+	ok, err := store.RegisterOwnerSubject("slackagent:T123:U456")
 	if err != nil {
 		t.Fatalf("RegisterOwnerSubject() error = %v", err)
 	}
 	if !ok {
 		t.Fatal("RegisterOwnerSubject() ok = false, want true")
 	}
-	if !store.IsOwnerSubject("slack:T123:U456") {
+	if !store.IsOwnerSubject("slackagent:T123:U456") {
 		t.Fatal("IsOwnerSubject() = false, want true")
 	}
 	if store.IsOwner(0) {
@@ -71,7 +71,7 @@ func TestOwnerStoreGetOwnerReturnsCopy(t *testing.T) {
 
 	owner := store.GetOwner()
 	owner.UserID = 7
-	owner.Bindings[0] = "slack:T123:U456"
+	owner.Bindings[0] = "slackagent:T123:U456"
 
 	if store.IsOwner(7) {
 		t.Fatal("IsOwner(7) = true after mutating GetOwner result, want false")
@@ -79,8 +79,8 @@ func TestOwnerStoreGetOwnerReturnsCopy(t *testing.T) {
 	if !store.IsOwner(42) {
 		t.Fatal("IsOwner(42) = false after mutating GetOwner result, want true")
 	}
-	if store.IsOwnerSubject("slack:T123:U456") {
-		t.Fatal("IsOwnerSubject(slack:T123:U456) = true after mutating GetOwner result, want false")
+	if store.IsOwnerSubject("slackagent:T123:U456") {
+		t.Fatal("IsOwnerSubject(slackagent:T123:U456) = true after mutating GetOwner result, want false")
 	}
 }
 
@@ -94,7 +94,7 @@ func TestOwnerStoreConcurrentBindings(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	subjects := []string{"slack:T123:U1", "zulip:2", "slack:T123:U3", "zulip:4"}
+	subjects := []string{"slackagent:T123:U1", "zulip:2", "slackagent:T123:U3", "zulip:4"}
 	for _, subject := range subjects {
 		wg.Add(1)
 		go func() {

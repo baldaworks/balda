@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	testSlackInboundID      = "slack:1712345678.1234"
-	testSlackAgentInboundID = "slack_agent:evt-123"
+	testSlackInboundID      = "slackagent:1712345678.1234"
+	testSlackAgentInboundID = "slackagent:evt-123"
 	testZulipInboundID      = "zulip:42"
 )
 
@@ -50,17 +50,17 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 		}
 	})
 
-	t.Run("slack chat", func(t *testing.T) {
+	t.Run("slackagent direct", func(t *testing.T) {
 		got := normalizeSlackInbound(slackInboundMessage{
 			Locator: slackDMLocator("T123", "D456"), ProviderMessageID: " 1712345678.1234 ",
 			UserID: slackUserID("T123", "U789"), Text: "hello", Direct: true, ReceivedAt: receivedAt,
 		})
 		if got.ID != testSlackInboundID || got.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn || !got.Direct {
-			t.Fatalf("normalized Slack chat = %+v", got)
+			t.Fatalf("normalized slackagent = %+v", got)
 		}
 	})
 
-	t.Run("slack agent", func(t *testing.T) {
+	t.Run("slackagent event", func(t *testing.T) {
 		got := baldaslackagent.NormalizeInbound(
 			baldaslackagent.NewConversationLocator("T123", "C456"),
 			baldaslackagent.Event{
@@ -76,7 +76,7 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 			receivedAt,
 		)
 		if got.ID != testSlackAgentInboundID || got.ProviderMessageID != "msg-456" || !got.ProgressPolicy.Thinking {
-			t.Fatalf("normalized Slack Agent = %+v", got)
+			t.Fatalf("normalized slackagent event = %+v", got)
 		}
 	})
 

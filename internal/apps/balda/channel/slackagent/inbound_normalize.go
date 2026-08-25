@@ -21,7 +21,7 @@ func NormalizeInbound(locator deliverycmd.Locator, event Event, receivedAt time.
 	}
 	logicalID := turncmd.InboundID("")
 	if eventID != "" {
-		logicalID = turncmd.InboundID("slack_agent:" + eventID)
+		logicalID = turncmd.InboundID("slackagent:" + eventID)
 	}
 	return turncmd.NormalizedInbound{
 		ID:                logicalID,

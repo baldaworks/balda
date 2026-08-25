@@ -136,17 +136,17 @@ For any transport `X`:
 - DI wiring becomes more deliberate;
 - some message kinds need both shared descriptors and per-transport renderers.
 
-## Slack agent as one instance of the rule
+## Slackagent as one instance of the rule
 
 `channel/slackagent` follows this generic boundary:
 
-- Slack Agent-specific rendering, prompt injection, ingress, and delivery stay
+- Slackagent-specific rendering, prompt injection, ingress, and delivery stay
   inside `internal/apps/balda/channel/slackagent`;
 - `internal/apps/balda/channel/slackagent/slackagentfx` is the DI boundary;
 - shared packages such as `questions`, `permissions`, and `deliveryfmt` stay
   transport-neutral.
 
-Slack Agent is an instance of the rule, not the rule itself.
+Slackagent is an instance of the rule, not the rule itself.
 
 ## Telegram as one instance of the rule
 

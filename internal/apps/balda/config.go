@@ -76,9 +76,9 @@ type SlackConfig struct {
 	Agent                  SlackAgentConfig `mapstructure:"agent"`
 }
 
-// SlackAgentConfig holds Slack AI Agents-specific ingress and capability settings.
-// It is intentionally nested under balda.slack so the existing slack_chat public
-// config surface stays intact while Balda grows a separate slack_agent mode.
+// SlackAgentConfig holds Slackagent-specific ingress and capability settings.
+// It is intentionally nested under balda.slack so the public config surface
+// stays intact while Balda exposes slackagent mode.
 type SlackAgentConfig struct {
 	Enabled          bool   `mapstructure:"enabled"`
 	ListenAddr       string `mapstructure:"listen_addr"`

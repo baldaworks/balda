@@ -45,7 +45,7 @@ func TestParseRejectsMalformedRef(t *testing.T) {
 func TestParseSlackAgentConversation(t *testing.T) {
 	t.Parallel()
 
-	got, err := Parse("slack_agent:c:T123:C456")
+	got, err := Parse("slackagent:c:T123:C456")
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestParseSlackAgentConversation(t *testing.T) {
 func TestParseSlackAgentThread(t *testing.T) {
 	t.Parallel()
 
-	got, err := Parse("slack_agent:t:T123:C456:thread-789")
+	got, err := Parse("slackagent:t:T123:C456:thread-789")
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}

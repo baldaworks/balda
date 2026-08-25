@@ -871,10 +871,10 @@ func validateSlackConfig(cfg SlackConfig) error {
 		return nil
 	}
 	if strings.TrimSpace(cfg.BotToken) == "" {
-		return fmt.Errorf("balda.slack.bot_token is required when Slack chat or slack_agent is enabled")
+		return fmt.Errorf("balda.slack.bot_token is required when Slack transports are enabled")
 	}
 	if strings.TrimSpace(cfg.SigningSecret) == "" {
-		return fmt.Errorf("balda.slack.signing_secret is required when Slack chat or slack_agent is enabled")
+		return fmt.Errorf("balda.slack.signing_secret is required when Slack transports are enabled")
 	}
 	if path := strings.TrimSpace(cfg.EventsPath); path != "" && !strings.HasPrefix(path, "/") {
 		return fmt.Errorf("balda.slack.events_path must start with /")
@@ -884,7 +884,7 @@ func validateSlackConfig(cfg SlackConfig) error {
 	}
 	if cfg.Agent.Enabled {
 		if strings.TrimSpace(cfg.Agent.AppToken) == "" {
-			return fmt.Errorf("balda.slack.agent.app_token is required when slack_agent is enabled")
+			return fmt.Errorf("balda.slack.agent.app_token is required when slackagent is enabled")
 		}
 		if path := strings.TrimSpace(cfg.Agent.EventsPath); path != "" && !strings.HasPrefix(path, "/") {
 			return fmt.Errorf("balda.slack.agent.events_path must start with /")

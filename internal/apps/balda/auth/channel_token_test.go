@@ -124,7 +124,7 @@ func TestChannelAuthServiceBindsOwnerSubject(t *testing.T) {
 	if !consumed {
 		t.Fatal("ConsumeOwnerBind() = false, want true")
 	}
-	if !owner.IsOwnerSubject("slack:T123:U456") {
-		t.Fatal("owner.IsOwnerSubject(slack:T123:U456) = false, want true")
+	if !owner.IsOwnerSubject("slackagent:T123:U456") {
+		t.Fatal("owner.IsOwnerSubject(slackagent:T123:U456) = false, want true")
 	}
 }

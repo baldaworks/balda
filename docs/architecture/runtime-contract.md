@@ -5,7 +5,7 @@ Status: active
 
 ## Invariants
 
-- Startup order stays strict: config -> bundled MCP -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Slack chat/Zulip/Telegram ingress.
+- Startup order stays strict: config -> bundled MCP -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Zulip/Telegram/Slackagent ingress.
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
@@ -22,7 +22,7 @@ Status: active
 - `github.com/baldaworks/go-actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
 - Delivery boundaries are explicit: `deliverycmd` owns transport-neutral delivery contracts, `deliveryfmt` owns the immutable format registry and transport-capability routing, `deliveryfx` supplies process-local formatter registrations, `locatorref` owns public locator parsing/formatting, and `channel/*` owns concrete provider delivery and transport-local presentation behavior behind DI boundaries.
 - Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.
-- Slack mode boundaries are explicit: the current Slack compatibility path is `slack_chat`; Slack AI Agents behavior lives in a separate `slack_agent` path with its own ingress/response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slack agent mode](slack-agent-mode.md).
+- Slackagent behavior lives in a dedicated `slackagent` path with its own ingress and response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slackagent mode](slack-agent-mode.md).
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 - Ingress construction is fail-fast: formatting/registry validation and all downstream runtime dependencies must resolve before any ingress lifecycle stage can accept work.
@@ -40,7 +40,7 @@ Status: active
 
 - Balda integration layer (policy owner):
   - Product actor implementations in `internal/apps/balda/actors` and wire contracts in leaf package `internal/apps/balda/actorcmd`.
-  - Telegram, Slack chat, Zulip, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors. Concrete provider bindings live in `internal/apps/balda/handlersfx`.
+  - Telegram, Slackagent, Zulip, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors. Concrete provider bindings live in `internal/apps/balda/handlersfx`.
   - Concrete transport adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
   - Job state in `execution_jobs`, transactional event publication intent in `execution_job_event_outbox`, and idempotent history projections in `execution_job_events`.

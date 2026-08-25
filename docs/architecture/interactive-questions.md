@@ -272,7 +272,7 @@ The current scope stays narrow:
 - optional timeout via one-shot scheduled job;
 - continuation to explicit actor resume target;
 - agent permission policy modes `allow_all`, `ask`, and `deny_all`; `ask` is
-  supported for Telegram and Slack Agent and fails closed elsewhere.
+  supported for Telegram and Slackagent and fails closed elsewhere.
 
 Additional channel-control projections, richer validation, and multiple
 simultaneous question policies may be added later without changing the generic

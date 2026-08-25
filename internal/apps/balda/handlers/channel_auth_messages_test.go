@@ -14,7 +14,7 @@ func TestOwnerBindTokenBundleMessageAvoidsTelegramPlaceholderLink(t *testing.T) 
 	if err != nil {
 		t.Fatalf("NewOwnerStore() error = %v", err)
 	}
-	if _, err := owner.RegisterOwnerSubject("slack:T123:U456"); err != nil {
+	if _, err := owner.RegisterOwnerSubject("slackagent:T123:U456"); err != nil {
 		t.Fatalf("RegisterOwnerSubject() error = %v", err)
 	}
 	tokens, err := auth.NewChannelTokenStore(&fakeChannelAuthTokenKV{values: make(map[string]any)})
@@ -23,7 +23,7 @@ func TestOwnerBindTokenBundleMessageAvoidsTelegramPlaceholderLink(t *testing.T) 
 	}
 	service := auth.NewChannelAuthService(tokens, owner)
 
-	message, ok := ownerBindTokenBundleMessage(context.Background(), service, "slack:T123:U456")
+	message, ok := ownerBindTokenBundleMessage(context.Background(), service, "slackagent:T123:U456")
 	if !ok {
 		t.Fatal("ownerBindTokenBundleMessage() ok = false, want true")
 	}

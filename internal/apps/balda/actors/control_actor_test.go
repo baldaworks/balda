@@ -339,7 +339,7 @@ func TestTaskControlActorSchedulesOneShotWaitForSlackAgentLocator(t *testing.T) 
 		jobRuns:        registry,
 		service:        service,
 	}
-	env, err := ControlScheduleWaitEnvelope(locator, "wait-slack-agent-1", "wake slack agent", 60, "slack:T123:U456", false)
+	env, err := ControlScheduleWaitEnvelope(locator, "wait-slack-agent-1", "wake slack agent", 60, "slackagent:T123:U456", false)
 	if err != nil {
 		t.Fatalf("ControlScheduleWaitEnvelope() error = %v", err)
 	}

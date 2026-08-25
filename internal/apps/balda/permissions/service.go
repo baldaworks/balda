@@ -94,7 +94,7 @@ func (s *Service) ask(ctx context.Context, request permissioncmd.Request) (permi
 	}
 	interaction := request.Interaction
 	channel := strings.ToLower(strings.TrimSpace(interaction.Locator.ChannelType))
-	if channel != "telegram" && channel != "slack_agent" {
+	if channel != "telegram" && channel != "slackagent" {
 		return fallback, fmt.Errorf("interactive permission review is unsupported for channel %q", channel)
 	}
 	if strings.TrimSpace(interaction.SessionID) == "" || strings.TrimSpace(interaction.RequestedBy.UserID) == "" {

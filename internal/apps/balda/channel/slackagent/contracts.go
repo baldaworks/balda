@@ -13,14 +13,14 @@ type ConversationRef struct {
 	ThreadID       string `json:"thread_id,omitempty"`
 }
 
-// MessageRef identifies a provider-visible Slack agent message inside a conversation.
+// MessageRef identifies a provider-visible Slackagent message inside a conversation.
 type MessageRef struct {
 	Conversation ConversationRef `json:"conversation"`
 	MessageID    string          `json:"message_id,omitempty"`
 	ThreadTS     string          `json:"thread_ts,omitempty"`
 }
 
-// Event is the normalized inbound contract for slack_agent ingress.
+// Event is the normalized inbound contract for slackagent ingress.
 type Event struct {
 	EventID      string          `json:"event_id,omitempty"`
 	EventType    string          `json:"event_type,omitempty"`
@@ -45,7 +45,7 @@ func (e Event) ReplyToMessageID() string {
 	return strings.TrimSpace(e.Message.ThreadTS)
 }
 
-// Capabilities snapshots the enabled slack_agent affordances after config normalization.
+// Capabilities snapshots the enabled slackagent affordances after config normalization.
 type Capabilities struct {
 	Enabled          bool `json:"enabled"`
 	Status           bool `json:"status"`
@@ -55,7 +55,7 @@ type Capabilities struct {
 	SuggestedPrompts bool `json:"suggested_prompts"`
 }
 
-// Responder owns slack_agent-specific UX signals and final reply delivery.
+// Responder owns slackagent-specific UX signals and final reply delivery.
 type Responder interface {
 	SetThinking(ctx context.Context, conversation ConversationRef, active bool) error
 	DeliverFinal(ctx context.Context, conversation ConversationRef, message *MessageRef, text string) error

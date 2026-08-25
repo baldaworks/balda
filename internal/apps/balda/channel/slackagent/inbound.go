@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// EventEnvelope is the normalized slack_agent webhook contract used by ingress.
+// EventEnvelope is the normalized slackagent webhook contract used by ingress.
 type EventEnvelope struct {
 	Type      string `json:"type,omitempty"`
 	Challenge string `json:"challenge,omitempty"`

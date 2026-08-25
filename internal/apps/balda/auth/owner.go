@@ -234,7 +234,7 @@ func TelegramSubject(userID int64) string {
 
 // SlackSubject returns the channel-qualified subject for a Slack user.
 func SlackSubject(teamID, userID string) string {
-	return fmt.Sprintf("slack:%s:%s", strings.TrimSpace(teamID), strings.TrimSpace(userID))
+	return fmt.Sprintf("slackagent:%s:%s", strings.TrimSpace(teamID), strings.TrimSpace(userID))
 }
 
 // ZulipSubject returns the channel-qualified subject for a Zulip user.

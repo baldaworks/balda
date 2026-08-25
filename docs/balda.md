@@ -598,7 +598,7 @@ Environment overrides are `BALDA_PERMISSIONS_MODE` and
 `BALDA_PERMISSIONS_TIMEOUT`. `allow_all` is retained for backward
 compatibility, but it grants every agent request using an allow option and should
 only be used for trusted agents. `ask` sends a redacted permission prompt to
-the initiating user on Telegram or Slack Agent. Replies can use the displayed
+the initiating user on Telegram or Slackagent. Replies can use the displayed
 number, exact option ID, or option name. Unknown channels, another user's
 reply, timeout, cancellation, or missing interaction context never grant the
 request.
@@ -1231,8 +1231,8 @@ a process-local formatter, so generation and delivery use the same route.
 | Telegram | `rich_markdown` | `telegram_rich_markdown` | Telegram rich Markdown |
 | Telegram | `rich_html` | `telegram_rich_html` | sanitized Telegram Rich HTML |
 | Telegram | `none` | `plain_text` | literal text without `parse_mode` |
-| Slack / Slack Agent | `mrkdwn` | `slack_mrkdwn` | Slack `mrkdwn` |
-| Slack / Slack Agent | `none` | `plain_text` | literal plain text |
+| Slackagent | `mrkdwn` | `slack_mrkdwn` | Slack `mrkdwn` |
+| Slackagent | `none` | `plain_text` | literal plain text |
 | Zulip | `markdown` | `zulip_markdown` | Zulip Markdown |
 | Zulip | `none` | `plain_text` | literal plain text |
 
@@ -1280,16 +1280,14 @@ Per model turn:
    - `none`: Balda sends literal text without Telegram `parse_mode`.
 3. If Telegram explicitly rejects rich formatting, Balda makes at most one parse-mode-free plain send. Ambiguous transport failures, timeouts, authentication errors, rate limits, and provider errors do not trigger presentation fallback.
 
-## Slack Chat Messaging Behavior
+## Slackagent Messaging Behavior
 
-See [Slack Integration](slack.md) for current Slack chat setup details.
+Slackagent keeps ingress, correlation, rendering, and delivery inside the
+`channel/slackagent` subtree.
 
-1. Slack chat DMs map to Balda DM sessions.
-2. Slack chat `app_mention` events map to thread sessions. If the mention is not already in a thread, Balda uses that message timestamp as the thread root.
-3. Ambient channel messages are ignored unless they belong to an already-active Balda thread session.
-4. Ordinary Slack chat conversational ingress publishes direct `balda.v1.cmd.session` work with Slack message-based dedupe.
-5. `/balda topic <name>` posts a seed message and creates a Balda session from that seed thread.
-6. Slack chat typing and draft progress are no-ops in v1; final replies are posted with Slack `mrkdwn`.
+1. Slackagent conversational ingress publishes transport-neutral session turn work.
+2. Delivery locators preserve provider addressing separately from response payloads.
+3. Shared application packages emit generic question, permission, and progress contracts; Slackagent registers its own renderers for them.
 
 ## Topic Sessions
 

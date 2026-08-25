@@ -14,8 +14,7 @@ import (
 
 const (
 	SourceTelegram   = "telegram"
-	SourceSlack      = "slack"
-	SourceSlackAgent = "slack_agent"
+	SourceSlackAgent = "slackagent"
 	SourceZulip      = "zulip"
 	SourceWebhook    = "webhook"
 	SourceSchedule   = "schedule"

@@ -355,7 +355,7 @@ func PreflightRuntime(
 func logSlackModeDiagnostics(logger zerolog.Logger, cfg SlackConfig) {
 	capabilities := normalizedSlackAgentCapabilities(cfg)
 	logger.Info().
-		Bool("slack_chat_enabled", cfg.Enabled).
+		Bool("slack_enabled", cfg.Enabled).
 		Bool("slack_agent_enabled", capabilities.Enabled).
 		Bool("slack_agent_status", capabilities.Status).
 		Bool("slack_agent_questions", capabilities.Questions).

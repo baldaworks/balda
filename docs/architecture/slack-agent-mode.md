@@ -1,13 +1,11 @@
-# Slack Agent Mode
+# Slackagent Mode
 
 Owner: Balda maintainers  
 Status: active
 
 ## Problem
 
-Balda already supports Slack as a chat-style channel integration built on Slack
-Events API, slash commands, DMs, and channel threads. That integration maps
-well to ordinary bot-style conversation, but Slack AI Agents use a different
+Balda supports Slackagent as a dedicated channel integration with its own
 transport and UX model:
 
 - different ingress/event surfaces;
@@ -16,49 +14,31 @@ transport and UX model:
 - different rollout constraints because agent features require Slack paid plans
   or the Slack developer sandbox.
 
-Trying to extend the current Slack chat path in-place would couple two distinct
-transport contracts and leak Slack agent semantics into shared application
-packages.
+Trying to spread Slackagent behavior across shared packages would couple
+distinct transport contracts and leak Slackagent semantics into application
+code that must stay transport-neutral.
 
 ## Decision
 
-Balda keeps the current Slack integration as `slack_chat` and adds a separate
-`slack_agent` channel path alongside it.
+Balda exposes Slackagent through its own `slackagent` channel path.
 
-The Slack Agent feature boundary is:
+The Slackagent feature boundary is:
 
 - `internal/apps/balda/channel/slackagent`
 - `internal/apps/balda/channel/slackagent/slackagentfx`
 
-`channel/slackagent` owns all Slack Agent-specific transport behavior.
+`channel/slackagent` owns all Slackagent-specific transport behavior.
 `channel/slackagent/slackagentfx` is the only composition boundary exported to
 the rest of the application.
 
 Everything outside that boundary must stay transport-neutral and must not branch
-on Slack Agent-specific UX, rendering, or correlation rules.
+on Slackagent-specific UX, rendering, or correlation rules.
 
-## Scope split
+## Scope
 
-### `slack_chat`
+### `slackagent`
 
-Use the existing Slack channel integration for:
-
-- DMs;
-- `app_mention` conversational threads;
-- slash commands such as `/balda topic`;
-- bot-style plain or `mrkdwn` final responses.
-
-This path remains the compatibility/default Slack mode and keeps existing
-wire/storage contracts:
-
-- `balda.slack.*` public config;
-- locator refs with channel type `slack`;
-- persisted `channel_type = "slack"`;
-- owner/auth subjects like `slack:<team_id>:<user_id>`.
-
-### `slack_agent`
-
-Use a separate integration for Slack AI Agents mode:
+Use the Slackagent integration for:
 
 - agent-native inbound events;
 - agent conversation identity and context;
@@ -66,8 +46,8 @@ Use a separate integration for Slack AI Agents mode:
 - optional streaming and suggested prompts;
 - agent-specific response affordances.
 
-This mode must not repurpose `slack_chat` handlers or overload Slack
-chat-specific delivery semantics.
+This mode must not overload shared handlers or transport-neutral delivery
+semantics.
 
 ## Shared core vs channel boundary
 
@@ -85,32 +65,32 @@ The following stay shared and Slack-mode-agnostic:
 - `internal/apps/balda/state`.
 
 These packages own runtime, actor, session, question, permission, and wait
-semantics. They do not own Slack Agent transport behavior.
+semantics. They do not own Slackagent transport behavior.
 
-### Slack Agent channel boundary
+### Slackagent channel boundary
 
 `internal/apps/balda/channel/slackagent` owns:
 
-- ingress decoding and verification for Slack Agent requests;
-- normalization of raw provider payloads into Slack Agent-local contracts;
-- Slack Agent conversation/message correlation;
-- Slack Agent-specific delivery semantics;
-- Slack Agent-specific responder behavior;
-- Slack Agent-specific presentation rendering;
-- Slack Agent-specific prompt-format injection;
+- ingress decoding and verification for Slackagent requests;
+- normalization of raw provider payloads into Slackagent-local contracts;
+- Slackagent conversation/message correlation;
+- Slackagent-specific delivery semantics;
+- Slackagent-specific responder behavior;
+- Slackagent-specific presentation rendering;
+- Slackagent-specific prompt-format injection;
 - capability reporting needed for transport wiring.
 
 `internal/apps/balda/channel/slackagent/slackagentfx` owns:
 
 - `fx` module wiring;
-- DI registration of Slack Agent ingress adapters;
-- DI registration of Slack Agent delivery adapters;
+- DI registration of Slackagent ingress adapters;
+- DI registration of Slackagent delivery adapters;
 - DI registration into `deliveryfmt.PromptRegistry`;
 - DI registration into `deliveryfmt.StructuredMessageRegistry`;
-- lifecycle wiring for Slack Agent ingress/runtime pieces.
+- lifecycle wiring for Slackagent ingress/runtime pieces.
 
 This `slackagentfx` module is the only external composition surface for the
-Slack Agent channel package.
+Slackagent channel package.
 
 ## Public boundary
 
@@ -137,11 +117,11 @@ Do not treat the root package as a grab bag for generic application logic.
 
 This package is the DI/composition boundary.
 
-It registers Slack Agent behavior into the process and prevents outer packages
-from manually assembling Slack Agent internals.
+It registers Slackagent behavior into the process and prevents outer packages
+from manually assembling Slackagent internals.
 
 Application root wiring should depend on `slackagentfx`, not on individual
-Slack Agent implementation subpackages.
+Slackagent implementation subpackages.
 
 ## Internal layout
 
@@ -157,7 +137,7 @@ Examples of valid internal subpackages:
 - `prompt`: prompt-format injection for model-authored text;
 - `correlation`: provider-local message and conversation correlation helpers.
 
-These are internal implementation details of the Slack Agent channel. The rest
+These are internal implementation details of the Slackagent channel. The rest
 of Balda must not depend on them directly.
 
 ## Integration rules
@@ -167,16 +147,16 @@ of Balda must not depend on them directly.
 `internal/apps/balda/handlers` owns only the generic ingress bridge:
 
 - receive HTTP/event input;
-- call a DI-provided Slack Agent ingress adapter;
+- call a DI-provided Slackagent ingress adapter;
 - run auth/session preconditions;
 - publish actor work.
 
 Handlers must not own:
 
-- raw Slack Agent payload structs;
-- Slack Agent payload normalization logic;
-- Slack Agent reply-correlation helpers;
-- Slack Agent presentation decisions.
+- raw Slackagent payload structs;
+- Slackagent payload normalization logic;
+- Slackagent reply-correlation helpers;
+- Slackagent presentation decisions.
 
 ### Delivery presentation
 
@@ -192,9 +172,9 @@ own only:
 - message descriptors/kinds;
 - transport-neutral registration contracts.
 
-They must not contain Slack Agent rendering branches.
+They must not contain Slackagent rendering branches.
 
-Concrete Slack Agent renderers are registered from inside the Slack Agent
+Concrete Slackagent renderers are registered from inside the Slackagent
 channel boundary through `slackagentfx`.
 
 ### Questions, permissions, wait, and turn execution
@@ -208,14 +188,14 @@ The following remain transport-neutral:
 - `controlapp`
 
 They may emit generic question, delivery, progress, or permission requests, but
-they must not branch on Slack Agent UX details.
+they must not branch on Slackagent UX details.
 
 Question is an application contract that works through any transport. It is not
-a Slack Agent-owned feature.
+a Slackagent-owned feature.
 
 ## Import rules
 
-Allowed imports from outside the Slack Agent subtree:
+Allowed imports from outside the Slackagent subtree:
 
 - `internal/apps/balda/channel/slackagent`
 - `internal/apps/balda/channel/slackagent/slackagentfx`
@@ -227,14 +207,14 @@ Disallowed imports from outside the subtree:
 - `internal/apps/balda/channel/slackagent/presentation`
 - `internal/apps/balda/channel/slackagent/prompt`
 - `internal/apps/balda/channel/slackagent/correlation`
-- any future Slack Agent implementation subpackage
+- any future Slackagent implementation subpackage
 
-If outer code needs Slack Agent behavior, it must get it through root contracts
+If outer code needs Slackagent behavior, it must get it through root contracts
 or through `slackagentfx` DI wiring.
 
 ## Required contracts
 
-Balda owns Slack Agent-local transport contracts in
+Balda owns Slackagent-local transport contracts in
 `internal/apps/balda/channel/slackagent`:
 
 - `ConversationRef`: stable conversation identity for agent mode;
@@ -248,38 +228,34 @@ payload shapes into higher-level Balda actor/session code.
 
 ## Execution model
 
-### Slack chat
+### Slackagent
 
-`Slack chat ingress -> session turn envelope -> session actor -> delivery actor -> Slack chat adapter`
+`Slackagent ingress adapter -> session turn envelope -> session actor -> delivery actor or Slackagent responder boundary`
 
-### Slack agent
-
-`Slack agent ingress adapter -> session turn envelope -> session actor -> delivery actor or Slack agent responder boundary`
-
-The actor/session core still owns conversation semantics. Slack Agent-specific
-rendering, status behavior, and correlation stay inside the Slack Agent channel
+The actor/session core still owns conversation semantics. Slackagent-specific
+rendering, status behavior, and correlation stay inside the Slackagent channel
 boundary.
 
 ## Current implementation direction
 
-The target architecture requires moving Slack Agent-specific logic inward from
+The target architecture requires moving Slackagent-specific logic inward from
 shared packages and outer adapters.
 
 Initial migration targets:
 
-- Slack Agent-specific inbound decoding currently living in handlers;
-- Slack Agent-specific structured rendering branches currently living outside
+- Slackagent-specific inbound decoding currently living in handlers;
+- Slackagent-specific structured rendering branches currently living outside
   the channel boundary;
-- Slack Agent-specific prompt injection registered outside channel ownership;
-- Slack Agent-specific correlation helpers used by question and wait flows;
-- Slack Agent-specific turn presentation branches implemented in shared turn
+- Slackagent-specific prompt injection registered outside channel ownership;
+- Slackagent-specific correlation helpers used by question and wait flows;
+- Slackagent-specific turn presentation branches implemented in shared turn
   orchestration paths.
 
 ## Question and wait
 
-`slack_agent` must support the same product features as other Balda sessions:
+`slackagent` must support the same product features as other Balda sessions:
 
-- question delivery must target the same Slack agent conversation;
+- question delivery must target the same Slackagent conversation;
 - replies must settle against provider conversation/message references, not text
   heuristics;
 - wait wake-ups must return to the same conversation context with preserved
@@ -288,43 +264,40 @@ Initial migration targets:
 Ownership split stays explicit:
 
 - question and wait lifecycle remain shared application behavior;
-- Slack Agent reply correlation and delivery rendering remain inside the Slack
-  Agent channel boundary.
+- Slackagent reply correlation and delivery rendering remain inside the
+  Slackagent channel boundary.
 
-Slack agent support is not considered complete until question and wait behavior
+Slackagent support is not considered complete until question and wait behavior
 are verified end-to-end in the same conversation lane with stable provider
 correlation.
 
 ## Capability gating
 
-Balda must not guess at runtime whether Slack agent mode is available.
+Balda must not guess at runtime whether Slackagent mode is available.
 
 Startup/preflight should explicitly model:
 
-- whether `slack_chat` is enabled;
-- whether `slack_agent` is enabled;
-- whether the configured workspace/app appears capable of Slack agent mode.
+- whether `slackagent` is enabled;
+- whether the configured workspace/app appears capable of Slackagent mode.
 
 Mode mismatch should produce explicit diagnostics rather than silent fallback.
 
 ## Consequences
 
-- Balda keeps a free-plan-compatible Slack bot path through `slack_chat`.
-- Slack AI Agents evolve behind a real channel boundary instead of leaking into
+- Slackagent evolves behind a real channel boundary instead of leaking into
   shared application packages.
 - outer layers remain transport-neutral;
 - DI wiring becomes explicit through `slackagentfx`;
-- future extraction of Slack Agent behavior into a more separable feature or
+- future extraction of Slackagent behavior into a more separable feature or
   process becomes easier because transport-local logic is kept together.
 
 ## Acceptance criteria
 
-- `slack_chat` remains behaviorally compatible.
-- `slack_agent` has a separate channel boundary.
-- all Slack Agent-specific rendering lives under `channel/slackagent`.
-- handlers no longer implement Slack Agent payload normalization directly.
-- transport-neutral presentation packages no longer branch on `slack_agent`.
-- no Slack agent-specific transport semantics leak into actorlayer or shared
+- `slackagent` has a separate channel boundary.
+- all Slackagent-specific rendering lives under `channel/slackagent`.
+- handlers no longer implement Slackagent payload normalization directly.
+- transport-neutral presentation packages no longer branch on `slackagent`.
+- no Slackagent-specific transport semantics leak into actorlayer or shared
   application lifecycle packages.
 - composition root wiring imports `slackagentfx` instead of assembling Slack
   Agent internals ad hoc.
@@ -334,4 +307,4 @@ Mode mismatch should produce explicit diagnostics rather than silent fallback.
 - New Slack transport mode or capability checks.
 - New question/wait routing requirements for Slack.
 - Any change to Slack session identity or response lifecycle.
-- Any change to the DI/export boundary of the Slack Agent channel package.
+- Any change to the DI/export boundary of the Slackagent channel package.

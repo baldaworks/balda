@@ -84,7 +84,7 @@ func telegramLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, erro
 	)
 }
 
-// NewSlackAgentConversationLocator builds a canonical Slack Agent conversation locator.
+// NewSlackAgentConversationLocator builds a canonical slackagent conversation locator.
 func NewSlackAgentConversationLocator(teamID, conversationID string) (deliverycmd.Locator, error) {
 	return slackAgentLocatorFromAddressKey(fmt.Sprintf(
 		"c:%s:%s",
@@ -93,7 +93,7 @@ func NewSlackAgentConversationLocator(teamID, conversationID string) (deliverycm
 	))
 }
 
-// NewSlackAgentThreadLocator builds a canonical Slack Agent thread locator.
+// NewSlackAgentThreadLocator builds a canonical slackagent thread locator.
 func NewSlackAgentThreadLocator(teamID, conversationID, threadID string) (deliverycmd.Locator, error) {
 	return slackAgentLocatorFromAddressKey(fmt.Sprintf(
 		"t:%s:%s:%s",
@@ -137,7 +137,7 @@ func slackAgentLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, er
 	switch {
 	case len(parts) == 3 && parts[0] == "c":
 		if parts[1] == "" || parts[2] == "" {
-			return deliverycmd.Locator{}, fmt.Errorf("slack_agent address key %q must be c:<team_id>:<conversation_id>", addressKey)
+			return deliverycmd.Locator{}, fmt.Errorf("slackagent address key %q must be c:<team_id>:<conversation_id>", addressKey)
 		}
 		return newSlackAgentLocator(slackAgentLocatorAddress{
 			TeamID:         strings.TrimSpace(parts[1]),
@@ -145,7 +145,7 @@ func slackAgentLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, er
 		}, addressKey)
 	case len(parts) == 4 && parts[0] == "t":
 		if parts[1] == "" || parts[2] == "" || parts[3] == "" {
-			return deliverycmd.Locator{}, fmt.Errorf("slack_agent address key %q must be t:<team_id>:<conversation_id>:<thread_id>", addressKey)
+			return deliverycmd.Locator{}, fmt.Errorf("slackagent address key %q must be t:<team_id>:<conversation_id>:<thread_id>", addressKey)
 		}
 		return newSlackAgentLocator(slackAgentLocatorAddress{
 			TeamID:         strings.TrimSpace(parts[1]),
@@ -153,7 +153,7 @@ func slackAgentLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, er
 			ThreadID:       strings.TrimSpace(parts[3]),
 		}, addressKey)
 	default:
-		return deliverycmd.Locator{}, fmt.Errorf("slack_agent address key %q must be c:<team_id>:<conversation_id> or t:<team_id>:<conversation_id>:<thread_id>", addressKey)
+		return deliverycmd.Locator{}, fmt.Errorf("slackagent address key %q must be c:<team_id>:<conversation_id> or t:<team_id>:<conversation_id>:<thread_id>", addressKey)
 	}
 }
 

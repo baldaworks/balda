@@ -14,7 +14,7 @@ import (
 
 const (
 	ChannelTelegram = "telegram"
-	ChannelSlack    = "slack"
+	ChannelSlack    = "slackagent"
 	ChannelZulip    = "zulip"
 
 	ChannelTokenPrefix = "balda_"

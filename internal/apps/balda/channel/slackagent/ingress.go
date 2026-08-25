@@ -76,5 +76,5 @@ func locatorForConversation(conversation ConversationRef) deliverycmd.Locator {
 }
 
 func slackUserID(teamID, userID string) string {
-	return "slack:" + strings.TrimSpace(teamID) + ":" + strings.TrimSpace(userID)
+	return "slackagent:" + strings.TrimSpace(teamID) + ":" + strings.TrimSpace(userID)
 }

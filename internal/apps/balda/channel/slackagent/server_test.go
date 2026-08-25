@@ -31,7 +31,7 @@ import (
 func TestServerProcessEventPublishesDirectSessionTurn(t *testing.T) {
 	locator := NewConversationLocator("T123", "C456")
 	ts := newTopicSession(t, locator.SessionID)
-	setUnexportedField(t, ts, "userID", "slack:T123:U456")
+	setUnexportedField(t, ts, "userID", "slackagent:T123:U456")
 	setUnexportedField(t, ts, "agentSessionID", "agent-session-1")
 	sessionManager := newSessionManagerWithSession(t, locator, ts)
 	dispatcher := &recordingCommandBus{}
@@ -60,7 +60,7 @@ func TestServerProcessEventPublishesDirectSessionTurn(t *testing.T) {
 		if env.To.Target != baldaexecution.ActorTypeSession {
 			continue
 		}
-		if got, want := env.DedupeKey, "slack_agent:evt-123"; got != want {
+		if got, want := env.DedupeKey, "slackagent:evt-123"; got != want {
 			t.Fatalf("dedupe_key = %q, want %q", got, want)
 		}
 		if err := actorlayer.UnmarshalPayload(env.Payload, &envPayload); err != nil {
@@ -72,13 +72,13 @@ func TestServerProcessEventPublishesDirectSessionTurn(t *testing.T) {
 	if !envFound {
 		t.Fatalf("session command not found in published commands: %+v", dispatcher.commands)
 	}
-	if envPayload.Source != "slack_agent" || !envPayload.Deliver {
-		t.Fatalf("session turn payload = %+v, want slack_agent deliver=true", envPayload)
+	if envPayload.Source != "slackagent" || !envPayload.Deliver {
+		t.Fatalf("session turn payload = %+v, want slackagent deliver=true", envPayload)
 	}
-	if got, want := envPayload.DedupeKey, "slack_agent:evt-123"; got != want {
+	if got, want := envPayload.DedupeKey, "slackagent:evt-123"; got != want {
 		t.Fatalf("payload dedupe_key = %q, want %q", got, want)
 	}
-	if got, want := envPayload.UserID, "slack:T123:U456"; got != want {
+	if got, want := envPayload.UserID, "slackagent:T123:U456"; got != want {
 		t.Fatalf("payload user_id = %q, want %q", got, want)
 	}
 }
@@ -86,7 +86,7 @@ func TestServerProcessEventPublishesDirectSessionTurn(t *testing.T) {
 func TestServerHTTPSettlementWaitsForDurableAcceptance(t *testing.T) {
 	locator := NewConversationLocator("T123", "C456")
 	ts := newTopicSession(t, locator.SessionID)
-	setUnexportedField(t, ts, "userID", "slack:T123:U456")
+	setUnexportedField(t, ts, "userID", "slackagent:T123:U456")
 	sessionManager := newSessionManagerWithSession(t, locator, ts)
 	body := []byte(`{"type":"event_callback","event_id":"evt-123","team_id":"T123","event":{"type":"message","user_id":"U456","text":"hello","conversation_id":"C456","message_id":"msg-123"}}`)
 
@@ -128,11 +128,11 @@ func TestServerHandleQuestionReplyEnqueuesContinuation(t *testing.T) {
 			QuestionID:        "question-1",
 			SessionID:         "sla-1",
 			AddressKey:        "c:T123:C456",
-			Provider:          "slack_agent",
+			Provider:          "slackagent",
 			ConversationKey:   "c:T123:C456",
 			ProviderMessageID: "reply-target-1",
 			Status:            questioncmd.StatusPending,
-			InteractionJSON:   `{"session_id":"sla-1","channel_kind":"slack_agent","locator":{"session_id":"sla-1","channel_type":"slack_agent","address_key":"c:T123:C456","address_json":"{\"team_id\":\"T123\",\"conversation_id\":\"C456\"}"}}`,
+			InteractionJSON:   `{"session_id":"sla-1","channel_kind":"slackagent","locator":{"session_id":"sla-1","channel_type":"slackagent","address_key":"c:T123:C456","address_json":"{\"team_id\":\"T123\",\"conversation_id\":\"C456\"}"}}`,
 			ResumeJSON:        `{"to":"session:sla-1"}`,
 		},
 	}

@@ -30,7 +30,7 @@ type AdapterConfig struct {
 func NewAdapter(client MessageClient, logger zerolog.Logger, cfg AdapterConfig) *Adapter {
 	return &Adapter{
 		client:           client,
-		logger:           logger.With().Str("component", "balda.channel.slack_agent").Logger(),
+		logger:           logger.With().Str("component", "balda.channel.slackagent").Logger(),
 		enableStreaming:  cfg.EnableStreaming,
 		suggestedPrompts: cfg.SuggestedPrompts,
 	}
@@ -61,7 +61,7 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 			case deliveryfmt.NamePlainText:
 				mrkdwn = false
 			default:
-				return deliverycmd.Result{}, fmt.Errorf("unsupported slack agent message format %q", operation.Message.Name)
+				return deliverycmd.Result{}, fmt.Errorf("unsupported slackagent message format %q", operation.Message.Name)
 			}
 		}
 		if a.suggestedPrompts {
@@ -75,7 +75,7 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationDraft:
 		err = nil
 	default:
-		err = fmt.Errorf("unsupported slack agent delivery operation %q", operation.Kind)
+		err = fmt.Errorf("unsupported slackagent delivery operation %q", operation.Kind)
 	}
 	return result, err
 }
@@ -87,20 +87,20 @@ func (a *Adapter) sendMessage(ctx context.Context, locator deliverycmd.Locator, 
 	case deliveryfmt.NamePlainText:
 		return a.send(ctx, locator, message.Text, false)
 	default:
-		return "", fmt.Errorf("unsupported slack agent message format %q", message.Name)
+		return "", fmt.Errorf("unsupported slackagent message format %q", message.Name)
 	}
 }
 
 func (a *Adapter) send(ctx context.Context, locator deliverycmd.Locator, text string, mrkdwn bool) (string, error) {
 	if a == nil || a.client == nil {
-		return "", fmt.Errorf("slack agent adapter client is required")
+		return "", fmt.Errorf("slackagent adapter client is required")
 	}
 	address, ok, err := DecodeLocator(locator)
 	if err != nil {
-		return "", fmt.Errorf("decode slack agent locator: %w", err)
+		return "", fmt.Errorf("decode slackagent locator: %w", err)
 	}
 	if !ok {
-		return "", fmt.Errorf("unsupported channel type %q for slack agent", locator.ChannelType)
+		return "", fmt.Errorf("unsupported channel type %q for slackagent", locator.ChannelType)
 	}
 	return a.client.PostMessage(ctx, address.ConversationID, address.ThreadID, text, mrkdwn)
 }
@@ -109,7 +109,7 @@ func (a *Adapter) sendThinking(_ context.Context, locator deliverycmd.Locator) e
 	a.logger.Debug().
 		Str("session_id", locator.SessionID).
 		Str("address_key", locator.AddressKey).
-		Msg("slack agent thinking/status activity")
+		Msg("slackagent thinking/status activity")
 	return nil
 }
 
@@ -136,7 +136,7 @@ func (a *Adapter) sendProgress(ctx context.Context, locator deliverycmd.Locator,
 		_, err := a.send(ctx, locator, progress.Text, false)
 		return err
 	default:
-		return fmt.Errorf("unsupported slack agent progress kind %q", progress.Kind)
+		return fmt.Errorf("unsupported slackagent progress kind %q", progress.Kind)
 	}
 }
 

@@ -74,7 +74,7 @@ func NewServer(params serverParams) *Server {
 		actorDispatcher: params.Dispatcher,
 		questionService: params.Question,
 		config:          params.Config,
-		logger:          params.Logger.With().Str("component", "balda.channel.slack_agent").Logger(),
+		logger:          params.Logger.With().Str("component", "balda.channel.slackagent").Logger(),
 		processSem:      make(chan struct{}, webhookMaxConcurrentTasks),
 	}
 }
@@ -84,7 +84,7 @@ func (h *Server) Stop(ctx context.Context) error  { return h.onStop(ctx) }
 
 func (h *Server) onStart(context.Context) error {
 	if !h.config.Enabled {
-		h.logger.Debug().Msg("slack agent disabled; skipping server start")
+		h.logger.Debug().Msg("slackagent disabled; skipping server start")
 		return nil
 	}
 	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
@@ -107,13 +107,13 @@ func (h *Server) onStart(context.Context) error {
 	}
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("listen slack agent endpoint on %q: %w", listenAddr, err)
+		return fmt.Errorf("listen slackagent endpoint on %q: %w", listenAddr, err)
 	}
 	h.ln = ln
 	go func() {
-		h.logger.Info().Str("addr", listenAddr).Str("events_path", eventsPath).Msg("slack agent http server starting")
+		h.logger.Info().Str("addr", listenAddr).Str("events_path", eventsPath).Msg("slackagent http server starting")
 		if err := h.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			h.logger.Error().Err(err).Msg("slack agent http server error")
+			h.logger.Error().Err(err).Msg("slackagent http server error")
 		}
 	}()
 	return nil
@@ -124,7 +124,7 @@ func (h *Server) onStop(ctx context.Context) error {
 		return nil
 	}
 	if err := h.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown slack agent server: %w", err)
+		return fmt.Errorf("shutdown slackagent server: %w", err)
 	}
 	done := make(chan struct{})
 	go func() {
@@ -135,7 +135,7 @@ func (h *Server) onStop(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("wait for slack agent processing: %w", ctx.Err())
+		return fmt.Errorf("wait for slackagent processing: %w", ctx.Err())
 	}
 }
 
@@ -146,7 +146,7 @@ func (h *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := DecodeIngressEnvelope(body, time.Now())
 	if err != nil {
-		h.logger.Warn().Err(err).Msg("failed to decode slack agent event payload")
+		h.logger.Warn().Err(err).Msg("failed to decode slackagent event payload")
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -187,7 +187,7 @@ func (h *Server) readAndVerifyRequest(w http.ResponseWriter, r *http.Request) ([
 		return nil, false
 	}
 	if err := verifySignature(strings.TrimSpace(h.config.SigningSecret), r.Header.Get("X-Slack-Request-Timestamp"), r.Header.Get("X-Slack-Signature"), body, time.Now()); err != nil {
-		h.logger.Warn().Err(err).Msg("slack agent signature verification failed")
+		h.logger.Warn().Err(err).Msg("slackagent signature verification failed")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return nil, false
 	}
@@ -214,7 +214,7 @@ func (h *Server) processEvent(requestCtx context.Context, env IngressEnvelope) (
 	}
 	locator := env.Locator
 	if handled, err := h.handleQuestionReply(ctx, env); err != nil {
-		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to handle slack agent question reply")
+		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to handle slackagent question reply")
 		return retryInbound(), err
 	} else if handled {
 		return terminalInbound(), nil
@@ -228,7 +228,7 @@ func (h *Server) processEvent(requestCtx context.Context, env IngressEnvelope) (
 		h.logger,
 	)
 	if err != nil {
-		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to construct slack agent ingress")
+		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to construct slackagent ingress")
 		return retryInbound(), err
 	}
 	result, err := service.Process(ctx, env.Inbound)
@@ -236,10 +236,10 @@ func (h *Server) processEvent(requestCtx context.Context, env IngressEnvelope) (
 		return result.Settlement, err
 	}
 	if actorcmd.IsCommandQueueFull(err) {
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("slack agent session command queue full")
+		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("slackagent session command queue full")
 		return result.Settlement, err
 	}
-	h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to dispatch slack agent session turn")
+	h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to dispatch slackagent session turn")
 	return result.Settlement, err
 }
 

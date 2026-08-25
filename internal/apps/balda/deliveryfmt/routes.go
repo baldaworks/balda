@@ -3,7 +3,7 @@ package deliveryfmt
 const (
 	// Transport identifiers intentionally mirror the public locator channel type.
 	TransportTelegram   = "telegram"
-	TransportSlackAgent = "slack_agent"
+	TransportSlackAgent = "slackagent"
 	TransportZulip      = "zulip"
 
 	DeliveryFormatRichMarkdown DeliveryFormat = "rich_markdown"

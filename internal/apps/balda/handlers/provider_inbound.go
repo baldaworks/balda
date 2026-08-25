@@ -59,7 +59,7 @@ func normalizeSlackInbound(message slackInboundMessage) turncmd.NormalizedInboun
 	providerMessageID := strings.TrimSpace(message.ProviderMessageID)
 	logicalID := turncmd.InboundID("")
 	if providerMessageID != "" {
-		logicalID = turncmd.InboundID("slack:" + providerMessageID)
+		logicalID = turncmd.InboundID("slackagent:" + providerMessageID)
 	}
 	return turncmd.NormalizedInbound{
 		ID:                logicalID,
@@ -72,7 +72,7 @@ func normalizeSlackInbound(message slackInboundMessage) turncmd.NormalizedInboun
 		DeliveryFormat:    deliveryfmt.DeliveryFormatMrkdwn,
 		ProgressPolicy:    deliveryfmt.ProgressPolicy{PlanUpdates: true},
 		Direct:            message.Direct,
-		Source:            turncmd.SourceSlack,
+		Source:            turncmd.SourceSlackAgent,
 	}
 }
 
@@ -124,7 +124,7 @@ func providerNumericMessageID(value string) int {
 }
 
 func slackUserID(teamID, userID string) string {
-	return fmt.Sprintf("slack:%s:%s", strings.TrimSpace(teamID), strings.TrimSpace(userID))
+	return fmt.Sprintf("slackagent:%s:%s", strings.TrimSpace(teamID), strings.TrimSpace(userID))
 }
 
 func zulipUserID(userID int) string {

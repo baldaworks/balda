@@ -15,7 +15,7 @@ Use this map to find the authoritative runtime contracts.
 - [Interactive questions](interactive-questions.md)
 - [Presentation routing](presentation-routing.md)
 - [Transport presentation boundary](transport-presentation-boundary.md)
-- [Slack agent mode](slack-agent-mode.md)
+- [Slackagent mode](slack-agent-mode.md)
 - [Goal worker results](goal-worker-results.md)
 - [Plugin marketplace repo format](plugin-marketplace-format.md)
 - [Actor runtime](actor-runtime.md)
@@ -57,7 +57,7 @@ Use this map to find the authoritative runtime contracts.
 
 ## Runtime Flow
 
-Telegram/Zulip/Slack chat/Slack agent/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
+Telegram/Zulip/Slackagent/webhook/scheduler ingress -> actorlayer transport dispatcher -> NATS adapter -> actorlayer `Source`/`Delivery` -> local dispatch runtime -> Balda product actor -> event projection/read-model updates.
 
 Completed turns and session boundaries additionally flow through Balda redaction
 and the SQLite ingress outbox, JetStream/PubAck, a bounded per-scope worker,
