@@ -50,7 +50,7 @@ go tool golangci-lint run
   - `internal/apps/balda/jobs`: durable job state, event projection, outbox.
   - `internal/apps/balda/actors`: product actor behavior and command handling.
   - `internal/apps/balda/handlers`: ingress only — parse/auth/session-check/publish.
-  - `internal/apps/balda/channel/*` and `messenger`: provider-specific delivery behavior only.
+  - `internal/apps/balda/channel/*`: provider-specific delivery behavior only.
   - `internal/apps/balda/state`: storage and read models only.
 
 - Do not move shared transport-neutral contracts into concrete transport or session packages.

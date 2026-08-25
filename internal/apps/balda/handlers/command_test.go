@@ -8,8 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
@@ -17,9 +15,10 @@ import (
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/messenger"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -993,7 +992,7 @@ func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 	}
 	collaboratorStore := auth.NewCollaboratorStore(&fakeCollaboratorBackend{})
 	tgClient := &fakeTelegramClient{}
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg := baldatelegram.NewMessenger(tgClient, zerolog.Nop())
 	msg.SetAgentReplyFormattingMode("none")
 	channel := &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,

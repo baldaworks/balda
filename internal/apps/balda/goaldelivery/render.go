@@ -7,10 +7,10 @@ import (
 	"strings"
 	"text/template"
 
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/redaction"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 )
 
 const (
@@ -233,7 +233,7 @@ func renderTemplate(style messageStyle, name messageTemplate, data messageData) 
 func systemText(style messageStyle, text string) string {
 	text = strings.TrimSpace(text)
 	if style == messageStyleHTML {
-		return telegramfmt.HTML(text)
+		return baldatelegram.EscapeHTML(text)
 	}
 	return text
 }
@@ -248,7 +248,7 @@ func outcomeLine(format deliveryfmt.DeliveryFormat, label string, value string) 
 	case messageStyleMarkdown:
 		return fmt.Sprintf("**%s:** %s", label, value)
 	case messageStyleHTML:
-		return fmt.Sprintf("<b>%s:</b> %s", telegramfmt.HTML(label), value)
+		return fmt.Sprintf("<b>%s:</b> %s", baldatelegram.EscapeHTML(label), value)
 	default:
 		return label + ": " + value
 	}
@@ -264,7 +264,7 @@ func outcomeBlock(format deliveryfmt.DeliveryFormat, label string, body string) 
 	case messageStyleMarkdown:
 		return fmt.Sprintf("**%s:**\n%s", label, body)
 	case messageStyleHTML:
-		return fmt.Sprintf("<b>%s:</b>\n%s", telegramfmt.HTML(label), body)
+		return fmt.Sprintf("<b>%s:</b>\n%s", baldatelegram.EscapeHTML(label), body)
 	default:
 		return label + ":\n" + body
 	}

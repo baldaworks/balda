@@ -24,7 +24,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
@@ -56,7 +55,7 @@ func PreflightRuntime(
 	if err := validateBaldaMCPConfiguration(normaCfg); err != nil {
 		return err
 	}
-	formattingMode, err := telegramfmt.ValidateMode(cfg.Balda.Telegram.FormattingMode)
+	formattingMode, err := baldatelegram.ValidateFormattingMode(cfg.Balda.Telegram.FormattingMode)
 	if err != nil {
 		return err
 	}

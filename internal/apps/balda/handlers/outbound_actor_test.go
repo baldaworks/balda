@@ -5,18 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/go-actorlayer"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	"github.com/baldaworks/balda/internal/apps/balda/messenger"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 )
 
 func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, formattingMode string) *testTelegramChannel {
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg := baldatelegram.NewMessenger(tgClient, zerolog.Nop())
 	if strings.TrimSpace(formattingMode) != "" {
 		msg.SetAgentReplyFormattingMode(formattingMode)
 	}

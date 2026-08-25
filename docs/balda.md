@@ -114,7 +114,6 @@ flowchart TB
     handlers["github.com/baldaworks/balda/internal/apps/balda/handlers"]
     internalmcp["github.com/baldaworks/balda/internal/apps/balda/internalmcp"]
     memory["github.com/baldaworks/balda/internal/apps/balda/memory"]
-    messenger["github.com/baldaworks/balda/internal/apps/balda/messenger"]
     session["github.com/baldaworks/balda/internal/apps/balda/session"]
     sessionturn["github.com/baldaworks/balda/internal/apps/balda/sessionturn"]
     state["github.com/baldaworks/balda/internal/apps/balda/state"]
@@ -142,13 +141,11 @@ flowchart TB
     actors --> actorcmd
     actors --> jobs
 
-    telegram --> messenger
     telegram --> session
 
     handlers --> agent
     handlers --> auth
     handlers --> telegram
-    handlers --> messenger
     handlers --> session
     handlers --> sessionturn
     handlers --> state
@@ -179,11 +176,10 @@ flowchart TB
 | `agent` | `internal/apps/balda/agent` | Provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support | `internal/git`, runtime/agent factory packages |
 | `actors` | `internal/apps/balda/actors` | Balda product actor behavior | actorcmd, agent, channel, jobs, session, state |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
-| `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram message adapter | messenger, session |
-| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command publishing, and ingress-side session/control orchestration | actorcmd, agent, auth, channel, jobs, messenger, session, sessionturnapp, tgbotkit, welcome |
+| `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram transport package: adapter, delivery formatting, and message sending | session, `tgbotkit/client` |
+| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command publishing, and ingress-side session/control orchestration | actorcmd, agent, auth, channel, jobs, session, sessionturnapp, tgbotkit, welcome |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
 | `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
-| `messenger` | `internal/apps/balda/messenger` | Telegram message sending | `tgbotkit/client` |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
 | `sessionturn` | `internal/apps/balda/sessionturn` | Queued-turn restoration and execution orchestration | memory, session |
 | `sessionturnapp` | `internal/apps/balda/sessionturnapp` | Queued turn execution wiring, provider-turn execution, progress dispatch, and turn-facing adapters | jobs, memory, session, sessionturn, `github.com/baldaworks/go-actorlayer` |
@@ -217,7 +213,7 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/internalmcp`: bundled MCP construction and lifecycle.
 - `internal/apps/balda/handlers`: transport ingress only. It normalizes Telegram/Slack/Zulip/webhook/scheduler input, checks auth/session rules, and publishes actor work. It must not own product actors, provider-turn execution, or delivery policy.
 - `internal/apps/balda/handlersfx`: composition-root adapters that bind handler-owned ports to concrete provider runtimes without moving ingress policy into wiring.
-- `internal/apps/balda/channel/*` and `internal/apps/balda/messenger`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
+- `internal/apps/balda/channel/*`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
 - `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
 - `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). It is not the session-memory subsystem.
 - `sessionmemory` and `sessionmemory/app`: portable semantic ownership and capability orchestration for exact-scope session memory.

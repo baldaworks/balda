@@ -218,15 +218,6 @@ func plainText(value string) string {
 	return strings.ReplaceAll(value, "`", "")
 }
 
-type telegramRenderer struct{}
-
-func (telegramRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
-	return deliveryfmt.StructuredPresentation{
-		Text:           renderTelegramMarkdown(env.Body),
-		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
-	}, nil
-}
-
 type plainRenderer struct{}
 
 func (plainRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/presentation"
+	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	telegrampresentation "github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
@@ -14,7 +15,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 )
 
 func TestMessageFormatRegistryProvidesCurrentPromptRoutes(t *testing.T) {
@@ -209,8 +209,8 @@ func TestStructuredMessageRegistryProvidesCurrentStructuredRoutes(t *testing.T) 
 }
 
 func telegramfxPromptContributionForTest() PromptRegistryContribution {
-	richMarkdownRule, richMarkdownExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichMarkdown)
-	richHTMLRule, richHTMLExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichHTML)
+	richMarkdownRule, richMarkdownExample := baldatelegram.FormattingPromptRuleAndExample(baldatelegram.FormattingModeRichMarkdown)
+	richHTMLRule, richHTMLExample := baldatelegram.FormattingPromptRuleAndExample(baldatelegram.FormattingModeRichHTML)
 	return PromptRegistryContribution{
 		Formats: []deliveryfmt.Format{
 			{Name: deliveryfmt.NameTelegramRichMarkdown, Instructions: richMarkdownRule, Example: richMarkdownExample},
@@ -256,8 +256,8 @@ func (testTelegramHTMLFormatter) Name() deliveryfmt.Name {
 func (testTelegramHTMLFormatter) Format(text string) (deliveryfmt.Message, error) {
 	return deliveryfmt.Message{
 		Name:          deliveryfmt.NameTelegramRichHTML,
-		Text:          telegramfmt.HTML(text),
-		PlainFallback: telegramfmt.HTMLPlainText(text),
+		Text:          baldatelegram.EscapeHTML(text),
+		PlainFallback: baldatelegram.HTMLPlainText(text),
 	}, nil
 }
 

@@ -1,14 +1,14 @@
 package telegramfx
 
 import (
+	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 )
 
 func NewPromptRegistryContribution() deliveryfx.PromptRegistryContribution {
-	richMarkdownRule, richMarkdownExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichMarkdown)
-	richHTMLRule, richHTMLExample := telegramfmt.PromptRuleAndExample(telegramfmt.ModeRichHTML)
+	richMarkdownRule, richMarkdownExample := telegram.FormattingPromptRuleAndExample(telegram.FormattingModeRichMarkdown)
+	richHTMLRule, richHTMLExample := telegram.FormattingPromptRuleAndExample(telegram.FormattingModeRichHTML)
 	return deliveryfx.PromptRegistryContribution{
 		Formats: []deliveryfmt.Format{
 			{Name: deliveryfmt.NameTelegramRichMarkdown, Instructions: richMarkdownRule, Example: richMarkdownExample},
@@ -50,7 +50,7 @@ func (htmlFormatter) Name() deliveryfmt.Name {
 func (htmlFormatter) Format(text string) (deliveryfmt.Message, error) {
 	return deliveryfmt.Message{
 		Name:          deliveryfmt.NameTelegramRichHTML,
-		Text:          telegramfmt.HTML(text),
-		PlainFallback: telegramfmt.HTMLPlainText(text),
+		Text:          telegram.EscapeHTML(text),
+		PlainFallback: telegram.HTMLPlainText(text),
 	}, nil
 }

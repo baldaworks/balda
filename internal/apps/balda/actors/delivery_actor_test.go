@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
 	baldachannel "github.com/baldaworks/balda/internal/apps/balda/channel"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -19,8 +18,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
-	"github.com/baldaworks/balda/internal/apps/balda/messenger"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 )
@@ -254,7 +253,7 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliver
 	_ = dispatcher
 	_ = allocator
 	tgClient := &fakeTelegramClient{}
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg := baldatelegram.NewMessenger(tgClient, zerolog.Nop())
 	tgAdapter := baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,

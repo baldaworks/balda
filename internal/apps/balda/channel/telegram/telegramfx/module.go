@@ -5,7 +5,6 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
-	"github.com/baldaworks/balda/internal/apps/balda/messenger"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -19,15 +18,15 @@ var Module = fx.Module(
 				tgClient client.ClientWithResponsesInterface,
 				logger zerolog.Logger,
 				formattingMode string,
-			) *messenger.Messenger {
-				m := messenger.NewMessenger(tgClient, logger)
+			) *telegram.Messenger {
+				m := telegram.NewMessenger(tgClient, logger)
 				m.SetAgentReplyFormattingMode(formattingMode)
 				return m
 			},
 			fx.ParamTags(``, ``, `name:"balda_telegram_formatting_mode"`),
 		),
 		fx.Annotate(
-			func(m *messenger.Messenger) telegram.TelegramMessenger { return m },
+			func(m *telegram.Messenger) telegram.TelegramMessenger { return m },
 		),
 		func(params telegram.AdapterParams) *telegram.Adapter {
 			adapter := telegram.NewAdapter(params)

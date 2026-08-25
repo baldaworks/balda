@@ -8,7 +8,6 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	"github.com/baldaworks/balda/internal/apps/balda/messenger"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -326,7 +325,7 @@ func TestMessageContextFromEvent_MapsVoiceWithoutOptionalMetadata(t *testing.T) 
 }
 
 func TestMessageContextFromEvent_SnapshotsDeliveryOptions(t *testing.T) {
-	msg := messenger.NewMessenger(nil, zerolog.Nop())
+	msg := NewMessenger(nil, zerolog.Nop())
 	msg.SetTelegramFormattingMode(telegramfmt.ModeRichHTML)
 	adapter := NewAdapter(AdapterParams{Messenger: msg, Logger: zerolog.Nop()})
 
@@ -1068,7 +1067,7 @@ func (f *fakeTelegramChatActionClient) SendChatActionWithResponse(
 
 func TestSendTyping_ThrottlesRepeatedChatActionsPerSession(t *testing.T) {
 	tgClient := &fakeTelegramChatActionClient{}
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg := NewMessenger(tgClient, zerolog.Nop())
 	adapter := NewAdapter(AdapterParams{Messenger: msg, TGClient: tgClient, Logger: zerolog.Nop()})
 	adapter.SetTypingThrottleInterval(4 * time.Second)
 	now := time.Unix(100, 0)
@@ -1089,7 +1088,7 @@ func TestSendTyping_ThrottlesRepeatedChatActionsPerSession(t *testing.T) {
 
 func TestSendTyping_AllowsChatActionAfterThrottleInterval(t *testing.T) {
 	tgClient := &fakeTelegramChatActionClient{}
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg := NewMessenger(tgClient, zerolog.Nop())
 	adapter := NewAdapter(AdapterParams{Messenger: msg, TGClient: tgClient, Logger: zerolog.Nop()})
 	adapter.SetTypingThrottleInterval(4 * time.Second)
 	now := time.Unix(100, 0)

@@ -13,7 +13,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/messenger"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/go-actorlayer"
@@ -1124,7 +1123,7 @@ func TestBaldaHandlerOnMessage_ChannelReplyToDifferentBotIgnored(t *testing.T) {
 
 func newBaldaTestTelegramAdapter() *testTelegramChannel {
 	tgClient := &fakeTelegramClient{}
-	msg := messenger.NewMessenger(tgClient, zerolog.Nop())
+	msg := baldatelegram.NewMessenger(tgClient, zerolog.Nop())
 	return &testTelegramChannel{Adapter: baldatelegram.NewAdapter(baldatelegram.AdapterParams{
 		Messenger: msg,
 		TGClient:  tgClient,

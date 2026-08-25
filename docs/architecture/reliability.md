@@ -20,7 +20,7 @@ Status: active
 - `internal/apps/balda/execution/host_test.go`
 - `internal/apps/balda/actors/delivery_actor_test.go`
 - `internal/apps/balda/deliveryworkflow/service_test.go`
-- `internal/apps/balda/messenger/messenger_test.go`
+- `internal/apps/balda/channel/telegram/messenger_test.go`
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/handlers/command_test.go`
 - `internal/apps/balda/jobs/service_test.go`
@@ -33,7 +33,7 @@ Status: active
 - `internal/apps/balda/actors`
 - `internal/apps/balda/deliverycmd`
 - `internal/apps/balda/deliveryworkflow`
-- `internal/apps/balda/messenger`
+- `internal/apps/balda/channel/telegram`
 - `internal/apps/balda/eventbus/nats`
 - `internal/apps/balda/handlers`
 - `internal/apps/balda/state`

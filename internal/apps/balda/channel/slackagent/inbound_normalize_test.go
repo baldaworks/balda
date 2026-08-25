@@ -7,6 +7,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 )
 
+const normalizedSlackAgentEventID = "slack_agent:evt-123"
+
 func TestNormalizeInboundPreservesIdentityAndCapabilities(t *testing.T) {
 	t.Parallel()
 
@@ -23,7 +25,7 @@ func TestNormalizeInboundPreservesIdentityAndCapabilities(t *testing.T) {
 		},
 	}, receivedAt)
 
-	if got.ID != "slack_agent:evt-123" || got.ProviderMessageID != "msg-456" {
+	if got.ID != normalizedSlackAgentEventID || got.ProviderMessageID != "msg-456" {
 		t.Fatalf("normalized Slack Agent = %+v", got)
 	}
 	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn || !got.ProgressPolicy.Thinking || !got.ProgressPolicy.Typing || !got.ProgressPolicy.PlanUpdates {

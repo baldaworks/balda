@@ -149,7 +149,6 @@ components:
       - internal/apps/balda/channel/**
       - internal/apps/balda/deliveryfx
       - internal/apps/balda/goaldelivery
-      - internal/apps/balda/messenger
       - internal/apps/balda/tgbotkit
 
   # Storage and adapter-heavy infrastructure that does not fit a narrower semantic layer.

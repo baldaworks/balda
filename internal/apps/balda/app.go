@@ -45,7 +45,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorymcp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
@@ -141,7 +140,7 @@ func Module(
 	if err := validateBaldaMCPConfiguration(normaCfg); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
-	formattingMode, err := telegramfmt.ValidateMode(cfg.Balda.Telegram.FormattingMode)
+	formattingMode, err := baldatelegram.ValidateFormattingMode(cfg.Balda.Telegram.FormattingMode)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}

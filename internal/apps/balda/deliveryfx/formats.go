@@ -91,8 +91,7 @@ func newMessageFormatRegistry(params promptRegistryParams) (*deliveryfmt.Registr
 	formatters := make([]deliveryfmt.FormatterRegistration, 0, len(formats))
 	for _, format := range formats {
 		formatter := deliveryfmt.Formatter(identityFormatter{name: format.Name})
-		switch format.Name {
-		case deliveryfmt.NameZulipMarkdown:
+		if format.Name == deliveryfmt.NameZulipMarkdown {
 			formatter = zulipMarkdownFormatter{}
 		}
 		formatters = append(formatters, deliveryfmt.FormatterRegistration{
