@@ -18,7 +18,6 @@ Status: active
 
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/execution/host_test.go`
-- `internal/apps/balda/architecture_dependencies_test.go`
 - `internal/apps/balda/execution/config_test.go`
 - `internal/apps/balda/handlers/inbound_webhook_test.go`
 

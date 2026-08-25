@@ -5,7 +5,7 @@ Status: active
 
 ## Invariants
 
-- Architecture contracts are enforced by repository tests.
+- Architecture contracts are enforced by `go-arch-lint`.
 - Built-in runtime integration coverage remains first-class.
 - Reliability scenarios cover redelivery, retry, and terminal failure flows.
 - Projection and runtime behavior are testable without external infra.
@@ -15,7 +15,6 @@ Status: active
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/execution/host_test.go`
 - `internal/apps/balda/application_lifecycle_test.go`
-- `internal/apps/balda/architecture_dependencies_test.go`
 - `internal/apps/balda/actors/turn_dispatcher_test.go`
 - `internal/apps/balda/jobs/service_test.go`
 - `internal/apps/balda/handlers/inbound_webhook_test.go`

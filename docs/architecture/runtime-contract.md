@@ -71,7 +71,6 @@ Status: active
 - `internal/apps/balda/execution/config_test.go`
 - `internal/apps/balda/eventbus/config_test.go`
 - `internal/apps/balda/application_lifecycle_test.go`
-- `internal/apps/balda/architecture_dependencies_test.go`
 - `internal/apps/balda/actors/turn_dispatcher_test.go`
 - `internal/apps/balda/jobs/service_test.go`
 

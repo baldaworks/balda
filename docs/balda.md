@@ -143,15 +143,11 @@ flowchart TB
 
     telegram --> session
 
-    handlers --> agent
     handlers --> auth
-    handlers --> telegram
     handlers --> session
-    handlers --> sessionturn
-    handlers --> state
-    handlers --> actorcmd
-    handlers --> jobs
-    handlers --> tgbotkit
+    handlers --> commandapp
+    handlers --> deliverycmd
+    handlers --> turncmd
     handlers --> welcome
 
     runtime --> actorcmd
@@ -177,7 +173,7 @@ flowchart TB
 | `actors` | `internal/apps/balda/actors` | Balda product actor behavior | actorcmd, agent, channel, jobs, session, state |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram transport package: adapter, delivery formatting, and message sending | session, `tgbotkit/client` |
-| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command publishing, and ingress-side session/control orchestration | actorcmd, agent, auth, channel, jobs, session, sessionturnapp, tgbotkit, welcome |
+| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command publishing, and ingress-side session/control orchestration | auth, commandapp, deliverycmd, session, turncmd, welcome |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
 | `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
