@@ -107,11 +107,11 @@ func TestArchitectureDependencyMap(t *testing.T) {
 			},
 		},
 		{
-			name: "ingress normalizes and publishes turn commands",
+			name: "handlers keep command and auth ingress concerns",
 			dir:  "handlers",
 			requires: []string{
 				baldaImportPrefix + "deliverycmd",
-				baldaImportPrefix + "ingressapp",
+				baldaImportPrefix + "commandapp",
 				baldaImportPrefix + "turncmd",
 			},
 		},
