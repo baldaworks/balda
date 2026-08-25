@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unsafe"
@@ -25,12 +26,16 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
-const testServerBotUsername = "testbot"
+const (
+	testServerBotUsername   = "testbot"
+	testPersistedOwnerLabel = "persisted-owner"
+)
 
 type fakeSessionStore struct {
-	record         baldastate.SessionRecord
-	foundByAddress bool
-	lastUpsert     baldastate.SessionRecord
+	record          baldastate.SessionRecord
+	foundByAddress  bool
+	lastUpsert      baldastate.SessionRecord
+	getByAddressErr error
 }
 
 func (f *fakeSessionStore) Upsert(_ context.Context, record baldastate.SessionRecord) error {
@@ -41,6 +46,9 @@ func (f *fakeSessionStore) Upsert(_ context.Context, record baldastate.SessionRe
 }
 
 func (f *fakeSessionStore) GetByAddress(_ context.Context, channelType, addressKey string) (baldastate.SessionRecord, bool, error) {
+	if f.getByAddressErr != nil {
+		return baldastate.SessionRecord{}, false, f.getByAddressErr
+	}
 	if !f.foundByAddress {
 		return baldastate.SessionRecord{}, false, nil
 	}
@@ -65,7 +73,10 @@ func (f *fakeSessionStore) List(context.Context) ([]baldastate.SessionRecord, er
 	return []baldastate.SessionRecord{f.record}, nil
 }
 
-type fakeAgentBuilder struct{ metadata baldasession.AgentMetadata }
+type fakeAgentBuilder struct {
+	metadata baldasession.AgentMetadata
+	err      error
+}
 
 func (f *fakeAgentBuilder) CreateRuntimeSession(
 	context.Context,
@@ -76,7 +87,7 @@ func (f *fakeAgentBuilder) CreateRuntimeSession(
 	string,
 	baldasession.RuntimeSessionContext,
 ) (adksession.Session, error) {
-	return nil, nil
+	return nil, f.err
 }
 
 func (f *fakeAgentBuilder) GetAgentMetadata(string) baldasession.AgentMetadata { return f.metadata }
@@ -417,6 +428,46 @@ func TestServerHandleMessage_PublishesDirectSessionTurn(t *testing.T) {
 	}
 }
 
+func TestServerHandleMessage_IncompleteOwnerBindingFailsClosed(t *testing.T) {
+	tests := []struct {
+		name   string
+		userID int64
+		chatID int64
+	}{
+		{name: "owner ordinary message", userID: 101, chatID: 9001},
+		{name: "authenticated collaborator message", userID: 202, chatID: 9002},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, turns, _ := newServerMessageHarness(t, 0)
+			server.setOwner(101, 0)
+			server.collaboratorStore = auth.NewCollaboratorStore(&fakeCollaboratorBackingStore{
+				byUserID: map[string]auth.Collaborator{"202": {UserID: "202"}},
+			})
+			text := "try to bind this chat"
+
+			if err := server.HandleMessage(t.Context(), &events.MessageEvent{
+				Type: messagetype.Text,
+				Message: &client.Message{
+					Chat: client.Chat{Id: tt.chatID, Type: "private"},
+					Text: &text,
+					From: &client.User{Id: tt.userID},
+				},
+			}); err != nil {
+				t.Fatalf("HandleMessage() error = %v", err)
+			}
+
+			ownerID, chatID := server.getOwnerBinding()
+			if ownerID != 101 || chatID != 0 {
+				t.Fatalf("owner binding = (%d, %d), want (101, 0)", ownerID, chatID)
+			}
+			if got := len(turns.commandSnapshot()); got != 0 {
+				t.Fatalf("published commands = %d, want 0", got)
+			}
+		})
+	}
+}
+
 func TestServerStartRestoresPersistedOwnerForDirectMessages(t *testing.T) {
 	server, turns, locator := newServerMessageHarness(t, 0)
 	server.ownerID = 0
@@ -444,6 +495,218 @@ func TestServerStartRestoresPersistedOwnerForDirectMessages(t *testing.T) {
 	}
 	if _, ok := findSessionEnvelope(turns.commands, locator.SessionID); !ok {
 		t.Fatalf("session command for %q not found after restart in %+v", locator.SessionID, turns.commands)
+	}
+}
+
+func TestServerStartRestoresPersistedOwnerSessionBeforeReadiness(t *testing.T) {
+	server, turns, locator := newServerMessageHarness(t, 0)
+	store := &fakeSessionStore{
+		record: baldastate.SessionRecord{
+			SessionID:   locator.SessionID,
+			UserID:      UserID(101),
+			ChannelType: locator.ChannelType,
+			AddressKey:  locator.AddressKey,
+			AddressJSON: locator.AddressJSON,
+			AgentName:   testPersistedOwnerLabel,
+			Status:      baldastate.SessionStatusActive,
+		},
+		foundByAddress: true,
+	}
+	server.sessionManager = newSessionManagerHarness(t, store)
+	server.ownerID = 0
+	server.chatID = 0
+	server.tgClient = &fakeTelegramClient{}
+	server.telegramConfigured = true
+	server.telegramEnabled = true
+
+	if err := server.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	ts, err := server.sessionManager.GetSession(locator)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if got := ts.GetAgentName(); got != testPersistedOwnerLabel {
+		t.Fatalf("restored agent label = %q, want %s", got, testPersistedOwnerLabel)
+	}
+	if got := store.lastUpsert.AgentName; got != testPersistedOwnerLabel {
+		t.Fatalf("persisted agent label after restore = %q, want %s", got, testPersistedOwnerLabel)
+	}
+
+	texts := deliveryTexts(t, turns.commandSnapshot())
+	if got := countText(texts, startupReadyMessage); got != 1 {
+		t.Fatalf("readiness deliveries = %d, want 1; texts=%q", got, texts)
+	}
+	if got := countContaining(texts, "**Name:** `balda`"); got != 1 {
+		t.Fatalf("welcome deliveries = %d, want 1; texts=%q", got, texts)
+	}
+}
+
+func TestServerStartCreatesOwnerSessionOnlyWhenPersistenceIsMissing(t *testing.T) {
+	server, _, locator := newServerMessageHarness(t, 0)
+	store := &fakeSessionStore{}
+	server.sessionManager = newSessionManagerHarness(t, store)
+	server.tgClient = &fakeTelegramClient{}
+	server.telegramConfigured = true
+	server.telegramEnabled = true
+
+	if err := server.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if got := store.lastUpsert.SessionID; got != locator.SessionID {
+		t.Fatalf("created session id = %q, want %q", got, locator.SessionID)
+	}
+	if got := store.lastUpsert.AgentName; got != ownerSessionLabel {
+		t.Fatalf("created agent label = %q, want %q", got, ownerSessionLabel)
+	}
+}
+
+func TestServerStartPropagatesOwnerRestoreFailure(t *testing.T) {
+	server, _, _ := newServerMessageHarness(t, 0)
+	server.sessionManager = newSessionManagerHarness(t, &fakeSessionStore{
+		getByAddressErr: errors.New("session store unavailable"),
+	})
+	server.tgClient = &fakeTelegramClient{}
+	server.telegramConfigured = true
+	server.telegramEnabled = true
+
+	err := server.Start(t.Context())
+	if err == nil {
+		t.Fatal("Start() error = nil, want restore failure")
+	}
+	if !strings.Contains(err.Error(), "restore owner session") || !strings.Contains(err.Error(), "session store unavailable") {
+		t.Fatalf("Start() error = %q, want restore context", err)
+	}
+}
+
+func TestServerActivateOwnerBootstrapsOnceAndPropagatesFailure(t *testing.T) {
+	t.Run("idempotent bootstrap", func(t *testing.T) {
+		server, turns, _ := newServerMessageHarness(t, 0)
+		server.ownerID = 0
+		server.chatID = 0
+
+		if err := server.ActivateOwner(t.Context(), 101, 9001); err != nil {
+			t.Fatalf("ActivateOwner() error = %v", err)
+		}
+		first := deliveryTexts(t, turns.commandSnapshot())
+		if got := countContaining(first, "**Name:** `balda`"); got != 1 {
+			t.Fatalf("welcome deliveries = %d, want 1; texts=%q", got, first)
+		}
+		if got := countText(first, startupReadyMessage); got != 0 {
+			t.Fatalf("activation readiness deliveries = %d, want 0", got)
+		}
+
+		if err := server.ActivateOwner(t.Context(), 101, 9001); err != nil {
+			t.Fatalf("second ActivateOwner() error = %v", err)
+		}
+		if got := len(turns.commandSnapshot()); got != len(first) {
+			t.Fatalf("deliveries after second activation = %d, want %d", got, len(first))
+		}
+	})
+
+	t.Run("bootstrap failure", func(t *testing.T) {
+		server, _, _ := newServerMessageHarness(t, 0)
+		manager := newSessionManagerHarness(t, &fakeSessionStore{})
+		setUnexportedField(t, manager, "agentBuilder", &fakeAgentBuilder{err: errors.New("runtime creation failed")})
+		server.sessionManager = manager
+
+		err := server.ActivateOwner(t.Context(), 101, 9001)
+		if err == nil {
+			t.Fatal("ActivateOwner() error = nil, want bootstrap failure")
+		}
+		if !strings.Contains(err.Error(), "create owner session") || !strings.Contains(err.Error(), "runtime creation failed") {
+			t.Fatalf("ActivateOwner() error = %q, want creation context", err)
+		}
+	})
+}
+
+func TestServerActivateOwnerConcurrentBootstrapIsIdempotent(t *testing.T) {
+	server, turns, _ := newServerMessageHarness(t, 0)
+	server.ownerID = 0
+	server.chatID = 0
+
+	const activations = 8
+	errCh := make(chan error, activations)
+	var wg sync.WaitGroup
+	for range activations {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- server.ActivateOwner(t.Context(), 101, 9001)
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("ActivateOwner() error = %v", err)
+		}
+	}
+
+	texts := deliveryTexts(t, turns.commandSnapshot())
+	if got := countContaining(texts, "**Name:** `balda`"); got != 1 {
+		t.Fatalf("welcome deliveries = %d, want 1; texts=%q", got, texts)
+	}
+}
+
+func TestServerSendSessionStartupNoticeDeliversPendingNoticeOnce(t *testing.T) {
+	locator := NewLocator(9001, 0)
+	ts := newTopicSession(t, locator.SessionID)
+	setUnexportedField(t, ts, "startupNotice", "workspace sync was skipped")
+	dispatcher := &fakeTurnDispatcher{}
+	server := &Server{
+		sessionManager:  newSessionManagerWithSession(t, locator, ts),
+		actorDispatcher: dispatcher,
+		logger:          zerolog.Nop(),
+	}
+
+	server.sendSessionStartupNotice(t.Context(), locator, locator.SessionID)
+	server.sendSessionStartupNotice(t.Context(), locator, locator.SessionID)
+
+	texts := deliveryTexts(t, dispatcher.commandSnapshot())
+	if got := countText(texts, "workspace sync was skipped"); got != 1 {
+		t.Fatalf("startup notice deliveries = %d, want 1; texts=%q", got, texts)
+	}
+}
+
+func TestServerHandleMessageRestoresPersistedOwnerSession(t *testing.T) {
+	server, turns, locator := newServerMessageHarness(t, 0)
+	store := &fakeSessionStore{
+		record: baldastate.SessionRecord{
+			SessionID:   locator.SessionID,
+			UserID:      UserID(101),
+			ChannelType: locator.ChannelType,
+			AddressKey:  locator.AddressKey,
+			AddressJSON: locator.AddressJSON,
+			AgentName:   testPersistedOwnerLabel,
+			Status:      baldastate.SessionStatusActive,
+		},
+		foundByAddress: true,
+	}
+	server.sessionManager = newSessionManagerHarness(t, store)
+	text := "resume persisted owner session"
+
+	if err := server.HandleMessage(t.Context(), &events.MessageEvent{
+		Type: messagetype.Text,
+		Message: &client.Message{
+			Chat: client.Chat{Id: 9001, Type: "private"},
+			Text: &text,
+			From: &client.User{Id: 101},
+		},
+	}); err != nil {
+		t.Fatalf("HandleMessage() error = %v", err)
+	}
+
+	ts, err := server.sessionManager.GetSession(locator)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if got := ts.GetAgentName(); got != testPersistedOwnerLabel {
+		t.Fatalf("restored agent label = %q, want %s", got, testPersistedOwnerLabel)
+	}
+	if _, ok := findSessionEnvelope(turns.commandSnapshot(), locator.SessionID); !ok {
+		t.Fatalf("session command for %q not found", locator.SessionID)
 	}
 }
 
@@ -486,6 +749,34 @@ func TestServerStartDoesNotSendReadyMessageWithoutOwner(t *testing.T) {
 	}
 }
 
+func TestServerStartClearsStaleChatForIncompletePersistedOwner(t *testing.T) {
+	server, turns, _ := newServerMessageHarness(t, 0)
+	ownerStore, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	if _, err := ownerStore.RegisterOwner(101, 0); err != nil {
+		t.Fatalf("RegisterOwner() error = %v", err)
+	}
+	server.ownerStore = ownerStore
+	server.ownerID = 101
+	server.chatID = 9001
+	server.tgClient = &fakeTelegramClient{}
+	server.telegramConfigured = true
+	server.telegramEnabled = true
+
+	if err := server.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	ownerID, chatID := server.getOwnerBinding()
+	if ownerID != 101 || chatID != 0 {
+		t.Fatalf("owner binding = (%d, %d), want (101, 0)", ownerID, chatID)
+	}
+	if got := len(turns.commandSnapshot()); got != 0 {
+		t.Fatalf("startup deliveries = %d, want 0 for incomplete owner", got)
+	}
+}
+
 func assertStartupReadyDelivery(t *testing.T, commands []actorlayer.Envelope, locator baldasession.SessionLocator) {
 	t.Helper()
 	for _, env := range commands {
@@ -505,6 +796,42 @@ func assertStartupReadyDelivery(t *testing.T, commands []actorlayer.Envelope, lo
 		return
 	}
 	t.Fatalf("startup readiness delivery not found in %+v", commands)
+}
+
+func deliveryTexts(t *testing.T, commands []actorlayer.Envelope) []string {
+	t.Helper()
+	texts := make([]string, 0, len(commands))
+	for _, env := range commands {
+		if env.To.Target != baldaexecution.ActorTypeDelivery {
+			continue
+		}
+		var payload deliverycmd.Payload
+		if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+			t.Fatalf("decode delivery payload: %v", err)
+		}
+		texts = append(texts, payload.Text)
+	}
+	return texts
+}
+
+func countText(texts []string, want string) int {
+	count := 0
+	for _, text := range texts {
+		if text == want {
+			count++
+		}
+	}
+	return count
+}
+
+func countContaining(texts []string, want string) int {
+	count := 0
+	for _, text := range texts {
+		if strings.Contains(text, want) {
+			count++
+		}
+	}
+	return count
 }
 
 func TestServerHandleMessage_ReplyAddsReplyContextToPublishedCommand(t *testing.T) {

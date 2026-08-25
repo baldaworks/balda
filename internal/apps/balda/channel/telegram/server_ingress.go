@@ -17,7 +17,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
 	"github.com/tgbotkit/runtime/messagetype"
 )
@@ -52,7 +51,8 @@ func (s *Server) HandleMessage(ctx context.Context, event *events.MessageEvent) 
 		Int("attachments_count", len(messageCtx.Attachments)).
 		Msg("received inbound telegram transport message")
 
-	if s.getOwnerID() == 0 {
+	ownerID, ownerChatID := s.getOwnerBinding()
+	if ownerID == 0 || ownerChatID == 0 {
 		s.logger.Warn().
 			Str("reason", telegramIngressReasonOwnerUnavailable).
 			Msg("ignored inbound telegram message")
@@ -64,10 +64,6 @@ func (s *Server) HandleMessage(ctx context.Context, event *events.MessageEvent) 
 	}
 	if !allowed {
 		return nil
-	}
-	if s.getChatID() == 0 {
-		s.setChatID(messageCtx.ChatID)
-		log.Info().Int64("chat_id", messageCtx.ChatID).Msg("Chat ID set from message")
 	}
 	if messageCtx.HasCommand {
 		return nil
@@ -218,24 +214,34 @@ func (s *Server) prepareTelegramSession(ctx context.Context, inbound ingressapp.
 	var ts *baldasession.TopicSession
 	var err error
 	if inbound.Direct && inbound.TopicID == 0 {
-		existingSession, _ := s.sessionManager.GetSession(locator)
-		sendOwnerWelcome := existingSession == nil
-		baldaProviderName := s.getProviderName()
-		if baldaProviderName == "" {
-			_ = sendPlain(ctx, s.actorDispatcher, serverActorAddress, locator, "Balda is not ready right now. Please close this chat and try again.")
-			return rejectedSession(telegramIngressReasonProviderUnavailable), nil
-		}
-		ts, err = s.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID}, ownerSessionLabel)
-		if err != nil {
-			s.logger.Error().Err(err).Str("agent", baldaProviderName).Msg("failed to ensure main dm session")
-			_ = sendPlain(ctx, s.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat and try again.")
-			return rejectedSession(telegramIngressReasonSessionUnavailable), nil
-		}
-		if sendOwnerWelcome {
-			metadata := s.sessionManager.GetAgentMetadata(baldaProviderName)
-			welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
-			_ = sendMarkdown(ctx, s.actorDispatcher, serverActorAddress, locator, welcomeMsg)
-			s.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
+		ownerID, ownerChatID := s.getOwnerBinding()
+		if transportUserID == UserID(ownerID) && locator.SessionID == NewLocator(ownerChatID, 0).SessionID {
+			ts, err = s.bootstrapOwnerSession(ctx, ownerID, ownerChatID)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("failed to bootstrap owner dm session")
+				_ = sendPlain(ctx, s.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat and try again.")
+				return rejectedSession(telegramIngressReasonSessionUnavailable), nil
+			}
+		} else {
+			existingSession, _ := s.sessionManager.GetSession(locator)
+			sendWelcome := existingSession == nil
+			baldaProviderName := s.getProviderName()
+			if baldaProviderName == "" {
+				_ = sendPlain(ctx, s.actorDispatcher, serverActorAddress, locator, "Balda is not ready right now. Please close this chat and try again.")
+				return rejectedSession(telegramIngressReasonProviderUnavailable), nil
+			}
+			ts, err = s.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: transportUserID}, ownerSessionLabel)
+			if err != nil {
+				s.logger.Error().Err(err).Str("agent", baldaProviderName).Msg("failed to ensure main dm session")
+				_ = sendPlain(ctx, s.actorDispatcher, serverActorAddress, locator, "Could not start this session. Please close this chat and try again.")
+				return rejectedSession(telegramIngressReasonSessionUnavailable), nil
+			}
+			if sendWelcome {
+				metadata := s.sessionManager.GetAgentMetadata(baldaProviderName)
+				welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+				_ = sendMarkdown(ctx, s.actorDispatcher, serverActorAddress, locator, welcomeMsg)
+				s.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
+			}
 		}
 	} else {
 		ts, err = s.sessionManager.GetSession(locator)

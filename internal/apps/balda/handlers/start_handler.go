@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
@@ -38,7 +38,7 @@ type startHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	ChannelAuth       *auth.ChannelAuthService
 	Dispatcher        actortransport.Dispatcher
-	AuthToken         string `name:"balda_auth_token"`
+	AuthToken         string              `name:"balda_auth_token"`
 	OwnerActivator    BaldaOwnerActivator `optional:"true"`
 }
 
@@ -158,6 +158,16 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		if consumed {
 			if err := h.ownerStore.BindOwnerTelegram(userID, chatID); err != nil {
 				log.Warn().Err(err).Int64("user_id", userID).Msg("failed to bind telegram owner")
+				if sendErr := h.sendPlain(ctx, chatID, "Failed to connect Telegram account. Please try again."); sendErr != nil {
+					return sendErr
+				}
+				return nil
+			}
+			if err := h.activateBalda(ctx, userID, chatID); err != nil {
+				if sendErr := h.sendPlain(ctx, chatID, "Could not start owner session. Please try again."); sendErr != nil {
+					return sendErr
+				}
+				return nil
 			}
 			if err := h.sendPlain(ctx, chatID, "This Telegram account is now connected to the Balda owner."); err != nil {
 				return err
@@ -175,11 +185,12 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 			return h.handleInviteStart(ctx, chatID, userID, userIDStr, args.token, event.Message.From)
 		}
 		if h.ownerStore.IsOwner(userID) {
-			// Persist chatID for existing owner
-			if err := h.ownerStore.BindOwnerTelegram(userID, chatID); err != nil {
-				log.Warn().Err(err).Msg("failed to update owner chatID")
+			startErr := h.ownerStore.BindOwnerTelegram(userID, chatID)
+			if startErr != nil {
+				log.Warn().Err(startErr).Msg("failed to update owner chatID")
+			} else {
+				startErr = h.activateBalda(ctx, userID, chatID)
 			}
-			startErr := h.activateBalda(ctx, userID, chatID)
 			if startErr == nil {
 				log.Info().Int64("user_id", userID).Msg("balda re-activated for existing owner")
 			}
@@ -271,8 +282,7 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 
 func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64) error {
 	if h.baldaHandler == nil {
-		log.Warn().Msg("balda handler is nil; skipping owner session activation")
-		return nil
+		return fmt.Errorf("balda owner activator is unavailable")
 	}
 	if err := h.baldaHandler.ActivateOwner(ctx, ownerID, chatID); err != nil {
 		log.Warn().

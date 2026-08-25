@@ -45,6 +45,7 @@ type Server struct {
 	attachmentStore    AttachmentStore
 
 	mu          sync.RWMutex
+	bootstrapMu sync.Mutex
 	ownerID     int64
 	chatID      int64
 	botUsername string
@@ -106,29 +107,35 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("resolve balda telegram bot identity: %w", err)
 	}
 	s.logOwnerAuthIfNeeded()
-	s.restorePersistedOwner()
+	ownerID, chatID, bound := s.restorePersistedOwner()
+	if bound {
+		if _, err := s.bootstrapOwnerSession(ctx, ownerID, chatID); err != nil {
+			s.logger.Error().Err(err).Int64("owner_id", ownerID).Msg("failed to bootstrap owner session during startup")
+			return fmt.Errorf("bootstrap owner session during startup: %w", err)
+		}
+	}
 	s.sendStartupReadyMessage(ctx)
 	return nil
 }
 
-func (s *Server) restorePersistedOwner() {
+func (s *Server) restorePersistedOwner() (ownerID, chatID int64, bound bool) {
 	if s.ownerStore == nil {
-		return
+		return 0, 0, false
 	}
 	owner := s.ownerStore.GetOwner()
 	if owner == nil || owner.UserID == 0 {
-		return
+		return 0, 0, false
 	}
 	s.setOwner(owner.UserID, owner.ChatID)
 	s.logger.Info().
 		Int64("owner_id", owner.UserID).
 		Int64("chat_id", owner.ChatID).
 		Msg("restored persisted telegram owner")
+	return owner.UserID, owner.ChatID, owner.ChatID != 0
 }
 
 func (s *Server) sendStartupReadyMessage(ctx context.Context) {
-	ownerID := s.getOwnerID()
-	chatID := s.getChatID()
+	ownerID, chatID := s.getOwnerBinding()
 	if ownerID == 0 || chatID == 0 {
 		return
 	}
@@ -141,9 +148,15 @@ func (s *Server) sendStartupReadyMessage(ctx context.Context) {
 
 // ActivateOwner binds the owner identity to the server state.
 func (s *Server) ActivateOwner(ctx context.Context, ownerID, chatID int64) error {
-	_ = ctx
+	if ownerID == 0 {
+		return fmt.Errorf("telegram owner id is required")
+	}
+	if chatID == 0 {
+		return fmt.Errorf("telegram owner chat id is required")
+	}
 	s.setOwner(ownerID, chatID)
-	return nil
+	_, err := s.bootstrapOwnerSession(ctx, ownerID, chatID)
+	return err
 }
 
 // SubmitSessionTurn forwards a session turn envelope into the actor runtime.
@@ -174,16 +187,16 @@ func (s *Server) SubmitWebhookTask(ctx context.Context, payload turncmd.SessionT
 	return result, jobID, nil
 }
 
-func (s *Server) getOwnerID() int64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.ownerID
-}
-
 func (s *Server) getChatID() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.chatID
+}
+
+func (s *Server) getOwnerBinding() (ownerID, chatID int64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ownerID, s.chatID
 }
 
 func (s *Server) setChatID(chatID int64) {
@@ -196,9 +209,7 @@ func (s *Server) setOwner(ownerID, chatID int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ownerID = ownerID
-	if chatID != 0 {
-		s.chatID = chatID
-	}
+	s.chatID = chatID
 }
 
 func (s *Server) getBotIdentity() (int64, string) {

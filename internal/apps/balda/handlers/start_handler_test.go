@@ -14,9 +14,12 @@ import (
 )
 
 type fakeOwnerKVStore struct {
-	value any
-	ok    bool
-	err   error
+	value    any
+	ok       bool
+	err      error
+	setCalls int
+	setErrAt int
+	setErr   error
 }
 
 func (s *fakeOwnerKVStore) GetJSON(_ context.Context, _ string) (any, bool, error) {
@@ -27,6 +30,10 @@ func (s *fakeOwnerKVStore) GetJSON(_ context.Context, _ string) (any, bool, erro
 }
 
 func (s *fakeOwnerKVStore) SetJSON(_ context.Context, _ string, value any) error {
+	s.setCalls++
+	if s.setErrAt != 0 && s.setCalls == s.setErrAt {
+		return s.setErr
+	}
 	if s.err != nil {
 		return s.err
 	}
@@ -362,6 +369,13 @@ func TestStartHandlerOnCommand_ExistingOwner_StartsRootWhenMissing(t *testing.T)
 	if len(balda.calls) != 1 {
 		t.Fatalf("ActivateOwner calls = %d, want 1", len(balda.calls))
 	}
+	if got := balda.calls[0]; got.ownerID != 101 || got.chatID != 9001 {
+		t.Fatalf("ActivateOwner call = %+v, want owner=101 chat=9001", got)
+	}
+	owner := store.GetOwner()
+	if owner == nil || owner.ChatID != 9001 {
+		t.Fatalf("persisted owner = %+v, want chat_id=9001", owner)
+	}
 	assertLastSentContains(t, tgClient, "You are already registered as the bot owner.")
 	assertLastSentNotContains(t, tgClient, "Balda mode is active.")
 }
@@ -546,6 +560,93 @@ func TestStartHandlerOnCommand_ExistingOwnerActivationFailure_DoesNotClaimBaldaA
 	assertLastSentNotContains(t, tgClient, "Balda mode is active.")
 }
 
+func TestStartHandlerOnCommand_ExistingOwnerBindingFailureDoesNotActivate(t *testing.T) {
+	stateStore := &fakeOwnerKVStore{setErrAt: 2, setErr: errors.New("owner persistence failed")}
+	ownerStore, err := auth.NewOwnerStore(stateStore)
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	if registered, err := ownerStore.RegisterOwner(101, 0); err != nil {
+		t.Fatalf("RegisterOwner() error = %v", err)
+	} else if !registered {
+		t.Fatal("owner should be newly registered")
+	}
+	tgClient := &fakeTelegramClient{}
+	adapter := newTestTelegramAdapter(tgClient, "none")
+	balda := &fakeBaldaOwnerActivator{}
+	handler := &StartHandler{
+		ownerStore:      ownerStore,
+		actorDispatcher: &recordingHandlerCommandBus{deliveryAdapter: adapter},
+		baldaHandler:    balda,
+	}
+
+	if err := handler.onCommand(t.Context(), newStartEvent("", 101, 9001)); err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+	if len(balda.calls) != 0 {
+		t.Fatalf("ActivateOwner calls = %d, want 0 after binding failure", len(balda.calls))
+	}
+	assertLastSentContains(t, tgClient, "Could not start owner session")
+}
+
+func TestStartHandlerOnCommand_ChannelTokenPersistsAndActivatesBeforeSuccess(t *testing.T) {
+	stateStore := &fakeOwnerKVStore{}
+	handler, ownerStore, tgClient, token := newTelegramOwnerBindHarness(t, stateStore)
+	balda := &fakeBaldaOwnerActivator{}
+	handler.baldaHandler = balda
+
+	if err := handler.onCommand(t.Context(), newStartEvent(token, 202, 9002)); err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+	if len(balda.calls) != 1 {
+		t.Fatalf("ActivateOwner calls = %d, want 1", len(balda.calls))
+	}
+	if got := balda.calls[0]; got.ownerID != 202 || got.chatID != 9002 {
+		t.Fatalf("ActivateOwner call = %+v, want owner=202 chat=9002", got)
+	}
+	owner := ownerStore.GetOwner()
+	if owner == nil || owner.UserID != 202 || owner.ChatID != 9002 {
+		t.Fatalf("persisted owner = %+v, want user_id=202 chat_id=9002", owner)
+	}
+	assertLastSentContains(t, tgClient, "now connected to the Balda owner")
+}
+
+func TestStartHandlerOnCommand_ChannelTokenBindingFailureDoesNotClaimSuccess(t *testing.T) {
+	stateStore := &fakeOwnerKVStore{setErrAt: 3, setErr: errors.New("owner persistence failed")}
+	handler, _, tgClient, token := newTelegramOwnerBindHarness(t, stateStore)
+	balda := &fakeBaldaOwnerActivator{}
+	handler.baldaHandler = balda
+
+	if err := handler.onCommand(t.Context(), newStartEvent(token, 202, 9002)); err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+	if len(balda.calls) != 0 {
+		t.Fatalf("ActivateOwner calls = %d, want 0 after binding failure", len(balda.calls))
+	}
+	assertLastSentContains(t, tgClient, "Failed to connect Telegram account")
+	assertLastSentNotContains(t, tgClient, "now connected to the Balda owner")
+}
+
+func TestStartHandlerOnCommand_ChannelTokenActivationFailureDoesNotClaimSuccess(t *testing.T) {
+	stateStore := &fakeOwnerKVStore{}
+	handler, ownerStore, tgClient, token := newTelegramOwnerBindHarness(t, stateStore)
+	balda := &fakeBaldaOwnerActivator{err: errors.New("owner bootstrap failed")}
+	handler.baldaHandler = balda
+
+	if err := handler.onCommand(t.Context(), newStartEvent(token, 202, 9002)); err != nil {
+		t.Fatalf("onCommand() error = %v", err)
+	}
+	if len(balda.calls) != 1 {
+		t.Fatalf("ActivateOwner calls = %d, want 1", len(balda.calls))
+	}
+	owner := ownerStore.GetOwner()
+	if owner == nil || owner.UserID != 202 || owner.ChatID != 9002 {
+		t.Fatalf("persisted owner = %+v, want completed binding before activation", owner)
+	}
+	assertLastSentContains(t, tgClient, "Could not start owner session")
+	assertLastSentNotContains(t, tgClient, "now connected to the Balda owner")
+}
+
 func TestStartHandlerOnCommand_SendErrorBubblesUp(t *testing.T) {
 	handler, _, tgClient := newStartHandlerTestHarness(t, "secret-token")
 	tgClient.sendErr = errors.New("send failed")
@@ -561,6 +662,37 @@ func newStartHandlerTestHarness(t *testing.T, authToken string) (*StartHandler, 
 
 	handler, ownerStore, _, _, tgClient := newStartHandlerFullTestHarness(t, authToken)
 	return handler, ownerStore, tgClient
+}
+
+func newTelegramOwnerBindHarness(t *testing.T, stateStore *fakeOwnerKVStore) (*StartHandler, *auth.OwnerStore, *fakeTelegramClient, string) {
+	t.Helper()
+	ownerStore, err := auth.NewOwnerStore(stateStore)
+	if err != nil {
+		t.Fatalf("NewOwnerStore() error = %v", err)
+	}
+	if registered, err := ownerStore.RegisterOwnerSubject(auth.SlackSubject("T123", "U456")); err != nil {
+		t.Fatalf("RegisterOwnerSubject() error = %v", err)
+	} else if !registered {
+		t.Fatal("owner should be newly registered")
+	}
+	tokenStore, err := auth.NewChannelTokenStore(&fakeInviteKVStore{})
+	if err != nil {
+		t.Fatalf("NewChannelTokenStore() error = %v", err)
+	}
+	channelAuth := auth.NewChannelAuthService(tokenStore, ownerStore)
+	token, err := channelAuth.CreateOwnerBindToken(t.Context(), auth.ChannelTelegram, auth.SlackSubject("T123", "U456"))
+	if err != nil {
+		t.Fatalf("CreateOwnerBindToken() error = %v", err)
+	}
+
+	tgClient := &fakeTelegramClient{}
+	adapter := newTestTelegramAdapter(tgClient, "none")
+	handler := &StartHandler{
+		ownerStore:      ownerStore,
+		channelAuth:     channelAuth,
+		actorDispatcher: &recordingHandlerCommandBus{deliveryAdapter: adapter},
+	}
+	return handler, ownerStore, tgClient, token
 }
 
 func newStartHandlerFullTestHarness(t *testing.T, authToken string) (*StartHandler, *auth.OwnerStore, *auth.InviteStore, *auth.CollaboratorStore, *fakeTelegramClient) {
