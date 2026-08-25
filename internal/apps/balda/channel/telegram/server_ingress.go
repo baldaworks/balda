@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
@@ -17,6 +15,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/welcome"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
 	"github.com/tgbotkit/runtime/messagetype"
@@ -26,6 +26,7 @@ const (
 	ownerSessionLabel = "balda"
 	autoSessionLabel  = "auto"
 
+	telegramIngressReasonOwnerUnavailable    = "owner_unavailable"
 	telegramIngressReasonProviderUnavailable = "provider_unavailable"
 	telegramIngressReasonSessionUnavailable  = "session_unavailable"
 )
@@ -52,6 +53,9 @@ func (s *Server) HandleMessage(ctx context.Context, event *events.MessageEvent) 
 		Msg("received inbound telegram transport message")
 
 	if s.getOwnerID() == 0 {
+		s.logger.Warn().
+			Str("reason", telegramIngressReasonOwnerUnavailable).
+			Msg("ignored inbound telegram message")
 		return nil
 	}
 	allowed, err := s.accessCollaboratorScope(ctx, messageCtx.UserID)

@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -104,7 +104,23 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("resolve balda telegram bot identity: %w", err)
 	}
 	s.logOwnerAuthIfNeeded()
+	s.restorePersistedOwner()
 	return nil
+}
+
+func (s *Server) restorePersistedOwner() {
+	if s.ownerStore == nil {
+		return
+	}
+	owner := s.ownerStore.GetOwner()
+	if owner == nil || owner.UserID == 0 {
+		return
+	}
+	s.setOwner(owner.UserID, owner.ChatID)
+	s.logger.Info().
+		Int64("owner_id", owner.UserID).
+		Int64("chat_id", owner.ChatID).
+		Msg("restored persisted telegram owner")
 }
 
 // ActivateOwner binds the owner identity to the server state.

@@ -21,6 +21,24 @@ type fakeTelegramClient struct {
 	createdTopics  []client.CreateForumTopicJSONRequestBody
 }
 
+func (c *fakeTelegramClient) GetMeWithResponse(_ context.Context, _ ...client.RequestEditorFn) (*client.GetMeResponse, error) {
+	username := testServerBotUsername
+	return &client.GetMeResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusOK, Status: "200 OK"},
+		JSON200: &struct {
+			Ok     client.GetMe200Ok `json:"ok"`
+			Result client.User       `json:"result"`
+		}{
+			Ok: true,
+			Result: client.User{
+				Id:        4242,
+				FirstName: "Test",
+				Username:  &username,
+			},
+		},
+	}, nil
+}
+
 func (c *fakeTelegramClient) SendMessageWithResponse(_ context.Context, body client.SendMessageJSONRequestBody, _ ...client.RequestEditorFn) (*client.SendMessageResponse, error) {
 	c.messages = append(c.messages, body)
 	if c.sendErr != nil {

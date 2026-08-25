@@ -8,8 +8,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -248,11 +248,11 @@ func TestServerHandleMessage_CommandRemainsOnCommandPath(t *testing.T) {
 	event := &events.MessageEvent{
 		Type: messagetype.Text,
 		Message: &client.Message{
-			Chat:     client.Chat{Id: 9001, Type: "private"},
+			Chat:      client.Chat{Id: 9001, Type: "private"},
 			MessageId: 56,
-			Text:     &text,
-			Entities: &entities,
-			From:     &client.User{Id: 101},
+			Text:      &text,
+			Entities:  &entities,
+			From:      &client.User{Id: 101},
 		},
 	}
 	if err := server.HandleMessage(context.Background(), event); err != nil {
@@ -411,6 +411,35 @@ func TestServerHandleMessage_PublishesDirectSessionTurn(t *testing.T) {
 	}
 	if payload.Source != "telegram" || !payload.Deliver {
 		t.Fatalf("session turn payload = %+v, want telegram deliver=true", payload)
+	}
+}
+
+func TestServerStartRestoresPersistedOwnerForDirectMessages(t *testing.T) {
+	server, turns, locator := newServerMessageHarness(t, 0)
+	server.ownerID = 0
+	server.chatID = 0
+	server.tgClient = &fakeTelegramClient{}
+	server.telegramConfigured = true
+	server.telegramEnabled = true
+
+	if err := server.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	text := "run tests after restart"
+	event := &events.MessageEvent{
+		Type: messagetype.Text,
+		Message: &client.Message{
+			Chat: client.Chat{Id: 9001, Type: "private"},
+			Text: &text,
+			From: &client.User{Id: 101},
+		},
+	}
+	if err := server.HandleMessage(t.Context(), event); err != nil {
+		t.Fatalf("HandleMessage() error = %v", err)
+	}
+	if _, ok := findSessionEnvelope(turns.commands, locator.SessionID); !ok {
+		t.Fatalf("session command for %q not found after restart in %+v", locator.SessionID, turns.commands)
 	}
 }
 
