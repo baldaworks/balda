@@ -357,6 +357,8 @@ func logSlackModeDiagnostics(logger zerolog.Logger, cfg SlackConfig) {
 	logger.Info().
 		Bool("slack_enabled", cfg.Enabled).
 		Bool("slack_agent_enabled", capabilities.Enabled).
+		Bool("slack_agent_http_events", capabilities.HTTPEvents).
+		Str("slack_agent_endpoint", slackAgentEndpoint(cfg.Agent)).
 		Bool("slack_agent_status", capabilities.Status).
 		Bool("slack_agent_questions", capabilities.Questions).
 		Bool("slack_agent_wait", capabilities.Wait).
@@ -366,14 +368,31 @@ func logSlackModeDiagnostics(logger zerolog.Logger, cfg SlackConfig) {
 }
 
 func normalizedSlackAgentCapabilities(cfg SlackConfig) baldaslackagent.Capabilities {
+	ready := cfg.Agent.Enabled && strings.TrimSpace(cfg.BotToken) != "" && strings.TrimSpace(cfg.SigningSecret) != ""
+	if path := strings.TrimSpace(cfg.Agent.EventsPath); path != "" && !strings.HasPrefix(path, "/") {
+		ready = false
+	}
 	return baldaslackagent.Capabilities{
 		Enabled:          cfg.Agent.Enabled,
-		Status:           cfg.Agent.Enabled,
-		Questions:        cfg.Agent.Enabled,
-		Wait:             cfg.Agent.Enabled,
-		Streaming:        cfg.Agent.Enabled && cfg.Agent.EnableStreaming,
-		SuggestedPrompts: cfg.Agent.Enabled && cfg.Agent.SuggestedPrompts,
+		HTTPEvents:       ready,
+		Status:           ready,
+		Questions:        ready,
+		Wait:             ready,
+		Streaming:        ready && cfg.Agent.EnableStreaming,
+		SuggestedPrompts: ready && cfg.Agent.SuggestedPrompts,
 	}
+}
+
+func slackAgentEndpoint(cfg SlackAgentConfig) string {
+	address := strings.TrimSpace(cfg.ListenAddr)
+	if address == "" {
+		address = ":8092"
+	}
+	path := strings.TrimSpace(cfg.EventsPath)
+	if path == "" {
+		path = "/slack/agent/events"
+	}
+	return address + path
 }
 
 func executionConfigFromBalda(cfg BaldaConfig) baldaexecution.Config {

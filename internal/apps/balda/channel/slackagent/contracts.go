@@ -53,6 +53,7 @@ func (e Event) ReplyToMessageID() string {
 // Capabilities snapshots the enabled slackagent affordances after config normalization.
 type Capabilities struct {
 	Enabled          bool `json:"enabled"`
+	HTTPEvents       bool `json:"http_events"`
 	Status           bool `json:"status"`
 	Questions        bool `json:"questions"`
 	Wait             bool `json:"wait"`

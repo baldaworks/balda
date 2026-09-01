@@ -1,113 +1,95 @@
-# Slack Integration
+# Slack Agent Integration
 
-Balda supports Slack as an internal app channel. Slack uses HTTP Events API and
-slash command requests. Balda serves plain HTTP only; HTTPS termination,
-certificates, reverse proxies, ingress, tunnels, and public Request URL
-management are out of scope for Balda and must be handled by deployment
-infrastructure.
-
-## Architecture
-
-```
-Slack Events API / slash command
-           ↓  HTTPS handled outside Balda
-       Balda HTTP endpoint (:8091/slack/events or /slack/commands)
-           ↓  verify Slack signature and ACK quickly
-       Balda durable actor runtime
-           ↓
-       Slack Web API chat.postMessage
-```
-
-Balda maps Slack DMs to personal sessions and Slack channel threads to isolated
-topic sessions.
-
-Slack replies use Balda's shared delivery registry. The `mrkdwn` capability
-routes to Slack `mrkdwn`, while `none` routes to literal plain text. Telegram
-format names are not valid Slack capabilities.
+Balda integrates with Slack's `agent_view` over the signed HTTP Events API.
+Balda serves plain HTTP; terminate public HTTPS in a reverse proxy, ingress, or
+tunnel and forward the request without changing its body.
 
 ## Slack App Setup
 
-Create an internal Slack app and configure:
+1. Create a Slack app and configure it as an agent.
+2. Install it to the workspace with `chat:write` and `im:history` bot scopes.
+   Slack adds the agent-specific `assistant:write` scope when the app is declared
+   as an agent.
+3. Enable Event Subscriptions and subscribe to these bot events:
+   - `message.im`
+   - `agent_session_stopped`
+4. Set the Events Request URL to a public HTTPS URL that forwards to
+   `balda.slack.agent.events_path`.
 
-- Bot token scopes: `commands`, `chat:write`, `app_mentions:read`,
-  `im:history`, `channels:history`
-- Optional private channel support: add `groups:history` and set
-  `balda.slack.include_private_channels=true`
-- Event subscriptions:
-  - `app_mention`
-  - `message.im`
-  - `message.channels`
-  - optional `message.groups`
-- Slash command:
-  - Command: `/balda`
-  - Request URL: your public HTTPS URL that forwards to Balda's
-    `balda.slack.commands_path`
-- Events Request URL: your public HTTPS URL that forwards to Balda's
-  `balda.slack.events_path`
+Slack validates the Request URL with a signed `url_verification` request. The
+forwarding layer must preserve the exact raw body and the
+`X-Slack-Request-Timestamp` and `X-Slack-Signature` headers.
 
 ## Balda Configuration
 
 Environment:
 
 ```env
-BALDA_SLACK_ENABLED=true
+BALDA_SLACK_AGENT_ENABLED=true
 BALDA_SLACK_BOT_TOKEN=xoxb-...
 BALDA_SLACK_SIGNING_SECRET=...
+BALDA_SLACK_AGENT_LISTEN_ADDR=0.0.0.0:8092
+BALDA_SLACK_AGENT_EVENTS_PATH=/slack/agent/events
+BALDA_SLACK_AGENT_ENABLE_STREAMING=false
 ```
 
-YAML:
+Equivalent YAML:
 
 ```yaml
 balda:
   slack:
-    enabled: true
     bot_token: "xoxb-..."
     signing_secret: "..."
-    listen_addr: "0.0.0.0:8091"
-    events_path: "/slack/events"
-    commands_path: "/slack/commands"
-    include_private_channels: false
+    agent:
+      enabled: true
+      listen_addr: "0.0.0.0:8092"
+      events_path: "/slack/agent/events"
+      enable_streaming: false
+      suggested_prompts: false
 ```
 
-Owner channel-bind tokens can be consumed in a direct message by sending the
-exact `balda_...` token, or with `/balda start <balda_token>`.
+The HTTP Events API requires the Bot OAuth Token and Signing Secret. No Slack
+app-level token is required.
 
-## Commands
+## Messaging Behavior
 
-Slack uses `/balda` instead of Telegram/Zulip slash commands:
+- Balda accepts human `message.im` events and ignores bot-originated or subtype
+  events, preventing response loops.
+- A top-level DM message starts a Slack thread. Replies carrying `thread_ts`
+  restore the same Balda session; different root timestamps remain isolated.
+- Slack Agent Session status is `processing` while a turn runs, `active` after
+  completion or cancellation, `suspended` while Balda waits for user input, and
+  `closed` when the Balda session closes.
+- Balda derives the initial Slack Agent Session title from the first prompt.
+- With streaming disabled, Balda replies through `chat.postMessage`. With
+  streaming enabled, it uses `chat.startStream`, `chat.appendStream`, and
+  `chat.stopStream` in the same thread.
+- Slack's Stop button sends `agent_session_stopped`; Balda cancels the matching
+  active turn and drops queued turns under the normal session cancellation
+  rules.
 
-| Slack command | Description |
-| --- | --- |
-| `/balda start owner=<token>` | Register owner in a DM |
-| `/balda start invite=<token>` | Register collaborator in a DM |
-| `/balda start <balda_token>` | Connect this Slack account to the existing owner |
-| `/balda topic <name>` | Create a Slack thread-backed Balda session |
-| `/balda goal <objective>` | Start goal work in the current session |
-| `/balda goal clear` | Stop active goal work for the current session |
-| `/balda cancel` | Cancel the current session turn and drop queued turns |
-| `/balda locator` | Show the current locator ref |
-| `/balda close` | Reset DM session history |
-| `/balda user add` | Generate a collaborator invite token |
-| `/balda user list` | List collaborators |
-| `/balda user remove <user_id>` | Remove a collaborator |
+## Sandbox Validation
 
-## Session Rules
+Before production rollout, verify in a Slack developer workspace:
 
-- DM messages create or restore a DM session.
-- `@Balda ...` in a channel creates or restores a thread session.
-- If an `@Balda` mention is not already in a thread, Balda uses that message as
-  the thread root.
-- Messages in active Balda threads continue the session.
-- Messages outside active Balda threads are ignored.
+1. Slack accepts the Events Request URL challenge.
+2. A request with an invalid signature is rejected and creates no Balda turn.
+3. A human DM receives one response in the same Slack thread.
+4. A bot/subtype event creates no Balda turn or reply.
+5. The Agent Session title and processing/active states appear correctly.
+6. The Stop button cancels active work.
+7. Repeat the DM test with streaming both disabled and enabled.
+
+Do not record tokens or signing secrets in logs, screenshots, or committed test
+artifacts.
 
 ## Troubleshooting
 
-- **Slack receiver does not start**: set `balda.slack.enabled=true`,
-  `balda.slack.bot_token`, and `balda.slack.signing_secret`.
-- **Slack URL verification fails**: confirm the public Events Request URL
-  forwards to `balda.slack.events_path`.
-- **Signature verification fails**: confirm the signing secret and ensure the
-  forwarding layer preserves the raw request body.
-- **Replies fail**: check the bot token and `chat:write` scope.
-- **Private channel messages are ignored**: add `groups:history`, invite the
-  app to the channel, and set `include_private_channels=true`.
+- Receiver does not start: enable `balda.slack.agent.enabled` and provide the
+  bot token and signing secret.
+- URL verification or signatures fail: verify the signing secret and confirm
+  the proxy preserves the raw body and Slack signature headers.
+- Events do not arrive: confirm the app is configured as an agent, installed to
+  the workspace, and subscribed to both required events.
+- Replies or session states fail: inspect Slack API error codes and confirm the
+  app has the required bot scopes.

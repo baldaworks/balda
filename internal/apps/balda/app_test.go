@@ -295,7 +295,7 @@ func TestValidateSlackConfig(t *testing.T) {
 		{name: "missing bot token", cfg: SlackConfig{Enabled: true, SigningSecret: "secret"}, wantError: "bot_token"},
 		{name: "missing signing secret", cfg: SlackConfig{Enabled: true, BotToken: "xoxb-token"}, wantError: "signing_secret"},
 		{
-			name: "slack agent requires app token",
+			name: "valid slack agent without app token",
 			cfg: SlackConfig{
 				BotToken:      "xoxb-token",
 				SigningSecret: "secret",
@@ -303,7 +303,7 @@ func TestValidateSlackConfig(t *testing.T) {
 					Enabled: true,
 				},
 			},
-			wantError: "agent.app_token",
+			wantError: "",
 		},
 		{
 			name: "invalid slack agent events path",
@@ -312,7 +312,6 @@ func TestValidateSlackConfig(t *testing.T) {
 				SigningSecret: "secret",
 				Agent: SlackAgentConfig{
 					Enabled:    true,
-					AppToken:   "xapp-token",
 					EventsPath: "slack/agent/events",
 				},
 			},
@@ -327,7 +326,6 @@ func TestValidateSlackConfig(t *testing.T) {
 				EventsPath:    "/slack/events",
 				Agent: SlackAgentConfig{
 					Enabled:    true,
-					AppToken:   "xapp-token",
 					EventsPath: "/slack/events",
 				},
 			},
@@ -369,7 +367,6 @@ func TestValidateSlackConfig(t *testing.T) {
 				SigningSecret: "secret",
 				Agent: SlackAgentConfig{
 					Enabled:    true,
-					AppToken:   "xapp-token",
 					EventsPath: "/slack/agent/events",
 				},
 			},
@@ -395,6 +392,30 @@ func TestValidateSlackConfig(t *testing.T) {
 				t.Fatalf("validateSlackConfig() error = %v, want marker %q", err, tt.wantError)
 			}
 		})
+	}
+}
+
+func TestNormalizedSlackAgentCapabilitiesReflectHTTPReadiness(t *testing.T) {
+	t.Parallel()
+	ready := normalizedSlackAgentCapabilities(SlackConfig{
+		BotToken:      "xoxb-token",
+		SigningSecret: "secret",
+		Agent: SlackAgentConfig{
+			Enabled:          true,
+			EventsPath:       "/slack/agent/events",
+			EnableStreaming:  true,
+			SuggestedPrompts: true,
+		},
+	})
+	if !ready.Enabled || !ready.HTTPEvents || !ready.Status || !ready.Streaming || !ready.Questions || !ready.Wait || !ready.SuggestedPrompts {
+		t.Fatalf("ready capabilities = %+v", ready)
+	}
+	notReady := normalizedSlackAgentCapabilities(SlackConfig{Agent: SlackAgentConfig{Enabled: true, EnableStreaming: true}})
+	if !notReady.Enabled || notReady.HTTPEvents || notReady.Status || notReady.Streaming {
+		t.Fatalf("not-ready capabilities = %+v", notReady)
+	}
+	if got, want := slackAgentEndpoint(SlackAgentConfig{}), ":8092/slack/agent/events"; got != want {
+		t.Fatalf("slackAgentEndpoint() = %q, want %q", got, want)
 	}
 }
 

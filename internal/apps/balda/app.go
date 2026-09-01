@@ -883,9 +883,6 @@ func validateSlackConfig(cfg SlackConfig) error {
 		return fmt.Errorf("balda.slack.commands_path must start with /")
 	}
 	if cfg.Agent.Enabled {
-		if strings.TrimSpace(cfg.Agent.AppToken) == "" {
-			return fmt.Errorf("balda.slack.agent.app_token is required when slackagent is enabled")
-		}
 		if path := strings.TrimSpace(cfg.Agent.EventsPath); path != "" && !strings.HasPrefix(path, "/") {
 			return fmt.Errorf("balda.slack.agent.events_path must start with /")
 		}

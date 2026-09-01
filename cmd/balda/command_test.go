@@ -141,6 +141,59 @@ balda:
 	}
 }
 
+func TestLoadConfigDocument_AppliesSlackAgentEnvOverrides(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Setenv("BALDA_SLACK_ENABLED", "true")
+	t.Setenv("BALDA_SLACK_BOT_TOKEN", "xoxb-test")
+	t.Setenv("BALDA_SLACK_SIGNING_SECRET", "signing-secret")
+	t.Setenv("BALDA_SLACK_AGENT_ENABLED", "true")
+	t.Setenv("BALDA_SLACK_AGENT_LISTEN_ADDR", "127.0.0.1:19092")
+	t.Setenv("BALDA_SLACK_AGENT_EVENTS_PATH", "/custom/slack/agent/events")
+	t.Setenv("BALDA_SLACK_AGENT_ENABLE_STREAMING", "true")
+
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+`); err != nil {
+		t.Fatalf("write balda config: %v", err)
+	}
+
+	var doc baldaTestConfigDocument
+	_, err := appconfig.LoadConfigDocument(
+		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
+		appconfig.AppLoadOptions{
+			AppName:            "balda",
+			DefaultsYAML:       defaultBaldaConfig,
+			UseDotConfigAppDir: true,
+		},
+		&doc,
+	)
+	if err != nil {
+		t.Fatalf("LoadConfigDocument: %v", err)
+	}
+
+	if !doc.Balda.Slack.Enabled || !doc.Balda.Slack.Agent.Enabled {
+		t.Fatal("Slack and Slack Agent enablement env overrides were not loaded")
+	}
+	if doc.Balda.Slack.BotToken != "xoxb-test" || doc.Balda.Slack.SigningSecret != "signing-secret" {
+		t.Fatalf("slack credentials were not loaded from env")
+	}
+	if got, want := doc.Balda.Slack.Agent.ListenAddr, "127.0.0.1:19092"; got != want {
+		t.Fatalf("slack.agent.listen_addr = %q, want %q", got, want)
+	}
+	if got, want := doc.Balda.Slack.Agent.EventsPath, "/custom/slack/agent/events"; got != want {
+		t.Fatalf("slack.agent.events_path = %q, want %q", got, want)
+	}
+	if !doc.Balda.Slack.Agent.EnableStreaming {
+		t.Fatal("slack.agent.enable_streaming = false, want true")
+	}
+}
+
 func TestLoadConfigDocument_ImplicitDefaultProfileDoesNotRequireProfilesDefault(t *testing.T) {
 	workingDir := t.TempDir()
 

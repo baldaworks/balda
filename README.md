@@ -15,7 +15,7 @@ summary, changed files, validation output, a commit, or a concrete next step.
 
 ## What Balda is good for
 
-- chat-native engineering help in Telegram, Zulip, or Slack
+- chat-native engineering help in Telegram, Zulip, or Slack Agent DMs
 - focused task threads instead of one shared bot conversation
 - long-running goal execution with progress updates and final results
 - `wedge` style operation: put the agent in the middle of your team workflow so
@@ -118,13 +118,13 @@ automation, and agent execution instead of separate bots and scripts.
 
 - Telegram
 - Zulip
-- Slack
+- Slack Agent DMs
 
 Balda maps each conversation scope to its own session:
 
 - Telegram direct chat or personal/group topic
 - Zulip stream + topic
-- Slack thread
+- Slack Agent DM thread
 
 ## Docker Compose
 
@@ -217,7 +217,7 @@ Common settings:
 - `balda.telegram.formatting_mode` — Telegram output mode: `rich_markdown`
   (default), `rich_html`, or `none` for literal plain text
 - `balda.zulip.*` — Zulip outgoing webhook bot credentials and receiver config
-- `balda.slack.*` — Slack bot token, signing secret, and HTTP receiver config
+- `balda.slack.*` — Slack Agent credentials plus `agent.*` HTTP/streaming config
 - `balda.webhooks.*` — optional inbound webhook routes
 - `balda.scheduler.jobs` — recurring scheduled jobs
 - `balda.workspace.*` — workspace/worktree behavior for goal execution

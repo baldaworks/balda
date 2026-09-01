@@ -83,7 +83,6 @@ type SlackAgentConfig struct {
 	Enabled          bool   `mapstructure:"enabled"`
 	ListenAddr       string `mapstructure:"listen_addr"`
 	EventsPath       string `mapstructure:"events_path"`
-	AppToken         string `mapstructure:"app_token"`
 	EnableStreaming  bool   `mapstructure:"enable_streaming"`
 	SuggestedPrompts bool   `mapstructure:"suggested_prompts"`
 }

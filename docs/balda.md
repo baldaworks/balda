@@ -12,7 +12,7 @@ Architecture contracts are maintained in:
 ## Summary
 
 - Runtime stack: one or more channel runtimes (Telegram, Zulip, Slack) plus the configured Balda provider runtime.
-- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), and Slack (HTTP Events API plus slash command receiver).
+- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), and Slack Agent DMs (signed HTTP Events API).
 - Main agent: Balda app key `balda.provider` (profile overrides via `profiles.<profile>.balda.provider`).
 - Subagents: one session per channel topic/thread with dedicated git worktree.
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.
@@ -294,11 +294,10 @@ BALDA_TELEGRAM_WEBHOOK_ENABLED=true
 BALDA_TELEGRAM_WEBHOOK_URL=https://example.com/telegram/webhook
 ```
 
-Slack deployments use plain HTTP inside Balda. Public HTTPS Request URLs,
+Slack Agent deployments use plain HTTP inside Balda. Public HTTPS Request URLs,
 certificates, reverse proxies, ingress, and tunnels are deployment
-infrastructure outside Balda. Forward Slack Events API traffic to
-`balda.slack.events_path` and Slack slash command traffic to
-`balda.slack.commands_path`.
+infrastructure outside Balda. Forward the signed Slack Events API traffic to
+`balda.slack.agent.events_path` without changing the raw request body.
 
 Config shape:
 
@@ -647,13 +646,13 @@ balda:
 - `balda.zulip.webhook.enabled`: enable local Zulip outgoing webhook receiver (`true` => Zulip channel enabled; default: `false`; env: `BALDA_ZULIP_WEBHOOK_ENABLED`)
 - `balda.zulip.webhook.listen_addr`: local Zulip webhook listen address (default: `0.0.0.0:8090`; env: `BALDA_ZULIP_WEBHOOK_LISTEN_ADDR`)
 - `balda.zulip.webhook.path`: local Zulip webhook path, which must start with `/` (default: `/zulip/webhook`; env: `BALDA_ZULIP_WEBHOOK_PATH`)
-- `balda.slack.enabled`: enable local Slack HTTP receiver (`true` => Slack channel enabled; default: `false`; env: `BALDA_SLACK_ENABLED`)
-- `balda.slack.bot_token`: Slack bot token used for `auth.test` and replies (required when Slack is enabled; env: `BALDA_SLACK_BOT_TOKEN`)
-- `balda.slack.signing_secret`: Slack signing secret used for request verification (required when Slack is enabled; env: `BALDA_SLACK_SIGNING_SECRET`)
-- `balda.slack.listen_addr`: local Slack HTTP listen address (default: `0.0.0.0:8091`; env: `BALDA_SLACK_LISTEN_ADDR`)
-- `balda.slack.events_path`: local Slack Events API path, must start with `/` (default: `/slack/events`; env: `BALDA_SLACK_EVENTS_PATH`)
-- `balda.slack.commands_path`: local Slack slash command path, must start with `/` (default: `/slack/commands`; env: `BALDA_SLACK_COMMANDS_PATH`)
-- `balda.slack.include_private_channels`: process private channel events when the app has `groups:history` (default: `false`)
+- `balda.slack.bot_token`: Bot OAuth Token used for Slack Agent Session and chat methods (required when Slack Agent is enabled; env: `BALDA_SLACK_BOT_TOKEN`)
+- `balda.slack.signing_secret`: signing secret used to verify the exact Events API request (required when Slack Agent is enabled; env: `BALDA_SLACK_SIGNING_SECRET`)
+- `balda.slack.agent.enabled`: enable Slack Agent HTTP ingress (default: `false`; env: `BALDA_SLACK_AGENT_ENABLED`)
+- `balda.slack.agent.listen_addr`: local Agent Events listener (default: `0.0.0.0:8092`; env: `BALDA_SLACK_AGENT_LISTEN_ADDR`)
+- `balda.slack.agent.events_path`: local Agent Events path, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
+- `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
+- `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
 - `balda.webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
 - `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
 - `balda.webhooks.routes`: route table keyed by route name
@@ -1281,9 +1280,17 @@ Per model turn:
 Slackagent keeps ingress, correlation, rendering, and delivery inside the
 `channel/slackagent` subtree.
 
-1. Slackagent conversational ingress publishes transport-neutral session turn work.
-2. Delivery locators preserve provider addressing separately from response payloads.
-3. Shared application packages emit generic question, permission, and progress contracts; Slackagent registers its own renderers for them.
+1. Signed human `message.im` events use `(team_id, channel, root_ts)` as the
+   stable thread locator; bot and subtype events are ignored.
+2. Accepted turns set the Agent Session to `processing` and apply an initial
+   title. Completion returns it to `active`, user-intervention waits use
+   `suspended`, and session close uses `closed`.
+3. Ordinary replies use `chat.postMessage`; when enabled, streaming uses the
+   Slack start/append/stop lifecycle in the same thread.
+4. `agent_session_stopped` cancels active work for the matching Balda session.
+
+See [Slack Agent setup](slack.md) for scopes, subscriptions, configuration, and
+sandbox validation.
 
 ## Topic Sessions
 
