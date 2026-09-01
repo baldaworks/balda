@@ -16,11 +16,14 @@ type IngressEnvelope struct {
 	Locator         deliverycmd.Locator
 	Subject         string
 	InitiatorUserID string
-	Inbound         turncmd.NormalizedInbound
-	Reply           questioncmd.InboundReply
-	HasReply        bool
-	Stopped         *SessionStopped
-	IgnoreEvent     bool
+	// RequireExistingSession prevents ambient channel messages from creating
+	// Balda sessions. Explicit app mentions remain the only channel entrypoint.
+	RequireExistingSession bool
+	Inbound                turncmd.NormalizedInbound
+	Reply                  questioncmd.InboundReply
+	HasReply               bool
+	Stopped                *SessionStopped
+	IgnoreEvent            bool
 }
 
 type SessionStopped struct {
@@ -55,7 +58,16 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 	event := env.Event
 	switch strings.TrimSpace(event.EventType) {
 	case "message":
-		if !eligibleHumanIM(event) {
+		switch {
+		case eligibleHumanIM(event):
+		case eligibleHumanChannelThreadMessage(event):
+			out.RequireExistingSession = true
+		default:
+			out.IgnoreEvent = true
+			return out, nil
+		}
+	case "app_mention":
+		if !eligibleHumanChannelMention(event) {
 			out.IgnoreEvent = true
 			return out, nil
 		}
@@ -89,10 +101,33 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 }
 
 func eligibleHumanIM(event Event) bool {
-	if strings.TrimSpace(event.ChannelType) != "im" || strings.TrimSpace(event.Subtype) != "" || strings.TrimSpace(event.BotID) != "" || event.HasBotProfile {
+	if strings.TrimSpace(event.ChannelType) != "im" || !eligibleHumanMessage(event) {
 		return false
 	}
-	return validateThreadEvent(event) == nil && strings.TrimSpace(event.Text) != ""
+	return true
+}
+
+func eligibleHumanChannelMention(event Event) bool {
+	return isChannelConversation(event.Conversation.ConversationID) && eligibleHumanMessage(event)
+}
+
+func eligibleHumanChannelThreadMessage(event Event) bool {
+	if strings.TrimSpace(event.ReplyToMessageID()) == "" || !isChannelConversation(event.Conversation.ConversationID) {
+		return false
+	}
+	return eligibleHumanMessage(event)
+}
+
+func eligibleHumanMessage(event Event) bool {
+	if strings.TrimSpace(event.Subtype) != "" || strings.TrimSpace(event.BotID) != "" || event.HasBotProfile || strings.TrimSpace(event.Text) == "" {
+		return false
+	}
+	return validateThreadEvent(event) == nil
+}
+
+func isChannelConversation(conversationID string) bool {
+	scope, err := classifyConversation(conversationID)
+	return err == nil && scope == deliverycmd.LocatorScopeGroup
 }
 
 func validateThreadEvent(event Event) error {

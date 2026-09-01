@@ -51,8 +51,67 @@ func TestServerAcceptsSignedNativeMessageIMInCanonicalThread(t *testing.T) {
 			if address.TeamID != "T123" || address.ConversationID != "D789" || address.ThreadID != test.wantRootTS {
 				t.Fatalf("address = %+v", address)
 			}
-			if env.Inbound.ID != "slackagent:Ev123" || env.Inbound.UserID != "slackagent:T123:U456" || env.Inbound.Text != "hello" {
+			wantInboundID := turncmd.InboundID("slackagent:message:T123:D789:" + test.ts)
+			if env.Inbound.ID != wantInboundID || env.Inbound.UserID != "slackagent:T123:U456" || env.Inbound.Text != "hello" {
 				t.Fatalf("inbound = %+v", env.Inbound)
+			}
+		})
+	}
+}
+
+func TestServerAcceptsSignedChannelMentionsAndKnownThreadCandidates(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name                string
+		body                string
+		wantConversationID  string
+		wantRootTS          string
+		wantExistingSession bool
+	}{
+		{
+			name:               "public channel mention starts thread",
+			body:               `{"type":"event_callback","event_id":"EvMention","team_id":"T123","event":{"type":"app_mention","user":"U456","channel":"C789","text":"<@UBOT> hello","ts":"1782234671.392669"}}`,
+			wantConversationID: "C789",
+			wantRootTS:         "1782234671.392669",
+		},
+		{
+			name:               "private channel mention starts thread",
+			body:               `{"type":"event_callback","event_id":"EvMention","team_id":"T123","event":{"type":"app_mention","user":"U456","channel":"G789","text":"<@UBOT> hello","ts":"1782234671.392669"}}`,
+			wantConversationID: "G789",
+			wantRootTS:         "1782234671.392669",
+		},
+		{
+			name:                "public channel reply requires known thread",
+			body:                `{"type":"event_callback","event_id":"EvReply","team_id":"T123","event":{"type":"message","user":"U456","channel":"C789","channel_type":"channel","text":"follow up","ts":"1782234987.693923","thread_ts":"1782234671.392669"}}`,
+			wantConversationID:  "C789",
+			wantRootTS:          "1782234671.392669",
+			wantExistingSession: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			processor := &recordingInboundProcessor{settlement: turncmd.InboundSettlement{Outcome: turncmd.InboundAccepted}}
+			handler := newTestServer(processor, &recordingTurnCanceller{})
+			rec := httptest.NewRecorder()
+
+			handler.handleEvents(rec, signedSlackRequest(t, "/slack/agent/events", "secret", []byte(test.body)))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			if len(processor.events) != 1 {
+				t.Fatalf("processed events = %d, want 1", len(processor.events))
+			}
+			env := processor.events[0]
+			address, ok, err := DecodeLocator(env.Locator)
+			if err != nil || !ok {
+				t.Fatalf("DecodeLocator() = (%+v, %v, %v)", address, ok, err)
+			}
+			if address.ConversationID != test.wantConversationID || address.ThreadID != test.wantRootTS {
+				t.Fatalf("address = %+v", address)
+			}
+			if env.RequireExistingSession != test.wantExistingSession {
+				t.Fatalf("RequireExistingSession = %v, want %v", env.RequireExistingSession, test.wantExistingSession)
 			}
 		})
 	}

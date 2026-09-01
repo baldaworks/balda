@@ -53,6 +53,10 @@ func normalizeRawEnvelope(raw rawEnvelope) EventEnvelope {
 		ThreadID:       strings.TrimSpace(rootTS),
 	}
 	messageID := strings.TrimSpace(raw.Event.TS)
+	dedupeKey := firstNonEmpty(strings.TrimSpace(raw.EventID), messageID, strings.TrimSpace(raw.Event.EventTS))
+	if teamID != "" && conversation.ConversationID != "" && messageID != "" {
+		dedupeKey = "message:" + teamID + ":" + conversation.ConversationID + ":" + messageID
+	}
 	replyToMessageID := strings.TrimSpace(raw.Event.ThreadTS)
 	var message *MessageRef
 	if messageID != "" || replyToMessageID != "" {
@@ -75,7 +79,7 @@ func normalizeRawEnvelope(raw rawEnvelope) EventEnvelope {
 			BotID:              strings.TrimSpace(raw.Event.BotID),
 			HasBotProfile:      hasJSONObject(raw.Event.BotProfile),
 			StreamingMessageTS: trimNonEmpty(raw.Event.StreamingMessageTS),
-			DedupeKey:          firstNonEmpty(strings.TrimSpace(raw.EventID), messageID, strings.TrimSpace(raw.Event.EventTS)),
+			DedupeKey:          dedupeKey,
 			Conversation:       conversation,
 			Message:            message,
 		},

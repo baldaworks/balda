@@ -215,6 +215,28 @@ func TestAdapterBeginTurnSetsProcessingAndRenamesOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestAdapterBeginTurnDoesNotRenameChannelThread(t *testing.T) {
+	t.Parallel()
+	client := &recordingAgentClient{}
+	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	locator := NewThreadLocator("T123", "C456", "root-ts")
+
+	for range 2 {
+		if err := adapter.BeginTurn(context.Background(), locator, "U123", "<@UBOT> hello"); err != nil {
+			t.Fatalf("BeginTurn() error = %v", err)
+		}
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.statuses) != 2 {
+		t.Fatalf("statuses = %+v, want two processing updates", client.statuses)
+	}
+	if len(client.renames) != 0 {
+		t.Fatalf("renames = %+v, want no channel rename", client.renames)
+	}
+}
+
 func TestAdapterStreamsDistinctSessionsConcurrently(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "stream-ts"}

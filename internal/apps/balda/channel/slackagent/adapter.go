@@ -203,6 +203,10 @@ func (a *Adapter) BeginTurn(ctx context.Context, locator deliverycmd.Locator, in
 	if state.titled {
 		return nil
 	}
+	if isChannelConversation(address.ConversationID) {
+		state.titled = true
+		return nil
+	}
 	title := sessionTitle(prompt)
 	if err := a.client.RenameSession(ctx, address.ConversationID, address.ThreadID, title); err != nil {
 		return err

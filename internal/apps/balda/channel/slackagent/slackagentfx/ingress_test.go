@@ -20,9 +20,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func TestInboundProcessorUsesExistingThreadSessionAndPublishesTurn(t *testing.T) {
+func TestInboundProcessorUsesExistingChannelThreadSessionAndPublishesTurn(t *testing.T) {
 	t.Parallel()
-	locator := slackagent.NewThreadLocator("T123", "D456", "1782234671.392669")
+	locator := slackagent.NewThreadLocator("T123", "C456", "1782234671.392669")
 	topic := &baldasession.TopicSession{}
 	setPrivateField(t, topic, "sessionID", locator.SessionID)
 	setPrivateField(t, topic, "userID", "slackagent:T123:U456")
@@ -45,10 +45,10 @@ func TestInboundProcessorUsesExistingThreadSessionAndPublishesTurn(t *testing.T)
 			EventType:   "message",
 			UserID:      "U456",
 			Text:        "hello",
-			ChannelType: "im",
+			ChannelType: "channel",
 			Conversation: slackagent.ConversationRef{
 				TeamID:         "T123",
-				ConversationID: "D456",
+				ConversationID: "C456",
 				ThreadID:       "1782234671.392669",
 			},
 			Message: &slackagent.MessageRef{MessageID: "1782234987.693923", ThreadTS: "1782234671.392669"},
@@ -81,6 +81,51 @@ func TestInboundProcessorUsesExistingThreadSessionAndPublishesTurn(t *testing.T)
 	}
 	if payload.UserID != "slackagent:T123:U456" || payload.Source != "slackagent" || !payload.Deliver {
 		t.Fatalf("payload = %+v", payload)
+	}
+}
+
+func TestInboundProcessorIgnoresUnknownAmbientChannelThread(t *testing.T) {
+	t.Parallel()
+	manager := &baldasession.Manager{}
+	setPrivateField(t, manager, "sessions", map[string]*baldasession.TopicSession{})
+	setPrivateField(t, manager, "sessionStore", restoreStoreStub{})
+	dispatcher := &dispatcherRecorder{}
+	lifecycle := &sessionLifecycleStub{}
+	processor := newInboundProcessor(inboundProcessorParams{
+		SessionManager: manager,
+		Dispatcher:     dispatcher,
+		Lifecycle:      lifecycle,
+		Logger:         zerolog.Nop(),
+	})
+	envelope, err := slackagent.BuildIngressEnvelope(slackagent.EventEnvelope{
+		Type: "event_callback",
+		Event: slackagent.Event{
+			EventID:     "EvChannelReply",
+			EventType:   "message",
+			UserID:      "U456",
+			Text:        "ambient reply",
+			ChannelType: "channel",
+			Conversation: slackagent.ConversationRef{
+				TeamID:         "T123",
+				ConversationID: "C456",
+				ThreadID:       "1782234671.392669",
+			},
+			Message: &slackagent.MessageRef{MessageID: "1782234987.693923", ThreadTS: "1782234671.392669"},
+		},
+	}, testTimestamp())
+	if err != nil {
+		t.Fatalf("BuildIngressEnvelope() error = %v", err)
+	}
+
+	settlement, err := processor.ProcessInbound(context.Background(), envelope)
+	if err != nil {
+		t.Fatalf("ProcessInbound() error = %v", err)
+	}
+	if settlement.Outcome != turncmd.InboundTerminal {
+		t.Fatalf("settlement = %+v, want terminal", settlement)
+	}
+	if len(dispatcher.commands) != 0 || len(lifecycle.begins) != 0 {
+		t.Fatalf("commands/begins = %d/%d, want 0/0", len(dispatcher.commands), len(lifecycle.begins))
 	}
 }
 
