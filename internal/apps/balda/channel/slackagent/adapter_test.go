@@ -17,11 +17,18 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	testChatPostMessagePath = "/chat.postMessage"
+	testHelloText           = "hello"
+	testStreamMessageTS     = "1782234987.693923"
+	testThreadTS            = "1782234671.392669"
+)
+
 func TestAdapterDeliverAgentReplyReturnsProviderMessageID(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/chat.postMessage" {
+		if r.URL.Path == testChatPostMessagePath {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
 				"ts": "1712345678.000100",
@@ -41,7 +48,7 @@ func TestAdapterDeliverAgentReplyReturnsProviderMessageID(t *testing.T) {
 
 	result, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{
 		Kind:    deliverycmd.OperationAgentReply,
-		Message: &deliveryfmt.Message{Name: deliveryfmt.NameSlackMrkdwn, Text: "hello"},
+		Message: &deliveryfmt.Message{Name: deliveryfmt.NameSlackMrkdwn, Text: testHelloText},
 	})
 	if err != nil {
 		t.Fatalf("Deliver() error = %v", err)
@@ -60,7 +67,7 @@ func TestAdapterDeliverAgentReplyAppendsSuggestedPromptsWhenEnabled(t *testing.T
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 			return
 		}
-		if r.URL.Path != "/chat.postMessage" {
+		if r.URL.Path != testChatPostMessagePath {
 			t.Fatalf("unexpected path = %q", r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -75,26 +82,26 @@ func TestAdapterDeliverAgentReplyAppendsSuggestedPromptsWhenEnabled(t *testing.T
 
 	client := NewClientWithBaseURL(server.URL, "xoxb-token")
 	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{SuggestedPrompts: true})
-	locator := NewThreadLocator("T123", "D456", "1782234671.392669")
+	locator := NewThreadLocator("T123", "D456", testThreadTS)
 
 	_, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{
 		Kind: deliverycmd.OperationAgentReply,
-		Text: "hello",
+		Text: testHelloText,
 	})
 	if err != nil {
 		t.Fatalf("Deliver() error = %v", err)
 	}
 	text, _ := got["text"].(string)
-	if text == "hello" || text == "" {
+	if text == testHelloText || text == "" {
 		t.Fatalf("request text = %q, want appended suggested prompts", text)
 	}
 }
 
 func TestAdapterStreamsMonotonicSnapshotsAndFinalizesOnce(t *testing.T) {
 	t.Parallel()
-	client := &recordingAgentClient{nextTS: "1782234987.693923"}
+	client := &recordingAgentClient{nextTS: testStreamMessageTS}
 	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{EnableStreaming: true})
-	locator := NewThreadLocator("T123", "D456", "1782234671.392669")
+	locator := NewThreadLocator("T123", "D456", testThreadTS)
 
 	for _, snapshot := range []string{"Hello", "Hello", "Hello world"} {
 		_, err := adapter.Deliver(context.Background(), locator, deliverycmd.Operation{
@@ -116,7 +123,7 @@ func TestAdapterStreamsMonotonicSnapshotsAndFinalizesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("final delivery error = %v", err)
 	}
-	if result.ProviderMessageID != "1782234987.693923" {
+	if result.ProviderMessageID != testStreamMessageTS {
 		t.Fatalf("provider_message_id = %q", result.ProviderMessageID)
 	}
 	client.mu.Lock()

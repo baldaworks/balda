@@ -28,13 +28,13 @@ func TestDecodeEventEnvelopeNormalizesNativeMessageIMPayload(t *testing.T) {
 	if env.Event.EventID != "evt-123" || env.Event.EventType != "message" || env.Event.UserID != "U456" {
 		t.Fatalf("Event = %+v", env.Event)
 	}
-	if env.Event.Conversation.TeamID != "T123" || env.Event.Conversation.ConversationID != "D456" || env.Event.Conversation.ThreadID != "1782234671.392669" {
+	if env.Event.Conversation.TeamID != "T123" || env.Event.Conversation.ConversationID != "D456" || env.Event.Conversation.ThreadID != testThreadTS {
 		t.Fatalf("Conversation = %+v", env.Event.Conversation)
 	}
-	if env.Event.Message == nil || env.Event.Message.MessageID != "1782234987.693923" || env.Event.Message.ThreadTS != "1782234671.392669" {
+	if env.Event.Message == nil || env.Event.Message.MessageID != testStreamMessageTS || env.Event.Message.ThreadTS != testThreadTS {
 		t.Fatalf("Message = %+v", env.Event.Message)
 	}
-	if env.Event.Text != "hello" {
+	if env.Event.Text != testHelloText {
 		t.Fatalf("Text = %q, want hello", env.Event.Text)
 	}
 	if env.Event.ChannelType != "im" {

@@ -213,7 +213,3 @@ func signedSlackRequestAt(t *testing.T, path, secret string, body []byte, at tim
 	req.Header.Set("X-Slack-Signature", signature)
 	return req
 }
-
-func testTime() time.Time {
-	return time.Date(2026, time.August, 4, 10, 0, 0, 0, time.UTC)
-}

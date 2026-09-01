@@ -50,11 +50,11 @@ type Server struct {
 }
 
 type InboundProcessor interface {
-	ProcessInbound(context.Context, IngressEnvelope) (turncmd.InboundSettlement, error)
+	ProcessInbound(ctx context.Context, envelope IngressEnvelope) (turncmd.InboundSettlement, error)
 }
 
 type TurnCanceller interface {
-	CancelTurn(context.Context, SessionStopped) error
+	CancelTurn(ctx context.Context, stopped SessionStopped) error
 }
 
 func NewServer(processor InboundProcessor, canceller TurnCanceller, config Config, logger zerolog.Logger) *Server {
