@@ -32,6 +32,12 @@ type MessageClient interface {
 	StopStream(ctx context.Context, channel, ts, markdownText string, status SessionStatus) error
 }
 
+type SessionLifecycle interface {
+	BeginTurn(ctx context.Context, locator deliverycmd.Locator, initiatorUserID, prompt string) error
+	HandleSessionStopped(ctx context.Context, locator deliverycmd.Locator) error
+	CloseSession(ctx context.Context, locator deliverycmd.Locator) error
+}
+
 type sessionDeliveryState struct {
 	mu           sync.Mutex
 	streamTS     string
@@ -236,6 +242,48 @@ func (a *Adapter) StopActiveStream(ctx context.Context, locator deliverycmd.Loca
 	}
 	state.streamTS = ""
 	state.text = ""
+	return nil
+}
+
+func (a *Adapter) HandleSessionStopped(ctx context.Context, locator deliverycmd.Locator) error {
+	address, state, err := a.sessionTarget(locator)
+	if err != nil {
+		return err
+	}
+	state.mu.Lock()
+	state.streamTS = ""
+	state.text = ""
+	state.pendingFinal = nil
+	state.mu.Unlock()
+	return a.client.SetSessionStatus(ctx, SetSessionStatusRequest{
+		ChannelID: address.ConversationID,
+		ThreadTS:  address.ThreadID,
+		Status:    SessionStatusActive,
+	})
+}
+
+func (a *Adapter) CloseSession(ctx context.Context, locator deliverycmd.Locator) error {
+	address, state, err := a.sessionTarget(locator)
+	if err != nil {
+		return err
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if err := a.client.SetSessionStatus(ctx, SetSessionStatusRequest{
+		ChannelID: address.ConversationID,
+		ThreadTS:  address.ThreadID,
+		Status:    SessionStatusClosed,
+	}); err != nil {
+		return err
+	}
+	state.streamTS = ""
+	state.text = ""
+	state.pendingFinal = nil
+	a.sessionsMu.Lock()
+	if a.sessions[locator.AddressKey] == state {
+		delete(a.sessions, locator.AddressKey)
+	}
+	a.sessionsMu.Unlock()
 	return nil
 }
 

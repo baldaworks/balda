@@ -11,15 +11,16 @@ import (
 )
 
 type IngressEnvelope struct {
-	Type        string
-	Challenge   string
-	Locator     deliverycmd.Locator
-	Subject     string
-	Inbound     turncmd.NormalizedInbound
-	Reply       questioncmd.InboundReply
-	HasReply    bool
-	Stopped     *SessionStopped
-	IgnoreEvent bool
+	Type            string
+	Challenge       string
+	Locator         deliverycmd.Locator
+	Subject         string
+	InitiatorUserID string
+	Inbound         turncmd.NormalizedInbound
+	Reply           questioncmd.InboundReply
+	HasReply        bool
+	Stopped         *SessionStopped
+	IgnoreEvent     bool
 }
 
 type SessionStopped struct {
@@ -64,6 +65,7 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 		}
 		out.Locator = locatorForConversation(event.Conversation)
 		out.Subject = slackUserID(event.Conversation.TeamID, event.UserID)
+		out.InitiatorUserID = strings.TrimSpace(event.UserID)
 		out.Stopped = &SessionStopped{
 			Locator:            out.Locator,
 			RequestedBy:        out.Subject,
@@ -76,6 +78,7 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 	}
 	out.Locator = locatorForConversation(event.Conversation)
 	out.Subject = slackUserID(event.Conversation.TeamID, event.UserID)
+	out.InitiatorUserID = strings.TrimSpace(event.UserID)
 	out.Inbound = NormalizeInbound(out.Locator, event, receivedAt)
 	out.Inbound.UserID = out.Subject
 	if reply, ok := BuildInboundReply(out.Locator, out.Subject, event, receivedAt); ok {

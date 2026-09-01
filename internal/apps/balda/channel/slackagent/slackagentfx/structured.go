@@ -40,13 +40,19 @@ func (slackAgentProgressRenderer) RenderStructured(_ context.Context, env delive
 }
 
 func NewQuestionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
-	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, questionfmt.RequestDescriptor, slackAgentQuestionRenderer{})
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, questionfmt.RequestDescriptor, slackAgentQuestionRenderer{})
+	}
 }
 
 func NewPermissionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
-	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, permissionfmt.RequestDescriptor, slackAgentPermissionRenderer{})
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, permissionfmt.RequestDescriptor, slackAgentPermissionRenderer{})
+	}
 }
 
 func NewProgressStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
-	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, slackAgentProgressRenderer{})
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, slackAgentProgressRenderer{})
+	}
 }

@@ -241,6 +241,50 @@ func TestAdapterStreamsDistinctSessionsConcurrently(t *testing.T) {
 	}
 }
 
+func TestAdapterStoppedSessionClearsStreamAndSetsActive(t *testing.T) {
+	t.Parallel()
+	client := &recordingAgentClient{nextTS: "stream-ts"}
+	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{EnableStreaming: true})
+	locator := NewThreadLocator("T123", "D456", "root-ts")
+	progress := deliverycmd.Operation{
+		Kind:     deliverycmd.OperationProgress,
+		Progress: deliverycmd.Progress{Kind: deliverycmd.ProgressThinking, Visible: true, Text: "partial"},
+	}
+	if _, err := adapter.Deliver(context.Background(), locator, progress); err != nil {
+		t.Fatalf("initial progress error = %v", err)
+	}
+	if err := adapter.HandleSessionStopped(context.Background(), locator); err != nil {
+		t.Fatalf("HandleSessionStopped() error = %v", err)
+	}
+	progress.Progress.Text = "new response"
+	if _, err := adapter.Deliver(context.Background(), locator, progress); err != nil {
+		t.Fatalf("new progress error = %v", err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.statuses) != 1 || client.statuses[0].Status != SessionStatusActive {
+		t.Fatalf("statuses = %+v", client.statuses)
+	}
+	if len(client.starts) != 2 {
+		t.Fatalf("starts = %+v, want a fresh stream", client.starts)
+	}
+}
+
+func TestAdapterCloseSessionSetsClosed(t *testing.T) {
+	t.Parallel()
+	client := &recordingAgentClient{}
+	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	locator := NewThreadLocator("T123", "D456", "root-ts")
+	if err := adapter.CloseSession(context.Background(), locator); err != nil {
+		t.Fatalf("CloseSession() error = %v", err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.statuses) != 1 || client.statuses[0].Status != SessionStatusClosed {
+		t.Fatalf("statuses = %+v", client.statuses)
+	}
+}
+
 func TestAdapterRetriesStatusWithoutReplayingSuccessfulPost(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "message-ts", statusErr: errors.New("status unavailable")}

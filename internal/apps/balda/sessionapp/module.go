@@ -174,6 +174,10 @@ var Module = fx.Module("balda_sessionapp",
 	fx.Provide(
 		baldaagent.NewBuilder,
 		baldaagent.NewRuntimeManager,
+		fx.Annotate(
+			NewBoundaryObserverComposite,
+			fx.ParamTags(`group:"balda_session_boundary_observer"`),
+		),
 		func(builder *baldaagent.Builder) baldasession.AgentBuilder {
 			return SessionAgentBuilderAdapter{Builder: builder}
 		},
@@ -200,6 +204,7 @@ var Module = fx.Module("balda_sessionapp",
 				return SessionBoundaryObserverAdapter{Capture: capture}
 			},
 			fx.As(new(baldasession.BoundaryObserver)),
+			fx.ResultTags(`group:"balda_session_boundary_observer"`),
 		),
 	),
 )

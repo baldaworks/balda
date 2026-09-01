@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
@@ -27,6 +28,7 @@ type inboundProcessorParams struct {
 	SessionManager *baldasession.Manager
 	Dispatcher     actortransport.Dispatcher
 	Question       *questions.Service `optional:"true"`
+	Lifecycle      slackagent.SessionLifecycle
 	Logger         zerolog.Logger
 }
 
@@ -34,6 +36,7 @@ type inboundProcessor struct {
 	sessions   *baldasession.Manager
 	dispatcher actortransport.Dispatcher
 	questions  *questions.Service
+	lifecycle  slackagent.SessionLifecycle
 	logger     zerolog.Logger
 }
 
@@ -42,11 +45,18 @@ func newInboundProcessor(params inboundProcessorParams) *inboundProcessor {
 		sessions:   params.SessionManager,
 		dispatcher: params.Dispatcher,
 		questions:  params.Question,
+		lifecycle:  params.Lifecycle,
 		logger:     params.Logger.With().Str("component", "balda.channel.slackagent.ingress").Logger(),
 	}
 }
 
 func (p *inboundProcessor) ProcessInbound(ctx context.Context, env slackagent.IngressEnvelope) (turncmd.InboundSettlement, error) {
+	if p.lifecycle == nil {
+		return retryInbound(), actorlayer.TransientError(fmt.Errorf("slackagent session lifecycle is unavailable"))
+	}
+	if err := p.lifecycle.BeginTurn(ctx, env.Locator, env.InitiatorUserID, env.Inbound.Text); err != nil {
+		return retryInbound(), err
+	}
 	if handled, err := p.handleQuestionReply(ctx, env); err != nil {
 		return retryInbound(), err
 	} else if handled {
@@ -127,25 +137,50 @@ func (p *inboundProcessor) handleQuestionReply(ctx context.Context, env slackage
 }
 
 type turnCanceller struct {
-	control *controlapp.Service
+	control   *controlapp.Service
+	lifecycle slackagent.SessionLifecycle
 }
 
-func newTurnCanceller(control *controlapp.Service) *turnCanceller {
-	return &turnCanceller{control: control}
+func newTurnCanceller(control *controlapp.Service, lifecycle slackagent.SessionLifecycle) *turnCanceller {
+	return &turnCanceller{control: control, lifecycle: lifecycle}
 }
 
 func (c *turnCanceller) CancelTurn(ctx context.Context, stopped slackagent.SessionStopped) error {
 	if c == nil || c.control == nil {
 		return actorlayer.TransientError(fmt.Errorf("control service is unavailable"))
 	}
-	return c.control.CancelSessionTurn(ctx, controlcmd.Payload{
+	if err := c.control.CancelSessionTurn(ctx, controlcmd.Payload{
 		Action:      controlcmd.ActionCancelTurn,
 		SessionID:   stopped.Locator.SessionID,
 		Locator:     stopped.Locator,
 		Reason:      "Slack agent session stopped by user",
 		RequestedBy: stopped.RequestedBy,
 		Notify:      false,
-	})
+	}); err != nil {
+		return err
+	}
+	if c.lifecycle == nil {
+		return actorlayer.TransientError(fmt.Errorf("slackagent session lifecycle is unavailable"))
+	}
+	return c.lifecycle.HandleSessionStopped(ctx, stopped.Locator)
+}
+
+type boundaryObserver struct {
+	lifecycle slackagent.SessionLifecycle
+}
+
+func newBoundaryObserver(lifecycle slackagent.SessionLifecycle) *boundaryObserver {
+	return &boundaryObserver{lifecycle: lifecycle}
+}
+
+func (o *boundaryObserver) BeforeSessionBoundary(ctx context.Context, boundary baldasession.SessionBoundary) error {
+	if boundary.Reason != baldasession.BoundaryReasonClose || strings.TrimSpace(boundary.Locator.ChannelType) != slackagent.ChannelType {
+		return nil
+	}
+	if o == nil || o.lifecycle == nil {
+		return actorlayer.TransientError(fmt.Errorf("slackagent session lifecycle is unavailable"))
+	}
+	return o.lifecycle.CloseSession(ctx, boundary.Locator)
 }
 
 func terminalInbound() turncmd.InboundSettlement {

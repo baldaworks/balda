@@ -148,10 +148,26 @@ components:
   delivery:
     in:
       - internal/apps/balda/channel
-      - internal/apps/balda/channel/**
+      - internal/apps/balda/channel/telegram
+      - internal/apps/balda/channel/telegram/**
+      - internal/apps/balda/channel/zulip
+      - internal/apps/balda/channel/zulip/**
       - internal/apps/balda/deliveryfx
       - internal/apps/balda/goaldelivery
       - internal/apps/balda/tgbotkit
+
+  # Provider-owned Slack Events/Web API transport. It may depend only on
+  # transport-neutral contracts; application/runtime adapters live below.
+  slackagent_transport:
+    in:
+      - internal/apps/balda/channel/slackagent
+      - internal/apps/balda/channel/slackagent/presentation
+
+  # Composition-root adapters for Slack ingress, control, delivery, and
+  # session lifecycle seams.
+  slackagent_wiring:
+    in:
+      - internal/apps/balda/channel/slackagent/slackagentfx
 
   # Storage and adapter-heavy infrastructure that does not fit a narrower semantic layer.
   infrastructure:
@@ -241,6 +257,9 @@ deps:
       - application
       - delivery
       - infrastructure
+      # Provider renderers are injected into transport-neutral registries at
+      # composition time; deep-scan models that intentional runtime edge.
+      - slackagent_wiring
     anyVendorDeps: true
 
   application:
@@ -309,6 +328,22 @@ deps:
       - delivery
       - runtime
       - infrastructure
+    anyVendorDeps: true
+
+  slackagent_transport:
+    mayDependOn:
+      - foundation
+      - contracts
+      - slackagent_transport
+    anyVendorDeps: true
+
+  slackagent_wiring:
+    mayDependOn:
+      - contracts
+      - application
+      - delivery
+      - slackagent_transport
+      - slackagent_wiring
     anyVendorDeps: true
 
   infrastructure:
