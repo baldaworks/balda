@@ -2,7 +2,7 @@ package slackagent
 
 import "testing"
 
-func TestDecodeEventEnvelopeNormalizesSlackAgentPayload(t *testing.T) {
+func TestDecodeEventEnvelopeNormalizesNativeMessageIMPayload(t *testing.T) {
 	t.Parallel()
 
 	env, err := DecodeEventEnvelope([]byte(`{
@@ -11,12 +11,12 @@ func TestDecodeEventEnvelopeNormalizesSlackAgentPayload(t *testing.T) {
 		"team_id":"T123",
 		"event":{
 			"type":"message",
-			"user_id":"U456",
+			"user":"U456",
 			"text":" hello ",
-			"conversation_id":"C456",
-			"thread_id":"thread-789",
-			"message_id":"msg-123",
-			"reply_to_message_id":"msg-100"
+			"channel":"D456",
+			"ts":"1782234987.693923",
+			"thread_ts":"1782234671.392669",
+			"channel_type":"im"
 		}
 	}`))
 	if err != nil {
@@ -28,13 +28,16 @@ func TestDecodeEventEnvelopeNormalizesSlackAgentPayload(t *testing.T) {
 	if env.Event.EventID != "evt-123" || env.Event.EventType != "message" || env.Event.UserID != "U456" {
 		t.Fatalf("Event = %+v", env.Event)
 	}
-	if env.Event.Conversation.TeamID != "T123" || env.Event.Conversation.ConversationID != "C456" || env.Event.Conversation.ThreadID != "thread-789" {
+	if env.Event.Conversation.TeamID != "T123" || env.Event.Conversation.ConversationID != "D456" || env.Event.Conversation.ThreadID != "1782234671.392669" {
 		t.Fatalf("Conversation = %+v", env.Event.Conversation)
 	}
-	if env.Event.Message == nil || env.Event.Message.MessageID != "msg-123" || env.Event.Message.ThreadTS != "msg-100" {
+	if env.Event.Message == nil || env.Event.Message.MessageID != "1782234987.693923" || env.Event.Message.ThreadTS != "1782234671.392669" {
 		t.Fatalf("Message = %+v", env.Event.Message)
 	}
 	if env.Event.Text != "hello" {
 		t.Fatalf("Text = %q, want hello", env.Event.Text)
+	}
+	if env.Event.ChannelType != "im" {
+		t.Fatalf("ChannelType = %q, want im", env.Event.ChannelType)
 	}
 }

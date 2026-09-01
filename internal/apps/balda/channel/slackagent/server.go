@@ -15,19 +15,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
-	"github.com/baldaworks/balda/internal/apps/balda/questions"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
-	"go.uber.org/fx"
 )
 
 const (
-	autoSessionLabel          = "auto"
 	webhookMaxBodyBytes       = 1 << 20
 	webhookReadHeaderTimeout  = 5 * time.Second
 	webhookReadTimeout        = 10 * time.Second
@@ -46,11 +38,10 @@ type Config struct {
 }
 
 type Server struct {
-	sessionManager  *baldasession.Manager
-	actorDispatcher actortransport.Dispatcher
-	questionService *questions.Service
-	config          Config
-	logger          zerolog.Logger
+	inboundProcessor InboundProcessor
+	turnCanceller    TurnCanceller
+	config           Config
+	logger           zerolog.Logger
 
 	server     *http.Server
 	ln         net.Listener
@@ -58,24 +49,21 @@ type Server struct {
 	processWG  sync.WaitGroup
 }
 
-type serverParams struct {
-	fx.In
-
-	SessionManager *baldasession.Manager
-	Dispatcher     actortransport.Dispatcher
-	Question       *questions.Service `optional:"true"`
-	Config         Config
-	Logger         zerolog.Logger
+type InboundProcessor interface {
+	ProcessInbound(context.Context, IngressEnvelope) (turncmd.InboundSettlement, error)
 }
 
-func NewServer(params serverParams) *Server {
+type TurnCanceller interface {
+	CancelTurn(context.Context, SessionStopped) error
+}
+
+func NewServer(processor InboundProcessor, canceller TurnCanceller, config Config, logger zerolog.Logger) *Server {
 	return &Server{
-		sessionManager:  params.SessionManager,
-		actorDispatcher: params.Dispatcher,
-		questionService: params.Question,
-		config:          params.Config,
-		logger:          params.Logger.With().Str("component", "balda.channel.slackagent").Logger(),
-		processSem:      make(chan struct{}, webhookMaxConcurrentTasks),
+		inboundProcessor: processor,
+		turnCanceller:    canceller,
+		config:           config,
+		logger:           logger.With().Str("component", "balda.channel.slackagent").Logger(),
+		processSem:       make(chan struct{}, webhookMaxConcurrentTasks),
 	}
 }
 
@@ -212,79 +200,24 @@ func (h *Server) processEvent(requestCtx context.Context, env IngressEnvelope) (
 	if env.IgnoreEvent {
 		return terminalInbound(), nil
 	}
-	locator := env.Locator
-	if handled, err := h.handleQuestionReply(ctx, env); err != nil {
-		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to handle slackagent question reply")
-		return retryInbound(), err
-	} else if handled {
+	if env.Stopped != nil {
+		if h.turnCanceller == nil {
+			return retryInbound(), fmt.Errorf("slackagent turn canceller is required")
+		}
+		if err := h.turnCanceller.CancelTurn(ctx, *env.Stopped); err != nil {
+			h.logger.Warn().Err(err).Str("address_key", env.Stopped.Locator.AddressKey).Msg("failed to cancel slackagent turn")
+			return retryInbound(), err
+		}
 		return terminalInbound(), nil
 	}
-	service, err := ingressapp.NewWithLogger(
-		ingressapp.AuthorizerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.Authorization, error) {
-			return ingressapp.Authorization{Allowed: true}, nil
-		}),
-		ingressapp.SessionPreparerFunc(h.prepareSession),
-		h.actorDispatcher,
-		h.logger,
-	)
+	if h.inboundProcessor == nil {
+		return retryInbound(), fmt.Errorf("slackagent inbound processor is required")
+	}
+	settlement, err := h.inboundProcessor.ProcessInbound(ctx, env)
 	if err != nil {
-		h.logger.Warn().Err(err).Str("address_key", locator.AddressKey).Msg("failed to construct slackagent ingress")
-		return retryInbound(), err
+		h.logger.Warn().Err(err).Str("session_id", env.Locator.SessionID).Msg("failed to process slackagent inbound event")
 	}
-	result, err := service.Process(ctx, env.Inbound)
-	if err == nil || result.Settlement.Outcome != turncmd.InboundRetry {
-		return result.Settlement, err
-	}
-	if actorcmd.IsCommandQueueFull(err) {
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("slackagent session command queue full")
-		return result.Settlement, err
-	}
-	h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to dispatch slackagent session turn")
-	return result.Settlement, err
-}
-
-func (h *Server) prepareSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
-	ts, err := h.getOrCreateSession(ctx, inboundContextLocator(inbound), inbound.UserID)
-	if err != nil {
-		return ingressapp.SessionPreparation{}, err
-	}
-	return ingressapp.SessionPreparation{
-		Ready:           true,
-		UserID:          ts.GetUserID(),
-		RequesterUserID: inbound.UserID,
-		AgentSessionID:  ts.GetAgentSessionID(),
-	}, nil
-}
-
-func (h *Server) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string) (*baldasession.TopicSession, error) {
-	if existing, _ := h.sessionManager.GetSession(locator); existing != nil {
-		return existing, nil
-	}
-	ts, err := h.sessionManager.RestoreSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject})
-	if err == nil && ts != nil {
-		return ts, nil
-	}
-	if err != nil && !errors.Is(err, baldasession.ErrNoPersistedSession) {
-		return nil, err
-	}
-	return h.sessionManager.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject}, autoSessionLabel)
-}
-
-func (h *Server) handleQuestionReply(ctx context.Context, env IngressEnvelope) (bool, error) {
-	if h == nil || h.questionService == nil || !env.HasReply {
-		return false, nil
-	}
-	result, err := h.questionService.ResolveReplyDetailed(ctx, env.Reply)
-	if err != nil || !result.Matched {
-		return result.Matched, err
-	}
-	if !result.Settled {
-		return true, nil
-	}
-	if err := dispatchQuestionContinuation(ctx, h.actorDispatcher, result.Continuation); err != nil {
-		return true, err
-	}
-	return true, nil
+	return settlement, err
 }
 
 func normalizePath(path string, fallback string) (string, error) {
@@ -321,27 +254,10 @@ func verifySignature(secret, timestamp, signature string, body []byte, now time.
 	return nil
 }
 
-func dispatchQuestionContinuation(ctx context.Context, dispatcher actortransport.Dispatcher, env actorlayer.Envelope) error {
-	if dispatcher == nil {
-		return actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
-	}
-	_, err := dispatcher.Dispatch(ctx, env)
-	return err
-}
-
 func terminalInbound() turncmd.InboundSettlement {
 	return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}
 }
 
 func retryInbound() turncmd.InboundSettlement {
 	return turncmd.InboundSettlement{Outcome: turncmd.InboundRetry}
-}
-
-func inboundContextLocator(inbound ingressapp.InboundContext) baldasession.SessionLocator {
-	return baldasession.SessionLocator{
-		ChannelType: inbound.ChannelType,
-		AddressKey:  inbound.AddressKey,
-		AddressJSON: inbound.AddressJSON,
-		SessionID:   inbound.SessionID,
-	}
 }

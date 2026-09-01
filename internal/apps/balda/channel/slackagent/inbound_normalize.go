@@ -4,17 +4,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 func NormalizeInbound(locator deliverycmd.Locator, event Event, receivedAt time.Time) turncmd.NormalizedInbound {
-	return BuildChatRequest(locator, event, receivedAt).NormalizedInbound()
-}
-
-func BuildChatRequest(locator deliverycmd.Locator, event Event, receivedAt time.Time) chatapp.Request {
 	eventID := strings.TrimSpace(event.EventID)
 	providerMessageID := event.ProviderMessageID()
 	replyToMessageID := event.ReplyToMessageID()
@@ -28,7 +23,11 @@ func BuildChatRequest(locator deliverycmd.Locator, event Event, receivedAt time.
 	if eventID != "" {
 		logicalID = turncmd.InboundID("slackagent:" + eventID)
 	}
-	return chatapp.Request{
+	options := deliveryfmt.NormalizeOptions(deliveryfmt.Options{
+		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+		ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
+	})
+	return turncmd.NormalizedInbound{
 		ID:                logicalID,
 		Text:              strings.TrimSpace(event.Text),
 		Locator:           locator,
@@ -36,11 +35,9 @@ func BuildChatRequest(locator deliverycmd.Locator, event Event, receivedAt time.
 		UserID:            strings.TrimSpace(event.UserID),
 		MessageID:         providerNumericMessageID(providerMessageID),
 		ReplyToMessageID:  providerNumericMessageID(replyToMessageID),
-		ReceivedAt:        receivedAt,
-		DeliveryOptions: deliveryfmt.Options{
-			DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
-			ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
-		},
+		ReceivedAt:        receivedAt.UTC().Format(time.RFC3339),
+		DeliveryFormat:    options.DeliveryFormat,
+		ProgressPolicy:    options.ProgressPolicy,
 		Source:            turncmd.SourceSlackAgent,
 	}
 }

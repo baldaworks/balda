@@ -22,13 +22,18 @@ type MessageRef struct {
 
 // Event is the normalized inbound contract for slackagent ingress.
 type Event struct {
-	EventID      string          `json:"event_id,omitempty"`
-	EventType    string          `json:"event_type,omitempty"`
-	UserID       string          `json:"user_id,omitempty"`
-	Text         string          `json:"text,omitempty"`
-	DedupeKey    string          `json:"dedupe_key,omitempty"`
-	Conversation ConversationRef `json:"conversation"`
-	Message      *MessageRef     `json:"message,omitempty"`
+	EventID            string          `json:"event_id,omitempty"`
+	EventType          string          `json:"event_type,omitempty"`
+	UserID             string          `json:"user_id,omitempty"`
+	Text               string          `json:"text,omitempty"`
+	ChannelType        string          `json:"channel_type,omitempty"`
+	Subtype            string          `json:"subtype,omitempty"`
+	BotID              string          `json:"bot_id,omitempty"`
+	HasBotProfile      bool            `json:"has_bot_profile,omitempty"`
+	StreamingMessageTS []string        `json:"streaming_message_ts,omitempty"`
+	DedupeKey          string          `json:"dedupe_key,omitempty"`
+	Conversation       ConversationRef `json:"conversation"`
+	Message            *MessageRef     `json:"message,omitempty"`
 }
 
 func (e Event) ProviderMessageID() string {

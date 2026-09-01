@@ -11,6 +11,14 @@ import (
 var Module = fx.Module(
 	"balda_channel_slackagent_fx",
 	fx.Provide(
+		fx.Annotate(
+			newInboundProcessor,
+			fx.As(new(slackagent.InboundProcessor)),
+		),
+		fx.Annotate(
+			newTurnCanceller,
+			fx.As(new(slackagent.TurnCanceller)),
+		),
 		slackagent.NewServer,
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
 		slackagent.NewAdapter,

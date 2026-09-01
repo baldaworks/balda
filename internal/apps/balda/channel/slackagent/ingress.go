@@ -1,6 +1,7 @@
 package slackagent
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -17,7 +18,14 @@ type IngressEnvelope struct {
 	Inbound     turncmd.NormalizedInbound
 	Reply       questioncmd.InboundReply
 	HasReply    bool
+	Stopped     *SessionStopped
 	IgnoreEvent bool
+}
+
+type SessionStopped struct {
+	Locator            deliverycmd.Locator
+	RequestedBy        string
+	StreamingMessageTS []string
 }
 
 func DecodeIngressEnvelope(body []byte, receivedAt time.Time) (IngressEnvelope, error) {
@@ -25,18 +33,46 @@ func DecodeIngressEnvelope(body []byte, receivedAt time.Time) (IngressEnvelope, 
 	if err != nil {
 		return IngressEnvelope{}, err
 	}
-	return BuildIngressEnvelope(env, receivedAt), nil
+	return BuildIngressEnvelope(env, receivedAt)
 }
 
-func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) IngressEnvelope {
+func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvelope, error) {
 	out := IngressEnvelope{
 		Type:      strings.TrimSpace(env.Type),
 		Challenge: env.Challenge,
 	}
-	event := env.Event
-	if strings.TrimSpace(event.Text) == "" || strings.TrimSpace(event.UserID) == "" {
+	if out.Type == "url_verification" {
+		if strings.TrimSpace(out.Challenge) == "" {
+			return IngressEnvelope{}, fmt.Errorf("slack url_verification challenge is required")
+		}
+		return out, nil
+	}
+	if out.Type != "event_callback" {
 		out.IgnoreEvent = true
-		return out
+		return out, nil
+	}
+	event := env.Event
+	switch strings.TrimSpace(event.EventType) {
+	case "message":
+		if !eligibleHumanIM(event) {
+			out.IgnoreEvent = true
+			return out, nil
+		}
+	case "agent_session_stopped":
+		if err := validateThreadEvent(event); err != nil {
+			return IngressEnvelope{}, err
+		}
+		out.Locator = locatorForConversation(event.Conversation)
+		out.Subject = slackUserID(event.Conversation.TeamID, event.UserID)
+		out.Stopped = &SessionStopped{
+			Locator:            out.Locator,
+			RequestedBy:        out.Subject,
+			StreamingMessageTS: append([]string(nil), event.StreamingMessageTS...),
+		}
+		return out, nil
+	default:
+		out.IgnoreEvent = true
+		return out, nil
 	}
 	out.Locator = locatorForConversation(event.Conversation)
 	out.Subject = slackUserID(event.Conversation.TeamID, event.UserID)
@@ -46,7 +82,30 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) IngressEnvelo
 		out.Reply = reply
 		out.HasReply = true
 	}
-	return out
+	return out, nil
+}
+
+func eligibleHumanIM(event Event) bool {
+	if strings.TrimSpace(event.ChannelType) != "im" || strings.TrimSpace(event.Subtype) != "" || strings.TrimSpace(event.BotID) != "" || event.HasBotProfile {
+		return false
+	}
+	return validateThreadEvent(event) == nil && strings.TrimSpace(event.Text) != ""
+}
+
+func validateThreadEvent(event Event) error {
+	if strings.TrimSpace(event.Conversation.TeamID) == "" {
+		return fmt.Errorf("slack event team_id is required")
+	}
+	if strings.TrimSpace(event.Conversation.ConversationID) == "" {
+		return fmt.Errorf("slack event channel is required")
+	}
+	if strings.TrimSpace(event.Conversation.ThreadID) == "" {
+		return fmt.Errorf("slack event thread timestamp is required")
+	}
+	if strings.TrimSpace(event.UserID) == "" {
+		return fmt.Errorf("slack event user is required")
+	}
+	return nil
 }
 
 func BuildInboundReply(locator deliverycmd.Locator, subject string, event Event, receivedAt time.Time) (questioncmd.InboundReply, bool) {
@@ -69,10 +128,7 @@ func BuildInboundReply(locator deliverycmd.Locator, subject string, event Event,
 }
 
 func locatorForConversation(conversation ConversationRef) deliverycmd.Locator {
-	if strings.TrimSpace(conversation.ThreadID) != "" {
-		return NewThreadLocator(conversation.TeamID, conversation.ConversationID, conversation.ThreadID)
-	}
-	return NewConversationLocator(conversation.TeamID, conversation.ConversationID)
+	return NewThreadLocator(conversation.TeamID, conversation.ConversationID, conversation.ThreadID)
 }
 
 func slackUserID(teamID, userID string) string {
