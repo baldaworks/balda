@@ -2,6 +2,7 @@ package slackagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -205,6 +206,14 @@ func (a *Adapter) BeginTurn(ctx context.Context, locator deliverycmd.Locator, in
 	}
 	title := sessionTitle(prompt)
 	if err := a.client.RenameSession(ctx, address.ConversationID, address.ThreadID, title); err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Code == "invalid_name" {
+			a.logger.Warn().Err(err).
+				Str("session_id", locator.SessionID).
+				Msg("slack rejected agent session title; continuing without rename")
+			state.titled = true
+			return nil
+		}
 		return err
 	}
 	state.titled = true

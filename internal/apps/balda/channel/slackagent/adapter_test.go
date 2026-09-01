@@ -215,6 +215,33 @@ func TestAdapterBeginTurnSetsProcessingAndRenamesOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestAdapterBeginTurnContinuesWhenSlackRejectsSessionTitle(t *testing.T) {
+	t.Parallel()
+	client := &recordingAgentClient{renameErr: &APIError{
+		Method:     "agents.sessions.rename",
+		StatusCode: http.StatusOK,
+		Code:       "invalid_name",
+		Message:    "invalid_name",
+	}}
+	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	locator := NewThreadLocator("T123", "C456", "root-ts")
+
+	for range 2 {
+		if err := adapter.BeginTurn(context.Background(), locator, "U123", "<@UBOT> hello"); err != nil {
+			t.Fatalf("BeginTurn() error = %v", err)
+		}
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.statuses) != 2 {
+		t.Fatalf("statuses = %+v, want two processing updates", client.statuses)
+	}
+	if len(client.renames) != 1 {
+		t.Fatalf("renames = %+v, want one non-retried rename", client.renames)
+	}
+}
+
 func TestAdapterStreamsDistinctSessionsConcurrently(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "stream-ts"}
@@ -336,6 +363,7 @@ type recordingAgentClient struct {
 	mu        sync.Mutex
 	nextTS    string
 	statusErr error
+	renameErr error
 	posts     []deliveryCall
 	starts    []deliveryCall
 	appends   []deliveryCall
@@ -362,7 +390,7 @@ func (c *recordingAgentClient) RenameSession(_ context.Context, channelID, threa
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.renames = append(c.renames, renameCall{channel: channelID, thread: threadTS, title: title})
-	return nil
+	return c.renameErr
 }
 
 func (c *recordingAgentClient) StartStream(_ context.Context, channel, threadTS, text string) (string, error) {
