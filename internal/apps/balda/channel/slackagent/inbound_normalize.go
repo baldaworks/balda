@@ -19,9 +19,13 @@ func NormalizeInbound(locator deliverycmd.Locator, event Event, receivedAt time.
 	if providerMessageID == "" {
 		providerMessageID = eventID
 	}
+	stableID := strings.TrimSpace(event.DedupeKey)
+	if stableID == "" {
+		stableID = eventID
+	}
 	logicalID := turncmd.InboundID("")
-	if eventID != "" {
-		logicalID = turncmd.InboundID("slackagent:" + eventID)
+	if stableID != "" {
+		logicalID = turncmd.InboundID("slackagent:" + stableID)
 	}
 	options := deliveryfmt.NormalizeOptions(deliveryfmt.Options{
 		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,

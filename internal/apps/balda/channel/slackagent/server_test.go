@@ -51,7 +51,8 @@ func TestServerAcceptsSignedNativeMessageIMInCanonicalThread(t *testing.T) {
 			if address.TeamID != "T123" || address.ConversationID != "D789" || address.ThreadID != test.wantRootTS {
 				t.Fatalf("address = %+v", address)
 			}
-			if env.Inbound.ID != "slackagent:Ev123" || env.Inbound.UserID != "slackagent:T123:U456" || env.Inbound.Text != "hello" {
+			wantInboundID := turncmd.InboundID("slackagent:message:T123:D789:" + test.ts)
+			if env.Inbound.ID != wantInboundID || env.Inbound.UserID != "slackagent:T123:U456" || env.Inbound.Text != "hello" {
 				t.Fatalf("inbound = %+v", env.Inbound)
 			}
 		})
