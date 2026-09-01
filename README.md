@@ -15,7 +15,7 @@ summary, changed files, validation output, a commit, or a concrete next step.
 
 ## What Balda is good for
 
-- chat-native engineering help in Telegram, Zulip, or Slack Agent DMs
+- chat-native engineering help in Telegram, Zulip, or Slack Agent DMs/channel threads
 - focused task threads instead of one shared bot conversation
 - long-running goal execution with progress updates and final results
 - `wedge` style operation: put the agent in the middle of your team workflow so
@@ -118,13 +118,13 @@ automation, and agent execution instead of separate bots and scripts.
 
 - Telegram
 - Zulip
-- Slack Agent DMs
+- Slack Agent DMs and mentioned channel threads
 
 Balda maps each conversation scope to its own session:
 
 - Telegram direct chat or personal/group topic
 - Zulip stream + topic
-- Slack Agent DM thread
+- Slack Agent DM or mentioned channel thread
 
 ## Docker Compose
 

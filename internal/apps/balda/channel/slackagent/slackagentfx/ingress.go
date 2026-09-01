@@ -10,6 +10,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
@@ -54,6 +55,15 @@ func (p *inboundProcessor) ProcessInbound(ctx context.Context, env slackagent.In
 	if p.lifecycle == nil {
 		return retryInbound(), actorlayer.TransientError(fmt.Errorf("slackagent session lifecycle is unavailable"))
 	}
+	if env.RequireExistingSession {
+		exists, err := p.restoreExistingSession(ctx, env.Locator, env.Subject)
+		if err != nil {
+			return retryInbound(), err
+		}
+		if !exists {
+			return terminalInbound(), nil
+		}
+	}
 	if err := p.lifecycle.BeginTurn(ctx, env.Locator, env.InitiatorUserID, env.Inbound.Text); err != nil {
 		return retryInbound(), err
 	}
@@ -83,6 +93,21 @@ func (p *inboundProcessor) ProcessInbound(ctx context.Context, env slackagent.In
 		}
 	}
 	return result.Settlement, err
+}
+
+func (p *inboundProcessor) restoreExistingSession(ctx context.Context, locator deliverycmd.Locator, subject string) (bool, error) {
+	sessionLocator := locator
+	if existing, _ := p.sessions.GetSession(sessionLocator); existing != nil {
+		return true, nil
+	}
+	_, err := p.sessions.RestoreSession(ctx, baldasession.SessionContext{Locator: sessionLocator, UserID: subject})
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, baldasession.ErrNoPersistedSession) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (p *inboundProcessor) prepareSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {

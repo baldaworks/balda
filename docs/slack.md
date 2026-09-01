@@ -7,11 +7,15 @@ tunnel and forward the request without changing its body.
 ## Slack App Setup
 
 1. Create a Slack app and configure it as an agent.
-2. Install it to the workspace with `chat:write` and `im:history` bot scopes.
+2. Install it to the workspace with `chat:write`, `im:history`,
+   `app_mentions:read`, `channels:history`, and `groups:history` bot scopes.
    Slack adds the agent-specific `assistant:write` scope when the app is declared
    as an agent.
 3. Enable Event Subscriptions and subscribe to these bot events:
    - `message.im`
+   - `app_mention`
+   - `message.channels`
+   - `message.groups`
    - `agent_session_stopped`
 4. Set the Events Request URL to a public HTTPS URL that forwards to
    `balda.slack.agent.events_path`.
@@ -53,10 +57,14 @@ app-level token is required.
 
 ## Messaging Behavior
 
-- Balda accepts human `message.im` events and ignores bot-originated or subtype
-  events, preventing response loops.
+- Balda accepts human `message.im` events and explicit `app_mention` events in
+  public and private channels. Bot-originated and subtype events are ignored,
+  preventing response loops.
 - A top-level DM message starts a Slack thread. Replies carrying `thread_ts`
   restore the same Balda session; different root timestamps remain isolated.
+- In channels, an explicit app mention starts a Balda thread. Human
+  `message.channels` and `message.groups` replies continue only an existing
+  Balda thread; unrelated top-level messages and unrelated threads are ignored.
 - Slack Agent Session status is `processing` while a turn runs, `active` after
   completion or cancellation, `suspended` while Balda waits for user input, and
   `closed` when the Balda session closes.
@@ -75,10 +83,14 @@ Before production rollout, verify in a Slack developer workspace:
 1. Slack accepts the Events Request URL challenge.
 2. A request with an invalid signature is rejected and creates no Balda turn.
 3. A human DM receives one response in the same Slack thread.
-4. A bot/subtype event creates no Balda turn or reply.
-5. The Agent Session title and processing/active states appear correctly.
-6. The Stop button cancels active work.
-7. Repeat the DM test with streaming both disabled and enabled.
+4. An app mention in both a public and private channel receives one response in
+   the same thread, and a follow-up reply continues that thread without another
+   mention.
+5. Unrelated channel messages and bot/subtype events create no Balda turn or
+   reply.
+6. The Agent Session title and processing/active states appear correctly.
+7. The Stop button cancels active work.
+8. Repeat the DM and channel tests with streaming both disabled and enabled.
 
 Do not record tokens or signing secrets in logs, screenshots, or committed test
 artifacts.
@@ -90,6 +102,7 @@ artifacts.
 - URL verification or signatures fail: verify the signing secret and confirm
   the proxy preserves the raw body and Slack signature headers.
 - Events do not arrive: confirm the app is configured as an agent, installed to
-  the workspace, and subscribed to both required events.
+  the workspace, subscribed to the required events, and using HTTP Events API
+  rather than Socket Mode.
 - Replies or session states fail: inspect Slack API error codes and confirm the
   app has the required bot scopes.

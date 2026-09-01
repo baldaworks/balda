@@ -12,7 +12,7 @@ Architecture contracts are maintained in:
 ## Summary
 
 - Runtime stack: one or more channel runtimes (Telegram, Zulip, Slack) plus the configured Balda provider runtime.
-- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), and Slack Agent DMs (signed HTTP Events API).
+- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), and Slack Agent DMs/channel threads (signed HTTP Events API).
 - Main agent: Balda app key `balda.provider` (profile overrides via `profiles.<profile>.balda.provider`).
 - Subagents: one session per channel topic/thread with dedicated git worktree.
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.
@@ -1280,14 +1280,18 @@ Per model turn:
 Slackagent keeps ingress, correlation, rendering, and delivery inside the
 `channel/slackagent` subtree.
 
-1. Signed human `message.im` events use `(team_id, channel, root_ts)` as the
-   stable thread locator; bot and subtype events are ignored.
-2. Accepted turns set the Agent Session to `processing` and apply an initial
+1. Signed human `message.im` and channel `app_mention` events use
+   `(team_id, channel, root_ts)` as the stable thread locator; bot and subtype
+   events are ignored.
+2. Channel `message.channels` and `message.groups` replies continue only a
+   previously created Balda thread. Ambient channel messages never create a
+   session.
+3. Accepted turns set the Agent Session to `processing` and apply an initial
    title. Completion returns it to `active`, user-intervention waits use
    `suspended`, and session close uses `closed`.
-3. Ordinary replies use `chat.postMessage`; when enabled, streaming uses the
+4. Ordinary replies use `chat.postMessage`; when enabled, streaming uses the
    Slack start/append/stop lifecycle in the same thread.
-4. `agent_session_stopped` cancels active work for the matching Balda session.
+5. `agent_session_stopped` cancels active work for the matching Balda session.
 
 See [Slack Agent setup](slack.md) for scopes, subscriptions, configuration, and
 sandbox validation.

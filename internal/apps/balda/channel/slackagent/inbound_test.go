@@ -1,6 +1,9 @@
 package slackagent
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestDecodeEventEnvelopeNormalizesNativeMessageIMPayload(t *testing.T) {
 	t.Parallel()
@@ -39,5 +42,56 @@ func TestDecodeEventEnvelopeNormalizesNativeMessageIMPayload(t *testing.T) {
 	}
 	if env.Event.ChannelType != "im" {
 		t.Fatalf("ChannelType = %q, want im", env.Event.ChannelType)
+	}
+}
+
+func TestBuildIngressEnvelopeClassifiesChannelEntryAndContinuation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name                string
+		eventType           string
+		conversationID      string
+		messageID           string
+		threadTS            string
+		wantExistingSession bool
+		wantIgnored         bool
+	}{
+		{name: "public mention", eventType: "app_mention", conversationID: "C123", messageID: "100.1"},
+		{name: "private mention", eventType: "app_mention", conversationID: "G123", messageID: "100.2"},
+		{name: "known thread candidate", eventType: "message", conversationID: "C123", messageID: "100.3", threadTS: "100.1", wantExistingSession: true},
+		{name: "ambient top level channel message", eventType: "message", conversationID: "C123", messageID: "100.4", wantIgnored: true},
+		{name: "mention outside channel", eventType: "app_mention", conversationID: "D123", messageID: "100.5", wantIgnored: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rootTS := test.messageID
+			if test.threadTS != "" {
+				rootTS = test.threadTS
+			}
+			env, err := BuildIngressEnvelope(EventEnvelope{
+				Type: "event_callback",
+				Event: Event{
+					EventID:   "Ev123",
+					EventType: test.eventType,
+					UserID:    "U456",
+					Text:      "hello",
+					Conversation: ConversationRef{
+						TeamID:         "T123",
+						ConversationID: test.conversationID,
+						ThreadID:       rootTS,
+					},
+					Message: &MessageRef{MessageID: test.messageID, ThreadTS: test.threadTS},
+				},
+			}, time.Date(2026, time.August, 4, 10, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatalf("BuildIngressEnvelope() error = %v", err)
+			}
+			if env.IgnoreEvent != test.wantIgnored {
+				t.Fatalf("IgnoreEvent = %v, want %v", env.IgnoreEvent, test.wantIgnored)
+			}
+			if env.RequireExistingSession != test.wantExistingSession {
+				t.Fatalf("RequireExistingSession = %v, want %v", env.RequireExistingSession, test.wantExistingSession)
+			}
+		})
 	}
 }
