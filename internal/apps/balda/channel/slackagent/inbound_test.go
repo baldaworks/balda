@@ -45,20 +45,20 @@ func TestDecodeEventEnvelopeNormalizesNativeMessageIMPayload(t *testing.T) {
 	}
 }
 
-func TestBuildIngressEnvelopeClassifiesChannelEntryAndContinuation(t *testing.T) {
+func TestBuildIngressEnvelopeClassifiesAddressedInputs(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name                string
-		eventType           string
-		conversationID      string
-		messageID           string
-		threadTS            string
-		wantExistingSession bool
-		wantIgnored         bool
+		name           string
+		eventType      string
+		conversationID string
+		messageID      string
+		threadTS       string
+		wantContext    bool
+		wantIgnored    bool
 	}{
 		{name: "public mention", eventType: "app_mention", conversationID: "C123", messageID: "100.1"},
-		{name: "private mention", eventType: "app_mention", conversationID: "G123", messageID: "100.2"},
-		{name: "known thread candidate", eventType: "message", conversationID: "C123", messageID: "100.3", threadTS: "100.1", wantExistingSession: true},
+		{name: "private thread mention", eventType: "app_mention", conversationID: "G123", messageID: "100.2", threadTS: "100.1", wantContext: true},
+		{name: "ambient channel reply", eventType: "message", conversationID: "C123", messageID: "100.3", threadTS: "100.1", wantIgnored: true},
 		{name: "ambient top level channel message", eventType: "message", conversationID: "C123", messageID: "100.4", wantIgnored: true},
 		{name: "mention outside channel", eventType: "app_mention", conversationID: "D123", messageID: "100.5", wantIgnored: true},
 	}
@@ -89,8 +89,11 @@ func TestBuildIngressEnvelopeClassifiesChannelEntryAndContinuation(t *testing.T)
 			if env.IgnoreEvent != test.wantIgnored {
 				t.Fatalf("IgnoreEvent = %v, want %v", env.IgnoreEvent, test.wantIgnored)
 			}
-			if env.RequireExistingSession != test.wantExistingSession {
-				t.Fatalf("RequireExistingSession = %v, want %v", env.RequireExistingSession, test.wantExistingSession)
+			if (env.ThreadContext != nil) != test.wantContext {
+				t.Fatalf("ThreadContext = %+v, wantContext %v", env.ThreadContext, test.wantContext)
+			}
+			if env.ThreadContext != nil && (env.ThreadContext.ConversationID != test.conversationID || env.ThreadContext.RootTS != test.threadTS || env.ThreadContext.BeforeTS != test.messageID) {
+				t.Fatalf("ThreadContext = %+v", env.ThreadContext)
 			}
 		})
 	}

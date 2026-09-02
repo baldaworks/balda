@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +20,6 @@ const (
 	defaultAPIBaseURL        = "https://slack.com/api"
 	defaultHTTPClientTimeout = 15 * time.Second
 	maxResponseBodyBytes     = 1 << 20
-	maxErrorResponseBodyText = 4096
 	maxSessionTitleRunes     = 200
 	maxStreamTextRunes       = 12000
 )
@@ -300,13 +300,60 @@ func (c *Client) postJSON(ctx context.Context, method string, payload any, out a
 		return &APIError{
 			Method:     method,
 			StatusCode: resp.StatusCode,
-			Message:    responseBodySnippet(data),
+			Message:    http.StatusText(resp.StatusCode),
 			RetryAfter: retryAfter,
 			Retryable:  resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError,
 		}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: "malformed_response", Message: responseBodySnippet(data), Retryable: true}
+		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: "malformed_response", Message: "invalid JSON response", Retryable: true}
+	}
+	return nil
+}
+
+func (c *Client) getJSON(ctx context.Context, method string, params url.Values, out any) error {
+	if c == nil {
+		return fmt.Errorf("slack client is required")
+	}
+	if strings.TrimSpace(c.baseURL) == "" {
+		return fmt.Errorf("slack api base url is required")
+	}
+	if strings.TrimSpace(c.token) == "" {
+		return fmt.Errorf("slack bot token is required")
+	}
+	endpoint := c.baseURL + "/" + method
+	if len(params) > 0 {
+		endpoint += "?" + params.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("build slack %s request: %w", method, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	httpClient := c.http
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: defaultHTTPClientTimeout}
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("slack %s request: %w", method, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := readLimitedResponseBody(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read slack %s response body: %w", method, err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return &APIError{
+			Method:     method,
+			StatusCode: resp.StatusCode,
+			Message:    http.StatusText(resp.StatusCode),
+			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
+			Retryable:  resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError,
+		}
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: "malformed_response", Message: "invalid JSON response", Retryable: true}
 	}
 	return nil
 }
@@ -366,12 +413,4 @@ func readLimitedResponseBody(body io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("slack response body too large: limit %d bytes", maxResponseBodyBytes)
 	}
 	return data, nil
-}
-
-func responseBodySnippet(body []byte) string {
-	text := strings.TrimSpace(string(body))
-	if len(text) <= maxErrorResponseBodyText {
-		return text
-	}
-	return text[:maxErrorResponseBodyText] + "...(truncated)"
 }

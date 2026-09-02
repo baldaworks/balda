@@ -36,7 +36,7 @@ func TestNormalizeInboundPreservesIdentityAndCapabilities(t *testing.T) {
 	}
 }
 
-func TestNormalizeInboundDeduplicatesSlackCallbacksForSameMessage(t *testing.T) {
+func TestNormalizeInboundUsesStableMentionIdentityAndIgnoresAmbientTwin(t *testing.T) {
 	t.Parallel()
 	const (
 		mentionBody = `{"type":"event_callback","event_id":"EvMention","team_id":"T123","event":{"type":"app_mention","user":"U456","channel":"C456","text":"<@UBOT> hello","ts":"100.2","thread_ts":"100.1"}}`
@@ -50,8 +50,8 @@ func TestNormalizeInboundDeduplicatesSlackCallbacksForSameMessage(t *testing.T) 
 	if err != nil {
 		t.Fatalf("DecodeIngressEnvelope(message) error = %v", err)
 	}
-	if mention.IgnoreEvent || message.IgnoreEvent || mention.Inbound.ID != message.Inbound.ID {
-		t.Fatalf("inbound IDs differ: mention=%q message=%q", mention.Inbound.ID, message.Inbound.ID)
+	if mention.IgnoreEvent || !message.IgnoreEvent {
+		t.Fatalf("ignore flags: mention=%v message=%v", mention.IgnoreEvent, message.IgnoreEvent)
 	}
 	if got, want := string(mention.Inbound.ID), "slackagent:message:T123:C456:100.2"; got != want {
 		t.Fatalf("inbound ID = %q, want %q", got, want)

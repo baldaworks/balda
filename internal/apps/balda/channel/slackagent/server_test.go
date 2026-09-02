@@ -59,14 +59,14 @@ func TestServerAcceptsSignedNativeMessageIMInCanonicalThread(t *testing.T) {
 	}
 }
 
-func TestServerAcceptsSignedChannelMentionsAndKnownThreadCandidates(t *testing.T) {
+func TestServerAcceptsSignedChannelMentions(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name                string
-		body                string
-		wantConversationID  string
-		wantRootTS          string
-		wantExistingSession bool
+		name               string
+		body               string
+		wantConversationID string
+		wantRootTS         string
+		wantContext        bool
 	}{
 		{
 			name:               "public channel mention starts thread",
@@ -81,11 +81,11 @@ func TestServerAcceptsSignedChannelMentionsAndKnownThreadCandidates(t *testing.T
 			wantRootTS:         "1782234671.392669",
 		},
 		{
-			name:                "public channel reply requires known thread",
-			body:                `{"type":"event_callback","event_id":"EvReply","team_id":"T123","event":{"type":"message","user":"U456","channel":"C789","channel_type":"channel","text":"follow up","ts":"1782234987.693923","thread_ts":"1782234671.392669"}}`,
-			wantConversationID:  "C789",
-			wantRootTS:          "1782234671.392669",
-			wantExistingSession: true,
+			name:               "public channel mention joins foreign thread",
+			body:               `{"type":"event_callback","event_id":"EvReply","team_id":"T123","event":{"type":"app_mention","user":"U456","channel":"C789","channel_type":"channel","text":"<@UBOT> follow up","ts":"1782234987.693923","thread_ts":"1782234671.392669"}}`,
+			wantConversationID: "C789",
+			wantRootTS:         "1782234671.392669",
+			wantContext:        true,
 		},
 	}
 	for _, test := range tests {
@@ -110,8 +110,8 @@ func TestServerAcceptsSignedChannelMentionsAndKnownThreadCandidates(t *testing.T
 			if address.ConversationID != test.wantConversationID || address.ThreadID != test.wantRootTS {
 				t.Fatalf("address = %+v", address)
 			}
-			if env.RequireExistingSession != test.wantExistingSession {
-				t.Fatalf("RequireExistingSession = %v, want %v", env.RequireExistingSession, test.wantExistingSession)
+			if (env.ThreadContext != nil) != test.wantContext {
+				t.Fatalf("ThreadContext = %+v, wantContext %v", env.ThreadContext, test.wantContext)
 			}
 		})
 	}

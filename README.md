@@ -126,6 +126,10 @@ Balda maps each conversation scope to its own session:
 - Zulip stream + topic
 - Slack Agent DM or mentioned channel thread
 
+In Slack channels, every turn requires an explicit `@Balda` mention. A mention
+inside an existing thread can use its preceding accessible discussion as
+bounded context; ordinary channel messages never activate Balda.
+
 ## Docker Compose
 
 Balda ships a root [Dockerfile](Dockerfile) and [compose.yaml](compose.yaml)

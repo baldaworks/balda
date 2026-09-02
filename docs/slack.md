@@ -8,14 +8,15 @@ tunnel and forward the request without changing its body.
 
 1. Create a Slack app and configure it as an agent.
 2. Install it to the workspace with `chat:write`, `im:history`,
-   `app_mentions:read`, `channels:history`, and `groups:history` bot scopes.
+   `app_mentions:read`, and `channels:history` bot scopes. Add
+   `groups:history` only when Balda must load context from private-channel
+   threads. The bot must be a member of each public or private channel whose
+   thread context it reads.
    Slack adds the agent-specific `assistant:write` scope when the app is declared
    as an agent.
 3. Enable Event Subscriptions and subscribe to these bot events:
    - `message.im`
    - `app_mention`
-   - `message.channels`
-   - `message.groups`
    - `agent_session_stopped`
 4. Set the Events Request URL to a public HTTPS URL that forwards to
    `balda.slack.agent.events_path`.
@@ -53,7 +54,16 @@ balda:
 ```
 
 The HTTP Events API requires the Bot OAuth Token and Signing Secret. No Slack
-app-level token is required.
+app-level token is required. User-token search, Canvas, file-search, and Slack
+MCP scopes are not used by conversational ingress.
+
+Event subscriptions and history scopes solve different problems:
+
+- `app_mention` and `message.im` deliver explicitly addressed input;
+- `channels:history` and optional `groups:history` allow an on-demand
+  `conversations.replies` read after a thread mention;
+- history scopes do not cause ordinary channel messages to be delivered as
+  events or interpreted as turns.
 
 ## Messaging Behavior
 
@@ -62,9 +72,22 @@ app-level token is required.
   preventing response loops.
 - A top-level DM message starts a Slack thread. Replies carrying `thread_ts`
   restore the same Balda session; different root timestamps remain isolated.
-- In channels, an explicit app mention starts a Balda thread. Human
-  `message.channels` and `message.groups` replies continue only an existing
-  Balda thread; unrelated top-level messages and unrelated threads are ignored.
+- In channels, every new Balda turn requires an explicit `@Balda` mention.
+  This includes replies in Balda-created threads and threads created by humans
+  or other agents. Ordinary channel messages never activate work, even when a
+  Balda session already exists for that thread.
+- For a mention inside an existing channel thread, Balda calls
+  `conversations.replies` and includes the accessible discussion before the
+  mention as bounded, author-attributed, untrusted background. The mention is
+  kept separately as the current request; messages posted at or after its
+  timestamp are excluded. Truncated context is marked explicitly.
+- A retryable history failure delays the turn and lets Slack retry the signed
+  event. If history is permanently inaccessible because of scope, membership,
+  or channel access, Balda still accepts the mention with an explicit
+  context-unavailable marker instead of inventing the missing discussion.
+- Slack workspace membership is the Slackagent access boundary: any workspace
+  user who can address the installed app may collaborate with it. Slackagent
+  does not apply Balda's owner/collaborator bootstrap gate.
 - Slack Agent Session status is `processing` while a turn runs, `active` after
   completion or cancellation, `suspended` while Balda waits for user input, and
   `closed` when the Balda session closes.
@@ -84,13 +107,16 @@ Before production rollout, verify in a Slack developer workspace:
 2. A request with an invalid signature is rejected and creates no Balda turn.
 3. A human DM receives one response in the same Slack thread.
 4. An app mention in both a public and private channel receives one response in
-   the same thread, and a follow-up reply continues that thread without another
-   mention.
-5. Unrelated channel messages and bot/subtype events create no Balda turn or
-   reply.
-6. The Agent Session title and processing/active states appear correctly.
-7. The Stop button cancels active work.
-8. Repeat the DM and channel tests with streaming both disabled and enabled.
+   the same thread. A follow-up creates another turn only when it mentions
+   Balda again.
+5. A mention inside a thread created by a human or another agent includes the
+   preceding discussion, but not the triggering mention or later messages, as
+   background context.
+6. Unmentioned channel messages and bot/subtype events create no Balda turn or
+   reply, including inside an existing Balda session.
+7. The Agent Session title and processing/active states appear correctly.
+8. The Stop button cancels active work.
+9. Repeat the DM and channel tests with streaming both disabled and enabled.
 
 Do not record tokens or signing secrets in logs, screenshots, or committed test
 artifacts.
@@ -106,3 +132,6 @@ artifacts.
   rather than Socket Mode.
 - Replies or session states fail: inspect Slack API error codes and confirm the
   app has the required bot scopes.
+- Thread context is unavailable: confirm `channels:history` for public channels
+  or `groups:history` plus app membership for private channels. These scopes do
+  not require `message.channels` or `message.groups` event subscriptions.

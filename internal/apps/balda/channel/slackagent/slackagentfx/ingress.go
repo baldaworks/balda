@@ -10,7 +10,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
@@ -30,7 +29,12 @@ type inboundProcessorParams struct {
 	Dispatcher     actortransport.Dispatcher
 	Question       *questions.Service `optional:"true"`
 	Lifecycle      slackagent.SessionLifecycle
+	History        threadHistoryReader
 	Logger         zerolog.Logger
+}
+
+type threadHistoryReader interface {
+	ReadThreadBefore(ctx context.Context, channelID, rootTS, beforeTS string) (slackagent.ThreadSnapshot, error)
 }
 
 type inboundProcessor struct {
@@ -38,6 +42,7 @@ type inboundProcessor struct {
 	dispatcher actortransport.Dispatcher
 	questions  *questions.Service
 	lifecycle  slackagent.SessionLifecycle
+	history    threadHistoryReader
 	logger     zerolog.Logger
 }
 
@@ -47,6 +52,7 @@ func newInboundProcessor(params inboundProcessorParams) *inboundProcessor {
 		dispatcher: params.Dispatcher,
 		questions:  params.Question,
 		lifecycle:  params.Lifecycle,
+		history:    params.History,
 		logger:     params.Logger.With().Str("component", "balda.channel.slackagent.ingress").Logger(),
 	}
 }
@@ -55,22 +61,19 @@ func (p *inboundProcessor) ProcessInbound(ctx context.Context, env slackagent.In
 	if p.lifecycle == nil {
 		return retryInbound(), actorlayer.TransientError(fmt.Errorf("slackagent session lifecycle is unavailable"))
 	}
-	if env.RequireExistingSession {
-		exists, err := p.restoreExistingSession(ctx, env.Locator, env.Subject)
-		if err != nil {
-			return retryInbound(), err
-		}
-		if !exists {
-			return terminalInbound(), nil
-		}
-	}
-	if err := p.lifecycle.BeginTurn(ctx, env.Locator, env.InitiatorUserID, env.Inbound.Text); err != nil {
-		return retryInbound(), err
-	}
-	if handled, err := p.handleQuestionReply(ctx, env); err != nil {
+	originalPrompt := env.Inbound.Text
+	if handled, activated, err := p.handleQuestionReply(ctx, env); err != nil {
 		return retryInbound(), err
 	} else if handled {
+		if activated {
+			if err := p.lifecycle.BeginTurn(ctx, env.Locator, env.InitiatorUserID, originalPrompt); err != nil {
+				return retryInbound(), err
+			}
+		}
 		return terminalInbound(), nil
+	}
+	if err := p.hydrateThreadContext(ctx, &env); err != nil {
+		return retryInbound(), err
 	}
 	service, err := ingressapp.NewWithLogger(
 		ingressapp.AuthorizerFunc(func(context.Context, ingressapp.InboundContext) (ingressapp.Authorization, error) {
@@ -92,22 +95,15 @@ func (p *inboundProcessor) ProcessInbound(ctx context.Context, env slackagent.In
 			event.Msg("failed to dispatch slackagent session turn")
 		}
 	}
-	return result.Settlement, err
-}
-
-func (p *inboundProcessor) restoreExistingSession(ctx context.Context, locator deliverycmd.Locator, subject string) (bool, error) {
-	sessionLocator := locator
-	if existing, _ := p.sessions.GetSession(sessionLocator); existing != nil {
-		return true, nil
+	if err != nil {
+		return result.Settlement, err
 	}
-	_, err := p.sessions.RestoreSession(ctx, baldasession.SessionContext{Locator: sessionLocator, UserID: subject})
-	if err == nil {
-		return true, nil
+	if result.Settlement.Outcome == turncmd.InboundAccepted {
+		if err := p.lifecycle.BeginTurn(ctx, env.Locator, env.InitiatorUserID, originalPrompt); err != nil {
+			return retryInbound(), err
+		}
 	}
-	if errors.Is(err, baldasession.ErrNoPersistedSession) {
-		return false, nil
-	}
-	return false, err
+	return result.Settlement, nil
 }
 
 func (p *inboundProcessor) prepareSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
@@ -143,22 +139,62 @@ func (p *inboundProcessor) getOrCreateSession(ctx context.Context, locator balda
 	return p.sessions.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject}, autoSessionLabel)
 }
 
-func (p *inboundProcessor) handleQuestionReply(ctx context.Context, env slackagent.IngressEnvelope) (bool, error) {
+func (p *inboundProcessor) handleQuestionReply(ctx context.Context, env slackagent.IngressEnvelope) (bool, bool, error) {
 	if p.questions == nil || !env.HasReply {
-		return false, nil
+		return false, false, nil
 	}
 	result, err := p.questions.ResolveReplyDetailed(ctx, env.Reply)
 	if err != nil || !result.Matched {
-		return result.Matched, err
+		return result.Matched, false, err
 	}
 	if !result.Settled {
-		return true, nil
+		return true, false, nil
 	}
 	if p.dispatcher == nil {
-		return true, actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
+		return true, false, actorlayer.TransientError(fmt.Errorf("runtime is unavailable"))
 	}
-	_, err = p.dispatcher.Dispatch(ctx, result.Continuation)
-	return true, err
+	continuation := result.Continuation
+	if inboundID := strings.TrimSpace(string(env.Inbound.ID)); inboundID != "" {
+		// A lifecycle failure after this receipt makes Slack redeliver the same
+		// callback. Reuse its provider-stable identity so that a reply already
+		// settled as a question cannot later become a second generic turn.
+		continuation.DedupeKey = inboundID
+	}
+	receipt, err := p.dispatcher.Dispatch(ctx, continuation)
+	if err != nil {
+		return true, false, err
+	}
+	if receipt == nil {
+		return true, false, actorlayer.TransientError(fmt.Errorf("question continuation dispatch returned no receipt"))
+	}
+	return true, true, nil
+}
+
+func (p *inboundProcessor) hydrateThreadContext(ctx context.Context, env *slackagent.IngressEnvelope) error {
+	if env == nil || env.ThreadContext == nil {
+		return nil
+	}
+	if p.history == nil {
+		return actorlayer.TransientError(fmt.Errorf("slackagent thread history reader is unavailable"))
+	}
+	request := *env.ThreadContext
+	snapshot, err := p.history.ReadThreadBefore(ctx, request.ConversationID, request.RootTS, request.BeforeTS)
+	if err != nil {
+		if slackagent.IsRetryableSlackError(err) {
+			return actorlayer.TransientError(fmt.Errorf("read Slack thread context: %w", err))
+		}
+		var apiErr *slackagent.APIError
+		if !errors.As(err, &apiErr) {
+			return actorlayer.TransientError(fmt.Errorf("read Slack thread context: %w", err))
+		}
+		snapshot = slackagent.UnavailableThreadSnapshot(request, apiErr.Code)
+	}
+	prompt, err := slackagent.FormatThreadContext(snapshot, env.Inbound.Text)
+	if err != nil {
+		return actorlayer.TransientError(err)
+	}
+	env.Inbound.Text = prompt
+	return nil
 }
 
 type turnCanceller struct {

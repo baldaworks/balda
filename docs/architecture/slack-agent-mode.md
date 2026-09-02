@@ -230,11 +230,24 @@ payload shapes into higher-level Balda actor/session code.
 
 ### Slackagent
 
-`Slackagent ingress adapter -> session turn envelope -> session actor -> delivery actor or Slackagent responder boundary`
+`Slackagent ingress adapter -> optional mention-time thread hydration -> session turn envelope -> session actor -> delivery actor or Slackagent responder boundary`
 
 The actor/session core still owns conversation semantics. Slackagent-specific
 rendering, status behavior, and correlation stay inside the Slackagent channel
 boundary.
+
+For an `app_mention` inside an existing channel thread, the ingress adapter
+loads a bounded snapshot through `conversations.replies`, formats it as
+author-attributed untrusted background, and then publishes the completed
+transport-neutral `SessionTurn`. The history request, Slack timestamps,
+pagination, error classification, and prompt enrichment remain inside
+`channel/slackagent`; `slackagentfx` owns their composition and ordering.
+
+There is no Slack-specific product actor or intermediate actor command. The
+first durable actor command remains `SessionTurn`, and shared `turncmd`,
+`session`, `actors`, `execution`, and actorlayer contracts remain Slack-neutral.
+Ordinary channel callbacks never become turns; every channel turn requires a
+fresh mention, independent of existing session state.
 
 ## Current implementation direction
 

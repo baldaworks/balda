@@ -16,14 +16,12 @@ type IngressEnvelope struct {
 	Locator         deliverycmd.Locator
 	Subject         string
 	InitiatorUserID string
-	// RequireExistingSession prevents ambient channel messages from creating
-	// Balda sessions. Explicit app mentions remain the only channel entrypoint.
-	RequireExistingSession bool
-	Inbound                turncmd.NormalizedInbound
-	Reply                  questioncmd.InboundReply
-	HasReply               bool
-	Stopped                *SessionStopped
-	IgnoreEvent            bool
+	ThreadContext   *ThreadContextRequest
+	Inbound         turncmd.NormalizedInbound
+	Reply           questioncmd.InboundReply
+	HasReply        bool
+	Stopped         *SessionStopped
+	IgnoreEvent     bool
 }
 
 type SessionStopped struct {
@@ -58,11 +56,7 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 	event := env.Event
 	switch strings.TrimSpace(event.EventType) {
 	case "message":
-		switch {
-		case eligibleHumanIM(event):
-		case eligibleHumanChannelThreadMessage(event):
-			out.RequireExistingSession = true
-		default:
+		if !eligibleHumanIM(event) {
 			out.IgnoreEvent = true
 			return out, nil
 		}
@@ -93,6 +87,13 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 	out.InitiatorUserID = strings.TrimSpace(event.UserID)
 	out.Inbound = NormalizeInbound(out.Locator, event, receivedAt)
 	out.Inbound.UserID = out.Subject
+	if event.EventType == "app_mention" && strings.TrimSpace(event.ReplyToMessageID()) != "" {
+		out.ThreadContext = &ThreadContextRequest{
+			ConversationID: strings.TrimSpace(event.Conversation.ConversationID),
+			RootTS:         strings.TrimSpace(event.ReplyToMessageID()),
+			BeforeTS:       strings.TrimSpace(event.ProviderMessageID()),
+		}
+	}
 	if reply, ok := BuildInboundReply(out.Locator, out.Subject, event, receivedAt); ok {
 		out.Reply = reply
 		out.HasReply = true
@@ -109,13 +110,6 @@ func eligibleHumanIM(event Event) bool {
 
 func eligibleHumanChannelMention(event Event) bool {
 	return isChannelConversation(event.Conversation.ConversationID) && eligibleHumanMessage(event)
-}
-
-func eligibleHumanChannelThreadMessage(event Event) bool {
-	if strings.TrimSpace(event.ReplyToMessageID()) == "" || !isChannelConversation(event.Conversation.ConversationID) {
-		return false
-	}
-	return eligibleHumanMessage(event)
 }
 
 func eligibleHumanMessage(event Event) bool {

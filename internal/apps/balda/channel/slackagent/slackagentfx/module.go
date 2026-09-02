@@ -28,6 +28,7 @@ var Module = fx.Module(
 		),
 		slackagent.NewServer,
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
+		func(client *slackagent.Client) threadHistoryReader { return client },
 		slackagent.NewAdapter,
 		fx.Annotate(
 			func(adapter *slackagent.Adapter) deliveryfx.ChannelAdapterBinding {

@@ -1283,15 +1283,25 @@ Slackagent keeps ingress, correlation, rendering, and delivery inside the
 1. Signed human `message.im` and channel `app_mention` events use
    `(team_id, channel, root_ts)` as the stable thread locator; bot and subtype
    events are ignored.
-2. Channel `message.channels` and `message.groups` replies continue only a
-   previously created Balda thread. Ambient channel messages never create a
-   session.
-3. Accepted turns set the Agent Session to `processing` and apply an initial
+2. Every channel turn requires a fresh `app_mention`, including turns in an
+   existing Balda thread. Ordinary `message.channels` and `message.groups`
+   events are ignored regardless of persisted session state.
+3. A mention in any accessible existing channel thread loads a bounded
+   `conversations.replies` snapshot before the mention. Slackagent keeps author
+   provenance, marks the snapshot as untrusted background, and dispatches only
+   the fully enriched transport-neutral session turn. DM turns do not perform
+   this history read.
+4. Accepted turns set the Agent Session to `processing` and apply an initial
    title. Completion returns it to `active`, user-intervention waits use
    `suspended`, and session close uses `closed`.
-4. Ordinary replies use `chat.postMessage`; when enabled, streaming uses the
+5. Ordinary replies use `chat.postMessage`; when enabled, streaming uses the
    Slack start/append/stop lifecycle in the same thread.
-5. `agent_session_stopped` cancels active work for the matching Balda session.
+6. `agent_session_stopped` cancels active work for the matching Balda session.
+
+The required conversational bot events are `message.im`, `app_mention`, and
+`agent_session_stopped`. `channels:history` enables public-thread context;
+`groups:history` is needed only for private-thread context. User-token Slack
+search/MCP capabilities do not participate in this ingress path.
 
 See [Slack Agent setup](slack.md) for scopes, subscriptions, configuration, and
 sandbox validation.
