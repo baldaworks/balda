@@ -63,12 +63,6 @@ func Render(request permissioncmd.Request) Presentation {
 	return Presentation{Prompt: presentation.Text, DeliveryFormat: presentation.DeliveryFormat}
 }
 
-func renderTelegramMarkdown(request permissioncmd.Request) string {
-	var out strings.Builder
-	writeMarkdownRequest(&out, request)
-	return out.String()
-}
-
 func renderMarkdown(request permissioncmd.Request) string {
 	var out strings.Builder
 	writeMarkdownRequest(&out, request)
@@ -230,6 +224,3 @@ func RenderMarkdown(request permissioncmd.Request) string {
 	return renderMarkdown(request)
 }
 
-func RenderTelegramMarkdown(request permissioncmd.Request) string {
-	return renderTelegramMarkdown(request)
-}

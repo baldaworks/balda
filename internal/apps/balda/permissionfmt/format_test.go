@@ -92,8 +92,10 @@ func TestRenderOmitsGenericOtherKind(t *testing.T) {
 type testTelegramPermissionRenderer struct{}
 
 func (testTelegramPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	var out strings.Builder
+	writeMarkdownRequest(&out, env.Body)
 	return deliveryfmt.StructuredPresentation{
-		Text:           RenderTelegramMarkdown(env.Body),
+		Text:           out.String(),
 		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
 	}, nil
 }
