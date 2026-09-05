@@ -8,7 +8,6 @@ import (
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 var serverActorAddress = actorlayer.ActorAddress{Target: "channel", Key: "telegram"}
@@ -21,7 +20,7 @@ func dispatchOutbound(ctx context.Context, dispatcher actortransport.Dispatcher,
 	return err
 }
 
-func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
+func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
 	env, err := deliverycmd.PlainEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
@@ -29,7 +28,7 @@ func sendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from a
 	return dispatchOutbound(ctx, dispatcher, env)
 }
 
-func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
+func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
 	env, err := deliverycmd.MarkdownEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
 	if err != nil {
 		return err
@@ -37,7 +36,7 @@ func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, fro
 	return dispatchOutbound(ctx, dispatcher, env)
 }
 
-func submitSessionCancelControl(ctx context.Context, dispatcher actortransport.Dispatcher, locator baldasession.SessionLocator, requestedBy, reason string, notify bool) error {
+func submitSessionCancelControl(ctx context.Context, dispatcher actortransport.Dispatcher, locator deliverycmd.Locator, requestedBy, reason string, notify bool) error {
 	if dispatcher == nil {
 		return nil
 	}

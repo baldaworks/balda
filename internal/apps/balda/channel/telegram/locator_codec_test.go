@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -35,9 +34,9 @@ func TestNewLocator_RoundTripDecode(t *testing.T) {
 }
 
 func TestDecodeLocator_NonTelegram(t *testing.T) {
-	locator, err := baldasession.NewSessionLocator("slack", "team:42", `{"channel":"ops"}`, "slack-42")
+	locator, err := deliverycmd.NewLocator("slack", "team:42", `{"channel":"ops"}`, "slack-42")
 	if err != nil {
-		t.Fatalf("NewSessionLocator() error = %v", err)
+		t.Fatalf("NewLocator() error = %v", err)
 	}
 
 	_, ok, err := DecodeLocator(locator)
@@ -50,9 +49,9 @@ func TestDecodeLocator_NonTelegram(t *testing.T) {
 }
 
 func TestDecodeLocator_InvalidTelegramAddressJSON(t *testing.T) {
-	locator, err := baldasession.NewSessionLocator(baldastate.ChannelTypeTelegram, "1:2", "{", "tg-1-2")
+	locator, err := deliverycmd.NewLocator(baldastate.ChannelTypeTelegram, "1:2", "{", "tg-1-2")
 	if err != nil {
-		t.Fatalf("NewSessionLocator() error = %v", err)
+		t.Fatalf("NewLocator() error = %v", err)
 	}
 
 	_, ok, err := DecodeLocator(locator)
