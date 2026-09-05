@@ -63,7 +63,7 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 	})
 
 	t.Run("slackagent event", func(t *testing.T) {
-		got := baldaslackagent.NormalizeInbound(
+		request := baldaslackagent.NormalizeChatRequest(
 			baldaslackagent.NewConversationLocator("T123", "C456"),
 			baldaslackagent.Event{
 				EventID: " evt-123 ",
@@ -77,6 +77,7 @@ func TestProviderInboundNormalizationPreservesIdentityAndCapabilities(t *testing
 			},
 			receivedAt,
 		)
+		got := request.NormalizedInbound()
 		if got.ID != testSlackAgentInboundID || got.ProviderMessageID != "msg-456" || !got.ProgressPolicy.Thinking {
 			t.Fatalf("normalized slackagent event = %+v", got)
 		}

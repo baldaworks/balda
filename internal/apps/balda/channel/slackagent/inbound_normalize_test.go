@@ -14,7 +14,7 @@ func TestNormalizeInboundPreservesIdentityAndCapabilities(t *testing.T) {
 
 	receivedAt := time.Date(2026, time.August, 4, 10, 0, 0, 0, time.UTC)
 	locator := NewConversationLocator("T123", "C456")
-	got := NormalizeInbound(locator, Event{
+	got := NormalizeChatRequest(locator, Event{
 		EventID: " evt-123 ",
 		UserID:  " slackagent:T123:U789 ",
 		Text:    " answer ",
@@ -28,8 +28,8 @@ func TestNormalizeInboundPreservesIdentityAndCapabilities(t *testing.T) {
 	if got.ID != normalizedSlackAgentEventID || got.ProviderMessageID != "msg-456" {
 		t.Fatalf("normalized slackagent = %+v", got)
 	}
-	if got.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn || !got.ProgressPolicy.Thinking || !got.ProgressPolicy.Typing || !got.ProgressPolicy.PlanUpdates {
-		t.Fatalf("capabilities = %+v", got)
+	if got.DeliveryOptions.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn || !got.DeliveryOptions.ProgressPolicy.Thinking || !got.DeliveryOptions.ProgressPolicy.Typing || !got.DeliveryOptions.ProgressPolicy.PlanUpdates {
+		t.Fatalf("capabilities = %+v", got.DeliveryOptions)
 	}
 	if got.ReplyToMessageID == 0 {
 		t.Fatalf("reply correlation lost: %+v", got)
@@ -53,7 +53,7 @@ func TestNormalizeInboundUsesStableMentionIdentityAndIgnoresAmbientTwin(t *testi
 	if mention.IgnoreEvent || !message.IgnoreEvent {
 		t.Fatalf("ignore flags: mention=%v message=%v", mention.IgnoreEvent, message.IgnoreEvent)
 	}
-	if got, want := string(mention.Inbound.ID), "slackagent:message:T123:C456:100.2"; got != want {
+	if got, want := string(mention.Chat.ID), "slackagent:message:T123:C456:100.2"; got != want {
 		t.Fatalf("inbound ID = %q, want %q", got, want)
 	}
 }

@@ -168,7 +168,6 @@ components:
   slackagent_wiring:
     in:
       - internal/apps/balda/channel/slackagent/slackagentfx
-      - internal/apps/balda/channel/slackagent/bridge
 
   # Storage and adapter-heavy infrastructure that does not fit a narrower semantic layer.
   infrastructure:

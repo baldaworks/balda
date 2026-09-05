@@ -93,6 +93,10 @@ This keeps transport internals replaceable and allows a transport to be moved
 toward a separate process boundary later without rewriting shared application
 code.
 
+Inbound transport implementations invoke generic `chatapp.Handler` and
+`commandapp` contracts. Session creation, question continuation, command
+policy, and actor publication stay on the application side of that seam.
+
 ## Rendering rule
 
 There are two output paths:

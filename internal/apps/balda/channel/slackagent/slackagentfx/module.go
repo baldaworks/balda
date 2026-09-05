@@ -3,7 +3,6 @@ package slackagentfx
 import (
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/bridge"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
@@ -14,22 +13,19 @@ var Module = fx.Module(
 	"balda_channel_slackagent_fx",
 	fx.Provide(
 		func(adapter *slackagent.Adapter) slackagent.SessionLifecycle { return adapter },
+		newInboundProcessor,
 		fx.Annotate(
-			bridge.NewInboundProcessor,
-			fx.As(new(slackagent.InboundProcessor)),
-		),
-		fx.Annotate(
-			bridge.NewTurnCanceller,
+			newTurnCanceller,
 			fx.As(new(slackagent.TurnCanceller)),
 		),
 		fx.Annotate(
-			bridge.NewBoundaryObserver,
+			newBoundaryObserver,
 			fx.As(new(baldasession.BoundaryObserver)),
 			fx.ResultTags(`group:"balda_session_boundary_observer"`),
 		),
 		slackagent.NewServer,
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
-		func(client *slackagent.Client) bridge.ThreadHistoryReader { return client },
+		func(client *slackagent.Client) slackagent.ThreadHistoryReader { return client },
 		slackagent.NewAdapter,
 		fx.Annotate(
 			func(adapter *slackagent.Adapter) deliveryfx.ChannelAdapterBinding {

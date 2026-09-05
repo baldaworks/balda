@@ -4,12 +4,17 @@ import (
 	"fmt"
 
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"go.uber.org/fx"
 )
 
 // Module provides handlers for the balda bot.
 var Module = fx.Module("balda_handlers",
 	fx.Provide(
+		fx.Annotate(
+			NewChatHandler,
+			fx.As(new(chatapp.Handler)),
+		),
 		func(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
 			normalized, err := normalizeInboundWebhookConfig(params.Config)
 			if err != nil {

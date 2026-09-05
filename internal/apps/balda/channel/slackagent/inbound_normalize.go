@@ -4,12 +4,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
-func NormalizeInbound(locator deliverycmd.Locator, event Event, receivedAt time.Time) turncmd.NormalizedInbound {
+func NormalizeChatRequest(locator deliverycmd.Locator, event Event, receivedAt time.Time) chatapp.Request {
 	eventID := strings.TrimSpace(event.EventID)
 	providerMessageID := event.ProviderMessageID()
 	replyToMessageID := event.ReplyToMessageID()
@@ -31,7 +32,7 @@ func NormalizeInbound(locator deliverycmd.Locator, event Event, receivedAt time.
 		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
 		ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: true, PlanUpdates: true},
 	})
-	return turncmd.NormalizedInbound{
+	return chatapp.Request{
 		ID:                logicalID,
 		Text:              strings.TrimSpace(event.Text),
 		Locator:           locator,
@@ -39,9 +40,9 @@ func NormalizeInbound(locator deliverycmd.Locator, event Event, receivedAt time.
 		UserID:            strings.TrimSpace(event.UserID),
 		MessageID:         providerNumericMessageID(providerMessageID),
 		ReplyToMessageID:  providerNumericMessageID(replyToMessageID),
-		ReceivedAt:        receivedAt.UTC().Format(time.RFC3339),
-		DeliveryFormat:    options.DeliveryFormat,
-		ProgressPolicy:    options.ProgressPolicy,
+		ReceivedAt:        receivedAt.UTC(),
+		DeliveryOptions:   options,
+		Direct:            strings.TrimSpace(event.ChannelType) == "im",
 		Source:            turncmd.SourceSlackAgent,
 	}
 }

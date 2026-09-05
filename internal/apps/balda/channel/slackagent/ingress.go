@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
-	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 type IngressEnvelope struct {
@@ -17,9 +17,7 @@ type IngressEnvelope struct {
 	Subject         string
 	InitiatorUserID string
 	ThreadContext   *ThreadContextRequest
-	Inbound         turncmd.NormalizedInbound
-	Reply           questioncmd.InboundReply
-	HasReply        bool
+	Chat            chatapp.Request
 	Stopped         *SessionStopped
 	IgnoreEvent     bool
 }
@@ -85,8 +83,8 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 	out.Locator = locatorForConversation(event.Conversation)
 	out.Subject = slackUserID(event.Conversation.TeamID, event.UserID)
 	out.InitiatorUserID = strings.TrimSpace(event.UserID)
-	out.Inbound = NormalizeInbound(out.Locator, event, receivedAt)
-	out.Inbound.UserID = out.Subject
+	out.Chat = NormalizeChatRequest(out.Locator, event, receivedAt)
+	out.Chat.UserID = out.Subject
 	if event.EventType == "app_mention" && strings.TrimSpace(event.ReplyToMessageID()) != "" {
 		out.ThreadContext = &ThreadContextRequest{
 			ConversationID: strings.TrimSpace(event.Conversation.ConversationID),
@@ -95,8 +93,7 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 		}
 	}
 	if reply, ok := BuildInboundReply(out.Locator, out.Subject, event, receivedAt); ok {
-		out.Reply = reply
-		out.HasReply = true
+		out.Chat.QuestionReply = &reply
 	}
 	return out, nil
 }

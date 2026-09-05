@@ -144,15 +144,16 @@ of Balda must not depend on them directly.
 
 ### Handlers
 
-`internal/apps/balda/handlers` owns only the generic ingress bridge:
+`internal/apps/balda/handlers` owns the generic chat and command handlers:
 
-- receive HTTP/event input;
-- call a DI-provided Slackagent ingress adapter;
-- run auth/session preconditions;
-- publish actor work.
+- accept transport-neutral `chatapp.Request` and `commandapp.Request` values;
+- run application authorization and session preconditions;
+- settle question replies;
+- publish actor work through actorlayer contracts.
 
 Handlers must not own:
 
+- Slackagent HTTP endpoints or signature verification;
 - raw Slackagent payload structs;
 - Slackagent payload normalization logic;
 - Slackagent reply-correlation helpers;
@@ -230,18 +231,20 @@ payload shapes into higher-level Balda actor/session code.
 
 ### Slackagent
 
-`Slackagent ingress adapter -> optional mention-time thread hydration -> session turn envelope -> session actor -> delivery actor or Slackagent responder boundary`
+`Slackagent ingress -> optional thread hydration -> chatapp.Handler -> SessionTurn envelope -> session actor -> Slackagent delivery adapter`
 
 The actor/session core still owns conversation semantics. Slackagent-specific
 rendering, status behavior, and correlation stay inside the Slackagent channel
 boundary.
 
 For an `app_mention` inside an existing channel thread, the ingress adapter
-loads a bounded snapshot through `conversations.replies`, formats it as
-author-attributed untrusted background, and then publishes the completed
-transport-neutral `SessionTurn`. The history request, Slack timestamps,
-pagination, error classification, and prompt enrichment remain inside
-`channel/slackagent`; `slackagentfx` owns their composition and ordering.
+loads a bounded snapshot through `conversations.replies` and formats it as
+author-attributed untrusted background before invoking the transport-neutral
+`chatapp.Handler`. The generic handler owns session preparation, question
+continuation settlement, and the first durable `SessionTurn` dispatch. History
+requests, Slack timestamps, pagination, error classification, and prompt
+enrichment remain inside `channel/slackagent`; `slackagentfx` owns only their DI
+composition.
 
 There is no Slack-specific product actor or intermediate actor command. The
 first durable actor command remains `SessionTurn`, and shared `turncmd`,
@@ -249,20 +252,16 @@ first durable actor command remains `SessionTurn`, and shared `turncmd`,
 Ordinary channel callbacks never become turns; every channel turn requires a
 fresh mention, independent of existing session state.
 
-## Current implementation direction
+## Dependency boundary
 
-The target architecture requires moving Slackagent-specific logic inward from
-shared packages and outer adapters.
+The Slackagent transport root depends only on transport-neutral contracts such
+as `chatapp`, `deliverycmd`, `deliveryfmt`, `questioncmd`, `turncmd`, and
+actorlayer. It must not import concrete application services such as `session`,
+`questions`, `controlapp`, `ingressapp`, or `handlers`.
 
-Initial migration targets:
-
-- Slackagent-specific inbound decoding currently living in handlers;
-- Slackagent-specific structured rendering branches currently living outside
-  the channel boundary;
-- Slackagent-specific prompt injection registered outside channel ownership;
-- Slackagent-specific correlation helpers used by question and wait flows;
-- Slackagent-specific turn presentation branches implemented in shared turn
-  orchestration paths.
+`slackagentfx` may see both sides of the boundary to bind generic application
+handlers and lifecycle groups to Slackagent ports. It must not contain reusable
+workflow policy; its adapters translate calls only.
 
 ## Question and wait
 
