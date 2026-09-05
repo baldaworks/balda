@@ -1,4 +1,4 @@
-package slackagentfx
+package bridge
 
 import (
 	"context"
@@ -22,32 +22,32 @@ import (
 
 const autoSessionLabel = "auto"
 
-type inboundProcessorParams struct {
+type InboundProcessorParams struct {
 	fx.In
 
 	SessionManager *baldasession.Manager
 	Dispatcher     actortransport.Dispatcher
 	Question       *questions.Service `optional:"true"`
 	Lifecycle      slackagent.SessionLifecycle
-	History        threadHistoryReader
+	History        ThreadHistoryReader
 	Logger         zerolog.Logger
 }
 
-type threadHistoryReader interface {
+type ThreadHistoryReader interface {
 	ReadThreadBefore(ctx context.Context, channelID, rootTS, beforeTS string) (slackagent.ThreadSnapshot, error)
 }
 
-type inboundProcessor struct {
+type InboundProcessor struct {
 	sessions   *baldasession.Manager
 	dispatcher actortransport.Dispatcher
 	questions  *questions.Service
 	lifecycle  slackagent.SessionLifecycle
-	history    threadHistoryReader
+	history    ThreadHistoryReader
 	logger     zerolog.Logger
 }
 
-func newInboundProcessor(params inboundProcessorParams) *inboundProcessor {
-	return &inboundProcessor{
+func NewInboundProcessor(params InboundProcessorParams) *InboundProcessor {
+	return &InboundProcessor{
 		sessions:   params.SessionManager,
 		dispatcher: params.Dispatcher,
 		questions:  params.Question,
@@ -57,7 +57,7 @@ func newInboundProcessor(params inboundProcessorParams) *inboundProcessor {
 	}
 }
 
-func (p *inboundProcessor) ProcessInbound(ctx context.Context, env slackagent.IngressEnvelope) (turncmd.InboundSettlement, error) {
+func (p *InboundProcessor) ProcessInbound(ctx context.Context, env slackagent.IngressEnvelope) (turncmd.InboundSettlement, error) {
 	if p.lifecycle == nil {
 		return retryInbound(), actorlayer.TransientError(fmt.Errorf("slackagent session lifecycle is unavailable"))
 	}
@@ -106,7 +106,7 @@ func (p *inboundProcessor) ProcessInbound(ctx context.Context, env slackagent.In
 	return result.Settlement, nil
 }
 
-func (p *inboundProcessor) prepareSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
+func (p *InboundProcessor) prepareSession(ctx context.Context, inbound ingressapp.InboundContext) (ingressapp.SessionPreparation, error) {
 	locator := baldasession.SessionLocator{
 		ChannelType: inbound.ChannelType,
 		AddressKey:  inbound.AddressKey,
@@ -125,7 +125,7 @@ func (p *inboundProcessor) prepareSession(ctx context.Context, inbound ingressap
 	}, nil
 }
 
-func (p *inboundProcessor) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string) (*baldasession.TopicSession, error) {
+func (p *InboundProcessor) getOrCreateSession(ctx context.Context, locator baldasession.SessionLocator, subject string) (*baldasession.TopicSession, error) {
 	if existing, _ := p.sessions.GetSession(locator); existing != nil {
 		return existing, nil
 	}
@@ -139,7 +139,7 @@ func (p *inboundProcessor) getOrCreateSession(ctx context.Context, locator balda
 	return p.sessions.EnsureSession(ctx, baldasession.SessionContext{Locator: locator, UserID: subject}, autoSessionLabel)
 }
 
-func (p *inboundProcessor) handleQuestionReply(ctx context.Context, env slackagent.IngressEnvelope) (bool, bool, error) {
+func (p *InboundProcessor) handleQuestionReply(ctx context.Context, env slackagent.IngressEnvelope) (bool, bool, error) {
 	if p.questions == nil || !env.HasReply {
 		return false, false, nil
 	}
@@ -155,9 +155,6 @@ func (p *inboundProcessor) handleQuestionReply(ctx context.Context, env slackage
 	}
 	continuation := result.Continuation
 	if inboundID := strings.TrimSpace(string(env.Inbound.ID)); inboundID != "" {
-		// A lifecycle failure after this receipt makes Slack redeliver the same
-		// callback. Reuse its provider-stable identity so that a reply already
-		// settled as a question cannot later become a second generic turn.
 		continuation.DedupeKey = inboundID
 	}
 	receipt, err := p.dispatcher.Dispatch(ctx, continuation)
@@ -170,7 +167,7 @@ func (p *inboundProcessor) handleQuestionReply(ctx context.Context, env slackage
 	return true, true, nil
 }
 
-func (p *inboundProcessor) hydrateThreadContext(ctx context.Context, env *slackagent.IngressEnvelope) error {
+func (p *InboundProcessor) hydrateThreadContext(ctx context.Context, env *slackagent.IngressEnvelope) error {
 	if env == nil || env.ThreadContext == nil {
 		return nil
 	}
@@ -197,16 +194,16 @@ func (p *inboundProcessor) hydrateThreadContext(ctx context.Context, env *slacka
 	return nil
 }
 
-type turnCanceller struct {
+type TurnCanceller struct {
 	control   *controlapp.Service
 	lifecycle slackagent.SessionLifecycle
 }
 
-func newTurnCanceller(control *controlapp.Service, lifecycle slackagent.SessionLifecycle) *turnCanceller {
-	return &turnCanceller{control: control, lifecycle: lifecycle}
+func NewTurnCanceller(control *controlapp.Service, lifecycle slackagent.SessionLifecycle) *TurnCanceller {
+	return &TurnCanceller{control: control, lifecycle: lifecycle}
 }
 
-func (c *turnCanceller) CancelTurn(ctx context.Context, stopped slackagent.SessionStopped) error {
+func (c *TurnCanceller) CancelTurn(ctx context.Context, stopped slackagent.SessionStopped) error {
 	if c == nil || c.control == nil {
 		return actorlayer.TransientError(fmt.Errorf("control service is unavailable"))
 	}
@@ -226,15 +223,15 @@ func (c *turnCanceller) CancelTurn(ctx context.Context, stopped slackagent.Sessi
 	return c.lifecycle.HandleSessionStopped(ctx, stopped.Locator)
 }
 
-type boundaryObserver struct {
+type BoundaryObserver struct {
 	lifecycle slackagent.SessionLifecycle
 }
 
-func newBoundaryObserver(lifecycle slackagent.SessionLifecycle) *boundaryObserver {
-	return &boundaryObserver{lifecycle: lifecycle}
+func NewBoundaryObserver(lifecycle slackagent.SessionLifecycle) *BoundaryObserver {
+	return &BoundaryObserver{lifecycle: lifecycle}
 }
 
-func (o *boundaryObserver) BeforeSessionBoundary(ctx context.Context, boundary baldasession.SessionBoundary) error {
+func (o *BoundaryObserver) BeforeSessionBoundary(ctx context.Context, boundary baldasession.SessionBoundary) error {
 	if boundary.Reason != baldasession.BoundaryReasonClose || strings.TrimSpace(boundary.Locator.ChannelType) != slackagent.ChannelType {
 		return nil
 	}

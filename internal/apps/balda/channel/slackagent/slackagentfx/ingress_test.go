@@ -12,6 +12,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/bridge"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
@@ -35,7 +36,7 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 	var order []string
 	dispatcher := &dispatcherRecorder{onDispatch: func() { order = append(order, "dispatch") }}
 	lifecycle := &sessionLifecycleStub{onBegin: func() { order = append(order, "begin") }}
-	processor := newInboundProcessor(inboundProcessorParams{
+	processor := bridge.NewInboundProcessor(bridge.InboundProcessorParams{
 		SessionManager: manager,
 		Dispatcher:     dispatcher,
 		Lifecycle:      lifecycle,
@@ -114,7 +115,7 @@ func TestInboundProcessorHistoryFailuresSettleBeforeDispatch(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			dispatcher := &dispatcherRecorder{}
 			lifecycle := &sessionLifecycleStub{}
-			processor := newInboundProcessor(inboundProcessorParams{
+			processor := bridge.NewInboundProcessor(bridge.InboundProcessorParams{
 				SessionManager: existingSessionManager(t, locator, "slackagent:T123:U456"),
 				Dispatcher:     dispatcher,
 				Lifecycle:      lifecycle,
@@ -167,7 +168,7 @@ func TestInboundProcessorSkipsHistoryForDMAndTopLevelMention(t *testing.T) {
 				t.Fatalf("BuildIngressEnvelope() = %+v, %v", envelope, err)
 			}
 			history := &threadHistoryStub{err: errors.New("must not be called")}
-			processor := newInboundProcessor(inboundProcessorParams{
+			processor := bridge.NewInboundProcessor(bridge.InboundProcessorParams{
 				SessionManager: existingSessionManager(t, locator, "slackagent:T123:U456"),
 				Dispatcher:     &dispatcherRecorder{}, Lifecycle: &sessionLifecycleStub{}, History: history, Logger: zerolog.Nop(),
 			})
@@ -192,7 +193,7 @@ func TestInboundProcessorDoesNotBeginLifecycleBeforeDispatchAcceptance(t *testin
 	}
 	dispatcher := &dispatcherRecorder{err: actorlayer.TransientError(errors.New("queue unavailable"))}
 	lifecycle := &sessionLifecycleStub{}
-	processor := newInboundProcessor(inboundProcessorParams{
+	processor := bridge.NewInboundProcessor(bridge.InboundProcessorParams{
 		SessionManager: existingSessionManager(t, locator, "slackagent:T123:U456"),
 		Dispatcher:     dispatcher, Lifecycle: lifecycle, Logger: zerolog.Nop(),
 	})
@@ -258,7 +259,7 @@ func TestTurnCancellerCancelsQueuedTurnThenReconcilesSlackSession(t *testing.T) 
 	t.Parallel()
 	queue := &turnQueueStub{hadInFlight: true, dropped: 2}
 	lifecycle := &sessionLifecycleStub{}
-	canceller := newTurnCanceller(controlapp.New(queue, nil, nil, nil, nil, zerolog.Nop()), lifecycle)
+	canceller := bridge.NewTurnCanceller(controlapp.New(queue, nil, nil, nil, nil, zerolog.Nop()), lifecycle)
 	locator := slackagent.NewThreadLocator("T123", "D456", "root-ts")
 	err := canceller.CancelTurn(context.Background(), slackagent.SessionStopped{
 		Locator:     locator,
@@ -278,7 +279,7 @@ func TestTurnCancellerCancelsQueuedTurnThenReconcilesSlackSession(t *testing.T) 
 func TestBoundaryObserverClosesOnlySlackCloseBoundary(t *testing.T) {
 	t.Parallel()
 	lifecycle := &sessionLifecycleStub{}
-	observer := newBoundaryObserver(lifecycle)
+	observer := bridge.NewBoundaryObserver(lifecycle)
 	slackLocator := slackagent.NewThreadLocator("T123", "D456", "root-ts")
 	if err := observer.BeforeSessionBoundary(context.Background(), baldasession.SessionBoundary{
 		Locator: slackLocator,
