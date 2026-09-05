@@ -715,9 +715,11 @@ or non-regular paths return a stable build error.
   - recalled text is returned as untrusted reference data and is never treated as instructions or commands.
 - `balda.goal.max_iterations`: maximum `/goalkeeper` worker-validator loop iterations (default `25`)
   - invalid values are clamped to `25`.
-- `runtime.providers.<provider_id>.codex_acp.reasoning_effort`: optional Codex reasoning effort.
-  - allowed values: `minimal`, `low`, `medium`, `high`, `xhigh`
-  - Balda passes the selected provider's value through to the isolated session-memory runtime (or chat runtime for `balda.provider`); it is not inherited across providers.
+- `runtime.providers.<provider_id>.<acp_type>.model` and `reasoning_effort`: optional explicit ACP session settings.
+  - `reasoning_effort` values: `minimal`, `low`, `medium`, `high`, `xhigh`
+  - Explicit values replace conflicting persisted values after `session/resume`; omitted values remain session-controlled, so changing provider configuration does not require `/reset`.
+  - ACP option IDs default to `model` and `reasoning_effort`. For a custom server, set `model_config_id` or `reasoning_effort_config_id` to the exact advertised ID (for example `thought_level`).
+  - Balda passes the selected provider's values through to the isolated session-memory runtime (or chat runtime for `balda.provider`); they are not inherited across providers.
 - `balda.nats.embedded`: run Balda-owned NATS inside the process (default `true`)
 - `balda.nats.host` / `port`: embedded listener address (default `127.0.0.1:-1`, random local port)
 - embedded NATS transport files live under `${balda.state_dir}/nats`

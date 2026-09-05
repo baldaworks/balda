@@ -218,6 +218,12 @@ Common settings:
 
 - `balda.provider` — which configured provider runtime to use
 - `balda.telegram.token` — Telegram bot token
+
+Explicit `model` and `reasoning_effort` values on an ACP provider are reapplied
+to restored sessions after restart. Persisted values for settings omitted from
+the provider configuration remain unchanged, so changing an explicit setting
+does not require `/reset`. Custom ACP servers can set `model_config_id` and
+`reasoning_effort_config_id` when their advertised option IDs differ.
 - `balda.telegram.formatting_mode` — Telegram output mode: `rich_markdown`
   (default), `rich_html`, or `none` for literal plain text
 - `balda.zulip.*` — Zulip outgoing webhook bot credentials and receiver config

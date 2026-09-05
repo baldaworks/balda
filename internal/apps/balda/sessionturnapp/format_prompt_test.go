@@ -131,11 +131,11 @@ func TestTurnExecutionCommitsFormatOnlyAfterSuccessfulTerminalCompletion(t *test
 			wantCommit: true,
 		},
 		{
-			name: "terminal provider failure",
+			name: "terminal session configuration failure",
 			events: func(invocationID string) ([]*adksession.Event, error) {
 				terminal := adksession.NewEvent(context.Background(), invocationID)
 				terminal.TurnComplete = true
-				terminal.ErrorMessage = "provider failed"
+				terminal.ErrorMessage = `set acp session config option "model": invalid params`
 				return []*adksession.Event{terminal}, nil
 			},
 		},
@@ -169,7 +169,9 @@ func TestTurnExecutionCommitsFormatOnlyAfterSuccessfulTerminalCompletion(t *test
 		t.Run(test.name, func(t *testing.T) {
 			state := &formatTestState{values: make(map[string]any)}
 			var providerInput string
+			providerRuns := 0
 			adkRunner, agentSessionID := newFormatTestRunner(t, func(invocationID, input string) ([]*adksession.Event, error) {
+				providerRuns++
 				providerInput = input
 				return test.events(invocationID)
 			})
@@ -202,6 +204,9 @@ func TestTurnExecutionCommitsFormatOnlyAfterSuccessfulTerminalCompletion(t *test
 			}
 			if got := state.updates > 0; got != test.wantCommit {
 				t.Fatalf("format state committed = %t, want %t", got, test.wantCommit)
+			}
+			if providerRuns != 1 {
+				t.Fatalf("provider runs = %d, want 1", providerRuns)
 			}
 		})
 	}
