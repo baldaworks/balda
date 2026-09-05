@@ -12,7 +12,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/nats-io/nats-server/v2 v2.14.0
 	github.com/nats-io/nats.go v1.52.0
-	github.com/normahq/runtime/v2 v2.0.11-0.20260905202956-5670764dc23e
+	github.com/normahq/runtime/v2 v2.0.11
 	github.com/pressly/goose/v3 v3.16.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1
@@ -239,7 +239,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
-	github.com/normahq/go-adk-acpagent/v2 v2.2.5-0.20260905202642-011e66c97060
+	github.com/normahq/go-adk-acpagent/v2 v2.2.5
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
