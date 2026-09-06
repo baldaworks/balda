@@ -10,7 +10,9 @@ Status: active
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
 - The session actor is the only code path that can enqueue `TurnDispatcher` work; `sessionturn` is the only queued-turn restoration use case.
-- `TurnDispatcher` is the authoritative per-session mailbox. Canceling a session resolves every dropped completion with `context.Canceled` and cancels the active turn.
+- `TurnDispatcher` is the authoritative per-session mailbox. Canceling a session resolves every dropped completion (including constituent steering waiters) with `context.Canceled` and cancels the active turn.
+- Coalesced steering messages retain individual constituent completion channels; constituent envelopes remain unacknowledged to durable transport until batch execution finishes, fails, or cancels.
+- Pre-execution process restart safely replays unacknowledged envelopes. Pending and running batches deduplicate constituents by stable identity (`DedupeKey` / message ID), attaching duplicate arrivals as waiters without duplicate text fragments. Transport delivery interruptions remain retryable rather than falsely settled.
 - SQLite does not own command selection, claim, retry, or wakeup semantics.
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through `github.com/baldaworks/go-actorlayer`, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.

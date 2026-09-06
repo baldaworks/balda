@@ -8,7 +8,9 @@ Status: active
 - ActorRuntime consumes durable command deliveries.
 - Actorlayer engine lanes serialize job/delivery actor state. Session commands use per-envelope runtime lanes and are serialized by the authoritative `TurnDispatcher` mailbox.
 - Runtime execution uses `github.com/baldaworks/go-actorlayer/engine.DispatchRuntime`; Balda adapts durable command transport into actorlayer deliveries and supplies only Balda-specific delivery wrapping.
-- Command settlement happens after actor side effects complete.
+- Command settlement happens after actor side effects complete. For coalesced steering messages, constituent envelopes remain unacknowledged while their batch is pending or running, completing only after batch execution, failure, or explicit cancellation.
+- Pre-execution process restart replays unacknowledged steering envelopes into a fresh runtime without lost corrections; constituent deduplication in pending/running batches attaches duplicate arrivals as waiters without duplicate text fragments.
+- Transport delivery context interruptions on waiting steering constituents remain retryable rather than falsely settled.
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: session turns, webhook/scheduled work routing, `/goalkeeper` execution, outbound delivery, and cancellation.
 - `/goalkeeper` uses Balda's goal workflow wrapper built on Norma's reusable goal loop runtime.
