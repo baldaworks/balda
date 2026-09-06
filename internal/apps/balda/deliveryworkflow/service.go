@@ -98,7 +98,10 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	}
 	sum := sha256.Sum256(env.Payload.Data)
 	payloadHash := hex.EncodeToString(sum[:])
-	if durable && s.outbox != nil {
+	if durable {
+		if s.outbox == nil {
+			return actorlayer.TransientError(fmt.Errorf("delivery outbox store is required for durable delivery"))
+		}
 		record, created, err := s.outbox.ReserveDelivery(ctx, baldastate.DeliveryRecord{
 			ID:          uuid.NewString(),
 			DeliveryKey: deliveryKey,
@@ -145,12 +148,16 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 	providerMessageID, err := s.dispatcher.Dispatch(ctx, delivery)
 	if err != nil {
 		deliveryErrorKind, classified := deliverycmd.ClassifyError(err)
-		retryable := classified && deliveryErrorKind == deliverycmd.ErrorKindRetryable
+		isAmbiguous := classified && deliveryErrorKind == deliverycmd.ErrorKindAmbiguous
+		isRetryable := classified && deliveryErrorKind == deliverycmd.ErrorKindRetryable
+		isPermanent := classified && deliveryErrorKind == deliverycmd.ErrorKindPermanent
 		settlementClass := deliveryFailureClass(err)
 		s.logSettlement(payload, env.ID, env.Attempt+1, "resolved", settlementClass)
 		if durable && s.outbox != nil {
-			_ = s.outbox.MarkDeliveryFailed(ctx, deliveryKey, settlementClass)
-			if !retryable && strings.TrimSpace(payload.JobID) != "" {
+			if !isAmbiguous {
+				_ = s.outbox.MarkDeliveryFailed(ctx, deliveryKey, settlementClass)
+			}
+			if isPermanent && strings.TrimSpace(payload.JobID) != "" {
 				if s.events != nil {
 					if appendErr := s.events.AppendEvent(ctx, payload.JobID, baldajobs.JobEventDeliveryFailed, "delivery.actor", env.ID, map[string]any{
 						"mode":            payload.Mode,
@@ -166,15 +173,17 @@ func (s *Service) Handle(ctx context.Context, env actorlayer.Envelope, payload d
 				}
 			}
 		}
-		if retryable {
+		if isRetryable || isAmbiguous {
 			return actorlayer.ExternalDeliveryError(err)
 		}
-		if handled, failErr := s.failQuestionDelivery(ctx, payload, err); failErr != nil {
-			return actorlayer.TransientError(failErr)
-		} else if handled {
-			return nil
+		if !isAmbiguous {
+			if handled, failErr := s.failQuestionDelivery(ctx, payload, err); failErr != nil {
+				return actorlayer.TransientError(failErr)
+			} else if handled {
+				return nil
+			}
 		}
-		if classified && deliveryErrorKind == deliverycmd.ErrorKindPermanent {
+		if isPermanent {
 			return actorlayer.PermanentError(err)
 		}
 		return actorlayer.ExternalDeliveryError(err)

@@ -475,7 +475,7 @@ func (b *testQuestionBinder) BindDelivery(_ context.Context, questionID string, 
 
 func TestHandleBindsQuestionToProviderMessage(t *testing.T) {
 	binder := &testQuestionBinder{}
-	service := New(testDispatcher{}, nil, nil, binder, nil, zerolog.Nop())
+	service := New(testDispatcher{}, &recordingDeliveryStore{}, nil, binder, nil, zerolog.Nop())
 	payload := deliverycmd.Payload{
 		Locator: deliverycmd.Locator{
 			ChannelType: "telegram",

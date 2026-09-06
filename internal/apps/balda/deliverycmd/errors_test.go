@@ -18,6 +18,7 @@ func TestClassifyError(t *testing.T) {
 	}{
 		{name: "retryable", err: RetryableError(cause), wantKind: ErrorKindRetryable, wantOK: true},
 		{name: "permanent wrapped", err: fmt.Errorf("deliver: %w", PermanentError(cause)), wantKind: ErrorKindPermanent, wantOK: true},
+		{name: "ambiguous", err: AmbiguousError(cause), wantKind: ErrorKindAmbiguous, wantOK: true},
 		{name: "unclassified", err: cause},
 	}
 

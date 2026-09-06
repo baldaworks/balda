@@ -115,14 +115,14 @@ func telegramTransportError(action string, chatID int64, err error) error {
 	if err == nil {
 		return telegramNoResponseError(action, chatID)
 	}
-	return deliverycmd.RetryableError(&redactedTransportError{
+	return deliverycmd.AmbiguousError(&redactedTransportError{
 		cause:   err,
 		message: fmt.Sprintf("%s to chat %d: %s", action, chatID, redaction.Secrets(err.Error())),
 	})
 }
 
 func telegramNoResponseError(action string, chatID int64) error {
-	return deliverycmd.RetryableError(fmt.Errorf("%s to chat %d: no response body", action, chatID))
+	return deliverycmd.AmbiguousError(fmt.Errorf("%s to chat %d: no response body", action, chatID))
 }
 
 func telegramHTTPError(action string, chatID int64, statusCode int, description string) error {
@@ -132,15 +132,22 @@ func telegramHTTPError(action string, chatID int64, statusCode int, description 
 		message += ": " + description
 	}
 	err := errors.New(message)
-	if retryableTelegramHTTPStatus(statusCode) {
+	switch {
+	case ambiguousTelegramHTTPStatus(statusCode):
+		return deliverycmd.AmbiguousError(err)
+	case retryableTelegramHTTPStatus(statusCode):
 		return deliverycmd.RetryableError(err)
+	default:
+		return deliverycmd.PermanentError(err)
 	}
-	return deliverycmd.PermanentError(err)
+}
+
+func ambiguousTelegramHTTPStatus(statusCode int) bool {
+	return statusCode == 0 || statusCode == http.StatusRequestTimeout || statusCode >= http.StatusInternalServerError
 }
 
 func retryableTelegramHTTPStatus(statusCode int) bool {
-	return statusCode == 0 || statusCode == http.StatusRequestTimeout || statusCode == http.StatusTooEarly ||
-		statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
+	return statusCode == http.StatusTooEarly || statusCode == http.StatusTooManyRequests
 }
 
 // AgentReplyResult carries provider delivery metadata for a final agent reply.

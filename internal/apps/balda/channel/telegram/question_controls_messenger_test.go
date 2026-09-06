@@ -146,8 +146,8 @@ func TestSendAgentReplyWithInlineKeyboardDoesNotFallbackOnTransportError(t *test
 		t.Fatalf("SendAgentReplyWithInlineKeyboardLastMessageIDAndMode() error = %v, want deadline exceeded", err)
 	}
 	kind, classified := deliverycmd.ClassifyError(err)
-	if !classified || kind != deliverycmd.ErrorKindRetryable {
-		t.Fatalf("delivery error = %v, want retryable", err)
+	if !classified || kind != deliverycmd.ErrorKindAmbiguous {
+		t.Fatalf("delivery error = %v, want ambiguous", err)
 	}
 	if len(tgClient.richFallback) != 0 {
 		t.Fatalf("fallback requests = %d, want 0 after ambiguous transport failure", len(tgClient.richFallback))

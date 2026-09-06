@@ -9,6 +9,7 @@ type ErrorKind string
 const (
 	ErrorKindRetryable ErrorKind = "retryable"
 	ErrorKindPermanent ErrorKind = "permanent"
+	ErrorKindAmbiguous ErrorKind = "ambiguous"
 )
 
 // DeliveryError carries transport-neutral retry semantics across the channel
@@ -38,6 +39,10 @@ func RetryableError(err error) error {
 
 func PermanentError(err error) error {
 	return deliveryError(ErrorKindPermanent, err)
+}
+
+func AmbiguousError(err error) error {
+	return deliveryError(ErrorKindAmbiguous, err)
 }
 
 // ClassifyError returns the explicit channel delivery classification. The bool

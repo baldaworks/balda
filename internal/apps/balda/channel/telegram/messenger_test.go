@@ -279,8 +279,8 @@ func TestSendAgentReplyUsesBoundedSendContextForTransportFailure(t *testing.T) {
 
 	err := m.SendAgentReply(context.Background(), 9001, "hello", 77)
 	kind, classified := deliverycmd.ClassifyError(err)
-	if !classified || kind != deliverycmd.ErrorKindRetryable {
-		t.Fatalf("SendAgentReply() error = %v, want retryable", err)
+	if !classified || kind != deliverycmd.ErrorKindAmbiguous {
+		t.Fatalf("SendAgentReply() error = %v, want ambiguous", err)
 	}
 
 	if len(tgClient.messageContexts) != 1 {
@@ -536,8 +536,8 @@ func TestSendAgentReply_RichMarkdownTransportErrorDoesNotFallbackToPlainText(t *
 		t.Fatalf("SendAgentReplyWithResult() error = %v, want deadline exceeded", err)
 	}
 	kind, classified := deliverycmd.ClassifyError(err)
-	if !classified || kind != deliverycmd.ErrorKindRetryable {
-		t.Fatalf("SendAgentReplyWithResult() error = %v, want retryable", err)
+	if !classified || kind != deliverycmd.ErrorKindAmbiguous {
+		t.Fatalf("SendAgentReplyWithResult() error = %v, want ambiguous", err)
 	}
 
 	if len(tgClient.richMessages) != 1 {
@@ -555,8 +555,8 @@ func TestTelegramDeliveryErrorsAreClassifiedAndRedacted(t *testing.T) {
 	cause := errors.New("Post https://api.telegram.org/bot" + token + "/sendMessage: timeout")
 	err := telegramTransportError("send message", 9001, cause)
 	kind, classified := deliverycmd.ClassifyError(err)
-	if !classified || kind != deliverycmd.ErrorKindRetryable {
-		t.Fatalf("transport error = %v, want retryable", err)
+	if !classified || kind != deliverycmd.ErrorKindAmbiguous {
+		t.Fatalf("transport error = %v, want ambiguous", err)
 	}
 	if !errors.Is(err, cause) {
 		t.Fatalf("transport error = %v, want original cause preserved", err)
@@ -565,14 +565,27 @@ func TestTelegramDeliveryErrorsAreClassifiedAndRedacted(t *testing.T) {
 		t.Fatalf("transport error = %q, want token redacted", err)
 	}
 
+	noRespErr := telegramNoResponseError("send message", 9001)
+	kind, classified = deliverycmd.ClassifyError(noRespErr)
+	if !classified || kind != deliverycmd.ErrorKindAmbiguous {
+		t.Fatalf("no response error = %v, want ambiguous", noRespErr)
+	}
+
 	tests := []struct {
 		status int
 		want   deliverycmd.ErrorKind
 	}{
 		{status: http.StatusBadRequest, want: deliverycmd.ErrorKindPermanent},
 		{status: http.StatusUnauthorized, want: deliverycmd.ErrorKindPermanent},
+		{status: http.StatusForbidden, want: deliverycmd.ErrorKindPermanent},
+		{status: http.StatusNotFound, want: deliverycmd.ErrorKindPermanent},
 		{status: http.StatusTooManyRequests, want: deliverycmd.ErrorKindRetryable},
-		{status: http.StatusBadGateway, want: deliverycmd.ErrorKindRetryable},
+		{status: http.StatusTooEarly, want: deliverycmd.ErrorKindRetryable},
+		{status: http.StatusBadGateway, want: deliverycmd.ErrorKindAmbiguous},
+		{status: http.StatusGatewayTimeout, want: deliverycmd.ErrorKindAmbiguous},
+		{status: http.StatusInternalServerError, want: deliverycmd.ErrorKindAmbiguous},
+		{status: http.StatusRequestTimeout, want: deliverycmd.ErrorKindAmbiguous},
+		{status: 0, want: deliverycmd.ErrorKindAmbiguous},
 	}
 	for _, tt := range tests {
 		err := telegramHTTPError("send message", 9001, tt.status, "provider response")
