@@ -92,6 +92,7 @@ This zone owns operator-facing control semantics and access state:
 
 `controlapp` owns control flows.
 `auth` owns access-control state and access-control support services.
+`authcmd` owns the transport-neutral collaborator data contract, ensuring persistence (`state`) and other layers can reference collaborator identity without importing the `auth` service package.
 
 Do not mix feature behavior into this zone. It should express "who may do what"
 and "how operator actions settle", not product actor workflows.
@@ -180,6 +181,10 @@ It does not own:
 Packages such as `questionfmt`, `permissionfmt`, and `progressfmt` should stay
 transport-neutral. If a transport needs custom rendering, that renderer should
 live in the owning `channel/*` subtree and register through DI.
+`deliveryfmt` owns the transport-neutral prompt format and structured message
+formatting registries; in architecture enforcement, it forms an isolated neutral
+registry component so that format registration at composition time does not create
+upward dependencies on concrete provider renderers.
 
 ### Application support
 
