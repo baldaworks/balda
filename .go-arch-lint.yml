@@ -75,7 +75,6 @@ components:
       - internal/apps/balda/chatapp
       - internal/apps/balda/commandapp
       - internal/apps/balda/deliverycmd
-      - internal/apps/balda/deliveryfmt
       - internal/apps/balda/goalcmd
       - internal/apps/balda/goalkeepercmd
       - internal/apps/balda/goalresultcmd
@@ -83,7 +82,6 @@ components:
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
-      - internal/apps/balda/plugincmd
       - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
       - internal/apps/balda/questionfmt
@@ -91,6 +89,11 @@ components:
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd
       - internal/apps/balda/usageview
+
+  # Transport-neutral delivery formatting registry.
+  neutral_registry:
+    in:
+      - internal/apps/balda/deliveryfmt
 
   # Narrow application-facing ports plus use-cases and orchestration services.
   application:
@@ -109,6 +112,7 @@ components:
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
+      - internal/apps/balda/plugincmd
       - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
       - internal/apps/balda/sessionmemorymcp
@@ -283,22 +287,31 @@ deps:
     mayDependOn:
       - foundation
       - contracts
-      - application
-      - delivery
-      - infrastructure
-      # Provider renderers are injected into transport-neutral registries at
-      # composition time; deep-scan models that intentional runtime edge.
-      - slackagent_wiring
-      - telegram_transport
-      - telegram_wiring
-      - zulip_transport
-      - zulip_wiring
+      - neutral_registry
+    # Neutral contracts expose error and context helpers taking standard
+    # interfaces (such as error or OutcomeSink); deep-scan would invert callers'
+    # argument injection into an upward dependency on callers. Direct import
+    # boundaries remain strictly enforced.
+    deepScan: false
+    anyVendorDeps: true
+
+  # Transport-neutral delivery formatting registry. Provider renderers are
+  # injected into the registry at composition time; deep-scan is disabled here
+  # to prevent inverted upward edges while strictly prohibiting direct imports
+  # of concrete provider renderers.
+  neutral_registry:
+    mayDependOn:
+      - foundation
+      - contracts
+      - neutral_registry
+    deepScan: false
     anyVendorDeps: true
 
   application:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - session_memory_core
       - session_memory_app
       - session_memory_badger
@@ -314,6 +327,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - application
       - domain
       - runtime
@@ -334,6 +348,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - application
 
     anyVendorDeps: true
@@ -341,6 +356,7 @@ deps:
   ingress_wiring:
     mayDependOn:
       - contracts
+      - neutral_registry
       - ingress
       - delivery
       - telegram_transport
@@ -354,6 +370,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - application
       - storage
       - infrastructure
@@ -363,6 +380,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - application
       - delivery_usecase
       - delivery
@@ -379,6 +397,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - infrastructure
       - telegram_transport
     anyVendorDeps: true
@@ -387,6 +406,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - application
       - delivery
       - storage
@@ -399,6 +419,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - zulip_transport
     anyVendorDeps: true
 
@@ -406,6 +427,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - application
       - delivery
       - storage
@@ -417,12 +439,14 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - slackagent_transport
     anyVendorDeps: true
 
   slackagent_wiring:
     mayDependOn:
       - contracts
+      - neutral_registry
       - application
       - delivery
       - storage
@@ -447,6 +471,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - neutral_registry
       - session_memory_core
       - session_memory_app
       - session_memory_badger
