@@ -11,7 +11,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
-	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
@@ -73,6 +72,7 @@ type CommandHandler struct {
 	sessionManager    commandSessionManager
 	workCanceller     sessionWorkCanceller
 	actorDispatcher   actortransport.Dispatcher
+	locatorRenderer   LocatorResponseRenderer
 	goalJobs          goalJobService
 	goalMaxIterations int
 	autoMaxTurns      int
@@ -89,6 +89,7 @@ type commandHandlerParams struct {
 	SessionManager    *session.Manager
 	WorkCanceller     appports.SessionWorkCanceller `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
+	LocatorRenderer   LocatorResponseRenderer
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	MaxIterations     int                            `name:"balda_goal_max_iterations"`
 	AutoMaxTurns      int                            `name:"balda_automode_max_turns"`
@@ -651,9 +652,14 @@ func (h *CommandHandler) onLocatorCommand(ctx context.Context, req commandapp.Re
 		return nil
 	}
 
-	ref := locatorref.Format(req.Locator)
-	message := fmt.Sprintf("Transport: %s\nLocator: %s\n\nUse in scheduler/webhook config:\ntarget: locator\nkey: %s", req.Locator.ChannelType, ref, ref)
-	return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, message)
+	if h.locatorRenderer == nil {
+		return fmt.Errorf("render locator response: renderer is unavailable")
+	}
+	presentation, err := h.locatorRenderer.Render(ctx, req.Locator)
+	if err != nil {
+		return err
+	}
+	return sendStructuredPresentation(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, presentation)
 }
 
 func (h *CommandHandler) onCloseCommand(ctx context.Context, req commandapp.Request) error {

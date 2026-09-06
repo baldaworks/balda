@@ -3,8 +3,8 @@ package deliverycmd
 import (
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 func TestQuestionEnvelopeCarriesTransportNeutralOptions(t *testing.T) {
@@ -59,6 +59,34 @@ func TestAgentReplyEnvelopeCarriesOnlyDeliveryFormat(t *testing.T) {
 	}
 	if payload.DeliveryFormat != deliveryfmt.DeliveryFormatRichHTML {
 		t.Errorf("DeliveryFormat = %q, want %q", payload.DeliveryFormat, deliveryfmt.DeliveryFormatRichHTML)
+	}
+}
+
+func TestMarkdownEnvelopeWithFormatAndSettlementCarriesSystemPresentation(t *testing.T) {
+	t.Parallel()
+
+	locator := testLocator()
+	env, err := MarkdownEnvelopeWithFormatAndSettlement(
+		"",
+		actorlayer.SystemAddress("command"),
+		locator,
+		deliveryfmt.DeliveryFormatMrkdwn,
+		SettlementBypass,
+		"*Balda locator*",
+		"locator",
+	)
+	if err != nil {
+		t.Fatalf("MarkdownEnvelopeWithFormatAndSettlement() error = %v", err)
+	}
+	var payload Payload
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Mode != ModeMarkdown || payload.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn || payload.Settlement != SettlementBypass {
+		t.Fatalf("payload delivery contract = %+v", payload)
+	}
+	if payload.Locator != locator || payload.Text != "*Balda locator*" {
+		t.Fatalf("payload content = %+v", payload)
 	}
 }
 

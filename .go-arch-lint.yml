@@ -79,6 +79,7 @@ components:
       - internal/apps/balda/goalkeepercmd
       - internal/apps/balda/goalresultcmd
       - internal/apps/balda/locatorref
+      - internal/apps/balda/locatorfmt
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
@@ -108,6 +109,7 @@ components:
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
       - internal/apps/balda/ingressapp
+      - internal/apps/balda/locatorapp
       - internal/apps/balda/memory
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
@@ -174,6 +176,7 @@ components:
   zulip_transport:
     in:
       - internal/apps/balda/channel/zulip
+      - internal/apps/balda/channel/zulip/presentation
 
   # Composition-root adapters for Zulip delivery, prompt, and structured renderers.
   zulip_wiring:

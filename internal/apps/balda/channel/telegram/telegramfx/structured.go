@@ -6,6 +6,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
@@ -39,6 +40,15 @@ func (telegramProgressRenderer) RenderStructured(_ context.Context, env delivery
 	}, nil
 }
 
+type telegramLocatorRenderer struct{}
+
+func (telegramLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderLocator(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
+}
+
 func NewQuestionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportTelegram, questionfmt.RequestDescriptor, telegramQuestionRenderer{})
 }
@@ -49,4 +59,9 @@ func NewPermissionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 
 func NewProgressStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportTelegram, progressfmt.RequestDescriptor, telegramProgressRenderer{})
+}
+
+// NewLocatorStructuredRegistrar registers Telegram locator response presentation.
+func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(deliveryfmt.TransportTelegram, locatorfmt.ResponseDescriptor, telegramLocatorRenderer{})
 }

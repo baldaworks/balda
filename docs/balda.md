@@ -1324,21 +1324,52 @@ GoalKeeper sessions.
 
 ### Manual session control
 
-- `/topic <name>` (DM only, owner/collaborator): creates a new Telegram topic and a topic-bound session.
-  - `<name>` is required.
-  - `<name>` is a session label, not a provider selector.
-- `/goalkeeper <objective>` (owner/collaborator): starts goal work from the current session context in isolated GoalKeeper worker/validator ADK sessions. With workspace mode enabled, Balda creates a goal workspace from `balda.workspace.base_branch`, exports it back automatically on success, and preserves it for recovery when export fails. With workspace mode disabled, GoalKeeper works directly in `balda.working_dir` and records `not_exported` on success. Started/validation/final updates use `balda.telegram.formatting_mode`; terminal updates include concise result, export, work, validation, and actionable next-step sections when needed. See the [goal workflow doc](goal-workflow.md).
-  - concurrent `/goalkeeper` runs in the same session are rejected.
-  - `/goalkeeper clear` stops active goal work for the current session only.
-- `/reset`, `/restart` (owner/collaborator): cancel current session work, clear the current session history, and immediately start a fresh runtime session without closing the chat/topic. Both commands work in the current DM, public-chat, or thread-scoped session.
-- `/locator` (owner/collaborator): replies with the current transport type and locator ref in the public config form `<channel_type>:<address_key>`. Use that value with `target: locator` in scheduler/webhook config.
-- `/balda locator` (Slack workspace member): routes to the same shared `locator` command and posts the conversation-level ref `slackagent:c:<team_id>:<conversation_id>` through normal Slack delivery. Slash payloads contain no thread timestamp, and this command does not start or restore an agent turn.
-- `/close` (DM only, owner/collaborator): resets the current session history. In topic contexts, it also closes that topic.
-- `/cancel` (owner/collaborator): cancels the current session turn and drops queued turns for that session. It does not stop active `/goalkeeper` work.
-- `/user add` (owner only): generates a collaborator invite link for this bot.
-- `/user list` (owner only): lists collaborators and active invites.
-- `/user remove <user_id>` (owner only): removes a collaborator by ID.
-- `balda.memory.*` MCP tools are internal capabilities, not chat commands.
+The [command reference](commands.md) is the sole complete catalog for command
+syntax, transport availability, access, context, side effects, non-effects,
+errors, and examples.
+
+At runtime, session-control commands operate on the locator attached to inbound
+transport data. Reset and restart replace the runtime session at that locator;
+cancel affects its conversational turn queue; GoalKeeper has separate durable
+state; close applies the session boundary and may close a provider topic. MCP
+tools such as `balda.memory.*` are internal capabilities rather than chat
+commands.
+
+### Locator response delivery
+
+The public locator comes from `commandapp.Request.Locator`, represented by the
+transport-neutral `deliverycmd.Locator` contract and formatted canonically by
+`locatorref`. `actorlayer.ActorAddress` identifies an internal envelope sender
+or recipient; it is not a public transport destination and is never printed by
+the locator command.
+
+A successful locator command resolves the typed
+`balda.locator.response.v1` message through the shared structured registry.
+Registered transports select these delivery formats:
+
+| Transport | Required registrar | Delivery format |
+|---|---|---|
+| `slackagent` | `slackagentfx.NewLocatorStructuredRegistrar` | `mrkdwn` |
+| `telegram` | `telegramfx.NewLocatorStructuredRegistrar` | `rich_markdown` |
+| `zulip` | `zulipfx.NewLocatorStructuredRegistrar` | `markdown` |
+
+The result is sent as `deliverycmd.ModeMarkdown` with bypass settlement and the
+renderer-selected explicit format. It does not enter agent-reply streaming or
+start/restore a turn. Slack slash-command payloads do not contain a thread
+timestamp, so `/balda locator` intentionally returns a conversation-level
+locator.
+
+Rendering fails closed. A missing registry, missing transport registration,
+invalid canonical locator, empty renderer result, or renderer error produces no
+partial or plain fallback locator. Check startup errors for structured registrar
+failures. For a request-time failure, inspect the handler error or the Zulip log
+message `failed to render locator response`, then verify that the transport Fx
+module contributes its locator registrar to
+`balda_delivery_structured_registrar`. Also verify that the renderer returns the
+format listed above. The complete implementation flow is documented in
+[Presentation routing](architecture/presentation-routing.md#worked-flow-locator-response);
+package ownership is documented in the
+[transport presentation boundary](architecture/transport-presentation-boundary.md).
 
 ### Job runtime semantics (internal)
 
@@ -1665,7 +1696,9 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 
 - Eligibility: only `status=active` tasks with `next_run_at <= now` are polled.
 - Dispatch path: due tasks resolve the envelope target by `target`/`key`, persist its canonical locator (`channel_type`, `address_key`, `address_json`, `session_id`), and publish a durable job command. Session restore and execution happen after command delivery.
-- Locator target form: `target=locator`, `key=<channel_type>:<address_key>`; `/locator` prints a paste-ready value for the current session.
+- Locator target form: `target=locator`, `key=<channel_type>:<address_key>`;
+  `/locator` returns the paste-ready value in a transport-formatted structured
+  response. See the [locator command contract](commands.md#locator).
 - Delivery: scheduled jobs are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
 - Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are deleted from the scheduler state.
@@ -1687,7 +1720,8 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 - Route resolution:
   - request path must match a configured route `path`
   - destination comes from route `envelope.target` + `envelope.key` (default `alias:owner`)
-  - `target=locator` accepts `<channel_type>:<address_key>` in `key`; `/locator` prints the current session value
+  - `target=locator` accepts `<channel_type>:<address_key>` in `key`; obtain the
+    current value from the [locator command](commands.md#locator)
   - route `envelope.mode` decides publish target:
     - `task` (default): publish webhook job command; job execution later emits the session command
     - `session`: publish session command directly
@@ -1787,7 +1821,9 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 9. Non-terminal session progress always emits progress activity; Telegram sends typing indicators in DM and public chats for that activity, while only visible progress renders as drafts/messages. Thinking placeholders remain DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode`; `none` is literal plain text, while rich modes make at most one parse-mode-free plain send only after an explicit Telegram formatting rejection.
 11. `/reset` and `/restart` cancel current session work, clear history, and immediately start a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
-12. `/locator` returns the current session locator in the config form `<channel_type>:<address_key>`.
+12. `/locator` returns the exact current session locator in
+    `<channel_type>:<address_key>` form through the registered structured
+    renderer and explicit transport format, with no fallback on render failure.
 13. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.
 14. With `balda.sessions.persistence=sqlite`, restart restores conversation history and explicit `/reset`, `/restart`, or `/close` clears it for the current session.
 15. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.

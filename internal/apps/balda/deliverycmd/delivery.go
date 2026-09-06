@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 )
 
 const jobPayloadKindDelivery = "delivery"
@@ -198,12 +198,19 @@ func MarkdownEnvelope(jobID string, from actorlayer.ActorAddress, locator Locato
 }
 
 func MarkdownEnvelopeWithSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
+	return MarkdownEnvelopeWithFormatAndSettlement(jobID, from, locator, "", settlement, text, dedupeSuffix)
+}
+
+// MarkdownEnvelopeWithFormatAndSettlement builds a system-authored formatted
+// delivery without using agent-reply streaming or session status behavior.
+func MarkdownEnvelopeWithFormatAndSettlement(jobID string, from actorlayer.ActorAddress, locator Locator, format deliveryfmt.DeliveryFormat, settlement SettlementPolicy, text string, dedupeSuffix string) (actorlayer.Envelope, error) {
 	return envelope(jobID, from, Payload{
-		JobID:      strings.TrimSpace(jobID),
-		Locator:    locator,
-		Mode:       ModeMarkdown,
-		Settlement: normalizeSettlementPolicy(settlement),
-		Text:       strings.TrimSpace(text),
+		JobID:          strings.TrimSpace(jobID),
+		Locator:        locator,
+		DeliveryFormat: deliveryfmt.NormalizeDeliveryFormat(format),
+		Mode:           ModeMarkdown,
+		Settlement:     normalizeSettlementPolicy(settlement),
+		Text:           strings.TrimSpace(text),
 	}, dedupeSuffix)
 }
 

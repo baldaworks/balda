@@ -6,6 +6,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
@@ -39,6 +40,15 @@ func (slackAgentProgressRenderer) RenderStructured(_ context.Context, env delive
 	}, nil
 }
 
+type slackAgentLocatorRenderer struct{}
+
+func (slackAgentLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderLocator(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+	}, nil
+}
+
 func NewQuestionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 	return func(registry *deliveryfmt.StructuredRegistry) error {
 		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, questionfmt.RequestDescriptor, slackAgentQuestionRenderer{})
@@ -54,5 +64,12 @@ func NewPermissionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 func NewProgressStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 	return func(registry *deliveryfmt.StructuredRegistry) error {
 		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, slackAgentProgressRenderer{})
+	}
+}
+
+// NewLocatorStructuredRegistrar registers Slack locator response presentation.
+func NewLocatorStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return func(registry *deliveryfmt.StructuredRegistry) error {
+		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, locatorfmt.ResponseDescriptor, slackAgentLocatorRenderer{})
 	}
 }

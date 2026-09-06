@@ -9,8 +9,10 @@ import (
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	telegrampresentation "github.com/baldaworks/balda/internal/apps/balda/channel/telegram/presentation"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
+	zulippresentation "github.com/baldaworks/balda/internal/apps/balda/channel/zulip/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/progressfmt"
@@ -150,6 +152,7 @@ func TestStructuredMessageRegistryProvidesCurrentStructuredRoutes(t *testing.T) 
 			questionfmt.RegisterStructuredRenderers,
 			telegramfxRegisterStructuredRenderersForTest,
 			slackagentRegisterStructuredRenderersForTest,
+			zulipfxRegisterStructuredRenderersForTest,
 		},
 	})
 	if err != nil {
@@ -195,6 +198,36 @@ func TestStructuredMessageRegistryProvidesCurrentStructuredRoutes(t *testing.T) 
 					Body: progressfmt.Request{
 						Progress: deliverycmd.Progress{Kind: deliverycmd.ProgressPlanUpdate, Text: "plan", Visible: true},
 					},
+				})
+			},
+		},
+		{
+			name:      "locator telegram",
+			transport: deliveryfmt.TransportTelegram,
+			render: func(ctx context.Context, reg *deliveryfmt.StructuredRegistry) (deliveryfmt.StructuredPresentation, error) {
+				return deliveryfmt.RenderStructured(ctx, reg, deliveryfmt.TransportTelegram, deliveryfmt.StructuredEnvelope[locatorfmt.Response]{
+					Descriptor: locatorfmt.ResponseDescriptor,
+					Body:       locatorfmt.Response{Transport: "telegram", Locator: "telegram:-1001:77"},
+				})
+			},
+		},
+		{
+			name:      "locator slack agent",
+			transport: deliveryfmt.TransportSlackAgent,
+			render: func(ctx context.Context, reg *deliveryfmt.StructuredRegistry) (deliveryfmt.StructuredPresentation, error) {
+				return deliveryfmt.RenderStructured(ctx, reg, deliveryfmt.TransportSlackAgent, deliveryfmt.StructuredEnvelope[locatorfmt.Response]{
+					Descriptor: locatorfmt.ResponseDescriptor,
+					Body:       locatorfmt.Response{Transport: "slackagent", Locator: "slackagent:c:T123:C456"},
+				})
+			},
+		},
+		{
+			name:      "locator zulip",
+			transport: deliveryfmt.TransportZulip,
+			render: func(ctx context.Context, reg *deliveryfmt.StructuredRegistry) (deliveryfmt.StructuredPresentation, error) {
+				return deliveryfmt.RenderStructured(ctx, reg, deliveryfmt.TransportZulip, deliveryfmt.StructuredEnvelope[locatorfmt.Response]{
+					Descriptor: locatorfmt.ResponseDescriptor,
+					Body:       locatorfmt.Response{Transport: "zulip", Locator: "zulip:s:42:deploys"},
 				})
 			},
 		},
@@ -252,7 +285,10 @@ func telegramfxRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredReg
 	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, permissionfmt.RequestDescriptor, testTelegramPermissionRenderer{}); err != nil {
 		return err
 	}
-	return deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, progressfmt.RequestDescriptor, testTelegramProgressRenderer{})
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, progressfmt.RequestDescriptor, testTelegramProgressRenderer{}); err != nil {
+		return err
+	}
+	return deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, locatorfmt.ResponseDescriptor, testTelegramLocatorRenderer{})
 }
 
 func slackagentRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredRegistry) error {
@@ -262,7 +298,14 @@ func slackagentRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredReg
 	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportSlackAgent, permissionfmt.RequestDescriptor, testSlackAgentPermissionRenderer{}); err != nil {
 		return err
 	}
-	return deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, testSlackAgentProgressRenderer{})
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportSlackAgent, progressfmt.RequestDescriptor, testSlackAgentProgressRenderer{}); err != nil {
+		return err
+	}
+	return deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportSlackAgent, locatorfmt.ResponseDescriptor, testSlackAgentLocatorRenderer{})
+}
+
+func zulipfxRegisterStructuredRenderersForTest(reg *deliveryfmt.StructuredRegistry) error {
+	return deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportZulip, locatorfmt.ResponseDescriptor, testZulipLocatorRenderer{})
 }
 
 type testTelegramHTMLFormatter struct{}
@@ -344,5 +387,32 @@ func (testSlackAgentProgressRenderer) RenderStructured(_ context.Context, env de
 	return deliveryfmt.StructuredPresentation{
 		Text:           presentation.RenderProgress(env.Body),
 		DeliveryFormat: deliveryfmt.DeliveryFormatNone,
+	}, nil
+}
+
+type testTelegramLocatorRenderer struct{}
+
+func (testTelegramLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           telegrampresentation.RenderLocator(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
+}
+
+type testSlackAgentLocatorRenderer struct{}
+
+func (testSlackAgentLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderLocator(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+	}, nil
+}
+
+type testZulipLocatorRenderer struct{}
+
+func (testZulipLocatorRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[locatorfmt.Response]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           zulippresentation.RenderLocator(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
 	}, nil
 }

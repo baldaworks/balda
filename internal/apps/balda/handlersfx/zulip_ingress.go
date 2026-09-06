@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
@@ -20,6 +18,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
@@ -28,6 +27,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usageview"
 	"github.com/baldaworks/balda/internal/apps/balda/welcome"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -44,17 +45,17 @@ const (
 	zulipLocatorUsageText         = "Usage: /locator"
 	ownerAlreadyRegisteredMessage = "You are already registered as the bot owner."
 
-	commandStart    = "start"
-	commandTopic    = "topic"
-	commandLocator  = "locator"
-	commandCancel   = "cancel"
-	commandGoal     = "goalkeeper"
-	commandUser     = "user"
-	commandUsage    = "usage"
-	commandAuto     = "auto"
-	commandReset    = "reset"
-	commandRestart  = "restart"
-	commandClose    = "close"
+	commandStart   = "start"
+	commandTopic   = "topic"
+	commandLocator = "locator"
+	commandCancel  = "cancel"
+	commandGoal    = "goalkeeper"
+	commandUser    = "user"
+	commandUsage   = "usage"
+	commandAuto    = "auto"
+	commandReset   = "reset"
+	commandRestart = "restart"
+	commandClose   = "close"
 
 	userActionAdd    = "add"
 	userActionInvite = "invite"
@@ -73,6 +74,7 @@ type zulipInboundHandlerParams struct {
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
 	Dispatcher        actortransport.Dispatcher
+	LocatorRenderer   handlers.LocatorResponseRenderer
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	MemoryStore       *memory.Store
 	AuthToken         string `name:"balda_auth_token"`
@@ -89,6 +91,7 @@ type zulipInboundHandler struct {
 	channelAuth       *auth.ChannelAuthService
 	sessionManager    *baldasession.Manager
 	actorDispatcher   actortransport.Dispatcher
+	locatorRenderer   handlers.LocatorResponseRenderer
 	goalJobs          *baldajobs.JobLifecycleService
 	memoryStore       *memory.Store
 	authToken         string
@@ -114,6 +117,7 @@ func newZulipInboundHandler(params zulipInboundHandlerParams) zulip.InboundProce
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		actorDispatcher:   params.Dispatcher,
+		locatorRenderer:   params.LocatorRenderer,
 		goalJobs:          params.GoalJobs,
 		memoryStore:       params.MemoryStore,
 		authToken:         strings.TrimSpace(params.AuthToken),
@@ -516,7 +520,18 @@ func (h *zulipInboundHandler) handleLocatorCommand(ctx context.Context, locator 
 		_ = h.sendPlain(ctx, locator, zulipLocatorUsageText)
 		return
 	}
-	_ = h.sendPlain(ctx, locator, buildZulipLocatorMessage(locator))
+	if h.locatorRenderer == nil {
+		h.logger.Error().Str("session_id", locator.SessionID).Msg("locator response renderer is unavailable")
+		return
+	}
+	presentation, err := h.locatorRenderer.Render(ctx, locator)
+	if err != nil {
+		h.logger.Error().Err(err).Str("session_id", locator.SessionID).Msg("failed to render locator response")
+		return
+	}
+	if err := sendStructuredPresentation(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, presentation); err != nil {
+		h.logger.Error().Err(err).Str("session_id", locator.SessionID).Msg("failed to send locator response")
+	}
 }
 
 func (h *zulipInboundHandler) handleTopicCommand(ctx context.Context, locator deliverycmd.Locator, senderID int, args string, isDM bool) {
@@ -1004,11 +1019,6 @@ func buildZulipTopicWelcome(manager *baldasession.Manager, providerName string, 
 	return welcome.BuildAgentWelcomeMessage(topicName, sessionID, metadata.Type, metadata.Model, metadata.MCPServers)
 }
 
-func buildZulipLocatorMessage(locator deliverycmd.Locator) string {
-	ref := locatorref.Format(locator)
-	return fmt.Sprintf("Transport: %s\nLocator: %s\n\nUse in scheduler/webhook config:\ntarget: locator\nkey: %s", locator.ChannelType, ref, ref)
-}
-
 func startWelcomeMessage() string {
 	return "Welcome to Balda Bot!\n\nTo authenticate:\n" +
 		"• /start owner=<your_owner_token>\n" +
@@ -1136,6 +1146,20 @@ func SendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from a
 
 func SendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
 	env, err := deliverycmd.MarkdownEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
+	if err != nil {
+		return err
+	}
+	if dispatcher == nil {
+		return fmt.Errorf("runtime is unavailable")
+	}
+	_, err = dispatcher.Dispatch(ctx, env)
+	return err
+}
+
+func sendStructuredPresentation(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, presentation deliveryfmt.StructuredPresentation) error {
+	env, err := deliverycmd.MarkdownEnvelopeWithFormatAndSettlement(
+		"", from, locator, presentation.DeliveryFormat, deliverycmd.SettlementBypass, presentation.Text, "",
+	)
 	if err != nil {
 		return err
 	}

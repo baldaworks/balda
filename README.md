@@ -182,17 +182,27 @@ ENTRYPOINT ["balda"]
 
 ## Core commands
 
-- `/start owner=<owner_token>` — owner bootstrap in direct messages
-- `/start invite=<invite_token>` — collaborator onboarding
-- `/topic <name>` — open a focused session
-- `/goalkeeper <objective>` — run a longer goal loop
-- `/goalkeeper clear` — stop active goal work in the current session
-- `/cancel` — stop the current turn
-- `/reset` or `/restart` — clear the current session and start fresh
-- `/locator` — show the current session locator for scheduler/webhook routing
-- `/balda locator` — show the current Slack conversation locator
+Balda provides onboarding, session control, GoalKeeper, locator, usage, user,
+and plugin commands. Telegram and Zulip use `/locator`; Slack exposes the
+conversation-scoped form `/balda locator`.
 
-Full command behavior is documented in [docs/balda.md](docs/balda.md).
+Slack formats the response for scanning and copying:
+
+````text
+*Balda locator*
+
+*Transport:* `slackagent`
+*Locator:* `slackagent:c:T0BFTRBFA94:C0BU4LKUB6W`
+
+*Scheduler / webhook configuration*
+```
+target: locator
+key: slackagent:c:T0BFTRBFA94:C0BU4LKUB6W
+```
+````
+
+See the [complete command reference](docs/commands.md) for syntax, transport
+availability, access, valid contexts, effects, errors, and examples.
 
 ## Configuration
 

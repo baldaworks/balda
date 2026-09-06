@@ -33,6 +33,10 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_delivery_prompt_contribution"`),
 		),
 		fx.Annotate(
+			NewLocatorStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
 			func(handler *zulip.ZulipBaldaHandler) appports.TransportLifecycleStage {
 				return appports.TransportLifecycleStage{
 					Name:  "zulip ingress",

@@ -14,6 +14,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
@@ -171,10 +172,10 @@ func TestCommandHandlerOnCommand_LocatorShowsCurrentTransportAndRef(t *testing.T
 	if len(turns.cancelCalls) != 0 {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
 	}
-	assertLastSentContains(t, tgClient, "Transport: telegram")
-	assertLastSentContains(t, tgClient, "Locator: telegram:9001:123")
-	assertLastSentContains(t, tgClient, "target: locator")
-	assertLastSentContains(t, tgClient, "key: telegram:9001:123")
+	assertLastRichSentContains(t, tgClient, "**Transport:** `telegram`")
+	assertLastRichSentContains(t, tgClient, "**Locator:** `telegram:9001:123`")
+	assertLastRichSentContains(t, tgClient, "target: locator")
+	assertLastRichSentContains(t, tgClient, "key: telegram:9001:123")
 }
 
 func TestCommandHandlerHandleCommand_LocatorUsesTransportNeutralAccessAndInvocation(t *testing.T) {
@@ -188,12 +189,18 @@ func TestCommandHandlerHandleCommand_LocatorUsesTransportNeutralAccessAndInvocat
 		args string
 		want string
 	}{
-		{name: "locator", want: "Locator: slackagent:c:T123:C456"},
+		{name: "locator", want: "*Locator:* `slackagent:c:T123:C456`"},
 		{name: "usage", args: "extra", want: "Usage: /balda locator"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			bus := &recordingHandlerCommandBus{}
-			handler := &CommandHandler{actorDispatcher: bus}
+			renderer := &fakeLocatorResponseRenderer{
+				presentation: deliveryfmt.StructuredPresentation{
+					Text:           "*Balda locator*\n\n*Locator:* `slackagent:c:T123:C456`",
+					DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
+				},
+			}
+			handler := &CommandHandler{actorDispatcher: bus, locatorRenderer: renderer}
 			err := handler.HandleCommand(context.Background(), commandapp.Request{
 				Locator:    locator,
 				Transport:  "slackagent",
@@ -216,7 +223,41 @@ func TestCommandHandlerHandleCommand_LocatorUsesTransportNeutralAccessAndInvocat
 			if !strings.Contains(payload.Text, test.want) {
 				t.Fatalf("delivery text = %q, want substring %q", payload.Text, test.want)
 			}
+			if test.args == "" {
+				if payload.Mode != deliverycmd.ModeMarkdown || payload.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn {
+					t.Fatalf("delivery mode/format = %q/%q, want markdown/mrkdwn", payload.Mode, payload.DeliveryFormat)
+				}
+				if renderer.calls != 1 {
+					t.Fatalf("renderer calls = %d, want 1", renderer.calls)
+				}
+			} else if renderer.calls != 0 {
+				t.Fatalf("renderer calls = %d, want 0 for invalid arguments", renderer.calls)
+			}
 		})
+	}
+}
+
+func TestCommandHandlerHandleCommand_LocatorRendererFailureDoesNotDispatch(t *testing.T) {
+	locator, err := locatorref.NewSlackAgentConversationLocator("T123", "C456")
+	if err != nil {
+		t.Fatalf("NewSlackAgentConversationLocator() error = %v", err)
+	}
+	bus := &recordingHandlerCommandBus{}
+	handler := &CommandHandler{
+		actorDispatcher: bus,
+		locatorRenderer: &fakeLocatorResponseRenderer{err: errors.New("render failed")},
+	}
+	err = handler.HandleCommand(context.Background(), commandapp.Request{
+		Locator:    locator,
+		Access:     commandapp.Access{SessionCommands: true},
+		Invocation: commandapp.Invocation{Root: "/balda"},
+		Command:    "locator",
+	})
+	if err == nil || !strings.Contains(err.Error(), "render failed") {
+		t.Fatalf("HandleCommand() error = %v, want render failure", err)
+	}
+	if len(bus.commands) != 0 {
+		t.Fatalf("delivery commands = %d, want 0", len(bus.commands))
 	}
 }
 
@@ -384,6 +425,7 @@ func TestCommandHandlerOnCommand_AutoOnOffAndStatus(t *testing.T) {
 
 func TestCommandHandlerOnCommand_LocatorWithArgsShowsUsage(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	renderer := handler.locatorRenderer.(*fakeLocatorResponseRenderer)
 
 	err := handler.onCommand(context.Background(), newCommandEvent("locator", "now", 101, 9001, nil))
 	if err != nil {
@@ -397,10 +439,14 @@ func TestCommandHandlerOnCommand_LocatorWithArgsShowsUsage(t *testing.T) {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
 	}
 	assertLastSentContains(t, tgClient, "Usage: /locator")
+	if renderer.calls != 0 {
+		t.Fatalf("renderer calls = %d, want 0", renderer.calls)
+	}
 }
 
 func TestCommandHandlerOnCommand_LocatorUnauthorized(t *testing.T) {
 	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
+	renderer := handler.locatorRenderer.(*fakeLocatorResponseRenderer)
 
 	err := handler.onCommand(context.Background(), newCommandEvent("locator", "", 999, 9001, nil))
 	if err != nil {
@@ -414,6 +460,9 @@ func TestCommandHandlerOnCommand_LocatorUnauthorized(t *testing.T) {
 		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
 	}
 	assertLastSentContains(t, tgClient, "Only the bot owner or collaborators can use this command.")
+	if renderer.calls != 0 {
+		t.Fatalf("renderer calls = %d, want 0", renderer.calls)
+	}
 }
 
 func TestCommandHandlerOnCommand_ResetUnauthorized(t *testing.T) {
@@ -1432,6 +1481,12 @@ func newCommandHandlerTestHarnessWithFormatting(t *testing.T, formattingMode str
 		sessionManager:    sessionManager,
 		workCanceller:     turnDispatcher,
 		actorDispatcher:   turnDispatcher,
+		locatorRenderer: &fakeLocatorResponseRenderer{
+			presentation: deliveryfmt.StructuredPresentation{
+				Text:           "# Balda locator\n\n**Transport:** `telegram`\n**Locator:** `telegram:9001:123`\n\n**Scheduler / webhook configuration**\n```yaml\ntarget: locator\nkey: telegram:9001:123\n```",
+				DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+			},
+		},
 		goalJobs:          &fakeGoalJobService{},
 		goalMaxIterations: normalizeGoalMaxIterations(0),
 		autoMaxTurns:      automode.DefaultMaxTurns,
@@ -1444,6 +1499,19 @@ func newCommandHandlerTestHarnessWithFormatting(t *testing.T, formattingMode str
 		},
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
+}
+
+type fakeLocatorResponseRenderer struct {
+	presentation deliveryfmt.StructuredPresentation
+	err          error
+	calls        int
+	locator      deliverycmd.Locator
+}
+
+func (f *fakeLocatorResponseRenderer) Render(_ context.Context, locator deliverycmd.Locator) (deliveryfmt.StructuredPresentation, error) {
+	f.calls++
+	f.locator = locator
+	return f.presentation, f.err
 }
 
 type recordingHandlerCommandBus struct {

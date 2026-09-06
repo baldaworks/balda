@@ -3,8 +3,8 @@ package telegramfx
 import (
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/rs/zerolog"
@@ -65,6 +65,10 @@ var Module = fx.Module(
 		),
 		fx.Annotate(
 			NewProgressStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			NewLocatorStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(

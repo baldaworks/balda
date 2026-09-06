@@ -1,7 +1,7 @@
 # Transport presentation boundary
 
 Owner: Balda maintainers  
-Status: proposed
+Status: active
 
 ## Problem
 
@@ -50,9 +50,10 @@ Shared application packages must not own:
 
 Examples:
 
-- `questionfmt`, `permissionfmt`, `progressfmt` define transport-neutral
+- `questionfmt`, `permissionfmt`, `progressfmt`, and `locatorfmt` define transport-neutral
   message descriptors and payloads;
 - `deliveryfmt` defines registry interfaces and routing contracts;
+- `locatorapp` owns canonical locator projection and structured resolution;
 - `deliveryfx` assembles shared transport-neutral presentation wiring.
 
 ### Transport package subtree
@@ -100,8 +101,9 @@ policy, and actor publication stay on the application side of that seam.
 For example, Slack `/balda` ingress verifies and normalizes the signed form into
 `commandapp.Request`, including provider-neutral access and invocation facts.
 It calls `commandapp.Handler` without interpreting the subcommand. The shared
-command handler owns authorization, validation, output construction, and
-delivery dispatch.
+command handler owns authorization and validation, delegates locator projection
+through its `LocatorResponseRenderer` port, and dispatches the resolved
+presentation. `handlersfx` binds that port to `locatorapp.Service`.
 
 ## Rendering rule
 
@@ -119,6 +121,30 @@ renderers registered by each transport.
 
 Structured renderers are registered per transport and per message kind. They
 must not live in shared message contract packages.
+
+## Locator as an ownership example
+
+The locator response divides ownership as follows:
+
+| Concern | Owner |
+|---|---|
+| Public `<channel_type>:<address_key>` syntax | `locatorref` |
+| Typed `Transport` and `Locator` response contract | `locatorfmt` |
+| Canonical projection and registry lookup | `locatorapp` |
+| Ingress authorization, arguments, and dispatch | `handlers` and provider ingress adapters |
+| Provider markup | each `channel/<transport>/presentation` package |
+| Renderer registration | each transport's `<transport>fx` package |
+| Formatted delivery payload | `deliverycmd` |
+
+The public destination comes from `commandapp.Request.Locator` /
+`deliverycmd.Locator`. `actorlayer.ActorAddress` remains internal routing
+metadata for the delivery envelope. Moving either the public locator contract
+or rendering policy into `session`, `handlers`, or a concrete channel package
+would violate this ownership split.
+
+The descriptor-to-adapter mechanics, registrations, formats, and failure path
+are documented once in the
+[locator worked flow](presentation-routing.md#worked-flow-locator-response).
 
 ## Generic invariant
 
@@ -173,3 +199,10 @@ Slackagent is an instance of the rule, not the rule itself.
 
 That means Telegram rich-format prompt rules and Telegram structured service
 renderers are transport-owned registrations, not shared application logic.
+
+## Zulip as one instance of the rule
+
+`channel/zulip` owns Zulip Markdown presentation and delivery. Its `zulipfx`
+package registers structured renderers and supplies the ingress adapter. The
+current Zulip ingress has its own command normalization path, but it consumes
+the same locator application service and does not construct locator markup.

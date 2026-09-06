@@ -3,6 +3,7 @@ package handlersfx
 import (
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorapp"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
 )
@@ -10,6 +11,10 @@ import (
 // Module wires ingress-owned ports to concrete provider runtimes.
 var Module = fx.Module("balda_handlersfx",
 	fx.Provide(
+		fx.Annotate(
+			locatorapp.New,
+			fx.As(new(handlers.LocatorResponseRenderer)),
+		),
 		newTelegramInboundHandler,
 		fx.Annotate(
 			func(h *telegramInboundHandler) baldatelegram.InboundHandler { return h },
