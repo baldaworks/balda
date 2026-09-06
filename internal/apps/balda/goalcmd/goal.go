@@ -3,10 +3,10 @@ package goalcmd
 // Package goalcmd is a compatibility shim over goalkeepercmd.
 
 import (
-	"github.com/baldaworks/go-actorlayer"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 const (
@@ -19,11 +19,11 @@ type EnvelopePayload = goalkeepercmd.EnvelopePayload
 type JobPayload = goalkeepercmd.JobPayload
 type QuestionPayload = goalkeepercmd.QuestionPayload
 
-func JobEnvelope(locator baldasession.SessionLocator, objective string, transportUserID string, maxIterations int) (actorlayer.Envelope, error) {
+func JobEnvelope(locator deliverycmd.Locator, objective string, transportUserID string, maxIterations int) (actorlayer.Envelope, error) {
 	return goalkeepercmd.JobEnvelope(locator, objective, transportUserID, maxIterations)
 }
 
-func JobEnvelopeWithOptions(locator baldasession.SessionLocator, deliveryOptions deliveryfmt.Options, objective string, transportUserID string, maxIterations int) (actorlayer.Envelope, error) {
+func JobEnvelopeWithOptions(locator deliverycmd.Locator, deliveryOptions deliveryfmt.Options, objective string, transportUserID string, maxIterations int) (actorlayer.Envelope, error) {
 	return goalkeepercmd.JobEnvelopeWithOptions(locator, deliveryOptions, objective, transportUserID, maxIterations)
 }
 

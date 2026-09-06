@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 type Payload struct {
-	Locator baldasession.SessionLocator `json:"locator"`
-	State   map[string]any              `json:"state,omitempty"`
+	Locator deliverycmd.Locator `json:"locator"`
+	State   map[string]any      `json:"state,omitempty"`
 }
 
 func Envelope(payload Payload) (actorlayer.Envelope, error) {

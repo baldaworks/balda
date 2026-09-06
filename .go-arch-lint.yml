@@ -266,7 +266,8 @@ deps:
     anyVendorDeps: false
 
   foundation:
-    anyProjectDeps: true
+    mayDependOn:
+      - foundation
     anyVendorDeps: true
 
   contracts:

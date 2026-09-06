@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/baldaworks/go-actorlayer"
-	"github.com/google/uuid"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/google/uuid"
 )
 
 const (
@@ -26,29 +26,29 @@ type WaitSchedulePayload struct {
 }
 
 type Payload struct {
-	Action      string                      `json:"action"`
-	JobID       string                      `json:"job_id,omitempty"`
-	SessionID   string                      `json:"session_id,omitempty"`
-	Locator     baldasession.SessionLocator `json:"locator"`
-	Reason      string                      `json:"reason,omitempty"`
-	RequestedBy string                      `json:"requested_by,omitempty"`
-	Notify      bool                        `json:"notify,omitempty"`
-	Wait        *WaitSchedulePayload        `json:"wait,omitempty"`
+	Action      string              `json:"action"`
+	JobID       string              `json:"job_id,omitempty"`
+	SessionID   string              `json:"session_id,omitempty"`
+	Locator     deliverycmd.Locator `json:"locator"`
+	Reason      string              `json:"reason,omitempty"`
+	RequestedBy string              `json:"requested_by,omitempty"`
+	Notify      bool                `json:"notify,omitempty"`
+	Wait        *WaitSchedulePayload `json:"wait,omitempty"`
 }
 
-func CancelEnvelopeWithNotify(locator baldasession.SessionLocator, jobID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
+func CancelEnvelopeWithNotify(locator deliverycmd.Locator, jobID string, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	return envelope(locator, ActionCancel, jobID, requestedBy, reason, notify, nil)
 }
 
-func CancelTurnEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
+func CancelTurnEnvelopeWithNotify(locator deliverycmd.Locator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	return envelope(locator, ActionCancelTurn, "", requestedBy, reason, notify, nil)
 }
 
-func ClearGoalEnvelopeWithNotify(locator baldasession.SessionLocator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
+func ClearGoalEnvelopeWithNotify(locator deliverycmd.Locator, requestedBy string, reason string, notify bool) (actorlayer.Envelope, error) {
 	return envelope(locator, ActionClearGoal, "", requestedBy, reason, notify, nil)
 }
 
-func ScheduleWaitEnvelope(locator baldasession.SessionLocator, jobID string, content string, delaySeconds int, requestedBy string, notify bool) (actorlayer.Envelope, error) {
+func ScheduleWaitEnvelope(locator deliverycmd.Locator, jobID string, content string, delaySeconds int, requestedBy string, notify bool) (actorlayer.Envelope, error) {
 	return envelope(locator, ActionScheduleWait, "", requestedBy, "", notify, &WaitSchedulePayload{
 		JobID:        strings.TrimSpace(jobID),
 		Content:      strings.TrimSpace(content),
@@ -58,7 +58,7 @@ func ScheduleWaitEnvelope(locator baldasession.SessionLocator, jobID string, con
 	})
 }
 
-func envelope(locator baldasession.SessionLocator, action string, jobID string, requestedBy string, reason string, notify bool, wait *WaitSchedulePayload) (actorlayer.Envelope, error) {
+func envelope(locator deliverycmd.Locator, action string, jobID string, requestedBy string, reason string, notify bool, wait *WaitSchedulePayload) (actorlayer.Envelope, error) {
 	payload := Payload{
 		Action:      strings.TrimSpace(action),
 		JobID:       strings.TrimSpace(jobID),

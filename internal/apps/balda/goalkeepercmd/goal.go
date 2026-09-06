@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 )
 
 const (
@@ -25,12 +25,12 @@ type EnvelopePayload struct {
 }
 
 type JobPayload struct {
-	JobID           string                      `json:"job_id,omitempty"`
-	Locator         baldasession.SessionLocator `json:"locator"`
-	DeliveryOptions deliveryfmt.Options         `json:"delivery_options,omitempty,omitzero"`
-	Objective       string                      `json:"objective"`
-	TransportUserID string                      `json:"transport_user_id"`
-	MaxIterations   int                         `json:"max_iterations,omitempty"`
+	JobID           string              `json:"job_id,omitempty"`
+	Locator         deliverycmd.Locator `json:"locator"`
+	DeliveryOptions deliveryfmt.Options `json:"delivery_options,omitempty,omitzero"`
+	Objective       string              `json:"objective"`
+	TransportUserID string              `json:"transport_user_id"`
+	MaxIterations   int                 `json:"max_iterations,omitempty"`
 }
 
 type QuestionPayload struct {
@@ -43,7 +43,7 @@ type QuestionPayload struct {
 }
 
 func JobEnvelope(
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	objective string,
 	transportUserID string,
 	maxIterations int,
@@ -52,7 +52,7 @@ func JobEnvelope(
 }
 
 func JobEnvelopeWithOptions(
-	locator baldasession.SessionLocator,
+	locator deliverycmd.Locator,
 	deliveryOptions deliveryfmt.Options,
 	objective string,
 	transportUserID string,

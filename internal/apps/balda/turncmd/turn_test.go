@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/go-actorlayer"
 )
 
 func TestSessionTurnEnvelopeCarriesGeneratedDedupeKeyInPayload(t *testing.T) {
@@ -16,7 +16,7 @@ func TestSessionTurnEnvelopeCarriesGeneratedDedupeKeyInPayload(t *testing.T) {
 
 	env, err := SessionTurnEnvelope(SessionTurnPayload{
 		Text: "test",
-		Locator: baldasession.SessionLocator{
+		Locator: deliverycmd.Locator{
 			SessionID: "tg-1-0",
 		},
 	})
@@ -61,7 +61,7 @@ func TestSessionTurnEnvelopePreservesMemoryMetadata(t *testing.T) {
 
 	const latestMemoryAt = "2026-08-20T10:00:00.123456789Z"
 	env, err := SessionTurnEnvelope(SessionTurnPayload{
-		Locator:  baldasession.SessionLocator{SessionID: "tg-1-0"},
+		Locator:  deliverycmd.Locator{SessionID: "tg-1-0"},
 		Metadata: &SessionTurnMetadata{LatestMemoryAt: latestMemoryAt},
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func TestWebhookJobEnvelopePreservesNestedMemoryMetadata(t *testing.T) {
 
 	const latestMemoryAt = "2026-08-20T10:00:00Z"
 	env, _, err := WebhookJobEnvelope(SessionTurnPayload{
-		Locator:  baldasession.SessionLocator{SessionID: "webhook-1"},
+		Locator:  deliverycmd.Locator{SessionID: "webhook-1"},
 		Metadata: &SessionTurnMetadata{LatestMemoryAt: latestMemoryAt},
 	}, "test", "request-1")
 	if err != nil {
@@ -105,7 +105,7 @@ func TestSessionTurnEnvelopePreservesExplicitDedupeKey(t *testing.T) {
 	env, err := SessionTurnEnvelope(SessionTurnPayload{
 		Text:      "test",
 		DedupeKey: "transport-message-1",
-		Locator: baldasession.SessionLocator{
+		Locator: deliverycmd.Locator{
 			SessionID: "tg-1-0",
 		},
 	})
@@ -129,7 +129,7 @@ func TestNormalizedInboundCarriesOneOrderedAttachmentSetThroughDurableTurn(t *te
 			{Kind: attachment.KindDocument, FileID: firstFileID, FileName: "a.txt", Blob: firstBlob},
 			{Kind: attachment.KindDocument, FileID: "second", FileName: "b.txt"},
 		},
-		Locator: baldasession.SessionLocator{
+		Locator: deliverycmd.Locator{
 			SessionID:   "tg-9001-77",
 			ChannelType: deliveryfmt.TransportTelegram,
 			AddressKey:  "9001:77",

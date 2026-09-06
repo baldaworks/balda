@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/go-actorlayer"
-	"github.com/google/uuid"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/go-actorlayer"
+	"github.com/google/uuid"
 )
 
 const (
@@ -22,11 +22,11 @@ const (
 )
 
 type SessionTurnPayload struct {
-	JobID            string                       `json:"job_id,omitempty"`
-	Text             string                       `json:"text"`
-	Attachments      []attachment.Descriptor      `json:"attachments,omitempty"`
-	Locator          baldasession.SessionLocator  `json:"locator"`
-	ReportTo         *baldasession.SessionLocator `json:"report_to,omitempty"`
+	JobID            string                     `json:"job_id,omitempty"`
+	Text             string                     `json:"text"`
+	Attachments      []attachment.Descriptor    `json:"attachments,omitempty"`
+	Locator          deliverycmd.Locator        `json:"locator"`
+	ReportTo         *deliverycmd.Locator       `json:"report_to,omitempty"`
 	ParentJobID      string                       `json:"parent_job_id,omitempty"`
 	UserID           string                       `json:"user_id,omitempty"`
 	RequesterUserID  string                       `json:"requester_user_id,omitempty"`
@@ -76,20 +76,20 @@ type InboundSettlement struct {
 
 // NormalizedInbound represents one logical message after provider grouping.
 type NormalizedInbound struct {
-	ID                InboundID                   `json:"id"`
-	Text              string                      `json:"text"`
-	Attachments       []attachment.Descriptor     `json:"attachments,omitempty"`
-	Locator           baldasession.SessionLocator `json:"locator"`
-	ProviderMessageID string                      `json:"provider_message_id,omitempty"`
-	UserID            string                      `json:"user_id,omitempty"`
-	MessageID         int                         `json:"message_id,omitempty"`
-	ReplyToMessageID  int                         `json:"reply_to_message_id,omitempty"`
-	TopicID           int                         `json:"topic_id,omitempty"`
-	ReceivedAt        string                      `json:"received_at,omitempty"`
-	DeliveryFormat    deliveryfmt.DeliveryFormat  `json:"delivery_format"`
-	ProgressPolicy    deliveryfmt.ProgressPolicy  `json:"progress_policy,omitempty"`
-	Direct            bool                        `json:"direct,omitempty"`
-	Source            string                      `json:"source"`
+	ID                InboundID                  `json:"id"`
+	Text              string                     `json:"text"`
+	Attachments       []attachment.Descriptor    `json:"attachments,omitempty"`
+	Locator           deliverycmd.Locator        `json:"locator"`
+	ProviderMessageID string                     `json:"provider_message_id,omitempty"`
+	UserID            string                     `json:"user_id,omitempty"`
+	MessageID         int                        `json:"message_id,omitempty"`
+	ReplyToMessageID  int                        `json:"reply_to_message_id,omitempty"`
+	TopicID           int                        `json:"topic_id,omitempty"`
+	ReceivedAt        string                     `json:"received_at,omitempty"`
+	DeliveryFormat    deliveryfmt.DeliveryFormat `json:"delivery_format"`
+	ProgressPolicy    deliveryfmt.ProgressPolicy `json:"progress_policy,omitempty"`
+	Direct            bool                       `json:"direct,omitempty"`
+	Source            string                     `json:"source"`
 }
 
 // SessionTurn converts a normalized logical message into the durable turn wire.
@@ -139,13 +139,13 @@ type jobEnvelopePayload struct {
 }
 
 type scheduledJobPayload struct {
-	JobID       string                       `json:"job_id"`
-	Content     string                       `json:"content"`
-	Locator     baldasession.SessionLocator  `json:"locator"`
-	ReportTo    *baldasession.SessionLocator `json:"report_to,omitempty"`
-	ParentJobID string                       `json:"parent_job_id,omitempty"`
-	UserID      string                       `json:"user_id"`
-	TopicID     int                          `json:"topic_id,omitempty"`
+	JobID       string               `json:"job_id"`
+	Content     string               `json:"content"`
+	Locator     deliverycmd.Locator  `json:"locator"`
+	ReportTo    *deliverycmd.Locator `json:"report_to,omitempty"`
+	ParentJobID string               `json:"parent_job_id,omitempty"`
+	UserID      string               `json:"user_id"`
+	TopicID     int                  `json:"topic_id,omitempty"`
 }
 
 const (
@@ -256,8 +256,8 @@ func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID 
 func ScheduledJobEnvelope(
 	scheduledJobID string,
 	content string,
-	locator baldasession.SessionLocator,
-	reportTo *baldasession.SessionLocator,
+	locator deliverycmd.Locator,
+	reportTo *deliverycmd.Locator,
 	userID string,
 	topicID int,
 	dispatchKey string,

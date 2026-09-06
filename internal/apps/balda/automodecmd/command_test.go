@@ -4,14 +4,14 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 )
 
 func TestEnvelopeSatisfiesRuntimeContract(t *testing.T) {
 	t.Parallel()
 
 	env, err := Envelope(Payload{
-		Locator: baldasession.SessionLocator{
+		Locator: deliverycmd.Locator{
 			SessionID:   "tg-1-2",
 			ChannelType: "telegram",
 			AddressKey:  "1:2",
