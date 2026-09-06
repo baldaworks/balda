@@ -13,6 +13,10 @@ Status: active
 - Transport delivery context interruptions on waiting steering constituents remain retryable rather than falsely settled.
 - Retry/permanent failure handling is explicit and classified.
 - Product actors own Balda behavior: session turns, webhook/scheduled work routing, `/goalkeeper` execution, outbound delivery, and cancellation.
+- CommandActor is registered independently at wildcard address `command:*`.
+  Transport ingress publishes `balda.v1.cmd.command`; the runtime serializes
+  it on `command:<session_id>`, and the actor routes by exact command name.
+  The current actor-owned names are `locator` and `reset`.
 - `/goalkeeper` uses Balda's goal workflow wrapper built on Norma's reusable goal loop runtime.
 - Job progress/results and projected event payload summaries use the shared `internal/apps/balda/redaction` policy before persistence and delivery.
 - The external actorlayer core does not depend on Balda, Telegram, MCP, transport, or provider SDK APIs; Balda's `execution` package is the product runtime facade and depends on canonical `actorcmd` contracts.
@@ -25,6 +29,7 @@ Status: active
 - `internal/apps/balda/actors/control_actor_test.go`
 - `internal/apps/balda/actors/delivery_actor_test.go`
 - `internal/apps/balda/handlers/command_test.go`
+- `internal/apps/balda/actors/command/router_test.go`
 
 ## Related packages
 

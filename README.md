@@ -183,8 +183,8 @@ ENTRYPOINT ["balda"]
 ## Core commands
 
 Balda provides onboarding, session control, GoalKeeper, locator, usage, user,
-and plugin commands. Telegram and Zulip use `/locator`; Slack exposes the
-conversation-scoped form `/balda locator`.
+and plugin commands. Telegram and Zulip use `/locator` and `/reset`; Slack
+exposes the conversation-scoped forms `/balda locator` and `/balda reset`.
 
 Slack formats the response for scanning and copying:
 

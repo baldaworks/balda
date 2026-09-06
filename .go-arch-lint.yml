@@ -73,7 +73,7 @@ components:
       - internal/apps/balda/automodecmd
       - internal/apps/balda/controlcmd
       - internal/apps/balda/chatapp
-      - internal/apps/balda/commandapp
+      - internal/apps/balda/commandcmd
       - internal/apps/balda/deliverycmd
       - internal/apps/balda/goalcmd
       - internal/apps/balda/goalkeepercmd
@@ -109,7 +109,6 @@ components:
       - internal/apps/balda/jobs
       - internal/apps/balda/jobexec
       - internal/apps/balda/ingressapp
-      - internal/apps/balda/locatorapp
       - internal/apps/balda/memory
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
@@ -144,6 +143,10 @@ components:
   ingress_wiring:
     in:
       - internal/apps/balda/handlersfx
+
+  command_wiring:
+    in:
+      - internal/apps/balda/commandfx
 
   # Transport-neutral delivery use case and consumer-owned ports. Concrete
   # channel routing is composed in deliveryfx and must not leak back here.
@@ -369,6 +372,16 @@ deps:
       - application
     anyVendorDeps: true
 
+  command_wiring:
+    mayDependOn:
+      - contracts
+      - neutral_registry
+      - application
+      - domain
+      - storage
+      - infrastructure
+    anyVendorDeps: true
+
   delivery_usecase:
     mayDependOn:
       - foundation
@@ -486,6 +499,7 @@ deps:
       - runtime
       - ingress
       - ingress_wiring
+      - command_wiring
       - delivery_usecase
       - delivery
       - telegram_transport

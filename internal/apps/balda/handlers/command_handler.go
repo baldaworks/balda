@@ -6,10 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
-	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
@@ -25,16 +24,10 @@ import (
 type commandSessionManager interface {
 	CreateSession(ctx context.Context, sessionCtx session.SessionContext, agentName string) error
 	GetAgentMetadata(agentName string) session.AgentMetadata
-	GetSessionInfo(ctx context.Context, sessionID string) (session.TopicSessionInfo, error)
 	RuntimeStateValue(ctx context.Context, locator session.SessionLocator, key string) (any, bool, error)
 	UpdateRuntimeState(ctx context.Context, locator session.SessionLocator, state map[string]any) error
 	BaldaProviderID() string
 	ResetSession(ctx context.Context, locator session.SessionLocator) error
-	TakeStartupNotice(sessionID string) string
-}
-
-type sessionWorkCanceller interface {
-	CancelWork(ctx context.Context, locator session.SessionLocator, actor string, reason string) error
 }
 
 type goalJobService interface {
@@ -52,7 +45,6 @@ const (
 	commandUsage    = "usage"
 	commandAuto     = "auto"
 	commandReset    = "reset"
-	commandRestart  = "restart"
 	commandClose    = "close"
 	commandPlugins  = plugincmd.CommandPlugin
 	chatTypePrivate = "private"
@@ -63,16 +55,15 @@ const (
 	userActionRemove = "remove"
 )
 
-// CommandHandler handles Balda chat commands such as /topic, /goalkeeper, /reset,
-// /restart, /locator, /close, /cancel, and /user.
+// CommandHandler handles legacy inline commands and publishes /reset and
+// /locator to the transport-neutral CommandActor.
 type CommandHandler struct {
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore
 	channel           CommandChannel
 	sessionManager    commandSessionManager
-	workCanceller     sessionWorkCanceller
 	actorDispatcher   actortransport.Dispatcher
-	locatorRenderer   LocatorResponseRenderer
+	commandIngress    commandcmd.Ingress
 	goalJobs          goalJobService
 	goalMaxIterations int
 	autoMaxTurns      int
@@ -87,9 +78,8 @@ type commandHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore
 	Channel           CommandChannel
 	SessionManager    *session.Manager
-	WorkCanceller     appports.SessionWorkCanceller `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
-	LocatorRenderer   LocatorResponseRenderer
+	CommandIngress    commandcmd.Ingress
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	MaxIterations     int                            `name:"balda_goal_max_iterations"`
 	AutoMaxTurns      int                            `name:"balda_automode_max_turns"`
@@ -107,7 +97,7 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 	if !ok {
 		return nil
 	}
-	return h.HandleCommand(ctx, commandapp.Request{
+	req := commandRequest{
 		Locator:         commandCtx.Locator,
 		DeliveryOptions: commandCtx.DeliveryOptions,
 		Transport:       commandCtx.Locator.ChannelType,
@@ -117,10 +107,25 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		Command:         commandCtx.Command,
 		Args:            commandCtx.Args,
 		IsDM:            commandCtx.IsDM,
-	})
+	}
+	if req.Command == commandReset || req.Command == commandLocator {
+		allowed := h.canUseSessionCommand(ctx, req)
+		isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(req.UserID)
+		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
+			InvocationID: fmt.Sprintf("telegram:command:%d:%d", commandCtx.ChatID, commandCtx.MessageID),
+			Payload: commandcmd.Payload{
+				Version: commandcmd.SchemaVersion, Name: req.Command, Args: req.Args,
+				Locator: req.Locator, Transport: req.Transport, Principal: telegramref.UserID(req.UserID),
+				Access:       commandcmd.Access{SessionCommands: allowed, Owner: isOwner, Collaborator: allowed && !isOwner},
+				Conversation: commandcmd.Conversation{Direct: req.IsDM},
+				Presentation: req.DeliveryOptions, Invocation: commandcmd.Invocation{Root: "/"},
+			},
+		})
+	}
+	return h.HandleCommand(ctx, req)
 }
 
-func (h *CommandHandler) HandleCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) HandleCommand(ctx context.Context, req commandRequest) error {
 	if !req.CommandEnabled(req.Command) {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Usage: "+req.EnabledCommandUsage())
 	}
@@ -129,10 +134,6 @@ func (h *CommandHandler) HandleCommand(ctx context.Context, req commandapp.Reque
 		return h.onHelpCommand(ctx, req)
 	case commandTopic:
 		return h.onTopicCommand(ctx, req)
-	case commandReset, commandRestart:
-		return h.onResetCommand(ctx, req)
-	case commandLocator:
-		return h.onLocatorCommand(ctx, req)
 	case commandClose:
 		return h.onCloseCommand(ctx, req)
 	case commandCancel:
@@ -152,7 +153,7 @@ func (h *CommandHandler) HandleCommand(ctx context.Context, req commandapp.Reque
 	}
 }
 
-func (h *CommandHandler) onHelpCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onHelpCommand(ctx context.Context, req commandRequest) error {
 	if strings.TrimSpace(req.Args) != "" {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Usage: /help")
 	}
@@ -168,7 +169,6 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 		lines = append(lines, "", "## Sessions", "")
 		lines = append(lines, "- `/topic <name>` — create a new DM topic session")
 		lines = append(lines, "- `/reset` — reset current session and start again")
-		lines = append(lines, "- `/restart` — alias of `/reset`")
 		lines = append(lines, "- `/close` — close topic or clear current DM session")
 		lines = append(lines, "- `/cancel` — request cancel for the current turn")
 		lines = append(lines, "- `/locator` — show current session locator")
@@ -192,7 +192,7 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 	return strings.Join(lines, "\n")
 }
 
-func (h *CommandHandler) onPluginsCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onPluginsCommand(ctx context.Context, req commandRequest) error {
 	if h.ownerStore == nil || !h.ownerStore.IsOwner(req.UserID) {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner can use this command.")
 	}
@@ -224,7 +224,7 @@ func (h *CommandHandler) onPluginsCommand(ctx context.Context, req commandapp.Re
 	}
 }
 
-func (h *CommandHandler) sendPluginsList(ctx context.Context, req commandapp.Request, rest []string) error {
+func (h *CommandHandler) sendPluginsList(ctx context.Context, req commandRequest, rest []string) error {
 	available := len(rest) == 1 && (rest[0] == "--available" || rest[0] == "available")
 	if len(rest) > 1 || (len(rest) == 1 && !available) {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, plugincmd.TransportUsage())
@@ -246,7 +246,7 @@ func (h *CommandHandler) sendPluginsList(ctx context.Context, req commandapp.Req
 	return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, plugincmd.RenderInstalledPluginsMarkdown(plugins))
 }
 
-func (h *CommandHandler) sendPluginsAction(ctx context.Context, req commandapp.Request, action string, rest []string) error {
+func (h *CommandHandler) sendPluginsAction(ctx context.Context, req commandRequest, action string, rest []string) error {
 	if len(rest) != 1 {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, plugincmd.TransportUsage())
 	}
@@ -292,7 +292,7 @@ func (h *CommandHandler) sendPluginsAction(ctx context.Context, req commandapp.R
 	}
 }
 
-func (h *CommandHandler) sendMarketplaceAction(ctx context.Context, req commandapp.Request, action string, rest []string) error {
+func (h *CommandHandler) sendMarketplaceAction(ctx context.Context, req commandRequest, action string, rest []string) error {
 	if h.plugins == nil {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Plugin service is unavailable.")
 	}
@@ -359,7 +359,7 @@ func (h *CommandHandler) sendMarketplaceAction(ctx context.Context, req commanda
 	}
 }
 
-func (h *CommandHandler) onAutoCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onAutoCommand(ctx context.Context, req commandRequest) error {
 	if !h.canUseSessionCommand(ctx, req) {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command.")
 	}
@@ -393,7 +393,7 @@ func (h *CommandHandler) onAutoCommand(ctx context.Context, req commandapp.Reque
 	}
 }
 
-func (h *CommandHandler) onUsageCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onUsageCommand(ctx context.Context, req commandRequest) error {
 	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -419,7 +419,7 @@ func (h *CommandHandler) onUsageCommand(ctx context.Context, req commandapp.Requ
 	return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, renderUsageSnapshot(snapshot))
 }
 
-func (h *CommandHandler) onGoalCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onGoalCommand(ctx context.Context, req commandRequest) error {
 	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -468,109 +468,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, req commandapp.Reque
 	return nil
 }
 
-func (h *CommandHandler) onResetCommand(ctx context.Context, req commandapp.Request) error {
-	commandName := req.Command
-	if commandName == "" {
-		commandName = commandReset
-	}
-
-	if !h.canUseSessionCommand(ctx, req) {
-		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if strings.TrimSpace(req.Args) != "" {
-		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, fmt.Sprintf("Usage: /%s", commandName)); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	info, infoErr := h.sessionManager.GetSessionInfo(ctx, req.Locator.SessionID)
-	if infoErr != nil {
-		log.Debug().Err(infoErr).Str("session_id", req.Locator.SessionID).Str("command", commandName).Msg("session info unavailable before restart")
-	}
-	h.cancelSessionWork(ctx, req.Locator, fmt.Sprintf("session canceled by %s command", commandName), commandName)
-	if err := h.sessionManager.ResetSession(ctx, req.Locator); err != nil {
-		log.Warn().Err(err).Str("session_id", req.Locator.SessionID).Str("command", commandName).Msg("failed to reset session during session restart command")
-		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Could not reset this session."); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-	label := restartSessionLabel(req, info)
-	userID := restartSessionUserID(req, info)
-	if err := h.sessionManager.CreateSession(ctx, session.SessionContext{
-		Locator: req.Locator,
-		UserID:  userID,
-	}, label); err != nil {
-		log.Warn().Err(err).Str("session_id", req.Locator.SessionID).Str("command", commandName).Msg("failed to recreate session during session restart command")
-		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Could not restart this session."); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-
-	baldaProviderID := strings.TrimSpace(h.sessionManager.BaldaProviderID())
-	metadata := h.sessionManager.GetAgentMetadata(baldaProviderID)
-	welcomeName := restartWelcomeDisplayName(req, label)
-	welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, req.Locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
-	if err := sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, welcomeMsg); err != nil {
-		log.Warn().Err(err).Int64("chat_id", req.ChatID).Int("topic_id", req.TopicID).Str("command", commandName).Msg("failed to send restart welcome")
-	}
-	h.sendSessionStartupNotice(ctx, req.Locator, req.Locator.SessionID)
-	return nil
-}
-
-func (h *CommandHandler) cancelSessionWork(ctx context.Context, locator session.SessionLocator, reason string, commandName string) {
-	if h.workCanceller == nil {
-		return
-	}
-	if err := h.workCanceller.CancelWork(ctx, locator, "command."+commandName, reason); err != nil {
-		log.Warn().Err(err).Str("session_id", locator.SessionID).Str("command", commandName).Msg("failed to synchronously cancel session work")
-	}
-}
-
-func (h *CommandHandler) sendSessionStartupNotice(ctx context.Context, locator session.SessionLocator, sessionID string) {
-	if h.sessionManager == nil {
-		return
-	}
-	notice := strings.TrimSpace(h.sessionManager.TakeStartupNotice(sessionID))
-	if notice == "" {
-		return
-	}
-	if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, locator, notice); err != nil {
-		log.Warn().Err(err).Str("session_id", sessionID).Msg("failed to send restart startup notice")
-	}
-}
-
-func restartSessionLabel(req commandapp.Request, info session.TopicSessionInfo) string {
-	if label := strings.TrimSpace(info.AgentName); label != "" {
-		return label
-	}
-	if req.IsDM && req.TopicID == 0 {
-		return ownerSessionLabel
-	}
-	return autoSessionLabel
-}
-
-func restartSessionUserID(req commandapp.Request, info session.TopicSessionInfo) string {
-	if userID := strings.TrimSpace(info.UserID); userID != "" {
-		return userID
-	}
-	return telegramref.UserID(req.UserID)
-}
-
-func restartWelcomeDisplayName(req commandapp.Request, label string) string {
-	if !req.IsDM {
-		return ownerSessionLabel
-	}
-	return label
-}
-
-func (h *CommandHandler) onTopicCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onTopicCommand(ctx context.Context, req commandRequest) error {
 	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -637,32 +535,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, req commandapp.Requ
 	return nil
 }
 
-func (h *CommandHandler) onLocatorCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req) {
-		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if strings.TrimSpace(req.Args) != "" {
-		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Usage: "+req.CommandUsage(commandLocator)); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if h.locatorRenderer == nil {
-		return fmt.Errorf("render locator response: renderer is unavailable")
-	}
-	presentation, err := h.locatorRenderer.Render(ctx, req.Locator)
-	if err != nil {
-		return err
-	}
-	return sendStructuredPresentation(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, presentation)
-}
-
-func (h *CommandHandler) onCloseCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onCloseCommand(ctx context.Context, req commandRequest) error {
 	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -720,7 +593,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, req commandapp.Requ
 	return nil
 }
 
-func (h *CommandHandler) onCancelCommand(ctx context.Context, req commandapp.Request) error {
+func (h *CommandHandler) onCancelCommand(ctx context.Context, req commandRequest) error {
 	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
@@ -754,7 +627,7 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, req commandapp.Req
 	return nil
 }
 
-func (h *CommandHandler) canUseSessionCommand(ctx context.Context, req commandapp.Request) bool {
+func (h *CommandHandler) canUseSessionCommand(ctx context.Context, req commandRequest) bool {
 	if req.Access.SessionCommands {
 		return true
 	}

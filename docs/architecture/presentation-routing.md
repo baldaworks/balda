@@ -122,69 +122,31 @@ If it is model-authored, it should stay on the prompt-formatting path.
 
 ## Worked flow: locator response
 
-The locator response is a complete implementation of the structured path.
-
-1. Telegram and Slack normalize inbound commands into `commandapp.Request`.
-   Zulip performs equivalent authorization and argument checks in its ingress
-   adapter. Those checks run before rendering.
-2. The current public destination comes from `commandapp.Request.Locator` or
-   the equivalent `deliverycmd.Locator`. The handler-facing
-   `handlers.LocatorResponseRenderer` port delegates to `locatorapp.Service`.
-   `actorlayer.ActorAddress` is used later to route the internal envelope; it
-   is not locator input and is never displayed.
-3. `locatorapp.Service.Render` normalizes the transport, obtains the public
-   `<channel_type>:<address_key>` string from `locatorref.Format`, verifies that
-   it parses back canonically, and rejects delimiter characters that could
-   corrupt formatted output.
-4. The service creates
-   `deliveryfmt.StructuredEnvelope[locatorfmt.Response]` with descriptor
-   `locatorfmt.ResponseDescriptor`. Its stable message type is
-   `balda.locator.response.v1`; its body contains only `Transport` and
-   `Locator` semantic fields.
-5. `deliveryfmt.StructuredMessageRegistry.RenderStructured` resolves by the
-   normalized `(transport, message type)` pair. The transport Fx modules
-   contribute these registrations to `balda_delivery_structured_registrar`:
-
-   | Transport | Registrar | Renderer owner | Result format |
-   |---|---|---|---|
-   | `slackagent` | `slackagentfx.NewLocatorStructuredRegistrar` | `channel/slackagent/presentation.RenderLocator` | `mrkdwn` |
-   | `telegram` | `telegramfx.NewLocatorStructuredRegistrar` | `channel/telegram/presentation.RenderLocator` | `rich_markdown` |
-   | `zulip` | `zulipfx.NewLocatorStructuredRegistrar` | `channel/zulip/presentation.RenderLocator` | `markdown` |
-
-6. The renderer returns `deliveryfmt.StructuredPresentation`. Ingress passes
-   its text and explicit provider format to
-   `deliverycmd.MarkdownEnvelopeWithFormatAndSettlement`, producing
-   `deliverycmd.ModeMarkdown` with `deliverycmd.SettlementBypass`.
-7. The existing delivery workflow resolves the explicit format and the
-   concrete channel adapter performs its Markdown operation. This system
-   message does not use agent-reply streaming and does not start or restore a
-   conversational turn.
+1. The concrete transport verifies its request, parses the command, and checks
+   its explicit whitelist.
+2. Ingress resolves access and publishes a neutral `commandcmd.Payload` to
+   `balda.v1.cmd.command`, addressed by canonical session ID.
+3. CommandActor selects the exact `locator` handler by name. No transport
+   callback contains locator policy.
+4. The handler obtains `<channel_type>:<address_key>` from `locatorref`, creates
+   `locatorfmt.Response`, and asks `deliveryfmt.StructuredMessageRegistry` for
+   the transport renderer.
+5. The handler publishes one formatted delivery command with a stable dedupe
+   key derived from the command operation.
 
 ```mermaid
 flowchart LR
-  I[command ingress\nauth and args] --> P[handlers locator renderer port]
-  P --> A[locatorapp.Service]
-  A --> L[locatorref.Format]
-  A --> E[locatorfmt.Response\nbalda.locator.response.v1]
-  E --> R[StructuredMessageRegistry]
-  R --> S[transport renderer]
-  S --> D[ModeMarkdown envelope\nexplicit format]
-  D --> W[delivery workflow]
-  W --> C[channel adapter]
+  T[transport parser + whitelist] --> I[ingress access check + publish]
+  I --> C[CommandActor]
+  C --> L[locator handler]
+  L --> F[locatorref + locatorfmt]
+  F --> R[transport structured renderer]
+  R --> D[delivery actor]
 ```
 
-The application path fails before dispatch if the registry is unavailable,
-the locator is empty, non-canonical, or unsafe, no renderer is registered, a
-renderer returns an error, or the presentation has empty text or format. There
-is no plain-text fallback. A delivery error after successful rendering follows
-the existing delivery error and settlement policy. Zulip's current void command
-callback logs `failed to render locator response` and emits no success payload;
-the shared command handler returns the render error to its transport caller.
-
-The user-visible command contract and exact Slack fixture are maintained in
-[the command reference](../commands.md#locator). The ownership rules behind
-this flow are maintained in the
-[transport presentation boundary](transport-presentation-boundary.md#locator-as-an-ownership-example).
+The transport packages own markup renderers and registration. `locatorref` and
+`locatorfmt` remain transport-neutral. `actors/command/locator` owns the
+behavior; the removed `locatorapp` service is no longer part of the path.
 
 ## Summary
 

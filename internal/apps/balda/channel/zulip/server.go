@@ -282,12 +282,20 @@ func (s *Server) processMessage(ctx context.Context, payload WebhookPayload) (tu
 			if len(fields) > 1 {
 				args = strings.Join(fields[1:], " ")
 			}
+			if cmd == "user" && strings.HasPrefix(args, "invite") {
+				args = "add" + strings.TrimPrefix(args, "invite")
+			}
+			command := InboundCommand{Locator: locator, MessageID: payload.Message.ID, SenderID: senderID, Command: cmd, Args: args, Direct: isDM}
+			if !commandSupported(cmd) {
+				return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, s.processor.HandleUnsupportedCommand(ctx, command)
+			}
 			err := s.processor.HandleCommand(ctx, InboundCommand{
-				Locator:  locator,
-				SenderID: senderID,
-				Command:  cmd,
-				Args:     args,
-				Direct:   isDM,
+				Locator:   locator,
+				MessageID: payload.Message.ID,
+				SenderID:  senderID,
+				Command:   cmd,
+				Args:      args,
+				Direct:    isDM,
 			})
 			return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, err
 		}

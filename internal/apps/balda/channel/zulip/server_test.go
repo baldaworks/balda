@@ -44,6 +44,13 @@ func (m *mockInboundProcessor) HandleCommand(_ context.Context, cmd InboundComma
 	return m.commandErr
 }
 
+func (m *mockInboundProcessor) HandleUnsupportedCommand(_ context.Context, cmd InboundCommand) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.commandCalls = append(m.commandCalls, cmd)
+	return m.commandErr
+}
+
 func TestZulipBaldaHandlerRejectsInvalidWebhookToken(t *testing.T) {
 	handler := &ZulipBaldaHandler{
 		webhookToken: "expected-token",
@@ -402,6 +409,10 @@ func (panickingProcessor) ProcessInbound(context.Context, InboundMessage) (turnc
 
 func (panickingProcessor) HandleCommand(context.Context, InboundCommand) error {
 	panic("unexpected processor command failure")
+}
+
+func (panickingProcessor) HandleUnsupportedCommand(context.Context, InboundCommand) error {
+	panic("unexpected processor unsupported command failure")
 }
 
 func TestZulipBaldaHandlerRecoversProcessingPanicAndReleasesSlot(t *testing.T) {

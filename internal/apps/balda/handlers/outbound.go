@@ -41,16 +41,6 @@ func sendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, fro
 	return dispatchOutbound(ctx, dispatcher, env)
 }
 
-func sendStructuredPresentation(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, presentation deliveryfmt.StructuredPresentation) error {
-	env, err := deliverycmd.MarkdownEnvelopeWithFormatAndSettlement(
-		"", from, locator, presentation.DeliveryFormat, deliverycmd.SettlementBypass, presentation.Text, "",
-	)
-	if err != nil {
-		return err
-	}
-	return dispatchOutbound(ctx, dispatcher, env)
-}
-
 func sendAgentReply(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator baldasession.SessionLocator, text string) error {
 	return sendAgentReplyWithFormat(ctx, dispatcher, from, locator, "", text)
 }

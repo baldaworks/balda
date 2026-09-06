@@ -26,17 +26,31 @@ type InboundMessage struct {
 
 // InboundCommand represents a command invocation from Zulip.
 type InboundCommand struct {
-	Locator  deliverycmd.Locator
-	SenderID int
-	Command  string
-	Args     string
-	Direct   bool
+	Locator   deliverycmd.Locator
+	MessageID int
+	SenderID  int
+	Command   string
+	Args      string
+	Direct    bool
 }
 
 // InboundProcessor processes inbound Zulip messages and commands.
 type InboundProcessor interface {
 	ProcessInbound(ctx context.Context, msg InboundMessage) (turncmd.InboundSettlement, error)
 	HandleCommand(ctx context.Context, cmd InboundCommand) error
+	HandleUnsupportedCommand(ctx context.Context, cmd InboundCommand) error
+}
+
+var supportedCommands = []string{"start", "topic", "locator", "cancel", "goalkeeper", "user", "usage", "auto", "reset", "close"}
+
+func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
+func commandSupported(name string) bool {
+	for _, supported := range supportedCommands {
+		if name == supported {
+			return true
+		}
+	}
+	return false
 }
 
 const (

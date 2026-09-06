@@ -9,8 +9,8 @@ command.
 Telegram and Zulip use one slash command per action, such as `/locator`.
 Slack registers one workspace slash command, `/balda`, and the first word of
 its text selects the Balda command. The current Slack command surface contains
-only `/balda locator`; `/balda` with no command or any other subcommand returns
-the enabled-command usage.
+`/balda locator` and `/balda reset`; `/balda` with no command or any other
+subcommand returns the enabled-command usage.
 
 `owner` means the account bootstrapped with the deployment owner token.
 `collaborator` means an account connected through an owner-created invite.
@@ -25,7 +25,7 @@ does not use Telegram or Zulip owner records.
 | `/goalkeeper ...` | yes | yes | no | owner, collaborator | current session |
 | `/auto [on\|off]` | yes | yes | no | owner, collaborator | current session |
 | `/usage` | yes | yes | no | owner, collaborator | current session |
-| `/reset`, `/restart` | yes | yes | no | owner, collaborator | current session |
+| `/reset` | yes | yes | `/balda reset` | owner, collaborator; signed Slack workspace member | current session |
 | `/locator` | yes | yes | no | owner, collaborator | current session |
 | `/balda locator` | no | no | yes | workspace member | current conversation |
 | `/close` | yes | yes | no | owner, collaborator | direct message |
@@ -101,11 +101,11 @@ forms. Toggling auto mode does not reset history or start GoalKeeper.
 Shows the most recently recorded provider usage for the current session. If no
 snapshot exists, Balda says so. It does not query a provider or start a turn.
 
-### `/reset` and `/restart`
+### `/reset`
 
-These aliases synchronously cancel current session work, clear that session's
-history, and immediately create a fresh runtime session at the same locator.
-They do not close the underlying chat or topic. They accept no arguments.
+This command cancels current session work, clears that session's
+history, and immediately creates a fresh runtime session at the same locator.
+It does not close the underlying chat or topic and accepts no arguments.
 
 ### `/close`
 
@@ -130,8 +130,8 @@ configuration. Telegram and Zulip require owner or collaborator access. Slack
 uses the conversation identified by the signed slash-command payload; Slack
 slash commands have no thread timestamp, so the result is conversation-scoped.
 
-The public value is derived from the current `commandapp.Request.Locator`, whose
-transport-neutral contract is `deliverycmd.Locator`. `actorlayer.ActorAddress`
+The public value is derived from the CommandActor's transport-neutral
+`deliverycmd.Locator`. `actorlayer.ActorAddress`
 is internal envelope-routing metadata and is never used as the displayed
 public locator.
 
@@ -157,6 +157,24 @@ an agent turn, change session history, or update session status. Invalid
 arguments return `Usage: /locator` or `Usage: /balda locator`. If the structured
 renderer is absent or fails, Balda sends no partial or plain fallback locator
 response. Operators should use the checks in [Balda operations](balda.md#locator-response-delivery).
+
+## Command execution architecture
+
+Each transport owns its command syntax and explicit whitelist. For the
+actor-migrated commands in this change, the path is:
+
+```text
+transport parser + whitelist
+  -> ingress access check + durable publish
+  -> CommandActor
+  -> exact name handler (locator or reset)
+  -> session/delivery ports
+```
+
+`commandcmd` owns the neutral envelope. `actors/command` owns exact-name
+routing and command policy. `commandfx` wires actor ports. Transport packages
+do not import those actor or application packages. Other commands retain their
+existing handlers until migrated in their own scoped changes.
 
 ## User administration
 

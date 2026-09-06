@@ -131,7 +131,7 @@ Use this checklist before merging any architecture-affecting change.
 - `/topic <name>`: owner/collaborator, direct message only; creates a topic session labeled `<name>` using the configured balda provider.
 - `/goalkeeper <objective>`: owner/collaborator; starts goal work from the current session context in an isolated GoalKeeper workspace/state with started/validation/final updates and terminal Result/Artifacts/Confidence/Next action outcome.
 - `/goalkeeper clear`: owner/collaborator; stops active goal work for the current session only.
-- `/reset`, `/restart`: owner/collaborator; cancels current session work, clears current session history, and immediately starts a fresh runtime session without closing the chat/topic.
+- `/reset`: owner/collaborator; cancels current session work, clears current session history, and immediately starts a fresh runtime session without closing the chat/topic.
 - `/locator`: owner/collaborator; replies with the current transport type and locator ref in the public config form `<channel_type>:<address_key>` for scheduler/webhook `target: locator` config.
 - `/close`: owner/collaborator, direct message only; resets the current session history and closes the topic when used from a topic session.
 - `/cancel`: owner/collaborator; cancels the current session turn and drops queued turns for that session. It does not stop active `/goalkeeper` runs.

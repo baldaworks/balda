@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
@@ -17,6 +17,10 @@ import (
 
 type testTelegramAdapter struct {
 	*baldatelegram.Adapter
+}
+
+func (*testTelegramAdapter) SupportedCommands() []string {
+	return []string{"start", "help", "topic", "goalkeeper", "reset", "locator", "close", "cancel", "usage", "auto", "user", "plugin"}
 }
 
 func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, formattingMode string) *testTelegramAdapter {

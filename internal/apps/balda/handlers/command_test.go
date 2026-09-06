@@ -13,8 +13,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
-	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
@@ -67,198 +65,18 @@ func TestCommandHandlerOnCommand_CloseTopicAndStopSession(t *testing.T) {
 	assertLastSentContains(t, tgClient, "Closing this topic and resetting session history.")
 }
 
-func TestCommandHandlerOnCommand_ResetTopicRestartsSessionWithoutClosingTopic(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-	sm.sessionInfo[testTopicSessionID] = session.TopicSessionInfo{
-		SessionID: testTopicSessionID,
-		UserID:    "tg-202",
-		AgentName: "topic-alpha",
+func TestCommandHandlerOnCommand_CloseRootClearsSessionHistory(t *testing.T) {
+	handler, sessions, turns, tgClient := newCommandHandlerTestHarness(t)
+	if err := handler.onCommand(context.Background(), newCommandEvent("close", "", 101, 9001, nil)); err != nil {
+		t.Fatal(err)
 	}
-
-	topicID := 123
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, &topicID))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
+	if len(sessions.resetCalls) != 1 || len(sessions.createCalls) != 0 {
+		t.Fatalf("session calls reset=%d create=%d", len(sessions.resetCalls), len(sessions.createCalls))
 	}
-
-	if len(tgClient.closedTopicIDs) != 0 {
-		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
+	if len(turns.commands) != 1 {
+		t.Fatalf("control commands = %d, want 1", len(turns.commands))
 	}
-	if len(sm.resetCalls) != 1 {
-		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
-	}
-	if len(sm.createCalls) != 1 {
-		t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
-	}
-	if sm.createCalls[0].SessionID != testTopicSessionID || sm.createCalls[0].UserID != "tg-202" || sm.createCalls[0].AgentName != "topic-alpha" {
-		t.Fatalf("CreateSession call = %+v, want preserved topic session", sm.createCalls[0])
-	}
-	if len(turns.cancelCalls) != 1 {
-		t.Fatalf("CancelSession calls = %d, want 1 synchronous call", len(turns.cancelCalls))
-	}
-	if got := turns.cancelCalls[0]; got.SessionID != testTopicSessionID || !got.ClearQueued {
-		t.Fatalf("CancelSession call = %+v, want session=tg-9001-123 clear queued", got)
-	}
-	if len(turns.commands) != 0 {
-		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
-	}
-	if sm.resetCalls[0].SessionID != testTopicSessionID {
-		t.Fatalf("ResetSession call = %+v, want session=tg-9001-123", sm.resetCalls[0])
-	}
-	assertLastSentContains(t, tgClient, "Session Started")
-	assertLastSentContains(t, tgClient, "`topic-alpha`")
-}
-
-func TestCommandHandlerOnCommand_ResetRootRestartsSessionHistory(t *testing.T) {
-	tgClient := assertCommandResetsRootSession(t, "reset")
-	assertLastSentContains(t, tgClient, "Session Started")
-	assertLastSentContains(t, tgClient, "`balda`")
-}
-
-func TestCommandHandlerOnCommand_RestartRootRestartsSessionHistory(t *testing.T) {
-	tgClient := assertCommandResetsRootSession(t, "restart")
-	assertLastSentContains(t, tgClient, "Session Started")
-	assertLastSentContains(t, tgClient, "`balda`")
-}
-
-func TestCommandHandlerOnCommand_ResetWithArgsShowsUsage(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	topicID := 11
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "now", 101, 9001, &topicID))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 0 {
-		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
-	}
-	assertLastSentContains(t, tgClient, "Usage: /reset")
-}
-
-func TestCommandHandlerOnCommand_RestartWithArgsShowsUsage(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	topicID := 11
-	err := handler.onCommand(context.Background(), newCommandEvent("restart", "now", 101, 9001, &topicID))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 0 {
-		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
-	}
-	assertLastSentContains(t, tgClient, "Usage: /restart")
-}
-
-func TestCommandHandlerOnCommand_LocatorShowsCurrentTransportAndRef(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	topicID := 123
-	err := handler.onCommand(context.Background(), newCommandEvent("locator", "", 101, 9001, &topicID))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 0 {
-		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
-	}
-	assertLastRichSentContains(t, tgClient, "**Transport:** `telegram`")
-	assertLastRichSentContains(t, tgClient, "**Locator:** `telegram:9001:123`")
-	assertLastRichSentContains(t, tgClient, "target: locator")
-	assertLastRichSentContains(t, tgClient, "key: telegram:9001:123")
-}
-
-func TestCommandHandlerHandleCommand_LocatorUsesTransportNeutralAccessAndInvocation(t *testing.T) {
-	locator, err := locatorref.NewSlackAgentConversationLocator("T123", "C456")
-	if err != nil {
-		t.Fatalf("NewSlackAgentConversationLocator() error = %v", err)
-	}
-
-	for _, test := range []struct {
-		name string
-		args string
-		want string
-	}{
-		{name: "locator", want: "*Locator:* `slackagent:c:T123:C456`"},
-		{name: "usage", args: "extra", want: "Usage: /balda locator"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			bus := &recordingHandlerCommandBus{}
-			renderer := &fakeLocatorResponseRenderer{
-				presentation: deliveryfmt.StructuredPresentation{
-					Text:           "*Balda locator*\n\n*Locator:* `slackagent:c:T123:C456`",
-					DeliveryFormat: deliveryfmt.DeliveryFormatMrkdwn,
-				},
-			}
-			handler := &CommandHandler{actorDispatcher: bus, locatorRenderer: renderer}
-			err := handler.HandleCommand(context.Background(), commandapp.Request{
-				Locator:    locator,
-				Transport:  "slackagent",
-				Subject:    "slackagent:T123:U789",
-				Access:     commandapp.Access{SessionCommands: true},
-				Invocation: commandapp.Invocation{Root: "/balda"},
-				Command:    "locator",
-				Args:       test.args,
-			})
-			if err != nil {
-				t.Fatalf("HandleCommand() error = %v", err)
-			}
-			if len(bus.commands) != 1 {
-				t.Fatalf("delivery commands = %d, want 1", len(bus.commands))
-			}
-			var payload actors.DeliveryPayload
-			if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &payload); err != nil {
-				t.Fatalf("UnmarshalPayload() error = %v", err)
-			}
-			if !strings.Contains(payload.Text, test.want) {
-				t.Fatalf("delivery text = %q, want substring %q", payload.Text, test.want)
-			}
-			if test.args == "" {
-				if payload.Mode != deliverycmd.ModeMarkdown || payload.DeliveryFormat != deliveryfmt.DeliveryFormatMrkdwn {
-					t.Fatalf("delivery mode/format = %q/%q, want markdown/mrkdwn", payload.Mode, payload.DeliveryFormat)
-				}
-				if renderer.calls != 1 {
-					t.Fatalf("renderer calls = %d, want 1", renderer.calls)
-				}
-			} else if renderer.calls != 0 {
-				t.Fatalf("renderer calls = %d, want 0 for invalid arguments", renderer.calls)
-			}
-		})
-	}
-}
-
-func TestCommandHandlerHandleCommand_LocatorRendererFailureDoesNotDispatch(t *testing.T) {
-	locator, err := locatorref.NewSlackAgentConversationLocator("T123", "C456")
-	if err != nil {
-		t.Fatalf("NewSlackAgentConversationLocator() error = %v", err)
-	}
-	bus := &recordingHandlerCommandBus{}
-	handler := &CommandHandler{
-		actorDispatcher: bus,
-		locatorRenderer: &fakeLocatorResponseRenderer{err: errors.New("render failed")},
-	}
-	err = handler.HandleCommand(context.Background(), commandapp.Request{
-		Locator:    locator,
-		Access:     commandapp.Access{SessionCommands: true},
-		Invocation: commandapp.Invocation{Root: "/balda"},
-		Command:    "locator",
-	})
-	if err == nil || !strings.Contains(err.Error(), "render failed") {
-		t.Fatalf("HandleCommand() error = %v, want render failure", err)
-	}
-	if len(bus.commands) != 0 {
-		t.Fatalf("delivery commands = %d, want 0", len(bus.commands))
-	}
+	assertLastSentContains(t, tgClient, "Session history reset.")
 }
 
 func TestCommandHandlerHandleCommand_RejectsCommandOutsideIngressCapability(t *testing.T) {
@@ -268,10 +86,10 @@ func TestCommandHandlerHandleCommand_RejectsCommandOutsideIngressCapability(t *t
 	}
 	bus := &recordingHandlerCommandBus{}
 	handler := &CommandHandler{actorDispatcher: bus}
-	err = handler.HandleCommand(context.Background(), commandapp.Request{
+	err = handler.HandleCommand(context.Background(), commandRequest{
 		Locator:         locator,
-		Access:          commandapp.Access{SessionCommands: true},
-		Invocation:      commandapp.Invocation{Root: "/balda"},
+		Access:          legacyCommandAccess{SessionCommands: true},
+		Invocation:      legacyCommandInvocation{Root: "/balda"},
 		EnabledCommands: []string{"locator"},
 		Command:         "reset",
 	})
@@ -421,188 +239,6 @@ func TestCommandHandlerOnCommand_AutoOnOffAndStatus(t *testing.T) {
 		t.Fatalf("auto enabled state after off = %#v, want false", got)
 	}
 	assertLastRichSentContains(t, tgClient, "**Mode:** `off`")
-}
-
-func TestCommandHandlerOnCommand_LocatorWithArgsShowsUsage(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-	renderer := handler.locatorRenderer.(*fakeLocatorResponseRenderer)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("locator", "now", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 0 {
-		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
-	}
-	assertLastSentContains(t, tgClient, "Usage: /locator")
-	if renderer.calls != 0 {
-		t.Fatalf("renderer calls = %d, want 0", renderer.calls)
-	}
-}
-
-func TestCommandHandlerOnCommand_LocatorUnauthorized(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-	renderer := handler.locatorRenderer.(*fakeLocatorResponseRenderer)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("locator", "", 999, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 0 {
-		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
-	}
-	assertLastSentContains(t, tgClient, "Only the bot owner or collaborators can use this command.")
-	if renderer.calls != 0 {
-		t.Fatalf("renderer calls = %d, want 0", renderer.calls)
-	}
-}
-
-func TestCommandHandlerOnCommand_ResetUnauthorized(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	topicID := 33
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 999, 9001, &topicID))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 0 {
-		t.Fatalf("ResetSession calls = %d, want 0", len(sm.resetCalls))
-	}
-	if len(turns.cancelCalls) != 0 {
-		t.Fatalf("CancelSession calls = %d, want 0", len(turns.cancelCalls))
-	}
-	assertLastSentContains(t, tgClient, "Only the bot owner or collaborators can use this command.")
-}
-
-func TestCommandHandlerOnCommand_ResetInGroupChatAllowed(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	topicID := 33
-	err := handler.onCommand(context.Background(), newCommandEventWithChatType("reset", "", 101, 9001, &topicID, "supergroup"))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(tgClient.closedTopicIDs) != 0 {
-		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
-	}
-	if len(sm.resetCalls) != 1 {
-		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
-	}
-	if len(sm.createCalls) != 1 {
-		t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
-	}
-	if sm.createCalls[0].AgentName != ownerSessionLabel {
-		t.Fatalf("CreateSession agent = %q, want %q", sm.createCalls[0].AgentName, ownerSessionLabel)
-	}
-	if len(turns.cancelCalls) != 1 {
-		t.Fatalf("CancelSession calls = %d, want 1 synchronous call", len(turns.cancelCalls))
-	}
-	if sm.resetCalls[0].SessionID != "tg-9001-0" {
-		t.Fatalf("ResetSession call = %+v, want session=tg-9001-0", sm.resetCalls[0])
-	}
-	if len(turns.commands) != 0 {
-		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
-	}
-	assertLastSentContains(t, tgClient, "Session Started")
-	assertLastSentContains(t, tgClient, "`balda`")
-}
-
-func TestCommandHandlerOnCommand_ResetFailureReportsError(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-	sm.resetErr = errors.New("reset failed")
-
-	topicID := 44
-	err := handler.onCommand(context.Background(), newCommandEventWithChatType("reset", "", 101, 9001, &topicID, "supergroup"))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 1 {
-		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
-	}
-	if len(sm.createCalls) != 0 {
-		t.Fatalf("CreateSession calls = %d, want 0 after reset failure", len(sm.createCalls))
-	}
-	if len(turns.commands) != 0 {
-		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
-	}
-	if len(tgClient.closedTopicIDs) != 0 {
-		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
-	}
-	assertLastSentContains(t, tgClient, "Could not reset this session.")
-}
-
-func TestCommandHandlerOnCommand_ResetCreateFailureReportsRestartError(t *testing.T) {
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-	sm.createErr = errors.New("create failed")
-
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(sm.resetCalls) != 1 {
-		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
-	}
-	if len(sm.createCalls) != 1 {
-		t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
-	}
-	if len(turns.commands) != 0 {
-		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
-	}
-	assertLastSentContains(t, tgClient, "Could not restart this session.")
-}
-
-func TestCommandHandlerOnCommand_ResetSendsStartupNoticeAfterWelcome(t *testing.T) {
-	handler, sm, _, tgClient := newCommandHandlerTestHarness(t)
-	sm.startupNotices[testRootSessionID] = "workspace sync skipped"
-
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(tgClient.messages) < 2 {
-		t.Fatalf("sent messages = %d, want welcome and startup notice", len(tgClient.messages))
-	}
-	if got := tgClient.messages[len(tgClient.messages)-2].Text; !strings.Contains(got, "Session Started") {
-		t.Fatalf("penultimate message = %q, want welcome", got)
-	}
-	assertLastSentContains(t, tgClient, "workspace sync skipped")
-}
-
-func TestCommandHandlerOnCommand_ResetCancelsWorkSynchronously(t *testing.T) {
-	handler, _, turns, _ := newCommandHandlerTestHarness(t)
-
-	err := handler.onCommand(context.Background(), newCommandEvent("reset", "", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(turns.cancelCalls) != 1 {
-		t.Fatalf("CancelWork calls = %d, want 1", len(turns.cancelCalls))
-	}
-	if got := turns.cancelCalls[0]; got.SessionID != testRootSessionID || got.Actor != "command.reset" || !strings.Contains(got.Reason, "reset") {
-		t.Fatalf("CancelWork call = %+v, want root command.reset", got)
-	}
-	if len(turns.commands) != 0 {
-		t.Fatalf("published control commands = %d, want 0", len(turns.commands))
-	}
-}
-
-func TestCommandHandlerOnCommand_CloseRootResetsSessionHistory(t *testing.T) {
-	tgClient := assertCommandResetsRootSession(t, "close")
-	assertLastSentContains(t, tgClient, "Session history reset.")
 }
 
 func TestCommandHandlerOnCommand_CloseWithArgsShowsUsage(t *testing.T) {
@@ -1144,58 +780,6 @@ func TestCommandHandlerOnCommand_UserUsageShowsUserID(t *testing.T) {
 	assertLastSentContains(t, tgClient, "/user remove <user_id>")
 }
 
-func assertCommandResetsRootSession(t *testing.T, command string) *fakeTelegramClient {
-	t.Helper()
-
-	handler, sm, turns, tgClient := newCommandHandlerTestHarness(t)
-
-	err := handler.onCommand(context.Background(), newCommandEvent(command, "", 101, 9001, nil))
-	if err != nil {
-		t.Fatalf("onCommand() error = %v", err)
-	}
-
-	if len(tgClient.closedTopicIDs) != 0 {
-		t.Fatalf("CloseTopic calls = %d, want 0", len(tgClient.closedTopicIDs))
-	}
-	if len(sm.resetCalls) != 1 {
-		t.Fatalf("ResetSession calls = %d, want 1", len(sm.resetCalls))
-	}
-	if command == "close" {
-		if len(sm.createCalls) != 0 {
-			t.Fatalf("CreateSession calls = %d, want 0 for /close", len(sm.createCalls))
-		}
-		if len(turns.cancelCalls) != 0 {
-			t.Fatalf("CancelSession calls = %d, want 0 before control actor runs", len(turns.cancelCalls))
-		}
-		if len(turns.commands) != 1 {
-			t.Fatalf("published commands = %d, want 1", len(turns.commands))
-		}
-		if turns.commands[0].Namespace != baldaexecution.NamespaceJobControl || turns.commands[0].Kind != baldaexecution.KindCancel {
-			t.Fatalf("published command = %+v, want job control cancel", turns.commands[0])
-		}
-	} else {
-		if len(sm.createCalls) != 1 {
-			t.Fatalf("CreateSession calls = %d, want 1", len(sm.createCalls))
-		}
-		if sm.createCalls[0].SessionID != testRootSessionID || sm.createCalls[0].UserID != testTelegramUserID101 || sm.createCalls[0].AgentName != ownerSessionLabel {
-			t.Fatalf("CreateSession call = %+v, want root restart session", sm.createCalls[0])
-		}
-		if len(turns.cancelCalls) != 1 {
-			t.Fatalf("CancelSession calls = %d, want 1 synchronous call", len(turns.cancelCalls))
-		}
-		if got := turns.cancelCalls[0]; got.SessionID != testRootSessionID || !got.ClearQueued {
-			t.Fatalf("CancelSession call = %+v, want root clear queued", got)
-		}
-		if len(turns.commands) != 0 {
-			t.Fatalf("published control commands = %d, want 0", len(turns.commands))
-		}
-	}
-	if sm.resetCalls[0].SessionID != testRootSessionID {
-		t.Fatalf("ResetSession call = %+v, want session=%s", sm.resetCalls[0], testRootSessionID)
-	}
-	return tgClient
-}
-
 type fakeCommandSessionManager struct {
 	resetCalls     []resetSessionCall
 	createCalls    []createSessionCall
@@ -1479,14 +1063,7 @@ func newCommandHandlerTestHarnessWithFormatting(t *testing.T, formattingMode str
 		collaboratorStore: collaboratorStore,
 		channel:           adapter,
 		sessionManager:    sessionManager,
-		workCanceller:     turnDispatcher,
 		actorDispatcher:   turnDispatcher,
-		locatorRenderer: &fakeLocatorResponseRenderer{
-			presentation: deliveryfmt.StructuredPresentation{
-				Text:           "# Balda locator\n\n**Transport:** `telegram`\n**Locator:** `telegram:9001:123`\n\n**Scheduler / webhook configuration**\n```yaml\ntarget: locator\nkey: telegram:9001:123\n```",
-				DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
-			},
-		},
 		goalJobs:          &fakeGoalJobService{},
 		goalMaxIterations: normalizeGoalMaxIterations(0),
 		autoMaxTurns:      automode.DefaultMaxTurns,
@@ -1499,19 +1076,6 @@ func newCommandHandlerTestHarnessWithFormatting(t *testing.T, formattingMode str
 		},
 	}
 	return handler, sessionManager, turnDispatcher, tgClient
-}
-
-type fakeLocatorResponseRenderer struct {
-	presentation deliveryfmt.StructuredPresentation
-	err          error
-	calls        int
-	locator      deliverycmd.Locator
-}
-
-func (f *fakeLocatorResponseRenderer) Render(_ context.Context, locator deliverycmd.Locator) (deliveryfmt.StructuredPresentation, error) {
-	f.calls++
-	f.locator = locator
-	return f.presentation, f.err
 }
 
 type recordingHandlerCommandBus struct {

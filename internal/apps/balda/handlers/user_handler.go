@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
-	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
 )
@@ -50,7 +49,7 @@ func (h *userHandler) getBotUsername(ctx context.Context) string {
 	return h.botUsername
 }
 
-func (h *userHandler) HandleUserCommand(ctx context.Context, req commandapp.Request) error {
+func (h *userHandler) HandleUserCommand(ctx context.Context, req commandRequest) error {
 	if !h.ownerStore.IsOwner(req.UserID) {
 		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "This command is only for the owner."); err != nil {
 			return err
@@ -83,7 +82,7 @@ func (h *userHandler) sendUsage(ctx context.Context, locator baldasession.Sessio
 	return sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, locator, usage)
 }
 
-func (h *userHandler) onAdd(ctx context.Context, req commandapp.Request) error {
+func (h *userHandler) onAdd(ctx context.Context, req commandRequest) error {
 	ownerID := fmt.Sprintf("%d", req.UserID)
 
 	token, _, err := h.inviteStore.CreateInvite(ctx, ownerID)
@@ -107,7 +106,7 @@ func (h *userHandler) onAdd(ctx context.Context, req commandapp.Request) error {
 	return nil
 }
 
-func (h *userHandler) onList(ctx context.Context, req commandapp.Request) error {
+func (h *userHandler) onList(ctx context.Context, req commandRequest) error {
 	var lines []string
 
 	collaborators, err := h.collaboratorStore.ListCollaborators(ctx)
@@ -156,7 +155,7 @@ func (h *userHandler) onList(ctx context.Context, req commandapp.Request) error 
 	return nil
 }
 
-func (h *userHandler) onRemove(ctx context.Context, req commandapp.Request) error {
+func (h *userHandler) onRemove(ctx context.Context, req commandRequest) error {
 	args := strings.Fields(req.Args)
 	if len(args) < 2 {
 		if err := sendPlain(ctx, h.actorDispatcher, userHandlerActorAddress, req.Locator, "Usage: /user remove <user_id>"); err != nil {

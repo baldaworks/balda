@@ -16,6 +16,7 @@ const (
 	SubjectCommandControl    = "balda.v1.cmd.control"
 	SubjectCommandQuestion   = "balda.v1.cmd.question"
 	SubjectCommandPermission = "balda.v1.cmd.permission"
+	SubjectCommand           = "balda.v1.cmd.command"
 	SubjectCommandAll        = "balda.v1.cmd.>"
 
 	SubjectEventCommandAccepted     = "balda.v1.evt.command.accepted"
@@ -55,6 +56,8 @@ func SubjectForEnvelope(env actorlayer.Envelope) string {
 		return SubjectCommandControl
 	}
 	switch target {
+	case ActorTypeCommand:
+		return SubjectCommand
 	case ActorTypeSession:
 		return SubjectCommandSession
 	case ActorTypeJob:

@@ -109,6 +109,8 @@ flowchart TB
     agent["github.com/baldaworks/balda/internal/apps/balda/agent"]
     actorcmd["github.com/baldaworks/balda/internal/apps/balda/actorcmd"]
     actors["github.com/baldaworks/balda/internal/apps/balda/actors"]
+    commandcmd["github.com/baldaworks/balda/internal/apps/balda/commandcmd"]
+    commandfx["github.com/baldaworks/balda/internal/apps/balda/commandfx"]
     auth["github.com/baldaworks/balda/internal/apps/balda/auth"]
     telegram["github.com/baldaworks/balda/internal/apps/balda/channel/telegram"]
     handlers["github.com/baldaworks/balda/internal/apps/balda/handlers"]
@@ -124,6 +126,7 @@ flowchart TB
 
     balda_root --> agent
     balda_root --> actors
+    balda_root --> commandfx
     balda_root --> actorcmd
     balda_root --> auth
     balda_root --> handlers
@@ -144,8 +147,8 @@ flowchart TB
     telegram --> session
 
     handlers --> auth
+    handlers --> commandcmd
     handlers --> session
-    handlers --> commandapp
     handlers --> deliverycmd
     handlers --> turncmd
     handlers --> welcome
@@ -171,9 +174,12 @@ flowchart TB
 | `actorcmd` | `internal/apps/balda/actorcmd` | Leaf actor targets, namespaces, subjects, headers, and job-scope metadata | `github.com/baldaworks/go-actorlayer` |
 | `agent` | `internal/apps/balda/agent` | Provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support | `internal/git`, runtime/agent factory packages |
 | `actors` | `internal/apps/balda/actors` | Balda product actor behavior | actorcmd, agent, channel, jobs, session, state |
+| `actors/command` | `internal/apps/balda/actors/command` | Independent CommandActor, exact-name router, and actor-owned locator/reset policy | actorcmd, commandcmd, delivery contracts, local ports |
+| `commandcmd` | `internal/apps/balda/commandcmd` | Neutral command envelope and transport advertisement contracts | actorcmd, deliverycmd, deliveryfmt |
+| `commandfx` | `internal/apps/balda/commandfx` | CommandActor registration and port wiring | actors/command, session, runtime interfaces |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram transport package: adapter, delivery formatting, and message sending | session, `tgbotkit/client` |
-| `handlers` | `internal/apps/balda/handlers` | Transport ingress, command publishing, and ingress-side session/control orchestration | auth, commandapp, deliverycmd, session, turncmd, welcome |
+| `handlers` | `internal/apps/balda/handlers` | Ingress parsing, access checks, and durable publication; legacy commands remain here pending scoped migration | auth, commandcmd, deliverycmd, turncmd |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
 | `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
@@ -1329,7 +1335,7 @@ syntax, transport availability, access, context, side effects, non-effects,
 errors, and examples.
 
 At runtime, session-control commands operate on the locator attached to inbound
-transport data. Reset and restart replace the runtime session at that locator;
+transport data. Reset replaces the runtime session at that locator;
 cancel affects its conversational turn queue; GoalKeeper has separate durable
 state; close applies the session boundary and may close a provider topic. MCP
 tools such as `balda.memory.*` are internal capabilities rather than chat
@@ -1337,7 +1343,7 @@ commands.
 
 ### Locator response delivery
 
-The public locator comes from `commandapp.Request.Locator`, represented by the
+The public locator comes from `commandcmd.Payload.Locator`, represented by the
 transport-neutral `deliverycmd.Locator` contract and formatted canonically by
 `locatorref`. `actorlayer.ActorAddress` identifies an internal envelope sender
 or recipient; it is not a public transport destination and is never printed by
@@ -1820,10 +1826,10 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
    terminal outcomes advance it.
 9. Non-terminal session progress always emits progress activity; Telegram sends typing indicators in DM and public chats for that activity, while only visible progress renders as drafts/messages. Thinking placeholders remain DM-only.
 10. Final assistant response uses configured `balda.telegram.formatting_mode`; `none` is literal plain text, while rich modes make at most one parse-mode-free plain send only after an explicit Telegram formatting rejection.
-11. `/reset` and `/restart` cancel current session work, clear history, and immediately start a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
+11. `/reset` cancels current session work, clears history, and immediately starts a fresh runtime session in any supported chat/thread context without closing the underlying chat/topic.
 12. `/locator` returns the exact current session locator in
     `<channel_type>:<address_key>` form through the registered structured
     renderer and explicit transport format, with no fallback on render failure.
 13. `/close` in a topic resets history and closes that topic; `/close` in a DM main chat resets that chat's current main session.
-14. With `balda.sessions.persistence=sqlite`, restart restores conversation history and explicit `/reset`, `/restart`, or `/close` clears it for the current session.
+14. With `balda.sessions.persistence=sqlite`, process restart restores conversation history and explicit `/reset` or `/close` clears it for the current session.
 15. `balda eval-fixtures` validates deterministic scenario fixtures in `testdata/scenarios` and checks golden event manifests; use `--scenario` and `--actual-events` for event-type comparison.

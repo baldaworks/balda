@@ -22,6 +22,11 @@ func executionAddressOf(env actorlayer.Envelope) (string, error) {
 
 func actorLaneKeyFromEnvelope(env actorlayer.Envelope) string {
 	namespace := canonicalNamespace(env.Namespace)
+	if strings.EqualFold(strings.TrimSpace(env.To.Target), ActorTypeCommand) {
+		if key := strings.TrimSpace(env.To.Key); key != "" {
+			return "command:" + key
+		}
+	}
 	jobID := EnvelopeJobID(env)
 	if jobID != "" {
 		switch namespace {

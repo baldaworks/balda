@@ -32,6 +32,9 @@ Use this map to find the authoritative runtime contracts.
 - Durable command/event transport is exposed to Balda runtime code through actorlayer abstractions.
 - SQLite is product/read-model state, not a command queue.
 - Ingress handlers dispatch actor envelopes through actorlayer transport dispatcher contracts; actors execute commands.
+- Transport adapters own parsing and whitelists. `locator` and `reset` publish
+  `commandcmd.Payload` to the independent CommandActor; its exact-name handlers
+  live under `actors/command`, and `commandfx` contains composition only.
 - `actorcmd` is the canonical leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata; `execution` re-exports that taxonomy as the runtime-facing compatibility facade.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, opaque delivery capability, progress policy, delivery payloads, and adapter-facing delivery operations. `deliveryfmt` resolves that capability through one immutable registry shared by prompt and delivery paths.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.
@@ -81,6 +84,9 @@ neutral MCP adapter returns bounded untrusted references.
 - `internal/apps/balda/execution`
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/actors`
+- `internal/apps/balda/actors/command`
+- `internal/apps/balda/commandcmd`
+- `internal/apps/balda/commandfx`
 - `internal/apps/balda/questions`
 - `internal/apps/balda/sessionturn`
 - `internal/apps/balda/internalmcp`

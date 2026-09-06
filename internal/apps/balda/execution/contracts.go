@@ -10,6 +10,7 @@ const (
 	ActorTypeGoal       = actorcmd.ActorTypeGoal
 	ActorTypeDelivery   = actorcmd.ActorTypeDelivery
 	ActorTypeMemory     = actorcmd.ActorTypeMemory
+	ActorTypeCommand    = actorcmd.ActorTypeCommand
 
 	NamespaceHumanInbound      = actorcmd.NamespaceHumanInbound
 	NamespaceWebhookInbound    = actorcmd.NamespaceWebhookInbound
@@ -21,6 +22,7 @@ const (
 	NamespaceMemoryCommand     = actorcmd.NamespaceMemoryCommand
 	NamespaceAutoModeCommand   = actorcmd.NamespaceAutoModeCommand
 	NamespaceTelemetry         = actorcmd.NamespaceTelemetry
+	NamespaceChatCommand       = actorcmd.NamespaceChatCommand
 
 	KindMessage        = actorcmd.KindMessage
 	KindWebhookEvent   = actorcmd.KindWebhookEvent
@@ -28,4 +30,5 @@ const (
 	KindGoal           = actorcmd.KindGoal
 	KindCancel         = actorcmd.KindCancel
 	KindMemoryRemember = actorcmd.KindMemoryRemember
+	KindCommandExecute = actorcmd.KindCommandExecute
 )

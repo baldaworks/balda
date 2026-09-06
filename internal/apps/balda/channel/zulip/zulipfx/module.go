@@ -5,6 +5,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -13,6 +14,13 @@ import (
 var Module = fx.Module(
 	"balda_channel_zulip_fx",
 	fx.Provide(
+		fx.Annotate(
+			func(enabled bool) commandcmd.Advertisement {
+				return commandcmd.Advertisement{Transport: zulip.ChannelType, Enabled: enabled, Names: []string{"locator", "reset"}}
+			},
+			fx.ParamTags(`name:"balda_zulip_webhook_enabled"`),
+			fx.ResultTags(`group:"balda_command_advertisements"`),
+		),
 		zulip.NewZulipBaldaHandler,
 		func(client *zulip.Client, logger zerolog.Logger) *zulip.Adapter {
 			adapter := zulip.NewAdapter(client, logger)

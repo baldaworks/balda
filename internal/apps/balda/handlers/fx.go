@@ -5,7 +5,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
-	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"go.uber.org/fx"
 )
 
@@ -60,9 +60,8 @@ var Module = fx.Module("balda_handlers",
 				collaboratorStore: params.CollaboratorStore,
 				channel:           params.Channel,
 				sessionManager:    params.SessionManager,
-				workCanceller:     params.WorkCanceller,
 				actorDispatcher:   params.Dispatcher,
-				locatorRenderer:   params.LocatorRenderer,
+				commandIngress:    params.CommandIngress,
 				goalJobs:          params.GoalJobs,
 				goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
 				autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
@@ -70,7 +69,6 @@ var Module = fx.Module("balda_handlers",
 				plugins:           params.Plugins,
 			}
 		},
-		func(handler *CommandHandler) commandapp.Handler { return handler },
 		func(params userHandlerParams) *userHandler {
 			return &userHandler{
 				ownerStore:        params.OwnerStore,
@@ -80,6 +78,7 @@ var Module = fx.Module("balda_handlers",
 				tgClient:          params.TGClient,
 			}
 		},
+		fx.Annotate(NewCommandIngress, fx.As(new(commandcmd.Ingress))),
 	),
 	fx.Invoke(
 		func(*InboundWebhookReceiver) {},

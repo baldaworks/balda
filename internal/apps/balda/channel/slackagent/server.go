@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
@@ -43,7 +43,7 @@ type Config struct {
 type Server struct {
 	inboundProcessor InboundProcessor
 	turnCanceller    TurnCanceller
-	commandHandler   commandapp.Handler
+	commandHandler   commandcmd.Ingress
 	config           Config
 	logger           zerolog.Logger
 
@@ -61,7 +61,7 @@ type TurnCanceller interface {
 	CancelTurn(ctx context.Context, stopped SessionStopped) error
 }
 
-func NewServer(processor InboundProcessor, canceller TurnCanceller, commandHandler commandapp.Handler, config Config, logger zerolog.Logger) *Server {
+func NewServer(processor InboundProcessor, canceller TurnCanceller, commandHandler commandcmd.Ingress, config Config, logger zerolog.Logger) *Server {
 	return &Server{
 		inboundProcessor: processor,
 		turnCanceller:    canceller,
@@ -186,6 +186,12 @@ func (h *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 	}
 	request, err := decodeCommandRequest(body)
 	if err != nil {
+		if errors.Is(err, errUnsupportedCommand) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(commandUsage()))
+			return
+		}
 		h.logger.Warn().Err(err).Msg("failed to decode slack command payload")
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -202,12 +208,19 @@ func (h *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), commandProcessingTimeout)
 	defer cancel()
-	if err := h.commandHandler.HandleCommand(ctx, request); err != nil {
-		h.logger.Warn().Err(err).Str("command", request.Command).Msg("failed to process slack command")
+	request.InvocationID = slackCommandInvocationID(r.Header.Get("X-Slack-Request-Timestamp"), body)
+	if err := h.commandHandler.PublishCommand(ctx, request); err != nil {
+		h.logger.Warn().Err(err).Str("command", request.Payload.Name).Msg("failed to publish slack command")
 		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func slackCommandInvocationID(timestamp string, body []byte) string {
+	material := append([]byte("slackagent/slash/v1\x00"+strings.TrimSpace(timestamp)+"\x00"), body...)
+	sum := sha256.Sum256(material)
+	return "slackagent:command:" + hex.EncodeToString(sum[:])
 }
 
 func (h *Server) readAndVerifyRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {

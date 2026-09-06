@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
@@ -217,7 +217,7 @@ func TestServerRoutesSignedSlashCommandsToCommonHandler(t *testing.T) {
 		text string
 	}{
 		{name: "default route", path: "/slack/commands", text: "locator"},
-		{name: "custom route preserves command and args", path: "/custom/commands", text: "future alpha beta"},
+		{name: "custom route preserves command and args", path: "/custom/commands", text: "reset alpha beta"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := &recordingCommandHandler{}
@@ -253,17 +253,38 @@ func TestServerRoutesSignedSlashCommandsToCommonHandler(t *testing.T) {
 			}
 			request := recorder.requests[0]
 			wantCommand := strings.Fields(test.text)[0]
-			if request.Command != wantCommand || request.Locator.AddressKey != "c:T123:C456" {
+			if request.Payload.Name != wantCommand || request.Payload.Locator.AddressKey != "c:T123:C456" {
 				t.Fatalf("command request = %+v", request)
 			}
-			if request.Subject != "slackagent:T123:U789" || !request.Access.SessionCommands || request.Invocation.Root != "/balda" {
+			if request.Payload.Principal != "slackagent:T123:U789" || !request.Payload.Access.SessionCommands || request.Payload.Invocation.Root != "/balda" {
 				t.Fatalf("command identity/access/invocation = %+v", request)
 			}
-			if len(request.EnabledCommands) != 1 || request.EnabledCommands[0] != "locator" {
-				t.Fatalf("enabled commands = %v, want [locator]", request.EnabledCommands)
+			if test.name == "custom route preserves command and args" && request.Payload.Args != "alpha beta" {
+				t.Fatalf("args = %q, want alpha beta", request.Payload.Args)
 			}
-			if test.name == "custom route preserves command and args" && request.Args != "alpha beta" {
-				t.Fatalf("args = %q, want alpha beta", request.Args)
+		})
+	}
+}
+
+func TestServerReturnsUsageForUnsupportedSlashCommands(t *testing.T) {
+	t.Parallel()
+	for _, commandText := range []string{"", "unknown"} {
+		t.Run(commandText, func(t *testing.T) {
+			recorder := &recordingCommandHandler{}
+			server := newTestServer(&recordingInboundProcessor{}, &recordingTurnCanceller{})
+			server.commandHandler = recorder
+			handler, _, _, err := server.httpHandler()
+			if err != nil {
+				t.Fatalf("httpHandler() error = %v", err)
+			}
+			body := url.Values{"command": {"/balda"}, "text": {commandText}, "team_id": {"T123"}, "channel_id": {"C456"}, "user_id": {"U789"}}.Encode()
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, signedSlackRequest(t, "/slack/commands", "secret", []byte(body)))
+			if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != "Usage: /balda locator | reset" {
+				t.Fatalf("response status=%d body=%q", response.Code, response.Body.String())
+			}
+			if len(recorder.requests) != 0 {
+				t.Fatalf("common handler calls = %d, want 0", len(recorder.requests))
 			}
 		})
 	}
@@ -428,11 +449,11 @@ type recordingTurnCanceller struct {
 }
 
 type recordingCommandHandler struct {
-	requests []commandapp.Request
+	requests []commandcmd.Request
 	err      error
 }
 
-func (h *recordingCommandHandler) HandleCommand(_ context.Context, request commandapp.Request) error {
+func (h *recordingCommandHandler) PublishCommand(_ context.Context, request commandcmd.Request) error {
 	h.requests = append(h.requests, request)
 	return h.err
 }

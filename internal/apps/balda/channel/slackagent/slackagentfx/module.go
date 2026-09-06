@@ -3,6 +3,7 @@ package slackagentfx
 import (
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
@@ -13,6 +14,12 @@ var Module = fx.Module(
 	"balda_channel_slackagent_fx",
 	fx.Provide(
 		func(adapter *slackagent.Adapter) slackagent.SessionLifecycle { return adapter },
+		fx.Annotate(
+			func(cfg slackagent.Config) commandcmd.Advertisement {
+				return commandcmd.Advertisement{Transport: slackagent.ChannelType, Enabled: cfg.Enabled, Names: slackagent.SupportedCommands()}
+			},
+			fx.ResultTags(`group:"balda_command_advertisements"`),
+		),
 		newInboundProcessor,
 		fx.Annotate(
 			newTurnCanceller,

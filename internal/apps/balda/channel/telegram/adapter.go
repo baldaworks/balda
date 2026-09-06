@@ -104,9 +104,23 @@ type CommandContext struct {
 	ChatID          int64
 	TopicID         int
 	UserID          int64
+	MessageID       int
 	Command         string
 	Args            string
 	IsDM            bool
+}
+
+var supportedCommands = []string{"start", "help", "topic", "goalkeeper", "reset", "locator", "close", "cancel", "usage", "auto", "user", "plugin"}
+
+func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
+
+func commandSupported(name string) bool {
+	for _, supported := range supportedCommands {
+		if strings.EqualFold(strings.TrimSpace(name), supported) {
+			return true
+		}
+	}
+	return false
 }
 
 // TopicLifecycleContext is the balda-facing Telegram topic lifecycle shape.
@@ -261,7 +275,6 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 	if event == nil || event.Message == nil || event.Message.From == nil {
 		return MessageContext{}, false
 	}
-
 	topicID := a.topicIDFromMessage(event.Message)
 
 	text := ""
@@ -687,6 +700,9 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	if event == nil || event.Message == nil || event.Message.From == nil {
 		return CommandContext{}, false
 	}
+	if !commandSupported(event.Command) {
+		return CommandContext{}, false
+	}
 	topicID := a.topicIDFromMessage(event.Message)
 
 	return CommandContext{
@@ -699,12 +715,13 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 				PlanUpdates: a.planUpdatesEnabled,
 			},
 		},
-		ChatID:  event.Message.Chat.Id,
-		TopicID: topicID,
-		UserID:  event.Message.From.Id,
-		Command: event.Command,
-		Args:    event.Args,
-		IsDM:    event.Message.Chat.Type == chatTypePrivate,
+		ChatID:    event.Message.Chat.Id,
+		TopicID:   topicID,
+		UserID:    event.Message.From.Id,
+		MessageID: event.Message.MessageId,
+		Command:   event.Command,
+		Args:      event.Args,
+		IsDM:      event.Message.Chat.Type == chatTypePrivate,
 	}, true
 }
 

@@ -2,7 +2,6 @@ package handlersfx
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -10,8 +9,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
-	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
@@ -36,6 +35,40 @@ type recordingZulipDispatcher struct {
 	err          error
 	stateManager interface {
 		UpdateRuntimeState(ctx context.Context, locator deliverycmd.Locator, state map[string]any) error
+	}
+}
+
+type recordingZulipCommandIngress struct{ requests []commandcmd.Request }
+
+func (r *recordingZulipCommandIngress) PublishCommand(_ context.Context, req commandcmd.Request) error {
+	r.requests = append(r.requests, req)
+	return nil
+}
+
+func TestZulipInboundHandlerPublishesActorOwnedCommands(t *testing.T) {
+	ownerStore, err := auth.NewOwnerStore(&fakeZulipOwnerKVStore{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"locator", "reset"} {
+		t.Run(name, func(t *testing.T) {
+			ingress := &recordingZulipCommandIngress{}
+			h := &zulipInboundHandler{ownerStore: ownerStore, commandIngress: ingress, logger: zerolog.Nop(), ownerID: 101}
+			locator := zulip.NewDMLocator(101)
+			if err := h.HandleCommand(context.Background(), zulip.InboundCommand{Locator: locator, MessageID: 88, SenderID: 101, Command: name, Direct: true}); err != nil {
+				t.Fatal(err)
+			}
+			if len(ingress.requests) != 1 {
+				t.Fatalf("published requests = %d, want 1", len(ingress.requests))
+			}
+			got := ingress.requests[0]
+			if got.InvocationID != "zulip:command:88" || got.Payload.Name != name || !got.Payload.Access.Owner {
+				t.Fatalf("published request = %+v", got)
+			}
+		})
 	}
 }
 
@@ -131,12 +164,6 @@ func TestZulipInboundHandler_CommandsRejectExtraArgs(t *testing.T) {
 		wantText string
 	}{
 		{
-			name:     "locator rejects args",
-			command:  "locator",
-			args:     "extra arg",
-			wantText: zulipLocatorUsageText,
-		},
-		{
 			name:     "cancel rejects args",
 			command:  "cancel",
 			args:     "now",
@@ -178,80 +205,6 @@ func TestZulipInboundHandler_CommandsRejectExtraArgs(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestZulipInboundHandler_LocatorUsesStructuredPresentation(t *testing.T) {
-	ownerStore, err := auth.NewOwnerStore(&fakeZulipOwnerKVStore{})
-	if err != nil {
-		t.Fatalf("NewOwnerStore() error = %v", err)
-	}
-	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
-		t.Fatalf("RegisterOwnerSubject() error = %v", err)
-	}
-	dispatcher := &recordingZulipDispatcher{}
-	renderer := &fakeZulipLocatorRenderer{presentation: deliveryfmt.StructuredPresentation{
-		Text:           "## Balda locator\n\n**Locator:** `zulip:dm:101`",
-		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
-	}}
-	handler := &zulipInboundHandler{
-		ownerStore:      ownerStore,
-		actorDispatcher: dispatcher,
-		locatorRenderer: renderer,
-		logger:          zerolog.Nop(),
-		ownerID:         101,
-	}
-
-	locator := zulip.NewDMLocator(101)
-	_ = handler.HandleCommand(context.Background(), zulip.InboundCommand{
-		Locator: locator, SenderID: 101, Command: "locator", Direct: true,
-	})
-
-	payloads := zulipDeliveryPayloads(t, dispatcher.commands)
-	if len(payloads) != 1 {
-		t.Fatalf("delivery payloads = %d, want 1", len(payloads))
-	}
-	if payloads[0].Mode != deliverycmd.ModeMarkdown || payloads[0].DeliveryFormat != deliveryfmt.DeliveryFormatMarkdown {
-		t.Fatalf("delivery mode/format = %q/%q, want markdown/markdown", payloads[0].Mode, payloads[0].DeliveryFormat)
-	}
-	if payloads[0].Text != renderer.presentation.Text || renderer.calls != 1 || renderer.locator != locator {
-		t.Fatalf("structured locator response was not preserved: payload=%+v renderer=%+v", payloads[0], renderer)
-	}
-}
-
-func TestZulipInboundHandler_LocatorRendererFailureDoesNotDispatch(t *testing.T) {
-	ownerStore, err := auth.NewOwnerStore(&fakeZulipOwnerKVStore{})
-	if err != nil {
-		t.Fatalf("NewOwnerStore() error = %v", err)
-	}
-	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
-		t.Fatalf("RegisterOwnerSubject() error = %v", err)
-	}
-	dispatcher := &recordingZulipDispatcher{}
-	handler := &zulipInboundHandler{
-		ownerStore: ownerStore, actorDispatcher: dispatcher,
-		locatorRenderer: &fakeZulipLocatorRenderer{err: errors.New("render failed")},
-		logger:          zerolog.Nop(), ownerID: 101,
-	}
-
-	_ = handler.HandleCommand(context.Background(), zulip.InboundCommand{
-		Locator: zulip.NewDMLocator(101), SenderID: 101, Command: "locator", Direct: true,
-	})
-	if len(dispatcher.commands) != 0 {
-		t.Fatalf("delivery commands = %d, want 0", len(dispatcher.commands))
-	}
-}
-
-type fakeZulipLocatorRenderer struct {
-	presentation deliveryfmt.StructuredPresentation
-	err          error
-	calls        int
-	locator      deliverycmd.Locator
-}
-
-func (f *fakeZulipLocatorRenderer) Render(_ context.Context, locator deliverycmd.Locator) (deliveryfmt.StructuredPresentation, error) {
-	f.calls++
-	f.locator = locator
-	return f.presentation, f.err
 }
 
 func TestZulipInboundHandler_Close_DirectMessageOnly(t *testing.T) {

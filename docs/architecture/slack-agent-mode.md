@@ -50,6 +50,19 @@ Use the Slackagent integration for:
 This mode must not overload shared handlers or transport-neutral delivery
 semantics.
 
+### Register `/balda` in Slack
+
+In the Slack app configuration, open **Features → Slash Commands**, create the
+command `/balda`, and set its Request URL to the public HTTPS endpoint that
+forwards unchanged request bodies to `balda.slack.commands_path` (default
+`/slack/commands`). Save the command and reinstall the app to the workspace if
+Slack requests it. The supported forms are `/balda locator` and
+`/balda reset`; the transport rejects other subcommands before actor publish.
+
+The endpoint uses the same `balda.slack.signing_secret` verification as Slack
+Events API ingress. A successful HTTP response means the command was durably
+accepted by Balda, while the visible result arrives through normal delivery.
+
 ## Shared core vs channel boundary
 
 ### Shared Balda core
@@ -73,8 +86,8 @@ semantics. They do not own Slackagent transport behavior.
 `internal/apps/balda/channel/slackagent` owns:
 
 - ingress decoding and verification for Slackagent requests;
-- normalization of Events payloads into Slackagent-local contracts and slash
-  payloads into the shared `commandapp.Request` contract;
+- normalization of Events payloads into Slackagent-local contracts and `/balda`
+  payloads into neutral `commandcmd.Payload` values;
 - Slackagent conversation/message correlation;
 - Slackagent-specific delivery semantics;
 - Slackagent-specific responder behavior;
@@ -148,7 +161,7 @@ of Balda must not depend on them directly.
 
 `internal/apps/balda/handlers` owns the generic chat and command handlers:
 
-- accept transport-neutral `chatapp.Request` and `commandapp.Request` values;
+- accept transport-neutral chat requests and publish actor-migrated command payloads;
 - run application authorization and session preconditions;
 - settle question replies;
 - publish actor work through actorlayer contracts.

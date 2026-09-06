@@ -22,6 +22,11 @@ Status: active
 - `permissions` owns provider-neutral agent permission policy and interactive review orchestration; provider protocol types stay below the `agent` adapter boundary.
 - `sessionturnapp` records failed ADK tool responses with redacted error metadata and never logs raw tool arguments or complete tool responses.
 - `github.com/baldaworks/go-actorlayer` owns generic envelopes, retry/error helpers, runtime primitives, and transport-facing contracts, but does not make Balda-specific product policy decisions.
+- CommandActor is an independently registered Balda product actor on
+  `balda.v1.cmd.command`. Its lane key is the canonical session ID. Transports
+  parse and whitelist commands; ingress resolves access and publishes; the
+  actor routes only by canonical command name. The current migrated handlers
+  are `locator` and `reset`.
 - Delivery boundaries are explicit: `deliverycmd` owns transport-neutral delivery contracts, `deliveryfmt` owns the immutable format registry and transport-capability routing, `deliveryfx` supplies process-local formatter registrations, `locatorref` owns public locator parsing/formatting, and `channel/*` owns concrete provider delivery and transport-local presentation behavior behind DI boundaries.
 - Channel transport boundaries are explicit: `internal/apps/balda/channel/*` packages (`telegram`, `zulip`, `slackagent`) own provider-specific transport carriers and presentation, exporting narrow ports (`InboundHandler`, `InboundProcessor`). Composition and DI wiring are isolated in composition roots (`telegramfx`, `zulipfx`, `slackagentfx`, `handlersfx`) which bind ingress, session, and application services without leaking application domain policy into transport packages.
 - Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.

@@ -18,6 +18,11 @@ Status: active
 - Retried interactive-question delivery rechecks durable question state before every provider side effect. A question that is already answered, timed out, or failed is never presented again by a late command retry.
 - Job state transitions atomically enqueue semantic events in `execution_job_event_outbox`; publication is at-least-once with stable envelope IDs and background retry.
 - Bypassed/non-outbox conversational paths rely on transport durability without outbox reservations; duplicate suppression is not guaranteed for those paths on lost provider responses.
+- Actor-migrated chat commands use retry-stable provider invocation IDs as
+  envelope and dedupe keys. CommandActor serializes `locator` and `reset` by
+  canonical session ID; their outbound delivery IDs derive from that command
+  operation. Reset keeps the existing session reset semantics in this scoped
+  migration; stronger crash-atomic session replacement is separate work.
 - Operational recovery for retained `sending` deliveries: operators inspect chat/channel history and local outbox timestamps/keys. Balda does not perform automated provider receipt reconciliation or provide an ad-hoc recovery CLI; deliberate manual resubmission carries an explicit risk of message duplication.
 
 ## Related tests

@@ -13,6 +13,19 @@ Status: active
 - Subject/header/namespace definitions live canonically in `internal/apps/balda/actorcmd`; `execution` re-exports them as the runtime-facing compatibility facade while consuming them for host policy.
 - Product/runtime packages consume actorlayer `Source`/`Delivery` and
   actorlayer transport dispatcher abstractions, not transport APIs directly.
+- `balda.v1.cmd.command` targets the independent CommandActor. Its payload is
+  `commandcmd.Payload`, its address key is the canonical session ID, and its
+  router selects an immutable exact-name handler table.
+- Concrete transports own command parsing and explicit whitelists. Ingress
+  resolves access and publishes. Actor handlers own behavior. `commandfx`
+  contains only registration and port wiring.
+
+## Current migration scope
+
+`locator` and `reset` use CommandActor in Telegram, Zulip, and Slack. The Slack
+surface is `/balda locator|reset`. Remaining commands keep their existing
+execution path until migrated by separate stories; this document does not
+claim that migration is complete.
 
 ## Related tests
 
@@ -26,6 +39,9 @@ Status: active
 - `internal/apps/balda/eventbus/nats`
 - `internal/apps/balda/execution`
 - `internal/apps/balda/handlers`
+- `internal/apps/balda/commandcmd`
+- `internal/apps/balda/actors/command`
+- `internal/apps/balda/commandfx`
 
 ## Update triggers
 

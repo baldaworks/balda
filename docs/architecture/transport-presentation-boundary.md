@@ -53,7 +53,7 @@ Examples:
 - `questionfmt`, `permissionfmt`, `progressfmt`, and `locatorfmt` define transport-neutral
   message descriptors and payloads;
 - `deliveryfmt` defines registry interfaces and routing contracts;
-- `locatorapp` owns canonical locator projection and structured resolution;
+- `actors/command/locator` owns canonical locator projection and structured resolution;
 - `deliveryfx` assembles shared transport-neutral presentation wiring.
 
 ### Transport package subtree
@@ -83,27 +83,13 @@ Examples of valid internal subpackages:
 
 ## DI boundary
 
-Outer Balda code must not call transport implementation subpackages directly.
+Transport packages expose parsed command facts and explicit whitelists. They do
+not import CommandActor or application policy. Ingress checks access and
+publishes `commandcmd.Payload`; `commandfx` registers the independent actor and
+its handlers.
 
-The only allowed external surface for a transport is:
-
-- its root transport package for stable transport-facing contracts;
-- its `fx` module for DI registration and lifecycle wiring.
-
-This keeps transport internals replaceable and allows a transport to be moved
-toward a separate process boundary later without rewriting shared application
-code.
-
-Inbound transport implementations invoke generic `chatapp.Handler` and
-`commandapp` contracts. Session creation, question continuation, command
-policy, and actor publication stay on the application side of that seam.
-
-For example, Slack `/balda` ingress verifies and normalizes the signed form into
-`commandapp.Request`, including provider-neutral access and invocation facts.
-It calls `commandapp.Handler` without interpreting the subcommand. The shared
-command handler owns authorization and validation, delegates locator projection
-through its `LocatorResponseRenderer` port, and dispatches the resolved
-presentation. `handlersfx` binds that port to `locatorapp.Service`.
+The first migrated commands are `locator` and `reset`. Existing commands retain
+their current handlers until a separate migration changes their ownership.
 
 ## Rendering rule
 
@@ -124,27 +110,15 @@ must not live in shared message contract packages.
 
 ## Locator as an ownership example
 
-The locator response divides ownership as follows:
-
 | Concern | Owner |
 |---|---|
-| Public `<channel_type>:<address_key>` syntax | `locatorref` |
-| Typed `Transport` and `Locator` response contract | `locatorfmt` |
-| Canonical projection and registry lookup | `locatorapp` |
-| Ingress authorization, arguments, and dispatch | `handlers` and provider ingress adapters |
-| Provider markup | each `channel/<transport>/presentation` package |
-| Renderer registration | each transport's `<transport>fx` package |
-| Formatted delivery payload | `deliverycmd` |
-
-The public destination comes from `commandapp.Request.Locator` /
-`deliverycmd.Locator`. `actorlayer.ActorAddress` remains internal routing
-metadata for the delivery envelope. Moving either the public locator contract
-or rendering policy into `session`, `handlers`, or a concrete channel package
-would violate this ownership split.
-
-The descriptor-to-adapter mechanics, registrations, formats, and failure path
-are documented once in the
-[locator worked flow](presentation-routing.md#worked-flow-locator-response).
+| Command syntax and whitelist | each concrete transport |
+| Neutral command envelope | `commandcmd` |
+| Access precheck and durable publish | `handlers` / transport ingress wiring |
+| Exact-name routing and locator behavior | `actors/command` and `actors/command/locator` |
+| Public locator syntax and typed response | `locatorref`, `locatorfmt` |
+| Provider markup and renderer registration | each `channel/<transport>` subtree |
+| Actor composition | `commandfx` |
 
 ## Generic invariant
 

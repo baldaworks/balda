@@ -14,11 +14,11 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
@@ -54,7 +54,6 @@ const (
 	commandUsage   = "usage"
 	commandAuto    = "auto"
 	commandReset   = "reset"
-	commandRestart = "restart"
 	commandClose   = "close"
 
 	userActionAdd    = "add"
@@ -74,7 +73,6 @@ type zulipInboundHandlerParams struct {
 	ChannelAuth       *auth.ChannelAuthService
 	SessionManager    *baldasession.Manager
 	Dispatcher        actortransport.Dispatcher
-	LocatorRenderer   handlers.LocatorResponseRenderer
 	GoalJobs          *baldajobs.JobLifecycleService `optional:"true"`
 	MemoryStore       *memory.Store
 	AuthToken         string `name:"balda_auth_token"`
@@ -82,6 +80,7 @@ type zulipInboundHandlerParams struct {
 	MaxIterations     int    `name:"balda_goal_max_iterations"`
 	AutoMaxTurns      int    `name:"balda_automode_max_turns"`
 	Logger            zerolog.Logger
+	CommandIngress    commandcmd.Ingress
 }
 
 type zulipInboundHandler struct {
@@ -91,7 +90,6 @@ type zulipInboundHandler struct {
 	channelAuth       *auth.ChannelAuthService
 	sessionManager    *baldasession.Manager
 	actorDispatcher   actortransport.Dispatcher
-	locatorRenderer   handlers.LocatorResponseRenderer
 	goalJobs          *baldajobs.JobLifecycleService
 	memoryStore       *memory.Store
 	authToken         string
@@ -99,6 +97,7 @@ type zulipInboundHandler struct {
 	goalMaxIterations int
 	autoMaxTurns      int
 	logger            zerolog.Logger
+	commandIngress    commandcmd.Ingress
 
 	mu      sync.RWMutex
 	ownerID int64
@@ -117,7 +116,6 @@ func newZulipInboundHandler(params zulipInboundHandlerParams) zulip.InboundProce
 		channelAuth:       params.ChannelAuth,
 		sessionManager:    params.SessionManager,
 		actorDispatcher:   params.Dispatcher,
-		locatorRenderer:   params.LocatorRenderer,
 		goalJobs:          params.GoalJobs,
 		memoryStore:       params.MemoryStore,
 		authToken:         strings.TrimSpace(params.AuthToken),
@@ -125,6 +123,7 @@ func newZulipInboundHandler(params zulipInboundHandlerParams) zulip.InboundProce
 		goalMaxIterations: maxIters,
 		autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
 		logger:            params.Logger.With().Str("component", "balda.handler.zulip").Logger(),
+		commandIngress:    params.CommandIngress,
 		now:               time.Now,
 	}
 	h.initOwnerFromStore()
@@ -173,16 +172,26 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 		_ = h.sendPlain(ctx, cmd.Locator, zulipAccessDeniedText)
 		return nil
 	}
+	if cmd.Command == commandReset || cmd.Command == commandLocator {
+		isOwner := h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(cmd.SenderID))
+		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
+			InvocationID: fmt.Sprintf("zulip:command:%d", cmd.MessageID),
+			Payload: commandcmd.Payload{
+				Version: commandcmd.SchemaVersion, Name: cmd.Command, Args: cmd.Args,
+				Locator: cmd.Locator, Transport: zulip.ChannelType, Principal: zulipUserID(cmd.SenderID),
+				Access:       commandcmd.Access{SessionCommands: true, Owner: isOwner, Collaborator: !isOwner},
+				Conversation: commandcmd.Conversation{Direct: cmd.Direct},
+				Presentation: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true}},
+				Invocation:   commandcmd.Invocation{Root: "/"},
+			},
+		})
+	}
 
 	switch cmd.Command {
 	case commandStart:
 		h.handleStartCommand(ctx, cmd.Locator, cmd.SenderID, cmd.Args, cmd.Direct)
-	case commandReset, commandRestart:
-		h.handleResetCommand(ctx, cmd.Locator, cmd.SenderID, cmd.Command, cmd.Args, cmd.Direct)
 	case commandCancel:
 		h.handleCancelCommand(ctx, cmd.Locator, cmd.SenderID, cmd.Args)
-	case commandLocator:
-		h.handleLocatorCommand(ctx, cmd.Locator, cmd.Args)
 	case commandTopic:
 		h.handleTopicCommand(ctx, cmd.Locator, cmd.SenderID, cmd.Args, cmd.Direct)
 	case commandGoal:
@@ -199,6 +208,10 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 		_ = h.sendPlain(ctx, cmd.Locator, fmt.Sprintf("Unknown command: /%s", cmd.Command))
 	}
 	return nil
+}
+
+func (h *zulipInboundHandler) HandleUnsupportedCommand(ctx context.Context, cmd zulip.InboundCommand) error {
+	return h.sendPlain(ctx, cmd.Locator, fmt.Sprintf("Unknown command: /%s", cmd.Command))
 }
 
 func (h *zulipInboundHandler) ProcessInbound(ctx context.Context, msg zulip.InboundMessage) (turncmd.InboundSettlement, error) {
@@ -440,65 +453,6 @@ func (h *zulipInboundHandler) handleOwnerBindToken(ctx context.Context, locator 
 	h.handleStartChannelTokenCommand(ctx, locator, senderID, token)
 }
 
-func (h *zulipInboundHandler) handleResetCommand(ctx context.Context, locator deliverycmd.Locator, senderID int, cmd, args string, isDM bool) {
-	if strings.TrimSpace(args) != "" {
-		_ = h.sendPlain(ctx, locator, fmt.Sprintf("Usage: /%s", cmd))
-		return
-	}
-	if h.sessionManager == nil {
-		_ = h.sendPlain(ctx, locator, zulipResetNotReadyText)
-		return
-	}
-	info, infoErr := h.sessionManager.GetSessionInfo(ctx, locator.SessionID)
-	if infoErr != nil {
-		h.logger.Debug().Err(infoErr).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: session info unavailable before restart")
-	}
-	transportUserID := zulipUserID(senderID)
-	reason := fmt.Sprintf("session canceled by %s command", cmd)
-	if submitErr := submitSessionCancelControl(
-		ctx, h.actorDispatcher, locator, transportUserID, reason, false,
-	); submitErr != nil {
-		h.logger.Warn().Err(submitErr).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("failed to submit cancel control")
-	}
-	if err := h.sessionManager.ResetSession(ctx, locator); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to reset session")
-		_ = h.sendPlain(ctx, locator, "Could not reset this session.")
-		return
-	}
-	label := restartZulipSessionLabel(isDM, info, ownerSessionLabel, autoSessionLabel)
-	userID := restartZulipSessionUserID(senderID, info)
-	if err := h.sessionManager.CreateSession(ctx, baldasession.SessionContext{
-		Locator: locator,
-		UserID:  userID,
-	}, label); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: failed to recreate session during restart command")
-		failMsg := "Could not reset this session."
-		if cmd == commandRestart {
-			failMsg = "Could not restart this session."
-		}
-		_ = h.sendPlain(ctx, locator, failMsg)
-		return
-	}
-
-	providerName := strings.TrimSpace(h.sessionManager.BaldaProviderID())
-	welcomeMsg := buildZulipRestartWelcome(h.sessionManager, providerName, isDM, label, locator.SessionID, ownerSessionLabel)
-	if err := h.sendMarkdown(ctx, locator, welcomeMsg); err != nil {
-		h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Str("cmd", cmd).Msg("zulip: failed to send restart welcome")
-	}
-	h.sendSessionStartupNotice(ctx, locator, locator.SessionID)
-}
-
-func (h *zulipInboundHandler) sendSessionStartupNotice(ctx context.Context, locator deliverycmd.Locator, sessionID string) {
-	if h.sessionManager == nil {
-		return
-	}
-	notice := h.sessionManager.TakeStartupNotice(sessionID)
-	if notice == "" {
-		return
-	}
-	_ = h.sendPlain(ctx, locator, notice)
-}
-
 func (h *zulipInboundHandler) handleCancelCommand(ctx context.Context, locator deliverycmd.Locator, senderID int, args string) {
 	if strings.TrimSpace(args) != "" {
 		_ = h.sendPlain(ctx, locator, zulipCancelUsageText)
@@ -513,25 +467,6 @@ func (h *zulipInboundHandler) handleCancelCommand(ctx context.Context, locator d
 		return
 	}
 	_ = h.sendPlain(ctx, locator, "Cancel requested.")
-}
-
-func (h *zulipInboundHandler) handleLocatorCommand(ctx context.Context, locator deliverycmd.Locator, args string) {
-	if strings.TrimSpace(args) != "" {
-		_ = h.sendPlain(ctx, locator, zulipLocatorUsageText)
-		return
-	}
-	if h.locatorRenderer == nil {
-		h.logger.Error().Str("session_id", locator.SessionID).Msg("locator response renderer is unavailable")
-		return
-	}
-	presentation, err := h.locatorRenderer.Render(ctx, locator)
-	if err != nil {
-		h.logger.Error().Err(err).Str("session_id", locator.SessionID).Msg("failed to render locator response")
-		return
-	}
-	if err := sendStructuredPresentation(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, presentation); err != nil {
-		h.logger.Error().Err(err).Str("session_id", locator.SessionID).Msg("failed to send locator response")
-	}
 }
 
 func (h *zulipInboundHandler) handleTopicCommand(ctx context.Context, locator deliverycmd.Locator, senderID int, args string, isDM bool) {
@@ -740,10 +675,6 @@ func (h *zulipInboundHandler) sendPlain(ctx context.Context, locator deliverycmd
 	return SendPlain(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
 }
 
-func (h *zulipInboundHandler) sendMarkdown(ctx context.Context, locator deliverycmd.Locator, text string) error {
-	return SendMarkdown(ctx, h.actorDispatcher, zulipHandlerActorAddress, locator, text)
-}
-
 // Support helpers:
 
 func initZulipOwnerID(store *auth.OwnerStore) (int64, bool) {
@@ -936,30 +867,6 @@ func parseZulipStartArgs(args string) (zulipStartArgs, bool) {
 	}
 }
 
-func restartZulipSessionLabel(isDM bool, info baldasession.TopicSessionInfo, ownerLabel, autoLabel string) string {
-	if label := strings.TrimSpace(info.AgentName); label != "" {
-		return label
-	}
-	if isDM {
-		return ownerLabel
-	}
-	return autoLabel
-}
-
-func restartZulipSessionUserID(senderID int, info baldasession.TopicSessionInfo) string {
-	if userID := strings.TrimSpace(info.UserID); userID != "" {
-		return userID
-	}
-	return zulipUserID(senderID)
-}
-
-func restartZulipWelcomeDisplayName(isDM bool, label, ownerLabel string) string {
-	if !isDM {
-		return ownerLabel
-	}
-	return label
-}
-
 func zulipSessionWelcomeLabel(isDM bool, ownerLabel, autoLabel string) string {
 	if isDM {
 		return ownerLabel
@@ -1000,15 +907,6 @@ func buildZulipSessionWelcome(manager *baldasession.Manager, providerName string
 	label := zulipSessionWelcomeLabel(isDM, ownerLabel, autoLabel)
 	metadata := manager.GetAgentMetadata(providerName)
 	return welcome.BuildAgentWelcomeMessage(label, sessionID, metadata.Type, metadata.Model, metadata.MCPServers)
-}
-
-func buildZulipRestartWelcome(manager *baldasession.Manager, providerName string, isDM bool, label string, sessionID string, ownerLabel string) string {
-	if manager == nil {
-		return ""
-	}
-	metadata := manager.GetAgentMetadata(providerName)
-	welcomeName := restartZulipWelcomeDisplayName(isDM, label, ownerLabel)
-	return welcome.BuildAgentWelcomeMessage(welcomeName, sessionID, metadata.Type, metadata.Model, metadata.MCPServers)
 }
 
 func buildZulipTopicWelcome(manager *baldasession.Manager, providerName string, topicName string, sessionID string) string {
@@ -1146,20 +1044,6 @@ func SendPlain(ctx context.Context, dispatcher actortransport.Dispatcher, from a
 
 func SendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, text string) error {
 	env, err := deliverycmd.MarkdownEnvelopeWithSettlement("", from, locator, deliverycmd.SettlementBypass, text, "")
-	if err != nil {
-		return err
-	}
-	if dispatcher == nil {
-		return fmt.Errorf("runtime is unavailable")
-	}
-	_, err = dispatcher.Dispatch(ctx, env)
-	return err
-}
-
-func sendStructuredPresentation(ctx context.Context, dispatcher actortransport.Dispatcher, from actorlayer.ActorAddress, locator deliverycmd.Locator, presentation deliveryfmt.StructuredPresentation) error {
-	env, err := deliverycmd.MarkdownEnvelopeWithFormatAndSettlement(
-		"", from, locator, presentation.DeliveryFormat, deliverycmd.SettlementBypass, presentation.Text, "",
-	)
 	if err != nil {
 		return err
 	}

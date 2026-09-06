@@ -11,6 +11,7 @@ const (
 	ActorTypeMemory     = "memory"
 	ActorTypeQuestion   = "question"
 	ActorTypePermission = "permission"
+	ActorTypeCommand    = "command"
 
 	NamespaceHumanInbound      = "human.inbound"
 	NamespaceWebhookInbound    = "webhook.inbound"
@@ -24,6 +25,7 @@ const (
 	NamespacePermissionCommand = "permission.command"
 	NamespaceAutoModeCommand   = "auto_mode.command"
 	NamespaceTelemetry         = "telemetry"
+	NamespaceChatCommand       = "chat.command"
 
 	KindMessage          = "message"
 	KindWebhookEvent     = "webhook_event"
@@ -34,6 +36,7 @@ const (
 	KindQuestionAnswered = "question_answered"
 	KindQuestionTimedOut = "question_timed_out"
 	KindQuestionFailed   = "question_failed"
+	KindCommandExecute   = "execute"
 
 	QueueModeInterrupt = "interrupt"
 )
