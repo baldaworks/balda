@@ -7,7 +7,7 @@ Status: active
 
 - Delivery is at-least-once at transport level and idempotent at side-effect level.
 - Retry policy and max deliver behavior are explicit and observable.
-- DLQ entries include enough context for diagnosis and replay planning.
+- DLQ entries retain diagnostic structural metadata (envelope ID, routing, error class, payload size, SHA-256 hash) for failure diagnosis and incident correlation, not raw payload bodies or request secrets; see the authoritative [Runtime Contract](runtime-contract.md). Original work cannot be reconstructed from the hash alone, and manual resubmission carries an explicit risk of prior side effects.
 - User-visible delivery paths remain transport-durable; provider-side dedupe/outbox policy depends on the ingress/runtime path.
 - Concrete channel adapters classify provider failures as retryable, permanent, or ambiguous at the transport-neutral `deliverycmd` boundary. Transport timeouts, connection resets, server errors (>= 500), and empty provider responses classify as ambiguous (`deliverycmd.ErrorKindAmbiguous`) because provider acceptance cannot be proven. Unknown legacy errors retain the existing bounded external-delivery retry behavior.
 - For durable outbox-backed deliveries, an ambiguous provider outcome retains the `sending` status in `execution_delivery_outbox` rather than transitioning to `failed`. Automatic resend across restarts is disabled to prevent duplicate side effects; subsequent attempts observe the `sending` status and fail closed with a transient error without calling the provider.

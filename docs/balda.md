@@ -1583,13 +1583,15 @@ All events are published as the same envelope shape. For event envelopes,
   - backoff is exponential with bounded cap (base `1s`, max `1m`), constrained by consumer `max_deliver`.
   - long-running handlers send `InProgress` heartbeats to prevent premature redelivery.
 - Retry exhaustion:
-  - when delivery attempts reach `max_deliver`, command is moved to `BALDA_DLQ` with reason `retry exhausted: <error>`.
-- DLQ payload contract:
-  - keeps original envelope identity/routing/payload (`id`, namespace, from/to, job/session scope).
-  - includes failure reason and transport origin metadata (subject/headers for poison decode cases).
-- Operational inspection:
-  - inspect DLQ stream contents, transport metadata, and structured logs when command failures need replay or triage.
-  - Balda does not perform automatic reconciliation against external provider receipts or provide an ad-hoc recovery CLI. Manual resubmission of original work must be evaluated against the duplicate risk.
+  - when delivery attempts reach `max_deliver`, command is moved to `BALDA_DLQ` with bounded error reason (such as `retry_exhausted:transient`).
+- DLQ payload contract (diagnostic-only):
+  - Decoded command envelopes retain structural identity, routing, and safe metadata (`id`, `job_id`, `session_id`, `namespace`, `from`, `to`, `error_class`, `reason`), but replace the original payload body with diagnostic metadata (`original_kind`, `payload_bytes`, `payload_sha256`, and optional `error_class`). Raw payloads, provider credentials, and secret parameters are never persisted to DLQ.
+  - Poison messages (which fail envelope decoding) publish a diagnostic telemetry envelope (`poison-<uuid>`) containing only transport source metadata (`subject`, integer `header_count`, and optional `source_stream`, `source_consumer`, `num_delivered`), sanitized decode reason, and payload diagnostics (`payload_bytes`, `payload_sha256`). Raw message bodies and header values are not retained.
+- Operational triage and recovery:
+  - Diagnostic DLQ records allow operators to identify failed work by ID, hash, and error category, but cannot reconstruct original message bodies from the SHA-256 hash alone.
+  - Recovery requires checking evidence outside the DLQ (such as channel chat history, client logs, or upstream producer outbox). When original input is unavailable, the DLQ record alone cannot recover or replay the work.
+  - If original input is located and resubmission is considered, operators must verify whether prior execution attempts produced partial side effects (e.g. external provider API calls, outbox entries, or job events), as manual resubmission carries duplicate risk.
+  - Balda does not perform automatic receipt reconciliation or provide an automated command replay CLI. Developer task `task runtime-state` inspects stream and consumer status via NATS metadata, while `task projection-replay` is a developer test suite for projection idempotency, not a production command reconstruction tool.
 
 #### Failure-mode matrix
 
@@ -1597,11 +1599,11 @@ All events are published as the same envelope shape. For event envelopes,
 |---|---|---|---|---|
 | Transport unavailable at startup | app startup/runtime bootstrap | startup fails fast | ingress not started; no work accepted | restore NATS transport and restart |
 | Command publish rejected (queue pressure/transport) | ingress publish path | request rejected (`queue_full`/`dispatch_failed`) | command not accepted; no job created | inspect stream limits/backpressure, retry ingress |
-| Envelope decode failure (command consumer) | command consumer decode | `TermWithReason`, publish poison record to `BALDA_DLQ`, emit `command.decode_failed` | affected message skipped; no handler side effects | inspect DLQ payload, fix producer/schema, replay if needed |
+| Envelope decode failure (command consumer) | command consumer decode | `TermWithReason`, publish poison record to `BALDA_DLQ`, emit `command.decode_failed` | affected message skipped; no handler side effects | inspect DLQ diagnostic metadata and source subject; fix producer/schema; re-issue from producer if input is retained upstream |
 | Retryable actor/runtime error | command handler/runtime | `NakWithDelay`, emit `command.retrying` | delayed completion | inspect retries, root-cause transient dependency failures |
-| Retry exhaustion (`max_deliver` reached) | command consumer | publish `BALDA_DLQ`, `TermWithReason`, emit `command.deadlettered` | job may end `deadlettered`; no further retries | inspect DLQ entries and logs, replay/fix or cancel |
-| Permanent actor/runtime error | handler/runtime classification | publish `BALDA_DLQ`, `TermWithReason` | job fails/deadletters without retry loop | inspect reason, patch code/config, replay if safe |
-| Projection apply/decode failure | event projector consumer | retry for transient; terminal to DLQ for permanent | command flow continues; read models may lag until replay or repair | inspect projector logs and replay state, fix the bug, replay events |
+| Retry exhaustion (`max_deliver` reached) | command consumer | publish `BALDA_DLQ`, `TermWithReason`, emit `command.deadlettered` | job may end `deadlettered`; no further retries | inspect DLQ diagnostic entry and error class; root-cause failure; reconstruct from external producer/history if safe or cancel |
+| Permanent actor/runtime error | handler/runtime classification | publish `BALDA_DLQ`, `TermWithReason` | job fails/deadletters without retry loop | inspect diagnostic error class and reason; patch code/config; re-issue from original source after assessing prior side effects |
+| Projection apply/decode failure | event projector consumer | retry for transient; terminal to DLQ for permanent | command flow continues; read models may lag until replay or repair | inspect projector logs and stream status; fix bug; replay stream events via projection service |
 | Delivery redelivery after partial send | delivery outbox reserve | duplicate suppressed by delivery key (noop path) | final user message not duplicated | inspect outbox row/status if delivery appears missing |
 | Ambiguous provider delivery (timeout/5xx/response loss) | delivery workflow / channel adapter | retains outbox `sending` status, returns transient error, disables automatic resend | delivery outcome uncertain; message not resent automatically | inspect channel history and outbox record; manual resubmission carries duplicate risk |
 | Cancellation races with queued/running work | control command handling | control command applied; canceled/terminal commands settle noop/ack | job/session stops promptly, later duplicates ignored | verify job state/events; no queue surgery needed |
@@ -1615,8 +1617,9 @@ All events are published as the same envelope shape. For event envelopes,
   NATS transport files live under `${balda.state_dir}/nats`, which is runtime state and should
   not be committed.
 - Poison command/event messages that cannot decode as Balda envelopes are
-  terminated and copied to `BALDA_DLQ` with the raw subject, headers, payload,
-  and decode reason.
+  terminated and published to `BALDA_DLQ` as diagnostic telemetry records
+  containing the transport subject, header count, payload size, SHA-256 hash,
+  and sanitized decode reason, without retaining raw message bodies or header values.
 - Job-mutating envelopes are serialized on a single job lane
   (`job:<job_id>`) across job control, goal command/result, and job-bound
   human/webhook/schedule ingress. Different job IDs still run concurrently.
