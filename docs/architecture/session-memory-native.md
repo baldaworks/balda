@@ -171,6 +171,6 @@ resources. Disabled session memory creates no stream, worker, or projection
 resource.
 
 The [acceptance matrix](session-memory-v2-acceptance.md) maps each current
-contract to positive tests and quality gates. The [operator runbook](../balda.md#operator-verification-runbook)
+contract to positive tests and quality gates. The [operator runbook](../reference/session-memory.md#operator-verification-runbook)
 contains metadata-only rollout and recovery checks; it is not a substitute for
 the repository gates.

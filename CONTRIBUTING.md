@@ -46,6 +46,8 @@ go tool go-arch-lint check --project-path .
 ## Documentation Policy
 
 - Keep `README.md` focused on installation and usage.
-- Keep `docs/balda.md` focused on technical architecture/spec details.
+- Keep `docs/balda.md` as the technical-reference entry point and put detailed
+  contracts in the relevant page under `docs/reference/`.
 - Keep `AGENTS.md` focused on agent workflow guardrails.
-- If bot commands or config contracts change, update both `README.md` and `docs/balda.md`.
+- If bot commands or config contracts change, update `README.md` and the
+  relevant technical-reference page.

@@ -138,7 +138,7 @@ Use this checklist before merging any architecture-affecting change.
 - `/user add`: owner only; generate a collaborator invite link.
 - `/user list`: owner only; list collaborators and active invites.
 - `/user remove <user_id>`: owner only; remove a collaborator by user ID.
-- Keep command behavior and access expectations backward compatible; when changing commands, update `README.md` and `docs/balda.md` as part of the same change.
+- Keep command behavior and access expectations backward compatible; when changing commands, update `README.md` and the relevant page under `docs/reference/` as part of the same change.
 
 ## Scheduling
 
@@ -152,7 +152,8 @@ Recurring scheduling is config-managed via `balda.scheduler.jobs`. It is not a c
 - Track migration debt and follow-up work with `bd`.
 - Product installation/usage docs are in `README.md`.
 - Development/contribution workflow is in `CONTRIBUTING.md`.
-- Balda technical spec and operational details are in `docs/balda.md`.
+- Balda technical-reference navigation is in `docs/balda.md`; detailed specs
+  and operational contracts are organized by topic under `docs/reference/`.
 
 ## Release
 

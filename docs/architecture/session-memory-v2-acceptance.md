@@ -64,7 +64,7 @@ required session boundaries while transport is live, drains per-scope work,
 then closes projection, canonical Badger, and model resources. Projection files
 are rebuildable maintenance state and are not logical export/import data.
 
-The operator runbook in [`docs/balda.md`](../balda.md#operator-verification-runbook)
+The [operator runbook](../reference/session-memory.md#operator-verification-runbook)
 uses metadata-only live checks when credentials and a real deployment are
 available. It does not replace the deterministic repository gates and must not
 record message bodies, recalled text, credentials, or capability URLs.

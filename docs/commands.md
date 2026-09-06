@@ -156,7 +156,8 @@ Successful locator rendering is deterministic and does not create or restore
 an agent turn, change session history, or update session status. Invalid
 arguments return `Usage: /locator` or `Usage: /balda locator`. If the structured
 renderer is absent or fails, Balda sends no partial or plain fallback locator
-response. Operators should use the checks in [Balda operations](balda.md#locator-response-delivery).
+response. Operators should use the checks in
+[Balda operations](reference/topic-sessions.md#locator-response-delivery).
 
 ## Command execution architecture
 

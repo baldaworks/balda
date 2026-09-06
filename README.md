@@ -145,7 +145,8 @@ docker compose up -d balda
 ```
 
 Polling mode is the default, so Telegram does not require publishing a port.
-Webhook deployment details live in [docs/balda.md](docs/balda.md).
+Webhook deployment details live in the
+[configuration reference](docs/reference/configuration.md).
 
 ## Published container image
 
@@ -290,8 +291,8 @@ ingress begins accepting messages. See the
 [Telegram formatting guide](docs/telegram-formatting.md) for rollout and
 fallback details.
 
-For complete configuration, examples, and provider-specific details, see
-[docs/balda.md](docs/balda.md).
+For complete configuration, examples, and provider-specific details, see the
+[configuration reference](docs/reference/configuration.md).
 
 ## Troubleshooting
 
@@ -308,7 +309,9 @@ For complete configuration, examples, and provider-specific details, see
 
 ## Docs
 
-- Product and operator docs: [docs/balda.md](docs/balda.md)
+- Technical reference: [docs/balda.md](docs/balda.md)
+- Configuration: [docs/reference/configuration.md](docs/reference/configuration.md)
+- Operations: [docs/reference/operations.md](docs/reference/operations.md)
 - Goal workflow: [docs/goal-workflow.md](docs/goal-workflow.md)
 - Architecture map: [docs/architecture/index.md](docs/architecture/index.md)
 - Telegram formatting: [docs/telegram-formatting.md](docs/telegram-formatting.md)

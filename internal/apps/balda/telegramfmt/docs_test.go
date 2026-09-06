@@ -52,9 +52,9 @@ func TestUserDocsLinkTelegramFormattingGuide(t *testing.T) {
 func TestUserDocsDocumentRuntimeStateHelper(t *testing.T) {
 	t.Parallel()
 
-	doc := readRepoDoc(t, "docs/balda.md")
+	doc := readRepoDoc(t, "docs/reference/onboarding.md")
 	if !strings.Contains(doc, "task runtime-state") {
-		t.Fatal("docs/balda.md does not document task runtime-state")
+		t.Fatal("docs/reference/onboarding.md does not document task runtime-state")
 	}
 }
 
@@ -86,7 +86,7 @@ func TestReadmeDocumentsBaldaConfigShapeAndMCPServers(t *testing.T) {
 func TestDocsBaldaDocumentsAdvancedConfigAndMCPServers(t *testing.T) {
 	t.Parallel()
 
-	doc := readRepoDoc(t, "docs/balda.md")
+	doc := readRepoDoc(t, "docs/reference/configuration.md")
 	for _, want := range []string{
 		"type: <provider_type>",
 		"type: codex_acp",
@@ -107,7 +107,7 @@ func TestDocsBaldaDocumentsAdvancedConfigAndMCPServers(t *testing.T) {
 		"`runtime.providers.<id>.mcp_servers`",
 	} {
 		if !strings.Contains(doc, want) {
-			t.Fatalf("docs/balda.md missing %q", want)
+			t.Fatalf("docs/reference/configuration.md missing %q", want)
 		}
 	}
 }
