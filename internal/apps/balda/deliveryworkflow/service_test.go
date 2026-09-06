@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -495,3 +496,147 @@ func TestHandleBindsQuestionToProviderMessage(t *testing.T) {
 		t.Fatalf("binding = %q %+v", binder.questionID, binder.ref)
 	}
 }
+
+func TestHandleAmbiguousDeliveryRetainsSendingAndPreventsResendAcrossRestart(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "delivery.db")
+	store1, err := baldastate.NewSQLiteProvider(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+
+	ambiguousErr := deliverycmd.AmbiguousError(errors.New("telegram timeout"))
+	delivery1 := &failingDeliveryDispatcher{err: ambiguousErr}
+	service1 := New(delivery1, store1.Jobs(), nil, nil, nil, zerolog.Nop())
+
+	payload := deliverycmd.Payload{
+		Locator: deliverycmd.Locator{
+			ChannelType: "telegram",
+			AddressKey:  "-1001:0",
+			AddressJSON: `{"chat_id":-1001,"topic_id":0}`,
+			SessionID:   "tg--1001-0",
+		},
+		Mode:       deliverycmd.ModeAgentReply,
+		Settlement: deliverycmd.SettlementOutbox,
+		Text:       "hello",
+	}
+
+	payloadData, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	env := actorlayer.Envelope{
+		ID:   "delivery-1",
+		Kind: "delivery.command",
+		Payload: actorlayer.Payload{
+			Encoding: actorlayer.EncodingJSON,
+			Data:     payloadData,
+		},
+	}
+
+	err1 := service1.Handle(ctx, env, payload)
+	if err1 == nil {
+		t.Fatal("Handle() error = nil, want external delivery error")
+	}
+	if actorlayer.ClassifyError(err1) != actorlayer.ErrorKindExternalDelivery {
+		t.Fatalf("Handle() error kind = %v (err: %v), want %v", actorlayer.ClassifyError(err1), err1, actorlayer.ErrorKindExternalDelivery)
+	}
+	if delivery1.calls != 1 {
+		t.Fatalf("delivery1.calls = %d, want 1", delivery1.calls)
+	}
+
+	if err := store1.Close(); err != nil {
+		t.Fatalf("store1.Close() error = %v", err)
+	}
+
+	store2, err := baldastate.NewSQLiteProvider(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteProvider() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store2.Close() })
+
+	delivery2 := &failingDeliveryDispatcher{}
+	service2 := New(delivery2, store2.Jobs(), nil, nil, nil, zerolog.Nop())
+
+	err2 := service2.Handle(ctx, env, payload)
+	if err2 == nil {
+		t.Fatal("Handle() error = nil, want transient error preventing resend")
+	}
+	if actorlayer.ClassifyError(err2) != actorlayer.ErrorKindTransient {
+		t.Fatalf("Handle() error kind = %v, want %v", actorlayer.ClassifyError(err2), actorlayer.ErrorKindTransient)
+	}
+	if !strings.Contains(err2.Error(), "ambiguous sending status; automatic resend is disabled") {
+		t.Fatalf("Handle() error message = %q, want ambiguous sending status error", err2.Error())
+	}
+	if delivery2.calls != 0 {
+		t.Fatalf("delivery2.calls = %d, want 0 (no resend allowed)", delivery2.calls)
+	}
+}
+
+func TestHandleFailsBeforeDispatchWhenOutboxIsRequiredButAbsent(t *testing.T) {
+	ctx := context.Background()
+	delivery := &failingDeliveryDispatcher{}
+	service := New(delivery, nil, nil, nil, nil, zerolog.Nop())
+
+	payload := deliverycmd.Payload{
+		Locator: deliverycmd.Locator{
+			ChannelType: "telegram",
+			AddressKey:  "-1001:0",
+			AddressJSON: `{"chat_id":-1001,"topic_id":0}`,
+			SessionID:   "tg--1001-0",
+		},
+		Mode:       deliverycmd.ModeAgentReply,
+		Settlement: deliverycmd.SettlementOutbox,
+		Text:       "hello",
+	}
+
+	err := service.Handle(ctx, actorlayer.Envelope{ID: "delivery-1"}, payload)
+	if err == nil {
+		t.Fatal("Handle() error = nil, want transient error")
+	}
+	if actorlayer.ClassifyError(err) != actorlayer.ErrorKindTransient {
+		t.Fatalf("Handle() error kind = %v, want %v", actorlayer.ClassifyError(err), actorlayer.ErrorKindTransient)
+	}
+	if !strings.Contains(err.Error(), "delivery outbox store is required for durable delivery") {
+		t.Fatalf("Handle() error message = %q, want outbox store required", err.Error())
+	}
+	if delivery.calls != 0 {
+		t.Fatalf("delivery.calls = %d, want 0", delivery.calls)
+	}
+}
+
+func TestHandleAmbiguousQuestionDeliveryDoesNotFailQuestion(t *testing.T) {
+	ctx := context.Background()
+	delivery := &failingDeliveryDispatcher{err: deliverycmd.AmbiguousError(errors.New("telegram timeout"))}
+	actor := &recordingActorDispatcher{}
+	binder := &failedQuestionBinder{}
+	service := New(delivery, &recordingDeliveryStore{}, nil, binder, actor, zerolog.Nop())
+
+	payload := deliverycmd.Payload{
+		Locator: deliverycmd.Locator{
+			ChannelType: "telegram",
+			AddressKey:  "-1001:0",
+			AddressJSON: `{"chat_id":-1001,"topic_id":0}`,
+			SessionID:   "tg--1001-0",
+		},
+		Mode:       deliverycmd.ModeAgentReply,
+		Settlement: deliverycmd.SettlementOutbox,
+		Refs:       map[string]string{"question_id": "question-1"},
+		Text:       "permission?",
+	}
+
+	err := service.Handle(ctx, actorlayer.Envelope{ID: "delivery-1"}, payload)
+	if err == nil {
+		t.Fatal("Handle() error = nil, want external delivery error")
+	}
+	if actorlayer.ClassifyError(err) != actorlayer.ErrorKindExternalDelivery {
+		t.Fatalf("Handle() error kind = %v, want %v", actorlayer.ClassifyError(err), actorlayer.ErrorKindExternalDelivery)
+	}
+	if binder.failure.Code != "" {
+		t.Fatalf("binder.failure.Code = %q, want empty", binder.failure.Code)
+	}
+	if len(actor.envelopes) != 0 {
+		t.Fatalf("actor.envelopes len = %d, want 0", len(actor.envelopes))
+	}
+}
+
