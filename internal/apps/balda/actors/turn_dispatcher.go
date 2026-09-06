@@ -45,9 +45,10 @@ type sessionTurnQueue struct {
 }
 
 type queuedTurn struct {
-	ctx    context.Context
-	task   appports.TurnTask
-	result chan error
+	ctx          context.Context
+	task         appports.TurnTask
+	result       chan error
+	constituents []*queuedTurn
 }
 
 type turnDispatcherParams struct {
@@ -103,6 +104,25 @@ func (d *TurnDispatcher) Enqueue(ctx context.Context, task appports.TurnTask) (<
 		task:   task,
 		result: make(chan error, 1),
 	}
+
+	incKey := turnDedupeKey(queued)
+	if incKey != "" {
+		if queue.running && queue.runningTurn != nil && batchContainsConstituent(queue.runningTurn, incKey) {
+			queue.runningTurn.constituents = append(queue.runningTurn.constituents, queued)
+			return queued.result, 0, nil
+		}
+		for i, pending := range queue.pending {
+			if batchContainsConstituent(pending, incKey) {
+				pending.constituents = append(pending.constituents, queued)
+				pos := i
+				if queue.running {
+					pos = i + 1
+				}
+				return queued.result, pos, nil
+			}
+		}
+	}
+
 	if queue.running && tryMergeSteeringTurn(queue, queued) {
 		return queued.result, 1, nil
 	}
@@ -289,8 +309,7 @@ func tryMergeSteeringTurn(queue *sessionTurnQueue, incoming *queuedTurn) bool {
 		return false
 	}
 	for i := len(queue.pending) - 1; i >= 0; i-- {
-		if mergeIntoSteeringBatch(queue.pending[i], incoming.task.SessionTurn) {
-			completeTurn(incoming, nil)
+		if mergeIntoSteeringBatch(queue.pending[i], incoming) {
 			return true
 		}
 	}
@@ -325,24 +344,70 @@ func matchesRunningSteering(runningPayload, incoming *turncmd.SessionTurnPayload
 	return slices.Contains(steeringAnchorMessageIDs(runningPayload), incoming.ReplyToMessageID)
 }
 
-func mergeIntoSteeringBatch(turn *queuedTurn, incoming *turncmd.SessionTurnPayload) bool {
-	if turn == nil || turn.task.SessionTurn == nil || incoming == nil {
+func turnDedupeKey(turn *queuedTurn) string {
+	if turn == nil || turn.task.SessionTurn == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(turn.task.SessionTurn.DedupeKey); key != "" {
+		return key
+	}
+	if turn.task.SessionTurn.MessageID > 0 {
+		return fmt.Sprintf("msg:%d", turn.task.SessionTurn.MessageID)
+	}
+	return ""
+}
+
+func batchContainsConstituent(batch *queuedTurn, dedupeKey string) bool {
+	if dedupeKey == "" || batch == nil {
+		return false
+	}
+	if turnDedupeKey(batch) == dedupeKey {
+		return true
+	}
+	for _, c := range batch.constituents {
+		if turnDedupeKey(c) == dedupeKey {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeIntoSteeringBatch(turn *queuedTurn, incoming *queuedTurn) bool {
+	if turn == nil || turn.task.SessionTurn == nil || incoming == nil || incoming.task.SessionTurn == nil {
 		return false
 	}
 	batch := turn.task.SessionTurn
-	if strings.TrimSpace(batch.RequesterUserID) != strings.TrimSpace(incoming.RequesterUserID) {
+	incomingPayload := incoming.task.SessionTurn
+	if strings.TrimSpace(batch.RequesterUserID) != strings.TrimSpace(incomingPayload.RequesterUserID) {
 		return false
 	}
-	if !slices.Contains(steeringAnchorMessageIDs(batch), incoming.ReplyToMessageID) {
-		return false
+
+	incKey := turnDedupeKey(incoming)
+	isDuplicate := incKey != "" && batchContainsConstituent(turn, incKey)
+
+	if !isDuplicate {
+		anchors := steeringAnchorMessageIDs(batch)
+		matchesAnchor := slices.Contains(anchors, incomingPayload.ReplyToMessageID)
+		matchesSameReply := batch.ReplyToMessageID > 0 && batch.ReplyToMessageID == incomingPayload.ReplyToMessageID
+		if !matchesAnchor && !matchesSameReply {
+			return false
+		}
 	}
-	batch.SteeringMessages = append(batch.SteeringMessages, steeringMessageFromPayload(incoming))
-	batch.Text = renderSteeringBatchText(batch.SteeringMessages)
-	batch.MessageID = incoming.MessageID
-	batch.ReplyToMessageID = incoming.ReplyToMessageID
-	batch.Metadata = reconcileSessionTurnMetadata(batch.Metadata, incoming.Metadata)
-	if strings.TrimSpace(incoming.ReceivedAt) != "" {
-		batch.ReceivedAt = incoming.ReceivedAt
+
+	turn.constituents = append(turn.constituents, incoming)
+	if turn.ctx.Err() != nil && incoming.ctx.Err() == nil {
+		turn.ctx = incoming.ctx
+	}
+
+	if !isDuplicate {
+		batch.SteeringMessages = append(batch.SteeringMessages, steeringMessageFromPayload(incomingPayload))
+		batch.Text = renderSteeringBatchText(batch.SteeringMessages)
+		batch.MessageID = incomingPayload.MessageID
+		batch.ReplyToMessageID = incomingPayload.ReplyToMessageID
+		batch.Metadata = reconcileSessionTurnMetadata(batch.Metadata, incomingPayload.Metadata)
+		if strings.TrimSpace(incomingPayload.ReceivedAt) != "" {
+			batch.ReceivedAt = incomingPayload.ReceivedAt
+		}
 	}
 	return true
 }
@@ -423,6 +488,17 @@ func completeTurn(turn *queuedTurn, err error) {
 	if turn == nil {
 		return
 	}
-	turn.result <- err
-	close(turn.result)
+	if turn.result != nil {
+		turn.result <- err
+		close(turn.result)
+		turn.result = nil
+	}
+	for _, c := range turn.constituents {
+		if c != nil && c.result != nil {
+			c.result <- err
+			close(c.result)
+			c.result = nil
+		}
+	}
+	turn.constituents = nil
 }

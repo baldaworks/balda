@@ -104,6 +104,13 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	if strings.TrimSpace(payload.Locator.SessionID) == "" {
 		payload.Locator.SessionID = strings.TrimSpace(env.To.Key)
 	}
+	if strings.TrimSpace(payload.DedupeKey) == "" {
+		if strings.TrimSpace(env.DedupeKey) != "" {
+			payload.DedupeKey = strings.TrimSpace(env.DedupeKey)
+		} else if strings.TrimSpace(env.ID) != "" {
+			payload.DedupeKey = strings.TrimSpace(env.ID)
+		}
+	}
 	envelopeJobID := strings.TrimSpace(baldaexecution.EnvelopeJobID(env))
 	payloadJobID := strings.TrimSpace(payload.JobID)
 	switch {
