@@ -1565,9 +1565,11 @@ All events are published as the same envelope shape. For event envelopes,
   - projector writes use stable event IDs and `INSERT OR IGNORE` semantics in SQLite.
   - replaying the same event stream must not duplicate projected job events.
 - Delivery idempotency:
-  - job-owned or otherwise durable delivery paths may reserve `delivery_key` in `execution_delivery_outbox` before provider send.
+  - job-owned or otherwise durable delivery paths may reserve `delivery_key` in `execution_delivery_outbox` before provider send. Durable delivery requires an outbox store; missing outbox fails closed before dispatch.
   - duplicate delivery reservations become noop, preventing duplicate user-visible messages when that path uses the outbox.
-  - Conversational session replies from Telegram, Slack, and Zulip may bypass the SQLite outbox and rely on actorlayer transport durability plus provider-side idempotent delivery handling.
+  - ambiguous provider outcomes (network timeout, 5xx server errors, connection resets, empty responses) retain `sending` status in `execution_delivery_outbox` rather than transitioning to `failed`. Automatic resend across restarts is disabled to prevent duplicate side effects. Subsequent attempts observe the `sending` status and fail closed with a transient error without calling the provider.
+  - interactive question deliveries that encounter ambiguous provider outcomes are not marked failed, preserving unconfirmed presentations.
+  - Conversational session replies from Telegram, Slack, and Zulip may bypass the SQLite outbox and rely on actorlayer transport durability plus provider-side idempotent delivery handling; bypass paths do not guarantee duplicate suppression against lost provider responses.
 - Job lifecycle idempotency:
   - job status transitions are guarded and terminal states are immutable.
   - repeated terminal lifecycle commands/events keep job state unchanged.
@@ -1587,6 +1589,7 @@ All events are published as the same envelope shape. For event envelopes,
   - includes failure reason and transport origin metadata (subject/headers for poison decode cases).
 - Operational inspection:
   - inspect DLQ stream contents, transport metadata, and structured logs when command failures need replay or triage.
+  - Balda does not perform automatic reconciliation against external provider receipts or provide an ad-hoc recovery CLI. Manual resubmission of original work must be evaluated against the duplicate risk.
 
 #### Failure-mode matrix
 
@@ -1600,6 +1603,7 @@ All events are published as the same envelope shape. For event envelopes,
 | Permanent actor/runtime error | handler/runtime classification | publish `BALDA_DLQ`, `TermWithReason` | job fails/deadletters without retry loop | inspect reason, patch code/config, replay if safe |
 | Projection apply/decode failure | event projector consumer | retry for transient; terminal to DLQ for permanent | command flow continues; read models may lag until replay or repair | inspect projector logs and replay state, fix the bug, replay events |
 | Delivery redelivery after partial send | delivery outbox reserve | duplicate suppressed by delivery key (noop path) | final user message not duplicated | inspect outbox row/status if delivery appears missing |
+| Ambiguous provider delivery (timeout/5xx/response loss) | delivery workflow / channel adapter | retains outbox `sending` status, returns transient error, disables automatic resend | delivery outcome uncertain; message not resent automatically | inspect channel history and outbox record; manual resubmission carries duplicate risk |
 | Cancellation races with queued/running work | control command handling | control command applied; canceled/terminal commands settle noop/ack | job/session stops promptly, later duplicates ignored | verify job state/events; no queue surgery needed |
 
 - NATS command identity is carried in headers such as
