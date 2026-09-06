@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
-	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 )
 
 func TestLocatorFromAddressKey_RoundTripsStreamLocator(t *testing.T) {
@@ -115,8 +114,8 @@ func TestDecodeLocatorRejectsInvalidAddress(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := DecodeLocator(baldasession.SessionLocator{
-				ChannelType: baldastate.ChannelTypeZulip,
+			_, _, err := DecodeLocator(deliverycmd.Locator{
+				ChannelType: ChannelType,
 				AddressKey:  "test",
 				AddressJSON: tt.addressJSON,
 				SessionID:   "zu-test",

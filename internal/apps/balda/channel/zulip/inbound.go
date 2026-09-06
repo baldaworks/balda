@@ -1,21 +1,48 @@
 package zulip
 
 import (
+	"context"
 	"crypto/subtle"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
+// InboundMessage represents a normalized inbound message from Zulip.
+type InboundMessage struct {
+	Locator     deliverycmd.Locator
+	MessageID   int
+	SenderID    int
+	SenderEmail string
+	Text        string
+	Direct      bool
+	ReceivedAt  time.Time
+}
+
+// InboundCommand represents a command invocation from Zulip.
+type InboundCommand struct {
+	Locator  deliverycmd.Locator
+	SenderID int
+	Command  string
+	Args     string
+	Direct   bool
+}
+
+// InboundProcessor processes inbound Zulip messages and commands.
+type InboundProcessor interface {
+	ProcessInbound(ctx context.Context, msg InboundMessage) (turncmd.InboundSettlement, error)
+	HandleCommand(ctx context.Context, cmd InboundCommand) error
+}
+
 const (
-	messageTypeStream = "stream"
-	triggerMention    = "mention"
+	messageTypeStream  = "stream"
+	messageTypePrivate = "private"
+	triggerMention     = "mention"
 )
 
 // WebhookPayload is the Zulip webhook contract used by ingress.
@@ -51,7 +78,7 @@ func ValidateWebhookPayload(payload WebhookPayload) error {
 		if payload.Message.StreamID <= 0 {
 			return fmt.Errorf("message.stream_id is required for stream messages")
 		}
-	case "private":
+	case messageTypePrivate:
 	default:
 		return fmt.Errorf("unsupported message.type %q", payload.Message.Type)
 	}
@@ -83,7 +110,7 @@ func NormalizeMessageText(payload WebhookPayload) string {
 
 // LocatorFromWebhookPayload builds the canonical Balda locator for one inbound payload.
 func LocatorFromWebhookPayload(payload WebhookPayload) deliverycmd.Locator {
-	if payload.Message.Type == "private" {
+	if payload.Message.Type == messageTypePrivate {
 		return NewDMLocator(payload.Message.SenderID)
 	}
 	return NewStreamLocator(payload.Message.StreamID, payload.Message.Subject)
@@ -91,10 +118,6 @@ func LocatorFromWebhookPayload(payload WebhookPayload) deliverycmd.Locator {
 
 // NormalizeInbound converts a Zulip message into the transport-neutral inbound contract.
 func NormalizeInbound(locator deliverycmd.Locator, messageID int, userID, text string, direct bool, receivedAt time.Time) turncmd.NormalizedInbound {
-	return BuildChatRequest(locator, messageID, userID, text, direct, receivedAt).NormalizedInbound()
-}
-
-func BuildChatRequest(locator deliverycmd.Locator, messageID int, userID, text string, direct bool, receivedAt time.Time) chatapp.Request {
 	providerMessageID := ""
 	if messageID > 0 {
 		providerMessageID = strconv.Itoa(messageID)
@@ -103,18 +126,16 @@ func BuildChatRequest(locator deliverycmd.Locator, messageID int, userID, text s
 	if providerMessageID != "" {
 		logicalID = turncmd.InboundID("zulip:" + providerMessageID)
 	}
-	return chatapp.Request{
+	return turncmd.NormalizedInbound{
 		ID:                logicalID,
 		Text:              strings.TrimSpace(text),
 		Locator:           locator,
 		ProviderMessageID: providerMessageID,
 		UserID:            strings.TrimSpace(userID),
 		MessageID:         messageID,
-		ReceivedAt:        receivedAt,
-		DeliveryOptions: deliveryfmt.Options{
-			DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
-			ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true},
-		},
+		ReceivedAt:        receivedAt.UTC().Format(time.RFC3339),
+		DeliveryFormat:    deliveryfmt.DeliveryFormatMarkdown,
+		ProgressPolicy:    deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true},
 		Direct:            direct,
 		Source:            turncmd.SourceZulip,
 	}

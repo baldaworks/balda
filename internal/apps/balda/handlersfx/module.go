@@ -38,5 +38,6 @@ var Module = fx.Module("balda_handlersfx",
 			},
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
+		newZulipInboundHandler,
 	),
 )
