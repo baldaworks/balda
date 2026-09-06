@@ -41,6 +41,7 @@ on Slackagent-specific UX, rendering, or correlation rules.
 Use the Slackagent integration for:
 
 - agent-native inbound events;
+- signed `/balda` slash-command ingress;
 - agent conversation identity and context;
 - status/progress lifecycle;
 - optional streaming and suggested prompts;
@@ -72,7 +73,8 @@ semantics. They do not own Slackagent transport behavior.
 `internal/apps/balda/channel/slackagent` owns:
 
 - ingress decoding and verification for Slackagent requests;
-- normalization of raw provider payloads into Slackagent-local contracts;
+- normalization of Events payloads into Slackagent-local contracts and slash
+  payloads into the shared `commandapp.Request` contract;
 - Slackagent conversation/message correlation;
 - Slackagent-specific delivery semantics;
 - Slackagent-specific responder behavior;

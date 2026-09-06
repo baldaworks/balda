@@ -297,7 +297,8 @@ BALDA_TELEGRAM_WEBHOOK_URL=https://example.com/telegram/webhook
 Slack Agent deployments use plain HTTP inside Balda. Public HTTPS Request URLs,
 certificates, reverse proxies, ingress, and tunnels are deployment
 infrastructure outside Balda. Forward the signed Slack Events API traffic to
-`balda.slack.agent.events_path` without changing the raw request body.
+`balda.slack.agent.events_path` and `/balda` slash-command traffic to
+`balda.slack.commands_path` without changing the raw request body.
 
 Config shape:
 
@@ -647,7 +648,8 @@ balda:
 - `balda.zulip.webhook.listen_addr`: local Zulip webhook listen address (default: `0.0.0.0:8090`; env: `BALDA_ZULIP_WEBHOOK_LISTEN_ADDR`)
 - `balda.zulip.webhook.path`: local Zulip webhook path, which must start with `/` (default: `/zulip/webhook`; env: `BALDA_ZULIP_WEBHOOK_PATH`)
 - `balda.slack.bot_token`: Bot OAuth Token used for Slack Agent Session and chat methods (required when Slack Agent is enabled; env: `BALDA_SLACK_BOT_TOKEN`)
-- `balda.slack.signing_secret`: signing secret used to verify the exact Events API request (required when Slack Agent is enabled; env: `BALDA_SLACK_SIGNING_SECRET`)
+- `balda.slack.signing_secret`: signing secret used to verify exact Events API and slash-command requests (required when Slack Agent is enabled; env: `BALDA_SLACK_SIGNING_SECRET`)
+- `balda.slack.commands_path`: local `/balda` slash-command path, which must start with `/` and differ from the Agent Events path (default: `/slack/commands`; env: `BALDA_SLACK_COMMANDS_PATH`)
 - `balda.slack.agent.enabled`: enable Slack Agent HTTP ingress (default: `false`; env: `BALDA_SLACK_AGENT_ENABLED`)
 - `balda.slack.agent.listen_addr`: local Agent Events listener (default: `0.0.0.0:8092`; env: `BALDA_SLACK_AGENT_LISTEN_ADDR`)
 - `balda.slack.agent.events_path`: local Agent Events path, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
@@ -1330,6 +1332,7 @@ GoalKeeper sessions.
   - `/goalkeeper clear` stops active goal work for the current session only.
 - `/reset`, `/restart` (owner/collaborator): cancel current session work, clear the current session history, and immediately start a fresh runtime session without closing the chat/topic. Both commands work in the current DM, public-chat, or thread-scoped session.
 - `/locator` (owner/collaborator): replies with the current transport type and locator ref in the public config form `<channel_type>:<address_key>`. Use that value with `target: locator` in scheduler/webhook config.
+- `/balda locator` (Slack workspace member): routes to the same shared `locator` command and posts the conversation-level ref `slackagent:c:<team_id>:<conversation_id>` through normal Slack delivery. Slash payloads contain no thread timestamp, and this command does not start or restore an agent turn.
 - `/close` (DM only, owner/collaborator): resets the current session history. In topic contexts, it also closes that topic.
 - `/cancel` (owner/collaborator): cancels the current session turn and drops queued turns for that session. It does not stop active `/goalkeeper` work.
 - `/user add` (owner only): generates a collaborator invite link for this bot.

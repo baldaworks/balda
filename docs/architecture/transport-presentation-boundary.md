@@ -97,6 +97,12 @@ Inbound transport implementations invoke generic `chatapp.Handler` and
 `commandapp` contracts. Session creation, question continuation, command
 policy, and actor publication stay on the application side of that seam.
 
+For example, Slack `/balda` ingress verifies and normalizes the signed form into
+`commandapp.Request`, including provider-neutral access and invocation facts.
+It calls `commandapp.Handler` without interpreting the subcommand. The shared
+command handler owns authorization, validation, output construction, and
+delivery dispatch.
+
 ## Rendering rule
 
 There are two output paths:

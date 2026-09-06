@@ -5,6 +5,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
+	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
 	"go.uber.org/fx"
 )
 
@@ -68,6 +69,7 @@ var Module = fx.Module("balda_handlers",
 				plugins:           params.Plugins,
 			}
 		},
+		func(handler *CommandHandler) commandapp.Handler { return handler },
 		func(params userHandlerParams) *userHandler {
 			return &userHandler{
 				ownerStore:        params.OwnerStore,

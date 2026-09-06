@@ -20,6 +20,8 @@ tunnel and forward the request without changing its body.
    - `agent_session_stopped`
 4. Set the Events Request URL to a public HTTPS URL that forwards to
    `balda.slack.agent.events_path`.
+5. Create a `/balda` slash command. Set its Request URL to a public HTTPS URL
+   that forwards to `balda.slack.commands_path`.
 
 Slack validates the Request URL with a signed `url_verification` request. The
 forwarding layer must preserve the exact raw body and the
@@ -35,6 +37,7 @@ BALDA_SLACK_BOT_TOKEN=xoxb-...
 BALDA_SLACK_SIGNING_SECRET=...
 BALDA_SLACK_AGENT_LISTEN_ADDR=0.0.0.0:8092
 BALDA_SLACK_AGENT_EVENTS_PATH=/slack/agent/events
+BALDA_SLACK_COMMANDS_PATH=/slack/commands
 BALDA_SLACK_AGENT_ENABLE_STREAMING=false
 ```
 
@@ -45,6 +48,7 @@ balda:
   slack:
     bot_token: "xoxb-..."
     signing_secret: "..."
+    commands_path: "/slack/commands"
     agent:
       enabled: true
       listen_addr: "0.0.0.0:8092"
@@ -88,6 +92,10 @@ Event subscriptions and history scopes solve different problems:
 - Slack workspace membership is the Slackagent access boundary: any workspace
   user who can address the installed app may collaborate with it. Slackagent
   does not apply Balda's owner/collaborator bootstrap gate.
+- `/balda locator` runs the shared Balda `locator` command and posts its result
+  through the normal Slack delivery path. It returns the conversation-level
+  reference `slackagent:c:<team_id>:<conversation_id>` because Slack slash
+  payloads do not identify a thread. The command does not start an agent turn.
 - Slack Agent Session status is `processing` while a turn runs, `active` after
   completion or cancellation, `suspended` while Balda waits for user input, and
   `closed` when the Balda session closes.
@@ -117,6 +125,8 @@ Before production rollout, verify in a Slack developer workspace:
 7. The Agent Session title and processing/active states appear correctly.
 8. The Stop button cancels active work.
 9. Repeat the DM and channel tests with streaming both disabled and enabled.
+10. `/balda locator` posts a conversation locator, and `/balda locator extra`
+    posts usage containing `/balda locator`; neither request starts a turn.
 
 Do not record tokens or signing secrets in logs, screenshots, or committed test
 artifacts.
@@ -130,6 +140,9 @@ artifacts.
 - Events do not arrive: confirm the app is configured as an agent, installed to
   the workspace, subscribed to the required events, and using HTTP Events API
   rather than Socket Mode.
+- Slash commands fail: confirm `/balda` uses the public URL that forwards to
+  `balda.slack.commands_path`, and that this path differs from the Agent Events
+  path.
 - Replies or session states fail: inspect Slack API error codes and confirm the
   app has the required bot scopes.
 - Thread context is unavailable: confirm `channels:history` for public channels

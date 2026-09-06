@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
@@ -26,6 +27,7 @@ const (
 	webhookWriteTimeout       = 10 * time.Second
 	webhookIdleTimeout        = 30 * time.Second
 	webhookProcessingTimeout  = 5 * time.Minute
+	commandProcessingTimeout  = 2500 * time.Millisecond
 	webhookMaxConcurrentTasks = 16
 	signatureVersion          = "v0"
 )
@@ -34,12 +36,14 @@ type Config struct {
 	Enabled       bool
 	ListenAddr    string
 	EventsPath    string
+	CommandsPath  string
 	SigningSecret string
 }
 
 type Server struct {
 	inboundProcessor InboundProcessor
 	turnCanceller    TurnCanceller
+	commandHandler   commandapp.Handler
 	config           Config
 	logger           zerolog.Logger
 
@@ -57,10 +61,11 @@ type TurnCanceller interface {
 	CancelTurn(ctx context.Context, stopped SessionStopped) error
 }
 
-func NewServer(processor InboundProcessor, canceller TurnCanceller, config Config, logger zerolog.Logger) *Server {
+func NewServer(processor InboundProcessor, canceller TurnCanceller, commandHandler commandapp.Handler, config Config, logger zerolog.Logger) *Server {
 	return &Server{
 		inboundProcessor: processor,
 		turnCanceller:    canceller,
+		commandHandler:   commandHandler,
 		config:           config,
 		logger:           logger.With().Str("component", "balda.channel.slackagent").Logger(),
 		processSem:       make(chan struct{}, webhookMaxConcurrentTasks),
@@ -75,7 +80,7 @@ func (h *Server) onStart(context.Context) error {
 		h.logger.Debug().Msg("slackagent disabled; skipping server start")
 		return nil
 	}
-	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
+	handler, eventsPath, commandsPath, err := h.httpHandler()
 	if err != nil {
 		return err
 	}
@@ -83,11 +88,9 @@ func (h *Server) onStart(context.Context) error {
 	if listenAddr == "" {
 		listenAddr = ":8092"
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc(eventsPath, h.handleEvents)
 	h.server = &http.Server{
 		Addr:              listenAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: webhookReadHeaderTimeout,
 		ReadTimeout:       webhookReadTimeout,
 		WriteTimeout:      webhookWriteTimeout,
@@ -99,12 +102,30 @@ func (h *Server) onStart(context.Context) error {
 	}
 	h.ln = ln
 	go func() {
-		h.logger.Info().Str("addr", listenAddr).Str("events_path", eventsPath).Msg("slackagent http server starting")
+		h.logger.Info().Str("addr", listenAddr).Str("events_path", eventsPath).Str("commands_path", commandsPath).Msg("slackagent http server starting")
 		if err := h.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			h.logger.Error().Err(err).Msg("slackagent http server error")
 		}
 	}()
 	return nil
+}
+
+func (h *Server) httpHandler() (http.Handler, string, string, error) {
+	eventsPath, err := normalizePath(h.config.EventsPath, "/slack/agent/events")
+	if err != nil {
+		return nil, "", "", err
+	}
+	commandsPath, err := normalizePath(h.config.CommandsPath, "/slack/commands")
+	if err != nil {
+		return nil, "", "", err
+	}
+	if eventsPath == commandsPath {
+		return nil, "", "", fmt.Errorf("slack agent events and commands paths must differ")
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc(eventsPath, h.handleEvents)
+	mux.HandleFunc(commandsPath, h.handleCommands)
+	return mux, eventsPath, commandsPath, nil
 }
 
 func (h *Server) onStop(ctx context.Context) error {
@@ -152,6 +173,37 @@ func (h *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	settlement, err := h.processEvent(context.WithoutCancel(r.Context()), env)
 	if err != nil && settlement.Outcome == turncmd.InboundRetry {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
+	body, ok := h.readAndVerifyRequest(w, r)
+	if !ok {
+		return
+	}
+	request, err := decodeCommandRequest(body)
+	if err != nil {
+		h.logger.Warn().Err(err).Msg("failed to decode slack command payload")
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if h.commandHandler == nil {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	release, ok := h.acquireProcessSlot()
+	if !ok {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+		return
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), commandProcessingTimeout)
+	defer cancel()
+	if err := h.commandHandler.HandleCommand(ctx, request); err != nil {
+		h.logger.Warn().Err(err).Str("command", request.Command).Msg("failed to process slack command")
 		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}

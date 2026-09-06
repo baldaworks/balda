@@ -13,8 +13,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/go-actorlayer"
@@ -173,6 +175,78 @@ func TestCommandHandlerOnCommand_LocatorShowsCurrentTransportAndRef(t *testing.T
 	assertLastSentContains(t, tgClient, "Locator: telegram:9001:123")
 	assertLastSentContains(t, tgClient, "target: locator")
 	assertLastSentContains(t, tgClient, "key: telegram:9001:123")
+}
+
+func TestCommandHandlerHandleCommand_LocatorUsesTransportNeutralAccessAndInvocation(t *testing.T) {
+	locator, err := locatorref.NewSlackAgentConversationLocator("T123", "C456")
+	if err != nil {
+		t.Fatalf("NewSlackAgentConversationLocator() error = %v", err)
+	}
+
+	for _, test := range []struct {
+		name string
+		args string
+		want string
+	}{
+		{name: "locator", want: "Locator: slackagent:c:T123:C456"},
+		{name: "usage", args: "extra", want: "Usage: /balda locator"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bus := &recordingHandlerCommandBus{}
+			handler := &CommandHandler{actorDispatcher: bus}
+			err := handler.HandleCommand(context.Background(), commandapp.Request{
+				Locator:    locator,
+				Transport:  "slackagent",
+				Subject:    "slackagent:T123:U789",
+				Access:     commandapp.Access{SessionCommands: true},
+				Invocation: commandapp.Invocation{Root: "/balda"},
+				Command:    "locator",
+				Args:       test.args,
+			})
+			if err != nil {
+				t.Fatalf("HandleCommand() error = %v", err)
+			}
+			if len(bus.commands) != 1 {
+				t.Fatalf("delivery commands = %d, want 1", len(bus.commands))
+			}
+			var payload actors.DeliveryPayload
+			if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &payload); err != nil {
+				t.Fatalf("UnmarshalPayload() error = %v", err)
+			}
+			if !strings.Contains(payload.Text, test.want) {
+				t.Fatalf("delivery text = %q, want substring %q", payload.Text, test.want)
+			}
+		})
+	}
+}
+
+func TestCommandHandlerHandleCommand_RejectsCommandOutsideIngressCapability(t *testing.T) {
+	locator, err := locatorref.NewSlackAgentConversationLocator("T123", "C456")
+	if err != nil {
+		t.Fatalf("NewSlackAgentConversationLocator() error = %v", err)
+	}
+	bus := &recordingHandlerCommandBus{}
+	handler := &CommandHandler{actorDispatcher: bus}
+	err = handler.HandleCommand(context.Background(), commandapp.Request{
+		Locator:         locator,
+		Access:          commandapp.Access{SessionCommands: true},
+		Invocation:      commandapp.Invocation{Root: "/balda"},
+		EnabledCommands: []string{"locator"},
+		Command:         "reset",
+	})
+	if err != nil {
+		t.Fatalf("HandleCommand() error = %v", err)
+	}
+	if len(bus.commands) != 1 {
+		t.Fatalf("delivery commands = %d, want 1", len(bus.commands))
+	}
+	var payload actors.DeliveryPayload
+	if err := actorlayer.UnmarshalPayload(bus.commands[0].Payload, &payload); err != nil {
+		t.Fatalf("UnmarshalPayload() error = %v", err)
+	}
+	if payload.Text != "Usage: /balda locator" {
+		t.Fatalf("delivery text = %q, want Slack locator usage", payload.Text)
+	}
 }
 
 func TestCommandHandlerOnCommand_UsageShowsLastProviderUsage(t *testing.T) {

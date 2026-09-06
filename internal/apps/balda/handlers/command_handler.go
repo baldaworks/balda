@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
@@ -18,6 +17,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/welcome"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/runtime/events"
 	"go.uber.org/fx"
@@ -120,6 +120,9 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 }
 
 func (h *CommandHandler) HandleCommand(ctx context.Context, req commandapp.Request) error {
+	if !req.CommandEnabled(req.Command) {
+		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Usage: "+req.EnabledCommandUsage())
+	}
 	switch req.Command {
 	case commandHelp:
 		return h.onHelpCommand(ctx, req)
@@ -152,7 +155,7 @@ func (h *CommandHandler) onHelpCommand(ctx context.Context, req commandapp.Reque
 	if strings.TrimSpace(req.Args) != "" {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Usage: /help")
 	}
-	return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, renderHelpMessage(h.canUseSessionCommand(ctx, req.UserID), h.ownerStore != nil && h.ownerStore.IsOwner(req.UserID)))
+	return sendMarkdown(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, renderHelpMessage(h.canUseSessionCommand(ctx, req), h.ownerStore != nil && h.ownerStore.IsOwner(req.UserID)))
 }
 
 func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
@@ -356,7 +359,7 @@ func (h *CommandHandler) sendMarketplaceAction(ctx context.Context, req commanda
 }
 
 func (h *CommandHandler) onAutoCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		return sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command.")
 	}
 	arg := strings.ToLower(strings.TrimSpace(req.Args))
@@ -390,7 +393,7 @@ func (h *CommandHandler) onAutoCommand(ctx context.Context, req commandapp.Reque
 }
 
 func (h *CommandHandler) onUsageCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
 		}
@@ -416,7 +419,7 @@ func (h *CommandHandler) onUsageCommand(ctx context.Context, req commandapp.Requ
 }
 
 func (h *CommandHandler) onGoalCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
 		}
@@ -470,7 +473,7 @@ func (h *CommandHandler) onResetCommand(ctx context.Context, req commandapp.Requ
 		commandName = commandReset
 	}
 
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
 		}
@@ -567,7 +570,7 @@ func restartWelcomeDisplayName(req commandapp.Request, label string) string {
 }
 
 func (h *CommandHandler) onTopicCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
 		}
@@ -634,7 +637,7 @@ func (h *CommandHandler) onTopicCommand(ctx context.Context, req commandapp.Requ
 }
 
 func (h *CommandHandler) onLocatorCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
 		}
@@ -642,7 +645,7 @@ func (h *CommandHandler) onLocatorCommand(ctx context.Context, req commandapp.Re
 	}
 
 	if strings.TrimSpace(req.Args) != "" {
-		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Usage: /locator"); err != nil {
+		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Usage: "+req.CommandUsage(commandLocator)); err != nil {
 			return err
 		}
 		return nil
@@ -654,7 +657,7 @@ func (h *CommandHandler) onLocatorCommand(ctx context.Context, req commandapp.Re
 }
 
 func (h *CommandHandler) onCloseCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
 		}
@@ -712,7 +715,7 @@ func (h *CommandHandler) onCloseCommand(ctx context.Context, req commandapp.Requ
 }
 
 func (h *CommandHandler) onCancelCommand(ctx context.Context, req commandapp.Request) error {
-	if !h.canUseSessionCommand(ctx, req.UserID) {
+	if !h.canUseSessionCommand(ctx, req) {
 		if err := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Only the bot owner or collaborators can use this command."); err != nil {
 			return err
 		}
@@ -745,7 +748,11 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, req commandapp.Req
 	return nil
 }
 
-func (h *CommandHandler) canUseSessionCommand(ctx context.Context, userID int64) bool {
+func (h *CommandHandler) canUseSessionCommand(ctx context.Context, req commandapp.Request) bool {
+	if req.Access.SessionCommands {
+		return true
+	}
+	userID := req.UserID
 	if h.ownerStore != nil && h.ownerStore.IsOwner(userID) {
 		return true
 	}

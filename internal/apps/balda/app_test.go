@@ -332,6 +332,19 @@ func TestValidateSlackConfig(t *testing.T) {
 			wantError: "must differ",
 		},
 		{
+			name: "slack agent command path must differ from agent events path",
+			cfg: SlackConfig{
+				BotToken:      "xoxb-token",
+				SigningSecret: "secret",
+				CommandsPath:  "/same",
+				Agent: SlackAgentConfig{
+					Enabled:    true,
+					EventsPath: "/same",
+				},
+			},
+			wantError: "must differ",
+		},
+		{
 			name: "invalid events path",
 			cfg: SlackConfig{
 				Enabled:       true,

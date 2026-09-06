@@ -587,6 +587,7 @@ func Module(
 				Enabled:       cfg.Balda.Slack.Agent.Enabled,
 				ListenAddr:    strings.TrimSpace(cfg.Balda.Slack.Agent.ListenAddr),
 				EventsPath:    strings.TrimSpace(cfg.Balda.Slack.Agent.EventsPath),
+				CommandsPath:  strings.TrimSpace(cfg.Balda.Slack.CommandsPath),
 				SigningSecret: strings.TrimSpace(cfg.Balda.Slack.SigningSecret),
 			}
 		}),
@@ -888,6 +889,17 @@ func validateSlackConfig(cfg SlackConfig) error {
 		}
 		if strings.TrimSpace(cfg.Agent.EventsPath) != "" && strings.TrimSpace(cfg.Agent.EventsPath) == strings.TrimSpace(cfg.EventsPath) {
 			return fmt.Errorf("balda.slack.agent.events_path must differ from balda.slack.events_path")
+		}
+		commandsPath := strings.TrimSpace(cfg.CommandsPath)
+		if commandsPath == "" {
+			commandsPath = "/slack/commands"
+		}
+		agentEventsPath := strings.TrimSpace(cfg.Agent.EventsPath)
+		if agentEventsPath == "" {
+			agentEventsPath = "/slack/agent/events"
+		}
+		if commandsPath == agentEventsPath {
+			return fmt.Errorf("balda.slack.commands_path must differ from balda.slack.agent.events_path")
 		}
 	}
 	return nil

@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/commandapp"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
@@ -207,6 +209,181 @@ func TestServerURLVerificationAndSignatureRejection(t *testing.T) {
 	}
 }
 
+func TestServerRoutesSignedSlashCommandsToCommonHandler(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		path string
+		text string
+	}{
+		{name: "default route", path: "/slack/commands", text: "locator"},
+		{name: "custom route preserves command and args", path: "/custom/commands", text: "future alpha beta"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &recordingCommandHandler{}
+			processor := &recordingInboundProcessor{}
+			canceller := &recordingTurnCanceller{}
+			server := newTestServer(processor, canceller)
+			server.commandHandler = recorder
+			if test.path != "/slack/commands" {
+				server.config.CommandsPath = test.path
+			}
+			handler, _, _, err := server.httpHandler()
+			if err != nil {
+				t.Fatalf("httpHandler() error = %v", err)
+			}
+			body := url.Values{
+				"command":    {"/balda"},
+				"text":       {test.text},
+				"team_id":    {"T123"},
+				"channel_id": {"C456"},
+				"user_id":    {"U789"},
+			}.Encode()
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, signedSlackRequest(t, test.path, "secret", []byte(body)))
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+			}
+			if len(recorder.requests) != 1 {
+				t.Fatalf("common handler calls = %d, want 1", len(recorder.requests))
+			}
+			if len(processor.events) != 0 || len(canceller.events) != 0 {
+				t.Fatalf("slash command reached chat lifecycle: processor=%d canceller=%d", len(processor.events), len(canceller.events))
+			}
+			request := recorder.requests[0]
+			wantCommand := strings.Fields(test.text)[0]
+			if request.Command != wantCommand || request.Locator.AddressKey != "c:T123:C456" {
+				t.Fatalf("command request = %+v", request)
+			}
+			if request.Subject != "slackagent:T123:U789" || !request.Access.SessionCommands || request.Invocation.Root != "/balda" {
+				t.Fatalf("command identity/access/invocation = %+v", request)
+			}
+			if len(request.EnabledCommands) != 1 || request.EnabledCommands[0] != "locator" {
+				t.Fatalf("enabled commands = %v, want [locator]", request.EnabledCommands)
+			}
+			if test.name == "custom route preserves command and args" && request.Args != "alpha beta" {
+				t.Fatalf("args = %q, want alpha beta", request.Args)
+			}
+		})
+	}
+}
+
+func TestServerRejectsInvalidSlashCommandsBeforeCommonHandler(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		body       string
+		secret     string
+		wantStatus int
+	}{
+		{name: "unexpected root command", body: "command=%2Fother&text=locator&team_id=T123&channel_id=C456&user_id=U789", secret: "secret", wantStatus: http.StatusBadRequest},
+		{name: "missing team", body: "command=%2Fbalda&text=locator&channel_id=C456&user_id=U789", secret: "secret", wantStatus: http.StatusBadRequest},
+		{name: "unknown conversation", body: "command=%2Fbalda&text=locator&team_id=T123&channel_id=X456&user_id=U789", secret: "secret", wantStatus: http.StatusBadRequest},
+		{name: "invalid signature", body: "command=%2Fbalda&text=locator&team_id=T123&channel_id=C456&user_id=U789", secret: "wrong", wantStatus: http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &recordingCommandHandler{}
+			server := newTestServer(&recordingInboundProcessor{}, &recordingTurnCanceller{})
+			server.commandHandler = recorder
+			handler, _, _, err := server.httpHandler()
+			if err != nil {
+				t.Fatalf("httpHandler() error = %v", err)
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, signedSlackRequest(t, "/slack/commands", test.secret, []byte(test.body)))
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", response.Code, test.wantStatus)
+			}
+			if len(recorder.requests) != 0 {
+				t.Fatalf("common handler calls = %d, want 0", len(recorder.requests))
+			}
+		})
+	}
+}
+
+func TestServerAppliesHTTPBoundariesToSlashCommands(t *testing.T) {
+	t.Parallel()
+	body := []byte("command=%2Fbalda&text=locator&team_id=T123&channel_id=C456&user_id=U789")
+	for _, test := range []struct {
+		name       string
+		request    func(*testing.T) *http.Request
+		wantStatus int
+	}{
+		{
+			name: "method",
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+				request := signedSlackRequest(t, "/slack/commands", "secret", body)
+				request.Method = http.MethodGet
+				return request
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name: "stale signature",
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+				return signedSlackRequestAt(t, "/slack/commands", "secret", body, time.Now().Add(-6*time.Minute))
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "oversized body",
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+				return signedSlackRequest(t, "/slack/commands", "secret", []byte(strings.Repeat("x", webhookMaxBodyBytes+1)))
+			},
+			wantStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name: "malformed form",
+			request: func(t *testing.T) *http.Request {
+				t.Helper()
+				return signedSlackRequest(t, "/slack/commands", "secret", []byte("command=%zz"))
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &recordingCommandHandler{}
+			server := newTestServer(&recordingInboundProcessor{}, &recordingTurnCanceller{})
+			server.commandHandler = recorder
+			response := httptest.NewRecorder()
+			server.handleCommands(response, test.request(t))
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", response.Code, test.wantStatus)
+			}
+			if len(recorder.requests) != 0 {
+				t.Fatalf("common handler calls = %d, want 0", len(recorder.requests))
+			}
+		})
+	}
+}
+
+func TestServerReturnsRetryWhenCommonCommandHandlerFails(t *testing.T) {
+	t.Parallel()
+	recorder := &recordingCommandHandler{err: errors.New("dispatch unavailable")}
+	server := newTestServer(&recordingInboundProcessor{}, &recordingTurnCanceller{})
+	server.commandHandler = recorder
+	body := []byte("command=%2Fbalda&text=locator&team_id=T123&channel_id=C456&user_id=U789")
+	response := httptest.NewRecorder()
+	server.handleCommands(response, signedSlackRequest(t, "/slack/commands", "secret", body))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestServerRejectsCollidingEffectiveRoutes(t *testing.T) {
+	t.Parallel()
+	server := newTestServer(&recordingInboundProcessor{}, &recordingTurnCanceller{})
+	server.config.EventsPath = "/same"
+	server.config.CommandsPath = "/same"
+	if _, _, _, err := server.httpHandler(); err == nil || !strings.Contains(err.Error(), "must differ") {
+		t.Fatalf("httpHandler() error = %v, want path collision", err)
+	}
+}
+
 func TestServerReturnsRetrySettlement(t *testing.T) {
 	t.Parallel()
 	processor := &recordingInboundProcessor{
@@ -248,6 +425,16 @@ func (p *recordingInboundProcessor) ProcessInbound(_ context.Context, env Ingres
 type recordingTurnCanceller struct {
 	events []SessionStopped
 	err    error
+}
+
+type recordingCommandHandler struct {
+	requests []commandapp.Request
+	err      error
+}
+
+func (h *recordingCommandHandler) HandleCommand(_ context.Context, request commandapp.Request) error {
+	h.requests = append(h.requests, request)
+	return h.err
 }
 
 func (c *recordingTurnCanceller) CancelTurn(_ context.Context, stopped SessionStopped) error {

@@ -85,7 +85,8 @@ balda:
     listen_addr: "0.0.0.0:8091"
     # Local HTTP path for Slack Events API requests.
     events_path: "/slack/events"
-    # Local HTTP path for Slack slash command requests.
+    # Local HTTP path for /balda slash requests. Slack Agent routes these into
+    # the shared transport-neutral command handler.
     commands_path: "/slack/commands"
     # If true, process private channel message events when the Slack app has
     # groups:history. Public channel and DM support does not require this.

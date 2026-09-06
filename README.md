@@ -190,6 +190,7 @@ ENTRYPOINT ["balda"]
 - `/cancel` — stop the current turn
 - `/reset` or `/restart` — clear the current session and start fresh
 - `/locator` — show the current session locator for scheduler/webhook routing
+- `/balda locator` — show the current Slack conversation locator
 
 Full command behavior is documented in [docs/balda.md](docs/balda.md).
 
