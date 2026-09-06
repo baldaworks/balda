@@ -148,13 +148,32 @@ components:
   delivery:
     in:
       - internal/apps/balda/channel
-      - internal/apps/balda/channel/telegram
-      - internal/apps/balda/channel/telegram/**
-      - internal/apps/balda/channel/zulip
-      - internal/apps/balda/channel/zulip/**
       - internal/apps/balda/deliveryfx
       - internal/apps/balda/goaldelivery
       - internal/apps/balda/tgbotkit
+
+  # Provider-owned Telegram transport. It may depend only on
+  # transport-neutral contracts and foundation/infrastructure; application/runtime adapters live in wiring.
+  telegram_transport:
+    in:
+      - internal/apps/balda/channel/telegram
+      - internal/apps/balda/channel/telegram/presentation
+
+  # Composition-root adapters for Telegram delivery, prompt, and structured renderers.
+  telegram_wiring:
+    in:
+      - internal/apps/balda/channel/telegram/telegramfx
+
+  # Provider-owned Zulip transport. It may depend only on
+  # transport-neutral contracts; application/runtime adapters live in wiring.
+  zulip_transport:
+    in:
+      - internal/apps/balda/channel/zulip
+
+  # Composition-root adapters for Zulip delivery, prompt, and structured renderers.
+  zulip_wiring:
+    in:
+      - internal/apps/balda/channel/zulip/zulipfx
 
   # Provider-owned Slack Events/Web API transport. It may depend only on
   # transport-neutral contracts; application/runtime adapters live below.
@@ -260,6 +279,10 @@ deps:
       # Provider renderers are injected into transport-neutral registries at
       # composition time; deep-scan models that intentional runtime edge.
       - slackagent_wiring
+      - telegram_transport
+      - telegram_wiring
+      - zulip_transport
+      - zulip_wiring
     anyVendorDeps: true
 
   application:
@@ -308,6 +331,8 @@ deps:
       - contracts
       - ingress
       - delivery
+      - telegram_transport
+      - zulip_transport
       - infrastructure
       - application
     anyVendorDeps: true
@@ -327,8 +352,48 @@ deps:
       - application
       - delivery_usecase
       - delivery
+      - telegram_transport
+      - telegram_wiring
+      - zulip_transport
+      - zulip_wiring
       - runtime
       - infrastructure
+    anyVendorDeps: true
+
+  telegram_transport:
+    mayDependOn:
+      - foundation
+      - contracts
+      - infrastructure
+      - telegram_transport
+    anyVendorDeps: true
+
+  telegram_wiring:
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - delivery
+      - infrastructure
+      - telegram_transport
+      - telegram_wiring
+    anyVendorDeps: true
+
+  zulip_transport:
+    mayDependOn:
+      - foundation
+      - contracts
+      - zulip_transport
+    anyVendorDeps: true
+
+  zulip_wiring:
+    mayDependOn:
+      - foundation
+      - contracts
+      - application
+      - delivery
+      - zulip_transport
+      - zulip_wiring
     anyVendorDeps: true
 
   slackagent_transport:
