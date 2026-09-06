@@ -2,6 +2,7 @@ package sessionmemoryapp
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"time"
 
@@ -26,6 +27,35 @@ type CanonicalForgetService struct {
 // identities; implementations must not make recall depend on scrub success.
 type CanonicalForgetScrubber interface {
 	ScrubCanonicalForget(ctx context.Context, scope sessionmemory.Scope, sourceIDs []string, revisionIDs []string) error
+}
+
+// MultiScrubber combines multiple CanonicalForgetScrubbers into one sequential scrubber.
+func MultiScrubber(scrubbers ...CanonicalForgetScrubber) CanonicalForgetScrubber {
+	active := make([]CanonicalForgetScrubber, 0, len(scrubbers))
+	for _, s := range scrubbers {
+		if s != nil {
+			active = append(active, s)
+		}
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	if len(active) == 1 {
+		return active[0]
+	}
+	return multiScrubber(active)
+}
+
+type multiScrubber []CanonicalForgetScrubber
+
+func (m multiScrubber) ScrubCanonicalForget(ctx context.Context, scope sessionmemory.Scope, sourceIDs []string, revisionIDs []string) error {
+	var errs []error
+	for _, s := range m {
+		if err := s.ScrubCanonicalForget(ctx, scope, sourceIDs, revisionIDs); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func NewCanonicalForgetService(store sessionmemory.CanonicalSourceForgetStore, canonical sessionmemory.CanonicalStore, enumerator sessionmemory.CanonicalForgetEnumerator, outcomes sessionmemory.CanonicalForgetOutcomeStore, scrubber CanonicalForgetScrubber) (*CanonicalForgetService, error) {

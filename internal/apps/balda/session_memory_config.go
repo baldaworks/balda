@@ -25,25 +25,6 @@ const (
 	defaultSessionMemorySearchTimeout = 5 * time.Second
 )
 
-type scrubbers struct {
-	canonical interface {
-		ScrubCanonicalForget(ctx context.Context, scope sessionmemory.Scope, sourceIDs, revisionIDs []string) error
-	}
-	projection interface {
-		ScrubCanonicalForget(ctx context.Context, scope sessionmemory.Scope, sourceIDs, revisionIDs []string) error
-	}
-}
-
-func (s scrubbers) ScrubCanonicalForget(ctx context.Context, scope sessionmemory.Scope, sourceIDs, revisionIDs []string) error {
-	// Canonical denial is committed before this hook.  Keep payload and
-	// projection cleanup independent so a disposable index failure cannot make
-	// an already-forgotten record visible again.
-	return errors.Join(
-		s.canonical.ScrubCanonicalForget(ctx, scope, sourceIDs, revisionIDs),
-		s.projection.ScrubCanonicalForget(ctx, scope, sourceIDs, revisionIDs),
-	)
-}
-
 // sessionMemoryExecutionConfig maps the public balda.session_memory block to
 // the runtime-owned JetStream settings.
 func sessionMemoryExecutionConfig(cfg SessionMemoryConfig) baldaexecution.SessionMemoryConfig {
@@ -347,7 +328,7 @@ func newCanonicalSessionMemoryRuntime(cfg SessionMemoryConfig, builder *baldaage
 		_ = invoker.Close(context.Background())
 		return nil, err
 	}
-	forget, err := sessionmemoryapp.NewCanonicalForgetService(canonicalStore, canonicalStore, canonicalStore, canonicalStore, scrubbers{canonical: canonicalStore, projection: applier})
+	forget, err := sessionmemoryapp.NewCanonicalForgetService(canonicalStore, canonicalStore, canonicalStore, canonicalStore, sessionmemoryapp.MultiScrubber(canonicalStore, applier))
 	if err != nil {
 		_ = projectionRuntime.Close(context.Background())
 		_ = applier.Close()

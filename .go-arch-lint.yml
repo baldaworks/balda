@@ -69,6 +69,7 @@ components:
     in:
       - internal/apps/balda/attachment
       - internal/apps/balda/actorcmd
+      - internal/apps/balda/authcmd
       - internal/apps/balda/automodecmd
       - internal/apps/balda/controlcmd
       - internal/apps/balda/chatapp
@@ -188,10 +189,14 @@ components:
     in:
       - internal/apps/balda/channel/slackagent/slackagentfx
 
+  # Product state persistence, read models, and durable outbox storage.
+  storage:
+    in:
+      - internal/apps/balda/state
+
   # Storage and adapter-heavy infrastructure that does not fit a narrower semantic layer.
   infrastructure:
     in:
-      - internal/apps/balda
       - internal/apps/balda/attachmentstore
       - internal/apps/balda/controlmcp
       - internal/apps/balda/eventbus
@@ -201,9 +206,13 @@ components:
       - internal/apps/balda/agentplugin
       - internal/apps/balda/redaction
       - internal/apps/balda/shutdown
-      - internal/apps/balda/state
       - internal/apps/sessionmcp
       - internal/apps/workspacemcp
+
+  # Application composition root wiring everything together.
+  composition_root:
+    in:
+      - internal/apps/balda
 
   entrypoints:
     in:
@@ -297,6 +306,7 @@ deps:
       - session_memory_mcp
       - session_memory_contracts
       - application
+      - storage
       - infrastructure
     anyVendorDeps: true
 
@@ -309,6 +319,7 @@ deps:
       - runtime
       - delivery_usecase
       - delivery
+      - storage
       - infrastructure
     anyVendorDeps: true
 
@@ -334,6 +345,7 @@ deps:
       - delivery
       - telegram_transport
       - zulip_transport
+      - storage
       - infrastructure
       - application
     anyVendorDeps: true
@@ -343,6 +355,7 @@ deps:
       - foundation
       - contracts
       - application
+      - storage
       - infrastructure
     anyVendorDeps: true
 
@@ -358,6 +371,7 @@ deps:
       - zulip_transport
       - zulip_wiring
       - runtime
+      - storage
       - infrastructure
     anyVendorDeps: true
 
@@ -375,6 +389,7 @@ deps:
       - contracts
       - application
       - delivery
+      - storage
       - infrastructure
       - telegram_transport
       - telegram_wiring
@@ -393,6 +408,7 @@ deps:
       - contracts
       - application
       - delivery
+      - storage
       - zulip_transport
       - zulip_wiring
     anyVendorDeps: true
@@ -409,12 +425,50 @@ deps:
       - contracts
       - application
       - delivery
+      - storage
       - slackagent_transport
       - slackagent_wiring
     anyVendorDeps: true
 
+  storage:
+    mayDependOn:
+      - foundation
+      - contracts
+      - session_memory_core
+      - session_memory_contracts
+      - storage
+    anyVendorDeps: true
+
   infrastructure:
     anyProjectDeps: true
+    anyVendorDeps: true
+
+  composition_root:
+    mayDependOn:
+      - foundation
+      - contracts
+      - session_memory_core
+      - session_memory_app
+      - session_memory_badger
+      - session_memory_bleve
+      - session_memory_mcp
+      - session_memory_contracts
+      - application
+      - domain
+      - runtime
+      - ingress
+      - ingress_wiring
+      - delivery_usecase
+      - delivery
+      - telegram_transport
+      - telegram_wiring
+      - zulip_transport
+      - zulip_wiring
+      - slackagent_transport
+      - slackagent_wiring
+      - storage
+      - infrastructure
+      - composition_root
     anyVendorDeps: true
 
   entrypoints:

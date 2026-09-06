@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
@@ -120,10 +120,10 @@ type KVStore interface {
 
 // CollaboratorStore persists authorized collaborators.
 type CollaboratorStore interface {
-	AddCollaborator(ctx context.Context, c auth.Collaborator) error
+	AddCollaborator(ctx context.Context, c authcmd.Collaborator) error
 	RemoveCollaborator(ctx context.Context, userID string) error
-	GetCollaborator(ctx context.Context, userID string) (*auth.Collaborator, bool, error)
-	ListCollaborators(ctx context.Context) ([]auth.Collaborator, error)
+	GetCollaborator(ctx context.Context, userID string) (*authcmd.Collaborator, bool, error)
+	ListCollaborators(ctx context.Context) ([]authcmd.Collaborator, error)
 }
 
 // SessionRecord persists balda session metadata for lazy restore.

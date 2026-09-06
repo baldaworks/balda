@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
@@ -28,7 +28,7 @@ type sqliteProvider struct {
 
 var _ Provider = (*sqliteProvider)(nil)
 
-func (p *sqliteProvider) AddCollaborator(ctx context.Context, c auth.Collaborator) error {
+func (p *sqliteProvider) AddCollaborator(ctx context.Context, c authcmd.Collaborator) error {
 	if c.UserID == "" {
 		return fmt.Errorf("user_id is required")
 	}
@@ -60,7 +60,7 @@ func (p *sqliteProvider) RemoveCollaborator(ctx context.Context, userID string) 
 	return nil
 }
 
-func (p *sqliteProvider) GetCollaborator(ctx context.Context, userID string) (*auth.Collaborator, bool, error) {
+func (p *sqliteProvider) GetCollaborator(ctx context.Context, userID string) (*authcmd.Collaborator, bool, error) {
 	var username, firstName, addedBy, addedAt string
 	err := p.db.QueryRowContext(ctx, `
 		SELECT username, first_name, added_by, added_at
@@ -80,7 +80,7 @@ func (p *sqliteProvider) GetCollaborator(ctx context.Context, userID string) (*a
 		return nil, false, fmt.Errorf("parse added_at: %w", err)
 	}
 
-	return &auth.Collaborator{
+	return &authcmd.Collaborator{
 		UserID:    userID,
 		Username:  username,
 		FirstName: firstName,
@@ -89,7 +89,7 @@ func (p *sqliteProvider) GetCollaborator(ctx context.Context, userID string) (*a
 	}, true, nil
 }
 
-func (p *sqliteProvider) ListCollaborators(ctx context.Context) ([]auth.Collaborator, error) {
+func (p *sqliteProvider) ListCollaborators(ctx context.Context) ([]authcmd.Collaborator, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT user_id, username, first_name, added_by, added_at
 		FROM balda_collaborators
@@ -99,9 +99,9 @@ func (p *sqliteProvider) ListCollaborators(ctx context.Context) ([]auth.Collabor
 	}
 	defer func() { _ = rows.Close() }()
 
-	var collaborators []auth.Collaborator
+	var collaborators []authcmd.Collaborator
 	for rows.Next() {
-		var c auth.Collaborator
+		var c authcmd.Collaborator
 		var addedAt string
 		if err := rows.Scan(&c.UserID, &c.Username, &c.FirstName, &c.AddedBy, &addedAt); err != nil {
 			return nil, fmt.Errorf("scan collaborator: %w", err)

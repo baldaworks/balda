@@ -2,16 +2,11 @@ package auth
 
 import (
 	"context"
-	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 )
 
-type Collaborator struct {
-	UserID    string    `json:"user_id"`
-	Username  string    `json:"username,omitempty"`
-	FirstName string    `json:"first_name,omitempty"`
-	AddedBy   string    `json:"added_by"`
-	AddedAt   time.Time `json:"added_at"`
-}
+type Collaborator = authcmd.Collaborator
 
 type collaboratorStore interface {
 	AddCollaborator(ctx context.Context, c Collaborator) error
