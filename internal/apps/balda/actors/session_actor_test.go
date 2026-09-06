@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -429,4 +430,362 @@ func (f *fakeScheduledJobRecorder) MarkSuccess(_ context.Context, jobID string) 
 func (f *fakeScheduledJobRecorder) RecordExecutionFailure(_ context.Context, jobID string, cause error) error {
 	f.failures = append(f.failures, scheduledJobFailure{jobID: jobID, cause: cause})
 	return nil
+}
+
+type callbackSessionTurnRunner struct {
+	runFn func(context.Context, SessionTurnPayload) error
+}
+
+func (c callbackSessionTurnRunner) RunSessionTurnPayload(ctx context.Context, payload SessionTurnPayload) error {
+	if c.runFn != nil {
+		return c.runFn(ctx, payload)
+	}
+	return nil
+}
+
+func testSessionSteeringEnvelope(t *testing.T, sessionID string, messageID int, replyToMessageID int, dedupeKey string, text string) actorlayer.Envelope {
+	t.Helper()
+	payload := SessionTurnPayload{
+		Locator: baldasession.SessionLocator{
+			ChannelType: "telegram",
+			AddressKey:  sessionID,
+			AddressJSON: `{"chat_id":9001,"topic_id":77}`,
+			SessionID:   sessionID,
+		},
+		RequesterUserID:  testTelegramUserID101,
+		MessageID:        messageID,
+		ReplyToMessageID: replyToMessageID,
+		DedupeKey:        dedupeKey,
+		Text:             text,
+		Source:           sessionTurnSourceTelegram,
+	}
+	env, err := SessionTurnEnvelope(payload)
+	if err != nil {
+		t.Fatalf("SessionTurnEnvelope() error = %v", err)
+	}
+	return env
+}
+
+func ensureNoErrorSignal(t *testing.T, ch <-chan error, wait time.Duration, label string) {
+	t.Helper()
+	select {
+	case err := <-ch:
+		t.Fatalf("unexpected error signal (%v): %s", err, label)
+	case <-time.After(wait):
+	}
+}
+
+func TestSessionActor_SteeringEnvelopesDoNotAcknowledgeBeforeExecutionBegins(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
+	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
+
+	rootStarted := make(chan struct{})
+	rootRelease := make(chan struct{})
+	batchStarted := make(chan struct{})
+	batchRelease := make(chan struct{})
+
+	runner := callbackSessionTurnRunner{
+		runFn: func(_ context.Context, p SessionTurnPayload) error {
+			if len(p.SteeringMessages) == 0 {
+				close(rootStarted)
+				<-rootRelease
+				return nil
+			}
+			close(batchStarted)
+			<-batchRelease
+			return nil
+		},
+	}
+	exec := &sessionActorExecutor{
+		turns:  dispatcher,
+		runner: runner,
+	}
+
+	sessionID := "tg-steer-ack-1"
+	rootEnv := testSessionSteeringEnvelope(t, sessionID, 100, 0, "root-100", "root message")
+	steer1Env := testSessionSteeringEnvelope(t, sessionID, 101, 100, "steer-101", "first correction")
+	steer2Env := testSessionSteeringEnvelope(t, sessionID, 102, 101, "steer-102", "second correction")
+
+	rootDone := make(chan error, 1)
+	go func() {
+		rootDone <- exec.enqueueTurn(context.Background(), rootEnv)
+	}()
+	waitForSignal(t, rootStarted, "root start")
+
+	steer1Done := make(chan error, 1)
+	go func() {
+		steer1Done <- exec.enqueueTurn(context.Background(), steer1Env)
+	}()
+	time.Sleep(30 * time.Millisecond)
+
+	steer2Done := make(chan error, 1)
+	go func() {
+		steer2Done <- exec.enqueueTurn(context.Background(), steer2Env)
+	}()
+
+	// Assert that neither steering constituent acknowledges while root is executing.
+	ensureNoErrorSignal(t, steer1Done, 200*time.Millisecond, "steer1 must not acknowledge while root is running")
+	ensureNoErrorSignal(t, steer2Done, 200*time.Millisecond, "steer2 must not acknowledge while root is running")
+
+	// Release root execution and verify it settles.
+	close(rootRelease)
+	select {
+	case err := <-rootDone:
+		if err != nil {
+			t.Fatalf("rootDone error = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for rootDone")
+	}
+
+	// Wait for batch execution to start.
+	waitForSignal(t, batchStarted, "batch execution start")
+
+	// Even while batch is running, steering constituents must not prematurely acknowledge.
+	ensureNoErrorSignal(t, steer1Done, 200*time.Millisecond, "steer1 must not acknowledge while batch is running")
+	ensureNoErrorSignal(t, steer2Done, 200*time.Millisecond, "steer2 must not acknowledge while batch is running")
+
+	// Release batch execution.
+	close(batchRelease)
+
+	// Now both steering constituents must complete successfully (ACK).
+	select {
+	case err := <-steer1Done:
+		if err != nil {
+			t.Fatalf("steer1Done error = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for steer1Done")
+	}
+
+	select {
+	case err := <-steer2Done:
+		if err != nil {
+			t.Fatalf("steer2Done error = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for steer2Done")
+	}
+}
+
+func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteering(t *testing.T) {
+	t.Parallel()
+
+	dispatcher1 := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
+
+	rootStarted := make(chan struct{})
+	blockRoot := make(chan struct{})
+
+	runner1 := callbackSessionTurnRunner{
+		runFn: func(_ context.Context, _ SessionTurnPayload) error {
+			close(rootStarted)
+			<-blockRoot
+			return nil
+		},
+	}
+	exec1 := &sessionActorExecutor{
+		turns:  dispatcher1,
+		runner: runner1,
+	}
+
+	sessionID := "tg-steer-restart-1"
+	rootEnv := testSessionSteeringEnvelope(t, sessionID, 200, 0, "root-200", "original prompt")
+	steer1Env := testSessionSteeringEnvelope(t, sessionID, 201, 200, "steer-201", "correction 1")
+	steer2Env := testSessionSteeringEnvelope(t, sessionID, 202, 201, "steer-202", "correction 2")
+
+	go func() {
+		_ = exec1.enqueueTurn(context.Background(), rootEnv)
+	}()
+	waitForSignal(t, rootStarted, "root start on instance 1")
+
+	steer1Done := make(chan error, 1)
+	go func() {
+		steer1Done <- exec1.enqueueTurn(context.Background(), steer1Env)
+	}()
+	steer2Done := make(chan error, 1)
+	go func() {
+		steer2Done <- exec1.enqueueTurn(context.Background(), steer2Env)
+	}()
+
+	ensureNoErrorSignal(t, steer1Done, 150*time.Millisecond, "steer1 unacknowledged")
+	ensureNoErrorSignal(t, steer2Done, 150*time.Millisecond, "steer2 unacknowledged")
+
+	// Simulate crash: shut down dispatcher1 and abandon instance 1.
+	close(blockRoot)
+	_ = dispatcher1.Shutdown(context.Background())
+
+	// Reconstruct fresh runtime instance (instance 2).
+	dispatcher2 := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
+	defer func() { _ = dispatcher2.Shutdown(context.Background()) }()
+
+	var mu sync.Mutex
+	var executedBatches []SessionTurnPayload
+	replayedRootStarted := make(chan struct{})
+	replayedRootRelease := make(chan struct{})
+	replayedDone := make(chan struct{})
+
+	runner2 := callbackSessionTurnRunner{
+		runFn: func(_ context.Context, p SessionTurnPayload) error {
+			mu.Lock()
+			executedBatches = append(executedBatches, p)
+			count := len(executedBatches)
+			mu.Unlock()
+
+			if count == 1 {
+				close(replayedRootStarted)
+				<-replayedRootRelease
+				return nil
+			}
+			if count == 2 {
+				close(replayedDone)
+			}
+			return nil
+		},
+	}
+	exec2 := &sessionActorExecutor{
+		turns:  dispatcher2,
+		runner: runner2,
+	}
+
+	// Redeliver original unacknowledged root envelope.
+	replayedRootDone := make(chan error, 1)
+	go func() {
+		replayedRootDone <- exec2.enqueueTurn(context.Background(), rootEnv)
+	}()
+	waitForSignal(t, replayedRootStarted, "replayed root start on instance 2")
+
+	// While root is executing, redeliver steering envelopes in sequence plus simulate a duplicate delivery of steer1Env.
+	replayedSteer1Done := make(chan error, 1)
+	go func() {
+		replayedSteer1Done <- exec2.enqueueTurn(context.Background(), steer1Env)
+	}()
+	time.Sleep(30 * time.Millisecond)
+
+	replayedSteer1DupDone := make(chan error, 1)
+	go func() {
+		replayedSteer1DupDone <- exec2.enqueueTurn(context.Background(), steer1Env)
+	}()
+	time.Sleep(30 * time.Millisecond)
+
+	replayedSteer2Done := make(chan error, 1)
+	go func() {
+		replayedSteer2Done <- exec2.enqueueTurn(context.Background(), steer2Env)
+	}()
+	time.Sleep(30 * time.Millisecond)
+
+	// Release root execution to let the merged steering batch run.
+	close(replayedRootRelease)
+	waitForSignal(t, replayedDone, "replayed execution of all turns")
+
+	// All redelivered envelopes must settle successfully.
+	for idx, ch := range []<-chan error{replayedRootDone, replayedSteer1Done, replayedSteer1DupDone, replayedSteer2Done} {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Fatalf("replayed result[%d] error = %v, want nil", idx, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timeout waiting for replayed result[%d]", idx)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(executedBatches) != 2 {
+		t.Fatalf("executed batches = %d, want 2 (root, then merged steering)", len(executedBatches))
+	}
+
+	// First batch is root.
+	if executedBatches[0].Text != "original prompt" {
+		t.Fatalf("batch[0] text = %q, want original prompt", executedBatches[0].Text)
+	}
+
+	// Second batch is merged steering, containing both corrections and no duplicates.
+	steeringBatch := executedBatches[1]
+	if len(steeringBatch.SteeringMessages) != 2 {
+		t.Fatalf("replayed steering messages len = %d, want 2", len(steeringBatch.SteeringMessages))
+	}
+	if steeringBatch.SteeringMessages[0].Text != "correction 1" || steeringBatch.SteeringMessages[1].Text != "correction 2" {
+		t.Fatalf("replayed steering messages texts = %+v", steeringBatch.SteeringMessages)
+	}
+}
+
+func TestSessionActor_TransportContextInterruptionKeepsEnvelopeRetryable(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &TurnDispatcher{
+		logger:   zerolog.Nop(),
+		sessions: make(map[string]*sessionTurnQueue),
+		stopCh:   make(chan struct{}),
+	}
+	defer func() { _ = dispatcher.Shutdown(context.Background()) }()
+
+	rootStarted := make(chan struct{})
+	rootRelease := make(chan struct{})
+
+	runner := callbackSessionTurnRunner{
+		runFn: func(_ context.Context, p SessionTurnPayload) error {
+			if len(p.SteeringMessages) == 0 {
+				close(rootStarted)
+				<-rootRelease
+			}
+			return nil
+		},
+	}
+	exec := &sessionActorExecutor{
+		turns:  dispatcher,
+		runner: runner,
+	}
+
+	sessionID := "tg-steer-ctx-1"
+	rootEnv := testSessionSteeringEnvelope(t, sessionID, 300, 0, "root-300", "root message")
+	steerEnv := testSessionSteeringEnvelope(t, sessionID, 301, 300, "steer-301", "correction")
+
+	go func() {
+		_ = exec.enqueueTurn(context.Background(), rootEnv)
+	}()
+	waitForSignal(t, rootStarted, "root start")
+
+	transportCtx, cancelTransport := context.WithCancel(context.Background())
+	steerDone := make(chan error, 1)
+	go func() {
+		steerDone <- exec.enqueueTurn(transportCtx, steerEnv)
+	}()
+
+	// Wait briefly to ensure steerEnv is enqueued in the dispatcher.
+	time.Sleep(50 * time.Millisecond)
+
+	// Interrupt transport delivery context while steering is still waiting for batch execution.
+	cancelTransport()
+
+	select {
+	case err := <-steerDone:
+		if err == nil {
+			t.Fatal("steerDone error = nil, want transient error on transport context cancellation")
+		}
+		if kind := actorlayer.ClassifyError(err); kind != actorlayer.ErrorKindTransient {
+			t.Fatalf("steerDone error kind = %q, want %q (err=%v)", kind, actorlayer.ErrorKindTransient, err)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("steerDone err = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for steerDone to abort")
+	}
+
+	close(rootRelease)
 }
