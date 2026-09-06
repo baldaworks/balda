@@ -310,7 +310,10 @@ For complete configuration, examples, and provider-specific details, see the
 ## Docs
 
 - Technical reference: [docs/balda.md](docs/balda.md)
+- Onboarding: [docs/reference/onboarding.md](docs/reference/onboarding.md)
 - Configuration: [docs/reference/configuration.md](docs/reference/configuration.md)
+- Topic sessions: [docs/reference/topic-sessions.md](docs/reference/topic-sessions.md)
+- Session memory: [docs/reference/session-memory.md](docs/reference/session-memory.md)
 - Operations: [docs/reference/operations.md](docs/reference/operations.md)
 - Goal workflow: [docs/goal-workflow.md](docs/goal-workflow.md)
 - Architecture map: [docs/architecture/index.md](docs/architecture/index.md)
