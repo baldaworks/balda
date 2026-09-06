@@ -33,10 +33,6 @@ func (a telegramChannelAdapter) Close(ctx context.Context, locator deliverycmd.L
 	return a.channel.Close(ctx, locator)
 }
 
-func (a telegramChannelAdapter) SupportedCommands() []string {
-	return baldatelegram.SupportedCommands()
-}
-
 type telegramRegistryAdapter struct {
 	registry tgbotkit.Registry
 }

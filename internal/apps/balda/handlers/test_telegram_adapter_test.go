@@ -19,10 +19,6 @@ type testTelegramAdapter struct {
 	*baldatelegram.Adapter
 }
 
-func (*testTelegramAdapter) SupportedCommands() []string {
-	return []string{"start", "help", "topic", "goalkeeper", "reset", "locator", "close", "cancel", "usage", "auto", "user", "plugin"}
-}
-
 func newTestTelegramAdapter(tgClient client.ClientWithResponsesInterface, formattingMode string) *testTelegramAdapter {
 	msg := baldatelegram.NewMessenger(tgClient, zerolog.Nop())
 	if strings.TrimSpace(formattingMode) != "" {
