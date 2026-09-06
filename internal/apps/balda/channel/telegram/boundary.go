@@ -31,6 +31,16 @@ type Handler interface {
 	Register(registry Registry)
 }
 
+type InboundHandler interface {
+	HandleMessage(ctx context.Context, message MessageContext) error
+	HandleCallback(ctx context.Context, callback CallbackContext) error
+	HandleForumTopic(ctx context.Context, lifecycle TopicLifecycleContext) error
+}
+
+type BotLifecycleHandler interface {
+	OnBotStarted(ctx context.Context, botUserID int64, botUsername string) error
+}
+
 type AttachmentStore interface {
 	PersistTelegram(ctx context.Context, descriptors []attachment.Descriptor) ([]attachment.Descriptor, error)
 }

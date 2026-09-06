@@ -43,3 +43,67 @@ func NormalizeInbound(message MessageContext, text string, receivedAt time.Time)
 		Source:            turncmd.SourceTelegram,
 	}
 }
+
+func AppendAttachmentSummary(text string, attachments []attachment.Descriptor) string {
+	attachments = attachment.NormalizeList(attachments)
+	if len(attachments) == 0 {
+		return text
+	}
+	var b strings.Builder
+	if trimmed := strings.TrimSpace(text); trimmed != "" {
+		b.WriteString(trimmed)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("Attachment manifest:\n")
+	for i, item := range attachments {
+		b.WriteString("- attachment_")
+		b.WriteString(strconv.Itoa(i + 1))
+		b.WriteString(":\n")
+		b.WriteString("  kind: ")
+		b.WriteString(string(item.Kind))
+		b.WriteString("\n")
+		if item.FileName != "" {
+			b.WriteString("  file_name: ")
+			b.WriteString(item.FileName)
+			b.WriteString("\n")
+		}
+		if item.MIMEType != "" {
+			b.WriteString("  mime_type: ")
+			b.WriteString(item.MIMEType)
+			b.WriteString("\n")
+		}
+		if item.SizeBytes > 0 {
+			b.WriteString("  size_bytes: ")
+			b.WriteString(strconv.FormatInt(item.SizeBytes, 10))
+			b.WriteString("\n")
+		}
+		if item.Caption != "" {
+			b.WriteString("  caption: ")
+			b.WriteString(item.Caption)
+			b.WriteString("\n")
+		}
+		if item.Blob != nil {
+			if item.Blob.Store != "" {
+				b.WriteString("  blob_store: ")
+				b.WriteString(item.Blob.Store)
+				b.WriteString("\n")
+			}
+			if item.Blob.Path != "" {
+				b.WriteString("  local_path: ")
+				b.WriteString(item.Blob.Path)
+				b.WriteString("\n")
+			}
+			if item.Blob.Key != "" {
+				b.WriteString("  blob_key: ")
+				b.WriteString(item.Blob.Key)
+				b.WriteString("\n")
+			}
+			if item.Blob.SHA256 != "" {
+				b.WriteString("  sha256: ")
+				b.WriteString(item.Blob.SHA256)
+				b.WriteString("\n")
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
+}

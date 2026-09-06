@@ -10,12 +10,17 @@ import (
 // Module wires ingress-owned ports to concrete provider runtimes.
 var Module = fx.Module("balda_handlersfx",
 	fx.Provide(
+		newTelegramInboundHandler,
 		fx.Annotate(
-			func(server *baldatelegram.Server) handlers.BaldaOwnerActivator { return server },
+			func(h *telegramInboundHandler) baldatelegram.InboundHandler { return h },
 		),
 		fx.Annotate(
-			func(server *baldatelegram.Server) handlers.InboundTurnExecutor { return server },
+			func(h *telegramInboundHandler) baldatelegram.BotLifecycleHandler { return h },
 		),
+		fx.Annotate(
+			func(h *telegramInboundHandler) handlers.BaldaOwnerActivator { return h },
+		),
+		newInboundTurnExecutor,
 		newTelegramChannelAdapter,
 		fx.Annotate(
 			func(handler *handlers.StartHandler) tgbotkit.Handler {

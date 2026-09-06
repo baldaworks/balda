@@ -5,94 +5,56 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/auth"
-	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
-	"github.com/baldaworks/balda/internal/apps/balda/questions"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
-	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
+	"github.com/tgbotkit/runtime/events"
+	"github.com/tgbotkit/runtime/messagetype"
 	"go.uber.org/fx"
 )
 
-type jobEventAppender interface {
-	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
-}
-
-const startupReadyMessage = "Boss, I'm online and ready to work."
-
 // Server is the transport-owned Telegram ingress/runtime carrier.
-// The implementation is introduced incrementally while the old handlers-owned
-// carrier is being dismantled.
 type Server struct {
-	ownerStore         *auth.OwnerStore
-	collaboratorStore  *auth.CollaboratorStore
 	channel            Channel
-	sessionManager     *baldasession.Manager
-	actorDispatcher    actortransport.Dispatcher
-	jobEvents          jobEventAppender
+	inboundHandler     InboundHandler
+	lifecycleHandler   BotLifecycleHandler
+	attachmentStore    AttachmentStore
 	tgClient           client.ClientWithResponsesInterface
-	authToken          string
-	baldaProviderName  string
 	telegramEnabled    bool
 	telegramConfigured bool
 	logger             zerolog.Logger
-	questionService    *questions.Service
-	attachmentStore    AttachmentStore
 
 	mu          sync.RWMutex
-	bootstrapMu sync.Mutex
-	ownerID     int64
-	chatID      int64
 	botUsername string
 	botUserID   int64
-	now         func() time.Time
 }
 
 type ServerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore
-	CollaboratorStore *auth.CollaboratorStore
-	Channel           Channel
-	SessionManager    *baldasession.Manager
-	Dispatcher        actortransport.Dispatcher
-	JobEvents         *baldajobs.JobEventsService `optional:"true"`
-	TGClient          client.ClientWithResponsesInterface
-	AuthToken         string `name:"balda_auth_token"`
-	BaldaProviderID   string `name:"balda_provider"`
-	TelegramEnabled   bool   `name:"balda_telegram_enabled"`
-	Logger            zerolog.Logger
-	QuestionService   *questions.Service `optional:"true"`
-	AttachmentStore   AttachmentStore    `optional:"true"`
+	Channel          Channel
+	InboundHandler   InboundHandler      `optional:"true"`
+	LifecycleHandler BotLifecycleHandler `optional:"true"`
+	AttachmentStore  AttachmentStore     `optional:"true"`
+	TGClient         client.ClientWithResponsesInterface
+	TelegramEnabled  bool                `name:"balda_telegram_enabled"`
+	Logger           zerolog.Logger
 }
 
 func NewServer(params ServerParams) *Server {
 	return &Server{
-		ownerStore:         params.OwnerStore,
-		collaboratorStore:  params.CollaboratorStore,
 		channel:            params.Channel,
-		sessionManager:     params.SessionManager,
-		actorDispatcher:    params.Dispatcher,
-		jobEvents:          params.JobEvents,
+		inboundHandler:     params.InboundHandler,
+		lifecycleHandler:   params.LifecycleHandler,
+		attachmentStore:    params.AttachmentStore,
 		tgClient:           params.TGClient,
-		authToken:          strings.TrimSpace(params.AuthToken),
-		baldaProviderName:  strings.TrimSpace(params.BaldaProviderID),
 		telegramEnabled:    params.TelegramEnabled,
 		telegramConfigured: true,
 		logger:             params.Logger.With().Str("component", "balda.channel.telegram.server").Logger(),
-		questionService:    params.QuestionService,
-		attachmentStore:    params.AttachmentStore,
-		now:                time.Now,
 	}
 }
 
-// Start validates that the carrier has enough configuration to be wired.
-// Full startup/bootstrap behavior is migrated here incrementally.
+// Start validates that the carrier has enough configuration to be wired and loads bot identity.
 func (s *Server) Start(ctx context.Context) error {
 	if s == nil {
 		return fmt.Errorf("telegram server is required")
@@ -106,113 +68,102 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.initializeBotUsername(ctx); err != nil {
 		return fmt.Errorf("resolve balda telegram bot identity: %w", err)
 	}
-	s.logOwnerAuthIfNeeded()
-	ownerID, chatID, bound := s.restorePersistedOwner()
-	if bound {
-		if _, err := s.bootstrapOwnerSession(ctx, ownerID, chatID); err != nil {
-			s.logger.Error().Err(err).Int64("owner_id", ownerID).Msg("failed to bootstrap owner session during startup")
-			return fmt.Errorf("bootstrap owner session during startup: %w", err)
+	if s.lifecycleHandler != nil {
+		botUserID, botUsername := s.GetBotIdentity()
+		if err := s.lifecycleHandler.OnBotStarted(ctx, botUserID, botUsername); err != nil {
+			return err
 		}
 	}
-	s.sendStartupReadyMessage(ctx)
 	return nil
 }
 
-func (s *Server) restorePersistedOwner() (ownerID, chatID int64, bound bool) {
-	if s.ownerStore == nil {
-		return 0, 0, false
+func (s *Server) Register(registry Registry) {
+	registry.OnMessage(s.HandleMessage)
+	registry.OnCallbackDataPrefix(QuestionCallbackPrefix, s.HandleQuestionCallback)
+	registry.OnMessageType(messagetype.ForumTopicCreated, s.onForumTopicLifecycle)
+	registry.OnMessageType(messagetype.ForumTopicEdited, s.onForumTopicLifecycle)
+	registry.OnMessageType(messagetype.ForumTopicClosed, s.onForumTopicLifecycle)
+	registry.OnMessageType(messagetype.ForumTopicReopened, s.onForumTopicLifecycle)
+}
+
+func (s *Server) HandleMessage(ctx context.Context, event *events.MessageEvent) error {
+	if s == nil || s.channel == nil {
+		return nil
 	}
-	owner := s.ownerStore.GetOwner()
-	if owner == nil || owner.UserID == 0 {
-		return 0, 0, false
+	messageCtx, ok := s.channel.MessageContextFromEvent(event)
+	if !ok {
+		return nil
 	}
-	s.setOwner(owner.UserID, owner.ChatID)
 	s.logger.Info().
-		Int64("owner_id", owner.UserID).
-		Int64("chat_id", owner.ChatID).
-		Msg("restored persisted telegram owner")
-	return owner.UserID, owner.ChatID, owner.ChatID != 0
+		Str("transport", "telegram").
+		Str("message_type", string(event.Type)).
+		Bool("media_group", strings.TrimSpace(messageCtx.MediaGroupID) != "").
+		Int("attachments_count", len(messageCtx.Attachments)).
+		Msg("received inbound telegram transport message")
+
+	if messageCtx.HasCommand {
+		return nil
+	}
+	if s.channel.CollectMediaGroup(messageCtx, func(groupCtx context.Context, grouped MessageContext) {
+		if err := s.handleAcceptedMessage(groupCtx, grouped); err != nil {
+			s.logger.Error().Err(err).
+				Str("session_id", grouped.Locator.SessionID).
+				Str("media_group_id", grouped.MediaGroupID).
+				Msg("failed to handle inbound telegram media group")
+		}
+	}) {
+		return nil
+	}
+	return s.handleAcceptedMessage(ctx, messageCtx)
 }
 
-func (s *Server) sendStartupReadyMessage(ctx context.Context) {
-	ownerID, chatID := s.getOwnerBinding()
-	if ownerID == 0 || chatID == 0 {
-		return
+func (s *Server) handleAcceptedMessage(ctx context.Context, messageCtx MessageContext) error {
+	if s.attachmentStore != nil && len(messageCtx.Attachments) > 0 {
+		persisted, err := s.attachmentStore.PersistTelegram(ctx, messageCtx.Attachments)
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("failed to persist inbound telegram attachments")
+		} else {
+			messageCtx.Attachments = persisted
+		}
 	}
-	if err := sendPlain(ctx, s.actorDispatcher, serverActorAddress, NewLocator(chatID, 0), startupReadyMessage); err != nil {
-		s.logger.Warn().Err(err).Int64("owner_id", ownerID).Msg("failed to send startup ready message to owner")
-		return
+	if s.inboundHandler == nil {
+		return nil
 	}
-	s.logger.Info().Int64("owner_id", ownerID).Msg("startup ready message sent to owner")
+	return s.inboundHandler.HandleMessage(ctx, messageCtx)
 }
 
-// ActivateOwner binds the owner identity to the server state.
-func (s *Server) ActivateOwner(ctx context.Context, ownerID, chatID int64) error {
-	if ownerID == 0 {
-		return fmt.Errorf("telegram owner id is required")
+func (s *Server) HandleQuestionCallback(ctx context.Context, event *events.CallbackQueryEvent) error {
+	if s == nil || s.channel == nil {
+		return nil
 	}
-	if chatID == 0 {
-		return fmt.Errorf("telegram owner chat id is required")
+	callback, ok := s.channel.CallbackContextFromEvent(event)
+	if !ok {
+		if event != nil && event.CallbackQuery != nil {
+			_ = s.channel.AnswerQuestionCallback(ctx, event.CallbackQuery.Id, "This choice is no longer available.", true)
+		}
+		return nil
 	}
-	s.setOwner(ownerID, chatID)
-	_, err := s.bootstrapOwnerSession(ctx, ownerID, chatID)
-	return err
+	if s.inboundHandler == nil {
+		return s.channel.AnswerQuestionCallback(ctx, callback.CallbackQueryID, "This request is unavailable.", true)
+	}
+	return s.inboundHandler.HandleCallback(ctx, callback)
 }
 
-// SubmitSessionTurn forwards a session turn envelope into the actor runtime.
-func (s *Server) SubmitSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
-	if s.actorDispatcher == nil {
-		return nil, fmt.Errorf("runtime is unavailable")
+func (s *Server) onForumTopicLifecycle(ctx context.Context, event *events.MessageEvent) error {
+	if s == nil || s.channel == nil {
+		return nil
 	}
-	env, err := turncmd.SessionTurnEnvelope(payload)
-	if err != nil {
-		return nil, err
+	lifecycle, ok := s.channel.TopicLifecycleFromEvent(event)
+	if !ok || lifecycle.TopicID <= 0 {
+		return nil
 	}
-	return s.actorDispatcher.Dispatch(ctx, env)
-}
-
-// SubmitWebhookTask forwards a durable webhook task envelope into the actor runtime.
-func (s *Server) SubmitWebhookTask(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
-	if s.actorDispatcher == nil {
-		return nil, "", fmt.Errorf("runtime is unavailable")
+	if s.inboundHandler == nil {
+		return nil
 	}
-	env, jobID, err := turncmd.WebhookJobEnvelope(payload, routeName, requestID)
-	if err != nil {
-		return nil, "", err
-	}
-	result, err := s.actorDispatcher.Dispatch(ctx, env)
-	if err != nil {
-		return nil, "", err
-	}
-	return result, jobID, nil
+	return s.inboundHandler.HandleForumTopic(ctx, lifecycle)
 }
 
-func (s *Server) getChatID() int64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.chatID
-}
-
-func (s *Server) getOwnerBinding() (ownerID, chatID int64) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.ownerID, s.chatID
-}
-
-func (s *Server) setChatID(chatID int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.chatID = chatID
-}
-
-func (s *Server) setOwner(ownerID, chatID int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ownerID = ownerID
-	s.chatID = chatID
-}
-
-func (s *Server) getBotIdentity() (int64, string) {
+func (s *Server) GetBotIdentity() (int64, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.botUserID, s.botUsername
@@ -258,30 +209,8 @@ func (s *Server) initializeBotUsername(ctx context.Context) error {
 	s.botUsername = username
 	s.mu.Unlock()
 
-	if s.authToken != "" {
-		s.logger.Info().Int64("bot_user_id", botUserID).Str("bot_username", username).Bool("owner_auth_available", true).Msg("balda owner auth available")
-		return nil
-	}
 	s.logger.Info().Int64("bot_user_id", botUserID).Str("bot_username", username).Msg("balda bot identity loaded")
 	return nil
 }
 
-func (s *Server) logOwnerAuthIfNeeded() {
-	if s.authToken == "" || s.ownerStore == nil || s.ownerStore.HasOwner() {
-		return
-	}
-
-	_, username := s.getBotIdentity()
-	if strings.TrimSpace(username) == "" {
-		return
-	}
-
-	s.logger.Info().
-		Str("auth_command", auth.BuildOwnerAuthCommand(s.authToken)).
-		Str("auth_link", auth.BuildOwnerAuthLink(username, s.authToken)).
-		Msg("balda owner authentication required")
-}
-
 var _ Handler = (*Server)(nil)
-var _ actortransport.Dispatcher = actortransport.Dispatcher(nil)
-var _ = actorlayer.ActorAddress{}

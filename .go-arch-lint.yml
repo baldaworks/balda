@@ -309,6 +309,7 @@ deps:
       - ingress
       - delivery
       - infrastructure
+      - application
     anyVendorDeps: true
 
   delivery_usecase:

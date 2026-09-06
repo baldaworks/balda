@@ -8,6 +8,8 @@ import (
 	"github.com/tgbotkit/client"
 )
 
+const testServerBotUsername = "testbot"
+
 type fakeTelegramClient struct {
 	client.ClientWithResponsesInterface
 	sendErr        error
