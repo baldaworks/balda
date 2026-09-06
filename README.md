@@ -189,10 +189,7 @@ conversation-scoped form `/balda locator`.
 Slack formats the response for scanning and copying:
 
 ````text
-*Balda locator*
-
-*Transport:* `slackagent`
-*Locator:* `slackagent:c:T0BFTRBFA94:C0BU4LKUB6W`
+📍 *Balda Locator* • *Transport:* `slackagent` • *Locator:* `slackagent:c:T0BFTRBFA94:C0BU4LKUB6W`
 
 *Scheduler / webhook configuration*
 ```

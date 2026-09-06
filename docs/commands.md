@@ -138,10 +138,7 @@ public locator.
 Slack renders `/balda locator` as `mrkdwn`:
 
 ````text
-*Balda locator*
-
-*Transport:* `slackagent`
-*Locator:* `slackagent:c:T0BFTRBFA94:C0BU4LKUB6W`
+📍 *Balda Locator* • *Transport:* `slackagent` • *Locator:* `slackagent:c:T0BFTRBFA94:C0BU4LKUB6W`
 
 *Scheduler / webhook configuration*
 ```

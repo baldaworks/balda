@@ -10,7 +10,7 @@ func TestRenderLocator(t *testing.T) {
 	t.Parallel()
 
 	body := locatorfmt.Response{Transport: "zulip", Locator: "zulip:s:42:deploys"}
-	want := "## Balda locator\n\n**Transport:** `zulip`\n**Locator:** `zulip:s:42:deploys`\n\n**Scheduler / webhook configuration**\n```yaml\ntarget: locator\nkey: zulip:s:42:deploys\n```"
+	want := "📍 **Balda Locator** • **Transport:** `zulip` • **Locator:** `zulip:s:42:deploys`\n\n**Scheduler / webhook configuration**\n```yaml\ntarget: locator\nkey: zulip:s:42:deploys\n```"
 	if got := RenderLocator(body); got != want {
 		t.Fatalf("RenderLocator() = %q, want %q", got, want)
 	}
