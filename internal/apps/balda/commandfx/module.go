@@ -2,6 +2,9 @@
 package commandfx
 
 import (
+	"context"
+	"sync"
+
 	"github.com/baldaworks/balda/internal/apps/balda/actors/command"
 	commandauto "github.com/baldaworks/balda/internal/apps/balda/actors/command/auto"
 	commandcancel "github.com/baldaworks/balda/internal/apps/balda/actors/command/cancel"
@@ -13,6 +16,7 @@ import (
 	commandstart "github.com/baldaworks/balda/internal/apps/balda/actors/command/start"
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
+	commanduser "github.com/baldaworks/balda/internal/apps/balda/actors/command/user"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
@@ -23,6 +27,7 @@ import (
 	"github.com/baldaworks/go-actorlayer/dispatch"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
+	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
 )
 
@@ -92,6 +97,42 @@ type startParams struct {
 	Dispatcher        actortransport.Dispatcher
 	AuthToken         string                       `name:"balda_auth_token" optional:"true"`
 	Logger            zerolog.Logger
+}
+
+type userParams struct {
+	fx.In
+	OwnerStore        *auth.OwnerStore                    `optional:"true"`
+	InviteStore       *auth.InviteStore                   `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore             `optional:"true"`
+	TGClient          client.ClientWithResponsesInterface `optional:"true"`
+	Dispatcher        actortransport.Dispatcher
+	Logger            zerolog.Logger
+}
+
+type tgBotUsernameProvider struct {
+	client client.ClientWithResponsesInterface
+	mu     sync.Mutex
+	cached string
+}
+
+func (p *tgBotUsernameProvider) GetBotUsername(ctx context.Context) string {
+	if p == nil || p.client == nil {
+		return ""
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cached != "" {
+		return p.cached
+	}
+	resp, err := p.client.GetMeWithResponse(ctx)
+	if err != nil {
+		return ""
+	}
+	if resp.JSON200 == nil || resp.JSON200.Result.Username == nil {
+		return ""
+	}
+	p.cached = *resp.JSON200.Result.Username
+	return p.cached
 }
 
 var Module = fx.Module("balda_command",
@@ -179,6 +220,28 @@ var Module = fx.Module("balda_command",
 					activator = p.Bootstrap
 				}
 				return commandstart.New(ownerStore, inviteStore, collaboratorStore, channelAuth, activator, p.Dispatcher, p.AuthToken, p.Logger)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			func(p userParams) *commanduser.Handler {
+				var ownerStore commanduser.OwnerStore
+				if p.OwnerStore != nil {
+					ownerStore = p.OwnerStore
+				}
+				var inviteStore commanduser.InviteStore
+				if p.InviteStore != nil {
+					inviteStore = p.InviteStore
+				}
+				var collaboratorStore commanduser.CollaboratorStore
+				if p.CollaboratorStore != nil {
+					collaboratorStore = p.CollaboratorStore
+				}
+				var botUsernames commanduser.BotUsernameProvider
+				if p.TGClient != nil {
+					botUsernames = &tgBotUsernameProvider{client: p.TGClient}
+				}
+				return commanduser.New(ownerStore, inviteStore, collaboratorStore, botUsernames, p.Dispatcher, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),
