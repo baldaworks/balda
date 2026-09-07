@@ -573,7 +573,14 @@ func (h *zulipInboundHandler) submitGoalJob(
 		}
 	}
 	maxIterations := normalizeGoalMaxIterations(h.goalMaxIterations)
-	env, err := goalkeepercmd.JobEnvelopeWithOptions(locator, deliveryfmt.Options{
+	from := actorlayer.ActorAddress{
+		Target: zulip.ChannelType,
+		Key:    strings.TrimSpace(transportUserID),
+	}
+	if from.Key == "" {
+		from.Key = strings.TrimSpace(locator.AddressKey)
+	}
+	env, err := goalkeepercmd.JobEnvelopeWithOptions(from, locator, deliveryfmt.Options{
 		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
 		ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, Thinking: false, PlanUpdates: true},
 	}, objective, transportUserID, maxIterations)

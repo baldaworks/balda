@@ -215,22 +215,24 @@ func (a *Actor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 }
 
 func GoalJobEnvelope(
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	objective string,
 	transportUserID string,
 	maxIterations int,
 ) (actorlayer.Envelope, error) {
-	return goalkeepercmd.JobEnvelope(locator, objective, transportUserID, maxIterations)
+	return goalkeepercmd.JobEnvelope(from, locator, objective, transportUserID, maxIterations)
 }
 
 func GoalJobEnvelopeWithOptions(
+	from actorlayer.ActorAddress,
 	locator baldasession.SessionLocator,
 	deliveryOptions deliveryfmt.Options,
 	objective string,
 	transportUserID string,
 	maxIterations int,
 ) (actorlayer.Envelope, error) {
-	return goalkeepercmd.JobEnvelopeWithOptions(locator, deliveryOptions, objective, transportUserID, maxIterations)
+	return goalkeepercmd.JobEnvelopeWithOptions(from, locator, deliveryOptions, objective, transportUserID, maxIterations)
 }
 
 func envelopeJobID(env actorlayer.Envelope) string {
@@ -238,9 +240,6 @@ func envelopeJobID(env actorlayer.Envelope) string {
 }
 
 func normalizeGoalDeliveryLocator(locator baldasession.SessionLocator) baldasession.SessionLocator {
-	if strings.TrimSpace(locator.ChannelType) == "" {
-		locator.ChannelType = "telegram"
-	}
 	return locator
 }
 

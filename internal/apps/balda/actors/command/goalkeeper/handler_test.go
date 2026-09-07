@@ -245,4 +245,100 @@ func TestGoalkeeperHandlerStartSuccess(t *testing.T) {
 	if jobPayload.MaxIterations != 15 {
 		t.Errorf("job max iterations = %d, want 15", jobPayload.MaxIterations)
 	}
+	if env.From.Target != "telegram" {
+		t.Errorf("env.From.Target = %q, want 'telegram'", env.From.Target)
+	}
+	if env.From.Key != "telegram:user:88" {
+		t.Errorf("env.From.Key = %q, want 'telegram:user:88'", env.From.Key)
+	}
+}
+
+func TestGoalkeeperHandlerStartCrossTransportProvenance(t *testing.T) {
+	tests := []struct {
+		name        string
+		transport   string
+		channelType string
+		addressKey  string
+		principal   string
+		format      deliveryfmt.DeliveryFormat
+	}{
+		{
+			name:        "slack provenance",
+			transport:   "slackagent",
+			channelType: "slackagent",
+			addressKey:  "c:T10:C20",
+			principal:   "U9988",
+			format:      deliveryfmt.DeliveryFormatMrkdwn,
+		},
+		{
+			name:        "zulip provenance",
+			transport:   "zulip",
+			channelType: "zulip",
+			addressKey:  "stream-5:topic-1",
+			principal:   "42",
+			format:      deliveryfmt.DeliveryFormatMarkdown,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &mockDispatcher{}
+			chk := &mockChecker{active: false}
+			h := goalkeeper.New(nil, chk, d, 10, zerolog.Nop())
+
+			payload := commandcmd.Payload{
+				Name:         "goalkeeper",
+				Args:         "fix bug",
+				Locator:      deliverycmd.Locator{ChannelType: tc.channelType, AddressKey: tc.addressKey, SessionID: "s-test-1"},
+				Transport:    tc.transport,
+				Principal:    tc.principal,
+				Access:       commandcmd.Access{Owner: true},
+				Presentation: deliveryfmt.Options{DeliveryFormat: tc.format},
+			}
+			err := h.Handle(context.Background(), actorlayer.Envelope{ID: "env-1"}, payload)
+			if err != nil {
+				t.Fatalf("Handle() error = %v", err)
+			}
+			if len(d.dispatched) != 1 {
+				t.Fatalf("dispatched count = %d, want 1", len(d.dispatched))
+			}
+			env := d.dispatched[0]
+			if env.From.Target != tc.transport {
+				t.Errorf("env.From.Target = %q, want %q", env.From.Target, tc.transport)
+			}
+			if env.From.Key != tc.principal {
+				t.Errorf("env.From.Key = %q, want %q", env.From.Key, tc.principal)
+			}
+		})
+	}
+}
+
+func TestGoalkeeperHandlerStartInvalidProvenanceFails(t *testing.T) {
+	d := &mockDispatcher{}
+	chk := &mockChecker{active: false}
+	h := goalkeeper.New(nil, chk, d, 10, zerolog.Nop())
+
+	payload := commandcmd.Payload{
+		Name:         "goalkeeper",
+		Args:         "test objective",
+		Locator:      deliverycmd.Locator{ChannelType: "telegram", AddressKey: "chat:1", SessionID: "s-mismatch-1"},
+		Transport:    "zulip",
+		Principal:    "user-1",
+		Access:       commandcmd.Access{Owner: true},
+		Presentation: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown},
+	}
+	err := h.Handle(context.Background(), actorlayer.Envelope{ID: "env-1"}, payload)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(d.dispatched) != 1 {
+		t.Fatalf("dispatched count = %d, want 1 (failure reply)", len(d.dispatched))
+	}
+	var deliveryPayload deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(d.dispatched[0].Payload, &deliveryPayload); err != nil {
+		t.Fatalf("UnmarshalPayload error = %v", err)
+	}
+	if !strings.Contains(deliveryPayload.Text, "Could not start goal run.") {
+		t.Errorf("expected failure message, got %q", deliveryPayload.Text)
+	}
 }

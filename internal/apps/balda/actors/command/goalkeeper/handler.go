@@ -101,7 +101,19 @@ func (h *Handler) handleStart(ctx context.Context, env actorlayer.Envelope, p co
 		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Could not start goal run.", "goalkeeper-start-unavailable")
 	}
 
+	from := actorlayer.ActorAddress{
+		Target: strings.TrimSpace(p.Transport),
+		Key:    strings.TrimSpace(p.Principal),
+	}
+	if from.Target == "" {
+		from.Target = strings.TrimSpace(p.Locator.ChannelType)
+	}
+	if from.Key == "" {
+		from.Key = strings.TrimSpace(p.Locator.AddressKey)
+	}
+
 	goalEnv, err := goalkeepercmd.JobEnvelopeWithOptions(
+		from,
 		p.Locator,
 		deliveryfmt.NormalizeOptions(p.Presentation),
 		objective,

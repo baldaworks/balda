@@ -2,6 +2,7 @@ package goalkeepercmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -43,22 +44,44 @@ type QuestionPayload struct {
 }
 
 func JobEnvelope(
+	from actorlayer.ActorAddress,
 	locator deliverycmd.Locator,
 	objective string,
 	transportUserID string,
 	maxIterations int,
 ) (actorlayer.Envelope, error) {
-	return JobEnvelopeWithOptions(locator, deliveryfmt.Options{}, objective, transportUserID, maxIterations)
+	return JobEnvelopeWithOptions(from, locator, deliveryfmt.Options{}, objective, transportUserID, maxIterations)
 }
 
 func JobEnvelopeWithOptions(
+	from actorlayer.ActorAddress,
 	locator deliverycmd.Locator,
 	deliveryOptions deliveryfmt.Options,
 	objective string,
 	transportUserID string,
 	maxIterations int,
 ) (actorlayer.Envelope, error) {
-	jobID := "goal-" + locator.SessionID + "-" + uuid.NewString()
+	from.Target = strings.TrimSpace(from.Target)
+	from.Key = strings.TrimSpace(from.Key)
+	if from.Target == "" {
+		return actorlayer.Envelope{}, errors.New("goalkeeper provenance target is required")
+	}
+	if from.Key == "" {
+		from.Key = strings.TrimSpace(firstNonEmpty(transportUserID, locator.AddressKey))
+	}
+	if from.Key == "" {
+		return actorlayer.Envelope{}, errors.New("goalkeeper provenance key is required")
+	}
+	locChannelType := strings.TrimSpace(locator.ChannelType)
+	if locChannelType != "" && !strings.EqualFold(from.Target, locChannelType) {
+		return actorlayer.Envelope{}, fmt.Errorf("goalkeeper provenance target %q does not match locator channel_type %q", from.Target, locChannelType)
+	}
+	sessionID := strings.TrimSpace(locator.SessionID)
+	if sessionID == "" {
+		return actorlayer.Envelope{}, errors.New("locator session_id is required")
+	}
+
+	jobID := "goal-" + sessionID + "-" + uuid.NewString()
 	payload := EnvelopePayload{
 		Kind: PayloadKindGoal,
 		Goal: &JobPayload{
@@ -74,16 +97,20 @@ func JobEnvelopeWithOptions(
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode goalkeeper job payload: %w", err)
 	}
-	return actorlayer.Envelope{
+	env := actorlayer.Envelope{
 		ID:        uuid.NewString(),
 		Namespace: baldaexecution.NamespaceGoalkeeperCommand,
 		Kind:      baldaexecution.KindGoal,
-		From:      actorlayer.ActorAddress{Target: "telegram", Key: firstNonEmpty(transportUserID, locator.AddressKey, "unknown")},
+		From:      from,
 		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: jobID},
-		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), locator.SessionID),
+		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, jobID), sessionID),
 		Priority:  90,
 		Payload:   data,
-	}, nil
+	}
+	if err := env.Validate(); err != nil {
+		return actorlayer.Envelope{}, fmt.Errorf("validate goalkeeper job envelope: %w", err)
+	}
+	return env, nil
 }
 
 func ResumeEnvelope(payload JobPayload) (actorlayer.Envelope, error) {
