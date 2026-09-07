@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"go.uber.org/fx"
 )
@@ -9,10 +8,6 @@ import (
 // Module provides handlers for the balda bot.
 var Module = fx.Module("balda_handlers",
 	fx.Provide(
-		fx.Annotate(
-			NewChatHandler,
-			fx.As(new(chatapp.Handler)),
-		),
 		func(params startHandlerParams) *StartHandler {
 			return &StartHandler{
 				ownerStore:     params.OwnerStore,

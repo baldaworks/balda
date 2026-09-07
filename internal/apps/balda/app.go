@@ -23,6 +23,7 @@ import (
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
+	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
@@ -643,6 +644,7 @@ func Module(
 		zulipfx.Module,
 		deliveryworkflow.Module,
 		commandfx.Module,
+		chatfx.Module,
 		fx.Provide(fx.Annotate(
 			func(service *questions.Service) deliveryworkflow.QuestionDeliveryBinder { return service },
 		)),

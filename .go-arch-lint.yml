@@ -141,6 +141,7 @@ components:
   # Composition adapters bind ingress-owned ports to concrete provider runtimes.
   ingress_wiring:
     in:
+      - internal/apps/balda/chatfx
       - internal/apps/balda/handlersfx
 
   actor_wiring:
