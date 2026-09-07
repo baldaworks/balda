@@ -17,11 +17,13 @@ import (
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	commanduser "github.com/baldaworks/balda/internal/apps/balda/actors/command/user"
+	commandplugin "github.com/baldaworks/balda/internal/apps/balda/actors/command/plugin"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/go-actorlayer/dispatch"
@@ -135,6 +137,14 @@ func (p *tgBotUsernameProvider) GetBotUsername(ctx context.Context) string {
 	return p.cached
 }
 
+type pluginParams struct {
+	fx.In
+	OwnerStore *auth.OwnerStore   `optional:"true"`
+	Plugins    *pluginapp.Service `optional:"true"`
+	Dispatcher actortransport.Dispatcher
+	Logger     zerolog.Logger
+}
+
 var Module = fx.Module("balda_command",
 	fx.Provide(
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
@@ -242,6 +252,20 @@ var Module = fx.Module("balda_command",
 					botUsernames = &tgBotUsernameProvider{client: p.TGClient}
 				}
 				return commanduser.New(ownerStore, inviteStore, collaboratorStore, botUsernames, p.Dispatcher, p.Logger)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			func(p pluginParams) *commandplugin.Handler {
+				var ownerStore commandplugin.OwnerStore
+				if p.OwnerStore != nil {
+					ownerStore = p.OwnerStore
+				}
+				var plugins commandplugin.Service
+				if p.Plugins != nil {
+					plugins = p.Plugins
+				}
+				return commandplugin.New(ownerStore, plugins, p.Dispatcher, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),
