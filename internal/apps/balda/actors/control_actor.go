@@ -6,14 +6,9 @@ import (
 	"strings"
 
 	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/appports"
-	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
-	"github.com/rs/zerolog"
-	"go.uber.org/fx"
 )
 
 const (
@@ -26,7 +21,7 @@ const (
 
 type jobControlPayload = controlcmd.Payload
 
-type jobControlService interface {
+type JobControlService interface {
 	CancelJob(ctx context.Context, payload controlcmd.Payload) error
 	CancelSession(ctx context.Context, payload controlcmd.Payload) error
 	CancelSessionTurn(ctx context.Context, payload controlcmd.Payload) error
@@ -34,33 +29,21 @@ type jobControlService interface {
 	ScheduleWait(ctx context.Context, payload controlcmd.Payload) error
 }
 
-type jobControlActor struct {
-	turnDispatcher appports.TurnQueue
-	dispatcher     actortransport.Dispatcher
-	jobs           controlapp.JobLifecycle
-	scheduledJobs  controlapp.ScheduledJobs
-	jobRuns        controlapp.JobRuns
-	logger         zerolog.Logger
-	service        jobControlService
+type JobControlActor struct {
+	service JobControlService
 }
 
-type jobControlActorParams struct {
-	fx.In
-
-	TurnDispatcher *TurnDispatcher
-	Dispatcher     actortransport.Dispatcher
-	JobLifecycle   controlapp.JobLifecycle
-	ScheduledJobs  controlapp.ScheduledJobs `optional:"true"`
-	JobRuns        *JobRunRegistry
-	Service        jobControlService
-	Logger         zerolog.Logger
+func NewJobControlActor(service JobControlService) *JobControlActor {
+	return &JobControlActor{
+		service: service,
+	}
 }
 
-func (a *jobControlActor) Address() string {
+func (a *JobControlActor) Address() string {
 	return "system:control"
 }
 
-func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
+func (a *JobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	if strings.TrimSpace(env.Namespace) != baldaexecution.NamespaceJobControl {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported control namespace %q", env.Namespace))
 	}
@@ -85,35 +68,35 @@ func (a *jobControlActor) Handle(ctx context.Context, env actorlayer.Envelope) e
 	}
 }
 
-func (a *jobControlActor) cancelJob(ctx context.Context, payload jobControlPayload) error {
+func (a *JobControlActor) cancelJob(ctx context.Context, payload jobControlPayload) error {
 	if a.service == nil {
 		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
 	return a.service.CancelJob(ctx, payload)
 }
 
-func (a *jobControlActor) cancelSession(ctx context.Context, payload jobControlPayload) error {
+func (a *JobControlActor) cancelSession(ctx context.Context, payload jobControlPayload) error {
 	if a.service == nil {
 		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
 	return a.service.CancelSession(ctx, payload)
 }
 
-func (a *jobControlActor) cancelSessionTurn(ctx context.Context, payload jobControlPayload) error {
+func (a *JobControlActor) cancelSessionTurn(ctx context.Context, payload jobControlPayload) error {
 	if a.service == nil {
 		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
 	return a.service.CancelSessionTurn(ctx, payload)
 }
 
-func (a *jobControlActor) clearGoal(ctx context.Context, payload jobControlPayload) error {
+func (a *JobControlActor) clearGoal(ctx context.Context, payload jobControlPayload) error {
 	if a.service == nil {
 		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}
 	return a.service.ClearGoal(ctx, payload)
 }
 
-func (a *jobControlActor) scheduleWait(ctx context.Context, payload jobControlPayload) error {
+func (a *JobControlActor) scheduleWait(ctx context.Context, payload jobControlPayload) error {
 	if a.service == nil {
 		return actorlayer.TransientError(fmt.Errorf("control service is required"))
 	}

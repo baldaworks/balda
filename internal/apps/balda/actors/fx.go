@@ -29,9 +29,6 @@ var Module = fx.Module("balda_actors",
 			func(r *JobRunRegistry) controlapp.JobRuns { return r },
 		),
 		fx.Annotate(
-			func(s *controlapp.Service) jobControlService { return s },
-		),
-		fx.Annotate(
 			func(s *jobexec.Service) jobExecutionService { return s },
 		),
 		fx.Annotate(
@@ -125,21 +122,6 @@ var Module = fx.Module("balda_actors",
 			func(params jobDeliveryActorParams) dispatch.Actor {
 				return &jobDeliveryActor{
 					service: params.Service,
-				}
-			},
-			fx.As(new(dispatch.Actor)),
-			fx.ResultTags(`group:"balda_product_actors"`),
-		),
-		fx.Annotate(
-			func(params jobControlActorParams) dispatch.Actor {
-				return &jobControlActor{
-					turnDispatcher: params.TurnDispatcher,
-					dispatcher:     params.Dispatcher,
-					jobs:           params.JobLifecycle,
-					scheduledJobs:  params.ScheduledJobs,
-					jobRuns:        params.JobRuns,
-					logger:         params.Logger.With().Str("component", "balda.job_control_actor").Logger(),
-					service:        params.Service,
 				}
 			},
 			fx.As(new(dispatch.Actor)),

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
+	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
@@ -647,6 +648,7 @@ func Module(
 		)),
 		jobexec.Module,
 		actors.Module,
+		actorsfx.Module,
 		scheduledjobs.Module,
 		handlers.Module,
 		handlersfx.Module,

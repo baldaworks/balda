@@ -143,6 +143,10 @@ components:
     in:
       - internal/apps/balda/handlersfx
 
+  actor_wiring:
+    in:
+      - internal/apps/balda/actorsfx
+
   command_wiring:
     in:
       - internal/apps/balda/commandfx
@@ -371,6 +375,17 @@ deps:
       - application
     anyVendorDeps: true
 
+  actor_wiring:
+    mayDependOn:
+      - contracts
+      - neutral_registry
+      - application
+      - domain
+      - storage
+      - infrastructure
+      - runtime
+    anyVendorDeps: true
+
   command_wiring:
     mayDependOn:
       - contracts
@@ -499,6 +514,7 @@ deps:
       - ingress
       - ingress_wiring
       - command_wiring
+      - actor_wiring
       - delivery_usecase
       - delivery
       - telegram_transport
