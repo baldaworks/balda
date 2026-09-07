@@ -5,16 +5,19 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/actors/command"
 	commandauto "github.com/baldaworks/balda/internal/apps/balda/actors/command/auto"
 	commandcancel "github.com/baldaworks/balda/internal/apps/balda/actors/command/cancel"
+	commandclose "github.com/baldaworks/balda/internal/apps/balda/actors/command/closecmd"
 	commandgoalkeeper "github.com/baldaworks/balda/internal/apps/balda/actors/command/goalkeeper"
 	commandhelp "github.com/baldaworks/balda/internal/apps/balda/actors/command/help"
 	commandlocator "github.com/baldaworks/balda/internal/apps/balda/actors/command/locator"
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
+	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/go-actorlayer/dispatch"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -59,6 +62,24 @@ type goalkeeperParams struct {
 	Logger        zerolog.Logger
 }
 
+type topicParams struct {
+	fx.In
+	Sessions   *session.Manager
+	TopicSvc   *sessionapp.TopicService `optional:"true"`
+	Dispatcher actortransport.Dispatcher
+	Logger     zerolog.Logger
+}
+
+type closeParams struct {
+	fx.In
+	Sessions   *session.Manager
+	Canceller  appports.SessionWorkCanceller `optional:"true"`
+	Control    *controlapp.CommandDispatcher `optional:"true"`
+	TopicSvc   *sessionapp.TopicService      `optional:"true"`
+	Dispatcher actortransport.Dispatcher
+	Logger     zerolog.Logger
+}
+
 var Module = fx.Module("balda_command",
 	fx.Provide(
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
@@ -94,6 +115,30 @@ var Module = fx.Module("balda_command",
 					checker = p.GoalJobs
 				}
 				return commandgoalkeeper.New(p.Control, checker, p.Dispatcher, p.MaxIterations, p.Logger)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			func(p topicParams) *commandtopic.Handler {
+				return commandtopic.New(p.Sessions, p.TopicSvc, p.Dispatcher, p.Logger)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			func(p closeParams) *commandclose.Handler {
+				var canceller commandclose.WorkCanceller
+				if p.Canceller != nil {
+					canceller = p.Canceller
+				}
+				var control commandclose.ControlDispatcher
+				if p.Control != nil {
+					control = p.Control
+				}
+				var topicSvc commandclose.TopicCloser
+				if p.TopicSvc != nil {
+					topicSvc = p.TopicSvc
+				}
+				return commandclose.New(p.Sessions, canceller, control, topicSvc, p.Dispatcher, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),

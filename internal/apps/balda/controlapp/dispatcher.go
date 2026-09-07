@@ -44,3 +44,16 @@ func (d *CommandDispatcher) ClearGoal(ctx context.Context, locator deliverycmd.L
 	_, err = d.dispatcher.Dispatch(ctx, env)
 	return err
 }
+
+// CancelSession dispatches a session cancel control envelope.
+func (d *CommandDispatcher) CancelSession(ctx context.Context, locator deliverycmd.Locator, requestedBy string, reason string, notify bool) error {
+	if d == nil || d.dispatcher == nil {
+		return fmt.Errorf("dispatcher is unavailable")
+	}
+	env, err := controlcmd.CancelEnvelopeWithNotify(locator, "", requestedBy, reason, notify)
+	if err != nil {
+		return err
+	}
+	_, err = d.dispatcher.Dispatch(ctx, env)
+	return err
+}

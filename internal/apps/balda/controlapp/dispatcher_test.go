@@ -46,6 +46,15 @@ func TestCommandDispatcherActions(t *testing.T) {
 			sessionID:  "s-456",
 			user:       "user-2",
 		},
+		{
+			name: "cancel session",
+			invoke: func(d *CommandDispatcher, loc deliverycmd.Locator) error {
+				return d.CancelSession(context.Background(), loc, "user-3", "session canceled by user", true)
+			},
+			wantAction: controlcmd.ActionCancel,
+			sessionID:  "s-789",
+			user:       "user-3",
+		},
 	}
 
 	for _, tt := range tests {

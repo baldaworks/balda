@@ -3,6 +3,7 @@ package handlersfx
 import (
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"go.uber.org/fx"
 )
@@ -39,5 +40,15 @@ var Module = fx.Module("balda_handlersfx",
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		newZulipInboundHandler,
+		fx.Annotate(
+			func(ch *baldatelegram.Adapter) sessionapp.TelegramTopicChannel {
+				if ch == nil {
+					return nil
+				}
+				return ch
+			},
+			fx.ParamTags(`optional:"true"`),
+			fx.As(new(sessionapp.TelegramTopicChannel)),
+		),
 	),
 )

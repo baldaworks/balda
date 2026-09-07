@@ -18,7 +18,7 @@ var Module = fx.Module(
 	fx.Provide(
 		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
-				return commandcmd.Advertisement{Transport: telegram.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "help", "usage", "auto", "cancel", "goalkeeper"}}
+				return commandcmd.Advertisement{Transport: telegram.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close"}}
 			},
 			fx.ParamTags(`name:"balda_telegram_enabled"`),
 			fx.ResultTags(`group:"balda_command_advertisements"`),

@@ -45,3 +45,11 @@ func SendMarkdown(ctx context.Context, dispatcher actortransport.Dispatcher, ope
 	}
 	return dispatch(ctx, dispatcher, env, operationID, suffix)
 }
+
+func SendAgentReply(ctx context.Context, dispatcher actortransport.Dispatcher, operationID string, locator deliverycmd.Locator, text, suffix string) error {
+	env, err := deliverycmd.AgentReplyEnvelopeWithSettlement("", actorAddress, locator, deliverycmd.SettlementBypass, text, suffix)
+	if err != nil {
+		return err
+	}
+	return dispatch(ctx, dispatcher, env, operationID, suffix)
+}
