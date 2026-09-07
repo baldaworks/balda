@@ -133,11 +133,6 @@ components:
     in:
       - internal/apps/balda/execution
 
-  # Ingress only: parse/auth/session-check/publish.
-  ingress:
-    in:
-      - internal/apps/balda/handlers
-
   # Composition adapters bind ingress-owned ports to concrete provider runtimes.
   ingress_wiring:
     in:
@@ -357,20 +352,10 @@ deps:
       - runtime
     anyVendorDeps: true
 
-  ingress:
-    mayDependOn:
-      - foundation
-      - contracts
-      - neutral_registry
-      - application
-
-    anyVendorDeps: true
-
   ingress_wiring:
     mayDependOn:
       - contracts
       - neutral_registry
-      - ingress
       - delivery
       - telegram_transport
       - zulip_transport
@@ -523,7 +508,6 @@ deps:
       - application
       - domain
       - runtime
-      - ingress
       - ingress_wiring
       - command_wiring
       - actor_wiring

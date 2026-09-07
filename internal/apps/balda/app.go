@@ -31,7 +31,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/handlersfx"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
@@ -651,7 +650,6 @@ func Module(
 		jobexec.Module,
 		actorsfx.Module,
 		scheduledjobs.Module,
-		handlers.Module,
 		handlersfx.Module,
 		webhook.Module,
 		fx.Provide(

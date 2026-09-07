@@ -34,13 +34,14 @@ Concrete transports retain only parsing and whitelist enforcement before publish
 - `internal/apps/balda/eventbus/nats/connection_test.go`
 - `internal/apps/balda/execution/host_test.go`
 - `internal/apps/balda/execution/config_test.go`
-- `internal/apps/balda/handlers/inbound_webhook_test.go`
+- `internal/apps/balda/channel/webhook/receiver_test.go`
 
 ## Related packages
 
 - `internal/apps/balda/eventbus/nats`
 - `internal/apps/balda/execution`
-- `internal/apps/balda/handlers`
+- `internal/apps/balda/channel/webhook`
+- `internal/apps/balda/handlersfx`
 - `internal/apps/balda/commandcmd`
 - `internal/apps/balda/actors/command`
 - `internal/apps/balda/commandfx`

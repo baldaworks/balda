@@ -15,14 +15,14 @@ Status: active
 ## Related tests
 
 - `internal/apps/balda/jobs/service_test.go`
-- `internal/apps/balda/handlers/command_test.go`
+- `internal/apps/balda/handlersfx/telegram_command_test.go`
 - `internal/apps/balda/memory/store_test.go`
 
 ## Related packages
 
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/state`
-- `internal/apps/balda/handlers`
+- `internal/apps/balda/commandfx`
 
 ## Update triggers
 

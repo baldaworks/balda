@@ -28,7 +28,7 @@ Status: active
 - `internal/apps/balda/actors/goal_actor_test.go`
 - `internal/apps/balda/actors/control_actor_test.go`
 - `internal/apps/balda/actors/delivery_actor_test.go`
-- `internal/apps/balda/handlers/command_test.go`
+- `internal/apps/balda/handlersfx/telegram_command_test.go`
 - `internal/apps/balda/actors/command/router_test.go`
 
 ## Related packages
@@ -38,7 +38,8 @@ Status: active
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/actors`
 - `internal/apps/balda/actorsfx`
-- `internal/apps/balda/handlers`
+- `internal/apps/balda/commandfx`
+- `internal/apps/balda/handlersfx`
 - `internal/apps/balda/sessionturn`
 
 ## Update triggers
@@ -86,8 +87,8 @@ Status: active
 - Actor dispatch and lane execution are composed in `internal/apps/balda/execution/host.go`, backed by `github.com/baldaworks/go-actorlayer/engine.DispatchRuntime`. Balda keeps its runtime ownership explicit inside `execution` through focused files for the host loop (`host.go`), lane/address policy (`lane_policy.go`), heartbeat visibility policy (`heartbeat.go`), dead-letter side effects (`deadletter.go`), and delivery wrapping/context (`delivery_wrapper.go`).
 - Balda product actor definitions live in `internal/apps/balda/actors` using plain constructors and consumer-owned interfaces, and are composed and registered through `internal/apps/balda/actorsfx.Module`.
 - Queued session restoration and execution orchestration lives in `internal/apps/balda/sessionturn`; `sessionturnapp` composes its provider-turn executor adapter.
-- Telegram/Zulip/Slackagent/webhook/scheduler ingress lives in `internal/apps/balda/handlers`; handlers normalize inbound provider data, enforce ingress preconditions, and publish actor commands without owning turn execution. Concrete provider-runtime bindings live in `internal/apps/balda/handlersfx`.
+- Conversational ingress lives in `internal/apps/balda/chatapp`, command publication in `internal/apps/balda/commandfx`, and webhook ingress in `internal/apps/balda/channel/webhook` and `internal/apps/balda/webhookapp`. Transport ingress adapters and concrete provider-runtime bindings live in `internal/apps/balda/handlersfx`.
 - Session/provider runtime ownership lives in `internal/apps/balda/agent` and `internal/apps/balda/session`; all sessions use the configured `balda.provider`.
 - Command delivery and settlement live in `internal/apps/balda/eventbus/nats` behind actorlayer `Source`/`Delivery` and actorlayer transport contracts.
 - The NATS adapter is the only concrete transport owner. It exposes small interfaces from one bus instance: actorlayer transport `Dispatcher`, `EventPublisher`, `EventConsumer`, `Drainer`, plus actorlayer `Source`.
-- Job projection, retry classification, DLQ reporting, and job/read-model persistence live in Balda packages (`runtime`, `jobs`, `handlers`, and `state`), not in `github.com/baldaworks/go-actorlayer`.
+- Job projection, retry classification, DLQ reporting, and job/read-model persistence live in Balda packages (`runtime`, `jobs`, `webhookapp`, and `state`), not in `github.com/baldaworks/go-actorlayer`.

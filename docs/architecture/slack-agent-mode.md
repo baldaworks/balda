@@ -157,16 +157,16 @@ of Balda must not depend on them directly.
 
 ## Integration rules
 
-### Handlers
+### Conversational Ingress and Commands
 
-`internal/apps/balda/handlers` owns the generic chat and command handlers:
+`internal/apps/balda/chatapp` and `internal/apps/balda/commandfx` own generic chat and command ingress:
 
 - accept transport-neutral chat requests and publish actor-migrated command payloads;
 - run application authorization and session preconditions;
 - settle question replies;
 - publish actor work through actorlayer contracts.
 
-Handlers must not own:
+Ingress services must not own:
 
 - Slackagent HTTP endpoints or signature verification;
 - raw Slackagent payload structs;
@@ -272,7 +272,7 @@ fresh mention, independent of existing session state.
 The Slackagent transport root depends only on transport-neutral contracts such
 as `chatapp`, `deliverycmd`, `deliveryfmt`, `questioncmd`, `turncmd`, and
 actorlayer. It must not import concrete application services such as `session`,
-`questions`, `controlapp`, `ingressapp`, or `handlers`.
+`questions`, `controlapp`, or `ingressapp`.
 
 `slackagentfx` may see both sides of the boundary to bind generic application
 handlers and lifecycle groups to Slackagent ports. It must not contain reusable
@@ -322,7 +322,7 @@ Mode mismatch should produce explicit diagnostics rather than silent fallback.
 
 - `slackagent` has a separate channel boundary.
 - all Slackagent-specific rendering lives under `channel/slackagent`.
-- handlers no longer implement Slackagent payload normalization directly.
+- shared ingress services no longer implement Slackagent payload normalization directly.
 - transport-neutral presentation packages no longer branch on `slackagent`.
 - no Slackagent-specific transport semantics leak into actorlayer or shared
   application lifecycle packages.

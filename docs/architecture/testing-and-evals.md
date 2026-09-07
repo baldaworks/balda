@@ -17,15 +17,16 @@ Status: active
 - `internal/apps/balda/application_lifecycle_test.go`
 - `internal/apps/balda/actors/turn_dispatcher_test.go`
 - `internal/apps/balda/jobs/service_test.go`
-- `internal/apps/balda/handlers/inbound_webhook_test.go`
-- `internal/apps/balda/handlers/command_test.go`
+- `internal/apps/balda/channel/webhook/receiver_test.go`
+- `internal/apps/balda/handlersfx/telegram_command_test.go`
 
 ## Related packages
 
 - `internal/apps/balda/eventbus/nats`
 - `internal/apps/balda/execution`
 - `internal/apps/balda/jobs`
-- `internal/apps/balda/handlers`
+- `internal/apps/balda/channel/webhook`
+- `internal/apps/balda/handlersfx`
 - `internal/apps/balda`
 
 ## Update triggers

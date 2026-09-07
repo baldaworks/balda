@@ -48,7 +48,7 @@ Status: active
 
 - Balda integration layer (policy owner):
   - Product actor implementations in `internal/apps/balda/actors` and wire contracts in leaf package `internal/apps/balda/actorcmd`.
-  - Telegram, Slackagent, Zulip, webhook, and scheduler ingress in `internal/apps/balda/handlers`; ingress publishes commands and does not register product actors. Concrete provider bindings live in `internal/apps/balda/handlersfx`.
+  - Telegram, Slackagent, Zulip, webhook, and scheduler ingress publish commands and do not register product actors. Conversational intake lives in `internal/apps/balda/chatapp`, webhook ingress in `channel/webhook` and `webhookapp`, and command ingress in `commandfx`. Concrete provider bindings live in `internal/apps/balda/handlersfx`.
   - Concrete transport adapter semantics: command stream, ack/nak/term behavior, heartbeats, in-progress redelivery, exposed upward only as actorlayer source/delivery and small Balda-facing dispatch/event interfaces.
   - Retry strategy and classification, dead-letter promotion logic, and DLQ reporting.
   - Job state in `execution_jobs`, transactional event publication intent in `execution_job_event_outbox`, and idempotent history projections in `execution_job_events`.
@@ -87,7 +87,11 @@ Status: active
 - `internal/apps/balda`
 - `internal/apps/balda/actors`
 - `internal/apps/balda/actorcmd`
-- `internal/apps/balda/handlers`
+- `internal/apps/balda/chatapp`
+- `internal/apps/balda/channel/webhook`
+- `internal/apps/balda/webhookapp`
+- `internal/apps/balda/commandfx`
+- `internal/apps/balda/handlersfx`
 - `internal/apps/balda/sessionturn`
 - `internal/apps/balda/internalmcp`
 - `internal/apps/balda/execution`

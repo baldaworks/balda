@@ -23,7 +23,7 @@ New code should attach to one of these zones deliberately instead of landing in
 | Job lifecycle | durable job records, job events, delivery persistence, projections, scheduled durable work execution | `jobs`, `jobexec`, `scheduledjobs` | transport adapters, ingress parsing, conversational session ownership |
 | Control and access | operator-driven cancel/clear/wait flows, owner/collaborator/channel auth state | `controlapp`, `auth` | feature actor behavior, transport-specific command handling |
 | Command behavior | exact-name product command handlers and neutral command envelopes | `actors/command`, `commandcmd`; wiring in `commandfx` | transport parsing, provider markup, generic session ownership |
-| Conversational ingress | provider-neutral authorization/session preconditions, one durable SessionActor publish attempt, accepted/retry/terminal settlement | `ingressapp`; inbound normalization in `handlers`; concrete runtime bindings in `handlersfx` | channel delivery, provider turn execution |
+| Conversational ingress | provider-neutral authorization/session preconditions, one durable SessionActor publish attempt, accepted/retry/terminal settlement | `chatapp`, `chatfx`, `ingressapp`; concrete runtime bindings in `handlersfx` | channel delivery, provider turn execution |
 | Interactive questions | session-scoped user questions, pending-question lifecycle, reply settlement, timeout orchestration, actor resume targeting | `questions`, transport-neutral question contracts in `questionfmt` | transport adapters, generic session lifecycle, hidden suspended runtime frames |
 | Agent permissions | transport-neutral agent permission policy, interactive permission review, fail-closed settlement | `permissions`, ADK-facing adapter in `agent`, transport-neutral permission contracts in `permissionfmt` | provider protocol types, transport-specific reply parsing, general question lifecycle |
 | Delivery presentation | prompt-format routing for model text, structured deterministic rendering for system-authored delivery messages, transport-neutral descriptors/registration surfaces | `deliveryfmt`, `deliveryfx`, service-message contracts in `permissionfmt`, `questionfmt`, `progressfmt` | transport adapters, provider SDK types, product workflow policy |
@@ -107,7 +107,7 @@ This zone owns the provider-neutral acceptance boundary for ordinary chat work:
 - exactly one durable SessionActor publish attempt per processing attempt;
 - accepted, retry, and terminal settlement classification with stable identity.
 
-Inbound provider parsing and normalization remain concrete in `handlers`.
+Inbound provider parsing and normalization are owned by the respective transport adapters or `chatapp`/`webhook` packages.
 `handlersfx` supplies composition-root bindings for provider runtime operations;
 provider delivery remains in `channel/*`, and model execution remains outside
 this zone. A rejected or ignored inbound item terminates before turn creation;

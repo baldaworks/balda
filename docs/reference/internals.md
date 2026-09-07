@@ -15,7 +15,8 @@ flowchart TB
     commandfx["github.com/baldaworks/balda/internal/apps/balda/commandfx"]
     auth["github.com/baldaworks/balda/internal/apps/balda/auth"]
     telegram["github.com/baldaworks/balda/internal/apps/balda/channel/telegram"]
-    handlers["github.com/baldaworks/balda/internal/apps/balda/handlers"]
+    chatapp["github.com/baldaworks/balda/internal/apps/balda/chatapp"]
+    webhook["github.com/baldaworks/balda/internal/apps/balda/channel/webhook"]
     internalmcp["github.com/baldaworks/balda/internal/apps/balda/internalmcp"]
     memory["github.com/baldaworks/balda/internal/apps/balda/memory"]
     session["github.com/baldaworks/balda/internal/apps/balda/session"]
@@ -31,7 +32,8 @@ flowchart TB
     balda_root --> commandfx
     balda_root --> actorcmd
     balda_root --> auth
-    balda_root --> handlers
+    balda_root --> chatapp
+    balda_root --> webhook
     balda_root --> internalmcp
     balda_root --> memory
     balda_root --> state
@@ -48,12 +50,8 @@ flowchart TB
 
     telegram --> session
 
-    handlers --> auth
-    handlers --> commandcmd
-    handlers --> session
-    handlers --> deliverycmd
-    handlers --> turncmd
-    handlers --> welcome
+    chatapp --> session
+    chatapp --> turncmd
 
     runtime --> actorcmd
 
@@ -72,7 +70,7 @@ flowchart TB
 
 | Package | Import Path | Description | Depends On |
 |---------|-------------|-------------|------------|
-| `balda` | `internal/apps/balda` | Root application module | actors, agent, auth, handlers, jobs, memory, runtime, state, tgbotkit |
+| `balda` | `internal/apps/balda` | Root application module | actors, agent, auth, chatapp, commandfx, jobs, memory, runtime, state, tgbotkit, webhook |
 | `actorcmd` | `internal/apps/balda/actorcmd` | Leaf actor targets, namespaces, subjects, headers, and job-scope metadata | `github.com/baldaworks/go-actorlayer` |
 | `agent` | `internal/apps/balda/agent` | Provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support | `internal/git`, runtime/agent factory packages |
 | `actors` | `internal/apps/balda/actors` | Balda product actor behavior | actorcmd, agent, channel, jobs, session, state |
@@ -81,7 +79,9 @@ flowchart TB
 | `commandfx` | `internal/apps/balda/commandfx` | CommandActor registration and port wiring | actors/command, session, runtime interfaces |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram transport package: adapter, delivery formatting, and message sending | session, `tgbotkit/client` |
-| `handlers` | `internal/apps/balda/handlers` | Ingress parsing, access checks, and durable publication | auth, commandcmd, deliverycmd, turncmd |
+| `channel/webhook` | `internal/apps/balda/channel/webhook` | HTTP webhook receiver, authentication, body parsing, deduplication, and HTTP responses | webhookapp |
+| `chatapp` | `internal/apps/balda/chatapp` | Conversational ingress orchestration, question settlement, and SessionActor publication | actorcmd, session, turncmd |
+| `webhookapp` | `internal/apps/balda/webhookapp` | Webhook target resolution and job/session publication use-case | actorcmd, appports, commandcmd |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
 | `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |
@@ -115,8 +115,9 @@ Balda treats `actorlayer` as the reusable actor library boundary and never as pr
 - `internal/apps/balda/sessionturn`: queued-turn restoration behind a narrow executor port.
 - `internal/apps/balda/sessionturnapp`: queued turn execution wiring, provider execution, progress dispatch, and turn-specific adapters.
 - `internal/apps/balda/internalmcp`: bundled MCP construction and lifecycle.
-- `internal/apps/balda/handlers`: transport ingress only. It normalizes Telegram/Slack/Zulip/webhook/scheduler input, checks auth/session rules, and publishes actor work. It must not own product actors, provider-turn execution, or delivery policy.
-- `internal/apps/balda/handlersfx`: composition-root adapters that bind handler-owned ports to concrete provider runtimes without moving ingress policy into wiring.
+- `internal/apps/balda/chatapp` and `internal/apps/balda/chatfx`: conversational intake, question resolution, and SessionActor publication.
+- `internal/apps/balda/channel/webhook` and `internal/apps/balda/webhookapp`: webhook HTTP receiver and application target resolution.
+- `internal/apps/balda/handlersfx`: composition-root adapters that bind transport-owned ports to concrete provider runtimes.
 - `internal/apps/balda/channel/*`: concrete channel delivery semantics. They adapt provider-specific messaging APIs behind Balda delivery commands.
 - `internal/apps/balda/state`: SQLite-backed product state and read models. It owns sessions, scheduler state, job tables, delivery idempotency, and the session-memory ingress outbox/audit records. It does not own canonical session-memory domain state.
 - `internal/apps/balda/memory`: separate global explicit-fact memory (`balda.memory.read`, `balda.memory.remember`, and `MEMORY.md` import). It is not the session-memory subsystem.
@@ -137,7 +138,7 @@ The boundary is intentionally explicit:
 
 ### Migration Checklist
 
-- Keep Balda product actor definitions in `internal/apps/balda/actors`; keep ingress/Telegram command handling in `internal/apps/balda/handlers`.
+- Keep Balda product actor definitions in `internal/apps/balda/actors`; keep command routing and publication in `actors/command` and `commandfx`.
 - Keep actor definitions and state types independent from provider IDs.
 - Ensure no provider or queue API types enter the actor layer contract.
 - Keep retry/dead-letter policy, projection writes, and reporting in Balda-owned modules.
@@ -150,8 +151,8 @@ Balda's actorlayer integration is intentionally direct:
 
 - `internal/apps/balda/execution/host.go`: consumes an `actorlayer/engine.Source` and owns actor lane execution.
 - `internal/apps/balda/actors`: defines Balda product actors for session, job, goal, delivery, control, and memory command contracts.
-- `internal/apps/balda/handlers`: owns ingress normalization, command parsing, precondition checks, and durable actor-command publication.
-- `internal/apps/balda/handlersfx`: binds handler-owned ports to concrete provider runtimes at the composition root.
+- `internal/apps/balda/chatapp`, `commandfx`, `webhookapp`: own conversational intake, command ingress publication, and webhook handling.
+- `internal/apps/balda/handlersfx`: binds transport-owned ports to concrete provider runtimes at the composition root.
 - `internal/apps/balda/sessionturn`: owns queued session restore/create and delegates the provider iteration to the executor adapter.
 - `internal/apps/balda/actorcmd`: owns product command/event wire constants shared by actors, runtime, jobs, and ingress.
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.

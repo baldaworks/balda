@@ -51,16 +51,16 @@ go tool golangci-lint run
   - `internal/apps/balda/execution`: runtime policy and host wiring only.
   - `internal/apps/balda/jobs`: durable job state, event projection, outbox.
   - `internal/apps/balda/actors`: product actor behavior and command handling.
-  - `internal/apps/balda/handlers`: ingress only — parse/auth/session-check/publish.
+  - Ingress: conversational intake in `internal/apps/balda/chatapp`, command publication in `internal/apps/balda/commandfx`, webhook receiver in `internal/apps/balda/channel/webhook` and `internal/apps/balda/webhookapp`, transport adapters in `internal/apps/balda/handlersfx`.
   - `internal/apps/balda/channel/*`: provider-specific delivery behavior only.
   - `internal/apps/balda/state`: storage and read models only.
 
 - Do not move shared transport-neutral contracts into concrete transport or session packages.
   - Shared locator/profile/progress/delivery boundary types belong in dedicated contract packages such as `deliverycmd`, `deliveryfmt`, `turncmd`, `controlcmd`, `goalkeepercmd`.
 
-- Do not add reusable business logic to `handlers`.
-  - `handlers` may normalize inbound transport input and enforce access/session preconditions.
-  - `handlers` must not become the default home for turn orchestration, goal policy, delivery workflow policy, or reusable runtime logic.
+- Do not add reusable business logic to ingress adapters.
+  - Ingress may normalize inbound transport input and enforce access/session preconditions.
+  - Ingress must not become the default home for turn orchestration, goal policy, delivery workflow policy, or reusable runtime logic.
 
 - Prefer ports plus adapters over concrete cross-layer dependencies.
   - Use small interfaces in the consuming package.
@@ -72,7 +72,7 @@ go tool golangci-lint run
 
 - Transitional compatibility layers are allowed only with an exit path.
   - Compat aliases/adapters must be minimal, documented, and removable.
-  - Do not let temporary glue in `handlers` or other broad packages become permanent architecture.
+  - Do not let temporary glue in ingress adapters or other broad packages become permanent architecture.
 
 - When changing architecture, update enforcement in the same change.
   - Update `.go-arch-lint.yml` together with the code.
@@ -98,8 +98,8 @@ Use this checklist before merging any architecture-affecting change.
   - Did any shared type drift into `session` or `channel/*` for convenience?
 
 - Ingress purity
-  - Did `handlers` stay limited to parse/auth/session-check/publish?
-  - If logic was added to `handlers`, can it move into an app/use-case package instead?
+  - Did ingress stay limited to parse/auth/session-check/publish?
+  - If logic was added to ingress adapters, can it move into an app/use-case package instead?
 
 - Transport isolation
   - Did any `channel/*` package import application/use-case/runtime packages?

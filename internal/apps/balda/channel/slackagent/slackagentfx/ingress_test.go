@@ -14,7 +14,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
+	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -424,13 +424,13 @@ func newTestInboundProcessor(
 	history slackagent.ThreadHistoryReader,
 ) slackagent.InboundProcessor {
 	t.Helper()
-	chatHandler, err := handlers.NewChatHandler(handlers.ChatHandlerParams{
+	chatHandler, err := chatfx.NewChatService(chatfx.ChatServiceParams{
 		SessionManager: manager,
 		Dispatcher:     dispatcher,
 		Logger:         zerolog.Nop(),
 	})
 	if err != nil {
-		t.Fatalf("NewChatHandler() error = %v", err)
+		t.Fatalf("NewChatService() error = %v", err)
 	}
 	return slackagent.NewInboundProcessor(chatHandler, lifecycle, history)
 }

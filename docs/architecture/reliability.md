@@ -32,7 +32,7 @@ Status: active
 - `internal/apps/balda/deliveryworkflow/service_test.go`
 - `internal/apps/balda/channel/telegram/messenger_test.go`
 - `internal/apps/balda/eventbus/nats/connection_test.go`
-- `internal/apps/balda/handlers/command_test.go`
+- `internal/apps/balda/handlersfx/telegram_command_test.go`
 - `internal/apps/balda/jobs/service_test.go`
 - `internal/apps/balda/state/sqlite_jobs_test.go`
 
@@ -45,7 +45,7 @@ Status: active
 - `internal/apps/balda/deliveryworkflow`
 - `internal/apps/balda/channel/telegram`
 - `internal/apps/balda/eventbus/nats`
-- `internal/apps/balda/handlers`
+- `internal/apps/balda/handlersfx`
 - `internal/apps/balda/state`
 
 ## Update triggers
