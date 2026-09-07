@@ -53,13 +53,9 @@ func TestBus_SessionMemoryTopologyPublishFetchAndAck(t *testing.T) {
 	if first.ExportID != export.ExportID() || second.ExportID != export.ExportID() || !second.Duplicate {
 		t.Fatalf("publish receipts = %+v / %+v", first, second)
 	}
-	stats, err := bus.SessionMemoryStats(context.Background())
-	if err != nil {
-		t.Fatalf("SessionMemoryStats(before fetch) error = %v", err)
-	}
-	if stats.Messages != 1 || stats.Pending != 1 || stats.Acknowledging != 0 || stats.OldestPendingAt.IsZero() {
-		t.Fatalf("stats before fetch = %+v", stats)
-	}
+	_ = waitForSessionMemoryStats(t, bus, func(s SessionMemoryStats) bool {
+		return s.Messages == 1 && s.Pending == 1 && s.Acknowledging == 0 && !s.OldestPendingAt.IsZero()
+	}, "before fetch")
 
 	delivery, err := bus.FetchSessionMemory(context.Background())
 	if err != nil {
@@ -79,13 +75,9 @@ func TestBus_SessionMemoryTopologyPublishFetchAndAck(t *testing.T) {
 	if decoded.ExportID() != export.ExportID() || delivery.Subject() != sessionmemorycmd.SubjectTurn {
 		t.Fatalf("delivery = %q on %q", decoded.ExportID(), delivery.Subject())
 	}
-	stats, err = bus.SessionMemoryStats(context.Background())
-	if err != nil {
-		t.Fatalf("SessionMemoryStats(after fetch) error = %v", err)
-	}
-	if stats.Pending != 0 || stats.Acknowledging != 1 {
-		t.Fatalf("stats after fetch = %+v", stats)
-	}
+	_ = waitForSessionMemoryStats(t, bus, func(s SessionMemoryStats) bool {
+		return s.Pending == 0 && s.Acknowledging == 1
+	}, "after fetch")
 	if err := delivery.Ack(context.Background()); err != nil {
 		t.Fatalf("delivery.Ack() error = %v", err)
 	}
@@ -118,13 +110,9 @@ func TestBus_SessionMemoryRestartPreservesPendingExport(t *testing.T) {
 		t.Fatalf("second NewBus() error = %v", err)
 	}
 	defer func() { _ = secondBus.Drain(context.Background()) }()
-	stats, err := secondBus.SessionMemoryStats(context.Background())
-	if err != nil {
-		t.Fatalf("SessionMemoryStats(after restart) error = %v", err)
-	}
-	if stats.Messages != 1 || stats.Pending != 1 {
-		t.Fatalf("stats after restart = %+v", stats)
-	}
+	_ = waitForSessionMemoryStats(t, secondBus, func(s SessionMemoryStats) bool {
+		return s.Messages == 1 && s.Pending == 1
+	}, "after restart")
 	delivery, err := secondBus.FetchSessionMemory(context.Background())
 	if err != nil {
 		t.Fatalf("FetchSessionMemory(after restart) error = %v", err)
@@ -295,24 +283,32 @@ func testSessionMemoryTurn(t *testing.T, sourceID string) sessionmemorycmd.Expor
 	return export
 }
 
-func waitForSessionMemoryEmpty(t *testing.T, bus *Bus) {
+func waitForSessionMemoryStats(t *testing.T, bus *Bus, match func(stats SessionMemoryStats) bool, desc string) SessionMemoryStats {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	var lastStats SessionMemoryStats
 	for {
 		stats, err := bus.SessionMemoryStats(ctx)
-		if err != nil {
-			t.Fatalf("SessionMemoryStats(wait) error = %v", err)
-		}
-		if stats.Messages == 0 && stats.Pending == 0 && stats.Acknowledging == 0 {
-			return
+		if err == nil {
+			lastStats = stats
+			if match(stats) {
+				return stats
+			}
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatalf("session-memory stats did not empty: %+v", stats)
+			t.Fatalf("timed out waiting for session-memory stats (%s): last = %+v", desc, lastStats)
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
+}
+
+func waitForSessionMemoryEmpty(t *testing.T, bus *Bus) {
+	t.Helper()
+	waitForSessionMemoryStats(t, bus, func(s SessionMemoryStats) bool {
+		return s.Messages == 0 && s.Pending == 0 && s.Acknowledging == 0
+	}, "empty")
 }
 
 func enabledSessionMemoryExecutionConfig() baldaexecution.Config {
