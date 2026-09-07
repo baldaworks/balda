@@ -3,6 +3,7 @@
 ## Development Standards
 
 - Follow idiomatic Go and Google Go best practices.
+- Always use the `go-google-style-guide` skill when writing Go code.
 - Prefer project-local tooling via `go tool ...` when available.
 - Use Conventional Commits for all commits.
 - Sync shared branches with merge (`git pull --no-rebase`), not rebase.
