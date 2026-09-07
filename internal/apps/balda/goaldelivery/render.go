@@ -2,15 +2,14 @@ package goaldelivery
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"text/template"
 
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/redaction"
-	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 const (
@@ -91,73 +90,32 @@ func RenderStatusMessage(format deliveryfmt.DeliveryFormat, text string) string 
 	return renderTemplate(style, templateStatus, messageData{Text: systemText(style, text)})
 }
 
-func RenderReviewableOutcome(format deliveryfmt.DeliveryFormat, task baldastate.JobRecord) string {
-	var result map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(task.Result)), &result); err != nil {
-		result = nil
+func RenderProgress(format deliveryfmt.DeliveryFormat, progress goalkeepercmd.GoalProgress) string {
+	switch progress.Kind {
+	case goalkeepercmd.GoalProgressKindStarted:
+		return RenderStartedMessage(format, progress.MaxIterations, progress.Objective)
+	case goalkeepercmd.GoalProgressKindStep:
+		return RenderStepMessage(format, progress.Iteration, progress.MaxIterations, progress.Step, progress.Action, progress.Body)
+	case goalkeepercmd.GoalProgressKindStatus:
+		return RenderStatusMessage(format, progress.Text)
+	default:
+		return RenderStatusMessage(format, progress.Text)
 	}
-	parsedOutcome := struct {
-		WhatWasDone string
-		Validation  string
-		Verified    string
-		NotVerified string
-		NextAction  string
-	}{}
-	hasOutcome := false
-	if len(result) != 0 {
-		if outcomeMap, ok := result["reviewable_outcome"].(map[string]any); ok {
-			parsedOutcome.WhatWasDone = RedactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_done"])))
-			parsedOutcome.Validation = RedactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["validation_output"])))
-			parsedOutcome.Verified = RedactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_verified"])))
-			parsedOutcome.NotVerified = RedactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["what_was_not_verified"])))
-			parsedOutcome.NextAction = RedactSecrets(strings.TrimSpace(fmt.Sprint(outcomeMap["next_action"])))
-			hasOutcome = parsedOutcome.WhatWasDone != "" || parsedOutcome.Validation != "" || parsedOutcome.Verified != "" || parsedOutcome.NotVerified != "" || parsedOutcome.NextAction != ""
-		}
-	}
-	goalReached := false
-	switch typed := result["goal_reached"].(type) {
-	case bool:
-		goalReached = typed
-	case string:
-		goalReached = strings.EqualFold(strings.TrimSpace(typed), "true")
-	}
-	exportStatus, exportReason, exportError := "", "", ""
-	if len(result) != 0 {
-		if exportMap, ok := result["export"].(map[string]any); ok {
-			exportStatus = RedactSecrets(strings.TrimSpace(fmt.Sprint(exportMap["status"])))
-			exportReason = RedactSecrets(strings.TrimSpace(fmt.Sprint(exportMap["reason"])))
-			exportError = RedactSecrets(strings.TrimSpace(fmt.Sprint(exportMap["error"])))
-		}
-	}
-	resultText := func(key string) string {
-		if len(result) == 0 {
-			return ""
-		}
-		value, ok := result[key]
-		if !ok || value == nil {
-			return ""
-		}
-		return strings.TrimSpace(fmt.Sprint(value))
-	}
-	executorOutput := RedactSecrets(firstNonEmpty(resultText("executor_output"), resultText("final_text")))
-	reviewerOutput := RedactSecrets(firstNonEmpty(resultText("reviewer_output"), resultText("reviewer_feedback")))
-	whatWasDone := firstNonEmpty(executorOutput, task.Objective)
-	if hasOutcome {
-		whatWasDone = firstNonEmpty(parsedOutcome.WhatWasDone, whatWasDone)
-	}
-	if !goalReached && task.Status != baldastate.JobStatusCompleted && resultText("final_text") != "" {
-		whatWasDone = RedactSecrets(resultText("final_text"))
-	}
-	validation := reviewerOutput
-	if hasOutcome {
-		validation = firstNonEmpty(parsedOutcome.Validation, validation)
-	}
+}
+
+func RenderReviewableOutcome(format deliveryfmt.DeliveryFormat, outcome goalkeepercmd.GoalOutcome) string {
+	goalReached := outcome.GoalReached
+	exportStatus := strings.TrimSpace(outcome.ExportStatus)
+	exportReason := strings.TrimSpace(outcome.ExportReason)
+	exportError := strings.TrimSpace(outcome.ExportError)
+	whatWasDone := strings.TrimSpace(outcome.WhatWasDone)
+	validation := strings.TrimSpace(outcome.Validation)
 	routineSuccessfulOutcome := goalReached && exportStatusIsRoutineSuccess(exportStatus)
-	verified := firstNonEmpty(parsedOutcome.Verified, "validator returned feedback")
-	notVerified := firstNonEmpty(parsedOutcome.NotVerified, DefaultNotVerifiedText)
-	nextAction := firstNonEmpty(parsedOutcome.NextAction, DefaultInspectNextAction)
-	renderNotVerified := shouldRenderNotVerified(parsedOutcome.NotVerified)
-	renderNextAction := shouldRenderNextAction(parsedOutcome.NextAction, goalReached, exportStatus)
+	verified := firstNonEmpty(outcome.Verified, "validator returned feedback")
+	notVerified := firstNonEmpty(outcome.NotVerified, DefaultNotVerifiedText)
+	nextAction := firstNonEmpty(outcome.NextAction, DefaultInspectNextAction)
+	renderNotVerified := shouldRenderNotVerified(outcome.NotVerified)
+	renderNextAction := shouldRenderNextAction(outcome.NextAction, goalReached, exportStatus)
 	renderVerified := shouldRenderVerified(verified, routineSuccessfulOutcome)
 	renderValidation := shouldRenderValidation(validation, goalReached)
 

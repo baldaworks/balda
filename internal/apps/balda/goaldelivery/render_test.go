@@ -1,12 +1,11 @@
 package goaldelivery
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 )
 
 func TestRenderGoalStartedMessagePlainMatchesLegacyText(t *testing.T) {
@@ -261,7 +260,7 @@ func TestRenderReviewableOutcomeKeepsExplicitNotVerified(t *testing.T) {
 
 const goalExportReasonDisabled = "workspace_disabled"
 
-func taskRecordWithResult(t *testing.T, goalReached bool, exportStatus string, notVerified string, exportReason string, outcomeNotVerified string, nextAction string) baldastate.JobRecord {
+func taskRecordWithResult(t *testing.T, goalReached bool, exportStatus string, notVerified string, exportReason string, outcomeNotVerified string, nextAction string) goalkeepercmd.GoalOutcome {
 	t.Helper()
 
 	return taskRecordWithOutcome(t, goalReached, exportStatus, map[string]string{
@@ -274,36 +273,40 @@ func taskRecordWithResult(t *testing.T, goalReached bool, exportStatus string, n
 	})
 }
 
-func taskRecordWithOutcome(t *testing.T, goalReached bool, exportStatus string, outcome map[string]string) baldastate.JobRecord {
+func taskRecordWithOutcome(t *testing.T, goalReached bool, exportStatus string, outcome map[string]string) goalkeepercmd.GoalOutcome {
 	t.Helper()
 
-	result := map[string]any{
-		"goal_reached": goalReached,
-		"reviewable_outcome": map[string]any{
-			"what_was_done":         outcome["what_was_done"],
-			"validation_output":     outcome["validation_output"],
-			"what_was_verified":     outcome["what_was_verified"],
-			"what_was_not_verified": outcome["what_was_not_verified"],
-			"next_action":           outcome["next_action"],
-		},
+	return goalkeepercmd.GoalOutcome{
+		GoalReached:  goalReached,
+		ExportStatus: exportStatus,
+		ExportReason: outcome["export_reason"],
+		ExportError:  outcome["export_error"],
+		WhatWasDone:  outcome["what_was_done"],
+		Validation:   outcome["validation_output"],
+		Verified:     outcome["what_was_verified"],
+		NotVerified:  outcome["what_was_not_verified"],
+		NextAction:   outcome["next_action"],
 	}
-	if exportStatus != "" {
-		result["export"] = map[string]any{
-			"status": exportStatus,
-			"reason": outcome["export_reason"],
-		}
+}
+
+func TestRenderProgress(t *testing.T) {
+	t.Parallel()
+
+	started := goalkeepercmd.NewStartedProgress(5, "deploy service")
+	gotStarted := RenderProgress(deliveryfmt.DeliveryFormatRichMarkdown, started)
+	if !strings.Contains(gotStarted, "**Goal run started**") {
+		t.Fatalf("RenderProgress(started) = %q, want started markdown", gotStarted)
 	}
-	data, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal result: %v", err)
+
+	step := goalkeepercmd.NewStepProgress(1, 5, "worker", "executing", "running build")
+	gotStep := RenderProgress(deliveryfmt.DeliveryFormatNone, step)
+	if !strings.Contains(gotStep, "Goal iteration 1/5: worker executing.") {
+		t.Fatalf("RenderProgress(step) = %q, want step text", gotStep)
 	}
-	status := baldastate.JobStatusCompleted
-	if !goalReached {
-		status = baldastate.JobStatusFailed
-	}
-	return baldastate.JobRecord{
-		Status:    status,
-		Objective: "objective",
-		Result:    string(data),
+
+	status := goalkeepercmd.NewStatusProgress("Goal run canceled.")
+	gotStatus := RenderProgress(deliveryfmt.DeliveryFormatRichMarkdown, status)
+	if gotStatus != "**Goal run canceled.**" {
+		t.Fatalf("RenderProgress(status) = %q, want status markdown", gotStatus)
 	}
 }

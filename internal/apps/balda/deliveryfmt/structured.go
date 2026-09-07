@@ -12,6 +12,8 @@ type MessageType string
 
 const (
 	MessageTypePermissionRequest MessageType = "balda.permission.request.v1"
+	MessageTypeGoalProgress      MessageType = "balda.goal.progress.v1"
+	MessageTypeGoalOutcome       MessageType = "balda.goal.outcome.v1"
 )
 
 // Descriptor ties a typed payload to a stable structured message contract.
