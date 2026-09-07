@@ -75,7 +75,6 @@ components:
       - internal/apps/balda/chatapp
       - internal/apps/balda/commandcmd
       - internal/apps/balda/deliverycmd
-      - internal/apps/balda/goalcmd
       - internal/apps/balda/goalkeepercmd
       - internal/apps/balda/goalresultcmd
       - internal/apps/balda/locatorref
