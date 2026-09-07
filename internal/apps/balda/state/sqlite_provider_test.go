@@ -1094,3 +1094,26 @@ func assertSessionMetadataHasNoChatTopicUnique(t *testing.T, ctx context.Context
 		t.Fatalf("balda_session_metadata still has chat/topic uniqueness: %s", createSQL)
 	}
 }
+
+func TestPollingOffsetStore_DecoupledFromVendor(t *testing.T) {
+	t.Parallel()
+
+	// Compile-time checks that state.Provider returns a neutral PollingOffsetStore.
+	var _ PollingOffsetStore = (*sqliteOffsetStore)(nil)
+
+	provider := newTestProvider(t)
+	defer closeProvider(t, provider)
+
+	ctx := context.Background()
+	store := provider.PollingOffsetStore()
+	if err := store.Save(ctx, 12345); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	got, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got != 12345 {
+		t.Fatalf("Load() = %d, want 12345", got)
+	}
+}
