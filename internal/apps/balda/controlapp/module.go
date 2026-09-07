@@ -18,6 +18,7 @@ var Module = fx.Module("balda_controlapp",
 			func(store baldastate.ScheduledJobStore) ScheduledJobs { return store },
 		),
 		NewSessionWorkCanceller,
+		NewCommandDispatcher,
 		fx.Annotate(
 			func(c *SessionWorkCanceller) appports.SessionWorkCanceller { return c },
 		),

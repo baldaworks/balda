@@ -15,7 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
-	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
@@ -172,7 +172,7 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 		_ = h.sendPlain(ctx, cmd.Locator, zulipAccessDeniedText)
 		return nil
 	}
-	if cmd.Command == commandReset || cmd.Command == commandLocator || cmd.Command == commandUsage || cmd.Command == commandAuto {
+	if h.commandIngress != nil && (cmd.Command == commandReset || cmd.Command == commandLocator || cmd.Command == commandUsage || cmd.Command == commandAuto || cmd.Command == commandCancel || cmd.Command == commandGoal) {
 		isOwner := h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(cmd.SenderID))
 		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 			InvocationID: fmt.Sprintf("zulip:command:%d", cmd.MessageID),
@@ -459,8 +459,8 @@ func (h *zulipInboundHandler) handleCancelCommand(ctx context.Context, locator d
 		return
 	}
 	transportUserID := zulipUserID(senderID)
-	if submitErr := SubmitSessionTurnCancelControl(
-		ctx, h.actorDispatcher, locator, transportUserID, "zulip: session canceled by /cancel", true,
+	if submitErr := controlapp.NewCommandDispatcher(h.actorDispatcher).CancelTurn(
+		ctx, locator, transportUserID, "zulip: session canceled by /cancel", true,
 	); submitErr != nil {
 		h.logger.Warn().Err(submitErr).Str("session_id", locator.SessionID).Msg("failed to submit cancel control")
 		_ = h.sendPlain(ctx, locator, "Could not request cancel.")
@@ -523,8 +523,8 @@ func (h *zulipInboundHandler) handleGoalCommand(ctx context.Context, locator del
 			_ = h.sendPlain(ctx, locator, "Goal control is unavailable right now. Please try again.")
 			return
 		}
-		if err := SubmitGoalClearControl(
-			ctx, h.actorDispatcher, locator, zulipUserID(senderID), "goal cleared by user", true,
+		if err := controlapp.NewCommandDispatcher(h.actorDispatcher).ClearGoal(
+			ctx, locator, zulipUserID(senderID), "goal cleared by user", true,
 		); err != nil {
 			h.logger.Warn().Err(err).Str("session_id", locator.SessionID).Msg("failed to submit goal clear control")
 			_ = h.sendPlain(ctx, locator, "Could not clear goal run.")
@@ -1064,34 +1064,6 @@ func SendAgentReply(ctx context.Context, dispatcher actortransport.Dispatcher, f
 	}
 	_, err = dispatcher.Dispatch(ctx, env)
 	return err
-}
-
-func SubmitSessionTurnCancelControl(ctx context.Context, dispatcher actortransport.Dispatcher, locator deliverycmd.Locator, requestedBy string, reason string, notify bool) error {
-	if dispatcher == nil {
-		return nil
-	}
-	env, err := controlcmd.CancelTurnEnvelopeWithNotify(locator, requestedBy, reason, notify)
-	if err != nil {
-		return fmt.Errorf("build session turn cancel control envelope: %w", err)
-	}
-	if _, err := dispatcher.Dispatch(ctx, env); err != nil {
-		return fmt.Errorf("publish session turn cancel control command: %w", err)
-	}
-	return nil
-}
-
-func SubmitGoalClearControl(ctx context.Context, dispatcher actortransport.Dispatcher, locator deliverycmd.Locator, requestedBy string, reason string, notify bool) error {
-	if dispatcher == nil {
-		return nil
-	}
-	env, err := controlcmd.ClearGoalEnvelopeWithNotify(locator, requestedBy, reason, notify)
-	if err != nil {
-		return fmt.Errorf("build goal clear control envelope: %w", err)
-	}
-	if _, err := dispatcher.Dispatch(ctx, env); err != nil {
-		return fmt.Errorf("publish goal clear control command: %w", err)
-	}
-	return nil
 }
 
 type autoStateManager interface {

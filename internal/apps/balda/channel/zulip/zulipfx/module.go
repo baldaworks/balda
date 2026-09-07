@@ -16,7 +16,7 @@ var Module = fx.Module(
 	fx.Provide(
 		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
-				return commandcmd.Advertisement{Transport: zulip.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "usage", "auto"}}
+				return commandcmd.Advertisement{Transport: zulip.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "usage", "auto", "cancel", "goalkeeper"}}
 			},
 			fx.ParamTags(`name:"balda_zulip_webhook_enabled"`),
 			fx.ResultTags(`group:"balda_command_advertisements"`),

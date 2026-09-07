@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
@@ -108,7 +109,7 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		Args:            commandCtx.Args,
 		IsDM:            commandCtx.IsDM,
 	}
-	if h.commandIngress != nil && (req.Command == commandReset || req.Command == commandLocator || req.Command == commandHelp || req.Command == commandUsage || req.Command == commandAuto) {
+	if h.commandIngress != nil && (req.Command == commandReset || req.Command == commandLocator || req.Command == commandHelp || req.Command == commandUsage || req.Command == commandAuto || req.Command == commandCancel || req.Command == commandGoal) {
 		allowed := h.canUseSessionCommand(ctx, req)
 		isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(req.UserID)
 		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
@@ -441,7 +442,7 @@ func (h *CommandHandler) onGoalCommand(ctx context.Context, req commandRequest) 
 			}
 			return nil
 		}
-		if err := submitGoalClearControl(ctx, h.actorDispatcher, req.Locator, telegramref.UserID(req.UserID), "goal cleared by user", true); err != nil {
+		if err := controlapp.NewCommandDispatcher(h.actorDispatcher).ClearGoal(ctx, req.Locator, telegramref.UserID(req.UserID), "goal cleared by user", true); err != nil {
 			log.Warn().Err(err).Str("session_id", req.Locator.SessionID).Msg("failed to publish goal clear command")
 			if sendErr := sendAgentReply(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Could not clear goal run."); sendErr != nil {
 				return sendErr
@@ -614,7 +615,7 @@ func (h *CommandHandler) onCancelCommand(ctx context.Context, req commandRequest
 		}
 		return nil
 	}
-	if err := submitSessionTurnCancelControl(ctx, h.actorDispatcher, req.Locator, telegramref.UserID(req.UserID), "session turn canceled by user", true); err != nil {
+	if err := controlapp.NewCommandDispatcher(h.actorDispatcher).CancelTurn(ctx, req.Locator, telegramref.UserID(req.UserID), "session turn canceled by user", true); err != nil {
 		log.Warn().Err(err).Str("session_id", req.Locator.SessionID).Msg("failed to publish cancel command")
 		if sendErr := sendPlain(ctx, h.actorDispatcher, commandHandlerActorAddress, req.Locator, "Could not request cancel."); sendErr != nil {
 			return sendErr

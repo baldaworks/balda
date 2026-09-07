@@ -15,7 +15,7 @@ func (r *recordingCommandIngress) PublishCommand(_ context.Context, req commandc
 }
 
 func TestCommandHandlerPublishesActorOwnedCommands(t *testing.T) {
-	for _, name := range []string{"locator", "reset", "help", "usage", "auto"} {
+	for _, name := range []string{"locator", "reset", "help", "usage", "auto", "cancel", "goalkeeper"} {
 		t.Run(name, func(t *testing.T) {
 			handler, sessions, _, _ := newCommandHandlerTestHarness(t)
 			ingress := &recordingCommandIngress{}
