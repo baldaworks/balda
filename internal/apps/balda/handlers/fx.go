@@ -22,12 +22,18 @@ var Module = fx.Module("balda_handlers",
 				return nil, err
 			}
 
+			resolver := params.Resolver
+			if resolver == nil && params.OwnerStore != nil {
+				resolver = params.OwnerStore
+			}
+
 			receiver := &InboundWebhookReceiver{
 				enabled:    normalized.Enabled,
 				listenAddr: normalized.ListenAddr,
 				routes:     normalized.Routes,
 				balda:      params.Executor,
 				owner:      params.OwnerStore,
+				resolver:   resolver,
 				logger:     params.Logger.With().Str("component", "balda.inbound_webhook").Logger(),
 			}
 
@@ -37,8 +43,8 @@ var Module = fx.Module("balda_handlers",
 			if receiver.balda == nil {
 				return nil, fmt.Errorf("balda handler is required for inbound webhooks")
 			}
-			if receiver.owner == nil {
-				return nil, fmt.Errorf("balda owner store is required for inbound webhooks")
+			if receiver.owner == nil && receiver.resolver == nil {
+				return nil, fmt.Errorf("balda destination resolver is required for inbound webhooks")
 			}
 
 			return receiver, nil

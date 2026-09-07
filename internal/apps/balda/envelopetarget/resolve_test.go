@@ -2,10 +2,11 @@ package envelopetarget
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 )
 
 const (
@@ -16,9 +17,19 @@ const (
 func TestResolveEnvelopeTarget_AliasOwner(t *testing.T) {
 	t.Parallel()
 
+	tgLoc, _ := deliverycmd.NewLocator("telegram", "9001:0", `{"chat_id":9001}`, "tg-9001-0")
+	resolver := &fakeResolver{
+		resolved: map[string]Resolved{
+			"owner": {
+				Locator:   tgLoc,
+				Principal: testTelegramUserID101,
+			},
+		},
+	}
+
 	target, err := Resolve(
 		context.Background(),
-		newOwnerStoreForTest(t, 101, 9001),
+		resolver,
 		Target{Target: " alias ", Key: " owner "},
 	)
 	if err != nil {
@@ -27,11 +38,11 @@ func TestResolveEnvelopeTarget_AliasOwner(t *testing.T) {
 	if got, want := target.Locator.SessionID, "tg-9001-0"; got != want {
 		t.Fatalf("session_id = %q, want %q", got, want)
 	}
-	if got, want := target.UserID, testTelegramUserID101; got != want {
+	if got, want := target.UserID(), testTelegramUserID101; got != want {
 		t.Fatalf("user_id = %q, want %q", got, want)
 	}
-	if got := target.TopicID; got != 0 {
-		t.Fatalf("topic_id = %d, want 0", got)
+	if got, want := target.Principal, testTelegramUserID101; got != want {
+		t.Fatalf("principal = %q, want %q", got, want)
 	}
 }
 
@@ -40,7 +51,7 @@ func TestResolveEnvelopeTarget_Locator(t *testing.T) {
 
 	target, err := Resolve(
 		context.Background(),
-		newOwnerStoreForTest(t, 101, 9001),
+		nil,
 		Target{Target: " locator ", Key: " telegram:-1002667079342:8939 "},
 	)
 	if err != nil {
@@ -52,20 +63,37 @@ func TestResolveEnvelopeTarget_Locator(t *testing.T) {
 	if got, want := target.Locator.AddressKey, "-1002667079342:8939"; got != want {
 		t.Fatalf("address_key = %q, want %q", got, want)
 	}
-	if got := target.UserID; got != "" {
+	if got := target.UserID(); got != "" {
 		t.Fatalf("user_id = %q, want empty", got)
 	}
-	if got := target.TopicID; got != 8939 {
-		t.Fatalf("topic_id = %d, want 8939", got)
+}
+
+func TestResolveEnvelopeTarget_SlackLocator(t *testing.T) {
+	t.Parallel()
+
+	target, err := Resolve(
+		context.Background(),
+		nil,
+		Target{Target: "locator", Key: "slackagent:c:T123:C456"},
+	)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := target.Locator.ChannelType, "slackagent"; got != want {
+		t.Fatalf("channel_type = %q, want %q", got, want)
+	}
+	if got, want := target.Locator.AddressKey, "c:T123:C456"; got != want {
+		t.Fatalf("address_key = %q, want %q", got, want)
 	}
 }
 
 func TestResolveEnvelopeTarget_RejectsUnknownAlias(t *testing.T) {
 	t.Parallel()
 
+	resolver := &fakeResolver{resolved: map[string]Resolved{}}
 	_, err := Resolve(
 		context.Background(),
-		newOwnerStoreForTest(t, 101, 9001),
+		resolver,
 		Target{Target: "alias", Key: "vasya"},
 	)
 	if err == nil {
@@ -81,7 +109,7 @@ func TestResolveEnvelopeTarget_RejectsInvalidLocator(t *testing.T) {
 
 	_, err := Resolve(
 		context.Background(),
-		newOwnerStoreForTest(t, 101, 9001),
+		nil,
 		Target{Target: "locator", Key: "telegram"},
 	)
 	if err == nil {
@@ -92,37 +120,44 @@ func TestResolveEnvelopeTarget_RejectsInvalidLocator(t *testing.T) {
 	}
 }
 
-func newOwnerStoreForTest(t *testing.T, userID int64, chatID int64) *auth.OwnerStore {
-	t.Helper()
+func TestResolveEnvelopeTarget_Validation(t *testing.T) {
+	t.Parallel()
 
-	store, err := auth.NewOwnerStore(&fakeOwnerKVStore{})
-	if err != nil {
-		t.Fatalf("NewOwnerStore() error = %v", err)
+	ctx := context.Background()
+
+	// Missing target kind
+	_, err := Resolve(ctx, nil, Target{Target: "", Key: "owner"})
+	if err == nil || !strings.Contains(err.Error(), "envelope target is required") {
+		t.Fatalf("expected target required error, got %v", err)
 	}
-	if _, err := store.RegisterOwner(userID, chatID); err != nil {
-		t.Fatalf("RegisterOwner() error = %v", err)
+
+	// Missing key
+	_, err = Resolve(ctx, nil, Target{Target: "alias", Key: ""})
+	if err == nil || !strings.Contains(err.Error(), "envelope target key is required") {
+		t.Fatalf("expected key required error, got %v", err)
 	}
-	return store
+
+	// Missing resolver for alias
+	_, err = Resolve(ctx, nil, Target{Target: "alias", Key: "owner"})
+	if err == nil || !strings.Contains(err.Error(), "destination resolver is required") {
+		t.Fatalf("expected destination resolver is required error, got %v", err)
+	}
+
+	// Unsupported target kind
+	_, err = Resolve(ctx, nil, Target{Target: "unknown", Key: "owner"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported envelope target") {
+		t.Fatalf("expected unsupported envelope target error, got %v", err)
+	}
 }
 
-type fakeOwnerKVStore struct {
-	value any
-	ok    bool
-	err   error
+type fakeResolver struct {
+	resolved map[string]Resolved
 }
 
-func (s *fakeOwnerKVStore) GetJSON(_ context.Context, _ string) (any, bool, error) {
-	if s.err != nil {
-		return nil, false, s.err
+func (f *fakeResolver) ResolveAlias(_ context.Context, alias string) (Resolved, error) {
+	norm := strings.ToLower(strings.TrimSpace(alias))
+	if r, ok := f.resolved[norm]; ok {
+		return r, nil
 	}
-	return s.value, s.ok, nil
-}
-
-func (s *fakeOwnerKVStore) SetJSON(_ context.Context, _ string, value any) error {
-	if s.err != nil {
-		return s.err
-	}
-	s.value = value
-	s.ok = true
-	return nil
+	return Resolved{}, fmt.Errorf("unsupported alias target %q", alias)
 }

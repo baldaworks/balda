@@ -392,6 +392,7 @@ balda:
   - optional `envelope`:
     - `target` + `key`: destination address (defaults to `alias` + `owner`)
       - `target=locator` consumes a locator ref in the form `<channel_type>:<address_key>`; `/locator` prints the current session value
+      - `target=alias` consumes an alias key (defaults to `owner`, with optional channel qualification such as `owner@telegram` or `owner@slackagent`); resolves via the transport-neutral destination resolver, supporting multiple concurrent channels and default selection with fallback to legacy Telegram owner state when no explicit destination records exist
     - `mode`: `task` (default) or `session`
     - `report_to`: optional destination for progress/final replies
   - optional `auth`:

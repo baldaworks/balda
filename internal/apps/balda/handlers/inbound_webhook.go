@@ -143,8 +143,9 @@ type inboundWebhookParams struct {
 	fx.In
 
 	Config     InboundWebhookConfig
-	Executor   InboundTurnExecutor `optional:"true"`
-	OwnerStore *auth.OwnerStore
+	Executor   InboundTurnExecutor                `optional:"true"`
+	OwnerStore *auth.OwnerStore                   `optional:"true"`
+	Resolver   envelopetarget.DestinationResolver `optional:"true"`
 	Logger     zerolog.Logger
 }
 
@@ -156,6 +157,7 @@ type InboundWebhookReceiver struct {
 	routes     map[string]inboundWebhookRoute
 	balda      InboundTurnExecutor
 	owner      *auth.OwnerStore
+	resolver   envelopetarget.DestinationResolver
 	logger     zerolog.Logger
 
 	metrics inboundWebhookMetrics
@@ -537,7 +539,8 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		})
 		return
 	}
-	target, targetErr := envelopetarget.Resolve(req.Context(), r.owner, route.Target)
+
+	target, targetErr := envelopetarget.Resolve(req.Context(), r.getResolver(), route.Target)
 	if targetErr != nil {
 		r.metrics.notFound.Add(1)
 		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
@@ -550,7 +553,7 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 	}
 	var reportTo *baldasession.SessionLocator
 	if route.ReportTo != nil {
-		resolved, err := envelopetarget.Resolve(req.Context(), r.owner, *route.ReportTo)
+		resolved, err := envelopetarget.Resolve(req.Context(), r.getResolver(), *route.ReportTo)
 		if err != nil {
 			r.metrics.notFound.Add(1)
 			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
@@ -578,8 +581,8 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		Text:           prompt,
 		Locator:        target.Locator,
 		ReportTo:       reportTo,
-		UserID:         target.UserID,
-		TopicID:        target.TopicID,
+		UserID:         target.UserID(),
+		TopicID:        0,
 		DeliveryFormat: "",
 		ProgressPolicy: deliveryfmt.ProgressPolicy{
 			Typing:      false,
@@ -644,6 +647,13 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		MessageID: result.MsgID,
 		Duplicate: result.Duplicate,
 	})
+}
+
+func (r *InboundWebhookReceiver) getResolver() envelopetarget.DestinationResolver {
+	if r.resolver != nil {
+		return r.resolver
+	}
+	return r.owner
 }
 
 func authorizeInboundWebhookRequest(req *http.Request, policy inboundWebhookAuthPolicy) error {

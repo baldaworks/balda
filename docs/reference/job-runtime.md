@@ -53,6 +53,10 @@ Each configured job has `id`, `cron`, and an `envelope` with `target`, `key`,
 - Locator target form: `target=locator`, `key=<channel_type>:<address_key>`;
   `/locator` returns the paste-ready value in a transport-formatted structured
   response. See the [locator command contract](../commands.md#locator).
+- Alias target form: `target=alias`, `key=owner` (or `owner@<channel_type>`);
+  resolves through the transport-neutral destination resolver across active
+  channels (Telegram, Slack, Zulip) with deterministic default selection and
+  fallback to registered Telegram owner data.
 - Delivery: scheduled jobs are fire-and-forget by default. If `envelope.report_to` is set, the session turn delivers progress/final replies to that locator.
 - Idempotency key: each due slot uses deterministic `last_dispatch_key = <job_id>@<due_next_run_at_rfc3339nano>`.
 - Startup reconciliation: configured job IDs are upserted, and persisted jobs not present in config are deleted from the scheduler state.

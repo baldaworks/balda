@@ -26,6 +26,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
@@ -600,6 +601,12 @@ func Module(
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
 			return auth.NewOwnerStore(provider.AppKV())
+		}),
+		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
+			return auth.NewDestinationStore(provider.AppKV())
+		}),
+		fx.Provide(func(destStore *auth.DestinationStore, ownerStore *auth.OwnerStore) envelopetarget.DestinationResolver {
+			return auth.NewDestinationResolver(destStore, ownerStore)
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())

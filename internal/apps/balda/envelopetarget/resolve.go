@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
-	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 )
 
 const (
@@ -17,20 +15,32 @@ const (
 	TargetLocator = "locator"
 )
 
+// Target describes an envelope destination reference (either alias or locator).
 type Target struct {
 	Target string
 	Key    string
 }
 
+// Resolved represents the transport-neutral resolution of an envelope target.
 type Resolved struct {
-	Locator baldasession.SessionLocator
-	UserID  string
-	TopicID int
+	Locator   deliverycmd.Locator
+	Principal string
 }
 
+// UserID returns the principal string for compatibility with callers expecting UserID.
+func (r Resolved) UserID() string {
+	return r.Principal
+}
+
+// DestinationResolver resolves an alias to a canonical delivery locator and principal.
+type DestinationResolver interface {
+	ResolveAlias(ctx context.Context, alias string) (Resolved, error)
+}
+
+// Resolve resolves an envelope target into a canonical delivery locator and principal.
 func Resolve(
-	_ context.Context,
-	ownerStore *auth.OwnerStore,
+	ctx context.Context,
+	resolver DestinationResolver,
 	target Target,
 ) (Resolved, error) {
 	targetKind := strings.ToLower(strings.TrimSpace(target.Target))
@@ -44,40 +54,16 @@ func Resolve(
 
 	switch targetKind {
 	case TargetAlias:
-		if strings.ToLower(key) != AliasOwner {
-			return Resolved{}, fmt.Errorf("unsupported alias target %q", target.Key)
+		if resolver == nil {
+			return Resolved{}, fmt.Errorf("destination resolver is required")
 		}
-		if ownerStore == nil {
-			return Resolved{}, fmt.Errorf("owner store is required")
-		}
-		owner := ownerStore.GetOwner()
-		if owner == nil {
-			return Resolved{}, fmt.Errorf("owner is not registered")
-		}
-		if owner.UserID == 0 {
-			return Resolved{}, fmt.Errorf("owner.user_id is required")
-		}
-		if owner.ChatID == 0 {
-			return Resolved{}, fmt.Errorf("owner.chat_id is required")
-		}
-
-		return Resolved{
-			Locator: telegramref.NewLocator(owner.ChatID, 0),
-			UserID:  telegramref.UserID(owner.UserID),
-			TopicID: 0,
-		}, nil
+		return resolver.ResolveAlias(ctx, key)
 	case TargetLocator:
 		locator, err := locatorref.Parse(target.Key)
 		if err != nil {
 			return Resolved{}, err
 		}
-		resolved := Resolved{Locator: locator}
-		if address, ok, decodeErr := telegramref.DecodeLocator(locator); decodeErr != nil {
-			return Resolved{}, decodeErr
-		} else if ok {
-			resolved.TopicID = address.TopicID
-		}
-		return resolved, nil
+		return Resolved{Locator: locator}, nil
 	default:
 		return Resolved{}, fmt.Errorf("unsupported envelope target %q", target.Target)
 	}

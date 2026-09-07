@@ -7,6 +7,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
+	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 )
 
 // Owner represents the authenticated admin user.
@@ -268,6 +272,42 @@ func (s *OwnerStore) HasOwner() bool {
 	defer s.mu.RUnlock()
 
 	return s.owner != nil
+}
+
+// ResolveAlias resolves an alias directly against owner state as a fallback DestinationResolver.
+func (s *OwnerStore) ResolveAlias(_ context.Context, alias string) (envelopetarget.Resolved, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(alias))
+	if trimmed != "owner" {
+		return envelopetarget.Resolved{}, fmt.Errorf("unsupported alias target %q", alias)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.owner == nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("owner is not registered")
+	}
+	if s.owner.UserID == 0 {
+		return envelopetarget.Resolved{}, fmt.Errorf("owner.user_id is required")
+	}
+	if s.owner.ChatID == 0 {
+		return envelopetarget.Resolved{}, fmt.Errorf("owner.chat_id is required")
+	}
+
+	rawJSON, _ := json.Marshal(map[string]any{"chat_id": s.owner.ChatID, "topic_id": 0})
+	loc, err := deliverycmd.NewLocator(
+		"telegram",
+		fmt.Sprintf("%d:0", s.owner.ChatID),
+		string(rawJSON),
+		fmt.Sprintf("tg-%d-0", s.owner.ChatID),
+	)
+	if err != nil {
+		return envelopetarget.Resolved{}, err
+	}
+	return envelopetarget.Resolved{
+		Locator:   loc,
+		Principal: telegramref.UserID(s.owner.UserID),
+	}, nil
 }
 
 func (s *OwnerStore) load() error {

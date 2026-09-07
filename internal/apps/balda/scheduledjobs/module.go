@@ -22,14 +22,19 @@ var Module = fx.Module("balda_scheduled_jobs",
 			if err != nil {
 				return nil, err
 			}
-			if len(config.Jobs) > 0 && params.OwnerStore == nil {
-				return nil, fmt.Errorf("balda owner store is required for scheduler jobs")
+			if len(config.Jobs) > 0 && params.OwnerStore == nil && params.Resolver == nil {
+				return nil, fmt.Errorf("balda destination resolver is required for scheduler jobs")
+			}
+			resolver := params.Resolver
+			if resolver == nil && params.OwnerStore != nil {
+				resolver = params.OwnerStore
 			}
 
 			scheduler := &ScheduledJobScheduler{
 				jobStore:     params.JobStore,
 				dispatcher:   params.Dispatcher,
 				owner:        params.OwnerStore,
+				resolver:     resolver,
 				logger:       params.Logger.With().Str("component", "balda.scheduled_job_scheduler").Logger(),
 				config:       config,
 				pollInterval: defaultSchedulerPollInterval,

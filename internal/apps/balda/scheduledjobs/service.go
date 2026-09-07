@@ -53,7 +53,8 @@ type scheduledJobSchedulerParams struct {
 
 	JobStore   baldastate.ScheduledJobStore
 	Dispatcher actortransport.Dispatcher
-	OwnerStore *auth.OwnerStore
+	OwnerStore *auth.OwnerStore                   `optional:"true"`
+	Resolver   envelopetarget.DestinationResolver `optional:"true"`
 	Logger     zerolog.Logger
 	Config     ScheduledJobSchedulerConfig
 }
@@ -63,6 +64,7 @@ type ScheduledJobScheduler struct {
 	jobStore   baldastate.ScheduledJobStore
 	dispatcher actortransport.Dispatcher
 	owner      *auth.OwnerStore
+	resolver   envelopetarget.DestinationResolver
 	logger     zerolog.Logger
 	config     ScheduledJobSchedulerConfig
 
@@ -139,13 +141,13 @@ func (s *ScheduledJobScheduler) reconcileConfiguredJobs(ctx context.Context) err
 	now := s.now().UTC()
 
 	for _, job := range s.config.Jobs {
-		target, err := envelopetarget.Resolve(ctx, s.owner, envelopetarget.Target{Target: job.Target, Key: job.Key})
+		target, err := envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: job.Target, Key: job.Key})
 		if err != nil {
 			return fmt.Errorf("resolve scheduler job %q target: %w", job.ID, err)
 		}
 		var reportTo *envelopetarget.Resolved
 		if job.ReportTo != nil {
-			resolved, err := envelopetarget.Resolve(ctx, s.owner, envelopetarget.Target{Target: job.ReportTo.Target, Key: job.ReportTo.Key})
+			resolved, err := envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: job.ReportTo.Target, Key: job.ReportTo.Key})
 			if err != nil {
 				return fmt.Errorf("resolve scheduler job %q report_to: %w", job.ID, err)
 			}
@@ -279,20 +281,22 @@ func (s *ScheduledJobScheduler) dispatchJob(ctx context.Context, job baldastate.
 	return nil
 }
 
+func (s *ScheduledJobScheduler) getResolver() envelopetarget.DestinationResolver {
+	if s.resolver != nil {
+		return s.resolver
+	}
+	return s.owner
+}
+
 func (s *ScheduledJobScheduler) resolveScheduledJobTarget(ctx context.Context, job baldastate.ScheduledJobRecord) (envelopetarget.Resolved, error) {
 	locator, err := baldasession.NewSessionLocator(job.ChannelType, job.AddressKey, job.AddressJSON, job.SessionID)
 	if err != nil {
-		return envelopetarget.Resolve(ctx, s.owner, envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner})
+		return envelopetarget.Resolve(ctx, s.getResolver(), envelopetarget.Target{Target: envelopetarget.TargetAlias, Key: envelopetarget.AliasOwner})
 	}
 	target := envelopetarget.Resolved{Locator: locator}
-	if address, ok, decodeErr := telegramref.DecodeLocator(locator); decodeErr != nil {
-		return envelopetarget.Resolved{}, decodeErr
-	} else if ok {
-		target.TopicID = address.TopicID
-	}
 	if s.owner != nil {
 		if owner := s.owner.GetOwner(); owner != nil && owner.UserID != 0 {
-			target.UserID = telegramref.UserID(owner.UserID)
+			target.Principal = telegramref.UserID(owner.UserID)
 		}
 	}
 	return target, nil
@@ -313,7 +317,7 @@ func (s *ScheduledJobScheduler) dispatchScheduledJob(
 		}
 		reportTo = &locator
 	}
-	env, err := turncmd.ScheduledJobEnvelope(job.JobID, content, target.Locator, reportTo, target.UserID, target.TopicID, dispatchKey)
+	env, err := turncmd.ScheduledJobEnvelope(job.JobID, content, target.Locator, reportTo, target.UserID(), 0, dispatchKey)
 	if err != nil {
 		return s.markFailure(ctx, job.JobID, err)
 	}
