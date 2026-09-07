@@ -126,7 +126,6 @@ components:
     in:
       - internal/apps/balda/actors
       - internal/apps/balda/actors/**
-      - internal/apps/balda/goalkeeperworkflow
 
   # Balda runtime policy and runtime host wiring.
   runtime:

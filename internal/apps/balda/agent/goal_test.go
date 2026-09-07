@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/baldaworks/balda/internal/apps/balda/goalkeeperworkflow"
 	"github.com/baldaworks/balda/internal/apps/balda/goalresultcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	adkagent "google.golang.org/adk/v2/agent"
@@ -132,79 +131,6 @@ func TestNormalizeGoalWorkerEvent_HidesNeedUserInputJSON(t *testing.T) {
 	got := normalizeGoalWorkerEvent(ev)
 	if got.Content != nil && visibleContentText(got.Content) != "" {
 		t.Fatalf("normalized content = %q, want empty", visibleContentText(got.Content))
-	}
-}
-
-func TestGoalValidatorWrapperUsesLatestWorkerOutputEachInvocation(t *testing.T) {
-	t.Parallel()
-
-	var workerRuns int
-	workerBase := mustNewGoalTestAgent(t, "worker", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-		return func(yield func(*adksession.Event, error) bool) {
-			workerRuns++
-			workerOutput := "first output"
-			if workerRuns == 2 {
-				workerOutput = goalTestSecondOutput
-			}
-			yield(goalTestTextEvent(ctx.InvocationID(), workerOutput), nil)
-		}
-	})
-	worker, err := wrapGoalPromptAgent(workerBase, goalPromptAgentConfig{
-		Name:        goalWorkerName,
-		Description: "Goal worker agent",
-		OutputKey:   goalWorkerOutputStateKey,
-		BuildPrompt: func(ctx adkagent.InvocationContext) (string, error) {
-			return extractGoalPromptText(ctx.UserContent()), nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("wrapGoalPromptAgent() error = %v", err)
-	}
-	var validatorRuns int
-	inner := mustNewGoalTestAgent(t, "validator", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-		return func(yield func(*adksession.Event, error) bool) {
-			validatorRuns++
-			result := "verdict: fail\n" + visibleContentText(ctx.UserContent())
-			if validatorRuns == 2 {
-				result = "verdict: pass\n" + visibleContentText(ctx.UserContent())
-			}
-			yield(goalTestTextEvent(ctx.InvocationID(), result), nil)
-		}
-	})
-	wrapped, err := wrapGoalValidatorWithWorkerOutput(inner, goalWorkerOutputStateKey, "")
-	if err != nil {
-		t.Fatalf("wrapGoalValidatorWithWorkerOutput() error = %v", err)
-	}
-	workflow, err := goalkeeperworkflow.New(worker, wrapped, 2)
-	if err != nil {
-		t.Fatalf("goalkeeperworkflow.New() error = %v", err)
-	}
-
-	sessionService := newGoalSQLiteSessionService(t)
-	r, err := adkrunner.New(adkrunner.Config{
-		AppName:        "goal-wrapper-test",
-		Agent:          workflow,
-		SessionService: sessionService,
-	})
-	if err != nil {
-		t.Fatalf("runner.New() error = %v", err)
-	}
-	created, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
-		AppName: "goal-wrapper-test",
-		UserID:  "tg-101",
-	})
-	if err != nil {
-		t.Fatalf("session.Create() error = %v", err)
-	}
-	got := runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
-	if !strings.Contains(got, "Worker result:\n"+goalTestSecondOutput) {
-		t.Fatalf("final validator text = %q, want latest worker output", got)
-	}
-	if strings.Contains(got, "Worker result:\nfirst output") {
-		t.Fatalf("final validator text = %q, contains earlier worker output", got)
-	}
-	if workerRuns != 2 || validatorRuns != 2 {
-		t.Fatalf("workerRuns, validatorRuns = %d, %d; want 2, 2", workerRuns, validatorRuns)
 	}
 }
 
@@ -339,48 +265,62 @@ func TestWrapGoalPromptAgentCarriesPartialVisibleOutputIntoFinalNonPartialEvent(
 func TestBuildGoalWorkflow_UsesGoalKeeperRootName(t *testing.T) {
 	t.Parallel()
 
-	workflow, err := goalkeeperworkflow.New(
-		mustNewGoalTestAgent(t, "worker", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-			return func(yield func(*adksession.Event, error) bool) {
-				yield(goalTestTextEvent(ctx.InvocationID(), "worker"), nil)
-			}
-		}),
-		mustNewGoalTestAgent(t, "validator", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-			return func(yield func(*adksession.Event, error) bool) {
-				yield(goalTestTextEvent(ctx.InvocationID(), "verdict: pass\nok"), nil)
-			}
-		}),
-		1,
-	)
+	ctx := context.Background()
+	appName := "goal-root-name-test"
+	sessionService := adksession.InMemoryService()
+	_, workerSessionID, validatorSessionID := newGoalWorkflowTestSessions(t, ctx, sessionService, appName)
+	base := mustNewGoalTestAgent(t, "worker", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(goalTestTextEvent(ctx.InvocationID(), "worker"), nil)
+		}
+	})
+	workflow, err := (&Builder{}).BuildGoalWorkflow(ctx, GoalBuildConfig{
+		BaseAgent:          base,
+		ProviderID:         "shared-provider",
+		SessionID:          "goal-session",
+		WorkerSessionID:    workerSessionID,
+		ValidatorSessionID: validatorSessionID,
+		WorkspaceDir:       t.TempDir(),
+		MaxIterations:      1,
+		AppName:            appName,
+		SessionService:     sessionService,
+	})
 	if err != nil {
-		t.Fatalf("goalkeeperworkflow.New() error = %v", err)
+		t.Fatalf("BuildGoalWorkflow() error = %v", err)
 	}
-	if got := workflow.Name(); got != goalkeeperworkflow.RootAgentName {
-		t.Fatalf("workflow.Name() = %q, want %q", got, goalkeeperworkflow.RootAgentName)
+	if got := workflow.Name(); got != goalkeeperRootAgentName {
+		t.Fatalf("workflow.Name() = %q, want %q", got, goalkeeperRootAgentName)
 	}
 }
 
 func TestClosableGoalWorkflowPreservesGoalSubAgents(t *testing.T) {
 	t.Parallel()
 
-	worker := mustNewGoalTestAgent(t, goalWorkerName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+	ctx := context.Background()
+	appName := "goal-subagents-test"
+	sessionService := adksession.InMemoryService()
+	_, workerSessionID, validatorSessionID := newGoalWorkflowTestSessions(t, ctx, sessionService, appName)
+	base := mustNewGoalTestAgent(t, "base", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 		return func(yield func(*adksession.Event, error) bool) {
-			yield(goalTestTextEvent(ctx.InvocationID(), "worker"), nil)
+			yield(goalTestTextEvent(ctx.InvocationID(), "base"), nil)
 		}
 	})
-	validator := mustNewGoalTestAgent(t, goalValidatorName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-		return func(yield func(*adksession.Event, error) bool) {
-			yield(goalTestTextEvent(ctx.InvocationID(), "verdict: pass\nok"), nil)
-		}
+	workflow, err := (&Builder{}).BuildGoalWorkflow(ctx, GoalBuildConfig{
+		BaseAgent:          base,
+		ProviderID:         "shared-provider",
+		SessionID:          "goal-session",
+		WorkerSessionID:    workerSessionID,
+		ValidatorSessionID: validatorSessionID,
+		WorkspaceDir:       t.TempDir(),
+		MaxIterations:      1,
+		AppName:            appName,
+		SessionService:     sessionService,
 	})
-
-	workflow, err := goalkeeperworkflow.New(worker, validator, 1)
 	if err != nil {
-		t.Fatalf("goalkeeperworkflow.New() error = %v", err)
+		t.Fatalf("BuildGoalWorkflow() error = %v", err)
 	}
 
-	wrapped := &closableGoalWorkflow{Agent: workflow, base: workflow}
-	subAgents := wrapped.SubAgents()
+	subAgents := workflow.SubAgents()
 	if len(subAgents) != 2 {
 		t.Fatalf("len(SubAgents()) = %d, want 2", len(subAgents))
 	}
@@ -620,41 +560,42 @@ func TestClosableGoalWorkflowRunnerDoesNotLogUnknownGoalAgents(t *testing.T) {
 		log.SetFlags(oldFlags)
 	})
 
-	worker := mustNewGoalTestAgent(t, goalWorkerName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-		return func(yield func(*adksession.Event, error) bool) {
-			yield(goalTestTextEvent(ctx.InvocationID(), "worker"), nil)
-		}
-	})
-	validator := mustNewGoalTestAgent(t, goalValidatorName, func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+	base := mustNewGoalTestAgent(t, "base", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
 		return func(yield func(*adksession.Event, error) bool) {
 			yield(goalTestTextEvent(ctx.InvocationID(), "verdict: pass\nok"), nil)
 		}
 	})
 
-	workflow, err := goalkeeperworkflow.New(worker, validator, 1)
+	ctx := context.Background()
+	appName := "goal-wrapper-runner-tree-test"
+	sessionService := adksession.InMemoryService()
+	rootSessionID, workerSessionID, validatorSessionID := newGoalWorkflowTestSessions(t, ctx, sessionService, appName)
+	workflow, err := (&Builder{}).BuildGoalWorkflow(ctx, GoalBuildConfig{
+		BaseAgent:          base,
+		ProviderID:         "shared-provider",
+		SessionID:          "goal-session",
+		WorkerSessionID:    workerSessionID,
+		ValidatorSessionID: validatorSessionID,
+		WorkspaceDir:       t.TempDir(),
+		MaxIterations:      1,
+		AppName:            appName,
+		SessionService:     sessionService,
+	})
 	if err != nil {
-		t.Fatalf("goalkeeperworkflow.New() error = %v", err)
+		t.Fatalf("BuildGoalWorkflow() error = %v", err)
 	}
 
-	sessionService := adksession.InMemoryService()
 	r, err := adkrunner.New(adkrunner.Config{
-		AppName:        "goal-wrapper-runner-tree-test",
-		Agent:          &closableGoalWorkflow{Agent: workflow, base: workflow},
+		AppName:        appName,
+		Agent:          workflow,
 		SessionService: sessionService,
 	})
 	if err != nil {
 		t.Fatalf("runner.New() error = %v", err)
 	}
-	created, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
-		AppName: "goal-wrapper-runner-tree-test",
-		UserID:  "tg-101",
-	})
-	if err != nil {
-		t.Fatalf("session.Create() error = %v", err)
-	}
 
-	runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
-	runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest again")
+	runGoalAgentOnce(t, r, "tg-101", rootSessionID, "Goal:\ntest")
+	runGoalAgentOnce(t, r, "tg-101", rootSessionID, "Goal:\ntest again")
 
 	if got := logBuf.String(); strings.Contains(got, "unknown agent") {
 		t.Fatalf("runner log = %q, want no unknown-agent messages", got)
@@ -831,39 +772,12 @@ func newGoalWorkflowTestSessions(
 	return rootSessionID, workerSessionID, validatorSessionID
 }
 
-func TestGoalValidatorWrapperIncludesMissingWorkerResultMarker(t *testing.T) {
+func TestBuildGoalValidationPromptFromText_IncludesMissingWorkerResultMarker(t *testing.T) {
 	t.Parallel()
 
-	inner := mustNewGoalTestAgent(t, "validator", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
-		return func(yield func(*adksession.Event, error) bool) {
-			yield(goalTestTextEvent(ctx.InvocationID(), visibleContentText(ctx.UserContent())), nil)
-		}
-	})
-	wrapped, err := wrapGoalValidatorWithWorkerOutput(inner, goalWorkerOutputStateKey, "")
-	if err != nil {
-		t.Fatalf("wrapGoalValidatorWithWorkerOutput() error = %v", err)
-	}
-
-	sessionService := adksession.InMemoryService()
-	r, err := adkrunner.New(adkrunner.Config{
-		AppName:        "goal-wrapper-missing-output-test",
-		Agent:          wrapped,
-		SessionService: sessionService,
-	})
-	if err != nil {
-		t.Fatalf("runner.New() error = %v", err)
-	}
-	created, err := sessionService.Create(context.Background(), &adksession.CreateRequest{
-		AppName: "goal-wrapper-missing-output-test",
-		UserID:  "tg-101",
-	})
-	if err != nil {
-		t.Fatalf("session.Create() error = %v", err)
-	}
-
-	got := runGoalAgentOnce(t, r, "tg-101", created.Session.ID(), "Goal:\ntest")
+	got := buildGoalValidationPromptFromText("Goal:\ntest", "", "")
 	if !strings.Contains(got, "Worker result:\n(none)") {
-		t.Fatalf("validator wrapper output = %q, want explicit missing worker result marker", got)
+		t.Fatalf("validation prompt = %q, want explicit missing worker result marker", got)
 	}
 }
 

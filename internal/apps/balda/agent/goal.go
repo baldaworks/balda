@@ -647,25 +647,6 @@ func visibleGoalEventText(ev *adksession.Event) string {
 	return strings.Join(parts, "\n\n")
 }
 
-func wrapGoalValidatorWithWorkerOutput(inner adkagent.Agent, workerOutputStateKey string, roleInstruction string) (adkagent.Agent, error) {
-	key := strings.TrimSpace(workerOutputStateKey)
-	if key == "" {
-		return nil, fmt.Errorf("worker output state key is required")
-	}
-	base, err := wrapGoalPromptAgent(inner, goalPromptAgentConfig{
-		Name:        inner.Name(),
-		Description: inner.Description(),
-		BuildPrompt: func(ctx adkagent.InvocationContext) (string, error) {
-			prompt := buildGoalValidationPrompt(ctx, key)
-			return joinGoalPromptSections(roleInstruction, prompt), nil
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return base, nil
-}
-
 type goalUserContentContext struct {
 	adkagent.InvocationContext
 	userContent *genai.Content
@@ -781,24 +762,6 @@ func joinGoalPromptSections(parts ...string) string {
 		}
 	}
 	return strings.Join(filtered, "\n\n")
-}
-
-func buildGoalValidationPrompt(ctx adkagent.InvocationContext, workerOutputStateKey string) string {
-	goal := extractGoalPromptText(ctx.UserContent())
-	if goal == "" {
-		goal = "Goal:"
-	}
-	workerOutput := ""
-	if ctx != nil && ctx.Session() != nil {
-		value, err := ctx.Session().State().Get(workerOutputStateKey)
-		if err == nil && value != nil {
-			workerOutput = strings.TrimSpace(fmt.Sprintf("%v", value))
-		}
-	}
-	if workerOutput == "" {
-		workerOutput = "(none)"
-	}
-	return goal + "\n\nWorker result:\n" + workerOutput
 }
 
 func buildGoalWorkerPrompt(objective string, previousWorkerResult string, previousValidatorResult string) string {
