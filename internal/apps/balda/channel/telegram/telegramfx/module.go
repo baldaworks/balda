@@ -80,6 +80,14 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(
+			NewGoalProgressStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
+			NewGoalOutcomeStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
 			func(server *telegram.Server) appports.TransportLifecycleStage {
 				return appports.TransportLifecycleStage{
 					Name:  "telegram ingress",

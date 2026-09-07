@@ -12,6 +12,7 @@ import (
 	zulippresentation "github.com/baldaworks/balda/internal/apps/balda/channel/zulip/presentation"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
@@ -416,3 +417,117 @@ func (testZulipLocatorRenderer) RenderStructured(_ context.Context, env delivery
 		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
 	}, nil
 }
+
+type testGoalProgressRenderer struct {
+	render func(goalkeepercmd.GoalProgress) string
+	format deliveryfmt.DeliveryFormat
+}
+
+func (r testGoalProgressRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[goalkeepercmd.GoalProgress]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           r.render(env.Body),
+		DeliveryFormat: r.format,
+	}, nil
+}
+
+type testGoalOutcomeRenderer struct {
+	render func(goalkeepercmd.GoalOutcome) string
+	format deliveryfmt.DeliveryFormat
+}
+
+func (r testGoalOutcomeRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[goalkeepercmd.GoalOutcome]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           r.render(env.Body),
+		DeliveryFormat: r.format,
+	}, nil
+}
+
+func TestStructuredRegistryRendersGoalKeeperAcrossTransports(t *testing.T) {
+	t.Parallel()
+
+	registry := deliveryfmt.NewStructuredRegistry()
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, goalkeepercmd.ProgressDescriptor, testGoalProgressRenderer{render: telegrampresentation.RenderGoalProgress, format: deliveryfmt.DeliveryFormatRichMarkdown}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportTelegram, goalkeepercmd.OutcomeDescriptor, testGoalOutcomeRenderer{render: telegrampresentation.RenderGoalOutcome, format: deliveryfmt.DeliveryFormatRichMarkdown}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, goalkeepercmd.ProgressDescriptor, testGoalProgressRenderer{render: presentation.RenderGoalProgress, format: deliveryfmt.DeliveryFormatMrkdwn}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, goalkeepercmd.OutcomeDescriptor, testGoalOutcomeRenderer{render: presentation.RenderGoalOutcome, format: deliveryfmt.DeliveryFormatMrkdwn}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, goalkeepercmd.ProgressDescriptor, testGoalProgressRenderer{render: zulippresentation.RenderGoalProgress, format: deliveryfmt.DeliveryFormatMarkdown}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportZulip, goalkeepercmd.OutcomeDescriptor, testGoalOutcomeRenderer{render: zulippresentation.RenderGoalOutcome, format: deliveryfmt.DeliveryFormatMarkdown}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	for _, transport := range []struct {
+		name       string
+		wantFormat deliveryfmt.DeliveryFormat
+	}{
+		{name: deliveryfmt.TransportTelegram, wantFormat: deliveryfmt.DeliveryFormatRichMarkdown},
+		{name: deliveryfmt.TransportSlackAgent, wantFormat: deliveryfmt.DeliveryFormatMrkdwn},
+		{name: deliveryfmt.TransportZulip, wantFormat: deliveryfmt.DeliveryFormatMarkdown},
+	} {
+		t.Run(transport.name+"/progress", func(t *testing.T) {
+			p, err := deliveryfmt.RenderStructured(context.Background(), registry, transport.name, goalkeepercmd.ProgressEnvelope(goalkeepercmd.NewStartedProgress(10, "cross-transport goal")))
+			if err != nil {
+				t.Fatalf("RenderStructured(progress) error = %v", err)
+			}
+			if p.DeliveryFormat != transport.wantFormat {
+				t.Fatalf("DeliveryFormat = %q, want %q", p.DeliveryFormat, transport.wantFormat)
+			}
+			if !strings.Contains(p.Text, "Goal run started") || !strings.Contains(p.Text, "cross-transport goal") {
+				t.Fatalf("Text = %q, missing progress content", p.Text)
+			}
+		})
+
+		t.Run(transport.name+"/outcome_routine", func(t *testing.T) {
+			p, err := deliveryfmt.RenderStructured(context.Background(), registry, transport.name, goalkeepercmd.OutcomeEnvelope(goalkeepercmd.GoalOutcome{
+				GoalReached:  true,
+				ExportStatus: goalkeepercmd.GoalExportStatusExported,
+				WhatWasDone:  "Fixed cross-transport bug.",
+				Validation:   "verdict: pass",
+				Verified:     "validator returned pass",
+				NotVerified:  goalkeepercmd.DefaultNotVerifiedText,
+				NextAction:   goalkeepercmd.DefaultExportedNextAction,
+			}))
+			if err != nil {
+				t.Fatalf("RenderStructured(outcome) error = %v", err)
+			}
+			if p.DeliveryFormat != transport.wantFormat {
+				t.Fatalf("DeliveryFormat = %q, want %q", p.DeliveryFormat, transport.wantFormat)
+			}
+			if !strings.Contains(p.Text, "Goal completed.") || !strings.Contains(p.Text, "Fixed cross-transport bug.") {
+				t.Fatalf("Text = %q, missing outcome content", p.Text)
+			}
+		})
+
+		t.Run(transport.name+"/outcome_failure", func(t *testing.T) {
+			p, err := deliveryfmt.RenderStructured(context.Background(), registry, transport.name, goalkeepercmd.OutcomeEnvelope(goalkeepercmd.GoalOutcome{
+				GoalReached: false,
+				WhatWasDone: "failed attempt",
+				Validation:  "verdict: fail\nEvidence: test broke",
+				Verified:    "validator returned feedback",
+				NotVerified: "coverage unverified",
+				NextAction:  "fix tests",
+			}))
+			if err != nil {
+				t.Fatalf("RenderStructured(outcome) error = %v", err)
+			}
+			if p.DeliveryFormat != transport.wantFormat {
+				t.Fatalf("DeliveryFormat = %q, want %q", p.DeliveryFormat, transport.wantFormat)
+			}
+			for _, piece := range []string{"Goal not completed.", "failed attempt", "verdict: fail", "test broke", "validator returned feedback", "coverage unverified", "fix tests"} {
+				if !strings.Contains(p.Text, piece) {
+					t.Fatalf("Text = %q, missing %q", p.Text, piece)
+				}
+			}
+		})
+	}
+}
+

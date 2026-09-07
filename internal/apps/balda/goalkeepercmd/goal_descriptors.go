@@ -43,6 +43,118 @@ type GoalOutcome struct {
 	ExportError  string `json:"export_error,omitempty"`
 }
 
+const (
+	DefaultNotVerifiedText       = "manual review still required"
+	DefaultInspectNextAction     = "Inspect events and decide whether to continue, cancel, or ask a human."
+	DefaultExportedNextAction    = "Review the exported result and continue with follow-up work if needed."
+	DefaultNotExportedNextAction = "Review the direct working directory changes and commit or follow up manually if needed."
+
+	GoalExportStatusExported    = "exported"
+	GoalExportStatusFailed      = "export_failed"
+	GoalExportStatusNotExported = "not_exported"
+)
+
+// RoutineSuccess returns true if the goal completed and its export was routine.
+func (o GoalOutcome) RoutineSuccess() bool {
+	return o.GoalReached && exportStatusIsRoutineSuccess(o.ExportStatus)
+}
+
+// ShouldRenderValidation returns true if validation feedback should be shown.
+func (o GoalOutcome) ShouldRenderValidation() bool {
+	val := strings.TrimSpace(o.Validation)
+	if val == "" {
+		return false
+	}
+	if !o.GoalReached {
+		return true
+	}
+	return !validationIsRoutinePass(val)
+}
+
+// ShouldRenderVerified returns true if the verified status should be shown.
+func (o GoalOutcome) ShouldRenderVerified() bool {
+	ver := strings.TrimSpace(o.ResolvedVerified())
+	if ver == "" {
+		return false
+	}
+	if !o.RoutineSuccess() {
+		return true
+	}
+	return !strings.EqualFold(ver, "validator returned pass")
+}
+
+// ShouldRenderNotVerified returns true if not-verified notes should be shown.
+func (o GoalOutcome) ShouldRenderNotVerified() bool {
+	trimmed := strings.TrimSpace(o.NotVerified)
+	return trimmed != "" && !strings.EqualFold(trimmed, DefaultNotVerifiedText)
+}
+
+// ShouldRenderNextAction returns true if the next action should be shown.
+func (o GoalOutcome) ShouldRenderNextAction() bool {
+	trimmed := strings.TrimSpace(o.NextAction)
+	if trimmed == "" {
+		return false
+	}
+	if !o.GoalReached {
+		return true
+	}
+	if !strings.EqualFold(trimmed, DefaultExportedNextAction) {
+		if o.GoalReached && strings.TrimSpace(o.ExportStatus) == GoalExportStatusNotExported && strings.EqualFold(trimmed, DefaultNotExportedNextAction) {
+			return false
+		}
+		return true
+	}
+	switch strings.TrimSpace(o.ExportStatus) {
+	case GoalExportStatusFailed, GoalExportStatusNotExported:
+		return true
+	default:
+		return false
+	}
+}
+
+// ResolvedVerified returns the verified string with default fallback.
+func (o GoalOutcome) ResolvedVerified() string {
+	if trimmed := strings.TrimSpace(o.Verified); trimmed != "" {
+		return trimmed
+	}
+	return "validator returned feedback"
+}
+
+// ResolvedNotVerified returns the not-verified string with default fallback.
+func (o GoalOutcome) ResolvedNotVerified() string {
+	if trimmed := strings.TrimSpace(o.NotVerified); trimmed != "" {
+		return trimmed
+	}
+	return DefaultNotVerifiedText
+}
+
+// ResolvedNextAction returns the next action string with default fallback.
+func (o GoalOutcome) ResolvedNextAction() string {
+	if trimmed := strings.TrimSpace(o.NextAction); trimmed != "" {
+		return trimmed
+	}
+	return DefaultInspectNextAction
+}
+
+func exportStatusIsRoutineSuccess(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "", GoalExportStatusExported, GoalExportStatusNotExported:
+		return true
+	default:
+		return false
+	}
+}
+
+func validationIsRoutinePass(value string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(value))
+	if strings.Contains(lowered, "evidence:") || strings.Contains(lowered, "verdict: fail") || strings.Contains(lowered, "verdict fail") {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, ":", " ")))
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	return strings.Contains(normalized, "verdict pass")
+}
+
 var (
 	// ProgressDescriptor identifies the versioned structured goal progress message.
 	ProgressDescriptor = deliveryfmt.Descriptor[GoalProgress]{

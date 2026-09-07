@@ -13,14 +13,14 @@ import (
 )
 
 const (
-	DefaultNotVerifiedText       = "manual review still required"
-	DefaultInspectNextAction     = "Inspect events and decide whether to continue, cancel, or ask a human."
-	DefaultExportedNextAction    = "Review the exported result and continue with follow-up work if needed."
-	DefaultNotExportedNextAction = "Review the direct working directory changes and commit or follow up manually if needed."
+	DefaultNotVerifiedText       = goalkeepercmd.DefaultNotVerifiedText
+	DefaultInspectNextAction     = goalkeepercmd.DefaultInspectNextAction
+	DefaultExportedNextAction    = goalkeepercmd.DefaultExportedNextAction
+	DefaultNotExportedNextAction = goalkeepercmd.DefaultNotExportedNextAction
 
-	GoalExportStatusExported    = "exported"
-	GoalExportStatusFailed      = "export_failed"
-	GoalExportStatusNotExported = "not_exported"
+	GoalExportStatusExported    = goalkeepercmd.GoalExportStatusExported
+	GoalExportStatusFailed      = goalkeepercmd.GoalExportStatusFailed
+	GoalExportStatusNotExported = goalkeepercmd.GoalExportStatusNotExported
 )
 
 type messageStyle string
