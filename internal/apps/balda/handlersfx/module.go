@@ -2,7 +2,6 @@ package handlersfx
 
 import (
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
@@ -24,11 +23,9 @@ var Module = fx.Module("balda_handlersfx",
 			fx.As(new(webhookapp.SessionPublisher)),
 			fx.As(new(webhookapp.JobPublisher)),
 		),
-		newTelegramChannelAdapter,
 		fx.Annotate(
-			func(handler *handlers.StartHandler) tgbotkit.Handler {
-				return newTelegramCommandHandlerAdapter(handler)
-			},
+			newTelegramStartHandler,
+			fx.As(new(tgbotkit.Handler)),
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		fx.Annotate(
@@ -36,9 +33,8 @@ var Module = fx.Module("balda_handlersfx",
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		fx.Annotate(
-			func(handler *handlers.CommandHandler) tgbotkit.Handler {
-				return newTelegramCommandHandlerAdapter(handler)
-			},
+			newTelegramCommandHandler,
+			fx.As(new(tgbotkit.Handler)),
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		newZulipInboundHandler,

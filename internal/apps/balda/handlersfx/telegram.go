@@ -5,24 +5,11 @@ import (
 	"context"
 
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/tgbotkit/runtime/events"
 	runtimehandlers "github.com/tgbotkit/runtime/handlers"
 	"github.com/tgbotkit/runtime/messagetype"
 )
-
-type telegramChannelAdapter struct {
-	channel *baldatelegram.Adapter
-}
-
-func (a telegramChannelAdapter) CommandContextFromEvent(event *events.CommandEvent) (handlers.CommandContext, bool) {
-	command, ok := a.channel.CommandContextFromEvent(event)
-	if !ok {
-		return handlers.CommandContext{}, false
-	}
-	return handlers.CommandContext(command), true
-}
 
 type telegramRegistryAdapter struct {
 	registry tgbotkit.Registry
@@ -44,22 +31,6 @@ func (a telegramRegistryAdapter) OnCallbackDataPrefix(prefix string, handler fun
 	a.registry.OnCallbackDataPrefix(prefix, runtimehandlers.CallbackQueryHandler(handler))
 }
 
-type telegramCommandHandler interface {
-	Register(registry handlers.CommandRegistry)
-}
-
-type telegramCommandHandlerAdapter struct {
-	handler telegramCommandHandler
-}
-
-func (a telegramCommandHandlerAdapter) Register(registry tgbotkit.Registry) {
-	a.handler.Register(telegramRegistryAdapter{registry: registry})
-}
-
-func newTelegramCommandHandlerAdapter(handler telegramCommandHandler) tgbotkit.Handler {
-	return telegramCommandHandlerAdapter{handler: handler}
-}
-
 type telegramServerHandlerAdapter struct {
 	server *baldatelegram.Server
 }
@@ -70,8 +41,4 @@ func (a telegramServerHandlerAdapter) Register(registry tgbotkit.Registry) {
 
 func newTelegramServerHandlerAdapter(server *baldatelegram.Server) tgbotkit.Handler {
 	return telegramServerHandlerAdapter{server: server}
-}
-
-func newTelegramChannelAdapter(channel *baldatelegram.Adapter) handlers.CommandChannel {
-	return telegramChannelAdapter{channel: channel}
 }

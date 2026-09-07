@@ -292,5 +292,9 @@ var Module = fx.Module("balda_command",
 			},
 			fx.As(new(dispatch.Actor)), fx.ResultTags(`group:"balda_product_actors"`),
 		),
+		fx.Annotate(
+			NewCommandIngress,
+			fx.As(new(commandcmd.Ingress)),
+		),
 	),
 )
