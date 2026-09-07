@@ -146,9 +146,9 @@ func TestTaskDeliveryActorSendsConversationalReplyWithoutPersistingDelivery(t *t
 	ctx := context.Background()
 	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	locator := baldatelegram.NewLocator(9001, 99)
-	env, err := AgentReplyDeliveryEnvelopeWithSettlement("", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: locator.SessionID}, locator, deliverycmd.SettlementBypass, "session reply", "final")
+	env, err := deliverycmd.AgentReplyEnvelopeWithSettlement("", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: locator.SessionID}, locator, deliverycmd.SettlementBypass, "session reply", "final")
 	if err != nil {
-		t.Fatalf("AgentReplyDeliveryEnvelopeWithSettlement() error = %v", err)
+		t.Fatalf("AgentReplyEnvelopeWithSettlement() error = %v", err)
 	}
 
 	if err := actor.Handle(ctx, env); err != nil {
@@ -171,9 +171,9 @@ func TestTaskDeliveryActorPersistsSessionOwnedTaskReplyWhenSettlementRequiresOut
 	ctx := context.Background()
 	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	locator := baldatelegram.NewLocator(9001, 99)
-	env, err := AgentReplyDeliveryEnvelopeWithSettlement("task-1", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: locator.SessionID}, locator, deliverycmd.SettlementOutbox, "session reply", "final")
+	env, err := deliverycmd.AgentReplyEnvelopeWithSettlement("task-1", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeSession, Key: locator.SessionID}, locator, deliverycmd.SettlementOutbox, "session reply", "final")
 	if err != nil {
-		t.Fatalf("AgentReplyDeliveryEnvelopeWithSettlement() error = %v", err)
+		t.Fatalf("AgentReplyEnvelopeWithSettlement() error = %v", err)
 	}
 
 	if err := actor.Handle(ctx, env); err != nil {
@@ -199,9 +199,9 @@ func TestTaskDeliveryActorSendsDraftWithoutPersistingDelivery(t *testing.T) {
 	ctx := context.Background()
 	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	locator := baldatelegram.NewLocator(9001, 99)
-	env, err := DraftPlainDeliveryEnvelope("task-1", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"}, locator, 7, "draft text")
+	env, err := deliverycmd.DraftPlainEnvelope("task-1", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"}, locator, 7, "draft text")
 	if err != nil {
-		t.Fatalf("DraftPlainDeliveryEnvelope() error = %v", err)
+		t.Fatalf("DraftPlainEnvelope() error = %v", err)
 	}
 
 	if err := actor.Handle(ctx, env); err != nil {
@@ -224,9 +224,9 @@ func TestTaskDeliveryActorSendsChatActionWithoutPersistingDelivery(t *testing.T)
 	ctx := context.Background()
 	actor, tasks, tgClient, _ := newTaskDeliveryActorForTest(t, ctx)
 	locator := baldatelegram.NewLocator(9001, 99)
-	env, err := ChatActionDeliveryEnvelope("task-1", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"}, locator, "typing")
+	env, err := deliverycmd.ChatActionEnvelope("task-1", actorlayer.ActorAddress{Target: baldaexecution.ActorTypeJob, Key: "task-1"}, locator, "typing")
 	if err != nil {
-		t.Fatalf("ChatActionDeliveryEnvelope() error = %v", err)
+		t.Fatalf("ChatActionEnvelope() error = %v", err)
 	}
 
 	if err := actor.Handle(ctx, env); err != nil {

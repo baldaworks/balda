@@ -42,9 +42,6 @@ type Server struct {
 	processWG  sync.WaitGroup
 }
 
-// ZulipBaldaHandler is an alias for Server for backward compatibility.
-type ZulipBaldaHandler = Server
-
 type ServerParams struct {
 	fx.In
 
@@ -68,9 +65,6 @@ func NewServer(params ServerParams) *Server {
 		processSem:   make(chan struct{}, zulipWebhookMaxConcurrentTasks),
 	}
 }
-
-// NewZulipBaldaHandler creates a ZulipBaldaHandler.
-var NewZulipBaldaHandler = NewServer
 
 // Start begins accepting configured Zulip webhook requests.
 func (s *Server) Start(ctx context.Context) error { return s.onStart(ctx) }

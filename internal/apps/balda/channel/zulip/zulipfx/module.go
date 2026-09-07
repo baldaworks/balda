@@ -21,7 +21,7 @@ var Module = fx.Module(
 			fx.ParamTags(`name:"balda_zulip_webhook_enabled"`),
 			fx.ResultTags(`group:"balda_command_advertisements"`),
 		),
-		zulip.NewZulipBaldaHandler,
+		zulip.NewServer,
 		func(client *zulip.Client, logger zerolog.Logger) *zulip.Adapter {
 			adapter := zulip.NewAdapter(client, logger)
 			adapter.SetTypingThrottleInterval(4 * time.Second)
@@ -45,7 +45,7 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(
-			func(handler *zulip.ZulipBaldaHandler) appports.TransportLifecycleStage {
+			func(handler *zulip.Server) appports.TransportLifecycleStage {
 				return appports.TransportLifecycleStage{
 					Name:  "zulip ingress",
 					Start: handler.Start,

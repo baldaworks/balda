@@ -51,8 +51,8 @@ func (m *mockInboundProcessor) HandleUnsupportedCommand(_ context.Context, cmd I
 	return m.commandErr
 }
 
-func TestZulipBaldaHandlerRejectsInvalidWebhookToken(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerRejectsInvalidWebhookToken(t *testing.T) {
+	handler := &Server{
 		webhookToken: "expected-token",
 		logger:       zerolog.Nop(),
 	}
@@ -69,8 +69,8 @@ func TestZulipBaldaHandlerRejectsInvalidWebhookToken(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerRejectsMissingWebhookTokenConfiguration(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerRejectsMissingWebhookTokenConfiguration(t *testing.T) {
+	handler := &Server{
 		logger: zerolog.Nop(),
 	}
 	req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(`{
@@ -86,8 +86,8 @@ func TestZulipBaldaHandlerRejectsMissingWebhookTokenConfiguration(t *testing.T) 
 	}
 }
 
-func TestZulipBaldaHandlerRejectsUnsupportedWebhookMethod(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerRejectsUnsupportedWebhookMethod(t *testing.T) {
+	handler := &Server{
 		webhookToken: "expected-token",
 		logger:       zerolog.Nop(),
 	}
@@ -104,7 +104,7 @@ func TestZulipBaldaHandlerRejectsUnsupportedWebhookMethod(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerOnStartFailsWhenListenAddressInUse(t *testing.T) {
+func TestServerOnStartFailsWhenListenAddressInUse(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.Listen() error = %v", err)
@@ -112,7 +112,7 @@ func TestZulipBaldaHandlerOnStartFailsWhenListenAddressInUse(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 
 	addr := ln.Addr().String()
-	handler := &ZulipBaldaHandler{
+	handler := &Server{
 		listenAddr:   addr,
 		webhookPath:  "/zulip/webhook",
 		webhookToken: "token",
@@ -129,8 +129,8 @@ func TestZulipBaldaHandlerOnStartFailsWhenListenAddressInUse(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerOnStartConfiguresHTTPTimeouts(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerOnStartConfiguresHTTPTimeouts(t *testing.T) {
+	handler := &Server{
 		listenAddr:   "127.0.0.1:0",
 		webhookPath:  "/zulip/webhook",
 		webhookToken: "token",
@@ -160,8 +160,8 @@ func TestZulipBaldaHandlerOnStartConfiguresHTTPTimeouts(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerOnStartRejectsInvalidWebhookPath(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerOnStartRejectsInvalidWebhookPath(t *testing.T) {
+	handler := &Server{
 		listenAddr:   "127.0.0.1:0",
 		webhookPath:  "invalid-path-without-slash",
 		webhookToken: "token",
@@ -178,7 +178,7 @@ func TestZulipBaldaHandlerOnStartRejectsInvalidWebhookPath(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerOnStopReturnsShutdownError(t *testing.T) {
+func TestServerOnStopReturnsShutdownError(t *testing.T) {
 	block := make(chan struct{})
 	entered := make(chan struct{})
 	server := &http.Server{
@@ -210,7 +210,7 @@ func TestZulipBaldaHandlerOnStopReturnsShutdownError(t *testing.T) {
 	}()
 	<-entered
 
-	handler := &ZulipBaldaHandler{
+	handler := &Server{
 		server: server,
 		logger: zerolog.Nop(),
 	}
@@ -226,8 +226,8 @@ func TestZulipBaldaHandlerOnStopReturnsShutdownError(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerOnStopWaitsForWebhookProcessing(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerOnStopWaitsForWebhookProcessing(t *testing.T) {
+	handler := &Server{
 		listenAddr:   "127.0.0.1:0",
 		webhookPath:  "/zulip/webhook",
 		webhookToken: "token",
@@ -270,8 +270,8 @@ func TestZulipBaldaHandlerOnStopWaitsForWebhookProcessing(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerOnStopReturnsProcessingWaitError(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerOnStopReturnsProcessingWaitError(t *testing.T) {
+	handler := &Server{
 		listenAddr:   "127.0.0.1:0",
 		webhookPath:  "/zulip/webhook",
 		webhookToken: "token",
@@ -303,8 +303,8 @@ func TestZulipBaldaHandlerOnStopReturnsProcessingWaitError(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerRejectsOversizedWebhookBody(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerRejectsOversizedWebhookBody(t *testing.T) {
+	handler := &Server{
 		webhookToken: "expected-token",
 		logger:       zerolog.Nop(),
 	}
@@ -319,13 +319,13 @@ func TestZulipBaldaHandlerRejectsOversizedWebhookBody(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerReturnsBusyWhenProcessingSlotsFull(t *testing.T) {
+func TestServerReturnsBusyWhenProcessingSlotsFull(t *testing.T) {
 	mockProc := &mockInboundProcessor{
 		blockInbound: make(chan struct{}),
 	}
 	t.Cleanup(func() { close(mockProc.blockInbound) })
 
-	handler := &ZulipBaldaHandler{
+	handler := &Server{
 		processor:    mockProc,
 		webhookToken: "expected-token",
 		processSem:   make(chan struct{}, 1),
@@ -364,9 +364,9 @@ func TestZulipBaldaHandlerReturnsBusyWhenProcessingSlotsFull(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerIgnoresBotEchoBeforeProcessingQueue(t *testing.T) {
+func TestServerIgnoresBotEchoBeforeProcessingQueue(t *testing.T) {
 	mockProc := &mockInboundProcessor{}
-	handler := &ZulipBaldaHandler{
+	handler := &Server{
 		processor:    mockProc,
 		webhookToken: "expected-token",
 		processSem:   make(chan struct{}, 1),
@@ -415,8 +415,8 @@ func (panickingProcessor) HandleUnsupportedCommand(context.Context, InboundComma
 	panic("unexpected processor unsupported command failure")
 }
 
-func TestZulipBaldaHandlerRecoversProcessingPanicAndReleasesSlot(t *testing.T) {
-	handler := &ZulipBaldaHandler{
+func TestServerRecoversProcessingPanicAndReleasesSlot(t *testing.T) {
+	handler := &Server{
 		processor:    panickingProcessor{},
 		webhookToken: "expected-token",
 		processSem:   make(chan struct{}, 1),
@@ -447,7 +447,7 @@ func TestZulipBaldaHandlerRecoversProcessingPanicAndReleasesSlot(t *testing.T) {
 	}
 }
 
-func TestZulipBaldaHandlerRejectsInvalidAuthenticatedPayload(t *testing.T) {
+func TestServerRejectsInvalidAuthenticatedPayload(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -472,7 +472,7 @@ func TestZulipBaldaHandlerRejectsInvalidAuthenticatedPayload(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := &ZulipBaldaHandler{
+			handler := &Server{
 				webhookToken: "expected-token",
 				processSem:   make(chan struct{}, 1),
 				logger:       zerolog.Nop(),

@@ -13,7 +13,6 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
-	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
@@ -191,8 +190,4 @@ func (e *sessionActorExecutor) handleScheduledQuestionTimeout(ctx context.Contex
 	}
 	_, err = e.dispatcher.Dispatch(ctx, timeoutEnv)
 	return true, err
-}
-
-func NormalizeSessionDeliveryOptions(payload SessionTurnPayload) deliveryfmt.Options {
-	return turncmd.NormalizeSessionDeliveryOptions(payload)
 }
