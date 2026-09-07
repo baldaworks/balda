@@ -22,6 +22,7 @@ This document defines layer ownership for the Balda application. The goal is to 
 | `internal/apps/balda/handlers` | ingress parsing, auth/session checks, publishing work into actor/runtime system | feature execution logic, provider settlement policy |
 | `internal/apps/balda/handlersfx` | composition-root adapters that bind ingress-owned ports to concrete provider runtimes | ingress policy, turn execution, reusable transport behavior |
 | `internal/apps/balda/actors` | product actor behavior and feature-owned orchestration | transport parsing, generic runtime policy |
+| `internal/apps/balda/actorsfx` | composition-root adapters and Fx module for product actors | product actor behavior, protocol handling |
 | `internal/apps/balda/actors/goalkeeper` | goal feature actor behavior, goal run lifecycle, goal progress/outcome assembly | generic runtime policy, provider-specific delivery logic |
 | `internal/apps/balda/jobs` | durable job state, events, projection-oriented application services | ingress behavior, transport execution |
 | `internal/apps/balda/channel/*` | provider-specific delivery adapters and delivery semantics | product workflow, session use-case policy, application domain dependencies |

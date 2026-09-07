@@ -84,6 +84,7 @@ neutral MCP adapter returns bounded untrusted references.
 - `internal/apps/balda/execution`
 - `internal/apps/balda/jobs`
 - `internal/apps/balda/actors`
+- `internal/apps/balda/actorsfx`
 - `internal/apps/balda/actors/command`
 - `internal/apps/balda/commandcmd`
 - `internal/apps/balda/commandfx`
