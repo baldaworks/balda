@@ -11,24 +11,23 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	"go.uber.org/fx"
 )
 
-type questionActor struct {
+type QuestionActor struct {
 	dispatcher actortransport.Dispatcher
 }
 
-type questionActorParams struct {
-	fx.In
+type questionActor = QuestionActor
 
-	Dispatcher actortransport.Dispatcher
+func NewQuestionActor(dispatcher actortransport.Dispatcher) *QuestionActor {
+	return &QuestionActor{dispatcher: dispatcher}
 }
 
-func (a *questionActor) Address() string {
+func (a *QuestionActor) Address() string {
 	return actorlayer.WildcardAddress(baldaexecution.ActorTypeQuestion)
 }
 
-func (a *questionActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
+func (a *QuestionActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	if strings.TrimSpace(env.Namespace) != baldaexecution.NamespaceQuestionCommand {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported question namespace %q", env.Namespace))
 	}
@@ -44,7 +43,7 @@ func (a *questionActor) Handle(ctx context.Context, env actorlayer.Envelope) err
 	}
 }
 
-func (a *questionActor) handleFailed(ctx context.Context, env actorlayer.Envelope) error {
+func (a *QuestionActor) handleFailed(ctx context.Context, env actorlayer.Envelope) error {
 	var payload questioncmd.FailedContinuation
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode failed continuation: %w", err))
@@ -52,7 +51,7 @@ func (a *questionActor) handleFailed(ctx context.Context, env actorlayer.Envelop
 	return a.resume(ctx, env, payload.QuestionID, payload.Resume, payload.Interaction, sessionQuestionFailedText(payload.QuestionID))
 }
 
-func (a *questionActor) handleAnswered(ctx context.Context, env actorlayer.Envelope) error {
+func (a *QuestionActor) handleAnswered(ctx context.Context, env actorlayer.Envelope) error {
 	var payload questioncmd.AnsweredContinuation
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode answered continuation: %w", err))
@@ -60,7 +59,7 @@ func (a *questionActor) handleAnswered(ctx context.Context, env actorlayer.Envel
 	return a.resume(ctx, env, payload.QuestionID, payload.Resume, payload.Interaction, payload.Answer.Text)
 }
 
-func (a *questionActor) handleTimedOut(ctx context.Context, env actorlayer.Envelope) error {
+func (a *QuestionActor) handleTimedOut(ctx context.Context, env actorlayer.Envelope) error {
 	var payload questioncmd.TimedOutContinuation
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode timed out continuation: %w", err))
@@ -68,7 +67,7 @@ func (a *questionActor) handleTimedOut(ctx context.Context, env actorlayer.Envel
 	return a.resume(ctx, env, payload.QuestionID, payload.Resume, payload.Interaction, sessionQuestionTimedOutText(payload.QuestionID))
 }
 
-func (a *questionActor) resume(ctx context.Context, env actorlayer.Envelope, questionID string, resume questioncmd.ResumeTarget, interaction questioncmd.InteractionContext, text string) error {
+func (a *QuestionActor) resume(ctx context.Context, env actorlayer.Envelope, questionID string, resume questioncmd.ResumeTarget, interaction questioncmd.InteractionContext, text string) error {
 	if a.dispatcher == nil {
 		return actorlayer.TransientError(fmt.Errorf("dispatcher is required"))
 	}

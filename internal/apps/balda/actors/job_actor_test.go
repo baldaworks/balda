@@ -20,7 +20,7 @@ func TestTaskActorDispatchesWebhookSessionTurn(t *testing.T) {
 
 	ctx := context.Background()
 	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
+	exec := NewJobActorExecutor(jobexec.New(tasks, dispatcher))
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	env, taskID, err := WebhookJobEnvelope(SessionTurnPayload{
 		Text:    "handle webhook",
@@ -64,7 +64,7 @@ func TestTaskActorRejectsWebhookSessionTurnWithoutEnvelopeJobID(t *testing.T) {
 
 	ctx := context.Background()
 	_, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
+	exec := NewJobActorExecutor(jobexec.New(tasks, dispatcher))
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	env, _, err := WebhookJobEnvelope(SessionTurnPayload{
 		Text:    "handle webhook",
@@ -91,7 +91,7 @@ func TestTaskActorRejectsNonWebhookSessionTurnTask(t *testing.T) {
 
 	ctx := context.Background()
 	_, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
+	exec := NewJobActorExecutor(jobexec.New(tasks, dispatcher))
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	data, err := json.Marshal(jobEnvelopePayload{
 		Kind: jobPayloadKindWebhookSessionTurn,
@@ -130,7 +130,7 @@ func TestScheduledJobEnvelopeDispatchesSessionTurn(t *testing.T) {
 
 	ctx := context.Background()
 	bus, dispatcher, tasks := newTaskActorDispatchServices(t, ctx)
-	exec := &jobActorExecutor{tasks: tasks, dispatcher: dispatcher, service: jobexec.New(tasks, dispatcher)}
+	exec := NewJobActorExecutor(jobexec.New(tasks, dispatcher))
 	locator := session.SessionLocator{SessionID: "tg-101-202", AddressKey: "101"}
 	env, err := ScheduledJobEnvelope("daily", "summarize", locator, nil, "101", 0, "tick-1")
 	if err != nil {

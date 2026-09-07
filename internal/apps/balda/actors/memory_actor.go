@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
-	"go.uber.org/fx"
 )
 
 // MemoryRememberPayload carries a fact that should be appended to memory.
@@ -19,16 +18,16 @@ type MemoryRememberPayload struct {
 	SourceSessionID string `json:"source_session_id,omitempty"`
 }
 
-type memoryActorExecutor struct {
+type MemoryActorExecutor struct {
 	store  *memory.Store
 	events actortransport.EventPublisher
 }
 
-type memoryActorExecutorParams struct {
-	fx.In
-
-	Store  *memory.Store
-	Events actortransport.EventPublisher `optional:"true"`
+func NewMemoryActorExecutor(store *memory.Store, events actortransport.EventPublisher) *MemoryActorExecutor {
+	return &MemoryActorExecutor{
+		store:  store,
+		events: events,
+	}
 }
 
 // MemoryRememberEnvelope builds a command envelope for appending memory.
@@ -53,11 +52,11 @@ func MemoryRememberEnvelope(payload MemoryRememberPayload) (actorlayer.Envelope,
 	}, nil
 }
 
-func (e *memoryActorExecutor) Address() string {
+func (e *MemoryActorExecutor) Address() string {
 	return actorlayer.WildcardAddress(baldaexecution.ActorTypeMemory)
 }
 
-func (e *memoryActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
+func (e *MemoryActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	if strings.TrimSpace(env.Namespace) != baldaexecution.NamespaceMemoryCommand {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported memory namespace %q", env.Namespace))
 	}
@@ -69,7 +68,7 @@ func (e *memoryActorExecutor) Handle(ctx context.Context, env actorlayer.Envelop
 	}
 }
 
-func (e *memoryActorExecutor) remember(ctx context.Context, env actorlayer.Envelope) error {
+func (e *MemoryActorExecutor) remember(ctx context.Context, env actorlayer.Envelope) error {
 	if e.store == nil {
 		return actorlayer.TransientError(fmt.Errorf("memory store is required"))
 	}
@@ -88,7 +87,7 @@ func (e *memoryActorExecutor) remember(ctx context.Context, env actorlayer.Envel
 	return nil
 }
 
-func (e *memoryActorExecutor) publishUpdated(ctx context.Context, env actorlayer.Envelope, snapshot memory.Snapshot) {
+func (e *MemoryActorExecutor) publishUpdated(ctx context.Context, env actorlayer.Envelope, snapshot memory.Snapshot) {
 	if e == nil || e.events == nil {
 		return
 	}

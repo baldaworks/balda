@@ -17,7 +17,7 @@ const testQuestionID = "question-1"
 
 func TestQuestionActorAnsweredDispatchesSessionTurn(t *testing.T) {
 	dispatcher := &fakeTurnDispatcher{}
-	actor := &questionActor{dispatcher: dispatcher}
+	actor := NewQuestionActor(dispatcher)
 	env, err := questioncmd.AnsweredEnvelope(
 		questioncmd.ResumeTarget{To: "session:tg-1-0"},
 		questioncmd.InteractionContext{
@@ -62,7 +62,7 @@ func TestQuestionActorAnsweredDispatchesSessionTurn(t *testing.T) {
 
 func TestQuestionActorTimedOutDispatchesUsableSessionTurn(t *testing.T) {
 	dispatcher := &fakeTurnDispatcher{}
-	actor := &questionActor{dispatcher: dispatcher}
+	actor := NewQuestionActor(dispatcher)
 	env, err := questioncmd.TimedOutEnvelope(
 		questioncmd.ResumeTarget{To: "session:tg-1-0"},
 		questioncmd.InteractionContext{
@@ -94,7 +94,7 @@ func TestQuestionActorTimedOutDispatchesUsableSessionTurn(t *testing.T) {
 
 func TestQuestionActorAnsweredDispatchesGoalContinuation(t *testing.T) {
 	dispatcher := &fakeTurnDispatcher{}
-	actor := &questionActor{dispatcher: dispatcher}
+	actor := NewQuestionActor(dispatcher)
 	env, err := questioncmd.AnsweredEnvelope(
 		questioncmd.ResumeTarget{
 			To: "goalkeeper:goal-tg-1-0-123",

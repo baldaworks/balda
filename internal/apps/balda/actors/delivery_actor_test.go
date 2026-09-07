@@ -245,7 +245,7 @@ func TestTaskDeliveryActorSendsChatActionWithoutPersistingDelivery(t *testing.T)
 	}
 }
 
-func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliveryActor, *testJobServices, *fakeTelegramClient, *recordingHandlerCommandBus) {
+func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*JobDeliveryActor, *testJobServices, *fakeTelegramClient, *recordingHandlerCommandBus) {
 	t.Helper()
 	provider, bus, dispatcher, tasks, allocator := newTaskActorRuntimeServices(t, ctx)
 	_ = provider
@@ -262,9 +262,9 @@ func newTaskDeliveryActorForTest(t *testing.T, ctx context.Context) (*jobDeliver
 	router := baldachannel.NewRouter(map[string]deliverycmd.Adapter{
 		baldatelegram.ChannelType: tgAdapter,
 	})
-	return &jobDeliveryActor{
-		service: deliveryworkflow.New(deliveryfx.NewChannelDispatcher(router), tasks, tasks, nil, dispatcher, zerolog.Nop()),
-	}, tasks, tgClient, bus
+	return NewJobDeliveryActor(
+		deliveryworkflow.New(deliveryfx.NewChannelDispatcher(router), tasks, tasks, nil, dispatcher, zerolog.Nop()),
+	), tasks, tgClient, bus
 }
 
 func deliveryEnvelopeForTest(t *testing.T, id string, dedupeKey string, text string) (actorlayer.Envelope, DeliveryPayload) {

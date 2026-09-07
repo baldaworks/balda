@@ -33,7 +33,7 @@ func TestPermissionActorResolvesSelectedOption(t *testing.T) {
 		t.Fatalf("MarshalPayload() error = %v", err)
 	}
 	sink := &testPermissionSink{}
-	actor := &permissionActor{sink: sink}
+	actor := NewPermissionActor(sink)
 	err = actor.Handle(context.Background(), actorlayer.Envelope{
 		Namespace: actorcmd.NamespacePermissionCommand,
 		Kind:      actorcmd.KindQuestionAnswered,
@@ -56,7 +56,7 @@ func TestPermissionActorResolvesTimeoutAsCancellation(t *testing.T) {
 		t.Fatalf("MarshalPayload() error = %v", err)
 	}
 	sink := &testPermissionSink{}
-	actor := &permissionActor{sink: sink}
+	actor := NewPermissionActor(sink)
 	err = actor.Handle(context.Background(), actorlayer.Envelope{
 		Namespace: actorcmd.NamespacePermissionCommand,
 		Kind:      actorcmd.KindQuestionTimedOut,

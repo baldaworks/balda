@@ -23,12 +23,9 @@ func TestNewSessionActorWiresRuntimeStateUpdater(t *testing.T) {
 	t.Parallel()
 
 	manager := &baldasession.Manager{}
-	actor, ok := newSessionActor(sessionActorExecutorParams{Sessions: manager}).(*sessionActorExecutor)
-	if !ok {
-		t.Fatalf("newSessionActor() type = %T", actor)
-	}
+	actor := NewSessionActor(SessionActorConfig{Sessions: manager})
 	if actor.sessions != manager {
-		t.Fatal("newSessionActor() did not wire session runtime state updater")
+		t.Fatal("NewSessionActor() did not wire session runtime state updater")
 	}
 }
 

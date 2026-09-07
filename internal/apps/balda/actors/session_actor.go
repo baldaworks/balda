@@ -18,7 +18,6 @@ import (
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	"go.uber.org/fx"
 )
 
 const (
@@ -31,46 +30,60 @@ type SessionTurnPayload = turncmd.SessionTurnPayload
 type SessionTurnRunner = appports.SessionTurnRunner
 type ScheduledJobRecorder = appports.ScheduledJobRecorder
 
-type sessionJobLifecycle interface {
+type SessionJobLifecycle interface {
 	Get(ctx context.Context, jobID string) (baldastate.JobRecord, bool, error)
 	MarkStatus(ctx context.Context, jobID string, status string, actor string, messageID string, reason string, payload any) error
 }
+
+type sessionJobLifecycle = SessionJobLifecycle
 
 func SessionTurnEnvelope(payload SessionTurnPayload) (actorlayer.Envelope, error) {
 	return turncmd.SessionTurnEnvelope(payload)
 }
 
-type sessionActorExecutor struct {
-	turns      appports.TurnQueue
-	runner     appports.SessionTurnRunner
-	tasks      sessionJobLifecycle
-	scheduler  appports.ScheduledJobRecorder
-	dispatcher actortransport.Dispatcher
-	questions  *questions.Service
-	sessions   sessionRuntimeStateUpdater
-}
-
-type sessionRuntimeStateUpdater interface {
+type SessionRuntimeStateUpdater interface {
 	UpdateRuntimeState(ctx context.Context, locator baldasession.SessionLocator, state map[string]any) error
 }
 
-type sessionActorExecutorParams struct {
-	fx.In
-
-	Dispatcher actortransport.Dispatcher
+type SessionActorConfig struct {
 	Turns      appports.TurnQueue
 	Runner     appports.SessionTurnRunner
-	Tasks      sessionJobLifecycle           `optional:"true"`
-	Scheduler  appports.ScheduledJobRecorder `optional:"true"`
-	Questions  *questions.Service            `optional:"true"`
-	Sessions   *baldasession.Manager         `optional:"true"`
+	Tasks      SessionJobLifecycle
+	Scheduler  appports.ScheduledJobRecorder
+	Dispatcher actortransport.Dispatcher
+	Questions  *questions.Service
+	Sessions   SessionRuntimeStateUpdater
 }
 
-func (e *sessionActorExecutor) Address() string {
+type SessionActorExecutor struct {
+	turns      appports.TurnQueue
+	runner     appports.SessionTurnRunner
+	tasks      SessionJobLifecycle
+	scheduler  appports.ScheduledJobRecorder
+	dispatcher actortransport.Dispatcher
+	questions  *questions.Service
+	sessions   SessionRuntimeStateUpdater
+}
+
+type sessionActorExecutor = SessionActorExecutor
+
+func NewSessionActor(cfg SessionActorConfig) *SessionActorExecutor {
+	return &SessionActorExecutor{
+		turns:      cfg.Turns,
+		runner:     cfg.Runner,
+		tasks:      cfg.Tasks,
+		scheduler:  cfg.Scheduler,
+		dispatcher: cfg.Dispatcher,
+		questions:  cfg.Questions,
+		sessions:   cfg.Sessions,
+	}
+}
+
+func (e *SessionActorExecutor) Address() string {
 	return actorlayer.WildcardAddress(baldaexecution.ActorTypeSession)
 }
 
-func (e *sessionActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
+func (e *SessionActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	switch strings.TrimSpace(env.Namespace) {
 	case baldaexecution.NamespaceHumanInbound, baldaexecution.NamespaceWebhookInbound, baldaexecution.NamespaceScheduleInbound, baldaexecution.NamespaceGoalkeeperCommand, baldaexecution.NamespaceJobControl:
 		return e.enqueueTurn(ctx, env)
@@ -81,7 +94,7 @@ func (e *sessionActorExecutor) Handle(ctx context.Context, env actorlayer.Envelo
 	}
 }
 
-func (e *sessionActorExecutor) updateAutoModeState(ctx context.Context, env actorlayer.Envelope) error {
+func (e *SessionActorExecutor) updateAutoModeState(ctx context.Context, env actorlayer.Envelope) error {
 	if e == nil || e.sessions == nil {
 		return actorlayer.TransientError(fmt.Errorf("session runtime state updater is required"))
 	}
@@ -95,7 +108,7 @@ func (e *sessionActorExecutor) updateAutoModeState(ctx context.Context, env acto
 	return nil
 }
 
-func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.Envelope) error {
+func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.Envelope) error {
 	var payload SessionTurnPayload
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode session turn payload: %w", err))
@@ -161,7 +174,7 @@ func (e *sessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 	}
 }
 
-func (e *sessionActorExecutor) handleScheduledQuestionTimeout(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) (bool, error) {
+func (e *SessionActorExecutor) handleScheduledQuestionTimeout(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) (bool, error) {
 	if e == nil || e.questions == nil || e.dispatcher == nil {
 		return false, nil
 	}

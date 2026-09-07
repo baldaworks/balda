@@ -30,7 +30,7 @@ func TestMemoryActorRememberWritesMemoryAndPublishesVersionEvent(t *testing.T) {
 
 	store := memory.NewStore(newActorMemoryKV(), "", true)
 	bus := &recordingHandlerCommandBus{}
-	exec := &memoryActorExecutor{store: store, events: bus}
+	exec := NewMemoryActorExecutor(store, bus)
 	env, err := MemoryRememberEnvelope(MemoryRememberPayload{Fact: "remember actor fact"})
 	if err != nil {
 		t.Fatalf("MemoryRememberEnvelope() error = %v", err)

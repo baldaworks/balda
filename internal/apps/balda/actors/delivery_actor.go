@@ -8,32 +8,25 @@ import (
 	"github.com/baldaworks/go-actorlayer"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
-	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
-	"go.uber.org/fx"
 )
 
-type deliveryWorkflowService interface {
+type DeliveryWorkflowService interface {
 	Handle(ctx context.Context, env actorlayer.Envelope, payload deliverycmd.Payload) error
 }
 
-type jobDeliveryActor struct {
-	service deliveryWorkflowService
+type JobDeliveryActor struct {
+	service DeliveryWorkflowService
 }
 
-type jobDeliveryActorParams struct {
-	fx.In
-
-	Dispatcher deliveryworkflow.Dispatcher
-	Outbox     deliveryworkflow.DeliveryStore
-	Events     deliveryworkflow.JobEvents
-	Service    deliveryWorkflowService
+func NewJobDeliveryActor(service DeliveryWorkflowService) *JobDeliveryActor {
+	return &JobDeliveryActor{service: service}
 }
 
-func (a *jobDeliveryActor) Address() string {
+func (a *JobDeliveryActor) Address() string {
 	return actorlayer.WildcardAddress(baldaexecution.ActorTypeDelivery)
 }
 
-func (a *jobDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
+func (a *JobDeliveryActor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	if strings.TrimSpace(env.Kind) != jobPayloadKindDelivery {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported delivery kind %q", env.Kind))
 	}

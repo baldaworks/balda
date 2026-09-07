@@ -11,19 +11,23 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 )
 
-type permissionDecisionSink interface {
+type PermissionDecisionSink interface {
 	Resolve(questionID string, decision permissioncmd.Decision)
 }
 
-type permissionActor struct {
-	sink permissionDecisionSink
+type PermissionActor struct {
+	sink PermissionDecisionSink
 }
 
-func (a *permissionActor) Address() string {
+func NewPermissionActor(sink PermissionDecisionSink) *PermissionActor {
+	return &PermissionActor{sink: sink}
+}
+
+func (a *PermissionActor) Address() string {
 	return actorlayer.WildcardAddress(actorcmd.ActorTypePermission)
 }
 
-func (a *permissionActor) Handle(_ context.Context, env actorlayer.Envelope) error {
+func (a *PermissionActor) Handle(_ context.Context, env actorlayer.Envelope) error {
 	if strings.TrimSpace(env.Namespace) != actorcmd.NamespacePermissionCommand {
 		return actorlayer.PolicyError(fmt.Errorf("unsupported permission namespace %q", env.Namespace))
 	}

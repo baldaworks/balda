@@ -17,7 +17,6 @@ import (
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/rs/zerolog"
-	"go.uber.org/fx"
 	adkagent "google.golang.org/adk/v2/agent"
 	adkrunner "google.golang.org/adk/v2/runner"
 	adksession "google.golang.org/adk/v2/session"
@@ -83,7 +82,7 @@ type JobRuns interface {
 	Unregister(jobID string, runID string)
 }
 
-type jobLifecycle interface {
+type JobLifecycle interface {
 	Create(ctx context.Context, record baldastate.JobRecord, actor string, payload any) (bool, error)
 	Get(ctx context.Context, jobID string) (baldastate.JobRecord, bool, error)
 	ListActiveGoalJobsBySession(ctx context.Context, sessionID string) ([]baldastate.JobRecord, error)
@@ -91,20 +90,21 @@ type jobLifecycle interface {
 	SetResult(ctx context.Context, jobID string, result any, status string, actor string, reason string) error
 }
 
-type jobEvents interface {
+type JobEvents interface {
 	AppendEvent(ctx context.Context, jobID string, eventType string, actor string, messageID string, payload any) error
 }
 
-type ActorParams struct {
-	fx.In
+type jobLifecycle = JobLifecycle
+type jobEvents = JobEvents
 
-	JobLifecycle    jobLifecycle
-	JobEvents       jobEvents
+type ActorParams struct {
+	JobLifecycle    JobLifecycle
+	JobEvents       JobEvents
 	SessionManager  *baldasession.Manager
 	GoalRunPreparer GoalRunPreparer
 	JobRuns         JobRuns
 	QuestionService *questions.Service
-	MaxIterations   int `name:"balda_goal_max_iterations"`
+	MaxIterations   int
 	Dispatcher      actortransport.Dispatcher
 	Logger          zerolog.Logger
 }

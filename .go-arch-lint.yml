@@ -384,6 +384,7 @@ deps:
       - storage
       - infrastructure
       - runtime
+      - delivery_usecase
     anyVendorDeps: true
 
   command_wiring:

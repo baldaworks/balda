@@ -13,7 +13,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
-	"go.uber.org/fx"
 )
 
 const (
@@ -51,15 +50,9 @@ type queuedTurn struct {
 	constituents []*queuedTurn
 }
 
-type turnDispatcherParams struct {
-	fx.In
-
-	Logger zerolog.Logger
-}
-
-func NewTurnDispatcher(params turnDispatcherParams) *TurnDispatcher {
+func NewTurnDispatcher(logger zerolog.Logger) *TurnDispatcher {
 	dispatcher := &TurnDispatcher{
-		logger:   params.Logger.With().Str("component", "balda.turn_dispatcher").Logger(),
+		logger:   logger.With().Str("component", "balda.turn_dispatcher").Logger(),
 		sessions: make(map[string]*sessionTurnQueue),
 		stopCh:   make(chan struct{}),
 	}

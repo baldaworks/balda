@@ -1,4 +1,4 @@
-package actors
+package actorsfx
 
 import (
 	"context"
@@ -6,6 +6,23 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/actors/goalkeeper"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 )
+
+type runtimeGoalRunPreparer struct {
+	manager *baldaagent.RuntimeManager
+}
+
+func (a runtimeGoalRunPreparer) PrepareGoalRun(ctx context.Context, cfg goalkeeper.GoalRunConfig) (goalkeeper.GoalRun, error) {
+	runtime, err := a.manager.PrepareGoalRun(ctx, baldaagent.GoalRunConfig{
+		SourceSessionID: cfg.SourceSessionID,
+		JobID:           cfg.JobID,
+		UserID:          cfg.UserID,
+		MaxIterations:   cfg.MaxIterations,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return goalRunAdapter{runtime: runtime}, nil
+}
 
 type goalRunAdapter struct {
 	runtime *baldaagent.GoalRun

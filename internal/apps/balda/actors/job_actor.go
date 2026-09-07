@@ -6,13 +6,11 @@ import (
 	"strings"
 
 	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
-	"go.uber.org/fx"
 )
 
 const (
@@ -44,7 +42,7 @@ type DeliveryMode = deliverycmd.Mode
 type DeliveryProgress = deliverycmd.Progress
 type DeliveryProgressKind = deliverycmd.ProgressKind
 
-type jobExecutionService interface {
+type JobExecutionService interface {
 	DispatchWebhookSessionTurn(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) error
 	StartScheduledJob(ctx context.Context, env actorlayer.Envelope, payload jobexec.ScheduledJobRequest) error
 }
@@ -63,18 +61,14 @@ const (
 	DeliveryProgressPlanUpdate DeliveryProgressKind = deliverycmd.ProgressPlanUpdate
 )
 
-type jobActorExecutor struct {
-	tasks      jobexec.JobLifecycle
-	dispatcher actortransport.Dispatcher
-	service    jobExecutionService
+type JobActorExecutor struct {
+	service JobExecutionService
 }
 
-type jobActorExecutorParams struct {
-	fx.In
-
-	JobLifecycle jobexec.JobLifecycle
-	Dispatcher   actortransport.Dispatcher
-	Service      jobExecutionService
+func NewJobActorExecutor(service JobExecutionService) *JobActorExecutor {
+	return &JobActorExecutor{
+		service: service,
+	}
 }
 
 func WebhookJobEnvelope(payload SessionTurnPayload, routeName string, requestID string) (actorlayer.Envelope, string, error) {
@@ -93,11 +87,11 @@ func ScheduledJobEnvelope(
 	return turncmd.ScheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey)
 }
 
-func (e *jobActorExecutor) Address() string {
+func (e *JobActorExecutor) Address() string {
 	return actorlayer.WildcardAddress(baldaexecution.ActorTypeJob)
 }
 
-func (e *jobActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
+func (e *JobActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) error {
 	var payload jobEnvelopePayload
 	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
 		return actorlayer.PermanentError(fmt.Errorf("decode job payload: %w", err))
@@ -123,14 +117,14 @@ func (e *jobActorExecutor) Handle(ctx context.Context, env actorlayer.Envelope) 
 	}
 }
 
-func (e *jobActorExecutor) dispatchWebhookSessionTurn(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) error {
+func (e *JobActorExecutor) dispatchWebhookSessionTurn(ctx context.Context, env actorlayer.Envelope, payload SessionTurnPayload) error {
 	if e.service == nil {
 		return actorlayer.TransientError(fmt.Errorf("job execution service is required"))
 	}
 	return e.service.DispatchWebhookSessionTurn(ctx, env, payload)
 }
 
-func (e *jobActorExecutor) startScheduledJob(ctx context.Context, env actorlayer.Envelope, payload scheduledJobPayload) error {
+func (e *JobActorExecutor) startScheduledJob(ctx context.Context, env actorlayer.Envelope, payload scheduledJobPayload) error {
 	if e.service == nil {
 		return actorlayer.TransientError(fmt.Errorf("job execution service is required"))
 	}
