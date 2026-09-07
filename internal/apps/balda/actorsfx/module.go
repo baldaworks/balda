@@ -147,7 +147,8 @@ var Module = fx.Module("balda_actorsfx",
 		),
 		fx.Annotate(
 			func(s *deliveryworkflow.Service) dispatch.Actor {
-				return actors.NewJobDeliveryActor(s)
+				var svc actors.DeliveryWorkflowService = deliveryWorkflowAdapter{service: s}
+				return actors.NewJobDeliveryActor(svc)
 			},
 			fx.As(new(dispatch.Actor)),
 			fx.ResultTags(`group:"balda_product_actors"`),

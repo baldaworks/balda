@@ -339,8 +339,6 @@ deps:
       - neutral_registry
       - application
       - domain
-      - runtime
-      - delivery_usecase
       - delivery
       - storage
       - infrastructure
