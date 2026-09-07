@@ -50,5 +50,25 @@ var Module = fx.Module("balda_handlersfx",
 			fx.ParamTags(`optional:"true"`),
 			fx.As(new(sessionapp.TelegramTopicChannel)),
 		),
+		fx.Annotate(
+			func(h *telegramInboundHandler) sessionapp.TelegramOwnerActivator {
+				if h == nil {
+					return nil
+				}
+				return h
+			},
+			fx.ParamTags(`optional:"true"`),
+			fx.As(new(sessionapp.TelegramOwnerActivator)),
+		),
+		fx.Annotate(
+			func(h *zulipInboundHandler) sessionapp.ZulipOwnerActivator {
+				if h == nil {
+					return nil
+				}
+				return h
+			},
+			fx.ParamTags(`optional:"true"`),
+			fx.As(new(sessionapp.ZulipOwnerActivator)),
+		),
 	),
 )

@@ -172,7 +172,7 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 		_ = h.sendPlain(ctx, cmd.Locator, zulipAccessDeniedText)
 		return nil
 	}
-	if h.commandIngress != nil && (cmd.Command == commandReset || cmd.Command == commandLocator || cmd.Command == commandUsage || cmd.Command == commandAuto || cmd.Command == commandCancel || cmd.Command == commandGoal || cmd.Command == commandTopic || cmd.Command == commandClose) {
+	if h.commandIngress != nil && (cmd.Command == commandReset || cmd.Command == commandLocator || cmd.Command == commandUsage || cmd.Command == commandAuto || cmd.Command == commandCancel || cmd.Command == commandGoal || cmd.Command == commandTopic || cmd.Command == commandClose || cmd.Command == commandStart) {
 		isOwner := h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(cmd.SenderID))
 		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 			InvocationID: fmt.Sprintf("zulip:command:%d", cmd.MessageID),
@@ -223,6 +223,21 @@ func (h *zulipInboundHandler) ProcessInbound(ctx context.Context, msg zulip.Inbo
 	}
 	if msg.Direct {
 		if token, ok := firstFieldToken(msg.Text); ok {
+			if h.commandIngress != nil {
+				isOwner := h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(msg.SenderID))
+				_ = h.commandIngress.PublishCommand(ctx, commandcmd.Request{
+					InvocationID: fmt.Sprintf("zulip:token:%d", msg.MessageID),
+					Payload: commandcmd.Payload{
+						Version: commandcmd.SchemaVersion, Name: commandStart, Args: token,
+						Locator: msg.Locator, Transport: zulip.ChannelType, Principal: zulipUserID(msg.SenderID),
+						Access:       commandcmd.Access{SessionCommands: true, Owner: isOwner, Collaborator: !isOwner},
+						Conversation: commandcmd.Conversation{Direct: true},
+						Presentation: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true}},
+						Invocation:   commandcmd.Invocation{Root: "/"},
+					},
+				})
+				return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, nil
+			}
 			h.handleOwnerBindToken(ctx, msg.Locator, msg.SenderID, token)
 			return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, nil
 		}
@@ -660,6 +675,12 @@ func (h *zulipInboundHandler) handleUserCommand(ctx context.Context, locator del
 	default:
 		_ = h.sendPlain(ctx, locator, UserUsageMessage())
 	}
+}
+
+func (h *zulipInboundHandler) ActivateOwner(ctx context.Context, senderID int) error {
+	h.setOwnerID(int64(senderID))
+	_, _, err := h.bootstrapOwnerSession(ctx, int64(senderID))
+	return err
 }
 
 func (h *zulipInboundHandler) bootstrapOwnerSession(ctx context.Context, ownerID int64) (*baldasession.TopicSession, bool, error) {

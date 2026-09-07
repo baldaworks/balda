@@ -58,6 +58,7 @@ var Module = fx.Module("balda_handlers",
 				actorDispatcher:   params.Dispatcher,
 				authToken:         params.AuthToken,
 				baldaHandler:      params.OwnerActivator,
+				commandIngress:    params.CommandIngress,
 			}
 		},
 		func(params commandHandlerParams) *CommandHandler {

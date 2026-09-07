@@ -109,6 +109,9 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		Args:            commandCtx.Args,
 		IsDM:            commandCtx.IsDM,
 	}
+	if req.Command == commandStart {
+		return nil
+	}
 	if h.commandIngress != nil && (req.Command == commandReset || req.Command == commandLocator || req.Command == commandHelp || req.Command == commandUsage || req.Command == commandAuto || req.Command == commandCancel || req.Command == commandGoal || req.Command == commandTopic || req.Command == commandClose) {
 		allowed := h.canUseSessionCommand(ctx, req)
 		isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(req.UserID)

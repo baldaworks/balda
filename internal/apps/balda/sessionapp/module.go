@@ -204,6 +204,10 @@ var Module = fx.Module("balda_sessionapp",
 			fx.ParamTags(`optional:"true"`),
 		),
 		fx.Annotate(
+			NewBootstrapService,
+			fx.ParamTags(`optional:"true"`, `optional:"true"`),
+		),
+		fx.Annotate(
 			func(capture *sessionmemoryapp.BoundaryCapture) baldasession.BoundaryObserver {
 				return SessionBoundaryObserverAdapter{Capture: capture}
 			},

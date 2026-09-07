@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog/log"
@@ -24,6 +26,7 @@ type StartHandler struct {
 	actorDispatcher   actortransport.Dispatcher
 	authToken         string
 	baldaHandler      BaldaOwnerActivator
+	commandIngress    commandcmd.Ingress
 }
 
 type BaldaOwnerActivator interface {
@@ -40,6 +43,7 @@ type startHandlerParams struct {
 	Dispatcher        actortransport.Dispatcher
 	AuthToken         string              `name:"balda_auth_token"`
 	OwnerActivator    BaldaOwnerActivator `optional:"true"`
+	CommandIngress    commandcmd.Ingress  `optional:"true"`
 }
 
 const (
@@ -78,6 +82,28 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 		Int64("user_id", userID).
 		Int64("chat_id", chatID).
 		Msg("Start command received")
+
+	if h.commandIngress != nil {
+		isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(userID)
+		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
+			InvocationID: fmt.Sprintf("telegram:command:%d:%d", chatID, event.Message.MessageId),
+			Payload: commandcmd.Payload{
+				Version:      commandcmd.SchemaVersion,
+				Name:         commandStart,
+				Args:         event.Args,
+				Locator:      telegramref.NewLocator(chatID, 0),
+				Transport:    telegramref.ChannelType,
+				Principal:    telegramref.UserID(userID),
+				Access:       commandcmd.Access{SessionCommands: true, Owner: isOwner, Collaborator: !isOwner},
+				Conversation: commandcmd.Conversation{Direct: true},
+				Presentation: deliveryfmt.Options{
+					DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
+					ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true},
+				},
+				Invocation: commandcmd.Invocation{Root: "/"},
+			},
+		})
+	}
 
 	trimmedArgs := strings.TrimSpace(event.Args)
 	args := startCommandArgs{}

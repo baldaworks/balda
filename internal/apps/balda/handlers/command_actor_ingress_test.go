@@ -39,3 +39,26 @@ func TestCommandHandlerPublishesActorOwnedCommands(t *testing.T) {
 		})
 	}
 }
+
+func TestStartHandlerPublishesActorOwnedCommand(t *testing.T) {
+	handler, store, _ := newStartHandlerTestHarness(t, "secret-token")
+	ingress := &recordingCommandIngress{}
+	handler.commandIngress = ingress
+	event := newStartEvent("owner=secret-token", 101, 9001)
+	event.Message.MessageId = 77
+
+	if err := handler.onCommand(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if len(ingress.requests) != 1 {
+		t.Fatalf("published requests = %d, want 1", len(ingress.requests))
+	}
+	got := ingress.requests[0]
+	if got.InvocationID != "telegram:command:9001:77" || got.Payload.Name != "start" || got.Payload.Args != "owner=secret-token" {
+		t.Fatalf("published request = %+v", got)
+	}
+	if store.HasOwner() {
+		t.Fatal("ingress executed owner policy before actor")
+	}
+}
+

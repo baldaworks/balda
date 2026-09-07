@@ -10,9 +10,11 @@ import (
 	commandhelp "github.com/baldaworks/balda/internal/apps/balda/actors/command/help"
 	commandlocator "github.com/baldaworks/balda/internal/apps/balda/actors/command/locator"
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
+	commandstart "github.com/baldaworks/balda/internal/apps/balda/actors/command/start"
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs"
@@ -80,6 +82,18 @@ type closeParams struct {
 	Logger     zerolog.Logger
 }
 
+type startParams struct {
+	fx.In
+	OwnerStore        *auth.OwnerStore             `optional:"true"`
+	InviteStore       *auth.InviteStore            `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore      `optional:"true"`
+	ChannelAuth       *auth.ChannelAuthService     `optional:"true"`
+	Bootstrap         *sessionapp.BootstrapService `optional:"true"`
+	Dispatcher        actortransport.Dispatcher
+	AuthToken         string                       `name:"balda_auth_token" optional:"true"`
+	Logger            zerolog.Logger
+}
+
 var Module = fx.Module("balda_command",
 	fx.Provide(
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
@@ -139,6 +153,32 @@ var Module = fx.Module("balda_command",
 					topicSvc = p.TopicSvc
 				}
 				return commandclose.New(p.Sessions, canceller, control, topicSvc, p.Dispatcher, p.Logger)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			func(p startParams) *commandstart.Handler {
+				var ownerStore commandstart.OwnerStore
+				if p.OwnerStore != nil {
+					ownerStore = p.OwnerStore
+				}
+				var inviteStore commandstart.InviteStore
+				if p.InviteStore != nil {
+					inviteStore = p.InviteStore
+				}
+				var collaboratorStore commandstart.CollaboratorStore
+				if p.CollaboratorStore != nil {
+					collaboratorStore = p.CollaboratorStore
+				}
+				var channelAuth commandstart.ChannelAuthService
+				if p.ChannelAuth != nil {
+					channelAuth = p.ChannelAuth
+				}
+				var activator commandstart.OwnerActivator
+				if p.Bootstrap != nil {
+					activator = p.Bootstrap
+				}
+				return commandstart.New(ownerStore, inviteStore, collaboratorStore, channelAuth, activator, p.Dispatcher, p.AuthToken, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),
