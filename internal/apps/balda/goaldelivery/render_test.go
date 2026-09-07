@@ -39,23 +39,6 @@ func TestRenderGoalStepMessageMarkdownFormatsHeaderAndPreservesBody(t *testing.T
 	}
 }
 
-func TestRenderGoalStartedMessageHTMLEscapesSystemFields(t *testing.T) {
-	t.Parallel()
-
-	got := RenderStartedMessage(
-		deliveryfmt.DeliveryFormatRichHTML,
-		3,
-		"ship <release> & verify",
-	)
-	for _, want := range []string{
-		"<b>Goal run started</b>",
-		"<b>Objective:</b> ship &lt;release&gt; &amp; verify",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("RenderStartedMessage() = %q, want %q", got, want)
-		}
-	}
-}
 
 func TestRenderGoalStartedMessageMarkdownUsesBlockSafeLayout(t *testing.T) {
 	t.Parallel()
@@ -75,25 +58,6 @@ func TestRenderGoalStartedMessageMarkdownUsesBlockSafeLayout(t *testing.T) {
 	}
 }
 
-func TestRenderGoalStepMessageHTMLPreservesBody(t *testing.T) {
-	t.Parallel()
-
-	body := "<b>validator</b>\n---\nplain"
-	got := RenderStepMessage(
-		deliveryfmt.DeliveryFormatRichHTML,
-		2,
-		5,
-		"validator",
-		"completed",
-		body,
-	)
-	if !strings.HasPrefix(got, "<b>Goal iteration 2/5:</b> validator completed.") {
-		t.Fatalf("RenderStepMessage() = %q, want HTML header", got)
-	}
-	if !strings.Contains(got, "\n\n"+body) {
-		t.Fatalf("RenderStepMessage() = %q, want unchanged body %q", got, body)
-	}
-}
 
 func TestRenderGoalStatusMessageUnknownModeFallsBackToPlain(t *testing.T) {
 	t.Parallel()

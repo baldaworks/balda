@@ -6,7 +6,6 @@ import (
 	"strings"
 	"text/template"
 
-	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/redaction"
@@ -28,7 +27,6 @@ type messageStyle string
 const (
 	messageStylePlain    messageStyle = "plain"
 	messageStyleMarkdown messageStyle = "markdown"
-	messageStyleHTML     messageStyle = "html"
 )
 
 type messageTemplate string
@@ -60,11 +58,6 @@ var messageTemplates = map[messageStyle]map[messageTemplate]*template.Template{
 		templateStep:    "**Goal iteration {{.Iteration}}/{{.MaxIterations}}:** {{.Step}} {{.Action}}.{{if .Body}}\n\n{{.Body}}{{end}}",
 		templateStatus:  "**{{.Text}}**",
 	}),
-	messageStyleHTML: mustTemplates(messageStyleHTML, map[messageTemplate]string{
-		templateStarted: "<b>Goal run started</b>\n\n<b>Max iterations:</b> {{.MaxIterations}}\n\n<b>Objective:</b> {{.Objective}}",
-		templateStep:    "<b>Goal iteration {{.Iteration}}/{{.MaxIterations}}:</b> {{.Step}} {{.Action}}.{{if .Body}}\n\n{{.Body}}{{end}}",
-		templateStatus:  "<b>{{.Text}}</b>",
-	}),
 }
 
 func mustTemplates(style messageStyle, sources map[messageTemplate]string) map[messageTemplate]*template.Template {
@@ -77,17 +70,17 @@ func mustTemplates(style messageStyle, sources map[messageTemplate]string) map[m
 
 func RenderStartedMessage(format deliveryfmt.DeliveryFormat, maxIterations int, objective string) string {
 	style := messageStyleForFormat(format)
-	return renderTemplate(style, templateStarted, messageData{MaxIterations: maxIterations, Objective: systemText(style, objective)})
+	return renderTemplate(style, templateStarted, messageData{MaxIterations: maxIterations, Objective: strings.TrimSpace(objective)})
 }
 
 func RenderStepMessage(format deliveryfmt.DeliveryFormat, iteration int, maxIterations int, step string, action string, body string) string {
 	style := messageStyleForFormat(format)
-	return renderTemplate(style, templateStep, messageData{MaxIterations: maxIterations, Iteration: iteration, Step: systemText(style, step), Action: systemText(style, action), Body: strings.TrimSpace(body)})
+	return renderTemplate(style, templateStep, messageData{MaxIterations: maxIterations, Iteration: iteration, Step: strings.TrimSpace(step), Action: strings.TrimSpace(action), Body: strings.TrimSpace(body)})
 }
 
 func RenderStatusMessage(format deliveryfmt.DeliveryFormat, text string) string {
 	style := messageStyleForFormat(format)
-	return renderTemplate(style, templateStatus, messageData{Text: systemText(style, text)})
+	return renderTemplate(style, templateStatus, messageData{Text: strings.TrimSpace(text)})
 }
 
 func RenderProgress(format deliveryfmt.DeliveryFormat, progress goalkeepercmd.GoalProgress) string {
@@ -109,15 +102,6 @@ func RenderReviewableOutcome(format deliveryfmt.DeliveryFormat, outcome goalkeep
 	exportReason := strings.TrimSpace(outcome.ExportReason)
 	exportError := strings.TrimSpace(outcome.ExportError)
 	whatWasDone := strings.TrimSpace(outcome.WhatWasDone)
-	validation := strings.TrimSpace(outcome.Validation)
-	routineSuccessfulOutcome := goalReached && exportStatusIsRoutineSuccess(exportStatus)
-	verified := firstNonEmpty(outcome.Verified, "validator returned feedback")
-	notVerified := firstNonEmpty(outcome.NotVerified, DefaultNotVerifiedText)
-	nextAction := firstNonEmpty(outcome.NextAction, DefaultInspectNextAction)
-	renderNotVerified := shouldRenderNotVerified(outcome.NotVerified)
-	renderNextAction := shouldRenderNextAction(outcome.NextAction, goalReached, exportStatus)
-	renderVerified := shouldRenderVerified(verified, routineSuccessfulOutcome)
-	renderValidation := shouldRenderValidation(validation, goalReached)
 
 	var parts []string
 	if goalReached {
@@ -130,29 +114,29 @@ func RenderReviewableOutcome(format deliveryfmt.DeliveryFormat, outcome goalkeep
 		case GoalExportStatusExported:
 		case GoalExportStatusNotExported:
 		case GoalExportStatusFailed:
-			parts = append(parts, outcomeLine(format, "Export", "failed: "+systemText(messageStyleForFormat(format), firstNonEmpty(exportError, exportReason, "unknown error"))))
+			parts = append(parts, outcomeLine(format, "Export", "failed: "+firstNonEmpty(exportError, exportReason, "unknown error")))
 		default:
-			parts = append(parts, outcomeLine(format, "Export", systemText(messageStyleForFormat(format), exportStatus)+"."))
+			parts = append(parts, outcomeLine(format, "Export", exportStatus+"."))
 		}
 	}
 	if whatWasDone != "" {
-		if routineSuccessfulOutcome {
-			parts = append(parts, strings.TrimSpace(whatWasDone))
+		if outcome.RoutineSuccess() {
+			parts = append(parts, whatWasDone)
 		} else {
 			parts = append(parts, outcomeBlock(format, "What was done", whatWasDone))
 		}
 	}
-	if renderValidation && validation != "" {
-		parts = append(parts, outcomeBlock(format, "Validation", validation))
+	if outcome.ShouldRenderValidation() {
+		parts = append(parts, outcomeBlock(format, "Validation", strings.TrimSpace(outcome.Validation)))
 	}
-	if renderVerified && verified != "" {
-		parts = append(parts, outcomeLine(format, "Verified", verified))
+	if outcome.ShouldRenderVerified() {
+		parts = append(parts, outcomeLine(format, "Verified", outcome.ResolvedVerified()))
 	}
-	if renderNotVerified && notVerified != "" {
-		parts = append(parts, outcomeLine(format, "Not verified", notVerified))
+	if outcome.ShouldRenderNotVerified() {
+		parts = append(parts, outcomeLine(format, "Not verified", outcome.ResolvedNotVerified()))
 	}
-	if renderNextAction && nextAction != "" {
-		parts = append(parts, outcomeLine(format, "Next action", nextAction))
+	if outcome.ShouldRenderNextAction() {
+		parts = append(parts, outcomeLine(format, "Next action", outcome.ResolvedNextAction()))
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
@@ -165,8 +149,6 @@ func messageStyleForFormat(format deliveryfmt.DeliveryFormat) messageStyle {
 	switch deliveryfmt.NormalizeDeliveryFormat(format) {
 	case deliveryfmt.DeliveryFormatRichMarkdown, deliveryfmt.DeliveryFormatMrkdwn, deliveryfmt.DeliveryFormatMarkdown:
 		return messageStyleMarkdown
-	case deliveryfmt.DeliveryFormatRichHTML:
-		return messageStyleHTML
 	default:
 		return messageStylePlain
 	}
@@ -188,28 +170,15 @@ func renderTemplate(style messageStyle, name messageTemplate, data messageData) 
 	return strings.TrimSpace(out.String())
 }
 
-func systemText(style messageStyle, text string) string {
-	text = strings.TrimSpace(text)
-	if style == messageStyleHTML {
-		return baldatelegram.EscapeHTML(text)
-	}
-	return text
-}
-
 func outcomeLine(format deliveryfmt.DeliveryFormat, label string, value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
 	}
-	style := messageStyleForFormat(format)
-	switch style {
-	case messageStyleMarkdown:
-		return fmt.Sprintf("**%s:** %s", label, value)
-	case messageStyleHTML:
-		return fmt.Sprintf("<b>%s:</b> %s", baldatelegram.EscapeHTML(label), value)
-	default:
+	if messageStyleForFormat(format) == messageStylePlain {
 		return label + ": " + value
 	}
+	return fmt.Sprintf("**%s:** %s", label, value)
 }
 
 func outcomeBlock(format deliveryfmt.DeliveryFormat, label string, body string) string {
@@ -217,15 +186,10 @@ func outcomeBlock(format deliveryfmt.DeliveryFormat, label string, body string) 
 	if body == "" {
 		return ""
 	}
-	style := messageStyleForFormat(format)
-	switch style {
-	case messageStyleMarkdown:
-		return fmt.Sprintf("**%s:**\n%s", label, body)
-	case messageStyleHTML:
-		return fmt.Sprintf("<b>%s:</b>\n%s", baldatelegram.EscapeHTML(label), body)
-	default:
+	if messageStyleForFormat(format) == messageStylePlain {
 		return label + ":\n" + body
 	}
+	return fmt.Sprintf("**%s:**\n%s", label, body)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -235,72 +199,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func shouldRenderNotVerified(value string) bool {
-	trimmed := strings.TrimSpace(value)
-	return trimmed != "" && !strings.EqualFold(trimmed, DefaultNotVerifiedText)
-}
-
-func shouldRenderVerified(value string, routineSuccessfulOutcome bool) bool {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return false
-	}
-	if !routineSuccessfulOutcome {
-		return true
-	}
-	return !strings.EqualFold(trimmed, "validator returned pass")
-}
-
-func shouldRenderValidation(value string, goalReached bool) bool {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return false
-	}
-	if !goalReached {
-		return true
-	}
-	return !validationIsRoutinePass(trimmed)
-}
-
-func validationIsRoutinePass(value string) bool {
-	lowered := strings.ToLower(strings.TrimSpace(value))
-	if strings.Contains(lowered, "evidence:") || strings.Contains(lowered, "verdict: fail") || strings.Contains(lowered, "verdict fail") {
-		return false
-	}
-	normalized := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, ":", " ")))
-	normalized = strings.Join(strings.Fields(normalized), " ")
-	return strings.Contains(normalized, "verdict pass")
-}
-
-func shouldRenderNextAction(value string, goalReached bool, exportStatus string) bool {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return false
-	}
-	if !goalReached {
-		return true
-	}
-	if !strings.EqualFold(trimmed, DefaultExportedNextAction) {
-		if goalReached && strings.TrimSpace(exportStatus) == GoalExportStatusNotExported && strings.EqualFold(trimmed, DefaultNotExportedNextAction) {
-			return false
-		}
-		return true
-	}
-	switch strings.TrimSpace(exportStatus) {
-	case GoalExportStatusFailed, GoalExportStatusNotExported:
-		return true
-	default:
-		return false
-	}
-}
-
-func exportStatusIsRoutineSuccess(status string) bool {
-	switch strings.TrimSpace(status) {
-	case "", GoalExportStatusExported, GoalExportStatusNotExported:
-		return true
-	default:
-		return false
-	}
 }

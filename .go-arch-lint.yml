@@ -412,13 +412,11 @@ deps:
       - application
       - delivery_usecase
       - delivery
-      - telegram_transport
-      - telegram_wiring
-      - zulip_transport
-      - zulip_wiring
-      - runtime
-      - storage
       - infrastructure
+    # Provider renderers and transport channels are injected into deliveryfx at
+    # composition time; deep-scan is disabled here to prevent inverted upward edges
+    # while strictly prohibiting direct imports of concrete transports and storage.
+    deepScan: false
     anyVendorDeps: true
 
   telegram_transport:
