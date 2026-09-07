@@ -57,7 +57,6 @@ import (
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog/log"
 	"github.com/tgbotkit/client"
-	"github.com/tgbotkit/runtime/updatepoller"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -341,7 +340,7 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider) updatepoller.OffsetStore {
+			func(provider baldastate.Provider) tgbotkit.OffsetStore {
 				return provider.PollingOffsetStore()
 			},
 			func(provider baldastate.Provider) sessionmcp.Store {

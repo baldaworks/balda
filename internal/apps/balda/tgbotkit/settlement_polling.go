@@ -186,8 +186,14 @@ func (g *pollingSettlementGate) release(batch pollingSettlementBatch) {
 	}
 }
 
+// OffsetStore is the persistence contract required for Telegram polling offsets.
+type OffsetStore interface {
+	Load(ctx context.Context) (int, error)
+	Save(ctx context.Context, offset int) error
+}
+
 type settlementOffsetStore struct {
-	store updatepoller.OffsetStore
+	store OffsetStore
 	gate  *pollingSettlementGate
 }
 
@@ -258,6 +264,7 @@ func (e settlementEventEmitter) Emit(ctx context.Context, event string, payload 
 	e.gate.finish(updateID)
 }
 
+var _ OffsetStore = settlementOffsetStore{}
 var _ updatepoller.OffsetStore = settlementOffsetStore{}
 var _ interface {
 	UpdateChan() <-chan client.Update

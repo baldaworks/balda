@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
-	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
@@ -200,7 +199,7 @@ func (p *sqliteProvider) Jobs() JobStore {
 	return p.runtime
 }
 
-func (p *sqliteProvider) PollingOffsetStore() updatepoller.OffsetStore {
+func (p *sqliteProvider) PollingOffsetStore() PollingOffsetStore {
 	return p.offset
 }
 

@@ -13,6 +13,8 @@ type sqliteOffsetStore struct {
 	db *sql.DB
 }
 
+var _ PollingOffsetStore = (*sqliteOffsetStore)(nil)
+
 func (s *sqliteOffsetStore) Load(ctx context.Context) (int, error) {
 	var offset int
 	err := s.db.QueryRowContext(ctx, `

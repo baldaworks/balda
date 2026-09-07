@@ -201,3 +201,54 @@ var (
 type testError string
 
 func (e testError) Error() string { return string(e) }
+
+type fakeCustomOffsetStore struct {
+	offset int
+}
+
+func (f *fakeCustomOffsetStore) Load(_ context.Context) (int, error) {
+	return f.offset, nil
+}
+
+func (f *fakeCustomOffsetStore) Save(_ context.Context, offset int) error {
+	f.offset = offset
+	return nil
+}
+
+func TestOffsetStoreInterface_CustomStoreCompatibility(t *testing.T) {
+	t.Parallel()
+
+	var store OffsetStore = &fakeCustomOffsetStore{offset: 42}
+	got, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got != 42 {
+		t.Fatalf("got = %d, want 42", got)
+	}
+	if err := store.Save(context.Background(), 100); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	got, err = store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got != 100 {
+		t.Fatalf("got = %d, want 100", got)
+	}
+
+	gate := newPollingSettlementGate(zerolog.Nop())
+	settlement := settlementOffsetStore{store: store, gate: gate}
+	gate.begin(100)
+	gate.finish(100)
+	if err := settlement.Save(context.Background(), 101); err != nil {
+		t.Fatalf("settlement.Save() error = %v", err)
+	}
+	got, err = settlement.Load(context.Background())
+	if err != nil {
+		t.Fatalf("settlement.Load() error = %v", err)
+	}
+	if got != 101 {
+		t.Fatalf("got = %d, want 101", got)
+	}
+}

@@ -8,7 +8,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
-	"github.com/tgbotkit/runtime/updatepoller"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -87,9 +86,15 @@ type Provider interface {
 	// JetStream PubAck. It is distinct from canonical memory delivery state.
 	SessionMemoryIngressOutbox() SessionMemoryIngressOutboxStore
 	Jobs() JobStore
-	PollingOffsetStore() updatepoller.OffsetStore
+	PollingOffsetStore() PollingOffsetStore
 	Collaborators() CollaboratorStore
 	Close() error
+}
+
+// PollingOffsetStore persists bot polling offsets across restarts.
+type PollingOffsetStore interface {
+	Load(ctx context.Context) (int, error)
+	Save(ctx context.Context, offset int) error
 }
 
 // SessionMemoryIngressOutboxStore persists producer-local session-memory

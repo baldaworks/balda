@@ -94,7 +94,7 @@ func NewBot(
 func NewUpdateSource(
 	cfg Config,
 	client client.ClientWithResponsesInterface,
-	persistedOffsetStore updatepoller.OffsetStore,
+	persistedOffsetStore OffsetStore,
 	l zerolog.Logger,
 ) (runtime.UpdateSource, error) {
 	if cfg.Webhook.Enabled {
