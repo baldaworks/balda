@@ -108,7 +108,7 @@ func (h *CommandHandler) onCommand(ctx context.Context, event *events.CommandEve
 		Args:            commandCtx.Args,
 		IsDM:            commandCtx.IsDM,
 	}
-	if req.Command == commandReset || req.Command == commandLocator {
+	if h.commandIngress != nil && (req.Command == commandReset || req.Command == commandLocator || req.Command == commandHelp || req.Command == commandUsage || req.Command == commandAuto) {
 		allowed := h.canUseSessionCommand(ctx, req)
 		isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(req.UserID)
 		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{

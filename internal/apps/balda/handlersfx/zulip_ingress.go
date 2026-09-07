@@ -172,7 +172,7 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 		_ = h.sendPlain(ctx, cmd.Locator, zulipAccessDeniedText)
 		return nil
 	}
-	if cmd.Command == commandReset || cmd.Command == commandLocator {
+	if cmd.Command == commandReset || cmd.Command == commandLocator || cmd.Command == commandUsage || cmd.Command == commandAuto {
 		isOwner := h.ownerStore != nil && h.ownerStore.IsOwnerSubject(auth.ZulipSubject(cmd.SenderID))
 		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 			InvocationID: fmt.Sprintf("zulip:command:%d", cmd.MessageID),

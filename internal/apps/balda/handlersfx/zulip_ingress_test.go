@@ -53,7 +53,7 @@ func TestZulipInboundHandlerPublishesActorOwnedCommands(t *testing.T) {
 	if _, err := ownerStore.RegisterOwnerSubject(auth.ZulipSubject(101)); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"locator", "reset"} {
+	for _, name := range []string{"locator", "reset", "usage", "auto"} {
 		t.Run(name, func(t *testing.T) {
 			ingress := &recordingZulipCommandIngress{}
 			h := &zulipInboundHandler{ownerStore: ownerStore, commandIngress: ingress, logger: zerolog.Nop(), ownerID: 101}

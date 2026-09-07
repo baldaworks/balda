@@ -3,13 +3,17 @@ package commandfx
 
 import (
 	"github.com/baldaworks/balda/internal/apps/balda/actors/command"
+	commandauto "github.com/baldaworks/balda/internal/apps/balda/actors/command/auto"
+	commandhelp "github.com/baldaworks/balda/internal/apps/balda/actors/command/help"
 	commandlocator "github.com/baldaworks/balda/internal/apps/balda/actors/command/locator"
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
+	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/go-actorlayer/dispatch"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
+	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
 
@@ -20,12 +24,40 @@ type resetParams struct {
 	Dispatcher actortransport.Dispatcher
 }
 
+type usageParams struct {
+	fx.In
+	Sessions   *session.Manager
+	Dispatcher actortransport.Dispatcher
+	Logger     zerolog.Logger
+}
+
+type autoParams struct {
+	fx.In
+	Sessions     *session.Manager
+	Dispatcher   actortransport.Dispatcher
+	AutoMaxTurns int `name:"balda_automode_max_turns"`
+	Logger       zerolog.Logger
+}
+
 var Module = fx.Module("balda_command",
 	fx.Provide(
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(
 			func(p resetParams) *commandreset.Handler {
 				return commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(commandhelp.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
+		fx.Annotate(
+			func(p usageParams) *commandusage.Handler {
+				return commandusage.New(p.Sessions, p.Dispatcher, p.Logger)
+			},
+			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+		),
+		fx.Annotate(
+			func(p autoParams) *commandauto.Handler {
+				return commandauto.New(p.Sessions, p.Dispatcher, p.AutoMaxTurns, nil, p.Logger)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),
