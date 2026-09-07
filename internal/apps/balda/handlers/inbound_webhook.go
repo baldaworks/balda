@@ -19,12 +19,10 @@ import (
 	"time"
 
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
-	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -540,32 +538,6 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		return
 	}
 
-	target, targetErr := envelopetarget.Resolve(req.Context(), r.getResolver(), route.Target)
-	if targetErr != nil {
-		r.metrics.notFound.Add(1)
-		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
-			status:  http.StatusNotFound,
-			code:    inboundWebhookCodeSessionNotFound,
-			message: inboundWebhookMessageCouldNotAccept,
-			cause:   targetErr,
-		})
-		return
-	}
-	var reportTo *baldasession.SessionLocator
-	if route.ReportTo != nil {
-		resolved, err := envelopetarget.Resolve(req.Context(), r.getResolver(), *route.ReportTo)
-		if err != nil {
-			r.metrics.notFound.Add(1)
-			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
-				status:  http.StatusNotFound,
-				code:    inboundWebhookCodeSessionNotFound,
-				message: inboundWebhookMessageCouldNotAccept,
-				cause:   err,
-			})
-			return
-		}
-		reportTo = &resolved.Locator
-	}
 	dedupeBase := strings.TrimSpace(requestID)
 	switch route.Dedupe.Source {
 	case inboundWebhookDedupeSourceHeader:
@@ -577,50 +549,57 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		dedupeBase = fmt.Sprintf("%x", sum[:])
 	}
 	dedupeKey := strings.Join([]string{"webhook", strings.TrimSpace(route.Name), dedupeBase}, ":")
-	payload := turncmd.SessionTurnPayload{
-		Text:           prompt,
-		Locator:        target.Locator,
-		ReportTo:       reportTo,
-		UserID:         target.UserID(),
-		TopicID:        0,
-		DeliveryFormat: "",
-		ProgressPolicy: deliveryfmt.ProgressPolicy{
-			Typing:      false,
-			Thinking:    false,
-			PlanUpdates: true,
-		},
-		Deliver:   reportTo != nil,
-		Source:    "webhook",
-		DedupeKey: dedupeKey,
-	}
+
 	var (
-		result     *actortransport.DispatchReceipt
-		taskID     string
-		enqueueErr error
+		sessionPub webhookapp.SessionPublisher
+		jobPub     webhookapp.JobPublisher
 	)
-	if route.Mode == inboundWebhookRouteModeSession {
-		result, enqueueErr = r.balda.SubmitSessionTurn(req.Context(), payload)
-	} else {
-		result, taskID, enqueueErr = r.balda.SubmitWebhookTask(req.Context(), payload, route.Name, requestID)
+	if r.balda != nil {
+		sessionPub = webhookapp.SessionPublisherFunc(r.balda.SubmitSessionTurn)
+		jobPub = webhookapp.JobPublisherFunc(r.balda.SubmitWebhookTask)
 	}
-	if enqueueErr != nil {
-		if baldaexecution.IsCommandQueueFull(enqueueErr) {
+	svc := webhookapp.NewService(
+		webhookapp.NewDestinationTargetResolver(r.getResolver()),
+		sessionPub,
+		jobPub,
+	)
+
+	result, err := svc.Accept(req.Context(), webhookapp.Request{
+		RequestID: requestID,
+		RouteName: route.Name,
+		Prompt:    prompt,
+		Target:    route.Target,
+		ReportTo:  route.ReportTo,
+		Mode:      route.Mode,
+		DedupeKey: dedupeKey,
+	})
+	if err != nil {
+		if webhookapp.IsTargetNotFound(err) {
+			r.metrics.notFound.Add(1)
+			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
+				status:  http.StatusNotFound,
+				code:    inboundWebhookCodeSessionNotFound,
+				message: inboundWebhookMessageCouldNotAccept,
+				cause:   err,
+			})
+			return
+		}
+		if webhookapp.IsQueueFull(err) {
 			r.metrics.queueFull.Add(1)
 			r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
 				status:  http.StatusTooManyRequests,
 				code:    inboundWebhookCodeQueueFull,
 				message: inboundWebhookMessageTemporarilyBusy,
-				cause:   enqueueErr,
+				cause:   err,
 			})
 			return
 		}
-
 		r.metrics.dispatchErr.Add(1)
 		r.writeInboundWebhookError(w, requestID, &inboundWebhookHTTPError{
 			status:  http.StatusServiceUnavailable,
 			code:    inboundWebhookCodeDispatchFailed,
 			message: inboundWebhookMessageTemporarilyBusy,
-			cause:   enqueueErr,
+			cause:   err,
 		})
 		return
 	}
@@ -630,21 +609,21 @@ func (r *InboundWebhookReceiver) handleInboundWebhook(w http.ResponseWriter, req
 		Str("request_id", requestID).
 		Str("route", route.Name).
 		Str("path", route.Path).
-		Str("session_id", target.Locator.SessionID).
-		Str("channel_type", target.Locator.ChannelType).
-		Str("address_key", target.Locator.AddressKey).
+		Str("session_id", result.Target.Locator.SessionID).
+		Str("channel_type", result.Target.Locator.ChannelType).
+		Str("address_key", result.Target.Locator.AddressKey).
 		Str("mode", route.Mode).
 		Str("dedupe_key", dedupeKey).
 		Str("stream", result.Stream).
 		Uint64("sequence", result.Sequence).
-		Str("job_id", taskID).
+		Str("job_id", result.JobID).
 		Msg("inbound webhook accepted")
 
 	writeInboundWebhookJSON(w, http.StatusAccepted, inboundWebhookAcceptedResponse{
 		Status:    inboundWebhookStatusAccepted,
 		Accepted:  true,
 		RequestID: requestID,
-		MessageID: result.MsgID,
+		MessageID: result.MessageID,
 		Duplicate: result.Duplicate,
 	})
 }

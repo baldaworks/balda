@@ -120,6 +120,7 @@ components:
       - internal/apps/balda/sessionturnapp
       - internal/apps/balda/sessionmemoryapp
       - internal/apps/balda/welcome
+      - internal/apps/balda/webhookapp
 
   # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
   domain:
