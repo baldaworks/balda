@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log"
@@ -836,4 +837,205 @@ func (a closeTrackingGoalAgent) Close() error {
 
 func (a closeTrackingGoalAgent) String() string {
 	return fmt.Sprintf("closeTrackingGoalAgent(%s)", a.Name())
+}
+
+func TestBuildGoalWorkflow_WorkerErrorEmitsStepFailedEvent(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("simulated worker failure")
+	base := mustNewGoalTestAgent(t, "worker", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			yield(nil, expectedErr)
+		}
+	})
+
+	ctx := context.Background()
+	appName := "goal-worker-error-test"
+	sessionService := adksession.InMemoryService()
+	rootSessionID, workerSessionID, validatorSessionID := newGoalWorkflowTestSessions(t, ctx, sessionService, appName)
+	workflow, err := (&Builder{}).BuildGoalWorkflow(ctx, GoalBuildConfig{
+		BaseAgent:          base,
+		ProviderID:         "shared-provider",
+		SessionID:          "goal-session",
+		WorkerSessionID:    workerSessionID,
+		ValidatorSessionID: validatorSessionID,
+		WorkspaceDir:       t.TempDir(),
+		MaxIterations:      1,
+		AppName:            appName,
+		SessionService:     sessionService,
+	})
+	if err != nil {
+		t.Fatalf("BuildGoalWorkflow() error = %v", err)
+	}
+
+	r, err := adkrunner.New(adkrunner.Config{
+		AppName:        appName,
+		Agent:          workflow,
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+
+	var events []*adksession.Event
+	var runErr error
+	for ev, err := range r.Run(ctx, "tg-101", rootSessionID, genai.NewContentFromText("Goal:\nfix bug", genai.RoleUser), adkagent.RunConfig{}) {
+		if err != nil {
+			runErr = err
+			break
+		}
+		if ev != nil {
+			events = append(events, ev)
+		}
+	}
+	if runErr == nil || !strings.Contains(runErr.Error(), "simulated worker failure") {
+		t.Fatalf("runErr = %v, want simulated worker failure", runErr)
+	}
+
+	var hasStepFailed bool
+	for _, ev := range events {
+		if ev.CustomMetadata != nil && ev.CustomMetadata[goalMetadataEventKey] == goalStepFailed {
+			hasStepFailed = true
+			if gotStep := ev.CustomMetadata[goalMetadataStepKey]; gotStep != goalWorkerStep {
+				t.Fatalf("metadata[%q] = %v, want %q", goalMetadataStepKey, gotStep, goalWorkerStep)
+			}
+			if gotErr := ev.CustomMetadata[goalMetadataErrorKey]; gotErr != "simulated worker failure" {
+				t.Fatalf("metadata[%q] = %v, want simulated worker failure", goalMetadataErrorKey, gotErr)
+			}
+		}
+	}
+	if !hasStepFailed {
+		t.Fatal("expected goalStepFailed event was not emitted")
+	}
+}
+
+func TestBuildGoalWorkflow_ExhaustionTerminatesLoopAfterMaxIterations(t *testing.T) {
+	t.Parallel()
+
+	var workerRuns int
+	var validatorRuns int
+	base := mustNewGoalTestAgent(t, "shared", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			prompt := visibleContentText(ctx.UserContent())
+			switch {
+			case strings.Contains(prompt, "You are the goal validator agent."):
+				validatorRuns++
+				yield(goalTestTextEvent(ctx.InvocationID(), "verdict: fail\nneeds more work"), nil)
+			default:
+				workerRuns++
+				yield(goalTestTextEvent(ctx.InvocationID(), "attempt output"), nil)
+			}
+		}
+	})
+
+	ctx := context.Background()
+	appName := "goal-exhaustion-test"
+	sessionService := adksession.InMemoryService()
+	rootSessionID, workerSessionID, validatorSessionID := newGoalWorkflowTestSessions(t, ctx, sessionService, appName)
+	workflow, err := (&Builder{}).BuildGoalWorkflow(ctx, GoalBuildConfig{
+		BaseAgent:          base,
+		ProviderID:         "shared-provider",
+		SessionID:          "goal-session",
+		WorkerSessionID:    workerSessionID,
+		ValidatorSessionID: validatorSessionID,
+		WorkspaceDir:       t.TempDir(),
+		MaxIterations:      2,
+		AppName:            appName,
+		SessionService:     sessionService,
+	})
+	if err != nil {
+		t.Fatalf("BuildGoalWorkflow() error = %v", err)
+	}
+
+	r, err := adkrunner.New(adkrunner.Config{
+		AppName:        appName,
+		Agent:          workflow,
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+
+	got := runGoalAgentOnce(t, r, "tg-101", rootSessionID, "Goal:\nfix complex issue")
+	if got != "verdict: fail\nneeds more work" {
+		t.Fatalf("runGoalAgentOnce() = %q, want final failing validator output", got)
+	}
+	if workerRuns != 2 || validatorRuns != 2 {
+		t.Fatalf("workerRuns, validatorRuns = %d, %d; want 2, 2 on exhaustion", workerRuns, validatorRuns)
+	}
+}
+
+func TestBuildGoalWorkflow_WorkerNeedUserInputEmitsQuestionEvent(t *testing.T) {
+	t.Parallel()
+
+	var validatorRuns int
+	base := mustNewGoalTestAgent(t, "shared", func(ctx adkagent.InvocationContext) iter.Seq2[*adksession.Event, error] {
+		return func(yield func(*adksession.Event, error) bool) {
+			prompt := visibleContentText(ctx.UserContent())
+			if strings.Contains(prompt, "You are the goal validator agent.") {
+				validatorRuns++
+				yield(goalTestTextEvent(ctx.InvocationID(), "verdict: pass\nok"), nil)
+				return
+			}
+			yield(goalTestTextEvent(ctx.InvocationID(), `{"status":"need_user_input","question":"Need API key?","reason":"required for external call"}`), nil)
+		}
+	})
+
+	ctx := context.Background()
+	appName := "goal-question-event-test"
+	sessionService := adksession.InMemoryService()
+	rootSessionID, workerSessionID, validatorSessionID := newGoalWorkflowTestSessions(t, ctx, sessionService, appName)
+	workflow, err := (&Builder{}).BuildGoalWorkflow(ctx, GoalBuildConfig{
+		BaseAgent:          base,
+		ProviderID:         "shared-provider",
+		SessionID:          "goal-session",
+		WorkerSessionID:    workerSessionID,
+		ValidatorSessionID: validatorSessionID,
+		WorkspaceDir:       t.TempDir(),
+		MaxIterations:      2,
+		AppName:            appName,
+		SessionService:     sessionService,
+	})
+	if err != nil {
+		t.Fatalf("BuildGoalWorkflow() error = %v", err)
+	}
+
+	r, err := adkrunner.New(adkrunner.Config{
+		AppName:        appName,
+		Agent:          workflow,
+		SessionService: sessionService,
+	})
+	if err != nil {
+		t.Fatalf("runner.New() error = %v", err)
+	}
+
+	var events []*adksession.Event
+	for ev, err := range r.Run(ctx, "tg-101", rootSessionID, genai.NewContentFromText("Goal:\ncall API", genai.RoleUser), adkagent.RunConfig{}) {
+		if err != nil {
+			t.Fatalf("runner.Run() error = %v", err)
+		}
+		if ev != nil {
+			events = append(events, ev)
+		}
+	}
+
+	if validatorRuns != 0 {
+		t.Fatalf("validatorRuns = %d, want 0 when worker asks a question", validatorRuns)
+	}
+
+	var hasQuestionEvent bool
+	for _, ev := range events {
+		if ev.CustomMetadata != nil && ev.CustomMetadata[goalMetadataEventKey] == goalStepQuestion {
+			hasQuestionEvent = true
+			if gotPrompt := ev.CustomMetadata[goalMetadataQuestionPromptKey]; gotPrompt != "Need API key?" {
+				t.Fatalf("metadata[%q] = %v, want %q", goalMetadataQuestionPromptKey, gotPrompt, "Need API key?")
+			}
+			if gotReason := ev.CustomMetadata[goalMetadataQuestionReasonKey]; gotReason != "required for external call" {
+				t.Fatalf("metadata[%q] = %v, want %q", goalMetadataQuestionReasonKey, gotReason, "required for external call")
+			}
+		}
+	}
+	if !hasQuestionEvent {
+		t.Fatal("expected goalStepQuestion event was not emitted")
+	}
 }

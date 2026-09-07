@@ -412,6 +412,7 @@ func runGoalStep(
 
 	stats := goalStepStats{}
 	latestVisibleOutput := ""
+	var workerResult *goalresultcmd.WorkerResult
 	for ev, err := range r.Run(ctx, userID, sessionID, genai.NewContentFromText(prompt, genai.RoleUser), adkagent.RunConfig{}) {
 		if err != nil {
 			stats.err = err
@@ -422,18 +423,25 @@ func runGoalStep(
 			yield(ev, err)
 			return goalStepResult{VisibleText: latestVisibleOutput}, err
 		}
+		rawText := visibleGoalEventText(ev)
 		if spec.name == goalWorkerStep {
+			if parsed, ok := goalresultcmd.ParseWorkerResult(rawText); ok {
+				workerResult = &parsed
+				if strings.EqualFold(parsed.Status, goalresultcmd.StatusDone) && parsed.Summary != "" {
+					rawText = parsed.Summary
+				}
+			}
 			ev = normalizeGoalWorkerEvent(ev)
 		}
-		if text := visibleGoalEventText(ev); text != "" {
-			latestVisibleOutput = strings.TrimSpace(text)
+		if rawText != "" {
+			latestVisibleOutput = strings.TrimSpace(rawText)
 		}
 		stats.record(ev)
 		if ev != nil {
 			ev.Author = goalkeeperRootAgentName
 		}
 		if !yield(ev, nil) {
-			return goalStepResult{VisibleText: latestVisibleOutput}, fmt.Errorf("goal step delivery stopped")
+			return goalStepResult{VisibleText: latestVisibleOutput, Worker: workerResult}, fmt.Errorf("goal step delivery stopped")
 		}
 	}
 	stats.duration = time.Since(startedAt)
@@ -441,10 +449,10 @@ func runGoalStep(
 		stats.escalated = true
 	}
 	if !yield(newGoalStepEvent(ctx, invocationID, agent, spec, goalStepCompleted, stats), nil) {
-		return goalStepResult{VisibleText: latestVisibleOutput}, fmt.Errorf("goal step delivery stopped")
+		return goalStepResult{VisibleText: latestVisibleOutput, Worker: workerResult}, fmt.Errorf("goal step delivery stopped")
 	}
-	result := goalStepResult{VisibleText: latestVisibleOutput}
-	if spec.name == goalWorkerStep {
+	result := goalStepResult{VisibleText: latestVisibleOutput, Worker: workerResult}
+	if spec.name == goalWorkerStep && result.Worker == nil {
 		if parsed, ok := goalresultcmd.ParseWorkerResult(latestVisibleOutput); ok {
 			result.Worker = &parsed
 			if strings.EqualFold(parsed.Status, goalresultcmd.StatusDone) && parsed.Summary != "" {
