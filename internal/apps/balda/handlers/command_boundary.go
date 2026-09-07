@@ -22,8 +22,6 @@ type CommandContext struct {
 
 type CommandChannel interface {
 	CommandContextFromEvent(event *events.CommandEvent) (CommandContext, bool)
-	CreateTopicLocator(ctx context.Context, chatID int64, topicName string) (deliverycmd.Locator, error)
-	Close(ctx context.Context, locator deliverycmd.Locator) error
 }
 
 type CommandRegistry interface {

@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 
-	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"go.uber.org/fx"
@@ -51,14 +50,8 @@ var Module = fx.Module("balda_handlers",
 		},
 		func(params startHandlerParams) *StartHandler {
 			return &StartHandler{
-				ownerStore:        params.OwnerStore,
-				inviteStore:       params.InviteStore,
-				collaboratorStore: params.CollaboratorStore,
-				channelAuth:       params.ChannelAuth,
-				actorDispatcher:   params.Dispatcher,
-				authToken:         params.AuthToken,
-				baldaHandler:      params.OwnerActivator,
-				commandIngress:    params.CommandIngress,
+				ownerStore:     params.OwnerStore,
+				commandIngress: params.CommandIngress,
 			}
 		},
 		func(params commandHandlerParams) *CommandHandler {
@@ -66,23 +59,7 @@ var Module = fx.Module("balda_handlers",
 				ownerStore:        params.OwnerStore,
 				collaboratorStore: params.CollaboratorStore,
 				channel:           params.Channel,
-				sessionManager:    params.SessionManager,
-				actorDispatcher:   params.Dispatcher,
 				commandIngress:    params.CommandIngress,
-				goalJobs:          params.GoalJobs,
-				goalMaxIterations: normalizeGoalMaxIterations(params.MaxIterations),
-				autoMaxTurns:      automode.NormalizeMaxTurns(params.AutoMaxTurns),
-				userHandler:       params.UserHandler,
-				plugins:           params.Plugins,
-			}
-		},
-		func(params userHandlerParams) *userHandler {
-			return &userHandler{
-				ownerStore:        params.OwnerStore,
-				inviteStore:       params.InviteStore,
-				collaboratorStore: params.CollaboratorStore,
-				actorDispatcher:   params.Dispatcher,
-				tgClient:          params.TGClient,
 			}
 		},
 		fx.Annotate(NewCommandIngress, fx.As(new(commandcmd.Ingress))),

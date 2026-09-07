@@ -76,12 +76,12 @@ flowchart TB
 | `actorcmd` | `internal/apps/balda/actorcmd` | Leaf actor targets, namespaces, subjects, headers, and job-scope metadata | `github.com/baldaworks/go-actorlayer` |
 | `agent` | `internal/apps/balda/agent` | Provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, and runtime-adjacent workspace support | `internal/git`, runtime/agent factory packages |
 | `actors` | `internal/apps/balda/actors` | Balda product actor behavior | actorcmd, agent, channel, jobs, session, state |
-| `actors/command` | `internal/apps/balda/actors/command` | Independent CommandActor, exact-name router, and actor-owned locator/reset policy | actorcmd, commandcmd, delivery contracts, local ports |
+| `actors/command` | `internal/apps/balda/actors/command` | Independent CommandActor, exact-name router, and actor-owned command policy families | actorcmd, commandcmd, delivery contracts, local ports |
 | `commandcmd` | `internal/apps/balda/commandcmd` | Neutral command envelope and transport advertisement contracts | actorcmd, deliverycmd, deliveryfmt |
 | `commandfx` | `internal/apps/balda/commandfx` | CommandActor registration and port wiring | actors/command, session, runtime interfaces |
 | `auth` | `internal/apps/balda/auth` | Owner authentication store | state (interface) |
 | `channel/telegram` | `internal/apps/balda/channel/telegram` | Telegram transport package: adapter, delivery formatting, and message sending | session, `tgbotkit/client` |
-| `handlers` | `internal/apps/balda/handlers` | Ingress parsing, access checks, and durable publication; legacy commands remain here pending scoped migration | auth, commandcmd, deliverycmd, turncmd |
+| `handlers` | `internal/apps/balda/handlers` | Ingress parsing, access checks, and durable publication | auth, commandcmd, deliverycmd, turncmd |
 | `internalmcp` | `internal/apps/balda/internalmcp` | Bundled MCP server lifecycle | controlmcp, memory, session |
 | `memory` | `internal/apps/balda/memory` | Global explicit-fact store and `balda.memory.*` MCP tools | (standalone) |
 | `session` | `internal/apps/balda/session` | Session management | agent, state |

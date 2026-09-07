@@ -18,9 +18,6 @@ var Module = fx.Module("balda_handlersfx",
 		fx.Annotate(
 			func(h *telegramInboundHandler) baldatelegram.BotLifecycleHandler { return h },
 		),
-		fx.Annotate(
-			func(h *telegramInboundHandler) handlers.BaldaOwnerActivator { return h },
-		),
 		newInboundTurnExecutor,
 		newTelegramChannelAdapter,
 		fx.Annotate(

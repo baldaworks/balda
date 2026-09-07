@@ -18,6 +18,8 @@ import (
 	"go.uber.org/fx"
 )
 
+const autoSessionLabel = "auto"
+
 type ChatHandlerParams struct {
 	fx.In
 

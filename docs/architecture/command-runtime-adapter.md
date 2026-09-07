@@ -20,12 +20,14 @@ Status: active
   resolves access and publishes. Actor handlers own behavior. `commandfx`
   contains only registration and port wiring.
 
-## Current migration scope
+## Command routing scope
 
-`locator` and `reset` use CommandActor in Telegram, Zulip, and Slack. The Slack
-surface is `/balda locator|reset`. Remaining commands keep their existing
-execution path until migrated by separate stories; this document does not
-claim that migration is complete.
+All supported chat commands (`locator`, `reset`, `help`, `usage`, `auto`, `cancel`,
+`goalkeeper`, `topic`, `close`, `start`, `user`, `plugin`) route via the
+transport-neutral `CommandActor`. Handlers are organized in scoped families under
+`internal/apps/balda/actors/command/<family>` and registered through `commandfx`.
+Concrete transports retain only parsing and whitelist enforcement before publishing
+`commandcmd.Request` envelopes.
 
 ## Related tests
 

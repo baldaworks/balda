@@ -5,7 +5,6 @@ import (
 	"context"
 
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/tgbotkit/runtime/events"
@@ -23,14 +22,6 @@ func (a telegramChannelAdapter) CommandContextFromEvent(event *events.CommandEve
 		return handlers.CommandContext{}, false
 	}
 	return handlers.CommandContext(command), true
-}
-
-func (a telegramChannelAdapter) CreateTopicLocator(ctx context.Context, chatID int64, topicName string) (deliverycmd.Locator, error) {
-	return a.channel.CreateTopicLocator(ctx, chatID, topicName)
-}
-
-func (a telegramChannelAdapter) Close(ctx context.Context, locator deliverycmd.Locator) error {
-	return a.channel.Close(ctx, locator)
 }
 
 type telegramRegistryAdapter struct {

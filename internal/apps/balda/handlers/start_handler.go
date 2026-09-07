@@ -4,60 +4,29 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog/log"
-	"github.com/tgbotkit/client"
 	"github.com/tgbotkit/runtime/events"
 	"go.uber.org/fx"
 )
 
-// StartHandler handles /start command for owner authentication and invite consumption.
-type StartHandler struct {
-	ownerStore        *auth.OwnerStore
-	inviteStore       *auth.InviteStore
-	collaboratorStore *auth.CollaboratorStore
-	channelAuth       *auth.ChannelAuthService
-	actorDispatcher   actortransport.Dispatcher
-	authToken         string
-	baldaHandler      BaldaOwnerActivator
-	commandIngress    commandcmd.Ingress
-}
+const chatTypePrivate = "private"
 
-type BaldaOwnerActivator interface {
-	ActivateOwner(ctx context.Context, ownerID, chatID int64) error
+// StartHandler handles /start command for telegram by publishing it to CommandActor ingress.
+type StartHandler struct {
+	ownerStore     *auth.OwnerStore
+	commandIngress commandcmd.Ingress
 }
 
 type startHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore
-	InviteStore       *auth.InviteStore
-	CollaboratorStore *auth.CollaboratorStore
-	ChannelAuth       *auth.ChannelAuthService
-	Dispatcher        actortransport.Dispatcher
-	AuthToken         string              `name:"balda_auth_token"`
-	OwnerActivator    BaldaOwnerActivator `optional:"true"`
-	CommandIngress    commandcmd.Ingress  `optional:"true"`
-}
-
-const (
-	startModeOwner  = "owner"
-	startModeInvite = "invite"
-)
-
-type startCommandArgs struct {
-	mode  string
-	token string
-}
-
-func (h *StartHandler) sendPlain(ctx context.Context, chatID int64, text string) error {
-	return sendPlain(ctx, h.actorDispatcher, startHandlerActorAddress, telegramref.NewLocator(chatID, 0), text)
+	OwnerStore     *auth.OwnerStore   `optional:"true"`
+	CommandIngress commandcmd.Ingress `optional:"true"`
 }
 
 // Register registers the handler with the registry.
@@ -69,318 +38,40 @@ func (h *StartHandler) onCommand(ctx context.Context, event *events.CommandEvent
 	if event.Command != commandStart {
 		return nil
 	}
-
-	if event.Message.Chat.Type != chatTypePrivate {
+	if event.Message == nil || event.Message.Chat.Type != chatTypePrivate {
 		return nil
 	}
 
 	chatID := event.Message.Chat.Id
-	userIDStr := fmt.Sprintf("%d", event.Message.From.Id)
-	userID := event.Message.From.Id
+	userID := int64(0)
+	if event.Message.From != nil {
+		userID = event.Message.From.Id
+	}
+	args := strings.TrimSpace(event.Args)
 
 	log.Debug().
 		Int64("user_id", userID).
 		Int64("chat_id", chatID).
 		Msg("Start command received")
 
-	if h.commandIngress != nil {
-		isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(userID)
-		return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
-			InvocationID: fmt.Sprintf("telegram:command:%d:%d", chatID, event.Message.MessageId),
-			Payload: commandcmd.Payload{
-				Version:      commandcmd.SchemaVersion,
-				Name:         commandStart,
-				Args:         event.Args,
-				Locator:      telegramref.NewLocator(chatID, 0),
-				Transport:    telegramref.ChannelType,
-				Principal:    telegramref.UserID(userID),
-				Access:       commandcmd.Access{SessionCommands: true, Owner: isOwner, Collaborator: !isOwner},
-				Conversation: commandcmd.Conversation{Direct: true},
-				Presentation: deliveryfmt.Options{
-					DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
-					ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true},
-				},
-				Invocation: commandcmd.Invocation{Root: "/"},
-			},
-		})
-	}
-
-	trimmedArgs := strings.TrimSpace(event.Args)
-	args := startCommandArgs{}
-	malformed := false
-	if trimmedArgs != "" {
-		fields := strings.Fields(trimmedArgs)
-		if len(fields) != 1 {
-			malformed = true
-		} else {
-			assignment := fields[0]
-			switch {
-			case strings.HasPrefix(assignment, "?"):
-				malformed = true
-			case auth.LooksLikeChannelToken(assignment):
-				args = startCommandArgs{mode: "channel_token", token: strings.TrimSpace(assignment)}
-			case strings.HasPrefix(assignment, startModeOwner+"_"):
-				value := strings.TrimSpace(strings.TrimPrefix(assignment, startModeOwner+"_"))
-				if value == "" {
-					malformed = true
-				} else {
-					args = startCommandArgs{mode: startModeOwner, token: value}
-				}
-			case strings.HasPrefix(assignment, startModeInvite+"_"):
-				value := strings.TrimSpace(strings.TrimPrefix(assignment, startModeInvite+"_"))
-				if value == "" {
-					malformed = true
-				} else {
-					args = startCommandArgs{mode: startModeInvite, token: value}
-				}
-			default:
-				if strings.Count(assignment, "=") != 1 {
-					malformed = true
-					break
-				}
-				key, value, _ := strings.Cut(assignment, "=")
-				key = strings.TrimSpace(key)
-				value = strings.TrimSpace(value)
-				if key == "" || value == "" {
-					malformed = true
-					break
-				}
-				switch key {
-				case startModeOwner, startModeInvite:
-					args = startCommandArgs{mode: key, token: value}
-				default:
-					malformed = true
-				}
-			}
-		}
-	}
-
-	if malformed {
-		log.Warn().
-			Int64("user_id", userID).
-			Int64("chat_id", chatID).
-			Msg("Malformed /start argument")
-		if err := sendPlain(ctx, h.actorDispatcher, startHandlerActorAddress, telegramref.NewLocator(chatID, 0), "Invalid /start format. Use one of:\n• /start owner=<your_owner_token>\n• /start invite=<your_invite_token>\n\nIf using a link, use one of:\n• https://t.me/<bot_username>?start=owner_<your_owner_token>\n• https://t.me/<bot_username>?start=invite_<your_invite_token>"); err != nil {
-			return err
-		}
+	if h.commandIngress == nil {
 		return nil
 	}
 
-	if args.mode == "channel_token" {
-		if h.channelAuth == nil {
-			if err := h.sendPlain(ctx, chatID, "Token authentication is unavailable right now."); err != nil {
-				return err
-			}
-			return nil
-		}
-		consumed, err := h.channelAuth.ConsumeOwnerBind(ctx, auth.ChannelTelegram, auth.TelegramSubject(userID), args.token)
-		if err != nil {
-			log.Warn().Err(err).Int64("user_id", userID).Msg("failed to consume telegram owner bind token")
-			if err := h.sendPlain(ctx, chatID, "Failed to process token. Please try again."); err != nil {
-				return err
-			}
-			return nil
-		}
-		if consumed {
-			if err := h.ownerStore.BindOwnerTelegram(userID, chatID); err != nil {
-				log.Warn().Err(err).Int64("user_id", userID).Msg("failed to bind telegram owner")
-				if sendErr := h.sendPlain(ctx, chatID, "Failed to connect Telegram account. Please try again."); sendErr != nil {
-					return sendErr
-				}
-				return nil
-			}
-			if err := h.activateBalda(ctx, userID, chatID); err != nil {
-				if sendErr := h.sendPlain(ctx, chatID, "Could not start owner session. Please try again."); sendErr != nil {
-					return sendErr
-				}
-				return nil
-			}
-			if err := h.sendPlain(ctx, chatID, "This Telegram account is now connected to the Balda owner."); err != nil {
-				return err
-			}
-			return nil
-		}
-		if err := h.sendPlain(ctx, chatID, "This token is invalid or has expired."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if h.ownerStore.HasOwner() {
-		if args.mode == startModeInvite {
-			return h.handleInviteStart(ctx, chatID, userID, userIDStr, args.token, event.Message.From)
-		}
-		if h.ownerStore.IsOwner(userID) {
-			startErr := h.ownerStore.BindOwnerTelegram(userID, chatID)
-			if startErr != nil {
-				log.Warn().Err(startErr).Msg("failed to update owner chatID")
-			} else {
-				startErr = h.activateBalda(ctx, userID, chatID)
-			}
-			if startErr == nil {
-				log.Info().Int64("user_id", userID).Msg("balda re-activated for existing owner")
-			}
-			msg := ownerAlreadyRegisteredMessage
-			if bundle, ok := ownerBindTokenBundleMessage(ctx, h.channelAuth, auth.TelegramSubject(userID)); ok {
-				msg += "\n\n" + bundle
-			}
-			if startErr != nil {
-				msg += "\n\nCould not start owner session. Please try again."
-			}
-			if err := h.sendPlain(ctx, chatID, msg); err != nil {
-				return err
-			}
-			return nil
-		}
-		if h.collaboratorStore != nil {
-			if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, userIDStr); err != nil {
-				log.Warn().Err(err).Str("user_id", userIDStr).Msg("failed to check collaborator during /start")
-			} else if ok {
-				if err := h.sendPlain(ctx, chatID, "You are already a bot collaborator."); err != nil {
-					return err
-				}
-				return nil
-			}
-		}
-		if err := h.sendPlain(ctx, chatID, "Bot owner is already registered. Only the owner can use this bot."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if args.mode == "" {
-		if err := h.sendPlain(ctx, chatID, "Welcome to Balda Bot!\n\nTo authenticate, send /start owner=<your_owner_token>"); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if args.mode == startModeInvite {
-		return h.handleInviteStart(ctx, chatID, userID, userIDStr, args.token, event.Message.From)
-	}
-
-	if args.token != h.authToken {
-		log.Warn().
-			Int64("user_id", userID).
-			Int64("chat_id", chatID).
-			Msg("Invalid auth token provided")
-		if err := h.sendPlain(ctx, chatID, "Invalid authentication token. Please try again."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	registered, err := h.ownerStore.RegisterOwner(userID, chatID)
-	if err != nil {
-		log.Error().Err(err).Int64("user_id", userID).Msg("Failed to register owner")
-		if sendErr := h.sendPlain(ctx, chatID, "Failed to register owner. Please try again."); sendErr != nil {
-			return sendErr
-		}
-		return nil
-	}
-
-	if !registered {
-		if err := h.sendPlain(ctx, chatID, "Owner is already registered."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	log.Info().
-		Int64("user_id", userID).
-		Msg("Owner registered successfully")
-
-	startErr := h.activateBalda(ctx, userID, chatID)
-	name := event.Message.From.FirstName
-	if name == "" {
-		name = "Owner"
-	}
-
-	text := fmt.Sprintf("Congratulations, %s! You are now registered as the bot owner.", name)
-	if startErr != nil {
-		text += "\n\nCould not start owner session. Please try again."
-	}
-	if err := h.sendPlain(ctx, chatID, text); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (h *StartHandler) activateBalda(ctx context.Context, ownerID, chatID int64) error {
-	if h.baldaHandler == nil {
-		return fmt.Errorf("balda owner activator is unavailable")
-	}
-	if err := h.baldaHandler.ActivateOwner(ctx, ownerID, chatID); err != nil {
-		log.Warn().
-			Err(err).
-			Int64("owner_id", ownerID).
-			Int64("chat_id", chatID).
-			Msg("failed to start owner session during /start")
-		return err
-	}
-	return nil
-}
-
-func (h *StartHandler) handleInviteStart(ctx context.Context, chatID, userID int64, userIDStr, token string, from *client.User) error {
-	if h.ownerStore.IsOwner(userID) {
-		if err := h.sendPlain(ctx, chatID, "You are already the bot owner."); err != nil {
-			return err
-		}
-		return nil
-	}
-	if h.collaboratorStore != nil {
-		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, userIDStr); err != nil {
-			log.Warn().Err(err).Str("user_id", userIDStr).Msg("failed to check collaborator")
-		} else if ok {
-			if err := h.sendPlain(ctx, chatID, "You are already a collaborator."); err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-	if h.inviteStore == nil || h.collaboratorStore == nil {
-		log.Error().Msg("invite or collaborator store is nil during /start invite flow")
-		if err := h.sendPlain(ctx, chatID, "Failed to process invite. Please try again."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	invite, err := h.inviteStore.GetInvite(ctx, token)
-	if err != nil {
-		log.Warn().Err(err).Str("token", token).Msg("failed to get invite")
-		if err := h.sendPlain(ctx, chatID, "Failed to process invite. Please try again."); err != nil {
-			return err
-		}
-		return nil
-	}
-	if invite == nil {
-		if err := h.sendPlain(ctx, chatID, "This invite link is invalid or has expired."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	collaborator := auth.Collaborator{
-		UserID:  userIDStr,
-		AddedBy: invite.CreatedBy,
-		AddedAt: time.Now(),
-	}
-	if from.Username != nil {
-		collaborator.Username = *from.Username
-	}
-	collaborator.FirstName = from.FirstName
-	if err := h.collaboratorStore.AddCollaborator(ctx, collaborator); err != nil {
-		log.Error().Err(err).Msg("failed to add collaborator from invite")
-		if err := h.sendPlain(ctx, chatID, "Failed to complete registration. Please try again."); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	log.Info().Str("user_id", userIDStr).Str("invited_by", invite.CreatedBy).Msg("user registered as collaborator via invite")
-	if err := h.sendPlain(ctx, chatID, "Welcome! You are now a bot collaborator."); err != nil {
-		return err
-	}
-	return nil
+	isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(userID)
+	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
+		InvocationID: fmt.Sprintf("telegram:command:%d:%d", chatID, event.Message.MessageId),
+		Payload: commandcmd.Payload{
+			Version:      commandcmd.SchemaVersion,
+			Name:         commandStart,
+			Args:         args,
+			Locator:      telegramref.NewLocator(chatID, 0),
+			Transport:    telegramref.ChannelType,
+			Principal:    telegramref.UserID(userID),
+			Access:       commandcmd.Access{SessionCommands: true, Owner: isOwner, Collaborator: !isOwner},
+			Conversation: commandcmd.Conversation{Direct: true},
+			Presentation: deliveryfmt.Options{DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown, ProgressPolicy: deliveryfmt.ProgressPolicy{Typing: true, PlanUpdates: true}},
+			Invocation:   commandcmd.Invocation{Root: "/"},
+		},
+	})
 }

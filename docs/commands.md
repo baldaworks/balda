@@ -161,21 +161,23 @@ response. Operators should use the checks in
 
 ## Command execution architecture
 
-Each transport owns its command syntax and explicit whitelist. For the
-actor-migrated commands in this change, the path is:
+Each transport owns its command syntax and explicit whitelist. All supported
+chat commands follow this path:
 
 ```text
 transport parser + whitelist
   -> ingress access check + durable publish
   -> CommandActor
-  -> exact name handler (locator or reset)
-  -> session/delivery ports
+  -> exact name handler in scoped family
+  -> session/delivery/auth/app ports
 ```
 
 `commandcmd` owns the neutral envelope. `actors/command` owns exact-name
-routing and command policy. `commandfx` wires actor ports. Transport packages
-do not import those actor or application packages. Other commands retain their
-existing handlers until migrated in their own scoped changes.
+routing and command policy across scoped families (`locator`, `reset`, `info`,
+`auto`, `control`, `goalkeeper`, `topic`, `closecmd`, `bootstrap`, `user`,
+`plugin`). `commandfx` wires actor ports. Transport packages do not import actor
+or application packages. Ingress handlers parse, perform auth/session checks, and
+publish `commandcmd.Request` envelopes.
 
 ## User administration
 

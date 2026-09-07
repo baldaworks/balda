@@ -6,6 +6,6 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
-PATTERN='TestCommandHandlerSubmitGoalJob_PublishesDurableCommandOnly|TestInboundWebhookReceiver_AcceptsAndPublishesCommand|TestInboundWebhookReceiver_SessionModePublishesSessionCommand|TestScheduledTaskSchedulerDispatchTask_PublishesCommandAndReschedules'
+PATTERN='TestCommandHandlerPublishesActorOwnedCommands|TestCommandHandlerAccessDerivation|TestInboundWebhookReceiver_AcceptsAndPublishesCommand|TestInboundWebhookReceiver_SessionModePublishesSessionCommand'
 
 exec go test ./internal/apps/balda/handlers -run "${PATTERN}" "$@"
