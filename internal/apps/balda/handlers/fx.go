@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"fmt"
-
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"go.uber.org/fx"
@@ -15,39 +13,6 @@ var Module = fx.Module("balda_handlers",
 			NewChatHandler,
 			fx.As(new(chatapp.Handler)),
 		),
-		func(params inboundWebhookParams) (*InboundWebhookReceiver, error) {
-			normalized, err := normalizeInboundWebhookConfig(params.Config)
-			if err != nil {
-				return nil, err
-			}
-
-			resolver := params.Resolver
-			if resolver == nil && params.OwnerStore != nil {
-				resolver = params.OwnerStore
-			}
-
-			receiver := &InboundWebhookReceiver{
-				enabled:    normalized.Enabled,
-				listenAddr: normalized.ListenAddr,
-				routes:     normalized.Routes,
-				balda:      params.Executor,
-				owner:      params.OwnerStore,
-				resolver:   resolver,
-				logger:     params.Logger.With().Str("component", "balda.inbound_webhook").Logger(),
-			}
-
-			if !receiver.enabled {
-				return receiver, nil
-			}
-			if receiver.balda == nil {
-				return nil, fmt.Errorf("balda handler is required for inbound webhooks")
-			}
-			if receiver.owner == nil && receiver.resolver == nil {
-				return nil, fmt.Errorf("balda destination resolver is required for inbound webhooks")
-			}
-
-			return receiver, nil
-		},
 		func(params startHandlerParams) *StartHandler {
 			return &StartHandler{
 				ownerStore:     params.OwnerStore,
@@ -63,8 +28,5 @@ var Module = fx.Module("balda_handlers",
 			}
 		},
 		fx.Annotate(NewCommandIngress, fx.As(new(commandcmd.Ingress))),
-	),
-	fx.Invoke(
-		func(*InboundWebhookReceiver) {},
 	),
 )

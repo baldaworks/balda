@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
@@ -122,7 +122,7 @@ func TestValidateRuntimeConfigLint_AllowsAlwaysOnRuntimeConfig(t *testing.T) {
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, handlers.InboundWebhookConfig{}); err != nil {
+	}, webhook.Config{}); err != nil {
 		t.Fatalf("validateExecutionConfigLint() error = %v, want nil", err)
 	}
 }
@@ -137,7 +137,7 @@ func TestValidateRuntimeConfigLint_RejectsInvalidAndDuplicateRuntimeNames(t *tes
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_EVENTS"},
-	}, handlers.InboundWebhookConfig{})
+	}, webhook.Config{})
 	if err == nil {
 		t.Fatal("validateExecutionConfigLint() error = nil, want non-nil")
 	}
@@ -163,12 +163,12 @@ func TestValidateRuntimeConfigLint_RejectsPublicWebhookWithoutRouteAuth(t *testi
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, handlers.InboundWebhookConfig{
+	}, webhook.Config{
 		Enabled:    true,
 		ListenAddr: "0.0.0.0:8090",
-		Routes: map[string]handlers.InboundWebhookRouteConfig{
+		Routes: map[string]webhook.RouteConfig{
 			"release": {
-				Auth: handlers.InboundWebhookRouteAuthConfig{Type: "none"},
+				Auth: webhook.RouteAuthConfig{Type: "none"},
 			},
 		},
 	})
@@ -190,12 +190,12 @@ func TestValidateRuntimeConfigLint_AllowsLoopbackWebhookWithoutRouteAuth(t *test
 		},
 		Events: baldaexecution.EventStreamConfig{Stream: "BALDA_EVENTS"},
 		DLQ:    baldaexecution.DLQConfig{Stream: "BALDA_DLQ"},
-	}, handlers.InboundWebhookConfig{
+	}, webhook.Config{
 		Enabled:    true,
 		ListenAddr: "127.0.0.1:8090",
-		Routes: map[string]handlers.InboundWebhookRouteConfig{
+		Routes: map[string]webhook.RouteConfig{
 			"release": {
-				Auth: handlers.InboundWebhookRouteAuthConfig{Type: "none"},
+				Auth: webhook.RouteAuthConfig{Type: "none"},
 			},
 		},
 	})
@@ -467,28 +467,28 @@ func TestBuildInboundWebhookConfig(t *testing.T) {
 	}
 
 	got := buildInboundWebhookConfig(cfg)
-	want := handlers.InboundWebhookConfig{
+	want := webhook.Config{
 		Enabled:    true,
 		ListenAddr: "127.0.0.1:8091",
-		Routes: map[string]handlers.InboundWebhookRouteConfig{
+		Routes: map[string]webhook.RouteConfig{
 			"webhook1": {
 				Path:           "webhook1",
 				PromptTemplate: "{{.RawBody}}",
-				Envelope: handlers.InboundWebhookRouteEnvelopeConfig{
+				Envelope: webhook.RouteEnvelopeConfig{
 					Target: "alias",
 					Key:    "owner",
 					Mode:   "task",
-					ReportTo: &handlers.InboundWebhookRouteTargetConfig{
+					ReportTo: &webhook.RouteTargetConfig{
 						Target: "alias",
 						Key:    "owner",
 					},
 				},
-				Auth: handlers.InboundWebhookRouteAuthConfig{
+				Auth: webhook.RouteAuthConfig{
 					Type:   "header",
 					Header: "X-Test-Auth",
 					Value:  "s3cr3t",
 				},
-				Dedupe: handlers.InboundWebhookRouteDedupeConfig{
+				Dedupe: webhook.RouteDedupeConfig{
 					Source: "header",
 					Header: "X-Event-ID",
 				},

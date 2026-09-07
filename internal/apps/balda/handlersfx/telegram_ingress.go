@@ -14,7 +14,6 @@ import (
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
@@ -654,7 +653,7 @@ type inboundTurnExecutor struct {
 	dispatcher actortransport.Dispatcher
 }
 
-func newInboundTurnExecutor(dispatcher actortransport.Dispatcher) handlers.InboundTurnExecutor {
+func newInboundTurnExecutor(dispatcher actortransport.Dispatcher) *inboundTurnExecutor {
 	return &inboundTurnExecutor{dispatcher: dispatcher}
 }
 
@@ -682,4 +681,12 @@ func (e *inboundTurnExecutor) SubmitWebhookTask(ctx context.Context, payload tur
 		return nil, "", err
 	}
 	return result, jobID, nil
+}
+
+func (e *inboundTurnExecutor) PublishSessionTurn(ctx context.Context, payload turncmd.SessionTurnPayload) (*actortransport.DispatchReceipt, error) {
+	return e.SubmitSessionTurn(ctx, payload)
+}
+
+func (e *inboundTurnExecutor) PublishWebhookJob(ctx context.Context, payload turncmd.SessionTurnPayload, routeName string, requestID string) (*actortransport.DispatchReceipt, string, error) {
+	return e.SubmitWebhookTask(ctx, payload, routeName, requestID)
 }

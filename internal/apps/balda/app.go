@@ -22,6 +22,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram/telegramfx"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
@@ -650,6 +651,7 @@ func Module(
 		scheduledjobs.Module,
 		handlers.Module,
 		handlersfx.Module,
+		webhook.Module,
 		fx.Provide(
 			internalmcp.NewInternalMCPManager,
 		),
@@ -762,7 +764,7 @@ func validateSessionPersistence(raw string) (string, error) {
 	}
 }
 
-func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg handlers.InboundWebhookConfig) error {
+func validateExecutionConfigLint(executionCfg baldaexecution.Config, webhookCfg webhook.Config) error {
 	errs := make([]string, 0)
 
 	streamNames := map[string]string{
@@ -924,12 +926,12 @@ func validateIdentifierValue(field, value string) error {
 	return nil
 }
 
-func buildInboundWebhookConfig(cfg BaldaConfig) handlers.InboundWebhookConfig {
-	routes := make(map[string]handlers.InboundWebhookRouteConfig, len(cfg.Webhooks.Routes))
+func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
+	routes := make(map[string]webhook.RouteConfig, len(cfg.Webhooks.Routes))
 	for routeName, route := range cfg.Webhooks.Routes {
-		var reportTo *handlers.InboundWebhookRouteTargetConfig
+		var reportTo *webhook.RouteTargetConfig
 		if route.Envelope.ReportTo != nil {
-			reportTo = &handlers.InboundWebhookRouteTargetConfig{
+			reportTo = &webhook.RouteTargetConfig{
 				Target: strings.TrimSpace(route.Envelope.ReportTo.Target),
 				Key:    strings.TrimSpace(route.Envelope.ReportTo.Key),
 			}
@@ -940,28 +942,28 @@ func buildInboundWebhookConfig(cfg BaldaConfig) handlers.InboundWebhookConfig {
 				authValue = strings.TrimSpace(os.Getenv(envKey))
 			}
 		}
-		routes[strings.TrimSpace(routeName)] = handlers.InboundWebhookRouteConfig{
+		routes[strings.TrimSpace(routeName)] = webhook.RouteConfig{
 			Path:           strings.TrimSpace(route.Path),
 			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
-			Envelope: handlers.InboundWebhookRouteEnvelopeConfig{
+			Envelope: webhook.RouteEnvelopeConfig{
 				Target:   strings.TrimSpace(route.Envelope.Target),
 				Key:      strings.TrimSpace(route.Envelope.Key),
 				Mode:     strings.TrimSpace(route.Envelope.Mode),
 				ReportTo: reportTo,
 			},
-			Auth: handlers.InboundWebhookRouteAuthConfig{
+			Auth: webhook.RouteAuthConfig{
 				Type:   strings.TrimSpace(route.Auth.Type),
 				Header: strings.TrimSpace(route.Auth.Header),
 				Value:  authValue,
 			},
-			Dedupe: handlers.InboundWebhookRouteDedupeConfig{
+			Dedupe: webhook.RouteDedupeConfig{
 				Source: strings.TrimSpace(route.Dedupe.Source),
 				Header: strings.TrimSpace(route.Dedupe.Header),
 			},
 		}
 	}
 
-	return handlers.InboundWebhookConfig{
+	return webhook.Config{
 		Enabled:    cfg.Webhooks.Enabled,
 		ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr),
 		Routes:     routes,

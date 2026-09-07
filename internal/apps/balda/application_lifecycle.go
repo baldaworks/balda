@@ -11,7 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/handlers"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
@@ -150,7 +150,7 @@ type applicationLifecycleParams struct {
 	ActorHost            *baldaexecution.ActorHost
 	TurnDispatcher       *actors.TurnDispatcher
 	Scheduler            *scheduledjobs.ScheduledJobScheduler
-	InboundWebhook       *handlers.InboundWebhookReceiver
+	InboundWebhook       *webhook.Receiver
 	TransportStages      []appports.TransportLifecycleStage `group:"balda_transport_lifecycle_stage"`
 	TelegramBot          *runtime.Bot
 	TelegramEnabled      bool `name:"balda_telegram_enabled"`

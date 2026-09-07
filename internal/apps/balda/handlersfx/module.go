@@ -5,6 +5,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/handlers"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"go.uber.org/fx"
 )
 
@@ -18,7 +19,11 @@ var Module = fx.Module("balda_handlersfx",
 		fx.Annotate(
 			func(h *telegramInboundHandler) baldatelegram.BotLifecycleHandler { return h },
 		),
-		newInboundTurnExecutor,
+		fx.Annotate(
+			newInboundTurnExecutor,
+			fx.As(new(webhookapp.SessionPublisher)),
+			fx.As(new(webhookapp.JobPublisher)),
+		),
 		newTelegramChannelAdapter,
 		fx.Annotate(
 			func(handler *handlers.StartHandler) tgbotkit.Handler {

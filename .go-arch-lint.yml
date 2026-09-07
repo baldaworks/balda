@@ -202,6 +202,11 @@ components:
     in:
       - internal/apps/balda/channel/slackagent/slackagentfx
 
+  # Provider-owned inbound webhook transport.
+  webhook_transport:
+    in:
+      - internal/apps/balda/channel/webhook
+
   # Product state persistence, read models, and durable outbox storage.
   storage:
     in:
@@ -481,6 +486,15 @@ deps:
       - slackagent_wiring
     anyVendorDeps: true
 
+  webhook_transport:
+    mayDependOn:
+      - foundation
+      - contracts
+      - neutral_registry
+      - application
+      - webhook_transport
+    anyVendorDeps: true
+
   storage:
     mayDependOn:
       - foundation
@@ -520,6 +534,7 @@ deps:
       - zulip_wiring
       - slackagent_transport
       - slackagent_wiring
+      - webhook_transport
       - storage
       - infrastructure
       - composition_root
