@@ -11,6 +11,7 @@ func TestBuildAgentWelcomeMessage(t *testing.T) {
 		sessionID  string
 		agentType  string
 		model      string
+		reasoning  string
 		mcpServers []string
 		want       string
 	}{
@@ -20,8 +21,9 @@ func TestBuildAgentWelcomeMessage(t *testing.T) {
 			sessionID:  "tg-1-0",
 			agentType:  "opencode_acp",
 			model:      "gpt-5",
+			reasoning:  "high",
 			mcpServers: []string{" balda ", "workspace", "balda", ""},
-			want:       "🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `gpt-5` • **Type:** `opencode_acp` • **MCP:** `balda, workspace` ",
+			want:       "🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `gpt-5` • **Reasoning:** `high` • **Type:** `opencode_acp` • **MCP:** `balda, workspace` ",
 		},
 		{
 			name:       "missing info uses none",
@@ -29,8 +31,9 @@ func TestBuildAgentWelcomeMessage(t *testing.T) {
 			sessionID:  " ",
 			agentType:  " ",
 			model:      " ",
+			reasoning:  " ",
 			mcpServers: nil,
-			want:       "🚀 **Session Started** • **Name:** `none` • **ID:** `none` • **Model:** `none` • **Type:** `none` • **MCP:** `none` ",
+			want:       "🚀 **Session Started** • **Name:** `none` • **ID:** `none` • **Model:** `none` • **Reasoning:** `none` • **Type:** `none` • **MCP:** `none` ",
 		},
 		{
 			name:       "escapes backticks",
@@ -38,14 +41,15 @@ func TestBuildAgentWelcomeMessage(t *testing.T) {
 			sessionID:  "id",
 			agentType:  "type",
 			model:      "model",
+			reasoning:  "reas`on",
 			mcpServers: nil,
-			want:       "🚀 **Session Started** • **Name:** `agent\\` name` • **ID:** `id` • **Model:** `model` • **Type:** `type` • **MCP:** `none` ",
+			want:       "🚀 **Session Started** • **Name:** `agent\\` name` • **ID:** `id` • **Model:** `model` • **Reasoning:** `reas\\` on` • **Type:** `type` • **MCP:** `none` ",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildAgentWelcomeMessage(tt.agentName, tt.sessionID, tt.agentType, tt.model, tt.mcpServers)
+			got := BuildAgentWelcomeMessage(tt.agentName, tt.sessionID, tt.agentType, tt.model, tt.reasoning, tt.mcpServers)
 			if got != tt.want {
 				t.Errorf("BuildAgentWelcomeMessage() = %q, want %q", got, tt.want)
 			}

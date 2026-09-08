@@ -99,7 +99,7 @@ func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, p command
 	}
 
 	metadata := h.sessions.GetAgentMetadata(baldaProviderID)
-	welcomeMsg := welcome.BuildAgentWelcomeMessage(topicName, topicLocator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	welcomeMsg := welcome.BuildAgentWelcomeMessage(topicName, topicLocator.SessionID, metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
 
 	if p.Transport == "zulip" {
 		if err := commandactor.SendAgentReply(ctx, h.dispatcher, env.ID, topicLocator, welcomeMsg, "topic-welcome"); err != nil {

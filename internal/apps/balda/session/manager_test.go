@@ -306,6 +306,25 @@ func TestGetAgentMetadata_MergesUniqueMCPServers(t *testing.T) {
 	}
 }
 
+func TestGetAgentMetadata_PreservesReasoningEffort(t *testing.T) {
+	m := &Manager{
+		agentBuilder: &fakeAgentBuilder{
+			agentMetadata: AgentMetadata{
+				Type:            "codex_acp",
+				Model:           "gpt-5",
+				ReasoningEffort: "high",
+				MCPServers:      []string{"balda"},
+			},
+		},
+	}
+
+	got := m.GetAgentMetadata("ignored")
+	if got.ReasoningEffort != "high" {
+		t.Fatalf("GetAgentMetadata().ReasoningEffort = %q, want high", got.ReasoningEffort)
+	}
+}
+
+
 func TestGetSessionInfo_ReturnsPersistedSession(t *testing.T) {
 	store := &fakeSessionStore{
 		recordsByID: map[string]baldastate.SessionRecord{

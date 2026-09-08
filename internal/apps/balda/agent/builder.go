@@ -214,9 +214,10 @@ type BuiltRuntime struct {
 }
 
 type AgentMetadata struct {
-	Type       string
-	Model      string
-	MCPServers []string
+	Type            string
+	Model           string
+	ReasoningEffort string
+	MCPServers      []string
 }
 
 func (b *Builder) BuildRuntimeWithMCPServerIDs(
@@ -409,38 +410,47 @@ func (b *Builder) GetAgentMetadata(agentName string) AgentMetadata {
 		return AgentMetadata{}
 	}
 
-	model := ""
+	var acp *agentconfig.ACPConfig
 	switch strings.TrimSpace(agentCfg.Type) {
 	case agentconfig.AgentTypeGenericACP:
-		if agentCfg.GenericACP != nil {
-			model = strings.TrimSpace(agentCfg.GenericACP.Model)
-		}
+		acp = agentCfg.GenericACP
 	case agentconfig.AgentTypeGeminiACP:
-		if agentCfg.GeminiACP != nil {
-			model = strings.TrimSpace(agentCfg.GeminiACP.Model)
-		}
+		acp = agentCfg.GeminiACP
 	case agentconfig.AgentTypeCodexACP:
-		if agentCfg.CodexACP != nil {
-			model = strings.TrimSpace(agentCfg.CodexACP.Model)
-		}
+		acp = agentCfg.CodexACP
 	case agentconfig.AgentTypeOpenCodeACP:
-		if agentCfg.OpenCodeACP != nil {
-			model = strings.TrimSpace(agentCfg.OpenCodeACP.Model)
-		}
+		acp = agentCfg.OpenCodeACP
 	case agentconfig.AgentTypeCopilotACP:
-		if agentCfg.CopilotACP != nil {
-			model = strings.TrimSpace(agentCfg.CopilotACP.Model)
-		}
-	case agentconfig.AgentTypeClaudeCodeACP:
-		if agentCfg.ClaudeCodeACP != nil {
-			model = strings.TrimSpace(agentCfg.ClaudeCodeACP.Model)
-		}
+		acp = agentCfg.CopilotACP
+	case agentconfig.AgentTypeClaudeCodeACP, agentconfig.AgentTypeClaudeACP:
+		acp = agentCfg.ClaudeCodeACP
+	case agentconfig.AgentTypeGrokACP:
+		acp = agentCfg.GrokACP
+	case agentconfig.AgentTypeRegistryACP:
+		acp = agentCfg.RegistryACP
+	case agentconfig.AgentTypeAgyACP:
+		acp = agentCfg.AgyACP
+	case agentconfig.AgentTypeAntigravityACP:
+		acp = agentCfg.AntigravityACP
+	}
+
+	model := ""
+	reasoningEffort := ""
+	switch {
+	case acp != nil:
+		model = strings.TrimSpace(acp.Model)
+		reasoningEffort = strings.TrimSpace(acp.ReasoningEffort)
+	case agentCfg.OpenAI != nil:
+		model = strings.TrimSpace(agentCfg.OpenAI.Model)
+	case agentCfg.AIStudio != nil:
+		model = strings.TrimSpace(agentCfg.AIStudio.Model)
 	}
 
 	return AgentMetadata{
-		Type:       strings.TrimSpace(agentCfg.Type),
-		Model:      model,
-		MCPServers: mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
+		Type:            strings.TrimSpace(agentCfg.Type),
+		Model:           model,
+		ReasoningEffort: reasoningEffort,
+		MCPServers:      mergeMCPServerIDsWithBase([]string{"balda"}, agentCfg.MCPServers, nil),
 	}
 }
 

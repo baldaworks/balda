@@ -72,9 +72,10 @@ type WorkspaceManager interface {
 }
 
 type AgentMetadata struct {
-	Type       string
-	Model      string
-	MCPServers []string
+	Type            string
+	Model           string
+	ReasoningEffort string
+	MCPServers      []string
 }
 
 type RuntimeSessionContext struct {

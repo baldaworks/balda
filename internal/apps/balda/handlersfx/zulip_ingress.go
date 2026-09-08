@@ -934,7 +934,7 @@ func buildZulipSessionWelcome(manager *baldasession.Manager, providerName string
 	}
 	label := zulipSessionWelcomeLabel(isDM, ownerLabel, autoLabel)
 	metadata := manager.GetAgentMetadata(providerName)
-	return welcome.BuildAgentWelcomeMessage(label, sessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	return welcome.BuildAgentWelcomeMessage(label, sessionID, metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
 }
 
 func buildZulipTopicWelcome(manager *baldasession.Manager, providerName string, topicName string, sessionID string) string {
@@ -942,7 +942,7 @@ func buildZulipTopicWelcome(manager *baldasession.Manager, providerName string, 
 		return ""
 	}
 	metadata := manager.GetAgentMetadata(providerName)
-	return welcome.BuildAgentWelcomeMessage(topicName, sessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	return welcome.BuildAgentWelcomeMessage(topicName, sessionID, metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
 }
 
 func startWelcomeMessage() string {

@@ -768,3 +768,77 @@ func TestCurrentRepoBranch_Fallbacks(t *testing.T) {
 		}
 	})
 }
+
+func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
+	builder := &Builder{
+		normaCfg: runtimeconfig.RuntimeConfig{
+			Providers: map[string]agentconfig.Config{
+				"codex": {
+					Type: agentconfig.AgentTypeCodexACP,
+					CodexACP: &agentconfig.ACPConfig{
+						Model:           "gpt-5.6-sol",
+						ReasoningEffort: "high",
+					},
+					MCPServers: []string{"custom-mcp"},
+				},
+				"empty-reasoning": {
+					Type: agentconfig.AgentTypeGenericACP,
+					GenericACP: &agentconfig.ACPConfig{
+						Model: "custom-model",
+					},
+				},
+				"openai": {
+					Type: agentconfig.AgentTypeOpenAI,
+					OpenAI: &agentconfig.LocalAPIConfig{
+						Model: "gpt-4o",
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("codex acp with reasoning", func(t *testing.T) {
+		meta := builder.GetAgentMetadata("codex")
+		if meta.Type != agentconfig.AgentTypeCodexACP {
+			t.Errorf("Type = %q, want %q", meta.Type, agentconfig.AgentTypeCodexACP)
+		}
+		if meta.Model != "gpt-5.6-sol" {
+			t.Errorf("Model = %q, want gpt-5.6-sol", meta.Model)
+		}
+		if meta.ReasoningEffort != "high" {
+			t.Errorf("ReasoningEffort = %q, want high", meta.ReasoningEffort)
+		}
+		wantMCP := []string{"balda", "custom-mcp"}
+		if !reflect.DeepEqual(meta.MCPServers, wantMCP) {
+			t.Errorf("MCPServers = %#v, want %#v", meta.MCPServers, wantMCP)
+		}
+	})
+
+	t.Run("generic acp without reasoning", func(t *testing.T) {
+		meta := builder.GetAgentMetadata("empty-reasoning")
+		if meta.Model != "custom-model" {
+			t.Errorf("Model = %q, want custom-model", meta.Model)
+		}
+		if meta.ReasoningEffort != "" {
+			t.Errorf("ReasoningEffort = %q, want empty", meta.ReasoningEffort)
+		}
+	})
+
+	t.Run("openai local provider", func(t *testing.T) {
+		meta := builder.GetAgentMetadata("openai")
+		if meta.Model != "gpt-4o" {
+			t.Errorf("Model = %q, want gpt-4o", meta.Model)
+		}
+		if meta.ReasoningEffort != "" {
+			t.Errorf("ReasoningEffort = %q, want empty", meta.ReasoningEffort)
+		}
+	})
+
+	t.Run("missing provider", func(t *testing.T) {
+		meta := builder.GetAgentMetadata("unknown")
+		if meta.Type != "" || meta.Model != "" || meta.ReasoningEffort != "" {
+			t.Errorf("expected empty metadata, got %+v", meta)
+		}
+	})
+}
+

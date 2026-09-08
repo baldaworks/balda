@@ -80,7 +80,7 @@ func (h *Handler) deliverResult(ctx context.Context, operationID string, p comma
 	if !p.Conversation.Direct {
 		displayName = "balda"
 	}
-	message := welcome.BuildAgentWelcomeMessage(displayName, p.Locator.SessionID, metadata.Type, metadata.Model, metadata.MCPServers)
+	message := welcome.BuildAgentWelcomeMessage(displayName, p.Locator.SessionID, metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
 	if err := commandactor.SendMarkdown(ctx, h.dispatcher, operationID, p.Locator, message, "reset-welcome"); err != nil {
 		return err
 	}

@@ -72,7 +72,7 @@ package ownership is documented in the
 - Public-channel welcome banners always display `Name: balda` to keep app identity stable, even when the internal persisted session label differs.
 - Welcome messages use the current transport formatting route:
   - Example:
-    🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `opencode/big-pickle` • **Type:** `opencode_acp` • **MCP:** `balda`
+    🚀 **Session Started** • **Name:** `balda` • **ID:** `tg-1-0` • **Model:** `opencode/big-pickle` • **Reasoning:** `none` • **Type:** `opencode_acp` • **MCP:** `balda`
 
 ## Workspace allocation contract
 

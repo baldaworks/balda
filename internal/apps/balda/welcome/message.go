@@ -8,7 +8,7 @@ import (
 const noneValue = "none"
 
 // BuildAgentWelcomeMessage returns the markdown-formatted session welcome text.
-func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServers []string) string {
+func BuildAgentWelcomeMessage(name, sessionID, agentType, model, reasoning string, mcpServers []string) string {
 	cleanName := strings.TrimSpace(name)
 	if cleanName == "" {
 		cleanName = noneValue
@@ -27,6 +27,11 @@ func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServe
 	cleanModel := strings.TrimSpace(model)
 	if cleanModel == "" {
 		cleanModel = noneValue
+	}
+
+	cleanReasoning := strings.TrimSpace(reasoning)
+	if cleanReasoning == "" {
+		cleanReasoning = noneValue
 	}
 
 	var cleanMCP []string
@@ -51,10 +56,11 @@ func BuildAgentWelcomeMessage(name, sessionID, agentType, model string, mcpServe
 	}
 
 	return fmt.Sprintf(
-		"🚀 **Session Started** • **Name:** `%s` • **ID:** `%s` • **Model:** `%s` • **Type:** `%s` • **MCP:** `%s` ",
+		"🚀 **Session Started** • **Name:** `%s` • **ID:** `%s` • **Model:** `%s` • **Reasoning:** `%s` • **Type:** `%s` • **MCP:** `%s` ",
 		strings.ReplaceAll(cleanName, "`", "\\` "),
 		strings.ReplaceAll(cleanSessionID, "`", "\\` "),
 		strings.ReplaceAll(cleanModel, "`", "\\` "),
+		strings.ReplaceAll(cleanReasoning, "`", "\\` "),
 		strings.ReplaceAll(cleanType, "`", "\\` "),
 		strings.ReplaceAll(mcpValue, "`", "\\` "),
 	)

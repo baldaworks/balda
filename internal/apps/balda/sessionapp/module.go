@@ -45,9 +45,10 @@ func (a SessionAgentBuilderAdapter) CreateRuntimeSession(
 func (a SessionAgentBuilderAdapter) GetAgentMetadata(agentName string) baldasession.AgentMetadata {
 	meta := a.Builder.GetAgentMetadata(agentName)
 	return baldasession.AgentMetadata{
-		Type:       meta.Type,
-		Model:      meta.Model,
-		MCPServers: append([]string(nil), meta.MCPServers...),
+		Type:            meta.Type,
+		Model:           meta.Model,
+		ReasoningEffort: meta.ReasoningEffort,
+		MCPServers:      append([]string(nil), meta.MCPServers...),
 	}
 }
 

@@ -389,7 +389,7 @@ func (h *telegramInboundHandler) prepareTelegramSession(ctx context.Context, inb
 			}
 			if sendWelcome {
 				metadata := h.sessionManager.GetAgentMetadata(baldaProviderName)
-				welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+				welcomeMsg := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
 				_ = sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMsg)
 				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
 			}
@@ -425,7 +425,7 @@ func (h *telegramInboundHandler) prepareTelegramSession(ctx context.Context, inb
 				if inbound.Direct {
 					welcomeName = ts.GetAgentName()
 				}
-				welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+				welcomeMsg := welcome.BuildAgentWelcomeMessage(welcomeName, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
 				_ = sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMsg)
 				h.sendSessionStartupNotice(ctx, locator, ts.GetSessionID())
 			}
@@ -493,7 +493,7 @@ func (h *telegramInboundHandler) bootstrapOwnerSession(ctx context.Context, owne
 	}
 
 	metadata := h.sessionManager.GetAgentMetadata(providerName)
-	welcomeMessage := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.MCPServers)
+	welcomeMessage := welcome.BuildAgentWelcomeMessage(ownerSessionLabel, ts.GetSessionID(), metadata.Type, metadata.Model, metadata.ReasoningEffort, metadata.MCPServers)
 	if err := sendMarkdown(ctx, h.actorDispatcher, serverActorAddress, locator, welcomeMessage); err != nil {
 		h.logger.Warn().Err(err).Str("session_id", ts.GetSessionID()).Msg("failed to send owner session welcome")
 	}
