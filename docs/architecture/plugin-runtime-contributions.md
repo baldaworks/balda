@@ -115,15 +115,17 @@ through an active turn.
 
 ### Plugin commands remain CommandActor commands
 
-Balda-specific plugin commands are declared under the `works.balda` extension
-namespace:
+Balda-specific plugin commands are declared under the
+`dev.baldaworks.balda` extension namespace. This is a stable, opaque namespace
+corresponding to the `baldaworks.dev` organizational domain; loading it never
+requires DNS or HTTP access.
 
 ```json
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "release-tools",
   "extensions": {
-    "works.balda": {
+    "dev.baldaworks.balda": {
       "commands": [
         {
           "name": "release",
@@ -328,4 +330,3 @@ skill and MCP projections come from a different generation.
 - [Command runtime adapter](command-runtime-adapter.md)
 - [Application sub-zones](application-zones.md)
 - [Runtime contract](runtime-contract.md)
-
