@@ -19,7 +19,7 @@ Use this map to find the authoritative runtime contracts.
 - [Slackagent mode](slack-agent-mode.md)
 - [Goal worker results](goal-worker-results.md)
 - [Plugin marketplace repo format](plugin-marketplace-format.md)
-- [Plugin runtime contributions](plugin-runtime-contributions.md)
+- [Runtime contribution catalog](runtime-contribution-catalog.md)
 - [Actor runtime](actor-runtime.md)
 - [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
 - [Projections and read models](projections-and-read-models.md)

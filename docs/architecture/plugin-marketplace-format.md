@@ -13,7 +13,8 @@ This format is intentionally narrow:
 
 - plugin package layout follows the Agent Plugins portable package model;
 - Balda adds only a repository-level index at `.agents/plugins/marketplace.json`;
-- Balda-specific extension metadata is out of scope for v0.
+- the marketplace index does not duplicate or interpret client extension
+  metadata; plugin manifests may contain conforming client extensions.
 
 ## Repository layout
 
@@ -40,7 +41,8 @@ repo/
   package format.
 - The marketplace index is a discovery/install catalog only. It does not
   duplicate the full plugin manifest.
-- Balda-specific extension metadata is not part of v0.
+- Balda-specific extension metadata is not part of the marketplace index v0;
+  installed plugin manifests may declare it independently.
 
 ## Marketplace index
 
@@ -98,6 +100,9 @@ Plugin entry object:
 - If Agent Plugins later defines a standard marketplace or distribution format,
   Balda should replace only the repository index layer and keep plugin package
   layout unchanged.
+
+Runtime activation of skills, MCP servers, and Balda client extensions is
+defined by the [runtime contribution catalog](runtime-contribution-catalog.md).
 
 ## Minimal valid example
 
