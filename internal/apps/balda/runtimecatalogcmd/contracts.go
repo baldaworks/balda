@@ -153,6 +153,16 @@ type LoadedSkill struct {
 	Resources    []SkillResource `json:"resources,omitempty"`
 }
 
+// MCPProjectionOutcome describes provider application of desired MCP state.
+type MCPProjectionOutcome string
+
+const (
+	MCPProjectionApplied         MCPProjectionOutcome = "applied"
+	MCPProjectionNewRuntimesOnly MCPProjectionOutcome = "new-runtimes-only"
+	MCPProjectionRebuildRequired MCPProjectionOutcome = "rebuild-required"
+	MCPProjectionUnsupported     MCPProjectionOutcome = "unsupported"
+)
+
 // CommandDescriptor describes a canonical command contribution.
 type CommandDescriptor struct {
 	ID          ContributionID `json:"id"`

@@ -130,6 +130,16 @@ components:
     in:
       - internal/apps/balda/runtimecatalog
 
+  # Desired/observed MCP lifecycle and safe revision-aware launch policy.
+  mcp_runtime:
+    in:
+      - internal/apps/balda/mcpruntime
+
+  # Provider registry projection belongs in composition wiring.
+  mcp_wiring:
+    in:
+      - internal/apps/balda/mcpfx
+
   # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
   domain:
     in:
@@ -346,6 +356,19 @@ deps:
     mayDependOn:
       - contracts
       - runtime_catalog
+    anyVendorDeps: true
+
+  mcp_runtime:
+    mayDependOn:
+      - contracts
+      - mcp_runtime
+    anyVendorDeps: false
+
+  mcp_wiring:
+    mayDependOn:
+      - contracts
+      - mcp_runtime
+      - mcp_wiring
     anyVendorDeps: true
 
   domain:

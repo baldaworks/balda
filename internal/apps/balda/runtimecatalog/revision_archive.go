@@ -111,23 +111,31 @@ func (a *RevisionArchive) Retain(ctx context.Context, sourceRoot string, descrip
 }
 
 // ResolveSkillRoot implements SkillRootResolver for retained source revisions.
-func (a *RevisionArchive) ResolveSkillRoot(_ context.Context, ref runtimecatalogcmd.SkillRef) (string, error) {
-	if a == nil || a.loader == nil || ref.Source.Kind == "" || strings.TrimSpace(ref.Source.Name) == "" || !validRevisionID(ref.Revision) {
+func (a *RevisionArchive) ResolveSkillRoot(ctx context.Context, ref runtimecatalogcmd.SkillRef) (string, error) {
+	return a.ResolveRevisionRoot(ctx, runtimecatalogcmd.SourceDescriptor{ID: ref.Source, Revision: ref.Revision})
+}
+
+// ResolveRevisionRoot returns one exact, read-only retained source root.
+func (a *RevisionArchive) ResolveRevisionRoot(ctx context.Context, descriptor runtimecatalogcmd.SourceDescriptor) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if a == nil || a.loader == nil || descriptor.ID.Kind == "" || strings.TrimSpace(descriptor.ID.Name) == "" || !validRevisionID(descriptor.Revision) {
 		return "", ErrRevisionUnavailable
 	}
-	sourceDir := filepath.Join(a.root, sourceArchiveKey(ref.Source))
-	for _, path := range []string{sourceDir, filepath.Join(sourceDir, string(ref.Revision))} {
+	sourceDir := filepath.Join(a.root, sourceArchiveKey(descriptor.ID))
+	for _, path := range []string{sourceDir, filepath.Join(sourceDir, string(descriptor.Revision))} {
 		info, err := os.Lstat(path)
 		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return "", ErrRevisionUnavailable
 		}
 	}
-	root := filepath.Join(sourceDir, string(ref.Revision))
+	root := filepath.Join(sourceDir, string(descriptor.Revision))
 	if !archivedTreeIsReadOnly(root) {
 		return "", ErrRevisionUnavailable
 	}
 	revision, err := a.loader.InspectRevision(root)
-	if err != nil || revision != ref.Revision {
+	if err != nil || revision != descriptor.Revision {
 		return "", ErrRevisionUnavailable
 	}
 	return root, nil
