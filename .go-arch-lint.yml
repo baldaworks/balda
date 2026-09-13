@@ -85,6 +85,7 @@ components:
       - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
       - internal/apps/balda/questionfmt
+      - internal/apps/balda/runtimecatalogcmd
       - internal/apps/balda/telegramref
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd
@@ -110,6 +111,7 @@ components:
       - internal/apps/balda/ingressapp
       - internal/apps/balda/memory
       - internal/apps/balda/questions
+      - internal/apps/balda/runtimecatalog
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
       - internal/apps/balda/plugincmd
