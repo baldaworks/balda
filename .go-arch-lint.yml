@@ -111,7 +111,6 @@ components:
       - internal/apps/balda/ingressapp
       - internal/apps/balda/memory
       - internal/apps/balda/questions
-      - internal/apps/balda/runtimecatalog
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
       - internal/apps/balda/plugincmd
@@ -123,6 +122,13 @@ components:
       - internal/apps/balda/sessionmemoryapp
       - internal/apps/balda/welcome
       - internal/apps/balda/webhookapp
+
+  # Runtime contribution compilation and bounded source/content reads. Agent,
+  # command, and MCP consumers depend on contracts or local ports; this owner
+  # must not reach into their application implementations.
+  runtime_catalog:
+    in:
+      - internal/apps/balda/runtimecatalog
 
   # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
   domain:
@@ -331,8 +337,15 @@ deps:
       - session_memory_mcp
       - session_memory_contracts
       - application
+      - runtime_catalog
       - storage
       - infrastructure
+    anyVendorDeps: true
+
+  runtime_catalog:
+    mayDependOn:
+      - contracts
+      - runtime_catalog
     anyVendorDeps: true
 
   domain:

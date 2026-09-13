@@ -14,6 +14,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
@@ -59,6 +60,7 @@ type Builder struct {
 	memoryEnabled          bool
 	memorySnapshotReader   MemorySnapshotReader
 	pluginCatalog          *agentplugin.Catalog
+	skillMetadataProvider  SkillMetadataProvider
 }
 
 // dedicatedRuntimeFactory is the narrow provider-factory port used only by
@@ -88,6 +90,11 @@ type MemorySnapshotReader interface {
 	Snapshot(ctx context.Context) (MemorySnapshot, error)
 }
 
+// SkillMetadataProvider is the builder's local metadata-only catalog port.
+type SkillMetadataProvider interface {
+	SkillMetadata(ctx context.Context, workspace string) (SkillMetadataProjection, error)
+}
+
 type baldaPromptData struct {
 	SessionID         string
 	ChannelType       string
@@ -101,7 +108,9 @@ type baldaPromptData struct {
 	MemoryEnabled     bool
 	GlobalInstruction string
 	Instruction       string
-	PluginSkills      []agentplugin.Skill
+	SkillSnapshot     string
+	Skills            []SkillPromptMetadata
+	OmittedSkills     int
 }
 
 func (b *Builder) buildBaldaInstruction(
@@ -111,6 +120,35 @@ func (b *Builder) buildBaldaInstruction(
 	sessionBranch,
 	workspaceDir,
 	repoBranchAtStart string,
+) string {
+	var skills []SkillPromptMetadata
+	if b.pluginCatalog != nil {
+		for _, skill := range b.pluginCatalog.Skills() {
+			skills = append(skills, SkillPromptMetadata{
+				Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: skill.PluginName},
+				Name:   skill.Name,
+			})
+		}
+	}
+	return b.buildBaldaInstructionWithSkills(
+		sessionID,
+		channelType,
+		agentName,
+		sessionBranch,
+		workspaceDir,
+		repoBranchAtStart,
+		SkillMetadataProjection{Skills: skills},
+	)
+}
+
+func (b *Builder) buildBaldaInstructionWithSkills(
+	sessionID,
+	channelType,
+	agentName,
+	sessionBranch,
+	workspaceDir,
+	repoBranchAtStart string,
+	projection SkillMetadataProjection,
 ) string {
 	normalizedAgentName := strings.TrimSpace(agentName)
 	repoBranch := strings.TrimSpace(repoBranchAtStart)
@@ -148,6 +186,9 @@ func (b *Builder) buildBaldaInstruction(
 		BaseBranch:        baseBranch,
 		RepoBranchAtStart: repoBranch,
 		MemoryEnabled:     b.memoryEnabled,
+		SkillSnapshot:     string(projection.Snapshot),
+		Skills:            append([]SkillPromptMetadata(nil), projection.Skills...),
+		OmittedSkills:     projection.Omitted,
 	}
 	agentInstruction := ""
 	if agentCfg, ok := b.normaCfg.Providers[normalizedAgentName]; ok {
@@ -155,10 +196,6 @@ func (b *Builder) buildBaldaInstruction(
 	}
 	data.GlobalInstruction = strings.TrimSpace(b.baldaGlobalInstruction)
 	data.Instruction = strings.TrimSpace(agentInstruction)
-	if b.pluginCatalog != nil {
-		data.PluginSkills = b.pluginCatalog.Skills()
-	}
-
 	var buf bytes.Buffer
 	tmpl := template.Must(template.New("balda").Parse(baldaInstructionTmpl))
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -179,7 +216,8 @@ type BuilderParams struct {
 	SessionService         adksession.Service `name:"balda_runtime_session_service"`
 	MemoryEnabled          bool               `name:"balda_memory_enabled"`
 	MemorySnapshotReader   MemorySnapshotReader
-	PluginCatalog          *agentplugin.Catalog `optional:"true"`
+	PluginCatalog          *agentplugin.Catalog  `optional:"true"`
+	SkillMetadataProvider  SkillMetadataProvider `optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -200,6 +238,7 @@ func NewBuilder(params BuilderParams) *Builder {
 		memoryEnabled:          params.MemoryEnabled,
 		memorySnapshotReader:   params.MemorySnapshotReader,
 		pluginCatalog:          params.PluginCatalog,
+		skillMetadataProvider:  params.SkillMetadataProvider,
 	}
 }
 
@@ -228,12 +267,16 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 ) (*BuiltRuntime, error) {
 	const appName = defaultRuntimeAppName
 
+	instruction, err := b.buildRootRuntimeInstruction(ctx, agentName, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
 	req := agentfactory.BuildRequest{
 		AgentID:          agentName,
 		Name:             agentName,
 		Description:      b.buildAgentDescription(agentName),
 		WorkingDirectory: workspaceDir,
-		Instruction:      b.buildRootRuntimeInstruction(agentName, workspaceDir),
+		Instruction:      instruction,
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
@@ -558,15 +601,31 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	return b.addMemorySnapshot(ctx, state)
 }
 
-func (b *Builder) buildRootRuntimeInstruction(agentName, workspaceDir string) string {
-	return b.buildBaldaInstruction(
+func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, workspaceDir string) (string, error) {
+	projection := SkillMetadataProjection{}
+	if b.skillMetadataProvider != nil {
+		var err error
+		projection, err = b.skillMetadataProvider.SkillMetadata(ctx, workspaceDir)
+		if err != nil {
+			return "", fmt.Errorf("load skill metadata: %w", err)
+		}
+	} else if b.pluginCatalog != nil {
+		for _, skill := range b.pluginCatalog.Skills() {
+			projection.Skills = append(projection.Skills, SkillPromptMetadata{
+				Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: skill.PluginName},
+				Name:   skill.Name,
+			})
+		}
+	}
+	return b.buildBaldaInstructionWithSkills(
 		baldaSessionIDPlaceholder,
 		"telegram",
 		agentName,
 		baldaSessionBranchPlaceholder,
 		"{"+sessionstate.CWDKey+"}",
 		baldaRepoBranchAtStartPlaceholder,
-	)
+		projection,
+	), nil
 }
 
 func resolveSessionWorkspaceDir(workspaceDir string) (string, error) {

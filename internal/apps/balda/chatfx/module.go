@@ -15,7 +15,8 @@ type ChatServiceParams struct {
 
 	SessionManager *baldasession.Manager
 	Dispatcher     actortransport.Dispatcher
-	Questions      *questions.Service `optional:"true"`
+	Questions      *questions.Service  `optional:"true"`
+	SkillPinner    chatapp.SkillPinner `optional:"true"`
 	Logger         zerolog.Logger
 }
 
@@ -29,6 +30,7 @@ func NewChatService(params ChatServiceParams) (chatapp.Handler, error) {
 		Sessions:   NewSessionAdapter(params.SessionManager),
 		Dispatcher: NewDispatcherAdapter(params.Dispatcher),
 		Questions:  qResolver,
+		Skills:     params.SkillPinner,
 		Logger:     params.Logger,
 	})
 }

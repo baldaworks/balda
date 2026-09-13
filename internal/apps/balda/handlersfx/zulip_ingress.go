@@ -1038,6 +1038,7 @@ func buildZulipSessionPreparation(ts *baldasession.TopicSession, requesterUserID
 		UserID:          ts.GetUserID(),
 		RequesterUserID: requesterUserID,
 		AgentSessionID:  ts.GetAgentSessionID(),
+		WorkspaceDir:    ts.GetWorkspaceDir(),
 	}
 }
 

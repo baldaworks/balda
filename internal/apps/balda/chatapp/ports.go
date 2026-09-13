@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -64,6 +65,12 @@ type SessionPreparation struct {
 	RequesterUserID string
 	AgentSessionID  string
 	TopicID         int
+	WorkspaceDir    string
+}
+
+// SkillPinner resolves an explicit reference using trusted prepared-session scope.
+type SkillPinner interface {
+	PinExplicit(ctx context.Context, workspace, text string) (string, *runtimecatalogcmd.SkillSelection, error)
 }
 
 // SessionPreparer enforces create/restore/session preconditions without

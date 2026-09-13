@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
-	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 
@@ -66,6 +67,12 @@ type SessionPreparation struct {
 	RequesterUserID string
 	AgentSessionID  string
 	TopicID         int
+	WorkspaceDir    string
+}
+
+// SkillPinner resolves an explicit reference using trusted prepared-session scope.
+type SkillPinner interface {
+	PinExplicit(ctx context.Context, workspace, text string) (string, *runtimecatalogcmd.SkillSelection, error)
 }
 
 // SessionPreparer enforces create/restore/session preconditions without
@@ -115,15 +122,27 @@ type Service struct {
 	sessions   SessionPreparer
 	dispatcher Dispatcher
 	logger     zerolog.Logger
+	skills     SkillPinner
 }
 
 // New constructs a provider-neutral conversational ingress service.
 func New(authorizer Authorizer, sessions SessionPreparer, dispatcher Dispatcher) (*Service, error) {
-	return NewWithLogger(authorizer, sessions, dispatcher, zerolog.Nop())
+	return NewWithLoggerAndSkillPinner(authorizer, sessions, dispatcher, nil, zerolog.Nop())
 }
 
 // NewWithLogger constructs conversational ingress with safe settlement diagnostics.
 func NewWithLogger(authorizer Authorizer, sessions SessionPreparer, dispatcher Dispatcher, logger zerolog.Logger) (*Service, error) {
+	return NewWithLoggerAndSkillPinner(authorizer, sessions, dispatcher, nil, logger)
+}
+
+// NewWithLoggerAndSkillPinner constructs ingress with optional explicit-skill pinning.
+func NewWithLoggerAndSkillPinner(
+	authorizer Authorizer,
+	sessions SessionPreparer,
+	dispatcher Dispatcher,
+	skills SkillPinner,
+	logger zerolog.Logger,
+) (*Service, error) {
 	if authorizer == nil {
 		return nil, fmt.Errorf("conversational ingress authorizer is required")
 	}
@@ -133,7 +152,7 @@ func NewWithLogger(authorizer Authorizer, sessions SessionPreparer, dispatcher D
 	if dispatcher == nil {
 		return nil, fmt.Errorf("conversational ingress dispatcher is required")
 	}
-	return &Service{authorizer: authorizer, sessions: sessions, dispatcher: dispatcher, logger: logger}, nil
+	return &Service{authorizer: authorizer, sessions: sessions, dispatcher: dispatcher, logger: logger, skills: skills}, nil
 }
 
 // Process performs at most one durable SessionActor publish attempt.
@@ -175,6 +194,12 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 	payload.RequesterUserID = firstNonEmpty(preparation.RequesterUserID, inbound.UserID)
 	payload.AgentSessionID = strings.TrimSpace(preparation.AgentSessionID)
 	payload.TopicID = preparation.TopicID
+	if s.skills != nil {
+		payload.Text, payload.Skill, err = s.skills.PinExplicit(ctx, preparation.WorkspaceDir, payload.Text)
+		if err != nil {
+			return s.finish(logContext, terminalResult(result, ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))
+		}
+	}
 	envelope, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {
 		return s.finish(logContext, terminalResult(result, ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))

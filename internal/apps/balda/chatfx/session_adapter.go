@@ -43,6 +43,7 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 		RequesterUserID: inbound.UserID,
 		AgentSessionID:  topicSession.GetAgentSessionID(),
 		TopicID:         inbound.TopicID,
+		WorkspaceDir:    topicSession.GetWorkspaceDir(),
 	}, nil
 }
 

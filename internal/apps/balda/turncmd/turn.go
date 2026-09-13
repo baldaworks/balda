@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
 )
@@ -22,28 +23,29 @@ const (
 )
 
 type SessionTurnPayload struct {
-	JobID            string                     `json:"job_id,omitempty"`
-	Text             string                     `json:"text"`
-	Attachments      []attachment.Descriptor    `json:"attachments,omitempty"`
-	Locator          deliverycmd.Locator        `json:"locator"`
-	ReportTo         *deliverycmd.Locator       `json:"report_to,omitempty"`
-	ParentJobID      string                       `json:"parent_job_id,omitempty"`
-	UserID           string                       `json:"user_id,omitempty"`
-	RequesterUserID  string                       `json:"requester_user_id,omitempty"`
-	AgentSessionID   string                       `json:"agent_session_id,omitempty"`
-	ScheduledJobID   string                       `json:"scheduled_job_id,omitempty"`
-	MessageID        int                          `json:"message_id,omitempty"`
-	ReplyToMessageID int                          `json:"reply_to_message_id,omitempty"`
-	ReceivedAt       string                       `json:"received_at,omitempty"`
-	SteeringMessages []SteeringMessage            `json:"steering_messages,omitempty"`
-	TopicID          int                          `json:"topic_id,omitempty"`
-	DeliveryFormat   deliveryfmt.DeliveryFormat   `json:"delivery_format,omitempty"`
-	ProgressPolicy   deliveryfmt.ProgressPolicy   `json:"progress_policy,omitempty"`
-	Deliver          bool                         `json:"deliver"`
-	Source           string                       `json:"source,omitempty"`
-	DedupeKey        string                       `json:"dedupe_key,omitempty"`
-	QuestionID       string                       `json:"question_id,omitempty"`
-	Metadata         *SessionTurnMetadata         `json:"metadata,omitempty,omitzero"`
+	JobID            string                            `json:"job_id,omitempty"`
+	Text             string                            `json:"text"`
+	Attachments      []attachment.Descriptor           `json:"attachments,omitempty"`
+	Locator          deliverycmd.Locator               `json:"locator"`
+	ReportTo         *deliverycmd.Locator              `json:"report_to,omitempty"`
+	ParentJobID      string                            `json:"parent_job_id,omitempty"`
+	UserID           string                            `json:"user_id,omitempty"`
+	RequesterUserID  string                            `json:"requester_user_id,omitempty"`
+	AgentSessionID   string                            `json:"agent_session_id,omitempty"`
+	ScheduledJobID   string                            `json:"scheduled_job_id,omitempty"`
+	MessageID        int                               `json:"message_id,omitempty"`
+	ReplyToMessageID int                               `json:"reply_to_message_id,omitempty"`
+	ReceivedAt       string                            `json:"received_at,omitempty"`
+	SteeringMessages []SteeringMessage                 `json:"steering_messages,omitempty"`
+	TopicID          int                               `json:"topic_id,omitempty"`
+	DeliveryFormat   deliveryfmt.DeliveryFormat        `json:"delivery_format,omitempty"`
+	ProgressPolicy   deliveryfmt.ProgressPolicy        `json:"progress_policy,omitempty"`
+	Deliver          bool                              `json:"deliver"`
+	Source           string                            `json:"source,omitempty"`
+	DedupeKey        string                            `json:"dedupe_key,omitempty"`
+	QuestionID       string                            `json:"question_id,omitempty"`
+	Metadata         *SessionTurnMetadata              `json:"metadata,omitempty,omitzero"`
+	Skill            *runtimecatalogcmd.SkillSelection `json:"skill,omitempty"`
 }
 
 // SessionTurnMetadata carries application-owned cursors through durable turn delivery.

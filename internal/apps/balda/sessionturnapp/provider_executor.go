@@ -4,13 +4,13 @@ import (
 	"context"
 	"strings"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -91,6 +91,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		OutboundFrom:    from,
 		RunOptions:      request.MemoryRunOptions,
 		MemoryRefresh:   request.MemoryRefresh,
+		SelectedSkill:   request.SelectedSkill,
 		TurnSource:      payload.Source,
 		DedupeKey:       payload.DedupeKey,
 	})

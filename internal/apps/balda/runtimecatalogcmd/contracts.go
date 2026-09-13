@@ -1,7 +1,10 @@
 // Package runtimecatalogcmd defines transport-neutral runtime contribution contracts.
 package runtimecatalogcmd
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // SourceKind identifies one class of runtime contribution source.
 type SourceKind string
@@ -13,6 +16,9 @@ const (
 	SourceKindConfiguredMCP  SourceKind = "configured-mcp"
 	SourceKindPlugin         SourceKind = "plugin"
 )
+
+// ErrRevisionUnavailable is the stable cross-layer result for absent pinned bytes.
+var ErrRevisionUnavailable = errors.New(OutcomeRevisionUnavailable)
 
 const (
 	// OutcomeSnapshotUnavailable is the stable code for a missing retained snapshot.
@@ -119,6 +125,32 @@ type SkillRef struct {
 	Source   SourceID   `json:"source"`
 	Revision RevisionID `json:"revision"`
 	Name     string     `json:"name"`
+}
+
+// SkillSelection pins one selected skill to the retained snapshot used to resolve it.
+type SkillSelection struct {
+	Snapshot SnapshotID `json:"snapshot"`
+	Ref      SkillRef   `json:"ref"`
+}
+
+// SkillReadRequest contains only host-resolved relative resource references.
+type SkillReadRequest struct {
+	Ref          SkillRef `json:"ref"`
+	MainResource string   `json:"main_resource"`
+	Resources    []string `json:"resources,omitempty"`
+}
+
+// SkillResource is one bounded supporting resource returned without a host path.
+type SkillResource struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// LoadedSkill contains the selected instructions and requested supporting resources.
+type LoadedSkill struct {
+	Ref          SkillRef        `json:"ref"`
+	Instructions string          `json:"instructions"`
+	Resources    []SkillResource `json:"resources,omitempty"`
 }
 
 // CommandDescriptor describes a canonical command contribution.

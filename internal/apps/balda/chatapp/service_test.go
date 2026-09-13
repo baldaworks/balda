@@ -11,6 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -57,6 +58,18 @@ type stubQuestionResolver struct {
 	result QuestionResolution
 	err    error
 	calls  int
+}
+
+type stubSkillPinner struct {
+	workspace string
+	text      string
+	selection runtimecatalogcmd.SkillSelection
+}
+
+func (p *stubSkillPinner) PinExplicit(_ context.Context, workspace, text string) (string, *runtimecatalogcmd.SkillSelection, error) {
+	p.workspace = workspace
+	p.text = text
+	return "request without selector", &p.selection, nil
 }
 
 func (s *stubQuestionResolver) ResolveQuestionReply(context.Context, questioncmd.InboundReply) (QuestionResolution, error) {
@@ -116,6 +129,47 @@ func TestService_HandleChat_NormalFlow(t *testing.T) {
 	}
 	if len(dispatcher.envelopes) != 1 {
 		t.Fatalf("dispatched envelopes = %d, want 1", len(dispatcher.envelopes))
+	}
+}
+
+func TestServiceHandleChatPinsExplicitSkillBeforeDurablePublication(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := &recordingDispatcher{receipt: &actortransport.DispatchReceipt{MsgID: "msg-1"}}
+	selection := runtimecatalogcmd.SkillSelection{
+		Snapshot: "snapshot-1",
+		Ref: runtimecatalogcmd.SkillRef{
+			Source:   runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "demo"},
+			Revision: "revision-1",
+			Name:     "review",
+		},
+	}
+	pinner := &stubSkillPinner{selection: selection}
+	service, err := NewService(ServiceParams{
+		Sessions: &stubSessionPreparer{result: SessionPreparation{
+			Ready: true, UserID: "user-1", WorkspaceDir: "/trusted/workspace",
+		}},
+		Dispatcher: dispatcher,
+		Skills:     pinner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.HandleChat(context.Background(), testRequest("in-skill", "$skill:plugin/demo/review inspect")); err != nil {
+		t.Fatalf("HandleChat() error = %v", err)
+	}
+	if pinner.workspace != "/trusted/workspace" || pinner.text != "$skill:plugin/demo/review inspect" {
+		t.Fatalf("pinner scope/text = %q/%q, want prepared workspace and inbound text", pinner.workspace, pinner.text)
+	}
+	if len(dispatcher.envelopes) != 1 {
+		t.Fatalf("envelopes = %d, want 1", len(dispatcher.envelopes))
+	}
+	var payload turncmd.SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(dispatcher.envelopes[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Text != "request without selector" || payload.Skill == nil || *payload.Skill != selection {
+		t.Fatalf("durable payload = %+v, want pinned selection and stripped text", payload)
 	}
 }
 

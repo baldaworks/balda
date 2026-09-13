@@ -15,6 +15,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -128,7 +129,7 @@ func (f *capturingDedicatedRuntimeFactory) Build(_ context.Context, req agentfac
 	return adkagent.New(adkagent.Config{Name: req.Name, Description: req.Description})
 }
 
-func TestBuildBaldaInstruction_IncludesPluginSkills(t *testing.T) {
+func TestBuildBaldaInstruction_IncludesPluginSkillMetadataWithoutBodiesOrPaths(t *testing.T) {
 	t.Parallel()
 
 	builder := &Builder{
@@ -163,15 +164,66 @@ func TestBuildBaldaInstruction_IncludesPluginSkills(t *testing.T) {
 	)
 
 	for _, snippet := range []string{
-		"Plugin skills:",
-		"`demo:summarize`",
-		"# Summarize",
-		"Use this skill.",
+		"Available skills (metadata only",
+		`source_kind="plugin" source_name="demo" skill_name="summarize"`,
 	} {
 		if !strings.Contains(got, snippet) {
 			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
 		}
 	}
+	for _, forbidden := range []string{"# Summarize", "Use this skill.", "SKILL.md"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("buildBaldaInstruction() unexpectedly contains %q:\n%s", forbidden, got)
+		}
+	}
+}
+
+func TestBuildRootRuntimeInstructionUsesCatalogMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	builder := &Builder{skillMetadataProvider: staticSkillMetadataProvider{
+		projection: SkillMetadataProjection{
+			Snapshot: "snapshot-1",
+			Skills: []SkillPromptMetadata{{
+				Source:      runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: "workspace/a"},
+				Name:        "review",
+				Description: "Review the change",
+				Revision:    "revision-1",
+			}},
+			Omitted: 2,
+		},
+	}}
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/trusted/workspace")
+	if err != nil {
+		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
+	}
+	for _, want := range []string{
+		`Snapshot: "snapshot-1"`,
+		`source_kind="workspace-skill" source_name="workspace/a" skill_name="review" revision="revision-1"`,
+		"Review the change",
+		"2 additional skill metadata entries omitted",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("buildRootRuntimeInstruction() missing %q:\n%s", want, got)
+		}
+	}
+	for _, forbidden := range []string{"SKILL.md", "/trusted/workspace/skills"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("buildRootRuntimeInstruction() unexpectedly contains %q:\n%s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "untrusted discovery data") {
+		t.Fatalf("buildRootRuntimeInstruction() lacks metadata trust boundary:\n%s", got)
+	}
+}
+
+type staticSkillMetadataProvider struct {
+	projection SkillMetadataProjection
+	err        error
+}
+
+func (p staticSkillMetadataProvider) SkillMetadata(context.Context, string) (SkillMetadataProjection, error) {
+	return p.projection, p.err
 }
 func TestBuildBaldaInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
 	t.Parallel()
@@ -407,7 +459,10 @@ func TestBuildRootRuntimeInstruction_UsesPerSessionPlaceholders(t *testing.T) {
 		workingDir:          "/repo",
 	}
 
-	got := builder.buildRootRuntimeInstruction("alpha", "/tmp/work")
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/tmp/work")
+	if err != nil {
+		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
+	}
 
 	for _, snippet := range []string{
 		"ID: {balda_session_id}",
@@ -841,4 +896,3 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 		}
 	})
 }
-
