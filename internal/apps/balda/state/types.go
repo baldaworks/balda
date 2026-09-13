@@ -102,6 +102,7 @@ type PluginRevisionRecord struct {
 	PluginID       string
 	RevisionID     string
 	Version        string
+	Description    string
 	RelativeRoot   string
 	CapabilityJSON string
 	CreatedAt      time.Time
@@ -117,6 +118,7 @@ type PluginInstallRecord struct {
 	ActiveRevisionID  string
 	Enabled           bool
 	Version           string
+	Description       string
 	CapabilityJSON    string
 	DataRelativePath  string
 	UpdatedAt         time.Time
@@ -142,6 +144,7 @@ type PluginStore interface {
 	GetPluginInstall(ctx context.Context, pluginID string) (PluginInstallRecord, bool, error)
 	ListPluginInstalls(ctx context.Context) ([]PluginInstallRecord, error)
 	ActivatePlugin(ctx context.Context, intent PluginActivationIntent, install PluginInstallRecord) error
+	DeactivatePlugin(ctx context.Context, intent PluginActivationIntent) error
 	SetPluginEnabled(ctx context.Context, pluginID string, enabled bool, updatedAt time.Time) error
 	CompletePluginActivation(ctx context.Context, intentID string, updatedAt time.Time) error
 	ListIncompletePluginActivations(ctx context.Context) ([]PluginActivationIntent, error)

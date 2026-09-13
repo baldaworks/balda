@@ -18,10 +18,10 @@ func (s *sqlitePluginStore) PutPluginRevision(ctx context.Context, record Plugin
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO balda_plugin_revisions
-		(plugin_id, revision_id, version, relative_root, capability_json, created_at, retired_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		(plugin_id, revision_id, version, description, relative_root, capability_json, created_at, retired_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(plugin_id, revision_id) DO NOTHING`, record.PluginID, record.RevisionID, record.Version,
-		record.RelativeRoot, record.CapabilityJSON, formatPluginTime(record.CreatedAt), formatPluginTime(record.RetiredAt))
+		record.Description, record.RelativeRoot, record.CapabilityJSON, formatPluginTime(record.CreatedAt), formatPluginTime(record.RetiredAt))
 	if err != nil {
 		return fmt.Errorf("put plugin revision: %w", err)
 	}
@@ -36,7 +36,7 @@ func (s *sqlitePluginStore) PutPluginRevision(ctx context.Context, record Plugin
 }
 
 func (s *sqlitePluginStore) GetPluginRevision(ctx context.Context, pluginID, revisionID string) (PluginRevisionRecord, bool, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT plugin_id, revision_id, version, relative_root, capability_json, created_at, retired_at
+	row := s.db.QueryRowContext(ctx, `SELECT plugin_id, revision_id, version, description, relative_root, capability_json, created_at, retired_at
 		FROM balda_plugin_revisions WHERE plugin_id = ? AND revision_id = ?`, pluginID, revisionID)
 	record, err := scanPluginRevision(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -49,7 +49,7 @@ func (s *sqlitePluginStore) GetPluginRevision(ctx context.Context, pluginID, rev
 }
 
 func (s *sqlitePluginStore) ListPluginRevisions(ctx context.Context, pluginID string) ([]PluginRevisionRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT plugin_id, revision_id, version, relative_root, capability_json, created_at, retired_at
+	rows, err := s.db.QueryContext(ctx, `SELECT plugin_id, revision_id, version, description, relative_root, capability_json, created_at, retired_at
 		FROM balda_plugin_revisions WHERE plugin_id = ? ORDER BY created_at, revision_id`, pluginID)
 	if err != nil {
 		return nil, fmt.Errorf("list plugin revisions: %w", err)
@@ -128,6 +128,18 @@ func (s *sqlitePluginStore) ActivatePlugin(ctx context.Context, intent PluginAct
 			return errors.New("activation from revision does not match active revision")
 		}
 	}
+	result, err := tx.ExecContext(ctx, `UPDATE balda_plugin_revisions SET retired_at=''
+		WHERE plugin_id=? AND revision_id=?`, install.PluginID, install.ActiveRevisionID)
+	if err := requireAffected(result, err, "activate plugin revision"); err != nil {
+		return err
+	}
+	if intent.FromRevisionID != "" && intent.FromRevisionID != intent.ToRevisionID {
+		result, err = tx.ExecContext(ctx, `UPDATE balda_plugin_revisions SET retired_at=?
+			WHERE plugin_id=? AND revision_id=?`, formatPluginTime(install.UpdatedAt), install.PluginID, intent.FromRevisionID)
+		if err := requireAffected(result, err, "retire previous plugin revision"); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO balda_plugin_activation_intents
 		(intent_id, plugin_id, from_revision_id, to_revision_id, operation, state, created_at, updated_at)
 		VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?)`, intent.IntentID, intent.PluginID, intent.FromRevisionID,
@@ -135,16 +147,46 @@ func (s *sqlitePluginStore) ActivatePlugin(ctx context.Context, intent PluginAct
 		return fmt.Errorf("insert plugin activation intent: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO balda_plugin_installs
-		(plugin_id, origin_marketplace, origin_source, origin_path, active_revision_id, enabled, version, capability_json, data_relative_path, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(plugin_id, origin_marketplace, origin_source, origin_path, active_revision_id, enabled, version, description, capability_json, data_relative_path, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(plugin_id) DO UPDATE SET active_revision_id=excluded.active_revision_id, enabled=excluded.enabled,
-		version=excluded.version, capability_json=excluded.capability_json, data_relative_path=excluded.data_relative_path, updated_at=excluded.updated_at`,
+		version=excluded.version, description=excluded.description, capability_json=excluded.capability_json, data_relative_path=excluded.data_relative_path, updated_at=excluded.updated_at`,
 		install.PluginID, install.OriginMarketplace, install.OriginSource, install.OriginPath, install.ActiveRevisionID,
-		install.Enabled, install.Version, install.CapabilityJSON, install.DataRelativePath, formatPluginTime(install.UpdatedAt)); err != nil {
+		install.Enabled, install.Version, install.Description, install.CapabilityJSON, install.DataRelativePath, formatPluginTime(install.UpdatedAt)); err != nil {
 		return fmt.Errorf("switch active plugin revision: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit plugin activation: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlitePluginStore) DeactivatePlugin(ctx context.Context, intent PluginActivationIntent) error {
+	if !normalizedID(intent.IntentID) || !normalizedID(intent.PluginID) || !normalizedID(intent.FromRevisionID) || intent.ToRevisionID != intent.FromRevisionID || intent.State != PluginActivationIntentPending || intent.Operation != "remove" || intent.CreatedAt.IsZero() || intent.UpdatedAt.IsZero() {
+		return errors.New("invalid plugin deactivation")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin plugin deactivation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `DELETE FROM balda_plugin_installs WHERE plugin_id=? AND active_revision_id=?`, intent.PluginID, intent.FromRevisionID)
+	if err := requireAffected(result, err, "remove plugin install"); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO balda_plugin_activation_intents
+		(intent_id, plugin_id, from_revision_id, to_revision_id, operation, state, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, intent.IntentID, intent.PluginID, intent.FromRevisionID, intent.ToRevisionID,
+		intent.Operation, intent.State, formatPluginTime(intent.CreatedAt), formatPluginTime(intent.UpdatedAt)); err != nil {
+		return fmt.Errorf("insert plugin deactivation intent: %w", err)
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE balda_plugin_revisions SET retired_at=?
+		WHERE plugin_id=? AND revision_id=? AND retired_at=''`, formatPluginTime(intent.UpdatedAt), intent.PluginID, intent.FromRevisionID)
+	if err := requireAffected(result, err, "retire removed plugin revision"); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit plugin deactivation: %w", err)
 	}
 	return nil
 }
@@ -234,14 +276,14 @@ func (s *sqlitePluginStore) PurgePluginRevision(ctx context.Context, pluginID, r
 }
 
 const pluginInstallSelect = `SELECT plugin_id, origin_marketplace, origin_source, origin_path, active_revision_id,
-	enabled, version, capability_json, data_relative_path, updated_at FROM balda_plugin_installs`
+	enabled, version, description, capability_json, data_relative_path, updated_at FROM balda_plugin_installs`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
 func scanPluginRevision(row rowScanner) (PluginRevisionRecord, error) {
 	var record PluginRevisionRecord
 	var created, retired string
-	if err := row.Scan(&record.PluginID, &record.RevisionID, &record.Version, &record.RelativeRoot, &record.CapabilityJSON, &created, &retired); err != nil {
+	if err := row.Scan(&record.PluginID, &record.RevisionID, &record.Version, &record.Description, &record.RelativeRoot, &record.CapabilityJSON, &created, &retired); err != nil {
 		return record, err
 	}
 	var err error
@@ -257,7 +299,7 @@ func scanPluginInstall(row rowScanner) (PluginInstallRecord, error) {
 	var record PluginInstallRecord
 	var enabled int
 	var updated string
-	if err := row.Scan(&record.PluginID, &record.OriginMarketplace, &record.OriginSource, &record.OriginPath, &record.ActiveRevisionID, &enabled, &record.Version, &record.CapabilityJSON, &record.DataRelativePath, &updated); err != nil {
+	if err := row.Scan(&record.PluginID, &record.OriginMarketplace, &record.OriginSource, &record.OriginPath, &record.ActiveRevisionID, &enabled, &record.Version, &record.Description, &record.CapabilityJSON, &record.DataRelativePath, &updated); err != nil {
 		return record, err
 	}
 	record.Enabled = enabled != 0
@@ -298,7 +340,7 @@ func validateActivation(intent PluginActivationIntent, install PluginInstallReco
 func normalizedID(value string) bool { return value != "" && value == strings.TrimSpace(value) }
 
 func samePluginRevision(left, right PluginRevisionRecord) bool {
-	return left.PluginID == right.PluginID && left.RevisionID == right.RevisionID && left.Version == right.Version &&
+	return left.PluginID == right.PluginID && left.RevisionID == right.RevisionID && left.Version == right.Version && left.Description == right.Description &&
 		left.RelativeRoot == right.RelativeRoot && left.CapabilityJSON == right.CapabilityJSON &&
 		left.CreatedAt.Equal(right.CreatedAt) && left.RetiredAt.Equal(right.RetiredAt)
 }

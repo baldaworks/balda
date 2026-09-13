@@ -205,6 +205,9 @@ func TestPluginCatalogMigrationRoundTrip(t *testing.T) {
 	if err := up00034PluginCatalogState(ctx, tx); err != nil {
 		t.Fatal(err)
 	}
+	if err := up00035PluginManifestMetadata(ctx, tx); err != nil {
+		t.Fatal(err)
+	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +219,9 @@ func TestPluginCatalogMigrationRoundTrip(t *testing.T) {
 	}
 	tx, err = db.BeginTx(ctx, nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := down00035PluginManifestMetadata(ctx, tx); err != nil {
 		t.Fatal(err)
 	}
 	if err := down00034PluginCatalogState(ctx, tx); err != nil {

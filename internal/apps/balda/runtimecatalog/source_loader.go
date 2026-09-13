@@ -55,6 +55,13 @@ type SourceLoader struct {
 	supportedTransports map[string]struct{}
 }
 
+// PluginPackage is one validated plugin source plus manifest display metadata.
+type PluginPackage struct {
+	Source      runtimecatalogcmd.Source
+	Version     string
+	Description string
+}
+
 // NewSourceLoader creates a bounded loader. Empty limits use safe defaults.
 func NewSourceLoader(limits SourceLimits, supportedMCPTransports ...string) (*SourceLoader, error) {
 	if limits == (SourceLimits{}) {
@@ -84,6 +91,46 @@ func (l *SourceLoader) LoadPlugin(root string) (runtimecatalogcmd.Source, error)
 	if err != nil {
 		return runtimecatalogcmd.Source{}, err
 	}
+	return l.loadCapturedPlugin(revision, tree)
+}
+
+// InspectRevision returns the bounded content identity without projecting components.
+func (l *SourceLoader) InspectRevision(root string) (runtimecatalogcmd.RevisionID, error) {
+	revision, _, err := l.captureTree(root)
+	return revision, err
+}
+
+// MaterializePlugin validates one package capture and writes that exact revision to dest.
+func (l *SourceLoader) MaterializePlugin(root, dest string) (PluginPackage, error) {
+	revision, tree, err := l.captureTree(root)
+	if err != nil {
+		return PluginPackage{}, err
+	}
+	source, err := l.loadCapturedPlugin(revision, tree)
+	if err != nil {
+		return PluginPackage{}, err
+	}
+	if len(tree.issues) != 0 {
+		return PluginPackage{}, errors.New("plugin package contains unsafe filesystem entries")
+	}
+	if err := materializeCapturedTree(dest, tree); err != nil {
+		return PluginPackage{}, err
+	}
+	materialized, err := l.LoadPlugin(dest)
+	if err != nil {
+		return PluginPackage{}, fmt.Errorf("verify materialized plugin: %w", err)
+	}
+	if materialized.Descriptor.Revision != revision {
+		return PluginPackage{}, errors.New("materialized plugin revision mismatch")
+	}
+	manifest, _, _, err := validatePluginManifest(tree.files["plugin.json"])
+	if err != nil {
+		return PluginPackage{}, err
+	}
+	return PluginPackage{Source: source, Version: manifest.Version, Description: manifest.Description}, nil
+}
+
+func (l *SourceLoader) loadCapturedPlugin(revision runtimecatalogcmd.RevisionID, tree capturedTree) (runtimecatalogcmd.Source, error) {
 	manifestData, ok := tree.files["plugin.json"]
 	if !ok {
 		return runtimecatalogcmd.Source{}, errors.New("plugin manifest is not a captured regular file")
@@ -131,7 +178,9 @@ func (l *SourceLoader) LoadSkillSource(root string, id runtimecatalogcmd.SourceI
 }
 
 type pluginManifest struct {
-	Name string
+	Name        string
+	Version     string
+	Description string
 }
 
 func validatePluginManifest(data []byte) (pluginManifest, []string, json.RawMessage, error) {
@@ -154,12 +203,14 @@ func validatePluginManifest(data []byte) (pluginManifest, []string, json.RawMess
 	if err := decodeRequired(fields, "name", &name); err != nil || !validPluginName(name) {
 		return pluginManifest{}, nil, nil, fmt.Errorf("invalid plugin name")
 	}
+	values := make(map[string]string)
 	for _, key := range []string{"version", "description", "homepage", "repository", "license"} {
 		if raw, ok := fields[key]; ok {
 			var value string
 			if err := json.Unmarshal(raw, &value); err != nil {
 				return pluginManifest{}, nil, nil, fmt.Errorf("field %q must be a string", key)
 			}
+			values[key] = value
 		}
 	}
 	if raw, ok := fields["keywords"]; ok {
@@ -192,7 +243,7 @@ func validatePluginManifest(data []byte) (pluginManifest, []string, json.RawMess
 			ignored = append(ignored, "extensions")
 		}
 	}
-	return pluginManifest{Name: name}, ignored, extensionRaw, nil
+	return pluginManifest{Name: name, Version: values["version"], Description: values["description"]}, ignored, extensionRaw, nil
 }
 
 func validPluginName(name string) bool {
@@ -540,11 +591,16 @@ type treeIssue struct {
 type capturedTree struct {
 	files  map[string][]byte
 	dirs   map[string]bool
+	links  map[string]string
+	modes  map[string]fs.FileMode
 	issues []treeIssue
 }
 
 func (l *SourceLoader) captureTree(root string) (runtimecatalogcmd.RevisionID, capturedTree, error) {
-	tree := capturedTree{files: make(map[string][]byte), dirs: map[string]bool{".": true}}
+	tree := capturedTree{
+		files: make(map[string][]byte), dirs: map[string]bool{".": true},
+		links: make(map[string]string), modes: make(map[string]fs.FileMode),
+	}
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", capturedTree{}, fmt.Errorf("resolve source root: %w", err)
@@ -597,6 +653,7 @@ func (l *SourceLoader) captureTree(root string) (runtimecatalogcmd.RevisionID, c
 			}
 			_, _ = io.WriteString(hash, target)
 			_, _ = hash.Write([]byte{0})
+			tree.links[relative] = target
 			if _, walkErr = secureRoot.Stat(relative); walkErr != nil {
 				tree.issues = append(tree.issues, treeIssue{path: relative, kind: "unresolvable symlink"})
 				return hashTreeIssue(hash, relative, "unresolvable-symlink")
@@ -611,11 +668,15 @@ func (l *SourceLoader) captureTree(root string) (runtimecatalogcmd.RevisionID, c
 			tree.issues = append(tree.issues, treeIssue{path: relative, kind: "special file"})
 			return hashTreeIssue(hash, relative, "special-file")
 		}
+		if modeClass == "regular" && fileInfo.Mode().Perm()&0o111 != 0 {
+			modeClass = "executable"
+		}
 		data, walkErr := readRootFile(secureRoot, relative, l.limits.MaxFileBytes)
 		if walkErr != nil {
 			return walkErr
 		}
 		tree.files[relative] = data
+		tree.modes[relative] = fileInfo.Mode().Perm()
 		total += int64(len(data))
 		if total > l.limits.MaxTotalBytes {
 			return errors.New("source total-size limit exceeded")
@@ -634,6 +695,59 @@ func (l *SourceLoader) captureTree(root string) (runtimecatalogcmd.RevisionID, c
 		return "", capturedTree{}, fmt.Errorf("capture source tree: %w", err)
 	}
 	return runtimecatalogcmd.RevisionID(hex.EncodeToString(hash.Sum(nil))), tree, nil
+}
+
+func materializeCapturedTree(dest string, tree capturedTree) error {
+	if _, err := os.Lstat(dest); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("revision destination already exists")
+	}
+	if err := os.Mkdir(dest, 0o700); err != nil {
+		return fmt.Errorf("create revision destination: %w", err)
+	}
+	directories := make([]string, 0, len(tree.dirs))
+	for directory := range tree.dirs {
+		if directory != "." {
+			directories = append(directories, directory)
+		}
+	}
+	sort.Slice(directories, func(i, j int) bool {
+		return len(strings.Split(directories[i], "/")) < len(strings.Split(directories[j], "/")) || (len(strings.Split(directories[i], "/")) == len(strings.Split(directories[j], "/")) && directories[i] < directories[j])
+	})
+	for _, directory := range directories {
+		if err := os.Mkdir(filepath.Join(dest, filepath.FromSlash(directory)), 0o700); err != nil {
+			return fmt.Errorf("create revision directory: %w", err)
+		}
+	}
+	paths := make([]string, 0, len(tree.files))
+	for path := range tree.files {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		fullPath := filepath.Join(dest, filepath.FromSlash(path))
+		if target, linked := tree.links[path]; linked {
+			if err := os.Symlink(target, fullPath); err != nil {
+				return fmt.Errorf("create revision symlink: %w", err)
+			}
+			continue
+		}
+		mode := fs.FileMode(0o400)
+		if tree.modes[path]&0o111 != 0 {
+			mode = 0o500
+		}
+		if err := os.WriteFile(fullPath, tree.files[path], mode); err != nil {
+			return fmt.Errorf("write revision file: %w", err)
+		}
+	}
+	for i := len(directories) - 1; i >= 0; i-- {
+		if err := os.Chmod(filepath.Join(dest, filepath.FromSlash(directories[i])), 0o500); err != nil {
+			return fmt.Errorf("protect revision directory: %w", err)
+		}
+	}
+	if err := os.Chmod(dest, 0o500); err != nil {
+		return fmt.Errorf("protect revision root: %w", err)
+	}
+	return nil
 }
 
 func readRootFile(root *os.Root, relative string, maxBytes int64) ([]byte, error) {

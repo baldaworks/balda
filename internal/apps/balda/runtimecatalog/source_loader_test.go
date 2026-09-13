@@ -105,6 +105,70 @@ func TestSourceLoaderRejectsFatalManifestAndTreeFailures(t *testing.T) {
 	}
 }
 
+func TestSourceLoaderMaterializesOnlySafeExactRevision(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeSourceFile(t, root, "plugin.json", validPluginManifest("demo"))
+	writeSourceFile(t, root, "skills/good/SKILL.md", "---\nname: good\ndescription: A valid skill.\n---\n")
+	destination := filepath.Join(t.TempDir(), "revision")
+	t.Cleanup(func() { makeSourceTreeWritable(destination) })
+	loader := newTestSourceLoader(t)
+
+	materialized, err := loader.MaterializePlugin(root, destination)
+	if err != nil {
+		t.Fatalf("MaterializePlugin() error = %v", err)
+	}
+	reloaded, err := loader.LoadPlugin(destination)
+	if err != nil {
+		t.Fatalf("LoadPlugin(materialized) error = %v", err)
+	}
+	if reloaded.Descriptor.Revision != materialized.Source.Descriptor.Revision {
+		t.Fatalf("revision = %q, want %q", reloaded.Descriptor.Revision, materialized.Source.Descriptor.Revision)
+	}
+	executable := filepath.Join(root, "server")
+	writeSourceFile(t, root, "server", "#!/bin/sh\n")
+	if err := os.Chmod(executable, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executableDestination := filepath.Join(t.TempDir(), "executable-revision")
+	t.Cleanup(func() { makeSourceTreeWritable(executableDestination) })
+	if _, err := loader.MaterializePlugin(root, executableDestination); err != nil {
+		t.Fatalf("MaterializePlugin(executable) error = %v", err)
+	}
+	info, err := os.Stat(filepath.Join(executableDestination, "server"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o100 == 0 || info.Mode().Perm()&0o222 != 0 {
+		t.Fatalf("materialized executable mode = %v", info.Mode())
+	}
+
+	unsafeRoot := t.TempDir()
+	writeSourceFile(t, unsafeRoot, "plugin.json", validPluginManifest("unsafe"))
+	if err := os.MkdirAll(filepath.Join(unsafeRoot, "skills", "unsafe"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(t.TempDir(), "outside"), filepath.Join(unsafeRoot, "skills", "unsafe", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loader.MaterializePlugin(unsafeRoot, filepath.Join(t.TempDir(), "unsafe-revision")); err == nil {
+		t.Fatal("MaterializePlugin() unsafe symlink error = nil")
+	}
+}
+
+func makeSourceTreeWritable(root string) {
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.Type()&os.ModeSymlink != 0 {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		return os.Chmod(path, info.Mode().Perm()|0o200)
+	})
+}
+
 func TestSourceLoaderIsolatesInvalidComponents(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
