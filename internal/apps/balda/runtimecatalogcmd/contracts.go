@@ -55,6 +55,22 @@ const (
 	DiagnosticDuplicateCommandAlias = "duplicate_command_alias"
 	// DiagnosticSkillMetadataOmitted reports metadata omitted by a projection budget.
 	DiagnosticSkillMetadataOmitted = "skill_metadata_omitted"
+	// DiagnosticManifestFieldIgnored reports an unknown portable manifest field.
+	DiagnosticManifestFieldIgnored = "manifest_field_ignored"
+	// DiagnosticExtensionInvalid reports a disabled Balda plugin extension.
+	DiagnosticExtensionInvalid = "plugin_extension_invalid"
+	// DiagnosticSkillInvalid reports one skipped Agent Skill.
+	DiagnosticSkillInvalid = "skill_invalid"
+	// DiagnosticSkillComponentInvalid reports an unusable skills component root.
+	DiagnosticSkillComponentInvalid = "skill_component_invalid"
+	// DiagnosticMCPConfigInvalid reports a disabled plugin MCP configuration.
+	DiagnosticMCPConfigInvalid = "mcp_config_invalid"
+	// DiagnosticMCPServerInvalid reports one skipped MCP server declaration.
+	DiagnosticMCPServerInvalid = "mcp_server_invalid"
+	// DiagnosticMCPTransportUnsupported reports a valid server using a disabled transport.
+	DiagnosticMCPTransportUnsupported = "mcp_transport_unsupported"
+	// DiagnosticMarketplaceSourcePathDeprecated reports the transitional marketplace path shape.
+	DiagnosticMarketplaceSourcePathDeprecated = "marketplace_source_path_deprecated"
 )
 
 // RevisionID identifies validated source content.

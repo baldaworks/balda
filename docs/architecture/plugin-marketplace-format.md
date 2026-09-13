@@ -74,6 +74,13 @@ Plugin entry object:
 - `manifest_path` optional, relative path to the plugin manifest inside the
   plugin package root; defaults to `plugin.json`
 
+For compatibility with marketplace indexes accepted before this contract was
+documented, Balda also reads `source.path` when canonical `path` is absent and
+`source.source` is `local`. That form produces the
+`marketplace_source_path_deprecated` diagnostic. Canonical `path` takes
+precedence when both are present. The transitional form will be removed only
+at a future explicit marketplace format version boundary.
+
 ## Validation rules
 
 - `plugins[].path` must be a relative path from repository root.
@@ -148,7 +155,7 @@ the marketplace entry must point to it explicitly:
   "plugins": [
     {
       "name": "prism",
-      "source": { "source": "local", "path": "./plugins/prism" },
+      "path": "./plugins/prism",
       "manifest_path": ".plugin/plugin.json"
     }
   ]

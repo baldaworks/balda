@@ -133,6 +133,13 @@ points to one revision and keeps origin, manifest version, enabled state, and
 capability summary. Package data is stored separately from writable
 `${PLUGIN_DATA}` state.
 
+The temporary marketplace v0 index uses canonical `plugins[].path`. Existing
+indexes using `plugins[].source.path` with local source type remain readable
+only when `path` is absent and produce a
+`marketplace_source_path_deprecated` diagnostic. Canonical `path` wins when
+both forms are present. The transitional decoder is removed only at a future
+explicit marketplace format version boundary.
+
 ### Snapshot identity
 
 Every application and effective snapshot has a content-derived identity that

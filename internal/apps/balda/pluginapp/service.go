@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	baldagit "github.com/baldaworks/balda/internal/git"
 )
@@ -33,6 +34,7 @@ type AvailablePlugin struct {
 	SourceRoot       string
 	PluginPath       string
 	Installed        bool
+	Diagnostics      []runtimecatalogcmd.Diagnostic
 }
 
 type Service struct {
@@ -180,12 +182,23 @@ type marketplaceIndex struct {
 
 type marketplacePlugin struct {
 	Name   string `json:"name"`
+	Path   string `json:"path"`
 	Source struct {
 		Source string `json:"source"`
 		Path   string `json:"path"`
 	} `json:"source"`
 	ManifestPath string `json:"manifest_path"`
 	Category     string `json:"category"`
+}
+
+func (p marketplacePlugin) packagePath() (string, bool) {
+	if path := strings.TrimSpace(p.Path); path != "" {
+		return path, false
+	}
+	if strings.TrimSpace(p.Source.Source) != "local" {
+		return "", false
+	}
+	return strings.TrimSpace(p.Source.Path), true
 }
 
 func (s *Service) ListMarketplaces(ctx context.Context) ([]MarketplaceSource, error) {
@@ -570,15 +583,22 @@ func (s *Service) readMarketplacePlugins(ctx context.Context, src MarketplaceSou
 		if strings.TrimSpace(entry.Name) == "" {
 			continue
 		}
-		if strings.TrimSpace(entry.Source.Source) != "local" {
+		packagePath, transitional := entry.packagePath()
+		if packagePath == "" || filepath.IsAbs(packagePath) {
 			continue
 		}
-		pluginRoot := filepath.Join(root, filepath.Clean(strings.TrimSpace(entry.Source.Path)))
+		pluginRoot, err := containedMarketplacePath(root, packagePath)
+		if err != nil {
+			continue
+		}
 		summary, err := readPluginSummary(pluginRoot, strings.TrimSpace(entry.ManifestPath))
 		if err != nil {
 			continue
 		}
-		out = append(out, AvailablePlugin{
+		if summary.Name != strings.TrimSpace(entry.Name) {
+			continue
+		}
+		plugin := AvailablePlugin{
 			Name:             summary.Name,
 			DisplayName:      summary.Name,
 			Description:      summary.Description,
@@ -588,9 +608,40 @@ func (s *Service) readMarketplacePlugins(ctx context.Context, src MarketplaceSou
 			Category:         strings.TrimSpace(entry.Category),
 			SourceRoot:       root,
 			PluginPath:       pluginRoot,
-		})
+		}
+		if transitional {
+			plugin.Diagnostics = append(plugin.Diagnostics, runtimecatalogcmd.Diagnostic{
+				Severity: runtimecatalogcmd.DiagnosticSeverityWarning,
+				Code:     runtimecatalogcmd.DiagnosticMarketplaceSourcePathDeprecated,
+				Source: runtimecatalogcmd.SourceID{
+					Kind: runtimecatalogcmd.SourceKindPlugin,
+					Name: summary.Name,
+				},
+			})
+		}
+		out = append(out, plugin)
 	}
 	return out, nil
+}
+
+func containedMarketplacePath(root, relative string) (string, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.EvalSymlinks(filepath.Join(root, filepath.Clean(relative)))
+	if err != nil {
+		return "", err
+	}
+	relativeToRoot, err := filepath.Rel(root, path)
+	if err != nil || relativeToRoot == ".." || strings.HasPrefix(relativeToRoot, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("plugin path escapes marketplace root")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("plugin path is not a directory")
+	}
+	return path, nil
 }
 
 func (s *Service) materializeMarketplaceSource(ctx context.Context, src MarketplaceSource) (string, error) {
@@ -797,7 +848,12 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 	var data []byte
 	var err error
 	for _, candidate := range candidates {
-		data, err = os.ReadFile(filepath.Join(root, filepath.Clean(candidate)))
+		var manifestFile string
+		manifestFile, err = containedMarketplaceFile(root, candidate)
+		if err != nil {
+			return PluginSummary{}, err
+		}
+		data, err = os.ReadFile(manifestFile)
 		if err == nil {
 			break
 		}
@@ -828,6 +884,29 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 		Version:     strings.TrimSpace(manifest.Version),
 		Description: strings.TrimSpace(manifest.Description),
 	}, nil
+}
+
+func containedMarketplaceFile(root, relative string) (string, error) {
+	if filepath.IsAbs(relative) {
+		return "", fmt.Errorf("manifest path must be relative")
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.EvalSymlinks(filepath.Join(resolvedRoot, filepath.Clean(relative)))
+	if err != nil {
+		return "", err
+	}
+	relativeToRoot, err := filepath.Rel(resolvedRoot, path)
+	if err != nil || relativeToRoot == ".." || strings.HasPrefix(relativeToRoot, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("manifest path escapes plugin root")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("manifest path is not a regular file")
+	}
+	return path, nil
 }
 
 func resolveLocalMarketplaceRoot(source string) string {
