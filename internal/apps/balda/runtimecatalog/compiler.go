@@ -17,7 +17,7 @@ import (
 const compilationRulesVersion = "runtime-catalog-v1"
 
 // ErrSnapshotUnavailable indicates that a pinned snapshot is not retained.
-var ErrSnapshotUnavailable = errors.New("runtime contribution snapshot unavailable")
+var ErrSnapshotUnavailable = runtimecatalogcmd.ErrSnapshotUnavailable
 
 // Compiler deterministically compiles contribution sources.
 type Compiler struct{}

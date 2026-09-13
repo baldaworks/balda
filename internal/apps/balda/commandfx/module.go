@@ -12,12 +12,12 @@ import (
 	commandgoalkeeper "github.com/baldaworks/balda/internal/apps/balda/actors/command/goalkeeper"
 	commandhelp "github.com/baldaworks/balda/internal/apps/balda/actors/command/help"
 	commandlocator "github.com/baldaworks/balda/internal/apps/balda/actors/command/locator"
+	commandplugin "github.com/baldaworks/balda/internal/apps/balda/actors/command/plugin"
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
 	commandstart "github.com/baldaworks/balda/internal/apps/balda/actors/command/start"
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	commanduser "github.com/baldaworks/balda/internal/apps/balda/actors/command/user"
-	commandplugin "github.com/baldaworks/balda/internal/apps/balda/actors/command/plugin"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
@@ -97,7 +97,7 @@ type startParams struct {
 	ChannelAuth       *auth.ChannelAuthService     `optional:"true"`
 	Bootstrap         *sessionapp.BootstrapService `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
-	AuthToken         string                       `name:"balda_auth_token" optional:"true"`
+	AuthToken         string `name:"balda_auth_token" optional:"true"`
 	Logger            zerolog.Logger
 }
 
@@ -143,6 +143,18 @@ type pluginParams struct {
 	Plugins    *pluginapp.Service `optional:"true"`
 	Dispatcher actortransport.Dispatcher
 	Logger     zerolog.Logger
+}
+
+type commandActorParams struct {
+	fx.In
+	Router    *command.Router
+	Snapshots command.SnapshotResolver `optional:"true"`
+}
+
+type commandIngressParams struct {
+	fx.In
+	Dispatcher actortransport.Dispatcher
+	Snapshots  EffectiveSnapshotResolver `optional:"true"`
 }
 
 var Module = fx.Module("balda_command",
@@ -287,13 +299,15 @@ var Module = fx.Module("balda_command",
 			fx.ParamTags(`group:"balda_command_handlers"`, `group:"balda_command_advertisements"`),
 		),
 		fx.Annotate(
-			func(router *command.Router) dispatch.Actor {
-				return command.NewActor(router)
+			func(p commandActorParams) dispatch.Actor {
+				return command.NewActor(p.Router, p.Snapshots)
 			},
 			fx.As(new(dispatch.Actor)), fx.ResultTags(`group:"balda_product_actors"`),
 		),
 		fx.Annotate(
-			NewCommandIngress,
+			func(p commandIngressParams) *CommandIngress {
+				return NewCommandIngress(p.Dispatcher, p.Snapshots)
+			},
 			fx.As(new(commandcmd.Ingress)),
 		),
 	),

@@ -17,8 +17,12 @@ const (
 	SourceKindPlugin         SourceKind = "plugin"
 )
 
-// ErrRevisionUnavailable is the stable cross-layer result for absent pinned bytes.
-var ErrRevisionUnavailable = errors.New(OutcomeRevisionUnavailable)
+var (
+	// ErrSnapshotUnavailable is the stable cross-layer result for an absent retained snapshot.
+	ErrSnapshotUnavailable = errors.New(OutcomeSnapshotUnavailable)
+	// ErrRevisionUnavailable is the stable cross-layer result for absent pinned bytes.
+	ErrRevisionUnavailable = errors.New(OutcomeRevisionUnavailable)
+)
 
 const (
 	// OutcomeSnapshotUnavailable is the stable code for a missing retained snapshot.
