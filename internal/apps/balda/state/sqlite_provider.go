@@ -23,6 +23,7 @@ type sqliteProvider struct {
 	runtime        *sqliteJobStore
 	ingress        *sqliteSessionMemoryIngressOutboxStore
 	offset         *sqliteOffsetStore
+	plugins        *sqlitePluginStore
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -163,6 +164,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		runtime:        &sqliteJobStore{db: db},
 		ingress:        &sqliteSessionMemoryIngressOutboxStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
+		plugins:        &sqlitePluginStore{db: db},
 	}
 	return provider, nil
 }
@@ -206,6 +208,8 @@ func (p *sqliteProvider) PollingOffsetStore() PollingOffsetStore {
 func (p *sqliteProvider) Collaborators() CollaboratorStore {
 	return p
 }
+
+func (p *sqliteProvider) Plugins() PluginStore { return p.plugins }
 
 func (p *sqliteProvider) Close() error {
 	return p.db.Close()

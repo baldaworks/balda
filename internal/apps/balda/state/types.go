@@ -88,7 +88,66 @@ type Provider interface {
 	Jobs() JobStore
 	PollingOffsetStore() PollingOffsetStore
 	Collaborators() CollaboratorStore
+	Plugins() PluginStore
 	Close() error
+}
+
+const (
+	PluginActivationIntentPending  = "pending"
+	PluginActivationIntentComplete = "complete"
+)
+
+// PluginRevisionRecord identifies immutable validated plugin package bytes.
+type PluginRevisionRecord struct {
+	PluginID       string
+	RevisionID     string
+	Version        string
+	RelativeRoot   string
+	CapabilityJSON string
+	CreatedAt      time.Time
+	RetiredAt      time.Time
+}
+
+// PluginInstallRecord is the durable active state for one logical plugin.
+type PluginInstallRecord struct {
+	PluginID          string
+	OriginMarketplace string
+	OriginSource      string
+	OriginPath        string
+	ActiveRevisionID  string
+	Enabled           bool
+	Version           string
+	CapabilityJSON    string
+	DataRelativePath  string
+	UpdatedAt         time.Time
+}
+
+// PluginActivationIntent makes an active-revision switch recoverable.
+type PluginActivationIntent struct {
+	IntentID       string
+	PluginID       string
+	FromRevisionID string
+	ToRevisionID   string
+	Operation      string
+	State          string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// PluginStore persists plugin revisions, active installs, and activation intents.
+type PluginStore interface {
+	PutPluginRevision(ctx context.Context, record PluginRevisionRecord) error
+	GetPluginRevision(ctx context.Context, pluginID, revisionID string) (PluginRevisionRecord, bool, error)
+	ListPluginRevisions(ctx context.Context, pluginID string) ([]PluginRevisionRecord, error)
+	GetPluginInstall(ctx context.Context, pluginID string) (PluginInstallRecord, bool, error)
+	ListPluginInstalls(ctx context.Context) ([]PluginInstallRecord, error)
+	ActivatePlugin(ctx context.Context, intent PluginActivationIntent, install PluginInstallRecord) error
+	SetPluginEnabled(ctx context.Context, pluginID string, enabled bool, updatedAt time.Time) error
+	CompletePluginActivation(ctx context.Context, intentID string, updatedAt time.Time) error
+	ListIncompletePluginActivations(ctx context.Context) ([]PluginActivationIntent, error)
+	RetirePluginRevision(ctx context.Context, pluginID, revisionID string, retiredAt time.Time) error
+	CanPurgePluginRevision(ctx context.Context, pluginID, revisionID string) (bool, error)
+	PurgePluginRevision(ctx context.Context, pluginID, revisionID string) error
 }
 
 // PollingOffsetStore persists bot polling offsets across restarts.
