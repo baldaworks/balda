@@ -40,8 +40,9 @@ can be read, linked, and indexed independently:
   restore behavior, and workspace isolation.
 - [Job, scheduler, and webhook runtime](reference/job-runtime.md) — durable job
   execution, scheduled delivery, and inbound webhook behavior.
-- [Command runtime internals](reference/command-runtime.md) — command delivery,
-  retries, projections, queues, replay boundaries, and runtime inspection.
+- [Command architecture and runtime internals](reference/command-runtime.md) —
+  built-in and plugin command sources, transport admission, `CommandActor`,
+  snapshot pinning, retries, queues, and replay boundaries.
 - [Operations and verification](reference/operations.md) — troubleshooting,
   workspace MCP verification, and acceptance checks.
 

@@ -8,6 +8,8 @@ Use this map to find the authoritative runtime contracts.
 ## Documents
 
 - [Runtime contract](runtime-contract.md)
+- [Command architecture and runtime internals](../reference/command-runtime.md) —
+  canonical command ownership, source, transport, and execution flow.
 - [Application sub-zones](application-zones.md)
 - [Command runtime adapter](command-runtime-adapter.md)
 - [Conversational turns and jobs](conversational-turns-and-jobs.md)

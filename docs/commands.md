@@ -174,11 +174,11 @@ transport parser + whitelist
 ```
 
 `commandcmd` owns the neutral envelope. `actors/command` owns exact-name
-routing and command policy across scoped families (`locator`, `reset`, `info`,
-`auto`, `control`, `goalkeeper`, `topic`, `closecmd`, `bootstrap`, `user`,
-`plugin`). `commandfx` wires actor ports. Transport packages do not import actor
-or application packages. Ingress handlers parse, perform auth/session checks, and
-publish `commandcmd.Request` envelopes.
+routing and command policy across scoped handler packages (`start`, `help`,
+`usage`, `locator`, `topic`, `reset`, `closecmd`, `cancel`, `auto`,
+`goalkeeper`, `user`, and `plugin`). `commandfx` wires actor ports. Transport
+packages do not import actor or application packages. Ingress handlers parse,
+perform auth/session checks, and publish `commandcmd.Request` envelopes.
 
 `CommandActor` is the only product command executor. Plugins cannot register
 native handlers: a catalog-advertised plugin command is declarative metadata
@@ -186,6 +186,10 @@ that creates one normal authenticated turn pinned to the command's catalog
 snapshot, plugin revision, skill, and provider-visible plugin MCP set. A retry
 rehydrates that exact retained MCP revision in a turn-scoped runtime instead of
 consulting the mutable current catalog. Built-in names always remain reserved.
+
+See [Command architecture and runtime internals](reference/command-runtime.md)
+for command sources, per-transport admission, registry projection, durable
+identity, retry, and exact snapshot/skill/MCP pinning.
 
 ## User administration
 
