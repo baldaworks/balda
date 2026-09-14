@@ -437,6 +437,7 @@ func (h *telegramInboundHandler) prepareTelegramSession(ctx context.Context, inb
 	return ingressapp.SessionPreparation{
 		Ready: true, UserID: ts.GetUserID(), RequesterUserID: transportUserID,
 		AgentSessionID: ts.GetAgentSessionID(), TopicID: inbound.TopicID, WorkspaceDir: ts.GetWorkspaceDir(),
+		RuntimeSnapshotID: ts.GetRuntimeSnapshotID(),
 	}, nil
 }
 

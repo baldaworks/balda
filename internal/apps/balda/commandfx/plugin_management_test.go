@@ -19,7 +19,7 @@ func TestCatalogStatusReaderReportsBoundedCatalogAndProjectionState(t *testing.T
 		Descriptor: runtimecatalogcmd.SourceDescriptor{ID: sourceID, Revision: revision},
 		Commands: []runtimecatalogcmd.CommandDescriptor{{
 			ID: commandID, Revision: revision, Name: "deploy", Advertised: true,
-			Skill: &runtimecatalogcmd.SkillRef{Source: sourceID, Revision: revision, Name: "deploy"},
+			Instruction: "Deploy safely",
 		}},
 		Skills: []runtimecatalogcmd.SkillMetadata{{
 			ID: skillID, Revision: revision, Name: "deploy", Resource: "skills/deploy/SKILL.md",

@@ -94,9 +94,6 @@ func (c *Compiler) compile(scope runtimecatalogcmd.SnapshotScope, parents []runt
 			return runtimecatalogcmd.Snapshot{}, err
 		}
 	}
-	if err := validateCommandSkillRefs(snapshot); err != nil {
-		return runtimecatalogcmd.Snapshot{}, err
-	}
 	if err := applyCommandCollisionPolicy(&snapshot); err != nil {
 		return runtimecatalogcmd.Snapshot{}, err
 	}
@@ -120,14 +117,14 @@ func addSource(snapshot *runtimecatalogcmd.Snapshot, source runtimecatalogcmd.So
 	snapshot.Sources[descriptor.ID] = descriptor
 	for _, command := range source.Commands {
 		command.Name = canonicalCommandName(command.Name)
+		command.Description = strings.TrimSpace(command.Description)
+		command.Instruction = strings.TrimSpace(command.Instruction)
 		command.Advertised = true
 		if err := validateContribution(descriptor, command.ID, command.Revision, runtimecatalogcmd.ContributionKindCommand, command.Name); err != nil {
 			return err
 		}
-		if command.Skill != nil {
-			if err := validateSkillRef(*command.Skill); err != nil {
-				return fmt.Errorf("command %q: %w", command.ID.String(), err)
-			}
+		if descriptor.ID.Kind == runtimecatalogcmd.SourceKindPlugin && (command.Instruction == "" || len(command.Instruction) > 16_384) {
+			return fmt.Errorf("command %q instruction is invalid", command.ID.String())
 		}
 		if _, exists := snapshot.Commands[command.ID]; exists {
 			return fmt.Errorf("duplicate contribution %q", command.ID.String())
@@ -184,24 +181,6 @@ func addSource(snapshot *runtimecatalogcmd.Snapshot, source runtimecatalogcmd.So
 	return nil
 }
 
-func validateCommandSkillRefs(snapshot runtimecatalogcmd.Snapshot) error {
-	for _, command := range snapshot.Commands {
-		if command.Skill == nil {
-			continue
-		}
-		ref := *command.Skill
-		if command.ID.Source.Kind == runtimecatalogcmd.SourceKindPlugin && ref.Source != command.ID.Source {
-			return fmt.Errorf("plugin command %q must reference a plugin-local skill", command.ID.String())
-		}
-		id := runtimecatalogcmd.ContributionID{Source: ref.Source, Kind: runtimecatalogcmd.ContributionKindSkill, Name: ref.Name}
-		skill, ok := snapshot.Skills[id]
-		if !ok || skill.Revision != ref.Revision {
-			return fmt.Errorf("command %q references unavailable skill %q", command.ID.String(), id.String())
-		}
-	}
-	return nil
-}
-
 func validateSourceDescriptor(descriptor runtimecatalogcmd.SourceDescriptor) error {
 	if !validSourceKind(descriptor.ID.Kind) {
 		return fmt.Errorf("invalid source kind %q", descriptor.ID.Kind)
@@ -236,16 +215,6 @@ func validateContribution(source runtimecatalogcmd.SourceDescriptor, id runtimec
 	}
 	if revision != source.Revision {
 		return fmt.Errorf("contribution %q revision does not match its source", id.String())
-	}
-	return nil
-}
-
-func validateSkillRef(ref runtimecatalogcmd.SkillRef) error {
-	if !validSourceKind(ref.Source.Kind) || strings.TrimSpace(ref.Source.Name) == "" {
-		return errors.New("skill source is required")
-	}
-	if strings.TrimSpace(string(ref.Revision)) == "" || strings.TrimSpace(ref.Name) == "" {
-		return errors.New("skill revision and name are required")
 	}
 	return nil
 }

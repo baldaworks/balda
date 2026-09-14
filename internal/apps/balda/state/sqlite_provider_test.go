@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 35
+const expectedSQLiteMigrationVersion = 36
 
 func TestSQLiteProvider_KVRoundTrip(t *testing.T) {
 	provider := newTestProvider(t)
@@ -104,15 +104,16 @@ func TestSQLiteProvider_SessionStoreRoundTrip(t *testing.T) {
 	store := provider.Sessions()
 
 	record := SessionRecord{
-		SessionID:    "tg-1-2",
-		UserID:       "tg-101",
-		ChannelType:  ChannelTypeTelegram,
-		AddressKey:   "1:2",
-		AddressJSON:  `{"chat_id":1,"topic_id":2}`,
-		AgentName:    "agent",
-		WorkspaceDir: "/tmp/ws",
-		BranchName:   "norma/balda/tg-1-2",
-		Status:       SessionStatusActive,
+		SessionID:         "tg-1-2",
+		UserID:            "tg-101",
+		ChannelType:       ChannelTypeTelegram,
+		AddressKey:        "1:2",
+		AddressJSON:       `{"chat_id":1,"topic_id":2}`,
+		AgentName:         "agent",
+		WorkspaceDir:      "/tmp/ws",
+		BranchName:        "norma/balda/tg-1-2",
+		RuntimeSnapshotID: "snapshot-1",
+		Status:            SessionStatusActive,
 	}
 	if err := store.Upsert(ctx, record); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
@@ -133,6 +134,9 @@ func TestSQLiteProvider_SessionStoreRoundTrip(t *testing.T) {
 	}
 	if got.UserID != record.UserID {
 		t.Fatalf("user_id = %q, want %q", got.UserID, record.UserID)
+	}
+	if got.RuntimeSnapshotID != record.RuntimeSnapshotID {
+		t.Fatalf("runtime_snapshot_id = %q, want %q", got.RuntimeSnapshotID, record.RuntimeSnapshotID)
 	}
 }
 
@@ -601,6 +605,9 @@ func TestSQLiteProvider_MigratesPreviousSchema(t *testing.T) {
 	}
 	if record.UserID != "" {
 		t.Fatalf("user_id after migration = %q, want empty for pre-migration rows", record.UserID)
+	}
+	if record.RuntimeSnapshotID != "" {
+		t.Fatalf("runtime_snapshot_id after migration = %q, want empty for legacy row", record.RuntimeSnapshotID)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)

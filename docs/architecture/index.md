@@ -21,6 +21,7 @@ Use this map to find the authoritative runtime contracts.
 - [Slackagent mode](slack-agent-mode.md)
 - [Goal worker results](goal-worker-results.md)
 - [Plugin marketplace repo format](plugin-marketplace-format.md)
+- [Plugins and session capabilities](../reference/plugins.md)
 - [Runtime contribution catalog](runtime-contribution-catalog.md)
 - [Actor runtime](actor-runtime.md)
 - [Local actorlayer contract boundary](actor-runtime.md#local-actorlayer-contract-boundaries)
@@ -40,8 +41,10 @@ Use this map to find the authoritative runtime contracts.
   live under scoped families in `actors/command`, and `commandfx` contains composition only.
 - `runtimecatalog` compiles immutable application/workspace snapshots;
   `catalogapp` reconstructs durable plugin state before provider startup and
-  projects the same pinned revision to command, skill, MCP, and transport consumers.
-  Plugin aliases still execute only through the independent `CommandActor`.
+  binds one immutable capability snapshot to each session. Commands and skills
+  resolve from that pin; MCP is supplied when the provider session is created
+  or restored. Plugin aliases still execute only through the independent
+  `CommandActor`.
 - `actorcmd` is the canonical leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata; `execution` re-exports that taxonomy as the runtime-facing compatibility facade.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, opaque delivery capability, progress policy, delivery payloads, and adapter-facing delivery operations. `deliveryfmt` resolves that capability through one immutable registry shared by prompt and delivery paths.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.

@@ -22,12 +22,6 @@ type recordingAdvertisementTarget struct {
 	projections []commandcmd.AdvertisementProjection
 }
 
-type fakeMCPReadiness map[string]bool
-
-func (r fakeMCPReadiness) MCPServerReady(_ runtimecatalogcmd.SourceID, revision runtimecatalogcmd.RevisionID, name string) bool {
-	return r[string(revision)+"/"+name]
-}
-
 func (t *recordingAdvertisementTarget) Transport() string { return t.transport }
 func (t *recordingAdvertisementTarget) SupportsCommand(name string) bool {
 	return !strings.Contains(name, "_")
@@ -83,27 +77,17 @@ func TestAdvertisementProjectorGatesSyntaxAndReplacesOnRefresh(t *testing.T) {
 	}
 }
 
-func TestPinnedCommandReadinessRequiresExactSkillAndMCPRevision(t *testing.T) {
+func TestPinnedCommandReadinessRequiresInstruction(t *testing.T) {
 	t.Parallel()
 
 	descriptor := pluginDescriptorForProjection("deploy", "revision")
-	skillID := runtimecatalogcmd.ContributionID{Source: descriptor.ID.Source, Kind: runtimecatalogcmd.ContributionKindSkill, Name: descriptor.Skill.Name}
-	serverID := runtimecatalogcmd.ContributionID{Source: descriptor.ID.Source, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: "tools"}
-	snapshot := runtimecatalogcmd.Snapshot{
-		Skills: map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.SkillMetadata{
-			skillID: {ID: skillID, Revision: "revision", Name: descriptor.Skill.Name},
-		},
-		MCPServers: map[runtimecatalogcmd.ContributionID]runtimecatalogcmd.MCPServerDescriptor{
-			serverID: {ID: serverID, Revision: "revision", Name: "tools"},
-		},
+	readiness := NewPinnedCommandReadiness()
+	if !readiness.PluginCommandReady(context.Background(), runtimecatalogcmd.Snapshot{}, descriptor) {
+		t.Fatal("command instruction reported unavailable")
 	}
-	readiness := NewPinnedCommandReadiness(fakeMCPReadiness{"revision/tools": true})
-	if !readiness.PluginCommandReady(context.Background(), snapshot, descriptor) {
-		t.Fatal("exact pinned skill and MCP revision reported unavailable")
-	}
-	snapshot.MCPServers[serverID] = runtimecatalogcmd.MCPServerDescriptor{ID: serverID, Revision: "other", Name: "tools"}
-	if readiness.PluginCommandReady(context.Background(), snapshot, descriptor) {
-		t.Fatal("mismatched MCP revision reported ready")
+	descriptor.Instruction = ""
+	if readiness.PluginCommandReady(context.Background(), runtimecatalogcmd.Snapshot{}, descriptor) {
+		t.Fatal("empty command instruction reported ready")
 	}
 }
 
@@ -112,7 +96,7 @@ func pluginDescriptorForProjection(name string, revision runtimecatalogcmd.Revis
 	return runtimecatalogcmd.CommandDescriptor{
 		ID:       runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindCommand, Name: name},
 		Revision: revision, Name: name, Description: "Run " + name, Advertised: true,
-		Skill: &runtimecatalogcmd.SkillRef{Source: source, Revision: revision, Name: "skill"},
+		Instruction: "Run " + name,
 	}
 }
 

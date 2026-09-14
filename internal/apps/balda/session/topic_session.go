@@ -12,19 +12,20 @@ import (
 
 // TopicSession represents a single channel session's provider-backed agent session.
 type TopicSession struct {
-	sessionID      string
-	agentSessionID string
-	userID         string
-	locator        SessionLocator
-	agentName      string
-	agent          agent.Agent
-	runner         *runner.Runner
-	sessionSvc     session.Service
-	sess           session.Session
-	runtimeClose   func() error
-	workspaceDir   string
-	branchName     string
-	startupNotice  string
+	sessionID         string
+	agentSessionID    string
+	userID            string
+	locator           SessionLocator
+	agentName         string
+	agent             agent.Agent
+	runner            *runner.Runner
+	sessionSvc        session.Service
+	sess              session.Session
+	runtimeClose      func() error
+	runtimeSnapshotID string
+	workspaceDir      string
+	branchName        string
+	startupNotice     string
 }
 
 func (s *TopicSession) GetRunner() *runner.Runner {
@@ -53,6 +54,11 @@ func (s *TopicSession) GetWorkspaceDir() string {
 
 func (s *TopicSession) GetBranchName() string {
 	return s.branchName
+}
+
+// GetRuntimeSnapshotID returns the immutable capability snapshot bound to the session runtime.
+func (s *TopicSession) GetRuntimeSnapshotID() string {
+	return s.runtimeSnapshotID
 }
 
 func (s *TopicSession) GetAgentName() string {

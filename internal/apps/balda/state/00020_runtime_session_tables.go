@@ -25,6 +25,7 @@ func registerBaldaGoMigrations() {
 		goose.AddNamedMigrationContext("00028_question_control_handles.go", up00028QuestionControlHandles, down00028QuestionControlHandles)
 		goose.AddNamedMigrationContext("00034_plugin_catalog_state.go", up00034PluginCatalogState, down00034PluginCatalogState)
 		goose.AddNamedMigrationContext("00035_plugin_manifest_metadata.go", up00035PluginManifestMetadata, down00035PluginManifestMetadata)
+		goose.AddNamedMigrationContext("00036_session_runtime_snapshot.go", up00036SessionRuntimeSnapshot, down00036SessionRuntimeSnapshot)
 	})
 }
 

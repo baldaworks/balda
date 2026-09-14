@@ -59,18 +59,19 @@ func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (
 // SessionPreparation contains runtime session identity established before
 // durable acceptance.
 type SessionPreparation struct {
-	Ready           bool
-	Reason          string
-	UserID          string
-	RequesterUserID string
-	AgentSessionID  string
-	TopicID         int
-	WorkspaceDir    string
+	Ready             bool
+	Reason            string
+	UserID            string
+	RequesterUserID   string
+	AgentSessionID    string
+	TopicID           int
+	WorkspaceDir      string
+	RuntimeSnapshotID string
 }
 
 // SkillPinner resolves an explicit reference using trusted prepared-session scope.
 type SkillPinner interface {
-	PinExplicit(ctx context.Context, workspace, text string) (string, *runtimecatalogcmd.SkillSelection, error)
+	PinExplicit(ctx context.Context, runtimeSnapshotID, text string) (string, *runtimecatalogcmd.SkillSelection, error)
 }
 
 // SessionPreparer enforces create/restore/session preconditions without

@@ -18,7 +18,7 @@ func TestSourceLoaderLoadsPluginComponentsDeterministically(t *testing.T) {
   "$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name":"release-tools",
   "ignored":true,
-  "extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"release","description":"Release","skill":"deploy"}]}}
+  "extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"release","description":"Release","instruction":"Deploy the release safely."}]}}
 }`)
 	writeSourceFile(t, root, "skills/deploy/SKILL.md", "---\nname: deploy\ndescription: Deploy releases safely.\n---\n# Deploy\n")
 	writeSourceFile(t, root, "mcp.json", `{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"remote":{"type":"streamable-http","url":"https://example.com/mcp"},"tools":{"type":"stdio","command":"go","args":["run","./cmd/tools"]}}}`)
@@ -38,7 +38,7 @@ func TestSourceLoaderLoadsPluginComponentsDeterministically(t *testing.T) {
 	if len(first.Skills) != 1 || first.Skills[0].Name != "deploy" || first.Skills[0].Resource != "skills/deploy/SKILL.md" {
 		t.Fatalf("skills = %#v", first.Skills)
 	}
-	if len(first.Commands) != 1 || first.Commands[0].Skill == nil || first.Commands[0].Skill.Name != "deploy" {
+	if len(first.Commands) != 1 || first.Commands[0].Instruction != "Deploy the release safely." {
 		t.Fatalf("commands = %#v", first.Commands)
 	}
 	if len(first.MCPServers) != 2 || first.MCPServers[0].Name != "remote" || first.MCPServers[1].Name != "tools" {
@@ -55,6 +55,54 @@ func TestSourceLoaderLoadsPluginComponentsDeterministically(t *testing.T) {
 	}
 	if changed.Descriptor.Revision == first.Descriptor.Revision {
 		t.Fatal("revision did not change with package content")
+	}
+}
+
+func TestSourceLoaderValidatesBundledBaldaExtensionSchema(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		extension   string
+		wantCommand bool
+	}{
+		{
+			name:        "valid inline instruction",
+			extension:   `{"schema_version":1,"commands":[{"name":"release","description":"Release safely","instruction":"Inspect the release and deploy it."}]}`,
+			wantCommand: true,
+		},
+		{
+			name:      "closed command object",
+			extension: `{"schema_version":1,"commands":[{"name":"release","description":"Release safely","instruction":"Deploy it.","unexpected":true}]}`,
+		},
+		{
+			name:      "required instruction",
+			extension: `{"schema_version":1,"commands":[{"name":"release","description":"Release safely"}]}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			manifest := `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","extensions":{"dev.baldaworks.balda":` + test.extension + `}}`
+			writeSourceFile(t, root, "plugin.json", manifest)
+
+			source, err := newTestSourceLoader(t).LoadPlugin(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.wantCommand {
+				if len(source.Commands) != 1 || source.Commands[0].Instruction != "Inspect the release and deploy it." {
+					t.Fatalf("commands = %+v, want exact inline instruction", source.Commands)
+				}
+				if containsDiagnostic(source.Diagnostics, runtimecatalogcmd.DiagnosticExtensionInvalid) {
+					t.Fatalf("diagnostics = %+v, want valid extension", source.Diagnostics)
+				}
+				return
+			}
+			if len(source.Commands) != 0 || !containsDiagnostic(source.Diagnostics, runtimecatalogcmd.DiagnosticExtensionInvalid) {
+				t.Fatalf("source = %+v, want disabled extension diagnostic", source)
+			}
+		})
 	}
 }
 
@@ -344,7 +392,7 @@ func TestSourceLoaderHashesAndBoundsDirectories(t *testing.T) {
 func TestSourceLoaderRejectsIncompleteBaldaCommand(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	writeSourceFile(t, root, "plugin.json", `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"run","skill":"good"}]}}}`)
+	writeSourceFile(t, root, "plugin.json", `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"run"}]}}}`)
 	writeSourceFile(t, root, "skills/good/SKILL.md", "---\nname: good\ndescription: A valid skill.\n---\n")
 	source, err := newTestSourceLoader(t).LoadPlugin(root)
 	if err != nil {

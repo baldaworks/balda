@@ -35,6 +35,11 @@ Status: active
 - Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.
 - Slackagent behavior lives in a dedicated `slackagent` path with its own ingress and response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slackagent mode](slack-agent-mode.md).
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
+- Each session persists one runtime catalog snapshot before exposure. Command
+  lookup and skill metadata/selection use that exact snapshot; MCP identities
+  are supplied only when the provider session is created or restored. Every
+  turn reuses `TopicSession`'s runner. Restore fails closed for an unavailable
+  non-empty pin, while reset deliberately selects current capabilities.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 - Ingress construction is fail-fast: formatting/registry validation and all downstream runtime dependencies must resolve before any ingress lifecycle stage can accept work.
 - Telegram polling settlement is explicit: the provider-owned offset boundary advances only after accepted or terminal event processing; retryable handler outcomes preserve the previous offset for stable-ID replay, while webhook settlement remains request-local.

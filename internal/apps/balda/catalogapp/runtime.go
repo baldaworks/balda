@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
@@ -105,7 +104,7 @@ func NewRuntime(
 		seenTransports[transport] = struct{}{}
 		targets = append(targets, commandfx.NewRegistryAdvertisementTarget(transport, commands))
 	}
-	runtime.ads, err = commandfx.NewAdvertisementProjector(commandfx.NewPinnedCommandReadiness(runtime.mcp), targets)
+	runtime.ads, err = commandfx.NewAdvertisementProjector(commandfx.NewPinnedCommandReadiness(), targets)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +175,20 @@ func (r *Runtime) ResolveEffectiveSnapshot(ctx context.Context, request commandf
 	if err != nil {
 		return "", err
 	}
-	if !found || strings.TrimSpace(record.WorkspaceDir) == "" {
+	if !found {
+		return application.ID, nil
+	}
+	if pinned := runtimecatalogcmd.SnapshotID(strings.TrimSpace(record.RuntimeSnapshotID)); pinned != "" {
+		snapshot, err := r.retainedSnapshot(ctx, pinned)
+		if err != nil {
+			return "", err
+		}
+		if snapshot.ID != pinned {
+			return "", runtimecatalogcmd.ErrSnapshotUnavailable
+		}
+		return pinned, nil
+	}
+	if strings.TrimSpace(record.WorkspaceDir) == "" {
 		return application.ID, nil
 	}
 	snapshot, err := r.effectiveSnapshot(ctx, record.WorkspaceDir, sessionID)
@@ -192,11 +204,11 @@ func (r *Runtime) ResolveCommandSnapshot(ctx context.Context, id runtimecatalogc
 }
 
 // CurrentSkillSnapshot resolves application plus the trusted workspace overlay.
-func (r *Runtime) CurrentSkillSnapshot(ctx context.Context, scope baldaagent.TrustedSkillScope) (runtimecatalogcmd.Snapshot, error) {
-	if strings.TrimSpace(scope.Workspace) == "" {
+func (r *Runtime) CurrentSkillSnapshot(ctx context.Context, workspace string) (runtimecatalogcmd.Snapshot, error) {
+	if strings.TrimSpace(workspace) == "" {
 		return r.store.Application()
 	}
-	return r.effectiveSnapshot(ctx, scope.Workspace, workspaceScopeName(scope.Workspace))
+	return r.effectiveSnapshot(ctx, workspace, workspaceScopeName(workspace))
 }
 
 // RetainedSkillSnapshot returns one exact immutable snapshot.
@@ -209,26 +221,8 @@ func (r *Runtime) ReadSkill(ctx context.Context, request runtimecatalogcmd.Skill
 	return r.reader.ReadSkill(ctx, request)
 }
 
-// MCPServerIDs returns ready revision-qualified plugin MCP registry IDs for a
-// provider runtime constructed in the trusted workspace scope.
-func (r *Runtime) MCPServerIDs(ctx context.Context, workspace string) ([]string, error) {
-	snapshot, err := r.CurrentSkillSnapshot(ctx, baldaagent.TrustedSkillScope{Workspace: workspace})
-	if err != nil {
-		return nil, err
-	}
-	var ids []string
-	for _, descriptor := range snapshot.MCPServers {
-		if descriptor.ID.Source.Kind != runtimecatalogcmd.SourceKindPlugin || !r.mcp.MCPServerReady(descriptor.ID.Source, descriptor.Revision, descriptor.Name) {
-			continue
-		}
-		ids = append(ids, mcpfx.RegistryID(mcpruntime.InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}))
-	}
-	sort.Strings(ids)
-	return ids, nil
-}
-
 // AcquireMCPServerIDs pins ready plugin MCP instances from one exact retained
-// snapshot for the lifetime of a provider turn.
+// snapshot for the lifetime of a provider session.
 func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecatalogcmd.SnapshotID) ([]string, func(), error) {
 	snapshot, err := r.retainedSnapshot(ctx, snapshotID)
 	if err != nil {

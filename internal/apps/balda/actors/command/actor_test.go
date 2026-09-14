@@ -148,7 +148,7 @@ func TestActorExecutesOnlyAuthorizedPinnedPluginDescriptor(t *testing.T) {
 	if err := actor.Handle(context.Background(), env); err != nil {
 		t.Fatal(err)
 	}
-	if len(executor.descriptors) != 1 || executor.descriptors[0].Revision != "revision-one" {
+	if len(executor.descriptors) != 1 || executor.descriptors[0].Revision != "revision-one" || executor.descriptors[0].Instruction != "Deploy safely" {
 		t.Fatalf("executed descriptors = %+v", executor.descriptors)
 	}
 
@@ -186,8 +186,7 @@ func pluginCommandDescriptor(name string, revision runtimecatalogcmd.RevisionID)
 	source := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "demo"}
 	return runtimecatalogcmd.CommandDescriptor{
 		ID:       runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindCommand, Name: name},
-		Revision: revision, Name: name, Advertised: true,
-		Skill: &runtimecatalogcmd.SkillRef{Source: source, Revision: revision, Name: "deploy-skill"},
+		Revision: revision, Name: name, Instruction: "Deploy safely", Advertised: true,
 	}
 }
 

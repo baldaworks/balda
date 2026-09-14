@@ -2,6 +2,8 @@ package catalogapp
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors/command"
@@ -9,11 +11,11 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -21,38 +23,53 @@ import (
 	"go.uber.org/fx"
 )
 
-type snapshotRuntimeProvider struct {
+type sessionCapabilityBinder struct {
 	catalog *Runtime
-	manager *baldaagent.RuntimeManager
+	skills  *baldaagent.SkillManager
 }
 
-func (p *snapshotRuntimeProvider) RuntimeForSnapshot(ctx context.Context, request sessionturn.SnapshotRuntimeRequest) (*sessionturn.SnapshotRuntime, error) {
-	ids, release, err := p.catalog.AcquireMCPServerIDs(ctx, request.SnapshotID)
-	if err != nil {
-		return nil, err
+func (b *sessionCapabilityBinder) BindSessionCapabilities(ctx context.Context, request baldaagent.SessionRuntimeRequest) (baldaagent.SessionCapabilityBinding, error) {
+	if b == nil || b.catalog == nil || b.skills == nil {
+		return baldaagent.SessionCapabilityBinding{}, fmt.Errorf("session capability binder is unavailable")
 	}
-	runtime, err := p.manager.RuntimeForSessionWithMCPServerIDs(ctx, baldaagent.SessionRuntimeRequest{
-		Locator: deliverycmd.Locator{
-			SessionID: request.Locator.SessionID, ChannelType: request.Locator.ChannelType,
-			AddressKey: request.Locator.AddressKey, AddressJSON: request.Locator.AddressJSON,
-		},
-		UserID: request.UserID, AgentSessionID: request.AgentSessionID, WorkspaceDir: request.WorkspaceDir,
-	}, ids)
+	requestedSnapshotID := runtimecatalogcmd.SnapshotID(strings.TrimSpace(request.RuntimeSnapshotID))
+	var (
+		snapshot runtimecatalogcmd.Snapshot
+		err      error
+	)
+	if requestedSnapshotID == "" {
+		snapshot, err = b.catalog.CurrentSkillSnapshot(ctx, request.WorkspaceDir)
+	} else {
+		snapshot, err = b.catalog.RetainedSkillSnapshot(ctx, requestedSnapshotID)
+	}
 	if err != nil {
-		release()
-		return nil, err
+		return baldaagent.SessionCapabilityBinding{}, err
+	}
+	if snapshot.ID == "" || (requestedSnapshotID != "" && snapshot.ID != requestedSnapshotID) {
+		return baldaagent.SessionCapabilityBinding{}, runtimecatalogcmd.ErrSnapshotUnavailable
+	}
+	projection, err := b.skills.SkillMetadataForSnapshot(ctx, snapshot.ID)
+	if err != nil {
+		return baldaagent.SessionCapabilityBinding{}, err
+	}
+	ids, release, err := b.catalog.AcquireMCPServerIDs(ctx, snapshot.ID)
+	if err != nil {
+		return baldaagent.SessionCapabilityBinding{}, err
 	}
 	var once sync.Once
-	return &sessionturn.SnapshotRuntime{Runner: runtime.Runner, Close: func() error {
-		var closeErr error
-		once.Do(func() {
-			if runtime.Close != nil {
-				closeErr = runtime.Close()
-			}
-			release()
-		})
-		return closeErr
-	}}, nil
+	return baldaagent.SessionCapabilityBinding{
+		SnapshotID:   snapshot.ID,
+		Skills:       projection,
+		MCPServerIDs: ids,
+		Close: func() error {
+			once.Do(func() {
+				if release != nil {
+					release()
+				}
+			})
+			return nil
+		},
+	}, nil
 }
 
 type runtimeParams struct {
@@ -107,12 +124,10 @@ var Module = fx.Module("balda_runtime_catalog",
 		func(catalog baldaagent.SkillCatalog, reader baldaagent.SkillContentReader) (*baldaagent.SkillManager, error) {
 			return baldaagent.NewSkillManager(catalog, reader, baldaagent.SkillMetadataBudget{})
 		},
-		fx.Annotate(func(manager *baldaagent.SkillManager) baldaagent.SkillMetadataProvider { return manager }),
-		fx.Annotate(func(runtime *Runtime) baldaagent.MCPMetadataProvider { return runtime }),
-		fx.Annotate(func(manager *baldaagent.SkillManager) sessionturn.SkillLoader { return manager }),
-		fx.Annotate(func(runtime *Runtime, manager *baldaagent.RuntimeManager) sessionturn.SnapshotRuntimeProvider {
-			return &snapshotRuntimeProvider{catalog: runtime, manager: manager}
+		fx.Annotate(func(runtime *Runtime, manager *baldaagent.SkillManager) baldaagent.SessionCapabilityBinder {
+			return &sessionCapabilityBinder{catalog: runtime, skills: manager}
 		}),
+		fx.Annotate(func(manager *baldaagent.SkillManager) sessionturn.SkillLoader { return manager }),
 		fx.Annotate(func(manager *baldaagent.SkillManager) chatapp.SkillPinner { return manager }),
 		fx.Annotate(func(manager *baldaagent.SkillManager) ingressapp.SkillPinner { return manager }),
 		NewLifecycle,

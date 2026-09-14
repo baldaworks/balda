@@ -76,10 +76,10 @@ func resolvePluginCommand(snapshot runtimecatalogcmd.Snapshot, name string) (run
 	var resolved runtimecatalogcmd.CommandDescriptor
 	found := false
 	for _, descriptor := range snapshot.Commands {
-		if descriptor.ID.Source.Kind != runtimecatalogcmd.SourceKindPlugin || !descriptor.Advertised || descriptor.Name != canonical || descriptor.Skill == nil {
+		if descriptor.ID.Source.Kind != runtimecatalogcmd.SourceKindPlugin || !descriptor.Advertised || descriptor.Name != canonical {
 			continue
 		}
-		if descriptor.Revision == "" || descriptor.Skill.Source != descriptor.ID.Source || descriptor.Skill.Revision != descriptor.Revision {
+		if descriptor.Revision == "" || strings.TrimSpace(descriptor.Instruction) == "" {
 			return runtimecatalogcmd.CommandDescriptor{}, false
 		}
 		if found {

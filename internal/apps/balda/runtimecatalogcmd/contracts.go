@@ -177,7 +177,7 @@ type CommandDescriptor struct {
 	Revision    RevisionID     `json:"revision"`
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
-	Skill       *SkillRef      `json:"skill,omitempty"`
+	Instruction string         `json:"instruction"`
 	Advertised  bool           `json:"advertised"`
 }
 
@@ -234,14 +234,7 @@ func (s Snapshot) Clone() Snapshot {
 	out := s
 	out.Parents = append([]SnapshotID(nil), s.Parents...)
 	out.Sources = cloneMap(s.Sources)
-	out.Commands = make(map[ContributionID]CommandDescriptor, len(s.Commands))
-	for id, descriptor := range s.Commands {
-		if descriptor.Skill != nil {
-			skill := *descriptor.Skill
-			descriptor.Skill = &skill
-		}
-		out.Commands[id] = descriptor
-	}
+	out.Commands = cloneMap(s.Commands)
 	out.Skills = cloneMap(s.Skills)
 	out.MCPServers = cloneMap(s.MCPServers)
 	out.Diagnostics = make([]Diagnostic, len(s.Diagnostics))

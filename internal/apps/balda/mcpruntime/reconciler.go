@@ -274,8 +274,8 @@ func (r *Reconciler) Acquire(keys []InstanceKey) ([]Tool, func(), error) {
 	}, nil
 }
 
-// AcquireDescriptors ensures and pins exact revision instances for one turn.
-// Non-current revisions are stopped again when the turn releases them.
+// AcquireDescriptors ensures and pins exact revision instances for one owner.
+// Non-current revisions are stopped again when that owner releases them.
 func (r *Reconciler) AcquireDescriptors(ctx context.Context, descriptors []runtimecatalogcmd.MCPServerDescriptor) ([]InstanceKey, func(), error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

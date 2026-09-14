@@ -25,12 +25,11 @@ func NewPluginTurnExecutor(dispatcher actortransport.Dispatcher) *PluginTurnExec
 
 // ExecutePluginCommand publishes exactly one revision-pinned child turn.
 func (e *PluginTurnExecutor) ExecutePluginCommand(ctx context.Context, parent actorlayer.Envelope, payload commandcmd.Payload, descriptor runtimecatalogcmd.CommandDescriptor) error {
-	if e == nil || e.dispatcher == nil || descriptor.Skill == nil {
+	if e == nil || e.dispatcher == nil || strings.TrimSpace(descriptor.Instruction) == "" {
 		return actorlayer.TransientError(fmt.Errorf("plugin command runtime is unavailable"))
 	}
-	ref := *descriptor.Skill
 	turn := turncmd.SessionTurnPayload{
-		Text:            pluginInvocationText(payload),
+		Text:            pluginInvocationText(descriptor.Instruction, payload.Args),
 		Locator:         payload.Locator,
 		UserID:          payload.Principal,
 		RequesterUserID: payload.Principal,
@@ -39,7 +38,6 @@ func (e *PluginTurnExecutor) ExecutePluginCommand(ctx context.Context, parent ac
 		Deliver:         true,
 		Source:          payload.Transport,
 		DedupeKey:       firstNonEmpty(parent.DedupeKey, parent.ID) + ":plugin-turn",
-		Skill:           &runtimecatalogcmd.SkillSelection{Snapshot: payload.SnapshotID, Ref: ref},
 	}
 	envelope, err := turncmd.SessionTurnEnvelope(turn)
 	if err != nil {
@@ -57,19 +55,12 @@ func (e *PluginTurnExecutor) ExecutePluginCommand(ctx context.Context, parent ac
 	return nil
 }
 
-func pluginInvocationText(payload commandcmd.Payload) string {
-	root := strings.TrimSpace(payload.Invocation.Root)
-	name := strings.ToLower(strings.TrimSpace(payload.Name))
-	var invocation string
-	if root == "" || root == "/" {
-		invocation = "/" + name
-	} else {
-		invocation = root + " " + name
+func pluginInvocationText(instruction, arguments string) string {
+	text := "Command instruction:\n" + strings.TrimSpace(instruction)
+	if arguments = strings.TrimSpace(arguments); arguments != "" {
+		text += "\n\nInvocation arguments:\n" + arguments
 	}
-	if args := strings.TrimSpace(payload.Args); args != "" {
-		invocation += " " + args
-	}
-	return invocation
+	return text
 }
 
 func firstNonEmpty(values ...string) string {

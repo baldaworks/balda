@@ -169,7 +169,7 @@ transport parser + whitelist
   -> ingress parse/auth + snapshot-pinned durable publish
   -> CommandActor
   -> built-in exact-name handler OR declarative plugin-command adapter
-  -> revision-pinned normal turn with SkillRef
+  -> normal turn with the pinned inline command instruction
   -> session/delivery/auth/app ports
 ```
 
@@ -182,14 +182,16 @@ perform auth/session checks, and publish `commandcmd.Request` envelopes.
 
 `CommandActor` is the only product command executor. Plugins cannot register
 native handlers: a catalog-advertised plugin command is declarative metadata
-that creates one normal authenticated turn pinned to the command's catalog
-snapshot, plugin revision, skill, and provider-visible plugin MCP set. A retry
-rehydrates that exact retained MCP revision in a turn-scoped runtime instead of
-consulting the mutable current catalog. Built-in names always remain reserved.
+that creates one normal authenticated turn from the exact inline instruction
+stored in the session's catalog snapshot. Commands do not select skills or
+change MCP configuration. Skills and the MCP list are fixed independently when
+the provider session is created or restored, and every turn uses that existing
+session runtime. Built-in names always remain reserved.
 
 See [Command architecture and runtime internals](reference/command-runtime.md)
 for command sources, per-transport admission, registry projection, durable
-identity, retry, and exact snapshot/skill/MCP pinning.
+identity, retry, and session snapshot pinning. See also
+[Plugins and session capabilities](reference/plugins.md).
 
 ## User administration
 

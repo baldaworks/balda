@@ -32,10 +32,9 @@ func TestPluginTurnExecutorPublishesPinnedDeduplicatedNormalTurn(t *testing.T) {
 		receipt: &actortransport.DispatchReceipt{MsgID: "turn"}, envelopes: make(map[string]actorlayer.Envelope),
 	}
 	executor := NewPluginTurnExecutor(dispatcher)
-	source := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "demo"}
 	descriptor := runtimecatalogcmd.CommandDescriptor{
-		Revision: "revision-one",
-		Skill:    &runtimecatalogcmd.SkillRef{Source: source, Revision: "revision-one", Name: "deploy"},
+		Revision:    "revision-one",
+		Instruction: "Deploy the selected release safely.",
 	}
 	payload := commandcmd.Payload{
 		Version: commandcmd.SchemaVersion, Name: "deploy", SnapshotID: "snapshot-one", Args: "production --safe",
@@ -61,7 +60,7 @@ func TestPluginTurnExecutorPublishesPinnedDeduplicatedNormalTurn(t *testing.T) {
 		if err := actorlayer.UnmarshalPayload(envelope.Payload, &turn); err != nil {
 			t.Fatal(err)
 		}
-		if turn.Text != "/deploy production --safe" || turn.Skill == nil || turn.Skill.Snapshot != "snapshot-one" || turn.Skill.Ref.Revision != "revision-one" {
+		if turn.Text != "Command instruction:\nDeploy the selected release safely.\n\nInvocation arguments:\nproduction --safe" || turn.Skill != nil {
 			t.Fatalf("turn payload = %+v", turn)
 		}
 		if turn.UserID != payload.Principal || turn.DeliveryFormat != payload.Presentation.DeliveryFormat || !turn.Deliver {

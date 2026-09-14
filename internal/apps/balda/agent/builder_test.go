@@ -131,19 +131,18 @@ func (f *capturingDedicatedRuntimeFactory) Build(_ context.Context, req agentfac
 func TestBuildRootRuntimeInstructionUsesCatalogMetadataOnly(t *testing.T) {
 	t.Parallel()
 
-	builder := &Builder{skillMetadataProvider: staticSkillMetadataProvider{
-		projection: SkillMetadataProjection{
-			Snapshot: "snapshot-1",
-			Skills: []SkillPromptMetadata{{
-				Source:      runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: "workspace/a"},
-				Name:        "review",
-				Description: "Review the change",
-				Revision:    "revision-1",
-			}},
-			Omitted: 2,
-		},
-	}}
-	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/trusted/workspace")
+	builder := &Builder{}
+	projection := SkillMetadataProjection{
+		Snapshot: "snapshot-1",
+		Skills: []SkillPromptMetadata{{
+			Source:      runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: "workspace/a"},
+			Name:        "review",
+			Description: "Review the change",
+			Revision:    "revision-1",
+		}},
+		Omitted: 2,
+	}
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/trusted/workspace", projection)
 	if err != nil {
 		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
 	}
@@ -167,14 +166,6 @@ func TestBuildRootRuntimeInstructionUsesCatalogMetadataOnly(t *testing.T) {
 	}
 }
 
-type staticSkillMetadataProvider struct {
-	projection SkillMetadataProjection
-	err        error
-}
-
-func (p staticSkillMetadataProvider) SkillMetadata(context.Context, string) (SkillMetadataProjection, error) {
-	return p.projection, p.err
-}
 func TestBuildBaldaInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
 	t.Parallel()
 
@@ -409,7 +400,7 @@ func TestBuildRootRuntimeInstruction_UsesPerSessionPlaceholders(t *testing.T) {
 		workingDir:          "/repo",
 	}
 
-	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/tmp/work")
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/tmp/work", SkillMetadataProjection{})
 	if err != nil {
 		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
 	}

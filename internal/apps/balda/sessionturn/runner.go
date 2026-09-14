@@ -56,6 +56,7 @@ type SessionContext struct {
 
 type ActiveSession interface {
 	GetRunner() *adkrunner.Runner
+	GetRuntimeSnapshotID() string
 	GetSessionID() string
 	GetAgentSessionID() string
 	GetUserID() string
@@ -94,32 +95,12 @@ type SkillLoader interface {
 	) (runtimecatalogcmd.LoadedSkill, error)
 }
 
-type SnapshotRuntime struct {
-	Runner *adkrunner.Runner
-	Close  func() error
-}
-
-type SnapshotRuntimeRequest struct {
-	SnapshotID     runtimecatalogcmd.SnapshotID
-	Locator        SessionLocator
-	UserID         string
-	AgentSessionID string
-	WorkspaceDir   string
-}
-
-// SnapshotRuntimeProvider creates a turn-scoped provider runtime whose MCP set
-// comes from the exact retained snapshot.
-type SnapshotRuntimeProvider interface {
-	RuntimeForSnapshot(ctx context.Context, request SnapshotRuntimeRequest) (*SnapshotRuntime, error)
-}
-
 // Runner restores the target session before delegating provider execution.
 type Runner struct {
 	sessions SessionAccessor
 	executor Executor
 	memory   MemoryStateProvider
 	skills   SkillLoader
-	runtimes SnapshotRuntimeProvider
 	logger   zerolog.Logger
 }
 
@@ -129,14 +110,13 @@ type runnerParams struct {
 	Sessions SessionAccessor
 	Executor Executor
 	Memory   MemoryStateProvider
-	Skills   SkillLoader             `optional:"true"`
-	Runtimes SnapshotRuntimeProvider `optional:"true"`
+	Skills   SkillLoader `optional:"true"`
 	Logger   zerolog.Logger
 }
 
 // NewRunner creates the queued session-turn use case.
 func NewRunner(params runnerParams) *Runner {
-	return newRunner(params.Sessions, params.Executor, params.Memory, params.Skills, params.Runtimes, params.Logger)
+	return newRunner(params.Sessions, params.Executor, params.Memory, params.Skills, params.Logger)
 }
 
 // New creates a Runner from explicit dependencies.
@@ -152,16 +132,15 @@ func NewWithSkillLoader(
 	skills SkillLoader,
 	logger zerolog.Logger,
 ) *Runner {
-	return newRunner(sessions, executor, memoryStore, skills, nil, logger)
+	return newRunner(sessions, executor, memoryStore, skills, logger)
 }
 
-func newRunner(sessions SessionAccessor, executor Executor, memoryStore MemoryStateProvider, skills SkillLoader, runtimes SnapshotRuntimeProvider, logger zerolog.Logger) *Runner {
+func newRunner(sessions SessionAccessor, executor Executor, memoryStore MemoryStateProvider, skills SkillLoader, logger zerolog.Logger) *Runner {
 	return &Runner{
 		sessions: sessions,
 		executor: executor,
 		memory:   memoryStore,
 		skills:   skills,
-		runtimes: runtimes,
 		logger:   logger.With().Str("component", "balda.session_turn").Logger(),
 	}
 }
@@ -227,44 +206,19 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	}
 	var selectedSkill *runtimecatalogcmd.LoadedSkill
 	providerRunner := topicSession.GetRunner()
-	var closeRuntime func() error
 	if payload.Skill != nil {
 		if r.skills == nil {
 			return fmt.Errorf("session turn: selected skill loader is unavailable")
+		}
+		sessionSnapshotID := runtimecatalogcmd.SnapshotID(strings.TrimSpace(topicSession.GetRuntimeSnapshotID()))
+		if sessionSnapshotID == "" || payload.Skill.Snapshot != sessionSnapshotID {
+			return fmt.Errorf("session turn: selected skill snapshot does not match session runtime")
 		}
 		loaded, loadErr := r.skills.LoadPinned(ctx, *payload.Skill, nil)
 		if loadErr != nil {
 			return fmt.Errorf("load selected skill: %w", loadErr)
 		}
 		selectedSkill = &loaded
-		if r.runtimes == nil {
-			return fmt.Errorf("session turn: snapshot runtime provider is unavailable")
-		}
-		workspaceDir := ""
-		if workspaceSession, ok := topicSession.(interface{ GetWorkspaceDir() string }); ok {
-			workspaceDir = workspaceSession.GetWorkspaceDir()
-		}
-		pinnedRuntime, runtimeErr := r.runtimes.RuntimeForSnapshot(ctx, SnapshotRuntimeRequest{
-			SnapshotID: payload.Skill.Snapshot,
-			Locator: SessionLocator{
-				SessionID: payload.Locator.SessionID, ChannelType: payload.Locator.ChannelType,
-				AddressKey: payload.Locator.AddressKey, AddressJSON: payload.Locator.AddressJSON,
-			},
-			UserID: userID, AgentSessionID: agentSessionID, WorkspaceDir: workspaceDir,
-		})
-		if runtimeErr != nil {
-			return fmt.Errorf("build pinned session runtime: %w", runtimeErr)
-		}
-		if pinnedRuntime == nil || pinnedRuntime.Runner == nil {
-			if pinnedRuntime != nil && pinnedRuntime.Close != nil {
-				_ = pinnedRuntime.Close()
-			}
-			return fmt.Errorf("session turn: pinned runtime is unavailable")
-		}
-		providerRunner, closeRuntime = pinnedRuntime.Runner, pinnedRuntime.Close
-	}
-	if closeRuntime != nil {
-		defer func() { _ = closeRuntime() }()
 	}
 	return r.executor.ExecuteSessionTurn(ctx, Request{
 		Payload:        payload,

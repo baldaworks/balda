@@ -2,6 +2,7 @@ package catalogapp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -24,7 +26,7 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
   "$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name":"release-tools",
   "version":"1.0.0",
-  "extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"release","description":"Release","skill":"deploy"}]}}
+  "extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"release","description":"Release","instruction":"Deploy the release safely."}]}}
 }`)
 	writeFile(t, filepath.Join(stateDir, "plugins", "release-tools", "skills", "deploy", "SKILL.md"), "---\nname: deploy\ndescription: Deploy safely.\n---\n# Secret body\n")
 
@@ -60,6 +62,28 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
 	assertContribution(t, snapshot, runtimecatalogcmd.SourceKindBuiltin, runtimecatalogcmd.ContributionKindCommand, "reset")
 	assertContribution(t, snapshot, runtimecatalogcmd.SourceKindPlugin, runtimecatalogcmd.ContributionKindCommand, "release")
 	assertContribution(t, snapshot, runtimecatalogcmd.SourceKindPlugin, runtimecatalogcmd.ContributionKindSkill, "deploy")
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, ".agents", "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Review changes.\n---\n")
+	current, err := runtime.CurrentSkillSnapshot(ctx, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ID == snapshot.ID {
+		t.Fatal("workspace catalog did not produce a distinct current snapshot")
+	}
+	if err := provider.Sessions().Upsert(ctx, baldastate.SessionRecord{
+		SessionID: "pinned-session", ChannelType: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1,"topic_id":0}`,
+		WorkspaceDir: workspace, RuntimeSnapshotID: string(snapshot.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := runtime.ResolveEffectiveSnapshot(ctx, commandfx.SnapshotRequest{SessionID: "pinned-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != snapshot.ID {
+		t.Fatalf("resolved snapshot = %q, want session pin %q", resolved, snapshot.ID)
+	}
 	if !commands.Supports("telegram", "release") {
 		t.Fatal("plugin command was not projected to telegram")
 	}
@@ -97,7 +121,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	workspace := t.TempDir()
 	writeFile(t, filepath.Join(workspace, ".agents", "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Review changes.\n---\n# Workspace-only body\n")
 
-	effective, err := runtime.CurrentSkillSnapshot(ctx, baldaagent.TrustedSkillScope{Workspace: workspace})
+	effective, err := runtime.CurrentSkillSnapshot(ctx, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +139,11 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	selection, err := manager.Resolve(ctx, baldaagent.TrustedSkillScope{Workspace: workspace}, baldaagent.SkillSelector{Name: "review"})
+	bound, err := manager.BindSnapshot(ctx, effective.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := bound.Resolve(baldaagent.SkillSelector{Name: "review"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,6 +171,64 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	}
 	if !strings.Contains(loaded.Instructions, "# Workspace-only body") {
 		t.Fatalf("instructions = %q", loaded.Instructions)
+	}
+}
+
+func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	stateDir := t.TempDir()
+	t.Cleanup(func() { makeWritable(stateDir) })
+	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	runtime, err := NewRuntime(stateDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plugins, err := pluginapp.NewManaged(stateDir, provider.AppKV(), provider.Plugins(), runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plugins.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, ".agents", "skills", "review", "SKILL.md"), "---\nname: review\ndescription: Review changes.\n---\n# Review\n")
+	retained, err := runtime.CurrentSkillSnapshot(ctx, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := baldaagent.NewSkillManager(runtime, runtime, baldaagent.SkillMetadataBudget{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binder := &sessionCapabilityBinder{catalog: runtime, skills: manager}
+
+	binding, err := binder.BindSessionCapabilities(ctx, baldaagent.SessionRuntimeRequest{
+		WorkspaceDir:      workspace,
+		RuntimeSnapshotID: string(retained.ID),
+	})
+	if err != nil {
+		t.Fatalf("BindSessionCapabilities() error = %v", err)
+	}
+	if binding.SnapshotID != retained.ID || binding.Skills.Snapshot != retained.ID {
+		t.Fatalf("binding snapshots = (%q, %q), want %q", binding.SnapshotID, binding.Skills.Snapshot, retained.ID)
+	}
+	if len(binding.Skills.Skills) != 1 || binding.Skills.Skills[0].Name != "review" {
+		t.Fatalf("bound skills = %+v, want retained review skill", binding.Skills.Skills)
+	}
+	if err := binding.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := binding.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	_, err = binder.BindSessionCapabilities(ctx, baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: "snapshot-missing"})
+	if !errors.Is(err, runtimecatalogcmd.ErrSnapshotUnavailable) {
+		t.Fatalf("BindSessionCapabilities(missing) error = %v, want ErrSnapshotUnavailable", err)
 	}
 }
 

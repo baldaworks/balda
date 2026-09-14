@@ -17,40 +17,17 @@ type CommandReadiness interface {
 	PluginCommandReady(ctx context.Context, snapshot runtimecatalogcmd.Snapshot, descriptor runtimecatalogcmd.CommandDescriptor) bool
 }
 
-// MCPReadiness reports observed readiness for one exact revision-keyed server.
-type MCPReadiness interface {
-	MCPServerReady(source runtimecatalogcmd.SourceID, revision runtimecatalogcmd.RevisionID, name string) bool
-}
-
-// PinnedCommandReadiness verifies the command's skill and every same-revision MCP dependency.
-type PinnedCommandReadiness struct {
-	mcp MCPReadiness
-}
+// PinnedCommandReadiness verifies that a command carries executable snapshot data.
+type PinnedCommandReadiness struct{}
 
 // NewPinnedCommandReadiness creates the default fail-closed readiness policy.
-func NewPinnedCommandReadiness(mcp MCPReadiness) *PinnedCommandReadiness {
-	return &PinnedCommandReadiness{mcp: mcp}
+func NewPinnedCommandReadiness() *PinnedCommandReadiness {
+	return &PinnedCommandReadiness{}
 }
 
-// PluginCommandReady reports whether all catalog-pinned consumers can resolve one revision.
-func (r *PinnedCommandReadiness) PluginCommandReady(_ context.Context, snapshot runtimecatalogcmd.Snapshot, descriptor runtimecatalogcmd.CommandDescriptor) bool {
-	if descriptor.Skill == nil || descriptor.Skill.Source != descriptor.ID.Source || descriptor.Skill.Revision != descriptor.Revision {
-		return false
-	}
-	skillID := runtimecatalogcmd.ContributionID{Source: descriptor.Skill.Source, Kind: runtimecatalogcmd.ContributionKindSkill, Name: descriptor.Skill.Name}
-	skill, ok := snapshot.Skills[skillID]
-	if !ok || skill.Revision != descriptor.Revision {
-		return false
-	}
-	for _, server := range snapshot.MCPServers {
-		if server.ID.Source != descriptor.ID.Source {
-			continue
-		}
-		if server.Revision != descriptor.Revision || r == nil || r.mcp == nil || !r.mcp.MCPServerReady(server.ID.Source, server.Revision, server.Name) {
-			return false
-		}
-	}
-	return true
+// PluginCommandReady reports whether the retained descriptor is executable.
+func (*PinnedCommandReadiness) PluginCommandReady(_ context.Context, _ runtimecatalogcmd.Snapshot, descriptor runtimecatalogcmd.CommandDescriptor) bool {
+	return descriptor.Revision != "" && strings.TrimSpace(descriptor.Instruction) != ""
 }
 
 // AdvertisementTarget owns provider syntax and atomic dynamic registration.
@@ -194,7 +171,7 @@ func (p *AdvertisementProjector) ProjectionSequence() uint64 {
 func orderedPluginCommands(snapshot runtimecatalogcmd.Snapshot) []runtimecatalogcmd.CommandDescriptor {
 	commands := make([]runtimecatalogcmd.CommandDescriptor, 0, len(snapshot.Commands))
 	for _, descriptor := range snapshot.Commands {
-		if descriptor.ID.Source.Kind == runtimecatalogcmd.SourceKindPlugin && descriptor.Advertised && descriptor.Skill != nil {
+		if descriptor.ID.Source.Kind == runtimecatalogcmd.SourceKindPlugin && descriptor.Advertised && strings.TrimSpace(descriptor.Instruction) != "" {
 			commands = append(commands, descriptor)
 		}
 	}

@@ -60,6 +60,9 @@ type SessionRuntimeRequest struct {
 	AgentSessionID string
 	LineageID      string
 	WorkspaceDir   string
+	// RuntimeSnapshotID requests an exact persisted capability snapshot.
+	// An empty value lets the runtime select the current effective snapshot.
+	RuntimeSnapshotID string
 }
 
 type WorkspaceManager interface {
@@ -88,7 +91,9 @@ type BuiltRuntime struct {
 	Runner     *runner.Runner
 	SessionSvc adksession.Service
 	AppName    string
-	Close      func() error
+	// RuntimeSnapshotID identifies the capabilities bound to this runtime.
+	RuntimeSnapshotID string
+	Close             func() error
 }
 
 type EnsureWorkspaceResult struct {
@@ -370,17 +375,47 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	}
 	sessionRuntime := rootRuntime
 	if scopedManager, ok := runtimeManager.(SessionRuntimeManager); ok {
+		requestedSnapshotID := ""
+		if persisted != nil {
+			requestedSnapshotID = strings.TrimSpace(persisted.RuntimeSnapshotID)
+		}
 		sessionRuntime, err = scopedManager.RuntimeForSession(ctx, SessionRuntimeRequest{
-			Locator:        locator,
-			UserID:         userID,
-			AgentSessionID: agentSessionID,
-			WorkspaceDir:   workspaceDir,
+			Locator:           locator,
+			UserID:            userID,
+			AgentSessionID:    agentSessionID,
+			WorkspaceDir:      workspaceDir,
+			RuntimeSnapshotID: requestedSnapshotID,
 		})
 		if err != nil {
 			if m.workspaceEnabled {
 				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
 			}
 			return err
+		}
+		if sessionRuntime == nil {
+			if m.workspaceEnabled {
+				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
+			}
+			return fmt.Errorf("session runtime is required")
+		}
+		resolvedSnapshotID := strings.TrimSpace(sessionRuntime.RuntimeSnapshotID)
+		if resolvedSnapshotID == "" {
+			if sessionRuntime.Close != nil {
+				_ = sessionRuntime.Close()
+			}
+			if m.workspaceEnabled {
+				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
+			}
+			return fmt.Errorf("session runtime snapshot is required")
+		}
+		if requestedSnapshotID != "" && resolvedSnapshotID != requestedSnapshotID {
+			if sessionRuntime.Close != nil {
+				_ = sessionRuntime.Close()
+			}
+			if m.workspaceEnabled {
+				_ = m.workspaces.CleanupWorkspace(ctx, workspaceDir)
+			}
+			return fmt.Errorf("session runtime snapshot %q does not match persisted snapshot %q", resolvedSnapshotID, requestedSnapshotID)
 		}
 	}
 	sess, err := builder.CreateRuntimeSession(
@@ -413,19 +448,20 @@ func (m *Manager) createSession(ctx context.Context, sessionCtx SessionContext, 
 	}
 
 	ts := &TopicSession{
-		sessionID:      sessionID,
-		agentSessionID: agentSessionID,
-		userID:         userID,
-		locator:        locator,
-		agentName:      agentName,
-		agent:          sessionRuntime.Agent,
-		runner:         sessionRuntime.Runner,
-		sessionSvc:     sessionRuntime.SessionSvc,
-		runtimeClose:   sessionRuntime.Close,
-		sess:           sess,
-		workspaceDir:   workspaceDir,
-		branchName:     branchName,
-		startupNotice:  startupNotice,
+		sessionID:         sessionID,
+		agentSessionID:    agentSessionID,
+		userID:            userID,
+		locator:           locator,
+		agentName:         agentName,
+		agent:             sessionRuntime.Agent,
+		runner:            sessionRuntime.Runner,
+		sessionSvc:        sessionRuntime.SessionSvc,
+		runtimeClose:      sessionRuntime.Close,
+		runtimeSnapshotID: strings.TrimSpace(sessionRuntime.RuntimeSnapshotID),
+		sess:              sess,
+		workspaceDir:      workspaceDir,
+		branchName:        branchName,
+		startupNotice:     startupNotice,
 	}
 
 	if err := m.persistSessionRecord(ctx, ts, baldastate.SessionStatusActive); err != nil {
@@ -802,15 +838,16 @@ func (m *Manager) persistSessionRecord(ctx context.Context, ts *TopicSession, st
 	}
 
 	return m.sessionStore.Upsert(ctx, baldastate.SessionRecord{
-		SessionID:    ts.sessionID,
-		UserID:       ts.userID,
-		ChannelType:  ts.locator.ChannelType,
-		AddressKey:   ts.locator.AddressKey,
-		AddressJSON:  ts.locator.AddressJSON,
-		AgentName:    ts.agentName,
-		WorkspaceDir: ts.workspaceDir,
-		BranchName:   ts.branchName,
-		Status:       status,
+		SessionID:         ts.sessionID,
+		UserID:            ts.userID,
+		ChannelType:       ts.locator.ChannelType,
+		AddressKey:        ts.locator.AddressKey,
+		AddressJSON:       ts.locator.AddressJSON,
+		AgentName:         ts.agentName,
+		WorkspaceDir:      ts.workspaceDir,
+		BranchName:        ts.branchName,
+		RuntimeSnapshotID: ts.runtimeSnapshotID,
+		Status:            status,
 	})
 }
 

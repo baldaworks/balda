@@ -57,8 +57,6 @@ type Builder struct {
 	sessionSvc             adksession.Service
 	memoryEnabled          bool
 	memorySnapshotReader   MemorySnapshotReader
-	skillMetadataProvider  SkillMetadataProvider
-	mcpMetadataProvider    MCPMetadataProvider
 }
 
 // dedicatedRuntimeFactory is the narrow provider-factory port used only by
@@ -86,16 +84,6 @@ type MemorySnapshot struct {
 
 type MemorySnapshotReader interface {
 	Snapshot(ctx context.Context) (MemorySnapshot, error)
-}
-
-// SkillMetadataProvider is the builder's local metadata-only catalog port.
-type SkillMetadataProvider interface {
-	SkillMetadata(ctx context.Context, workspace string) (SkillMetadataProjection, error)
-}
-
-// MCPMetadataProvider projects ready catalog MCP server IDs for one trusted workspace.
-type MCPMetadataProvider interface {
-	MCPServerIDs(ctx context.Context, workspace string) ([]string, error)
 }
 
 type baldaPromptData struct {
@@ -210,8 +198,6 @@ type BuilderParams struct {
 	SessionService         adksession.Service `name:"balda_runtime_session_service"`
 	MemoryEnabled          bool               `name:"balda_memory_enabled"`
 	MemorySnapshotReader   MemorySnapshotReader
-	SkillMetadataProvider  SkillMetadataProvider `optional:"true"`
-	MCPMetadataProvider    MCPMetadataProvider   `optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -231,8 +217,6 @@ func NewBuilder(params BuilderParams) *Builder {
 		sessionSvc:             params.SessionService,
 		memoryEnabled:          params.MemoryEnabled,
 		memorySnapshotReader:   params.MemorySnapshotReader,
-		skillMetadataProvider:  params.SkillMetadataProvider,
-		mcpMetadataProvider:    params.MCPMetadataProvider,
 	}
 }
 
@@ -241,6 +225,8 @@ type BuiltRuntime struct {
 	Runner     *runner.Runner
 	SessionSvc adksession.Service
 	AppName    string
+	// RuntimeSnapshotID identifies the catalog capabilities bound to this runtime.
+	RuntimeSnapshotID string
 	// Close releases resources owned by a scoped runtime. The app-scoped
 	// runtime leaves this nil and is closed by RuntimeManager.Stop.
 	Close func() error
@@ -259,40 +245,32 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
 ) (*BuiltRuntime, error) {
-	return b.buildRuntimeWithMCPServerIDs(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, true)
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, SkillMetadataProjection{})
 }
 
-// BuildRuntimeWithPinnedMCPServerIDs builds a runtime from an exact catalog
-// selection without consulting the mutable current catalog snapshot.
-func (b *Builder) BuildRuntimeWithPinnedMCPServerIDs(
+// BuildRuntimeWithCapabilities builds a runtime from one immutable session capability binding.
+func (b *Builder) BuildRuntimeWithCapabilities(
 	ctx context.Context,
 	agentName, workspaceDir string,
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
+	skills SkillMetadataProjection,
 ) (*BuiltRuntime, error) {
-	return b.buildRuntimeWithMCPServerIDs(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, false)
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, skills)
 }
 
-func (b *Builder) buildRuntimeWithMCPServerIDs(
+func (b *Builder) buildRuntimeWithCapabilities(
 	ctx context.Context,
 	agentName, workspaceDir string,
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
-	includeCurrentCatalog bool,
+	skills SkillMetadataProjection,
 ) (*BuiltRuntime, error) {
 	const appName = defaultRuntimeAppName
 
-	instruction, err := b.buildRootRuntimeInstruction(ctx, agentName, workspaceDir)
+	instruction, err := b.buildRootRuntimeInstruction(ctx, agentName, workspaceDir, skills)
 	if err != nil {
 		return nil, err
-	}
-	catalogMCPServerIDs := append([]string(nil), extraMCPServerIDs...)
-	if includeCurrentCatalog && b.mcpMetadataProvider != nil {
-		ids, err := b.mcpMetadataProvider.MCPServerIDs(ctx, workspaceDir)
-		if err != nil {
-			return nil, fmt.Errorf("load catalog MCP metadata: %w", err)
-		}
-		catalogMCPServerIDs = append(catalogMCPServerIDs, ids...)
 	}
 	req := agentfactory.BuildRequest{
 		AgentID:          agentName,
@@ -300,7 +278,7 @@ func (b *Builder) buildRuntimeWithMCPServerIDs(
 		Description:      b.buildAgentDescription(agentName),
 		WorkingDirectory: workspaceDir,
 		Instruction:      instruction,
-		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, catalogMCPServerIDs),
+		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
 	ag, err := b.factory.Build(ctx, req)
@@ -624,15 +602,7 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	return b.addMemorySnapshot(ctx, state)
 }
 
-func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, workspaceDir string) (string, error) {
-	projection := SkillMetadataProjection{}
-	if b.skillMetadataProvider != nil {
-		var err error
-		projection, err = b.skillMetadataProvider.SkillMetadata(ctx, workspaceDir)
-		if err != nil {
-			return "", fmt.Errorf("load skill metadata: %w", err)
-		}
-	}
+func (b *Builder) buildRootRuntimeInstruction(_ context.Context, agentName, workspaceDir string, projection SkillMetadataProjection) (string, error) {
 	return b.buildBaldaInstructionWithSkills(
 		baldaSessionIDPlaceholder,
 		"telegram",

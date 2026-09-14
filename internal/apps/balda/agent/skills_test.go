@@ -10,14 +10,7 @@ import (
 )
 
 type testSkillCatalog struct {
-	current  runtimecatalogcmd.Snapshot
 	retained map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot
-	scope    TrustedSkillScope
-}
-
-func (c *testSkillCatalog) CurrentSkillSnapshot(_ context.Context, scope TrustedSkillScope) (runtimecatalogcmd.Snapshot, error) {
-	c.scope = scope
-	return c.current.Clone(), nil
 }
 
 func (c *testSkillCatalog) RetainedSkillSnapshot(_ context.Context, id runtimecatalogcmd.SnapshotID) (runtimecatalogcmd.Snapshot, error) {
@@ -32,20 +25,6 @@ type testSkillReader struct {
 	requests []runtimecatalogcmd.SkillReadRequest
 }
 
-type scopedSkillCatalog map[string]runtimecatalogcmd.Snapshot
-
-func (c scopedSkillCatalog) CurrentSkillSnapshot(_ context.Context, scope TrustedSkillScope) (runtimecatalogcmd.Snapshot, error) {
-	snapshot, ok := c[scope.Workspace]
-	if !ok {
-		return runtimecatalogcmd.Snapshot{}, errors.New("missing scope")
-	}
-	return snapshot.Clone(), nil
-}
-
-func (scopedSkillCatalog) RetainedSkillSnapshot(context.Context, runtimecatalogcmd.SnapshotID) (runtimecatalogcmd.Snapshot, error) {
-	return runtimecatalogcmd.Snapshot{}, errors.New("unexpected retained snapshot read")
-}
-
 func (r *testSkillReader) ReadSkill(_ context.Context, request runtimecatalogcmd.SkillReadRequest) (runtimecatalogcmd.LoadedSkill, error) {
 	r.requests = append(r.requests, request)
 	return runtimecatalogcmd.LoadedSkill{Ref: request.Ref, Instructions: "pinned body"}, nil
@@ -58,14 +37,18 @@ func TestSkillManagerResolvesExactAndRejectsAmbiguousUnqualifiedNames(t *testing
 	second := skillDescriptor(runtimecatalogcmd.SourceKindUserSkill, "user", "review", "rev-2", "SKILL.md")
 	snapshot := skillSnapshot("snapshot-1", first, second)
 	manager, err := NewSkillManager(
-		&testSkillCatalog{current: snapshot, retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{snapshot.ID: snapshot}},
+		&testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{snapshot.ID: snapshot}},
 		&testSkillReader{},
 		SkillMetadataBudget{},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	selection, err := manager.Resolve(context.Background(), TrustedSkillScope{Workspace: " /trusted/work "}, SkillSelector{
+	bound, err := manager.BindSnapshot(context.Background(), snapshot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := bound.Resolve(SkillSelector{
 		Source: first.ID.Source,
 		Name:   first.Name,
 	})
@@ -75,7 +58,7 @@ func TestSkillManagerResolvesExactAndRejectsAmbiguousUnqualifiedNames(t *testing
 	if selection.Snapshot != snapshot.ID || selection.Ref.Source != first.ID.Source || selection.Ref.Revision != first.Revision {
 		t.Fatalf("qualified selection = %+v, want exact first descriptor", selection)
 	}
-	_, err = manager.Resolve(context.Background(), TrustedSkillScope{}, SkillSelector{Name: "review"})
+	_, err = bound.Resolve(SkillSelector{Name: "review"})
 	if !errors.Is(err, ErrSkillAmbiguous) {
 		t.Fatalf("Resolve(unqualified) error = %v, want ErrSkillAmbiguous", err)
 	}
@@ -86,13 +69,15 @@ func TestSkillManagerPinsLeadingExplicitReferenceAndRemovesOnlyItsToken(t *testi
 
 	descriptor := skillDescriptor(runtimecatalogcmd.SourceKindPlugin, "team/one", "review", "revision-1", "skills/review/SKILL.md")
 	snapshot := skillSnapshot("snapshot-1", descriptor)
-	manager, err := NewSkillManager(&testSkillCatalog{current: snapshot}, &testSkillReader{}, SkillMetadataBudget{})
+	manager, err := NewSkillManager(&testSkillCatalog{
+		retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{snapshot.ID: snapshot},
+	}, &testSkillReader{}, SkillMetadataBudget{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	text, selection, err := manager.PinExplicit(
 		context.Background(),
-		"/trusted/workspace",
+		string(snapshot.ID),
 		"  $skill:plugin/team%2Fone/review\ninspect this",
 	)
 	if err != nil {
@@ -113,15 +98,16 @@ func TestSkillManagerPinsUnqualifiedReferenceOnlyWhenUnique(t *testing.T) {
 
 	first := skillDescriptor(runtimecatalogcmd.SourceKindPlugin, "one", "review", "revision-1", "skills/review/SKILL.md")
 	second := skillDescriptor(runtimecatalogcmd.SourceKindUserSkill, "two", "review", "revision-2", "SKILL.md")
+	snapshot := skillSnapshot("snapshot", first, second)
 	manager, err := NewSkillManager(
-		&testSkillCatalog{current: skillSnapshot("snapshot", first, second)},
+		&testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{snapshot.ID: snapshot}},
 		&testSkillReader{},
 		SkillMetadataBudget{},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := manager.PinExplicit(context.Background(), "workspace", "$skill:review inspect"); !errors.Is(err, ErrSkillAmbiguous) {
+	if _, _, err := manager.PinExplicit(context.Background(), string(snapshot.ID), "$skill:review inspect"); !errors.Is(err, ErrSkillAmbiguous) {
 		t.Fatalf("PinExplicit() error = %v, want ErrSkillAmbiguous", err)
 	}
 }
@@ -134,7 +120,6 @@ func TestBoundSkillLoaderRetainsTurnRevisionAcrossRefresh(t *testing.T) {
 	oldSnapshot := skillSnapshot("snapshot-old", oldSkill)
 	newSnapshot := skillSnapshot("snapshot-new", newSkill)
 	catalog := &testSkillCatalog{
-		current: newSnapshot,
 		retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{
 			oldSnapshot.ID: oldSnapshot,
 			newSnapshot.ID: newSnapshot,
@@ -164,7 +149,6 @@ func TestReadOnlySkillAdapterCannotChooseScopeSnapshotRevisionOrPath(t *testing.
 	descriptor := skillDescriptor(runtimecatalogcmd.SourceKindPlugin, "demo", "review", "revision-1", "skills/review/SKILL.md")
 	snapshot := skillSnapshot("snapshot-1", descriptor)
 	catalog := &testSkillCatalog{
-		current: snapshot,
 		retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{
 			snapshot.ID: snapshot,
 		},
@@ -174,7 +158,7 @@ func TestReadOnlySkillAdapterCannotChooseScopeSnapshotRevisionOrPath(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	bound, err := manager.Bind(context.Background(), TrustedSkillScope{Workspace: "/trusted/workspace"})
+	bound, err := manager.BindSnapshot(context.Background(), snapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,9 +175,6 @@ func TestReadOnlySkillAdapterCannotChooseScopeSnapshotRevisionOrPath(t *testing.
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if catalog.scope.Workspace != "/trusted/workspace" {
-		t.Fatalf("catalog scope = %+v, want host-bound workspace", catalog.scope)
-	}
 	if len(reader.requests) != 1 || reader.requests[0].MainResource != descriptor.Resource || reader.requests[0].Ref.Revision != descriptor.Revision {
 		t.Fatalf("reader request = %+v, want host-resolved descriptor", reader.requests)
 	}
@@ -206,14 +187,14 @@ func TestSkillMetadataProjectionIsDeterministicBoundedAndPathFree(t *testing.T) 
 	beta := skillDescriptor(runtimecatalogcmd.SourceKindBuiltin, "host", "beta", "rev-b", "other/SKILL.md")
 	snapshot := skillSnapshot("snapshot", alpha, beta)
 	manager, err := NewSkillManager(
-		&testSkillCatalog{current: snapshot},
+		&testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{snapshot.ID: snapshot}},
 		&testSkillReader{},
 		SkillMetadataBudget{MaxItems: 1},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := manager.SkillMetadata(context.Background(), "/trusted/workspace")
+	projection, err := manager.SkillMetadataForSnapshot(context.Background(), snapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +208,7 @@ func TestSkillMetadataUsesSafeDefaultsAndByteBudget(t *testing.T) {
 
 	descriptor := skillDescriptor(runtimecatalogcmd.SourceKindPlugin, "demo", "review", "revision", "SKILL.md")
 	snapshot := skillSnapshot("snapshot", descriptor)
-	manager, err := NewSkillManager(&testSkillCatalog{current: snapshot}, &testSkillReader{}, SkillMetadataBudget{})
+	manager, err := NewSkillManager(&testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{snapshot.ID: snapshot}}, &testSkillReader{}, SkillMetadataBudget{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,14 +216,14 @@ func TestSkillMetadataUsesSafeDefaultsAndByteBudget(t *testing.T) {
 		t.Fatalf("default budget = %+v, want safe finite defaults", manager.budget)
 	}
 	byteLimited, err := NewSkillManager(
-		&testSkillCatalog{current: snapshot},
+		&testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{snapshot.ID: snapshot}},
 		&testSkillReader{},
 		SkillMetadataBudget{MaxItems: 10, MaxBytes: 1},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := byteLimited.SkillMetadata(context.Background(), "workspace")
+	projection, err := byteLimited.SkillMetadataForSnapshot(context.Background(), snapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,40 +232,42 @@ func TestSkillMetadataUsesSafeDefaultsAndByteBudget(t *testing.T) {
 	}
 }
 
-func TestSkillSelectionRefreshesOnlyBetweenBoundTurns(t *testing.T) {
+func TestSkillSelectionsRemainBoundToExplicitSessionSnapshots(t *testing.T) {
 	t.Parallel()
 
 	oldSkill := skillDescriptor(runtimecatalogcmd.SourceKindWorkspaceSkill, "workspace", "review", "revision-old", "SKILL.md")
 	newSkill := skillDescriptor(runtimecatalogcmd.SourceKindWorkspaceSkill, "workspace", "review", "revision-new", "SKILL.md")
 	oldSnapshot := skillSnapshot("snapshot-old", oldSkill)
 	newSnapshot := skillSnapshot("snapshot-new", newSkill)
-	catalog := &testSkillCatalog{current: oldSnapshot}
+	catalog := &testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{
+		oldSnapshot.ID: oldSnapshot,
+		newSnapshot.ID: newSnapshot,
+	}}
 	manager, err := NewSkillManager(catalog, &testSkillReader{}, SkillMetadataBudget{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstTurn, err := manager.Bind(context.Background(), TrustedSkillScope{Workspace: "workspace"})
+	firstSession, err := manager.BindSnapshot(context.Background(), oldSnapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog.current = newSnapshot
-	secondTurn, err := manager.Bind(context.Background(), TrustedSkillScope{Workspace: "workspace"})
+	secondSession, err := manager.BindSnapshot(context.Background(), newSnapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstSelection, err := firstTurn.Resolve(SkillSelector{Source: oldSkill.ID.Source, Name: oldSkill.Name})
+	firstSelection, err := firstSession.Resolve(SkillSelector{Source: oldSkill.ID.Source, Name: oldSkill.Name})
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondSelection, err := secondTurn.Resolve(SkillSelector{Source: newSkill.ID.Source, Name: newSkill.Name})
+	secondSelection, err := secondSession.Resolve(SkillSelector{Source: newSkill.ID.Source, Name: newSkill.Name})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if firstSelection.Snapshot != oldSnapshot.ID || firstSelection.Ref.Revision != oldSkill.Revision {
-		t.Fatalf("first selection = %+v, want old pinned turn", firstSelection)
+		t.Fatalf("first selection = %+v, want old pinned session", firstSelection)
 	}
 	if secondSelection.Snapshot != newSnapshot.ID || secondSelection.Ref.Revision != newSkill.Revision {
-		t.Fatalf("second selection = %+v, want refreshed new turn", secondSelection)
+		t.Fatalf("second selection = %+v, want new pinned session", secondSelection)
 	}
 }
 
@@ -293,21 +276,23 @@ func TestSkillManagerKeepsWorkspaceCatalogsIsolated(t *testing.T) {
 
 	alpha := skillDescriptor(runtimecatalogcmd.SourceKindWorkspaceSkill, "alpha", "alpha-skill", "revision-a", "SKILL.md")
 	beta := skillDescriptor(runtimecatalogcmd.SourceKindWorkspaceSkill, "beta", "beta-skill", "revision-b", "SKILL.md")
-	manager, err := NewSkillManager(scopedSkillCatalog{
-		"/work/alpha": skillSnapshot("snapshot-a", alpha),
-		"/work/beta":  skillSnapshot("snapshot-b", beta),
-	}, &testSkillReader{}, SkillMetadataBudget{})
+	alphaSnapshot := skillSnapshot("snapshot-a", alpha)
+	betaSnapshot := skillSnapshot("snapshot-b", beta)
+	manager, err := NewSkillManager(&testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{
+		alphaSnapshot.ID: alphaSnapshot,
+		betaSnapshot.ID:  betaSnapshot,
+	}}, &testSkillReader{}, SkillMetadataBudget{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	alphaTurn, err := manager.Bind(context.Background(), TrustedSkillScope{Workspace: "/work/alpha"})
+	alphaSession, err := manager.BindSnapshot(context.Background(), alphaSnapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := alphaTurn.Resolve(SkillSelector{Name: "beta-skill"}); !errors.Is(err, ErrSkillNotFound) {
+	if _, err := alphaSession.Resolve(SkillSelector{Name: "beta-skill"}); !errors.Is(err, ErrSkillNotFound) {
 		t.Fatalf("alpha Resolve(beta-skill) error = %v, want ErrSkillNotFound", err)
 	}
-	selection, err := alphaTurn.Resolve(SkillSelector{Name: "alpha-skill"})
+	selection, err := alphaSession.Resolve(SkillSelector{Name: "alpha-skill"})
 	if err != nil {
 		t.Fatal(err)
 	}

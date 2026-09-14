@@ -204,7 +204,9 @@ type SessionRecord struct {
 	AgentName    string
 	WorkspaceDir string
 	BranchName   string
-	Status       string
+	// RuntimeSnapshotID pins provider capabilities for the lifetime of the session.
+	RuntimeSnapshotID string
+	Status            string
 }
 
 // SessionStore persists balda session metadata.

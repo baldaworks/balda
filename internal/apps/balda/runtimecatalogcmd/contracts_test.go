@@ -24,11 +24,10 @@ func TestSnapshotCloneDoesNotShareMutableState(t *testing.T) {
 
 	sourceID := SourceID{Kind: SourceKindPlugin, Name: "demo"}
 	commandID := ContributionID{Source: sourceID, Kind: ContributionKindCommand, Name: "release"}
-	skill := SkillRef{Source: sourceID, Revision: "revision", Name: "deploy"}
 	snapshot := Snapshot{
 		Parents:  []SnapshotID{"parent"},
 		Sources:  map[SourceID]SourceDescriptor{sourceID: {ID: sourceID, Revision: "revision"}},
-		Commands: map[ContributionID]CommandDescriptor{commandID: {ID: commandID, Revision: "revision", Name: "release", Skill: &skill}},
+		Commands: map[ContributionID]CommandDescriptor{commandID: {ID: commandID, Revision: "revision", Name: "release", Instruction: "release safely"}},
 		Diagnostics: []Diagnostic{{
 			Severity: DiagnosticSeverityWarning, Code: "test", Source: sourceID, Contribution: &commandID,
 		}},
@@ -37,16 +36,14 @@ func TestSnapshotCloneDoesNotShareMutableState(t *testing.T) {
 	clone := snapshot.Clone()
 	clone.Parents[0] = changed
 	delete(clone.Sources, sourceID)
-	command := clone.Commands[commandID]
-	command.Skill.Name = changed
-	clone.Commands[commandID] = command
+	delete(clone.Commands, commandID)
 	clone.Diagnostics[0].Contribution.Name = changed
 
 	if snapshot.Parents[0] != "parent" || len(snapshot.Sources) != 1 {
 		t.Fatalf("clone mutated snapshot containers: %+v", snapshot)
 	}
-	if got := snapshot.Commands[commandID].Skill.Name; got != "deploy" {
-		t.Fatalf("clone mutated command skill = %q, want deploy", got)
+	if len(snapshot.Commands) != 1 {
+		t.Fatalf("clone mutated command descriptors: %+v", snapshot.Commands)
 	}
 	if got := snapshot.Diagnostics[0].Contribution.Name; got != "release" {
 		t.Fatalf("clone mutated diagnostic contribution = %q, want release", got)

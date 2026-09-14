@@ -61,13 +61,13 @@ type stubQuestionResolver struct {
 }
 
 type stubSkillPinner struct {
-	workspace string
-	text      string
-	selection runtimecatalogcmd.SkillSelection
+	runtimeSnapshotID string
+	text              string
+	selection         runtimecatalogcmd.SkillSelection
 }
 
-func (p *stubSkillPinner) PinExplicit(_ context.Context, workspace, text string) (string, *runtimecatalogcmd.SkillSelection, error) {
-	p.workspace = workspace
+func (p *stubSkillPinner) PinExplicit(_ context.Context, runtimeSnapshotID, text string) (string, *runtimecatalogcmd.SkillSelection, error) {
+	p.runtimeSnapshotID = runtimeSnapshotID
 	p.text = text
 	return "request without selector", &p.selection, nil
 }
@@ -147,7 +147,7 @@ func TestServiceHandleChatPinsExplicitSkillBeforeDurablePublication(t *testing.T
 	pinner := &stubSkillPinner{selection: selection}
 	service, err := NewService(ServiceParams{
 		Sessions: &stubSessionPreparer{result: SessionPreparation{
-			Ready: true, UserID: "user-1", WorkspaceDir: "/trusted/workspace",
+			Ready: true, UserID: "user-1", RuntimeSnapshotID: "snapshot-1",
 		}},
 		Dispatcher: dispatcher,
 		Skills:     pinner,
@@ -158,8 +158,8 @@ func TestServiceHandleChatPinsExplicitSkillBeforeDurablePublication(t *testing.T
 	if _, err := service.HandleChat(context.Background(), testRequest("in-skill", "$skill:plugin/demo/review inspect")); err != nil {
 		t.Fatalf("HandleChat() error = %v", err)
 	}
-	if pinner.workspace != "/trusted/workspace" || pinner.text != "$skill:plugin/demo/review inspect" {
-		t.Fatalf("pinner scope/text = %q/%q, want prepared workspace and inbound text", pinner.workspace, pinner.text)
+	if pinner.runtimeSnapshotID != "snapshot-1" || pinner.text != "$skill:plugin/demo/review inspect" {
+		t.Fatalf("pinner snapshot/text = %q/%q, want prepared snapshot and inbound text", pinner.runtimeSnapshotID, pinner.text)
 	}
 	if len(dispatcher.envelopes) != 1 {
 		t.Fatalf("envelopes = %d, want 1", len(dispatcher.envelopes))

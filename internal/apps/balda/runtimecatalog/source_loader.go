@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,8 +28,12 @@ const (
 	pluginSchemaV1             = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 	mcpSchemaV1                = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 	baldaExtension             = "dev.baldaworks.balda"
+	baldaExtensionSchemaV1     = "https://baldaworks.dev/schemas/balda-extension/1.0.0/schema.json"
 	sourceRevisionRulesVersion = "runtime-source-v1"
 )
+
+//go:embed schemas/balda-extension-v1.schema.json
+var baldaExtensionSchemaJSON []byte
 
 var (
 	pluginNamePattern  = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
@@ -53,6 +59,7 @@ func DefaultSourceLimits() SourceLimits {
 type SourceLoader struct {
 	limits              SourceLimits
 	supportedTransports map[string]struct{}
+	baldaExtension      *jsonschema.Schema
 }
 
 // PluginPackage is one validated plugin source plus manifest display metadata.
@@ -82,7 +89,11 @@ func NewSourceLoader(limits SourceLimits, supportedMCPTransports ...string) (*So
 		transports["stdio"] = struct{}{}
 		transports["streamable-http"] = struct{}{}
 	}
-	return &SourceLoader{limits: limits, supportedTransports: transports}, nil
+	baldaSchema, err := compileBaldaExtensionSchema()
+	if err != nil {
+		return nil, fmt.Errorf("compile bundled balda-extension schema: %w", err)
+	}
+	return &SourceLoader{limits: limits, supportedTransports: transports, baldaExtension: baldaSchema}, nil
 }
 
 // LoadPlugin validates one Agent Plugins package and projects its components.
@@ -185,7 +196,7 @@ func (l *SourceLoader) loadCapturedPlugin(revision runtimecatalogcmd.RevisionID,
 	}
 	source.Skills, source.Diagnostics = loadSkills(tree, "skills", source.Descriptor, source.Diagnostics)
 	source.MCPServers, source.Diagnostics = l.loadMCP(tree, source.Descriptor, source.Diagnostics)
-	commands, commandDiagnostics := loadBaldaCommands(extensionRaw, source.Descriptor, source.Skills)
+	commands, commandDiagnostics := l.loadBaldaCommands(extensionRaw, source.Descriptor)
 	source.Commands = commands
 	source.Diagnostics = append(source.Diagnostics, commandDiagnostics...)
 	source.Diagnostics = boundDiagnostics(source.Diagnostics, l.limits.MaxDiagnostics)
@@ -572,49 +583,51 @@ type baldaCommandExtension struct {
 	Commands      []json.RawMessage `json:"commands"`
 }
 
-func loadBaldaCommands(raw json.RawMessage, source runtimecatalogcmd.SourceDescriptor, skills []runtimecatalogcmd.SkillMetadata) ([]runtimecatalogcmd.CommandDescriptor, []runtimecatalogcmd.Diagnostic) {
+func (l *SourceLoader) loadBaldaCommands(raw json.RawMessage, source runtimecatalogcmd.SourceDescriptor) ([]runtimecatalogcmd.CommandDescriptor, []runtimecatalogcmd.Diagnostic) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
-	var fields map[string]json.RawMessage
-	if decodeJSONObject(raw, &fields) != nil || !onlyFields(fields, "schema_version", "commands") {
+	var value any
+	if json.Unmarshal(raw, &value) != nil || l == nil || l.baldaExtension == nil || l.baldaExtension.Validate(value) != nil {
 		return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
 	}
 	var extension baldaCommandExtension
-	if json.Unmarshal(raw, &extension) != nil || extension.SchemaVersion != 1 || extension.Commands == nil || len(extension.Commands) > 128 {
+	if json.Unmarshal(raw, &extension) != nil {
 		return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
-	}
-	availableSkills := make(map[string]struct{}, len(skills))
-	for _, skill := range skills {
-		availableSkills[skill.Name] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(extension.Commands))
 	commands := make([]runtimecatalogcmd.CommandDescriptor, 0, len(extension.Commands))
 	for _, rawCommand := range extension.Commands {
-		var fields map[string]json.RawMessage
-		if decodeJSONObject(rawCommand, &fields) != nil || !onlyFields(fields, "name", "description", "skill") || len(fields) != 3 {
-			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
-		}
-		var command struct{ Name, Description, Skill string }
-		if decodeRequired(fields, "name", &command.Name) != nil || decodeRequired(fields, "description", &command.Description) != nil || decodeRequired(fields, "skill", &command.Skill) != nil {
+		var command struct{ Name, Description, Instruction string }
+		if json.Unmarshal(rawCommand, &command) != nil {
 			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
 		}
 		name := strings.ToLower(strings.TrimSpace(command.Name))
 		description := strings.TrimSpace(command.Description)
-		if name == "" || len(name) > 64 || command.Name != name || !skillNamePattern.MatchString(name) || strings.Contains(name, "--") || description == "" || len(description) > 1024 || strings.TrimSpace(command.Skill) != command.Skill {
+		instruction := strings.TrimSpace(command.Instruction)
+		if command.Name != name || strings.Contains(name, "--") || command.Description != description || command.Instruction != instruction {
 			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
 		}
 		if _, ok := seen[name]; ok {
 			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
 		}
-		if _, ok := availableSkills[command.Skill]; !ok {
-			return nil, []runtimecatalogcmd.Diagnostic{diagnostic(source.ID, runtimecatalogcmd.DiagnosticSeverityError, runtimecatalogcmd.DiagnosticExtensionInvalid, nil)}
-		}
 		seen[name] = struct{}{}
 		id := runtimecatalogcmd.ContributionID{Source: source.ID, Kind: runtimecatalogcmd.ContributionKindCommand, Name: name}
-		commands = append(commands, runtimecatalogcmd.CommandDescriptor{ID: id, Revision: source.Revision, Name: name, Description: description, Skill: &runtimecatalogcmd.SkillRef{Source: source.ID, Revision: source.Revision, Name: command.Skill}, Advertised: true})
+		commands = append(commands, runtimecatalogcmd.CommandDescriptor{ID: id, Revision: source.Revision, Name: name, Description: description, Instruction: instruction, Advertised: true})
 	}
 	return commands, nil
+}
+
+func compileBaldaExtensionSchema() (*jsonschema.Schema, error) {
+	var document any
+	if err := json.Unmarshal(baldaExtensionSchemaJSON, &document); err != nil {
+		return nil, err
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource(baldaExtensionSchemaV1, document); err != nil {
+		return nil, err
+	}
+	return compiler.Compile(baldaExtensionSchemaV1)
 }
 
 type treeIssue struct {

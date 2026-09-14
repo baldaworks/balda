@@ -61,18 +61,19 @@ func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (
 // SessionPreparation contains runtime session identity established before
 // durable acceptance. Locator ownership remains with the normalized inbound.
 type SessionPreparation struct {
-	Ready           bool
-	Reason          string
-	UserID          string
-	RequesterUserID string
-	AgentSessionID  string
-	TopicID         int
-	WorkspaceDir    string
+	Ready             bool
+	Reason            string
+	UserID            string
+	RequesterUserID   string
+	AgentSessionID    string
+	TopicID           int
+	WorkspaceDir      string
+	RuntimeSnapshotID string
 }
 
 // SkillPinner resolves an explicit reference using trusted prepared-session scope.
 type SkillPinner interface {
-	PinExplicit(ctx context.Context, workspace, text string) (string, *runtimecatalogcmd.SkillSelection, error)
+	PinExplicit(ctx context.Context, runtimeSnapshotID, text string) (string, *runtimecatalogcmd.SkillSelection, error)
 }
 
 // SessionPreparer enforces create/restore/session preconditions without
@@ -195,7 +196,7 @@ func (s *Service) Process(ctx context.Context, inbound turncmd.NormalizedInbound
 	payload.AgentSessionID = strings.TrimSpace(preparation.AgentSessionID)
 	payload.TopicID = preparation.TopicID
 	if s.skills != nil {
-		payload.Text, payload.Skill, err = s.skills.PinExplicit(ctx, preparation.WorkspaceDir, payload.Text)
+		payload.Text, payload.Skill, err = s.skills.PinExplicit(ctx, preparation.RuntimeSnapshotID, payload.Text)
 		if err != nil {
 			return s.finish(logContext, terminalResult(result, ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))
 		}

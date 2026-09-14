@@ -476,7 +476,7 @@ func writeManagedPlugin(t *testing.T, marketplaceRoot, version string, withSkill
 	mustMkdirAll(t, pluginRoot)
 	manifest := `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"` + version + `","description":"Demo ` + version + `"}`
 	if withSkill {
-		manifest = `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"` + version + `","description":"Demo ` + version + `","extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"ship","description":"Ship safely","skill":"ship"}]}}}`
+		manifest = `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"` + version + `","description":"Demo ` + version + `","extensions":{"dev.baldaworks.balda":{"schema_version":1,"commands":[{"name":"ship","description":"Ship safely","instruction":"Ship the release safely."}]}}}`
 		mustMkdirAll(t, filepath.Join(pluginRoot, "skills", "ship"))
 		mustWriteFile(t, filepath.Join(pluginRoot, "skills", "ship", "SKILL.md"), "---\nname: ship\ndescription: Ship safely.\n---\n")
 	}

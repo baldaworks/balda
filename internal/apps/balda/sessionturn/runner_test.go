@@ -40,16 +40,14 @@ func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 		},
 		Instructions: "review carefully",
 	}}
+	pinnedRunner := &adkrunner.Runner{}
 	runner := NewWithSkillLoader(
-		&testSessionAccessor{active: &testActiveSession{}},
+		&testSessionAccessor{active: &testActiveSession{runner: pinnedRunner, runtimeSnapshotID: "snapshot-1"}},
 		executor,
 		nil,
 		loader,
 		zerolog.Nop(),
 	)
-	pinnedRunner := &adkrunner.Runner{}
-	runtimes := &testSnapshotRuntimeProvider{runtime: &SnapshotRuntime{Runner: pinnedRunner}}
-	runner.runtimes = runtimes
 	payload := testTurnPayload()
 	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "snapshot-1", Ref: loader.loaded.Ref}
 	if err := runner.RunSessionTurnPayload(context.Background(), payload); err != nil {
@@ -62,8 +60,8 @@ func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 	if request.SelectedSkill == nil || request.SelectedSkill.Ref.Revision != "revision-1" {
 		t.Fatalf("selected skill = %+v, want pinned loaded content", request.SelectedSkill)
 	}
-	if request.Runner != pinnedRunner || len(runtimes.requests) != 1 || runtimes.requests[0].SnapshotID != payload.Skill.Snapshot {
-		t.Fatalf("pinned runtime request = (%p, %+v), want runner %p and snapshot %q", request.Runner, runtimes.requests, pinnedRunner, payload.Skill.Snapshot)
+	if request.Runner != pinnedRunner {
+		t.Fatalf("runner = %p, want existing session runner %p", request.Runner, pinnedRunner)
 	}
 }
 
@@ -71,7 +69,7 @@ func TestRunnerFailsClosedWhenSelectedSkillLoaderIsUnavailable(t *testing.T) {
 	t.Parallel()
 
 	executor := &testExecutor{}
-	runner := New(&testSessionAccessor{active: &testActiveSession{}}, executor, nil, zerolog.Nop())
+	runner := New(&testSessionAccessor{active: &testActiveSession{runtimeSnapshotID: "snapshot-1"}}, executor, nil, zerolog.Nop())
 	payload := testTurnPayload()
 	payload.Skill = &runtimecatalogcmd.SkillSelection{
 		Snapshot: "snapshot-1",
@@ -80,6 +78,36 @@ func TestRunnerFailsClosedWhenSelectedSkillLoaderIsUnavailable(t *testing.T) {
 	err := runner.RunSessionTurnPayload(context.Background(), payload)
 	if err == nil || !strings.Contains(err.Error(), "selected skill loader is unavailable") {
 		t.Fatalf("RunSessionTurnPayload() error = %v, want unavailable loader", err)
+	}
+	if len(executor.requests) != 0 {
+		t.Fatalf("executor requests = %d, want none", len(executor.requests))
+	}
+}
+
+func TestRunnerFailsClosedWhenSelectedSkillSnapshotDiffersFromSession(t *testing.T) {
+	t.Parallel()
+
+	executor := &testExecutor{}
+	loader := &testSkillLoader{}
+	runner := NewWithSkillLoader(
+		&testSessionAccessor{active: &testActiveSession{runtimeSnapshotID: "session-snapshot"}},
+		executor,
+		nil,
+		loader,
+		zerolog.Nop(),
+	)
+	payload := testTurnPayload()
+	payload.Skill = &runtimecatalogcmd.SkillSelection{
+		Snapshot: "other-snapshot",
+		Ref:      runtimecatalogcmd.SkillRef{Revision: "revision-1", Name: "review"},
+	}
+
+	err := runner.RunSessionTurnPayload(context.Background(), payload)
+	if err == nil || !strings.Contains(err.Error(), "does not match session runtime") {
+		t.Fatalf("RunSessionTurnPayload() error = %v, want snapshot mismatch", err)
+	}
+	if len(loader.selections) != 0 {
+		t.Fatalf("skill selections = %d, want none", len(loader.selections))
 	}
 	if len(executor.requests) != 0 {
 		t.Fatalf("executor requests = %d, want none", len(executor.requests))
@@ -383,24 +411,17 @@ func (a *testSessionAccessor) EnsureSession(context.Context, SessionContext, str
 }
 
 type testActiveSession struct {
-	state    map[string]any
-	stateErr error
+	state             map[string]any
+	stateErr          error
+	runner            *adkrunner.Runner
+	runtimeSnapshotID string
 }
 
-type testSnapshotRuntimeProvider struct {
-	runtime  *SnapshotRuntime
-	requests []SnapshotRuntimeRequest
-}
-
-func (p *testSnapshotRuntimeProvider) RuntimeForSnapshot(_ context.Context, request SnapshotRuntimeRequest) (*SnapshotRuntime, error) {
-	p.requests = append(p.requests, request)
-	return p.runtime, nil
-}
-
-func (*testActiveSession) GetRunner() *adkrunner.Runner { return nil }
-func (*testActiveSession) GetSessionID() string         { return "tg-1-0" }
-func (*testActiveSession) GetAgentSessionID() string    { return "agent-session-1" }
-func (*testActiveSession) GetUserID() string            { return "user-1" }
+func (s *testActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
+func (s *testActiveSession) GetRuntimeSnapshotID() string { return s.runtimeSnapshotID }
+func (*testActiveSession) GetSessionID() string           { return "tg-1-0" }
+func (*testActiveSession) GetAgentSessionID() string      { return "agent-session-1" }
+func (*testActiveSession) GetUserID() string              { return "user-1" }
 
 func (s *testActiveSession) RuntimeStateValue(_ context.Context, key string) (any, bool, error) {
 	if s.stateErr != nil {

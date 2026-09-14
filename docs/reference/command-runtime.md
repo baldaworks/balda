@@ -4,7 +4,9 @@ This page is the canonical architecture reference for Balda chat commands. It
 explains where command names come from, how transports admit them, and how one
 durable invocation reaches product policy. For user-visible syntax and command
 effects, see the [command reference](../commands.md). For non-chat work, see
-the [job, scheduler, and webhook runtime](job-runtime.md).
+the [job, scheduler, and webhook runtime](job-runtime.md). The Balda extension
+schema and session capability lifetime are specified in
+[Plugins and session capabilities](plugins.md).
 
 Balda uses the word *command* at two levels:
 
@@ -23,7 +25,7 @@ work, but it is not a chat command and does not pass through `CommandActor`.
 flowchart LR
     subgraph Sources["Command definitions"]
         BUILTIN["Built-in handlers<br/>commandfx + actors/command/*"]
-        PLUGIN["Plugin manifest<br/>declarative command + local skill"]
+        PLUGIN["Plugin manifest<br/>inline Balda command instruction"]
     end
 
     CATALOG["Runtime contribution catalog<br/>immutable effective snapshot"]
@@ -42,7 +44,7 @@ flowchart LR
     ACTOR["CommandActor<br/>sole product-command executor"]
     HANDLER["Exact built-in handler"]
     ADAPTER["Generic plugin-command adapter"]
-    TURN["Revision-pinned normal session turn<br/>lazy SkillRef + pinned MCP runtime"]
+    TURN["Normal session turn<br/>existing session runner"]
 
     BUILTIN --> CATALOG
     PLUGIN --> CATALOG --> PROJECTION --> PARSE
@@ -64,7 +66,7 @@ performs exact-name resolution only after durable delivery.
 | Input class | Authoritative definition | Admission source | Durable target and executor |
 |---|---|---|---|
 | Built-in chat command | A named handler under `internal/apps/balda/actors/command`; `commandfx` assembles all handlers into one immutable router | Each enabled transport declares its static whitelist | `balda.v1.cmd.command` -> `CommandActor` -> exact built-in handler |
-| Plugin chat command | The installed plugin's `plugin.json`, under `extensions.dev.baldaworks.balda.commands`; each declaration names a plugin-local skill | The current catalog projects ready, collision-free, provider-compatible aliases into the transport registry | `balda.v1.cmd.command` -> `CommandActor` -> generic plugin adapter -> normal session turn |
+| Plugin chat command | The installed plugin's `plugin.json`, under `extensions.dev.baldaworks.balda.commands`; each declaration owns an inline instruction | The current catalog projects collision-free, provider-compatible aliases into the transport registry | `balda.v1.cmd.command` -> `CommandActor` -> generic plugin adapter -> normal session turn |
 | Ordinary chat message | Message content from Telegram, Slack, or Zulip | Transport message/mention rules and conversational ingress | Session command -> `SessionActor`; it is not routed by command name |
 | Generic inbound webhook | A configured `balda.webhooks.routes` entry and its prompt template | HTTP method, route, optional shared-header authentication, target resolution, and dedupe policy | Job mode -> `JobActor`; session mode -> `SessionActor` |
 | Scheduled work | A configured `balda.scheduler.jobs` entry | Scheduler reconciliation and due-time selection | Scheduled job envelope -> `JobActor` |
@@ -93,7 +95,7 @@ resolve a plugin revision.
    the canonical name and arguments plus the transport-neutral locator,
    principal, access capabilities, direct/public conversation flag,
    presentation options, and invocation root (`/` or `/balda`).
-3. `commandfx.CommandIngress` resolves the effective catalog snapshot from the
+3. `commandfx.CommandIngress` resolves the catalog snapshot persisted for the
    trusted session ID. It overwrites any caller-supplied version or snapshot,
    requires schema v2, and durably dispatches an envelope addressed to
    `command:<session_id>` on `balda.v1.cmd.command`.
@@ -102,7 +104,7 @@ resolve a plugin revision.
    exact retained snapshot named by the envelope.
 5. The actor gives an exact built-in router match precedence. Otherwise it
    resolves one advertised plugin descriptor with the same canonical name,
-   source, revision, and plugin-local skill reference.
+   source, revision, and inline instruction.
 6. A built-in handler applies its own access, argument, and conversation
    policy through narrow application ports. A plugin descriptor goes through
    the single generic adapter described below.
@@ -133,18 +135,19 @@ other `/plugin` management actions are built-in owner commands; they are not
 plugin contributions.
 
 A plugin contributes metadata, never a Go handler. Its declaration contains a
-canonical name, description, and reference to a skill in the same immutable
-plugin revision. After `CommandActor` resolves that descriptor, the generic
-adapter publishes exactly one normal `SessionActor` turn. The turn text
-preserves the provider invocation form, for example `/release production` or
-`/balda release production`, and carries an explicit `SkillSelection` with
-both snapshot ID and `SkillRef`.
+canonical name, description, and inline instruction in the immutable plugin
+revision. After `CommandActor` resolves that descriptor from the session's
+persisted snapshot, the generic adapter publishes exactly one normal
+`SessionActor` turn. The instruction and supplied invocation arguments are
+formatted as user-level input. The turn carries no `SkillSelection`.
 
-The turn runner loads that exact skill body lazily. It also acquires every
-plugin MCP descriptor in the same retained snapshot under that descriptor's
-exact revision-qualified runtime identity for the lifetime of the turn. A
-catalog refresh may affect later invocations but cannot rebind an already
-published command to new skill text, another plugin, or another MCP executable.
+The turn uses the existing `TopicSession` runner. Skills are an independent
+session capability and remain lazy-loaded only after explicit selection. MCP
+servers are also independent: their fixed list is supplied when the provider
+session is created or restored and remains attached until that session runtime
+closes. Commands do not acquire MCP or construct a per-turn provider runtime.
+A catalog refresh cannot change an active session; `/reset` is the explicit
+boundary that adopts the current command, skill, and MCP snapshot.
 
 ## Transport parsing and support
 
@@ -175,12 +178,9 @@ runtime-readiness, advertisement, omission, and projection-lag state.
 When a catalog snapshot is published, the advertisement projector atomically
 replaces the dynamic alias set for each enabled transport:
 
-1. It considers only advertised plugin command descriptors.
-2. The referenced skill must exist in the snapshot with the same plugin source
-   and revision.
-3. Every MCP server from that plugin revision must be ready under its
-   revision-qualified runtime identity.
-4. The alias must satisfy the target transport's syntax shown above.
+1. It considers only advertised plugin command descriptors with a non-empty
+   inline instruction.
+2. The alias must satisfy the target transport's syntax shown above.
 
 An alias is withheld, rather than partially activated, if any check fails.
 Diagnostics distinguish a runtime dependency failure from provider-incompatible
@@ -246,10 +246,10 @@ To add or change a built-in command:
    routing, transport availability, or settlement changes.
 
 A plugin command does not follow this procedure: its source is the installed
-manifest and plugin-local skill. Enabling the validated revision republishes
+manifest and inline Balda extension instruction. Enabling the validated revision republishes
 the catalog and refreshes dynamic transport projections. If a plugin alias is
-missing, inspect `/plugin status` for collision, syntax, skill, MCP readiness,
-or projection-lag diagnostics before changing transport code.
+missing, inspect `/plugin status` for collision, syntax, validation, or
+projection-lag diagnostics before changing transport code.
 
 When adding a transport, keep its parser and provider authentication in the
 concrete channel boundary, publish the neutral `commandcmd.Request` through the

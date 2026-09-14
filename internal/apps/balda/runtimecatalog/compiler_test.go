@@ -32,7 +32,6 @@ func TestCompileApplicationIsDeterministic(t *testing.T) {
 	plugin.Descriptor.Revision = changedRevision
 	for i := range plugin.Commands {
 		plugin.Commands[i].Revision = changedRevision
-		plugin.Commands[i].Skill.Revision = changedRevision
 	}
 	for i := range plugin.Skills {
 		plugin.Skills[i].Revision = changedRevision
@@ -43,29 +42,6 @@ func TestCompileApplicationIsDeterministic(t *testing.T) {
 	}
 	if changed.ID == first.ID {
 		t.Fatalf("changed revision retained snapshot ID %q", changed.ID)
-	}
-}
-
-func TestCompileApplicationRejectsUnavailableCommandSkill(t *testing.T) {
-	t.Parallel()
-
-	source := pluginSource("release-tools", "revision", "release", "deploy")
-	source.Skills = nil
-	if _, err := NewCompiler().CompileApplication([]runtimecatalogcmd.Source{source}); err == nil {
-		t.Fatal("CompileApplication() error = nil, want unavailable skill error")
-	}
-}
-
-func TestCompileApplicationRejectsNonLocalPluginCommandSkill(t *testing.T) {
-	t.Parallel()
-
-	plugin := pluginSource("release-tools", "plugin-revision", "release", "deploy")
-	user := skillSource(runtimecatalogcmd.SourceKindUserSkill, "user", "user-revision", "deploy")
-	plugin.Commands[0].Skill = &runtimecatalogcmd.SkillRef{
-		Source: user.Descriptor.ID, Revision: user.Descriptor.Revision, Name: "deploy",
-	}
-	if _, err := NewCompiler().CompileApplication([]runtimecatalogcmd.Source{plugin, user}); err == nil {
-		t.Fatal("CompileApplication() error = nil, want non-local plugin skill error")
 	}
 }
 
@@ -332,7 +308,7 @@ func commandSource(kind runtimecatalogcmd.SourceKind, sourceName, revision, comm
 	id := runtimecatalogcmd.ContributionID{Source: sourceID, Kind: runtimecatalogcmd.ContributionKindCommand, Name: commandName}
 	return runtimecatalogcmd.Source{
 		Descriptor: runtimecatalogcmd.SourceDescriptor{ID: sourceID, Revision: runtimecatalogcmd.RevisionID(revision)},
-		Commands:   []runtimecatalogcmd.CommandDescriptor{{ID: id, Revision: runtimecatalogcmd.RevisionID(revision), Name: commandName}},
+		Commands:   []runtimecatalogcmd.CommandDescriptor{{ID: id, Revision: runtimecatalogcmd.RevisionID(revision), Name: commandName, Instruction: "Run " + commandName}},
 	}
 }
 
@@ -352,7 +328,7 @@ func pluginSource(sourceName, revision, commandName, skillName string) runtimeca
 	commandID := runtimecatalogcmd.ContributionID{Source: source.Descriptor.ID, Kind: runtimecatalogcmd.ContributionKindCommand, Name: commandName}
 	source.Commands = []runtimecatalogcmd.CommandDescriptor{{
 		ID: commandID, Revision: runtimecatalogcmd.RevisionID(revision), Name: commandName, Description: "Command " + commandName,
-		Skill: &runtimecatalogcmd.SkillRef{Source: source.Descriptor.ID, Revision: runtimecatalogcmd.RevisionID(revision), Name: skillName},
+		Instruction: "Execute command " + commandName,
 	}}
 	return source
 }

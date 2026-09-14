@@ -208,6 +208,9 @@ explicit `purge`, and bounded `status`.
 Every chat command is durably published and executed by `CommandActor`;
 plugin-contributed commands are declarative, revision-pinned normal turns and
 never native plugin handlers.
+See [Plugins and session capabilities](docs/reference/plugins.md) for the
+`dev.baldaworks.balda` extension schema and the session-bound command, skill,
+and MCP lifecycle.
 
 ## Configuration
 

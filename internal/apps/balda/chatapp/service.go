@@ -103,7 +103,7 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 	payload.AgentSessionID = strings.TrimSpace(prep.AgentSessionID)
 	payload.TopicID = prep.TopicID
 	if s.skills != nil {
-		payload.Text, payload.Skill, err = s.skills.PinExplicit(ctx, prep.WorkspaceDir, payload.Text)
+		payload.Text, payload.Skill, err = s.skills.PinExplicit(ctx, prep.RuntimeSnapshotID, payload.Text)
 		if err != nil {
 			return s.finish(logContext, terminalResult(ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))
 		}

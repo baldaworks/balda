@@ -27,15 +27,8 @@ var (
 	ErrSkillRevisionUnavailable = runtimecatalogcmd.ErrRevisionUnavailable
 )
 
-// TrustedSkillScope is host-owned scope for one provider turn. It is never a
-// model-facing argument.
-type TrustedSkillScope struct {
-	Workspace string
-}
-
 // SkillCatalog is the agent layer's local immutable-snapshot port.
 type SkillCatalog interface {
-	CurrentSkillSnapshot(ctx context.Context, scope TrustedSkillScope) (runtimecatalogcmd.Snapshot, error)
 	RetainedSkillSnapshot(ctx context.Context, id runtimecatalogcmd.SnapshotID) (runtimecatalogcmd.Snapshot, error)
 }
 
@@ -113,7 +106,7 @@ func NewSkillManager(catalog SkillCatalog, reader SkillContentReader, budget Ski
 // $skill:<source-kind>/<escaped-source-name>/<escaped-skill-name>.
 func (m *SkillManager) PinExplicit(
 	ctx context.Context,
-	workspace,
+	snapshotID,
 	text string,
 ) (string, *runtimecatalogcmd.SkillSelection, error) {
 	selector, remaining, found, err := parseExplicitSkillReference(text)
@@ -123,29 +116,24 @@ func (m *SkillManager) PinExplicit(
 	if !found {
 		return text, nil, nil
 	}
-	selection, err := m.Resolve(ctx, TrustedSkillScope{Workspace: workspace}, selector)
+	bound, err := m.BindSnapshot(ctx, runtimecatalogcmd.SnapshotID(strings.TrimSpace(snapshotID)))
+	if err != nil {
+		return "", nil, err
+	}
+	selection, err := bound.Resolve(selector)
 	if err != nil {
 		return "", nil, err
 	}
 	return remaining, &selection, nil
 }
 
-// SkillMetadata returns bounded metadata for trusted workspace scope.
-func (m *SkillManager) SkillMetadata(ctx context.Context, workspace string) (SkillMetadataProjection, error) {
-	bound, err := m.Bind(ctx, TrustedSkillScope{Workspace: workspace})
+// SkillMetadataForSnapshot returns bounded metadata from one retained snapshot.
+func (m *SkillManager) SkillMetadataForSnapshot(ctx context.Context, snapshotID runtimecatalogcmd.SnapshotID) (SkillMetadataProjection, error) {
+	bound, err := m.BindSnapshot(ctx, snapshotID)
 	if err != nil {
 		return SkillMetadataProjection{}, err
 	}
 	return bound.Metadata(m.budget), nil
-}
-
-// Resolve pins a qualified or unique unqualified selection to the current snapshot.
-func (m *SkillManager) Resolve(ctx context.Context, scope TrustedSkillScope, selector SkillSelector) (runtimecatalogcmd.SkillSelection, error) {
-	bound, err := m.Bind(ctx, scope)
-	if err != nil {
-		return runtimecatalogcmd.SkillSelection{}, err
-	}
-	return bound.Resolve(selector)
 }
 
 // LoadPinned reads exactly the descriptor retained by a durable selection.
@@ -214,17 +202,20 @@ func (a *ReadOnlySkillAdapter) Load(ctx context.Context, request QualifiedSkillL
 	}, strings.TrimSpace(request.SkillName), append([]string(nil), request.Resources...))
 }
 
-// Bind captures the current effective snapshot once for a provider turn.
-func (m *SkillManager) Bind(ctx context.Context, scope TrustedSkillScope) (*BoundSkillLoader, error) {
+// BindSnapshot captures one exact retained snapshot for session-bound selection.
+func (m *SkillManager) BindSnapshot(ctx context.Context, snapshotID runtimecatalogcmd.SnapshotID) (*BoundSkillLoader, error) {
 	if m == nil || m.catalog == nil {
 		return nil, errors.New("skill manager is unavailable")
 	}
-	snapshot, err := m.catalog.CurrentSkillSnapshot(ctx, TrustedSkillScope{Workspace: strings.TrimSpace(scope.Workspace)})
+	if strings.TrimSpace(string(snapshotID)) == "" {
+		return nil, errors.New("skill snapshot identity is required")
+	}
+	snapshot, err := m.catalog.RetainedSkillSnapshot(ctx, snapshotID)
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(string(snapshot.ID)) == "" {
-		return nil, errors.New("current skill snapshot has no identity")
+	if snapshot.ID != snapshotID {
+		return nil, runtimecatalogcmd.ErrSnapshotUnavailable
 	}
 	return &BoundSkillLoader{manager: m, snapshot: snapshot.Clone()}, nil
 }
