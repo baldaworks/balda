@@ -296,6 +296,14 @@ func (r *Reconciler) Health() []Health {
 	return r.healthLocked()
 }
 
+// MCPServerReady reports observed readiness for one exact catalog identity.
+func (r *Reconciler) MCPServerReady(source runtimecatalogcmd.SourceID, revision runtimecatalogcmd.RevisionID, name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.instances[InstanceKey{Source: source, Revision: revision, Name: name}]
+	return ok && current.health.State == HealthReady
+}
+
 // Shutdown closes every instance without changing catalog snapshots.
 func (r *Reconciler) Shutdown(ctx context.Context) error {
 	r.mu.Lock()

@@ -63,6 +63,10 @@ const (
 	DiagnosticBuiltinCommandReserved = "builtin_command_reserved"
 	// DiagnosticDuplicateCommandAlias reports ambiguous non-built-in command aliases.
 	DiagnosticDuplicateCommandAlias = "duplicate_command_alias"
+	// DiagnosticCommandTransportIncompatible reports an alias omitted by provider syntax.
+	DiagnosticCommandTransportIncompatible = "command_transport_incompatible"
+	// DiagnosticCommandRuntimeUnavailable reports an alias withheld until pinned dependencies are ready.
+	DiagnosticCommandRuntimeUnavailable = "command_runtime_unavailable"
 	// DiagnosticSkillMetadataOmitted reports metadata omitted by a projection budget.
 	DiagnosticSkillMetadataOmitted = "skill_metadata_omitted"
 	// DiagnosticManifestFieldIgnored reports an unknown portable manifest field.

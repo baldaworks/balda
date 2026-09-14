@@ -149,6 +149,7 @@ type commandActorParams struct {
 	fx.In
 	Router    *command.Router
 	Snapshots command.SnapshotResolver `optional:"true"`
+	Plugins   command.PluginExecutor   `optional:"true"`
 }
 
 type commandIngressParams struct {
@@ -300,7 +301,7 @@ var Module = fx.Module("balda_command",
 		),
 		fx.Annotate(
 			func(p commandActorParams) dispatch.Actor {
-				return command.NewActor(p.Router, p.Snapshots)
+				return command.NewActor(p.Router, p.Snapshots, p.Plugins)
 			},
 			fx.As(new(dispatch.Actor)), fx.ResultTags(`group:"balda_product_actors"`),
 		),
@@ -310,5 +311,6 @@ var Module = fx.Module("balda_command",
 			},
 			fx.As(new(commandcmd.Ingress)),
 		),
+		fx.Annotate(NewPluginTurnExecutor, fx.As(new(command.PluginExecutor))),
 	),
 )
