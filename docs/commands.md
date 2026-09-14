@@ -183,7 +183,9 @@ publish `commandcmd.Request` envelopes.
 `CommandActor` is the only product command executor. Plugins cannot register
 native handlers: a catalog-advertised plugin command is declarative metadata
 that creates one normal authenticated turn pinned to the command's catalog
-snapshot, plugin revision, and skill. Built-in names always remain reserved.
+snapshot, plugin revision, skill, and provider-visible plugin MCP set. A retry
+rehydrates that exact retained MCP revision in a turn-scoped runtime instead of
+consulting the mutable current catalog. Built-in names always remain reserved.
 
 ## User administration
 

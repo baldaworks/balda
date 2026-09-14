@@ -47,6 +47,9 @@ func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 		loader,
 		zerolog.Nop(),
 	)
+	pinnedRunner := &adkrunner.Runner{}
+	runtimes := &testSnapshotRuntimeProvider{runtime: &SnapshotRuntime{Runner: pinnedRunner}}
+	runner.runtimes = runtimes
 	payload := testTurnPayload()
 	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "snapshot-1", Ref: loader.loaded.Ref}
 	if err := runner.RunSessionTurnPayload(context.Background(), payload); err != nil {
@@ -58,6 +61,9 @@ func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 	request := executor.singleRequest(t)
 	if request.SelectedSkill == nil || request.SelectedSkill.Ref.Revision != "revision-1" {
 		t.Fatalf("selected skill = %+v, want pinned loaded content", request.SelectedSkill)
+	}
+	if request.Runner != pinnedRunner || len(runtimes.requests) != 1 || runtimes.requests[0].SnapshotID != payload.Skill.Snapshot {
+		t.Fatalf("pinned runtime request = (%p, %+v), want runner %p and snapshot %q", request.Runner, runtimes.requests, pinnedRunner, payload.Skill.Snapshot)
 	}
 }
 
@@ -379,6 +385,16 @@ func (a *testSessionAccessor) EnsureSession(context.Context, SessionContext, str
 type testActiveSession struct {
 	state    map[string]any
 	stateErr error
+}
+
+type testSnapshotRuntimeProvider struct {
+	runtime  *SnapshotRuntime
+	requests []SnapshotRuntimeRequest
+}
+
+func (p *testSnapshotRuntimeProvider) RuntimeForSnapshot(_ context.Context, request SnapshotRuntimeRequest) (*SnapshotRuntime, error) {
+	p.requests = append(p.requests, request)
+	return p.runtime, nil
 }
 
 func (*testActiveSession) GetRunner() *adkrunner.Runner { return nil }

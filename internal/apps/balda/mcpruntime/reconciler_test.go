@@ -114,6 +114,59 @@ func TestReconcilerKeepsPinnedOldRevisionUntilTurnDrain(t *testing.T) {
 	}
 }
 
+func TestReconcilerReacquiresRetainedRevisionForDurableRetry(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	launcher := &fakeLauncher{instances: make(map[InstanceKey]*fakeInstance), fail: make(map[InstanceKey]bool)}
+	projector := &fakeProjector{outcome: runtimecatalogcmd.MCPProjectionNewRuntimesOnly, set: make(map[InstanceKey]int), removed: make(map[InstanceKey]int)}
+	reconciler, err := New(fakeLaunchResolver{}, launcher, projector, Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldDescriptor := mcpDescriptor("revision-old")
+	newDescriptor := mcpDescriptor("revision-new")
+	reconciler.Reconcile(ctx, mcpSnapshot("snapshot-old", oldDescriptor))
+	reconciler.Reconcile(ctx, mcpSnapshot("snapshot-new", newDescriptor))
+	oldKey := keyFromDescriptor(oldDescriptor)
+	if projector.removed[oldKey] != 1 {
+		t.Fatalf("old projection removals = %d, want initial drain", projector.removed[oldKey])
+	}
+	keys, release, err := reconciler.AcquireDescriptors(ctx, []runtimecatalogcmd.MCPServerDescriptor{oldDescriptor})
+	if err != nil {
+		t.Fatalf("AcquireDescriptors(old) error = %v", err)
+	}
+	if len(keys) != 1 || keys[0] != oldKey || projector.set[oldKey] != 2 {
+		t.Fatalf("reacquired keys/projections = (%+v, %d), want exact old revision projected twice", keys, projector.set[oldKey])
+	}
+	if launcher.instances[oldKey].closed != 0 {
+		t.Fatal("reacquired old revision closed before durable retry completed")
+	}
+	release()
+	if launcher.instances[oldKey].closed != 1 || projector.removed[oldKey] != 2 {
+		t.Fatalf("old close/remove after retry = %d/%d, want 1/2", launcher.instances[oldKey].closed, projector.removed[oldKey])
+	}
+}
+
+func TestReconcilerRejectsOverLimitRetainedSelectionBeforeLaunch(t *testing.T) {
+	t.Parallel()
+	launcher := &fakeLauncher{instances: make(map[InstanceKey]*fakeInstance), fail: make(map[InstanceKey]bool)}
+	projector := &fakeProjector{outcome: runtimecatalogcmd.MCPProjectionNewRuntimesOnly, set: make(map[InstanceKey]int), removed: make(map[InstanceKey]int)}
+	reconciler, err := New(fakeLaunchResolver{}, launcher, projector, Limits{MaxServers: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := mcpDescriptor("revision-one")
+	second := mcpDescriptor("revision-two")
+	second.Name = "second"
+	second.ID.Name = "second"
+	if _, _, err := reconciler.AcquireDescriptors(context.Background(), []runtimecatalogcmd.MCPServerDescriptor{first, second}); err == nil {
+		t.Fatal("AcquireDescriptors() error = nil for over-limit retained selection")
+	}
+	if len(launcher.instances) != 0 || len(projector.set) != 0 {
+		t.Fatalf("over-limit selection started/projected instances = %d/%d, want 0/0", len(launcher.instances), len(projector.set))
+	}
+}
+
 func TestReconcilerIsolatesFailureAndReportsProjectionOutcome(t *testing.T) {
 	t.Parallel()
 

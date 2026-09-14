@@ -259,6 +259,27 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
 ) (*BuiltRuntime, error) {
+	return b.buildRuntimeWithMCPServerIDs(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, true)
+}
+
+// BuildRuntimeWithPinnedMCPServerIDs builds a runtime from an exact catalog
+// selection without consulting the mutable current catalog snapshot.
+func (b *Builder) BuildRuntimeWithPinnedMCPServerIDs(
+	ctx context.Context,
+	agentName, workspaceDir string,
+	bundledMCPServerIDs []string,
+	extraMCPServerIDs []string,
+) (*BuiltRuntime, error) {
+	return b.buildRuntimeWithMCPServerIDs(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, false)
+}
+
+func (b *Builder) buildRuntimeWithMCPServerIDs(
+	ctx context.Context,
+	agentName, workspaceDir string,
+	bundledMCPServerIDs []string,
+	extraMCPServerIDs []string,
+	includeCurrentCatalog bool,
+) (*BuiltRuntime, error) {
 	const appName = defaultRuntimeAppName
 
 	instruction, err := b.buildRootRuntimeInstruction(ctx, agentName, workspaceDir)
@@ -266,7 +287,7 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 		return nil, err
 	}
 	catalogMCPServerIDs := append([]string(nil), extraMCPServerIDs...)
-	if b.mcpMetadataProvider != nil {
+	if includeCurrentCatalog && b.mcpMetadataProvider != nil {
 		ids, err := b.mcpMetadataProvider.MCPServerIDs(ctx, workspaceDir)
 		if err != nil {
 			return nil, fmt.Errorf("load catalog MCP metadata: %w", err)

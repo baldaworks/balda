@@ -274,6 +274,49 @@ func (r *Reconciler) Acquire(keys []InstanceKey) ([]Tool, func(), error) {
 	}, nil
 }
 
+// AcquireDescriptors ensures and pins exact revision instances for one turn.
+// Non-current revisions are stopped again when the turn releases them.
+func (r *Reconciler) AcquireDescriptors(ctx context.Context, descriptors []runtimecatalogcmd.MCPServerDescriptor) ([]InstanceKey, func(), error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(descriptors) > r.limits.MaxServers {
+		return nil, nil, errors.New("MCP server selection exceeds configured limit")
+	}
+	selected := make([]*managedInstance, 0, len(descriptors))
+	keys := make([]InstanceKey, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		key := InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
+		current, ok := r.instances[key]
+		if !ok {
+			r.startLocked(ctx, key, descriptor)
+			current = r.instances[key]
+			current.desired = false
+		}
+		if current.health.State != HealthReady {
+			for _, acquired := range selected {
+				acquired.refs--
+			}
+			r.cleanupEphemeralLocked(ctx)
+			return nil, nil, fmt.Errorf("MCP revision unavailable: %s", key.Name)
+		}
+		current.refs++
+		selected = append(selected, current)
+		keys = append(keys, key)
+	}
+	var once sync.Once
+	return keys, func() {
+		once.Do(func() { r.release(selected) })
+	}, nil
+}
+
+func (r *Reconciler) cleanupEphemeralLocked(ctx context.Context) {
+	for key, current := range r.instances {
+		if !current.desired && current.refs == 0 {
+			r.stopLocked(ctx, key, current)
+		}
+	}
+}
+
 func (r *Reconciler) release(selected []*managedInstance) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

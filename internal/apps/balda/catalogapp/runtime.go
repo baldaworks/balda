@@ -227,6 +227,31 @@ func (r *Runtime) MCPServerIDs(ctx context.Context, workspace string) ([]string,
 	return ids, nil
 }
 
+// AcquireMCPServerIDs pins ready plugin MCP instances from one exact retained
+// snapshot for the lifetime of a provider turn.
+func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecatalogcmd.SnapshotID) ([]string, func(), error) {
+	snapshot, err := r.retainedSnapshot(ctx, snapshotID)
+	if err != nil {
+		return nil, nil, err
+	}
+	descriptors := make([]runtimecatalogcmd.MCPServerDescriptor, 0, len(snapshot.MCPServers))
+	for _, descriptor := range snapshot.MCPServers {
+		if descriptor.ID.Source.Kind == runtimecatalogcmd.SourceKindPlugin {
+			descriptors = append(descriptors, descriptor)
+		}
+	}
+	keys, release, err := r.mcp.AcquireDescriptors(ctx, descriptors)
+	if err != nil {
+		return nil, nil, err
+	}
+	ids := make([]string, 0, len(keys))
+	for _, key := range keys {
+		ids = append(ids, mcpfx.RegistryID(key))
+	}
+	sort.Strings(ids)
+	return ids, release, nil
+}
+
 // PluginDataRoot resolves the stable writable root for a managed plugin.
 func (r *Runtime) PluginDataRoot(ctx context.Context, source runtimecatalogcmd.SourceID) (string, error) {
 	if source.Kind != runtimecatalogcmd.SourceKindPlugin {

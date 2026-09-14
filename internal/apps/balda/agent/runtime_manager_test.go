@@ -3,9 +3,22 @@ package agent
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestPinnedRuntimeMCPServerIDsPreservesHostConfiguration(t *testing.T) {
+	t.Parallel()
+	got := pinnedRuntimeMCPServerIDs(
+		[]string{" host.one ", "shared", "host.one"},
+		[]string{"snapshot.old", "shared"},
+	)
+	want := []string{"host.one", "shared", "snapshot.old"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pinnedRuntimeMCPServerIDs() = %#v, want %#v", got, want)
+	}
+}
 
 type closeableRuntimeAgent struct {
 	closeErr error

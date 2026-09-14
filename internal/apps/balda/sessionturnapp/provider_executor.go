@@ -52,6 +52,10 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 		}
 	}
 	payload := request.Payload
+	providerRunner := request.Runner
+	if providerRunner == nil {
+		providerRunner = request.Session.GetRunner()
+	}
 	from := actorlayer.ActorAddress{Target: actorcmd.ActorTypeSession, Key: request.Session.GetSessionID()}
 	progressEmitter := NewSessionProgressDispatcher(
 		execution.dispatcher,
@@ -71,7 +75,7 @@ func (e *ProviderTurnExecutor) ExecuteSessionTurn(ctx context.Context, request s
 	)
 	return execution.Execute(ctx, ExecutionRequest{
 		Text:            payload.Text,
-		Runner:          request.Session.GetRunner(),
+		Runner:          providerRunner,
 		UserID:          request.UserID,
 		RequesterUserID: payload.RequesterUserID,
 		SessionID:       request.Session.GetSessionID(),

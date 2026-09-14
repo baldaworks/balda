@@ -62,6 +62,7 @@ type RuntimeManager struct {
 	mu             sync.RWMutex
 	runtime        *BuiltRuntime
 	scopedRuntimes map[string]*BuiltRuntime
+	scopedSequence uint64
 }
 
 // RuntimeManagerParams wires RuntimeManager dependencies.
@@ -244,6 +245,16 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 // ACP process/runtime because the provider's MCP headers are static for the
 // lifetime of an ACP process and cannot be safely mutated between turns.
 func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error) {
+	return m.runtimeForSession(ctx, request, nil, false)
+}
+
+// RuntimeForSessionWithMCPServerIDs builds a turn-scoped runtime using only
+// the exact catalog MCP revisions supplied by the durable turn resolver.
+func (m *RuntimeManager) RuntimeForSessionWithMCPServerIDs(ctx context.Context, request SessionRuntimeRequest, mcpServerIDs []string) (*BuiltRuntime, error) {
+	return m.runtimeForSession(ctx, request, mcpServerIDs, true)
+}
+
+func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionRuntimeRequest, mcpServerIDs []string, pinned bool) (*BuiltRuntime, error) {
 	if m == nil {
 		return nil, fmt.Errorf("balda runtime manager is required")
 	}
@@ -253,15 +264,20 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	workingDir := strings.TrimSpace(request.WorkspaceDir)
 	binder := m.sessionMCPBinder
 	registry := m.mcpRegistry
+	hostMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
 	if workingDir == "" {
 		workingDir = m.workingDir
 	}
 	m.mu.RUnlock()
-	if binder == nil || registry == nil {
+	bindingEnabled := binder != nil && registry != nil
+	if status, ok := binder.(sessionMCPBinderStatus); ok && !status.SessionMCPEnabled() {
+		bindingEnabled = false
+	}
+	if !bindingEnabled && !pinned {
 		return m.Runtime(ctx)
 	}
-	if status, ok := binder.(sessionMCPBinderStatus); ok && !status.SessionMCPEnabled() {
-		return m.Runtime(ctx)
+	if pinned && len(mcpServerIDs) > 0 && registry == nil {
+		return nil, fmt.Errorf("MCP registry is required for pinned runtime")
 	}
 	if builder == nil {
 		return nil, fmt.Errorf("agent builder is required")
@@ -269,36 +285,61 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	if providerID == "" {
 		return nil, fmt.Errorf("balda provider is not configured")
 	}
-	binding, err := binder.BindSession(ctx, request)
-	if err != nil {
-		return nil, fmt.Errorf("bind session MCP context: %w", err)
-	}
-	if strings.TrimSpace(binding.ID) == "" || strings.TrimSpace(binding.Config.URL) == "" {
-		if binding.Release != nil {
-			_ = binding.Release()
+	var binding ScopedMCPServer
+	extraMCPServerIDs := pinnedRuntimeMCPServerIDs(hostMCPServerIDs, mcpServerIDs)
+	if bindingEnabled {
+		var err error
+		binding, err = binder.BindSession(ctx, request)
+		if err != nil {
+			return nil, fmt.Errorf("bind session MCP context: %w", err)
 		}
-		return nil, fmt.Errorf("session MCP binding is incomplete")
+		if strings.TrimSpace(binding.ID) == "" || strings.TrimSpace(binding.Config.URL) == "" {
+			if binding.Release != nil {
+				_ = binding.Release()
+			}
+			return nil, fmt.Errorf("session MCP binding is incomplete")
+		}
+		registry.Set(binding.ID, binding.Config)
+		extraMCPServerIDs = append(extraMCPServerIDs, binding.ID)
 	}
-	registry.Set(binding.ID, binding.Config)
-	runtime, err := builder.BuildRuntimeWithMCPServerIDs(ctx, providerID, workingDir, nil, []string{binding.ID})
+	var (
+		runtime *BuiltRuntime
+		err     error
+	)
+	if pinned {
+		runtime, err = builder.BuildRuntimeWithPinnedMCPServerIDs(ctx, providerID, workingDir, nil, extraMCPServerIDs)
+	} else {
+		runtime, err = builder.BuildRuntimeWithMCPServerIDs(ctx, providerID, workingDir, nil, extraMCPServerIDs)
+	}
 	if err != nil {
-		registry.Delete(binding.ID)
+		if binding.ID != "" {
+			registry.Delete(binding.ID)
+		}
 		if binding.Release != nil {
 			_ = binding.Release()
 		}
 		return nil, err
 	}
+	m.mu.Lock()
+	m.scopedSequence++
+	scopedID := binding.ID
+	if scopedID == "" {
+		scopedID = fmt.Sprintf("catalog-turn-%d", m.scopedSequence)
+	}
+	m.mu.Unlock()
 	var once sync.Once
 	closeScoped := func() error {
 		var closeErr error
 		once.Do(func() {
-			registry.Delete(binding.ID)
+			if binding.ID != "" {
+				registry.Delete(binding.ID)
+			}
 			if binding.Release != nil {
 				closeErr = errors.Join(closeErr, binding.Release())
 			}
 			closeErr = errors.Join(closeErr, closeRuntimeAgent(runtime.Agent))
 			m.mu.Lock()
-			delete(m.scopedRuntimes, binding.ID)
+			delete(m.scopedRuntimes, scopedID)
 			m.mu.Unlock()
 		})
 		return closeErr
@@ -308,9 +349,13 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	if m.scopedRuntimes == nil {
 		m.scopedRuntimes = make(map[string]*BuiltRuntime)
 	}
-	m.scopedRuntimes[binding.ID] = runtime
+	m.scopedRuntimes[scopedID] = runtime
 	m.mu.Unlock()
 	return runtime, nil
+}
+
+func pinnedRuntimeMCPServerIDs(hostConfigured, snapshotPinned []string) []string {
+	return mergeMCPServerIDsWithBase(hostConfigured, nil, snapshotPinned)
 }
 
 // PrepareGoalRun creates an isolated GoalKeeper execution context using the
