@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -35,6 +36,7 @@ type Server struct {
 	webhookPath  string
 	enabled      bool
 	logger       zerolog.Logger
+	commands     *commandcmd.Registry
 
 	server     *http.Server
 	ln         net.Listener
@@ -51,6 +53,7 @@ type ServerParams struct {
 	ZulipWebhookPath  string           `name:"balda_zulip_webhook_path"`
 	ZulipEnabled      bool             `name:"balda_zulip_webhook_enabled"`
 	Logger            zerolog.Logger
+	Commands          *commandcmd.Registry
 }
 
 // NewServer creates a Zulip webhook server carrier.
@@ -62,6 +65,7 @@ func NewServer(params ServerParams) *Server {
 		webhookPath:  strings.TrimSpace(params.ZulipWebhookPath),
 		enabled:      params.ZulipEnabled,
 		logger:       params.Logger.With().Str("component", "balda.channel.zulip.server").Logger(),
+		commands:     params.Commands,
 		processSem:   make(chan struct{}, zulipWebhookMaxConcurrentTasks),
 	}
 }
@@ -280,7 +284,7 @@ func (s *Server) processMessage(ctx context.Context, payload WebhookPayload) (tu
 				args = "add" + strings.TrimPrefix(args, "invite")
 			}
 			command := InboundCommand{Locator: locator, MessageID: payload.Message.ID, SenderID: senderID, Command: cmd, Args: args, Direct: isDM}
-			if !commandSupported(cmd) {
+			if !commandSupported(cmd) && (s.commands == nil || !s.commands.Supports(ChannelType, cmd)) {
 				return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, s.processor.HandleUnsupportedCommand(ctx, command)
 			}
 			err := s.processor.HandleCommand(ctx, InboundCommand{

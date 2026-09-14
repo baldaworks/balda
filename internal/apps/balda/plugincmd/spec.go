@@ -17,6 +17,7 @@ const (
 	CommandPluginsShow        = "show"
 	CommandPluginsInstall     = "install"
 	CommandPluginsUpgrade     = "upgrade"
+	CommandPluginsOrigin      = "origin"
 	CommandPluginsEnable      = "enable"
 	CommandPluginsDisable     = "disable"
 	CommandPluginsRollback    = "rollback"
@@ -40,6 +41,7 @@ func HelpMarkdown() string {
 		"- `/plugin show <plugin[@marketplace]>` — show plugin details",
 		"- `/plugin install <plugin[@marketplace]>` — install a plugin",
 		"- `/plugin upgrade <plugin[@marketplace]>` — activate a newer marketplace revision",
+		"- `/plugin origin <plugin@marketplace>` — adopt an origin for a migrated origin-unknown install",
 		"- `/plugin enable <plugin>` — enable an installed plugin",
 		"- `/plugin disable <plugin>` — disable an installed plugin",
 		"- `/plugin rollback <plugin> <revision>` — activate a retained revision",
@@ -66,6 +68,7 @@ func TransportUsage() string {
 		"/plugin show <plugin[@marketplace]>",
 		"/plugin install <plugin[@marketplace]>",
 		"/plugin upgrade <plugin[@marketplace]>",
+		"/plugin origin <plugin@marketplace>",
 		"/plugin enable <plugin>",
 		"/plugin disable <plugin>",
 		"/plugin rollback <plugin> <revision>",
@@ -91,6 +94,7 @@ func TransportUsageMarkdown() string {
 		"- `/plugin show <plugin[@marketplace]>`",
 		"- `/plugin install <plugin[@marketplace]>`",
 		"- `/plugin upgrade <plugin[@marketplace]>`",
+		"- `/plugin origin <plugin@marketplace>`",
 		"- `/plugin enable <plugin>`",
 		"- `/plugin disable <plugin>`",
 		"- `/plugin rollback <plugin> <revision>`",

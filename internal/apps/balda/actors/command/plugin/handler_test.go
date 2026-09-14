@@ -129,6 +129,11 @@ func (f *fakePluginService) Upgrade(_ context.Context, ref string) error {
 	return f.upgradeErr
 }
 
+func (f *fakePluginService) AdoptOrigin(_ context.Context, ref string) error {
+	f.upgradedRef = ref
+	return f.upgradeErr
+}
+
 func (f *fakePluginService) Enable(_ context.Context, name string) error {
 	f.enabledPlugin = name
 	return f.enableErr
@@ -461,6 +466,11 @@ func TestHandler_ManagedLifecycleAndStatus(t *testing.T) {
 		{args: "upgrade " + managedPluginName + "@official", want: "Plugin upgraded.", assert: func(t *testing.T, service *fakePluginService) {
 			if service.upgradedRef != managedPluginName+"@official" {
 				t.Fatalf("upgraded ref = %q", service.upgradedRef)
+			}
+		}},
+		{args: "origin " + managedPluginName + "@official", want: "Plugin origin adopted.", assert: func(t *testing.T, service *fakePluginService) {
+			if service.upgradedRef != managedPluginName+"@official" {
+				t.Fatalf("origin ref = %q", service.upgradedRef)
 			}
 		}},
 		{args: "enable " + managedPluginName, want: "Plugin enabled.", assert: func(t *testing.T, service *fakePluginService) {

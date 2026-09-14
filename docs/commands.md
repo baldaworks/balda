@@ -213,6 +213,7 @@ Plugin commands are currently available through Telegram to the owner:
 | `/plugin show <plugin[@marketplace]>` | Show resolved plugin details. |
 | `/plugin install <plugin[@marketplace]>` | Install a plugin. |
 | `/plugin upgrade <plugin[@marketplace]>` | Validate and activate a newer revision while preserving enablement and plugin data. |
+| `/plugin origin <plugin@marketplace>` | Explicitly adopt a marketplace origin for a migrated `origin-unknown` install before its first managed upgrade. |
 | `/plugin enable <plugin>` | Publish the installed revision's contributions. |
 | `/plugin disable <plugin>` | Remove contributions without deleting the package or plugin data. |
 | `/plugin rollback <plugin> <revision>` | Activate an explicitly retained immutable revision. |

@@ -12,17 +12,17 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
-	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
+	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram/telegramfx"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
@@ -250,16 +250,6 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
-			fx.Annotate(
-				func(stateDir string) (*agentplugin.Catalog, error) {
-					loader, err := agentplugin.NewLoader(stateDir)
-					if err != nil {
-						return nil, err
-					}
-					return loader.Load()
-				},
-				fx.ParamTags(`name:"balda_state_dir"`),
-			),
 			sessionmemorymcp.NewContextBroker,
 			fx.Annotate(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
@@ -641,6 +631,7 @@ func Module(
 		slackagentfx.Module,
 		telegramfx.Module,
 		zulipfx.Module,
+		catalogapp.Module,
 		deliveryworkflow.Module,
 		commandfx.Module,
 		chatfx.Module,

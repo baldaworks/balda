@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/normahq/runtime/v2/agentconfig"
@@ -127,55 +126,6 @@ func (f *capturingDedicatedRuntimeFactory) Build(_ context.Context, req agentfac
 	}
 	f.resolved = append(f.resolved, resolved)
 	return adkagent.New(adkagent.Config{Name: req.Name, Description: req.Description})
-}
-
-func TestBuildBaldaInstruction_IncludesPluginSkillMetadataWithoutBodiesOrPaths(t *testing.T) {
-	t.Parallel()
-
-	builder := &Builder{
-		pluginCatalog: &agentplugin.Catalog{},
-	}
-	builder.pluginCatalog, _ = func() (*agentplugin.Catalog, error) {
-		stateDir := t.TempDir()
-		root := filepath.Join(stateDir, "plugins", "demo")
-		if err := os.MkdirAll(filepath.Join(root, "skills", "summarize"), 0o755); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(root, "plugin.json"), []byte(`{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo"}`), 0o644); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(root, "skills", "summarize", "SKILL.md"), []byte("# Summarize\n\nUse this skill."), 0o644); err != nil {
-			return nil, err
-		}
-		loader, err := agentplugin.NewLoader(stateDir)
-		if err != nil {
-			return nil, err
-		}
-		return loader.Load()
-	}()
-
-	got := builder.buildBaldaInstruction(
-		"tg-1-2",
-		"telegram",
-		"alpha",
-		"norma/balda/tg-1-2",
-		"/tmp/work",
-		"main",
-	)
-
-	for _, snippet := range []string{
-		"Available skills (metadata only",
-		`source_kind="plugin" source_name="demo" skill_name="summarize"`,
-	} {
-		if !strings.Contains(got, snippet) {
-			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
-		}
-	}
-	for _, forbidden := range []string{"# Summarize", "Use this skill.", "SKILL.md"} {
-		if strings.Contains(got, forbidden) {
-			t.Fatalf("buildBaldaInstruction() unexpectedly contains %q:\n%s", forbidden, got)
-		}
-	}
 }
 
 func TestBuildRootRuntimeInstructionUsesCatalogMetadataOnly(t *testing.T) {

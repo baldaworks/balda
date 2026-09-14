@@ -87,11 +87,26 @@ func NewSourceLoader(limits SourceLimits, supportedMCPTransports ...string) (*So
 
 // LoadPlugin validates one Agent Plugins package and projects its components.
 func (l *SourceLoader) LoadPlugin(root string) (runtimecatalogcmd.Source, error) {
+	pluginPackage, err := l.LoadPluginPackage(root)
+	return pluginPackage.Source, err
+}
+
+// LoadPluginPackage validates one Agent Plugins package and returns its
+// catalog source together with display-only manifest metadata.
+func (l *SourceLoader) LoadPluginPackage(root string) (PluginPackage, error) {
 	revision, tree, err := l.captureTree(root)
 	if err != nil {
-		return runtimecatalogcmd.Source{}, err
+		return PluginPackage{}, err
 	}
-	return l.loadCapturedPlugin(revision, tree)
+	source, err := l.loadCapturedPlugin(revision, tree)
+	if err != nil {
+		return PluginPackage{}, err
+	}
+	manifest, _, _, err := validatePluginManifest(tree.files["plugin.json"])
+	if err != nil {
+		return PluginPackage{}, err
+	}
+	return PluginPackage{Source: source, Version: manifest.Version, Description: manifest.Description}, nil
 }
 
 // InspectRevision returns the bounded content identity without projecting components.
@@ -106,6 +121,25 @@ func (l *SourceLoader) MaterializePlugin(root, dest string) (PluginPackage, erro
 	if err != nil {
 		return PluginPackage{}, err
 	}
+	return l.materializeCapturedPlugin(revision, tree, dest)
+}
+
+// MaterializePluginFromRoot captures a plugin through an already anchored root.
+// Renaming or replacing the root's lexical path cannot redirect the capture.
+func (l *SourceLoader) MaterializePluginFromRoot(root *os.Root, relative, dest string) (PluginPackage, error) {
+	pluginRoot, err := root.OpenRoot(filepath.ToSlash(relative))
+	if err != nil {
+		return PluginPackage{}, fmt.Errorf("open plugin package root: %w", err)
+	}
+	defer func() { _ = pluginRoot.Close() }()
+	revision, tree, err := l.captureOpenRoot(pluginRoot)
+	if err != nil {
+		return PluginPackage{}, err
+	}
+	return l.materializeCapturedPlugin(revision, tree, dest)
+}
+
+func (l *SourceLoader) materializeCapturedPlugin(revision runtimecatalogcmd.RevisionID, tree capturedTree, dest string) (PluginPackage, error) {
 	source, err := l.loadCapturedPlugin(revision, tree)
 	if err != nil {
 		return PluginPackage{}, err
@@ -597,10 +631,6 @@ type capturedTree struct {
 }
 
 func (l *SourceLoader) captureTree(root string) (runtimecatalogcmd.RevisionID, capturedTree, error) {
-	tree := capturedTree{
-		files: make(map[string][]byte), dirs: map[string]bool{".": true},
-		links: make(map[string]string), modes: make(map[string]fs.FileMode),
-	}
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", capturedTree{}, fmt.Errorf("resolve source root: %w", err)
@@ -618,11 +648,19 @@ func (l *SourceLoader) captureTree(root string) (runtimecatalogcmd.RevisionID, c
 		return "", capturedTree{}, fmt.Errorf("open source root: %w", err)
 	}
 	defer func() { _ = secureRoot.Close() }()
+	return l.captureOpenRoot(secureRoot)
+}
+
+func (l *SourceLoader) captureOpenRoot(secureRoot *os.Root) (runtimecatalogcmd.RevisionID, capturedTree, error) {
+	tree := capturedTree{
+		files: make(map[string][]byte), dirs: map[string]bool{".": true},
+		links: make(map[string]string), modes: make(map[string]fs.FileMode),
+	}
 	hash := sha256.New()
 	_, _ = io.WriteString(hash, sourceRevisionRulesVersion)
 	_, _ = hash.Write([]byte{0})
 	entries, files, total := 0, 0, int64(0)
-	err = fs.WalkDir(secureRoot.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+	err := fs.WalkDir(secureRoot.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

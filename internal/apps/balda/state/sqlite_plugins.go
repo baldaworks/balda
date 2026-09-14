@@ -161,6 +161,36 @@ func (s *sqlitePluginStore) ActivatePlugin(ctx context.Context, intent PluginAct
 	return nil
 }
 
+func (s *sqlitePluginStore) AdoptPluginOrigin(ctx context.Context, intent PluginActivationIntent, install PluginInstallRecord) error {
+	if err := validateActivation(intent, install); err != nil || intent.Operation != "adopt-origin" || intent.FromRevisionID != intent.ToRevisionID {
+		return errors.New("invalid plugin origin adoption")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin plugin origin adoption: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `UPDATE balda_plugin_installs
+		SET origin_marketplace=?, origin_source=?, origin_path=?, updated_at=?
+		WHERE plugin_id=? AND active_revision_id=? AND origin_marketplace='origin-unknown'
+		AND origin_source='origin-unknown' AND origin_path='origin-unknown' AND data_relative_path=?`,
+		install.OriginMarketplace, install.OriginSource, install.OriginPath, formatPluginTime(install.UpdatedAt),
+		install.PluginID, install.ActiveRevisionID, install.DataRelativePath)
+	if err := requireAffected(result, err, "adopt plugin origin"); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO balda_plugin_activation_intents
+		(intent_id, plugin_id, from_revision_id, to_revision_id, operation, state, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, intent.IntentID, intent.PluginID, intent.FromRevisionID, intent.ToRevisionID,
+		intent.Operation, intent.State, formatPluginTime(intent.CreatedAt), formatPluginTime(intent.UpdatedAt)); err != nil {
+		return fmt.Errorf("insert plugin origin adoption intent: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit plugin origin adoption: %w", err)
+	}
+	return nil
+}
+
 func (s *sqlitePluginStore) DeactivatePlugin(ctx context.Context, intent PluginActivationIntent) error {
 	if !normalizedID(intent.IntentID) || !normalizedID(intent.PluginID) || !normalizedID(intent.FromRevisionID) || intent.ToRevisionID != intent.FromRevisionID || intent.State != PluginActivationIntentPending || intent.Operation != "remove" || intent.CreatedAt.IsZero() || intent.UpdatedAt.IsZero() {
 		return errors.New("invalid plugin deactivation")

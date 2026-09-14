@@ -144,6 +144,7 @@ type PluginStore interface {
 	GetPluginInstall(ctx context.Context, pluginID string) (PluginInstallRecord, bool, error)
 	ListPluginInstalls(ctx context.Context) ([]PluginInstallRecord, error)
 	ActivatePlugin(ctx context.Context, intent PluginActivationIntent, install PluginInstallRecord) error
+	AdoptPluginOrigin(ctx context.Context, intent PluginActivationIntent, install PluginInstallRecord) error
 	DeactivatePlugin(ctx context.Context, intent PluginActivationIntent) error
 	SetPluginEnabled(ctx context.Context, pluginID string, enabled bool, updatedAt time.Time) error
 	CompletePluginActivation(ctx context.Context, intentID string, updatedAt time.Time) error

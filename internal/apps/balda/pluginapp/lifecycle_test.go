@@ -494,3 +494,107 @@ func assertNoPendingPluginActivations(t *testing.T, store state.PluginStore) {
 		t.Fatalf("pending activations = %#v, err = %v", pending, err)
 	}
 }
+
+func TestLegacyMigrationRequiresExplicitOriginAndIsNotReactivatedAfterRemove(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	stateDir, marketplaceRoot, service, _, store := newManagedTestService(t)
+	legacyRoot := filepath.Join(stateDir, "plugins", testPluginName)
+	mustMkdirAll(t, filepath.Join(legacyRoot, "skills", "ship"))
+	mustWriteFile(t, filepath.Join(legacyRoot, "plugin.json"), `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"legacy"}`)
+
+	if err := service.MigrateLegacy(ctx); err != nil {
+		t.Fatalf("MigrateLegacy() error = %v", err)
+	}
+	installed, found, err := service.Inspect(ctx, testPluginName)
+	if err != nil || !found || installed.Marketplace != originUnknown {
+		t.Fatalf("Inspect() = (%#v, %v, %v)", installed, found, err)
+	}
+	writeManagedPlugin(t, marketplaceRoot, "2.0.0", true)
+	if err := service.Upgrade(ctx, testPluginName+"@"+testMarketplaceName); err == nil {
+		t.Fatal("Upgrade() error = nil before explicit origin adoption")
+	}
+	if err := service.AdoptOrigin(ctx, testPluginName+"@"+testMarketplaceName); err != nil {
+		record, _, _ := store.GetPluginInstall(ctx, testPluginName)
+		t.Fatalf("AdoptOrigin() error = %v; origin = (%q, %q, %q)", err, record.OriginMarketplace, record.OriginSource, record.OriginPath)
+	}
+	if err := service.Upgrade(ctx, testPluginName+"@"+testMarketplaceName); err != nil {
+		t.Fatalf("Upgrade() after adoption error = %v", err)
+	}
+	if err := service.RemoveInstalled(ctx, testPluginName); err != nil {
+		t.Fatalf("RemoveInstalled() error = %v", err)
+	}
+	lateRoot := filepath.Join(stateDir, "plugins", "late-plugin")
+	mustMkdirAll(t, lateRoot)
+	mustWriteFile(t, filepath.Join(lateRoot, "plugin.json"), `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"late-plugin","version":"1.0.0"}`)
+	if err := service.MigrateLegacy(ctx); err != nil {
+		t.Fatalf("MigrateLegacy() after remove error = %v", err)
+	}
+	if _, found, err := service.GetInstalled(ctx, testPluginName); err != nil || found {
+		t.Fatalf("GetInstalled() after restart-style migration = (_, %v, %v), want absent", found, err)
+	}
+	if _, found, err := service.GetInstalled(ctx, "late-plugin"); err != nil || found {
+		t.Fatalf("GetInstalled(late-plugin) = (_, %v, %v), want absent after completed migration", found, err)
+	}
+}
+
+func TestLegacyMigrationRejectsSymlinkedRoot(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	stateDir, _, service, _, _ := newManagedTestService(t) //nolint:dogsled // helper returns unrelated fixtures
+	outsideRoot := filepath.Join(t.TempDir(), "plugins")
+	pluginRoot := filepath.Join(outsideRoot, "outside")
+	mustMkdirAll(t, pluginRoot)
+	mustWriteFile(t, filepath.Join(pluginRoot, "plugin.json"), `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"outside","version":"1.0.0"}`)
+	if err := os.Symlink(outsideRoot, filepath.Join(stateDir, "plugins")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.MigrateLegacy(ctx); err == nil {
+		t.Fatal("MigrateLegacy() error = nil for symlinked legacy root")
+	}
+	if _, found, err := service.GetInstalled(ctx, "outside"); err != nil || found {
+		t.Fatalf("GetInstalled(outside) = (_, %v, %v), want absent", found, err)
+	}
+}
+
+func TestLegacyMigrationCaptureRemainsAnchoredAfterRootSwap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	stateDir, _, service, _, _ := newManagedTestService(t) //nolint:dogsled // helper returns unrelated fixtures
+	legacyPluginRoot := filepath.Join(stateDir, "plugins", testPluginName)
+	mustMkdirAll(t, legacyPluginRoot)
+	mustWriteFile(t, filepath.Join(legacyPluginRoot, "plugin.json"), `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo","version":"legacy"}`)
+
+	stateRoot, err := os.OpenRoot(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stateRoot.Close() }()
+	legacyRoot, err := stateRoot.OpenRoot("plugins")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = legacyRoot.Close() }()
+
+	outsideRoot := filepath.Join(t.TempDir(), "plugins")
+	outsidePluginRoot := filepath.Join(outsideRoot, "outside")
+	mustMkdirAll(t, outsidePluginRoot)
+	mustWriteFile(t, filepath.Join(outsidePluginRoot, "plugin.json"), `{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"outside","version":"1.0.0"}`)
+	if err := os.Rename(filepath.Join(stateDir, "plugins"), filepath.Join(stateDir, "plugins-original")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideRoot, filepath.Join(stateDir, "plugins")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.managed.migrateLegacyRoot(ctx, legacyRoot); err != nil {
+		t.Fatalf("migrateLegacyRoot() error = %v", err)
+	}
+	if _, found, err := service.GetInstalled(ctx, testPluginName); err != nil || !found {
+		t.Fatalf("GetInstalled(demo) = (_, %v, %v), want anchored legacy package", found, err)
+	}
+	if _, found, err := service.GetInstalled(ctx, "outside"); err != nil || found {
+		t.Fatalf("GetInstalled(outside) = (_, %v, %v), want absent", found, err)
+	}
+}

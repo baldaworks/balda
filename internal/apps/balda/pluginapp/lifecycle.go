@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,7 @@ type PluginStore interface {
 	GetPluginInstall(ctx context.Context, pluginID string) (baldastate.PluginInstallRecord, bool, error)
 	ListPluginInstalls(ctx context.Context) ([]baldastate.PluginInstallRecord, error)
 	ActivatePlugin(ctx context.Context, intent baldastate.PluginActivationIntent, install baldastate.PluginInstallRecord) error
+	AdoptPluginOrigin(ctx context.Context, intent baldastate.PluginActivationIntent, install baldastate.PluginInstallRecord) error
 	DeactivatePlugin(ctx context.Context, intent baldastate.PluginActivationIntent) error
 	CompletePluginActivation(ctx context.Context, intentID string, updatedAt time.Time) error
 	ListIncompletePluginActivations(ctx context.Context) ([]baldastate.PluginActivationIntent, error)
@@ -57,10 +59,15 @@ type managedLifecycle struct {
 	mu        sync.Mutex
 	stateDir  string
 	store     PluginStore
+	kv        baldastate.KVStore
 	activator CatalogActivator
 	loader    *runtimecatalog.SourceLoader
 	now       func() time.Time
 }
+
+const originUnknown = "origin-unknown"
+const legacyMigrationKeyPrefix = "plugin_legacy_migrated:"
+const legacyMigrationCompleteKey = "plugin_legacy_migration_complete"
 
 func (m *managedLifecycle) install(ctx context.Context, plugin AvailablePlugin) error {
 	m.mu.Lock()
@@ -72,6 +79,67 @@ func (m *managedLifecycle) upgrade(ctx context.Context, plugin AvailablePlugin) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.installLocked(ctx, plugin, true)
+}
+
+func (m *managedLifecycle) adoptOrigin(ctx context.Context, plugin AvailablePlugin) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.reconcilePending(ctx, plugin.Name); err != nil {
+		return fmt.Errorf("reconcile plugin before origin adoption: %w", err)
+	}
+	install, found, err := m.store.GetPluginInstall(ctx, plugin.Name)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("plugin not installed")
+	}
+	if install.OriginMarketplace != originUnknown || install.OriginSource != originUnknown || install.OriginPath != originUnknown {
+		return errors.New("plugin origin is already locked")
+	}
+	originPath, err := marketplaceRelativePath(plugin)
+	if err != nil {
+		return err
+	}
+	candidate, err := m.loader.LoadPluginPackage(plugin.PluginPath)
+	if err != nil {
+		return fmt.Errorf("validate plugin origin: %w", err)
+	}
+	if candidate.Source.Descriptor.ID.Name != install.PluginID {
+		return errors.New("marketplace and installed plugin names differ")
+	}
+	active, err := m.loadRevision(ctx, install)
+	if err != nil {
+		return err
+	}
+	install.OriginMarketplace = plugin.Marketplace
+	install.OriginSource = plugin.SourceRoot
+	install.OriginPath = originPath
+	install.UpdatedAt = m.now().UTC()
+	sources, err := m.candidateSources(ctx, install, active)
+	if err != nil {
+		return err
+	}
+	snapshot, err := m.activator.PreparePluginCandidate(ctx, sources)
+	if err != nil {
+		return fmt.Errorf("compile origin adoption candidate: %w", err)
+	}
+	intentID := uuid.NewString()
+	intent := baldastate.PluginActivationIntent{
+		IntentID: intentID, PluginID: install.PluginID, FromRevisionID: install.ActiveRevisionID,
+		ToRevisionID: install.ActiveRevisionID, Operation: "adopt-origin", State: baldastate.PluginActivationIntentPending,
+		CreatedAt: install.UpdatedAt, UpdatedAt: install.UpdatedAt,
+	}
+	if err := m.store.AdoptPluginOrigin(ctx, intent, install); err != nil {
+		return err
+	}
+	if err := m.activator.PublishCandidate(ctx, snapshot); err != nil {
+		return fmt.Errorf("publish adopted plugin origin: %w", err)
+	}
+	if err := m.store.CompletePluginActivation(ctx, intentID, m.now().UTC()); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePlugin, requireInstalled bool) error {
@@ -91,6 +159,11 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 	}
 	if found && (existing.OriginMarketplace != plugin.Marketplace || existing.OriginSource != plugin.SourceRoot || existing.OriginPath != originPath) {
 		return errors.New("plugin origin is locked; change it explicitly before upgrading")
+	}
+	originSource := plugin.SourceRoot
+	if plugin.Marketplace == originUnknown {
+		originSource = originUnknown
+		originPath = originUnknown
 	}
 	stagingParent, err := ensureContainedDirectory(m.stateDir, "plugin-staging")
 	if err != nil {
@@ -180,8 +253,101 @@ func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePl
 	if _, err := ensureContainedDirectory(m.stateDir, filepath.FromSlash(dataPath)); err != nil {
 		return fmt.Errorf("create plugin data root: %w", err)
 	}
-	install := baldastate.PluginInstallRecord{PluginID: plugin.Name, OriginMarketplace: plugin.Marketplace, OriginSource: plugin.SourceRoot, OriginPath: originPath, ActiveRevisionID: revisionID, Enabled: enabled, Version: revision.Version, Description: revision.Description, CapabilityJSON: capabilities, DataRelativePath: dataPath, UpdatedAt: now}
+	install := baldastate.PluginInstallRecord{PluginID: plugin.Name, OriginMarketplace: plugin.Marketplace, OriginSource: originSource, OriginPath: originPath, ActiveRevisionID: revisionID, Enabled: enabled, Version: revision.Version, Description: revision.Description, CapabilityJSON: capabilities, DataRelativePath: dataPath, UpdatedAt: now}
 	return m.activate(ctx, operation, fromRevision, install, source)
+}
+
+func (m *managedLifecycle) migrateLegacy(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.kv == nil {
+		return errors.New("managed plugin migration store unavailable")
+	}
+	if _, complete, err := m.kv.Get(ctx, legacyMigrationCompleteKey); err != nil {
+		return fmt.Errorf("read legacy plugin migration state: %w", err)
+	} else if complete {
+		return nil
+	}
+
+	stateRoot, err := os.OpenRoot(m.stateDir)
+	if err != nil {
+		return fmt.Errorf("open plugin state root: %w", err)
+	}
+	defer func() { _ = stateRoot.Close() }()
+	info, err := stateRoot.Lstat("plugins")
+	if errors.Is(err, os.ErrNotExist) {
+		return m.markLegacyMigrationComplete(ctx)
+	}
+	if err != nil {
+		return fmt.Errorf("inspect legacy plugin installs: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return errors.New("legacy plugin root must be a directory inside the state directory")
+	}
+	legacyRoot, err := stateRoot.OpenRoot("plugins")
+	if err != nil {
+		return fmt.Errorf("open legacy plugin installs: %w", err)
+	}
+	defer func() { _ = legacyRoot.Close() }()
+	return m.migrateLegacyRoot(ctx, legacyRoot)
+}
+
+func (m *managedLifecycle) migrateLegacyRoot(ctx context.Context, legacyRoot *os.Root) error {
+	entries, err := fs.ReadDir(legacyRoot.FS(), ".")
+	if err != nil {
+		return fmt.Errorf("read legacy plugin installs: %w", err)
+	}
+	stagingParent, err := ensureContainedDirectory(m.stateDir, "plugin-staging")
+	if err != nil {
+		return fmt.Errorf("prepare legacy plugin staging root: %w", err)
+	}
+	stage, err := os.MkdirTemp(stagingParent, "legacy-")
+	if err != nil {
+		return fmt.Errorf("create legacy plugin staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stage) }()
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		packageRoot := filepath.Join(stage, entry.Name())
+		pkg, err := m.loader.MaterializePluginFromRoot(legacyRoot, entry.Name(), packageRoot)
+		if err != nil {
+			return fmt.Errorf("migrate legacy plugin %q: %w", entry.Name(), err)
+		}
+		name := pkg.Source.Descriptor.ID.Name
+		migrationKey := legacyMigrationKeyPrefix + name
+		if _, migrated, err := m.kv.Get(ctx, migrationKey); err != nil {
+			return err
+		} else if migrated {
+			continue
+		}
+		if _, found, err := m.store.GetPluginInstall(ctx, name); err != nil {
+			return err
+		} else if found {
+			if err := m.kv.Set(ctx, migrationKey, string(pkg.Source.Descriptor.Revision)); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := m.installLocked(ctx, AvailablePlugin{
+			Name: name, Version: pkg.Version, Description: pkg.Description,
+			Marketplace: originUnknown, SourceRoot: stage, PluginPath: packageRoot,
+		}, false); err != nil {
+			return fmt.Errorf("migrate legacy plugin %q: %w", name, err)
+		}
+		if err := m.kv.Set(ctx, migrationKey, string(pkg.Source.Descriptor.Revision)); err != nil {
+			return fmt.Errorf("mark legacy plugin %q migrated: %w", name, err)
+		}
+	}
+	return m.markLegacyMigrationComplete(ctx)
+}
+
+func (m *managedLifecycle) markLegacyMigrationComplete(ctx context.Context) error {
+	if err := m.kv.Set(ctx, legacyMigrationCompleteKey, "v1"); err != nil {
+		return fmt.Errorf("mark legacy plugin migration complete: %w", err)
+	}
+	return nil
 }
 
 func (m *managedLifecycle) verifyRevisionRoot(root, revisionID string) error {

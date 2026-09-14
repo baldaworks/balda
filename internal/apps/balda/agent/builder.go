@@ -12,9 +12,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
-	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
@@ -59,8 +57,8 @@ type Builder struct {
 	sessionSvc             adksession.Service
 	memoryEnabled          bool
 	memorySnapshotReader   MemorySnapshotReader
-	pluginCatalog          *agentplugin.Catalog
 	skillMetadataProvider  SkillMetadataProvider
+	mcpMetadataProvider    MCPMetadataProvider
 }
 
 // dedicatedRuntimeFactory is the narrow provider-factory port used only by
@@ -95,6 +93,11 @@ type SkillMetadataProvider interface {
 	SkillMetadata(ctx context.Context, workspace string) (SkillMetadataProjection, error)
 }
 
+// MCPMetadataProvider projects ready catalog MCP server IDs for one trusted workspace.
+type MCPMetadataProvider interface {
+	MCPServerIDs(ctx context.Context, workspace string) ([]string, error)
+}
+
 type baldaPromptData struct {
 	SessionID         string
 	ChannelType       string
@@ -121,15 +124,6 @@ func (b *Builder) buildBaldaInstruction(
 	workspaceDir,
 	repoBranchAtStart string,
 ) string {
-	var skills []SkillPromptMetadata
-	if b.pluginCatalog != nil {
-		for _, skill := range b.pluginCatalog.Skills() {
-			skills = append(skills, SkillPromptMetadata{
-				Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: skill.PluginName},
-				Name:   skill.Name,
-			})
-		}
-	}
 	return b.buildBaldaInstructionWithSkills(
 		sessionID,
 		channelType,
@@ -137,7 +131,7 @@ func (b *Builder) buildBaldaInstruction(
 		sessionBranch,
 		workspaceDir,
 		repoBranchAtStart,
-		SkillMetadataProjection{Skills: skills},
+		SkillMetadataProjection{},
 	)
 }
 
@@ -216,8 +210,8 @@ type BuilderParams struct {
 	SessionService         adksession.Service `name:"balda_runtime_session_service"`
 	MemoryEnabled          bool               `name:"balda_memory_enabled"`
 	MemorySnapshotReader   MemorySnapshotReader
-	PluginCatalog          *agentplugin.Catalog  `optional:"true"`
 	SkillMetadataProvider  SkillMetadataProvider `optional:"true"`
+	MCPMetadataProvider    MCPMetadataProvider   `optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -237,8 +231,8 @@ func NewBuilder(params BuilderParams) *Builder {
 		sessionSvc:             params.SessionService,
 		memoryEnabled:          params.MemoryEnabled,
 		memorySnapshotReader:   params.MemorySnapshotReader,
-		pluginCatalog:          params.PluginCatalog,
 		skillMetadataProvider:  params.SkillMetadataProvider,
+		mcpMetadataProvider:    params.MCPMetadataProvider,
 	}
 }
 
@@ -271,13 +265,21 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	if err != nil {
 		return nil, err
 	}
+	catalogMCPServerIDs := append([]string(nil), extraMCPServerIDs...)
+	if b.mcpMetadataProvider != nil {
+		ids, err := b.mcpMetadataProvider.MCPServerIDs(ctx, workspaceDir)
+		if err != nil {
+			return nil, fmt.Errorf("load catalog MCP metadata: %w", err)
+		}
+		catalogMCPServerIDs = append(catalogMCPServerIDs, ids...)
+	}
 	req := agentfactory.BuildRequest{
 		AgentID:          agentName,
 		Name:             agentName,
 		Description:      b.buildAgentDescription(agentName),
 		WorkingDirectory: workspaceDir,
 		Instruction:      instruction,
-		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
+		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, catalogMCPServerIDs),
 	}
 
 	ag, err := b.factory.Build(ctx, req)
@@ -608,13 +610,6 @@ func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, wo
 		projection, err = b.skillMetadataProvider.SkillMetadata(ctx, workspaceDir)
 		if err != nil {
 			return "", fmt.Errorf("load skill metadata: %w", err)
-		}
-	} else if b.pluginCatalog != nil {
-		for _, skill := range b.pluginCatalog.Skills() {
-			projection.Skills = append(projection.Skills, SkillPromptMetadata{
-				Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: skill.PluginName},
-				Name:   skill.Name,
-			})
 		}
 	}
 	return b.buildBaldaInstructionWithSkills(

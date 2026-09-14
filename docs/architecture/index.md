@@ -36,6 +36,10 @@ Use this map to find the authoritative runtime contracts.
 - Transport adapters own parsing and whitelists. Supported chat commands publish
   `commandcmd.Payload` to the independent CommandActor; its exact-name handlers
   live under scoped families in `actors/command`, and `commandfx` contains composition only.
+- `runtimecatalog` compiles immutable application/workspace snapshots;
+  `catalogapp` reconstructs durable plugin state before provider startup and
+  projects the same pinned revision to command, skill, MCP, and transport consumers.
+  Plugin aliases still execute only through the independent `CommandActor`.
 - `actorcmd` is the canonical leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata; `execution` re-exports that taxonomy as the runtime-facing compatibility facade.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, opaque delivery capability, progress policy, delivery payloads, and adapter-facing delivery operations. `deliveryfmt` resolves that capability through one immutable registry shared by prompt and delivery paths.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.
@@ -89,6 +93,10 @@ neutral MCP adapter returns bounded untrusted references.
 - `internal/apps/balda/actors/command`
 - `internal/apps/balda/commandcmd`
 - `internal/apps/balda/commandfx`
+- `internal/apps/balda/runtimecatalog`
+- `internal/apps/balda/catalogapp`
+- `internal/apps/balda/mcpruntime`
+- `internal/apps/balda/mcpfx`
 - `internal/apps/balda/questions`
 - `internal/apps/balda/sessionturn`
 - `internal/apps/balda/internalmcp`

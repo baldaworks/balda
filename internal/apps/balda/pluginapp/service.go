@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -133,7 +132,7 @@ func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activ
 	if err := os.MkdirAll(service.stateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create plugin state directory: %w", err)
 	}
-	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, activator: activator, loader: loader, now: time.Now}
+	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, kv: kv, activator: activator, loader: loader, now: time.Now}
 	return service, nil
 }
 
@@ -166,23 +165,11 @@ func (s *Service) ListInstalled(ctx context.Context) ([]PluginSummary, error) {
 		return out, nil
 	}
 	_ = ctx
-	catalog, err := s.loadCatalog()
+	plugins, err := s.legacyInstalled()
 	if err != nil {
 		return nil, err
 	}
-	plugins := catalog.Plugins()
-	if len(plugins) == 0 {
-		return nil, nil
-	}
-	out := make([]PluginSummary, 0, len(plugins))
-	for _, plugin := range plugins {
-		out = append(out, PluginSummary{
-			Name:        plugin.Name,
-			Version:     plugin.Version,
-			Description: plugin.Description,
-		})
-	}
-	return out, nil
+	return plugins, nil
 }
 
 func (s *Service) GetInstalled(ctx context.Context, name string) (PluginSummary, bool, error) {
@@ -197,28 +184,43 @@ func (s *Service) GetInstalled(ctx context.Context, name string) (PluginSummary,
 		}
 		return PluginSummary{Name: install.PluginID, Version: install.Version, Description: install.Description}, true, nil
 	}
-	catalog, err := s.loadCatalog()
+	plugins, err := s.legacyInstalled()
 	if err != nil {
 		return PluginSummary{}, false, err
 	}
-	for _, plugin := range catalog.Plugins() {
+	for _, plugin := range plugins {
 		if plugin.Name == trimmed {
-			return PluginSummary{
-				Name:        plugin.Name,
-				Version:     plugin.Version,
-				Description: plugin.Description,
-			}, true, nil
+			return plugin, true, nil
 		}
 	}
 	return PluginSummary{}, false, nil
 }
 
-func (s *Service) loadCatalog() (*agentplugin.Catalog, error) {
-	loader, err := agentplugin.NewLoader(s.stateDir)
+func (s *Service) legacyInstalled() ([]PluginSummary, error) {
+	loader, err := runtimecatalog.NewSourceLoader(runtimecatalog.SourceLimits{})
 	if err != nil {
 		return nil, err
 	}
-	return loader.Load()
+	entries, err := os.ReadDir(filepath.Join(s.stateDir, "plugins"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read installed plugins: %w", err)
+	}
+	plugins := make([]PluginSummary, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		pkg, err := loader.LoadPluginPackage(filepath.Join(s.stateDir, "plugins", entry.Name()))
+		if err != nil {
+			continue
+		}
+		plugins = append(plugins, PluginSummary{Name: pkg.Source.Descriptor.ID.Name, Version: pkg.Version, Description: pkg.Description})
+	}
+	sort.Slice(plugins, func(i, j int) bool { return plugins[i].Name < plugins[j].Name })
+	return plugins, nil
 }
 
 const marketplacePrefix = "plugin_marketplace:"
@@ -564,21 +566,19 @@ func (s *Service) Install(ctx context.Context, selector string) error {
 		_ = os.RemoveAll(stageRoot)
 		return fmt.Errorf("activate installed plugin root: %w", err)
 	}
-	loader, err := agentplugin.NewLoader(s.stateDir)
+	loader, err := runtimecatalog.NewSourceLoader(runtimecatalog.SourceLimits{})
 	if err != nil {
 		rollbackInstalledPlugin(destRoot, backupRoot)
 		return err
 	}
-	catalog, err := loader.Load()
+	source, err := loader.LoadPlugin(destRoot)
 	if err != nil {
 		rollbackInstalledPlugin(destRoot, backupRoot)
 		return err
 	}
-	for _, installed := range catalog.Plugins() {
-		if installed.Name == plugin.Name {
-			_ = os.RemoveAll(backupRoot)
-			return nil
-		}
+	if source.Descriptor.ID.Name == plugin.Name {
+		_ = os.RemoveAll(backupRoot)
+		return nil
 	}
 	rollbackInstalledPlugin(destRoot, backupRoot)
 	return fmt.Errorf("installed plugin %q did not validate", plugin.Name)
@@ -629,6 +629,22 @@ func (s *Service) Upgrade(ctx context.Context, selector string) error {
 	return s.managed.upgrade(ctx, plugin)
 }
 
+// AdoptOrigin explicitly locks an origin-unknown migrated install to one
+// unambiguous marketplace package before its first managed upgrade.
+func (s *Service) AdoptOrigin(ctx context.Context, selector string) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	plugin, found, err := s.GetAvailable(ctx, selector)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("plugin not found")
+	}
+	return s.managed.adoptOrigin(ctx, plugin)
+}
+
 func (s *Service) Disable(ctx context.Context, name string) error {
 	if s.managed == nil {
 		return errors.New("managed plugin lifecycle is unavailable")
@@ -648,6 +664,15 @@ func (s *Service) Recover(ctx context.Context) error {
 		return errors.New("managed plugin lifecycle is unavailable")
 	}
 	return s.managed.recover(ctx)
+}
+
+// MigrateLegacy imports startup-era packages as origin-unknown managed
+// revisions. Their origin must be selected explicitly before upgrade.
+func (s *Service) MigrateLegacy(ctx context.Context) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.migrateLegacy(ctx)
 }
 
 func (s *Service) Drifted(ctx context.Context, name string) (bool, error) {

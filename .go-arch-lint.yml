@@ -140,6 +140,12 @@ components:
     in:
       - internal/apps/balda/mcpfx
 
+  # Composition adapters for catalog sources, lifecycle, scope overlays, and
+  # command/skill/MCP projections.
+  catalog_wiring:
+    in:
+      - internal/apps/balda/catalogapp
+
   # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
   domain:
     in:
@@ -235,7 +241,6 @@ components:
       - internal/apps/balda/eventbus/**
       - internal/apps/balda/internalmcp
       - internal/apps/balda/paths
-      - internal/apps/balda/agentplugin
       - internal/apps/balda/redaction
       - internal/apps/balda/shutdown
       - internal/apps/sessionmcp
@@ -362,6 +367,10 @@ deps:
     mayDependOn:
       - contracts
       - mcp_runtime
+    # The runtime receives resolver/launcher/projector interfaces from
+    # composition. Deep scan would invert those constructor arguments into
+    # dependencies on their implementations.
+    deepScan: false
     anyVendorDeps: false
 
   mcp_wiring:
@@ -369,6 +378,25 @@ deps:
       - contracts
       - mcp_runtime
       - mcp_wiring
+    # Constructors inject runtime ports into provider adapters; deep scan
+    # otherwise reports the intended composition direction as an inverse edge.
+    deepScan: false
+    anyVendorDeps: true
+
+  catalog_wiring:
+    mayDependOn:
+      - contracts
+      - application
+      - domain
+      - command_wiring
+      - runtime_catalog
+      - mcp_runtime
+      - mcp_wiring
+      - storage
+      - catalog_wiring
+    # This is the explicit composition boundary for catalog-owned ports.
+    # Direct imports remain enforced while constructor injection is allowed.
+    deepScan: false
     anyVendorDeps: true
 
   domain:
@@ -550,6 +578,7 @@ deps:
       - runtime
       - ingress_wiring
       - command_wiring
+      - catalog_wiring
       - actor_wiring
       - delivery_usecase
       - delivery

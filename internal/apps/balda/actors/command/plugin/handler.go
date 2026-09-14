@@ -55,6 +55,7 @@ type Service interface {
 	GetAvailable(ctx context.Context, name string) (plugincmd.AvailablePlugin, bool, error)
 	Install(ctx context.Context, ref string) error
 	Upgrade(ctx context.Context, ref string) error
+	AdoptOrigin(ctx context.Context, ref string) error
 	Enable(ctx context.Context, name string) error
 	Disable(ctx context.Context, name string) error
 	Rollback(ctx context.Context, name, revision string) error
@@ -132,7 +133,7 @@ func (h *Handler) Handle(ctx context.Context, env actorlayer.Envelope, p command
 	switch fields[0] {
 	case plugincmd.CommandPluginsList:
 		return h.sendPluginsList(ctx, env.ID, p, fields[1:])
-	case plugincmd.CommandPluginsShow, plugincmd.CommandPluginsInstall, plugincmd.CommandPluginsUpgrade,
+	case plugincmd.CommandPluginsShow, plugincmd.CommandPluginsInstall, plugincmd.CommandPluginsUpgrade, plugincmd.CommandPluginsOrigin,
 		plugincmd.CommandPluginsEnable, plugincmd.CommandPluginsDisable, plugincmd.CommandPluginsRemove,
 		plugincmd.CommandPluginsStatus:
 		return h.sendPluginsAction(ctx, env.ID, p, fields[0], fields[1:])
@@ -205,6 +206,9 @@ func (h *Handler) sendPluginsAction(ctx context.Context, opID string, p commandc
 
 	case plugincmd.CommandPluginsUpgrade:
 		return h.runLifecycle(ctx, opID, p, action, rest[0], "Plugin upgraded.", "Could not upgrade plugin.", h.plugins.Upgrade)
+
+	case plugincmd.CommandPluginsOrigin:
+		return h.runLifecycle(ctx, opID, p, action, rest[0], "Plugin origin adopted.", "Could not adopt plugin origin.", h.plugins.AdoptOrigin)
 
 	case plugincmd.CommandPluginsEnable:
 		return h.runLifecycle(ctx, opID, p, action, rest[0], "Plugin enabled.", "Could not enable plugin.", h.plugins.Enable)

@@ -64,6 +64,9 @@ func (a *PluginManagementAdapter) Install(ctx context.Context, ref string) error
 func (a *PluginManagementAdapter) Upgrade(ctx context.Context, ref string) error {
 	return a.plugins.Upgrade(ctx, ref)
 }
+func (a *PluginManagementAdapter) AdoptOrigin(ctx context.Context, ref string) error {
+	return a.plugins.AdoptOrigin(ctx, ref)
+}
 func (a *PluginManagementAdapter) Enable(ctx context.Context, name string) error {
 	return a.plugins.Enable(ctx, name)
 }
