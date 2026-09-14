@@ -3,11 +3,9 @@ package plugincmd
 import (
 	"fmt"
 	"strings"
-
-	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 )
 
-func RenderMarketplaceStatusesPlain(statuses []pluginapp.MarketplaceStatus) string {
+func RenderMarketplaceStatusesPlain(statuses []MarketplaceStatus) string {
 	if len(statuses) == 0 {
 		return "No configured plugin marketplaces."
 	}
@@ -24,9 +22,6 @@ func RenderMarketplaceStatusesPlain(statuses []pluginapp.MarketplaceStatus) stri
 		if len(src.Sparse) > 0 {
 			lines = append(lines, "  sparse: "+strings.Join(src.Sparse, ", "))
 		}
-		if src.CachePath != "" {
-			lines = append(lines, "  cache: "+src.CachePath)
-		}
 		if src.ResolvedRef != "" {
 			lines = append(lines, "  resolved: "+src.ResolvedRef)
 		}
@@ -40,7 +35,7 @@ func RenderMarketplaceStatusesPlain(statuses []pluginapp.MarketplaceStatus) stri
 	return strings.Join(lines, "\n")
 }
 
-func RenderMarketplaceStatusesMarkdown(statuses []pluginapp.MarketplaceStatus) string {
+func RenderMarketplaceStatusesMarkdown(statuses []MarketplaceStatus) string {
 	if len(statuses) == 0 {
 		return "# Plugin marketplaces\n\nNo configured plugin marketplaces."
 	}
@@ -57,9 +52,6 @@ func RenderMarketplaceStatusesMarkdown(statuses []pluginapp.MarketplaceStatus) s
 		if len(src.Sparse) > 0 {
 			lines = append(lines, "  sparse: `"+strings.Join(src.Sparse, ", ")+"`")
 		}
-		if src.CachePath != "" {
-			lines = append(lines, "  cache: `"+src.CachePath+"`")
-		}
 		if src.ResolvedRef != "" {
 			lines = append(lines, "  resolved: `"+src.ResolvedRef+"`")
 		}
@@ -73,7 +65,7 @@ func RenderMarketplaceStatusesMarkdown(statuses []pluginapp.MarketplaceStatus) s
 	return strings.Join(lines, "\n")
 }
 
-func RenderMarketplaceStatusPlain(status pluginapp.MarketplaceStatus) string {
+func RenderMarketplaceStatusPlain(status MarketplaceStatus) string {
 	lines := []string{"Plugin marketplace:", "- name: " + status.Name, "- source: " + status.Source}
 	if status.Kind != "" {
 		lines = append(lines, "- kind: "+status.Kind)
@@ -84,17 +76,11 @@ func RenderMarketplaceStatusPlain(status pluginapp.MarketplaceStatus) string {
 	if len(status.Sparse) > 0 {
 		lines = append(lines, "  sparse: "+strings.Join(status.Sparse, ", "))
 	}
-	if status.CachePath != "" {
-		lines = append(lines, "- cache: "+status.CachePath)
-	}
 	if status.ResolvedRef != "" {
 		lines = append(lines, "- resolved: "+status.ResolvedRef)
 	}
 	if status.LastRefreshedAt != "" {
 		lines = append(lines, "- refreshed: "+status.LastRefreshedAt)
-	}
-	if status.ManifestPath != "" {
-		lines = append(lines, "- manifest: "+status.ManifestPath)
 	}
 	lines = append(lines, fmt.Sprintf("- manifest present: %t", status.ManifestPresent))
 	if status.ManifestPresent {
@@ -103,7 +89,7 @@ func RenderMarketplaceStatusPlain(status pluginapp.MarketplaceStatus) string {
 	return strings.Join(lines, "\n")
 }
 
-func RenderMarketplaceStatusMarkdown(status pluginapp.MarketplaceStatus) string {
+func RenderMarketplaceStatusMarkdown(status MarketplaceStatus) string {
 	lines := []string{"# Plugin marketplace", "", "- **Name:** `" + status.Name + "`", "- **Source:** `" + status.Source + "`"}
 	if status.Kind != "" {
 		lines = append(lines, "- **Kind:** `"+status.Kind+"`")
@@ -114,17 +100,11 @@ func RenderMarketplaceStatusMarkdown(status pluginapp.MarketplaceStatus) string 
 	if len(status.Sparse) > 0 {
 		lines = append(lines, "- **Sparse:** `"+strings.Join(status.Sparse, ", ")+"`")
 	}
-	if status.CachePath != "" {
-		lines = append(lines, "- **Cache:** `"+status.CachePath+"`")
-	}
 	if status.ResolvedRef != "" {
 		lines = append(lines, "- **Resolved:** `"+status.ResolvedRef+"`")
 	}
 	if status.LastRefreshedAt != "" {
 		lines = append(lines, "- **Refreshed:** `"+status.LastRefreshedAt+"`")
-	}
-	if status.ManifestPath != "" {
-		lines = append(lines, "- **Manifest:** `"+status.ManifestPath+"`")
 	}
 	lines = append(lines, fmt.Sprintf("- **Manifest present:** `%t`", status.ManifestPresent))
 	if status.ManifestPresent {
@@ -133,7 +113,7 @@ func RenderMarketplaceStatusMarkdown(status pluginapp.MarketplaceStatus) string 
 	return strings.Join(lines, "\n")
 }
 
-func RenderMarketplaceUpgradePlain(results []pluginapp.MarketplaceUpgradeResult) string {
+func RenderMarketplaceUpgradePlain(results []MarketplaceUpgradeResult) string {
 	if len(results) == 0 {
 		return "No configured plugin marketplaces."
 	}
@@ -154,7 +134,7 @@ func RenderMarketplaceUpgradePlain(results []pluginapp.MarketplaceUpgradeResult)
 	return strings.Join(lines, "\n")
 }
 
-func RenderMarketplaceUpgradeMarkdown(results []pluginapp.MarketplaceUpgradeResult) string {
+func RenderMarketplaceUpgradeMarkdown(results []MarketplaceUpgradeResult) string {
 	if len(results) == 0 {
 		return "# Plugin marketplaces\n\nNo configured plugin marketplaces."
 	}
@@ -175,7 +155,7 @@ func RenderMarketplaceUpgradeMarkdown(results []pluginapp.MarketplaceUpgradeResu
 	return strings.Join(lines, "\n")
 }
 
-func RenderInstalledPluginsPlain(plugins []pluginapp.PluginSummary) string {
+func RenderInstalledPluginsPlain(plugins []PluginSummary) string {
 	if len(plugins) == 0 {
 		return "No installed plugins."
 	}
@@ -193,7 +173,7 @@ func RenderInstalledPluginsPlain(plugins []pluginapp.PluginSummary) string {
 	return strings.Join(lines, "\n")
 }
 
-func RenderInstalledPluginsMarkdown(plugins []pluginapp.PluginSummary) string {
+func RenderInstalledPluginsMarkdown(plugins []PluginSummary) string {
 	if len(plugins) == 0 {
 		return "# Installed plugins\n\nNo installed plugins."
 	}
@@ -211,7 +191,7 @@ func RenderInstalledPluginsMarkdown(plugins []pluginapp.PluginSummary) string {
 	return strings.Join(lines, "\n")
 }
 
-func RenderAvailablePluginsPlain(plugins []pluginapp.AvailablePlugin) string {
+func RenderAvailablePluginsPlain(plugins []AvailablePlugin) string {
 	if len(plugins) == 0 {
 		return "No available plugins."
 	}
@@ -235,7 +215,7 @@ func RenderAvailablePluginsPlain(plugins []pluginapp.AvailablePlugin) string {
 	return strings.Join(lines, "\n")
 }
 
-func RenderAvailablePluginsMarkdown(plugins []pluginapp.AvailablePlugin) string {
+func RenderAvailablePluginsMarkdown(plugins []AvailablePlugin) string {
 	if len(plugins) == 0 {
 		return "# Available plugins\n\nNo available plugins."
 	}
@@ -259,7 +239,7 @@ func RenderAvailablePluginsMarkdown(plugins []pluginapp.AvailablePlugin) string 
 	return strings.Join(lines, "\n")
 }
 
-func RenderInstalledPluginPlain(plugin pluginapp.PluginSummary) string {
+func RenderInstalledPluginPlain(plugin PluginSummary) string {
 	lines := []string{"Plugin:", "- name: " + plugin.Name}
 	if strings.TrimSpace(plugin.Version) != "" {
 		lines = append(lines, "- version: "+plugin.Version)
@@ -271,7 +251,7 @@ func RenderInstalledPluginPlain(plugin pluginapp.PluginSummary) string {
 	return strings.Join(lines, "\n")
 }
 
-func RenderInstalledPluginMarkdown(plugin pluginapp.PluginSummary) string {
+func RenderInstalledPluginMarkdown(plugin PluginSummary) string {
 	lines := []string{"# Plugin", "", "- **Name:** `" + plugin.Name + "`"}
 	if strings.TrimSpace(plugin.Version) != "" {
 		lines = append(lines, "- **Version:** `"+plugin.Version+"`")
@@ -283,7 +263,7 @@ func RenderInstalledPluginMarkdown(plugin pluginapp.PluginSummary) string {
 	return strings.Join(lines, "\n")
 }
 
-func RenderAvailablePluginPlain(plugin pluginapp.AvailablePlugin) string {
+func RenderAvailablePluginPlain(plugin AvailablePlugin) string {
 	lines := []string{"Plugin:", "- name: " + plugin.Name, "- marketplace: " + plugin.Marketplace}
 	if strings.TrimSpace(plugin.Version) != "" {
 		lines = append(lines, "- version: "+plugin.Version)
@@ -300,7 +280,7 @@ func RenderAvailablePluginPlain(plugin pluginapp.AvailablePlugin) string {
 	return strings.Join(lines, "\n")
 }
 
-func RenderAvailablePluginMarkdown(plugin pluginapp.AvailablePlugin) string {
+func RenderAvailablePluginMarkdown(plugin AvailablePlugin) string {
 	lines := []string{"# Plugin", "", "- **Name:** `" + plugin.Name + "`", "- **Marketplace:** `" + plugin.Marketplace + "`"}
 	if strings.TrimSpace(plugin.Version) != "" {
 		lines = append(lines, "- **Version:** `"+plugin.Version+"`")
@@ -313,6 +293,39 @@ func RenderAvailablePluginMarkdown(plugin pluginapp.AvailablePlugin) string {
 	}
 	if plugin.Installed {
 		lines = append(lines, "- **Installed:** yes")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// RenderPluginStatusMarkdown renders only bounded, non-secret status fields.
+func RenderPluginStatusMarkdown(status PluginStatus) string {
+	lines := []string{
+		"# Plugin status", "",
+		"- **Name:** `" + status.Name + "`",
+		"- **Version:** `" + status.Version + "`",
+		"- **Marketplace:** `" + status.Marketplace + "`",
+		"- **Origin:** `" + status.Origin + "`",
+		"- **Revision:** `" + status.Revision + "`",
+		fmt.Sprintf("- **Enabled:** `%t`", status.Enabled),
+		fmt.Sprintf("- **Drifted:** `%t`", status.Drifted),
+		fmt.Sprintf("- **Capabilities:** commands=%d skills=%d mcp=%d diagnostics=%d",
+			status.Capabilities.Commands, status.Capabilities.Skills,
+			status.Capabilities.MCPServers, status.Capabilities.Diagnostics),
+		"", "## Runtime catalog",
+		"",
+		"- **Snapshot:** `" + status.Runtime.SnapshotID + "`",
+		fmt.Sprintf("- **Snapshot sequence:** `%d`", status.Runtime.SnapshotSequence),
+		fmt.Sprintf("- **Projection lag:** `%d`", status.Runtime.ProjectionLag),
+		fmt.Sprintf("- **Advertisements:** `%d`", status.Runtime.Advertisements),
+		fmt.Sprintf("- **Skills:** `%d` (ambiguous names: %d)", status.Runtime.Skills, status.Runtime.SkillAmbiguities),
+		fmt.Sprintf("- **MCP:** desired=%d ready=%d degraded=%d", status.Runtime.DesiredMCPServers,
+			status.Runtime.ReadyMCPServers, status.Runtime.DegradedMCPServers),
+	}
+	if len(status.Runtime.DiagnosticCodes) > 0 {
+		lines = append(lines, "- **Diagnostics:** `"+strings.Join(status.Runtime.DiagnosticCodes, "`, `")+"`")
+	}
+	if len(status.Runtime.ProjectionOmissions) > 0 {
+		lines = append(lines, "- **Projection omissions:** `"+strings.Join(status.Runtime.ProjectionOmissions, "`, `")+"`")
 	}
 	return strings.Join(lines, "\n")
 }

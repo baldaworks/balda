@@ -53,11 +53,15 @@ func TestAdvertisementProjectorGatesSyntaxAndReplacesOnRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := projectionSnapshot("snapshot-one", ready, incompatible, unready, omitted)
+	snapshot.Sequence = 9
 	if err := projector.Project(context.Background(), snapshot); err != nil {
 		t.Fatal(err)
 	}
 	if len(target.projections) != 1 || len(target.projections[0].Commands) != 1 || target.projections[0].Commands[0].Name != "deploy" {
 		t.Fatalf("projection = %+v", target.projections)
+	}
+	if got := projector.ProjectionSequence(); got != snapshot.Sequence {
+		t.Fatalf("ProjectionSequence() = %d, want %d", got, snapshot.Sequence)
 	}
 	codes := map[string]bool{}
 	for _, diagnostic := range target.projections[0].Diagnostics {
@@ -65,6 +69,10 @@ func TestAdvertisementProjectorGatesSyntaxAndReplacesOnRefresh(t *testing.T) {
 	}
 	if !codes[runtimecatalogcmd.DiagnosticCommandTransportIncompatible] || !codes[runtimecatalogcmd.DiagnosticCommandRuntimeUnavailable] {
 		t.Fatalf("diagnostics = %+v", target.projections[0].Diagnostics)
+	}
+	status := projector.status("plugin-bad_name", "revision", snapshot.Sequence)
+	if status.Advertisements != 0 || len(status.Omissions) != 1 || !strings.Contains(status.Omissions[0], runtimecatalogcmd.DiagnosticCommandTransportIncompatible) {
+		t.Fatalf("incompatible command status = %+v", status)
 	}
 
 	if err := projector.Project(context.Background(), projectionSnapshot("snapshot-two")); err != nil {

@@ -399,6 +399,39 @@ func TestManagedLifecycleSerializesDurableSwitchAndPublication(t *testing.T) {
 	}
 }
 
+func TestManagedLifecycleUpgradeCannotReinstallAfterConcurrentRemove(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, marketplaceRoot, service, activator, store := newManagedTestService(t)
+	if err := service.managed.install(ctx, writeManagedPlugin(t, marketplaceRoot, "1.0.0", false)); err != nil {
+		t.Fatal(err)
+	}
+	upgrade := writeManagedPlugin(t, marketplaceRoot, "2.0.0", true)
+	activator.started = make(chan struct{})
+	activator.release = make(chan struct{})
+	removeDone := make(chan error, 1)
+	go func() { removeDone <- service.RemoveInstalled(ctx, testPluginName) }()
+	<-activator.started
+
+	upgradeDone := make(chan error, 1)
+	go func() { upgradeDone <- service.managed.upgrade(ctx, upgrade) }()
+	select {
+	case err := <-upgradeDone:
+		t.Fatalf("upgrade crossed remove publication boundary early: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(activator.release)
+	if err := <-removeDone; err != nil {
+		t.Fatalf("RemoveInstalled() error = %v", err)
+	}
+	if err := <-upgradeDone; err == nil || err.Error() != "plugin not installed" {
+		t.Fatalf("upgrade after remove error = %v, want plugin not installed", err)
+	}
+	if _, found, err := store.GetPluginInstall(ctx, testPluginName); err != nil || found {
+		t.Fatalf("removed plugin reinstalled: found = %t, err = %v", found, err)
+	}
+}
+
 func newManagedTestService(
 	t *testing.T,
 ) (string, string, *Service, *recordingActivator, state.PluginStore) {

@@ -82,6 +82,7 @@ components:
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
+      - internal/apps/balda/plugincmd
       - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
       - internal/apps/balda/questionfmt
@@ -113,7 +114,6 @@ components:
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
-      - internal/apps/balda/plugincmd
       - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
       - internal/apps/balda/sessionmemorymcp
@@ -420,6 +420,8 @@ deps:
       - neutral_registry
       - application
       - domain
+      - runtime_catalog
+      - mcp_runtime
       - storage
       - infrastructure
     anyVendorDeps: true

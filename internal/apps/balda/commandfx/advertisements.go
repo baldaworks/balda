@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
@@ -61,8 +62,22 @@ type AdvertisementTarget interface {
 
 // AdvertisementProjector derives provider-safe aliases from one immutable snapshot.
 type AdvertisementProjector struct {
+	mu        sync.RWMutex
 	readiness CommandReadiness
 	targets   []AdvertisementTarget
+	sequence  uint64
+	projected map[string]advertisementProjectionState
+}
+
+type advertisementProjectionState struct {
+	sequence   uint64
+	projection commandcmd.AdvertisementProjection
+}
+
+type advertisementStatus struct {
+	Advertisements int
+	Lag            uint64
+	Omissions      []string
 }
 
 // NewAdvertisementProjector creates a dynamic command projection service.
@@ -86,7 +101,10 @@ func NewAdvertisementProjector(readiness CommandReadiness, targets []Advertiseme
 		seen[transport] = struct{}{}
 	}
 	sort.Slice(cloned, func(i, j int) bool { return cloned[i].Transport() < cloned[j].Transport() })
-	return &AdvertisementProjector{readiness: readiness, targets: cloned}, nil
+	return &AdvertisementProjector{
+		readiness: readiness, targets: cloned,
+		projected: make(map[string]advertisementProjectionState, len(cloned)),
+	}, nil
 }
 
 // Project replaces every provider's dynamic aliases for snapshot.
@@ -110,9 +128,67 @@ func (p *AdvertisementProjector) Project(ctx context.Context, snapshot runtimeca
 		}
 		if err := target.ReplaceCommands(ctx, projection); err != nil {
 			errs = append(errs, fmt.Errorf("replace %s command advertisements: %w", target.Transport(), err))
+			continue
+		}
+		p.mu.Lock()
+		p.projected[target.Transport()] = advertisementProjectionState{sequence: snapshot.Sequence, projection: cloneAdvertisementProjection(projection)}
+		p.mu.Unlock()
+	}
+	err := errors.Join(errs...)
+	if err == nil {
+		p.mu.Lock()
+		p.sequence = snapshot.Sequence
+		p.mu.Unlock()
+	}
+	return err
+}
+
+func (p *AdvertisementProjector) status(pluginName string, revision runtimecatalogcmd.RevisionID, currentSequence uint64) advertisementStatus {
+	if p == nil {
+		return advertisementStatus{Lag: currentSequence, Omissions: []string{"advertisement_status_unavailable"}}
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	var status advertisementStatus
+	for _, target := range p.targets {
+		projected, ok := p.projected[target.Transport()]
+		if !ok {
+			status.Lag = max(status.Lag, currentSequence)
+			status.Omissions = append(status.Omissions, target.Transport()+"/projection_unavailable")
+			continue
+		}
+		if projected.sequence < currentSequence {
+			status.Lag = max(status.Lag, currentSequence-projected.sequence)
+		}
+		for _, command := range projected.projection.Commands {
+			if pluginSource(command.ID.Source, pluginName) && command.Revision == revision {
+				status.Advertisements++
+			}
+		}
+		for _, diagnostic := range projected.projection.Diagnostics {
+			if pluginSource(diagnostic.Source, pluginName) {
+				status.Omissions = append(status.Omissions, target.Transport()+"/"+diagnostic.Code)
+			}
 		}
 	}
-	return errors.Join(errs...)
+	return status
+}
+
+func cloneAdvertisementProjection(projection commandcmd.AdvertisementProjection) commandcmd.AdvertisementProjection {
+	out := projection
+	out.Commands = append([]commandcmd.ProjectedCommand(nil), projection.Commands...)
+	out.Diagnostics = append([]runtimecatalogcmd.Diagnostic(nil), projection.Diagnostics...)
+	return out
+}
+
+// ProjectionSequence returns the newest fully applied catalog sequence.
+func (p *AdvertisementProjector) ProjectionSequence() uint64 {
+	if p == nil {
+		return 0
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.sequence
 }
 
 func orderedPluginCommands(snapshot runtimecatalogcmd.Snapshot) []runtimecatalogcmd.CommandDescriptor {

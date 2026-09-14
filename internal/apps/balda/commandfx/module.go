@@ -23,7 +23,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/go-actorlayer/dispatch"
@@ -139,10 +141,19 @@ func (p *tgBotUsernameProvider) GetBotUsername(ctx context.Context) string {
 
 type pluginParams struct {
 	fx.In
-	OwnerStore *auth.OwnerStore   `optional:"true"`
-	Plugins    *pluginapp.Service `optional:"true"`
-	Dispatcher actortransport.Dispatcher
-	Logger     zerolog.Logger
+	OwnerStore    *auth.OwnerStore   `optional:"true"`
+	Plugins       *pluginapp.Service `optional:"true"`
+	CatalogStatus *CatalogStatusReader
+	Telemetry     commandplugin.Observer
+	Dispatcher    actortransport.Dispatcher
+	Logger        zerolog.Logger
+}
+
+type catalogStatusParams struct {
+	fx.In
+	Catalog *runtimecatalog.Store   `optional:"true"`
+	MCP     *mcpruntime.Reconciler  `optional:"true"`
+	Ads     *AdvertisementProjector `optional:"true"`
 }
 
 type commandActorParams struct {
@@ -276,9 +287,9 @@ var Module = fx.Module("balda_command",
 				}
 				var plugins commandplugin.Service
 				if p.Plugins != nil {
-					plugins = p.Plugins
+					plugins = NewPluginManagementAdapter(p.Plugins, p.CatalogStatus)
 				}
-				return commandplugin.New(ownerStore, plugins, p.Dispatcher, p.Logger)
+				return commandplugin.New(ownerStore, plugins, p.Dispatcher, p.Logger, p.Telemetry)
 			},
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),
@@ -312,5 +323,9 @@ var Module = fx.Module("balda_command",
 			fx.As(new(commandcmd.Ingress)),
 		),
 		fx.Annotate(NewPluginTurnExecutor, fx.As(new(command.PluginExecutor))),
+		func(p catalogStatusParams) *CatalogStatusReader {
+			return NewCatalogStatusReader(p.Catalog, p.MCP, p.Ads)
+		},
+		fx.Annotate(NewPluginManagementTelemetry, fx.As(new(commandplugin.Observer))),
 	),
 )

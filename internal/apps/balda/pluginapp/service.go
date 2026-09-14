@@ -45,6 +45,19 @@ type Service struct {
 	managed  *managedLifecycle
 }
 
+// InstalledState is the application-owned durable plugin state exposed only
+// to composition adapters. It contains logical references, never host paths.
+type InstalledState struct {
+	Name         string
+	Version      string
+	Marketplace  string
+	Origin       string
+	Revision     string
+	Enabled      bool
+	Drifted      bool
+	Capabilities CapabilitySummary
+}
+
 type MarketplaceSource struct {
 	Name   string
 	Source string
@@ -601,6 +614,21 @@ func (s *Service) Enable(ctx context.Context, name string) error {
 	return s.managed.setEnabled(ctx, strings.TrimSpace(name), true)
 }
 
+// Upgrade validates and atomically upgrades an existing managed installation.
+func (s *Service) Upgrade(ctx context.Context, selector string) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	plugin, found, err := s.GetAvailable(ctx, selector)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("plugin not found")
+	}
+	return s.managed.upgrade(ctx, plugin)
+}
+
 func (s *Service) Disable(ctx context.Context, name string) error {
 	if s.managed == nil {
 		return errors.New("managed plugin lifecycle is unavailable")
@@ -649,6 +677,30 @@ func (s *Service) Capabilities(ctx context.Context, selector string) (Capability
 		return CapabilityDiff{}, errors.New("plugin not found")
 	}
 	return s.managed.capabilityDiff(ctx, plugin)
+}
+
+// Inspect returns bounded durable state for one managed installation.
+func (s *Service) Inspect(ctx context.Context, name string) (InstalledState, bool, error) {
+	if s.managed == nil {
+		return InstalledState{}, false, errors.New("managed plugin lifecycle is unavailable")
+	}
+	install, found, err := s.managed.store.GetPluginInstall(ctx, strings.TrimSpace(name))
+	if err != nil || !found {
+		return InstalledState{}, found, err
+	}
+	var capabilities CapabilitySummary
+	if err := json.Unmarshal([]byte(install.CapabilityJSON), &capabilities); err != nil {
+		return InstalledState{}, false, fmt.Errorf("decode plugin capabilities: %w", err)
+	}
+	drifted, err := s.managed.drifted(ctx, install.PluginID)
+	if err != nil {
+		return InstalledState{}, false, err
+	}
+	return InstalledState{
+		Name: install.PluginID, Version: install.Version, Marketplace: install.OriginMarketplace,
+		Origin: install.OriginPath, Revision: install.ActiveRevisionID, Enabled: install.Enabled,
+		Drifted: drifted, Capabilities: capabilities,
+	}, true, nil
 }
 
 func splitSelector(selector string) (name string, marketplace string) {

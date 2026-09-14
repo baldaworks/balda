@@ -65,13 +65,25 @@ type managedLifecycle struct {
 func (m *managedLifecycle) install(ctx context.Context, plugin AvailablePlugin) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.installLocked(ctx, plugin, false)
+}
 
+func (m *managedLifecycle) upgrade(ctx context.Context, plugin AvailablePlugin) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.installLocked(ctx, plugin, true)
+}
+
+func (m *managedLifecycle) installLocked(ctx context.Context, plugin AvailablePlugin, requireInstalled bool) error {
 	if _, err := m.reconcilePending(ctx, plugin.Name); err != nil {
 		return err
 	}
 	existing, found, err := m.store.GetPluginInstall(ctx, plugin.Name)
 	if err != nil {
 		return err
+	}
+	if requireInstalled && !found {
+		return errors.New("plugin not installed")
 	}
 	originPath, err := marketplaceRelativePath(plugin)
 	if err != nil {

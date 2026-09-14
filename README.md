@@ -202,6 +202,12 @@ key: slackagent:c:T0BFTRBFA94:C0BU4LKUB6W
 See the [complete command reference](docs/commands.md) for syntax, transport
 availability, access, valid contexts, effects, errors, and examples.
 
+Owner plugin lifecycle commands include `install`, `upgrade`, `enable`,
+`disable`, `rollback`, `remove`, explicit `purge`, and bounded `status`.
+Every chat command is durably published and executed by `CommandActor`;
+plugin-contributed commands are declarative, revision-pinned normal turns and
+never native plugin handlers.
+
 ## Configuration
 
 Balda loads `.config/balda/config.yaml` and then applies `BALDA_*` environment
