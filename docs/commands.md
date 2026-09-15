@@ -26,6 +26,7 @@ does not use Telegram or Zulip owner records.
 | `/auto [on\|off]` | yes | yes | no | owner, collaborator | current session |
 | `/usage` | yes | yes | no | owner, collaborator | current session |
 | `/reset` | yes | yes | `/balda reset` | owner, collaborator; signed Slack workspace member | current session |
+| `/new` | yes | yes | no | owner, collaborator | current session |
 | `/locator` | yes | yes | no | owner, collaborator | current session |
 | `/balda locator` | no | no | yes | workspace member | current conversation |
 | `/close` | yes | yes | no | owner, collaborator | direct message |
@@ -101,11 +102,12 @@ forms. Toggling auto mode does not reset history or start GoalKeeper.
 Shows the most recently recorded provider usage for the current session. If no
 snapshot exists, Balda says so. It does not query a provider or start a turn.
 
-### `/reset`
+### `/reset` and `/new`
 
-This command cancels current session work, clears that session's
-history, and immediately creates a fresh runtime session at the same locator.
-It does not close the underlying chat or topic and accepts no arguments.
+These commands cancel current session work, clear that session's
+history, and immediately create a fresh runtime session at the same locator.
+`/new` is an alias for `/reset`. Neither command closes the underlying chat or
+topic, and neither accepts arguments.
 
 ### `/close`
 

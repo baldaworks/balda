@@ -16,3 +16,9 @@ func (h HandlerFunc) Name() string { return h.CommandName }
 func (h HandlerFunc) Handle(ctx context.Context, env actorlayer.Envelope, payload commandcmd.Payload) error {
 	return h.Run(ctx, env, payload)
 }
+
+// Alias exposes target under another command name while preserving the
+// original invocation payload for usage and audit messages.
+func Alias(name string, target Handler) Handler {
+	return HandlerFunc{CommandName: name, Run: target.Handle}
+}

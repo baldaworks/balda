@@ -12,12 +12,12 @@ import (
 	commandgoalkeeper "github.com/baldaworks/balda/internal/apps/balda/actors/command/goalkeeper"
 	commandhelp "github.com/baldaworks/balda/internal/apps/balda/actors/command/help"
 	commandlocator "github.com/baldaworks/balda/internal/apps/balda/actors/command/locator"
+	commandplugin "github.com/baldaworks/balda/internal/apps/balda/actors/command/plugin"
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
 	commandstart "github.com/baldaworks/balda/internal/apps/balda/actors/command/start"
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
 	commanduser "github.com/baldaworks/balda/internal/apps/balda/actors/command/user"
-	commandplugin "github.com/baldaworks/balda/internal/apps/balda/actors/command/plugin"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
@@ -38,6 +38,11 @@ type resetParams struct {
 	Sessions   *session.Manager
 	Canceller  appports.SessionWorkCanceller
 	Dispatcher actortransport.Dispatcher
+}
+
+func newResetHandlers(p resetParams) []command.Handler {
+	handler := commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
+	return []command.Handler{handler, command.Alias("new", handler)}
 }
 
 type usageParams struct {
@@ -97,7 +102,7 @@ type startParams struct {
 	ChannelAuth       *auth.ChannelAuthService     `optional:"true"`
 	Bootstrap         *sessionapp.BootstrapService `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
-	AuthToken         string                       `name:"balda_auth_token" optional:"true"`
+	AuthToken         string `name:"balda_auth_token" optional:"true"`
 	Logger            zerolog.Logger
 }
 
@@ -149,10 +154,8 @@ var Module = fx.Module("balda_command",
 	fx.Provide(
 		fx.Annotate(commandlocator.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(
-			func(p resetParams) *commandreset.Handler {
-				return commandreset.New(p.Sessions, p.Canceller, p.Dispatcher)
-			},
-			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
+			newResetHandlers,
+			fx.ResultTags(`group:"balda_command_handlers,flatten"`),
 		),
 		fx.Annotate(commandhelp.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(

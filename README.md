@@ -72,7 +72,7 @@ From there you can:
 - ask for ordinary help in chat
 - start a goal loop with `/goalkeeper <objective>`
 - stop the current turn with `/cancel`
-- reset the current session with `/reset`
+- reset the current session with `/reset` or its `/new` alias
 
 ## Main workflows
 
@@ -184,7 +184,8 @@ ENTRYPOINT ["balda"]
 ## Core commands
 
 Balda provides onboarding, session control, GoalKeeper, locator, usage, user,
-and plugin commands. Telegram and Zulip use `/locator` and `/reset`; Slack
+and plugin commands. Telegram and Zulip use `/locator`, `/reset`, and the
+`/new` alias for `/reset`; Slack
 exposes the conversation-scoped forms `/balda locator` and `/balda reset`.
 
 Slack formats the response for scanning and copying:

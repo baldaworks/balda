@@ -104,6 +104,7 @@ Balda supports these commands in Zulip:
 | `/goalkeeper <objective>` | Start goal work from the current session context |
 | `/goalkeeper clear` | Stop active goal work for the current session |
 | `/reset` | Reset current session history |
+| `/new` | Alias for `/reset` |
 | `/cancel` | Cancel current session turn; active goal runs continue |
 | `/locator` | Show current locator ref |
 | `/close` | Reset DM session history (DM only) |
