@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -32,6 +33,8 @@ type Request struct {
 	DeliveryOptions  deliveryfmt.Options
 	MemoryRefresh    MemoryRefresh
 	MemoryRunOptions []adkrunner.RunOption
+	SelectedSkill    *runtimecatalogcmd.LoadedSkill
+	Runner           *adkrunner.Runner
 }
 
 // Executor performs the provider iteration and delivery side effects.
@@ -53,6 +56,7 @@ type SessionContext struct {
 
 type ActiveSession interface {
 	GetRunner() *adkrunner.Runner
+	GetRuntimeSnapshotID() string
 	GetSessionID() string
 	GetAgentSessionID() string
 	GetUserID() string
@@ -82,11 +86,21 @@ type MemoryStateProvider interface {
 	Snapshot(ctx context.Context) (MemorySnapshot, error)
 }
 
+// SkillLoader is the turn assembler's local revision-pinned content port.
+type SkillLoader interface {
+	LoadPinned(
+		ctx context.Context,
+		selection runtimecatalogcmd.SkillSelection,
+		resources []string,
+	) (runtimecatalogcmd.LoadedSkill, error)
+}
+
 // Runner restores the target session before delegating provider execution.
 type Runner struct {
 	sessions SessionAccessor
 	executor Executor
 	memory   MemoryStateProvider
+	skills   SkillLoader
 	logger   zerolog.Logger
 }
 
@@ -96,20 +110,37 @@ type runnerParams struct {
 	Sessions SessionAccessor
 	Executor Executor
 	Memory   MemoryStateProvider
+	Skills   SkillLoader `optional:"true"`
 	Logger   zerolog.Logger
 }
 
 // NewRunner creates the queued session-turn use case.
 func NewRunner(params runnerParams) *Runner {
-	return New(params.Sessions, params.Executor, params.Memory, params.Logger)
+	return newRunner(params.Sessions, params.Executor, params.Memory, params.Skills, params.Logger)
 }
 
 // New creates a Runner from explicit dependencies.
 func New(sessions SessionAccessor, executor Executor, memoryStore MemoryStateProvider, logger zerolog.Logger) *Runner {
+	return NewWithSkillLoader(sessions, executor, memoryStore, nil, logger)
+}
+
+// NewWithSkillLoader creates a Runner with lazy selected-skill loading.
+func NewWithSkillLoader(
+	sessions SessionAccessor,
+	executor Executor,
+	memoryStore MemoryStateProvider,
+	skills SkillLoader,
+	logger zerolog.Logger,
+) *Runner {
+	return newRunner(sessions, executor, memoryStore, skills, logger)
+}
+
+func newRunner(sessions SessionAccessor, executor Executor, memoryStore MemoryStateProvider, skills SkillLoader, logger zerolog.Logger) *Runner {
 	return &Runner{
 		sessions: sessions,
 		executor: executor,
 		memory:   memoryStore,
+		skills:   skills,
 		logger:   logger.With().Str("component", "balda.session_turn").Logger(),
 	}
 }
@@ -173,6 +204,22 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 	if preparedMemory.updatedAt != "" {
 		payload.Metadata = &turncmd.SessionTurnMetadata{LatestMemoryAt: preparedMemory.updatedAt}
 	}
+	var selectedSkill *runtimecatalogcmd.LoadedSkill
+	providerRunner := topicSession.GetRunner()
+	if payload.Skill != nil {
+		if r.skills == nil {
+			return fmt.Errorf("session turn: selected skill loader is unavailable")
+		}
+		sessionSnapshotID := runtimecatalogcmd.SnapshotID(strings.TrimSpace(topicSession.GetRuntimeSnapshotID()))
+		if sessionSnapshotID == "" || payload.Skill.Snapshot != sessionSnapshotID {
+			return fmt.Errorf("session turn: selected skill snapshot does not match session runtime")
+		}
+		loaded, loadErr := r.skills.LoadPinned(ctx, *payload.Skill, nil)
+		if loadErr != nil {
+			return fmt.Errorf("load selected skill: %w", loadErr)
+		}
+		selectedSkill = &loaded
+	}
 	return r.executor.ExecuteSessionTurn(ctx, Request{
 		Payload:        payload,
 		Session:        topicSession,
@@ -187,6 +234,8 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 		DeliveryOptions:  turncmd.NormalizeSessionDeliveryOptions(payload),
 		MemoryRefresh:    preparedMemory.refresh,
 		MemoryRunOptions: preparedMemory.runOptions,
+		SelectedSkill:    selectedSkill,
+		Runner:           providerRunner,
 	})
 }
 

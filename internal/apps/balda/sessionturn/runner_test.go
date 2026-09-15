@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
@@ -24,6 +25,92 @@ func TestRunnerRequiresSessionManager(t *testing.T) {
 	err := runner.RunSessionTurnPayload(context.Background(), turncmd.SessionTurnPayload{})
 	if err == nil || !strings.Contains(err.Error(), "session manager is unavailable") {
 		t.Fatalf("RunSessionTurnPayload() error = %v, want missing session manager", err)
+	}
+}
+
+func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
+	t.Parallel()
+
+	executor := &testExecutor{}
+	loader := &testSkillLoader{loaded: runtimecatalogcmd.LoadedSkill{
+		Ref: runtimecatalogcmd.SkillRef{
+			Source:   runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "demo"},
+			Revision: "revision-1",
+			Name:     "review",
+		},
+		Instructions: "review carefully",
+	}}
+	pinnedRunner := &adkrunner.Runner{}
+	runner := NewWithSkillLoader(
+		&testSessionAccessor{active: &testActiveSession{runner: pinnedRunner, runtimeSnapshotID: "snapshot-1"}},
+		executor,
+		nil,
+		loader,
+		zerolog.Nop(),
+	)
+	payload := testTurnPayload()
+	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "snapshot-1", Ref: loader.loaded.Ref}
+	if err := runner.RunSessionTurnPayload(context.Background(), payload); err != nil {
+		t.Fatalf("RunSessionTurnPayload() error = %v", err)
+	}
+	if len(loader.selections) != 1 || loader.selections[0] != *payload.Skill {
+		t.Fatalf("skill selections = %+v, want durable selection %+v", loader.selections, *payload.Skill)
+	}
+	request := executor.singleRequest(t)
+	if request.SelectedSkill == nil || request.SelectedSkill.Ref.Revision != "revision-1" {
+		t.Fatalf("selected skill = %+v, want pinned loaded content", request.SelectedSkill)
+	}
+	if request.Runner != pinnedRunner {
+		t.Fatalf("runner = %p, want existing session runner %p", request.Runner, pinnedRunner)
+	}
+}
+
+func TestRunnerFailsClosedWhenSelectedSkillLoaderIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	executor := &testExecutor{}
+	runner := New(&testSessionAccessor{active: &testActiveSession{runtimeSnapshotID: "snapshot-1"}}, executor, nil, zerolog.Nop())
+	payload := testTurnPayload()
+	payload.Skill = &runtimecatalogcmd.SkillSelection{
+		Snapshot: "snapshot-1",
+		Ref:      runtimecatalogcmd.SkillRef{Revision: "revision-1", Name: "review"},
+	}
+	err := runner.RunSessionTurnPayload(context.Background(), payload)
+	if err == nil || !strings.Contains(err.Error(), "selected skill loader is unavailable") {
+		t.Fatalf("RunSessionTurnPayload() error = %v, want unavailable loader", err)
+	}
+	if len(executor.requests) != 0 {
+		t.Fatalf("executor requests = %d, want none", len(executor.requests))
+	}
+}
+
+func TestRunnerFailsClosedWhenSelectedSkillSnapshotDiffersFromSession(t *testing.T) {
+	t.Parallel()
+
+	executor := &testExecutor{}
+	loader := &testSkillLoader{}
+	runner := NewWithSkillLoader(
+		&testSessionAccessor{active: &testActiveSession{runtimeSnapshotID: "session-snapshot"}},
+		executor,
+		nil,
+		loader,
+		zerolog.Nop(),
+	)
+	payload := testTurnPayload()
+	payload.Skill = &runtimecatalogcmd.SkillSelection{
+		Snapshot: "other-snapshot",
+		Ref:      runtimecatalogcmd.SkillRef{Revision: "revision-1", Name: "review"},
+	}
+
+	err := runner.RunSessionTurnPayload(context.Background(), payload)
+	if err == nil || !strings.Contains(err.Error(), "does not match session runtime") {
+		t.Fatalf("RunSessionTurnPayload() error = %v, want snapshot mismatch", err)
+	}
+	if len(loader.selections) != 0 {
+		t.Fatalf("skill selections = %d, want none", len(loader.selections))
+	}
+	if len(executor.requests) != 0 {
+		t.Fatalf("executor requests = %d, want none", len(executor.requests))
 	}
 }
 
@@ -276,6 +363,20 @@ type testMemoryProvider struct {
 	err      error
 }
 
+type testSkillLoader struct {
+	loaded     runtimecatalogcmd.LoadedSkill
+	selections []runtimecatalogcmd.SkillSelection
+}
+
+func (l *testSkillLoader) LoadPinned(
+	_ context.Context,
+	selection runtimecatalogcmd.SkillSelection,
+	_ []string,
+) (runtimecatalogcmd.LoadedSkill, error) {
+	l.selections = append(l.selections, selection)
+	return l.loaded, nil
+}
+
 type disabledMemoryProvider struct{}
 
 func (disabledMemoryProvider) Enabled() bool { return false }
@@ -310,14 +411,17 @@ func (a *testSessionAccessor) EnsureSession(context.Context, SessionContext, str
 }
 
 type testActiveSession struct {
-	state    map[string]any
-	stateErr error
+	state             map[string]any
+	stateErr          error
+	runner            *adkrunner.Runner
+	runtimeSnapshotID string
 }
 
-func (*testActiveSession) GetRunner() *adkrunner.Runner { return nil }
-func (*testActiveSession) GetSessionID() string         { return "tg-1-0" }
-func (*testActiveSession) GetAgentSessionID() string    { return "agent-session-1" }
-func (*testActiveSession) GetUserID() string            { return "user-1" }
+func (s *testActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
+func (s *testActiveSession) GetRuntimeSnapshotID() string { return s.runtimeSnapshotID }
+func (*testActiveSession) GetSessionID() string           { return "tg-1-0" }
+func (*testActiveSession) GetAgentSessionID() string      { return "agent-session-1" }
+func (*testActiveSession) GetUserID() string              { return "user-1" }
 
 func (s *testActiveSession) RuntimeStateValue(_ context.Context, key string) (any, bool, error) {
 	if s.stateErr != nil {

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
@@ -28,6 +29,21 @@ type SessionRuntimeRequest struct {
 	AgentSessionID string
 	LineageID      string
 	WorkspaceDir   string
+	// RuntimeSnapshotID requests an exact persisted capability snapshot.
+	RuntimeSnapshotID string
+}
+
+// SessionCapabilityBinding is one immutable catalog projection owned by a session runtime.
+type SessionCapabilityBinding struct {
+	SnapshotID   runtimecatalogcmd.SnapshotID
+	Skills       SkillMetadataProjection
+	MCPServerIDs []string
+	Close        func() error
+}
+
+// SessionCapabilityBinder selects commands, skills, and MCP from one catalog snapshot.
+type SessionCapabilityBinder interface {
+	BindSessionCapabilities(ctx context.Context, request SessionRuntimeRequest) (SessionCapabilityBinding, error)
 }
 
 // ScopedMCPServer is an authenticated per-session MCP endpoint registration.
@@ -56,12 +72,14 @@ type RuntimeManager struct {
 	baldaMCPServerIDs []string
 	goalWorkspaces    *WorkspaceManager
 	sessionMCPBinder  SessionMCPBinder
+	capabilityBinder  SessionCapabilityBinder
 	mcpRegistry       *mcpregistry.MapRegistry
 	logger            zerolog.Logger
 
 	mu             sync.RWMutex
 	runtime        *BuiltRuntime
 	scopedRuntimes map[string]*BuiltRuntime
+	scopedSequence uint64
 }
 
 // RuntimeManagerParams wires RuntimeManager dependencies.
@@ -76,6 +94,7 @@ type RuntimeManagerParams struct {
 	WorkspaceBaseRef  string           `name:"balda_workspace_base_branch"`
 	BaldaMCPServerIDs []string         `name:"balda_mcp_servers"`
 	SessionMCPBinder  SessionMCPBinder `optional:"true"`
+	CapabilityBinder  SessionCapabilityBinder
 	MCPRegistry       *mcpregistry.MapRegistry
 	Logger            zerolog.Logger
 }
@@ -162,6 +181,7 @@ func NewRuntimeManager(p RuntimeManagerParams) *RuntimeManager {
 		workspaceEnabled:  p.WorkspaceEnabled,
 		baldaMCPServerIDs: append([]string(nil), p.BaldaMCPServerIDs...),
 		sessionMCPBinder:  p.SessionMCPBinder,
+		capabilityBinder:  p.CapabilityBinder,
 		mcpRegistry:       p.MCPRegistry,
 		goalWorkspaces:    NewWorkspaceManagerWithSessionsDir(p.WorkingDir, p.StateDir, p.WorkspaceBaseRef, "goals"),
 		logger:            p.Logger.With().Str("component", "balda.runtime_manager").Logger(),
@@ -248,69 +268,139 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 		return nil, fmt.Errorf("balda runtime manager is required")
 	}
 	m.mu.RLock()
+	binder := m.capabilityBinder
+	m.mu.RUnlock()
+	if binder == nil {
+		return nil, fmt.Errorf("session capability binder is required")
+	}
+	capabilities, err := binder.BindSessionCapabilities(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("bind session capabilities: %w", err)
+	}
+	snapshotID := strings.TrimSpace(string(capabilities.SnapshotID))
+	if snapshotID == "" || capabilities.Skills.Snapshot != capabilities.SnapshotID {
+		closeSessionCapabilities(capabilities)
+		return nil, fmt.Errorf("session capability binding is incomplete")
+	}
+	requestedSnapshotID := strings.TrimSpace(request.RuntimeSnapshotID)
+	if requestedSnapshotID != "" && snapshotID != requestedSnapshotID {
+		closeSessionCapabilities(capabilities)
+		return nil, fmt.Errorf("session capability snapshot %q does not match requested snapshot %q", snapshotID, requestedSnapshotID)
+	}
+	return m.runtimeForSession(ctx, request, capabilities)
+}
+
+func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionRuntimeRequest, capabilities SessionCapabilityBinding) (*BuiltRuntime, error) {
+	if m == nil {
+		return nil, fmt.Errorf("balda runtime manager is required")
+	}
+	m.mu.RLock()
 	builder := m.builder
 	providerID := strings.TrimSpace(m.providerID)
 	workingDir := strings.TrimSpace(request.WorkspaceDir)
 	binder := m.sessionMCPBinder
 	registry := m.mcpRegistry
+	hostMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
 	if workingDir == "" {
 		workingDir = m.workingDir
 	}
 	m.mu.RUnlock()
-	if binder == nil || registry == nil {
+	bindingEnabled := binder != nil && registry != nil
+	if status, ok := binder.(sessionMCPBinderStatus); ok && !status.SessionMCPEnabled() {
+		bindingEnabled = false
+	}
+	hasCapabilities := strings.TrimSpace(string(capabilities.SnapshotID)) != ""
+	if !bindingEnabled && !hasCapabilities {
 		return m.Runtime(ctx)
 	}
-	if status, ok := binder.(sessionMCPBinderStatus); ok && !status.SessionMCPEnabled() {
-		return m.Runtime(ctx)
+	if len(capabilities.MCPServerIDs) > 0 && registry == nil {
+		closeSessionCapabilities(capabilities)
+		return nil, fmt.Errorf("MCP registry is required for session capabilities")
 	}
 	if builder == nil {
+		closeSessionCapabilities(capabilities)
 		return nil, fmt.Errorf("agent builder is required")
 	}
 	if providerID == "" {
+		closeSessionCapabilities(capabilities)
 		return nil, fmt.Errorf("balda provider is not configured")
 	}
-	binding, err := binder.BindSession(ctx, request)
-	if err != nil {
-		return nil, fmt.Errorf("bind session MCP context: %w", err)
+	var binding ScopedMCPServer
+	extraMCPServerIDs := pinnedRuntimeMCPServerIDs(hostMCPServerIDs, capabilities.MCPServerIDs)
+	if bindingEnabled {
+		var err error
+		binding, err = binder.BindSession(ctx, request)
+		if err != nil {
+			closeSessionCapabilities(capabilities)
+			return nil, fmt.Errorf("bind session MCP context: %w", err)
+		}
+		if strings.TrimSpace(binding.ID) == "" || strings.TrimSpace(binding.Config.URL) == "" {
+			if binding.Release != nil {
+				_ = binding.Release()
+			}
+			closeSessionCapabilities(capabilities)
+			return nil, fmt.Errorf("session MCP binding is incomplete")
+		}
+		registry.Set(binding.ID, binding.Config)
+		extraMCPServerIDs = append(extraMCPServerIDs, binding.ID)
 	}
-	if strings.TrimSpace(binding.ID) == "" || strings.TrimSpace(binding.Config.URL) == "" {
+	runtime, err := builder.BuildRuntimeWithCapabilities(ctx, providerID, workingDir, nil, extraMCPServerIDs, capabilities.Skills)
+	if err != nil {
+		if binding.ID != "" {
+			registry.Delete(binding.ID)
+		}
 		if binding.Release != nil {
 			_ = binding.Release()
 		}
-		return nil, fmt.Errorf("session MCP binding is incomplete")
-	}
-	registry.Set(binding.ID, binding.Config)
-	runtime, err := builder.BuildRuntimeWithMCPServerIDs(ctx, providerID, workingDir, nil, []string{binding.ID})
-	if err != nil {
-		registry.Delete(binding.ID)
-		if binding.Release != nil {
-			_ = binding.Release()
-		}
+		closeSessionCapabilities(capabilities)
 		return nil, err
 	}
+	m.mu.Lock()
+	m.scopedSequence++
+	scopedID := binding.ID
+	if scopedID == "" {
+		scopedID = fmt.Sprintf("session-runtime-%d", m.scopedSequence)
+	}
+	m.mu.Unlock()
 	var once sync.Once
 	closeScoped := func() error {
 		var closeErr error
 		once.Do(func() {
-			registry.Delete(binding.ID)
+			if binding.ID != "" {
+				registry.Delete(binding.ID)
+			}
 			if binding.Release != nil {
 				closeErr = errors.Join(closeErr, binding.Release())
 			}
 			closeErr = errors.Join(closeErr, closeRuntimeAgent(runtime.Agent))
+			if capabilities.Close != nil {
+				closeErr = errors.Join(closeErr, capabilities.Close())
+			}
 			m.mu.Lock()
-			delete(m.scopedRuntimes, binding.ID)
+			delete(m.scopedRuntimes, scopedID)
 			m.mu.Unlock()
 		})
 		return closeErr
 	}
 	runtime.Close = closeScoped
+	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
 	m.mu.Lock()
 	if m.scopedRuntimes == nil {
 		m.scopedRuntimes = make(map[string]*BuiltRuntime)
 	}
-	m.scopedRuntimes[binding.ID] = runtime
+	m.scopedRuntimes[scopedID] = runtime
 	m.mu.Unlock()
 	return runtime, nil
+}
+
+func closeSessionCapabilities(capabilities SessionCapabilityBinding) {
+	if capabilities.Close != nil {
+		_ = capabilities.Close()
+	}
+}
+
+func pinnedRuntimeMCPServerIDs(hostConfigured, snapshotPinned []string) []string {
+	return mergeMCPServerIDsWithBase(hostConfigured, nil, snapshotPinned)
 }
 
 // PrepareGoalRun creates an isolated GoalKeeper execution context using the

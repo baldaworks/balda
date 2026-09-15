@@ -9,9 +9,10 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
@@ -138,6 +139,7 @@ type applicationLifecycleParams struct {
 	LC                   fx.Lifecycle
 	Logger               zerolog.Logger
 	MCP                  *internalmcp.InternalMCPManager
+	Catalog              *catalogapp.Lifecycle
 	Runtime              *baldaagent.RuntimeManager
 	Sessions             *session.Manager
 	Bus                  *natsbus.Bus
@@ -169,6 +171,7 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegramLifecycle) []lifecycleStage {
 	stages := []lifecycleStage{
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
+		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
 			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}, stop: func(ctx context.Context) error {

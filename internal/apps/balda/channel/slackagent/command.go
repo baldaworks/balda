@@ -19,7 +19,7 @@ var supportedCommands = []string{"locator", "reset"}
 
 func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
 
-func decodeCommandRequest(body []byte) (commandcmd.Request, error) {
+func decodeCommandRequestWithRegistry(body []byte, registry *commandcmd.Registry) (commandcmd.Request, error) {
 	form, err := url.ParseQuery(string(body))
 	if err != nil {
 		return commandcmd.Request{}, fmt.Errorf("decode slack command form: %w", err)
@@ -46,7 +46,7 @@ func decodeCommandRequest(body []byte) (commandcmd.Request, error) {
 		return commandcmd.Request{}, fmt.Errorf("classify slack command conversation: %w", err)
 	}
 	fields := strings.Fields(form.Get("text"))
-	if len(fields) == 0 || !commandSupported(strings.ToLower(fields[0])) {
+	if len(fields) == 0 || (!commandSupported(strings.ToLower(fields[0])) && (registry == nil || !registry.Supports(ChannelType, fields[0]))) {
 		return commandcmd.Request{}, errUnsupportedCommand
 	}
 	name := strings.ToLower(fields[0])

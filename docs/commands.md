@@ -168,18 +168,32 @@ chat commands follow this path:
 
 ```text
 transport parser + whitelist
-  -> ingress access check + durable publish
+  -> ingress parse/auth + snapshot-pinned durable publish
   -> CommandActor
-  -> exact name handler in scoped family
+  -> built-in exact-name handler OR declarative plugin-command adapter
+  -> normal turn with the pinned inline command instruction
   -> session/delivery/auth/app ports
 ```
 
 `commandcmd` owns the neutral envelope. `actors/command` owns exact-name
-routing and command policy across scoped families (`locator`, `reset`, `info`,
-`auto`, `control`, `goalkeeper`, `topic`, `closecmd`, `bootstrap`, `user`,
-`plugin`). `commandfx` wires actor ports. Transport packages do not import actor
-or application packages. Ingress handlers parse, perform auth/session checks, and
-publish `commandcmd.Request` envelopes.
+routing and command policy across scoped handler packages (`start`, `help`,
+`usage`, `locator`, `topic`, `reset`, `closecmd`, `cancel`, `auto`,
+`goalkeeper`, `user`, and `plugin`). `commandfx` wires actor ports. Transport
+packages do not import actor or application packages. Ingress handlers parse,
+perform auth/session checks, and publish `commandcmd.Request` envelopes.
+
+`CommandActor` is the only product command executor. Plugins cannot register
+native handlers: a catalog-advertised plugin command is declarative metadata
+that creates one normal authenticated turn from the exact inline instruction
+stored in the session's catalog snapshot. Commands do not select skills or
+change MCP configuration. Skills and the MCP list are fixed independently when
+the provider session is created or restored, and every turn uses that existing
+session runtime. Built-in names always remain reserved.
+
+See [Command architecture and runtime internals](reference/command-runtime.md)
+for command sources, per-transport admission, registry projection, durable
+identity, retry, and session snapshot pinning. See also
+[Plugins and session capabilities](reference/plugins.md).
 
 ## User administration
 
@@ -208,7 +222,14 @@ Plugin commands are currently available through Telegram to the owner:
 | `/plugin list --available` | List plugins available from configured marketplaces. |
 | `/plugin show <plugin[@marketplace]>` | Show resolved plugin details. |
 | `/plugin install <plugin[@marketplace]>` | Install a plugin. |
-| `/plugin remove <plugin>` | Remove an installed plugin. |
+| `/plugin upgrade <plugin[@marketplace]>` | Validate and activate a newer revision while preserving enablement and plugin data. |
+| `/plugin origin <plugin@marketplace>` | Explicitly adopt a marketplace origin for a migrated `origin-unknown` install before its first managed upgrade. |
+| `/plugin enable <plugin>` | Publish the installed revision's contributions. |
+| `/plugin disable <plugin>` | Remove contributions without deleting the package or plugin data. |
+| `/plugin rollback <plugin> <revision>` | Activate an explicitly retained immutable revision. |
+| `/plugin remove <plugin>` | Remove the active install record while retaining revision bytes and plugin data. |
+| `/plugin purge <plugin> <revision> [--data]` | Permanently purge an eligible retired revision; `--data` is rejected while the plugin remains installed. |
+| `/plugin status <plugin>` | Show bounded origin/revision, enablement, drift, capability, catalog, advertisement, skill, MCP health, snapshot, diagnostic-code, omission, and projection-lag status. |
 | `/plugin marketplace add <source>` | Add a marketplace source. |
 | `/plugin marketplace list` | List configured marketplaces. |
 | `/plugin marketplace show <name>` | Show marketplace details. |
@@ -218,6 +239,12 @@ Plugin commands are currently available through Telegram to the owner:
 An unavailable plugin backend returns an explicit unavailable/not-implemented
 response and makes no plugin change. Invalid subcommands or argument counts
 return the complete `/plugin` usage.
+
+All plugin administration commands are owner-only and execute in
+`CommandActor`. Purge fails closed if the revision is active, retained by a
+snapshot/turn, or otherwise not proven safe. Status and audit/metric events are
+redacted: they never include credentials, environment or header values, host
+absolute paths, complete skill bodies, or raw tool data.
 
 ## Common failures
 

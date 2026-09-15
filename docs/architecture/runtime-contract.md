@@ -5,7 +5,7 @@ Status: active
 
 ## Invariants
 
-- Startup order stays strict: config -> bundled MCP -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Zulip/Telegram/Slackagent ingress.
+- Startup order stays strict: config -> bundled MCP -> runtime contribution catalog reconstruction -> provider runtime -> session/mailbox and durable actor infrastructure -> scheduler/webhook/Zulip/Telegram/Slackagent ingress. Shutdown runs these stages in reverse.
 - Shutdown follows the exact reverse lifecycle order.
 - The durable command runtime must be available before ingress accepts work.
 - No runtime path executes user work without durable actor dispatch acceptance.
@@ -17,7 +17,7 @@ Status: active
 - Runtime boundaries are strict and explicit: ingress publishes through actorlayer transport dispatcher contracts, actor execution and delivery settlement flow through `github.com/baldaworks/go-actorlayer`, and concrete transport policy stays in Balda's NATS adapter.
 - Balda owns queue, retry exhaustion, dead-letter side effects, projection writes, and command visibility telemetry.
 - Runtime diagnostics expose only structural settlement metadata. Retry/dead-letter reasons are bounded outcome and error-class codes; command DLQ records retain identity, routing, source metadata, payload size, and SHA-256, but never the original payload, provider error body, header values, credentials, or capability URLs.
-- Balda keeps that ownership inside explicit app layers: `actorcmd` owns the canonical wire taxonomy; `execution` owns runtime policy and re-exports that taxonomy as the runtime-facing compatibility facade; `jobs` owns durable job state, event outbox, and projections; `actors` owns product behavior; `actorsfx` owns actor composition and Fx wiring; `sessionturn` owns queued-turn restoration; `internalmcp` owns bundled MCP lifecycle; `handlers` owns ingress normalization and publication; and `handlersfx` binds ingress-owned ports to concrete provider runtimes.
+- Balda keeps that ownership inside explicit app layers: `actorcmd` owns the canonical wire taxonomy; `execution` owns runtime policy and re-exports that taxonomy as the runtime-facing compatibility facade; `jobs` owns durable job state, event outbox, and projections; `actors` owns product behavior; `actorsfx` owns actor composition and Fx wiring; `runtimecatalog` owns immutable compilation and bounded reads; `catalogapp` owns catalog lifecycle and consumer adapters; `sessionturn` owns queued-turn restoration; `internalmcp` owns bundled MCP lifecycle; `handlers` owns ingress normalization and publication; and `handlersfx` binds ingress-owned ports to concrete provider runtimes.
 - `agent` owns provider-backed runtime construction, root runtime prompt/session-state bootstrap, isolated goal runtime preparation, runtime-adjacent workspace support, and adaptation of ADK-facing permission callbacks into provider-neutral Balda contracts. It does not own session lifecycle semantics, queued-turn orchestration, or permission policy.
 - `permissions` owns provider-neutral agent permission policy and interactive review orchestration; provider protocol types stay below the `agent` adapter boundary.
 - `sessionturnapp` records failed ADK tool responses with redacted error metadata and never logs raw tool arguments or complete tool responses.
@@ -25,13 +25,21 @@ Status: active
 - CommandActor is an independently registered Balda product actor on
   `balda.v1.cmd.command`. Its lane key is the canonical session ID. Transports
   parse and whitelist commands; ingress resolves access and publishes; the
-  actor routes only by canonical command name. The current migrated handlers
-  are `locator` and `reset`.
+  actor routes only by canonical command name. Built-in handlers cover
+  onboarding, administration, session information, session lifecycle/control,
+  and automation. Declarative plugin aliases use one generic adapter to publish
+  a revision-pinned normal session turn; plugins cannot register native
+  handlers. See [Command architecture and runtime internals](../reference/command-runtime.md).
 - Delivery boundaries are explicit: `deliverycmd` owns transport-neutral delivery contracts, `deliveryfmt` owns the immutable format registry and transport-capability routing, `deliveryfx` supplies process-local formatter registrations, `locatorref` owns public locator parsing/formatting, and `channel/*` owns concrete provider delivery and transport-local presentation behavior behind DI boundaries.
 - Channel transport boundaries are explicit: `internal/apps/balda/channel/*` packages (`telegram`, `zulip`, `slackagent`) own provider-specific transport carriers and presentation, exporting narrow ports (`InboundHandler`, `InboundProcessor`). Composition and DI wiring are isolated in composition roots (`telegramfx`, `zulipfx`, `slackagentfx`, `handlersfx`) which bind ingress, session, and application services without leaking application domain policy into transport packages.
 - Presentation routing is explicit: model-authored text stays on the prompt-formatting path, while system-authored service messages use typed structured message contracts with deterministic per-transport renderers. Where those structured messages are durable/runtime-facing contracts, their schema identity belongs in AsyncAPI rather than in channel formatter registrations.
 - Slackagent behavior lives in a dedicated `slackagent` path with its own ingress and response contracts. `internal/apps/balda/channel/slackagent` owns the channel boundary, and `internal/apps/balda/channel/slackagent/slackagentfx` is the composition/DI boundary exported to the rest of the app. See [Slackagent mode](slack-agent-mode.md).
 - Session boundaries are explicit: `session` owns create/restore/reset/lifecycle semantics and may consume shared delivery contracts, but it must not become the home of transport delivery contract types.
+- Each session persists one runtime catalog snapshot before exposure. Command
+  lookup and skill metadata/selection use that exact snapshot; MCP identities
+  are supplied only when the provider session is created or restored. Every
+  turn reuses `TopicSession`'s runner. Restore fails closed for an unavailable
+  non-empty pin, while reset deliberately selects current capabilities.
 - Adapter boundaries are explicit: transport/use-case integrations should prefer package-local ports with composition-root adapters instead of reaching directly into concrete runtime or transport implementations.
 - Ingress construction is fail-fast: formatting/registry validation and all downstream runtime dependencies must resolve before any ingress lifecycle stage can accept work.
 - Telegram polling settlement is explicit: the provider-owned offset boundary advances only after accepted or terminal event processing; retryable handler outcomes preserve the previous offset for stable-ID replay, while webhook settlement remains request-local.

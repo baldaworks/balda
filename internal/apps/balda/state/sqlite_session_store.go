@@ -39,9 +39,9 @@ func (s *sqliteSessionStore) Upsert(ctx context.Context, record SessionRecord) e
 
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO balda_session_metadata (
-			session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status, updated_at
+			session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id) DO UPDATE SET
 			user_id = excluded.user_id,
 			chat_id = excluded.chat_id,
@@ -52,6 +52,7 @@ func (s *sqliteSessionStore) Upsert(ctx context.Context, record SessionRecord) e
 			agent_name = excluded.agent_name,
 			workspace_dir = excluded.workspace_dir,
 			branch_name = excluded.branch_name,
+			runtime_snapshot_id = excluded.runtime_snapshot_id,
 			status = excluded.status,
 			updated_at = excluded.updated_at`,
 		sessionID,
@@ -64,6 +65,7 @@ func (s *sqliteSessionStore) Upsert(ctx context.Context, record SessionRecord) e
 		record.AgentName,
 		record.WorkspaceDir,
 		record.BranchName,
+		strings.TrimSpace(record.RuntimeSnapshotID),
 		record.Status,
 		time.Now().UTC().Format(time.RFC3339),
 	); err != nil {
@@ -95,7 +97,7 @@ func telegramAddressColumns(record SessionRecord) (int64, int64) {
 
 func (s *sqliteSessionStore) GetByAddress(ctx context.Context, channelType, addressKey string) (SessionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status
 		FROM balda_session_metadata
 		WHERE channel_type = ? AND address_key = ?`,
 		strings.TrimSpace(channelType), strings.TrimSpace(addressKey),
@@ -111,6 +113,7 @@ func (s *sqliteSessionStore) GetByAddress(ctx context.Context, channelType, addr
 		&record.AgentName,
 		&record.WorkspaceDir,
 		&record.BranchName,
+		&record.RuntimeSnapshotID,
 		&record.Status,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -124,7 +127,7 @@ func (s *sqliteSessionStore) GetByAddress(ctx context.Context, channelType, addr
 
 func (s *sqliteSessionStore) GetBySessionID(ctx context.Context, sessionID string) (SessionRecord, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status
 		FROM balda_session_metadata
 		WHERE session_id = ?`,
 		strings.TrimSpace(sessionID),
@@ -140,6 +143,7 @@ func (s *sqliteSessionStore) GetBySessionID(ctx context.Context, sessionID strin
 		&record.AgentName,
 		&record.WorkspaceDir,
 		&record.BranchName,
+		&record.RuntimeSnapshotID,
 		&record.Status,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -169,7 +173,7 @@ func (s *sqliteSessionStore) DeleteBySessionID(ctx context.Context, sessionID st
 
 func (s *sqliteSessionStore) List(ctx context.Context) ([]SessionRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, status
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status
 		FROM balda_session_metadata
 		ORDER BY updated_at DESC`)
 	if err != nil {
@@ -189,6 +193,7 @@ func (s *sqliteSessionStore) List(ctx context.Context) ([]SessionRecord, error) 
 			&record.AgentName,
 			&record.WorkspaceDir,
 			&record.BranchName,
+			&record.RuntimeSnapshotID,
 			&record.Status,
 		); err != nil {
 			return nil, fmt.Errorf("scan balda session: %w", err)

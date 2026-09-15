@@ -41,14 +41,14 @@ func pluginsListCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderAvailablePluginsPlain(plugins))
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderAvailablePluginsPlain(pluginAvailableViews(plugins)))
 				return nil
 			}
 			plugins, err := service.ListInstalled(context.Background())
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderInstalledPluginsPlain(plugins))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderInstalledPluginsPlain(pluginSummaryViews(plugins)))
 			return nil
 		},
 	}
@@ -72,7 +72,7 @@ func pluginsShowCommand() *cobra.Command {
 				return err
 			}
 			if ok {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderInstalledPluginPlain(plugin))
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderInstalledPluginPlain(pluginSummaryView(plugin)))
 				return nil
 			}
 			available, found, err := service.GetAvailable(context.Background(), args[0])
@@ -82,7 +82,7 @@ func pluginsShowCommand() *cobra.Command {
 			if !found {
 				return errors.New(plugincmd.NotImplementedMessage("plugin show " + args[0]))
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderAvailablePluginPlain(available))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderAvailablePluginPlain(pluginAvailableView(available)))
 			return nil
 		},
 	}
@@ -179,7 +179,7 @@ func pluginsMarketplaceListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderMarketplaceStatusesPlain(sources))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderMarketplaceStatusesPlain(marketplaceStatusViews(sources)))
 			return nil
 		},
 	}
@@ -204,7 +204,7 @@ func pluginsMarketplaceUpgradeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderMarketplaceUpgradePlain(results))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderMarketplaceUpgradePlain(marketplaceUpgradeViews(results)))
 			return nil
 		},
 	}
@@ -228,10 +228,66 @@ func pluginsMarketplaceShowCommand() *cobra.Command {
 			if !ok {
 				return errors.New("plugin marketplace not found")
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderMarketplaceStatusPlain(status))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), plugincmd.RenderMarketplaceStatusPlain(marketplaceStatusView(status)))
 			return nil
 		},
 	}
+}
+
+func pluginSummaryView(item pluginapp.PluginSummary) plugincmd.PluginSummary {
+	return plugincmd.PluginSummary{Name: item.Name, Version: item.Version, Description: item.Description}
+}
+
+func pluginSummaryViews(items []pluginapp.PluginSummary) []plugincmd.PluginSummary {
+	out := make([]plugincmd.PluginSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, pluginSummaryView(item))
+	}
+	return out
+}
+
+func pluginAvailableView(item pluginapp.AvailablePlugin) plugincmd.AvailablePlugin {
+	return plugincmd.AvailablePlugin{
+		Name: item.Name, DisplayName: item.DisplayName, Description: item.Description,
+		Version: item.Version, Marketplace: item.Marketplace, MarketplaceLabel: item.MarketplaceLabel,
+		Category: item.Category, Installed: item.Installed,
+	}
+}
+
+func pluginAvailableViews(items []pluginapp.AvailablePlugin) []plugincmd.AvailablePlugin {
+	out := make([]plugincmd.AvailablePlugin, 0, len(items))
+	for _, item := range items {
+		out = append(out, pluginAvailableView(item))
+	}
+	return out
+}
+
+func marketplaceStatusView(item pluginapp.MarketplaceStatus) plugincmd.MarketplaceStatus {
+	return plugincmd.MarketplaceStatus{
+		Name: item.Name, Source: plugincmd.PublicMarketplaceSource(item.Source), Kind: item.Kind, Ref: item.Ref,
+		Sparse: append([]string(nil), item.Sparse...), Cached: item.Cached,
+		LastRefreshedAt: item.LastRefreshedAt, ResolvedRef: item.ResolvedRef,
+		ManifestPresent: item.ManifestPresent, AvailablePlugins: item.AvailablePlugins,
+	}
+}
+
+func marketplaceStatusViews(items []pluginapp.MarketplaceStatus) []plugincmd.MarketplaceStatus {
+	out := make([]plugincmd.MarketplaceStatus, 0, len(items))
+	for _, item := range items {
+		out = append(out, marketplaceStatusView(item))
+	}
+	return out
+}
+
+func marketplaceUpgradeViews(items []pluginapp.MarketplaceUpgradeResult) []plugincmd.MarketplaceUpgradeResult {
+	out := make([]plugincmd.MarketplaceUpgradeResult, 0, len(items))
+	for _, item := range items {
+		out = append(out, plugincmd.MarketplaceUpgradeResult{
+			Name: item.Name, Source: item.Source, PluginCount: item.PluginCount,
+			Refreshed: item.Refreshed, Status: marketplaceStatusView(item.Status),
+		})
+	}
+	return out
 }
 
 func pluginsMarketplaceRemoveCommand() *cobra.Command {

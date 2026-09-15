@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
@@ -35,7 +36,7 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
   "plugins": [
     {
       "name": "demo",
-      "source": { "source": "local", "path": "./plugins/demo" },
+      "path": "./plugins/demo",
       "category": "Productivity"
     }
   ]
@@ -83,6 +84,9 @@ func TestServiceMarketplaceAndAvailableInstallFlow(t *testing.T) {
 	}
 	if available[0].Name != testPluginName || available[0].Marketplace != testMarketplaceName || available[0].Category != "Productivity" {
 		t.Fatalf("available[0] = %#v", available[0])
+	}
+	if len(available[0].Diagnostics) != 0 {
+		t.Fatalf("canonical path diagnostics = %#v", available[0].Diagnostics)
 	}
 
 	if err := svc.Install(context.Background(), testPluginName+"@"+testMarketplaceName); err != nil {
@@ -180,6 +184,9 @@ func TestServiceMarketplaceGitSourceFlow(t *testing.T) {
 	}
 	if available[0].Marketplace != "git-market" || available[0].Version != "2.0.0" {
 		t.Fatalf("available[0] = %#v", available[0])
+	}
+	if len(available[0].Diagnostics) != 1 || available[0].Diagnostics[0].Code != runtimecatalogcmd.DiagnosticMarketplaceSourcePathDeprecated {
+		t.Fatalf("transitional path diagnostics = %#v", available[0].Diagnostics)
 	}
 	if _, err := os.Stat(filepath.Join(stateDir, "plugin-marketplaces", "git-market", "repo", ".agents", "plugins", "marketplace.json")); err != nil {
 		t.Fatalf("cached marketplace repo missing: %v", err)

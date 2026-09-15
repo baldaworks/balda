@@ -31,6 +31,9 @@ var requiredBaldaSQLiteTables = []string{
 	"balda_questions",
 	"session_memory_ingress_outbox",
 	"session_memory_ingress_audit",
+	"balda_plugin_revisions",
+	"balda_plugin_installs",
+	"balda_plugin_activation_intents",
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

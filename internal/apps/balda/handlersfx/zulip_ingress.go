@@ -1035,10 +1035,12 @@ func normalizeGoalMaxIterations(v int) int {
 
 func buildZulipSessionPreparation(ts *baldasession.TopicSession, requesterUserID string) ingressapp.SessionPreparation {
 	return ingressapp.SessionPreparation{
-		Ready:           true,
-		UserID:          ts.GetUserID(),
-		RequesterUserID: requesterUserID,
-		AgentSessionID:  ts.GetAgentSessionID(),
+		Ready:             true,
+		UserID:            ts.GetUserID(),
+		RequesterUserID:   requesterUserID,
+		AgentSessionID:    ts.GetAgentSessionID(),
+		WorkspaceDir:      ts.GetWorkspaceDir(),
+		RuntimeSnapshotID: ts.GetRuntimeSnapshotID(),
 	}
 }
 

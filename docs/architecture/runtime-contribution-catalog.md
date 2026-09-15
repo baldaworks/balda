@@ -1,7 +1,7 @@
 # Runtime contribution catalog
 
 Owner: Balda maintainers
-Status: draft
+Status: active
 
 ## Context
 
@@ -13,11 +13,11 @@ Balda receives runtime capabilities from several sources:
 - installed Agent Plugins packages containing skills and `mcp.json`;
 - Balda-specific command declarations inside Agent Plugins extensions.
 
-These sources currently use unrelated lifecycle paths. `commandfx` assembles an
-immutable command router, `agentplugin` scans installed plugin skills once at
-startup, the agent builder copies complete `SKILL.md` bodies into the system
-instruction, and configured MCP servers use their own startup wiring. Plugin
-`mcp.json` files are not loaded.
+These sources have different execution semantics but share one catalog and
+session binding. `commandfx` assembles the built-in router and projects plugin
+aliases, the agent receives bounded skill metadata and lazy exact-revision
+loading, and configured/plugin MCP servers are selected before provider-session
+construction.
 
 A plugin-only catalog would not solve the whole problem. Built-in commands,
 standalone skills, and configured MCP servers participate in the same name,
@@ -133,6 +133,13 @@ points to one revision and keeps origin, manifest version, enabled state, and
 capability summary. Package data is stored separately from writable
 `${PLUGIN_DATA}` state.
 
+The temporary marketplace v0 index uses canonical `plugins[].path`. Existing
+indexes using `plugins[].source.path` with local source type remain readable
+only when `path` is absent and produce a
+`marketplace_source_path_deprecated` diagnostic. Canonical `path` wins when
+both forms are present. The transitional decoder is removed only at a future
+explicit marketplace format version boundary.
+
 ### Snapshot identity
 
 Every application and effective snapshot has a content-derived identity that
@@ -194,7 +201,9 @@ from the desired catalog.
 Balda-specific plugin commands are declared under the stable, opaque
 `dev.baldaworks.balda` extension namespace. It corresponds to the
 `baldaworks.dev` organizational domain, but loading never requires DNS or HTTP
-access.
+access. This client namespace is distinct from the `balda-extension` schema
+name and its canonical `$id`,
+`https://baldaworks.dev/schemas/balda-extension/1.0.0/schema.json`.
 
 ```json
 {
@@ -207,7 +216,7 @@ access.
         {
           "name": "release",
           "description": "Run the release workflow",
-          "skill": "deploy"
+          "instruction": "Inspect the release configuration and execute the release workflow."
         }
       ]
     }
@@ -216,19 +225,21 @@ access.
 ```
 
 `schema_version` is required and versions the Balda extension independently of
-the portable Agent Plugins schema. Balda validates supported versions with a
-bundled schema and never fetches a schema at runtime. An unsupported extension
-version disables only Balda-specific contributions.
+the portable Agent Plugins schema. Balda validates the closed extension and
+command objects with its bundled Draft 2020-12 schema and never fetches that
+schema at runtime. An unsupported or invalid extension disables only
+Balda-specific contributions.
 
-The initial command declaration contains only `name`, `description`, and a
-plugin-local `skill` reference. Access, context, approval, retry, and delivery
-policy remain host-owned. Plugin data cannot grant permissions. Plugin
-commands are available only to authenticated Balda users.
+Each command contains exactly `name`, `description`, and its own inline
+`instruction`. It does not reference a skill, file, agent, model, permission,
+or MCP server. Access, context, approval, retry, workspace, and delivery policy
+remain host-owned. Plugin data cannot grant permissions or alter system
+policy. Plugin commands are available only to authenticated Balda users.
 
 Direct command-to-MCP-tool execution is outside this contract. It requires a
 separate typed argument, authorization, approval, idempotency, and result
-contract. A skill-backed command already composes command, instruction, and
-tool behavior through existing runtime boundaries.
+contract. A declarative command only supplies user-level instruction text to
+the already-created session runtime.
 
 ### Durable command routing
 
@@ -260,16 +271,9 @@ aliases are omitted from that transport's advertisement projection and
 reported as diagnostics. Canonical contribution identity remains valid even
 when a provider cannot expose a direct alias.
 
-The plugin-command handler publishes a normal conversational turn with an
-explicit skill reference and the command arguments as user input:
-
-```go
-type SkillRef struct {
-    Source   SourceID
-    Revision RevisionID
-    Name     string
-}
-```
+The plugin-command handler publishes a normal conversational turn containing
+the descriptor's inline instruction and the command arguments as user input.
+It does not attach a skill selection or change runtime capabilities.
 
 The child turn derives correlation, causation, and deduplication identity from
 the command envelope. Re-delivery of one command cannot create two turns.
@@ -280,9 +284,9 @@ provider command
   -> durable command payload
   -> CommandActor
   -> plugin command adapter
-  -> deduplicated normal turn with SkillRef
-  -> lazy SKILL.md read
-  -> model may use healthy MCP tools from the pinned revision
+  -> deduplicated normal turn with instruction + arguments
+  -> existing TopicSession runner
+  -> model may use skills and MCP tools already bound to that session
 ```
 
 ### Management commands are separate
@@ -306,7 +310,7 @@ All skill sources project the same bounded metadata contract:
 - availability diagnostics when useful to the model or operator.
 
 The catalog does not include complete `SKILL.md` bodies. A skill reader loads
-the selected body and supporting resources only when the model or a command
+the selected body and supporting resources only when conversational ingress
 selects that exact skill reference. Loaded instructions enter the current turn
 as user-level context and cannot alter host permissions or system policy.
 
@@ -314,15 +318,13 @@ Selection has an explicit protocol:
 
 - the turn assembler recognizes an explicit qualified `$skill` reference and
   loads it before provider execution;
-- a plugin command supplies its revision-pinned `SkillRef` directly to the turn
-  assembler;
 - for implicit selection, the metadata prompt tells the model to call a
   read-only skill-loader operation with the qualified contribution ID;
 - provider adapters may implement that operation through a native skill
   mechanism or a bundled MCP adapter over the same skill-reader port.
 
-The loader obtains snapshot and execution scope from trusted turn context, not
-from model arguments. It returns the main `SKILL.md` body and allows bounded,
+The loader obtains the persisted session snapshot from trusted session context,
+not from model arguments. It returns the main `SKILL.md` body and allows bounded,
 contained reads of referenced skill resources. The model never receives or
 submits an absolute host path. This read operation is a catalog projection, not
 a plugin lifecycle or execution control plane.
@@ -340,13 +342,28 @@ symlinks, and supporting resources must remain inside their source root. Size,
 file-count, and total prompt budgets are enforced before content reaches the
 model.
 
-Each turn pins its skill revision. A refresh affects new turns and cannot
-change instructions midway through an active or retried turn.
+Each session pins its skill metadata and resolvable revisions. Content remains
+lazy, but every selected body is read from the exact archived revision named by
+that session snapshot. Catalog or workspace refresh does not affect an active
+session; reset creates a fresh runtime and deliberately adopts current state.
 
-Workspace overlays may refresh from committed or working-tree skill changes
-between turns because they contain instructional resources, not plugin MCP
-process declarations. This does not weaken the rule that unmanaged changes to
-an installed plugin revision are never activated automatically.
+### Session capability binding
+
+One effective `SnapshotID` is selected and persisted before a new or restored
+session is exposed. Command resolution, provider-visible skill metadata,
+explicit skill resolution, and provider MCP identities all derive from that
+same snapshot. A legacy empty pin adopts current state once. A non-empty pin is
+exact and restore fails closed if it is unavailable.
+
+The MCP list is passed to the provider only when its session is created,
+resumed, or loaded. MCP acquisitions live until the Balda session runtime
+closes. Individual prompts and commands neither receive a new MCP list nor
+construct, swap, or close a provider runtime. Every turn uses the existing
+`TopicSession` runner.
+
+Publishing a new catalog snapshot never mutates an active session. `/reset`
+closes the old session runtime and is the explicit adoption boundary for
+current commands, skills, and MCP servers.
 
 Metadata budgeting is deterministic. The effective catalog sorts by stable
 source and contribution identity, applies a host-defined total budget, and
@@ -458,8 +475,8 @@ the durable active records before opening dependent ingress. If a process-local
 projection fails, desired state remains visible with failed health and can be
 retried or rolled back explicitly.
 
-Old immutable revisions remain readable while durable commands or turns refer
-to them. The first implementation performs no automatic revision garbage
+Old immutable revisions remain readable while persisted session pins refer to
+them. The first implementation performs no automatic revision garbage
 collection. An explicit purge requires a drain and reference preflight; it
 fails closed when safety cannot be established. If a retained revision is
 unavailable, execution returns a stable unavailable-revision outcome rather
@@ -484,7 +501,7 @@ an invalid built-in registration.
 
 ### Wire compatibility
 
-Snapshot-pinned command names and revision-pinned skill references require new
+Snapshot-pinned command names and session-pinned skill references require new
 versioned durable payload schemas. Plugin commands are never encoded in the
 legacy unpinned command payload. Built-in command compatibility may be read
 during a bounded migration window, but every newly published payload uses the
@@ -551,7 +568,7 @@ The plugin service contributes one source to a host-wide catalog instead.
 ### Inject all skill bodies into the system instruction
 
 This consumes context for unused skills and grants third-party text global
-placement. Metadata discovery plus turn-scoped loading replaces it.
+placement. Session-bound metadata plus lazy exact-revision loading replaces it.
 
 ### Make a skills-only MCP API the catalog owner
 
@@ -580,7 +597,7 @@ Ingress publishes the canonical name with a retained snapshot ID instead, and
 ### Let plugins register native Go handlers
 
 Dynamic host code would bypass portability and complicate trust, upgrades, and
-isolation. Plugin commands remain declarative and skill-backed.
+isolation. Plugin commands remain declarative inline instructions.
 
 ### Define one generic `Capability.Execute` interface
 
@@ -641,8 +658,8 @@ steps:
 9. remove the startup-only `agentplugin.Catalog` path after every consumer uses
    the shared catalog.
 
-No intermediate release may expose plugin commands whose referenced skill and
-MCP projections can resolve from a different revision.
+No intermediate release may expose commands, skills, or MCP projections that
+resolve from different snapshots within one session.
 
 ## Non-goals
 

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
@@ -128,51 +128,44 @@ func (f *capturingDedicatedRuntimeFactory) Build(_ context.Context, req agentfac
 	return adkagent.New(adkagent.Config{Name: req.Name, Description: req.Description})
 }
 
-func TestBuildBaldaInstruction_IncludesPluginSkills(t *testing.T) {
+func TestBuildRootRuntimeInstructionUsesCatalogMetadataOnly(t *testing.T) {
 	t.Parallel()
 
-	builder := &Builder{
-		pluginCatalog: &agentplugin.Catalog{},
+	builder := &Builder{}
+	projection := SkillMetadataProjection{
+		Snapshot: "snapshot-1",
+		Skills: []SkillPromptMetadata{{
+			Source:      runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindWorkspaceSkill, Name: "workspace/a"},
+			Name:        "review",
+			Description: "Review the change",
+			Revision:    "revision-1",
+		}},
+		Omitted: 2,
 	}
-	builder.pluginCatalog, _ = func() (*agentplugin.Catalog, error) {
-		stateDir := t.TempDir()
-		root := filepath.Join(stateDir, "plugins", "demo")
-		if err := os.MkdirAll(filepath.Join(root, "skills", "summarize"), 0o755); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(root, "plugin.json"), []byte(`{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"demo"}`), 0o644); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(root, "skills", "summarize", "SKILL.md"), []byte("# Summarize\n\nUse this skill."), 0o644); err != nil {
-			return nil, err
-		}
-		loader, err := agentplugin.NewLoader(stateDir)
-		if err != nil {
-			return nil, err
-		}
-		return loader.Load()
-	}()
-
-	got := builder.buildBaldaInstruction(
-		"tg-1-2",
-		"telegram",
-		"alpha",
-		"norma/balda/tg-1-2",
-		"/tmp/work",
-		"main",
-	)
-
-	for _, snippet := range []string{
-		"Plugin skills:",
-		"`demo:summarize`",
-		"# Summarize",
-		"Use this skill.",
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/trusted/workspace", projection)
+	if err != nil {
+		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
+	}
+	for _, want := range []string{
+		`Snapshot: "snapshot-1"`,
+		`source_kind="workspace-skill" source_name="workspace/a" skill_name="review" revision="revision-1"`,
+		"Review the change",
+		"2 additional skill metadata entries omitted",
 	} {
-		if !strings.Contains(got, snippet) {
-			t.Fatalf("buildBaldaInstruction() missing snippet %q in output:\n%s", snippet, got)
+		if !strings.Contains(got, want) {
+			t.Fatalf("buildRootRuntimeInstruction() missing %q:\n%s", want, got)
 		}
+	}
+	for _, forbidden := range []string{"SKILL.md", "/trusted/workspace/skills"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("buildRootRuntimeInstruction() unexpectedly contains %q:\n%s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "untrusted discovery data") {
+		t.Fatalf("buildRootRuntimeInstruction() lacks metadata trust boundary:\n%s", got)
 	}
 }
+
 func TestBuildBaldaInstruction_IncludesGlobalAndAgentInstruction(t *testing.T) {
 	t.Parallel()
 
@@ -407,7 +400,10 @@ func TestBuildRootRuntimeInstruction_UsesPerSessionPlaceholders(t *testing.T) {
 		workingDir:          "/repo",
 	}
 
-	got := builder.buildRootRuntimeInstruction("alpha", "/tmp/work")
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/tmp/work", SkillMetadataProjection{})
+	if err != nil {
+		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
+	}
 
 	for _, snippet := range []string{
 		"ID: {balda_session_id}",
@@ -841,4 +837,3 @@ func TestGetAgentMetadata_ExtractsModelAndReasoningEffort(t *testing.T) {
 		}
 	})
 }
-

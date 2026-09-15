@@ -12,7 +12,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
@@ -58,7 +57,6 @@ type Builder struct {
 	sessionSvc             adksession.Service
 	memoryEnabled          bool
 	memorySnapshotReader   MemorySnapshotReader
-	pluginCatalog          *agentplugin.Catalog
 }
 
 // dedicatedRuntimeFactory is the narrow provider-factory port used only by
@@ -101,7 +99,9 @@ type baldaPromptData struct {
 	MemoryEnabled     bool
 	GlobalInstruction string
 	Instruction       string
-	PluginSkills      []agentplugin.Skill
+	SkillSnapshot     string
+	Skills            []SkillPromptMetadata
+	OmittedSkills     int
 }
 
 func (b *Builder) buildBaldaInstruction(
@@ -111,6 +111,26 @@ func (b *Builder) buildBaldaInstruction(
 	sessionBranch,
 	workspaceDir,
 	repoBranchAtStart string,
+) string {
+	return b.buildBaldaInstructionWithSkills(
+		sessionID,
+		channelType,
+		agentName,
+		sessionBranch,
+		workspaceDir,
+		repoBranchAtStart,
+		SkillMetadataProjection{},
+	)
+}
+
+func (b *Builder) buildBaldaInstructionWithSkills(
+	sessionID,
+	channelType,
+	agentName,
+	sessionBranch,
+	workspaceDir,
+	repoBranchAtStart string,
+	projection SkillMetadataProjection,
 ) string {
 	normalizedAgentName := strings.TrimSpace(agentName)
 	repoBranch := strings.TrimSpace(repoBranchAtStart)
@@ -148,6 +168,9 @@ func (b *Builder) buildBaldaInstruction(
 		BaseBranch:        baseBranch,
 		RepoBranchAtStart: repoBranch,
 		MemoryEnabled:     b.memoryEnabled,
+		SkillSnapshot:     string(projection.Snapshot),
+		Skills:            append([]SkillPromptMetadata(nil), projection.Skills...),
+		OmittedSkills:     projection.Omitted,
 	}
 	agentInstruction := ""
 	if agentCfg, ok := b.normaCfg.Providers[normalizedAgentName]; ok {
@@ -155,10 +178,6 @@ func (b *Builder) buildBaldaInstruction(
 	}
 	data.GlobalInstruction = strings.TrimSpace(b.baldaGlobalInstruction)
 	data.Instruction = strings.TrimSpace(agentInstruction)
-	if b.pluginCatalog != nil {
-		data.PluginSkills = b.pluginCatalog.Skills()
-	}
-
 	var buf bytes.Buffer
 	tmpl := template.Must(template.New("balda").Parse(baldaInstructionTmpl))
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -179,7 +198,6 @@ type BuilderParams struct {
 	SessionService         adksession.Service `name:"balda_runtime_session_service"`
 	MemoryEnabled          bool               `name:"balda_memory_enabled"`
 	MemorySnapshotReader   MemorySnapshotReader
-	PluginCatalog          *agentplugin.Catalog `optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -199,7 +217,6 @@ func NewBuilder(params BuilderParams) *Builder {
 		sessionSvc:             params.SessionService,
 		memoryEnabled:          params.MemoryEnabled,
 		memorySnapshotReader:   params.MemorySnapshotReader,
-		pluginCatalog:          params.PluginCatalog,
 	}
 }
 
@@ -208,6 +225,8 @@ type BuiltRuntime struct {
 	Runner     *runner.Runner
 	SessionSvc adksession.Service
 	AppName    string
+	// RuntimeSnapshotID identifies the catalog capabilities bound to this runtime.
+	RuntimeSnapshotID string
 	// Close releases resources owned by a scoped runtime. The app-scoped
 	// runtime leaves this nil and is closed by RuntimeManager.Stop.
 	Close func() error
@@ -226,14 +245,39 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
 ) (*BuiltRuntime, error) {
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, SkillMetadataProjection{})
+}
+
+// BuildRuntimeWithCapabilities builds a runtime from one immutable session capability binding.
+func (b *Builder) BuildRuntimeWithCapabilities(
+	ctx context.Context,
+	agentName, workspaceDir string,
+	bundledMCPServerIDs []string,
+	extraMCPServerIDs []string,
+	skills SkillMetadataProjection,
+) (*BuiltRuntime, error) {
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, skills)
+}
+
+func (b *Builder) buildRuntimeWithCapabilities(
+	ctx context.Context,
+	agentName, workspaceDir string,
+	bundledMCPServerIDs []string,
+	extraMCPServerIDs []string,
+	skills SkillMetadataProjection,
+) (*BuiltRuntime, error) {
 	const appName = defaultRuntimeAppName
 
+	instruction, err := b.buildRootRuntimeInstruction(ctx, agentName, workspaceDir, skills)
+	if err != nil {
+		return nil, err
+	}
 	req := agentfactory.BuildRequest{
 		AgentID:          agentName,
 		Name:             agentName,
 		Description:      b.buildAgentDescription(agentName),
 		WorkingDirectory: workspaceDir,
-		Instruction:      b.buildRootRuntimeInstruction(agentName, workspaceDir),
+		Instruction:      instruction,
 		MCPServerIDs:     b.buildAgentMCPServerIDs(agentName, bundledMCPServerIDs, extraMCPServerIDs),
 	}
 
@@ -558,15 +602,16 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	return b.addMemorySnapshot(ctx, state)
 }
 
-func (b *Builder) buildRootRuntimeInstruction(agentName, workspaceDir string) string {
-	return b.buildBaldaInstruction(
+func (b *Builder) buildRootRuntimeInstruction(_ context.Context, agentName, workspaceDir string, projection SkillMetadataProjection) (string, error) {
+	return b.buildBaldaInstructionWithSkills(
 		baldaSessionIDPlaceholder,
 		"telegram",
 		agentName,
 		baldaSessionBranchPlaceholder,
 		"{"+sessionstate.CWDKey+"}",
 		baldaRepoBranchAtStartPlaceholder,
-	)
+		projection,
+	), nil
 }
 
 func resolveSessionWorkspaceDir(workspaceDir string) (string, error) {

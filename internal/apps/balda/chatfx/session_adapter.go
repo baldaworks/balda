@@ -38,11 +38,13 @@ func (a *SessionAdapter) Prepare(ctx context.Context, inbound chatapp.InboundCon
 		return chatapp.SessionPreparation{}, err
 	}
 	return chatapp.SessionPreparation{
-		Ready:           true,
-		UserID:          topicSession.GetUserID(),
-		RequesterUserID: inbound.UserID,
-		AgentSessionID:  topicSession.GetAgentSessionID(),
-		TopicID:         inbound.TopicID,
+		Ready:             true,
+		UserID:            topicSession.GetUserID(),
+		RequesterUserID:   inbound.UserID,
+		AgentSessionID:    topicSession.GetAgentSessionID(),
+		TopicID:           inbound.TopicID,
+		WorkspaceDir:      topicSession.GetWorkspaceDir(),
+		RuntimeSnapshotID: topicSession.GetRuntimeSnapshotID(),
 	}, nil
 }
 

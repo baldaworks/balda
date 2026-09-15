@@ -148,6 +148,7 @@ type memoryPromptActiveSession struct {
 }
 
 func (s memoryPromptActiveSession) GetRunner() *adkrunner.Runner { return s.runner }
+func (memoryPromptActiveSession) GetRuntimeSnapshotID() string   { return "" }
 func (memoryPromptActiveSession) GetSessionID() string           { return "tg-1-0" }
 func (s memoryPromptActiveSession) GetAgentSessionID() string    { return s.agentSessionID }
 func (memoryPromptActiveSession) GetUserID() string              { return "telegram-user" }

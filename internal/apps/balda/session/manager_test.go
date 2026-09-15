@@ -324,7 +324,6 @@ func TestGetAgentMetadata_PreservesReasoningEffort(t *testing.T) {
 	}
 }
 
-
 func TestGetSessionInfo_ReturnsPersistedSession(t *testing.T) {
 	store := &fakeSessionStore{
 		recordsByID: map[string]baldastate.SessionRecord{
@@ -495,6 +494,180 @@ func (f *fakeBaldaRuntimeManager) Runtime(context.Context) (*BuiltRuntime, error
 
 func (f *fakeBaldaRuntimeManager) ProviderID() string {
 	return f.providerID
+}
+
+type fakeScopedRuntimeManager struct {
+	fakeBaldaRuntimeManager
+	sessionRuntime  *BuiltRuntime
+	sessionErr      error
+	sessionRequests []SessionRuntimeRequest
+}
+
+func (f *fakeScopedRuntimeManager) RuntimeForSession(_ context.Context, request SessionRuntimeRequest) (*BuiltRuntime, error) {
+	f.sessionRequests = append(f.sessionRequests, request)
+	if f.sessionErr != nil {
+		return nil, f.sessionErr
+	}
+	if f.sessionRuntime != nil {
+		return f.sessionRuntime, nil
+	}
+	return &BuiltRuntime{}, nil
+}
+
+func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
+	store := &fakeSessionStore{}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-current"},
+	}
+	m := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager:    runtimeManager,
+		agentBuilder:      &fakeAgentBuilder{},
+		workingDir:        t.TempDir(),
+		logger:            zerolog.Nop(),
+		sessions:          make(map[string]*TopicSession),
+		sessionStore:      store,
+	}
+	locator := testTelegramLocator(10, 42)
+
+	if err := m.CreateSession(context.Background(), SessionContext{Locator: locator, UserID: "tg-101"}, "topic"); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if len(runtimeManager.sessionRequests) != 1 {
+		t.Fatalf("RuntimeForSession() calls = %d, want 1", len(runtimeManager.sessionRequests))
+	}
+	if got := runtimeManager.sessionRequests[0].RuntimeSnapshotID; got != "" {
+		t.Fatalf("requested runtime snapshot = %q, want current selection", got)
+	}
+	if len(store.upsertedRecords) != 1 {
+		t.Fatalf("persisted records = %d, want 1", len(store.upsertedRecords))
+	}
+	if got := store.upsertedRecords[0].RuntimeSnapshotID; got != "snapshot-current" {
+		t.Fatalf("persisted runtime snapshot = %q, want snapshot-current", got)
+	}
+	ts, err := m.GetSession(locator)
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if got := ts.GetRuntimeSnapshotID(); got != "snapshot-current" {
+		t.Fatalf("GetRuntimeSnapshotID() = %q, want snapshot-current", got)
+	}
+}
+
+func TestCreateSessionRejectsRuntimeWithoutSnapshot(t *testing.T) {
+	closed := 0
+	m := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager: &fakeScopedRuntimeManager{
+			fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+			sessionRuntime:          &BuiltRuntime{Close: func() error { closed++; return nil }},
+		},
+		agentBuilder: &fakeAgentBuilder{},
+		workingDir:   t.TempDir(),
+		logger:       zerolog.Nop(),
+		sessions:     make(map[string]*TopicSession),
+		sessionStore: &fakeSessionStore{},
+	}
+
+	err := m.CreateSession(context.Background(), SessionContext{Locator: testTelegramLocator(10, 42), UserID: "tg-101"}, "topic")
+	if err == nil || !strings.Contains(err.Error(), "runtime snapshot is required") {
+		t.Fatalf("CreateSession() error = %v, want missing snapshot", err)
+	}
+	if closed != 1 {
+		t.Fatalf("runtime close calls = %d, want 1", closed)
+	}
+}
+
+func TestRestoreSessionRequestsPersistedRuntimeSnapshot(t *testing.T) {
+	locator := testTelegramLocator(10, 42)
+	record := baldastate.SessionRecord{
+		SessionID:         locator.SessionID,
+		UserID:            "tg-101",
+		ChannelType:       locator.ChannelType,
+		AddressKey:        locator.AddressKey,
+		AddressJSON:       locator.AddressJSON,
+		AgentName:         "topic",
+		RuntimeSnapshotID: "snapshot-persisted",
+		Status:            baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+	}}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-persisted"},
+	}
+	m := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager:    runtimeManager,
+		agentBuilder:      &fakeAgentBuilder{},
+		workingDir:        t.TempDir(),
+		logger:            zerolog.Nop(),
+		sessions:          make(map[string]*TopicSession),
+		sessionStore:      store,
+	}
+
+	if _, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator}); err != nil {
+		t.Fatalf("RestoreSession() error = %v", err)
+	}
+	if len(runtimeManager.sessionRequests) != 1 {
+		t.Fatalf("RuntimeForSession() calls = %d, want 1", len(runtimeManager.sessionRequests))
+	}
+	if got := runtimeManager.sessionRequests[0].RuntimeSnapshotID; got != "snapshot-persisted" {
+		t.Fatalf("requested runtime snapshot = %q, want snapshot-persisted", got)
+	}
+}
+
+func TestRestoreSessionRejectsRuntimeSnapshotMismatch(t *testing.T) {
+	locator := testTelegramLocator(10, 42)
+	record := baldastate.SessionRecord{
+		SessionID:         locator.SessionID,
+		UserID:            "tg-101",
+		ChannelType:       locator.ChannelType,
+		AddressKey:        locator.AddressKey,
+		AddressJSON:       locator.AddressJSON,
+		AgentName:         "topic",
+		RuntimeSnapshotID: "snapshot-persisted",
+		Status:            baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+		sessionAddressKey(locator.ChannelType, locator.AddressKey): record,
+	}}
+	closeCalls := 0
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime: &BuiltRuntime{
+			RuntimeSnapshotID: "snapshot-other",
+			Close: func() error {
+				closeCalls++
+				return nil
+			},
+		},
+	}
+	m := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager:    runtimeManager,
+		agentBuilder:      &fakeAgentBuilder{},
+		workingDir:        t.TempDir(),
+		logger:            zerolog.Nop(),
+		sessions:          make(map[string]*TopicSession),
+		sessionStore:      store,
+	}
+
+	_, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator})
+	if err == nil || !strings.Contains(err.Error(), "does not match persisted snapshot") {
+		t.Fatalf("RestoreSession() error = %v, want snapshot mismatch", err)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("runtime close calls = %d, want 1", closeCalls)
+	}
+	if len(store.upsertedRecords) != 0 {
+		t.Fatalf("persisted records = %d, want 0", len(store.upsertedRecords))
+	}
+	if _, ok := m.sessions[locator.SessionID]; ok {
+		t.Fatal("mismatched runtime was published")
+	}
 }
 
 func TestCreateSession_ReusesSingleRuntimeAndMapsAgentSessions(t *testing.T) {

@@ -67,14 +67,14 @@ type telegramInboundHandler struct {
 type telegramInboundHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore            `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore     `optional:"true"`
-	SessionManager    *baldasession.Manager       `optional:"true"`
-	Dispatcher        actortransport.Dispatcher   `optional:"true"`
-	QuestionService   *questions.Service          `optional:"true"`
-	Channel           *baldatelegram.Adapter      `optional:"true"`
-	AuthToken         string                      `name:"balda_auth_token" optional:"true"`
-	BaldaProviderID   string                      `name:"balda_provider" optional:"true"`
+	OwnerStore        *auth.OwnerStore          `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore   `optional:"true"`
+	SessionManager    *baldasession.Manager     `optional:"true"`
+	Dispatcher        actortransport.Dispatcher `optional:"true"`
+	QuestionService   *questions.Service        `optional:"true"`
+	Channel           *baldatelegram.Adapter    `optional:"true"`
+	AuthToken         string                    `name:"balda_auth_token" optional:"true"`
+	BaldaProviderID   string                    `name:"balda_provider" optional:"true"`
 	Logger            zerolog.Logger
 }
 
@@ -434,7 +434,11 @@ func (h *telegramInboundHandler) prepareTelegramSession(ctx context.Context, inb
 	if ts == nil {
 		return ingressapp.SessionPreparation{Reason: telegramIngressReasonSessionUnavailable}, nil
 	}
-	return ingressapp.SessionPreparation{Ready: true, UserID: ts.GetUserID(), RequesterUserID: transportUserID, AgentSessionID: ts.GetAgentSessionID(), TopicID: inbound.TopicID}, nil
+	return ingressapp.SessionPreparation{
+		Ready: true, UserID: ts.GetUserID(), RequesterUserID: transportUserID,
+		AgentSessionID: ts.GetAgentSessionID(), TopicID: inbound.TopicID, WorkspaceDir: ts.GetWorkspaceDir(),
+		RuntimeSnapshotID: ts.GetRuntimeSnapshotID(),
+	}, nil
 }
 
 func (h *telegramInboundHandler) dispatchTelegramInbound(ctx context.Context, envelope actorlayer.Envelope) (*actortransport.DispatchReceipt, error) {
@@ -588,7 +592,6 @@ func (h *telegramInboundHandler) getOwnerBinding() (ownerID, chatID int64) {
 	defer h.mu.RUnlock()
 	return h.ownerID, h.chatID
 }
-
 
 func (h *telegramInboundHandler) setOwner(ownerID, chatID int64) {
 	h.mu.Lock()

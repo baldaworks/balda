@@ -10,11 +10,17 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/go-actorlayer"
 )
 
 const (
-	SchemaVersion = 1
+	LegacySchemaVersion = 1
+	SchemaVersion       = 2
+	maxPayloadBytes     = 64 << 10
+	maxCommandNameBytes = 64
+	maxCommandArgsBytes = 16 << 10
+	maxSnapshotIDBytes  = 128
 )
 
 // Access contains immutable capabilities established by ingress.
@@ -37,24 +43,37 @@ type Invocation struct {
 
 // Payload is the command body routed solely by Name.
 type Payload struct {
-	Version      int                 `json:"version"`
-	Name         string              `json:"name"`
-	Args         string              `json:"args,omitempty"`
-	Locator      deliverycmd.Locator `json:"locator"`
-	Transport    string              `json:"transport"`
-	Principal    string              `json:"principal"`
-	Access       Access              `json:"access"`
-	Conversation Conversation        `json:"conversation"`
-	Presentation deliveryfmt.Options `json:"presentation"`
-	Invocation   Invocation          `json:"invocation"`
+	Version      int                          `json:"version"`
+	Name         string                       `json:"name"`
+	SnapshotID   runtimecatalogcmd.SnapshotID `json:"snapshot_id,omitempty"`
+	Args         string                       `json:"args,omitempty"`
+	Locator      deliverycmd.Locator          `json:"locator"`
+	Transport    string                       `json:"transport"`
+	Principal    string                       `json:"principal"`
+	Access       Access                       `json:"access"`
+	Conversation Conversation                 `json:"conversation"`
+	Presentation deliveryfmt.Options          `json:"presentation"`
+	Invocation   Invocation                   `json:"invocation"`
 }
 
 func (p Payload) Validate() error {
-	if p.Version != SchemaVersion {
+	if p.Version != LegacySchemaVersion && p.Version != SchemaVersion {
 		return fmt.Errorf("unsupported command payload version %d", p.Version)
 	}
-	if strings.TrimSpace(p.Name) == "" {
+	if strings.TrimSpace(p.Name) == "" || len(p.Name) > maxCommandNameBytes {
 		return errors.New("command name is required")
+	}
+	if len(p.Args) > maxCommandArgsBytes {
+		return errors.New("command arguments exceed limit")
+	}
+	if p.Version == SchemaVersion && (strings.TrimSpace(string(p.SnapshotID)) == "" || len(p.SnapshotID) > maxSnapshotIDBytes) {
+		return errors.New("command snapshot id is required")
+	}
+	if p.Version == SchemaVersion && string(p.SnapshotID) != strings.TrimSpace(string(p.SnapshotID)) {
+		return errors.New("command snapshot id is not normalized")
+	}
+	if p.Version == LegacySchemaVersion && p.SnapshotID != "" {
+		return errors.New("legacy command cannot pin a snapshot")
 	}
 	if strings.TrimSpace(p.Transport) == "" {
 		return errors.New("command transport is required")
@@ -100,6 +119,9 @@ type Advertisement struct {
 
 // NewEnvelope validates and serializes one durable command.
 func NewEnvelope(p Payload, opts EnvelopeOptions) (actorlayer.Envelope, error) {
+	if p.Version != SchemaVersion {
+		return actorlayer.Envelope{}, errors.New("new command envelopes require schema version 2")
+	}
 	if err := p.Validate(); err != nil {
 		return actorlayer.Envelope{}, err
 	}
@@ -118,6 +140,9 @@ func NewEnvelope(p Payload, opts EnvelopeOptions) (actorlayer.Envelope, error) {
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("marshal command: %w", err)
 	}
+	if len(env.Payload.Data) > maxPayloadBytes {
+		return actorlayer.Envelope{}, errors.New("command payload exceeds limit")
+	}
 	if err := env.Validate(); err != nil {
 		return actorlayer.Envelope{}, err
 	}
@@ -128,6 +153,9 @@ func NewEnvelope(p Payload, opts EnvelopeOptions) (actorlayer.Envelope, error) {
 func Decode(env actorlayer.Envelope) (Payload, error) {
 	if env.Namespace != actorcmd.NamespaceChatCommand || env.Kind != actorcmd.KindCommandExecute || !strings.EqualFold(env.To.Target, actorcmd.ActorTypeCommand) {
 		return Payload{}, errors.New("invalid command envelope taxonomy")
+	}
+	if len(env.Payload.Data) > maxPayloadBytes {
+		return Payload{}, errors.New("command payload exceeds limit")
 	}
 	var p Payload
 	if err := actorlayer.UnmarshalPayload(env.Payload, &p); err != nil {

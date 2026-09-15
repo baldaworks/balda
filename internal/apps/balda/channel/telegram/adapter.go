@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramfmt"
@@ -59,6 +60,7 @@ type Adapter struct {
 	tgClient           client.ClientWithResponsesInterface
 	logger             zerolog.Logger
 	planUpdatesEnabled bool
+	commands           *commandcmd.Registry
 
 	typingMu               sync.Mutex
 	typingThrottleInterval time.Duration
@@ -140,6 +142,7 @@ type AdapterParams struct {
 	TGClient           client.ClientWithResponsesInterface
 	PlanUpdatesEnabled bool `name:"balda_telegram_plan_updates"`
 	Logger             zerolog.Logger
+	Commands           *commandcmd.Registry
 }
 
 // NewAdapter creates the Telegram balda adapter.
@@ -149,6 +152,7 @@ func NewAdapter(params AdapterParams) *Adapter {
 		tgClient:            params.TGClient,
 		logger:              params.Logger.With().Str("component", "balda.channel.telegram").Logger(),
 		planUpdatesEnabled:  params.PlanUpdatesEnabled,
+		commands:            params.Commands,
 		typingLastSentAt:    make(map[string]time.Time),
 		now:                 time.Now,
 		progressDrafts:      make(map[string]int),
@@ -700,7 +704,7 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 	if event == nil || event.Message == nil || event.Message.From == nil {
 		return CommandContext{}, false
 	}
-	if !commandSupported(event.Command) {
+	if !commandSupported(event.Command) && (a.commands == nil || !a.commands.Supports(ChannelType, event.Command)) {
 		return CommandContext{}, false
 	}
 	topicID := a.topicIDFromMessage(event.Message)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -58,12 +59,19 @@ func (f AuthorizerFunc) Authorize(ctx context.Context, inbound InboundContext) (
 // SessionPreparation contains runtime session identity established before
 // durable acceptance.
 type SessionPreparation struct {
-	Ready           bool
-	Reason          string
-	UserID          string
-	RequesterUserID string
-	AgentSessionID  string
-	TopicID         int
+	Ready             bool
+	Reason            string
+	UserID            string
+	RequesterUserID   string
+	AgentSessionID    string
+	TopicID           int
+	WorkspaceDir      string
+	RuntimeSnapshotID string
+}
+
+// SkillPinner resolves an explicit reference using trusted prepared-session scope.
+type SkillPinner interface {
+	PinExplicit(ctx context.Context, runtimeSnapshotID, text string) (string, *runtimecatalogcmd.SkillSelection, error)
 }
 
 // SessionPreparer enforces create/restore/session preconditions without

@@ -72,6 +72,7 @@ func TestApplicationLifecycleStagesStartQuestionProjectorAfterTransport(t *testi
 
 	want := []string{
 		"bundled MCP",
+		"runtime contribution catalog",
 		"session-memory runtime",
 		"provider runtime",
 		"session manager",

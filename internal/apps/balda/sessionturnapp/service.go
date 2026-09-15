@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
@@ -19,11 +17,14 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/progress"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturn"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usageview"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/adk/v2/agent"
@@ -123,6 +124,7 @@ type ExecutionRequest struct {
 	OutboundFrom    actorlayer.ActorAddress
 	RunOptions      []runner.RunOption
 	MemoryRefresh   sessionturn.MemoryRefresh
+	SelectedSkill   *runtimecatalogcmd.LoadedSkill
 	TurnSource      string
 	DedupeKey       string
 }
@@ -272,6 +274,7 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 		}
 	}
 	providerText = composeApplicationMemoryPrompt(providerText, req.MemoryRefresh.Content)
+	providerText = composeSelectedSkillPrompt(providerText, req.SelectedSkill)
 	userContent, err := buildUserContent(providerText, req.Attachments)
 	if err != nil {
 		return fmt.Errorf("build user content: %w", err)

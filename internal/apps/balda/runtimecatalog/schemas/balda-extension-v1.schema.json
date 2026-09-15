@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://baldaworks.dev/schemas/balda-extension/1.0.0/schema.json",
+  "title": "balda-extension",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "commands"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "commands": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "description", "instruction"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "instruction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          }
+        }
+      }
+    }
+  }
+}

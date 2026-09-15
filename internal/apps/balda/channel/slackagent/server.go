@@ -44,6 +44,7 @@ type Server struct {
 	inboundProcessor InboundProcessor
 	turnCanceller    TurnCanceller
 	commandHandler   commandcmd.Ingress
+	commands         *commandcmd.Registry
 	config           Config
 	logger           zerolog.Logger
 
@@ -61,11 +62,12 @@ type TurnCanceller interface {
 	CancelTurn(ctx context.Context, stopped SessionStopped) error
 }
 
-func NewServer(processor InboundProcessor, canceller TurnCanceller, commandHandler commandcmd.Ingress, config Config, logger zerolog.Logger) *Server {
+func NewServer(processor InboundProcessor, canceller TurnCanceller, commandHandler commandcmd.Ingress, commands *commandcmd.Registry, config Config, logger zerolog.Logger) *Server {
 	return &Server{
 		inboundProcessor: processor,
 		turnCanceller:    canceller,
 		commandHandler:   commandHandler,
+		commands:         commands,
 		config:           config,
 		logger:           logger.With().Str("component", "balda.channel.slackagent").Logger(),
 		processSem:       make(chan struct{}, webhookMaxConcurrentTasks),
@@ -184,7 +186,7 @@ func (h *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	request, err := decodeCommandRequest(body)
+	request, err := decodeCommandRequestWithRegistry(body, h.commands)
 	if err != nil {
 		if errors.Is(err, errUnsupportedCommand) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")

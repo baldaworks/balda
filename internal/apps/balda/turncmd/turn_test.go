@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/baldaworks/go-actorlayer"
 )
 
@@ -74,6 +75,33 @@ func TestSessionTurnEnvelopePreservesMemoryMetadata(t *testing.T) {
 	}
 	if payload.Metadata == nil || payload.Metadata.LatestMemoryAt != latestMemoryAt {
 		t.Fatalf("metadata = %+v, want latest_memory_at %q", payload.Metadata, latestMemoryAt)
+	}
+}
+
+func TestSessionTurnEnvelopePreservesPinnedSkillSelection(t *testing.T) {
+	t.Parallel()
+
+	selection := runtimecatalogcmd.SkillSelection{
+		Snapshot: "snapshot-1",
+		Ref: runtimecatalogcmd.SkillRef{
+			Source:   runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "demo"},
+			Revision: "revision-1",
+			Name:     "review",
+		},
+	}
+	env, err := SessionTurnEnvelope(SessionTurnPayload{
+		Locator: deliverycmd.Locator{SessionID: "tg-1-0"},
+		Skill:   &selection,
+	})
+	if err != nil {
+		t.Fatalf("SessionTurnEnvelope() error = %v", err)
+	}
+	var payload SessionTurnPayload
+	if err := actorlayer.UnmarshalPayload(env.Payload, &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Skill == nil || *payload.Skill != selection {
+		t.Fatalf("skill selection = %+v, want %+v", payload.Skill, selection)
 	}
 }
 

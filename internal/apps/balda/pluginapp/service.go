@@ -3,6 +3,7 @@ package pluginapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,7 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/agentplugin"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	baldagit "github.com/baldaworks/balda/internal/git"
 )
@@ -33,11 +35,26 @@ type AvailablePlugin struct {
 	SourceRoot       string
 	PluginPath       string
 	Installed        bool
+	Diagnostics      []runtimecatalogcmd.Diagnostic
 }
 
 type Service struct {
 	stateDir string
 	kv       baldastate.KVStore
+	managed  *managedLifecycle
+}
+
+// InstalledState is the application-owned durable plugin state exposed only
+// to composition adapters. It contains logical references, never host paths.
+type InstalledState struct {
+	Name         string
+	Version      string
+	Marketplace  string
+	Origin       string
+	Revision     string
+	Enabled      bool
+	Drifted      bool
+	Capabilities CapabilitySummary
 }
 
 type MarketplaceSource struct {
@@ -99,6 +116,26 @@ func New(stateDir string, kv baldastate.KVStore) (*Service, error) {
 	return &Service{stateDir: trimmed, kv: kv}, nil
 }
 
+// NewManaged creates the durable plugin lifecycle service.
+func NewManaged(stateDir string, kv baldastate.KVStore, store PluginStore, activator CatalogActivator) (*Service, error) {
+	service, err := New(stateDir, kv)
+	if err != nil {
+		return nil, err
+	}
+	loader, err := runtimecatalog.NewSourceLoader(runtimecatalog.SourceLimits{})
+	if err != nil {
+		return nil, err
+	}
+	if store == nil || activator == nil {
+		return nil, fmt.Errorf("plugin store and catalog activator are required")
+	}
+	if err := os.MkdirAll(service.stateDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create plugin state directory: %w", err)
+	}
+	service.managed = &managedLifecycle{stateDir: service.stateDir, store: store, kv: kv, activator: activator, loader: loader, now: time.Now}
+	return service, nil
+}
+
 func InferMarketplaceName(source string) string {
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
@@ -116,54 +153,74 @@ func InferMarketplaceName(source string) string {
 }
 
 func (s *Service) ListInstalled(ctx context.Context) ([]PluginSummary, error) {
+	if s.managed != nil {
+		installs, err := s.managed.store.ListPluginInstalls(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]PluginSummary, 0, len(installs))
+		for _, install := range installs {
+			out = append(out, PluginSummary{Name: install.PluginID, Version: install.Version, Description: install.Description})
+		}
+		return out, nil
+	}
 	_ = ctx
-	catalog, err := s.loadCatalog()
+	plugins, err := s.legacyInstalled()
 	if err != nil {
 		return nil, err
 	}
-	plugins := catalog.Plugins()
-	if len(plugins) == 0 {
-		return nil, nil
-	}
-	out := make([]PluginSummary, 0, len(plugins))
-	for _, plugin := range plugins {
-		out = append(out, PluginSummary{
-			Name:        plugin.Name,
-			Version:     plugin.Version,
-			Description: plugin.Description,
-		})
-	}
-	return out, nil
+	return plugins, nil
 }
 
 func (s *Service) GetInstalled(ctx context.Context, name string) (PluginSummary, bool, error) {
-	_ = ctx
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return PluginSummary{}, false, nil
 	}
-	catalog, err := s.loadCatalog()
+	if s.managed != nil {
+		install, found, err := s.managed.store.GetPluginInstall(ctx, trimmed)
+		if err != nil || !found {
+			return PluginSummary{}, found, err
+		}
+		return PluginSummary{Name: install.PluginID, Version: install.Version, Description: install.Description}, true, nil
+	}
+	plugins, err := s.legacyInstalled()
 	if err != nil {
 		return PluginSummary{}, false, err
 	}
-	for _, plugin := range catalog.Plugins() {
+	for _, plugin := range plugins {
 		if plugin.Name == trimmed {
-			return PluginSummary{
-				Name:        plugin.Name,
-				Version:     plugin.Version,
-				Description: plugin.Description,
-			}, true, nil
+			return plugin, true, nil
 		}
 	}
 	return PluginSummary{}, false, nil
 }
 
-func (s *Service) loadCatalog() (*agentplugin.Catalog, error) {
-	loader, err := agentplugin.NewLoader(s.stateDir)
+func (s *Service) legacyInstalled() ([]PluginSummary, error) {
+	loader, err := runtimecatalog.NewSourceLoader(runtimecatalog.SourceLimits{})
 	if err != nil {
 		return nil, err
 	}
-	return loader.Load()
+	entries, err := os.ReadDir(filepath.Join(s.stateDir, "plugins"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read installed plugins: %w", err)
+	}
+	plugins := make([]PluginSummary, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		pkg, err := loader.LoadPluginPackage(filepath.Join(s.stateDir, "plugins", entry.Name()))
+		if err != nil {
+			continue
+		}
+		plugins = append(plugins, PluginSummary{Name: pkg.Source.Descriptor.ID.Name, Version: pkg.Version, Description: pkg.Description})
+	}
+	sort.Slice(plugins, func(i, j int) bool { return plugins[i].Name < plugins[j].Name })
+	return plugins, nil
 }
 
 const marketplacePrefix = "plugin_marketplace:"
@@ -180,12 +237,23 @@ type marketplaceIndex struct {
 
 type marketplacePlugin struct {
 	Name   string `json:"name"`
+	Path   string `json:"path"`
 	Source struct {
 		Source string `json:"source"`
 		Path   string `json:"path"`
 	} `json:"source"`
 	ManifestPath string `json:"manifest_path"`
 	Category     string `json:"category"`
+}
+
+func (p marketplacePlugin) packagePath() (string, bool) {
+	if path := strings.TrimSpace(p.Path); path != "" {
+		return path, false
+	}
+	if strings.TrimSpace(p.Source.Source) != "local" {
+		return "", false
+	}
+	return strings.TrimSpace(p.Source.Path), true
 }
 
 func (s *Service) ListMarketplaces(ctx context.Context) ([]MarketplaceSource, error) {
@@ -465,6 +533,9 @@ func (s *Service) Install(ctx context.Context, selector string) error {
 	if !ok {
 		return fmt.Errorf("plugin not found")
 	}
+	if s.managed != nil {
+		return s.managed.install(ctx, plugin)
+	}
 	if installed, installedOK, err := s.GetInstalled(ctx, plugin.Name); err != nil {
 		return err
 	} else if installedOK && sameInstalledPluginVersion(installed, plugin) {
@@ -495,21 +566,19 @@ func (s *Service) Install(ctx context.Context, selector string) error {
 		_ = os.RemoveAll(stageRoot)
 		return fmt.Errorf("activate installed plugin root: %w", err)
 	}
-	loader, err := agentplugin.NewLoader(s.stateDir)
+	loader, err := runtimecatalog.NewSourceLoader(runtimecatalog.SourceLimits{})
 	if err != nil {
 		rollbackInstalledPlugin(destRoot, backupRoot)
 		return err
 	}
-	catalog, err := loader.Load()
+	source, err := loader.LoadPlugin(destRoot)
 	if err != nil {
 		rollbackInstalledPlugin(destRoot, backupRoot)
 		return err
 	}
-	for _, installed := range catalog.Plugins() {
-		if installed.Name == plugin.Name {
-			_ = os.RemoveAll(backupRoot)
-			return nil
-		}
+	if source.Descriptor.ID.Name == plugin.Name {
+		_ = os.RemoveAll(backupRoot)
+		return nil
 	}
 	rollbackInstalledPlugin(destRoot, backupRoot)
 	return fmt.Errorf("installed plugin %q did not validate", plugin.Name)
@@ -525,6 +594,9 @@ func sameInstalledPluginVersion(installed PluginSummary, available AvailablePlug
 }
 
 func (s *Service) RemoveInstalled(ctx context.Context, name string) error {
+	if s.managed != nil {
+		return s.managed.remove(ctx, strings.TrimSpace(name))
+	}
 	_, ok, err := s.GetInstalled(ctx, name)
 	if err != nil {
 		return err
@@ -533,6 +605,127 @@ func (s *Service) RemoveInstalled(ctx context.Context, name string) error {
 		return fmt.Errorf("plugin not installed")
 	}
 	return os.RemoveAll(filepath.Join(s.stateDir, "plugins", strings.TrimSpace(name)))
+}
+
+func (s *Service) Enable(ctx context.Context, name string) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.setEnabled(ctx, strings.TrimSpace(name), true)
+}
+
+// Upgrade validates and atomically upgrades an existing managed installation.
+func (s *Service) Upgrade(ctx context.Context, selector string) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	plugin, found, err := s.GetAvailable(ctx, selector)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("plugin not found")
+	}
+	return s.managed.upgrade(ctx, plugin)
+}
+
+// AdoptOrigin explicitly locks an origin-unknown migrated install to one
+// unambiguous marketplace package before its first managed upgrade.
+func (s *Service) AdoptOrigin(ctx context.Context, selector string) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	plugin, found, err := s.GetAvailable(ctx, selector)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("plugin not found")
+	}
+	return s.managed.adoptOrigin(ctx, plugin)
+}
+
+func (s *Service) Disable(ctx context.Context, name string) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.setEnabled(ctx, strings.TrimSpace(name), false)
+}
+
+func (s *Service) Rollback(ctx context.Context, name, revision string) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.rollback(ctx, strings.TrimSpace(name), strings.TrimSpace(revision))
+}
+
+func (s *Service) Recover(ctx context.Context) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.recover(ctx)
+}
+
+// MigrateLegacy imports startup-era packages as origin-unknown managed
+// revisions. Their origin must be selected explicitly before upgrade.
+func (s *Service) MigrateLegacy(ctx context.Context) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.migrateLegacy(ctx)
+}
+
+func (s *Service) Drifted(ctx context.Context, name string) (bool, error) {
+	if s.managed == nil {
+		return false, errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.drifted(ctx, strings.TrimSpace(name))
+}
+
+func (s *Service) Purge(ctx context.Context, name, revision string, purgeData bool) error {
+	if s.managed == nil {
+		return errors.New("managed plugin lifecycle is unavailable")
+	}
+	return s.managed.purge(ctx, strings.TrimSpace(name), strings.TrimSpace(revision), purgeData)
+}
+
+// Capabilities compares the installed revision with an available marketplace package.
+func (s *Service) Capabilities(ctx context.Context, selector string) (CapabilityDiff, error) {
+	if s.managed == nil {
+		return CapabilityDiff{}, errors.New("managed plugin lifecycle is unavailable")
+	}
+	plugin, found, err := s.GetAvailable(ctx, selector)
+	if err != nil {
+		return CapabilityDiff{}, err
+	}
+	if !found {
+		return CapabilityDiff{}, errors.New("plugin not found")
+	}
+	return s.managed.capabilityDiff(ctx, plugin)
+}
+
+// Inspect returns bounded durable state for one managed installation.
+func (s *Service) Inspect(ctx context.Context, name string) (InstalledState, bool, error) {
+	if s.managed == nil {
+		return InstalledState{}, false, errors.New("managed plugin lifecycle is unavailable")
+	}
+	install, found, err := s.managed.store.GetPluginInstall(ctx, strings.TrimSpace(name))
+	if err != nil || !found {
+		return InstalledState{}, found, err
+	}
+	var capabilities CapabilitySummary
+	if err := json.Unmarshal([]byte(install.CapabilityJSON), &capabilities); err != nil {
+		return InstalledState{}, false, fmt.Errorf("decode plugin capabilities: %w", err)
+	}
+	drifted, err := s.managed.drifted(ctx, install.PluginID)
+	if err != nil {
+		return InstalledState{}, false, err
+	}
+	return InstalledState{
+		Name: install.PluginID, Version: install.Version, Marketplace: install.OriginMarketplace,
+		Origin: install.OriginPath, Revision: install.ActiveRevisionID, Enabled: install.Enabled,
+		Drifted: drifted, Capabilities: capabilities,
+	}, true, nil
 }
 
 func splitSelector(selector string) (name string, marketplace string) {
@@ -570,15 +763,22 @@ func (s *Service) readMarketplacePlugins(ctx context.Context, src MarketplaceSou
 		if strings.TrimSpace(entry.Name) == "" {
 			continue
 		}
-		if strings.TrimSpace(entry.Source.Source) != "local" {
+		packagePath, transitional := entry.packagePath()
+		if packagePath == "" || filepath.IsAbs(packagePath) {
 			continue
 		}
-		pluginRoot := filepath.Join(root, filepath.Clean(strings.TrimSpace(entry.Source.Path)))
+		pluginRoot, err := containedMarketplacePath(root, packagePath)
+		if err != nil {
+			continue
+		}
 		summary, err := readPluginSummary(pluginRoot, strings.TrimSpace(entry.ManifestPath))
 		if err != nil {
 			continue
 		}
-		out = append(out, AvailablePlugin{
+		if summary.Name != strings.TrimSpace(entry.Name) {
+			continue
+		}
+		plugin := AvailablePlugin{
 			Name:             summary.Name,
 			DisplayName:      summary.Name,
 			Description:      summary.Description,
@@ -588,9 +788,40 @@ func (s *Service) readMarketplacePlugins(ctx context.Context, src MarketplaceSou
 			Category:         strings.TrimSpace(entry.Category),
 			SourceRoot:       root,
 			PluginPath:       pluginRoot,
-		})
+		}
+		if transitional {
+			plugin.Diagnostics = append(plugin.Diagnostics, runtimecatalogcmd.Diagnostic{
+				Severity: runtimecatalogcmd.DiagnosticSeverityWarning,
+				Code:     runtimecatalogcmd.DiagnosticMarketplaceSourcePathDeprecated,
+				Source: runtimecatalogcmd.SourceID{
+					Kind: runtimecatalogcmd.SourceKindPlugin,
+					Name: summary.Name,
+				},
+			})
+		}
+		out = append(out, plugin)
 	}
 	return out, nil
+}
+
+func containedMarketplacePath(root, relative string) (string, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.EvalSymlinks(filepath.Join(root, filepath.Clean(relative)))
+	if err != nil {
+		return "", err
+	}
+	relativeToRoot, err := filepath.Rel(root, path)
+	if err != nil || relativeToRoot == ".." || strings.HasPrefix(relativeToRoot, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("plugin path escapes marketplace root")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("plugin path is not a directory")
+	}
+	return path, nil
 }
 
 func (s *Service) materializeMarketplaceSource(ctx context.Context, src MarketplaceSource) (string, error) {
@@ -797,7 +1028,12 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 	var data []byte
 	var err error
 	for _, candidate := range candidates {
-		data, err = os.ReadFile(filepath.Join(root, filepath.Clean(candidate)))
+		var manifestFile string
+		manifestFile, err = containedMarketplaceFile(root, candidate)
+		if err != nil {
+			return PluginSummary{}, err
+		}
+		data, err = os.ReadFile(manifestFile)
 		if err == nil {
 			break
 		}
@@ -828,6 +1064,29 @@ func readPluginSummary(root string, manifestPath string) (PluginSummary, error) 
 		Version:     strings.TrimSpace(manifest.Version),
 		Description: strings.TrimSpace(manifest.Description),
 	}, nil
+}
+
+func containedMarketplaceFile(root, relative string) (string, error) {
+	if filepath.IsAbs(relative) {
+		return "", fmt.Errorf("manifest path must be relative")
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.EvalSymlinks(filepath.Join(resolvedRoot, filepath.Clean(relative)))
+	if err != nil {
+		return "", err
+	}
+	relativeToRoot, err := filepath.Rel(resolvedRoot, path)
+	if err != nil || relativeToRoot == ".." || strings.HasPrefix(relativeToRoot, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("manifest path escapes plugin root")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("manifest path is not a regular file")
+	}
+	return path, nil
 }
 
 func resolveLocalMarketplaceRoot(source string) string {

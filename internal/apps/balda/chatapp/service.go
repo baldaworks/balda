@@ -17,6 +17,7 @@ type ServiceParams struct {
 	Dispatcher Dispatcher
 	Questions  QuestionResolver // optional
 	Authorizer Authorizer       // optional
+	Skills     SkillPinner      // optional
 	Logger     zerolog.Logger   // optional
 }
 
@@ -27,6 +28,7 @@ type Service struct {
 	dispatcher Dispatcher
 	questions  QuestionResolver
 	authorizer Authorizer
+	skills     SkillPinner
 	logger     zerolog.Logger
 }
 
@@ -49,6 +51,7 @@ func NewService(params ServiceParams) (*Service, error) {
 		dispatcher: params.Dispatcher,
 		questions:  params.Questions,
 		authorizer: authorizer,
+		skills:     params.Skills,
 		logger:     params.Logger.With().Str("component", "balda.chatapp").Logger(),
 	}, nil
 }
@@ -99,6 +102,12 @@ func (s *Service) HandleChat(ctx context.Context, request Request) (Result, erro
 	payload.RequesterUserID = firstNonEmpty(prep.RequesterUserID, inbound.UserID)
 	payload.AgentSessionID = strings.TrimSpace(prep.AgentSessionID)
 	payload.TopicID = prep.TopicID
+	if s.skills != nil {
+		payload.Text, payload.Skill, err = s.skills.PinExplicit(ctx, prep.RuntimeSnapshotID, payload.Text)
+		if err != nil {
+			return s.finish(logContext, terminalResult(ReasonInvalidInbound), ReasonInvalidInbound, actorlayer.DecodeError(err))
+		}
+	}
 
 	envelope, err := turncmd.SessionTurnEnvelope(payload)
 	if err != nil {

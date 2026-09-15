@@ -82,9 +82,11 @@ components:
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd
       - internal/apps/balda/permissionfmt
+      - internal/apps/balda/plugincmd
       - internal/apps/balda/progressfmt
       - internal/apps/balda/questioncmd
       - internal/apps/balda/questionfmt
+      - internal/apps/balda/runtimecatalogcmd
       - internal/apps/balda/telegramref
       - internal/apps/balda/telegramfmt
       - internal/apps/balda/turncmd
@@ -112,7 +114,6 @@ components:
       - internal/apps/balda/questions
       - internal/apps/balda/permissions
       - internal/apps/balda/pluginapp
-      - internal/apps/balda/plugincmd
       - internal/apps/balda/scheduledjobs
       - internal/apps/balda/session
       - internal/apps/balda/sessionmemorymcp
@@ -121,6 +122,29 @@ components:
       - internal/apps/balda/sessionmemoryapp
       - internal/apps/balda/welcome
       - internal/apps/balda/webhookapp
+
+  # Runtime contribution compilation and bounded source/content reads. Agent,
+  # command, and MCP consumers depend on contracts or local ports; this owner
+  # must not reach into their application implementations.
+  runtime_catalog:
+    in:
+      - internal/apps/balda/runtimecatalog
+
+  # Desired/observed MCP lifecycle and safe revision-aware launch policy.
+  mcp_runtime:
+    in:
+      - internal/apps/balda/mcpruntime
+
+  # Provider registry projection belongs in composition wiring.
+  mcp_wiring:
+    in:
+      - internal/apps/balda/mcpfx
+
+  # Composition adapters for catalog sources, lifecycle, scope overlays, and
+  # command/skill/MCP projections.
+  catalog_wiring:
+    in:
+      - internal/apps/balda/catalogapp
 
   # Product feature behavior. Feature subtrees stay here; they are not top-level architecture layers.
   domain:
@@ -217,7 +241,6 @@ components:
       - internal/apps/balda/eventbus/**
       - internal/apps/balda/internalmcp
       - internal/apps/balda/paths
-      - internal/apps/balda/agentplugin
       - internal/apps/balda/redaction
       - internal/apps/balda/shutdown
       - internal/apps/sessionmcp
@@ -329,8 +352,51 @@ deps:
       - session_memory_mcp
       - session_memory_contracts
       - application
+      - runtime_catalog
       - storage
       - infrastructure
+    anyVendorDeps: true
+
+  runtime_catalog:
+    mayDependOn:
+      - contracts
+      - runtime_catalog
+    anyVendorDeps: true
+
+  mcp_runtime:
+    mayDependOn:
+      - contracts
+      - mcp_runtime
+    # The runtime receives resolver/launcher/projector interfaces from
+    # composition. Deep scan would invert those constructor arguments into
+    # dependencies on their implementations.
+    deepScan: false
+    anyVendorDeps: false
+
+  mcp_wiring:
+    mayDependOn:
+      - contracts
+      - mcp_runtime
+      - mcp_wiring
+    # Constructors inject runtime ports into provider adapters; deep scan
+    # otherwise reports the intended composition direction as an inverse edge.
+    deepScan: false
+    anyVendorDeps: true
+
+  catalog_wiring:
+    mayDependOn:
+      - contracts
+      - application
+      - domain
+      - command_wiring
+      - runtime_catalog
+      - mcp_runtime
+      - mcp_wiring
+      - storage
+      - catalog_wiring
+    # This is the explicit composition boundary for catalog-owned ports.
+    # Direct imports remain enforced while constructor injection is allowed.
+    deepScan: false
     anyVendorDeps: true
 
   domain:
@@ -382,6 +448,8 @@ deps:
       - neutral_registry
       - application
       - domain
+      - runtime_catalog
+      - mcp_runtime
       - storage
       - infrastructure
     anyVendorDeps: true
@@ -510,6 +578,7 @@ deps:
       - runtime
       - ingress_wiring
       - command_wiring
+      - catalog_wiring
       - actor_wiring
       - delivery_usecase
       - delivery
