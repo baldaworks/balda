@@ -344,7 +344,19 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		registry.Set(binding.ID, binding.Config)
 		extraMCPServerIDs = append(extraMCPServerIDs, binding.ID)
 	}
-	runtime, err := builder.BuildRuntimeWithCapabilities(ctx, providerID, workingDir, nil, extraMCPServerIDs, capabilities.Skills)
+	runtime, err := builder.BuildRuntimeWithCapabilities(
+		ctx,
+		providerID,
+		workingDir,
+		nil,
+		extraMCPServerIDs,
+		capabilities.Skills,
+		SessionInstructionContext{
+			SnapshotID:  capabilities.SnapshotID,
+			SessionID:   strings.TrimSpace(request.Locator.SessionID),
+			ChannelType: strings.TrimSpace(request.Locator.ChannelType),
+		},
+	)
 	if err != nil {
 		if binding.ID != "" {
 			registry.Delete(binding.ID)

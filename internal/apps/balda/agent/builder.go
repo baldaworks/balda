@@ -47,16 +47,22 @@ const (
 )
 
 type Builder struct {
-	factory                *agentfactory.Factory
-	dedicatedFactory       dedicatedRuntimeFactory
-	normaCfg               runtimeconfig.RuntimeConfig
-	workingDir             string
-	workspaceEnabled       bool
-	workspaceBaseBranch    string
-	baldaGlobalInstruction string
-	sessionSvc             adksession.Service
-	memoryEnabled          bool
-	memorySnapshotReader   MemorySnapshotReader
+	factory                 runtimeFactory
+	dedicatedFactory        dedicatedRuntimeFactory
+	normaCfg                runtimeconfig.RuntimeConfig
+	workingDir              string
+	workspaceEnabled        bool
+	workspaceBaseBranch     string
+	baldaGlobalInstruction  string
+	sessionSvc              adksession.Service
+	memoryEnabled           bool
+	memorySnapshotReader    MemorySnapshotReader
+	instructionContributors []SessionInstructionContributor
+}
+
+// runtimeFactory is the provider-factory boundary used by chat runtimes.
+type runtimeFactory interface {
+	Build(ctx context.Context, req agentfactory.BuildRequest) (agent.Agent, error)
 }
 
 // dedicatedRuntimeFactory is the narrow provider-factory port used only by
@@ -189,34 +195,38 @@ func (b *Builder) buildBaldaInstructionWithSkills(
 type BuilderParams struct {
 	fx.In
 
-	Factory                *agentfactory.Factory
-	NormaCfg               runtimeconfig.RuntimeConfig
-	WorkingDir             string
-	WorkspaceEnabled       bool               `name:"balda_workspace_enabled"`
-	WorkspaceBaseBranch    string             `name:"balda_workspace_base_branch"`
-	BaldaGlobalInstruction string             `name:"balda_global_instruction"`
-	SessionService         adksession.Service `name:"balda_runtime_session_service"`
-	MemoryEnabled          bool               `name:"balda_memory_enabled"`
-	MemorySnapshotReader   MemorySnapshotReader
+	Factory                 *agentfactory.Factory
+	NormaCfg                runtimeconfig.RuntimeConfig
+	WorkingDir              string
+	WorkspaceEnabled        bool               `name:"balda_workspace_enabled"`
+	WorkspaceBaseBranch     string             `name:"balda_workspace_base_branch"`
+	BaldaGlobalInstruction  string             `name:"balda_global_instruction"`
+	SessionService          adksession.Service `name:"balda_runtime_session_service"`
+	MemoryEnabled           bool               `name:"balda_memory_enabled"`
+	MemorySnapshotReader    MemorySnapshotReader
+	InstructionContributors []SessionInstructionContributor `group:"balda_session_instruction_contributors"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
 func NewBuilder(params BuilderParams) *Builder {
+	var factory runtimeFactory
 	var dedicatedFactory dedicatedRuntimeFactory
 	if params.Factory != nil {
+		factory = params.Factory
 		dedicatedFactory = params.Factory
 	}
 	return &Builder{
-		factory:                params.Factory,
-		dedicatedFactory:       dedicatedFactory,
-		normaCfg:               params.NormaCfg,
-		workingDir:             strings.TrimSpace(params.WorkingDir),
-		workspaceEnabled:       params.WorkspaceEnabled,
-		workspaceBaseBranch:    strings.TrimSpace(params.WorkspaceBaseBranch),
-		baldaGlobalInstruction: strings.TrimSpace(params.BaldaGlobalInstruction),
-		sessionSvc:             params.SessionService,
-		memoryEnabled:          params.MemoryEnabled,
-		memorySnapshotReader:   params.MemorySnapshotReader,
+		factory:                 factory,
+		dedicatedFactory:        dedicatedFactory,
+		normaCfg:                params.NormaCfg,
+		workingDir:              strings.TrimSpace(params.WorkingDir),
+		workspaceEnabled:        params.WorkspaceEnabled,
+		workspaceBaseBranch:     strings.TrimSpace(params.WorkspaceBaseBranch),
+		baldaGlobalInstruction:  strings.TrimSpace(params.BaldaGlobalInstruction),
+		sessionSvc:              params.SessionService,
+		memoryEnabled:           params.MemoryEnabled,
+		memorySnapshotReader:    params.MemorySnapshotReader,
+		instructionContributors: append([]SessionInstructionContributor(nil), params.InstructionContributors...),
 	}
 }
 
@@ -245,7 +255,7 @@ func (b *Builder) BuildRuntimeWithMCPServerIDs(
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
 ) (*BuiltRuntime, error) {
-	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, SkillMetadataProjection{})
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, SkillMetadataProjection{}, SessionInstructionContext{})
 }
 
 // BuildRuntimeWithCapabilities builds a runtime from one immutable session capability binding.
@@ -255,8 +265,9 @@ func (b *Builder) BuildRuntimeWithCapabilities(
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
 	skills SkillMetadataProjection,
+	instructionContext SessionInstructionContext,
 ) (*BuiltRuntime, error) {
-	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, skills)
+	return b.buildRuntimeWithCapabilities(ctx, agentName, workspaceDir, bundledMCPServerIDs, extraMCPServerIDs, skills, instructionContext)
 }
 
 func (b *Builder) buildRuntimeWithCapabilities(
@@ -265,10 +276,17 @@ func (b *Builder) buildRuntimeWithCapabilities(
 	bundledMCPServerIDs []string,
 	extraMCPServerIDs []string,
 	skills SkillMetadataProjection,
+	instructionContext SessionInstructionContext,
 ) (*BuiltRuntime, error) {
 	const appName = defaultRuntimeAppName
 
-	instruction, err := b.buildRootRuntimeInstruction(ctx, agentName, workspaceDir, skills)
+	instructionContext.ProviderID = strings.TrimSpace(agentName)
+	instructionContext.WorkspaceDir = strings.TrimSpace(workspaceDir)
+	instructionContext.Skills = skills
+	if instructionContext.SnapshotID == "" {
+		instructionContext.SnapshotID = skills.Snapshot
+	}
+	instruction, err := b.buildRootRuntimeInstruction(ctx, agentName, workspaceDir, skills, instructionContext)
 	if err != nil {
 		return nil, err
 	}
@@ -602,8 +620,8 @@ func (b *Builder) buildSessionState(ctx context.Context, agentName, workspaceDir
 	return b.addMemorySnapshot(ctx, state)
 }
 
-func (b *Builder) buildRootRuntimeInstruction(_ context.Context, agentName, workspaceDir string, projection SkillMetadataProjection) (string, error) {
-	return b.buildBaldaInstructionWithSkills(
+func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, workspaceDir string, projection SkillMetadataProjection, input SessionInstructionContext) (string, error) {
+	base := b.buildBaldaInstructionWithSkills(
 		baldaSessionIDPlaceholder,
 		"telegram",
 		agentName,
@@ -611,7 +629,8 @@ func (b *Builder) buildRootRuntimeInstruction(_ context.Context, agentName, work
 		"{"+sessionstate.CWDKey+"}",
 		baldaRepoBranchAtStartPlaceholder,
 		projection,
-	), nil
+	)
+	return assembleSessionInstruction(ctx, base, input, b.instructionContributors)
 }
 
 func resolveSessionWorkspaceDir(workspaceDir string) (string, error) {
