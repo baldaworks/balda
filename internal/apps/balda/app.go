@@ -140,6 +140,9 @@ func Module(
 	if err := validateBaldaMCPConfiguration(normaCfg); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	if err := validateSessionInstructionsConfig(cfg.Balda.SessionInstructions); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	formattingMode, err := baldatelegram.ValidateFormattingMode(cfg.Balda.Telegram.FormattingMode)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
@@ -487,6 +490,14 @@ func Module(
 		),
 		fx.Provide(
 			fx.Annotate(
+				func() int {
+					return cfg.Balda.SessionInstructions.MaxTotalBytes
+				},
+				fx.ResultTags(`name:"balda_session_instruction_max_total_bytes"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
 				func() string {
 					return formattingMode
 				},
@@ -648,6 +659,13 @@ func Module(
 		),
 		fx.Invoke(registerApplicationLifecycle),
 	)
+}
+
+func validateSessionInstructionsConfig(cfg SessionInstructionsConfig) error {
+	if cfg.MaxTotalBytes < 0 {
+		return fmt.Errorf("balda.session_instructions.max_total_bytes must not be negative")
+	}
+	return nil
 }
 
 func validateBaldaMCPConfiguration(normaCfg runtimeconfig.RuntimeConfig) error {

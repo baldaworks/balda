@@ -10,7 +10,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 )
 
-const maxSessionInstructionBytes = 64 << 10
+const (
+	// DefaultMaxSessionInstructionContributorBytes bounds one trusted extension.
+	DefaultMaxSessionInstructionContributorBytes = 64 << 10
+	// DefaultMaxSessionInstructionContributionsBytes bounds all extension content.
+	DefaultMaxSessionInstructionContributionsBytes = 256 << 10
+)
 
 // SessionInstructionContext is the provider-neutral, immutable context exposed
 // to trusted host instruction contributors while a session runtime is built.
@@ -36,10 +41,14 @@ func assembleSessionInstruction(
 	base string,
 	input SessionInstructionContext,
 	contributors []SessionInstructionContributor,
+	maxTotalBytes int,
 ) (string, error) {
 	base = strings.TrimSpace(base)
-	if len(base) > maxSessionInstructionBytes {
-		return "", errors.New("base session instruction exceeds size limit")
+	if maxTotalBytes < 0 {
+		return "", errors.New("session instruction contribution total size limit must not be negative")
+	}
+	if maxTotalBytes == 0 {
+		maxTotalBytes = DefaultMaxSessionInstructionContributionsBytes
 	}
 
 	ordered := append([]SessionInstructionContributor(nil), contributors...)
@@ -54,6 +63,7 @@ func assembleSessionInstruction(
 
 	seen := make(map[string]struct{}, len(ordered))
 	var result strings.Builder
+	contributedBytes := 0
 	result.WriteString(base)
 	for _, contributor := range ordered {
 		id := strings.TrimSpace(contributor.ID())
@@ -73,11 +83,15 @@ func assembleSessionInstruction(
 		if content == "" {
 			continue
 		}
-		section := "\n\nExtension instruction [" + id + "]:\n" + content
-		if result.Len()+len(section) > maxSessionInstructionBytes {
-			return "", fmt.Errorf("session instruction exceeds size limit after contributor %q", id)
+		if len(content) > DefaultMaxSessionInstructionContributorBytes {
+			return "", fmt.Errorf("session instruction contributor %q exceeds size limit", id)
 		}
+		if contributedBytes+len(content) > maxTotalBytes {
+			return "", fmt.Errorf("session instruction contributions exceed total size limit after contributor %q", id)
+		}
+		section := "\n\nExtension instruction [" + id + "]:\n" + content
 		result.WriteString(section)
+		contributedBytes += len(content)
 	}
 	return result.String(), nil
 }

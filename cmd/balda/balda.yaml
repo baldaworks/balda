@@ -273,3 +273,8 @@ balda:
   # Optional balda-wide global instruction applied to all sessions.
   # Applied before runtime.providers.<provider_id>.system_instructions when both are set.
   global_instruction: ""
+
+  # Trusted host extensions may add bounded sections to the session instruction.
+  # Zero uses the default total contribution budget of 256 KiB.
+  session_instructions:
+    max_total_bytes: 0

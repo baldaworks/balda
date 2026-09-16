@@ -31,7 +31,7 @@ func TestAssembleSessionInstructionOrdersContributorsAndPassesPinnedContext(t *t
 	got, err := assembleSessionInstruction(context.Background(), "base", input, []SessionInstructionContributor{
 		&testInstructionContributor{id: "zeta", content: "last"},
 		&testInstructionContributor{id: "alpha", content: "first", input: &captured},
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("assembleSessionInstruction() error = %v", err)
 	}
@@ -73,7 +73,7 @@ func TestAssembleSessionInstructionRejectsInvalidContributions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := assembleSessionInstruction(context.Background(), "base", SessionInstructionContext{}, test.contributors)
+			_, err := assembleSessionInstruction(context.Background(), "base", SessionInstructionContext{}, test.contributors, 0)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("assembleSessionInstruction() error = %v, want %q", err, test.want)
 			}
@@ -81,13 +81,39 @@ func TestAssembleSessionInstructionRejectsInvalidContributions(t *testing.T) {
 	}
 }
 
-func TestAssembleSessionInstructionEnforcesTotalBudget(t *testing.T) {
+func TestAssembleSessionInstructionEnforcesContributorBudget(t *testing.T) {
 	t.Parallel()
 
 	_, err := assembleSessionInstruction(context.Background(), "base", SessionInstructionContext{}, []SessionInstructionContributor{
-		&testInstructionContributor{id: "large", content: strings.Repeat("x", maxSessionInstructionBytes)},
-	})
-	if err == nil || !strings.Contains(err.Error(), "session instruction exceeds size limit") {
-		t.Fatalf("assembleSessionInstruction() error = %v, want size limit", err)
+		&testInstructionContributor{id: "large", content: strings.Repeat("x", DefaultMaxSessionInstructionContributorBytes+1)},
+	}, 0)
+	if err == nil || !strings.Contains(err.Error(), "contributor \"large\" exceeds size limit") {
+		t.Fatalf("assembleSessionInstruction() error = %v, want contributor size limit", err)
+	}
+}
+
+func TestAssembleSessionInstructionEnforcesConfiguredTotalBudget(t *testing.T) {
+	t.Parallel()
+
+	_, err := assembleSessionInstruction(context.Background(), "base", SessionInstructionContext{}, []SessionInstructionContributor{
+		&testInstructionContributor{id: "alpha", content: "1234"},
+		&testInstructionContributor{id: "beta", content: "5678"},
+	}, 7)
+	if err == nil || !strings.Contains(err.Error(), "contributions exceed total size limit") {
+		t.Fatalf("assembleSessionInstruction() error = %v, want total size limit", err)
+	}
+}
+
+func TestAssembleSessionInstructionDoesNotChargeBaseAgainstContributionBudget(t *testing.T) {
+	t.Parallel()
+
+	got, err := assembleSessionInstruction(context.Background(), strings.Repeat("b", 128), SessionInstructionContext{}, []SessionInstructionContributor{
+		&testInstructionContributor{id: "extension", content: "1234"},
+	}, 4)
+	if err != nil {
+		t.Fatalf("assembleSessionInstruction() error = %v", err)
+	}
+	if !strings.Contains(got, "1234") {
+		t.Fatalf("assembleSessionInstruction() = %q, want extension content", got)
 	}
 }

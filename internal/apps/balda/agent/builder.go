@@ -47,17 +47,18 @@ const (
 )
 
 type Builder struct {
-	factory                 runtimeFactory
-	dedicatedFactory        dedicatedRuntimeFactory
-	normaCfg                runtimeconfig.RuntimeConfig
-	workingDir              string
-	workspaceEnabled        bool
-	workspaceBaseBranch     string
-	baldaGlobalInstruction  string
-	sessionSvc              adksession.Service
-	memoryEnabled           bool
-	memorySnapshotReader    MemorySnapshotReader
-	instructionContributors []SessionInstructionContributor
+	factory                  runtimeFactory
+	dedicatedFactory         dedicatedRuntimeFactory
+	normaCfg                 runtimeconfig.RuntimeConfig
+	workingDir               string
+	workspaceEnabled         bool
+	workspaceBaseBranch      string
+	baldaGlobalInstruction   string
+	sessionSvc               adksession.Service
+	memoryEnabled            bool
+	memorySnapshotReader     MemorySnapshotReader
+	instructionContributors  []SessionInstructionContributor
+	instructionMaxTotalBytes int
 }
 
 // runtimeFactory is the provider-factory boundary used by chat runtimes.
@@ -195,16 +196,17 @@ func (b *Builder) buildBaldaInstructionWithSkills(
 type BuilderParams struct {
 	fx.In
 
-	Factory                 *agentfactory.Factory
-	NormaCfg                runtimeconfig.RuntimeConfig
-	WorkingDir              string
-	WorkspaceEnabled        bool               `name:"balda_workspace_enabled"`
-	WorkspaceBaseBranch     string             `name:"balda_workspace_base_branch"`
-	BaldaGlobalInstruction  string             `name:"balda_global_instruction"`
-	SessionService          adksession.Service `name:"balda_runtime_session_service"`
-	MemoryEnabled           bool               `name:"balda_memory_enabled"`
-	MemorySnapshotReader    MemorySnapshotReader
-	InstructionContributors []SessionInstructionContributor `group:"balda_session_instruction_contributors"`
+	Factory                  *agentfactory.Factory
+	NormaCfg                 runtimeconfig.RuntimeConfig
+	WorkingDir               string
+	WorkspaceEnabled         bool               `name:"balda_workspace_enabled"`
+	WorkspaceBaseBranch      string             `name:"balda_workspace_base_branch"`
+	BaldaGlobalInstruction   string             `name:"balda_global_instruction"`
+	SessionService           adksession.Service `name:"balda_runtime_session_service"`
+	MemoryEnabled            bool               `name:"balda_memory_enabled"`
+	MemorySnapshotReader     MemorySnapshotReader
+	InstructionContributors  []SessionInstructionContributor `group:"balda_session_instruction_contributors"`
+	InstructionMaxTotalBytes int                             `name:"balda_session_instruction_max_total_bytes" optional:"true"`
 }
 
 // NewBuilder creates a Builder with the given factory and config.
@@ -216,17 +218,18 @@ func NewBuilder(params BuilderParams) *Builder {
 		dedicatedFactory = params.Factory
 	}
 	return &Builder{
-		factory:                 factory,
-		dedicatedFactory:        dedicatedFactory,
-		normaCfg:                params.NormaCfg,
-		workingDir:              strings.TrimSpace(params.WorkingDir),
-		workspaceEnabled:        params.WorkspaceEnabled,
-		workspaceBaseBranch:     strings.TrimSpace(params.WorkspaceBaseBranch),
-		baldaGlobalInstruction:  strings.TrimSpace(params.BaldaGlobalInstruction),
-		sessionSvc:              params.SessionService,
-		memoryEnabled:           params.MemoryEnabled,
-		memorySnapshotReader:    params.MemorySnapshotReader,
-		instructionContributors: append([]SessionInstructionContributor(nil), params.InstructionContributors...),
+		factory:                  factory,
+		dedicatedFactory:         dedicatedFactory,
+		normaCfg:                 params.NormaCfg,
+		workingDir:               strings.TrimSpace(params.WorkingDir),
+		workspaceEnabled:         params.WorkspaceEnabled,
+		workspaceBaseBranch:      strings.TrimSpace(params.WorkspaceBaseBranch),
+		baldaGlobalInstruction:   strings.TrimSpace(params.BaldaGlobalInstruction),
+		sessionSvc:               params.SessionService,
+		memoryEnabled:            params.MemoryEnabled,
+		memorySnapshotReader:     params.MemorySnapshotReader,
+		instructionContributors:  append([]SessionInstructionContributor(nil), params.InstructionContributors...),
+		instructionMaxTotalBytes: params.InstructionMaxTotalBytes,
 	}
 }
 
@@ -630,7 +633,7 @@ func (b *Builder) buildRootRuntimeInstruction(ctx context.Context, agentName, wo
 		baldaRepoBranchAtStartPlaceholder,
 		projection,
 	)
-	return assembleSessionInstruction(ctx, base, input, b.instructionContributors)
+	return assembleSessionInstruction(ctx, base, input, b.instructionContributors, b.instructionMaxTotalBytes)
 }
 
 func resolveSessionWorkspaceDir(workspaceDir string) (string, error) {
