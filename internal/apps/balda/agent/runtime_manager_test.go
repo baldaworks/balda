@@ -27,6 +27,17 @@ func TestPinnedRuntimeMCPServerIDsPreservesHostConfiguration(t *testing.T) {
 	}
 }
 
+func TestRuntimeManagerAllowsPreflightWithoutCapabilityBinder(t *testing.T) {
+	t.Parallel()
+	field, ok := reflect.TypeOf(RuntimeManagerParams{}).FieldByName("CapabilityBinder")
+	if !ok {
+		t.Fatal("RuntimeManagerParams.CapabilityBinder field is missing")
+	}
+	if got := field.Tag.Get("optional"); got != "true" {
+		t.Fatalf("CapabilityBinder optional tag = %q, want true", got)
+	}
+}
+
 type recordingCapabilityBinder struct {
 	binding  SessionCapabilityBinding
 	err      error

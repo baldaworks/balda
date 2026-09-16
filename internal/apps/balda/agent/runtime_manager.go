@@ -89,12 +89,12 @@ type RuntimeManagerParams struct {
 	Builder           *Builder
 	BaldaProviderID   string `name:"balda_provider"`
 	WorkingDir        string
-	StateDir          string           `name:"balda_state_dir"`
-	WorkspaceEnabled  bool             `name:"balda_workspace_enabled"`
-	WorkspaceBaseRef  string           `name:"balda_workspace_base_branch"`
-	BaldaMCPServerIDs []string         `name:"balda_mcp_servers"`
-	SessionMCPBinder  SessionMCPBinder `optional:"true"`
-	CapabilityBinder  SessionCapabilityBinder
+	StateDir          string                  `name:"balda_state_dir"`
+	WorkspaceEnabled  bool                    `name:"balda_workspace_enabled"`
+	WorkspaceBaseRef  string                  `name:"balda_workspace_base_branch"`
+	BaldaMCPServerIDs []string                `name:"balda_mcp_servers"`
+	SessionMCPBinder  SessionMCPBinder        `optional:"true"`
+	CapabilityBinder  SessionCapabilityBinder `optional:"true"`
 	MCPRegistry       *mcpregistry.MapRegistry
 	Logger            zerolog.Logger
 }
