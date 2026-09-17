@@ -38,6 +38,23 @@ func TestRuntimeManagerAllowsPreflightWithoutCapabilityBinder(t *testing.T) {
 	}
 }
 
+func TestRuntimeLifecycleContextSurvivesRequestCancellation(t *testing.T) {
+	t.Parallel()
+
+	type contextKey string
+	const key contextKey = "runtime"
+	requestCtx, cancel := context.WithCancel(context.WithValue(context.Background(), key, "value"))
+	cancel()
+
+	lifecycleCtx := runtimeLifecycleContext(requestCtx)
+	if err := lifecycleCtx.Err(); err != nil {
+		t.Fatalf("runtimeLifecycleContext() error = %v, want nil", err)
+	}
+	if got := lifecycleCtx.Value(key); got != "value" {
+		t.Fatalf("runtimeLifecycleContext() value = %v, want value", got)
+	}
+}
+
 type recordingCapabilityBinder struct {
 	binding  SessionCapabilityBinding
 	err      error
