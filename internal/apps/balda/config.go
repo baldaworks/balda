@@ -1,6 +1,9 @@
 package balda
 
-import baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+import (
+	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
+)
 
 // Config holds the configuration for the Balda bot.
 type Config struct {
@@ -17,6 +20,7 @@ type BaldaConfig struct {
 	Logger              LoggerConfig              `mapstructure:"logger"`
 	WorkingDir          string                    `mapstructure:"working_dir"`
 	StateDir            string                    `mapstructure:"state_dir"`
+	Database            state.DatabaseConfig      `mapstructure:"database"`
 	Sessions            SessionsConfig            `mapstructure:"sessions"`
 	Memory              MemoryConfig              `mapstructure:"memory"`
 	SessionMemory       SessionMemoryConfig       `mapstructure:"session_memory"`

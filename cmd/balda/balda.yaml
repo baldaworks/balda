@@ -157,6 +157,18 @@ balda:
   # Relative paths are resolved from balda.working_dir.
   state_dir: ".config/balda"
 
+  database:
+    type: sqlite
+    sqlite:
+      path: '{{.StateDir}}/state.db'
+    postgres:
+      host: localhost
+      port: 5432
+      name: balda
+      user: balda
+      password: ""
+      sslmode: disable
+
   sessions:
     # Conversation/session persistence:
     # - sqlite: persist runtime conversation state in state.db until the session is explicitly closed (default)
