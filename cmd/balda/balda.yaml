@@ -275,6 +275,6 @@ balda:
   global_instruction: ""
 
   # Trusted host extensions may add bounded sections to the session instruction.
-  # Zero uses the default total contribution budget of 256 KiB.
+  # Zero uses the default total contribution budget of 1 MiB.
   session_instructions:
     max_total_bytes: 0

@@ -97,8 +97,8 @@ provider runtime. Trusted host extensions may contribute bounded, named
 sections through the `agent.SessionInstructionContributor` port. Contributions
 receive the immutable session snapshot identity and safe session context, are
 ordered by stable contributor ID, and fail session construction on invalid
-IDs, duplicates, errors, or size overflow. Each contributor is limited to 64
-KiB. The combined extension content defaults to 256 KiB and can be configured
+IDs, duplicates, errors, or size overflow. Each contributor is limited to 256
+KiB. The combined extension content defaults to 1 MiB and can be configured
 with `balda.session_instructions.max_total_bytes`; zero selects the default.
 These limits apply to extension content rather than Balda's base instruction.
 

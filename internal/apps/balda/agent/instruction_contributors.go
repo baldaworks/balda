@@ -12,9 +12,9 @@ import (
 
 const (
 	// DefaultMaxSessionInstructionContributorBytes bounds one trusted extension.
-	DefaultMaxSessionInstructionContributorBytes = 64 << 10
+	DefaultMaxSessionInstructionContributorBytes = 256 << 10
 	// DefaultMaxSessionInstructionContributionsBytes bounds all extension content.
-	DefaultMaxSessionInstructionContributionsBytes = 256 << 10
+	DefaultMaxSessionInstructionContributionsBytes = 1 << 20
 )
 
 // SessionInstructionContext is the provider-neutral, immutable context exposed
