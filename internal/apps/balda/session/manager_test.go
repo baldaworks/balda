@@ -516,6 +516,7 @@ func (f *fakeScopedRuntimeManager) RuntimeForSession(_ context.Context, request 
 
 func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	store := &fakeSessionStore{}
+	workingDir := t.TempDir()
 	runtimeManager := &fakeScopedRuntimeManager{
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
 		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-current"},
@@ -524,7 +525,7 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 		baldaProviderName: "balda-provider",
 		runtimeManager:    runtimeManager,
 		agentBuilder:      &fakeAgentBuilder{},
-		workingDir:        t.TempDir(),
+		workingDir:        workingDir,
 		logger:            zerolog.Nop(),
 		sessions:          make(map[string]*TopicSession),
 		sessionStore:      store,
@@ -539,6 +540,9 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	}
 	if got := runtimeManager.sessionRequests[0].RuntimeSnapshotID; got != "" {
 		t.Fatalf("requested runtime snapshot = %q, want current selection", got)
+	}
+	if got := runtimeManager.sessionRequests[0].WorkspaceDir; got != workingDir {
+		t.Fatalf("requested workspace dir = %q, want %q", got, workingDir)
 	}
 	if len(store.upsertedRecords) != 1 {
 		t.Fatalf("persisted records = %d, want 1", len(store.upsertedRecords))
