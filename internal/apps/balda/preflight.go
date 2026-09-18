@@ -54,6 +54,9 @@ func PreflightRuntime(
 	if err := validateBaldaMCPConfiguration(normaCfg); err != nil {
 		return err
 	}
+	if err := validateSessionInstructionsConfig(cfg.Balda.SessionInstructions); err != nil {
+		return err
+	}
 	formattingMode, err := baldatelegram.ValidateFormattingMode(cfg.Balda.Telegram.FormattingMode)
 	if err != nil {
 		return err
@@ -276,6 +279,10 @@ func PreflightRuntime(
 			fx.Annotate(
 				func() string { return strings.TrimSpace(cfg.Balda.GlobalInstruction) },
 				fx.ResultTags(`name:"balda_global_instruction"`),
+			),
+			fx.Annotate(
+				func() int { return cfg.Balda.SessionInstructions.MaxTotalBytes },
+				fx.ResultTags(`name:"balda_session_instruction_max_total_bytes"`),
 			),
 			fx.Annotate(
 				func() string { return formattingMode },

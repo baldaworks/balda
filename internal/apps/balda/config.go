@@ -9,26 +9,32 @@ type Config struct {
 
 // BaldaConfig holds the balda-specific configuration.
 type BaldaConfig struct {
-	Provider          string               `mapstructure:"provider"`
-	Telegram          TelegramConfig       `mapstructure:"telegram"`
-	Zulip             ZulipConfig          `mapstructure:"zulip"`
-	Slack             SlackConfig          `mapstructure:"slack"`
-	Webhooks          WebhooksConfig       `mapstructure:"webhooks"`
-	Logger            LoggerConfig         `mapstructure:"logger"`
-	WorkingDir        string               `mapstructure:"working_dir"`
-	StateDir          string               `mapstructure:"state_dir"`
-	Sessions          SessionsConfig       `mapstructure:"sessions"`
-	Memory            MemoryConfig         `mapstructure:"memory"`
-	SessionMemory     SessionMemoryConfig  `mapstructure:"session_memory"`
-	Permissions       PermissionsConfig    `mapstructure:"permissions"`
-	Features          FeaturesConfig       `mapstructure:"features"`
-	Goal              GoalConfig           `mapstructure:"goal"`
-	NATS              baldaeventbus.Config `mapstructure:"nats"`
-	Execution         ExecutionConfig      `mapstructure:"execution"`
-	Scheduler         SchedulerConfig      `mapstructure:"scheduler"`
-	Workspace         WorkspaceConfig      `mapstructure:"workspace"`
-	MCPServers        []string             `mapstructure:"mcp_servers"`
-	GlobalInstruction string               `mapstructure:"global_instruction"`
+	Provider            string                    `mapstructure:"provider"`
+	Telegram            TelegramConfig            `mapstructure:"telegram"`
+	Zulip               ZulipConfig               `mapstructure:"zulip"`
+	Slack               SlackConfig               `mapstructure:"slack"`
+	Webhooks            WebhooksConfig            `mapstructure:"webhooks"`
+	Logger              LoggerConfig              `mapstructure:"logger"`
+	WorkingDir          string                    `mapstructure:"working_dir"`
+	StateDir            string                    `mapstructure:"state_dir"`
+	Sessions            SessionsConfig            `mapstructure:"sessions"`
+	Memory              MemoryConfig              `mapstructure:"memory"`
+	SessionMemory       SessionMemoryConfig       `mapstructure:"session_memory"`
+	Permissions         PermissionsConfig         `mapstructure:"permissions"`
+	Features            FeaturesConfig            `mapstructure:"features"`
+	Goal                GoalConfig                `mapstructure:"goal"`
+	NATS                baldaeventbus.Config      `mapstructure:"nats"`
+	Execution           ExecutionConfig           `mapstructure:"execution"`
+	Scheduler           SchedulerConfig           `mapstructure:"scheduler"`
+	Workspace           WorkspaceConfig           `mapstructure:"workspace"`
+	MCPServers          []string                  `mapstructure:"mcp_servers"`
+	GlobalInstruction   string                    `mapstructure:"global_instruction"`
+	SessionInstructions SessionInstructionsConfig `mapstructure:"session_instructions"`
+}
+
+// SessionInstructionsConfig controls trusted host instruction contributions.
+type SessionInstructionsConfig struct {
+	MaxTotalBytes int `mapstructure:"max_total_bytes"`
 }
 
 // TelegramConfig holds the Telegram bot configuration.

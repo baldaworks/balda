@@ -7,12 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/agentfactory"
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog"
+	adkagent "google.golang.org/adk/v2/agent"
 )
 
 func TestPinnedRuntimeMCPServerIDsPreservesHostConfiguration(t *testing.T) {
@@ -59,6 +61,71 @@ type recordingCapabilityBinder struct {
 	binding  SessionCapabilityBinding
 	err      error
 	requests []SessionRuntimeRequest
+}
+
+type recordingRuntimeFactory struct {
+	requests []agentfactory.BuildRequest
+}
+
+func (f *recordingRuntimeFactory) Build(_ context.Context, request agentfactory.BuildRequest) (adkagent.Agent, error) {
+	f.requests = append(f.requests, request)
+	return adkagent.New(adkagent.Config{Name: request.Name, Description: request.Description})
+}
+
+func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProviderRequest(t *testing.T) {
+	factory := &recordingRuntimeFactory{}
+	var contributorInput SessionInstructionContext
+	builder := &Builder{
+		factory: factory,
+		instructionContributors: []SessionInstructionContributor{
+			&testInstructionContributor{id: "example.extension", content: "Extension guidance.", input: &contributorInput},
+		},
+	}
+	binder := &recordingCapabilityBinder{binding: SessionCapabilityBinding{
+		SnapshotID: "snapshot-prism",
+		Skills: SkillMetadataProjection{
+			Snapshot: "snapshot-prism",
+			Skills: []SkillPromptMetadata{{
+				Source:      runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindPlugin, Name: "prism"},
+				Name:        "story",
+				Description: "Run a Prism story.",
+				Revision:    "revision-prism",
+			}},
+		},
+	}}
+	manager := NewRuntimeManager(RuntimeManagerParams{
+		Builder:          builder,
+		BaldaProviderID:  "alpha",
+		WorkingDir:       t.TempDir(),
+		StateDir:         t.TempDir(),
+		CapabilityBinder: binder,
+		MCPRegistry:      mcpregistry.New(nil),
+		Logger:           zerolog.Nop(),
+	})
+
+	runtime, err := manager.RuntimeForSession(context.Background(), SessionRuntimeRequest{
+		Locator: deliverycmd.Locator{SessionID: "session-1", ChannelType: "telegram"},
+	})
+	if err != nil {
+		t.Fatalf("RuntimeForSession() error = %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	if len(factory.requests) != 1 {
+		t.Fatalf("provider build requests = %d, want 1", len(factory.requests))
+	}
+	instruction := factory.requests[0].Instruction
+	for _, want := range []string{
+		`source_kind="plugin" source_name="prism" skill_name="story" revision="revision-prism"`,
+		"Run a Prism story.",
+		"Extension instruction [example.extension]:\nExtension guidance.",
+	} {
+		if !strings.Contains(instruction, want) {
+			t.Fatalf("provider instruction missing %q:\n%s", want, instruction)
+		}
+	}
+	if contributorInput.SnapshotID != "snapshot-prism" || contributorInput.SessionID != "session-1" || contributorInput.ChannelType != "telegram" {
+		t.Fatalf("contributor input = %+v, want pinned session context", contributorInput)
+	}
 }
 
 func (b *recordingCapabilityBinder) BindSessionCapabilities(_ context.Context, request SessionRuntimeRequest) (SessionCapabilityBinding, error) {

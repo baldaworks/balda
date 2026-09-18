@@ -351,6 +351,11 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		nil,
 		extraMCPServerIDs,
 		capabilities.Skills,
+		SessionInstructionContext{
+			SnapshotID:  capabilities.SnapshotID,
+			SessionID:   strings.TrimSpace(request.Locator.SessionID),
+			ChannelType: strings.TrimSpace(request.Locator.ChannelType),
+		},
 	)
 	if err != nil {
 		if binding.ID != "" {

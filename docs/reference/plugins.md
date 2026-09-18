@@ -90,6 +90,25 @@ Immutable command instructions are retained in snapshot descriptors. Archived
 skill bytes remain readable by exact revision. MCP processes are the only
 capability resources with a live acquisition that must be released.
 
+## Session instruction contributions
+
+Balda assembles one provider-neutral session instruction before constructing a
+provider runtime. Trusted host extensions may contribute bounded, named
+sections through the `agent.SessionInstructionContributor` port. Contributions
+receive the immutable session snapshot identity and safe session context, are
+ordered by stable contributor ID, and fail session construction on invalid
+IDs, duplicates, errors, or size overflow. Each contributor is limited to 256
+KiB. The combined extension content defaults to 1 MiB and can be configured
+with `balda.session_instructions.max_total_bytes`; zero selects the default.
+These limits apply to extension content rather than Balda's base instruction.
+
+This is a host extension boundary, not a portable plugin-data surface. A
+contributor cannot replace the built-in Balda instruction, select a different
+snapshot, or write provider-specific session metadata. The provider adapter
+remains responsible for mapping the assembled instruction to its native
+instruction mechanism. ACP providers without such a mechanism receive the
+adapter's documented first-prompt fallback.
+
 ## Transport behavior
 
 Plugin command names are projected into each compatible transport's local
