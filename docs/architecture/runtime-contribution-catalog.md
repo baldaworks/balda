@@ -87,6 +87,33 @@ workspace. Sources with future principal-specific credentials or policy must
 use another explicit overlay rather than adding user checks inside the global
 catalog.
 
+#### Project-local skills
+
+A project exposes skills to Balda from direct children of its workspace skill
+root:
+
+```text
+<workspace>/.agents/skills/<name>/SKILL.md
+```
+
+When Balda creates an unpinned session runtime, it captures this directory and
+merges its valid skills into that workspace's effective snapshot as
+`workspace-skill` contributions. A missing `.agents/skills` directory is an
+empty overlay. Malformed or unsafe entries follow the catalog's existing
+validation and diagnostics rules and are not exposed as usable skills.
+
+The root instruction contains bounded skill metadata, not every `SKILL.md`
+body. When a turn explicitly selects a skill, Balda resolves it inside the
+session's pinned snapshot and loads that exact retained revision for the turn.
+Project skills cannot contribute commands or MCP servers through this overlay.
+
+Session snapshots are immutable. An active or restored session continues to
+use its pinned snapshot even if files under `.agents/skills` change. Session
+reset preserves that metadata and does not refresh capabilities; a newly
+created, unpinned session is required to capture a new project-skill revision.
+Because each workspace receives a separate overlay, its project skills are
+unavailable to sessions bound to another workspace.
+
 Conceptually:
 
 ```go
