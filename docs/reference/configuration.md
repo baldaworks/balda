@@ -422,13 +422,17 @@ or non-regular paths return a stable build error.
 ### Balda settings
 
 - `balda.working_dir`: optional balda working directory (defaults to process CWD)
-- `balda.state_dir`: balda state directory for persistent balda SQLite state (`state.db`).
-  - Stores owner/app KV, `balda.state` MCP KV, session metadata, job/read-model state, optional session history, and Telegram polling offset.
-  - Schema is migration-versioned and auto-applied on startup.
+- `balda.state_dir`: local state directory; supplies the default SQLite database location and other local runtime paths.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
+- `balda.database.type`: `sqlite|postgres` (default `sqlite`).
+  - Stores owner/app KV, `balda.state` MCP KV, session metadata, job/read-model state, optional session history, and Telegram polling offset.
+  - Schema is migration-versioned and auto-applied on startup.
+- `balda.database.sqlite.path`: strict one-pass template, default `{{.StateDir}}/state.db`.
+- `balda.database.postgres`: structured `host`, `port`, `name`, `user`, `password`, and `sslmode` settings.
+  See [State database](database.md) for copyable examples, template rules and operations.
 - `balda.sessions.persistence`: `sqlite|memory` (default `sqlite`)
-  - `sqlite`: session history and state are persisted in `state.db` and reused after restart until the session is explicitly closed.
+  - `sqlite`: durable session history in the selected database (SQLite or PostgreSQL), reused after restart until explicitly closed.
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
@@ -458,7 +462,7 @@ or non-regular paths return a stable build error.
 - `/goalkeeper` runs repeated work and validation passes in isolated GoalKeeper worker/validator ADK sessions until the goal passes validation or `balda.goal.max_iterations` is reached.
   - with workspace mode enabled, `/goalkeeper` uses a separate goal worktree and exports passing work to `balda.workspace.base_branch`.
   - with workspace mode disabled, `/goalkeeper` works directly in `balda.working_dir` and records `not_exported` on passing runs.
-- internal durable memory uses app KV in `${balda.state_dir}/state.db` when `balda.memory.enabled=true`
+- internal durable memory uses app KV in the selected database when `balda.memory.enabled=true`
   - `balda.memory.read` reads memory from MCP.
   - `balda.memory.remember` appends facts from MCP.
   - every write advances the latest-memory timestamp.
@@ -466,7 +470,7 @@ or non-regular paths return a stable build error.
     complete current snapshot into the provider user prompt and advance the
     turn/session timestamp boundary; unchanged timestamps do not inject memory.
   - existing `${balda.state_dir}/MEMORY.md` content is imported once when KV memory is empty.
-- owner auth token is generated during `balda init`, persisted in `state.db`, and reused by `balda start`
+- owner auth token is generated during `balda init`, persisted in the selected database, and reused by `balda start`
   - if token is missing in existing state, `balda start` backfills one-time and persists it
   - if no owner is registered yet, `balda start` logs the owner bootstrap command and auth link again to help finish first-time onboarding
   - after the first successful owner auth, normal startup logs go back to bot identity only and no longer expose owner auth tokens or auth links

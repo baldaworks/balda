@@ -10,6 +10,18 @@ excludeFiles:
 exclude:
   - .config
 
+vendors:
+  state_adapters:
+    in:
+      - github.com/jackc/pgx/v5
+      - github.com/jackc/pgx/v5/**
+      - github.com/pressly/goose/v3
+      - github.com/pressly/goose/v3/**
+      - modernc.org/sqlite
+      - github.com/rs/zerolog/log
+      - google.golang.org/adk/v2/session
+      - google.golang.org/adk/v2/platform
+
 components:
   # Extraction-ready session-memory values and semantic API. This package may
   # use only the standard library and must remain independent of Balda policy.
@@ -556,7 +568,10 @@ deps:
       - session_memory_core
       - session_memory_contracts
       - storage
-    anyVendorDeps: true
+    # Constructor bypasses are checked by forbidigo in .golangci.yml.
+    anyVendorDeps: false
+    canUse:
+      - state_adapters
 
   infrastructure:
     anyProjectDeps: true

@@ -13,6 +13,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/normahq/runtime/v2/appconfig"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -36,6 +37,7 @@ type preparedBaldaCommand struct {
 	baldaCfg        balda.Config
 	runtimeLoadOpts appconfig.RuntimeLoadOptions
 	ownerToken      string
+	database        state.DatabaseConfig
 }
 
 var (
@@ -198,7 +200,11 @@ func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
 		return preparedBaldaCommand{}, err
 	}
 
-	stateDir, err := paths.ResolveStateDir(workingDir, baldaCfg.Balda.StateDir)
+	stateWorkingDir, err := paths.ResolveWorkingDir(baldaCfg.Balda.WorkingDir)
+	if err != nil {
+		return preparedBaldaCommand{}, err
+	}
+	stateDir, err := paths.ResolveStateDir(stateWorkingDir, baldaCfg.Balda.StateDir)
 	if err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("resolve balda state_dir: %w", err)
 	}
@@ -206,8 +212,11 @@ func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
 		return preparedBaldaCommand{}, fmt.Errorf("create balda state dir: %w", err)
 	}
 
-	dbPath := paths.StateDBPath(stateDir)
-	ownerToken, err := loadOrCreateBaldaOwnerToken(ctx, dbPath)
+	database, err := baldaCfg.Balda.Database.Resolve(stateWorkingDir, stateDir)
+	if err != nil {
+		return preparedBaldaCommand{}, err
+	}
+	ownerToken, err := loadOrCreateBaldaOwnerToken(ctx, database)
 	if err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("bootstrap balda owner token: %w", err)
 	}
@@ -219,6 +228,7 @@ func prepareBaldaCommand(ctx context.Context) (preparedBaldaCommand, error) {
 		baldaCfg:        baldaCfg,
 		runtimeLoadOpts: runtimeLoadOpts,
 		ownerToken:      ownerToken,
+		database:        database,
 	}, nil
 }
 

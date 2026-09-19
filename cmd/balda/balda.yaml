@@ -153,7 +153,7 @@ balda:
   working_dir: ""
 
   # Balda app state directory.
-  # Stores migration-managed state.db (owner/app KV, session metadata, telegram polling offset).
+  # Supplies the default SQLite location and local NATS/artifact paths.
   # Relative paths are resolved from balda.working_dir.
   state_dir: ".config/balda"
 
@@ -171,12 +171,12 @@ balda:
 
   sessions:
     # Conversation/session persistence:
-    # - sqlite: persist runtime conversation state in state.db until the session is explicitly closed (default)
+    # - sqlite: durable runtime conversation state in the selected database (default)
     # - memory: keep runtime conversation state in memory only
     persistence: "sqlite"
 
   memory:
-    # Internal durable memory backed by ${balda.state_dir}/state.db.
+    # Internal durable memory backed by the selected state database.
     # Existing ${balda.state_dir}/MEMORY.md content is imported once when KV memory is empty.
     # If false, balda.memory.* MCP tools are disabled.
     enabled: true

@@ -31,7 +31,11 @@ var (
 func TestOpenBaldaStateProviderUsesStateDB(t *testing.T) {
 	stateDir := t.TempDir()
 
-	provider, err := openBaldaStateProvider(context.Background(), stateDir)
+	database, err := (Config{}).Balda.Database.Resolve(stateDir, stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := openBaldaStateProvider(context.Background(), stateDir, database)
 	if err != nil {
 		t.Fatalf("openBaldaStateProvider() error = %v", err)
 	}

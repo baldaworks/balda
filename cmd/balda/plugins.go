@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/plugincmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
@@ -320,7 +319,7 @@ func preparePluginServiceWithCleanup(ctx context.Context) (*pluginapp.Service, f
 	if err != nil {
 		return nil, nil, err
 	}
-	provider, err := baldastate.NewSQLiteProvider(ctx, paths.StateDBPath(prepared.stateDir))
+	provider, err := baldastate.Open(ctx, prepared.database)
 	if err != nil {
 		return nil, nil, err
 	}

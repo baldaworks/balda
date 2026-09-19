@@ -50,8 +50,12 @@ balda start
 ```
 
 `balda init` creates `.config/balda/config.yaml`, initializes
-`.config/balda/state.db`, detects available provider CLIs, and prints the next
-step for your selected chat provider.
+`.config/balda/state.db` by default, detects available provider CLIs, and prints
+the next step for your selected chat provider.
+
+SQLite is the default state database. To select PostgreSQL, configure
+`balda.database.type: postgres`; launch remains `balda start`.
+See [database configuration and operations](docs/reference/database.md).
 
 ## First run
 

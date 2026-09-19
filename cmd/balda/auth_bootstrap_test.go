@@ -6,12 +6,14 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 const testOwnerTokenPersisted = "owner-token-persisted"
 
 func TestLoadOrCreateBaldaOwnerToken_GeneratesAndReuses(t *testing.T) {
 	dbPath := paths.StateDBPath(t.TempDir())
+	database := state.DatabaseConfig{Type: "sqlite", SQLite: state.SQLiteConfig{Path: dbPath}}
 
 	previousGenerator := baldaGenerateOwnerToken
 	defer func() { baldaGenerateOwnerToken = previousGenerator }()
@@ -22,7 +24,7 @@ func TestLoadOrCreateBaldaOwnerToken_GeneratesAndReuses(t *testing.T) {
 		return testOwnerTokenPersisted, nil
 	}
 
-	first, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
+	first, err := loadOrCreateBaldaOwnerToken(context.Background(), database)
 	if err != nil {
 		t.Fatalf("loadOrCreateBaldaOwnerToken(first): %v", err)
 	}
@@ -33,7 +35,7 @@ func TestLoadOrCreateBaldaOwnerToken_GeneratesAndReuses(t *testing.T) {
 		t.Fatalf("generate calls after first = %d, want 1", generateCalls)
 	}
 
-	second, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
+	second, err := loadOrCreateBaldaOwnerToken(context.Background(), database)
 	if err != nil {
 		t.Fatalf("loadOrCreateBaldaOwnerToken(second): %v", err)
 	}

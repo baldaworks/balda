@@ -1,3 +1,5 @@
+//go:build integration && sqlite
+
 package state
 
 import (
@@ -87,7 +89,7 @@ func seedSQLiteCompatibilityFixture(t *testing.T, db *sql.DB) {
 	if _, err := tx.ExecContext(t.Context(), "PRAGMA defer_foreign_keys=ON"); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range requiredBaldaSQLiteTables {
+	for _, table := range requiredBaldaStateTables {
 		rows, err := tx.QueryContext(t.Context(), "PRAGMA table_info("+table+")")
 		if err != nil {
 			t.Fatal(err)
@@ -140,7 +142,7 @@ func sqliteFixtureValue(table, column, kind string) any {
 func snapshotSQLiteFixture(t *testing.T, db *sql.DB) map[string][]string {
 	t.Helper()
 	snapshot := make(map[string][]string)
-	tables := append([]string{"goose_db_version"}, requiredBaldaSQLiteTables...)
+	tables := append([]string{"goose_db_version"}, requiredBaldaStateTables...)
 	for _, table := range tables {
 		rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table+" ORDER BY 1") //nolint:unqueryvet // The compatibility snapshot must compare every stored column.
 		if err != nil {

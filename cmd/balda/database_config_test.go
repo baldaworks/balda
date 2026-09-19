@@ -8,12 +8,10 @@ import (
 	"github.com/normahq/runtime/v2/appconfig"
 )
 
-const testDatabaseSQLite = "sqlite"
-
 func TestLoadDatabaseDefaults(t *testing.T) {
 	dir := t.TempDir()
 	doc := loadDatabaseTestDocument(t, dir)
-	if doc.Balda.Database.Type != testDatabaseSQLite || doc.Balda.Database.SQLite.Path != state.DefaultSQLitePath {
+	if doc.Balda.Database.Type != databaseTypeSQLite || doc.Balda.Database.SQLite.Path != state.DefaultSQLitePath {
 		t.Fatalf("database defaults = %v", doc.Balda.Database)
 	}
 	stateDir := filepath.Join(dir, doc.Balda.StateDir)
@@ -48,6 +46,32 @@ func TestLoadDatabaseEnvironmentOverrides(t *testing.T) {
 	}
 	if doc.Balda.Database != want {
 		t.Fatal("database environment overrides were not applied")
+	}
+}
+
+func TestInitDatabaseUsesEffectiveStateSettings(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("BALDA_STATE_DIR", "runtime-state")
+	t.Setenv("BALDA_DATABASE_SQLITE_PATH", "{{.StateDir}}/nested/custom.db")
+	document := map[string]any{"balda": map[string]any{
+		"state_dir": ".config/balda",
+		"database":  map[string]any{"type": "sqlite", "sqlite": map[string]any{"path": state.DefaultSQLitePath}},
+	}}
+	stateDir, database, err := resolveBaldaInitDatabase(dir, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stateDir != filepath.Join(dir, "runtime-state") || database.SQLite.Path != filepath.Join(stateDir, "nested", "custom.db") {
+		t.Fatalf("resolved init state: %q, %v", stateDir, database)
+	}
+	t.Setenv("BALDA_DATABASE_TYPE", "postgres")
+	document["balda"].(map[string]any)["database"].(map[string]any)["postgres"] = map[string]any{
+		"host": "localhost", "port": 5432, "name": "balda", "user": "balda", "password": "", "sslmode": "disable",
+	}
+	_, database, err = resolveBaldaInitDatabase(dir, document)
+	if err != nil || database.Type != "postgres" {
+		t.Fatalf("postgres init selection = %v, %v", database, err)
 	}
 }
 
