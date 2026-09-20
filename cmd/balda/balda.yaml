@@ -223,6 +223,12 @@ balda:
       # Balda clamps invalid values to 5.
       max_turns: 10
     attachments:
+      # Maximum files accepted from one inbound message.
+      max_files_per_message: 10
+      # Maximum bytes accepted for one inbound file (25 MiB).
+      max_file_bytes: 26214400
+      # Maximum bytes accepted across one inbound message (50 MiB).
+      max_total_bytes: 52428800
       store:
         # Attachment store engine:
         # - off: do not persist inbound attachments

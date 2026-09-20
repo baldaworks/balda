@@ -20,10 +20,11 @@ type inboundProcessorParams struct {
 	Chat      chatapp.Handler
 	Lifecycle slackagent.SessionLifecycle
 	History   slackagent.ThreadHistoryReader
+	Files     slackagent.CurrentFileIngestor
 }
 
 func newInboundProcessor(params inboundProcessorParams) slackagent.InboundProcessor {
-	return slackagent.NewInboundProcessor(params.Chat, params.Lifecycle, params.History)
+	return slackagent.NewInboundProcessor(params.Chat, params.Lifecycle, params.History, params.Files)
 }
 
 type turnCanceller struct {

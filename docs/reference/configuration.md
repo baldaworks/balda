@@ -382,6 +382,10 @@ balda:
 - `balda.slack.agent.events_path`: local Agent Events path, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
 - `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
 - `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
+- `balda.features.attachments.max_files_per_message`: maximum files accepted from one inbound message (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`)
+- `balda.features.attachments.max_file_bytes`: maximum bytes accepted for one inbound file (default: `26214400`, 25 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES`)
+- `balda.features.attachments.max_total_bytes`: maximum bytes accepted across one inbound message (default: `52428800`, 50 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES`)
+- `balda.features.attachments.store.engine`: inbound attachment persistence engine (`local` or `off`; default: `local`; env: `BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE`)
 - `balda.webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
 - `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
 - `balda.webhooks.routes`: route table keyed by route name
@@ -402,12 +406,28 @@ balda:
     - `source`: `request_id` (default), `header`, or `body_sha256`
     - `header` required for `source=header`
 
-### Attachment prompt representation
+### Attachment storage and prompt representation
 
-Telegram documents, photos, and voice messages are persisted under
-`balda.state_dir` before the provider turn. For every non-empty regular file
-with a preserved or detected MIME type, Balda supplies an ADK `FileData` part
-with an absolute, escaped `file://` URI and the persisted display name.
+Telegram media and files on the triggering Slack Agent event are persisted
+under `${balda.state_dir}/attachments` before the provider turn. The `local`
+engine streams to a temporary file and publishes a content-addressed blob only
+after the configured byte checks pass. The `off` engine disables persistence;
+a Slack event containing files is then rejected as one terminal turn while
+text-only Slack behavior remains available. Telegram retains its transport
+behavior when persistence is unavailable.
+
+The attachment limits must be positive, and `max_total_bytes` must be at least
+`max_file_bytes`. Slack enforces declared and streamed sizes and rejects the
+whole media turn when any file or aggregate limit is exceeded. Current Slack
+media also requires the bot `files:read` scope. Slack Connect
+`check_file_info` placeholders are resolved with `files.info`; inaccessible
+files are terminal without exposing private download URLs. Historical thread
+files and outbound Slack file uploads are not part of current-message media
+support.
+
+For every non-empty regular file with a preserved or detected MIME type, Balda
+supplies an ADK `FileData` part with an absolute, escaped `file://` URI and the
+persisted display name.
 Metadata remains an adjacent text part and does not replace a valid file
 reference.
 

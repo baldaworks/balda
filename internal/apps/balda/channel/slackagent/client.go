@@ -34,9 +34,10 @@ const (
 )
 
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL         string
+	token           string
+	http            *http.Client
+	validateFileURL func(*url.URL) error
 }
 
 type postMessageRequest struct {
@@ -108,6 +109,10 @@ func IsRetryableSlackError(err error) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
+	var fileErr *fileError
+	if errors.As(err, &fileErr) {
+		return fileErr.retryable
+	}
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.Retryable
@@ -122,9 +127,10 @@ func NewClient(token string) *Client {
 
 func NewClientWithBaseURL(baseURL, token string) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		token:   strings.TrimSpace(token),
-		http:    &http.Client{Timeout: defaultHTTPClientTimeout},
+		baseURL:         strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		token:           strings.TrimSpace(token),
+		http:            &http.Client{Timeout: defaultHTTPClientTimeout},
+		validateFileURL: validateSlackFileURL,
 	}
 }
 

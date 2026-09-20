@@ -18,10 +18,11 @@ type inboundProcessor struct {
 	chat      chatapp.Handler
 	lifecycle SessionLifecycle
 	history   ThreadHistoryReader
+	files     CurrentFileIngestor
 }
 
-func NewInboundProcessor(chat chatapp.Handler, lifecycle SessionLifecycle, history ThreadHistoryReader) InboundProcessor {
-	return &inboundProcessor{chat: chat, lifecycle: lifecycle, history: history}
+func NewInboundProcessor(chat chatapp.Handler, lifecycle SessionLifecycle, history ThreadHistoryReader, files CurrentFileIngestor) InboundProcessor {
+	return &inboundProcessor{chat: chat, lifecycle: lifecycle, history: history, files: files}
 }
 
 func (p *inboundProcessor) ProcessInbound(ctx context.Context, envelope IngressEnvelope) (turncmd.InboundSettlement, error) {
@@ -32,6 +33,19 @@ func (p *inboundProcessor) ProcessInbound(ctx context.Context, envelope IngressE
 		return retryInbound(), actorlayer.TransientError(fmt.Errorf("chat handler is unavailable"))
 	}
 	originalPrompt := envelope.Chat.Text
+	if len(envelope.Files) > 0 {
+		if p.files == nil {
+			return retryInbound(), actorlayer.TransientError(fmt.Errorf("slackagent file ingestor is unavailable"))
+		}
+		attachments, err := p.files.Ingest(ctx, envelope.Files)
+		if err != nil {
+			if IsRetryableSlackError(err) {
+				return retryInbound(), actorlayer.TransientError(fileIngestError(err))
+			}
+			return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal, Reason: fileFailureReason(err)}, err
+		}
+		envelope.Chat.Attachments = attachments
+	}
 	if err := p.hydrateThreadContext(ctx, &envelope); err != nil {
 		return retryInbound(), err
 	}

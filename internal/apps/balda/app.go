@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
@@ -57,7 +58,6 @@ import (
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog/log"
-	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -148,6 +148,10 @@ func Module(
 		return fx.Module("balda", fx.Error(err))
 	}
 	permissionConfig, err := permissions.ParseConfig(cfg.Balda.Permissions.Mode, cfg.Balda.Permissions.Timeout)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	attachmentLimits, err := cfg.Balda.Features.Attachments.Limits()
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
@@ -356,12 +360,13 @@ func Module(
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
 			},
-			func(tgCfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface) (attachmentstore.Store, error) {
+			func() (attachmentstore.Store, error) {
 				return attachmentstore.New(attachmentstore.Config{
 					Engine:   cfg.Balda.Features.Attachments.Store.Engine,
 					StateDir: stateDir,
-				}, attachmentstore.NewTelegramDownloader(tgClient, tgCfg.Token))
+				})
 			},
+			func(store attachmentstore.Store) baldaslackagent.BlobStore { return store },
 			fx.Annotate(
 				func(store *memory.Store) bool {
 					return store != nil && store.MemoryEnabled()
@@ -385,6 +390,11 @@ func Module(
 			},
 			func(s *baldajobs.JobLifecycleService) baldaexecution.DeadLetterRecorder {
 				return s
+			},
+		),
+		fx.Provide(
+			func() attachment.Limits {
+				return attachmentLimits
 			},
 		),
 		fx.Provide(

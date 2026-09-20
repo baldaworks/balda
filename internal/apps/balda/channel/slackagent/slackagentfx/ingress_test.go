@@ -11,10 +11,11 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -36,10 +37,16 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 	var order []string
 	dispatcher := &dispatcherRecorder{onDispatch: func() { order = append(order, "dispatch") }}
 	lifecycle := &sessionLifecycleStub{onBegin: func() { order = append(order, "begin") }}
+	fileIngestor := &currentFileIngestorStub{attachments: []attachment.Descriptor{{
+		Kind:     attachment.KindDocument,
+		FileID:   "F123",
+		FileName: "report.pdf",
+		Blob:     &attachment.BlobRef{Store: "local", Key: "f123", Path: "/state/attachments/f123"},
+	}}}
 	processor := newTestInboundProcessor(t, manager, dispatcher, lifecycle, &threadHistoryStub{snapshot: slackagent.ThreadSnapshot{
 		RootTS: "1782234671.392669", CutoffTS: "1782234987.693923", Available: true,
 		Messages: []slackagent.ThreadMessage{{TS: "1782234671.392669", AuthorID: "U111", AuthorType: slackagent.ThreadAuthorHuman, Text: "prior discussion"}},
-	}})
+	}}, fileIngestor)
 	envelope, err := slackagent.BuildIngressEnvelope(slackagent.EventEnvelope{
 		Type: "event_callback",
 		Event: slackagent.Event{
@@ -48,6 +55,7 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 			UserID:      "U456",
 			Text:        "<@UBOT> hello",
 			ChannelType: "channel",
+			Files:       []slackagent.FileRef{{ID: "F123"}},
 			Conversation: slackagent.ConversationRef{
 				TeamID:         "T123",
 				ConversationID: "C456",
@@ -83,6 +91,9 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 	}
 	if payload.UserID != "slackagent:T123:U456" || payload.Source != "slackagent" || !payload.Deliver {
 		t.Fatalf("payload = %+v", payload)
+	}
+	if len(payload.Attachments) != 1 || payload.Attachments[0].FileID != "F123" || payload.Attachments[0].Blob == nil {
+		t.Fatalf("payload attachments = %+v, want persisted F123", payload.Attachments)
 	}
 	if !strings.Contains(payload.Text, "prior discussion") || !strings.Contains(payload.Text, "CURRENT_ADDRESSED_REQUEST:\n<@UBOT> hello") {
 		t.Fatalf("payload text = %q", payload.Text)
@@ -248,6 +259,14 @@ type threadHistoryStub struct {
 	snapshot slackagent.ThreadSnapshot
 	err      error
 	calls    int
+}
+
+type currentFileIngestorStub struct {
+	attachments []attachment.Descriptor
+}
+
+func (s *currentFileIngestorStub) Ingest(context.Context, []slackagent.FileRef) ([]attachment.Descriptor, error) {
+	return attachment.NormalizeList(s.attachments), nil
 }
 
 func (s *threadHistoryStub) ReadThreadBefore(context.Context, string, string, string) (slackagent.ThreadSnapshot, error) {
@@ -422,6 +441,7 @@ func newTestInboundProcessor(
 	dispatcher actortransport.Dispatcher,
 	lifecycle slackagent.SessionLifecycle,
 	history slackagent.ThreadHistoryReader,
+	fileIngestors ...slackagent.CurrentFileIngestor,
 ) slackagent.InboundProcessor {
 	t.Helper()
 	chatHandler, err := chatfx.NewChatService(chatfx.ChatServiceParams{
@@ -432,7 +452,11 @@ func newTestInboundProcessor(
 	if err != nil {
 		t.Fatalf("NewChatService() error = %v", err)
 	}
-	return slackagent.NewInboundProcessor(chatHandler, lifecycle, history)
+	var files slackagent.CurrentFileIngestor
+	if len(fileIngestors) > 0 {
+		files = fileIngestors[0]
+	}
+	return slackagent.NewInboundProcessor(chatHandler, lifecycle, history, files)
 }
 
 func (s *sessionLifecycleStub) HandleSessionStopped(_ context.Context, locator baldasession.SessionLocator) error {

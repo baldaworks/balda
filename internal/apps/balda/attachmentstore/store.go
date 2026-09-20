@@ -3,6 +3,7 @@ package attachmentstore
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
@@ -13,26 +14,22 @@ const (
 	EngineLocal = "local"
 )
 
+var (
+	// ErrDisabled reports that persistence was requested while the store is off.
+	ErrDisabled = attachment.ErrStoreDisabled
+	// ErrTooLarge reports that content exceeded the caller's byte limit.
+	ErrTooLarge = attachment.ErrTooLarge
+)
+
 type Config struct {
 	Engine   string
 	StateDir string
 }
 
-type TelegramFileDownloader interface {
-	DownloadFile(ctx context.Context, fileID string) (DownloadedFile, error)
-}
-
-type DownloadedFile struct {
-	FileID       string
-	FileUniqueID string
-	FileName     string
-	MIMEType     string
-	SizeBytes    int64
-	Body         []byte
-}
-
+// Store persists already downloaded attachment content.
 type Store interface {
-	PersistTelegram(ctx context.Context, in []attachment.Descriptor) ([]attachment.Descriptor, error)
+	Enabled() bool
+	Persist(ctx context.Context, descriptor attachment.Descriptor, body io.Reader, maxBytes int64) (attachment.Descriptor, error)
 }
 
 func NormalizeEngine(value string) string {
@@ -46,12 +43,13 @@ func NormalizeEngine(value string) string {
 	}
 }
 
-func New(cfg Config, downloader TelegramFileDownloader) (Store, error) {
+// New constructs the configured attachment store.
+func New(cfg Config) (Store, error) {
 	switch NormalizeEngine(cfg.Engine) {
 	case EngineOff:
 		return noopStore{}, nil
 	case EngineLocal:
-		return newLocalStore(cfg.StateDir, downloader)
+		return newLocalStore(cfg.StateDir)
 	default:
 		return nil, fmt.Errorf("unsupported attachment store engine %q", cfg.Engine)
 	}
@@ -59,6 +57,8 @@ func New(cfg Config, downloader TelegramFileDownloader) (Store, error) {
 
 type noopStore struct{}
 
-func (noopStore) PersistTelegram(_ context.Context, in []attachment.Descriptor) ([]attachment.Descriptor, error) {
-	return attachment.NormalizeList(in), nil
+func (noopStore) Enabled() bool { return false }
+
+func (noopStore) Persist(context.Context, attachment.Descriptor, io.Reader, int64) (attachment.Descriptor, error) {
+	return attachment.Descriptor{}, ErrDisabled
 }

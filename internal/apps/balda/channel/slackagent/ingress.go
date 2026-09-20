@@ -17,6 +17,7 @@ type IngressEnvelope struct {
 	Subject         string
 	InitiatorUserID string
 	ThreadContext   *ThreadContextRequest
+	Files           []FileRef
 	Chat            chatapp.Request
 	Stopped         *SessionStopped
 	IgnoreEvent     bool
@@ -83,6 +84,7 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 	out.Locator = locatorForConversation(event.Conversation)
 	out.Subject = slackUserID(event.Conversation.TeamID, event.UserID)
 	out.InitiatorUserID = strings.TrimSpace(event.UserID)
+	out.Files = append([]FileRef(nil), event.Files...)
 	out.Chat = NormalizeChatRequest(out.Locator, event, receivedAt)
 	out.Chat.UserID = out.Subject
 	if event.EventType == "app_mention" && strings.TrimSpace(event.ReplyToMessageID()) != "" {
@@ -99,21 +101,35 @@ func BuildIngressEnvelope(env EventEnvelope, receivedAt time.Time) (IngressEnvel
 }
 
 func eligibleHumanIM(event Event) bool {
-	if strings.TrimSpace(event.ChannelType) != "im" || !eligibleHumanMessage(event) {
+	if strings.TrimSpace(event.ChannelType) != "im" || !eligibleHumanOrigin(event) {
 		return false
 	}
-	return true
+	switch strings.TrimSpace(event.Subtype) {
+	case "":
+		return hasMessageContent(event)
+	case "file_share":
+		return len(event.Files) > 0
+	default:
+		return false
+	}
 }
 
 func eligibleHumanChannelMention(event Event) bool {
-	return isChannelConversation(event.Conversation.ConversationID) && eligibleHumanMessage(event)
+	return isChannelConversation(event.Conversation.ConversationID) &&
+		strings.TrimSpace(event.Subtype) == "" &&
+		eligibleHumanOrigin(event) &&
+		hasMessageContent(event)
 }
 
-func eligibleHumanMessage(event Event) bool {
-	if strings.TrimSpace(event.Subtype) != "" || strings.TrimSpace(event.BotID) != "" || event.HasBotProfile || strings.TrimSpace(event.Text) == "" {
+func eligibleHumanOrigin(event Event) bool {
+	if strings.TrimSpace(event.BotID) != "" || event.HasBotProfile || event.Hidden {
 		return false
 	}
 	return validateThreadEvent(event) == nil
+}
+
+func hasMessageContent(event Event) bool {
+	return strings.TrimSpace(event.Text) != "" || len(event.Files) > 0
 }
 
 func isChannelConversation(conversationID string) bool {

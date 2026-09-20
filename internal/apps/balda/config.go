@@ -1,8 +1,18 @@
 package balda
 
 import (
+	"fmt"
+	"math"
+
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+)
+
+const (
+	defaultAttachmentMaxFilesPerMessage = 10
+	defaultAttachmentMaxFileBytes       = 25 << 20
+	defaultAttachmentMaxTotalBytes      = 50 << 20
 )
 
 // Config holds the configuration for the Balda bot.
@@ -218,11 +228,39 @@ type AutoModeConfig struct {
 }
 
 type AttachmentsConfig struct {
-	Store AttachmentsStoreConfig `mapstructure:"store"`
+	MaxFilesPerMessage int                    `mapstructure:"max_files_per_message"`
+	MaxFileBytes       int64                  `mapstructure:"max_file_bytes"`
+	MaxTotalBytes      int64                  `mapstructure:"max_total_bytes"`
+	Store              AttachmentsStoreConfig `mapstructure:"store"`
 }
 
 type AttachmentsStoreConfig struct {
 	Engine string `mapstructure:"engine"`
+}
+
+// Limits validates and returns the effective attachment resource limits.
+func (c AttachmentsConfig) Limits() (attachment.Limits, error) {
+	limits := attachment.Limits{
+		MaxFilesPerMessage: c.MaxFilesPerMessage,
+		MaxFileBytes:       c.MaxFileBytes,
+		MaxTotalBytes:      c.MaxTotalBytes,
+	}
+	if limits.MaxFilesPerMessage <= 0 {
+		return attachment.Limits{}, fmt.Errorf("balda.features.attachments.max_files_per_message must be positive")
+	}
+	if limits.MaxFileBytes <= 0 {
+		return attachment.Limits{}, fmt.Errorf("balda.features.attachments.max_file_bytes must be positive")
+	}
+	if limits.MaxFileBytes == math.MaxInt64 {
+		return attachment.Limits{}, fmt.Errorf("balda.features.attachments.max_file_bytes must be less than %d", int64(math.MaxInt64))
+	}
+	if limits.MaxTotalBytes <= 0 {
+		return attachment.Limits{}, fmt.Errorf("balda.features.attachments.max_total_bytes must be positive")
+	}
+	if limits.MaxTotalBytes < limits.MaxFileBytes {
+		return attachment.Limits{}, fmt.Errorf("balda.features.attachments.max_total_bytes must be at least max_file_bytes")
+	}
+	return limits, nil
 }
 
 // GoalConfig controls /goalkeeper command execution behavior.
