@@ -39,11 +39,22 @@ linters:
     - gocritic
     - whitespace
     - nolintlint
+    - forbidigo
   settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: '^state\.New(SQLite|Postgres)Provider$'
+          pkg: '^github\.com/baldaworks/balda/internal/apps/balda/state$'
+          msg: 'Use state.Open with resolved database configuration in production composition.'
     revive:
       rules:
         - name: exported
           disabled: true
+  exclusions:
+    rules:
+      - path: 'internal/apps/balda/state/|_test\.go$'
+        linters: [forbidigo]
 
 formatters:
   enable: []

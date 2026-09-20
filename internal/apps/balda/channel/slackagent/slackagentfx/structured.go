@@ -106,4 +106,3 @@ func NewGoalOutcomeStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar 
 		return deliveryfmt.RegisterStructuredRenderer(registry, deliveryfmt.TransportSlackAgent, goalkeepercmd.OutcomeDescriptor, slackAgentGoalOutcomeRenderer{})
 	}
 }
-

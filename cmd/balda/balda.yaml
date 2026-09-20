@@ -153,18 +153,30 @@ balda:
   working_dir: ""
 
   # Balda app state directory.
-  # Stores migration-managed state.db (owner/app KV, session metadata, telegram polling offset).
+  # Supplies the default SQLite location and local NATS/artifact paths.
   # Relative paths are resolved from balda.working_dir.
   state_dir: ".config/balda"
 
+  database:
+    type: sqlite
+    sqlite:
+      path: '{{.StateDir}}/state.db'
+    postgres:
+      host: localhost
+      port: 5432
+      name: balda
+      user: balda
+      password: ""
+      sslmode: disable
+
   sessions:
     # Conversation/session persistence:
-    # - sqlite: persist runtime conversation state in state.db until the session is explicitly closed (default)
+    # - sqlite: durable runtime conversation state in the selected database (default)
     # - memory: keep runtime conversation state in memory only
     persistence: "sqlite"
 
   memory:
-    # Internal durable memory backed by ${balda.state_dir}/state.db.
+    # Internal durable memory backed by the selected state database.
     # Existing ${balda.state_dir}/MEMORY.md content is imported once when KV memory is empty.
     # If false, balda.memory.* MCP tools are disabled.
     enabled: true
@@ -211,6 +223,12 @@ balda:
       # Balda clamps invalid values to 5.
       max_turns: 10
     attachments:
+      # Maximum files accepted from one inbound message.
+      max_files_per_message: 10
+      # Maximum bytes accepted for one inbound file (25 MiB).
+      max_file_bytes: 26214400
+      # Maximum bytes accepted across one inbound message (50 MiB).
+      max_total_bytes: 52428800
       store:
         # Attachment store engine:
         # - off: do not persist inbound attachments

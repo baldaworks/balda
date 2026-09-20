@@ -382,6 +382,10 @@ balda:
 - `balda.slack.agent.events_path`: local Agent Events path, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
 - `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
 - `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
+- `balda.features.attachments.max_files_per_message`: maximum files accepted in one inbound attachment set (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`); a Slack thread turn shares this count between current-message and historical files
+- `balda.features.attachments.max_file_bytes`: maximum bytes accepted for one inbound file or one outbound Slack local-file delivery (default: `26214400`, 25 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES`)
+- `balda.features.attachments.max_total_bytes`: maximum bytes accepted across one inbound message (default: `52428800`, 50 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES`)
+- `balda.features.attachments.store.engine`: inbound attachment persistence engine (`local` or `off`; default: `local`; env: `BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE`)
 - `balda.webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
 - `balda.webhooks.listen_addr`: local inbound webhook listen address (default: `127.0.0.1:8090`)
 - `balda.webhooks.routes`: route table keyed by route name
@@ -402,12 +406,56 @@ balda:
     - `source`: `request_id` (default), `header`, or `body_sha256`
     - `header` required for `source=header`
 
-### Attachment prompt representation
+### Attachment storage and prompt representation
 
-Telegram documents, photos, and voice messages are persisted under
-`balda.state_dir` before the provider turn. For every non-empty regular file
-with a preserved or detected MIME type, Balda supplies an ADK `FileData` part
-with an absolute, escaped `file://` URI and the persisted display name.
+Telegram media, files on the triggering Slack Agent event, and eligible files
+from preceding Slack thread messages are persisted under
+`${balda.state_dir}/attachments` before the provider turn. The `local`
+engine streams to a temporary file and publishes a content-addressed blob only
+after the configured byte checks pass. The `off` engine disables persistence;
+a Slack event containing current files is then rejected as one terminal turn
+while text-only Slack behavior remains available. A text mention with only
+historical files still proceeds with bounded unavailable markers and no
+historical provider attachments. Telegram retains its transport behavior when
+persistence is unavailable.
+
+The attachment limits must be positive, and `max_total_bytes` must be at least
+`max_file_bytes`. Slack enforces declared and streamed sizes and rejects the
+whole current-message media turn when any file or aggregate limit is exceeded.
+For a Slack thread mention, current files consume the configured count and
+actual-byte budget first. Historical candidates are deduplicated by Slack file
+ID, considered newest-first within the remaining capacity, and supplied after
+current files in chronological message/file order. Historical over-budget,
+unsupported, storage-disabled, and permanently inaccessible files become
+bounded untrusted-context markers instead of rejecting the current mention.
+Temporary Slack, network, or storage failures retry the whole triggering event
+before durable publication.
+
+Current and historical Slack media require the bot `files:read` scope plus
+access to the conversation. Slack Connect `check_file_info` placeholders are
+resolved with `files.info`; private URLs and authorization material are never
+written to context or logs.
+
+Outbound Slack photos and documents require the independent bot `files:write`
+scope. Balda accepts one non-empty, non-symlink regular local file and applies
+the same `max_file_bytes` limit; it adds no outbound-specific setting. File IDs,
+URLs, directories, missing paths, and changed files are rejected before Slack
+completion. Balda obtains an external upload ticket, streams the exact bytes,
+and completes the file into the locator conversation and root thread with its
+filename, MIME type, and caption. The resulting Slack file ID is stored as the
+provider message ID.
+
+Definitive pre-completion failures can use the existing retry path. An unknown
+completion outcome remains durable state `sending` and is not dispatched again
+automatically after restart, preventing duplicate files. Missing `files:write`
+affects only outbound media; text delivery and `files:read` ingestion remain
+available. Logs and returned errors omit local paths, upload URLs, credentials,
+captions, response bodies, and file content. Disabling the inbound attachment
+store does not create a remote-source fallback for outbound delivery.
+
+For every non-empty regular file with a preserved or detected MIME type, Balda
+supplies an ADK `FileData` part with an absolute, escaped `file://` URI and the
+persisted display name.
 Metadata remains an adjacent text part and does not replace a valid file
 reference.
 
@@ -422,13 +470,17 @@ or non-regular paths return a stable build error.
 ### Balda settings
 
 - `balda.working_dir`: optional balda working directory (defaults to process CWD)
-- `balda.state_dir`: balda state directory for persistent balda SQLite state (`state.db`).
-  - Stores owner/app KV, `balda.state` MCP KV, session metadata, job/read-model state, optional session history, and Telegram polling offset.
-  - Schema is migration-versioned and auto-applied on startup.
+- `balda.state_dir`: local state directory; supplies the default SQLite database location and other local runtime paths.
   - Relative paths are resolved from `balda.working_dir`.
   - Default: `.config/balda`
+- `balda.database.type`: `sqlite|postgres` (default `sqlite`).
+  - Stores owner/app KV, `balda.state` MCP KV, session metadata, job/read-model state, optional session history, and Telegram polling offset.
+  - Schema is migration-versioned and auto-applied on startup.
+- `balda.database.sqlite.path`: strict one-pass template, default `{{.StateDir}}/state.db`.
+- `balda.database.postgres`: structured `host`, `port`, `name`, `user`, `password`, and `sslmode` settings.
+  See [State database](database.md) for copyable examples, template rules and operations.
 - `balda.sessions.persistence`: `sqlite|memory` (default `sqlite`)
-  - `sqlite`: session history and state are persisted in `state.db` and reused after restart until the session is explicitly closed.
+  - `sqlite`: durable session history in the selected database (SQLite or PostgreSQL), reused after restart until explicitly closed.
   - `memory`: conversation/runtime state is process-local; only Balda metadata is persisted.
 - `balda.memory.enabled`: enable internal durable memory (default `true`)
   - when disabled, Balda does not snapshot durable memory or register `balda.memory.*` MCP tools.
@@ -458,7 +510,7 @@ or non-regular paths return a stable build error.
 - `/goalkeeper` runs repeated work and validation passes in isolated GoalKeeper worker/validator ADK sessions until the goal passes validation or `balda.goal.max_iterations` is reached.
   - with workspace mode enabled, `/goalkeeper` uses a separate goal worktree and exports passing work to `balda.workspace.base_branch`.
   - with workspace mode disabled, `/goalkeeper` works directly in `balda.working_dir` and records `not_exported` on passing runs.
-- internal durable memory uses app KV in `${balda.state_dir}/state.db` when `balda.memory.enabled=true`
+- internal durable memory uses app KV in the selected database when `balda.memory.enabled=true`
   - `balda.memory.read` reads memory from MCP.
   - `balda.memory.remember` appends facts from MCP.
   - every write advances the latest-memory timestamp.
@@ -466,7 +518,7 @@ or non-regular paths return a stable build error.
     complete current snapshot into the provider user prompt and advance the
     turn/session timestamp boundary; unchanged timestamps do not inject memory.
   - existing `${balda.state_dir}/MEMORY.md` content is imported once when KV memory is empty.
-- owner auth token is generated during `balda init`, persisted in `state.db`, and reused by `balda start`
+- owner auth token is generated during `balda init`, persisted in the selected database, and reused by `balda start`
   - if token is missing in existing state, `balda start` backfills one-time and persists it
   - if no owner is registered yet, `balda start` logs the owner bootstrap command and auth link again to help finish first-time onboarding
   - after the first successful owner auth, normal startup logs go back to bot identity only and no longer expose owner auth tokens or auth links

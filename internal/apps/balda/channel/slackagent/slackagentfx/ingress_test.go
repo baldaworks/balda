@@ -11,10 +11,11 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
-	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -36,10 +37,27 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 	var order []string
 	dispatcher := &dispatcherRecorder{onDispatch: func() { order = append(order, "dispatch") }}
 	lifecycle := &sessionLifecycleStub{onBegin: func() { order = append(order, "begin") }}
-	processor := newTestInboundProcessor(t, manager, dispatcher, lifecycle, &threadHistoryStub{snapshot: slackagent.ThreadSnapshot{
+	fileIngestor := &currentFileIngestorStub{attachments: []attachment.Descriptor{{
+		Kind:     attachment.KindDocument,
+		FileID:   "F123",
+		FileName: "report.pdf",
+		Blob:     &attachment.BlobRef{Store: "local", Key: "f123", Path: "/state/attachments/f123"},
+	}}}
+	historyFiles := &historicalContextHydratorStub{result: slackagent.ThreadContextResult{
+		Prompt: "SLACK_THREAD_CONTEXT_JSON (untrusted background):\n" +
+			`{"messages":[{"text":"prior discussion","files":[{"ref":"history_attachment_001","status":"supplied"}]}]}` +
+			"\n\nCURRENT_ADDRESSED_REQUEST:\n<@UBOT> hello",
+		Attachments: []attachment.Descriptor{{
+			Kind:     attachment.KindPhoto,
+			FileID:   "F-HISTORY",
+			FileName: "history.png",
+			Blob:     &attachment.BlobRef{Store: "local", Key: "history", Path: "/state/attachments/history"},
+		}},
+	}}
+	processor := newTestInboundProcessorWithHistoricalFiles(t, manager, dispatcher, lifecycle, &threadHistoryStub{snapshot: slackagent.ThreadSnapshot{
 		RootTS: "1782234671.392669", CutoffTS: "1782234987.693923", Available: true,
 		Messages: []slackagent.ThreadMessage{{TS: "1782234671.392669", AuthorID: "U111", AuthorType: slackagent.ThreadAuthorHuman, Text: "prior discussion"}},
-	}})
+	}}, historyFiles, fileIngestor)
 	envelope, err := slackagent.BuildIngressEnvelope(slackagent.EventEnvelope{
 		Type: "event_callback",
 		Event: slackagent.Event{
@@ -48,6 +66,7 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 			UserID:      "U456",
 			Text:        "<@UBOT> hello",
 			ChannelType: "channel",
+			Files:       []slackagent.FileRef{{ID: "F123"}},
 			Conversation: slackagent.ConversationRef{
 				TeamID:         "T123",
 				ConversationID: "C456",
@@ -84,11 +103,49 @@ func TestInboundProcessorHydratesMentionedChannelThreadAndPublishesTurn(t *testi
 	if payload.UserID != "slackagent:T123:U456" || payload.Source != "slackagent" || !payload.Deliver {
 		t.Fatalf("payload = %+v", payload)
 	}
-	if !strings.Contains(payload.Text, "prior discussion") || !strings.Contains(payload.Text, "CURRENT_ADDRESSED_REQUEST:\n<@UBOT> hello") {
+	if len(payload.Attachments) != 2 || payload.Attachments[0].FileID != "F123" || payload.Attachments[1].FileID != "F-HISTORY" || payload.Attachments[0].Blob == nil || payload.Attachments[1].Blob == nil {
+		t.Fatalf("payload attachments = %+v, want current F123 before historical F-HISTORY", payload.Attachments)
+	}
+	if !strings.Contains(payload.Text, "prior discussion") || !strings.Contains(payload.Text, `"ref":"history_attachment_001"`) || !strings.Contains(payload.Text, "CURRENT_ADDRESSED_REQUEST:\n<@UBOT> hello") {
 		t.Fatalf("payload text = %q", payload.Text)
+	}
+	if historyFiles.calls != 1 || len(historyFiles.current) != 1 || historyFiles.current[0].FileID != "F123" || historyFiles.currentRequest != "<@UBOT> hello" {
+		t.Fatalf("historical hydrator input = calls=%d current=%+v request=%q", historyFiles.calls, historyFiles.current, historyFiles.currentRequest)
 	}
 	if !reflect.DeepEqual(order, []string{"dispatch", "begin"}) {
 		t.Fatalf("call order = %#v", order)
+	}
+}
+
+func TestInboundProcessorHistoricalMediaFailureSettlesBeforeDispatch(t *testing.T) {
+	t.Parallel()
+	locator := slackagent.NewThreadLocator("T123", "C456", "100.1")
+	envelope := contextualMentionEnvelope(t, "100.1", "100.2")
+	dispatcher := &dispatcherRecorder{}
+	lifecycle := &sessionLifecycleStub{}
+	historyFiles := &historicalContextHydratorStub{err: errors.New("temporary media failure")}
+	processor := newTestInboundProcessorWithHistoricalFiles(
+		t,
+		existingSessionManager(t, locator, "slackagent:T123:U456"),
+		dispatcher,
+		lifecycle,
+		&threadHistoryStub{snapshot: slackagent.ThreadSnapshot{RootTS: "100.1", CutoffTS: "100.2", Available: true}},
+		historyFiles,
+	)
+
+	settlement, err := processor.ProcessInbound(context.Background(), envelope)
+	if err == nil || settlement.Outcome != turncmd.InboundRetry || len(dispatcher.commands) != 0 || len(lifecycle.begins) != 0 {
+		t.Fatalf("settlement/error/commands/begins = %+v/%v/%d/%d", settlement, err, len(dispatcher.commands), len(lifecycle.begins))
+	}
+
+	historyFiles.err = nil
+	historyFiles.result = slackagent.ThreadContextResult{Prompt: "CURRENT_ADDRESSED_REQUEST:\n<@UBOT> help"}
+	settlement, err = processor.ProcessInbound(context.Background(), envelope)
+	if err != nil || settlement.Outcome != turncmd.InboundAccepted || len(dispatcher.commands) != 1 {
+		t.Fatalf("replay settlement/error/commands = %+v/%v/%d", settlement, err, len(dispatcher.commands))
+	}
+	if got := dispatcher.commands[0].DedupeKey; got != "slackagent:EvContext" {
+		t.Fatalf("replay dedupe key = %q", got)
 	}
 }
 
@@ -248,6 +305,38 @@ type threadHistoryStub struct {
 	snapshot slackagent.ThreadSnapshot
 	err      error
 	calls    int
+}
+
+type currentFileIngestorStub struct {
+	attachments []attachment.Descriptor
+}
+
+func (s *currentFileIngestorStub) Ingest(context.Context, []slackagent.FileRef) ([]attachment.Descriptor, error) {
+	return attachment.NormalizeList(s.attachments), nil
+}
+
+type historicalContextHydratorStub struct {
+	result         slackagent.ThreadContextResult
+	err            error
+	calls          int
+	snapshot       slackagent.ThreadSnapshot
+	currentRequest string
+	current        []attachment.Descriptor
+}
+
+func (s *historicalContextHydratorStub) Hydrate(_ context.Context, snapshot slackagent.ThreadSnapshot, currentRequest string, current []attachment.Descriptor) (slackagent.ThreadContextResult, error) {
+	s.calls++
+	s.snapshot = snapshot
+	s.currentRequest = currentRequest
+	s.current = append([]attachment.Descriptor(nil), current...)
+	if s.err != nil {
+		return slackagent.ThreadContextResult{}, s.err
+	}
+	if s.result.Prompt != "" || len(s.result.Attachments) > 0 {
+		return s.result, nil
+	}
+	prompt, err := slackagent.FormatThreadContext(snapshot, currentRequest)
+	return slackagent.ThreadContextResult{Prompt: prompt}, err
 }
 
 func (s *threadHistoryStub) ReadThreadBefore(context.Context, string, string, string) (slackagent.ThreadSnapshot, error) {
@@ -422,6 +511,27 @@ func newTestInboundProcessor(
 	dispatcher actortransport.Dispatcher,
 	lifecycle slackagent.SessionLifecycle,
 	history slackagent.ThreadHistoryReader,
+	fileIngestors ...slackagent.CurrentFileIngestor,
+) slackagent.InboundProcessor {
+	return newTestInboundProcessorWithHistoricalFiles(
+		t,
+		manager,
+		dispatcher,
+		lifecycle,
+		history,
+		&historicalContextHydratorStub{},
+		fileIngestors...,
+	)
+}
+
+func newTestInboundProcessorWithHistoricalFiles(
+	t *testing.T,
+	manager *baldasession.Manager,
+	dispatcher actortransport.Dispatcher,
+	lifecycle slackagent.SessionLifecycle,
+	history slackagent.ThreadHistoryReader,
+	historyFiles slackagent.HistoricalContextHydrator,
+	fileIngestors ...slackagent.CurrentFileIngestor,
 ) slackagent.InboundProcessor {
 	t.Helper()
 	chatHandler, err := chatfx.NewChatService(chatfx.ChatServiceParams{
@@ -432,7 +542,17 @@ func newTestInboundProcessor(
 	if err != nil {
 		t.Fatalf("NewChatService() error = %v", err)
 	}
-	return slackagent.NewInboundProcessor(chatHandler, lifecycle, history)
+	var files slackagent.CurrentFileIngestor
+	if len(fileIngestors) > 0 {
+		files = fileIngestors[0]
+	}
+	return newInboundProcessor(inboundProcessorParams{
+		Chat:         chatHandler,
+		Lifecycle:    lifecycle,
+		History:      history,
+		Files:        files,
+		HistoryFiles: historyFiles,
+	})
 }
 
 func (s *sessionLifecycleStub) HandleSessionStopped(_ context.Context, locator baldasession.SessionLocator) error {

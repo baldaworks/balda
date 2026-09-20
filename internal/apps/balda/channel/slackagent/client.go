@@ -22,6 +22,7 @@ const (
 	maxResponseBodyBytes     = 1 << 20
 	maxSessionTitleRunes     = 200
 	maxStreamTextRunes       = 12000
+	malformedResponseCode    = "malformed_response"
 )
 
 type SessionStatus string
@@ -34,9 +35,10 @@ const (
 )
 
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL         string
+	token           string
+	http            *http.Client
+	validateFileURL func(*url.URL) error
 }
 
 type postMessageRequest struct {
@@ -108,6 +110,10 @@ func IsRetryableSlackError(err error) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
+	var fileErr *fileError
+	if errors.As(err, &fileErr) {
+		return fileErr.retryable
+	}
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.Retryable
@@ -122,9 +128,10 @@ func NewClient(token string) *Client {
 
 func NewClientWithBaseURL(baseURL, token string) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		token:   strings.TrimSpace(token),
-		http:    &http.Client{Timeout: defaultHTTPClientTimeout},
+		baseURL:         strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		token:           strings.TrimSpace(token),
+		http:            &http.Client{Timeout: defaultHTTPClientTimeout},
+		validateFileURL: validateSlackFileURL,
 	}
 }
 
@@ -255,7 +262,7 @@ func (c *Client) callSlack(ctx context.Context, method string, payload any, requ
 	}
 	response.TS = strings.TrimSpace(response.TS)
 	if requireTS && response.TS == "" {
-		return slackResponse{}, &APIError{Method: method, StatusCode: http.StatusOK, Code: "malformed_response", Message: "missing ts"}
+		return slackResponse{}, &APIError{Method: method, StatusCode: http.StatusOK, Code: malformedResponseCode, Message: "missing ts"}
 	}
 	return response, nil
 }
@@ -306,7 +313,7 @@ func (c *Client) postJSON(ctx context.Context, method string, payload any, out a
 		}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: "malformed_response", Message: "invalid JSON response", Retryable: true}
+		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: malformedResponseCode, Message: "invalid JSON response", Retryable: true}
 	}
 	return nil
 }
@@ -353,7 +360,7 @@ func (c *Client) getJSON(ctx context.Context, method string, params url.Values, 
 		}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: "malformed_response", Message: "invalid JSON response", Retryable: true}
+		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: malformedResponseCode, Message: "invalid JSON response", Retryable: true}
 	}
 	return nil
 }

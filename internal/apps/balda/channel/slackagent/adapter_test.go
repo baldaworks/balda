@@ -12,10 +12,15 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
 )
+
+func newTestAdapter(client MessageClient, cfg AdapterConfig) *Adapter {
+	return NewAdapter(client, nil, attachment.Limits{}, zerolog.Nop(), cfg)
+}
 
 const (
 	testChatPostMessagePath = "/chat.postMessage"
@@ -43,7 +48,7 @@ func TestAdapterDeliverAgentReplyReturnsProviderMessageID(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	client := NewClientWithBaseURL(server.URL, "xoxb-token")
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	adapter := newTestAdapter(client, AdapterConfig{})
 	locator := NewThreadLocator("T123", "C456", "thread-789")
 
 	result, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{
@@ -81,7 +86,7 @@ func TestAdapterDeliverAgentReplyAppendsSuggestedPromptsWhenEnabled(t *testing.T
 	t.Cleanup(server.Close)
 
 	client := NewClientWithBaseURL(server.URL, "xoxb-token")
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{SuggestedPrompts: true})
+	adapter := newTestAdapter(client, AdapterConfig{SuggestedPrompts: true})
 	locator := NewThreadLocator("T123", "D456", testThreadTS)
 
 	_, err := adapter.Deliver(t.Context(), locator, deliverycmd.Operation{
@@ -100,7 +105,7 @@ func TestAdapterDeliverAgentReplyAppendsSuggestedPromptsWhenEnabled(t *testing.T
 func TestAdapterStreamsMonotonicSnapshotsAndFinalizesOnce(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: testStreamMessageTS}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{EnableStreaming: true})
+	adapter := newTestAdapter(client, AdapterConfig{EnableStreaming: true})
 	locator := NewThreadLocator("T123", "D456", testThreadTS)
 
 	for _, snapshot := range []string{"Hello", "Hello", "Hello world"} {
@@ -145,7 +150,7 @@ func TestAdapterStreamsMonotonicSnapshotsAndFinalizesOnce(t *testing.T) {
 func TestAdapterFinalOnlyStreamAndQuestionSuspension(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "stream-ts"}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{EnableStreaming: true})
+	adapter := newTestAdapter(client, AdapterConfig{EnableStreaming: true})
 	locator := NewThreadLocator("T123", "D456", "root-ts")
 	result, err := adapter.Deliver(context.Background(), locator, deliverycmd.Operation{
 		Kind:     deliverycmd.OperationAgentReply,
@@ -171,7 +176,7 @@ func TestAdapterFinalOnlyStreamAndQuestionSuspension(t *testing.T) {
 func TestAdapterRejectsDivergentStreamWithoutFallbackPost(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "stream-ts"}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{EnableStreaming: true})
+	adapter := newTestAdapter(client, AdapterConfig{EnableStreaming: true})
 	locator := NewThreadLocator("T123", "D456", "root-ts")
 	_, err := adapter.Deliver(context.Background(), locator, deliverycmd.Operation{
 		Kind:     deliverycmd.OperationProgress,
@@ -197,7 +202,7 @@ func TestAdapterRejectsDivergentStreamWithoutFallbackPost(t *testing.T) {
 func TestAdapterBeginTurnSetsProcessingAndRenamesOnlyOnce(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	adapter := newTestAdapter(client, AdapterConfig{})
 	locator := NewThreadLocator("T123", "D456", "root-ts")
 	prompt := strings.Repeat("界", maxSessionTitleRunes+5)
 	for range 2 {
@@ -218,7 +223,7 @@ func TestAdapterBeginTurnSetsProcessingAndRenamesOnlyOnce(t *testing.T) {
 func TestAdapterBeginTurnDoesNotRenameChannelThread(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	adapter := newTestAdapter(client, AdapterConfig{})
 	locator := NewThreadLocator("T123", "C456", "root-ts")
 
 	for range 2 {
@@ -240,7 +245,7 @@ func TestAdapterBeginTurnDoesNotRenameChannelThread(t *testing.T) {
 func TestAdapterStreamsDistinctSessionsConcurrently(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "stream-ts"}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{EnableStreaming: true})
+	adapter := newTestAdapter(client, AdapterConfig{EnableStreaming: true})
 	locators := []deliverycmd.Locator{
 		NewThreadLocator("T123", "D456", "root-a"),
 		NewThreadLocator("T123", "D456", "root-b"),
@@ -273,7 +278,7 @@ func TestAdapterStreamsDistinctSessionsConcurrently(t *testing.T) {
 func TestAdapterStoppedSessionClearsStreamAndSetsActive(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "stream-ts"}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{EnableStreaming: true})
+	adapter := newTestAdapter(client, AdapterConfig{EnableStreaming: true})
 	locator := NewThreadLocator("T123", "D456", "root-ts")
 	progress := deliverycmd.Operation{
 		Kind:     deliverycmd.OperationProgress,
@@ -302,7 +307,7 @@ func TestAdapterStoppedSessionClearsStreamAndSetsActive(t *testing.T) {
 func TestAdapterCloseSessionSetsClosed(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	adapter := newTestAdapter(client, AdapterConfig{})
 	locator := NewThreadLocator("T123", "D456", "root-ts")
 	if err := adapter.CloseSession(context.Background(), locator); err != nil {
 		t.Fatalf("CloseSession() error = %v", err)
@@ -317,7 +322,7 @@ func TestAdapterCloseSessionSetsClosed(t *testing.T) {
 func TestAdapterRetriesStatusWithoutReplayingSuccessfulPost(t *testing.T) {
 	t.Parallel()
 	client := &recordingAgentClient{nextTS: "message-ts", statusErr: errors.New("status unavailable")}
-	adapter := NewAdapter(client, zerolog.Nop(), AdapterConfig{})
+	adapter := newTestAdapter(client, AdapterConfig{})
 	locator := NewThreadLocator("T123", "D456", "root-ts")
 	operation := deliverycmd.Operation{Kind: deliverycmd.OperationAgentReply, Text: "done"}
 	if _, err := adapter.Deliver(context.Background(), locator, operation); err == nil {

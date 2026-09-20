@@ -21,6 +21,8 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_command_advertisements"`),
 		),
 		newInboundProcessor,
+		slackagent.NewCurrentFileIngestor,
+		slackagent.NewHistoricalContextHydrator,
 		fx.Annotate(
 			newTurnCanceller,
 			fx.As(new(slackagent.TurnCanceller)),
@@ -33,6 +35,8 @@ var Module = fx.Module(
 		slackagent.NewServer,
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
 		func(client *slackagent.Client) slackagent.ThreadHistoryReader { return client },
+		func(client *slackagent.Client) slackagent.FileClient { return client },
+		func(client *slackagent.Client) slackagent.MediaUploadClient { return client },
 		slackagent.NewAdapter,
 		fx.Annotate(
 			func(adapter *slackagent.Adapter) deliveryfx.ChannelAdapterBinding {

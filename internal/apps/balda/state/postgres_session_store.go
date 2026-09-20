@@ -1,0 +1,183 @@
+package state
+
+import (
+	"context"
+	"database/sql"
+
+	"strings"
+	"time"
+)
+
+type postgresSessionStore struct {
+	db *sql.DB
+}
+
+func (s *postgresSessionStore) Upsert(ctx context.Context, record SessionRecord) error {
+	sessionID := strings.TrimSpace(record.SessionID)
+	if sessionID == "" {
+		return postgresErrorf("session_id is required")
+	}
+	channelType := strings.TrimSpace(record.ChannelType)
+	if channelType == "" {
+		return postgresErrorf("channel_type is required")
+	}
+	addressKey := strings.TrimSpace(record.AddressKey)
+	if addressKey == "" {
+		return postgresErrorf("address_key is required")
+	}
+	addressJSON := strings.TrimSpace(record.AddressJSON)
+	if addressJSON == "" {
+		return postgresErrorf("address_json is required")
+	}
+
+	if strings.TrimSpace(record.Status) == "" {
+		record.Status = SessionStatusActive
+	}
+
+	chatID, topicID := telegramAddressColumns(record)
+
+	if _, err := s.db.ExecContext(ctx, postgresBind(`
+		INSERT INTO balda_session_metadata (
+			session_id, user_id, chat_id, topic_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			user_id = excluded.user_id,
+			chat_id = excluded.chat_id,
+			topic_id = excluded.topic_id,
+			channel_type = excluded.channel_type,
+			address_key = excluded.address_key,
+			address_json = excluded.address_json,
+			agent_name = excluded.agent_name,
+			workspace_dir = excluded.workspace_dir,
+			branch_name = excluded.branch_name,
+			runtime_snapshot_id = excluded.runtime_snapshot_id,
+			status = excluded.status,
+			updated_at = excluded.updated_at`), sessionID,
+		strings.TrimSpace(record.UserID),
+		chatID,
+		topicID,
+		channelType,
+		addressKey,
+		addressJSON,
+		record.AgentName,
+		record.WorkspaceDir,
+		record.BranchName,
+		strings.TrimSpace(record.RuntimeSnapshotID),
+		record.Status,
+		time.Now().UTC().Format(time.RFC3339),
+	); err != nil {
+		return postgresErrorf("upsert balda session %q: %w", sessionID, err)
+	}
+
+	return nil
+}
+
+func (s *postgresSessionStore) GetByAddress(ctx context.Context, channelType, addressKey string) (SessionRecord, bool, error) {
+	row := s.db.QueryRowContext(ctx, postgresBind(`
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status
+		FROM balda_session_metadata
+		WHERE channel_type = ? AND address_key = ?`), strings.TrimSpace(channelType), strings.TrimSpace(addressKey),
+	)
+
+	var record SessionRecord
+	if err := row.Scan(
+		&record.SessionID,
+		&record.UserID,
+		&record.ChannelType,
+		&record.AddressKey,
+		&record.AddressJSON,
+		&record.AgentName,
+		&record.WorkspaceDir,
+		&record.BranchName,
+		&record.RuntimeSnapshotID,
+		&record.Status,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return SessionRecord{}, false, nil
+		}
+		return SessionRecord{}, false, postgresErrorf("get balda session by address: %w", err)
+	}
+
+	return record, true, nil
+}
+
+func (s *postgresSessionStore) GetBySessionID(ctx context.Context, sessionID string) (SessionRecord, bool, error) {
+	row := s.db.QueryRowContext(ctx, postgresBind(`
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status
+		FROM balda_session_metadata
+		WHERE session_id = ?`), strings.TrimSpace(sessionID),
+	)
+
+	var record SessionRecord
+	if err := row.Scan(
+		&record.SessionID,
+		&record.UserID,
+		&record.ChannelType,
+		&record.AddressKey,
+		&record.AddressJSON,
+		&record.AgentName,
+		&record.WorkspaceDir,
+		&record.BranchName,
+		&record.RuntimeSnapshotID,
+		&record.Status,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return SessionRecord{}, false, nil
+		}
+		return SessionRecord{}, false, postgresErrorf("get balda session by session_id: %w", err)
+	}
+
+	return record, true, nil
+}
+
+func (s *postgresSessionStore) DeleteBySessionID(ctx context.Context, sessionID string) error {
+	trimmed := strings.TrimSpace(sessionID)
+	if trimmed == "" {
+		return nil
+	}
+
+	if _, err := s.db.ExecContext(ctx, postgresBind(`
+		DELETE FROM balda_session_metadata
+		WHERE session_id = ?`), trimmed,
+	); err != nil {
+		return postgresErrorf("delete balda session %q: %w", trimmed, err)
+	}
+	return nil
+}
+
+func (s *postgresSessionStore) List(ctx context.Context) ([]SessionRecord, error) {
+	rows, err := s.db.QueryContext(ctx, postgresBind(`
+		SELECT session_id, user_id, channel_type, address_key, address_json, agent_name, workspace_dir, branch_name, runtime_snapshot_id, status
+		FROM balda_session_metadata
+		ORDER BY updated_at DESC`))
+	if err != nil {
+		return nil, postgresErrorf("list balda sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]SessionRecord, 0)
+	for rows.Next() {
+		var record SessionRecord
+		if err := rows.Scan(
+			&record.SessionID,
+			&record.UserID,
+			&record.ChannelType,
+			&record.AddressKey,
+			&record.AddressJSON,
+			&record.AgentName,
+			&record.WorkspaceDir,
+			&record.BranchName,
+			&record.RuntimeSnapshotID,
+			&record.Status,
+		); err != nil {
+			return nil, postgresErrorf("scan balda session: %w", err)
+		}
+		out = append(out, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, postgresErrorf("iterate balda sessions: %w", err)
+	}
+
+	return out, nil
+}

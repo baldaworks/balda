@@ -13,7 +13,7 @@ import (
 //go:embed migrations/*.sql
 var baldaMigrationsFS embed.FS
 
-var requiredBaldaSQLiteTables = []string{
+var requiredBaldaStateTables = []string{
 	"balda_app_kv",
 	"balda_session_metadata",
 	"balda_telegram_offsets",
@@ -59,7 +59,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 }
 
 func validateBaldaSQLiteSchema(ctx context.Context, db *sql.DB) error {
-	for _, table := range requiredBaldaSQLiteTables {
+	for _, table := range requiredBaldaStateTables {
 		exists, err := sqliteTableExists(ctx, db, table)
 		if err != nil {
 			return fmt.Errorf("inspect %s table: %w", table, err)

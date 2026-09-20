@@ -7,6 +7,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/rs/zerolog"
@@ -16,6 +17,8 @@ var _ deliverycmd.Adapter = (*Adapter)(nil)
 
 type Adapter struct {
 	client           MessageClient
+	uploads          MediaUploadClient
+	attachmentLimits attachment.Limits
 	logger           zerolog.Logger
 	enableStreaming  bool
 	suggestedPrompts bool
@@ -57,9 +60,11 @@ type AdapterConfig struct {
 	SuggestedPrompts bool
 }
 
-func NewAdapter(client MessageClient, logger zerolog.Logger, cfg AdapterConfig) *Adapter {
+func NewAdapter(client MessageClient, uploads MediaUploadClient, limits attachment.Limits, logger zerolog.Logger, cfg AdapterConfig) *Adapter {
 	return &Adapter{
 		client:           client,
+		uploads:          uploads,
+		attachmentLimits: limits,
 		logger:           logger.With().Str("component", "balda.channel.slackagent").Logger(),
 		enableStreaming:  cfg.EnableStreaming,
 		suggestedPrompts: cfg.SuggestedPrompts,
@@ -111,6 +116,8 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		err = a.sendThinking(ctx, locator)
 	case deliverycmd.OperationProgress:
 		err = a.sendProgress(ctx, locator, operation.Progress)
+	case deliverycmd.OperationPhoto, deliverycmd.OperationDocument:
+		return a.deliverMedia(ctx, locator, operation)
 	case deliverycmd.OperationDraft:
 		err = nil
 	default:

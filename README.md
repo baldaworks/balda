@@ -50,8 +50,12 @@ balda start
 ```
 
 `balda init` creates `.config/balda/config.yaml`, initializes
-`.config/balda/state.db`, detects available provider CLIs, and prints the next
-step for your selected chat provider.
+`.config/balda/state.db` by default, detects available provider CLIs, and prints
+the next step for your selected chat provider.
+
+SQLite is the default state database. To select PostgreSQL, configure
+`balda.database.type: postgres`; launch remains `balda start`.
+See [database configuration and operations](docs/reference/database.md).
 
 ## First run
 
@@ -127,8 +131,10 @@ Balda maps each conversation scope to its own session:
 - Slack Agent DM or mentioned channel thread
 
 In Slack channels, every turn requires an explicit `@Balda` mention. A mention
-inside an existing thread can use its preceding accessible discussion as
-bounded context; ordinary channel messages never activate Balda.
+inside an existing thread can use its preceding accessible discussion and
+persisted files as bounded context; ordinary channel messages never activate
+Balda. With the optional `files:write` scope, generated photos and documents
+are delivered back into the same root thread from bounded local files.
 
 ## Docker Compose
 

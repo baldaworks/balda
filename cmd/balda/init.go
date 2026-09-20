@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
-	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -135,23 +134,14 @@ func initCommand() *cobra.Command {
 			baldaSection["telegram"] = telegramSection
 			doc["balda"] = baldaSection
 
-			stateDirRaw := baldaRuntimeStatePath
-			if raw, exists := baldaSection["state_dir"]; exists {
-				stateDirRaw = strings.TrimSpace(fmt.Sprintf("%v", raw))
-				if stateDirRaw == "" {
-					return fmt.Errorf("balda.state_dir is required")
-				}
-			}
-			stateDir, err := paths.ResolveStateDir(workingDir, stateDirRaw)
+			stateDir, database, err := resolveBaldaInitDatabase(workingDir, doc)
 			if err != nil {
 				return fmt.Errorf("resolve balda state_dir: %w", err)
 			}
 			if err := os.MkdirAll(stateDir, 0o700); err != nil {
 				return fmt.Errorf("create Balda runtime state directory: %w", err)
 			}
-			dbPath := paths.StateDBPath(stateDir)
-
-			ownerToken, err := loadOrCreateBaldaOwnerToken(context.Background(), dbPath)
+			ownerToken, err := loadOrCreateBaldaOwnerToken(context.Background(), database)
 			if err != nil {
 				return fmt.Errorf("bootstrap balda owner token: %w", err)
 			}
@@ -167,7 +157,11 @@ func initCommand() *cobra.Command {
 
 			_, _ = fmt.Fprintf(baldaInitOutput, "balda initialized successfully\n")
 			_, _ = fmt.Fprintf(baldaInitOutput, "config: %s\n", configPath)
-			_, _ = fmt.Fprintf(baldaInitOutput, "state db: %s\n", dbPath)
+			if database.Type == databaseTypeSQLite {
+				_, _ = fmt.Fprintf(baldaInitOutput, "state db: %s\n", database.SQLite.Path)
+			} else {
+				_, _ = fmt.Fprintf(baldaInitOutput, "state database: %s\n", database.Type)
+			}
 			_, _ = fmt.Fprintf(baldaInitOutput, "Balda provider: %s\n", selectedBaldaProvider)
 			_, _ = fmt.Fprintf(baldaInitOutput, "telegram token stored in: %s\n", storageTarget)
 			_, _ = fmt.Fprintf(baldaInitOutput, "start command: balda start\n")

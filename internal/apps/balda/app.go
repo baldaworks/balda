@@ -12,6 +12,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
@@ -57,7 +58,6 @@ import (
 	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
 	"github.com/rs/zerolog/log"
-	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -151,7 +151,15 @@ func Module(
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	attachmentLimits, err := cfg.Balda.Features.Attachments.Limits()
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 	stateDir, err := paths.ResolveStateDir(workingDir, cfg.Balda.StateDir)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	database, err := cfg.Balda.Database.Resolve(workingDir, stateDir)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
@@ -323,7 +331,7 @@ func Module(
 		),
 		fx.Provide(
 			func(lc fx.Lifecycle) (baldastate.Provider, error) {
-				provider, err := openBaldaStateProvider(context.Background(), stateDir)
+				provider, err := openBaldaStateProvider(context.Background(), stateDir, database)
 				if err != nil {
 					return nil, err
 				}
@@ -352,12 +360,13 @@ func Module(
 			func(provider baldastate.Provider) *memory.Store {
 				return memory.NewStore(provider.AppKV(), stateDir, cfg.Balda.Memory.Enabled)
 			},
-			func(tgCfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface) (attachmentstore.Store, error) {
+			func() (attachmentstore.Store, error) {
 				return attachmentstore.New(attachmentstore.Config{
 					Engine:   cfg.Balda.Features.Attachments.Store.Engine,
 					StateDir: stateDir,
-				}, attachmentstore.NewTelegramDownloader(tgClient, tgCfg.Token))
+				})
 			},
+			func(store attachmentstore.Store) baldaslackagent.BlobStore { return store },
 			fx.Annotate(
 				func(store *memory.Store) bool {
 					return store != nil && store.MemoryEnabled()
@@ -381,6 +390,11 @@ func Module(
 			},
 			func(s *baldajobs.JobLifecycleService) baldaexecution.DeadLetterRecorder {
 				return s
+			},
+		),
+		fx.Provide(
+			func() attachment.Limits {
+				return attachmentLimits
 			},
 		),
 		fx.Provide(
@@ -684,11 +698,11 @@ func validateBaldaMCPConfiguration(normaCfg runtimeconfig.RuntimeConfig) error {
 	return fmt.Errorf("invalid balda MCP configuration: %s", strings.Join(errs, "; "))
 }
 
-func openBaldaStateProvider(ctx context.Context, stateDir string) (baldastate.Provider, error) {
+func openBaldaStateProvider(ctx context.Context, stateDir string, database baldastate.DatabaseConfig) (baldastate.Provider, error) {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create balda state dir: %w", err)
 	}
-	provider, err := baldastate.NewSQLiteProvider(ctx, paths.StateDBPath(stateDir))
+	provider, err := baldastate.Open(ctx, database)
 	if err != nil {
 		return nil, fmt.Errorf("open balda state provider: %w", err)
 	}

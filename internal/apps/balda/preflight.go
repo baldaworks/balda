@@ -74,6 +74,10 @@ func PreflightRuntime(
 	if err != nil {
 		return fmt.Errorf("resolve balda state_dir: %w", err)
 	}
+	database, err := cfg.Balda.Database.Resolve(workingDir, stateDir)
+	if err != nil {
+		return err
+	}
 	sessionPersistence, err := validateSessionPersistence(cfg.Balda.Sessions.Persistence)
 	if err != nil {
 		return err
@@ -209,7 +213,7 @@ func PreflightRuntime(
 				fx.ResultTags(`name:"balda_state_dir"`),
 			),
 			func(lc fx.Lifecycle) (baldastate.Provider, error) {
-				provider, openErr := openBaldaStateProvider(ctx, stateDir)
+				provider, openErr := openBaldaStateProvider(ctx, stateDir, database)
 				if openErr != nil {
 					return nil, openErr
 				}

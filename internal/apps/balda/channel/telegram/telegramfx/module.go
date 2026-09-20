@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -47,9 +48,9 @@ var Module = fx.Module(
 		fx.Annotate(
 			func(adapter *telegram.Adapter) telegram.Channel { return adapter },
 		),
-		fx.Annotate(
-			func(store attachmentstore.Store) telegram.AttachmentStore { return store },
-		),
+		func(store attachmentstore.Store, cfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface) telegram.AttachmentStore {
+			return telegram.NewAttachmentStore(store, tgClient, cfg.Token)
+		},
 		fx.Annotate(
 			func(adapter *telegram.Adapter) deliveryfx.ChannelAdapterBinding {
 				return deliveryfx.ChannelAdapterBinding{
