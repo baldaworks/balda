@@ -12,7 +12,8 @@ tunnel and forward the request without changing its body.
    `groups:history` only when Balda must load context from private-channel
    threads. The bot must be a member of each public or private channel whose
    thread context it reads. `files:read` is required for files attached to the
-   message that starts a turn.
+   message that starts a turn and for files loaded from preceding thread
+   messages.
    Slack adds the agent-specific `assistant:write` scope when the app is declared
    as an agent.
 3. Enable Event Subscriptions and subscribe to these bot events:
@@ -123,6 +124,24 @@ Event subscriptions and history scopes solve different problems:
   mention as bounded, author-attributed, untrusted background. The mention is
   kept separately as the current request; messages posted at or after its
   timestamp are excluded. Truncated context is marked explicitly.
+- Files and images on those preceding messages, including file-only messages,
+  use the same authenticated download, local persistence, and limits as files
+  on the triggering mention. Files on the triggering mention consume the
+  count and actual-byte budget first. Balda then considers deduplicated
+  historical files newest-first within the remaining budget, while presenting
+  retained historical attachments in chronological message and Slack file
+  order after all current attachments.
+- Historical file metadata remains inside the untrusted context block. A
+  bounded `history_attachment_NNN` reference uses `supplied`, `duplicate`,
+  `over_budget`, `unavailable`, or `unsupported` to explain each retained
+  occurrence without exposing a private Slack URL, token, file body, or local
+  path. A permanently inaccessible individual historical file becomes a safe
+  marker and does not reject the current mention. A temporary Slack, network,
+  or storage failure delays the whole turn so Slack can retry it without a
+  partial durable publication.
+- With attachment storage set to `off`, a triggering event that contains files
+  remains terminal. A text mention with historical files still proceeds: the
+  files are marked unavailable and the accessible text context is retained.
 - A retryable history failure delays the turn and lets Slack retry the signed
   event. If history is permanently inaccessible because of scope, membership,
   or channel access, Balda still accepts the mention with an explicit
@@ -169,13 +188,24 @@ Before production rollout, verify in a Slack developer workspace:
 11. Send a file with an explicit app mention in a public and, when configured,
     private channel. Confirm it produces one turn; confirm the same file share
     without a mention produces none.
-12. Test one standard workspace file and an accessible Slack Connect file. For
-    an inaccessible Slack Connect placeholder, confirm Balda creates no turn
-    and logs only a safe terminal reason without a private URL or token.
+12. Test one standard workspace file and an accessible Slack Connect file on
+    the triggering event. For an inaccessible Slack Connect placeholder,
+    confirm Balda creates no turn and logs only a safe terminal reason without
+    a private URL or token.
 13. Verify a request exceeding each configured count, per-file, and aggregate
     limit creates no turn. Temporarily set the attachment store to `off` and
     confirm file input is rejected while a text-only DM still succeeds.
-14. `/balda locator` posts a conversation locator, and `/balda locator extra`
+14. In an existing channel thread, post an earlier document, image, and
+    repeated reference to the same file, then explicitly mention Balda. Confirm
+    the provider receives each accessible file once, current-request files are
+    first, selected historical files are chronological, and the prompt contains
+    matching bounded markers. Repeat with history exceeding the remaining
+    budget and with an inaccessible Slack Connect file; confirm the mention
+    still produces one turn with `over_budget` or `unavailable` markers. With
+    storage `off`, confirm a text mention still succeeds with unavailable
+    historical markers. Finally, repeat with a text-only thread and confirm its
+    existing bounded context behavior is unchanged.
+15. `/balda locator` posts a conversation locator, and `/balda locator extra`
     posts usage containing `/balda locator`; neither request starts a turn.
 
 Do not record tokens or signing secrets in logs, screenshots, or committed test
@@ -201,8 +231,11 @@ artifacts.
   are retried by Slack.
 - Thread context is unavailable: confirm `channels:history` for public channels
   or `groups:history` plus app membership for private channels. These scopes do
-  not require `message.channels` or `message.groups` event subscriptions.
+  not require `message.channels` or `message.groups` event subscriptions. For
+  historical files, also confirm `files:read`, attachment storage, and the
+  shared count/byte limits. A permanent failure for one historical file is
+  reported by a bounded marker; temporary access or storage failures retry the
+  entire triggering event.
 
-Only files attached to the triggering event are ingested today. Files from
-earlier thread messages are not added to provider context, and Balda does not
-yet upload generated files back to Slack.
+Balda does not yet upload generated files back to Slack. Outbound file delivery
+and `files:write` are not part of this inbound and historical-context support.

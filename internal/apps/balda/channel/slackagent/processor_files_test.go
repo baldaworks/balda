@@ -50,7 +50,7 @@ func TestInboundProcessorAddsCompletePersistedFileSetBeforeChat(t *testing.T) {
 	}
 	files := &currentFileIngestorStub{attachments: descriptors}
 	chat := &chatHandlerRecorder{result: chatapp.Result{Settlement: turncmd.InboundSettlement{Outcome: turncmd.InboundAccepted}}}
-	processor := NewInboundProcessor(chat, processorLifecycleStub{}, nil, files)
+	processor := NewInboundProcessor(chat, processorLifecycleStub{}, nil, files, nil)
 	envelope := IngressEnvelope{
 		Files: []FileRef{{ID: "F1"}, {ID: "F2"}},
 		Chat:  chatapp.Request{Text: "", Locator: deliverycmd.Locator{SessionID: "session"}},
@@ -83,7 +83,7 @@ func TestInboundProcessorSettlesFileFailuresBeforeChat(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			files := &currentFileIngestorStub{err: test.err}
 			chat := &chatHandlerRecorder{}
-			processor := NewInboundProcessor(chat, processorLifecycleStub{}, nil, files)
+			processor := NewInboundProcessor(chat, processorLifecycleStub{}, nil, files, nil)
 
 			settlement, err := processor.ProcessInbound(context.Background(), IngressEnvelope{
 				Files: []FileRef{{ID: "F1"}},

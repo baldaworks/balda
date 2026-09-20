@@ -14,8 +14,11 @@ import (
 )
 
 const (
-	mediaUnavailableReason = "media_unavailable"
-	unknownDiagnosticValue = "unknown"
+	mediaUnavailableReason  = "media_unavailable"
+	unknownDiagnosticValue  = "unknown"
+	fileSizeExceededReason  = "file_size_exceeded"
+	totalSizeExceededReason = "total_size_exceeded"
+	checkFileInfoAccess     = "check_file_info"
 )
 
 // BlobStore is the persistence capability consumed by Slack file ingestion.
@@ -98,7 +101,7 @@ func (s *currentFileIngestor) Ingest(ctx context.Context, files []FileRef) ([]at
 		remaining := s.limits.MaxTotalBytes - totalBytes
 		maxBytes := min(s.limits.MaxFileBytes, remaining)
 		if maxBytes <= 0 {
-			err := newFileError(file.ID, "total_size_exceeded", false, attachment.ErrTooLarge)
+			err := newFileError(file.ID, totalSizeExceededReason, false, attachment.ErrTooLarge)
 			s.logFailure("policy", resolved, file.ID, totalBytes, err)
 			return nil, err
 		}
@@ -116,9 +119,9 @@ func (s *currentFileIngestor) Ingest(ctx context.Context, files []FileRef) ([]at
 		_ = body.Close()
 		if persistErr != nil {
 			if errors.Is(persistErr, attachment.ErrTooLarge) {
-				reason := "file_size_exceeded"
+				reason := fileSizeExceededReason
 				if remaining < s.limits.MaxFileBytes {
-					reason = "total_size_exceeded"
+					reason = totalSizeExceededReason
 				}
 				err = newFileError(file.ID, reason, false, persistErr)
 			} else {
@@ -133,7 +136,7 @@ func (s *currentFileIngestor) Ingest(ctx context.Context, files []FileRef) ([]at
 			return nil, err
 		}
 		if persisted.SizeBytes > remaining {
-			err = newFileError(file.ID, "total_size_exceeded", false, attachment.ErrTooLarge)
+			err = newFileError(file.ID, totalSizeExceededReason, false, attachment.ErrTooLarge)
 			s.logFailure("persistence", resolved, file.ID, totalBytes, err)
 			return nil, err
 		}
@@ -162,10 +165,10 @@ func preflightDeclaredSizes(files []FileRef, limits attachment.Limits) error {
 			size = 0
 		}
 		if size > limits.MaxFileBytes {
-			return newFileError(file.ID, "file_size_exceeded", false, attachment.ErrTooLarge)
+			return newFileError(file.ID, fileSizeExceededReason, false, attachment.ErrTooLarge)
 		}
 		if size > limits.MaxTotalBytes-total {
-			return newFileError(file.ID, "total_size_exceeded", false, attachment.ErrTooLarge)
+			return newFileError(file.ID, totalSizeExceededReason, false, attachment.ErrTooLarge)
 		}
 		total += size
 	}

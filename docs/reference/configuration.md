@@ -382,7 +382,7 @@ balda:
 - `balda.slack.agent.events_path`: local Agent Events path, which must start with `/` (default: `/slack/agent/events`; env: `BALDA_SLACK_AGENT_EVENTS_PATH`)
 - `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
 - `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
-- `balda.features.attachments.max_files_per_message`: maximum files accepted from one inbound message (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`)
+- `balda.features.attachments.max_files_per_message`: maximum files accepted in one inbound attachment set (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`); a Slack thread turn shares this count between current-message and historical files
 - `balda.features.attachments.max_file_bytes`: maximum bytes accepted for one inbound file (default: `26214400`, 25 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES`)
 - `balda.features.attachments.max_total_bytes`: maximum bytes accepted across one inbound message (default: `52428800`, 50 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES`)
 - `balda.features.attachments.store.engine`: inbound attachment persistence engine (`local` or `off`; default: `local`; env: `BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE`)
@@ -408,22 +408,34 @@ balda:
 
 ### Attachment storage and prompt representation
 
-Telegram media and files on the triggering Slack Agent event are persisted
-under `${balda.state_dir}/attachments` before the provider turn. The `local`
+Telegram media, files on the triggering Slack Agent event, and eligible files
+from preceding Slack thread messages are persisted under
+`${balda.state_dir}/attachments` before the provider turn. The `local`
 engine streams to a temporary file and publishes a content-addressed blob only
 after the configured byte checks pass. The `off` engine disables persistence;
-a Slack event containing files is then rejected as one terminal turn while
-text-only Slack behavior remains available. Telegram retains its transport
-behavior when persistence is unavailable.
+a Slack event containing current files is then rejected as one terminal turn
+while text-only Slack behavior remains available. A text mention with only
+historical files still proceeds with bounded unavailable markers and no
+historical provider attachments. Telegram retains its transport behavior when
+persistence is unavailable.
 
 The attachment limits must be positive, and `max_total_bytes` must be at least
 `max_file_bytes`. Slack enforces declared and streamed sizes and rejects the
-whole media turn when any file or aggregate limit is exceeded. Current Slack
-media also requires the bot `files:read` scope. Slack Connect
-`check_file_info` placeholders are resolved with `files.info`; inaccessible
-files are terminal without exposing private download URLs. Historical thread
-files and outbound Slack file uploads are not part of current-message media
-support.
+whole current-message media turn when any file or aggregate limit is exceeded.
+For a Slack thread mention, current files consume the configured count and
+actual-byte budget first. Historical candidates are deduplicated by Slack file
+ID, considered newest-first within the remaining capacity, and supplied after
+current files in chronological message/file order. Historical over-budget,
+unsupported, storage-disabled, and permanently inaccessible files become
+bounded untrusted-context markers instead of rejecting the current mention.
+Temporary Slack, network, or storage failures retry the whole triggering event
+before durable publication.
+
+Current and historical Slack media require the bot `files:read` scope plus
+access to the conversation. Slack Connect `check_file_info` placeholders are
+resolved with `files.info`; private URLs and authorization material are never
+written to context or logs. Outbound Slack file uploads remain unsupported and
+`files:write` is not used by this feature.
 
 For every non-empty regular file with a preserved or detected MIME type, Balda
 supplies an ADK `FileData` part with an absolute, escaped `file://` URI and the

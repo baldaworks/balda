@@ -118,7 +118,7 @@ func (c *Client) ResolveFile(ctx context.Context, file FileRef) (FileRef, error)
 	if file.ID == "" {
 		return FileRef{}, newFileError("", "missing_file_id", false, nil)
 	}
-	if file.FileAccess != "check_file_info" && file.downloadURL() != "" {
+	if file.FileAccess != checkFileInfoAccess && file.downloadURL() != "" {
 		return file, nil
 	}
 

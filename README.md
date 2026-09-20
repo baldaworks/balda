@@ -131,8 +131,9 @@ Balda maps each conversation scope to its own session:
 - Slack Agent DM or mentioned channel thread
 
 In Slack channels, every turn requires an explicit `@Balda` mention. A mention
-inside an existing thread can use its preceding accessible discussion as
-bounded context; ordinary channel messages never activate Balda.
+inside an existing thread can use its preceding accessible discussion and
+persisted files as bounded context; ordinary channel messages never activate
+Balda.
 
 ## Docker Compose
 

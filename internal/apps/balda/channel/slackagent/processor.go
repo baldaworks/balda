@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
@@ -15,14 +16,21 @@ type ThreadHistoryReader interface {
 }
 
 type inboundProcessor struct {
-	chat      chatapp.Handler
-	lifecycle SessionLifecycle
-	history   ThreadHistoryReader
-	files     CurrentFileIngestor
+	chat         chatapp.Handler
+	lifecycle    SessionLifecycle
+	history      ThreadHistoryReader
+	files        CurrentFileIngestor
+	historyFiles HistoricalContextHydrator
 }
 
-func NewInboundProcessor(chat chatapp.Handler, lifecycle SessionLifecycle, history ThreadHistoryReader, files CurrentFileIngestor) InboundProcessor {
-	return &inboundProcessor{chat: chat, lifecycle: lifecycle, history: history, files: files}
+func NewInboundProcessor(
+	chat chatapp.Handler,
+	lifecycle SessionLifecycle,
+	history ThreadHistoryReader,
+	files CurrentFileIngestor,
+	historyFiles HistoricalContextHydrator,
+) InboundProcessor {
+	return &inboundProcessor{chat: chat, lifecycle: lifecycle, history: history, files: files, historyFiles: historyFiles}
 }
 
 func (p *inboundProcessor) ProcessInbound(ctx context.Context, envelope IngressEnvelope) (turncmd.InboundSettlement, error) {
@@ -80,10 +88,17 @@ func (p *inboundProcessor) hydrateThreadContext(ctx context.Context, envelope *I
 		}
 		snapshot = UnavailableThreadSnapshot(request, apiErr.Code)
 	}
-	prompt, err := FormatThreadContext(snapshot, envelope.Chat.Text)
-	if err != nil {
-		return actorlayer.TransientError(err)
+	if p.historyFiles == nil {
+		return actorlayer.TransientError(fmt.Errorf("slackagent historical context hydrator is unavailable"))
 	}
-	envelope.Chat.Text = prompt
+	result, err := p.historyFiles.Hydrate(ctx, snapshot, envelope.Chat.Text, envelope.Chat.Attachments)
+	if err != nil {
+		return actorlayer.TransientError(fmt.Errorf("hydrate Slack thread context: %w", err))
+	}
+	envelope.Chat.Text = result.Prompt
+	attachments := make([]attachment.Descriptor, 0, len(envelope.Chat.Attachments)+len(result.Attachments))
+	attachments = append(attachments, envelope.Chat.Attachments...)
+	attachments = append(attachments, result.Attachments...)
+	envelope.Chat.Attachments = attachments
 	return nil
 }

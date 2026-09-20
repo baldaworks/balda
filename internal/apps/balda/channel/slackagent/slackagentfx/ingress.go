@@ -17,14 +17,15 @@ import (
 type inboundProcessorParams struct {
 	fx.In
 
-	Chat      chatapp.Handler
-	Lifecycle slackagent.SessionLifecycle
-	History   slackagent.ThreadHistoryReader
-	Files     slackagent.CurrentFileIngestor
+	Chat         chatapp.Handler
+	Lifecycle    slackagent.SessionLifecycle
+	History      slackagent.ThreadHistoryReader
+	Files        slackagent.CurrentFileIngestor
+	HistoryFiles slackagent.HistoricalContextHydrator
 }
 
 func newInboundProcessor(params inboundProcessorParams) slackagent.InboundProcessor {
-	return slackagent.NewInboundProcessor(params.Chat, params.Lifecycle, params.History, params.Files)
+	return slackagent.NewInboundProcessor(params.Chat, params.Lifecycle, params.History, params.Files, params.HistoryFiles)
 }
 
 type turnCanceller struct {

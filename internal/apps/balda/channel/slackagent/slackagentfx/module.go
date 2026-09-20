@@ -22,6 +22,7 @@ var Module = fx.Module(
 		),
 		newInboundProcessor,
 		slackagent.NewCurrentFileIngestor,
+		slackagent.NewHistoricalContextHydrator,
 		fx.Annotate(
 			newTurnCanceller,
 			fx.As(new(slackagent.TurnCanceller)),
