@@ -36,6 +36,7 @@ var Module = fx.Module(
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
 		func(client *slackagent.Client) slackagent.ThreadHistoryReader { return client },
 		func(client *slackagent.Client) slackagent.FileClient { return client },
+		func(client *slackagent.Client) slackagent.MediaUploadClient { return client },
 		slackagent.NewAdapter,
 		fx.Annotate(
 			func(adapter *slackagent.Adapter) deliveryfx.ChannelAdapterBinding {

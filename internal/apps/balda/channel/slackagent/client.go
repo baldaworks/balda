@@ -22,6 +22,7 @@ const (
 	maxResponseBodyBytes     = 1 << 20
 	maxSessionTitleRunes     = 200
 	maxStreamTextRunes       = 12000
+	malformedResponseCode    = "malformed_response"
 )
 
 type SessionStatus string
@@ -261,7 +262,7 @@ func (c *Client) callSlack(ctx context.Context, method string, payload any, requ
 	}
 	response.TS = strings.TrimSpace(response.TS)
 	if requireTS && response.TS == "" {
-		return slackResponse{}, &APIError{Method: method, StatusCode: http.StatusOK, Code: "malformed_response", Message: "missing ts"}
+		return slackResponse{}, &APIError{Method: method, StatusCode: http.StatusOK, Code: malformedResponseCode, Message: "missing ts"}
 	}
 	return response, nil
 }
@@ -312,7 +313,7 @@ func (c *Client) postJSON(ctx context.Context, method string, payload any, out a
 		}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: "malformed_response", Message: "invalid JSON response", Retryable: true}
+		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: malformedResponseCode, Message: "invalid JSON response", Retryable: true}
 	}
 	return nil
 }
@@ -359,7 +360,7 @@ func (c *Client) getJSON(ctx context.Context, method string, params url.Values, 
 		}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: "malformed_response", Message: "invalid JSON response", Retryable: true}
+		return &APIError{Method: method, StatusCode: resp.StatusCode, Code: malformedResponseCode, Message: "invalid JSON response", Retryable: true}
 	}
 	return nil
 }

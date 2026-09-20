@@ -383,7 +383,7 @@ balda:
 - `balda.slack.agent.enable_streaming`: deliver responses through Slack streaming methods instead of `chat.postMessage` (default: `false`; env: `BALDA_SLACK_AGENT_ENABLE_STREAMING`)
 - `balda.slack.agent.suggested_prompts`: enable Slack Agent suggested prompts (default: `false`; env: `BALDA_SLACK_AGENT_SUGGESTED_PROMPTS`)
 - `balda.features.attachments.max_files_per_message`: maximum files accepted in one inbound attachment set (default: `10`; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE`); a Slack thread turn shares this count between current-message and historical files
-- `balda.features.attachments.max_file_bytes`: maximum bytes accepted for one inbound file (default: `26214400`, 25 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES`)
+- `balda.features.attachments.max_file_bytes`: maximum bytes accepted for one inbound file or one outbound Slack local-file delivery (default: `26214400`, 25 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES`)
 - `balda.features.attachments.max_total_bytes`: maximum bytes accepted across one inbound message (default: `52428800`, 50 MiB; env: `BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES`)
 - `balda.features.attachments.store.engine`: inbound attachment persistence engine (`local` or `off`; default: `local`; env: `BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE`)
 - `balda.webhooks.enabled`: enable generic inbound webhook receiver (default: `false`)
@@ -434,8 +434,24 @@ before durable publication.
 Current and historical Slack media require the bot `files:read` scope plus
 access to the conversation. Slack Connect `check_file_info` placeholders are
 resolved with `files.info`; private URLs and authorization material are never
-written to context or logs. Outbound Slack file uploads remain unsupported and
-`files:write` is not used by this feature.
+written to context or logs.
+
+Outbound Slack photos and documents require the independent bot `files:write`
+scope. Balda accepts one non-empty, non-symlink regular local file and applies
+the same `max_file_bytes` limit; it adds no outbound-specific setting. File IDs,
+URLs, directories, missing paths, and changed files are rejected before Slack
+completion. Balda obtains an external upload ticket, streams the exact bytes,
+and completes the file into the locator conversation and root thread with its
+filename, MIME type, and caption. The resulting Slack file ID is stored as the
+provider message ID.
+
+Definitive pre-completion failures can use the existing retry path. An unknown
+completion outcome remains durable state `sending` and is not dispatched again
+automatically after restart, preventing duplicate files. Missing `files:write`
+affects only outbound media; text delivery and `files:read` ingestion remain
+available. Logs and returned errors omit local paths, upload URLs, credentials,
+captions, response bodies, and file content. Disabling the inbound attachment
+store does not create a remote-source fallback for outbound delivery.
 
 For every non-empty regular file with a preserved or detected MIME type, Balda
 supplies an ADK `FileData` part with an absolute, escaped `file://` URI and the

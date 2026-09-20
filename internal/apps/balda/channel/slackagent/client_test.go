@@ -115,7 +115,7 @@ func TestClientClassifiesSlackFailures(t *testing.T) {
 	}{
 		{name: "rate limit", status: http.StatusTooManyRequests, body: `slow down`, retryAfter: "7", wantRetryable: true, wantRetryAfter: 7 * time.Second},
 		{name: "server error", status: http.StatusBadGateway, body: `upstream unavailable`, wantRetryable: true},
-		{name: "malformed json", status: http.StatusOK, body: `{`, wantCode: "malformed_response", wantRetryable: true},
+		{name: "malformed json", status: http.StatusOK, body: `{`, wantCode: malformedResponseCode, wantRetryable: true},
 		{name: "transient slack code", status: http.StatusOK, body: `{"ok":false,"error":"internal_error"}`, wantCode: "internal_error", wantRetryable: true},
 		{name: "permanent slack code", status: http.StatusOK, body: `{"ok":false,"error":"invalid_auth"}`, wantCode: "invalid_auth"},
 	}
@@ -159,7 +159,7 @@ func TestClientRejectsMissingStartStreamTimestamp(t *testing.T) {
 	client := NewClientWithBaseURL(server.URL, "xoxb-test-token")
 	_, err := client.StartStream(context.Background(), "D123", "1.2", "hello")
 	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.Code != "malformed_response" {
+	if !errors.As(err, &apiErr) || apiErr.Code != malformedResponseCode {
 		t.Fatalf("StartStream() error = %T %v", err, err)
 	}
 }

@@ -9,11 +9,13 @@ tunnel and forward the request without changing its body.
 1. Create a Slack app and configure it as an agent.
 2. Install it to the workspace with `chat:write`, `im:history`,
    `app_mentions:read`, `channels:history`, and `files:read` bot scopes. Add
+   `files:write` when Balda must deliver generated photos or documents. Add
    `groups:history` only when Balda must load context from private-channel
    threads. The bot must be a member of each public or private channel whose
    thread context it reads. `files:read` is required for files attached to the
    message that starts a turn and for files loaded from preceding thread
-   messages.
+   messages. `files:write` is independent: it is used only for outbound media
+   delivery, and omitting it does not disable text replies or inbound files.
    Slack adds the agent-specific `assistant:write` scope when the app is declared
    as an agent.
 3. Enable Event Subscriptions and subscribe to these bot events:
@@ -146,6 +148,21 @@ Event subscriptions and history scopes solve different problems:
   event. If history is permanently inaccessible because of scope, membership,
   or channel access, Balda still accepts the mention with an explicit
   context-unavailable marker instead of inventing the missing discussion.
+- Balda delivers photo and document results from one non-empty regular local
+  file. It rejects file-ID-only sources, URLs, directories, symlinks, missing
+  files, and files larger than `max_file_bytes` before requesting an upload.
+  Both media kinds use Slack's external upload flow: Balda obtains an upload
+  ticket, streams the exact file bytes without attaching the bot credential,
+  then completes the upload into the locator conversation and root thread.
+  The filename, MIME type, and caption are preserved, and Slack's file ID is
+  stored as the durable provider correlation.
+- A definitive failure before completion can follow the normal retry policy.
+  If the completion request may have reached Slack but its outcome is unknown,
+  the durable delivery remains `sending` and is not retried automatically; an
+  operator must resolve it to avoid posting a duplicate. Missing `files:write`
+  fails only that media delivery. Diagnostics contain bounded stage, media
+  kind, MIME class, byte count, settlement, and safe file-ID fields, never the
+  local path, upload URL, token, caption, response body, or file bytes.
 - Slack workspace membership is the Slackagent access boundary: any workspace
   user who can address the installed app may collaborate with it. Slackagent
   does not apply Balda's owner/collaborator bootstrap gate.
@@ -207,6 +224,20 @@ Before production rollout, verify in a Slack developer workspace:
     existing bounded context behavior is unchanged.
 15. `/balda locator` posts a conversation locator, and `/balda locator extra`
     posts usage containing `/balda locator`; neither request starts a turn.
+16. Trigger one generated image and one generated document. Confirm each is
+    posted once in the originating root thread, keeps its filename and MIME
+    type, and records a Slack file ID. Include a caption and confirm it appears
+    with the file.
+17. Attempt outbound delivery of a missing file, symlink, URL, and file larger
+    than `max_file_bytes`. Confirm no Slack upload is requested and logs expose
+    none of the source path or content.
+18. Temporarily remove `files:write`. Confirm outbound media fails with a safe
+    classified reason while a text-only response and inbound file request still
+    work. Restore the scope before continuing.
+19. In a controlled test environment, interrupt or force a server failure after
+    the completion request is sent. Confirm the delivery remains `sending` and
+    restarting Balda does not upload it again automatically. Resolve the record
+    operationally; do not trigger an automatic replay.
 
 Do not record tokens or signing secrets in logs, screenshots, or committed test
 artifacts.
@@ -236,6 +267,7 @@ artifacts.
   shared count/byte limits. A permanent failure for one historical file is
   reported by a bounded marker; temporary access or storage failures retry the
   entire triggering event.
-
-Balda does not yet upload generated files back to Slack. Outbound file delivery
-and `files:write` are not part of this inbound and historical-context support.
+- Outbound media fails: confirm `files:write`, channel access, a non-empty
+  regular local source, and `max_file_bytes`. A missing scope or invalid source
+  does not affect text delivery. A delivery left `sending` after completion
+  uncertainty is intentionally not replayed automatically.
