@@ -122,6 +122,23 @@ project:
   the same repository as host execution.
 - `balda-home` persists provider CLI auth/config written under `/home/node`.
 
+### Skill discovery roots
+
+Skill roots are conventions rather than configuration keys. Balda compiles
+direct-child skills from the runtime account's `$HOME/.agents/skills` and from
+`<state_dir>/skills` into the application catalog. It separately captures
+`<workspace>/.agents/skills` for each unpinned session runtime. In the default
+Compose setup, `$HOME` is `/home/node`, `<state_dir>` is
+`/workspace/.config/balda`, and `<workspace>` is `/workspace` unless workspace
+mode selects an isolated session worktree.
+
+Missing roots are empty. Existing roots are subject to the catalog's bounded
+filesystem traversal and validation. The global root does not replace the
+state-directory root, and neither overrides workspace or enabled-plugin skills;
+duplicate unqualified names remain ambiguous. Restart Balda to compile changes
+to application roots, then use `/reset` in an existing conversation to adopt
+the current catalog snapshot.
+
 Balda auto-loads `/workspace/.env`. `env_file: .env` is optional after the file
 exists, but should not be required for the first `docker compose run --rm balda init`.
 

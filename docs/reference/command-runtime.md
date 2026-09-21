@@ -153,13 +153,20 @@ the existing session runner loads the pinned body and resources only when the
 turn executes. Skill content remains user-level context and cannot override
 system policy, access, or approval controls.
 
+The catalog supplies those candidates from the runtime account's
+`$HOME/.agents/skills`, `<state_dir>/skills`, the session workspace's
+`.agents/skills`, and enabled plugin revisions. Command parsing and execution
+never scan those directories; they consume only the immutable snapshot and
+archived revision selected by the catalog boundary.
+
 The turn uses the existing `TopicSession` runner. Skills are an independent
 session capability and remain lazy-loaded only after explicit selection. MCP
 servers are also independent: their fixed list is supplied when the provider
 session is created or restored and remains attached until that session runtime
 closes. Commands do not acquire MCP or construct a per-turn provider runtime.
 A catalog refresh cannot change an active session; `/reset` is the explicit
-boundary that adopts the current command, skill, and MCP snapshot.
+boundary that closes the old runtime, creates an unpinned replacement, and
+persists the current command, skill, and MCP snapshot selected for it.
 
 ## Transport parsing and support
 

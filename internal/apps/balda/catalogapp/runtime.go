@@ -30,25 +30,27 @@ const snapshotKeyPrefix = "runtime_catalog_snapshot:"
 
 // Runtime owns compilation, retention, scope overlays, and projection fanout.
 type Runtime struct {
-	mu            sync.Mutex
-	stateDir      string
-	compiler      *runtimecatalog.Compiler
-	store         *runtimecatalog.Store
-	loader        *runtimecatalog.SourceLoader
-	archive       *runtimecatalog.RevisionArchive
-	reader        *runtimecatalog.SkillReader
-	plugins       baldastate.PluginStore
-	sessions      baldastate.SessionStore
-	kv            baldastate.KVStore
-	builtin       runtimecatalogcmd.Source
-	configuredMCP []runtimecatalogcmd.Source
-	mcp           *mcpruntime.Reconciler
-	ads           *commandfx.AdvertisementProjector
+	mu             sync.Mutex
+	stateDir       string
+	globalSkillDir string
+	compiler       *runtimecatalog.Compiler
+	store          *runtimecatalog.Store
+	loader         *runtimecatalog.SourceLoader
+	archive        *runtimecatalog.RevisionArchive
+	reader         *runtimecatalog.SkillReader
+	plugins        baldastate.PluginStore
+	sessions       baldastate.SessionStore
+	kv             baldastate.KVStore
+	builtin        runtimecatalogcmd.Source
+	configuredMCP  []runtimecatalogcmd.Source
+	mcp            *mcpruntime.Reconciler
+	ads            *commandfx.AdvertisementProjector
 }
 
 // NewRuntime creates the application catalog without publishing mutable state.
 func NewRuntime(
 	stateDir string,
+	globalSkillDir string,
 	provider baldastate.Provider,
 	advertisements []commandcmd.Advertisement,
 	configured map[string]agentconfig.MCPServerConfig,
@@ -72,7 +74,7 @@ func NewRuntime(
 		return nil, err
 	}
 	runtime := &Runtime{
-		stateDir: stateDir, compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
+		stateDir: stateDir, globalSkillDir: strings.TrimSpace(globalSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
 		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), sessions: provider.Sessions(), kv: provider.AppKV(),
 		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured),
 	}
@@ -131,6 +133,14 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 		return runtimecatalogcmd.Snapshot{}, err
 	}
 	sources = append(sources, userSources...)
+	stateSkillDir := filepath.Clean(filepath.Join(r.stateDir, "skills"))
+	if r.globalSkillDir != "" && filepath.Clean(r.globalSkillDir) != stateSkillDir {
+		globalSources, err := r.loadSkillSources(ctx, r.globalSkillDir, runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: "agents-global"})
+		if err != nil {
+			return runtimecatalogcmd.Snapshot{}, err
+		}
+		sources = append(sources, globalSources...)
+	}
 	for _, source := range plugins {
 		if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
 			return runtimecatalogcmd.Snapshot{}, err

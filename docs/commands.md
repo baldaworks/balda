@@ -115,6 +115,12 @@ and Zulip use `/skill`; Slack uses `/balda skill`. The first whitespace-delimite
 argument is the selector and the trimmed remainder is the optional turn prompt,
 so both `/skill review` and `/skill review inspect this package` are valid.
 
+Standalone skills are discovered from direct children of the runtime account's
+`$HOME/.agents/skills`, `<state_dir>/skills`, and the current workspace's
+`.agents/skills`. Enabled plugins contribute their packaged skills. These are
+separate sources: an unqualified name present in more than one source is
+ambiguous rather than ordered by precedence.
+
 An unqualified selector such as `review` must identify exactly one skill in the
 session's immutable capability snapshot. If more than one source contributes
 that name, Balda reports ambiguity instead of choosing by load order. A
@@ -127,9 +133,11 @@ body and resources stay lazy until the session turn executes. Skill content is
 user-level context: it cannot override Balda system policy, permissions, or
 approval boundaries. Installing, upgrading, enabling, disabling, or removing a
 skill does not alter an existing session snapshot; use `/reset` to create a
-fresh runtime that adopts the current catalog. The existing `$skill:` provider
-selection mechanism remains supported. Generic webhooks and scheduler jobs do
-not expose this chat command.
+fresh runtime that adopts the current catalog. The reset handler closes the old
+runtime and recreates the session without requesting its old snapshot, after
+which the newly selected snapshot is persisted. The existing `$skill:`
+provider selection mechanism remains supported. Generic webhooks and scheduler
+jobs do not expose this chat command.
 
 ### `/close`
 

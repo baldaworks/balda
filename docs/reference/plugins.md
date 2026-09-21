@@ -56,6 +56,22 @@ instruction are formatted as user-level input and enter the ordinary durable
 session-turn path. They cannot replace Balda's system policy or change access,
 approval, retry, workspace, delivery, or runtime configuration.
 
+## Standalone skill roots
+
+Balda captures standalone skills from direct child directories under two
+application roots and one session workspace root:
+
+- `$HOME/.agents/skills` for the operating-system account running Balda;
+- `<state_dir>/skills` for Balda-managed application skills;
+- `<workspace>/.agents/skills` for the workspace bound to the session.
+
+The application roots are captured when the application catalog is compiled.
+The workspace root is captured when an unpinned session runtime selects its
+effective snapshot. A missing root is empty. All roots use the same bounded
+loader, validation, revision archive, and lazy reader. Enabled plugins remain a
+separate source. Balda does not assign precedence between sources, so duplicate
+unqualified names are ambiguous.
+
 ## One capability snapshot per session
 
 Balda compiles commands, skill metadata, and MCP server descriptors into an
@@ -97,8 +113,9 @@ Catalog activation affects newly created sessions only. Restoring a session
 uses its exact persisted snapshot and fails closed if that retained snapshot is
 unavailable. A legacy session without a pin adopts the current effective
 snapshot once and persists it. `/reset` closes the old runtime and creates a
-fresh one, so reset is the explicit boundary at which an existing conversation
-adopts current commands, skills, and MCP servers.
+fresh unpinned runtime, so reset is the explicit boundary at which an existing
+conversation adopts current commands, skills, and MCP servers. The newly
+selected snapshot replaces the old persisted pin only after recreation.
 
 Immutable command instructions are retained in snapshot descriptors. Archived
 skill bytes remain readable by exact revision. MCP processes are the only

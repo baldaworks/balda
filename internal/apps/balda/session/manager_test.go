@@ -16,6 +16,8 @@ import (
 	adksession "google.golang.org/adk/v2/session"
 )
 
+const currentSnapshotID = "snapshot-current"
+
 func TestStopAllWithContext_CleansWorkspaceWhenRootContextCanceled(t *testing.T) {
 	ctx := context.Background()
 	workingDir := t.TempDir()
@@ -519,7 +521,7 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	workingDir := t.TempDir()
 	runtimeManager := &fakeScopedRuntimeManager{
 		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
-		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: "snapshot-current"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
 	}
 	m := &Manager{
 		baldaProviderName: "balda-provider",
@@ -547,15 +549,101 @@ func TestCreateSessionPersistsRuntimeSnapshot(t *testing.T) {
 	if len(store.upsertedRecords) != 1 {
 		t.Fatalf("persisted records = %d, want 1", len(store.upsertedRecords))
 	}
-	if got := store.upsertedRecords[0].RuntimeSnapshotID; got != "snapshot-current" {
+	if got := store.upsertedRecords[0].RuntimeSnapshotID; got != currentSnapshotID {
 		t.Fatalf("persisted runtime snapshot = %q, want snapshot-current", got)
 	}
 	ts, err := m.GetSession(locator)
 	if err != nil {
 		t.Fatalf("GetSession() error = %v", err)
 	}
-	if got := ts.GetRuntimeSnapshotID(); got != "snapshot-current" {
+	if got := ts.GetRuntimeSnapshotID(); got != currentSnapshotID {
 		t.Fatalf("GetRuntimeSnapshotID() = %q, want snapshot-current", got)
+	}
+}
+
+func TestResetThenCreateSessionAdoptsCurrentRuntimeSnapshot(t *testing.T) {
+	locator := testTelegramLocator(10, 42)
+	otherLocator := testTelegramLocator(11, 43)
+	oldRecord := baldastate.SessionRecord{
+		SessionID:         locator.SessionID,
+		UserID:            "tg-101",
+		ChannelType:       locator.ChannelType,
+		AddressKey:        locator.AddressKey,
+		AddressJSON:       locator.AddressJSON,
+		AgentName:         "project",
+		RuntimeSnapshotID: "snapshot-old",
+		Status:            baldastate.SessionStatusActive,
+	}
+	otherRecord := baldastate.SessionRecord{
+		SessionID:         otherLocator.SessionID,
+		UserID:            "tg-102",
+		ChannelType:       otherLocator.ChannelType,
+		AddressKey:        otherLocator.AddressKey,
+		AddressJSON:       otherLocator.AddressJSON,
+		AgentName:         "other",
+		RuntimeSnapshotID: "snapshot-other",
+		Status:            baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByID: map[string]baldastate.SessionRecord{
+		locator.SessionID:      oldRecord,
+		otherLocator.SessionID: otherRecord,
+	}}
+	runtimeManager := &fakeScopedRuntimeManager{
+		fakeBaldaRuntimeManager: fakeBaldaRuntimeManager{providerID: "balda-provider"},
+		sessionRuntime:          &BuiltRuntime{RuntimeSnapshotID: currentSnapshotID},
+	}
+	closed := 0
+	m := &Manager{
+		baldaProviderName: "balda-provider",
+		runtimeManager:    runtimeManager,
+		agentBuilder:      &fakeAgentBuilder{},
+		workingDir:        t.TempDir(),
+		logger:            zerolog.Nop(),
+		sessionStore:      store,
+		sessions: map[string]*TopicSession{
+			locator.SessionID: {
+				sessionID:         locator.SessionID,
+				agentSessionID:    locator.SessionID,
+				userID:            oldRecord.UserID,
+				locator:           locator,
+				agentName:         oldRecord.AgentName,
+				runtimeSnapshotID: oldRecord.RuntimeSnapshotID,
+				runtimeClose: func() error {
+					closed++
+					return nil
+				},
+			},
+		},
+	}
+
+	if err := m.ResetSession(context.Background(), locator); err != nil {
+		t.Fatalf("ResetSession() error = %v", err)
+	}
+	if err := m.CreateSession(context.Background(), SessionContext{Locator: locator, UserID: oldRecord.UserID}, oldRecord.AgentName); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("old runtime close calls = %d, want 1", closed)
+	}
+	if len(runtimeManager.sessionRequests) != 1 {
+		t.Fatalf("RuntimeForSession() calls = %d, want 1", len(runtimeManager.sessionRequests))
+	}
+	request := runtimeManager.sessionRequests[0]
+	if request.RuntimeSnapshotID != "" {
+		t.Fatalf("requested runtime snapshot = %q, want current selection", request.RuntimeSnapshotID)
+	}
+	if request.Locator != locator || request.UserID != oldRecord.UserID {
+		t.Fatalf("runtime request = %+v, want preserved locator and user", request)
+	}
+	if len(store.upsertedRecords) != 1 {
+		t.Fatalf("persisted records = %d, want 1", len(store.upsertedRecords))
+	}
+	got := store.upsertedRecords[0]
+	if got.RuntimeSnapshotID != currentSnapshotID || got.AgentName != oldRecord.AgentName || got.UserID != oldRecord.UserID {
+		t.Fatalf("recreated record = %+v, want current snapshot with preserved identity", got)
+	}
+	if store.recordsByID[otherLocator.SessionID] != otherRecord {
+		t.Fatalf("other session changed: %+v", store.recordsByID[otherLocator.SessionID])
 	}
 }
 
