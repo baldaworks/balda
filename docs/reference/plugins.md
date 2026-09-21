@@ -58,10 +58,12 @@ approval, retry, workspace, delivery, or runtime configuration.
 
 ## Standalone skill roots
 
-Balda captures standalone skills from direct child directories under two
+Balda captures standalone skills from direct child directories under three
 application roots and one session workspace root:
 
 - `$HOME/.agents/skills` for the operating-system account running Balda;
+- `$CODEX_HOME/skills`, or `$HOME/.codex/skills` when `CODEX_HOME` is unset,
+  for Codex global skills;
 - `<state_dir>/skills` for Balda-managed application skills;
 - `<workspace>/.agents/skills` for the workspace bound to the session.
 

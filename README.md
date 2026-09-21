@@ -221,10 +221,10 @@ never native plugin handlers.
 session snapshot. Use `/skill <plugin>:<skill> [prompt...]` to select an exact
 plugin source. The optional trailing prompt becomes the turn text; the skill
 body stays lazy until the turn executes. Balda discovers standalone skills from
-the runtime account's `$HOME/.agents/skills`, `<state_dir>/skills`, and the
-current workspace's `.agents/skills`; enabled plugins contribute their own
-skills. Run `/reset` to adopt skills installed or changed after the session was
-created.
+the runtime account's `$HOME/.agents/skills`, `$CODEX_HOME/skills` (defaulting
+to `$HOME/.codex/skills`), `<state_dir>/skills`, and the current workspace's
+`.agents/skills`; enabled plugins contribute their own skills. Run `/reset` to
+adopt skills installed or changed after the session was created.
 See [Plugins and session capabilities](docs/reference/plugins.md) for the
 `dev.baldaworks.balda` extension schema and the session-bound command, skill,
 and MCP lifecycle.

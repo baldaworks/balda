@@ -89,25 +89,30 @@ catalog.
 
 #### Application skill roots
 
-Balda compiles direct-child standalone skills from two application-scoped
+Balda compiles direct-child standalone skills from three application-scoped
 roots:
 
 ```text
 $HOME/.agents/skills/<name>/SKILL.md
+$CODEX_HOME/skills/<name>/SKILL.md
 <state_dir>/skills/<name>/SKILL.md
 ```
 
-`$HOME` is resolved for the operating-system account running Balda. The global
-root is represented as `user-skill:agents-global`; the state-directory root
-retains `user-skill:default`. They remain separate provenance domains and have
-no precedence over each other. If both paths identify the same cleaned root,
-Balda captures it once as `user-skill:default`.
+`$HOME` is resolved for the operating-system account running Balda. When
+`CODEX_HOME` is unset, its root defaults to `$HOME/.codex`. The Agent Skills
+root is represented as `user-skill:agents-global`, the Codex root as
+`user-skill:codex-global`, and the state-directory root retains
+`user-skill:default`. They remain separate provenance domains and have no
+precedence over each other. If multiple paths identify the same cleaned root,
+Balda captures it once in state-directory, Agent Skills, then Codex order. This
+deduplication applies only to identical roots; distinct roots never override one
+another.
 
-Both roots use the catalog's bounded source loader and exact revision archive.
+All roots use the catalog's bounded source loader and exact revision archive.
 A missing root is empty. An existing non-directory or unreadable root prevents
 candidate publication; malformed or unsafe child entries follow the loader's
 bounded diagnostics and are not exposed as usable skills. No command handler or
-transport adapter scans either path.
+transport adapter scans these paths.
 
 #### Project-local skills
 

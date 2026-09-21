@@ -41,7 +41,7 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	commands := commandcmd.NewRegistry()
-	runtime, err := NewRuntime(stateDir, "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"plugin", "reset"}}}, nil, mcpregistry.New(nil), commands)
+	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"plugin", "reset"}}}, nil, mcpregistry.New(nil), commands)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeAfterRestart, err := NewRuntime(stateDir, "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtimeAfterRestart, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,28 +179,31 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	}
 }
 
-func TestRuntimeDiscoversGlobalAgentSkills(t *testing.T) {
+func TestRuntimeDiscoversGlobalSkills(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	stateDir := t.TempDir()
-	globalSkillDir := t.TempDir()
+	agentSkillDir := t.TempDir()
+	codexSkillDir := t.TempDir()
 	t.Cleanup(func() {
 		makeWritable(stateDir)
-		makeWritable(globalSkillDir)
+		makeWritable(agentSkillDir)
+		makeWritable(codexSkillDir)
 	})
 	writeFile(t, filepath.Join(stateDir, "skills", "state-only", "SKILL.md"), "---\nname: state-only\ndescription: State skill.\n---\n")
 	writeFile(t, filepath.Join(stateDir, "skills", "shared", "SKILL.md"), "---\nname: shared\ndescription: State shared skill.\n---\n")
-	globalSkillPath := filepath.Join(globalSkillDir, "go-senior-developer", "SKILL.md")
+	writeFile(t, filepath.Join(agentSkillDir, "agent-only", "SKILL.md"), "---\nname: agent-only\ndescription: Agent skill.\n---\n")
+	writeFile(t, filepath.Join(agentSkillDir, "shared", "SKILL.md"), "---\nname: shared\ndescription: Agent shared skill.\n---\n")
+	writeFile(t, filepath.Join(agentSkillDir, "malformed", "SKILL.md"), "missing frontmatter")
+	globalSkillPath := filepath.Join(codexSkillDir, "go-senior-developer", "SKILL.md")
 	writeFile(t, globalSkillPath, "---\nname: go-senior-developer\ndescription: Review Go projects.\n---\n# Original global instructions\n")
-	writeFile(t, filepath.Join(globalSkillDir, "shared", "SKILL.md"), "---\nname: shared\ndescription: Global shared skill.\n---\n")
-	writeFile(t, filepath.Join(globalSkillDir, "malformed", "SKILL.md"), "missing frontmatter")
 
 	provider, err := baldastate.NewSQLiteProvider(ctx, filepath.Join(stateDir, "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, globalSkillDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, agentSkillDir, codexSkillDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +216,8 @@ func TestRuntimeDiscoversGlobalAgentSkills(t *testing.T) {
 	}
 
 	assertSkillContribution(t, snapshot, "default", "state-only")
-	assertSkillContribution(t, snapshot, "agents-global", "go-senior-developer")
+	assertSkillContribution(t, snapshot, "agents-global", "agent-only")
+	assertSkillContribution(t, snapshot, "codex-global", "go-senior-developer")
 	if _, ok := snapshot.Skills[runtimecatalogcmd.ContributionID{
 		Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: "agents-global"},
 		Kind:   runtimecatalogcmd.ContributionKindSkill,
@@ -235,8 +239,8 @@ func TestRuntimeDiscoversGlobalAgentSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve(global skill) error = %v", err)
 	}
-	if selection.Ref.Source.Name != "agents-global" {
-		t.Fatalf("selection source = %q, want agents-global", selection.Ref.Source.Name)
+	if selection.Ref.Source.Name != "codex-global" {
+		t.Fatalf("selection source = %q, want codex-global", selection.Ref.Source.Name)
 	}
 	if _, err := bound.Resolve(baldaagent.SkillSelector{Name: "shared"}); !errors.Is(err, baldaagent.ErrSkillAmbiguous) {
 		t.Fatalf("Resolve(shared) error = %v, want ErrSkillAmbiguous", err)
@@ -307,7 +311,7 @@ func TestRuntimeIsolatesUnsafeGlobalSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, globalSkillDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, globalSkillDir, "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,17 +335,20 @@ func TestRuntimeGlobalSkillRootFallbacks(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
 		name       string
-		globalRoot func(string) string
+		agentRoot  func(string) string
+		codexRoot  func(string) string
 		wantSource string
 	}{
 		{
-			name:       "missing root",
-			globalRoot: func(stateDir string) string { return filepath.Join(stateDir, "missing-global-skills") },
+			name:       "missing roots",
+			agentRoot:  func(stateDir string) string { return filepath.Join(stateDir, "missing-global-skills") },
+			codexRoot:  func(stateDir string) string { return filepath.Join(stateDir, "missing-codex-skills") },
 			wantSource: "default",
 		},
 		{
 			name:       "state root is not loaded twice",
-			globalRoot: func(stateDir string) string { return filepath.Join(stateDir, "skills") },
+			agentRoot:  func(stateDir string) string { return filepath.Join(stateDir, "skills") },
+			codexRoot:  func(stateDir string) string { return filepath.Join(stateDir, "skills") },
 			wantSource: "default",
 		},
 	}
@@ -355,7 +362,15 @@ func TestRuntimeGlobalSkillRootFallbacks(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = provider.Close() })
-			runtime, err := NewRuntime(stateDir, test.globalRoot(stateDir), provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+			agentRoot := ""
+			if test.agentRoot != nil {
+				agentRoot = test.agentRoot(stateDir)
+			}
+			codexRoot := ""
+			if test.codexRoot != nil {
+				codexRoot = test.codexRoot(stateDir)
+			}
+			runtime, err := NewRuntime(stateDir, agentRoot, codexRoot, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -392,6 +407,27 @@ func TestAgentSkillsDir(t *testing.T) {
 	}
 }
 
+func TestCodexSkillsDir(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		home      string
+		codexHome string
+		want      string
+	}{
+		{name: "empty", home: "  ", want: ""},
+		{name: "default", home: filepath.Join("tmp", "runtime-home"), want: filepath.Join("tmp", "runtime-home", ".codex", "skills")},
+		{name: "explicit", home: filepath.Join("tmp", "ignored"), codexHome: filepath.Join("opt", "codex"), want: filepath.Join("opt", "codex", "skills")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := codexSkillsDir(test.home, test.codexHome); got != test.want {
+				t.Fatalf("codexSkillsDir(%q, %q) = %q, want %q", test.home, test.codexHome, got, test.want)
+			}
+		})
+	}
+}
+
 func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -402,7 +438,7 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, "", "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}

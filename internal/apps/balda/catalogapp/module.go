@@ -78,7 +78,8 @@ type runtimeParams struct {
 	fx.In
 
 	StateDir       string `name:"balda_state_dir"`
-	GlobalSkillDir globalSkillDir
+	AgentSkillDir  agentSkillDir
+	CodexSkillDir  codexSkillDir
 	Provider       baldastate.Provider
 	Advertisements []commandcmd.Advertisement `group:"balda_command_advertisements"`
 	Norma          runtimeconfig.RuntimeConfig
@@ -86,7 +87,9 @@ type runtimeParams struct {
 	Commands       *commandcmd.Registry
 }
 
-type globalSkillDir string
+type agentSkillDir string
+
+type codexSkillDir string
 
 func agentSkillsDir(home string) string {
 	home = strings.TrimSpace(home)
@@ -96,16 +99,36 @@ func agentSkillsDir(home string) string {
 	return filepath.Join(home, ".agents", "skills")
 }
 
-func provideGlobalSkillDir() globalSkillDir {
+func codexSkillsDir(home, codexHome string) string {
+	codexHome = strings.TrimSpace(codexHome)
+	if codexHome == "" {
+		home = strings.TrimSpace(home)
+		if home == "" {
+			return ""
+		}
+		codexHome = filepath.Join(home, ".codex")
+	}
+	return filepath.Join(codexHome, "skills")
+}
+
+func provideAgentSkillDir() agentSkillDir {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return globalSkillDir(agentSkillsDir(home))
+	return agentSkillDir(agentSkillsDir(home))
+}
+
+func provideCodexSkillDir() codexSkillDir {
+	home, err := os.UserHomeDir()
+	if err != nil && strings.TrimSpace(os.Getenv("CODEX_HOME")) == "" {
+		return ""
+	}
+	return codexSkillDir(codexSkillsDir(home, os.Getenv("CODEX_HOME")))
 }
 
 func newRuntime(params runtimeParams) (*Runtime, error) {
-	return NewRuntime(params.StateDir, string(params.GlobalSkillDir), params.Provider, params.Advertisements, params.Norma.MCPServers, params.Registry, params.Commands)
+	return NewRuntime(params.StateDir, string(params.AgentSkillDir), string(params.CodexSkillDir), params.Provider, params.Advertisements, params.Norma.MCPServers, params.Registry, params.Commands)
 }
 
 // Lifecycle reconstructs durable catalog state before dependent ingress.
@@ -133,7 +156,8 @@ func (l *Lifecycle) Stop(ctx context.Context) error { return l.runtime.mcp.Shutd
 var Module = fx.Module("balda_runtime_catalog",
 	fx.Provide(
 		commandcmd.NewRegistry,
-		provideGlobalSkillDir,
+		provideAgentSkillDir,
+		provideCodexSkillDir,
 		newRuntime,
 		func(runtime *Runtime) *runtimecatalog.Store { return runtime.Store() },
 		func(runtime *Runtime) *mcpruntime.Reconciler { return runtime.MCP() },

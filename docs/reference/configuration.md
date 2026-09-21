@@ -124,8 +124,9 @@ project:
 
 ### Skill discovery roots
 
-Skill roots are conventions rather than configuration keys. Balda compiles
-direct-child skills from the runtime account's `$HOME/.agents/skills` and from
+Skill roots are conventions rather than Balda configuration keys. Balda
+compiles direct-child skills from the runtime account's `$HOME/.agents/skills`,
+from `$CODEX_HOME/skills` (defaulting to `$HOME/.codex/skills`), and from
 `<state_dir>/skills` into the application catalog. It separately captures
 `<workspace>/.agents/skills` for each unpinned session runtime. In the default
 Compose setup, `$HOME` is `/home/node`, `<state_dir>` is

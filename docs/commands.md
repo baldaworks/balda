@@ -116,7 +116,8 @@ argument is the selector and the trimmed remainder is the optional turn prompt,
 so both `/skill review` and `/skill review inspect this package` are valid.
 
 Standalone skills are discovered from direct children of the runtime account's
-`$HOME/.agents/skills`, `<state_dir>/skills`, and the current workspace's
+`$HOME/.agents/skills`, `$CODEX_HOME/skills` (defaulting to
+`$HOME/.codex/skills`), `<state_dir>/skills`, and the current workspace's
 `.agents/skills`. Enabled plugins contribute their packaged skills. These are
 separate sources: an unqualified name present in more than one source is
 ambiguous rather than ordered by precedence.

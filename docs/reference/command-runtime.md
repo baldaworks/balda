@@ -154,7 +154,8 @@ turn executes. Skill content remains user-level context and cannot override
 system policy, access, or approval controls.
 
 The catalog supplies those candidates from the runtime account's
-`$HOME/.agents/skills`, `<state_dir>/skills`, the session workspace's
+`$HOME/.agents/skills`, `$CODEX_HOME/skills` (defaulting to
+`$HOME/.codex/skills`), `<state_dir>/skills`, the session workspace's
 `.agents/skills`, and enabled plugin revisions. Command parsing and execution
 never scan those directories; they consume only the immutable snapshot and
 archived revision selected by the catalog boundary.
