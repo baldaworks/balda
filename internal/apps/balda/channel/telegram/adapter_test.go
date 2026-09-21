@@ -934,6 +934,24 @@ func TestCommandContextFromEvent_PrivateChatIgnoresMessageThreadID(t *testing.T)
 	}
 }
 
+func TestCommandContextFromEvent_SkillPreservesSelectorAndPrompt(t *testing.T) {
+	got, ok := (&Adapter{}).CommandContextFromEvent(&events.CommandEvent{
+		Command: "skill",
+		Args:    "prism:story implement this feature",
+		Message: &client.Message{
+			MessageId: 99,
+			Chat:      client.Chat{Id: 2317500, Type: "private"},
+			From:      &client.User{Id: 2317500},
+		},
+	})
+	if !ok {
+		t.Fatal("CommandContextFromEvent() ok = false, want true")
+	}
+	if got.Command != "skill" || got.Args != "prism:story implement this feature" {
+		t.Fatalf("command context = %+v, want skill selector and prompt", got)
+	}
+}
+
 func TestCommandContextFromEvent_PrivateTopicPreservesMessageThreadID(t *testing.T) {
 	topicID := 523431
 	isTopicMessage := true

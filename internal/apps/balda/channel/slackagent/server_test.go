@@ -218,6 +218,7 @@ func TestServerRoutesSignedSlashCommandsToCommonHandler(t *testing.T) {
 	}{
 		{name: "default route", path: "/slack/commands", text: "locator"},
 		{name: "custom route preserves command and args", path: "/custom/commands", text: "reset alpha beta"},
+		{name: "skill preserves selector and prompt", path: "/slack/commands", text: "skill prism:story implement this feature"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := &recordingCommandHandler{}
@@ -262,6 +263,9 @@ func TestServerRoutesSignedSlashCommandsToCommonHandler(t *testing.T) {
 			if test.name == "custom route preserves command and args" && request.Payload.Args != "alpha beta" {
 				t.Fatalf("args = %q, want alpha beta", request.Payload.Args)
 			}
+			if test.name == "skill preserves selector and prompt" && request.Payload.Args != "prism:story implement this feature" {
+				t.Fatalf("args = %q, want skill selector and prompt", request.Payload.Args)
+			}
 		})
 	}
 }
@@ -280,7 +284,7 @@ func TestServerReturnsUsageForUnsupportedSlashCommands(t *testing.T) {
 			body := url.Values{"command": {"/balda"}, "text": {commandText}, "team_id": {"T123"}, "channel_id": {"C456"}, "user_id": {"U789"}}.Encode()
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, signedSlackRequest(t, "/slack/commands", "secret", []byte(body)))
-			if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != "Usage: /balda locator | reset" {
+			if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != "Usage: /balda locator | reset | skill" {
 				t.Fatalf("response status=%d body=%q", response.Code, response.Body.String())
 			}
 			if len(recorder.requests) != 0 {

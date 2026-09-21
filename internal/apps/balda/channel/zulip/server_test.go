@@ -506,7 +506,7 @@ func TestValidateZulipWebhookPayloadAllowsEmptyStreamSubject(t *testing.T) {
 	}
 }
 
-func TestZulipServerForwardsCommandToProcessor(t *testing.T) {
+func TestZulipServerForwardsSkillSelectorAndPromptToProcessor(t *testing.T) {
 	mockProc := &mockInboundProcessor{}
 	server := NewServer(ServerParams{
 		Processor:         mockProc,
@@ -520,7 +520,7 @@ func TestZulipServerForwardsCommandToProcessor(t *testing.T) {
 			"sender_id":101,
 			"sender_email":"user@example.com",
 			"type":"private",
-			"content":"/reset"
+			"content":"/skill prism:story implement this feature"
 		}
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/zulip/webhook", strings.NewReader(body))
@@ -535,8 +535,11 @@ func TestZulipServerForwardsCommandToProcessor(t *testing.T) {
 		t.Fatalf("command calls = %d, want 1", len(mockProc.commandCalls))
 	}
 	cmd := mockProc.commandCalls[0]
-	if cmd.Command != "reset" {
-		t.Fatalf("cmd.Command = %q, want reset", cmd.Command)
+	if cmd.Command != "skill" {
+		t.Fatalf("cmd.Command = %q, want skill", cmd.Command)
+	}
+	if cmd.Args != "prism:story implement this feature" {
+		t.Fatalf("cmd.Args = %q, want selector and prompt", cmd.Args)
 	}
 	if cmd.SenderID != 101 {
 		t.Fatalf("cmd.SenderID = %d, want 101", cmd.SenderID)

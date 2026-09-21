@@ -14,6 +14,7 @@ import (
 	commandlocator "github.com/baldaworks/balda/internal/apps/balda/actors/command/locator"
 	commandplugin "github.com/baldaworks/balda/internal/apps/balda/actors/command/plugin"
 	commandreset "github.com/baldaworks/balda/internal/apps/balda/actors/command/reset"
+	commandskill "github.com/baldaworks/balda/internal/apps/balda/actors/command/skill"
 	commandstart "github.com/baldaworks/balda/internal/apps/balda/actors/command/start"
 	commandtopic "github.com/baldaworks/balda/internal/apps/balda/actors/command/topic"
 	commandusage "github.com/baldaworks/balda/internal/apps/balda/actors/command/usage"
@@ -179,6 +180,7 @@ var Module = fx.Module("balda_command",
 			fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`),
 		),
 		fx.Annotate(commandhelp.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
+		fx.Annotate(commandskill.New, fx.As(new(command.Handler)), fx.ResultTags(`group:"balda_command_handlers"`)),
 		fx.Annotate(
 			func(p usageParams) *commandusage.Handler {
 				return commandusage.New(p.Sessions, p.Dispatcher, p.Logger)
@@ -323,6 +325,7 @@ var Module = fx.Module("balda_command",
 			fx.As(new(commandcmd.Ingress)),
 		),
 		fx.Annotate(NewPluginTurnExecutor, fx.As(new(command.PluginExecutor))),
+		fx.Annotate(NewSkillTurnExecutor, fx.As(new(commandskill.Executor))),
 		func(p catalogStatusParams) *CatalogStatusReader {
 			return NewCatalogStatusReader(p.Catalog, p.MCP, p.Ads)
 		},

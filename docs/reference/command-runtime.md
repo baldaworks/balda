@@ -10,8 +10,9 @@ schema and session capability lifetime are specified in
 
 Balda uses the word *command* at two levels:
 
-- A **chat command** is a user invocation such as `/reset`, `/release`, or
-  `/balda reset`. Every supported chat command is executed by `CommandActor`.
+- A **chat command** is a user invocation such as `/reset`, `/skill review`,
+  `/release`, or `/balda reset`. Every supported chat command is executed by
+  `CommandActor`.
 - A **runtime command** is any durable actor envelope. Session turns, jobs,
   delivery, questions, permissions, and chat commands all use this transport,
   but they target different product actors.
@@ -128,6 +129,7 @@ transport switch:
 - onboarding and administration: `start`, `user`, and `plugin`;
 - session information: `help`, `usage`, and `locator`;
 - session lifecycle and control: `topic`, `reset`, `close`, and `cancel`;
+- explicit skill execution: `skill`;
 - automation: `auto` and `goalkeeper`.
 
 These names are native Balda policy. In particular, `/plugin install` and the
@@ -140,6 +142,16 @@ revision. After `CommandActor` resolves that descriptor from the session's
 persisted snapshot, the generic adapter publishes exactly one normal
 `SessionActor` turn. The instruction and supplied invocation arguments are
 formatted as user-level input. The turn carries no `SkillSelection`.
+
+The built-in `/skill` handler is a separate explicit-selection path. It
+resolves either one unique unqualified name or one exact `<plugin>:<skill>`
+source from the command envelope's persisted snapshot, pins that selection,
+and publishes one normal session turn. The optional text after the selector is
+the turn prompt and may be empty. Ambiguous unqualified names fail rather than
+using source or load-order precedence. Resolution does not read the skill body;
+the existing session runner loads the pinned body and resources only when the
+turn executes. Skill content remains user-level context and cannot override
+system policy, access, or approval controls.
 
 The turn uses the existing `TopicSession` runner. Skills are an independent
 session capability and remain lazy-loaded only after explicit selection. MCP
@@ -156,9 +168,9 @@ for the user-visible built-in matrix. The runtime-specific differences are:
 
 | Ingress | Provider syntax | Static built-ins admitted | Authentication and context | Projected plugin aliases |
 |---|---|---|---|---|
-| Telegram polling or Telegram webhook | `/<name> [args]` | `start`, `help`, `topic`, `goalkeeper`, `reset`, `locator`, `close`, `cancel`, `usage`, `auto`, `user`, `plugin` | Telegram user/chat/message identity; owner or collaborator capability is derived by ingress. `/start` has a separate direct-message admission path. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_]{0,31}$`. |
-| Slack Agent slash-command endpoint | `/balda <name> [args]` | `locator`, `reset` | Slack HMAC signature, timestamp, team, conversation, and user are required. A valid request receives workspace-member/session-command capability; slash invocations are conversation-scoped because they contain no thread timestamp. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_-]{0,63}$`; `/balda` itself remains the single provider slash command. |
-| Zulip outgoing webhook | `/<name> [args]` | `start`, `topic`, `locator`, `cancel`, `goalkeeper`, `user`, `usage`, `auto`, `reset`, `close` | The channel verifies the configured webhook token and payload; application ingress then requires owner or collaborator access except for onboarding. Direct message versus stream is preserved. | Not currently end-to-end. The channel registry recognizes compatible projected aliases, but application ingress still publishes only its static built-in set and otherwise returns `Unknown command`. See `balda-x3lz`. |
+| Telegram polling or Telegram webhook | `/<name> [args]` | `start`, `help`, `topic`, `goalkeeper`, `reset`, `skill`, `locator`, `close`, `cancel`, `usage`, `auto`, `user`, `plugin` | Telegram user/chat/message identity; owner or collaborator capability is derived by ingress. `/start` has a separate direct-message admission path. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_]{0,31}$`. |
+| Slack Agent slash-command endpoint | `/balda <name> [args]` | `locator`, `reset`, `skill` | Slack HMAC signature, timestamp, team, conversation, and user are required. A valid request receives workspace-member/session-command capability; slash invocations are conversation-scoped because they contain no thread timestamp. | End-to-end through the shared registry. Alias syntax is `^[a-z][a-z0-9_-]{0,63}$`; `/balda` itself remains the single provider slash command. |
+| Zulip outgoing webhook | `/<name> [args]` | `start`, `topic`, `locator`, `cancel`, `goalkeeper`, `user`, `usage`, `auto`, `reset`, `skill`, `close` | The channel verifies the configured webhook token and payload; application ingress then requires owner or collaborator access except for onboarding. Direct message versus stream is preserved. | Not currently end-to-end. The channel registry recognizes compatible projected aliases, but application ingress still publishes only its static built-in set and otherwise returns `Unknown command`. See `balda-x3lz`. |
 | Generic Balda webhook | Configured HTTP route, not slash syntax | None | Route/method/auth/template/target policy comes from `balda.webhooks.routes` | Not applicable: it publishes job or session work, never a chat command. |
 | Scheduler | Configured cron envelope, not slash syntax | None | Configuration selects target, content, and optional report destination | Not applicable: it publishes scheduled job work, never a chat command. |
 

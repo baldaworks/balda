@@ -112,7 +112,7 @@ func (f *fakeTelegramChannel) AnswerQuestionCallback(context.Context, string, st
 }
 
 func TestTelegramCommandHandler_PublishesActorOwnedCommands(t *testing.T) {
-	supported := []string{"locator", "reset", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "user", "plugin"}
+	supported := []string{"locator", "reset", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "user", "plugin", "skill"}
 
 	for _, cmd := range supported {
 		t.Run(cmd, func(t *testing.T) {

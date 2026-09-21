@@ -75,6 +75,8 @@ From there you can:
 
 - ask for ordinary help in chat
 - start a goal loop with `/goalkeeper <objective>`
+- run a session skill with `/skill <skill> [prompt...]` or
+  `/skill <plugin>:<skill> [prompt...]`
 - stop the current turn with `/cancel`
 - reset the current session with `/reset`
 
@@ -189,9 +191,10 @@ ENTRYPOINT ["balda"]
 
 ## Core commands
 
-Balda provides onboarding, session control, GoalKeeper, locator, usage, user,
-and plugin commands. Telegram and Zulip use `/locator` and `/reset`; Slack
-exposes the conversation-scoped forms `/balda locator` and `/balda reset`.
+Balda provides onboarding, session control, GoalKeeper, locator, usage, skill,
+user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`, and
+`/reset`; Slack exposes the conversation-scoped forms `/balda skill`,
+`/balda locator`, and `/balda reset`.
 
 Slack formats the response for scanning and copying:
 
@@ -214,6 +217,11 @@ explicit `purge`, and bounded `status`.
 Every chat command is durably published and executed by `CommandActor`;
 plugin-contributed commands are declarative, revision-pinned normal turns and
 never native plugin handlers.
+`/skill <skill> [prompt...]` selects one uniquely named skill from the current
+session snapshot. Use `/skill <plugin>:<skill> [prompt...]` to select an exact
+plugin source. The optional trailing prompt becomes the turn text; the skill
+body stays lazy until the turn executes. Run `/reset` to adopt skills installed
+or changed after the session was created.
 See [Plugins and session capabilities](docs/reference/plugins.md) for the
 `dev.baldaworks.balda` extension schema and the session-bound command, skill,
 and MCP lifecycle.

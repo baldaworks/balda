@@ -15,7 +15,7 @@ const slackRootCommand = "/balda"
 
 var errUnsupportedCommand = errors.New("unsupported /balda command")
 
-var supportedCommands = []string{"locator", "reset"}
+var supportedCommands = []string{"locator", "reset", "skill"}
 
 func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
 

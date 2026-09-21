@@ -73,6 +73,20 @@ That snapshot ID fixes all three capability classes for the session lifetime:
   provider session is created, resumed, or loaded. Its acquisitions live until
   that Balda session runtime closes.
 
+The built-in `/skill <skill> [prompt...]` command explicitly selects a skill
+from this snapshot; Slack spells it `/balda skill <skill> [prompt...]`. An
+unqualified name must be unique across the snapshot. The
+`/skill <plugin>:<skill> [prompt...]` form selects that exact plugin source and
+does not fall back to another contribution. The optional trailing prompt is the
+ordinary user text for the turn and may be empty. Resolution pins the revision
+without reading its body; the body and resources are loaded lazily when the
+turn executes. The existing `$skill:` selection mechanism remains available.
+
+Selected skill content is user-level context. It cannot replace Balda's system
+policy or weaken permissions and approval controls. Catalog changes affect new
+sessions only, so `/reset` is required before an existing conversation can use
+a newly installed or changed skill.
+
 MCP is not supplied again with each prompt. A command does not receive an MCP
 list and cannot add tools; it merely executes inside the already-created
 provider session, where the model may use the tools that session already has.

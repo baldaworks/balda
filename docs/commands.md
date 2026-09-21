@@ -9,8 +9,8 @@ command.
 Telegram and Zulip use one slash command per action, such as `/locator`.
 Slack registers one workspace slash command, `/balda`, and the first word of
 its text selects the Balda command. The current Slack command surface contains
-`/balda locator` and `/balda reset`; `/balda` with no command or any other
-subcommand returns the enabled-command usage.
+`/balda locator`, `/balda reset`, and `/balda skill`; `/balda` with no command
+or any other subcommand returns the enabled-command usage.
 
 `owner` means the account bootstrapped with the deployment owner token.
 `collaborator` means an account connected through an owner-created invite.
@@ -26,6 +26,7 @@ does not use Telegram or Zulip owner records.
 | `/auto [on\|off]` | yes | yes | no | owner, collaborator | current session |
 | `/usage` | yes | yes | no | owner, collaborator | current session |
 | `/reset` | yes | yes | `/balda reset` | owner, collaborator; signed Slack workspace member | current session |
+| `/skill <skill> [prompt...]` | yes | yes | `/balda skill <skill> [prompt...]` | owner, collaborator; signed Slack workspace member | current session |
 | `/locator` | yes | yes | no | owner, collaborator | current session |
 | `/balda locator` | no | no | yes | workspace member | current conversation |
 | `/close` | yes | yes | no | owner, collaborator | direct message |
@@ -107,6 +108,29 @@ This command cancels current session work, clears that session's
 history, and immediately creates a fresh runtime session at the same locator.
 It does not close the underlying chat or topic and accepts no arguments.
 
+### `/skill <skill> [prompt...]`
+
+Runs an installed skill as one ordinary turn in the current session. Telegram
+and Zulip use `/skill`; Slack uses `/balda skill`. The first whitespace-delimited
+argument is the selector and the trimmed remainder is the optional turn prompt,
+so both `/skill review` and `/skill review inspect this package` are valid.
+
+An unqualified selector such as `review` must identify exactly one skill in the
+session's immutable capability snapshot. If more than one source contributes
+that name, Balda reports ambiguity instead of choosing by load order. A
+qualified selector such as `prism:story` addresses exactly the `story` skill
+from the `prism` plugin and never falls back to another source. Empty plugin or
+skill names and selectors with multiple colons are rejected.
+
+The selected skill revision is pinned before the turn is published, but its
+body and resources stay lazy until the session turn executes. Skill content is
+user-level context: it cannot override Balda system policy, permissions, or
+approval boundaries. Installing, upgrading, enabling, disabling, or removing a
+skill does not alter an existing session snapshot; use `/reset` to create a
+fresh runtime that adopts the current catalog. The existing `$skill:` provider
+selection mechanism remains supported. Generic webhooks and scheduler jobs do
+not expose this chat command.
+
 ### `/close`
 
 Resets the current direct-message session. When the direct-message transport
@@ -175,7 +199,7 @@ transport parser + whitelist
 
 `commandcmd` owns the neutral envelope. `actors/command` owns exact-name
 routing and command policy across scoped handler packages (`start`, `help`,
-`usage`, `locator`, `topic`, `reset`, `closecmd`, `cancel`, `auto`,
+`usage`, `locator`, `topic`, `reset`, `skill`, `closecmd`, `cancel`, `auto`,
 `goalkeeper`, `user`, and `plugin`). `commandfx` wires actor ports. Transport
 packages do not import actor or application packages. Ingress handlers parse,
 perform auth/session checks, and publish `commandcmd.Request` envelopes.
@@ -183,10 +207,13 @@ perform auth/session checks, and publish `commandcmd.Request` envelopes.
 `CommandActor` is the only product command executor. Plugins cannot register
 native handlers: a catalog-advertised plugin command is declarative metadata
 that creates one normal authenticated turn from the exact inline instruction
-stored in the session's catalog snapshot. Commands do not select skills or
-change MCP configuration. Skills and the MCP list are fixed independently when
-the provider session is created or restored, and every turn uses that existing
-session runtime. Built-in names always remain reserved.
+stored in the session's catalog snapshot. Such plugin commands do not select
+skills or change MCP configuration. The built-in `/skill` handler is the
+explicit exception: it resolves and pins one skill from that same snapshot,
+then publishes an ordinary session turn with the optional trailing prompt.
+Skills and the MCP list are fixed when the provider session is created or
+restored, and every turn uses that existing session runtime. Built-in names
+always remain reserved.
 
 See [Command architecture and runtime internals](reference/command-runtime.md)
 for command sources, per-transport admission, registry projection, durable
