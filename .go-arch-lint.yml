@@ -415,6 +415,7 @@ deps:
       - infrastructure
       - backoffice_application
       - backoffice_webui
+      - backoffice_security
     # Backoffice passes its local persistence port into the migration use case;
     # direct imports remain enforced without inverting constructor injection.
     deepScan: false

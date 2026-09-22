@@ -111,6 +111,7 @@ type Page struct {
 	Audit        []AuditView
 	Error        *ErrorView
 	CSRFToken    string
+	ReturnTo     string
 }
 
 // Navigation derives visible workspaces only from current server capabilities.

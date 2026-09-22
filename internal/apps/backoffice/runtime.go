@@ -87,8 +87,16 @@ func (r *Runtime) Serve(ctx context.Context) error {
 		return fmt.Errorf("listen for Backoffice: %w", err)
 	}
 	defer func() { _ = listener.Close() }()
+	httpApplication, err := newHTTPApp(r.provider.Users(), r.config)
+	if err != nil {
+		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
+	}
+	handler, err := httpApplication.handler()
+	if err != nil {
+		return fmt.Errorf("construct Backoffice HTTP routes: %w", err)
+	}
 	server := &http.Server{
-		Handler:           healthHandler(),
+		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,

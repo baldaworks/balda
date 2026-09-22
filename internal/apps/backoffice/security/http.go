@@ -46,6 +46,7 @@ type HTTPConfig struct {
 	SecureCookies         bool
 	MaxBodyBytes          int64
 	AllowedReturnPrefixes []string
+	ErrorHandler          func(http.ResponseWriter, *http.Request, int)
 }
 
 // Browser implements the HTTP security boundary without owning page rendering.
@@ -56,6 +57,7 @@ type Browser struct {
 	maxBodyBytes  int64
 	returnPaths   []string
 	random        io.Reader
+	errorHandler  func(http.ResponseWriter, *http.Request, int)
 }
 
 // NewBrowser validates and creates the browser security HTTP boundary.
@@ -89,7 +91,7 @@ func NewBrowser(service browserService, config HTTPConfig) (*Browser, error) {
 	return &Browser{
 		service: service, trustedOrigin: strings.TrimSuffix(origin.String(), "/"),
 		secureCookies: config.SecureCookies, maxBodyBytes: maxBodyBytes,
-		returnPaths: returnPaths, random: rand.Reader,
+		returnPaths: returnPaths, random: rand.Reader, errorHandler: config.ErrorHandler,
 	}, nil
 }
 
@@ -126,7 +128,7 @@ func (b *Browser) Login(w http.ResponseWriter, r *http.Request) {
 	defer zero(password)
 	credentials, err := b.service.Login(r.Context(), form.Get("username"), password)
 	if err != nil {
-		b.writeServiceError(w, err)
+		b.writeServiceError(w, r, err)
 		return
 	}
 	b.setCredentials(w, credentials)
@@ -146,7 +148,7 @@ func (b *Browser) Refresh(w http.ResponseWriter, r *http.Request) {
 	refresh, err := r.Cookie(RefreshCookieName)
 	if err != nil || refresh.Value == "" {
 		b.clearCredentials(w)
-		b.writeServiceError(w, ErrUnauthenticated)
+		b.writeServiceError(w, r, ErrUnauthenticated)
 		return
 	}
 	credentials, err := b.service.Refresh(r.Context(), refresh.Value, form.Get("csrf_token"))
@@ -154,7 +156,7 @@ func (b *Browser) Refresh(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, ErrUnauthenticated) {
 			b.clearCredentials(w)
 		}
-		b.writeServiceError(w, err)
+		b.writeServiceError(w, r, err)
 		return
 	}
 	b.setCredentials(w, credentials)
@@ -174,15 +176,15 @@ func (b *Browser) Logout(w http.ResponseWriter, r *http.Request) {
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil || access.Value == "" {
 		b.clearCredentials(w)
-		b.writeServiceError(w, ErrUnauthenticated)
+		b.writeServiceError(w, r, ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, b.CSRFToken(r)); err != nil {
-		b.writeServiceError(w, err)
+		b.writeServiceError(w, r, err)
 		return
 	}
 	if err := b.service.Logout(r.Context(), access.Value); err != nil && !errors.Is(err, ErrUnauthenticated) {
-		b.writeServiceError(w, err)
+		b.writeServiceError(w, r, err)
 		return
 	}
 	b.clearCredentials(w)
@@ -197,11 +199,11 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	access, err := r.Cookie(AccessCookieName)
 	if err != nil || access.Value == "" {
-		b.writeServiceError(w, ErrUnauthenticated)
+		b.writeServiceError(w, r, ErrUnauthenticated)
 		return
 	}
 	if err := b.service.ValidateCSRF(r.Context(), access.Value, b.CSRFToken(r)); err != nil {
-		b.writeServiceError(w, err)
+		b.writeServiceError(w, r, err)
 		return
 	}
 	currentPassword := []byte(form.Get("current_password"))
@@ -210,7 +212,7 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 	defer zero(nextPassword)
 	credentials, err := b.service.ReplacePassword(r.Context(), access.Value, currentPassword, nextPassword)
 	if err != nil {
-		b.writeServiceError(w, err)
+		b.writeServiceError(w, r, err)
 		return
 	}
 	b.setCredentials(w, credentials)
@@ -222,12 +224,12 @@ func (b *Browser) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(AccessCookieName)
 		if err != nil || cookie.Value == "" {
-			b.writeServiceError(w, ErrUnauthenticated)
+			b.writeServiceError(w, r, ErrUnauthenticated)
 			return
 		}
 		principal, err := b.service.ValidateAccess(r.Context(), cookie.Value)
 		if err != nil {
-			b.writeServiceError(w, err)
+			b.writeServiceError(w, r, err)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalContextKey{}, principal)))
@@ -239,11 +241,11 @@ func (b *Browser) RequireNormal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFromContext(r.Context())
 		if !ok {
-			b.writeServiceError(w, ErrUnauthenticated)
+			b.writeServiceError(w, r, ErrUnauthenticated)
 			return
 		}
 		if principal.Assurance != usercmd.SessionAssuranceNormal {
-			b.writeServiceError(w, ErrForbidden)
+			b.writeServiceError(w, r, ErrForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -255,11 +257,11 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFromContext(r.Context())
 		if !ok {
-			b.writeServiceError(w, ErrUnauthenticated)
+			b.writeServiceError(w, r, ErrUnauthenticated)
 			return
 		}
 		if principal.Assurance != usercmd.SessionAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
-			b.writeServiceError(w, ErrForbidden)
+			b.writeServiceError(w, r, ErrForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -293,27 +295,27 @@ func (b *Browser) mutationForm(w http.ResponseWriter, r *http.Request) (url.Valu
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		b.writeHTTPError(w, r, http.StatusMethodNotAllowed, "method not allowed")
 		return nil, false
 	}
 	if r.Header.Get("Origin") != b.trustedOrigin {
-		http.Error(w, "request forbidden", http.StatusForbidden)
+		b.writeHTTPError(w, r, http.StatusForbidden, "request forbidden")
 		return nil, false
 	}
 	site := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")))
 	if site != "" && site != "same-origin" {
-		http.Error(w, "request forbidden", http.StatusForbidden)
+		b.writeHTTPError(w, r, http.StatusForbidden, "request forbidden")
 		return nil, false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, b.maxBodyBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
 		return nil, false
 	}
 	csrfCookie, err := r.Cookie(CSRFCookieName)
 	csrfForm := r.PostForm.Get("csrf_token")
 	if err != nil || csrfCookie.Value == "" || csrfForm == "" || subtle.ConstantTimeCompare([]byte(csrfCookie.Value), []byte(csrfForm)) != 1 {
-		http.Error(w, "request forbidden", http.StatusForbidden)
+		b.writeHTTPError(w, r, http.StatusForbidden, "request forbidden")
 		return nil, false
 	}
 	return r.PostForm, true
@@ -349,20 +351,28 @@ func (b *Browser) redirect(w http.ResponseWriter, r *http.Request, requested, fa
 	http.Redirect(w, r, b.SafeReturnPath(requested, fallback), http.StatusSeeOther)
 }
 
-func (b *Browser) writeServiceError(w http.ResponseWriter, err error) {
+func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
 	case errors.Is(err, ErrUnauthenticated):
-		http.Error(w, "authentication failed", http.StatusUnauthorized)
+		b.writeHTTPError(w, r, http.StatusUnauthorized, "authentication failed")
 	case errors.Is(err, ErrForbidden):
-		http.Error(w, "request forbidden", http.StatusForbidden)
+		b.writeHTTPError(w, r, http.StatusForbidden, "request forbidden")
 	case errors.Is(err, usercmd.ErrInvalid):
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
 	case errors.Is(err, usercmd.ErrConflict):
-		http.Error(w, "request conflict", http.StatusConflict)
+		b.writeHTTPError(w, r, http.StatusConflict, "request conflict")
 	default:
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		b.writeHTTPError(w, r, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func (b *Browser) writeHTTPError(w http.ResponseWriter, r *http.Request, status int, message string) {
+	if b.errorHandler != nil {
+		b.errorHandler(w, r, status)
+		return
+	}
+	http.Error(w, message, status)
 }
 
 func validReturnPrefix(prefix string) bool {

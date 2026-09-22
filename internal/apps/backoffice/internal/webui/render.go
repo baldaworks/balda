@@ -18,12 +18,15 @@ const (
 	TemplateAccount  = "account"
 	TemplateAudit    = "audit"
 	TemplateError    = "error"
+	TemplateRefresh  = "refresh"
+	TemplatePassword = "password"
 )
 
 var templateFiles = map[string]string{
 	TemplateLogin: "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl",
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
+	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
 }
 
 //go:embed templates static
