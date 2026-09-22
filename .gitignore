@@ -58,6 +58,9 @@ Thumbs.db
 # Beads runtime logs
 .beads/*.log
 
+# Beads 1.3 workspace coordination lock (local runtime state).
+.beads.gate.lock
+
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
 /balda

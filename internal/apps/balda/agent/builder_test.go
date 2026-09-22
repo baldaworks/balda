@@ -142,7 +142,7 @@ func TestBuildRootRuntimeInstructionUsesCatalogMetadataOnly(t *testing.T) {
 		}},
 		Omitted: 2,
 	}
-	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/trusted/workspace", projection)
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/trusted/workspace", projection, SessionInstructionContext{SnapshotID: projection.Snapshot})
 	if err != nil {
 		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
 	}
@@ -400,7 +400,7 @@ func TestBuildRootRuntimeInstruction_UsesPerSessionPlaceholders(t *testing.T) {
 		workingDir:          "/repo",
 	}
 
-	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/tmp/work", SkillMetadataProjection{})
+	got, err := builder.buildRootRuntimeInstruction(context.Background(), "alpha", "/tmp/work", SkillMetadataProjection{}, SessionInstructionContext{})
 	if err != nil {
 		t.Fatalf("buildRootRuntimeInstruction() error = %v", err)
 	}

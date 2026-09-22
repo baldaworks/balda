@@ -54,6 +54,9 @@ func PreflightRuntime(
 	if err := validateBaldaMCPConfiguration(normaCfg); err != nil {
 		return err
 	}
+	if err := validateSessionInstructionsConfig(cfg.Balda.SessionInstructions); err != nil {
+		return err
+	}
 	formattingMode, err := baldatelegram.ValidateFormattingMode(cfg.Balda.Telegram.FormattingMode)
 	if err != nil {
 		return err
@@ -70,6 +73,10 @@ func PreflightRuntime(
 	stateDir, err := paths.ResolveStateDir(workingDir, cfg.Balda.StateDir)
 	if err != nil {
 		return fmt.Errorf("resolve balda state_dir: %w", err)
+	}
+	database, err := cfg.Balda.Database.Resolve(workingDir, stateDir)
+	if err != nil {
+		return err
 	}
 	sessionPersistence, err := validateSessionPersistence(cfg.Balda.Sessions.Persistence)
 	if err != nil {
@@ -206,7 +213,7 @@ func PreflightRuntime(
 				fx.ResultTags(`name:"balda_state_dir"`),
 			),
 			func(lc fx.Lifecycle) (baldastate.Provider, error) {
-				provider, openErr := openBaldaStateProvider(ctx, stateDir)
+				provider, openErr := openBaldaStateProvider(ctx, stateDir, database)
 				if openErr != nil {
 					return nil, openErr
 				}
@@ -276,6 +283,10 @@ func PreflightRuntime(
 			fx.Annotate(
 				func() string { return strings.TrimSpace(cfg.Balda.GlobalInstruction) },
 				fx.ResultTags(`name:"balda_global_instruction"`),
+			),
+			fx.Annotate(
+				func() int { return cfg.Balda.SessionInstructions.MaxTotalBytes },
+				fx.ResultTags(`name:"balda_session_instruction_max_total_bytes"`),
 			),
 			fx.Annotate(
 				func() string { return formattingMode },

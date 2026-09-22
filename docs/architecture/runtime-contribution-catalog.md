@@ -64,7 +64,7 @@ execution and failure semantics.
 Every contribution has a typed source:
 
 - `builtin`: compiled Balda behavior;
-- `user-skill`: a host-configured user skill root;
+- `user-skill`: an application-scoped global or state-directory skill root;
 - `workspace-skill`: a skill root belonging to the active workspace;
 - `configured-mcp`: an MCP server from trusted host configuration;
 - `plugin`: an installed Agent Plugins package revision.
@@ -86,6 +86,33 @@ change the commands, skills, or tools visible to a session bound to another
 workspace. Sources with future principal-specific credentials or policy must
 use another explicit overlay rather than adding user checks inside the global
 catalog.
+
+#### Application skill roots
+
+Balda compiles direct-child standalone skills from three application-scoped
+roots:
+
+```text
+$HOME/.agents/skills/<name>/SKILL.md
+$CODEX_HOME/skills/<name>/SKILL.md
+<state_dir>/skills/<name>/SKILL.md
+```
+
+`$HOME` is resolved for the operating-system account running Balda. When
+`CODEX_HOME` is unset, its root defaults to `$HOME/.codex`. The Agent Skills
+root is represented as `user-skill:agents-global`, the Codex root as
+`user-skill:codex-global`, and the state-directory root retains
+`user-skill:default`. They remain separate provenance domains and have no
+precedence over each other. If multiple paths identify the same cleaned root,
+Balda captures it once in state-directory, Agent Skills, then Codex order. This
+deduplication applies only to identical roots; distinct roots never override one
+another.
+
+All roots use the catalog's bounded source loader and exact revision archive.
+A missing root is empty. An existing non-directory or unreadable root prevents
+candidate publication; malformed or unsafe child entries follow the loader's
+bounded diagnostics and are not exposed as usable skills. No command handler or
+transport adapter scans these paths.
 
 #### Project-local skills
 
@@ -109,10 +136,11 @@ Project skills cannot contribute commands or MCP servers through this overlay.
 
 Session snapshots are immutable. An active or restored session continues to
 use its pinned snapshot even if files under `.agents/skills` change. Session
-reset preserves that metadata and does not refresh capabilities; a newly
-created, unpinned session is required to capture a new project-skill revision.
-Because each workspace receives a separate overlay, its project skills are
-unavailable to sessions bound to another workspace.
+reset closes that runtime and the command handler immediately creates an
+unpinned replacement, which captures the current project-skill revision and
+persists the new effective snapshot. Because each workspace receives a separate
+overlay, its project skills are unavailable to sessions bound to another
+workspace.
 
 Conceptually:
 
@@ -389,8 +417,10 @@ construct, swap, or close a provider runtime. Every turn uses the existing
 `TopicSession` runner.
 
 Publishing a new catalog snapshot never mutates an active session. `/reset`
-closes the old session runtime and is the explicit adoption boundary for
-current commands, skills, and MCP servers.
+closes the old session runtime and creates a replacement without requesting the
+old snapshot. It is therefore the explicit adoption boundary for current
+commands, skills, and MCP servers; successful recreation persists the newly
+selected snapshot.
 
 Metadata budgeting is deterministic. The effective catalog sorts by stable
 source and contribution identity, applies a host-defined total budget, and

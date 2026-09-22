@@ -8,10 +8,14 @@ tunnel and forward the request without changing its body.
 
 1. Create a Slack app and configure it as an agent.
 2. Install it to the workspace with `chat:write`, `im:history`,
-   `app_mentions:read`, and `channels:history` bot scopes. Add
+   `app_mentions:read`, `channels:history`, and `files:read` bot scopes. Add
+   `files:write` when Balda must deliver generated photos or documents. Add
    `groups:history` only when Balda must load context from private-channel
    threads. The bot must be a member of each public or private channel whose
-   thread context it reads.
+   thread context it reads. `files:read` is required for files attached to the
+   message that starts a turn and for files loaded from preceding thread
+   messages. `files:write` is independent: it is used only for outbound media
+   delivery, and omitting it does not disable text replies or inbound files.
    Slack adds the agent-specific `assistant:write` scope when the app is declared
    as an agent.
 3. Enable Event Subscriptions and subscribe to these bot events:
@@ -45,6 +49,13 @@ Equivalent YAML:
 
 ```yaml
 balda:
+  features:
+    attachments:
+      max_files_per_message: 10
+      max_file_bytes: 26214400
+      max_total_bytes: 52428800
+      store:
+        engine: local
   slack:
     bot_token: "xoxb-..."
     signing_secret: "..."
@@ -61,6 +72,22 @@ The HTTP Events API requires the Bot OAuth Token and Signing Secret. No Slack
 app-level token is required. User-token search, Canvas, file-search, and Slack
 MCP scopes are not used by conversational ingress.
 
+The attachment limit environment overrides are:
+
+```env
+BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE=10
+BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES=26214400
+BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES=52428800
+BALDA_FEATURES_ATTACHMENTS_STORE_ENGINE=local
+```
+
+The defaults are 10 files per message, 25 MiB per file, and 50 MiB across the
+message. Values must be positive, and the total limit must not be smaller than
+the per-file limit. The default `local` store writes content-addressed blobs
+under `${balda.state_dir}/attachments`. Setting
+`balda.features.attachments.store.engine` to `off` keeps text-only Slack turns
+available but rejects a turn that contains files.
+
 Event subscriptions and history scopes solve different problems:
 
 - `app_mention` and `message.im` deliver explicitly addressed input;
@@ -72,8 +99,22 @@ Event subscriptions and history scopes solve different problems:
 ## Messaging Behavior
 
 - Balda accepts human `message.im` events and explicit `app_mention` events in
-  public and private channels. Bot-originated and subtype events are ignored,
-  preventing response loops.
+  public and private channels. A DM may be text-only, mixed text and files, or
+  an attachment-only `file_share`. A channel request may carry files but still
+  requires an explicit app mention. Ordinary channel file shares,
+  bot-originated events, hidden messages, edits, deletions, and unrelated
+  subtypes are ignored, preventing response loops.
+- Files on the triggering event are downloaded with the bot credential,
+  persisted before the turn is published, and delivered to the provider in
+  Slack payload order. Images are classified from their `image/*` MIME type;
+  other files are documents. If any file fails validation, download, or
+  persistence, Balda publishes no partial turn.
+- Slack Connect `check_file_info` placeholders are resolved with `files.info`.
+  A file that is inaccessible to the installed app is rejected without
+  inventing content. Rate limits, Slack 5xx responses, network failures, and
+  temporary storage failures ask Slack to retry; access, policy, unsafe URL,
+  disabled-store, and size failures are acknowledged as terminal. Diagnostics
+  contain safe reason codes and file IDs, never bot tokens or private URLs.
 - A top-level DM message starts a Slack thread. Replies carrying `thread_ts`
   restore the same Balda session; different root timestamps remain isolated.
 - In channels, every new Balda turn requires an explicit `@Balda` mention.
@@ -85,10 +126,43 @@ Event subscriptions and history scopes solve different problems:
   mention as bounded, author-attributed, untrusted background. The mention is
   kept separately as the current request; messages posted at or after its
   timestamp are excluded. Truncated context is marked explicitly.
+- Files and images on those preceding messages, including file-only messages,
+  use the same authenticated download, local persistence, and limits as files
+  on the triggering mention. Files on the triggering mention consume the
+  count and actual-byte budget first. Balda then considers deduplicated
+  historical files newest-first within the remaining budget, while presenting
+  retained historical attachments in chronological message and Slack file
+  order after all current attachments.
+- Historical file metadata remains inside the untrusted context block. A
+  bounded `history_attachment_NNN` reference uses `supplied`, `duplicate`,
+  `over_budget`, `unavailable`, or `unsupported` to explain each retained
+  occurrence without exposing a private Slack URL, token, file body, or local
+  path. A permanently inaccessible individual historical file becomes a safe
+  marker and does not reject the current mention. A temporary Slack, network,
+  or storage failure delays the whole turn so Slack can retry it without a
+  partial durable publication.
+- With attachment storage set to `off`, a triggering event that contains files
+  remains terminal. A text mention with historical files still proceeds: the
+  files are marked unavailable and the accessible text context is retained.
 - A retryable history failure delays the turn and lets Slack retry the signed
   event. If history is permanently inaccessible because of scope, membership,
   or channel access, Balda still accepts the mention with an explicit
   context-unavailable marker instead of inventing the missing discussion.
+- Balda delivers photo and document results from one non-empty regular local
+  file. It rejects file-ID-only sources, URLs, directories, symlinks, missing
+  files, and files larger than `max_file_bytes` before requesting an upload.
+  Both media kinds use Slack's external upload flow: Balda obtains an upload
+  ticket, streams the exact file bytes without attaching the bot credential,
+  then completes the upload into the locator conversation and root thread.
+  The filename, MIME type, and caption are preserved, and Slack's file ID is
+  stored as the durable provider correlation.
+- A definitive failure before completion can follow the normal retry policy.
+  If the completion request may have reached Slack but its outcome is unknown,
+  the durable delivery remains `sending` and is not retried automatically; an
+  operator must resolve it to avoid posting a duplicate. Missing `files:write`
+  fails only that media delivery. Diagnostics contain bounded stage, media
+  kind, MIME class, byte count, settlement, and safe file-ID fields, never the
+  local path, upload URL, token, caption, response body, or file bytes.
 - Slack workspace membership is the Slackagent access boundary: any workspace
   user who can address the installed app may collaborate with it. Slackagent
   does not apply Balda's owner/collaborator bootstrap gate.
@@ -125,8 +199,45 @@ Before production rollout, verify in a Slack developer workspace:
 7. The Agent Session title and processing/active states appear correctly.
 8. The Stop button cancels active work.
 9. Repeat the DM and channel tests with streaming both disabled and enabled.
-10. `/balda locator` posts a conversation locator, and `/balda locator extra`
+10. Send an attachment-only image and a mixed text-plus-document request in a
+    DM. Confirm each produces one response and the provider receives the
+    persisted files in their original order.
+11. Send a file with an explicit app mention in a public and, when configured,
+    private channel. Confirm it produces one turn; confirm the same file share
+    without a mention produces none.
+12. Test one standard workspace file and an accessible Slack Connect file on
+    the triggering event. For an inaccessible Slack Connect placeholder,
+    confirm Balda creates no turn and logs only a safe terminal reason without
+    a private URL or token.
+13. Verify a request exceeding each configured count, per-file, and aggregate
+    limit creates no turn. Temporarily set the attachment store to `off` and
+    confirm file input is rejected while a text-only DM still succeeds.
+14. In an existing channel thread, post an earlier document, image, and
+    repeated reference to the same file, then explicitly mention Balda. Confirm
+    the provider receives each accessible file once, current-request files are
+    first, selected historical files are chronological, and the prompt contains
+    matching bounded markers. Repeat with history exceeding the remaining
+    budget and with an inaccessible Slack Connect file; confirm the mention
+    still produces one turn with `over_budget` or `unavailable` markers. With
+    storage `off`, confirm a text mention still succeeds with unavailable
+    historical markers. Finally, repeat with a text-only thread and confirm its
+    existing bounded context behavior is unchanged.
+15. `/balda locator` posts a conversation locator, and `/balda locator extra`
     posts usage containing `/balda locator`; neither request starts a turn.
+16. Trigger one generated image and one generated document. Confirm each is
+    posted once in the originating root thread, keeps its filename and MIME
+    type, and records a Slack file ID. Include a caption and confirm it appears
+    with the file.
+17. Attempt outbound delivery of a missing file, symlink, URL, and file larger
+    than `max_file_bytes`. Confirm no Slack upload is requested and logs expose
+    none of the source path or content.
+18. Temporarily remove `files:write`. Confirm outbound media fails with a safe
+    classified reason while a text-only response and inbound file request still
+    work. Restore the scope before continuing.
+19. In a controlled test environment, interrupt or force a server failure after
+    the completion request is sent. Confirm the delivery remains `sending` and
+    restarting Balda does not upload it again automatically. Resolve the record
+    operationally; do not trigger an automatic replay.
 
 Do not record tokens or signing secrets in logs, screenshots, or committed test
 artifacts.
@@ -145,6 +256,18 @@ artifacts.
   path.
 - Replies or session states fail: inspect Slack API error codes and confirm the
   app has the required bot scopes.
+- Current-message files fail: confirm `files:read`, conversation membership,
+  attachment storage, and the configured count/byte limits. Missing access or
+  a disabled store is terminal; temporary Slack, network, or storage failures
+  are retried by Slack.
 - Thread context is unavailable: confirm `channels:history` for public channels
   or `groups:history` plus app membership for private channels. These scopes do
-  not require `message.channels` or `message.groups` event subscriptions.
+  not require `message.channels` or `message.groups` event subscriptions. For
+  historical files, also confirm `files:read`, attachment storage, and the
+  shared count/byte limits. A permanent failure for one historical file is
+  reported by a bounded marker; temporary access or storage failures retry the
+  entire triggering event.
+- Outbound media fails: confirm `files:write`, channel access, a non-empty
+  regular local source, and `max_file_bytes`. A missing scope or invalid source
+  does not affect text delivery. A delivery left `sending` after completion
+  uncertainty is intentionally not replayed automatically.

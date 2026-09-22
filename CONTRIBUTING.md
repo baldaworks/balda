@@ -27,6 +27,21 @@ go tool golangci-lint run
 go tool go-arch-lint check --project-path .
 ```
 
+## Database Integration Checks
+
+State database integration suites are explicitly tagged and run separately:
+
+```bash
+go test -race -tags=integration,sqlite ./internal/apps/balda/state
+BALDA_TEST_POSTGRES_DSN='postgres://postgres:test-only@localhost:5432/postgres?sslmode=disable' \
+  go test -race -tags=integration,postgres ./internal/apps/balda/state
+```
+
+Use a disposable PostgreSQL database with permission to create/drop test schemas.
+Each test gets an isolated schema and cleans it up. An explicit PostgreSQL run
+fails if the DSN is missing. Both backends have separate required CI jobs;
+configuration and dispatch unit tests remain untagged.
+
 ## Code Standards
 
 - Follow idiomatic Go and Google Go best practices.

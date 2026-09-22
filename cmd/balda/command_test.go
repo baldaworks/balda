@@ -194,6 +194,34 @@ balda:
 	}
 }
 
+func TestLoadConfigDocument_AppliesAttachmentDefaults(t *testing.T) {
+	for _, key := range []string{
+		"BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE",
+		"BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES",
+		"BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES",
+	} {
+		unsetEnvForTest(t, key)
+	}
+
+	doc := loadDatabaseTestDocument(t, t.TempDir())
+	attachments := doc.Balda.Features.Attachments
+	if attachments.MaxFilesPerMessage != 10 || attachments.MaxFileBytes != 26_214_400 || attachments.MaxTotalBytes != 52_428_800 {
+		t.Fatalf("attachment defaults = %+v, want 10 files, 25 MiB per file, and 50 MiB total", attachments)
+	}
+}
+
+func TestLoadConfigDocument_AppliesAttachmentEnvOverrides(t *testing.T) {
+	t.Setenv("BALDA_FEATURES_ATTACHMENTS_MAX_FILES_PER_MESSAGE", "4")
+	t.Setenv("BALDA_FEATURES_ATTACHMENTS_MAX_FILE_BYTES", "1048576")
+	t.Setenv("BALDA_FEATURES_ATTACHMENTS_MAX_TOTAL_BYTES", "3145728")
+
+	doc := loadDatabaseTestDocument(t, t.TempDir())
+	attachments := doc.Balda.Features.Attachments
+	if attachments.MaxFilesPerMessage != 4 || attachments.MaxFileBytes != 1_048_576 || attachments.MaxTotalBytes != 3_145_728 {
+		t.Fatalf("attachment environment overrides = %+v", attachments)
+	}
+}
+
 func TestLoadConfigDocument_ImplicitDefaultProfileDoesNotRequireProfilesDefault(t *testing.T) {
 	workingDir := t.TempDir()
 

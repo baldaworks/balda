@@ -54,6 +54,8 @@ func renderHelpMessage(canUseSessionCommands bool, isOwner bool) string {
 		lines = append(lines, "- `/cancel` — request cancel for the current turn")
 		lines = append(lines, "- `/locator` — show current session locator")
 		lines = append(lines, "- `/usage` — show last provider usage for this session")
+		lines = append(lines, "- `/skill <skill> [prompt...]` — run a session skill")
+		lines = append(lines, "- `/skill <plugin>:<skill> [prompt...]` — run an exact plugin skill")
 		lines = append(lines, "", "## Automation", "")
 		lines = append(lines, "- `/goalkeeper <objective>` — start a goal run")
 		lines = append(lines, "- `/goalkeeper clear` — clear active goal run")

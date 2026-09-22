@@ -50,8 +50,12 @@ balda start
 ```
 
 `balda init` creates `.config/balda/config.yaml`, initializes
-`.config/balda/state.db`, detects available provider CLIs, and prints the next
-step for your selected chat provider.
+`.config/balda/state.db` by default, detects available provider CLIs, and prints
+the next step for your selected chat provider.
+
+SQLite is the default state database. To select PostgreSQL, configure
+`balda.database.type: postgres`; launch remains `balda start`.
+See [database configuration and operations](docs/reference/database.md).
 
 ## First run
 
@@ -71,6 +75,8 @@ From there you can:
 
 - ask for ordinary help in chat
 - start a goal loop with `/goalkeeper <objective>`
+- run a session skill with `/skill <skill> [prompt...]` or
+  `/skill <plugin>:<skill> [prompt...]`
 - stop the current turn with `/cancel`
 - reset the current session with `/reset` or its `/new` alias
 
@@ -127,8 +133,10 @@ Balda maps each conversation scope to its own session:
 - Slack Agent DM or mentioned channel thread
 
 In Slack channels, every turn requires an explicit `@Balda` mention. A mention
-inside an existing thread can use its preceding accessible discussion as
-bounded context; ordinary channel messages never activate Balda.
+inside an existing thread can use its preceding accessible discussion and
+persisted files as bounded context; ordinary channel messages never activate
+Balda. With the optional `files:write` scope, generated photos and documents
+are delivered back into the same root thread from bounded local files.
 
 ## Docker Compose
 
@@ -183,10 +191,11 @@ ENTRYPOINT ["balda"]
 
 ## Core commands
 
-Balda provides onboarding, session control, GoalKeeper, locator, usage, user,
-and plugin commands. Telegram and Zulip use `/locator`, `/reset`, and the
-`/new` alias for `/reset`; Slack
-exposes the conversation-scoped forms `/balda locator` and `/balda reset`.
+Balda provides onboarding, session control, GoalKeeper, locator, usage, skill,
+user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`,
+`/reset`, and the `/new` alias for `/reset`; Slack exposes the
+conversation-scoped forms `/balda skill`,
+`/balda locator`, and `/balda reset`.
 
 Slack formats the response for scanning and copying:
 
@@ -209,6 +218,14 @@ explicit `purge`, and bounded `status`.
 Every chat command is durably published and executed by `CommandActor`;
 plugin-contributed commands are declarative, revision-pinned normal turns and
 never native plugin handlers.
+`/skill <skill> [prompt...]` selects one uniquely named skill from the current
+session snapshot. Use `/skill <plugin>:<skill> [prompt...]` to select an exact
+plugin source. The optional trailing prompt becomes the turn text; the skill
+body stays lazy until the turn executes. Balda discovers standalone skills from
+the runtime account's `$HOME/.agents/skills`, `$CODEX_HOME/skills` (defaulting
+to `$HOME/.codex/skills`), `<state_dir>/skills`, and the current workspace's
+`.agents/skills`; enabled plugins contribute their own skills. Run `/reset` to
+adopt skills installed or changed after the session was created.
 See [Plugins and session capabilities](docs/reference/plugins.md) for the
 `dev.baldaworks.balda` extension schema and the session-bound command, skill,
 and MCP lifecycle.

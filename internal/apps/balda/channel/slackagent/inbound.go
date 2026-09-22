@@ -33,6 +33,8 @@ type rawEvent struct {
 	Subtype            string          `json:"subtype"`
 	BotID              string          `json:"bot_id"`
 	BotProfile         json.RawMessage `json:"bot_profile"`
+	Hidden             bool            `json:"hidden"`
+	Files              []rawFile       `json:"files"`
 	StreamingMessageTS []string        `json:"streaming_message_ts"`
 }
 
@@ -78,6 +80,8 @@ func normalizeRawEnvelope(raw rawEnvelope) EventEnvelope {
 			Subtype:            strings.TrimSpace(raw.Event.Subtype),
 			BotID:              strings.TrimSpace(raw.Event.BotID),
 			HasBotProfile:      hasJSONObject(raw.Event.BotProfile),
+			Hidden:             raw.Event.Hidden,
+			Files:              normalizeRawFiles(raw.Event.Files),
 			StreamingMessageTS: trimNonEmpty(raw.Event.StreamingMessageTS),
 			DedupeKey:          dedupeKey,
 			Conversation:       conversation,

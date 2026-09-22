@@ -30,6 +30,8 @@ type Event struct {
 	Subtype            string          `json:"subtype,omitempty"`
 	BotID              string          `json:"bot_id,omitempty"`
 	HasBotProfile      bool            `json:"has_bot_profile,omitempty"`
+	Hidden             bool            `json:"hidden,omitempty"`
+	Files              []FileRef       `json:"files,omitempty"`
 	StreamingMessageTS []string        `json:"streaming_message_ts,omitempty"`
 	DedupeKey          string          `json:"dedupe_key,omitempty"`
 	Conversation       ConversationRef `json:"conversation"`

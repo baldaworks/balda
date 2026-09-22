@@ -13,8 +13,8 @@ const baldaOwnerAuthTokenKV = "owner_auth_token"
 
 var baldaGenerateOwnerToken = auth.GenerateOwnerToken
 
-func loadOrCreateBaldaOwnerToken(ctx context.Context, dbPath string) (string, error) {
-	provider, err := baldastate.NewSQLiteProvider(ctx, dbPath)
+func loadOrCreateBaldaOwnerToken(ctx context.Context, database baldastate.DatabaseConfig) (string, error) {
+	provider, err := baldastate.Open(ctx, database)
 	if err != nil {
 		return "", fmt.Errorf("open balda state provider: %w", err)
 	}

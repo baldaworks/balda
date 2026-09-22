@@ -22,6 +22,11 @@ func TestValidateApp(t *testing.T) {
 			WorkingDir: workingDir,
 			StateDir:   ".config/balda",
 			Execution:  ExecutionConfig{},
+			Features: FeaturesConfig{Attachments: AttachmentsConfig{
+				MaxFilesPerMessage: defaultAttachmentMaxFilesPerMessage,
+				MaxFileBytes:       defaultAttachmentMaxFileBytes,
+				MaxTotalBytes:      defaultAttachmentMaxTotalBytes,
+			}},
 			Workspace: WorkspaceConfig{
 				Mode: string(WorkspaceModeAuto),
 			},
@@ -55,6 +60,11 @@ func TestValidateApp_InvalidTelegramFormattingModeFails(t *testing.T) {
 			WorkingDir: workingDir,
 			StateDir:   ".config/balda",
 			Execution:  ExecutionConfig{},
+			Features: FeaturesConfig{Attachments: AttachmentsConfig{
+				MaxFilesPerMessage: defaultAttachmentMaxFilesPerMessage,
+				MaxFileBytes:       defaultAttachmentMaxFileBytes,
+				MaxTotalBytes:      defaultAttachmentMaxTotalBytes,
+			}},
 			Workspace: WorkspaceConfig{
 				Mode: string(WorkspaceModeAuto),
 			},
@@ -73,4 +83,37 @@ func TestValidateApp_InvalidTelegramFormattingModeFails(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid balda.telegram.formatting_mode")
+}
+
+func TestValidateApp_InvalidAttachmentLimitsFail(t *testing.T) {
+	ctx := context.Background()
+	workingDir := t.TempDir()
+	runGitForBalda(t, ctx, workingDir, "init")
+
+	cfg := Config{
+		Balda: BaldaConfig{
+			Telegram:   TelegramConfig{Token: "test-token"},
+			WorkingDir: workingDir,
+			StateDir:   ".config/balda",
+			Features: FeaturesConfig{Attachments: AttachmentsConfig{
+				MaxFilesPerMessage: defaultAttachmentMaxFilesPerMessage,
+				MaxFileBytes:       defaultAttachmentMaxFileBytes,
+				MaxTotalBytes:      defaultAttachmentMaxFileBytes - 1,
+			}},
+			Workspace: WorkspaceConfig{Mode: string(WorkspaceModeAuto)},
+		},
+	}
+
+	err := fx.ValidateApp(
+		Module(
+			cfg,
+			runtimeconfig.RuntimeConfig{},
+			"test-owner-token",
+			runtimeconfig.RuntimeLoadOptions{WorkingDir: workingDir},
+			nil,
+		),
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "max_total_bytes must be at least max_file_bytes")
 }

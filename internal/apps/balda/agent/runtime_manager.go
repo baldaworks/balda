@@ -89,12 +89,12 @@ type RuntimeManagerParams struct {
 	Builder           *Builder
 	BaldaProviderID   string `name:"balda_provider"`
 	WorkingDir        string
-	StateDir          string           `name:"balda_state_dir"`
-	WorkspaceEnabled  bool             `name:"balda_workspace_enabled"`
-	WorkspaceBaseRef  string           `name:"balda_workspace_base_branch"`
-	BaldaMCPServerIDs []string         `name:"balda_mcp_servers"`
-	SessionMCPBinder  SessionMCPBinder `optional:"true"`
-	CapabilityBinder  SessionCapabilityBinder
+	StateDir          string                  `name:"balda_state_dir"`
+	WorkspaceEnabled  bool                    `name:"balda_workspace_enabled"`
+	WorkspaceBaseRef  string                  `name:"balda_workspace_base_branch"`
+	BaldaMCPServerIDs []string                `name:"balda_mcp_servers"`
+	SessionMCPBinder  SessionMCPBinder        `optional:"true"`
+	CapabilityBinder  SessionCapabilityBinder `optional:"true"`
 	MCPRegistry       *mcpregistry.MapRegistry
 	Logger            zerolog.Logger
 }
@@ -231,7 +231,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	}
 
 	runtime, err := builder.BuildRuntimeWithMCPServerIDs(
-		ctx,
+		runtimeLifecycleContext(ctx),
 		providerID,
 		workingDir,
 		nil,
@@ -344,7 +344,19 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 		registry.Set(binding.ID, binding.Config)
 		extraMCPServerIDs = append(extraMCPServerIDs, binding.ID)
 	}
-	runtime, err := builder.BuildRuntimeWithCapabilities(ctx, providerID, workingDir, nil, extraMCPServerIDs, capabilities.Skills)
+	runtime, err := builder.BuildRuntimeWithCapabilities(
+		runtimeLifecycleContext(ctx),
+		providerID,
+		workingDir,
+		nil,
+		extraMCPServerIDs,
+		capabilities.Skills,
+		SessionInstructionContext{
+			SnapshotID:  capabilities.SnapshotID,
+			SessionID:   strings.TrimSpace(request.Locator.SessionID),
+			ChannelType: strings.TrimSpace(request.Locator.ChannelType),
+		},
+	)
 	if err != nil {
 		if binding.ID != "" {
 			registry.Delete(binding.ID)
@@ -391,6 +403,16 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	m.scopedRuntimes[scopedID] = runtime
 	m.mu.Unlock()
 	return runtime, nil
+}
+
+// runtimeLifecycleContext preserves request values without tying an owned
+// provider subprocess to the request's cancellation. RuntimeManager closes
+// app-scoped and session-scoped runtimes explicitly.
+func runtimeLifecycleContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
 }
 
 func closeSessionCapabilities(capabilities SessionCapabilityBinding) {

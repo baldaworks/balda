@@ -394,7 +394,7 @@ func (s *Service) bindQuestionDelivery(ctx context.Context, payload deliverycmd.
 
 func RequiresOutbox(payload deliverycmd.Payload) bool {
 	switch payload.Mode {
-	case deliverycmd.ModeAgentReply, deliverycmd.ModePlain, deliverycmd.ModeMarkdown:
+	case deliverycmd.ModeAgentReply, deliverycmd.ModePlain, deliverycmd.ModeMarkdown, deliverycmd.ModePhoto, deliverycmd.ModeDocument:
 	default:
 		return false
 	}

@@ -1,7 +1,15 @@
 package attachment
 
 import (
+	"errors"
 	"strings"
+)
+
+var (
+	// ErrStoreDisabled reports that attachment persistence is disabled by configuration.
+	ErrStoreDisabled = errors.New("attachment store is disabled")
+	// ErrTooLarge reports that attachment content exceeded its byte limit.
+	ErrTooLarge = errors.New("attachment exceeds byte limit")
 )
 
 type Kind string
@@ -31,6 +39,13 @@ type BlobRef struct {
 	Path   string `json:"path,omitempty"`
 	URL    string `json:"url,omitempty"`
 	SHA256 string `json:"sha256,omitempty"`
+}
+
+// Limits bounds the resources consumed by one inbound attachment set.
+type Limits struct {
+	MaxFilesPerMessage int
+	MaxFileBytes       int64
+	MaxTotalBytes      int64
 }
 
 func NormalizeList(in []Descriptor) []Descriptor {

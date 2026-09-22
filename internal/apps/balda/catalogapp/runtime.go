@@ -32,6 +32,8 @@ const snapshotKeyPrefix = "runtime_catalog_snapshot:"
 type Runtime struct {
 	mu            sync.Mutex
 	stateDir      string
+	agentSkillDir string
+	codexSkillDir string
 	compiler      *runtimecatalog.Compiler
 	store         *runtimecatalog.Store
 	loader        *runtimecatalog.SourceLoader
@@ -49,6 +51,8 @@ type Runtime struct {
 // NewRuntime creates the application catalog without publishing mutable state.
 func NewRuntime(
 	stateDir string,
+	agentSkillDir string,
+	codexSkillDir string,
 	provider baldastate.Provider,
 	advertisements []commandcmd.Advertisement,
 	configured map[string]agentconfig.MCPServerConfig,
@@ -72,7 +76,7 @@ func NewRuntime(
 		return nil, err
 	}
 	runtime := &Runtime{
-		stateDir: stateDir, compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
+		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
 		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), sessions: provider.Sessions(), kv: provider.AppKV(),
 		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured),
 	}
@@ -126,11 +130,30 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 	defer r.mu.Unlock()
 	sources := []runtimecatalogcmd.Source{r.builtin}
 	sources = append(sources, r.configuredMCP...)
-	userSources, err := r.loadSkillSources(ctx, filepath.Join(r.stateDir, "skills"), runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: "default"})
-	if err != nil {
-		return runtimecatalogcmd.Snapshot{}, err
+	skillRoots := []struct {
+		dir  string
+		name string
+	}{
+		{dir: filepath.Join(r.stateDir, "skills"), name: "default"},
+		{dir: r.agentSkillDir, name: "agents-global"},
+		{dir: r.codexSkillDir, name: "codex-global"},
 	}
-	sources = append(sources, userSources...)
+	seenSkillRoots := make(map[string]struct{}, len(skillRoots))
+	for _, root := range skillRoots {
+		if strings.TrimSpace(root.dir) == "" {
+			continue
+		}
+		cleanDir := filepath.Clean(root.dir)
+		if _, ok := seenSkillRoots[cleanDir]; ok {
+			continue
+		}
+		seenSkillRoots[cleanDir] = struct{}{}
+		loaded, err := r.loadSkillSources(ctx, cleanDir, runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindUserSkill, Name: root.name})
+		if err != nil {
+			return runtimecatalogcmd.Snapshot{}, err
+		}
+		sources = append(sources, loaded...)
+	}
 	for _, source := range plugins {
 		if err := r.retainPlugin(ctx, source.Descriptor); err != nil {
 			return runtimecatalogcmd.Snapshot{}, err

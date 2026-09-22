@@ -56,6 +56,24 @@ instruction are formatted as user-level input and enter the ordinary durable
 session-turn path. They cannot replace Balda's system policy or change access,
 approval, retry, workspace, delivery, or runtime configuration.
 
+## Standalone skill roots
+
+Balda captures standalone skills from direct child directories under three
+application roots and one session workspace root:
+
+- `$HOME/.agents/skills` for the operating-system account running Balda;
+- `$CODEX_HOME/skills`, or `$HOME/.codex/skills` when `CODEX_HOME` is unset,
+  for Codex global skills;
+- `<state_dir>/skills` for Balda-managed application skills;
+- `<workspace>/.agents/skills` for the workspace bound to the session.
+
+The application roots are captured when the application catalog is compiled.
+The workspace root is captured when an unpinned session runtime selects its
+effective snapshot. A missing root is empty. All roots use the same bounded
+loader, validation, revision archive, and lazy reader. Enabled plugins remain a
+separate source. Balda does not assign precedence between sources, so duplicate
+unqualified names are ambiguous.
+
 ## One capability snapshot per session
 
 Balda compiles commands, skill metadata, and MCP server descriptors into an
@@ -73,6 +91,20 @@ That snapshot ID fixes all three capability classes for the session lifetime:
   provider session is created, resumed, or loaded. Its acquisitions live until
   that Balda session runtime closes.
 
+The built-in `/skill <skill> [prompt...]` command explicitly selects a skill
+from this snapshot; Slack spells it `/balda skill <skill> [prompt...]`. An
+unqualified name must be unique across the snapshot. The
+`/skill <plugin>:<skill> [prompt...]` form selects that exact plugin source and
+does not fall back to another contribution. The optional trailing prompt is the
+ordinary user text for the turn and may be empty. Resolution pins the revision
+without reading its body; the body and resources are loaded lazily when the
+turn executes. The existing `$skill:` selection mechanism remains available.
+
+Selected skill content is user-level context. It cannot replace Balda's system
+policy or weaken permissions and approval controls. Catalog changes affect new
+sessions only, so `/reset` is required before an existing conversation can use
+a newly installed or changed skill.
+
 MCP is not supplied again with each prompt. A command does not receive an MCP
 list and cannot add tools; it merely executes inside the already-created
 provider session, where the model may use the tools that session already has.
@@ -83,12 +115,32 @@ Catalog activation affects newly created sessions only. Restoring a session
 uses its exact persisted snapshot and fails closed if that retained snapshot is
 unavailable. A legacy session without a pin adopts the current effective
 snapshot once and persists it. `/reset` closes the old runtime and creates a
-fresh one, so reset is the explicit boundary at which an existing conversation
-adopts current commands, skills, and MCP servers.
+fresh unpinned runtime, so reset is the explicit boundary at which an existing
+conversation adopts current commands, skills, and MCP servers. The newly
+selected snapshot replaces the old persisted pin only after recreation.
 
 Immutable command instructions are retained in snapshot descriptors. Archived
 skill bytes remain readable by exact revision. MCP processes are the only
 capability resources with a live acquisition that must be released.
+
+## Session instruction contributions
+
+Balda assembles one provider-neutral session instruction before constructing a
+provider runtime. Trusted host extensions may contribute bounded, named
+sections through the `agent.SessionInstructionContributor` port. Contributions
+receive the immutable session snapshot identity and safe session context, are
+ordered by stable contributor ID, and fail session construction on invalid
+IDs, duplicates, errors, or size overflow. Each contributor is limited to 256
+KiB. The combined extension content defaults to 1 MiB and can be configured
+with `balda.session_instructions.max_total_bytes`; zero selects the default.
+These limits apply to extension content rather than Balda's base instruction.
+
+This is a host extension boundary, not a portable plugin-data surface. A
+contributor cannot replace the built-in Balda instruction, select a different
+snapshot, or write provider-specific session metadata. The provider adapter
+remains responsible for mapping the assembled instruction to its native
+instruction mechanism. ACP providers without such a mechanism receive the
+adapter's documented first-prompt fallback.
 
 ## Transport behavior
 

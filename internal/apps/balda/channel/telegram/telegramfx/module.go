@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/client"
 	"go.uber.org/fx"
@@ -18,7 +19,7 @@ var Module = fx.Module(
 	fx.Provide(
 		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
-				return commandcmd.Advertisement{Transport: telegram.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "new", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "plugin"}}
+				return commandcmd.Advertisement{Transport: telegram.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "new", "help", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "plugin", "skill"}}
 			},
 			fx.ParamTags(`name:"balda_telegram_enabled"`),
 			fx.ResultTags(`group:"balda_command_advertisements"`),
@@ -47,9 +48,9 @@ var Module = fx.Module(
 		fx.Annotate(
 			func(adapter *telegram.Adapter) telegram.Channel { return adapter },
 		),
-		fx.Annotate(
-			func(store attachmentstore.Store) telegram.AttachmentStore { return store },
-		),
+		func(store attachmentstore.Store, cfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface) telegram.AttachmentStore {
+			return telegram.NewAttachmentStore(store, tgClient, cfg.Token)
+		},
 		fx.Annotate(
 			func(adapter *telegram.Adapter) deliveryfx.ChannelAdapterBinding {
 				return deliveryfx.ChannelAdapterBinding{

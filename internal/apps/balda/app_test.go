@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/git"
 	"github.com/normahq/runtime/v2/agentconfig"
@@ -31,7 +31,11 @@ var (
 func TestOpenBaldaStateProviderUsesStateDB(t *testing.T) {
 	stateDir := t.TempDir()
 
-	provider, err := openBaldaStateProvider(context.Background(), stateDir)
+	database, err := (Config{}).Balda.Database.Resolve(stateDir, stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := openBaldaStateProvider(context.Background(), stateDir, database)
 	if err != nil {
 		t.Fatalf("openBaldaStateProvider() error = %v", err)
 	}
@@ -54,6 +58,21 @@ func TestValidateBaldaMCPConfiguration_AllowsCurrentBuiltInServerUsage(t *testin
 
 	if err := validateBaldaMCPConfiguration(normaCfg); err != nil {
 		t.Fatalf("validateBaldaMCPConfiguration() error = %v, want nil", err)
+	}
+}
+
+func TestValidateSessionInstructionsConfig(t *testing.T) {
+	t.Parallel()
+
+	if err := validateSessionInstructionsConfig(SessionInstructionsConfig{}); err != nil {
+		t.Fatalf("validateSessionInstructionsConfig() default error = %v", err)
+	}
+	if err := validateSessionInstructionsConfig(SessionInstructionsConfig{MaxTotalBytes: 1024}); err != nil {
+		t.Fatalf("validateSessionInstructionsConfig() configured error = %v", err)
+	}
+	err := validateSessionInstructionsConfig(SessionInstructionsConfig{MaxTotalBytes: -1})
+	if err == nil || !strings.Contains(err.Error(), "max_total_bytes must not be negative") {
+		t.Fatalf("validateSessionInstructionsConfig() error = %v, want negative limit rejection", err)
 	}
 }
 

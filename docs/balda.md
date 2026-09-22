@@ -30,8 +30,12 @@ can be read, linked, and indexed independently:
   first operator checks, including `task runtime-state`.
 - [Internal packages and startup architecture](reference/internals.md) — owned
   packages, dependency boundaries, architecture layers, and startup order.
+- [Backoffice application](reference/backoffice.md) — application ownership,
+  Web UI foundation, HTMX contracts, and the page-development workflow.
 - [Configuration](reference/configuration.md) — the complete runtime, provider,
   channel, workspace, scheduler, webhook, and MCP configuration contract.
+- [State database](reference/database.md) — SQLite defaults, PostgreSQL selection,
+  path templates, migration behavior, and backup/restore.
 - [Durable session memory](reference/session-memory.md) — lifecycle, storage,
   recall, compaction, observability, and the operator verification runbook.
 - [Session and messaging behavior](reference/messaging.md) — session keys,
