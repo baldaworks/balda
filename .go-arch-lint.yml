@@ -130,6 +130,11 @@ components:
     in:
       - internal/apps/backoffice
 
+  # Browser-only Backoffice authentication, opaque token rotation, and HTTP guards.
+  backoffice_security:
+    in:
+      - internal/apps/backoffice/security
+
   # Transport-neutral delivery formatting registry.
   neutral_registry:
     in:
@@ -406,6 +411,16 @@ deps:
       - backoffice_application
     # Backoffice passes its local persistence port into the migration use case;
     # direct imports remain enforced without inverting constructor injection.
+    deepScan: false
+    anyVendorDeps: true
+
+  backoffice_security:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - user_security
+      - backoffice_security
+    # The storage and HTTP services are injected through security-owned narrow ports.
     deepScan: false
     anyVendorDeps: true
 

@@ -199,6 +199,7 @@ type SessionSummary struct {
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
 	RevokedAt  time.Time
+	Version    uint64
 }
 
 // AuditAction is a stable security event action.
@@ -219,6 +220,14 @@ const (
 	AuditActionBindingClaimCreated AuditAction = "user.binding.claim.created"
 	// AuditActionUserMigrated records canonical creation from legacy authorization state.
 	AuditActionUserMigrated AuditAction = "user.migrated"
+	// AuditActionLoginSucceeded records creation of a browser session family.
+	AuditActionLoginSucceeded AuditAction = "session.login.succeeded"
+	// AuditActionRefreshSucceeded records access/refresh pair rotation.
+	AuditActionRefreshSucceeded AuditAction = "session.refresh.succeeded"
+	// AuditActionRefreshReplay records verified refresh-token reuse and family revocation.
+	AuditActionRefreshReplay AuditAction = "session.refresh.replay"
+	// AuditActionLogout records explicit browser-session logout.
+	AuditActionLogout AuditAction = "session.logout"
 )
 
 // AuditOutcome is the security event result.

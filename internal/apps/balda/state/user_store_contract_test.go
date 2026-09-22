@@ -235,6 +235,29 @@ func checkUserStoreCredentialAndSessionRevocation(t *testing.T, open contractOpe
 	nextCredential := usercmd.Credential{State: usercmd.CredentialStateActive, Version: 2}
 	nextSecret := usercmd.CredentialSecret{UserID: user.ID, PasswordHash: "replacement-hash"}
 	changedAt := now.Add(time.Hour)
+	conflictingSession := contractSessionFamily(user.ID, changedAt)
+	conflictingSession.ID = "replacement-session"
+	conflictingSession.CredentialVersion = 2
+	conflictingSession.Access.Selector = family.Access.Selector
+	conflictingSession.RefreshTokens[0].Selector = "replacement-refresh"
+	err := store.ChangeCredentialAndCreateSession(t.Context(), usercmd.CredentialSessionChange{
+		UserID: user.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1,
+		Credential: nextCredential, Secret: nextSecret, RevokedAt: changedAt,
+		Session:         conflictingSession,
+		CredentialAudit: contractAudit("audit-password-rollback", usercmd.AuditActionCredentialChanged, user.ID, changedAt),
+		SessionAudit:    contractAudit("audit-session-rollback", usercmd.AuditActionLoginSucceeded, conflictingSession.ID, changedAt),
+	})
+	if !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("ChangeCredentialAndCreateSession(conflict) error = %v, want ErrConflict", err)
+	}
+	unchanged, found, err := store.GetUser(t.Context(), user.ID)
+	if err != nil || !found || unchanged.Version != 1 || unchanged.Credential.Version != 1 {
+		t.Fatalf("GetUser(after rollback) = %+v, %t, %v", unchanged, found, err)
+	}
+	stillActive, found, err := store.GetSessionByAccessSelector(t.Context(), family.Access.Selector)
+	if err != nil || !found || !stillActive.Family.RevokedAt.IsZero() {
+		t.Fatalf("session after rollback = %+v, %t, %v", stillActive, found, err)
+	}
 	if err := store.ChangeCredential(
 		t.Context(), user.ID, 1, 1, nextCredential, nextSecret, changedAt,
 		contractAudit("audit-password", usercmd.AuditActionCredentialChanged, user.ID, changedAt),
@@ -278,6 +301,9 @@ func checkUserStoreCredentialAndSessionRevocation(t *testing.T, open contractOpe
 	sessions, err := store.ListSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: usercmd.MaxPageSize})
 	if err != nil || len(sessions.Sessions) != 2 {
 		t.Fatalf("ListSessions() = %+v, %v", sessions, err)
+	}
+	if sessions.Sessions[1].Version != 2 {
+		t.Fatalf("revoked session version = %d, want 2", sessions.Sessions[1].Version)
 	}
 }
 

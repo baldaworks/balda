@@ -56,6 +56,20 @@ type RefreshRotation struct {
 	ReplayAudit             AuditEvent
 }
 
+// CredentialSessionChange atomically replaces one credential, revokes all old
+// session families, and creates the replacement normal session family.
+type CredentialSessionChange struct {
+	UserID                    string
+	ExpectedUserVersion       uint64
+	ExpectedCredentialVersion uint64
+	Credential                Credential
+	Secret                    CredentialSecret
+	RevokedAt                 time.Time
+	Session                   SessionFamily
+	CredentialAudit           AuditEvent
+	SessionAudit              AuditEvent
+}
+
 // RefreshRotationResult is the non-secret outcome of one verified refresh attempt.
 type RefreshRotationResult string
 
@@ -92,6 +106,7 @@ type Store interface {
 	CreateUser(ctx context.Context, user User, secret CredentialSecret, audit AuditEvent) error
 	UpdateUser(ctx context.Context, user User, expectedVersion uint64, audit AuditEvent) error
 	ChangeCredential(ctx context.Context, userID string, expectedUserVersion, expectedCredentialVersion uint64, credential Credential, secret CredentialSecret, revokedAt time.Time, audit AuditEvent) error
+	ChangeCredentialAndCreateSession(ctx context.Context, change CredentialSessionChange) error
 	GetUser(ctx context.Context, userID string) (User, bool, error)
 	GetUserByNormalizedUsername(ctx context.Context, normalizedUsername string) (User, bool, error)
 	GetUserByBinding(ctx context.Context, channelType, principal string) (User, bool, error)
@@ -102,6 +117,7 @@ type Store interface {
 	AttachBinding(ctx context.Context, claimID string, binding Binding, consumedAt time.Time, audit AuditEvent) error
 
 	CreateSession(ctx context.Context, family SessionFamily, audit AuditEvent) error
+	GetSession(ctx context.Context, sessionID string) (SessionFamily, bool, error)
 	GetSessionByAccessSelector(ctx context.Context, selector string) (AccessSession, bool, error)
 	GetSessionByRefreshSelector(ctx context.Context, selector string) (RefreshSession, bool, error)
 	ListSessions(ctx context.Context, userID string, page PageRequest) (SessionPage, error)

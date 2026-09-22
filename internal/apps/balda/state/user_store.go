@@ -213,6 +213,68 @@ func (s *sqlUserStore) ChangeCredential(
 	return nil
 }
 
+func (s *sqlUserStore) ChangeCredentialAndCreateSession(ctx context.Context, change usercmd.CredentialSessionChange) error {
+	if strings.TrimSpace(change.UserID) == "" || change.Secret.UserID != change.UserID || strings.TrimSpace(change.Secret.PasswordHash) == "" ||
+		change.Credential.Version != change.ExpectedCredentialVersion+1 || change.RevokedAt.IsZero() || !change.Credential.State.Valid() ||
+		(change.Credential.State == usercmd.CredentialStateTemporary) != change.Credential.MustChange ||
+		change.Session.UserID != change.UserID || change.Session.CredentialVersion != change.Credential.Version ||
+		change.Session.Assurance != usercmd.SessionAssuranceNormal {
+		return usercmd.ErrInvalid
+	}
+	if err := usercmd.ValidateSessionFamily(change.Session); err != nil {
+		return err
+	}
+	if err := usercmd.ValidateAuditEvent(change.CredentialAudit); err != nil {
+		return err
+	}
+	if err := usercmd.ValidateAuditEvent(change.SessionAudit); err != nil {
+		return err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return s.wrapError("begin credential and session change", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var userVersion, credentialVersion uint64
+	err = tx.QueryRowContext(ctx, s.bind(`
+		SELECT version, credential_version FROM balda_users WHERE user_id = ?`)+s.forUpdate, change.UserID).
+		Scan(&userVersion, &credentialVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return usercmd.ErrNotFound
+	}
+	if err != nil {
+		return s.wrapError("load user credential and session", err)
+	}
+	if userVersion != change.ExpectedUserVersion || credentialVersion != change.ExpectedCredentialVersion {
+		return usercmd.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, s.bind(`
+		UPDATE balda_users SET password_hash = ?, credential_state = ?, must_change = ?,
+			credential_version = ?, version = version + 1, updated_at = ?
+		WHERE user_id = ? AND version = ? AND credential_version = ?`),
+		change.Secret.PasswordHash, change.Credential.State, boolInt(change.Credential.MustChange), change.Credential.Version,
+		formatUserTime(change.RevokedAt), change.UserID, change.ExpectedUserVersion, change.ExpectedCredentialVersion,
+	); err != nil {
+		return s.mutationError("change credential with session", err)
+	}
+	if err := s.revokeUserSessionsTx(ctx, tx, change.UserID, change.RevokedAt, "credential changed"); err != nil {
+		return err
+	}
+	if err := s.insertSessionTx(ctx, tx, change.Session); err != nil {
+		return err
+	}
+	if err := s.insertAudit(ctx, tx, change.CredentialAudit); err != nil {
+		return err
+	}
+	if err := s.insertAudit(ctx, tx, change.SessionAudit); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return s.wrapError("commit credential and session change", err)
+	}
+	return nil
+}
+
 func (s *sqlUserStore) GetUser(ctx context.Context, userID string) (usercmd.User, bool, error) {
 	return s.getUser(ctx, `u.user_id = ?`, userID)
 }
@@ -410,24 +472,8 @@ func (s *sqlUserStore) CreateSession(ctx context.Context, family usercmd.Session
 		credentialVersion != family.CredentialVersion {
 		return usercmd.ErrSessionUnavailable
 	}
-	if _, err := tx.ExecContext(ctx, s.bind(`
-		INSERT INTO balda_backoffice_sessions (
-			session_id, user_id, assurance, credential_version,
-			access_selector, access_verifier_digest, csrf_verifier_digest,
-			created_at, last_seen_at, access_expires_at, refresh_expires_at,
-			revoked_at, revocation_reason, version
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		family.ID, family.UserID, family.Assurance, family.CredentialVersion,
-		family.Access.Selector, family.Access.VerifierDigest, family.CSRFVerifierDigest,
-		formatUserTime(family.CreatedAt), formatUserTime(family.LastSeenAt), formatUserTime(family.Access.ExpiresAt),
-		formatUserTime(family.RefreshExpiresAt), formatOptionalUserTime(family.RevokedAt), family.RevocationReason, family.Version,
-	); err != nil {
-		return s.mutationError("insert session family", err)
-	}
-	for _, token := range family.RefreshTokens {
-		if err := s.insertRefreshToken(ctx, tx, family.ID, token); err != nil {
-			return err
-		}
+	if err := s.insertSessionTx(ctx, tx, family); err != nil {
+		return err
 	}
 	if err := s.insertAudit(ctx, tx, audit); err != nil {
 		return err
@@ -490,7 +536,7 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 		return usercmd.SessionPage{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, s.bind(`
-		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at
+		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version
 		FROM balda_backoffice_sessions
 		WHERE user_id = ? AND session_id > ? ORDER BY session_id LIMIT ?`), userID, page.AfterID, limit+1)
 	if err != nil {
@@ -501,7 +547,7 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 	for rows.Next() {
 		var summary usercmd.SessionSummary
 		var assurance, createdAt, lastSeenAt, expiresAt, revokedAt string
-		if err := rows.Scan(&summary.ID, &assurance, &createdAt, &lastSeenAt, &expiresAt, &revokedAt); err != nil {
+		if err := rows.Scan(&summary.ID, &assurance, &createdAt, &lastSeenAt, &expiresAt, &revokedAt, &summary.Version); err != nil {
 			return usercmd.SessionPage{}, s.wrapError("scan user session", err)
 		}
 		summary.Assurance = usercmd.SessionAssurance(assurance)
@@ -528,6 +574,14 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 		result.NextAfterID = result.Sessions[len(result.Sessions)-1].ID
 	}
 	return result, nil
+}
+
+// GetSession loads one browser session family by its stable identifier.
+func (s *sqlUserStore) GetSession(ctx context.Context, sessionID string) (usercmd.SessionFamily, bool, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return usercmd.SessionFamily{}, false, usercmd.ErrInvalid
+	}
+	return s.loadSessionFamily(ctx, s.db, `session_id = ?`, sessionID)
 }
 
 func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.RefreshRotation) (usercmd.RefreshRotationResult, error) {
@@ -969,6 +1023,29 @@ func (s *sqlUserStore) insertRefreshToken(ctx context.Context, tx *sql.Tx, sessi
 	)
 	if err != nil {
 		return s.mutationError("insert refresh generation", err)
+	}
+	return nil
+}
+
+func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family usercmd.SessionFamily) error {
+	if _, err := tx.ExecContext(ctx, s.bind(`
+		INSERT INTO balda_backoffice_sessions (
+			session_id, user_id, assurance, credential_version,
+			access_selector, access_verifier_digest, csrf_verifier_digest,
+			created_at, last_seen_at, access_expires_at, refresh_expires_at,
+			revoked_at, revocation_reason, version
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		family.ID, family.UserID, family.Assurance, family.CredentialVersion,
+		family.Access.Selector, family.Access.VerifierDigest, family.CSRFVerifierDigest,
+		formatUserTime(family.CreatedAt), formatUserTime(family.LastSeenAt), formatUserTime(family.Access.ExpiresAt),
+		formatUserTime(family.RefreshExpiresAt), formatOptionalUserTime(family.RevokedAt), family.RevocationReason, family.Version,
+	); err != nil {
+		return s.mutationError("insert session family", err)
+	}
+	for _, token := range family.RefreshTokens {
+		if err := s.insertRefreshToken(ctx, tx, family.ID, token); err != nil {
+			return err
+		}
 	}
 	return nil
 }
