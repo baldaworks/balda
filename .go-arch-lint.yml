@@ -104,6 +104,17 @@ components:
       - internal/apps/balda/turncmd
       - internal/apps/balda/usageview
 
+  # Canonical user, credential, binding, session, and audit contracts. These
+  # values stay independent of storage, HTTP, and concrete transports.
+  user_contracts:
+    in:
+      - internal/apps/balda/usercmd
+
+  # System-wide user policy shared by Backoffice and bot authorization.
+  user_application:
+    in:
+      - internal/apps/balda/users
+
   # Transport-neutral delivery formatting registry.
   neutral_registry:
     in:
@@ -340,6 +351,17 @@ deps:
     deepScan: false
     anyVendorDeps: true
 
+  user_contracts:
+    mayDependOn:
+      - user_contracts
+    anyVendorDeps: false
+
+  user_application:
+    mayDependOn:
+      - user_contracts
+      - user_application
+    anyVendorDeps: false
+
   # Transport-neutral delivery formatting registry. Provider renderers are
   # injected into the registry at composition time; deep-scan is disabled here
   # to prevent inverted upward edges while strictly prohibiting direct imports
@@ -356,6 +378,8 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - session_memory_core
       - session_memory_app
@@ -415,6 +439,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - user_contracts
       - neutral_registry
       - application
       - domain
@@ -433,6 +458,8 @@ deps:
   ingress_wiring:
     mayDependOn:
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - delivery
       - telegram_transport
@@ -457,6 +484,8 @@ deps:
   command_wiring:
     mayDependOn:
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - application
       - domain
@@ -565,6 +594,7 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - user_contracts
       - session_memory_core
       - session_memory_contracts
       - storage
@@ -581,6 +611,8 @@ deps:
     mayDependOn:
       - foundation
       - contracts
+      - user_contracts
+      - user_application
       - neutral_registry
       - session_memory_core
       - session_memory_app
