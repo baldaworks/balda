@@ -255,7 +255,8 @@ func (h *Handler) handleExistingOwnerState(ctx context.Context, env actorlayer.E
 	}
 
 	if h.collaboratorStore != nil {
-		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, p.Principal); err != nil {
+		subject := userSubject(p.Transport, p.Principal)
+		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, subject); err != nil {
 			h.logger.Warn().Err(err).Str("principal", p.Principal).Msg("failed to check collaborator during /start")
 		} else if ok {
 			return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "You are already a bot collaborator.", "start-already-collaborator")
@@ -339,7 +340,8 @@ func (h *Handler) handleInvite(ctx context.Context, env actorlayer.Envelope, p c
 	}
 
 	if h.collaboratorStore != nil {
-		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, p.Principal); err != nil {
+		subject := userSubject(p.Transport, p.Principal)
+		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, subject); err != nil {
 			h.logger.Warn().Err(err).Str("principal", p.Principal).Msg("failed to check collaborator during invite")
 		} else if ok {
 			return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "You are already a collaborator.", "start-already-collaborator")
@@ -373,7 +375,7 @@ func (h *Handler) handleInvite(ctx context.Context, env actorlayer.Envelope, p c
 	}
 
 	collaborator := auth.Collaborator{
-		UserID:  p.Principal,
+		UserID:  userSubject(p.Transport, p.Principal),
 		AddedBy: invite.CreatedBy,
 		AddedAt: time.Now(),
 	}

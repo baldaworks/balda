@@ -115,6 +115,16 @@ components:
     in:
       - internal/apps/balda/users
 
+  # Bounded adaptive password primitives shared by migration and Backoffice security.
+  user_security:
+    in:
+      - internal/apps/balda/userpassword
+
+  # Explicit forward-only conversion from legacy authorization state.
+  user_migration:
+    in:
+      - internal/apps/balda/usermigration
+
   # Transport-neutral delivery formatting registry.
   neutral_registry:
     in:
@@ -361,6 +371,19 @@ deps:
       - user_contracts
       - user_application
     anyVendorDeps: false
+
+  user_security:
+    mayDependOn:
+      - user_security
+    anyVendorDeps: true
+
+  user_migration:
+    mayDependOn:
+      - contracts
+      - user_contracts
+      - user_security
+      - user_migration
+    anyVendorDeps: true
 
   # Transport-neutral delivery formatting registry. Provider renderers are
   # injected into the registry at composition time; deep-scan is disabled here

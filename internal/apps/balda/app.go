@@ -615,13 +615,13 @@ func Module(
 			}
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
-			return auth.NewOwnerStore(provider.AppKV())
+			return auth.NewCanonicalOwnerStore(provider.Users())
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
 			return auth.NewDestinationStore(provider.AppKV())
 		}),
-		fx.Provide(func(destStore *auth.DestinationStore, ownerStore *auth.OwnerStore) envelopetarget.DestinationResolver {
-			return auth.NewDestinationResolver(destStore, ownerStore)
+		fx.Provide(func(destStore *auth.DestinationStore) envelopetarget.DestinationResolver {
+			return auth.NewDestinationResolver(destStore)
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
@@ -633,7 +633,7 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) *auth.CollaboratorStore {
 			// Wrap the state.CollaboratorStore interface in *auth.CollaboratorStore
 			// The wrapper delegates to the underlying store implementation
-			return auth.NewCollaboratorStore(provider.Collaborators())
+			return auth.NewCanonicalCollaboratorStore(provider.Users())
 		}),
 		fx.Provide(func(reg *mcpregistry.MapRegistry, reviewer *permissions.Service) *agentfactory.Factory {
 			return agentfactory.New(

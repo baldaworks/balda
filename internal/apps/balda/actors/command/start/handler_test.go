@@ -552,7 +552,7 @@ func TestStartHandler_InviteFlow(t *testing.T) {
 		if err := h.Handle(context.Background(), env, payload); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := collaborators.collaborators["303"]; !ok {
+		if _, ok := collaborators.collaborators["telegram:303"]; !ok {
 			t.Fatal("collaborator 303 was not added")
 		}
 		if text := dispatcher.lastText(t); !strings.Contains(text, "Welcome! You are now a bot collaborator.") {
@@ -589,7 +589,7 @@ func TestStartHandler_InviteFlow(t *testing.T) {
 		owners := newFakeOwnerStore()
 		_, _ = owners.RegisterOwner(101, 9001)
 		collaborators := newFakeCollaboratorStore()
-		collaborators.collaborators["303"] = &auth.Collaborator{UserID: "303"}
+		collaborators.collaborators["telegram:303"] = &auth.Collaborator{UserID: "telegram:303"}
 		h := New(owners, nil, collaborators, nil, nil, dispatcher, "secret-123", zerolog.Nop())
 		env := actorlayer.Envelope{ID: "env-1"}
 		payload := commandcmd.Payload{

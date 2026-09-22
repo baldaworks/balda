@@ -215,6 +215,10 @@ const (
 	AuditActionSessionRevoked AuditAction = "session.revoked"
 	// AuditActionBindingAttached records verified transport-binding attachment.
 	AuditActionBindingAttached AuditAction = "user.binding.attached"
+	// AuditActionBindingClaimCreated records creation of a scoped onboarding claim.
+	AuditActionBindingClaimCreated AuditAction = "user.binding.claim.created"
+	// AuditActionUserMigrated records canonical creation from legacy authorization state.
+	AuditActionUserMigrated AuditAction = "user.migrated"
 )
 
 // AuditOutcome is the security event result.

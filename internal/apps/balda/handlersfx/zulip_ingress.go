@@ -782,12 +782,12 @@ func canAccessZulipCollaboratorScope(ctx context.Context, ownerStore *auth.Owner
 	if isNilZulipInterface(collaboratorStore) {
 		return false, nil
 	}
-	_, found, err := collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
+	_, found, err := collaboratorStore.GetCollaborator(ctx, auth.ZulipSubject(int(userID)))
 	return found, err
 }
 
 func consumeZulipInvite(ctx context.Context, ownerStore *auth.OwnerStore, inviteStore *auth.InviteStore, collaboratorStore *auth.CollaboratorStore, senderID int, token string) (string, error) {
-	userIDStr := fmt.Sprintf("%d", senderID)
+	userIDStr := auth.ZulipSubject(senderID)
 	if isNilZulipInterface(ownerStore) {
 		return "", fmt.Errorf("owner store is unavailable")
 	}

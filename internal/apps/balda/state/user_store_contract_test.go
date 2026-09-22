@@ -339,6 +339,65 @@ func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
 	}
 }
 
+func checkUserStoreMigrationBatch(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Users()
+	now := time.Date(2026, 9, 23, 5, 0, 0, 0, time.UTC)
+	admin := contractUser("migrated-admin", "telegram-101", true, now)
+	admin.Credential = usercmd.Credential{State: usercmd.CredentialStateTemporary, MustChange: true, Version: 1}
+	binding := usercmd.Binding{
+		ID: "migrated-binding", UserID: admin.ID, ChannelType: "telegram", Principal: "101",
+		DisplayName: "Legacy owner", Provenance: "legacy-owner", CreatedAt: now, UpdatedAt: now,
+	}
+	migration := usercmd.UserMigration{
+		ID: "migration-1", SourceFingerprint: "fingerprint-1", SourceCountsJSON: `{"bindings":1,"users":1}`,
+		PrimaryUserID: admin.ID, CompletedAt: now, GeneratedBindingCount: 1,
+		Users: []usercmd.MigrationUser{{
+			User: admin, Secret: usercmd.CredentialSecret{UserID: admin.ID, PasswordHash: "adaptive-hash"}, Binding: &binding,
+			Audits: []usercmd.AuditEvent{contractAudit("audit-migration", usercmd.AuditActionUserMigrated, admin.ID, now)},
+		}},
+	}
+	rollbackMigration := migration
+	rollbackMigration.Users = append([]usercmd.MigrationUser(nil), migration.Users...)
+	rollbackMigration.ID = "migration-rollback"
+	rollbackMigration.SourceFingerprint = "fingerprint-rollback"
+	rollbackMigration.Users[0].Audits = []usercmd.AuditEvent{
+		contractAudit("audit-duplicate", usercmd.AuditActionUserMigrated, admin.ID, now),
+		contractAudit("audit-duplicate", usercmd.AuditActionUserMigrated, binding.ID, now),
+	}
+	if _, err := store.ApplyUserMigration(t.Context(), rollbackMigration); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("ApplyUserMigration(duplicate audit) error = %v, want ErrConflict", err)
+	}
+	if _, found, err := store.GetUser(t.Context(), admin.ID); err != nil || found {
+		t.Fatalf("rolled-back migrated user found=%t error=%v", found, err)
+	}
+	marked, err := store.UserMigrationApplied(t.Context(), rollbackMigration.SourceFingerprint)
+	if err != nil || marked {
+		t.Fatalf("rolled-back migration marker=%t error=%v", marked, err)
+	}
+	applied, err := store.ApplyUserMigration(t.Context(), migration)
+	if err != nil || !applied {
+		t.Fatalf("ApplyUserMigration() = %t, %v", applied, err)
+	}
+	marked, err = store.UserMigrationApplied(t.Context(), migration.SourceFingerprint)
+	if err != nil || !marked {
+		t.Fatalf("UserMigrationApplied() = %t, %v", marked, err)
+	}
+	bound, found, err := store.GetUserByBinding(t.Context(), "telegram", "101")
+	if err != nil || !found || bound.ID != admin.ID || bound.Credential.State != usercmd.CredentialStateTemporary {
+		t.Fatalf("GetUserByBinding() = %+v, %t, %v", bound, found, err)
+	}
+	sessions, err := store.ListSessions(t.Context(), admin.ID, usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	if err != nil || len(sessions.Sessions) != 0 {
+		t.Fatalf("ListSessions(migrated user) = %+v, %v", sessions, err)
+	}
+	applied, err = store.ApplyUserMigration(t.Context(), migration)
+	if err != nil || applied {
+		t.Fatalf("ApplyUserMigration(repeated) = %t, %v", applied, err)
+	}
+}
+
 func contractUser(id, username string, primary bool, now time.Time) usercmd.User {
 	return usercmd.User{
 		ID: id, DisplayName: id, Username: username, NormalizedUsername: username,

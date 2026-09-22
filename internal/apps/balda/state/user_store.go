@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -744,6 +745,132 @@ func (s *sqlUserStore) ListAuditEvents(ctx context.Context, page usercmd.PageReq
 		result.NextAfterID = result.Events[len(result.Events)-1].ID
 	}
 	return result, nil
+}
+
+func (s *sqlUserStore) UserMigrationApplied(ctx context.Context, sourceFingerprint string) (bool, error) {
+	if strings.TrimSpace(sourceFingerprint) == "" {
+		return false, usercmd.ErrInvalid
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, s.bind(`
+		SELECT COUNT(*) FROM balda_user_migrations WHERE source_fingerprint = ?`), sourceFingerprint).Scan(&count); err != nil {
+		return false, s.wrapError("check user migration marker", err)
+	}
+	return count != 0, nil
+}
+
+func (s *sqlUserStore) ApplyUserMigration(ctx context.Context, migration usercmd.UserMigration) (bool, error) {
+	if err := validateUserMigration(migration); err != nil {
+		return false, err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return false, s.wrapError("begin user migration", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var count int
+	if err := tx.QueryRowContext(ctx, s.bind(`
+		SELECT COUNT(*) FROM balda_user_migrations WHERE source_fingerprint = ?`),
+		migration.SourceFingerprint,
+	).Scan(&count); err != nil {
+		return false, s.wrapError("load user migration marker", err)
+	}
+	if count != 0 {
+		if err := tx.Commit(); err != nil {
+			return false, s.wrapError("commit repeated user migration", err)
+		}
+		return false, nil
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM balda_users`).Scan(&count); err != nil {
+		return false, s.wrapError("count canonical users before migration", err)
+	}
+	if count != 0 {
+		return false, usercmd.ErrConflict
+	}
+	for _, entry := range migration.Users {
+		user := entry.User
+		if _, err := tx.ExecContext(ctx, s.bind(`
+			INSERT INTO balda_users (
+				user_id, display_name, username, normalized_username, status, role,
+				password_hash, credential_state, must_change, is_primary,
+				credential_version, version, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			user.ID, user.DisplayName, user.Username, user.NormalizedUsername, user.Status, user.Role,
+			entry.Secret.PasswordHash, user.Credential.State, boolInt(user.Credential.MustChange), boolInt(user.Primary),
+			user.Credential.Version, user.Version, formatUserTime(user.CreatedAt), formatUserTime(user.UpdatedAt),
+		); err != nil {
+			return false, s.mutationError("insert migrated user", err)
+		}
+		if entry.Binding != nil {
+			binding := *entry.Binding
+			if _, err := tx.ExecContext(ctx, s.bind(`
+				INSERT INTO balda_user_bindings
+					(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+				binding.ID, binding.UserID, binding.ChannelType, binding.Principal,
+				binding.DisplayName, binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
+			); err != nil {
+				return false, s.mutationError("insert migrated binding", err)
+			}
+		}
+		for _, audit := range entry.Audits {
+			if err := s.insertAudit(ctx, tx, audit); err != nil {
+				return false, err
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, s.bind(`
+		INSERT INTO balda_user_migrations (
+			migration_id, source_fingerprint, source_counts_json,
+			generated_user_count, generated_binding_count, primary_user_id, completed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?)`),
+		migration.ID, migration.SourceFingerprint, migration.SourceCountsJSON,
+		len(migration.Users), migration.GeneratedBindingCount, migration.PrimaryUserID,
+		formatUserTime(migration.CompletedAt),
+	); err != nil {
+		return false, s.mutationError("insert user migration marker", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, s.wrapError("commit user migration", err)
+	}
+	return true, nil
+}
+
+func validateUserMigration(migration usercmd.UserMigration) error {
+	if strings.TrimSpace(migration.ID) == "" || strings.TrimSpace(migration.SourceFingerprint) == "" ||
+		strings.TrimSpace(migration.PrimaryUserID) == "" || migration.CompletedAt.IsZero() || len(migration.Users) == 0 ||
+		!json.Valid([]byte(migration.SourceCountsJSON)) {
+		return usercmd.ErrInvalid
+	}
+	primaryCount := 0
+	bindingCount := 0
+	for _, entry := range migration.Users {
+		if entry.User.Binding != nil || entry.Secret.UserID != entry.User.ID || strings.TrimSpace(entry.Secret.PasswordHash) == "" ||
+			entry.User.Credential.State != usercmd.CredentialStateTemporary || !entry.User.Credential.MustChange {
+			return usercmd.ErrInvalid
+		}
+		if entry.User.Primary {
+			primaryCount++
+			if entry.User.ID != migration.PrimaryUserID {
+				return usercmd.ErrInvalid
+			}
+		}
+		if entry.Binding != nil {
+			bindingCount++
+			if entry.Binding.UserID != entry.User.ID {
+				return usercmd.ErrInvalid
+			}
+		}
+		for _, audit := range entry.Audits {
+			if err := usercmd.ValidateAuditEvent(audit); err != nil {
+				return err
+			}
+		}
+	}
+	if primaryCount != 1 || bindingCount != migration.GeneratedBindingCount {
+		return usercmd.ErrInvalid
+	}
+	return nil
 }
 
 const userSelectSQL = `

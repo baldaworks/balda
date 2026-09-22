@@ -29,7 +29,7 @@ func TestDestinationResolver_SingleDestination(t *testing.T) {
 		t.Fatalf("RegisterDestination() error = %v", err)
 	}
 
-	resolver := NewDestinationResolver(destStore, nil)
+	resolver := NewDestinationResolver(destStore)
 	res, err := resolver.ResolveAlias(context.Background(), "owner")
 	if err != nil {
 		t.Fatalf("ResolveAlias(owner) error = %v", err)
@@ -71,7 +71,7 @@ func TestDestinationResolver_MultiChannel_WithDefault(t *testing.T) {
 		Principal:   "slackagent:T1:U1",
 	})
 
-	resolver := NewDestinationResolver(destStore, nil)
+	resolver := NewDestinationResolver(destStore)
 	res, err := resolver.ResolveAlias(ctx, "owner")
 	if err != nil {
 		t.Fatalf("ResolveAlias(owner) error = %v", err)
@@ -117,7 +117,7 @@ func TestDestinationResolver_MultiChannel_Ambiguity(t *testing.T) {
 		IsDefault:   false,
 	})
 
-	resolver := NewDestinationResolver(destStore, nil)
+	resolver := NewDestinationResolver(destStore)
 	_, err = resolver.ResolveAlias(ctx, "owner")
 	if err == nil {
 		t.Fatal("expected AmbiguousDestinationError, got nil")
@@ -144,37 +144,10 @@ func TestDestinationResolver_MultiChannel_Ambiguity(t *testing.T) {
 	}
 }
 
-func TestDestinationResolver_LegacyFallback(t *testing.T) {
-	t.Parallel()
-
-	ownerStore, err := NewOwnerStore(newMemoryOwnerKV())
-	if err != nil {
-		t.Fatalf("NewOwnerStore() error = %v", err)
-	}
-	_, _ = ownerStore.RegisterOwner(202, 8080)
-
-	destStore, _ := NewDestinationStore(newMemoryOwnerKV())
-
-	resolver := NewDestinationResolver(destStore, ownerStore)
-	res, err := resolver.ResolveAlias(context.Background(), "owner")
-	if err != nil {
-		t.Fatalf("ResolveAlias(owner) fallback error = %v", err)
-	}
-	if res.Locator.ChannelType != "telegram" {
-		t.Fatalf("res.Locator.ChannelType = %q, want telegram", res.Locator.ChannelType)
-	}
-	if res.Locator.AddressKey != "8080:0" {
-		t.Fatalf("res.Locator.AddressKey = %q, want 8080:0", res.Locator.AddressKey)
-	}
-	if res.Principal != "tg-202" {
-		t.Fatalf("res.Principal = %q, want tg-202", res.Principal)
-	}
-}
-
 func TestDestinationResolver_NotFound(t *testing.T) {
 	t.Parallel()
 
-	resolver := NewDestinationResolver(nil, nil)
+	resolver := NewDestinationResolver(nil)
 	_, err := resolver.ResolveAlias(context.Background(), "owner")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -196,7 +169,7 @@ func TestResolve_WithDestinationResolver(t *testing.T) {
 		Principal:   "tg-555",
 	})
 
-	resolver := NewDestinationResolver(destStore, nil)
+	resolver := NewDestinationResolver(destStore)
 	resolved, err := envelopetarget.Resolve(context.Background(), resolver, envelopetarget.Target{
 		Target: "alias",
 		Key:    "owner",
