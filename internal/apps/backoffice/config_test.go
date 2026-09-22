@@ -61,6 +61,10 @@ func TestProjectConfiguredCapabilitiesOmitsDisabledAndSecrets(t *testing.T) {
 			t.Fatalf("webhook route count = %d, want 1", capability.RouteCount)
 		}
 	}
+	cards := ProjectCapabilityCards(cfg)
+	if len(cards) != len(projection) || cards[0].ID != projection[0].ID {
+		t.Fatalf("capability cards = %+v", cards)
+	}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		t.Fatal(err)

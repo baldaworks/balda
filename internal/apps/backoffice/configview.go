@@ -3,6 +3,8 @@ package backoffice
 import (
 	"sort"
 	"strings"
+
+	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 )
 
 // ConfiguredCapability is a secret-free read-only projection of one enabled integration.
@@ -14,6 +16,20 @@ type ConfiguredCapability struct {
 	Endpoint   string
 	RouteCount int
 	Streaming  bool
+}
+
+// ProjectCapabilityCards converts the safe configured projection into Web UI cards.
+func ProjectCapabilityCards(cfg BaldaConfig) []webui.CapabilityCard {
+	configured := ProjectConfiguredCapabilities(cfg)
+	cards := make([]webui.CapabilityCard, 0, len(configured))
+	for _, capability := range configured {
+		cards = append(cards, webui.CapabilityCard{
+			ID: capability.ID, Name: capability.Name, Mode: capability.Mode,
+			ListenAddr: capability.ListenAddr, Endpoint: capability.Endpoint,
+			RouteCount: capability.RouteCount, Streaming: capability.Streaming,
+		})
+	}
+	return cards
 }
 
 // ProjectConfiguredCapabilities returns only integrations enabled by resolved configuration.

@@ -1,0 +1,3 @@
+{{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
+  <div class="container-fluid py-3"><h1>Audit</h1><div class="table-responsive"><table class="table"><thead><tr><th scope="col">Time</th><th scope="col">Action</th><th scope="col">Outcome</th><th scope="col">Target</th><th scope="col">Reason</th></tr></thead><tbody>{{range .Audit}}<tr><td>{{.OccurredAt}}</td><td>{{.Action}}</td><td>{{.Outcome}}</td><td>{{.TargetType}}:{{.TargetID}}</td><td>{{.Reason}}</td></tr>{{else}}<tr><td colspan="5">No audit events.</td></tr>{{end}}</tbody></table></div></div>
+</main>{{end}}

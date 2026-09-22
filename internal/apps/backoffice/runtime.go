@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usermigration"
 )
@@ -30,6 +31,9 @@ type Runtime struct {
 
 // OpenRuntime opens exactly the resolved Balda backend and constructs Backoffice use cases.
 func OpenRuntime(ctx context.Context, config ResolvedConfig) (*Runtime, error) {
+	if err := webui.VerifyAssets(); err != nil {
+		return nil, fmt.Errorf("verify Backoffice frontend: %w", err)
+	}
 	provider, err := state.Open(ctx, config.Database)
 	if err != nil {
 		return nil, fmt.Errorf("open Backoffice state: %w", err)

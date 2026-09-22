@@ -135,6 +135,11 @@ components:
     in:
       - internal/apps/backoffice/security
 
+  # Embedded, secret-free Backoffice SSR models, templates, and static assets.
+  backoffice_webui:
+    in:
+      - internal/apps/backoffice/internal/webui
+
   # Transport-neutral delivery formatting registry.
   neutral_registry:
     in:
@@ -409,6 +414,7 @@ deps:
       - storage
       - infrastructure
       - backoffice_application
+      - backoffice_webui
     # Backoffice passes its local persistence port into the migration use case;
     # direct imports remain enforced without inverting constructor injection.
     deepScan: false
@@ -423,6 +429,12 @@ deps:
     # The storage and HTTP services are injected through security-owned narrow ports.
     deepScan: false
     anyVendorDeps: true
+
+  backoffice_webui:
+    mayDependOn:
+      - user_contracts
+      - backoffice_webui
+    anyVendorDeps: false
 
   # Transport-neutral delivery formatting registry. Provider renderers are
   # injected into the registry at composition time; deep-scan is disabled here

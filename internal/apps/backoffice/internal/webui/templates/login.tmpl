@@ -1,0 +1,16 @@
+{{define "content"}}<main id="main-content" class="login-page">
+  <section class="login-box" aria-labelledby="login-heading">
+    <div class="card card-outline card-primary">
+      <div class="card-header text-center"><h1 id="login-heading" class="h3 mb-0">Sign in</h1></div>
+      <div class="card-body">
+        {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
+        <form method="post" action="/login" hx-boost="false">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="mb-3"><label for="username" class="form-label">Username</label><input id="username" name="username" class="form-control" autocomplete="username" required autofocus></div>
+          <div class="mb-3"><label for="password" class="form-label">Password</label><input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required></div>
+          <button class="btn btn-primary w-100" type="submit">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>{{end}}

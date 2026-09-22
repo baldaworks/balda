@@ -1,0 +1,35 @@
+{{define "document"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/assets/vendor/adminlte/adminlte.min.css">
+  <link rel="stylesheet" href="/assets/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
+<a class="skip-link btn btn-primary" href="#main-content">Skip to main content</a>
+<div class="app-wrapper">
+  {{if .Navigation}}
+  <nav class="app-header navbar navbar-expand bg-body" aria-label="Utility navigation">
+    <div class="container-fluid"><a class="navbar-brand" href="/overview">Balda Backoffice</a></div>
+  </nav>
+  <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
+    <div class="sidebar-brand"><a href="/overview" class="brand-link">Balda</a></div>
+    <div class="sidebar-wrapper">
+      <nav aria-label="Primary navigation">
+        <ul class="nav sidebar-menu flex-column" data-lte-toggle="treeview" role="menu">
+          {{range .Navigation}}<li class="nav-item"><a class="nav-link{{if .Current}} active{{end}}" href="{{.Href}}" hx-boost="true" hx-target="#main-content" hx-push-url="true"{{if .Current}} aria-current="page"{{end}}><i class="nav-icon bi {{.Icon}}" aria-hidden="true"></i><span>{{.Label}}</span></a></li>{{end}}
+        </ul>
+      </nav>
+    </div>
+  </aside>
+  {{end}}
+  <div class="app-main">{{template "content" .}}</div>
+</div>
+<script src="/assets/vendor/htmx/htmx.min.js"></script>
+<script src="/assets/vendor/adminlte/adminlte.min.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>{{end}}

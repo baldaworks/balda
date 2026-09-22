@@ -1,0 +1,37 @@
+{
+  "dependencies": [
+    {
+      "name": "AdminLTE",
+      "version": "4.9.1",
+      "license": "MIT",
+      "source": "https://cdn.jsdelivr.net/npm/admin-lte@4.9.1/",
+      "files": [
+        {"path": "adminlte/adminlte.min.css", "sha256": "0934e1e6298dd4666440703dd613fdbb1a3c5f1554467923c29464ef4a5682ea"},
+        {"path": "adminlte/adminlte.min.js", "sha256": "922181e2098af61f2c6d8e997b1acccf37bdfa27c9dd0c9e20d15282ae31eddb"},
+        {"path": "adminlte/LICENSE", "sha256": "9e8b0d4e7ce8c13e67a2373d5094910c263fd95b1e49bdf45dc2a9813be5996b"}
+      ]
+    },
+    {
+      "name": "HTMX",
+      "version": "2.0.10",
+      "license": "0BSD",
+      "source": "https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/",
+      "files": [
+        {"path": "htmx/htmx.min.js", "sha256": "71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de"},
+        {"path": "htmx/LICENSE", "sha256": "d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38"}
+      ]
+    },
+    {
+      "name": "Bootstrap Icons",
+      "version": "1.13.1",
+      "license": "MIT",
+      "source": "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/",
+      "files": [
+        {"path": "bootstrap-icons/bootstrap-icons.min.css", "sha256": "a5d6387a32ca3baec4d02336b5b3edab50c9dd518355576a011ea3dd9c1d884e"},
+        {"path": "bootstrap-icons/fonts/bootstrap-icons.woff2", "sha256": "6c75710364a1ca5604267716f6d28997b26319fdb078cf11e0b42ab66ff2ea61"},
+        {"path": "bootstrap-icons/fonts/bootstrap-icons.woff", "sha256": "f55513b7b591cb84a3b87ff0e34ea24d4831d6fedc22e54b911ca64b5b544a15"},
+        {"path": "bootstrap-icons/LICENSE", "sha256": "0fb3e11bd57e896c5a512afd64864d28a37de45d19835016c87ca1ad19ead969"}
+      ]
+    }
+  ]
+}

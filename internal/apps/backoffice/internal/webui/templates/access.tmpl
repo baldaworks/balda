@@ -1,0 +1,7 @@
+{{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
+  <div class="container-fluid py-3"><h1>Access</h1>
+    <div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Binding</th></tr></thead><tbody>
+    {{range .Users}}<tr><td><strong>{{.DisplayName}}</strong><br><span class="text-body-secondary">{{.Username}}</span></td><td>{{.Role}}</td><td>{{.Status}}</td><td>{{with .Binding}}{{.ChannelType}}:{{.Principal}}{{else}}Unbound{{end}}</td></tr>{{else}}<tr><td colspan="4">No users.</td></tr>{{end}}
+    </tbody></table></div>
+  </div>
+</main>{{end}}

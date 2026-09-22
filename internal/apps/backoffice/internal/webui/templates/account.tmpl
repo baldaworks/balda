@@ -1,0 +1,6 @@
+{{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
+  <div class="container-fluid py-3"><h1>Account</h1>
+    {{with .User}}<section aria-labelledby="profile-heading"><h2 id="profile-heading" class="h4">Profile</h2><dl class="row"><dt class="col-sm-3">Display name</dt><dd class="col-sm-9">{{.DisplayName}}</dd><dt class="col-sm-3">Username</dt><dd class="col-sm-9">{{.Username}}</dd><dt class="col-sm-3">Role</dt><dd class="col-sm-9">{{.Role}}</dd><dt class="col-sm-3">Binding</dt><dd class="col-sm-9">{{with .Binding}}{{.ChannelType}}:{{.Principal}}{{else}}Unbound{{end}}</dd></dl></section>{{end}}
+    <section aria-labelledby="sessions-heading"><h2 id="sessions-heading" class="h4">Browser sessions</h2><div class="table-responsive"><table class="table"><thead><tr><th scope="col">Created</th><th scope="col">Last seen</th><th scope="col">Expires</th><th scope="col">Assurance</th></tr></thead><tbody>{{range .Sessions}}<tr><td>{{.CreatedAt}}</td><td>{{.LastSeenAt}}</td><td>{{.ExpiresAt}}</td><td>{{.Assurance}}{{if .Current}} <span class="badge text-bg-primary">Current</span>{{end}}</td></tr>{{else}}<tr><td colspan="4">No sessions.</td></tr>{{end}}</tbody></table></div></section>
+  </div>
+</main>{{end}}
