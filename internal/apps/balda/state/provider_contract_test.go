@@ -25,6 +25,10 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("UserStoreCanonicalLifecycle", func(t *testing.T) { checkUserStoreCanonicalLifecycle(t, factory(t)) })
+	t.Run("UserStoreRefreshRotationAndReplay", func(t *testing.T) { checkUserStoreRefreshRotationAndReplay(t, factory(t)) })
+	t.Run("UserStoreCredentialAndSessionRevocation", func(t *testing.T) { checkUserStoreCredentialAndSessionRevocation(t, factory(t)) })
+	t.Run("UserStoreConcurrentRefreshReplay", func(t *testing.T) { checkUserStoreConcurrentRefreshReplay(t, factory(t)) })
 	t.Run("Collaborators", func(t *testing.T) { checkCollaborators(t, factory(t)) })
 	t.Run("Provider_KVRoundTrip", func(t *testing.T) { checkProvider_KVRoundTrip(t, factory(t)) })
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })

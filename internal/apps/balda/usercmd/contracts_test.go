@@ -62,4 +62,16 @@ func TestValidateAuditEvent(t *testing.T) {
 	if err := ValidateAuditEvent(event); !errors.Is(err, ErrInvalid) {
 		t.Errorf("missing action error = %v, want %v", err, ErrInvalid)
 	}
+
+	event.Action = AuditActionUserRoleChanged
+	event.Outcome = AuditOutcome("unsupported")
+	if err := ValidateAuditEvent(event); !errors.Is(err, ErrInvalid) {
+		t.Errorf("unsupported outcome error = %v, want %v", err, ErrInvalid)
+	}
+
+	event.Outcome = AuditOutcomeSucceeded
+	event.Reason = string(make([]byte, 1025))
+	if err := ValidateAuditEvent(event); !errors.Is(err, ErrInvalid) {
+		t.Errorf("oversized reason error = %v, want %v", err, ErrInvalid)
+	}
 }

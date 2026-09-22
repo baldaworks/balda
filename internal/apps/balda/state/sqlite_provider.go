@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
@@ -24,6 +25,7 @@ type sqliteProvider struct {
 	ingress        *sqliteSessionMemoryIngressOutboxStore
 	offset         *sqliteOffsetStore
 	plugins        *sqlitePluginStore
+	users          usercmd.Store
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -165,6 +167,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		ingress:        &sqliteSessionMemoryIngressOutboxStore{db: db},
 		offset:         &sqliteOffsetStore{db: db},
 		plugins:        &sqlitePluginStore{db: db},
+		users:          newSQLiteUserStore(db),
 	}
 	return provider, nil
 }
@@ -210,6 +213,8 @@ func (p *sqliteProvider) Collaborators() CollaboratorStore {
 }
 
 func (p *sqliteProvider) Plugins() PluginStore { return p.plugins }
+
+func (p *sqliteProvider) Users() usercmd.Store { return p.users }
 
 func (p *sqliteProvider) Close() error {
 	return p.db.Close()

@@ -227,6 +227,11 @@ const (
 	AuditOutcomeDenied AuditOutcome = "denied"
 )
 
+// Valid reports whether the audit outcome is supported.
+func (o AuditOutcome) Valid() bool {
+	return o == AuditOutcomeSucceeded || o == AuditOutcomeDenied
+}
+
 // AuditTargetType identifies the kind of object affected by a security event.
 type AuditTargetType string
 
@@ -237,7 +242,21 @@ const (
 	AuditTargetSession AuditTargetType = "session"
 	// AuditTargetBinding identifies a transport binding.
 	AuditTargetBinding AuditTargetType = "binding"
+	// AuditTargetSystem identifies a system-scoped security operation.
+	AuditTargetSystem AuditTargetType = "system"
+	// AuditTargetMigration identifies a canonical-user migration.
+	AuditTargetMigration AuditTargetType = "migration"
 )
+
+// Valid reports whether the audit target type is supported.
+func (t AuditTargetType) Valid() bool {
+	switch t {
+	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration:
+		return true
+	default:
+		return false
+	}
+}
 
 // AuditEvent is a secret-free immutable security event contract.
 type AuditEvent struct {
@@ -249,6 +268,7 @@ type AuditEvent struct {
 	TargetType     AuditTargetType
 	TargetID       string
 	Reason         string
+	RequestID      string
 	Source         string
 	CorrelationID  string
 	OccurredAt     time.Time
@@ -313,11 +333,16 @@ func ValidateSessionFamily(f SessionFamily) error {
 
 // ValidateAuditEvent checks the required safe audit envelope fields.
 func ValidateAuditEvent(event AuditEvent) error {
-	if strings.TrimSpace(event.ID) == "" || strings.TrimSpace(string(event.Action)) == "" || strings.TrimSpace(string(event.Outcome)) == "" {
+	if strings.TrimSpace(event.ID) == "" || strings.TrimSpace(string(event.Action)) == "" || !event.Outcome.Valid() {
 		return fmt.Errorf("%w: audit identity, action, and outcome are required", ErrInvalid)
 	}
-	if strings.TrimSpace(string(event.TargetType)) == "" || strings.TrimSpace(event.TargetID) == "" || strings.TrimSpace(event.Source) == "" {
+	if !event.TargetType.Valid() || strings.TrimSpace(event.TargetID) == "" || strings.TrimSpace(event.Source) == "" {
 		return fmt.Errorf("%w: audit target and source are required", ErrInvalid)
+	}
+	if len(event.ID) > 256 || len(event.Action) > 128 || len(event.ActorUserID) > 256 || len(event.ActorSessionID) > 256 ||
+		len(event.TargetID) > 256 || len(event.Reason) > 1024 || len(event.RequestID) > 256 ||
+		len(event.Source) > 128 || len(event.CorrelationID) > 256 {
+		return fmt.Errorf("%w: audit field exceeds its safe bound", ErrInvalid)
 	}
 	if event.OccurredAt.IsZero() {
 		return fmt.Errorf("%w: audit occurrence time is required", ErrInvalid)

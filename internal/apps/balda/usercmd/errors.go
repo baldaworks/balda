@@ -29,4 +29,6 @@ var (
 	ErrBootstrapSelectionRequired = errors.New("bootstrap user selection required")
 	// ErrCurrentSessionConfirmationRequired identifies accidental current-session revocation.
 	ErrCurrentSessionConfirmationRequired = errors.New("current session revocation confirmation required")
+	// ErrSessionUnavailable identifies an expired, revoked, stale, or otherwise unusable browser session.
+	ErrSessionUnavailable = errors.New("browser session unavailable")
 )

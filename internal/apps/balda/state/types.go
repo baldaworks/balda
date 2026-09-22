@@ -8,6 +8,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemorycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -89,6 +90,7 @@ type Provider interface {
 	PollingOffsetStore() PollingOffsetStore
 	Collaborators() CollaboratorStore
 	Plugins() PluginStore
+	Users() usercmd.Store
 	Close() error
 }
 

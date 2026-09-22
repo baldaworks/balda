@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	adksession "google.golang.org/adk/v2/session"
 )
 
@@ -22,6 +23,7 @@ type postgresProvider struct {
 	ingress        *postgresSessionMemoryIngressOutboxStore
 	offset         *postgresOffsetStore
 	plugins        *postgresPluginStore
+	users          usercmd.Store
 }
 
 var _ Provider = (*postgresProvider)(nil)
@@ -56,6 +58,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		ingress:        &postgresSessionMemoryIngressOutboxStore{db: db},
 		offset:         &postgresOffsetStore{db: db},
 		plugins:        &postgresPluginStore{db: db},
+		users:          newPostgresUserStore(db),
 	}, nil
 }
 
@@ -189,6 +192,8 @@ func (p *postgresProvider) Collaborators() CollaboratorStore {
 }
 
 func (p *postgresProvider) Plugins() PluginStore { return p.plugins }
+
+func (p *postgresProvider) Users() usercmd.Store { return p.users }
 
 func (p *postgresProvider) Close() error {
 	return p.db.Close()
