@@ -90,10 +90,11 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(
-			func(server *telegram.Server) appports.TransportLifecycleStage {
+			func(server *telegram.Server, adapter *telegram.Adapter) appports.TransportLifecycleStage {
 				return appports.TransportLifecycleStage{
 					Name:  "telegram ingress",
 					Start: server.Start,
+					Stop:  adapter.StopMediaGroups,
 				}
 			},
 			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),

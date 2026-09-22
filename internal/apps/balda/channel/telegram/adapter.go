@@ -172,6 +172,14 @@ func (a *Adapter) CollectMediaGroup(message MessageContext, dispatch func(contex
 	return a.mediaGroups.collect(message, dispatch)
 }
 
+// StopMediaGroups cancels pending media-group work and waits for active dispatches.
+func (a *Adapter) StopMediaGroups(ctx context.Context) error {
+	if a == nil || a.mediaGroups == nil {
+		return nil
+	}
+	return a.mediaGroups.stop(ctx)
+}
+
 func (a *Adapter) SetTypingThrottleInterval(interval time.Duration) {
 	if a == nil {
 		return
