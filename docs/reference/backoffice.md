@@ -16,6 +16,35 @@ Backoffice. Read it before changing `cmd/backoffice` or
 - `superadmin` is the interface name, not a new authorization role. Existing
   `administrator` and `operator` roles remain authoritative.
 
+## Process and configuration
+
+The separate `backoffice` binary reads the normal
+`.config/balda/config.yaml`, applies `BALDA_*` overrides, and opens exactly the
+database selected by `balda.database`. It does not start Balda channels or the
+agent runtime.
+
+Commands:
+
+- `backoffice validate` validates configuration, database access, legacy-user
+  migration state, and administrator bootstrap state.
+- `backoffice migrate-users --credentials-output <path>` performs the explicit
+  forward-only owner/collaborator migration. The output file is created once
+  with mode `0600`; it contains temporary plaintext credentials and must be
+  distributed and deleted as sensitive material.
+- `backoffice bootstrap-admin` reads a password from non-terminal stdin. It
+  creates the first unbound primary administrator on a fresh database, or
+  configures the selected credential-disabled administrator. Replacing a
+  usable credential requires `--reset` and revokes all existing browser
+  session families.
+- `backoffice serve` refuses pending legacy migration or incomplete
+  administrator bootstrap before binding the listener.
+
+The safe defaults are loopback `127.0.0.1:8095`, public URL
+`http://127.0.0.1:8095`, a 15-minute opaque access-token lifetime, and a
+12-hour rotating refresh-token family lifetime. `access_token_ttl` must be
+positive and shorter than `refresh_token_ttl`; both are bounded. A
+non-loopback listener requires an HTTPS public URL.
+
 ## Web UI foundation
 
 The foundation is:

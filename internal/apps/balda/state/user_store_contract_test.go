@@ -384,6 +384,10 @@ func checkUserStoreMigrationBatch(t *testing.T, open contractOpener) {
 	if err != nil || !marked {
 		t.Fatalf("UserMigrationApplied() = %t, %v", marked, err)
 	}
+	anyMarked, err := store.AnyUserMigrationApplied(t.Context())
+	if err != nil || !anyMarked {
+		t.Fatalf("AnyUserMigrationApplied() = %t, %v", anyMarked, err)
+	}
 	bound, found, err := store.GetUserByBinding(t.Context(), "telegram", "101")
 	if err != nil || !found || bound.ID != admin.ID || bound.Credential.State != usercmd.CredentialStateTemporary {
 		t.Fatalf("GetUserByBinding() = %+v, %t, %v", bound, found, err)

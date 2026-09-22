@@ -125,6 +125,11 @@ components:
     in:
       - internal/apps/balda/usermigration
 
+  # Separate Backoffice application behavior and composition-facing use cases.
+  backoffice_application:
+    in:
+      - internal/apps/backoffice
+
   # Transport-neutral delivery formatting registry.
   neutral_registry:
     in:
@@ -287,6 +292,7 @@ components:
   entrypoints:
     in:
       - cmd/balda
+      - cmd/backoffice
 
 deps:
   session_memory_core:
@@ -383,6 +389,24 @@ deps:
       - user_contracts
       - user_security
       - user_migration
+    # The caller supplies storage through the migration-owned narrow port;
+    # direct imports remain enforced without inverting that injection edge.
+    deepScan: false
+    anyVendorDeps: true
+
+  backoffice_application:
+    mayDependOn:
+      - contracts
+      - user_contracts
+      - user_application
+      - user_security
+      - user_migration
+      - storage
+      - infrastructure
+      - backoffice_application
+    # Backoffice passes its local persistence port into the migration use case;
+    # direct imports remain enforced without inverting constructor injection.
+    deepScan: false
     anyVendorDeps: true
 
   # Transport-neutral delivery formatting registry. Provider renderers are

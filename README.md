@@ -57,6 +57,11 @@ SQLite is the default state database. To select PostgreSQL, configure
 `balda.database.type: postgres`; launch remains `balda start`.
 See [database configuration and operations](docs/reference/database.md).
 
+The separate `backoffice` binary reuses the same configuration and database.
+Before serving it, migrate any legacy owner/collaborator records with an
+exclusive credentials-output file, or bootstrap the first administrator on a
+fresh database. See the [Backoffice process and security contract](docs/reference/backoffice.md).
+
 ## First run
 
 For Telegram, authenticate the owner with the command printed by `balda init`:

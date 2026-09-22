@@ -169,6 +169,19 @@ balda:
       password: ""
       sslmode: disable
 
+  # Separate Backoffice process. It reuses this database and never starts
+  # Balda channel runtimes.
+  backoffice:
+    # Loopback is the safe default. A non-loopback listener requires an HTTPS
+    # public_url (typically through a trusted reverse proxy).
+    listen_addr: "127.0.0.1:8095"
+    public_url: "http://127.0.0.1:8095"
+    # Opaque access credentials are short-lived. Single-use rotating refresh
+    # credentials retain a fixed, longer session-family deadline.
+    access_token_ttl: "15m"
+    refresh_token_ttl: "12h"
+    qa_ui: false
+
   sessions:
     # Conversation/session persistence:
     # - sqlite: durable runtime conversation state in the selected database (default)

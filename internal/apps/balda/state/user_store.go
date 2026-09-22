@@ -759,6 +759,14 @@ func (s *sqlUserStore) UserMigrationApplied(ctx context.Context, sourceFingerpri
 	return count != 0, nil
 }
 
+func (s *sqlUserStore) AnyUserMigrationApplied(ctx context.Context) (bool, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM balda_user_migrations`).Scan(&count); err != nil {
+		return false, s.wrapError("check any user migration marker", err)
+	}
+	return count != 0, nil
+}
+
 func (s *sqlUserStore) ApplyUserMigration(ctx context.Context, migration usercmd.UserMigration) (bool, error) {
 	if err := validateUserMigration(migration); err != nil {
 		return false, err

@@ -31,11 +31,11 @@ var migrationNamespace = uuid.MustParse("90af3ae2-6775-50e3-b4fc-54fc0d011a55")
 
 // LegacyOwner is the safe legacy owner state consumed by the explicit migration.
 type LegacyOwner struct {
-	UserID       int64
-	ChatID       int64
-	Subject      string
-	Bindings     []string
-	RegisteredAt time.Time
+	UserID       int64     `json:"user_id"`
+	ChatID       int64     `json:"chat_id,omitempty"`
+	Subject      string    `json:"subject,omitempty"`
+	Bindings     []string  `json:"bindings,omitempty"`
+	RegisteredAt time.Time `json:"registered_at"`
 }
 
 // Input contains the complete legacy snapshot and secure output target.

@@ -111,6 +111,7 @@ type Store interface {
 	DeleteExpiredSessions(ctx context.Context, before time.Time, limit int) (int, error)
 
 	ListAuditEvents(ctx context.Context, page PageRequest) (AuditPage, error)
+	AnyUserMigrationApplied(ctx context.Context) (bool, error)
 	UserMigrationApplied(ctx context.Context, sourceFingerprint string) (bool, error)
 	ApplyUserMigration(ctx context.Context, migration UserMigration) (bool, error)
 }
