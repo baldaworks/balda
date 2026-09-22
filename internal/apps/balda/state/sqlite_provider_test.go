@@ -13,7 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 36
+const expectedSQLiteMigrationVersion = 37
 
 func TestSQLiteProvider_SessionStoreUpsert_PopulatesTelegramAddressColumns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "state.db")

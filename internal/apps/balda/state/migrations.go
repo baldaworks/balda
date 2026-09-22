@@ -34,6 +34,13 @@ var requiredBaldaStateTables = []string{
 	"balda_plugin_revisions",
 	"balda_plugin_installs",
 	"balda_plugin_activation_intents",
+	"balda_users",
+	"balda_user_bindings",
+	"balda_user_binding_claims",
+	"balda_backoffice_sessions",
+	"balda_backoffice_refresh_tokens",
+	"balda_security_audit_events",
+	"balda_user_migrations",
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

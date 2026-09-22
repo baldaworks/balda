@@ -13,6 +13,29 @@ import (
 	"testing"
 )
 
+var sqliteV36Tables = []string{
+	"balda_app_kv",
+	"balda_session_metadata",
+	"balda_telegram_offsets",
+	"balda_collaborators",
+	"balda_runtime_app_state",
+	"balda_runtime_user_state",
+	"balda_runtime_sessions",
+	"balda_runtime_events",
+	"balda_scheduled_jobs",
+	"execution_jobs",
+	"execution_job_events",
+	"execution_job_event_outbox",
+	"execution_delivery_outbox",
+	"execution_agent_steps",
+	"balda_questions",
+	"session_memory_ingress_outbox",
+	"session_memory_ingress_audit",
+	"balda_plugin_revisions",
+	"balda_plugin_installs",
+	"balda_plugin_activation_intents",
+}
+
 func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -60,8 +83,10 @@ func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 	}
 	after := snapshotSQLiteFixture(t, p.(*sqliteProvider).db)
 	if !reflect.DeepEqual(before, after) {
-		t.Fatal("opening the default database changed existing rows or migration history")
+		t.Fatal("opening the default database changed existing rows")
 	}
+	assertGooseVersion(t, t.Context(), p.(*sqliteProvider).db, expectedSQLiteMigrationVersion)
+	assertRequiredBaldaSQLiteTables(t, t.Context(), p.(*sqliteProvider).db)
 	user, found, err := p.Collaborators().GetCollaborator(t.Context(), "fixture")
 	if err != nil || !found || user.UserID != "fixture" {
 		t.Fatalf("existing collaborator was not preserved: found=%t err=%v", found, err)
@@ -89,7 +114,7 @@ func seedSQLiteCompatibilityFixture(t *testing.T, db *sql.DB) {
 	if _, err := tx.ExecContext(t.Context(), "PRAGMA defer_foreign_keys=ON"); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range requiredBaldaStateTables {
+	for _, table := range sqliteV36Tables {
 		rows, err := tx.QueryContext(t.Context(), "PRAGMA table_info("+table+")")
 		if err != nil {
 			t.Fatal(err)
@@ -142,8 +167,7 @@ func sqliteFixtureValue(table, column, kind string) any {
 func snapshotSQLiteFixture(t *testing.T, db *sql.DB) map[string][]string {
 	t.Helper()
 	snapshot := make(map[string][]string)
-	tables := append([]string{"goose_db_version"}, requiredBaldaStateTables...)
-	for _, table := range tables {
+	for _, table := range sqliteV36Tables {
 		rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table+" ORDER BY 1") //nolint:unqueryvet // The compatibility snapshot must compare every stored column.
 		if err != nil {
 			t.Fatal(err)
