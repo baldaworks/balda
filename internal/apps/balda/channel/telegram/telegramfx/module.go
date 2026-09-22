@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
+	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	"github.com/baldaworks/balda/internal/apps/balda/attachmentstore"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
@@ -48,8 +49,8 @@ var Module = fx.Module(
 		fx.Annotate(
 			func(adapter *telegram.Adapter) telegram.Channel { return adapter },
 		),
-		func(store attachmentstore.Store, cfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface) telegram.AttachmentStore {
-			return telegram.NewAttachmentStore(store, tgClient, cfg.Token)
+		func(store attachmentstore.Store, cfg tgbotkit.Config, tgClient client.ClientWithResponsesInterface, limits attachment.Limits) telegram.AttachmentStore {
+			return telegram.NewAttachmentStore(store, tgClient, cfg.Token, limits)
 		},
 		fx.Annotate(
 			func(adapter *telegram.Adapter) deliveryfx.ChannelAdapterBinding {
