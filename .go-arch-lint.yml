@@ -135,6 +135,11 @@ components:
     in:
       - internal/apps/backoffice/access
 
+  # Bounded, read-only Backoffice security-audit query use case.
+  backoffice_audit:
+    in:
+      - internal/apps/backoffice/audit
+
   # Browser-only Backoffice authentication, opaque token rotation, and HTTP guards.
   backoffice_security:
     in:
@@ -420,6 +425,7 @@ deps:
       - infrastructure
       - backoffice_application
       - backoffice_access
+      - backoffice_audit
       - backoffice_webui
       - backoffice_security
     # Backoffice passes its local persistence port into the migration use case;
@@ -446,6 +452,15 @@ deps:
     # The selected user store is injected through the Access-owned narrow port.
     deepScan: false
     anyVendorDeps: true
+
+  backoffice_audit:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - backoffice_audit
+    # The selected audit repository is injected through the Audit-owned query port.
+    deepScan: false
+    anyVendorDeps: false
 
   backoffice_webui:
     mayDependOn:

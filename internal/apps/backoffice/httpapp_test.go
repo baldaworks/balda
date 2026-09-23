@@ -59,6 +59,7 @@ func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 	}{
 		{name: "access", want: []string{"Temporary credential", "telegram:42", "Browser sessions"}},
 		{name: "account", want: []string{"Rotate password", "telegram:42", "Revoke family"}},
+		{name: "audit", want: []string{"session.refresh.succeeded", "session.refresh.replay", "11111111-1111-4111-8111-111111111111"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -294,6 +295,69 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 	if _, err := app.security.Refresh(t.Context(), next.refresh, next.csrf); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("revoked refresh validation error = %v", err)
+	}
+}
+
+func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
+	t.Parallel()
+	provider, config := newHTTPAppTestState(t)
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	createAccessTestUser(t, provider.Users(), usercmd.User{
+		ID: "admin", DisplayName: "Admin", Username: "admin", NormalizedUsername: "admin",
+		Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator,
+		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+		Primary:    true, Version: 1, CreatedAt: now, UpdatedAt: now,
+	})
+	createAccessTestUser(t, provider.Users(), usercmd.User{
+		ID: "operator", DisplayName: "Operator", Username: "operator", NormalizedUsername: "operator",
+		Status: usercmd.StatusActive, Role: usercmd.RoleOperator,
+		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+		Version:    1, CreatedAt: now, UpdatedAt: now,
+	})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := loginHTTPAppSession(t, handler, config, "admin")
+	operator := loginHTTPAppSession(t, handler, config, "operator")
+
+	auditRequest := httptest.NewRequest(http.MethodGet, "/audit?action=session.login.succeeded&outcome=succeeded&target=session&limit=1", nil)
+	auditRequest.Header.Set("HX-Request", "true")
+	auditRequest.Header.Set("HX-Target", "main-content")
+	auditRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+	auditResponse := httptest.NewRecorder()
+	handler.ServeHTTP(auditResponse, auditRequest)
+	body := auditResponse.Body.String()
+	if auditResponse.Code != http.StatusOK || strings.Contains(body, "<!doctype") || strings.Count(body, `id="main-content"`) != 1 ||
+		!strings.Contains(body, "session.login.succeeded") || !strings.Contains(body, "Next page") {
+		t.Fatalf("filtered audit = %d %q", auditResponse.Code, body)
+	}
+	for _, forbidden := range []string{"correct horse battery staple", admin.access, admin.refresh, admin.csrf} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("audit leaked browser secret %q", forbidden)
+		}
+	}
+
+	invalidRequest := httptest.NewRequest(http.MethodGet, "/audit?action=product.event", nil)
+	invalidRequest.Header.Set("HX-Request", "true")
+	invalidRequest.Header.Set("HX-Target", "main-content")
+	invalidRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+	invalid := httptest.NewRecorder()
+	handler.ServeHTTP(invalid, invalidRequest)
+	if invalid.Code != http.StatusBadRequest || strings.Contains(invalid.Body.String(), "<!doctype") {
+		t.Fatalf("invalid audit filter = %d %q", invalid.Code, invalid.Body.String())
+	}
+
+	deniedRequest := httptest.NewRequest(http.MethodGet, "/audit", nil)
+	deniedRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: operator.access})
+	denied := httptest.NewRecorder()
+	handler.ServeHTTP(denied, deniedRequest)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("operator audit status = %d", denied.Code)
 	}
 }
 

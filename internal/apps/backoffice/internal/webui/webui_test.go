@@ -140,6 +140,34 @@ func TestSafeViewProjectionUsesOneBindingAndFamilyLevelSessions(t *testing.T) {
 	}
 }
 
+func TestAuditProjectionDoesNotRenderFreeFormReason(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := usercmd.AuditEvent{
+		ID: "event-selector-secret", Action: usercmd.AuditActionRefreshReplay, Outcome: usercmd.AuditOutcomeDenied,
+		ActorSessionID: "refresh-selector-secret", TargetType: usercmd.AuditTargetSession,
+		TargetID:   "11111111-1111-4111-8111-111111111111",
+		Reason:     "password=hunter2 refresh_selector=secret csrf=secret cookie=secret",
+		OccurredAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC),
+	}
+	request := httptest.NewRequest(http.MethodGet, "/audit", nil)
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, request, http.StatusOK, TemplateAudit, Page{Title: "Audit", Audit: []AuditView{ProjectAudit(event)}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"hunter2", "refresh_selector", "refresh-selector-secret", "event-selector-secret", "csrf=", "cookie="} {
+		if strings.Contains(response.Body.String(), secret) {
+			t.Fatalf("audit response leaked %q: %q", secret, response.Body.String())
+		}
+	}
+	if !strings.Contains(response.Body.String(), "11111111-1111-4111-8111-111111111111") {
+		t.Fatalf("safe family ID missing: %q", response.Body.String())
+	}
+}
+
 func TestEmbeddedAssetsServeOffline(t *testing.T) {
 	t.Parallel()
 	handler, err := Assets()

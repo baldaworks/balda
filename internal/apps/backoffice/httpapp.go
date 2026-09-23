@@ -3,11 +3,13 @@ package backoffice
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/access"
+	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -21,6 +23,7 @@ type httpApp struct {
 	browser  *security.Browser
 	security *security.Service
 	access   *access.Service
+	auditLog *audit.Service
 	cards    []webui.CapabilityCard
 	qa       bool
 }
@@ -36,7 +39,7 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI}
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies,
 		ErrorHandler: app.renderSecurityError,
@@ -72,6 +75,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET /overview", a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
 	mux.Handle("GET /account", a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.account))))
 	mux.HandleFunc("POST /account/sessions/{session_id}/revoke", a.browser.RevokeSession)
+	mux.Handle("GET /audit", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET /access", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
 	mux.Handle("GET /access/users/{user_id}", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
 	mux.HandleFunc("POST /access/users", a.accessCreate)
@@ -146,6 +150,61 @@ func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 		Title: "Account · Balda", Current: webui.LocationAccount,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccount),
 		User:       &view, Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
+	})
+}
+
+func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
+	principal, ok := security.PrincipalFromContext(r.Context())
+	if !ok {
+		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		return
+	}
+	limit := 0
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			return
+		}
+		limit = parsed
+	}
+	request := audit.Request{
+		AfterID: r.URL.Query().Get("after"), Limit: limit,
+		Action: usercmd.AuditAction(r.URL.Query().Get("action")), Outcome: usercmd.AuditOutcome(r.URL.Query().Get("outcome")),
+		TargetType: usercmd.AuditTargetType(r.URL.Query().Get("target")),
+	}
+	page, err := a.auditLog.List(r.Context(), principal.User, request)
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	events := make([]webui.AuditView, 0, len(page.Events))
+	for _, event := range page.Events {
+		events = append(events, webui.ProjectAudit(event))
+	}
+	nextURL := ""
+	if page.NextAfterID != "" {
+		query := url.Values{"after": {page.NextAfterID}}
+		if request.Limit != 0 {
+			query.Set("limit", strconv.Itoa(request.Limit))
+		}
+		if request.Action != "" {
+			query.Set("action", string(request.Action))
+		}
+		if request.Outcome != "" {
+			query.Set("outcome", string(request.Outcome))
+		}
+		if request.TargetType != "" {
+			query.Set("target", string(request.TargetType))
+		}
+		nextURL = "/audit?" + query.Encode()
+	}
+	capabilities := users.BackofficeCapabilities(principal.User)
+	a.render(w, r, http.StatusOK, webui.TemplateAudit, webui.Page{
+		Title: "Audit · Balda", Current: webui.LocationAudit,
+		Navigation: webui.Navigation(capabilities, webui.LocationAudit), Audit: events,
+		AuditAction: string(request.Action), AuditOutcome: string(request.Outcome),
+		AuditTargetType: string(request.TargetType), NextURL: nextURL,
 	})
 }
 
@@ -364,6 +423,17 @@ func qaFixture(name string) (webui.Page, string, bool) {
 			Title: "Account · QA", Current: webui.LocationAccount, Navigation: webui.Navigation(operator, webui.LocationAccount),
 			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
 		}, webui.TemplateAccount, true
+	case "audit":
+		familyID := "11111111-1111-4111-8111-111111111111"
+		adminID := "22222222-2222-4222-8222-222222222222"
+		return webui.Page{
+			Title: "Audit · QA", Current: webui.LocationAudit, Navigation: webui.Navigation(admin, webui.LocationAudit),
+			Audit: []webui.AuditView{
+				{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", Outcome: "succeeded", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: now},
+				{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", Outcome: "denied", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: now.Add(time.Minute)},
+				{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", Outcome: "succeeded", ActorUserID: adminID, TargetType: "session", TargetID: familyID, OccurredAt: now.Add(2 * time.Minute)},
+			},
+		}, webui.TemplateAudit, true
 	default:
 		return webui.Page{}, "", false
 	}

@@ -236,6 +236,20 @@ const (
 	AuditActionLogout AuditAction = "session.logout"
 )
 
+// Valid reports whether the action belongs to the bounded security audit vocabulary.
+func (a AuditAction) Valid() bool {
+	switch a {
+	case AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
+		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
+		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingClaimCreated,
+		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
+		AuditActionRefreshReplay, AuditActionLogout:
+		return true
+	default:
+		return false
+	}
+}
+
 // AuditOutcome is the security event result.
 type AuditOutcome string
 
@@ -352,7 +366,7 @@ func ValidateSessionFamily(f SessionFamily) error {
 
 // ValidateAuditEvent checks the required safe audit envelope fields.
 func ValidateAuditEvent(event AuditEvent) error {
-	if strings.TrimSpace(event.ID) == "" || strings.TrimSpace(string(event.Action)) == "" || !event.Outcome.Valid() {
+	if strings.TrimSpace(event.ID) == "" || !event.Action.Valid() || !event.Outcome.Valid() {
 		return fmt.Errorf("%w: audit identity, action, and outcome are required", ErrInvalid)
 	}
 	if !event.TargetType.Valid() || strings.TrimSpace(event.TargetID) == "" || strings.TrimSpace(event.Source) == "" {

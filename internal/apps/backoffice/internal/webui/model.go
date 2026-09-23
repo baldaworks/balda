@@ -88,12 +88,14 @@ type SessionView struct {
 
 // AuditView is a safe immutable security-event projection.
 type AuditView struct {
-	Action     string
-	Outcome    string
-	TargetType string
-	TargetID   string
-	Reason     string
-	OccurredAt time.Time
+	ID             string
+	Action         string
+	Outcome        string
+	ActorUserID    string
+	ActorSessionID string
+	TargetType     string
+	TargetID       string
+	OccurredAt     time.Time
 }
 
 // ErrorView is a user-facing error without provider internals.
@@ -104,17 +106,21 @@ type ErrorView struct {
 
 // Page is the closed safe model accepted by production templates.
 type Page struct {
-	Title        string
-	Current      Location
-	Navigation   []NavItem
-	Capabilities []CapabilityCard
-	Users        []UserView
-	User         *UserView
-	Sessions     []SessionView
-	Audit        []AuditView
-	Error        *ErrorView
-	CSRFToken    string
-	ReturnTo     string
+	Title           string
+	Current         Location
+	Navigation      []NavItem
+	Capabilities    []CapabilityCard
+	Users           []UserView
+	User            *UserView
+	Sessions        []SessionView
+	Audit           []AuditView
+	Error           *ErrorView
+	CSRFToken       string
+	ReturnTo        string
+	AuditAction     string
+	AuditOutcome    string
+	AuditTargetType string
+	NextURL         string
 }
 
 // Navigation derives visible workspaces only from current server capabilities.
@@ -161,9 +167,34 @@ func ProjectSession(summary usercmd.SessionSummary, currentFamilyID string) Sess
 // ProjectAudit constructs a safe audit row.
 func ProjectAudit(event usercmd.AuditEvent) AuditView {
 	return AuditView{
-		Action: string(event.Action), Outcome: string(event.Outcome), TargetType: string(event.TargetType),
-		TargetID: event.TargetID, Reason: event.Reason, OccurredAt: event.OccurredAt,
+		ID: safeAuditID(event.ID), Action: string(event.Action), Outcome: string(event.Outcome),
+		ActorUserID: safeAuditID(event.ActorUserID), ActorSessionID: safeAuditID(event.ActorSessionID),
+		TargetType: string(event.TargetType), TargetID: safeAuditID(event.TargetID), OccurredAt: event.OccurredAt,
 	}
+}
+
+func safeAuditID(value string) string {
+	if value == "" {
+		return ""
+	}
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return "[redacted]"
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !isHexCharacter(character) {
+			return "[redacted]"
+		}
+	}
+	return value
+}
+
+func isHexCharacter(character rune) bool {
+	return character >= '0' && character <= '9' ||
+		character >= 'a' && character <= 'f' ||
+		character >= 'A' && character <= 'F'
 }
 
 func (p Page) validate() error {
