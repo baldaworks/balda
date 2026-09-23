@@ -312,7 +312,6 @@ components:
   entrypoints:
     in:
       - cmd/balda
-      - cmd/backoffice
 
 deps:
   session_memory_core:
@@ -716,6 +715,7 @@ deps:
   composition_root:
     mayDependOn:
       - foundation
+      - backoffice_application
       - contracts
       - user_contracts
       - user_application

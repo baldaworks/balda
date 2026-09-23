@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
@@ -31,6 +32,7 @@ type BaldaConfig struct {
 	WorkingDir          string                    `mapstructure:"working_dir"`
 	StateDir            string                    `mapstructure:"state_dir"`
 	Database            state.DatabaseConfig      `mapstructure:"database"`
+	Backoffice          backoffice.ServerConfig   `mapstructure:"backoffice"`
 	Sessions            SessionsConfig            `mapstructure:"sessions"`
 	Memory              MemoryConfig              `mapstructure:"memory"`
 	SessionMemory       SessionMemoryConfig       `mapstructure:"session_memory"`

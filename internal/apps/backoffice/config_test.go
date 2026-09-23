@@ -1,8 +1,6 @@
 package backoffice
 
 import (
-	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 )
@@ -36,18 +34,16 @@ func TestResolveServerConfig(t *testing.T) {
 	}
 }
 
-func TestProjectConfiguredCapabilitiesOmitsDisabledAndSecrets(t *testing.T) {
+func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
 	t.Parallel()
 	cfg := BaldaConfig{
-		Telegram: TelegramConfig{Token: "telegram-secret", Webhook: TelegramWebhookConfig{Enabled: true, ListenAddr: "127.0.0.1:8080", Path: "/telegram"}},
-		Zulip:    ZulipConfig{APIKey: "zulip-secret", WebhookToken: "zulip-hook", Webhook: ZulipWebhookConfig{Enabled: false}},
+		Telegram: TelegramConfig{Enabled: true, Webhook: TelegramWebhookConfig{Enabled: true, ListenAddr: "127.0.0.1:8080", Path: "/telegram"}},
+		Zulip:    ZulipConfig{Webhook: ZulipWebhookConfig{Enabled: false}},
 		Slack: SlackConfig{
-			Enabled: true, BotToken: "slack-secret", SigningSecret: "signing-secret", ListenAddr: "127.0.0.1:8091", EventsPath: "/slack/events",
+			Enabled: true, ListenAddr: "127.0.0.1:8091", EventsPath: "/slack/events",
 			Agent: SlackAgentConfig{Enabled: true, ListenAddr: "127.0.0.1:8092", EventsPath: "/slack/agent/events", EnableStreaming: true},
 		},
-		Webhooks: WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", Routes: map[string]any{
-			"release": map[string]any{"path": "/release", "secret": "webhook-secret"},
-		}},
+		Webhooks: WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", RouteCount: 1},
 	}
 	projection := ProjectConfiguredCapabilities(cfg)
 	if len(projection) != 4 {
@@ -64,15 +60,6 @@ func TestProjectConfiguredCapabilitiesOmitsDisabledAndSecrets(t *testing.T) {
 	cards := ProjectCapabilityCards(cfg)
 	if len(cards) != len(projection) || cards[0].ID != projection[0].ID {
 		t.Fatalf("capability cards = %+v", cards)
-	}
-	encoded, err := json.Marshal(projection)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, secret := range []string{"telegram-secret", "zulip-secret", "zulip-hook", "slack-secret", "signing-secret", "webhook-secret"} {
-		if strings.Contains(string(encoded), secret) {
-			t.Fatalf("projection leaked secret %q: %s", secret, encoded)
-		}
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/actors"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
@@ -137,7 +138,9 @@ type applicationLifecycleParams struct {
 	fx.In
 
 	LC                   fx.Lifecycle
+	Shutdowner           fx.Shutdowner
 	Logger               zerolog.Logger
+	Backoffice           *backoffice.Runtime
 	MCP                  *internalmcp.InternalMCPManager
 	Catalog              *catalogapp.Lifecycle
 	Runtime              *baldaagent.RuntimeManager
@@ -170,6 +173,7 @@ func registerApplicationLifecycle(p applicationLifecycleParams) {
 
 func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegramLifecycle) []lifecycleStage {
 	stages := []lifecycleStage{
+		{name: "user readiness", start: p.Backoffice.ValidateReady},
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
 		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
@@ -194,6 +198,21 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "job event outbox", start: p.OutboxPublisher.Start, stop: p.OutboxPublisher.Stop},
 		{name: "actor host", start: p.ActorHost.Start, stop: p.ActorHost.Stop},
 		{name: "scheduled jobs", start: p.Scheduler.Start, stop: p.Scheduler.Stop},
+		{name: "Backoffice HTTP", start: func(ctx context.Context) error {
+			if err := p.Backoffice.Start(ctx); err != nil {
+				return err
+			}
+			go func() {
+				<-p.Backoffice.Done()
+				if err := p.Backoffice.Err(); err != nil {
+					p.Logger.Error().Err(err).Msg("Backoffice HTTP stopped unexpectedly")
+					if shutdownErr := p.Shutdowner.Shutdown(fx.ExitCode(1)); shutdownErr != nil {
+						p.Logger.Error().Err(shutdownErr).Msg("request Balda shutdown after Backoffice failure")
+					}
+				}
+			}()
+			return nil
+		}, stop: p.Backoffice.Stop},
 		{name: "inbound webhooks", start: p.InboundWebhook.Start, stop: p.InboundWebhook.Stop},
 	}
 	for _, stage := range p.TransportStages {

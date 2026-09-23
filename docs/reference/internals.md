@@ -158,7 +158,7 @@ Balda's actorlayer integration is intentionally direct:
 - `internal/apps/balda/eventbus/nats`: adapts transport publish, fetch, ack, retry, in-progress heartbeat, terminal dead-letter, and event-stream publishing into actorlayer source/delivery/dispatch contracts.
 - `internal/apps/balda/agent`: owns the single app-scoped provider runtime selected by `balda.provider`, root runtime construction, isolated goal runtime preparation, and runtime-adjacent workspace support.
 - `internal/apps/balda/session`: owns per-session lifecycle state, restore/ensure semantics, and runtime/session binding.
-- `internal/apps/balda/state`: owns SQLite product/read-model state for sessions, jobs, projections, global-memory KV, delivery outbox rows, and session-memory ingress/audit rows. Canonical session-memory records live in the public Badger adapter.
+- `internal/apps/balda/state`: owns selected SQLite/PostgreSQL product/read-model state and embedded schema migrations for sessions, jobs, projections, global-memory KV, delivery outbox rows, and session-memory ingress/audit rows. Canonical session-memory records live in the public Badger adapter.
 - `sessionmemory/app` and `internal/apps/balda/sessionmemoryapp`: own typed semantic processing versus Balda capture/redaction/outbox/worker wiring respectively.
 
 Do not add extra Balda-local actor adapter packages or execution/delivery selector
@@ -169,15 +169,20 @@ and Balda keeps product policy in Balda.
 
 Balda startup order is strict:
 
-1. Load runtime + Balda config, then construct and validate the immutable delivery-format registry.
-2. Start internal MCP lifecycle manager.
-3. Start the enabled portable session-memory runtime (canonical Badger, Bleve projection, and model lifecycle).
-4. Start Balda provider runtime via `RuntimeManager.EnsureRuntime(...)`.
-5. Start session/mailbox and durable actor infrastructure: event projector, job-event outbox publisher, and actor host.
-6. Bootstrap Telegram owner state, then start scheduler, inbound webhooks, Zulip, Slack, and Telegram ingress.
+1. Load one runtime + Balda config snapshot, resolve the selected database,
+   open the shared state provider, and apply its embedded schema migrations.
+2. Require completed legacy-user conversion and an active administrator before
+   any listener or ingress becomes ready.
+3. Start internal MCP, the runtime contribution catalog, the enabled portable
+   session-memory runtime, and Balda provider runtime in that order.
+4. Start session/mailbox and durable actor infrastructure: event projector,
+   job-event outbox publisher, actor host, and scheduler.
+5. Bind Backoffice HTTP over the same state provider and canonical users.
+6. Start inbound webhooks and enabled Zulip, Slack, and Telegram ingress.
 
-One composition-root coordinator owns this order. Configuration or registry
-errors fail before any ingress stage can become ready. Shutdown runs the same
-stages in reverse, so ingress stops before actor/provider/MCP resources.
+One composition-root coordinator owns this order. Migration, readiness,
+configuration, or registry errors fail before any ingress stage can become
+ready. Shutdown runs stages in reverse, so ingress and Backoffice HTTP stop
+before the actor/provider/MCP resources and shared state provider.
 
 Internal MCP v1 scope is config + lifecycle plumbing; server implementations can be added incrementally.

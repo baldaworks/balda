@@ -19,7 +19,10 @@ func loadOrCreateBaldaOwnerToken(ctx context.Context, database baldastate.Databa
 		return "", fmt.Errorf("open balda state provider: %w", err)
 	}
 	defer func() { _ = provider.Close() }()
+	return loadOrCreateBaldaOwnerTokenFromProvider(ctx, provider)
+}
 
+func loadOrCreateBaldaOwnerTokenFromProvider(ctx context.Context, provider baldastate.Provider) (string, error) {
 	stored, ok, err := provider.AppKV().Get(ctx, baldaOwnerAuthTokenKV)
 	if err != nil {
 		return "", fmt.Errorf("read owner auth token: %w", err)

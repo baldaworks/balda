@@ -43,9 +43,10 @@ Initialize in your project:
 balda init
 ```
 
-Start:
+Bootstrap browser administration from a protected password file, then start:
 
 ```bash
+balda backoffice bootstrap-admin --username admin < /run/secrets/backoffice-admin-password
 balda start
 ```
 
@@ -57,24 +58,26 @@ SQLite is the default state database. To select PostgreSQL, configure
 `balda.database.type: postgres`; launch remains `balda start`.
 See [database configuration and operations](docs/reference/database.md).
 
-The separate `backoffice` binary reuses the same configuration and database.
-Before serving it, migrate any legacy owner/collaborator records with an
-exclusive credentials-output file, or bootstrap the first administrator on a
-fresh database. See the [Backoffice process and security contract](docs/reference/backoffice.md).
+`balda start` applies embedded schema migrations to the selected database,
+checks canonical users and administrator bootstrap, then starts the bot,
+Backoffice, and enabled integrations in one process. Before the first start,
+bootstrap an administrator on a fresh database. For an existing installation,
+stop Balda, back up the database, and convert legacy owner/collaborator records
+with an exclusive credentials-output file. See the
+[Backoffice startup and security contract](docs/reference/backoffice.md).
 
 ```bash
-mkdir -p ./bin
-go build -trimpath -o ./bin/backoffice ./cmd/backoffice
-./bin/backoffice migrate-users --credentials-output /run/secrets/balda-migrated-users.txt
-./bin/backoffice validate
-./bin/backoffice serve
+# Existing installation with legacy users, while Balda is stopped and after a database backup:
+balda backoffice migrate-users --credentials-output /run/secrets/balda-migrated-users.txt
+balda backoffice bootstrap-admin --reset < /run/secrets/backoffice-admin-password
+balda start
 ```
 
-For a fresh database, replace `migrate-users` with `bootstrap-admin` and feed
-the password from a protected file on standard input. Never pass passwords or
-generated migration credentials as command arguments. The migration manifest
-is plaintext secret material: distribute it out of band and securely remove it
-after verified delivery.
+The existing-install `--reset` step is needed when the migrated primary user
+has a temporary credential; it revokes that user's browser refresh-token
+families. Never pass passwords or generated migration credentials as command
+arguments. Distribute the plaintext migration manifest out of band and
+securely remove it after verified delivery.
 
 ## First run
 

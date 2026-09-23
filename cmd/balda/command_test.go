@@ -574,8 +574,10 @@ balda:
 	})
 
 	validated := false
+	var databasePath string
 	validateBaldaApplicationFn = func(prepared preparedBaldaCommand) error {
 		validated = prepared.baldaCfg.Balda.Provider == testBaldaProvider
+		databasePath = prepared.database.SQLite.Path
 		return nil
 	}
 	preflightBaldaRuntimeFn = func(_ context.Context, _ preparedBaldaCommand) error {
@@ -596,6 +598,9 @@ balda:
 	}
 	if !validated {
 		t.Fatal("validate command did not invoke validation hook")
+	}
+	if _, err := os.Stat(databasePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("validate created database %q: stat error = %v", databasePath, err)
 	}
 	if got := out.String(); !strings.Contains(got, "balda validate: ok") {
 		t.Fatalf("validate output = %q, want success message", got)

@@ -35,7 +35,7 @@ func ProjectCapabilityCards(cfg BaldaConfig) []webui.CapabilityCard {
 // ProjectConfiguredCapabilities returns only integrations enabled by resolved configuration.
 func ProjectConfiguredCapabilities(cfg BaldaConfig) []ConfiguredCapability {
 	capabilities := make([]ConfiguredCapability, 0, 5)
-	if strings.TrimSpace(cfg.Telegram.Token) != "" {
+	if cfg.Telegram.Enabled {
 		capability := ConfiguredCapability{ID: "telegram", Name: "Telegram", Mode: "polling"}
 		if cfg.Telegram.Webhook.Enabled {
 			capability.Mode = "webhook"
@@ -66,7 +66,7 @@ func ProjectConfiguredCapabilities(cfg BaldaConfig) []ConfiguredCapability {
 	if cfg.Webhooks.Enabled {
 		capabilities = append(capabilities, ConfiguredCapability{
 			ID: "webhooks", Name: "Webhooks", Mode: "inbound",
-			ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr), RouteCount: len(cfg.Webhooks.Routes),
+			ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr), RouteCount: cfg.Webhooks.RouteCount,
 		})
 	}
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i].ID < capabilities[j].ID })

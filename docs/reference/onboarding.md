@@ -16,6 +16,7 @@ npm remains the shortest install path:
 ```bash
 npm install -g -y @baldaworks/balda
 balda init
+balda backoffice bootstrap-admin --username admin < /run/secrets/backoffice-admin-password
 balda start
 ```
 
@@ -50,6 +51,13 @@ task projection-replay
 both an owner auth command and Telegram auth link. The default token storage is
 CWD `.env` as `BALDA_TELEGRAM_TOKEN`.
 
+The bootstrap password must come from protected, non-terminal stdin. On an
+existing installation, stop Balda, back up the selected database, run
+`balda backoffice migrate-users --credentials-output <new-0600-path>`, then
+bootstrap the migrated primary administrator with `--reset` before restart.
+`balda start` applies embedded schema migrations and refuses bot ingress or
+Backoffice HTTP until canonical users and administrator credentials are ready.
+
 Owner onboarding is completed in a direct message with the bot by opening the
 printed auth link or sending:
 
@@ -70,6 +78,7 @@ The supported Docker Compose onboarding path uses the shipped root
 ```bash
 docker compose build balda
 docker compose run --rm balda init
+docker compose run --rm -T balda backoffice bootstrap-admin --username admin < /run/secrets/backoffice-admin-password
 docker compose up -d balda
 ```
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
@@ -27,33 +28,50 @@ type Runtime struct {
 	provider  state.Provider
 	state     *StateService
 	bootstrap *BootstrapService
+	owned     bool
+	mu        sync.Mutex
+	server    *http.Server
+	done      chan struct{}
+	serveErr  error
 }
 
-// OpenRuntime opens exactly the resolved Balda backend and constructs Backoffice use cases.
-func OpenRuntime(ctx context.Context, config ResolvedConfig) (*Runtime, error) {
+// NewRuntime constructs Backoffice over a provider owned by its host.
+func NewRuntime(config ResolvedConfig, provider state.Provider) (*Runtime, error) {
 	if err := webui.VerifyAssets(); err != nil {
 		return nil, fmt.Errorf("verify Backoffice frontend: %w", err)
 	}
-	provider, err := state.Open(ctx, config.Database)
-	if err != nil {
-		return nil, fmt.Errorf("open Backoffice state: %w", err)
+	if provider == nil {
+		return nil, fmt.Errorf("backoffice state provider is required")
 	}
 	stateService, err := NewStateService(provider.AppKV(), provider.Collaborators(), provider.Users())
 	if err != nil {
-		_ = provider.Close()
 		return nil, err
 	}
 	bootstrap, err := NewBootstrapService(provider.Users())
 	if err != nil {
-		_ = provider.Close()
 		return nil, err
 	}
 	return &Runtime{config: config, provider: provider, state: stateService, bootstrap: bootstrap}, nil
 }
 
-// Close releases the selected state backend.
+// OpenRuntime opens the selected backend for standalone maintenance operations.
+func OpenRuntime(ctx context.Context, config ResolvedConfig) (*Runtime, error) {
+	provider, err := state.Open(ctx, config.Database)
+	if err != nil {
+		return nil, fmt.Errorf("open Backoffice state: %w", err)
+	}
+	runtime, err := NewRuntime(config, provider)
+	if err != nil {
+		_ = provider.Close()
+		return nil, err
+	}
+	runtime.owned = true
+	return runtime, nil
+}
+
+// Close releases a provider opened by OpenRuntime, but never a host provider.
 func (r *Runtime) Close() error {
-	if r == nil || r.provider == nil {
+	if r == nil || !r.owned {
 		return nil
 	}
 	return r.provider.Close()
@@ -77,16 +95,16 @@ func (r *Runtime) BootstrapAdmin(ctx context.Context, input BootstrapInput) (Boo
 	return r.bootstrap.Bootstrap(ctx, input)
 }
 
-// Serve validates state and runs the Backoffice HTTP lifecycle without channel runtimes.
-func (r *Runtime) Serve(ctx context.Context) error {
+// Start validates readiness and binds HTTP before returning to the host.
+func (r *Runtime) Start(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.server != nil {
+		return nil
+	}
 	if err := r.ValidateReady(ctx); err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", r.config.Server.ListenAddr)
-	if err != nil {
-		return fmt.Errorf("listen for Backoffice: %w", err)
-	}
-	defer func() { _ = listener.Close() }()
 	httpApplication, err := newHTTPApp(r.provider.Users(), r.config)
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
@@ -95,6 +113,10 @@ func (r *Runtime) Serve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP routes: %w", err)
 	}
+	listener, err := net.Listen("tcp", r.config.Server.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listen for Backoffice: %w", err)
+	}
 	server := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
@@ -102,25 +124,55 @@ func (r *Runtime) Serve(ctx context.Context) error {
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 	}
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- server.Serve(listener) }()
-	select {
-	case err := <-serveErr:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+	r.server = server
+	r.done = make(chan struct{})
+	r.serveErr = nil
+	go func() {
+		err := server.Serve(listener)
+		r.mu.Lock()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			r.serveErr = fmt.Errorf("serve Backoffice: %w", err)
 		}
-		return fmt.Errorf("serve Backoffice: %w", err)
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("shutdown Backoffice: %w", err)
-		}
-		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("stop Backoffice: %w", err)
-		}
+		close(r.done)
+		r.mu.Unlock()
+	}()
+	return nil
+}
+
+// Done closes when the HTTP serving loop exits; Err reports its failure.
+func (r *Runtime) Done() <-chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.done
+}
+
+// Err returns a background serving error after Done closes.
+func (r *Runtime) Err() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.serveErr
+}
+
+// Stop gracefully shuts down the listener without closing the shared provider.
+func (r *Runtime) Stop(ctx context.Context) error {
+	r.mu.Lock()
+	server, done := r.server, r.done
+	r.mu.Unlock()
+	if server == nil {
 		return nil
 	}
+	shutdownCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		_ = server.Close()
+		return fmt.Errorf("shutdown Backoffice: %w", err)
+	}
+	<-done
+	r.mu.Lock()
+	r.server = nil
+	err := r.serveErr
+	r.mu.Unlock()
+	return err
 }
 
 func healthHandler() http.Handler {

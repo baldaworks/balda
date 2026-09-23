@@ -169,8 +169,8 @@ balda:
       password: ""
       sslmode: disable
 
-  # Separate Backoffice process. It reuses this database and never starts
-  # Balda channel runtimes.
+  # Backoffice starts inside `balda start` after schema migration and user
+  # readiness, using the same database and canonical users as the bot.
   backoffice:
     # Loopback is the safe default. A non-loopback listener requires an HTTPS
     # public_url (typically through a trusted reverse proxy).

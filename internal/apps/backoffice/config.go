@@ -2,18 +2,14 @@
 package backoffice
 
 import (
-	_ "embed"
 	"fmt"
 	"net"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/normahq/runtime/v2/appconfig"
 )
 
 const (
@@ -26,9 +22,6 @@ const (
 	maximumRefreshTokenTTL = 30 * 24 * time.Hour
 	httpsScheme            = "https"
 )
-
-//go:embed defaults.yaml
-var defaultConfigYAML []byte
 
 // ServerConfig is the serialized Backoffice listener and browser-session configuration.
 type ServerConfig struct {
@@ -118,33 +111,17 @@ func resolveDuration(raw string, fallback time.Duration, field string) (time.Dur
 	return value, nil
 }
 
-// BaldaDocumentConfig combines the allowlisted Balda subset with Backoffice settings.
-type BaldaDocumentConfig struct {
-	BaldaConfig `mapstructure:",squash"`
-	Backoffice  ServerConfig `mapstructure:"backoffice"`
-}
-
 // BaldaConfig is the allowlisted configuration subset consumed by Backoffice.
 type BaldaConfig struct {
-	Telegram   TelegramConfig       `mapstructure:"telegram"`
-	Zulip      ZulipConfig          `mapstructure:"zulip"`
-	Slack      SlackConfig          `mapstructure:"slack"`
-	Webhooks   WebhooksConfig       `mapstructure:"webhooks"`
-	Logger     LoggerConfig         `mapstructure:"logger"`
-	WorkingDir string               `mapstructure:"working_dir"`
-	StateDir   string               `mapstructure:"state_dir"`
-	Database   state.DatabaseConfig `mapstructure:"database"`
+	Telegram TelegramConfig `mapstructure:"telegram"`
+	Zulip    ZulipConfig    `mapstructure:"zulip"`
+	Slack    SlackConfig    `mapstructure:"slack"`
+	Webhooks WebhooksConfig `mapstructure:"webhooks"`
 }
 
-// LoggerConfig controls Backoffice structured logging.
-type LoggerConfig struct {
-	Level  string `mapstructure:"level"`
-	Pretty bool   `mapstructure:"pretty"`
-}
-
-// TelegramConfig contains only fields required for configured-capability projection.
+// TelegramConfig contains only non-secret capability information.
 type TelegramConfig struct {
-	Token   string                `mapstructure:"token"`
+	Enabled bool                  `mapstructure:"enabled"`
 	Webhook TelegramWebhookConfig `mapstructure:"webhook"`
 }
 
@@ -155,11 +132,9 @@ type TelegramWebhookConfig struct {
 	Path       string `mapstructure:"path"`
 }
 
-// ZulipConfig contains only fields required for configured-capability projection.
+// ZulipConfig contains only non-secret capability information.
 type ZulipConfig struct {
-	APIKey       string             `mapstructure:"api_key"`
-	WebhookToken string             `mapstructure:"webhook_token"`
-	Webhook      ZulipWebhookConfig `mapstructure:"webhook"`
+	Webhook ZulipWebhookConfig `mapstructure:"webhook"`
 }
 
 // ZulipWebhookConfig is the safe enablement/address subset.
@@ -169,14 +144,12 @@ type ZulipWebhookConfig struct {
 	Path       string `mapstructure:"path"`
 }
 
-// SlackConfig contains chat and agent enablement plus secret-bearing load-only fields.
+// SlackConfig contains only chat and agent capability information.
 type SlackConfig struct {
-	Enabled       bool             `mapstructure:"enabled"`
-	BotToken      string           `mapstructure:"bot_token"`
-	SigningSecret string           `mapstructure:"signing_secret"`
-	ListenAddr    string           `mapstructure:"listen_addr"`
-	EventsPath    string           `mapstructure:"events_path"`
-	Agent         SlackAgentConfig `mapstructure:"agent"`
+	Enabled    bool             `mapstructure:"enabled"`
+	ListenAddr string           `mapstructure:"listen_addr"`
+	EventsPath string           `mapstructure:"events_path"`
+	Agent      SlackAgentConfig `mapstructure:"agent"`
 }
 
 // SlackAgentConfig is the safe enablement/address subset.
@@ -187,71 +160,16 @@ type SlackAgentConfig struct {
 	EnableStreaming bool   `mapstructure:"enable_streaming"`
 }
 
-// WebhooksConfig contains enablement and opaque routes used only for a safe count.
+// WebhooksConfig contains only enablement and a safe route count.
 type WebhooksConfig struct {
-	Enabled    bool           `mapstructure:"enabled"`
-	ListenAddr string         `mapstructure:"listen_addr"`
-	Routes     map[string]any `mapstructure:"routes"`
-}
-
-// ConfigDocument is the app-specific .config/balda/config.yaml projection.
-type ConfigDocument struct {
-	Balda BaldaDocumentConfig `mapstructure:"balda"`
-}
-
-// LoadOptions selects the normal Balda config root and optional profile.
-type LoadOptions struct {
-	WorkingDir string
-	ConfigDir  string
-	Profile    string
+	Enabled    bool   `mapstructure:"enabled"`
+	ListenAddr string `mapstructure:"listen_addr"`
+	RouteCount int    `mapstructure:"route_count"`
 }
 
 // ResolvedConfig contains the selected database and safe Backoffice runtime settings.
 type ResolvedConfig struct {
-	Balda      BaldaConfig
-	Server     ResolvedServerConfig
-	WorkingDir string
-	StateDir   string
-	Database   state.DatabaseConfig
-}
-
-// LoadConfig loads .config/balda/config.yaml with BALDA_* overrides and resolves paths once.
-func LoadConfig(options LoadOptions) (ResolvedConfig, error) {
-	var document ConfigDocument
-	settings, _, err := appconfig.LoadResolvedSettings(
-		appconfig.RuntimeLoadOptions{WorkingDir: options.WorkingDir, ConfigDir: options.ConfigDir, Profile: options.Profile},
-		appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultConfigYAML, UseDotConfigAppDir: true},
-	)
-	if err != nil {
-		return ResolvedConfig{}, err
-	}
-	if err := appconfig.DecodeSettings(settings, &document); err != nil {
-		return ResolvedConfig{}, fmt.Errorf("decode Backoffice config: %w", err)
-	}
-	configuredWorkingDir := strings.TrimSpace(document.Balda.WorkingDir)
-	if configuredWorkingDir == "" {
-		configuredWorkingDir = strings.TrimSpace(options.WorkingDir)
-	} else if !filepath.IsAbs(configuredWorkingDir) && strings.TrimSpace(options.WorkingDir) != "" {
-		configuredWorkingDir = filepath.Join(options.WorkingDir, configuredWorkingDir)
-	}
-	workingDir, err := paths.ResolveWorkingDir(configuredWorkingDir)
-	if err != nil {
-		return ResolvedConfig{}, err
-	}
-	stateDir, err := paths.ResolveStateDir(workingDir, document.Balda.StateDir)
-	if err != nil {
-		return ResolvedConfig{}, fmt.Errorf("resolve balda state_dir: %w", err)
-	}
-	database, err := document.Balda.Database.Resolve(workingDir, stateDir)
-	if err != nil {
-		return ResolvedConfig{}, err
-	}
-	server, err := document.Balda.Backoffice.Resolve()
-	if err != nil {
-		return ResolvedConfig{}, err
-	}
-	return ResolvedConfig{
-		Balda: document.Balda.BaldaConfig, Server: server,
-		WorkingDir: workingDir, StateDir: stateDir, Database: database,
-	}, nil
+	Balda    BaldaConfig
+	Server   ResolvedServerConfig
+	Database state.DatabaseConfig
 }

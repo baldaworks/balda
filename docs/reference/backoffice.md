@@ -1,13 +1,15 @@
 # Backoffice application
 
 This page is the authoritative application and Web UI foundation for
-Backoffice. Read it before changing `cmd/backoffice` or
+Backoffice. Read it before changing `cmd/balda` or
 `internal/apps/backoffice`.
 
 ## Application boundary
 
-- `cmd/backoffice` is the executable entrypoint and composition edge. It owns
-  process startup and dependency wiring, not page policy or domain state.
+- `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
+  process lifecycle; `backoffice bootstrap-admin` and `backoffice migrate-users`
+  are offline maintenance subcommands, not separate runtime start modes.
+- `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
   HTTP routes, security enforcement, server-side rendering, view models,
   templates, static assets, and tests.
@@ -16,28 +18,32 @@ Backoffice. Read it before changing `cmd/backoffice` or
 - `superadmin` is the interface name, not a new authorization role. Existing
   `administrator` and `operator` roles remain authoritative.
 
-## Process and configuration
+## Startup and configuration
 
-The separate `backoffice` binary reads the normal
-`.config/balda/config.yaml`, applies `BALDA_*` overrides, and opens exactly the
-database selected by `balda.database`. It does not start Balda channels or the
-agent runtime.
+`balda start` reads `.config/balda/config.yaml` once, applies `BALDA_*`
+overrides, opens the database selected by `balda.database`, and applies its
+embedded schema migrations. Backoffice uses that same provider and canonical
+user store; it does not select a second database or run separate migrations.
+The lifecycle checks legacy-user conversion and administrator bootstrap before
+MCP or ingress, then binds Backoffice HTTP before enabling inbound transports.
+A failed prerequisite or listener bind aborts startup. Shutdown closes ingress
+before HTTP and the shared provider.
 
 Commands:
 
-- `backoffice validate` validates configuration, database access, legacy-user
-  migration state, and administrator bootstrap state.
-- `backoffice migrate-users --credentials-output <path>` performs the explicit
+- `balda validate` checks configuration and the application graph without
+  opening or migrating the database. It is not a user-readiness check.
+- `balda backoffice migrate-users --credentials-output <path>` performs the explicit
   forward-only owner/collaborator migration. The output file is created once
   with mode `0600`; it contains temporary plaintext credentials and must be
   distributed and deleted as sensitive material.
-- `backoffice bootstrap-admin` reads a password from non-terminal stdin. It
+- `balda backoffice bootstrap-admin` reads a password from non-terminal stdin. It
   creates the first unbound primary administrator on a fresh database, or
   configures the selected credential-disabled administrator. Replacing a
   usable credential requires `--reset` and revokes all existing browser
   session families.
-- `backoffice serve` refuses pending legacy migration or incomplete
-  administrator bootstrap before binding the listener.
+- `balda start` refuses pending legacy conversion or incomplete administrator
+  bootstrap before binding any listener or ingress.
 
 The safe defaults are loopback `127.0.0.1:8095`, public URL
 `http://127.0.0.1:8095`, a 15-minute opaque access-token lifetime, and a
@@ -45,7 +51,7 @@ The safe defaults are loopback `127.0.0.1:8095`, public URL
 positive and shorter than `refresh_token_ttl`; both are bounded. A
 non-loopback listener requires an HTTPS public URL.
 
-Configure the process in the existing Balda file; do not create a second
+Configure Backoffice in the existing Balda file; do not create a second
 configuration or database section:
 
 ```yaml
@@ -68,14 +74,14 @@ absolute family deadline; rotation never extends it.
 
 ## Deployment and first administrator
 
-Build the process without a frontend toolchain or network-fetched runtime
-assets:
+The shipped Balda binary embeds the Backoffice UI; no second binary, frontend
+toolchain, or runtime asset download is required:
 
 ```bash
 mkdir -p ./bin
-go build -trimpath -o ./bin/backoffice ./cmd/backoffice
-./bin/backoffice validate
-./bin/backoffice serve
+go build -trimpath -o ./bin/balda ./cmd/balda
+./bin/balda init
+./bin/balda validate
 ```
 
 For a fresh database, supply the first administrator password over redirected
@@ -83,10 +89,10 @@ standard input. Never put a password in a command argument, shell history,
 environment variable, log, or terminal paste:
 
 ```bash
-./bin/backoffice bootstrap-admin \
+./bin/balda backoffice bootstrap-admin \
   --username admin \
   --display-name "Balda administrator" < /run/secrets/backoffice-admin-password
-./bin/backoffice validate
+./bin/balda start
 ```
 
 The password file should be readable only by the service account and provided
@@ -95,14 +101,18 @@ terminal as password input. Resetting an existing usable credential requires
 an explicit `--reset`; it invalidates every browser session family for that
 user.
 
-For an existing installation, stop Balda and Backoffice, take a consistent
-database backup, deploy both new binaries, and run the forward migration before
-starting either process:
+For an existing installation with legacy owner/collaborator records, stop
+Balda, take a consistent database backup, deploy the new binary, and run the
+forward user conversion before start. The converted primary has a temporary
+credential, so `--reset` sets its intended password and revokes any prior
+browser refresh families. Skip conversion and reset when canonical users and
+an active administrator are already ready:
 
 ```bash
-./bin/backoffice migrate-users \
+./bin/balda backoffice migrate-users \
   --credentials-output /run/secrets/balda-migrated-users.txt
-./bin/backoffice validate
+./bin/balda backoffice bootstrap-admin --reset < /run/secrets/backoffice-admin-password
+./bin/balda start
 ```
 
 The credentials path must not exist beforehand. Backoffice creates it
@@ -114,7 +124,7 @@ attach the manifest to a ticket. Migrated bot bindings and roles become
 canonical immediately; a temporary browser credential can reach only password
 replacement and logout until it is changed.
 
-Migration is transactional and idempotent. A collision or interrupted
+User conversion is transactional and idempotent. A collision or interrupted
 precondition fails instead of silently merging users. After it succeeds there
 is no legacy runtime fallback. Rollback means restoring the pre-migration
 database backup with the old binaries stopped; do not roll back only the binary
@@ -146,12 +156,13 @@ credential that could restore access.
 
 ## Operations, recovery, and QA
 
-- Run `backoffice validate` after configuration, migration, bootstrap, restore,
-  or credential reset and before exposing the listener.
+- Run `balda validate` for read-only configuration/graph checks. `balda start`
+  is the authoritative user-readiness gate and refuses to expose listeners
+  until conversion and bootstrap are complete.
 - Back up and restore the selected database as documented in
   [Balda state database](database.md). SQLite may be shared only by one Balda
-  runtime and one local Backoffice process; stop both for file backup or
-  restore. PostgreSQL backups must include schema, data, sequences, and Goose
+  process; stop it for file backup or restore. PostgreSQL backups must include
+  schema, data, sequences, and Goose
   migration history.
 - Access is administrator-only. Account and Overview are available to active
   administrators and operators; Audit is administrator-only. The optional
@@ -200,7 +211,7 @@ remain server-side and authoritative.
 
 ## Packaging and frontend provenance
 
-One Backoffice Go binary contains the templates, CSS, JavaScript, icons, and
+The Balda Go binary contains the Backoffice templates, CSS, JavaScript, icons, and
 fonts. Node/npm, an SPA router, a frontend development server, and CDN-hosted
 runtime assets are prohibited.
 

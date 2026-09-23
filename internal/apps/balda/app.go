@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/actorsfx"
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
@@ -160,6 +161,10 @@ func Module(
 		return fx.Module("balda", fx.Error(err))
 	}
 	database, err := cfg.Balda.Database.Resolve(workingDir, stateDir)
+	if err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
+	backofficeConfig, err := backofficeRuntimeConfig(cfg.Balda, database)
 	if err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
@@ -341,6 +346,9 @@ func Module(
 					},
 				})
 				return provider, nil
+			},
+			func(provider baldastate.Provider) (*backoffice.Runtime, error) {
+				return backoffice.NewRuntime(backofficeConfig, provider)
 			},
 			func(provider baldastate.Provider) tgbotkit.OffsetStore {
 				return provider.PollingOffsetStore()

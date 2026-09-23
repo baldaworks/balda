@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/normahq/runtime/v2/appconfig"
@@ -46,6 +47,20 @@ func TestLoadDatabaseEnvironmentOverrides(t *testing.T) {
 	}
 	if doc.Balda.Database != want {
 		t.Fatal("database environment overrides were not applied")
+	}
+}
+
+func TestLoadBackofficeEnvironmentOverridesFromSameDocument(t *testing.T) {
+	t.Setenv("BALDA_BACKOFFICE_LISTEN_ADDR", "127.0.0.1:9095")
+	t.Setenv("BALDA_BACKOFFICE_PUBLIC_URL", "http://127.0.0.1:9095")
+	t.Setenv("BALDA_BACKOFFICE_ACCESS_TOKEN_TTL", "10m")
+	doc := loadDatabaseTestDocument(t, t.TempDir())
+	server, err := doc.Balda.Backoffice.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.ListenAddr != "127.0.0.1:9095" || server.AccessTokenTTL != 10*time.Minute {
+		t.Fatalf("backoffice server = %+v", server)
 	}
 }
 

@@ -27,11 +27,11 @@ fields. Unknown fields, malformed templates and empty paths fail startup.
 Rendered relative paths are anchored to the working directory and cleaned.
 For example, `{{.StateDir}}/databases/runtime.db` selects a custom file.
 
-SQLite is intended for one Balda runtime plus the separate Backoffice process
-on the same host and local persistent storage. Do not run multiple active Balda
-runtimes, share the file across hosts, or place it on a network filesystem. It
-uses foreign keys, WAL where available, an immediate transaction lock for
-writes, a bounded busy timeout, and one pooled connection per process.
+SQLite is intended for one Balda process on local persistent storage. The bot
+and embedded Backoffice share its provider. Do not run multiple active Balda
+processes, share the file across hosts, or place it on a network filesystem.
+It uses foreign keys, WAL where available, an immediate transaction lock for
+writes, a bounded busy timeout, and one pooled connection.
 
 ## PostgreSQL
 
@@ -71,11 +71,13 @@ other local resources. `state_dir` is still needed for NATS and local artifacts.
 
 ## Commands and session persistence
 
-`start`, `init`, `validate`, `preflight`, `doctor`, and plugin commands use the
-same selected backend whenever they access state. Diagnostic commands can open
-and migrate the database and bootstrap owner state; they are not read-only
-database checks. Connection or migration failure prevents startup. No fallback
-to SQLite, hot switching, or database-specific start command exists.
+`start`, `init`, `preflight`, `doctor`, Backoffice maintenance, and plugin
+commands use the same selected backend whenever they access state. Opening it
+applies embedded forward schema migrations. `balda validate` is different: it
+checks configuration and graph construction without opening, creating, or
+migrating the database. `preflight` and `doctor` can still open and mutate state;
+they are not read-only checks. Connection or migration failure prevents
+startup. No fallback to SQLite, hot switching, or schema down command exists.
 
 `balda init` retains its refusal to overwrite an existing config. On a fresh
 installation it honors effective database environment settings; keep those
@@ -90,12 +92,13 @@ still uses the selected database.
 ## Backup, restore and changing engines
 
 Back up before an upgrade or configuration change. For SQLite, stop Balda and
-Backoffice and use a consistent SQLite backup (or copy the stopped database and
+use a consistent SQLite backup (or copy the stopped database and
 any remaining WAL/SHM files together). Do not copy only a live WAL-mode main
 file. For PostgreSQL, use your normal consistent `pg_dump`/restore or managed
 backup procedure, including schema, data, sequences and Goose version history.
-Restore into a stopped deployment, run `balda preflight` and `backoffice
-validate`, and only then resume Backoffice and transport traffic. Schema
+Restore into a stopped deployment, run `balda validate`, then start Balda and
+verify Backoffice health and bot ingress. `balda start` applies schema
+migrations and checks canonical users before listeners become ready. Schema
 recovery is forward migration or backup restore, not automatic migration
 downgrade.
 
