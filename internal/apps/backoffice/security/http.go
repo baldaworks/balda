@@ -268,6 +268,39 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 	})
 }
 
+// AdministratorMutation applies the browser mutation guard in trust-boundary
+// order and returns a current normal administrator principal.
+func (b *Browser) AdministratorMutation(w http.ResponseWriter, r *http.Request) (url.Values, Principal, bool) {
+	form, ok := b.mutationForm(w, r)
+	if !ok {
+		return nil, Principal{}, false
+	}
+	access, err := r.Cookie(AccessCookieName)
+	if err != nil || access.Value == "" {
+		b.writeServiceError(w, r, ErrUnauthenticated)
+		return nil, Principal{}, false
+	}
+	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
+		b.writeServiceError(w, r, err)
+		return nil, Principal{}, false
+	}
+	principal, err := b.service.ValidateAccess(r.Context(), access.Value)
+	if err != nil {
+		b.writeServiceError(w, r, err)
+		return nil, Principal{}, false
+	}
+	if principal.Assurance != usercmd.SessionAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
+		b.writeServiceError(w, r, ErrForbidden)
+		return nil, Principal{}, false
+	}
+	return form, principal, true
+}
+
+// WriteError maps an application failure onto the shared buffered HTML error surface.
+func (b *Browser) WriteError(w http.ResponseWriter, r *http.Request, err error) {
+	b.writeServiceError(w, r, err)
+}
+
 // PrincipalFromContext returns a principal installed by Authenticate.
 func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	principal, ok := ctx.Value(principalContextKey{}).(Principal)
@@ -356,11 +389,17 @@ func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 	switch {
 	case errors.Is(err, ErrUnauthenticated):
 		b.writeHTTPError(w, r, http.StatusUnauthorized, "authentication failed")
-	case errors.Is(err, ErrForbidden):
+	case errors.Is(err, ErrForbidden), errors.Is(err, usercmd.ErrForbidden):
 		b.writeHTTPError(w, r, http.StatusForbidden, "request forbidden")
 	case errors.Is(err, usercmd.ErrInvalid):
 		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
-	case errors.Is(err, usercmd.ErrConflict):
+	case errors.Is(err, usercmd.ErrBotImpactAcknowledgementRequired),
+		errors.Is(err, usercmd.ErrCurrentSessionConfirmationRequired):
+		b.writeHTTPError(w, r, http.StatusBadRequest, "confirmation required")
+	case errors.Is(err, usercmd.ErrNotFound):
+		b.writeHTTPError(w, r, http.StatusNotFound, "not found")
+	case errors.Is(err, usercmd.ErrConflict), errors.Is(err, usercmd.ErrLastAdministrator),
+		errors.Is(err, usercmd.ErrPrimaryConflict):
 		b.writeHTTPError(w, r, http.StatusConflict, "request conflict")
 	default:
 		b.writeHTTPError(w, r, http.StatusInternalServerError, "internal server error")

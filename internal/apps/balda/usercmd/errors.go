@@ -9,6 +9,8 @@ var (
 	ErrNotFound = errors.New("user resource not found")
 	// ErrConflict identifies an optimistic version conflict.
 	ErrConflict = errors.New("user version conflict")
+	// ErrForbidden identifies an authenticated actor without the required user capability.
+	ErrForbidden = errors.New("user operation forbidden")
 	// ErrAuthenticationDisabled identifies a user or credential that cannot authenticate.
 	ErrAuthenticationDisabled = errors.New("authentication disabled")
 	// ErrBindingAlreadyAssigned identifies a user that already has its single binding.

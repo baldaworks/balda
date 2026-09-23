@@ -60,15 +60,17 @@ type BindingView struct {
 
 // UserView is the canonical user's safe browser projection.
 type UserView struct {
-	ID              string
-	DisplayName     string
-	Username        string
-	Status          string
-	Role            string
-	CredentialState string
-	MustChange      bool
-	Primary         bool
-	Binding         *BindingView
+	ID                string
+	DisplayName       string
+	Username          string
+	Status            string
+	Role              string
+	CredentialState   string
+	MustChange        bool
+	Primary           bool
+	Binding           *BindingView
+	Version           uint64
+	CredentialVersion uint64
 }
 
 // SessionView represents one server-side family, never an individual token generation.
@@ -79,6 +81,7 @@ type SessionView struct {
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
 	RevokedAt  time.Time
+	Revoked    bool
 	Current    bool
 	Version    uint64
 }
@@ -135,6 +138,7 @@ func ProjectUser(user usercmd.User) UserView {
 		ID: user.ID, DisplayName: user.DisplayName, Username: user.Username,
 		Status: string(user.Status), Role: string(user.Role), CredentialState: string(user.Credential.State),
 		MustChange: user.Credential.MustChange, Primary: user.Primary,
+		Version: user.Version, CredentialVersion: user.Credential.Version,
 	}
 	if user.Binding != nil {
 		view.Binding = &BindingView{
@@ -150,7 +154,7 @@ func ProjectSession(summary usercmd.SessionSummary, currentFamilyID string) Sess
 	return SessionView{
 		ID: summary.ID, Assurance: string(summary.Assurance), CreatedAt: summary.CreatedAt,
 		LastSeenAt: summary.LastSeenAt, ExpiresAt: summary.ExpiresAt, RevokedAt: summary.RevokedAt,
-		Current: summary.ID == currentFamilyID, Version: summary.Version,
+		Revoked: !summary.RevokedAt.IsZero(), Current: summary.ID == currentFamilyID, Version: summary.Version,
 	}
 }
 

@@ -1,19 +1,25 @@
 package backoffice
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
 
+const checkedFormValue = "yes"
+
 type httpApp struct {
 	renderer *webui.Renderer
 	browser  *security.Browser
+	access   *access.Service
 	cards    []webui.CapabilityCard
 	qa       bool
 }
@@ -29,7 +35,7 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := &httpApp{renderer: renderer, cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI}
+	app := &httpApp{renderer: renderer, access: access.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies,
 		ErrorHandler: app.renderSecurityError,
@@ -60,6 +66,12 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET /account/password", a.browser.Authenticate(http.HandlerFunc(a.passwordPage)))
 	mux.HandleFunc("POST /account/password", a.browser.ReplacePassword)
 	mux.Handle("GET /overview", a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
+	mux.Handle("GET /access", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
+	mux.Handle("GET /access/users/{user_id}", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
+	mux.HandleFunc("POST /access/users", a.accessCreate)
+	mux.HandleFunc("POST /access/users/{user_id}", a.accessUpdate)
+	mux.HandleFunc("POST /access/users/{user_id}/credential", a.accessCredentialReset)
+	mux.HandleFunc("POST /access/users/{user_id}/sessions/{session_id}/revoke", a.accessSessionRevoke)
 	mux.HandleFunc("GET /qa/ui/", a.qaPage)
 	return securityHeaders(mux), nil
 }
@@ -100,6 +112,158 @@ func (a *httpApp) overview(w http.ResponseWriter, r *http.Request) {
 		Title: "Overview · Balda", Current: webui.LocationOverview,
 		Navigation: webui.Navigation(capabilities, webui.LocationOverview), Capabilities: a.cards,
 	})
+}
+
+func (a *httpApp) accessList(w http.ResponseWriter, r *http.Request) {
+	principal, ok := security.PrincipalFromContext(r.Context())
+	if !ok {
+		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		return
+	}
+	userList, err := a.access.ListUsers(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	views := make([]webui.UserView, 0, len(userList))
+	for _, user := range userList {
+		views = append(views, webui.ProjectUser(user))
+	}
+	capabilities := users.BackofficeCapabilities(principal.User)
+	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
+		Title: "Access · Balda", Current: webui.LocationAccess,
+		Navigation: webui.Navigation(capabilities, webui.LocationAccess), Users: views,
+		CSRFToken: a.browser.CSRFToken(r),
+	})
+}
+
+func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
+	principal, ok := security.PrincipalFromContext(r.Context())
+	if !ok {
+		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		return
+	}
+	actor := access.Actor{User: principal.User, SessionID: principal.FamilyID}
+	user, err := a.access.GetUser(r.Context(), actor, r.PathValue("user_id"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	sessionPage, err := a.access.ListSessions(r.Context(), actor, user.ID)
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
+	for _, session := range sessionPage.Sessions {
+		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID))
+	}
+	view := webui.ProjectUser(user)
+	capabilities := users.BackofficeCapabilities(principal.User)
+	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
+		Title: "Access · " + user.DisplayName, Current: webui.LocationAccess,
+		Navigation: webui.Navigation(capabilities, webui.LocationAccess), User: &view,
+		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
+	})
+}
+
+func (a *httpApp) accessCreate(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	password := []byte(form.Get("temporary_password"))
+	defer clear(password)
+	_, err := a.access.CreateUser(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.CreateInput{
+		DisplayName: form.Get("display_name"), Username: form.Get("username"), TemporaryPassword: password,
+		Role: usercmd.Role(form.Get("role")), Status: usercmd.UserStatus(form.Get("status")),
+	})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondMutation(w, r, webui.LocationAccess)
+}
+
+func (a *httpApp) accessUpdate(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	expectedVersion, err := parseFormVersion(form.Get("expected_version"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	_, err = a.access.UpdateUser(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.UpdateInput{
+		UserID: r.PathValue("user_id"), DisplayName: form.Get("display_name"), Username: form.Get("username"),
+		Role: usercmd.Role(form.Get("role")), Status: usercmd.UserStatus(form.Get("status")), ExpectedVersion: expectedVersion,
+		AcknowledgeBotAccessImpact: form.Get("confirm_bot_impact") == checkedFormValue,
+	})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondMutation(w, r, webui.LocationAccess)
+}
+
+func (a *httpApp) accessCredentialReset(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	userVersion, err := parseFormVersion(form.Get("expected_user_version"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	credentialVersion, err := parseFormVersion(form.Get("expected_credential_version"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	password := []byte(form.Get("temporary_password"))
+	defer clear(password)
+	err = a.access.ResetCredential(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.CredentialInput{
+		UserID: r.PathValue("user_id"), ExpectedUserVersion: userVersion,
+		ExpectedCredentialVersion: credentialVersion, TemporaryPassword: password,
+		ConfirmCurrent: form.Get("confirm_current") == checkedFormValue,
+	})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondMutation(w, r, webui.LocationAccess)
+}
+
+func (a *httpApp) accessSessionRevoke(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	err := a.access.RevokeSession(
+		r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID},
+		r.PathValue("user_id"), r.PathValue("session_id"), form.Get("confirm_current") == checkedFormValue,
+	)
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondMutation(w, r, webui.LocationAccess)
+}
+
+func (a *httpApp) respondMutation(w http.ResponseWriter, r *http.Request, location webui.Location) {
+	if err := webui.RespondMutation(w, r, location); err != nil {
+		a.browser.WriteError(w, r, fmt.Errorf("respond to mutation: %w", err))
+	}
+}
+
+func parseFormVersion(raw string) (uint64, error) {
+	version, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
+	if err != nil || version == 0 {
+		return 0, usercmd.ErrInvalid
+	}
+	return version, nil
 }
 
 func (a *httpApp) qaPage(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +308,16 @@ func qaFixture(name string) (webui.Page, string, bool) {
 			},
 			Audit: []webui.AuditView{{Action: "session.login.succeeded", Outcome: "succeeded", TargetType: "session", TargetID: "family-demo", OccurredAt: now}},
 		}, webui.TemplateOverview, true
+	case "access":
+		user := webui.UserView{
+			ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
+			CredentialState: "temporary", MustChange: true, Version: 3, CredentialVersion: 2,
+			Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "legacy migration"},
+		}
+		return webui.Page{
+			Title: "Access · QA", Current: webui.LocationAccess, Navigation: webui.Navigation(admin, webui.LocationAccess),
+			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
+		}, webui.TemplateAccess, true
 	default:
 		return webui.Page{}, "", false
 	}

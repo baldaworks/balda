@@ -206,6 +206,12 @@ type SessionSummary struct {
 type AuditAction string
 
 const (
+	// AuditActionUserCreated records canonical user creation.
+	AuditActionUserCreated AuditAction = "user.created"
+	// AuditActionUserUpdated records a profile mutation that does not change role or status.
+	AuditActionUserUpdated AuditAction = "user.updated"
+	// AuditActionUserAccessChanged records one mutation that changes both role and status.
+	AuditActionUserAccessChanged AuditAction = "user.access.changed"
 	// AuditActionUserRoleChanged records a system-role mutation.
 	AuditActionUserRoleChanged AuditAction = "user.role.changed"
 	// AuditActionUserStatusChanged records a user-status mutation.

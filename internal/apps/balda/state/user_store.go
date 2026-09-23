@@ -148,6 +148,11 @@ func (s *sqlUserStore) UpdateUser(ctx context.Context, user usercmd.User, expect
 	} else if affected != 1 {
 		return usercmd.ErrConflict
 	}
+	if currentStatus == string(usercmd.StatusActive) && user.Status == usercmd.StatusDisabled {
+		if err := s.revokeUserSessionsTx(ctx, tx, user.ID, audit.OccurredAt, "user disabled"); err != nil {
+			return err
+		}
+	}
 	if err := s.insertAudit(ctx, tx, audit); err != nil {
 		return err
 	}

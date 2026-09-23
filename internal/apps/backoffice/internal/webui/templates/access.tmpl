@@ -1,7 +1,41 @@
 {{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
-  <div class="container-fluid py-3"><h1>Access</h1>
-    <div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Binding</th></tr></thead><tbody>
-    {{range .Users}}<tr><td><strong>{{.DisplayName}}</strong><br><span class="text-body-secondary">{{.Username}}</span></td><td>{{.Role}}</td><td>{{.Status}}</td><td>{{with .Binding}}{{.ChannelType}}:{{.Principal}}{{else}}Unbound{{end}}</td></tr>{{else}}<tr><td colspan="4">No users.</td></tr>{{end}}
+  <div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h1 class="mb-0">Access</h1>{{if .User}}<a class="btn btn-outline-secondary" href="/access" hx-boost="true" hx-target="#main-content" hx-push-url="true">All users</a>{{end}}</div>
+    {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
+    {{with .User}}
+    <section aria-labelledby="user-heading" class="card mb-3"><div class="card-body"><h2 id="user-heading" class="h4">{{.DisplayName}}</h2>
+      {{if .Primary}}<p><span class="badge text-bg-primary">Primary administrator</span></p>{{end}}
+      <form action="/access/users/{{.ID}}" method="post" hx-post="/access/users/{{.ID}}" hx-target="#main-content">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="expected_version" value="{{.Version}}">
+        <div class="row g-3"><div class="col-md-6"><label class="form-label" for="display-name">Display name</label><input class="form-control" id="display-name" name="display_name" value="{{.DisplayName}}" required></div>
+        <div class="col-md-6"><label class="form-label" for="username">Username</label><input class="form-control" id="username" name="username" value="{{.Username}}" autocomplete="off" required></div>
+        <div class="col-md-6"><label class="form-label" for="role">Role</label><select class="form-select" id="role" name="role" required><option value="administrator"{{if eq .Role "administrator"}} selected{{end}}>Administrator</option><option value="operator"{{if eq .Role "operator"}} selected{{end}}>Operator</option></select></div>
+        <div class="col-md-6"><label class="form-label" for="status">Status</label><select class="form-select" id="status" name="status" required><option value="active"{{if eq .Status "active"}} selected{{end}}>Active</option><option value="disabled"{{if eq .Status "disabled"}} selected{{end}}>Disabled</option></select></div></div>
+        {{with .Binding}}<div class="alert alert-secondary mt-3 mb-0"><strong>Read-only binding:</strong> <code>{{.ChannelType}}:{{.Principal}}</code>{{with .DisplayName}} — {{.}}{{end}}{{with .Provenance}} ({{.}}){{end}}</div>
+        <div class="form-check mt-3"><input class="form-check-input" type="checkbox" id="confirm-bot-impact" name="confirm_bot_impact" value="yes"><label class="form-check-label" for="confirm-bot-impact">I understand that changing role or status can change this user's bot access.</label></div>{{else}}<p class="text-body-secondary mt-3 mb-0">No transport binding. Bindings are read-only in Backoffice.</p>{{end}}
+        <button class="btn btn-primary mt-3" type="submit">Save user</button>
+      </form>
+    </div></section>
+    <section aria-labelledby="credential-heading" class="card mb-3"><div class="card-body"><h2 id="credential-heading" class="h4">Temporary credential</h2><p>Current state: <strong>{{.CredentialState}}</strong>{{if .MustChange}}; password replacement required{{end}}.</p>
+      <form action="/access/users/{{.ID}}/credential" method="post" hx-post="/access/users/{{.ID}}/credential" hx-target="#main-content">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="expected_user_version" value="{{.Version}}"><input type="hidden" name="expected_credential_version" value="{{.CredentialVersion}}">
+        <label class="form-label" for="temporary-password">New temporary password</label><input class="form-control" id="temporary-password" name="temporary_password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required>
+        <p class="form-text">Resetting the credential revokes every access token and every refresh-token generation for this user.</p><div class="form-check mb-3"><input class="form-check-input" id="confirm-reset-current" type="checkbox" name="confirm_current" value="yes"><label class="form-check-label" for="confirm-reset-current">If this is my account, I understand that my current session will be revoked.</label></div><button class="btn btn-warning" type="submit">Reset credential</button>
+      </form>
+    </div></section>
+    <section aria-labelledby="sessions-heading" class="card"><div class="card-body"><h2 id="sessions-heading" class="h4">Browser sessions</h2><div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">Created</th><th scope="col">Last seen</th><th scope="col">Expires</th><th scope="col">State</th><th scope="col">Action</th></tr></thead><tbody>
+      {{range $.Sessions}}<tr><td>{{.CreatedAt}}</td><td>{{.LastSeenAt}}</td><td>{{.ExpiresAt}}</td><td>{{.Assurance}}{{if .Current}} <span class="badge text-bg-primary">Current</span>{{end}}{{if .Revoked}} <span class="badge text-bg-secondary">Revoked</span>{{end}}</td><td>{{if not .Revoked}}<form action="/access/users/{{$.User.ID}}/sessions/{{.ID}}/revoke" method="post" hx-post="/access/users/{{$.User.ID}}/sessions/{{.ID}}/revoke" hx-target="#main-content"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">{{if .Current}}<div class="form-check"><input class="form-check-input" id="confirm-current-{{.ID}}" type="checkbox" name="confirm_current" value="yes"><label class="form-check-label" for="confirm-current-{{.ID}}">Confirm current session</label></div>{{end}}<button class="btn btn-sm btn-outline-danger" type="submit">Revoke family</button></form>{{end}}</td></tr>{{else}}<tr><td colspan="5">No browser sessions.</td></tr>{{end}}
+    </tbody></table></div></div></section>
+    {{else}}
+    <section aria-labelledby="create-heading" class="card mb-3"><div class="card-body"><h2 id="create-heading" class="h4">Create user</h2>
+      <form action="/access/users" method="post" hx-post="/access/users" hx-target="#main-content"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><div class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="create-display-name">Display name</label><input class="form-control" id="create-display-name" name="display_name" required></div><div class="col-md-6"><label class="form-label" for="create-username">Username</label><input class="form-control" id="create-username" name="username" autocomplete="off" required></div>
+        <div class="col-md-4"><label class="form-label" for="create-role">Role</label><select class="form-select" id="create-role" name="role"><option value="operator">Operator</option><option value="administrator">Administrator</option></select></div><div class="col-md-4"><label class="form-label" for="create-status">Status</label><select class="form-select" id="create-status" name="status"><option value="active">Active</option><option value="disabled">Disabled</option></select></div><div class="col-md-4"><label class="form-label" for="create-password">Temporary password</label><input class="form-control" id="create-password" name="temporary_password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></div>
+      </div><button class="btn btn-primary mt-3" type="submit">Create user</button></form>
+    </div></section>
+    <div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">User</th><th scope="col">Credential</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Binding</th></tr></thead><tbody>
+    {{range .Users}}<tr><td><a href="/access/users/{{.ID}}" hx-boost="true" hx-target="#main-content" hx-push-url="true"><strong>{{.DisplayName}}</strong></a><br><span class="text-body-secondary">{{.Username}}</span></td><td>{{.CredentialState}}{{if .MustChange}} <span class="badge text-bg-warning">Must change</span>{{end}}</td><td>{{.Role}}</td><td>{{.Status}}</td><td>{{with .Binding}}<code>{{.ChannelType}}:{{.Principal}}</code>{{else}}Unbound{{end}}</td></tr>{{else}}<tr><td colspan="5">No users.</td></tr>{{end}}
     </tbody></table></div>
+    {{end}}
   </div>
 </main>{{end}}

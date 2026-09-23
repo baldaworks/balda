@@ -130,6 +130,11 @@ components:
     in:
       - internal/apps/backoffice
 
+  # Backoffice-only canonical user and browser-session administration use cases.
+  backoffice_access:
+    in:
+      - internal/apps/backoffice/access
+
   # Browser-only Backoffice authentication, opaque token rotation, and HTTP guards.
   backoffice_security:
     in:
@@ -414,6 +419,7 @@ deps:
       - storage
       - infrastructure
       - backoffice_application
+      - backoffice_access
       - backoffice_webui
       - backoffice_security
     # Backoffice passes its local persistence port into the migration use case;
@@ -428,6 +434,16 @@ deps:
       - user_security
       - backoffice_security
     # The storage and HTTP services are injected through security-owned narrow ports.
+    deepScan: false
+    anyVendorDeps: true
+
+  backoffice_access:
+    mayDependOn:
+      - user_contracts
+      - user_application
+      - user_security
+      - backoffice_access
+    # The selected user store is injected through the Access-owned narrow port.
     deepScan: false
     anyVendorDeps: true
 
