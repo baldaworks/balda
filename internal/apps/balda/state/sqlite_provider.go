@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -129,7 +130,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		return nil, fmt.Errorf("sqlite path is required")
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteConnectionString(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open balda state sqlite db: %w", err)
 	}
@@ -170,6 +171,16 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		users:          newSQLiteUserStore(db),
 	}
 	return provider, nil
+}
+
+func sqliteConnectionString(path string) string {
+	query := url.Values{"_txlock": {"immediate"}}
+	query.Add("_pragma", "foreign_keys(1)")
+	query.Add("_pragma", "busy_timeout(5000)")
+	if path == ":memory:" {
+		return "file::memory:?" + query.Encode()
+	}
+	return (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
 }
 
 func (p *sqliteProvider) AppKV() KVStore {

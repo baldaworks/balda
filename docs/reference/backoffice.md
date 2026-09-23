@@ -45,6 +45,127 @@ The safe defaults are loopback `127.0.0.1:8095`, public URL
 positive and shorter than `refresh_token_ttl`; both are bounded. A
 non-loopback listener requires an HTTPS public URL.
 
+Configure the process in the existing Balda file; do not create a second
+configuration or database section:
+
+```yaml
+balda:
+  backoffice:
+    listen_addr: "127.0.0.1:8095"
+    public_url: "http://127.0.0.1:8095"
+    access_token_ttl: "15m"
+    refresh_token_ttl: "12h"
+    qa_ui: false
+```
+
+Every field has the normal `BALDA_*` environment override, for example
+`BALDA_BACKOFFICE_LISTEN_ADDR`, `BALDA_BACKOFFICE_PUBLIC_URL`,
+`BALDA_BACKOFFICE_ACCESS_TOKEN_TTL`,
+`BALDA_BACKOFFICE_REFRESH_TOKEN_TTL`, and `BALDA_BACKOFFICE_QA_UI`. Access
+tokens may live from 1 minute through 1 hour. Refresh families must outlive
+access tokens and may live for at most 30 days. The refresh deadline is an
+absolute family deadline; rotation never extends it.
+
+## Deployment and first administrator
+
+Build the process without a frontend toolchain or network-fetched runtime
+assets:
+
+```bash
+mkdir -p ./bin
+go build -trimpath -o ./bin/backoffice ./cmd/backoffice
+./bin/backoffice validate
+./bin/backoffice serve
+```
+
+For a fresh database, supply the first administrator password over redirected
+standard input. Never put a password in a command argument, shell history,
+environment variable, log, or terminal paste:
+
+```bash
+./bin/backoffice bootstrap-admin \
+  --username admin \
+  --display-name "Balda administrator" < /run/secrets/backoffice-admin-password
+./bin/backoffice validate
+```
+
+The password file should be readable only by the service account and provided
+by the deployment secret manager. `bootstrap-admin` deliberately refuses a
+terminal as password input. Resetting an existing usable credential requires
+an explicit `--reset`; it invalidates every browser session family for that
+user.
+
+For an existing installation, stop Balda and Backoffice, take a consistent
+database backup, deploy both new binaries, and run the forward migration before
+starting either process:
+
+```bash
+./bin/backoffice migrate-users \
+  --credentials-output /run/secrets/balda-migrated-users.txt
+./bin/backoffice validate
+```
+
+The credentials path must not exist beforehand. Backoffice creates it
+exclusively with mode `0600`, writes each generated temporary credential once,
+and never prints a password to stdout. Distribute entries out of band to their
+intended users, verify delivery, and then securely remove the manifest under
+your organization's secret-retention policy. Never commit, upload, back up, or
+attach the manifest to a ticket. Migrated bot bindings and roles become
+canonical immediately; a temporary browser credential can reach only password
+replacement and logout until it is changed.
+
+Migration is transactional and idempotent. A collision or interrupted
+precondition fails instead of silently merging users. After it succeeds there
+is no legacy runtime fallback. Rollback means restoring the pre-migration
+database backup with the old binaries stopped; do not roll back only the binary
+or re-enable legacy reads.
+
+## Browser sessions and refresh rotation
+
+Successful login creates a short-lived opaque access token and a longer-lived
+refresh family. When access expires, Backoffice renders a continuation page;
+the user submits its native POST form to rotate the single-use refresh token.
+The server consumes generation N, creates generation N+1, replaces both
+cookies, and preserves the family's original absolute expiry. The browser does
+not silently replay the request that encountered expiry, especially an unsafe
+mutation.
+
+Submitting an already consumed refresh token is treated as verified replay.
+Backoffice revokes the whole family and requires a new username/password login.
+A genuine duplicate submit can therefore sign the user out; this is the
+intentional fail-closed tradeoff. Invalid, expired, credential-stale, disabled,
+or administratively revoked families also require re-login and receive only a
+generic browser error.
+
+Access administrators can revoke another browser family. Account owners can
+revoke their own families, but revoking the current one requires explicit
+confirmation. Family revocation invalidates the current access token and every
+refresh generation in that lineage. Password reset, password replacement, and
+user disablement revoke all affected families rather than leaving a refresh
+credential that could restore access.
+
+## Operations, recovery, and QA
+
+- Run `backoffice validate` after configuration, migration, bootstrap, restore,
+  or credential reset and before exposing the listener.
+- Back up and restore the selected database as documented in
+  [Balda state database](database.md). SQLite may be shared only by one Balda
+  runtime and one local Backoffice process; stop both for file backup or
+  restore. PostgreSQL backups must include schema, data, sequences, and Goose
+  migration history.
+- Access is administrator-only. Account and Overview are available to active
+  administrators and operators; Audit is administrator-only. The optional
+  transport binding is read-only, and committed role/status changes immediately
+  affect bot authorization.
+- Set `qa_ui: true` only for a private development or review instance. It
+  exposes deterministic repository-free fixtures at `/qa/ui/login`,
+  `/qa/ui/refresh`, `/qa/ui/password`, `/qa/ui/overview`, `/qa/ui/access`,
+  `/qa/ui/account`, and `/qa/ui/audit`. QA routes are GET/HEAD-only,
+  `no-store`, and `noindex`; keep them disabled in production.
+- Username/password is the only browser authentication provider in this
+  release. OIDC, WebAuthn/passkeys, and MFA are intentionally deferred; no
+  placeholder configuration or browser flow exists for them.
+
 ## Web UI foundation
 
 The foundation is:

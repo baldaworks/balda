@@ -27,9 +27,11 @@ fields. Unknown fields, malformed templates and empty paths fail startup.
 Rendered relative paths are anchored to the working directory and cleaned.
 For example, `{{.StateDir}}/databases/runtime.db` selects a custom file.
 
-SQLite is intended for a single Balda process with local persistent storage.
-Do not share its file across hosts or place it on a network filesystem. It uses
-foreign keys, WAL where available, and a single pooled connection.
+SQLite is intended for one Balda runtime plus the separate Backoffice process
+on the same host and local persistent storage. Do not run multiple active Balda
+runtimes, share the file across hosts, or place it on a network filesystem. It
+uses foreign keys, WAL where available, an immediate transaction lock for
+writes, a bounded busy timeout, and one pooled connection per process.
 
 ## PostgreSQL
 
@@ -88,13 +90,14 @@ still uses the selected database.
 ## Backup, restore and changing engines
 
 Back up before an upgrade or configuration change. For SQLite, stop Balda and
-use a consistent SQLite backup (or copy the stopped database and any remaining
-WAL/SHM files together). Do not copy only a live WAL-mode main file. For
-PostgreSQL, use your normal consistent `pg_dump`/restore or managed backup
-procedure, including schema, data, sequences and Goose version history.
-Restore into a stopped deployment and verify with `balda preflight` before
-resuming transport traffic. Schema recovery is forward migration or backup
-restore, not automatic migration downgrade.
+Backoffice and use a consistent SQLite backup (or copy the stopped database and
+any remaining WAL/SHM files together). Do not copy only a live WAL-mode main
+file. For PostgreSQL, use your normal consistent `pg_dump`/restore or managed
+backup procedure, including schema, data, sequences and Goose version history.
+Restore into a stopped deployment, run `balda preflight` and `backoffice
+validate`, and only then resume Backoffice and transport traffic. Schema
+recovery is forward migration or backup restore, not automatic migration
+downgrade.
 
 Changing `type` does **not** copy data between engines. An empty PostgreSQL
 database starts empty: existing users do not appear there automatically.
