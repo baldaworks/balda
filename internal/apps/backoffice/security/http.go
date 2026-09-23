@@ -38,6 +38,7 @@ type browserService interface {
 	Refresh(ctx context.Context, rawToken, csrfToken string) (Credentials, error)
 	Logout(ctx context.Context, rawAccessToken string) error
 	ReplacePassword(ctx context.Context, rawAccessToken string, currentPassword, nextPassword []byte) (Credentials, error)
+	RevokeSession(ctx context.Context, rawAccessToken, targetSessionID string, confirmCurrent bool) error
 }
 
 // HTTPConfig controls the browser-only trust boundary.
@@ -47,17 +48,19 @@ type HTTPConfig struct {
 	MaxBodyBytes          int64
 	AllowedReturnPrefixes []string
 	ErrorHandler          func(http.ResponseWriter, *http.Request, int)
+	MutationResponder     func(http.ResponseWriter, *http.Request, string) error
 }
 
 // Browser implements the HTTP security boundary without owning page rendering.
 type Browser struct {
-	service       browserService
-	trustedOrigin string
-	secureCookies bool
-	maxBodyBytes  int64
-	returnPaths   []string
-	random        io.Reader
-	errorHandler  func(http.ResponseWriter, *http.Request, int)
+	service           browserService
+	trustedOrigin     string
+	secureCookies     bool
+	maxBodyBytes      int64
+	returnPaths       []string
+	random            io.Reader
+	errorHandler      func(http.ResponseWriter, *http.Request, int)
+	mutationResponder func(http.ResponseWriter, *http.Request, string) error
 }
 
 // NewBrowser validates and creates the browser security HTTP boundary.
@@ -92,6 +95,7 @@ func NewBrowser(service browserService, config HTTPConfig) (*Browser, error) {
 		service: service, trustedOrigin: strings.TrimSuffix(origin.String(), "/"),
 		secureCookies: config.SecureCookies, maxBodyBytes: maxBodyBytes,
 		returnPaths: returnPaths, random: rand.Reader, errorHandler: config.ErrorHandler,
+		mutationResponder: config.MutationResponder,
 	}, nil
 }
 
@@ -216,7 +220,41 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.setCredentials(w, credentials)
-	b.redirect(w, r, "", "/account")
+	b.respondMutation(w, r, "/account")
+}
+
+// RevokeSession revokes one owned browser session family and all of its
+// access and refresh credentials.
+func (b *Browser) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	form, ok := b.mutationForm(w, r)
+	if !ok {
+		return
+	}
+	access, err := r.Cookie(AccessCookieName)
+	if err != nil || access.Value == "" {
+		b.writeServiceError(w, r, ErrUnauthenticated)
+		return
+	}
+	if err := b.service.ValidateCSRF(r.Context(), access.Value, form.Get("csrf_token")); err != nil {
+		b.writeServiceError(w, r, err)
+		return
+	}
+	principal, err := b.service.ValidateAccess(r.Context(), access.Value)
+	if err != nil {
+		b.writeServiceError(w, r, err)
+		return
+	}
+	targetSessionID := strings.TrimSpace(r.PathValue("session_id"))
+	if err := b.service.RevokeSession(r.Context(), access.Value, targetSessionID, form.Get("confirm_current") == "yes"); err != nil {
+		b.writeServiceError(w, r, err)
+		return
+	}
+	if targetSessionID == principal.FamilyID {
+		b.clearCredentials(w)
+		b.respondMutation(w, r, "/login")
+		return
+	}
+	b.respondMutation(w, r, "/account")
 }
 
 // Authenticate adds a current canonical principal to the request context.
@@ -382,6 +420,16 @@ func (b *Browser) clearCookie(w http.ResponseWriter, name, cookiePath string) {
 
 func (b *Browser) redirect(w http.ResponseWriter, r *http.Request, requested, fallback string) {
 	http.Redirect(w, r, b.SafeReturnPath(requested, fallback), http.StatusSeeOther)
+}
+
+func (b *Browser) respondMutation(w http.ResponseWriter, r *http.Request, location string) {
+	if b.mutationResponder == nil {
+		http.Redirect(w, r, location, http.StatusSeeOther)
+		return
+	}
+	if err := b.mutationResponder(w, r, location); err != nil {
+		b.writeServiceError(w, r, fmt.Errorf("respond to browser mutation: %w", err))
+	}
 }
 
 func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {

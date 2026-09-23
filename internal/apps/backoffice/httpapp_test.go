@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -40,7 +41,7 @@ func TestHTTPAppQAIsOptInAndUsesProductionTemplates(t *testing.T) {
 	}
 }
 
-func TestHTTPAppQAAccessFixturePrecedesRuntimeBinding(t *testing.T) {
+func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)
 	config.Server.QAUI = true
@@ -52,12 +53,27 @@ func TestHTTPAppQAAccessFixturePrecedesRuntimeBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/qa/ui/access", nil)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Temporary credential") ||
-		!strings.Contains(response.Body.String(), "telegram:42") || !strings.Contains(response.Body.String(), "Browser sessions") {
-		t.Fatalf("access QA fixture = %d %q", response.Code, response.Body.String())
+	tests := []struct {
+		name string
+		want []string
+	}{
+		{name: "access", want: []string{"Temporary credential", "telegram:42", "Browser sessions"}},
+		{name: "account", want: []string{"Rotate password", "telegram:42", "Revoke family"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/qa/ui/"+tt.name, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("QA fixture status = %d", response.Code)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(response.Body.String(), want) {
+					t.Fatalf("QA fixture missing %q: %q", want, response.Body.String())
+				}
+			}
+		})
 	}
 }
 
@@ -200,7 +216,100 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	}
 }
 
+func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
+	t.Parallel()
+	provider, config := newHTTPAppTestState(t)
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	createAccessTestUser(t, provider.Users(), usercmd.User{
+		ID: "operator", DisplayName: "Operator", Username: "operator", NormalizedUsername: "operator",
+		Status: usercmd.StatusActive, Role: usercmd.RoleOperator,
+		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+		Version:    1, CreatedAt: now, UpdatedAt: now,
+	})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := loginHTTPAppSession(t, handler, config, "operator")
+	accountRequest := httptest.NewRequest(http.MethodGet, "/account", nil)
+	accountRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: initial.access})
+	accountRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: initial.csrf})
+	account := httptest.NewRecorder()
+	handler.ServeHTTP(account, accountRequest)
+	if account.Code != http.StatusOK || !strings.Contains(account.Body.String(), "Rotate password") || strings.Contains(account.Body.String(), "Access</span>") {
+		t.Fatalf("account page = %d %q", account.Code, account.Body.String())
+	}
+
+	rotateForm := url.Values{
+		"csrf_token": {initial.csrf}, "current_password": {"correct horse battery staple"},
+		"new_password": {"replacement password"},
+	}
+	wrongRotateForm := url.Values{
+		"csrf_token": {initial.csrf}, "current_password": {"incorrect password"},
+		"new_password": {"replacement password"},
+	}
+	wrongRotation := performAccessMutation(t, handler, config, "/account/password", wrongRotateForm, initial.access, initial.csrf, true)
+	if wrongRotation.Code != http.StatusUnauthorized || strings.Contains(wrongRotation.Body.String(), "<!doctype") || strings.Count(wrongRotation.Body.String(), `id="main-content"`) != 1 {
+		t.Fatalf("wrong password rotation = %d %q", wrongRotation.Code, wrongRotation.Body.String())
+	}
+	rotated := performAccessMutation(t, handler, config, "/account/password", rotateForm, initial.access, initial.csrf, true)
+	if rotated.Code != http.StatusNoContent || rotated.Header().Get("HX-Location") != "/account" {
+		t.Fatalf("password rotation = %d %v %q", rotated.Code, rotated.Header(), rotated.Body.String())
+	}
+	next := httpLoginCookies{
+		access:  cookieValue(rotated.Result().Cookies(), security.AccessCookieName),
+		refresh: cookieValue(rotated.Result().Cookies(), security.RefreshCookieName),
+		csrf:    cookieValue(rotated.Result().Cookies(), security.CSRFCookieName),
+	}
+	if next.access == "" || next.refresh == "" || next.csrf == "" {
+		t.Fatalf("rotation cookies = %+v", rotated.Result().Cookies())
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), initial.access); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("old access validation error = %v", err)
+	}
+	if _, err := app.security.Refresh(t.Context(), initial.refresh, initial.csrf); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("old refresh validation error = %v", err)
+	}
+	principal, err := app.security.ValidateAccess(t.Context(), next.access)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unconfirmedForm := url.Values{"csrf_token": {next.csrf}}
+	unconfirmed := performAccessMutation(t, handler, config, "/account/sessions/"+principal.FamilyID+"/revoke", unconfirmedForm, next.access, next.csrf, true)
+	if unconfirmed.Code != http.StatusBadRequest || strings.Contains(unconfirmed.Body.String(), "<!doctype") {
+		t.Fatalf("unconfirmed current family revocation = %d %q", unconfirmed.Code, unconfirmed.Body.String())
+	}
+	revokeForm := url.Values{"csrf_token": {next.csrf}, "confirm_current": {"yes"}}
+	revoked := performAccessMutation(t, handler, config, "/account/sessions/"+principal.FamilyID+"/revoke", revokeForm, next.access, next.csrf, false)
+	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/login" {
+		t.Fatalf("current family revocation = %d %v %q", revoked.Code, revoked.Header(), revoked.Body.String())
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("revoked access validation error = %v", err)
+	}
+	if _, err := app.security.Refresh(t.Context(), next.refresh, next.csrf); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("revoked refresh validation error = %v", err)
+	}
+}
+
+type httpLoginCookies struct {
+	access  string
+	refresh string
+	csrf    string
+}
+
 func loginHTTPApp(t *testing.T, handler http.Handler, config ResolvedConfig, username string) (string, string) {
+	t.Helper()
+	session := loginHTTPAppSession(t, handler, config, username)
+	return session.access, session.csrf
+}
+
+func loginHTTPAppSession(t *testing.T, handler http.Handler, config ResolvedConfig, username string) httpLoginCookies {
 	t.Helper()
 	loginPage := httptest.NewRecorder()
 	handler.ServeHTTP(loginPage, httptest.NewRequest(http.MethodGet, "/login", nil))
@@ -216,7 +325,11 @@ func loginHTTPApp(t *testing.T, handler http.Handler, config ResolvedConfig, use
 	if response.Code != http.StatusSeeOther {
 		t.Fatalf("login %q = %d %q", username, response.Code, response.Body.String())
 	}
-	return cookieValue(response.Result().Cookies(), security.AccessCookieName), cookieValue(response.Result().Cookies(), security.CSRFCookieName)
+	return httpLoginCookies{
+		access:  cookieValue(response.Result().Cookies(), security.AccessCookieName),
+		refresh: cookieValue(response.Result().Cookies(), security.RefreshCookieName),
+		csrf:    cookieValue(response.Result().Cookies(), security.CSRFCookieName),
+	}
 }
 
 func performAccessMutation(t *testing.T, handler http.Handler, config ResolvedConfig, path string, form url.Values, access, csrf string, htmx bool) *httptest.ResponseRecorder {

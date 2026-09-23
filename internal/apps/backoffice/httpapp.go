@@ -19,6 +19,7 @@ const checkedFormValue = "yes"
 type httpApp struct {
 	renderer *webui.Renderer
 	browser  *security.Browser
+	security *security.Service
 	access   *access.Service
 	cards    []webui.CapabilityCard
 	qa       bool
@@ -35,10 +36,13 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := &httpApp{renderer: renderer, access: access.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI}
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies,
 		ErrorHandler: app.renderSecurityError,
+		MutationResponder: func(w http.ResponseWriter, r *http.Request, location string) error {
+			return webui.RespondMutation(w, r, webui.Location(location))
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -66,6 +70,8 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET /account/password", a.browser.Authenticate(http.HandlerFunc(a.passwordPage)))
 	mux.HandleFunc("POST /account/password", a.browser.ReplacePassword)
 	mux.Handle("GET /overview", a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
+	mux.Handle("GET /account", a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.account))))
+	mux.HandleFunc("POST /account/sessions/{session_id}/revoke", a.browser.RevokeSession)
 	mux.Handle("GET /access", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
 	mux.Handle("GET /access/users/{user_id}", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
 	mux.HandleFunc("POST /access/users", a.accessCreate)
@@ -111,6 +117,35 @@ func (a *httpApp) overview(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateOverview, webui.Page{
 		Title: "Overview · Balda", Current: webui.LocationOverview,
 		Navigation: webui.Navigation(capabilities, webui.LocationOverview), Capabilities: a.cards,
+	})
+}
+
+func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
+	principal, ok := security.PrincipalFromContext(r.Context())
+	if !ok {
+		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		return
+	}
+	accessCookie, err := r.Cookie(security.AccessCookieName)
+	if err != nil || accessCookie.Value == "" {
+		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		return
+	}
+	sessionPage, err := a.security.ListSessions(r.Context(), accessCookie.Value, "", usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
+	for _, session := range sessionPage.Sessions {
+		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID))
+	}
+	view := webui.ProjectUser(principal.User)
+	capabilities := users.BackofficeCapabilities(principal.User)
+	a.render(w, r, http.StatusOK, webui.TemplateAccount, webui.Page{
+		Title: "Account · Balda", Current: webui.LocationAccount,
+		Navigation: webui.Navigation(capabilities, webui.LocationAccount),
+		User:       &view, Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
 	})
 }
 
@@ -290,6 +325,7 @@ func (a *httpApp) qaPage(w http.ResponseWriter, r *http.Request) {
 func qaFixture(name string) (webui.Page, string, bool) {
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	admin := usercmd.BackofficeCapabilities{Overview: true, Account: true, ManageUsers: true, ViewAudit: true}
+	operator := usercmd.BackofficeCapabilities{Overview: true, Account: true}
 	switch name {
 	case "login":
 		return webui.Page{Title: "Sign in · QA", Current: webui.LocationLogin, CSRFToken: "qa-csrf"}, webui.TemplateLogin, true
@@ -318,6 +354,16 @@ func qaFixture(name string) (webui.Page, string, bool) {
 			Title: "Access · QA", Current: webui.LocationAccess, Navigation: webui.Navigation(admin, webui.LocationAccess),
 			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
 		}, webui.TemplateAccess, true
+	case "account":
+		user := webui.UserView{
+			ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
+			CredentialState: "active", Version: 3, CredentialVersion: 2,
+			Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "legacy migration"},
+		}
+		return webui.Page{
+			Title: "Account · QA", Current: webui.LocationAccount, Navigation: webui.Navigation(operator, webui.LocationAccount),
+			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
+		}, webui.TemplateAccount, true
 	default:
 		return webui.Page{}, "", false
 	}

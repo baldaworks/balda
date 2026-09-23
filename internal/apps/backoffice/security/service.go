@@ -299,14 +299,12 @@ func (s *Service) ReplacePassword(ctx context.Context, rawAccessToken string, cu
 	if err != nil {
 		return Credentials{}, err
 	}
-	if principal.Assurance == usercmd.SessionAssuranceNormal {
-		secret, found, err := s.store.GetCredentialSecret(ctx, principal.User.ID)
-		if err != nil {
-			return Credentials{}, fmt.Errorf("load current credential: %w", err)
-		}
-		if !found || !userpassword.Verify(secret.PasswordHash, current) {
-			return Credentials{}, ErrUnauthenticated
-		}
+	secret, found, err := s.store.GetCredentialSecret(ctx, principal.User.ID)
+	if err != nil {
+		return Credentials{}, fmt.Errorf("load current credential: %w", err)
+	}
+	if !found || !userpassword.Verify(secret.PasswordHash, current) {
+		return Credentials{}, ErrUnauthenticated
 	}
 	hash, err := userpassword.Hash(next)
 	if err != nil {

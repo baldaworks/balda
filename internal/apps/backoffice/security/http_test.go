@@ -249,6 +249,7 @@ type fakeBrowserService struct {
 	refresh  func(context.Context, string, string) (Credentials, error)
 	logout   func(context.Context, string) error
 	replace  func(context.Context, string, []byte, []byte) (Credentials, error)
+	revoke   func(context.Context, string, string, bool) error
 }
 
 func (f *fakeBrowserService) Login(ctx context.Context, username string, password []byte) (Credentials, error) {
@@ -291,6 +292,13 @@ func (f *fakeBrowserService) ReplacePassword(ctx context.Context, token string, 
 		return Credentials{}, errors.New("unexpected ReplacePassword call")
 	}
 	return f.replace(ctx, token, current, next)
+}
+
+func (f *fakeBrowserService) RevokeSession(ctx context.Context, token, sessionID string, confirmCurrent bool) error {
+	if f.revoke == nil {
+		return errors.New("unexpected RevokeSession call")
+	}
+	return f.revoke(ctx, token, sessionID, confirmCurrent)
 }
 
 func newHTTPTestBrowser(t *testing.T, service browserService, secure bool, maxBodyBytes int64) *Browser {

@@ -186,7 +186,10 @@ func TestTemporaryPasswordReplacementRevokesOldRefreshAndIssuesNormalFamily(t *t
 		t.Fatal(err)
 	}
 	service.now = func() time.Time { return now.Add(time.Minute) }
-	normal, err := service.ReplacePassword(t.Context(), restricted.AccessToken, nil, []byte(replacementPassword))
+	if _, err := service.ReplacePassword(t.Context(), restricted.AccessToken, []byte("incorrect password"), []byte(replacementPassword)); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("ReplacePassword(wrong temporary current) error = %v", err)
+	}
+	normal, err := service.ReplacePassword(t.Context(), restricted.AccessToken, []byte(testPassword), []byte(replacementPassword))
 	if err != nil {
 		t.Fatalf("ReplacePassword() error = %v", err)
 	}
