@@ -15,7 +15,7 @@ summary, changed files, validation output, a commit, or a concrete next step.
 
 ## What Balda is good for
 
-- chat-native engineering help in Telegram, Zulip, or Slack Agent DMs/channel threads
+- chat-native engineering help in Telegram, Zulip, Slack Agent, or Mattermost DMs/channel threads
 - focused task threads instead of one shared bot conversation
 - long-running goal execution with progress updates and final results
 - `wedge` style operation: put the agent in the middle of your team workflow so
@@ -26,7 +26,7 @@ summary, changed files, validation output, a commit, or a concrete next step.
 
 You need:
 
-- one chat surface: Telegram, Zulip, or Slack
+- one chat surface: Telegram, Zulip, Slack, or Mattermost
 - one supported provider CLI installed on the host or in Docker:
   `codex`, `opencode`, `copilot`, `gemini`, or `claude`
 - Node.js/npm, unless you run the Docker Compose path
@@ -147,12 +147,14 @@ automation, and agent execution instead of separate bots and scripts.
 - Telegram
 - Zulip
 - Slack Agent DMs and mentioned channel threads
+- Mattermost DMs and mentioned channel threads
 
 Balda maps each conversation scope to its own session:
 
 - Telegram direct chat or personal/group topic
 - Zulip stream + topic
 - Slack Agent DM or mentioned channel thread
+- Mattermost DM, channel, or channel thread
 
 In Slack channels, every turn requires an explicit `@Balda` mention. A mention
 inside an existing thread can use its preceding accessible discussion and
@@ -285,6 +287,8 @@ does not require `/reset`. Custom ACP servers can set `model_config_id` and
 - `balda.telegram.formatting_mode` — Telegram output mode: `rich_markdown`
   (default), `rich_html`, or `none` for literal plain text
 - `balda.zulip.*` — Zulip outgoing webhook bot credentials and receiver config
+- `balda.mattermost.*` — Mattermost bot credentials (`enabled`, `server_url`,
+  `token`, `bot_user_id`, `bot_username`) for websocket event ingress
 - `balda.slack.*` — Slack Agent credentials plus `agent.*` HTTP/streaming config
 - `balda.webhooks.*` — optional inbound webhook routes
 - `balda.scheduler.jobs` — recurring scheduled jobs
@@ -368,6 +372,7 @@ For complete configuration, examples, and provider-specific details, see the
 - Architecture map: [docs/architecture/index.md](docs/architecture/index.md)
 - Telegram formatting: [docs/telegram-formatting.md](docs/telegram-formatting.md)
 - Zulip webhook setup: [docs/zulip-webhook.md](docs/zulip-webhook.md)
+- Mattermost setup: [docs/mattermost.md](docs/mattermost.md)
 - Slack setup: [docs/slack.md](docs/slack.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 
