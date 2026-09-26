@@ -1,8 +1,0 @@
-[
-  {
-    "file": "internal/apps/balda/app.go",
-    "note": "провайдеры balda_mattermost_server_url/token/bot_user_id (registered strings)",
-    "search": "\t\t// Mattermost transport\n\t\tfx.Provide(\n\t\t\tfx.Annotate(\n\t\t\t\tfunc() bool { return cfg.Balda.Mattermost.Enabled },\n\t\t\t\tfx.ResultTags(`name:\"balda_mattermost_enabled\"`),\n\t\t\t),\n\t\t),\n",
-    "replace": "\t\t// Mattermost transport\n\t\tfx.Provide(\n\t\t\tfx.Annotate(\n\t\t\t\tfunc() bool { return cfg.Balda.Mattermost.Enabled },\n\t\t\t\tfx.ResultTags(`name:\"balda_mattermost_enabled\"`),\n\t\t\t),\n\t\t),\n\t\tfx.Provide(\n\t\t\tfx.Annotate(\n\t\t\t\tfunc() string { return strings.TrimSpace(cfg.Balda.Mattermost.ServerURL) },\n\t\t\t\tfx.ResultTags(`name:\"balda_mattermost_server_url\"`),\n\t\t\t),\n\t\t),\n\t\tfx.Provide(\n\t\t\tfx.Annotate(\n\t\t\t\tfunc() string { return strings.TrimSpace(cfg.Balda.Mattermost.Token) },\n\t\t\t\tfx.ResultTags(`name:\"balda_mattermost_token\"`),\n\t\t\t),\n\t\t),\n\t\tfx.Provide(\n\t\t\tfx.Annotate(\n\t\t\t\tfunc() string { return strings.TrimSpace(cfg.Balda.Mattermost.BotUserID) },\n\t\t\t\tfx.ResultTags(`name:\"balda_mattermost_bot_user_id\"`),\n\t\t\t),\n\t\t),\n\t\tfx.Provide(\n\t\t\tfx.Annotate(\n\t\t\t\tfunc() string { return strings.TrimSpace(cfg.Balda.Mattermost.BotUsername) },\n\t\t\t\tfx.ResultTags(`name:\"balda_mattermost_bot_username\"`),\n\t\t\t),\n\t\t),\n"
-  }
-]

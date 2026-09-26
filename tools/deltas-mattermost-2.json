@@ -1,8 +1,0 @@
-[
-  {
-    "file": "internal/apps/balda/app.go",
-    "note": "импорт корневого пакета mattermost (нужен для mattermost.ValidateConfig)",
-    "search": "\t\"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx\"\n",
-    "replace": "\t\"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost\"\n\t\"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx\"\n"
-  }
-]

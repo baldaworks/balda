@@ -1,8 +1,0 @@
-[
-  {
-    "file": "internal/apps/balda/deliveryfmt/registry_test.go",
-    "note": "ожидание маршрута Mattermost в TestBuiltinRoutes",
-    "search": "\t\t{transport: TransportZulip, deliveryFormat: DeliveryFormatNone}:        NamePlainText,\n\t}\n",
-    "replace": "\t\t{transport: TransportZulip, deliveryFormat: DeliveryFormatNone}:        NamePlainText,\n\t\t{transport: TransportMattermost, deliveryFormat: DeliveryFormatNone}:   NamePlainText,\n\t}\n"
-  }
-]
