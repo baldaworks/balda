@@ -17,6 +17,7 @@ const (
 	SourceTelegram   = "telegram"
 	SourceSlackAgent = "slackagent"
 	SourceZulip      = "zulip"
+	SourceMattermost = "mattermost"
 	SourceWebhook    = "webhook"
 	SourceSchedule   = "schedule"
 	SourceAuto       = "auto"

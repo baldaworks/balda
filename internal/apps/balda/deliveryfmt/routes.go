@@ -5,6 +5,7 @@ const (
 	TransportTelegram   = "telegram"
 	TransportSlackAgent = "slackagent"
 	TransportZulip      = "zulip"
+	TransportMattermost = "mattermost"
 
 	DeliveryFormatRichMarkdown DeliveryFormat = "rich_markdown"
 	DeliveryFormatRichHTML     DeliveryFormat = "rich_html"
@@ -16,6 +17,7 @@ const (
 	NameTelegramRichHTML     Name = "telegram_rich_html"
 	NameSlackMrkdwn          Name = "slack_mrkdwn"
 	NameZulipMarkdown        Name = "zulip_markdown"
+	NameMattermostMarkdown   Name = "mattermost_markdown"
 	NamePlainText            Name = "plain_text"
 )
 
@@ -27,5 +29,6 @@ func BuiltinRoutes() []Route {
 		{Transport: TransportSlackAgent, DeliveryFormat: DeliveryFormatMrkdwn, RegisteredName: NameSlackMrkdwn},
 		{Transport: TransportSlackAgent, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
 		{Transport: TransportZulip, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
+		{Transport: TransportMattermost, DeliveryFormat: DeliveryFormatNone, RegisteredName: NamePlainText},
 	}
 }

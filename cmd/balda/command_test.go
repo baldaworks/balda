@@ -141,6 +141,57 @@ balda:
 	}
 }
 
+func TestLoadConfigDocument_AppliesMattermostEnvOverrides(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Setenv("BALDA_MATTERMOST_ENABLED", "true")
+	t.Setenv("BALDA_MATTERMOST_SERVER_URL", "https://mm.example.com")
+	t.Setenv("BALDA_MATTERMOST_TOKEN", "mattermost-bot-token")
+	t.Setenv("BALDA_MATTERMOST_BOT_USER_ID", "bot-user-id")
+	t.Setenv("BALDA_MATTERMOST_BOT_USERNAME", "balda-bot")
+
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+`); err != nil {
+		t.Fatalf("write balda config: %v", err)
+	}
+
+	var doc baldaTestConfigDocument
+	_, err := appconfig.LoadConfigDocument(
+		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
+		appconfig.AppLoadOptions{
+			AppName:            "balda",
+			DefaultsYAML:       defaultBaldaConfig,
+			UseDotConfigAppDir: true,
+		},
+		&doc,
+	)
+	if err != nil {
+		t.Fatalf("LoadConfigDocument: %v", err)
+	}
+
+	if !doc.Balda.Mattermost.Enabled {
+		t.Fatal("mattermost.enabled = false, want true from env override")
+	}
+	if doc.Balda.Mattermost.ServerURL != "https://mm.example.com" {
+		t.Fatalf("mattermost.server_url = %q, want https://mm.example.com", doc.Balda.Mattermost.ServerURL)
+	}
+	if doc.Balda.Mattermost.Token != "mattermost-bot-token" {
+		t.Fatalf("mattermost.token = %q, want mattermost-bot-token", doc.Balda.Mattermost.Token)
+	}
+	if doc.Balda.Mattermost.BotUserID != "bot-user-id" {
+		t.Fatalf("mattermost.bot_user_id = %q, want bot-user-id", doc.Balda.Mattermost.BotUserID)
+	}
+	if doc.Balda.Mattermost.BotUsername != "balda-bot" {
+		t.Fatalf("mattermost.bot_username = %q, want balda-bot", doc.Balda.Mattermost.BotUsername)
+	}
+}
+
 func TestLoadConfigDocument_AppliesSlackAgentEnvOverrides(t *testing.T) {
 	workingDir := t.TempDir()
 	t.Setenv("BALDA_SLACK_ENABLED", "true")
@@ -540,6 +591,56 @@ func writeFile(path, content string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+func TestValidateCommandRunsValidationWithMattermostTransport(t *testing.T) {
+	workingDir := t.TempDir()
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+  mattermost:
+    enabled: true
+    server_url: "https://mm.example.com"
+    token: "mattermost-bot-token"
+    bot_user_id: "bot-user-id"
+    bot_username: "balda-bot"
+`); err != nil {
+		t.Fatalf("write balda config: %v", err)
+	}
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(workingDir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalWD) })
+
+	prepared, err := loadBaldaCommandConfig(true)
+	if err != nil {
+		t.Fatalf("loadBaldaCommandConfig: %v", err)
+	}
+	mm := prepared.baldaCfg.Balda.Mattermost
+	if !mm.Enabled {
+		t.Fatal("mattermost transport not enabled in loaded config")
+	}
+	if mm.ServerURL != "https://mm.example.com" {
+		t.Fatalf("mattermost.server_url = %q, want https://mm.example.com", mm.ServerURL)
+	}
+	if mm.Token != "mattermost-bot-token" {
+		t.Fatalf("mattermost.token = %q, want mattermost-bot-token", mm.Token)
+	}
+	if mm.BotUserID != "bot-user-id" {
+		t.Fatalf("mattermost.bot_user_id = %q, want bot-user-id", mm.BotUserID)
+	}
+	if err := validateBaldaApplication(prepared); err != nil {
+		t.Fatalf("validateBaldaApplication with Mattermost transport: %v", err)
+	}
 }
 
 func TestValidateCommandRunsValidation(t *testing.T) {

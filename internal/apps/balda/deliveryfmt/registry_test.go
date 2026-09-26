@@ -207,6 +207,7 @@ func TestBuiltinRoutes(t *testing.T) {
 		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatMrkdwn}: NameSlackMrkdwn,
 		{transport: TransportSlackAgent, deliveryFormat: DeliveryFormatNone}:   NamePlainText,
 		{transport: TransportZulip, deliveryFormat: DeliveryFormatNone}:        NamePlainText,
+		{transport: TransportMattermost, deliveryFormat: DeliveryFormatNone}:   NamePlainText,
 	}
 
 	if len(routes) != len(want) {

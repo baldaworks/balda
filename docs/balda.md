@@ -11,13 +11,13 @@ Architecture contracts are maintained in:
 
 ## Summary
 
-- Runtime stack: one or more channel runtimes (Telegram, Zulip, Slack) plus the configured Balda provider runtime.
-- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), and Slack Agent DMs/channel threads (signed HTTP Events API).
+- Runtime stack: one or more channel runtimes (Telegram, Zulip, Slack, Mattermost) plus the configured Balda provider runtime.
+- Supported channels: Telegram (polling or webhook), Zulip (outgoing webhook), Slack Agent DMs/channel threads (signed HTTP Events API), and Mattermost (websocket events).
 - Main agent: Balda app key `balda.provider` (profile overrides via `profiles.<profile>.balda.provider`).
 - Subagents: one session per channel topic/thread with dedicated git worktree.
 - Balda startup prompt includes workspace settings for each session; in git workspace mode it also includes session/base/current-branch context and workspace MCP guidance.
 - Output streaming:
-  - Progress updates: non-terminal provider progress emits channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders.
+  - Progress updates: non-terminal provider progress emits channel progress. Telegram maps this to throttled typing indicators for all chats, plus DM-only thinking placeholders. Mattermost has no bot typing API, so progress there is plan updates only.
   - Final assistant response uses `balda.telegram.formatting_mode` (`rich_markdown|rich_html|none`; default `rich_markdown`; `none` is literal plain text).
 - Auth model: one-time owner authorization with startup-generated token.
 
@@ -55,4 +55,5 @@ can be read, linked, and indexed independently:
 
 Focused guides remain separate from the technical reference, including
 [Telegram message formatting](telegram-formatting.md),
-[Slack Agent setup](slack.md), and the [command reference](commands.md).
+[Slack Agent setup](slack.md),
+[Mattermost setup](mattermost.md), and the [command reference](commands.md).

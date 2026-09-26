@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	ChannelTelegram = "telegram"
-	ChannelSlack    = "slackagent"
-	ChannelZulip    = "zulip"
+	ChannelTelegram   = "telegram"
+	ChannelSlack      = "slackagent"
+	ChannelZulip      = "zulip"
+	ChannelMattermost = "mattermost"
 
 	ChannelTokenPrefix = "balda_"
 
@@ -208,7 +209,7 @@ func (s *ChannelAuthService) CreateMissingOwnerBindTokens(ctx context.Context, c
 	if s == nil || s.owner == nil || !s.owner.HasOwner() {
 		return nil, nil
 	}
-	channels := []string{ChannelTelegram, ChannelSlack, ChannelZulip}
+	channels := []string{ChannelTelegram, ChannelSlack, ChannelZulip, ChannelMattermost}
 	out := make([]OwnerBindToken, 0, len(channels))
 	for _, channel := range channels {
 		if s.owner.HasOwnerSubject(channel) {
