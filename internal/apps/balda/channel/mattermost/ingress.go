@@ -26,10 +26,10 @@ const (
 	websocketReconnectBackoff = 5 * time.Second
 	// websocketHandshakeTimeout bounds the initial dial.
 	websocketHandshakeTimeout = 20 * time.Second
-	// websocketActionAuthChallenge is the first frame Mattermost sends.
-	websocketActionAuthChallenge = "authentication_challenge"
 	// websocketMaxConcurrentTasks bounds in-flight inbound processing.
 	websocketMaxConcurrentTasks = 16
+	// websocketActionPing is the keepalive action Mattermost accepts on a client frame.
+	websocketActionPing = "ping"
 )
 
 // Ingress streams Mattermost events over the websocket API and dispatches them
@@ -54,6 +54,12 @@ type Ingress struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	stopped bool
+
+	// seq is the monotonic outgoing websocket sequence number Mattermost
+	// requires on every client frame. Frames without it are rejected with
+	// api.web_socket_router.bad_seq.app_error and the server then stops
+	// delivering events on that socket.
+	seq int64
 
 	processSem chan struct{}
 	processWG  sync.WaitGroup
@@ -207,9 +213,16 @@ func (s *Ingress) streamOnce(ctx context.Context) error {
 
 	conn, resp, err := dialer.DialContext(ctx, endpoint, header)
 	if err != nil {
+		status := 0
 		if resp != nil {
+			status = resp.StatusCode
 			_ = resp.Body.Close()
 		}
+		s.logger.Warn().
+			Err(err).
+			Str("url", endpoint).
+			Int("http_status", status).
+			Msg("dial mattermost websocket failed")
 		return fmt.Errorf("dial mattermost websocket: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
@@ -217,19 +230,15 @@ func (s *Ingress) streamOnce(ctx context.Context) error {
 
 	s.mu.Lock()
 	s.conn = conn
+	s.seq = 0
 	s.mu.Unlock()
 
 	s.logger.Info().Str("url", endpoint).Msg("mattermost websocket connected")
 
-	// Mattermost requires an auth challenge reply before events flow.
-	if err := conn.WriteJSON(map[string]any{
-		"seq":    1,
-		"action": websocketActionAuthChallenge,
-		"data":   map[string]string{"token": strings.TrimSpace(tokenOf(s.client))},
-	}); err != nil {
-		return fmt.Errorf("send mattermost auth challenge: %w", err)
-	}
-
+	// Authentication happens via the Authorization: Bearer header on the dial.
+	// Sending an authentication_challenge frame on an already-authenticated
+	// connection makes Mattermost re-initialise the session for this socket and
+	// it silently stops delivering posted events on it, so no challenge is sent.
 	return s.readLoop(ctx, conn)
 }
 
@@ -266,7 +275,7 @@ func (s *Ingress) readLoop(ctx context.Context, conn *websocket.Conn) error {
 		case <-ctx.Done():
 			return nil
 		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"action":"ping"}`)); err != nil {
+			if err := s.writeEvent(conn, websocketActionPing, nil); err != nil {
 				return fmt.Errorf("send mattermost websocket ping: %w", err)
 			}
 		case frame := <-frames:
@@ -276,6 +285,11 @@ func (s *Ingress) readLoop(ctx context.Context, conn *websocket.Conn) error {
 				}
 				return fmt.Errorf("read mattermost websocket frame: %w", frame.err)
 			}
+			s.logger.Debug().
+				Int("message_type", frame.messageType).
+				Int("payload_bytes", len(frame.payload)).
+				Str("payload_head", headOf(frame.payload, 160)).
+				Msg("mattermost websocket frame received")
 			if frame.messageType != websocket.TextMessage {
 				continue
 			}
@@ -284,12 +298,47 @@ func (s *Ingress) readLoop(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
+// nextSeq returns the next outgoing websocket sequence number.
+//
+// Mattermost validates seq on every client frame and rejects an invalid one with
+// api.web_socket_router.bad_seq.app_error, after which it silently stops pushing
+// events to the socket. The counter therefore has to start above zero and grow
+// monotonically for the lifetime of the connection.
+func (s *Ingress) nextSeq() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seq++
+	return s.seq
+}
+
+// writeEvent sends a client frame with the required seq field.
+func (s *Ingress) writeEvent(conn *websocket.Conn, action string, data any) error {
+	frame := map[string]any{"seq": s.nextSeq(), "action": action}
+	if data != nil {
+		frame["data"] = data
+	}
+	return conn.WriteJSON(frame)
+}
+
+// headOf returns a bounded, single-line preview of a payload for logging.
+func headOf(payload []byte, limit int) string {
+	if len(payload) > limit {
+		payload = payload[:limit]
+	}
+	return strings.ReplaceAll(string(payload), "\n", " ")
+}
+
 func (s *Ingress) handleFrame(ctx context.Context, payload []byte) {
 	var event WebSocketEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
 		s.logger.Debug().Err(err).Msg("ignoring undecodable mattermost websocket frame")
 		return
 	}
+	if event.Status == "FAIL" {
+		s.logger.Warn().Str("event", event.Event).Str("status", event.Status).RawJSON("data", event.Data).Msg("mattermost rejected a client websocket frame")
+		return
+	}
+	s.logger.Debug().Str("event", event.Event).Msg("mattermost websocket event decoded")
 	switch event.Event {
 	case eventPosted:
 		s.dispatchPosted(ctx, event)
@@ -311,6 +360,7 @@ func (s *Ingress) dispatchPosted(ctx context.Context, event WebSocketEvent) {
 	}
 	postID := strings.TrimSpace(data.Post)
 	if postID == "" {
+		s.logger.Debug().Msg("dropping posted event: empty post id")
 		return
 	}
 	var post Post
@@ -321,9 +371,24 @@ func (s *Ingress) dispatchPosted(ctx context.Context, event WebSocketEvent) {
 	if strings.TrimSpace(post.ChannelID) == "" {
 		post.ChannelID = strings.TrimSpace(event.Broadcast.ChannelID)
 	}
-	if IsBotEcho(post, s.botUserID) || IsSystemPost(post) || IsDeletedPost(post) {
+	if IsBotEcho(post, s.botUserID) {
+		s.logger.Debug().Str("post_id", post.ID).Str("post_user_id", post.UserID).Msg("dropping posted event: bot echo")
 		return
 	}
+	if IsSystemPost(post) {
+		s.logger.Debug().Str("post_id", post.ID).Str("post_type", post.Type).Msg("dropping posted event: system post")
+		return
+	}
+	if IsDeletedPost(post) {
+		s.logger.Debug().Str("post_id", post.ID).Msg("dropping posted event: deleted post")
+		return
+	}
+	s.logger.Debug().
+		Str("post_id", post.ID).
+		Str("channel_id", post.ChannelID).
+		Str("post_user_id", post.UserID).
+		Str("message", post.Message).
+		Msg("mattermost posted event accepted")
 
 	release, ok := s.acquireSlot()
 	if !ok {
@@ -358,13 +423,26 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 	if !direct {
 		// In a shared channel Balda must be addressed explicitly.
 		if !MentionsBot(text, s.botUsername) {
+			s.logger.Debug().
+				Str("post_id", post.ID).
+				Str("bot_username", s.botUsername).
+				Bool("bot_username_empty", s.botUsername == "").
+				Str("message", text).
+				Msg("dropping posted event: bot not mentioned")
 			return
 		}
 		text = StripMention(text, s.botUsername)
 	}
 	if text == "" {
+		s.logger.Debug().Str("post_id", post.ID).Msg("dropping posted event: empty text after mention strip")
 		return
 	}
+	s.logger.Info().
+		Str("post_id", post.ID).
+		Str("channel_id", post.ChannelID).
+		Bool("direct", direct).
+		Str("text", text).
+		Msg("mattermost post accepted for processing")
 
 	if name, args, ok := ParseCommand(text); ok {
 		if !commandSupported(name) && (s.commands == nil || !s.commands.Supports(ChannelType, name)) {

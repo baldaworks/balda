@@ -49,7 +49,7 @@ type InboundProcessor interface {
 // supportedCommands is the Mattermost transport command whitelist. It mirrors
 // the Zulip surface so every documented Balda command is reachable from MM.
 var supportedCommands = []string{
-	"start", "topic", "locator", "cancel", "goal", "goalkeeper",
+	"start", "topic", "locator", "cancel", "goalkeeper",
 	"user", "usage", "auto", "reset", "close", "skill",
 }
 
