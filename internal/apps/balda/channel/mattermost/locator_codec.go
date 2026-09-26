@@ -35,6 +35,22 @@ type LocatorAddress struct {
 	UserID    string `json:"user_id,omitempty"`
 }
 
+// ChannelIDOf returns the Mattermost channel id encoded in a locator address.
+//
+// It returns an empty string when the locator does not carry a Mattermost
+// address, so callers can treat a missing channel as "unknown" rather than
+// failing.
+func ChannelIDOf(locator deliverycmd.Locator) string {
+	if strings.TrimSpace(locator.AddressJSON) == "" {
+		return ""
+	}
+	var address LocatorAddress
+	if err := json.Unmarshal([]byte(locator.AddressJSON), &address); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(address.ChannelID)
+}
+
 // NewChannelLocator builds a canonical session locator for a Mattermost channel
 // (optionally scoped to one thread via rootID).
 func NewChannelLocator(teamID, channelID, rootID string) deliverycmd.Locator {

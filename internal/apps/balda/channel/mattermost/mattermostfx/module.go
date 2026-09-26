@@ -25,7 +25,7 @@ var Module = fx.Module(
 					Enabled:   enabled,
 					Names: []string{
 						"locator", "reset", "usage", "auto", "cancel",
-						"goal", "goalkeeper", "topic", "close", "start",
+						"goalkeeper", "topic", "close", "start",
 						"user", "skill",
 					},
 				}
