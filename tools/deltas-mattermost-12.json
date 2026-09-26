@@ -1,0 +1,8 @@
+[
+  {
+    "file": "internal/apps/balda/channel/mattermost/mattermostfx/module.go",
+    "note": "замена ручной обёртки на прямую ссылку на mattermost.NewAdapter (unlambda)",
+    "search": "\t\tfunc(client *mattermost.Client, logger zerolog.Logger) *mattermost.Adapter {\n\t\t\t// Mattermost bots cannot emit typing events; the adapter keeps the\n\t\t\t// shared progress surface as a no-op for interface parity.\n\t\t\treturn mattermost.NewAdapter(client, logger)\n\t\t},\n",
+    "replace": "\t\t// Mattermost bots cannot emit typing events, so the adapter keeps the\n\t\t// shared progress surface as a no-op for interface parity.\n\t\tmattermost.NewAdapter,\n"
+  }
+]

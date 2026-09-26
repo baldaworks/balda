@@ -1,0 +1,74 @@
+[
+  {
+    "file": "internal/apps/balda/app.go",
+    "note": "импорт mattermostfx рядом с zulipfx",
+    "search": "\t\"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx\"\n",
+    "replace": "\t\"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx\"\n\t\"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx\"\n"
+  },
+  {
+    "file": "internal/apps/balda/app.go",
+    "note": "провайдер enabled для mattermost (имя balda_mattermost_enabled)",
+    "search": "\t\tfx.Provide(func() *baldaslackagent.Client {\n",
+    "replace": "\t\t// Mattermost transport\n\t\tfx.Provide(\n\t\t\tfx.Annotate(\n\t\t\t\tfunc() bool { return cfg.Balda.Mattermost.Enabled },\n\t\t\t\tfx.ResultTags(`name:\"balda_mattermost_enabled\"`),\n\t\t\t),\n\t\t),\n\t\tfx.Provide(func() *baldaslackagent.Client {\n"
+  },
+  {
+    "file": "internal/apps/balda/config.go",
+    "note": "поле Mattermost в BaldaConfig",
+    "search": "\tZulip               ZulipConfig               `mapstructure:\"zulip\"`\n",
+    "replace": "\tZulip               ZulipConfig               `mapstructure:\"zulip\"`\n\tMattermost          MattermostConfig          `mapstructure:\"mattermost\"`\n"
+  },
+  {
+    "file": "internal/apps/balda/config.go",
+    "note": "тип MattermostConfig",
+    "search": "// ZulipWebhookConfig holds Zulip webhook receiver settings.\n",
+    "replace": "// MattermostConfig holds the Mattermost bot configuration.\n//\n// Mattermost is a websocket transport: Enabled turns on the bot-account\n// connection, ServerURL is the absolute http(s) base URL, and Token is the\n// bot account personal access token. BotUserID/BotUsername identify the bot\n// so inbound posts authored by it are not answered.\n//\n// A non-loopback ServerURL is required for real deployments because the\n// websocket event stream is only reachable over the network.\ntype MattermostConfig struct {\n\tEnabled     bool   `mapstructure:\"enabled\"`\n\tServerURL   string `mapstructure:\"server_url\"`\n\tToken       string `mapstructure:\"token\"`\n\tBotUserID   string `mapstructure:\"bot_user_id\"`\n\tBotUsername string `mapstructure:\"bot_username\"`\n}\n\n// ZulipWebhookConfig holds Zulip webhook receiver settings.\n"
+  },
+  {
+    "file": "internal/apps/balda/app.go",
+    "note": "валидация MattermostConfig: функция + вызов рядом с validateSlackConfig",
+    "search": "\tif err := validateSlackConfig(cfg.Balda.Slack); err != nil {\n\t\treturn fx.Module(\"balda\", fx.Error(err))\n\t}\n",
+    "replace": "\tif err := validateSlackConfig(cfg.Balda.Slack); err != nil {\n\t\treturn fx.Module(\"balda\", fx.Error(err))\n\t}\n\tif err := validateMattermostConfig(cfg.Balda.Mattermost); err != nil {\n\t\treturn fx.Module(\"balda\", fx.Error(err))\n\t}\n"
+  },
+  {
+    "file": "internal/apps/balda/app.go",
+    "note": "функция validateMattermostConfig рядом с validateSlackConfig",
+    "search": "func validateIdentifierValue(field, value string) error {\n",
+    "replace": "func validateMattermostConfig(cfg MattermostConfig) error {\n\tif !cfg.Enabled {\n\t\treturn nil\n\t}\n\tif err := mattermost.ValidateConfig(cfg.ServerURL, cfg.Token); err != nil {\n\t\treturn err\n\t}\n\tif strings.TrimSpace(cfg.BotUserID) == \"\" {\n\t\treturn fmt.Errorf(\"balda.mattermost.bot_user_id is required when the Mattermost transport is enabled\")\n\t}\n\treturn nil\n}\n\nfunc validateIdentifierValue(field, value string) error {\n"
+  },
+  {
+    "file": "cmd/balda/command.go",
+    "note": "mattermost в проверке хотя бы одного канала",
+    "search": "if cfg.Balda.Telegram.Token == \"\" && !cfg.Balda.Zulip.Webhook.Enabled && !cfg.Balda.Slack.Enabled && !cfg.Balda.Slack.Agent.Enabled {\n",
+    "replace": "if cfg.Balda.Telegram.Token == \"\" && !cfg.Balda.Zulip.Webhook.Enabled && !cfg.Balda.Mattermost.Enabled && !cfg.Balda.Slack.Enabled && !cfg.Balda.Slack.Agent.Enabled {\n"
+  },
+  {
+    "file": "cmd/balda/command.go",
+    "note": "сообщение об ошибке: подсказка про Mattermost",
+    "search": "\\nFor Slack chat: set balda.slack.enabled=true (or BALDA_SLACK_ENABLED=true)",
+    "replace": "\\nFor Mattermost: set balda.mattermost.enabled=true (or BALDA_MATTERMOST_ENABLED=true)\\nFor Slack chat: set balda.slack.enabled=true (or BALDA_SLACK_ENABLED=true)"
+  },
+  {
+    "file": "cmd/balda/balda.yaml",
+    "note": "дефолтный блок balda.mattermost",
+    "search": "  slack:\n    # Enable inbound Slack HTTP receiver.\n",
+    "replace": "  mattermost:\n    # Mattermost bot-account transport over the v4 websocket/REST API.\n    # Enable to connect this bot account and receive channel/DM events.\n    # Set via BALDA_MATTERMOST_ENABLED env var\n    enabled: false\n    # Mattermost server base URL (e.g. https://mm.example.com).\n    # Set via BALDA_MATTERMOST_SERVER_URL env var\n    server_url: \"\"\n    # Bot account personal access token.\n    # Set via BALDA_MATTERMOST_TOKEN env var\n    token: \"\"\n    # Bot account user id, used to ignore the bot's own posts.\n    # Set via BALDA_MATTERMOST_BOT_USER_ID env var\n    bot_user_id: \"\"\n    # Bot username, used for @mention detection in channels.\n    # Set via BALDA_MATTERMOST_BOT_USERNAME env var\n    bot_username: \"\"\n\n  slack:\n    # Enable inbound Slack HTTP receiver.\n"
+  },
+  {
+    "file": "docs/reference/configuration.md",
+    "note": "описание ключей balda.mattermost.*",
+    "search": "- `balda.slack.bot_token`: Bot OAuth Token used for Slack Agent Session",
+    "replace": "- `balda.mattermost.enabled`: enable the Mattermost bot-account websocket transport (`true` => Mattermost channel enabled; default: `false`; env: `BALDA_MATTERMOST_ENABLED`)\n- `balda.mattermost.server_url`: Mattermost server base URL, absolute `http://` or `https://` (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_SERVER_URL`)\n- `balda.mattermost.token`: Mattermost bot account personal access token (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_TOKEN`)\n- `balda.mattermost.bot_user_id`: Mattermost bot account user id, used to ignore the bot's own posts (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_BOT_USER_ID`)\n- `balda.mattermost.bot_username`: Mattermost bot account username, used to detect `@mention` activation in public and private channels (env: `BALDA_MATTERMOST_BOT_USERNAME`)\n- `balda.slack.bot_token`: Bot OAuth Token used for Slack Agent Session"
+  },
+  {
+    "file": "docs/commands.md",
+    "note": "колонка Mattermost в таблице команд",
+    "search": "| Command | Telegram | Zulip | Slack | Access | Context |\n|---|---:|---:|---:|---|---|\n",
+    "replace": "Mattermost uses one slash command per action, such as `/locator`, and accepts\nthem in direct messages and in channels where the bot is mentioned. Public and\nprivate channels require an explicit `@mention` before a message or command is\ndispatched; direct messages never require one. Mattermost bots cannot emit\ntyping indicators, so progress is delivered as plan updates only.\n\n| Command | Telegram | Zulip | Mattermost | Slack | Access | Context |\n|---|---:|---:|---:|---:|---|---|\n"
+  },
+  {
+    "file": "docs/commands.md",
+    "note": "строки таблицы: значения Mattermost",
+    "search": "| `/plugin ...` | yes | no | no | owner | current chat |\n",
+    "replace": "| `/plugin ...` | yes | yes | yes | owner | current chat |\n"
+  }
+]

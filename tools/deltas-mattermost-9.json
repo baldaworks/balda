@@ -1,0 +1,32 @@
+[
+  {
+    "file": "internal/apps/balda/channel/mattermost/ingress.go",
+    "note": "именованные параметры в assertion (inamedparam)",
+    "search": "var _ interface {\n\tStart(context.Context) error\n\tStop(context.Context) error\n} = (*Ingress)(nil)\n",
+    "replace": "var _ interface {\n\tStart(ctx context.Context) error\n\tStop(ctx context.Context) error\n} = (*Ingress)(nil)\n"
+  },
+  {
+    "file": "internal/apps/balda/channel/mattermost/ingress.go",
+    "note": "удаление неиспользуемой константы websocketReceiveTimeout",
+    "search": "const (\n\t// websocketReceiveTimeout bounds how long we wait for the next frame before\n\t// sending a client-side keepalive.\n\twebsocketReceiveTimeout = 50 * time.Second\n\t// websocketPingInterval is the Mattermost-recommended client ping cadence.\n",
+    "replace": "const (\n\t// websocketPingInterval is the Mattermost-recommended client ping cadence.\n"
+  },
+  {
+    "file": "internal/apps/balda/channel/mattermost/adapter.go",
+    "note": "удаление мёртвого typing-throttle: метод shouldSendTyping",
+    "search": "func (a *Adapter) shouldSendTyping(locator deliverycmd.Locator) bool {\n\tif a == nil {\n\t\treturn false\n\t}\n\ta.typingMu.Lock()\n\tdefer a.typingMu.Unlock()\n\tif a.typingThrottleInterval <= 0 {\n\t\treturn true\n\t}\n\tnow := time.Now()\n\tif a.now != nil {\n\t\tnow = a.now()\n\t}\n\tkey := locator.SessionID\n\tif last, ok := a.typingLastSentAt[key]; ok && now.Sub(last) < a.typingThrottleInterval {\n\t\treturn false\n\t}\n\ta.typingLastSentAt[key] = now\n\treturn true\n}\n\n",
+    "replace": ""
+  },
+  {
+    "file": "internal/apps/balda/channel/mattermost/adapter.go",
+    "note": "удаление мёртвого typing-throttle: поля структуры",
+    "search": "\ttypingThrottleInterval time.Duration\n\ttypingLastSentAt       map[string]time.Time\n",
+    "replace": ""
+  },
+  {
+    "file": "internal/apps/balda/channel/mattermost/adapter.go",
+    "note": "удаление мёртвого typing-throttle: инициализация map",
+    "search": "\t\ttypingLastSentAt: make(map[string]time.Time),\n",
+    "replace": ""
+  }
+]

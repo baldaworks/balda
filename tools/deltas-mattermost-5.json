@@ -1,0 +1,14 @@
+[
+  {
+    "file": "internal/apps/balda/channel/mattermost/mattermostfx/ingress.go",
+    "note": "fx.In: теги name на полях, а не fx.ParamTags снаружи; Commands как *commandcmd.Registry",
+    "search": "type IngressParams struct {\n\tfx.In\n\n\tProcessor   mattermost.InboundProcessor `optional:\"true\"`\n\tClient      *mattermost.Client\n\tCommands    *commandcmd.Registry `optional:\"true\"`\n\tEnabled     bool                 `name:\"balda_mattermost_enabled\"`\n\tBotUserID   string               `name:\"balda_mattermost_bot_user_id\"`\n\tBotUsername string               `name:\"balda_mattermost_bot_username\"`\n\tLogger      zerolog.Logger\n}\n",
+    "replace": "type IngressParams struct {\n\tfx.In\n\n\tProcessor   mattermost.InboundProcessor `optional:\"true\"`\n\tClient      *mattermost.Client\n\tCommands    *commandcmd.Registry\n\tEnabled     bool             `name:\"balda_mattermost_enabled\"`\n\tBotUserID   string           `name:\"balda_mattermost_bot_user_id\"`\n\tBotUsername string           `name:\"balda_mattermost_bot_username\"`\n\tLogger      zerolog.Logger\n}\n"
+  },
+  {
+    "file": "internal/apps/balda/channel/mattermost/mattermostfx/module.go",
+    "note": "NewIngress без внешних fx.ParamTags (fx.In теги живут в структуре)",
+    "search": "\t\tfx.Annotate(\n\t\t\tNewIngress,\n\t\t\tfx.ParamTags(\n\t\t\t\t``,\n\t\t\t\t``,\n\t\t\t\t``,\n\t\t\t\t`name:\"balda_mattermost_enabled\"`,\n\t\t\t\t`name:\"balda_mattermost_bot_user_id\"`,\n\t\t\t\t`name:\"balda_mattermost_bot_username\"`,\n\t\t\t\t``,\n\t\t\t),\n\t\t),\n",
+    "replace": "\t\tNewIngress,\n"
+  }
+]

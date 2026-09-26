@@ -1,0 +1,8 @@
+[
+  {
+    "file": "internal/apps/balda/channel/mattermost/adapter.go",
+    "note": "убрать неиспользуемый импорт sync",
+    "search": "\t\"strings\"\n\t\"sync\"\n\t\"time\"\n",
+    "replace": "\t\"strings\"\n\t\"time\"\n"
+  }
+]

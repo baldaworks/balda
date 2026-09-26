@@ -17,8 +17,14 @@ or any other subcommand returns the enabled-command usage.
 Slack's locator command accepts a signed request from a workspace member and
 does not use Telegram or Zulip owner records.
 
-| Command | Telegram | Zulip | Slack | Access | Context |
-|---|---:|---:|---:|---|---|
+Mattermost uses one slash command per action, such as `/locator`, and accepts
+them in direct messages and in channels where the bot is mentioned. Public and
+private channels require an explicit `@mention` before a message or command is
+dispatched; direct messages never require one. Mattermost bots cannot emit
+typing indicators, so progress is delivered as plan updates only.
+
+| Command | Telegram | Zulip | Mattermost | Slack | Access | Context |
+|---|---:|---:|---:|---:|---|---|
 | `/start ...` | yes | yes | no | onboarding | direct message |
 | `/help` | yes | no | no | anyone | current chat |
 | `/topic <name>` | yes | yes | no | owner, collaborator | Telegram direct message; Zulip stream |
@@ -32,7 +38,7 @@ does not use Telegram or Zulip owner records.
 | `/close` | yes | yes | no | owner, collaborator | direct message |
 | `/cancel` | yes | yes | no | owner, collaborator | current session |
 | `/user ...` | yes | yes | no | owner | direct message recommended |
-| `/plugin ...` | yes | no | no | owner | current chat |
+| `/plugin ...` | yes | yes | yes | owner | current chat |
 
 Arguments shown in angle brackets are required. Arguments in square brackets
 are optional. Commands that accept no arguments return a usage response when

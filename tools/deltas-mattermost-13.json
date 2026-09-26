@@ -1,0 +1,8 @@
+[
+  {
+    "file": "internal/apps/balda/channel/mattermost/mattermostfx/module.go",
+    "note": "убрать неиспользуемый импорт zerolog из module.go",
+    "search": "\t\"github.com/baldaworks/balda/internal/apps/balda/deliveryfx\"\n\t\"github.com/rs/zerolog\"\n\t\"go.uber.org/fx\"\n",
+    "replace": "\t\"github.com/baldaworks/balda/internal/apps/balda/deliveryfx\"\n\t\"go.uber.org/fx\"\n"
+  }
+]

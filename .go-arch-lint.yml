@@ -280,6 +280,18 @@ components:
     in:
       - internal/apps/balda/channel/slackagent/slackagentfx
 
+  # Provider-owned Mattermost transport. It may depend only on
+  # transport-neutral contracts; application/runtime adapters live in wiring.
+  mattermost_transport:
+    in:
+      - internal/apps/balda/channel/mattermost
+      - internal/apps/balda/channel/mattermost/presentation
+
+  # Composition-root adapters for Mattermost delivery, prompt, and structured renderers.
+  mattermost_wiring:
+    in:
+      - internal/apps/balda/channel/mattermost/mattermostfx
+
   # Provider-owned inbound webhook transport.
   webhook_transport:
     in:
@@ -569,6 +581,7 @@ deps:
       - delivery
       - telegram_transport
       - zulip_transport
+      - mattermost_transport
       - storage
       - infrastructure
       - application
@@ -686,6 +699,26 @@ deps:
       - slackagent_wiring
     anyVendorDeps: true
 
+  mattermost_transport:
+    mayDependOn:
+      - foundation
+      - contracts
+      - neutral_registry
+      - mattermost_transport
+    anyVendorDeps: true
+
+  mattermost_wiring:
+    mayDependOn:
+      - foundation
+      - contracts
+      - neutral_registry
+      - application
+      - delivery
+      - storage
+      - mattermost_transport
+      - mattermost_wiring
+    anyVendorDeps: true
+
   webhook_transport:
     mayDependOn:
       - foundation
@@ -741,6 +774,8 @@ deps:
       - zulip_wiring
       - slackagent_transport
       - slackagent_wiring
+      - mattermost_transport
+      - mattermost_wiring
       - webhook_transport
       - storage
       - infrastructure
