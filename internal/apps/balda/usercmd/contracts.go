@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// PrimaryUsername is the login name assigned to the primary administrator.
+const PrimaryUsername = "superuser"
+
 // Role is the system-wide authorization role of a canonical user.
 type Role string
 

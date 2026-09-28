@@ -43,7 +43,7 @@ Initialize in your project:
 balda init
 ```
 
-`balda init` also creates the Backoffice administrator and prints its generated
+`balda init` also creates the Backoffice administrator with username `superuser` and prints its generated
 password once. Save it securely, then start:
 
 ```bash

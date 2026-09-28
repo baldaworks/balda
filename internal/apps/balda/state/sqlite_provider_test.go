@@ -5,15 +5,77 @@ package state
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"path/filepath"
 	"strings"
 
 	"testing"
 
+	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 37
+const expectedSQLiteMigrationVersion = 38
+
+func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	registerBaldaGoMigrations()
+	migrations, err := fs.Sub(baldaMigrationsFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, db, migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 37); err != nil {
+		t.Fatal(err)
+	}
+	insertSQLiteUser(t, db, "admin-1", "telegram-2317500-368dcc50", true)
+	insertSQLiteUser(t, db, "operator-1", "telegram-202", false)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_bindings
+		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		VALUES ('binding-1', 'admin-1', 'telegram', '2317500', 'Owner', 'migration',
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	insertSQLiteSession(t, db)
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	assertGooseVersion(t, t.Context(), db, expectedSQLiteMigrationVersion)
+	var username, normalized, role, passwordHash, principal string
+	var userVersion, credentialVersion, sessionCount int
+	if err := db.QueryRowContext(t.Context(), `SELECT username, normalized_username, role, password_hash,
+		version, credential_version FROM balda_users WHERE user_id = 'admin-1'`).Scan(
+		&username, &normalized, &role, &passwordHash, &userVersion, &credentialVersion,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if username != "superuser" || normalized != "superuser" || role != "administrator" ||
+		passwordHash != "hash" || userVersion != 2 || credentialVersion != 1 {
+		t.Fatalf("migrated primary = %q/%q %q hash=%q versions=%d/%d", username, normalized, role, passwordHash, userVersion, credentialVersion)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT principal FROM balda_user_bindings WHERE user_id = 'admin-1'`).Scan(&principal); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM balda_backoffice_sessions WHERE user_id = 'admin-1'`).Scan(&sessionCount); err != nil {
+		t.Fatal(err)
+	}
+	if principal != "2317500" || sessionCount != 1 {
+		t.Fatalf("primary binding/session = %q/%d", principal, sessionCount)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT username FROM balda_users WHERE user_id = 'operator-1'`).Scan(&username); err != nil {
+		t.Fatal(err)
+	}
+	if username != "telegram-202" {
+		t.Fatalf("operator username = %q", username)
+	}
+}
 
 func TestSQLiteProvider_SessionStoreUpsert_PopulatesTelegramAddressColumns(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "state.db")

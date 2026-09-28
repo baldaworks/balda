@@ -223,6 +223,9 @@ func prepare(input Input) (preparedMigration, error) {
 			role = usercmd.RoleAdministrator
 		}
 		username := deterministicUsername(channelType, principal, record.Subject)
+		if record.Subject == primarySubject {
+			username = usercmd.PrimaryUsername
+		}
 		if prior, exists := usernames[username]; exists {
 			return preparedMigration{}, fmt.Errorf("legacy subjects %q and %q produce the same username", prior, record.Subject)
 		}

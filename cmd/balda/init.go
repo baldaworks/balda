@@ -11,6 +11,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -174,7 +175,7 @@ func initCommand() *cobra.Command {
 			_, _ = fmt.Fprintf(baldaInitOutput, "start command: balda start\n")
 			_, _ = fmt.Fprintf(baldaInitOutput, "auth command: %s\n", auth.BuildOwnerAuthCommand(ownerToken))
 			_, _ = fmt.Fprintf(baldaInitOutput, "auth link: %s\n", auth.BuildOwnerAuthLink(bot.username, ownerToken))
-			_, _ = fmt.Fprintf(baldaInitOutput, "Backoffice administrator: admin\n")
+			_, _ = fmt.Fprintf(baldaInitOutput, "Backoffice administrator: %s\n", usercmd.PrimaryUsername)
 			_, _ = fmt.Fprintf(baldaInitOutput, "Backoffice password: %s\n", adminPassword)
 
 			return nil
@@ -200,7 +201,7 @@ func bootstrapInitialAdmin(ctx context.Context, database state.DatabaseConfig) (
 		return nil, err
 	}
 	defer func() { _ = runtime.Close() }()
-	if _, err := runtime.BootstrapAdmin(ctx, backoffice.BootstrapInput{Username: "admin", Password: password}); err != nil {
+	if _, err := runtime.BootstrapAdmin(ctx, backoffice.BootstrapInput{Username: usercmd.PrimaryUsername, Password: password}); err != nil {
 		zeroPassword(password)
 		return nil, err
 	}

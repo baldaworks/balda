@@ -88,7 +88,7 @@ func (s *BootstrapService) Bootstrap(ctx context.Context, input BootstrapInput) 
 	if selection.Action == users.BootstrapCreatePrimary {
 		username := strings.TrimSpace(input.Username)
 		if username == "" {
-			username = "admin"
+			username = usercmd.PrimaryUsername
 		}
 		displayName := strings.TrimSpace(input.DisplayName)
 		if displayName == "" {
