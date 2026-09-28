@@ -20,6 +20,7 @@ const (
 	TemplateError    = "error"
 	TemplateRefresh  = "refresh"
 	TemplatePassword = "password"
+	TemplateGallery  = "gallery"
 )
 
 var templateFiles = map[string]string{
@@ -27,6 +28,7 @@ var templateFiles = map[string]string{
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
+	TemplateGallery: "templates/gallery.tmpl",
 }
 
 //go:embed templates static
@@ -39,9 +41,21 @@ type Renderer struct {
 
 // NewRenderer parses each allowlisted page independently with the shared shell.
 func NewRenderer(basePath string) (*Renderer, error) {
+	return newRenderer(basePath, basePath)
+}
+
+// NewQARenderer keeps preview navigation inside QA while sharing production templates.
+func NewQARenderer(basePath string) (*Renderer, error) {
+	return newRenderer(basePath+"/qa/ui", basePath)
+}
+
+func newRenderer(pagePath, assetPath string) (*Renderer, error) {
 	templates := make(map[string]*template.Template, len(templateFiles))
 	for name, pageFile := range templateFiles {
-		parsed, err := template.New(name).Funcs(template.FuncMap{"path": func(route any) string { return basePath + fmt.Sprint(route) }}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", pageFile)
+		parsed, err := template.New(name).Funcs(template.FuncMap{
+			"path":      func(route any) string { return pagePath + fmt.Sprint(route) },
+			"assetPath": func(route any) string { return assetPath + fmt.Sprint(route) },
+		}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", pageFile)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
 		}

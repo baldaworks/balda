@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
@@ -87,7 +86,17 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}"), a.accessUpdate)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/credential"), a.accessCredentialReset)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/sessions/{session_id}/revoke"), a.accessSessionRevoke)
-	mux.HandleFunc("GET "+a.path("/qa/ui/"), a.qaPage)
+	qaHandler, err := QAHandler(a.basePath)
+	if err != nil {
+		return nil, err
+	}
+	mux.HandleFunc("GET "+a.path("/qa/ui/"), func(w http.ResponseWriter, r *http.Request) {
+		if !a.qa {
+			http.NotFound(w, r)
+			return
+		}
+		qaHandler.ServeHTTP(w, r)
+	})
 	return securityHeaders(mux, a.basePath), nil
 }
 
@@ -365,88 +374,6 @@ func parseFormVersion(raw string) (uint64, error) {
 		return 0, usercmd.ErrInvalid
 	}
 	return version, nil
-}
-
-func (a *httpApp) qaPage(w http.ResponseWriter, r *http.Request) {
-	if !a.qa {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
-	fixture := strings.TrimPrefix(r.URL.Path, a.path("/qa/ui/"))
-	page, templateName, ok := qaFixture(fixture)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if page.ReturnTo == "/overview" {
-		page.ReturnTo = a.path(page.ReturnTo)
-	}
-	if r.Method == http.MethodHead {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	a.render(w, r, http.StatusOK, templateName, page)
-}
-
-func qaFixture(name string) (webui.Page, string, bool) {
-	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
-	admin := usercmd.BackofficeCapabilities{Overview: true, Account: true, ManageUsers: true, ViewAudit: true}
-	operator := usercmd.BackofficeCapabilities{Overview: true, Account: true}
-	switch name {
-	case "login":
-		return webui.Page{Title: "Sign in · QA", Current: webui.LocationLogin, CSRFToken: "qa-csrf"}, webui.TemplateLogin, true
-	case "refresh":
-		return webui.Page{Title: "Continue session · QA", CSRFToken: "qa-csrf", ReturnTo: "/overview"}, webui.TemplateRefresh, true
-	case "password":
-		return webui.Page{Title: "Replace password · QA", CSRFToken: "qa-csrf"}, webui.TemplatePassword, true
-	case "overview", "":
-		return webui.Page{
-			Title: "Overview · QA", Current: webui.LocationOverview,
-			Navigation: webui.Navigation(admin, webui.LocationOverview),
-			Capabilities: []webui.CapabilityCard{
-				{ID: "telegram", Name: "Telegram", Mode: "webhook", ListenAddr: "127.0.0.1:8080", Endpoint: "/telegram"},
-				{ID: "slack-agent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
-				{ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: 3},
-			},
-			Audit: []webui.AuditView{{Action: "session.login.succeeded", Outcome: "succeeded", TargetType: "session", TargetID: "family-demo", OccurredAt: now}},
-		}, webui.TemplateOverview, true
-	case "access":
-		user := webui.UserView{
-			ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
-			CredentialState: "temporary", MustChange: true, Version: 3, CredentialVersion: 2,
-			Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "legacy migration"},
-		}
-		return webui.Page{
-			Title: "Access · QA", Current: webui.LocationAccess, Navigation: webui.Navigation(admin, webui.LocationAccess),
-			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
-		}, webui.TemplateAccess, true
-	case "account":
-		user := webui.UserView{
-			ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
-			CredentialState: "active", Version: 3, CredentialVersion: 2,
-			Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "legacy migration"},
-		}
-		return webui.Page{
-			Title: "Account · QA", Current: webui.LocationAccount, Navigation: webui.Navigation(operator, webui.LocationAccount),
-			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
-		}, webui.TemplateAccount, true
-	case "audit":
-		familyID := "11111111-1111-4111-8111-111111111111"
-		adminID := "22222222-2222-4222-8222-222222222222"
-		return webui.Page{
-			Title: "Audit · QA", Current: webui.LocationAudit, Navigation: webui.Navigation(admin, webui.LocationAudit),
-			Audit: []webui.AuditView{
-				{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", Outcome: "succeeded", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: now},
-				{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", Outcome: "denied", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: now.Add(time.Minute)},
-				{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", Outcome: "succeeded", ActorUserID: adminID, TargetType: "session", TargetID: familyID, OccurredAt: now.Add(2 * time.Minute)},
-			},
-		}, webui.TemplateAudit, true
-	default:
-		return webui.Page{}, "", false
-	}
 }
 
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {

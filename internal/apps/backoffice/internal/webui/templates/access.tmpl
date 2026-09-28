@@ -1,6 +1,6 @@
 {{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
   <div class="container-fluid py-3">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h1 class="mb-0">Access</h1>{{if .User}}<a class="btn btn-outline-secondary" href="{{path "/"}}access" hx-boost="true" hx-target="#main-content" hx-push-url="true">All users</a>{{end}}</div>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><h1 class="mb-0">Access</h1>{{if .User}}<a class="btn btn-outline-secondary" href="{{path "/"}}{{if .Preview}}access-list{{else}}access{{end}}" hx-boost="true" hx-target="#main-content" hx-push-url="true">All users</a>{{end}}</div>
     {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
     {{with .User}}
     <section aria-labelledby="user-heading" class="card mb-3"><div class="card-body"><h2 id="user-heading" class="h4">{{.DisplayName}}</h2>

@@ -41,6 +41,59 @@ func TestHTTPAppQAIsOptInAndUsesProductionTemplates(t *testing.T) {
 	}
 }
 
+func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
+	t.Parallel()
+	handler, err := QAHandler("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gallery := httptest.NewRecorder()
+	handler.ServeHTTP(gallery, httptest.NewRequest(http.MethodGet, "/balda/qa/ui/", nil))
+	if gallery.Code != http.StatusOK || !strings.Contains(gallery.Body.String(), "Backoffice UI previews") {
+		t.Fatalf("gallery response = %d %q", gallery.Code, gallery.Body.String())
+	}
+	if got := gallery.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("gallery Cache-Control = %q", got)
+	}
+	if got := gallery.Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") {
+		t.Errorf("gallery X-Robots-Tag = %q", got)
+	}
+	for _, entry := range qaEntries {
+		path := "/balda/qa/ui/" + entry.name
+		if entry.gallery && !strings.Contains(gallery.Body.String(), `href="`+path+`"`) {
+			t.Errorf("gallery has no link to %s", path)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK || strings.Count(response.Body.String(), `id="main-content"`) != 1 {
+			t.Errorf("GET %s = %d, main count = %d", path, response.Code, strings.Count(response.Body.String(), `id="main-content"`))
+		}
+		if strings.Contains(response.Body.String(), `action="/balda/access`) || strings.Contains(response.Body.String(), `action="/balda/account`) {
+			t.Errorf("GET %s has an operational form action", path)
+		}
+		head := httptest.NewRecorder()
+		handler.ServeHTTP(head, httptest.NewRequest(http.MethodHead, path, nil))
+		if head.Code != http.StatusOK || head.Body.Len() != 0 {
+			t.Errorf("HEAD %s = %d with %d body bytes", path, head.Code, head.Body.Len())
+		}
+		post := httptest.NewRecorder()
+		handler.ServeHTTP(post, httptest.NewRequest(http.MethodPost, path, nil))
+		if post.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s = %d, want 405", path, post.Code)
+		}
+	}
+	asset := httptest.NewRecorder()
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/balda/assets/app.css", nil))
+	if asset.Code != http.StatusOK {
+		t.Errorf("asset status = %d", asset.Code)
+	}
+	runtime := httptest.NewRecorder()
+	handler.ServeHTTP(runtime, httptest.NewRequest(http.MethodGet, "/balda/access", nil))
+	if runtime.Code != http.StatusNotFound {
+		t.Errorf("runtime route status = %d, want 404", runtime.Code)
+	}
+}
+
 func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)
@@ -83,7 +136,7 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	}
 	qa := httptest.NewRecorder()
 	handler.ServeHTTP(qa, httptest.NewRequest(http.MethodGet, "/balda/qa/ui/access", nil))
-	if qa.Code != http.StatusOK || !strings.Contains(qa.Body.String(), `action="/balda/access/users`) || !strings.Contains(qa.Body.String(), `href="/balda/overview"`) {
+	if qa.Code != http.StatusOK || !strings.Contains(qa.Body.String(), `action="/balda/qa/ui/access/users`) || !strings.Contains(qa.Body.String(), `href="/balda/qa/ui/overview"`) {
 		t.Fatalf("prefixed QA = %d %q", qa.Code, qa.Body.String())
 	}
 }

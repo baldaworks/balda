@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
-  <link rel="stylesheet" href="{{path "/"}}assets/vendor/adminlte/adminlte.min.css">
-  <link rel="stylesheet" href="{{path "/"}}assets/vendor/bootstrap-icons/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="{{path "/"}}assets/app.css">
+  <link rel="stylesheet" href="{{assetPath "/"}}assets/vendor/adminlte/adminlte.min.css">
+  <link rel="stylesheet" href="{{assetPath "/"}}assets/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{assetPath "/"}}assets/app.css">
 </head>
 <body class="layout-fixed sidebar-expand-lg bg-body-tertiary">
 <a class="skip-link btn btn-primary" href="#main-content">Skip to main content</a>
@@ -28,8 +28,8 @@
   {{end}}
   <div class="app-main">{{template "content" .}}</div>
 </div>
-<script src="{{path "/"}}assets/vendor/htmx/htmx.min.js"></script>
-<script src="{{path "/"}}assets/vendor/adminlte/adminlte.min.js"></script>
-<script src="{{path "/"}}assets/app.js"></script>
+<script src="{{assetPath "/"}}assets/vendor/htmx/htmx.min.js"></script>
+<script src="{{assetPath "/"}}assets/vendor/adminlte/adminlte.min.js"></script>
+<script src="{{assetPath "/"}}assets/app.js"></script>
 </body>
 </html>{{end}}

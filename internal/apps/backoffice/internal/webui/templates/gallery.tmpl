@@ -1,0 +1,9 @@
+{{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
+  <div class="container-fluid py-3">
+    <h1>Backoffice UI previews</h1>
+    <p class="text-body-secondary">Synthetic screens for visual review. Forms cannot change application data.</p>
+    <div class="list-group" aria-label="QA previews">
+      {{range .Gallery}}<a class="list-group-item list-group-item-action" href="{{path .Path}}" hx-boost="true" hx-target="#main-content" hx-push-url="true">{{.Label}}</a>{{end}}
+    </div>
+  </div>
+</main>{{end}}
