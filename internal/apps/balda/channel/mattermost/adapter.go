@@ -25,8 +25,8 @@ var (
 //
 // Mattermost has no typing indicator for bots and no draft concept, so those
 // operations are deliberate no-ops rather than errors. Progress updates are
-// delivered as posts; edit-in-place is used only when the caller supplies a
-// provider message ID via ClearQuestionControls settlement.
+// delivered as posts. Questions are answered by text replies, so their
+// settlement does not edit any existing Mattermost post.
 type Adapter struct {
 	client *Client
 	logger zerolog.Logger
@@ -86,6 +86,9 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		} else {
 			result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 		}
+		if err == nil && operation.Question != nil {
+			result.ProviderMessageID = questionReplyReference(locator, result.ProviderMessageID)
+		}
 	case deliverycmd.OperationDraft:
 		// Mattermost cannot draft or edit a provisional post. The final reply is
 		// delivered separately, so a draft must not create a permanent post.
@@ -95,7 +98,10 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 	case deliverycmd.OperationProgress:
 		err = a.SendProgress(ctx, locator, operation.Progress)
 	case deliverycmd.OperationClearQuestionControls:
-		err = a.settleQuestionControls(ctx, locator, operation.MessageID, operation.Handle, operation.Text)
+		// Mattermost questions use text replies rather than native controls. A
+		// thread question is bound to its thread root so subsequent replies can
+		// resolve it; editing that root would overwrite the user's original post.
+		err = nil
 	case deliverycmd.OperationPhoto:
 		if operation.Media == nil {
 			err = fmt.Errorf("mattermost photo operation requires media")
@@ -112,6 +118,17 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 		err = fmt.Errorf("unsupported mattermost delivery operation %q", operation.Kind)
 	}
 	return result, err
+}
+
+// questionReplyReference returns the ID Mattermost will place in RootID on a
+// reply to a delivered question. Channel threads always report the thread root,
+// not the immediate post being replied to; direct and channel-root questions
+// retain their delivered post ID.
+func questionReplyReference(locator deliverycmd.Locator, providerMessageID string) string {
+	if rootID, ok := RootIDFromLocator(locator); ok && strings.TrimSpace(rootID) != "" {
+		return rootID
+	}
+	return strings.TrimSpace(providerMessageID)
 }
 
 func (a *Adapter) sendMessage(ctx context.Context, locator deliverycmd.Locator, message deliveryfmt.Message) (string, error) {
@@ -214,36 +231,6 @@ func (a *Adapter) SendProgress(ctx context.Context, locator deliverycmd.Locator,
 	default:
 		return fmt.Errorf("unsupported mattermost progress kind %q", progress.Kind)
 	}
-}
-
-// settleQuestionControls applies a resolved interactive control: the original
-// post is edited to record the selection so stale buttons are visibly settled.
-func (a *Adapter) settleQuestionControls(
-	ctx context.Context,
-	_ deliverycmd.Locator,
-	messageID string,
-	handle string,
-	selectionText string,
-) error {
-	postID := strings.TrimSpace(messageID)
-	if postID == "" {
-		return nil
-	}
-	text := strings.TrimSpace(selectionText)
-	if text == "" {
-		return nil
-	}
-	if handle := strings.TrimSpace(handle); handle != "" {
-		text = handle + ": " + text
-	}
-	if _, err := a.client.UpdatePost(ctx, postID, text); err != nil {
-		a.logger.Warn().
-			Err(err).
-			Str("post_id", postID).
-			Msg("mattermost question settlement edit failed")
-		return fmt.Errorf("settle mattermost question controls: %w", err)
-	}
-	return nil
 }
 
 // sendMedia uploads a file and posts it into the target conversation.

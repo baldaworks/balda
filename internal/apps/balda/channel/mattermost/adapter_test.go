@@ -248,6 +248,27 @@ func TestDeliverAgentReplyReportsProviderMessageID(t *testing.T) {
 	}
 }
 
+func TestDeliverThreadQuestionBindsToThreadRoot(t *testing.T) {
+	fake := &fakeServer{}
+	adapter := newTestAdapter(t, fake)
+
+	result, err := adapter.Deliver(context.Background(), NewChannelLocator(testTeamID, testChannelID, "thread-root-1"), deliverycmd.Operation{
+		Kind:     deliverycmd.OperationAgentReply,
+		Text:     "Approve this action?",
+		Question: &deliverycmd.Question{ID: "question-1", Options: []deliverycmd.QuestionOption{{ID: "allow", Label: "Allow"}}},
+	})
+	if err != nil {
+		t.Fatalf("Deliver() error = %v", err)
+	}
+	if got, want := result.ProviderMessageID, "thread-root-1"; got != want {
+		t.Fatalf("question reply reference = %q, want thread root %q", got, want)
+	}
+	requests := fake.recorded()
+	if len(requests) != 1 || requests[0].RootID != "thread-root-1" {
+		t.Fatalf("question post requests = %+v, want one reply in thread root", requests)
+	}
+}
+
 func TestDeliverDraftIsNoOpWithoutNetworkCall(t *testing.T) {
 	// Mattermost cannot render an ephemeral draft. Creating a post for every
 	// intermediate draft would spam the channel; the final reply is delivered
