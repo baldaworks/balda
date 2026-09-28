@@ -586,14 +586,14 @@ func TestResolveWorkspaceBaseBranch_ConfigPreferredWhenValid(t *testing.T) {
 	repoDir := t.TempDir()
 	initGitRepoForBalda(t, ctx, repoDir)
 
-	runGitForBalda(t, ctx, repoDir, "branch", "main")
+	runGitForBalda(t, ctx, repoDir, "branch", "configured-base")
 
-	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "main", true)
+	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "configured-base", true)
 	if err != nil {
 		t.Fatalf("resolveWorkspaceBaseBranch returned error: %v", err)
 	}
-	if branch != "main" {
-		t.Fatalf("branch = %q, want main", branch)
+	if branch != "configured-base" {
+		t.Fatalf("branch = %q, want configured-base", branch)
 	}
 	if source != testWorkspaceBaseBranchSourceConfig {
 		t.Fatalf("source = %q, want %s", source, testWorkspaceBaseBranchSourceConfig)

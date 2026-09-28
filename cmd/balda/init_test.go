@@ -143,7 +143,11 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	if !strings.Contains(out, "auth link: https://t.me/BaldaBot?start=owner_owner-token-init") {
 		t.Fatalf("init output missing auth link: %q", out)
 	}
-	if !strings.Contains(out, "telegram token stored in: "+filepath.Join(workingDir, ".env")) {
+	tokenPath, err := filepath.EvalSymlinks(filepath.Join(workingDir, ".env"))
+	if err != nil {
+		t.Fatalf("resolve token storage path: %v", err)
+	}
+	if !strings.Contains(out, "telegram token stored in: "+tokenPath) {
 		t.Fatalf("init output missing token storage path: %q", out)
 	}
 }
