@@ -4,7 +4,7 @@ Thanks for contributing to `balda`.
 
 ## Development Setup
 
-1. Use Go `1.26.3` (see `go.mod`).
+1. Use Go `1.26.6` (see `go.mod`).
 2. Clone the repository and fetch dependencies:
 
 ```bash
@@ -41,6 +41,27 @@ Use a disposable PostgreSQL database with permission to create/drop test schemas
 Each test gets an isolated schema and cleans it up. An explicit PostgreSQL run
 fails if the DSN is missing. Both backends have separate required CI jobs;
 configuration and dispatch unit tests remain untagged.
+
+## Database Migrations
+
+Create sequential SQL migration files with the project-pinned Goose CLI:
+
+```bash
+go tool goose -s -dir internal/apps/balda/state/migrations create <name> sql
+go tool goose -s -dir internal/apps/balda/state/postgres_migrations create <name> sql
+```
+
+Use the SQLite or PostgreSQL command for the backend being changed. Fill in
+the generated `Up` section, then validate both embedded migration directories:
+
+```bash
+go tool goose -dir internal/apps/balda/state/migrations validate
+go tool goose -dir internal/apps/balda/state/postgres_migrations validate
+```
+
+Balda applies migrations through the embedded Goose providers when it opens
+the selected database. Run the tagged integration suite against a disposable
+database before shipping a migration.
 
 ## Code Standards
 

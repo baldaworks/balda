@@ -149,9 +149,8 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	if !strings.Contains(out, "Backoffice password: generated-admin-password-for-init") {
 		t.Fatalf("init output missing generated administrator password: %q", out)
 	}
-	tokenPath, err := filepath.EvalSymlinks(filepath.Join(workingDir, ".env"))
-	if err != nil {
-		t.Fatalf("resolve token storage path: %v", err)
+	if !strings.Contains(out, "Backoffice administrator: superuser") {
+		t.Fatalf("init output missing primary administrator username: %q", out)
 	}
 	provider, err := baldastate.NewSQLiteProvider(t.Context(), paths.StateDBPath(filepath.Join(workingDir, baldaRuntimeStatePath)))
 	if err != nil {
@@ -159,14 +158,14 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	}
 	defer func() { _ = provider.Close() }()
 	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
-	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary {
+	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary || page.Users[0].Username != "superuser" {
 		t.Fatalf("initial administrator = %+v, error = %v", page, err)
 	}
 	secret, found, err := provider.Users().GetCredentialSecret(t.Context(), page.Users[0].ID)
 	if err != nil || !found || !userpassword.Verify(secret.PasswordHash, []byte("generated-admin-password-for-init")) {
 		t.Fatalf("initial administrator password verification: found=%t error=%v", found, err)
 	}
-	if !strings.Contains(out, "telegram token stored in: "+tokenPath) {
+	if !strings.Contains(out, "telegram token stored in: "+filepath.Join(workingDir, ".env")) {
 		t.Fatalf("init output missing token storage path: %q", out)
 	}
 }

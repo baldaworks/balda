@@ -48,12 +48,12 @@ task projection-replay
 (`codex`, `opencode`, `copilot`, `gemini`, `claude`), writes
 `.config/balda/config.yaml`, initializes `.config/balda/state.db`, and prints
 both an owner auth command and Telegram auth link, plus the generated
-Backoffice administrator password. Save the password securely. The default token storage is
+Backoffice administrator password. Its username is `superuser`; save the password securely. The default token storage is
 CWD `.env` as `BALDA_TELEGRAM_TOKEN`.
 
 On an existing installation, stop Balda, back up the selected database, run
 `balda backoffice migrate-users --credentials-output <new-0600-path>`, then
-bootstrap the migrated primary administrator with `--reset` before restart.
+bootstrap the migrated primary administrator (`superuser`) with `--reset` before restart.
 The reset command generates and prints the new password once; optional
 non-terminal stdin can provide an operator-chosen password.
 `balda start` applies embedded schema migrations and refuses bot ingress or

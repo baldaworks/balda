@@ -67,6 +67,9 @@ func TestMigratorBuildsCanonicalUsersAndSecureManifest(t *testing.T) {
 	if primary.Binding == nil || primary.Binding.ChannelType != testChannelTelegram || primary.Binding.Principal != "101" {
 		t.Fatalf("primary entry = %+v", primary)
 	}
+	if primary.User.Username != usercmd.PrimaryUsername || primary.User.Role != usercmd.RoleAdministrator {
+		t.Fatalf("primary identity = %+v", primary.User)
+	}
 	if !strings.Contains(primary.Binding.Provenance, "chat_id=909") || !strings.Contains(primary.Binding.Provenance, "registered_at=") {
 		t.Fatalf("primary provenance = %q", primary.Binding.Provenance)
 	}
@@ -224,9 +227,11 @@ func TestPrepareUsesSelectedPrimaryInFingerprint(t *testing.T) {
 	if telegramPrimary.fingerprint == slackPrimary.fingerprint {
 		t.Fatal("source fingerprint omitted selected primary")
 	}
-	for i := range telegramPrimary.users {
-		if telegramPrimary.users[i].user.Username != slackPrimary.users[i].user.Username {
-			t.Fatal("primary selection changed deterministic username")
+	for _, prepared := range []preparedMigration{telegramPrimary, slackPrimary} {
+		for _, entry := range prepared.users {
+			if entry.user.Primary != (entry.user.Username == usercmd.PrimaryUsername) {
+				t.Fatalf("primary username mismatch: %+v", entry.user)
+			}
 		}
 	}
 }

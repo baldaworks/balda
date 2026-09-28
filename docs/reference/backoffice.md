@@ -39,7 +39,7 @@ Commands:
   with mode `0600`; it contains temporary plaintext credentials and must be
   distributed and deleted as sensitive material.
 - `balda init` creates the first administrator and prints its generated password
-  once, alongside the owner token.
+  once, alongside the owner token. Its username is `superuser`.
 - `balda backoffice bootstrap-admin` generates and prints a password once by
   default; it also accepts an operator-provided password on non-terminal stdin.
   It creates the first unbound primary administrator on a fresh database, or
@@ -96,7 +96,7 @@ go build -trimpath -o ./bin/balda ./cmd/balda
 ./bin/balda validate
 ```
 
-For a fresh database, `init` creates the administrator and prints its password
+For a fresh database, `init` creates the `superuser` administrator and prints its password
 once. Store the output securely, then start:
 
 ```bash
@@ -113,7 +113,7 @@ session family for that user.
 For an existing installation with legacy owner/collaborator records, stop
 Balda, take a consistent database backup, deploy the new binary, and run the
 forward user conversion before start. The converted primary has a temporary
-credential, so `--reset` sets its intended password and revokes any prior
+credential and username `superuser`, so `--reset` sets its intended password and revokes any prior
 browser refresh families. Skip conversion and reset when canonical users and
 an active administrator are already ready:
 

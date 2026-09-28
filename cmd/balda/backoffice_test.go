@@ -280,7 +280,7 @@ balda:
 	}
 	defer func() { _ = provider.Close() }()
 	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
-	if err != nil || len(page.Users) != 1 {
+	if err != nil || len(page.Users) != 1 || page.Users[0].Username != "superuser" {
 		t.Fatalf("administrator lookup: %+v, %v", page, err)
 	}
 	secret, found, err := provider.Users().GetCredentialSecret(t.Context(), page.Users[0].ID)
