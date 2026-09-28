@@ -323,7 +323,7 @@ func (h *telegramInboundHandler) accessCollaboratorScope(ctx context.Context, us
 	if h.collaboratorStore == nil {
 		return false, nil
 	}
-	collaborator, found, err := h.collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
+	collaborator, found, err := h.collaboratorStore.GetCollaborator(ctx, auth.TelegramSubject(userID))
 	if err != nil {
 		return false, fmt.Errorf("look up telegram collaborator: %w", err)
 	}

@@ -106,10 +106,10 @@ type telegramCommandHandler struct {
 type telegramCommandHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore            `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore     `optional:"true"`
-	Channel           *baldatelegram.Adapter      `optional:"true"`
-	CommandIngress    commandcmd.Ingress          `optional:"true"`
+	OwnerStore        *auth.OwnerStore        `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore `optional:"true"`
+	Channel           *baldatelegram.Adapter  `optional:"true"`
+	CommandIngress    commandcmd.Ingress      `optional:"true"`
 	Logger            zerolog.Logger
 }
 
@@ -172,7 +172,7 @@ func (h *telegramCommandHandler) canUseSessionCommand(ctx context.Context, userI
 	if h.collaboratorStore == nil {
 		return false
 	}
-	_, found, err := h.collaboratorStore.GetCollaborator(ctx, fmt.Sprintf("%d", userID))
+	_, found, err := h.collaboratorStore.GetCollaborator(ctx, auth.TelegramSubject(userID))
 	if err != nil {
 		h.logger.Warn().Err(err).Int64("user_id", userID).Msg("failed to check collaborator access")
 		return false
