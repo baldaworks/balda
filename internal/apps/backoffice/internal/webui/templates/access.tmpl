@@ -4,7 +4,7 @@
     {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
     {{with .User}}
     <section aria-labelledby="user-heading" class="card mb-3"><div class="card-body"><h2 id="user-heading" class="h4">{{.DisplayName}}</h2>
-      {{if .Primary}}<p><span class="badge text-bg-primary">Primary administrator</span></p>{{end}}
+      {{if .Primary}}<p><span class="badge text-bg-primary">Primary administrator</span></p>{{end}}{{if $.OwnUser}}<p><a href="{{path "/"}}account" hx-boost="true" hx-target="#main-content" hx-push-url="true">Change your password in Account</a></p>{{end}}
       <form action="{{path "/"}}access/users/{{.ID}}" method="post" hx-post="{{path "/"}}access/users/{{.ID}}" hx-target="#main-content">
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="expected_version" value="{{.Version}}">
         <div class="row g-3"><div class="col-md-6"><label class="form-label" for="display-name">Display name</label><input class="form-control" id="display-name" name="display_name" value="{{.DisplayName}}" required></div>

@@ -145,7 +145,7 @@ func qaRefreshError() webui.Page {
 }
 
 func qaPassword() webui.Page {
-	return webui.Page{Title: "Replace password · QA", Current: webui.LocationAccount, CSRFToken: "qa-csrf"}
+	return webui.Page{Title: "Change password · QA", Current: webui.LocationAccount, CSRFToken: "qa-csrf"}
 }
 
 func qaPasswordError() webui.Page {

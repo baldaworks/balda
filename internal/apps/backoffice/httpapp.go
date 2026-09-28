@@ -127,7 +127,7 @@ func (a *httpApp) refreshPage(w http.ResponseWriter, r *http.Request) {
 
 func (a *httpApp) passwordPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplatePassword, webui.Page{
-		Title: "Replace password · Balda", Current: webui.LocationAccount, CSRFToken: a.browser.CSRFToken(r),
+		Title: "Change password · Balda", Current: webui.LocationAccount, CSRFToken: a.browser.CSRFToken(r),
 	})
 }
 
@@ -278,6 +278,7 @@ func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
 		Title: "Access · " + user.DisplayName, Current: webui.LocationAccess,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccess), User: &view,
 		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r), BindingChoices: a.bindingChoices,
+		OwnUser: user.ID == principal.User.ID,
 	})
 }
 

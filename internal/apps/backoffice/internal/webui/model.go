@@ -121,6 +121,7 @@ type Page struct {
 	Navigation      []NavItem
 	Capabilities    []CapabilityCard
 	BindingChoices  []string
+	OwnUser         bool
 	Users           []UserView
 	User            *UserView
 	Sessions        []SessionView

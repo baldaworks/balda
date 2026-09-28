@@ -158,7 +158,7 @@ func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 		want []string
 	}{
 		{name: "access", want: []string{"Temporary credential", "telegram:42", "Browser sessions"}},
-		{name: "account", want: []string{"Rotate password", "telegram:42", "Revoke family"}},
+		{name: "account", want: []string{"Change password", "telegram:42", "Revoke family"}},
 		{name: "audit", want: []string{"session.refresh.succeeded", "session.refresh.replay", "11111111-1111-4111-8111-111111111111"}},
 	}
 	for _, tt := range tests {
@@ -421,7 +421,7 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	accountRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: initial.csrf})
 	account := httptest.NewRecorder()
 	handler.ServeHTTP(account, accountRequest)
-	if account.Code != http.StatusOK || !strings.Contains(account.Body.String(), "Rotate password") || strings.Contains(account.Body.String(), "Access</span>") {
+	if account.Code != http.StatusOK || !strings.Contains(account.Body.String(), "Change password") || strings.Contains(account.Body.String(), "Access</span>") {
 		t.Fatalf("account page = %d %q", account.Code, account.Body.String())
 	}
 
@@ -454,6 +454,21 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 	if _, err := app.security.Refresh(t.Context(), initial.refresh, initial.csrf); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("old refresh validation error = %v", err)
+	}
+	nativeChange := performAccessMutation(t, handler, config, "/account/password", url.Values{
+		"csrf_token": {next.csrf}, "current_password": {"replacement password"},
+		"new_password": {"final replacement password"},
+	}, next.access, next.csrf, false)
+	if nativeChange.Code != http.StatusSeeOther || nativeChange.Header().Get("Location") != "/account" {
+		t.Fatalf("native password change = %d %v", nativeChange.Code, nativeChange.Header())
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("previous access after native change = %v", err)
+	}
+	next = httpLoginCookies{
+		access:  cookieValue(nativeChange.Result().Cookies(), security.AccessCookieName),
+		refresh: cookieValue(nativeChange.Result().Cookies(), security.RefreshCookieName),
+		csrf:    cookieValue(nativeChange.Result().Cookies(), security.CSRFCookieName),
 	}
 	principal, err := app.security.ValidateAccess(t.Context(), next.access)
 	if err != nil {
