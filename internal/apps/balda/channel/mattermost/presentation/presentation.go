@@ -9,7 +9,13 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 )
+
+// RenderQuestion renders question options as Mattermost Markdown.
+func RenderQuestion(body questionfmt.Request) string {
+	return questionfmt.RenderMarkdownOptions(body)
+}
 
 // RenderLocator renders a validated locator response as Mattermost Markdown.
 func RenderLocator(body locatorfmt.Response) string {

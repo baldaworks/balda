@@ -68,6 +68,10 @@ var Module = fx.Module(
 
 		// Structured renderers for system-authored service messages.
 		fx.Annotate(
+			NewQuestionStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
 			NewLocatorStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),

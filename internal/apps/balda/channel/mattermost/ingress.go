@@ -288,7 +288,6 @@ func (s *Ingress) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			s.logger.Debug().
 				Int("message_type", frame.messageType).
 				Int("payload_bytes", len(frame.payload)).
-				Str("payload_head", headOf(frame.payload, 160)).
 				Msg("mattermost websocket frame received")
 			if frame.messageType != websocket.TextMessage {
 				continue
@@ -320,14 +319,6 @@ func (s *Ingress) writeEvent(conn *websocket.Conn, action string, data any) erro
 	return conn.WriteJSON(frame)
 }
 
-// headOf returns a bounded, single-line preview of a payload for logging.
-func headOf(payload []byte, limit int) string {
-	if len(payload) > limit {
-		payload = payload[:limit]
-	}
-	return strings.ReplaceAll(string(payload), "\n", " ")
-}
-
 func (s *Ingress) handleFrame(ctx context.Context, payload []byte) {
 	var event WebSocketEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
@@ -335,7 +326,7 @@ func (s *Ingress) handleFrame(ctx context.Context, payload []byte) {
 		return
 	}
 	if event.Status == "FAIL" {
-		s.logger.Warn().Str("event", event.Event).Str("status", event.Status).RawJSON("data", event.Data).Msg("mattermost rejected a client websocket frame")
+		s.logger.Warn().Str("event", event.Event).Str("status", event.Status).Int("data_bytes", len(event.Data)).Msg("mattermost rejected a client websocket frame")
 		return
 	}
 	s.logger.Debug().Str("event", event.Event).Msg("mattermost websocket event decoded")
@@ -387,7 +378,7 @@ func (s *Ingress) dispatchPosted(ctx context.Context, event WebSocketEvent) {
 		Str("post_id", post.ID).
 		Str("channel_id", post.ChannelID).
 		Str("post_user_id", post.UserID).
-		Str("message", post.Message).
+		Int("message_bytes", len(post.Message)).
 		Msg("mattermost posted event accepted")
 
 	release, ok := s.acquireSlot()
@@ -427,7 +418,7 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 				Str("post_id", post.ID).
 				Str("bot_username", s.botUsername).
 				Bool("bot_username_empty", s.botUsername == "").
-				Str("message", text).
+				Int("message_bytes", len(text)).
 				Msg("dropping posted event: bot not mentioned")
 			return
 		}
@@ -441,7 +432,7 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 		Str("post_id", post.ID).
 		Str("channel_id", post.ChannelID).
 		Bool("direct", direct).
-		Str("text", text).
+		Int("text_bytes", len(text)).
 		Msg("mattermost post accepted for processing")
 
 	if name, args, ok := ParseCommand(text); ok {
@@ -480,6 +471,7 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 		Locator:    locator,
 		MessageID:  ParsePostID(post.ID),
 		PostID:     post.ID,
+		RootID:     post.RootID,
 		SenderID:   post.UserID,
 		SenderName: strings.TrimSpace(data.SenderName),
 		Text:       text,

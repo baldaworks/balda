@@ -33,7 +33,7 @@ type Adapter struct {
 	// botUserID is needed to address posts and resolve direct channels.
 	botUserID string
 
-	now                    func() time.Time
+	now func() time.Time
 }
 
 // NewAdapter creates a new Mattermost channel adapter.
@@ -43,10 +43,10 @@ func NewAdapter(client *Client, logger zerolog.Logger) *Adapter {
 		botUserID = client.UserID()
 	}
 	return &Adapter{
-		client:           client,
-		logger:           logger.With().Str("component", "balda.channel.mattermost").Logger(),
-		botUserID:        botUserID,
-		now:              time.Now,
+		client:    client,
+		logger:    logger.With().Str("component", "balda.channel.mattermost").Logger(),
+		botUserID: botUserID,
+		now:       time.Now,
 	}
 }
 
@@ -87,9 +87,9 @@ func (a *Adapter) Deliver(ctx context.Context, locator deliverycmd.Locator, oper
 			result.ProviderMessageID, err = a.SendAgentReplyWithProviderMessageIDAndFormat(ctx, locator, operation.DeliveryFormat, operation.Text)
 		}
 	case deliverycmd.OperationDraft:
-		// Mattermost has no draft concept: render the draft as a normal post
-		// so the text is never silently dropped.
-		err = a.SendPlain(ctx, locator, operation.Text)
+		// Mattermost cannot draft or edit a provisional post. The final reply is
+		// delivered separately, so a draft must not create a permanent post.
+		err = nil
 	case deliverycmd.OperationTyping:
 		err = a.SendTyping(ctx, locator)
 	case deliverycmd.OperationProgress:

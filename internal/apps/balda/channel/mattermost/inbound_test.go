@@ -70,6 +70,31 @@ func TestNormalizeInboundWithoutPostIDHasEmptyLogicalID(t *testing.T) {
 	}
 }
 
+func TestBuildInboundReplyMapsMattermostThreadReply(t *testing.T) {
+	receivedAt := time.Date(2026, time.September, 28, 10, 0, 0, 0, time.UTC)
+	locator := NewChannelLocator("team-1", "channel-1", "question-post")
+	reply, ok := BuildInboundReply(locator, "mattermost:user-1", InboundMessage{
+		PostID: "reply-post",
+		RootID: "question-post",
+		Text:   "  second option  ",
+	}, receivedAt)
+	if !ok {
+		t.Fatal("BuildInboundReply() ok = false, want true")
+	}
+	if got, want := reply.Provider, ChannelType; got != want {
+		t.Fatalf("Provider = %q, want %q", got, want)
+	}
+	if got, want := reply.ReplyToMessageID, "question-post"; got != want {
+		t.Fatalf("ReplyToMessageID = %q, want %q", got, want)
+	}
+	if got, want := reply.MessageID, "reply-post"; got != want {
+		t.Fatalf("MessageID = %q, want %q", got, want)
+	}
+	if got, want := reply.Text, "second option"; got != want {
+		t.Fatalf("Text = %q, want %q", got, want)
+	}
+}
+
 func TestLocatorForPostUsesChannelForTeamChannel(t *testing.T) {
 	channel := Channel{ID: "channel-1", TeamID: "team-1", Type: channelTypeOpen}
 	post := Post{ID: "post-1", ChannelID: "channel-1", UserID: "user-1"}

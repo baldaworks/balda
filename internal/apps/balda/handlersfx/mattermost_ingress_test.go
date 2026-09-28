@@ -8,9 +8,10 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
+	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
-	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/rs/zerolog"
 )
 
@@ -31,6 +32,17 @@ type recordingMattermostCommandIngress struct{ requests []commandcmd.Request }
 func (r *recordingMattermostCommandIngress) PublishCommand(_ context.Context, req commandcmd.Request) error {
 	r.requests = append(r.requests, req)
 	return nil
+}
+
+type recordingMattermostChatHandler struct {
+	requests []chatapp.Request
+	result   chatapp.Result
+	err      error
+}
+
+func (h *recordingMattermostChatHandler) HandleChat(_ context.Context, request chatapp.Request) (chatapp.Result, error) {
+	h.requests = append(h.requests, request)
+	return h.result, h.err
 }
 
 func newOwnerStoreWithMattermostSubject(t *testing.T, userID string) *auth.OwnerStore {
@@ -257,38 +269,38 @@ func TestMattermostHandlerWithoutIngressIsSafe(t *testing.T) {
 	}
 }
 
-func TestMattermostHandlerAuthorizeInboundAllowsOwnerOnly(t *testing.T) {
+func TestMattermostHandlerAuthorizeMattermostUserAllowsOwnerOnly(t *testing.T) {
 	const ownerID = "owner-user-1"
 	ownerStore := newOwnerStoreWithMattermostSubject(t, ownerID)
 	h := &mattermostInboundHandler{ownerStore: ownerStore, logger: zerolog.Nop()}
 
-	allowed, err := h.authorizeInbound(context.Background(), ingressInboundContext(ownerID))
+	allowed, err := h.authorizeMattermostUser(context.Background(), ownerID)
 	if err != nil {
-		t.Fatalf("authorizeInbound(owner) error = %v", err)
+		t.Fatalf("authorizeMattermostUser(owner) error = %v", err)
 	}
-	if !allowed.Allowed {
-		t.Fatal("authorizeInbound(owner).Allowed = false, want true")
+	if !allowed {
+		t.Fatal("authorizeMattermostUser(owner) = false, want true")
 	}
 
-	denied, err := h.authorizeInbound(context.Background(), ingressInboundContext("stranger-1"))
+	denied, err := h.authorizeMattermostUser(context.Background(), "stranger-1")
 	if err != nil {
-		t.Fatalf("authorizeInbound(stranger) error = %v", err)
+		t.Fatalf("authorizeMattermostUser(stranger) error = %v", err)
 	}
-	if denied.Allowed {
-		t.Fatal("authorizeInbound(stranger).Allowed = true, want false")
+	if denied {
+		t.Fatal("authorizeMattermostUser(stranger) = true, want false")
 	}
 }
 
-func TestMattermostHandlerAuthorizeInboundRejectsEmptyUser(t *testing.T) {
+func TestMattermostHandlerAuthorizeMattermostUserRejectsEmptyUser(t *testing.T) {
 	ownerStore := newOwnerStoreWithMattermostSubject(t, "owner-user-1")
 	h := &mattermostInboundHandler{ownerStore: ownerStore, logger: zerolog.Nop()}
 
-	result, err := h.authorizeInbound(context.Background(), ingressInboundContext(""))
+	result, err := h.authorizeMattermostUser(context.Background(), "")
 	if err != nil {
-		t.Fatalf("authorizeInbound(empty) error = %v", err)
+		t.Fatalf("authorizeMattermostUser(empty) error = %v", err)
 	}
-	if result.Allowed {
-		t.Fatal("authorizeInbound(empty).Allowed = true, want false")
+	if result {
+		t.Fatal("authorizeMattermostUser(empty) = true, want false")
 	}
 }
 
@@ -320,10 +332,10 @@ func TestMattermostHandlerWithoutOwnerStoreDeniesAccess(t *testing.T) {
 	if h.isOwner("user-1") {
 		t.Fatal("isOwner() = true without an owner store, want false")
 	}
-	if result, err := h.authorizeInbound(context.Background(), ingressInboundContext("user-1")); err != nil {
-		t.Fatalf("authorizeInbound() error = %v", err)
-	} else if result.Allowed {
-		t.Fatal("authorizeInbound().Allowed = true without an owner store, want false")
+	if result, err := h.authorizeMattermostUser(context.Background(), "user-1"); err != nil {
+		t.Fatalf("authorizeMattermostUser() error = %v", err)
+	} else if result {
+		t.Fatal("authorizeMattermostUser() = true without an owner store, want false")
 	}
 }
 
@@ -343,22 +355,7 @@ func TestMattermostHandlerHandleUnsupportedCommandIsSafe(t *testing.T) {
 	}
 }
 
-func TestMattermostHandlerPrepareSessionWithoutManagerIsNotReady(t *testing.T) {
-	h := &mattermostInboundHandler{logger: zerolog.Nop()}
-
-	preparation, err := h.prepareSession(context.Background(), ingressInboundContext("user-1"))
-	if err != nil {
-		t.Fatalf("prepareSession() error = %v", err)
-	}
-	if preparation.Ready {
-		t.Fatal("prepareSession().Ready = true without a session manager, want false")
-	}
-	if got, want := preparation.Reason, mattermostIngressReasonSessionUnavailable; got != want {
-		t.Fatalf("prepareSession().Reason = %q, want %q", got, want)
-	}
-}
-
-func TestMattermostHandlerProcessInboundWithoutComponentsFailsSafely(t *testing.T) {
+func TestMattermostHandlerProcessInboundWithoutComponentsRejectsUnauthorizedSender(t *testing.T) {
 	h := &mattermostInboundHandler{logger: zerolog.Nop()}
 
 	settlement, err := h.ProcessInbound(context.Background(), mattermost.InboundMessage{
@@ -375,6 +372,48 @@ func TestMattermostHandlerProcessInboundWithoutComponentsFailsSafely(t *testing.
 	}
 	if settlement.Outcome == "" {
 		t.Fatal("ProcessInbound().Outcome is empty, want a settlement outcome")
+	}
+}
+
+func TestMattermostHandlerProcessInboundUsesCanonicalChatHandlerForQuestionReply(t *testing.T) {
+	const ownerID = "owner-user-1"
+	chat := &recordingMattermostChatHandler{result: chatapp.Result{
+		Settlement: turncmd.InboundSettlement{Outcome: turncmd.InboundAccepted, Reason: chatapp.ReasonAccepted},
+		Activated:  true,
+	}}
+	h := &mattermostInboundHandler{
+		ownerStore: newOwnerStoreWithMattermostSubject(t, ownerID),
+		chat:       chat,
+		logger:     zerolog.Nop(),
+	}
+	receivedAt := time.Date(2026, time.September, 28, 10, 0, 0, 0, time.UTC)
+	settlement, err := h.ProcessInbound(context.Background(), mattermost.InboundMessage{
+		Locator:    mattermost.NewChannelLocator("team-1", "channel-1", "question-post"),
+		PostID:     "reply-post",
+		RootID:     "question-post",
+		SenderID:   ownerID,
+		Text:       "2",
+		Direct:     false,
+		ReceivedAt: receivedAt,
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbound() error = %v", err)
+	}
+	if settlement.Outcome != turncmd.InboundAccepted {
+		t.Fatalf("settlement outcome = %q, want %q", settlement.Outcome, turncmd.InboundAccepted)
+	}
+	if len(chat.requests) != 1 {
+		t.Fatalf("HandleChat calls = %d, want 1", len(chat.requests))
+	}
+	request := chat.requests[0]
+	if request.QuestionReply == nil {
+		t.Fatal("QuestionReply = nil, want a Mattermost thread reply")
+	}
+	if got, want := request.QuestionReply.ReplyToMessageID, "question-post"; got != want {
+		t.Fatalf("QuestionReply.ReplyToMessageID = %q, want %q", got, want)
+	}
+	if got, want := request.QuestionReply.User.UserID, auth.MattermostSubject(ownerID); got != want {
+		t.Fatalf("QuestionReply.User.UserID = %q, want %q", got, want)
 	}
 }
 
@@ -396,31 +435,18 @@ func TestMattermostHandlerImplementsInboundProcessor(t *testing.T) {
 	var _ mattermost.InboundProcessor = (*mattermostInboundHandler)(nil)
 }
 
-func TestNewMattermostInboundHandlerTrimsConfiguredValues(t *testing.T) {
+func TestNewMattermostInboundHandlerWiresCanonicalChatHandler(t *testing.T) {
+	chat := &recordingMattermostChatHandler{}
 	processor := newMattermostInboundHandler(mattermostInboundHandlerParams{
-		AuthToken:       "  auth-token  ",
-		BaldaProviderID: "  deepseek  ",
-		Logger:          zerolog.Nop(),
+		Chat:   chat,
+		Logger: zerolog.Nop(),
 	})
 
 	handler, ok := processor.(*mattermostInboundHandler)
 	if !ok {
 		t.Fatalf("newMattermostInboundHandler() returned %T, want *mattermostInboundHandler", processor)
 	}
-	if got, want := handler.authToken, "auth-token"; got != want {
-		t.Fatalf("authToken = %q, want %q", got, want)
-	}
-	if got, want := handler.baldaProviderName, "deepseek"; got != want {
-		t.Fatalf("baldaProviderName = %q, want %q", got, want)
-	}
-}
-
-func ingressInboundContext(userID string) ingressapp.InboundContext {
-	return ingressapp.InboundContext{
-		ChannelType: mattermost.ChannelType,
-		AddressKey:  "d:dm-1",
-		AddressJSON: `{"type":"dm","channel_id":"dm-1","user_id":"` + userID + `"}`,
-		SessionID:   "mm-dm-1",
-		UserID:      userID,
+	if handler.chat != chat {
+		t.Fatal("handler.chat does not contain the supplied canonical chat handler")
 	}
 }

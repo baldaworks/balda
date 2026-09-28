@@ -248,9 +248,10 @@ func TestDeliverAgentReplyReportsProviderMessageID(t *testing.T) {
 	}
 }
 
-func TestDeliverDraftRendersAsPostInsteadOfDropping(t *testing.T) {
-	// Mattermost has no draft concept. The draft text must still reach the user
-	// rather than being silently discarded.
+func TestDeliverDraftIsNoOpWithoutNetworkCall(t *testing.T) {
+	// Mattermost cannot render an ephemeral draft. Creating a post for every
+	// intermediate draft would spam the channel; the final reply is delivered
+	// by a separate operation.
 	fake := &fakeServer{}
 	adapter := newTestAdapter(t, fake)
 
@@ -262,11 +263,8 @@ func TestDeliverDraftRendersAsPostInsteadOfDropping(t *testing.T) {
 	}
 
 	requests := fake.recorded()
-	if len(requests) != 1 {
-		t.Fatalf("create post called %d times, want 1", len(requests))
-	}
-	if got, want := requests[0].Message, "draft body"; got != want {
-		t.Fatalf("draft message = %q, want %q", got, want)
+	if len(requests) != 0 {
+		t.Fatalf("create post called %d times, want 0", len(requests))
 	}
 }
 

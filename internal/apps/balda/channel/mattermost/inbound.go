@@ -9,6 +9,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
@@ -17,12 +18,33 @@ type InboundMessage struct {
 	Locator     deliverycmd.Locator
 	MessageID   int
 	PostID      string
+	RootID      string
 	SenderID    string
 	SenderName  string
 	Text        string
 	Direct      bool
 	ReceivedAt  time.Time
 	Attachments []string
+}
+
+// BuildInboundReply converts a threaded Mattermost post into a question
+// answer candidate. Mattermost identifies a reply's parent with RootID.
+func BuildInboundReply(locator deliverycmd.Locator, subject string, message InboundMessage, receivedAt time.Time) (questioncmd.InboundReply, bool) {
+	replyToMessageID := strings.TrimSpace(message.RootID)
+	text := strings.TrimSpace(message.Text)
+	if replyToMessageID == "" || text == "" {
+		return questioncmd.InboundReply{}, false
+	}
+	return questioncmd.InboundReply{
+		Provider:         ChannelType,
+		SessionID:        locator.SessionID,
+		ConversationKey:  locator.AddressKey,
+		ReplyToMessageID: replyToMessageID,
+		MessageID:        strings.TrimSpace(message.PostID),
+		User:             questioncmd.UserRef{UserID: strings.TrimSpace(subject)},
+		Text:             text,
+		ReceivedAt:       receivedAt.UTC(),
+	}, true
 }
 
 // InboundCommand represents a command invocation from Mattermost.
