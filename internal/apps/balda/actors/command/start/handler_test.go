@@ -336,7 +336,7 @@ func TestStartHandler_OwnerBootstrapFlow(t *testing.T) {
 			Name:         "start",
 			Args:         "owner=secret-123",
 			Transport:    "telegram",
-			Principal:    "101",
+			Principal:    telegramref.UserID(101),
 			Conversation: commandcmd.Conversation{Direct: true},
 			Locator:      telegramLocator(9001),
 		}
@@ -545,7 +545,7 @@ func TestStartHandler_InviteFlow(t *testing.T) {
 			Name:         "start",
 			Args:         "invite=valid-token",
 			Transport:    "telegram",
-			Principal:    "303",
+			Principal:    telegramref.UserID(303),
 			Conversation: commandcmd.Conversation{Direct: true},
 			Locator:      telegramLocator(9001),
 		}
@@ -572,7 +572,7 @@ func TestStartHandler_InviteFlow(t *testing.T) {
 			Name:         "start",
 			Args:         "invite=expired-token",
 			Transport:    "telegram",
-			Principal:    "303",
+			Principal:    telegramref.UserID(303),
 			Conversation: commandcmd.Conversation{Direct: true},
 			Locator:      telegramLocator(9001),
 		}
@@ -609,6 +609,38 @@ func TestStartHandler_InviteFlow(t *testing.T) {
 	})
 }
 
+func TestResolveTelegramIdentity(t *testing.T) {
+	tests := []struct {
+		name        string
+		principal   string
+		wantUserID  int64
+		wantSubject string
+		wantErr     bool
+	}{
+		{name: "transport principal", principal: "tg-303", wantUserID: 303, wantSubject: "telegram:303"},
+		{name: "numeric compatibility", principal: "303", wantUserID: 303, wantSubject: "telegram:303"},
+		{name: "other transport", principal: "zu-303", wantErr: true},
+		{name: "nested subject", principal: "telegram:tg-303", wantErr: true},
+		{name: "zero", principal: "0", wantErr: true},
+		{name: "empty", principal: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveTelegramIdentity(tt.principal)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveTelegramIdentity(%q) error = %v, wantErr %t", tt.principal, err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if got.userID != tt.wantUserID || got.subject != tt.wantSubject {
+				t.Errorf("resolveTelegramIdentity(%q) = %+v, want userID=%d subject=%q", tt.principal, got, tt.wantUserID, tt.wantSubject)
+			}
+		})
+	}
+}
+
 func TestStartHandler_ChannelTokenFlow(t *testing.T) {
 	t.Run("valid channel token connects account", func(t *testing.T) {
 		dispatcher := &recordingDispatcher{}
@@ -624,7 +656,7 @@ func TestStartHandler_ChannelTokenFlow(t *testing.T) {
 			Name:         "start",
 			Args:         "balda_testtoken123",
 			Transport:    "telegram",
-			Principal:    "101",
+			Principal:    telegramref.UserID(101),
 			Conversation: commandcmd.Conversation{Direct: true},
 			Locator:      telegramLocator(9001),
 		}
