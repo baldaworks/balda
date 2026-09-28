@@ -161,7 +161,14 @@ func LocatorForPost(channel Channel, post Post) deliverycmd.Locator {
 	if IsDirectChannelType(channel.Type) {
 		return NewDMLocator(channelID, strings.TrimSpace(post.UserID))
 	}
-	return NewChannelLocator(channel.TeamID, channelID, strings.TrimSpace(post.RootID))
+	rootID := strings.TrimSpace(post.RootID)
+	if rootID == "" {
+		// A channel-level mention starts a new Mattermost thread. Keeping the
+		// source post as the root makes the first answer and all later replies
+		// share the same session and delivery target.
+		rootID = strings.TrimSpace(post.ID)
+	}
+	return NewChannelLocator(channel.TeamID, channelID, rootID)
 }
 
 // IsDirectChannelType reports whether a Mattermost channel type is a direct or
@@ -266,8 +273,12 @@ func ParseCommand(text string) (name string, args string, ok bool) {
 	if len(fields) > 1 {
 		args = strings.Join(fields[1:], " ")
 	}
-	if name == "user" && strings.HasPrefix(args, "invite") {
-		args = "add" + strings.TrimPrefix(args, "invite")
+	if name == "user" {
+		argFields := strings.Fields(args)
+		if len(argFields) > 0 && argFields[0] == "invite" {
+			argFields[0] = "add"
+			args = strings.Join(argFields, " ")
+		}
 	}
 	if name == "" {
 		return "", "", false

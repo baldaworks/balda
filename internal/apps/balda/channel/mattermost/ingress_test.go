@@ -168,6 +168,31 @@ func TestHandleFrameIgnoresChannelPostWithoutMention(t *testing.T) {
 	}
 }
 
+func TestHandleFrameProcessesThreadReplyWithoutMention(t *testing.T) {
+	processor := &recordingProcessor{inboundDone: make(chan struct{}, 1)}
+	ingress := newTestIngress(processor, "bot-1", "balda")
+
+	frame := postedEventPayload(t, Post{
+		ID:        "reply-1",
+		UserID:    "user-1",
+		ChannelID: "channel-1",
+		RootID:    "question-1",
+		Message:   "2",
+	}, channelTypeOpen, "Alice")
+
+	ingress.handleFrame(context.Background(), frame)
+
+	select {
+	case <-processor.inboundDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("processor.ProcessInbound was not called for an unmentioned thread reply")
+	}
+	messages := processor.inboundMessages()
+	if len(messages) != 1 || messages[0].RootID != "question-1" || messages[0].Text != "2" {
+		t.Fatalf("inbound messages = %+v, want one reply in question-1 with text 2", messages)
+	}
+}
+
 func TestHandleFrameProcessesDirectMessageWithoutMention(t *testing.T) {
 	processor := &recordingProcessor{inboundDone: make(chan struct{}, 1)}
 	ingress := newTestIngress(processor, "bot-1", "balda")

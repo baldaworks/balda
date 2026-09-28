@@ -130,12 +130,22 @@ func TestLocatorForPostScopesReplyToThreadRoot(t *testing.T) {
 		t.Fatalf("two replies in one thread resolved to different sessions: %q != %q", sibling.SessionID, locator.SessionID)
 	}
 
-	channelLocator := LocatorForPost(channel, Post{ID: "post-1", ChannelID: "channel-1", UserID: "user-1"})
+	channelLocator := NewChannelLocator("team-1", "channel-1", "")
 	if channelLocator.SessionID == locator.SessionID {
 		t.Fatalf("thread session %q collides with the channel session %q", locator.SessionID, channelLocator.SessionID)
 	}
 	if got, want := ChannelIDOf(locator), ChannelIDOf(channelLocator); got != want {
 		t.Fatalf("thread and channel locators resolve to different channels: %q vs %q", got, want)
+	}
+}
+
+func TestLocatorForPostStartsThreadFromMentionedChannelPost(t *testing.T) {
+	channel := Channel{ID: "channel-1", TeamID: "team-1", Type: channelTypeOpen}
+	post := Post{ID: "post-1", ChannelID: "channel-1", UserID: "user-1"}
+
+	locator := LocatorForPost(channel, post)
+	if rootID, ok := RootIDFromLocator(locator); !ok || rootID != post.ID {
+		t.Fatalf("RootIDFromLocator() = (%q, %v), want (%q, true)", rootID, ok, post.ID)
 	}
 }
 
@@ -341,6 +351,7 @@ func TestParseCommand(t *testing.T) {
 		{name: "uppercase is normalised", text: "/TOPIC ops", wantName: "topic", wantArgs: "ops", wantOK: true},
 		{name: "extra whitespace", text: "  /topic   ops  ", wantName: "topic", wantArgs: "ops", wantOK: true},
 		{name: "user invite normalises to add", text: "/user invite alice", wantName: "user", wantArgs: "add alice", wantOK: true},
+		{name: "user words starting with invite stay unchanged", text: "/user invitation alice", wantName: "user", wantArgs: "invitation alice", wantOK: true},
 		{name: "not a command", text: "hello", wantOK: false},
 		{name: "bare slash", text: "/", wantOK: false},
 		{name: "empty", text: "", wantOK: false},

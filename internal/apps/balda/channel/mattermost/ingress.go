@@ -415,8 +415,10 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 	direct := IsDirectChannelType(channel.Type)
 	text := strings.TrimSpace(post.Message)
 	if !direct {
-		// In a shared channel Balda must be addressed explicitly.
-		if !MentionsBot(text, s.botUsername) {
+		// New channel-level messages must address Balda explicitly. Replies
+		// already inside a thread are part of that conversation, including
+		// short answers to a question such as "2" or "allow".
+		if strings.TrimSpace(post.RootID) == "" && !MentionsBot(text, s.botUsername) {
 			s.logger.Debug().
 				Str("post_id", post.ID).
 				Str("bot_username", s.botUsername).
