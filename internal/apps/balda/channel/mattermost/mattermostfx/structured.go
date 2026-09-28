@@ -9,6 +9,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 )
 
@@ -51,6 +53,8 @@ type mattermostLocatorRenderer struct{}
 
 type mattermostQuestionRenderer struct{}
 
+type mattermostPermissionRenderer struct{}
+
 func (mattermostQuestionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[questionfmt.Request]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
 		Text:           presentation.RenderQuestion(env.Body),
@@ -64,6 +68,22 @@ func NewQuestionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
 		deliveryfmt.TransportMattermost,
 		questionfmt.RequestDescriptor,
 		mattermostQuestionRenderer{},
+	)
+}
+
+func (mattermostPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           presentation.RenderPermission(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
+	}, nil
+}
+
+// NewPermissionStructuredRegistrar registers Mattermost permission prompts.
+func NewPermissionStructuredRegistrar() deliveryfx.StructuredRegistryRegistrar {
+	return deliveryfx.NewStructuredRegistrar(
+		deliveryfmt.TransportMattermost,
+		permissionfmt.RequestDescriptor,
+		mattermostPermissionRenderer{},
 	)
 }
 

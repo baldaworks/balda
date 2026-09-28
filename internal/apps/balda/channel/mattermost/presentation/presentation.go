@@ -9,12 +9,22 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/permissionfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/questionfmt"
 )
 
 // RenderQuestion renders question options as Mattermost Markdown.
 func RenderQuestion(body questionfmt.Request) string {
 	return questionfmt.RenderMarkdownOptions(body)
+}
+
+// RenderPermission renders a permission request as a text-reply question.
+// Mattermost interactive-message actions require a public callback endpoint,
+// whereas a thread reply is already authenticated by websocket ingress and is
+// resolved by chatapp's canonical QuestionReply path.
+func RenderPermission(body permissioncmd.Request) string {
+	return permissionfmt.RenderMarkdown(body)
 }
 
 // RenderLocator renders a validated locator response as Mattermost Markdown.

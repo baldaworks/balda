@@ -79,6 +79,10 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
 		fx.Annotate(
+			NewPermissionStructuredRegistrar,
+			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
+		),
+		fx.Annotate(
 			NewLocatorStructuredRegistrar,
 			fx.ResultTags(`group:"balda_delivery_structured_registrar"`),
 		),
