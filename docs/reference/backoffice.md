@@ -7,8 +7,9 @@ Backoffice. Read it before changing `cmd/balda` or
 ## Application boundary
 
 - `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
-  process lifecycle; `backoffice bootstrap-admin` and `backoffice migrate-users`
-  are offline maintenance subcommands, not separate runtime start modes.
+  production process lifecycle; `backoffice bootstrap-admin` and
+  `backoffice migrate-users` are offline maintenance subcommands.
+  `backoffice qa serve` is a local preview command without application state.
 - `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
   HTTP routes, security enforcement, server-side rendering, view models,
@@ -177,11 +178,12 @@ credential that could restore access.
   administrators and operators; Audit is administrator-only. The optional
   transport binding is read-only, and committed role/status changes immediately
   affect bot authorization.
-- Set `qa_ui: true` only for a private development or review instance. It
-  exposes deterministic repository-free fixtures at `/qa/ui/login`,
-  `/qa/ui/refresh`, `/qa/ui/password`, `/qa/ui/overview`, `/qa/ui/access`,
-  `/qa/ui/account`, and `/qa/ui/audit`. QA routes are GET/HEAD-only,
-  `no-store`, and `noindex`; keep them disabled in production.
+- Keep `qa_ui: false` in production. A private development instance may enable
+  the same synthetic previews under `/qa/ui/`, but the preferred local workflow
+  uses `balda backoffice qa serve` without configuration or database access.
+  QA routes accept GET/HEAD only and send `no-store` and `noindex` headers.
+  Follow the [Backoffice UI review runbook](backoffice-ui-review.md) for routes,
+  browser checks, and the separate authenticated runtime check.
 - Username/password is the only browser authentication provider in this
   release. OIDC, WebAuthn/passkeys, and MFA are intentionally deferred; no
   placeholder configuration or browser flow exists for them.
@@ -221,8 +223,10 @@ remain server-side and authoritative.
 ## Packaging and frontend provenance
 
 The Balda Go binary contains the Backoffice templates, CSS, JavaScript, icons, and
-fonts. Node/npm, an SPA router, a frontend development server, and CDN-hosted
-runtime assets are prohibited.
+fonts. Node/npm as a frontend build or runtime dependency, an SPA router, a
+separate frontend development server, and CDN-hosted runtime assets are
+prohibited. The local QA preview is served by the same Go binary and uses the
+same embedded templates and assets.
 
 Every vendored frontend dependency must be pinned with its exact version,
 license, and SHA-256 digest in

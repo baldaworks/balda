@@ -32,6 +32,8 @@ can be read, linked, and indexed independently:
   packages, dependency boundaries, architecture layers, and startup order.
 - [Backoffice application](reference/backoffice.md) — application ownership,
   Web UI foundation, HTMX contracts, and the page-development workflow.
+- [Backoffice UI review](reference/backoffice-ui-review.md) — local synthetic
+  preview gallery, browser review, and authenticated deployment checks.
 - [Configuration](reference/configuration.md) — the complete runtime, provider,
   channel, workspace, scheduler, webhook, and MCP configuration contract.
 - [State database](reference/database.md) — SQLite defaults, PostgreSQL selection,
