@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"google.golang.org/adk/v2/platform"
 	adksession "google.golang.org/adk/v2/session"
 )
@@ -223,11 +224,37 @@ func (s *sqliteRuntimeSessionService) Delete(ctx context.Context, req *adksessio
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `
+	started := time.Now()
+	conn, err := s.db.Conn(ctx)
+	acquireDuration := time.Since(started)
+	if err != nil {
+		log.Warn().Err(err).
+			Str("session_id", key.sessionID).
+			Dur("acquire_duration", acquireDuration).
+			Int("pool_in_use", s.db.Stats().InUse).
+			Msg("runtime session delete could not acquire sqlite connection")
+		return fmt.Errorf("acquire connection to delete runtime session %q: %w", key.sessionID, err)
+	}
+	defer func() { _ = conn.Close() }()
+	execStarted := time.Now()
+	_, err = conn.ExecContext(ctx, `
 		DELETE FROM balda_runtime_sessions
 		WHERE app_name = ? AND user_id = ? AND session_id = ?`,
 		key.appName, key.userID, key.sessionID,
-	); err != nil {
+	)
+	execDuration := time.Since(execStarted)
+	if err != nil || acquireDuration >= time.Second || execDuration >= time.Second {
+		event := log.Warn()
+		if err != nil {
+			event = event.Err(err)
+		}
+		event.Str("session_id", key.sessionID).
+			Dur("acquire_duration", acquireDuration).
+			Dur("exec_duration", execDuration).
+			Int("pool_in_use", s.db.Stats().InUse).
+			Msg("runtime session delete sqlite timing")
+	}
+	if err != nil {
 		return fmt.Errorf("delete runtime session %q: %w", key.sessionID, err)
 	}
 	return nil
