@@ -43,10 +43,10 @@ Initialize in your project:
 balda init
 ```
 
-Bootstrap browser administration from a protected password file, then start:
+`balda init` also creates the Backoffice administrator and prints its generated
+password once. Save it securely, then start:
 
 ```bash
-balda backoffice bootstrap-admin --username admin < /run/secrets/backoffice-admin-password
 balda start
 ```
 
@@ -61,7 +61,7 @@ See [database configuration and operations](docs/reference/database.md).
 `balda start` applies embedded schema migrations to the selected database,
 checks canonical users and administrator bootstrap, then starts the bot,
 Backoffice, and enabled integrations in one process. Before the first start,
-bootstrap an administrator on a fresh database. For an existing installation,
+the administrator is already bootstrapped on a fresh database. For an existing installation,
 stop Balda, back up the database, and convert legacy owner/collaborator records
 with an exclusive credentials-output file. See the
 [Backoffice startup and security contract](docs/reference/backoffice.md).
@@ -69,11 +69,12 @@ with an exclusive credentials-output file. See the
 ```bash
 # Existing installation with legacy users, while Balda is stopped and after a database backup:
 balda backoffice migrate-users --credentials-output /run/secrets/balda-migrated-users.txt
-balda backoffice bootstrap-admin --reset < /run/secrets/backoffice-admin-password
+balda backoffice bootstrap-admin --reset
 balda start
 ```
 
-The existing-install `--reset` step is needed when the migrated primary user
+The existing-install `--reset` step generates and prints a new password for the
+migrated primary user. It is needed when that user
 has a temporary credential; it revokes that user's browser refresh-token
 families. Never pass passwords or generated migration credentials as command
 arguments. Distribute the plaintext migration manifest out of band and

@@ -37,8 +37,11 @@ Commands:
   forward-only owner/collaborator migration. The output file is created once
   with mode `0600`; it contains temporary plaintext credentials and must be
   distributed and deleted as sensitive material.
-- `balda backoffice bootstrap-admin` reads a password from non-terminal stdin. It
-  creates the first unbound primary administrator on a fresh database, or
+- `balda init` creates the first administrator and prints its generated password
+  once, alongside the owner token.
+- `balda backoffice bootstrap-admin` generates and prints a password once by
+  default; it also accepts an operator-provided password on non-terminal stdin.
+  It creates the first unbound primary administrator on a fresh database, or
   configures the selected credential-disabled administrator. Replacing a
   usable credential requires `--reset` and revokes all existing browser
   session families.
@@ -92,22 +95,19 @@ go build -trimpath -o ./bin/balda ./cmd/balda
 ./bin/balda validate
 ```
 
-For a fresh database, supply the first administrator password over redirected
-standard input. Never put a password in a command argument, shell history,
-environment variable, log, or terminal paste:
+For a fresh database, `init` creates the administrator and prints its password
+once. Store the output securely, then start:
 
 ```bash
-./bin/balda backoffice bootstrap-admin \
-  --username admin \
-  --display-name "Balda administrator" < /run/secrets/backoffice-admin-password
 ./bin/balda start
 ```
 
-The password file should be readable only by the service account and provided
-by the deployment secret manager. `bootstrap-admin` deliberately refuses a
-terminal as password input. Resetting an existing usable credential requires
-an explicit `--reset`; it invalidates every browser session family for that
-user.
+`bootstrap-admin` generates a new password when run without redirected input.
+The optional stdin path remains available for an operator-provided password;
+terminal input is never read or echoed. Never put passwords in command
+arguments, shell history, environment variables, or logs. Resetting an existing
+usable credential requires an explicit `--reset`; it invalidates every browser
+session family for that user.
 
 For an existing installation with legacy owner/collaborator records, stop
 Balda, take a consistent database backup, deploy the new binary, and run the
@@ -119,13 +119,14 @@ an active administrator are already ready:
 ```bash
 ./bin/balda backoffice migrate-users \
   --credentials-output /run/secrets/balda-migrated-users.txt
-./bin/balda backoffice bootstrap-admin --reset < /run/secrets/backoffice-admin-password
+./bin/balda backoffice bootstrap-admin --reset
 ./bin/balda start
 ```
 
 The credentials path must not exist beforehand. Backoffice creates it
 exclusively with mode `0600`, writes each generated temporary credential once,
-and never prints a password to stdout. Distribute entries out of band to their
+and never prints migration passwords to stdout. The reset command prints the
+new primary administrator password once. Distribute manifest entries out of band to their
 intended users, verify delivery, and then securely remove the manifest under
 your organization's secret-retention policy. Never commit, upload, back up, or
 attach the manifest to a ticket. Migrated bot bindings and roles become

@@ -1,6 +1,25 @@
 package userpassword
 
-import "testing"
+import (
+	"encoding/base64"
+	"testing"
+)
+
+func TestGenerate(t *testing.T) {
+	t.Parallel()
+	first, err := Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(string(first))
+	if err != nil || len(decoded) != 32 || string(first) == string(second) {
+		t.Fatalf("generated password: length=%d decoded=%d duplicate=%t error=%v", len(first), len(decoded), string(first) == string(second), err)
+	}
+}
 
 func TestHashAndVerify(t *testing.T) {
 	t.Parallel()

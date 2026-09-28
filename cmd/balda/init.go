@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -154,6 +156,11 @@ func initCommand() *cobra.Command {
 			if err := os.WriteFile(configPath, content, 0o600); err != nil {
 				return fmt.Errorf("write %s: %w", configPath, err)
 			}
+			adminPassword, err := bootstrapInitialAdmin(context.Background(), database)
+			if err != nil {
+				return fmt.Errorf("bootstrap initial Backoffice administrator: %w", err)
+			}
+			defer zeroPassword(adminPassword)
 
 			_, _ = fmt.Fprintf(baldaInitOutput, "balda initialized successfully\n")
 			_, _ = fmt.Fprintf(baldaInitOutput, "config: %s\n", configPath)
@@ -167,10 +174,35 @@ func initCommand() *cobra.Command {
 			_, _ = fmt.Fprintf(baldaInitOutput, "start command: balda start\n")
 			_, _ = fmt.Fprintf(baldaInitOutput, "auth command: %s\n", auth.BuildOwnerAuthCommand(ownerToken))
 			_, _ = fmt.Fprintf(baldaInitOutput, "auth link: %s\n", auth.BuildOwnerAuthLink(bot.username, ownerToken))
+			_, _ = fmt.Fprintf(baldaInitOutput, "Backoffice administrator: admin\n")
+			_, _ = fmt.Fprintf(baldaInitOutput, "Backoffice password: %s\n", adminPassword)
 
 			return nil
 		},
 	}
 
 	return cmd
+}
+
+func bootstrapInitialAdmin(ctx context.Context, database state.DatabaseConfig) ([]byte, error) {
+	password, err := baldaGenerateAdminPassword()
+	if err != nil {
+		return nil, err
+	}
+	server, err := (backoffice.ServerConfig{}).Resolve()
+	if err != nil {
+		zeroPassword(password)
+		return nil, err
+	}
+	runtime, err := backoffice.OpenRuntime(ctx, backoffice.ResolvedConfig{Server: server, Database: database})
+	if err != nil {
+		zeroPassword(password)
+		return nil, err
+	}
+	defer func() { _ = runtime.Close() }()
+	if _, err := runtime.BootstrapAdmin(ctx, backoffice.BootstrapInput{Username: "admin", Password: password}); err != nil {
+		zeroPassword(password)
+		return nil, err
+	}
+	return password, nil
 }

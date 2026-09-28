@@ -12,6 +12,8 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 	"github.com/normahq/runtime/v2/appconfig"
 	"gopkg.in/yaml.v3"
 )
@@ -34,6 +36,7 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 		return botIdentity{username: "BaldaBot", name: "Balda"}, nil
 	})
 	setBaldaOwnerTokenGenerator(t, "owner-token-init")
+	setBaldaAdminPasswordGenerator(t, "generated-admin-password-for-init")
 
 	prevInput := baldaInitInput
 	prevOutput := baldaInitOutput
@@ -142,6 +145,22 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	}
 	if !strings.Contains(out, "auth link: https://t.me/BaldaBot?start=owner_owner-token-init") {
 		t.Fatalf("init output missing auth link: %q", out)
+	}
+	if !strings.Contains(out, "Backoffice password: generated-admin-password-for-init") {
+		t.Fatalf("init output missing generated administrator password: %q", out)
+	}
+	provider, err := baldastate.NewSQLiteProvider(t.Context(), paths.StateDBPath(filepath.Join(workingDir, baldaRuntimeStatePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
+	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary {
+		t.Fatalf("initial administrator = %+v, error = %v", page, err)
+	}
+	secret, found, err := provider.Users().GetCredentialSecret(t.Context(), page.Users[0].ID)
+	if err != nil || !found || !userpassword.Verify(secret.PasswordHash, []byte("generated-admin-password-for-init")) {
+		t.Fatalf("initial administrator password verification: found=%t error=%v", found, err)
 	}
 	if !strings.Contains(out, "telegram token stored in: "+filepath.Join(workingDir, ".env")) {
 		t.Fatalf("init output missing token storage path: %q", out)
@@ -638,6 +657,13 @@ func setBaldaOwnerTokenGenerator(t *testing.T, token string) {
 	baldaGenerateOwnerToken = func() (string, error) {
 		return token, nil
 	}
+}
+
+func setBaldaAdminPasswordGenerator(t *testing.T, password string) {
+	t.Helper()
+	previous := baldaGenerateAdminPassword
+	t.Cleanup(func() { baldaGenerateAdminPassword = previous })
+	baldaGenerateAdminPassword = func() ([]byte, error) { return []byte(password), nil }
 }
 
 func mustReadBaldaDoc(t *testing.T, workingDir string) map[string]any {
