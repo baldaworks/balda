@@ -396,7 +396,7 @@ balda:
 - `balda.mattermost.server_url`: Mattermost server base URL, absolute `http://` or `https://` (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_SERVER_URL`)
 - `balda.mattermost.token`: Mattermost bot account personal access token (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_TOKEN`)
 - `balda.mattermost.bot_user_id`: Mattermost bot account user id, used to ignore the bot's own posts (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_BOT_USER_ID`)
-- `balda.mattermost.bot_username`: Mattermost bot account username, used to detect `@mention` activation in public and private channels (env: `BALDA_MATTERMOST_BOT_USERNAME`)
+- `balda.mattermost.bot_username`: Mattermost bot account username, used to detect `@mention` activation in public and private channels (required when the Mattermost transport is enabled; env: `BALDA_MATTERMOST_BOT_USERNAME`)
 - `balda.mattermost.commands_enabled`: enable the Mattermost HTTP slash-command receiver (requires `balda.mattermost.enabled=true`; default: `false`; env: `BALDA_MATTERMOST_COMMANDS_ENABLED`)
 - `balda.mattermost.commands_listen_addr`: local slash-command receiver address (default: `:8093`; env: `BALDA_MATTERMOST_COMMANDS_LISTEN_ADDR`)
 - `balda.mattermost.commands_path`: local slash-command receiver path, beginning with `/` (default: `/mattermost/commands`; env: `BALDA_MATTERMOST_COMMANDS_PATH`)

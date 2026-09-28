@@ -1,29 +1,28 @@
 package mattermost
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mattermostref"
 )
 
 const (
 	mattermostSessionIDPrefix = "mm"
 	// ChannelType is the channel type string for the Mattermost transport.
-	ChannelType = "mattermost"
+	ChannelType = mattermostref.ChannelType
 
 	// addressTypeChannel is a team channel (public or private) audience.
-	addressTypeChannel = "channel"
+	addressTypeChannel = mattermostref.AddressTypeChannel
 	// addressTypeDM is the direct-message channel between the bot and one user.
-	addressTypeDM = "dm"
+	addressTypeDM = mattermostref.AddressTypeDM
 	// addressTypeGroupDM is the group direct-message channel shared by several
 	// users. Unlike addressTypeDM it is keyed by the channel, never by an author,
 	// so every participant of one group chat shares a single session.
-	addressTypeGroupDM = "group"
+	addressTypeGroupDM = mattermostref.AddressTypeGroup
 )
 
 // LocatorAddress is the Mattermost-specific transport address payload.
@@ -31,13 +30,7 @@ const (
 // Thread is stored separately from ChannelID because Mattermost models threads
 // as a root post inside a channel: the locator key must stay stable for a whole
 // thread so that a session maps to one conversation, not to every reply.
-type LocatorAddress struct {
-	Type      string `json:"type"`
-	ChannelID string `json:"channel_id,omitempty"`
-	RootID    string `json:"root_id,omitempty"`
-	TeamID    string `json:"team_id,omitempty"`
-	UserID    string `json:"user_id,omitempty"`
-}
+type LocatorAddress = mattermostref.Address
 
 // ChannelIDOf returns the Mattermost channel id encoded in a locator address.
 //
@@ -107,41 +100,23 @@ func newLocator(address LocatorAddress, addressKey, sessionID string) deliverycm
 }
 
 func channelAddressKey(address LocatorAddress) string {
-	base := fmt.Sprintf("c:%s", url.PathEscape(address.ChannelID))
-	if address.RootID == "" {
-		return base
-	}
-	return base + ":" + url.PathEscape(address.RootID)
+	return mattermostref.AddressKey(address)
 }
 
 func dmAddressKey(address LocatorAddress) string {
-	if address.Type == addressTypeGroupDM {
-		return fmt.Sprintf("g:%s", url.PathEscape(address.ChannelID))
-	}
-	return fmt.Sprintf("d:%s", url.PathEscape(address.ChannelID))
+	return mattermostref.AddressKey(address)
 }
 
 func channelSessionID(address LocatorAddress) string {
-	if address.RootID == "" {
-		return fmt.Sprintf("%s-c-%s", mattermostSessionIDPrefix, shortHash(address.ChannelID))
-	}
-	return fmt.Sprintf("%s-t-%s", mattermostSessionIDPrefix, shortHash(address.ChannelID+"|"+address.RootID))
+	return mattermostref.SessionID(address)
 }
 
 func dmSessionID(address LocatorAddress) string {
-	if address.Type == addressTypeGroupDM {
-		return groupDMSessionID(address)
-	}
-	return fmt.Sprintf("%s-dm-%s", mattermostSessionIDPrefix, shortHash(address.ChannelID))
+	return mattermostref.SessionID(address)
 }
 
 func groupDMSessionID(address LocatorAddress) string {
-	return fmt.Sprintf("%s-gdm-%s", mattermostSessionIDPrefix, shortHash(address.ChannelID))
-}
-
-func shortHash(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return fmt.Sprintf("%x", sum[:4])
+	return mattermostref.SessionID(address)
 }
 
 // DecodeLocator decodes a Mattermost locator payload from canonical session
@@ -191,63 +166,11 @@ func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScope
 // produces a valid locator without the optional metadata.
 func LocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	trimmed := strings.TrimSpace(addressKey)
-	if strings.HasPrefix(trimmed, "c:") {
-		return channelLocatorFromAddressKey(trimmed)
-	}
-	if strings.HasPrefix(trimmed, "g:") {
-		return groupDMLocatorFromAddressKey(trimmed)
-	}
-	if strings.HasPrefix(trimmed, "d:") {
-		return dmLocatorFromAddressKey(trimmed)
-	}
-	return deliverycmd.Locator{}, fmt.Errorf(
-		"mattermost address key %q must start with \"c:\" (channel), \"d:\" (direct message) or \"g:\" (group direct message)",
-		addressKey,
-	)
-}
-
-func channelLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
-	rest := strings.TrimPrefix(addressKey, "c:")
-	channelPart, rootPart, hasRoot := strings.Cut(rest, ":")
-	channelID, err := url.PathUnescape(channelPart)
+	address, err := mattermostref.ParseAddressKey(trimmed)
 	if err != nil {
-		return deliverycmd.Locator{}, fmt.Errorf("unescape mattermost channel id from %q: %w", addressKey, err)
+		return deliverycmd.Locator{}, err
 	}
-	if strings.TrimSpace(channelID) == "" {
-		return deliverycmd.Locator{}, fmt.Errorf("mattermost channel address key %q has empty channel id", addressKey)
-	}
-	rootID := ""
-	if hasRoot {
-		rootID, err = url.PathUnescape(rootPart)
-		if err != nil {
-			return deliverycmd.Locator{}, fmt.Errorf("unescape mattermost root id from %q: %w", addressKey, err)
-		}
-	}
-	return NewChannelLocator("", channelID, rootID), nil
-}
-
-func dmLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
-	rest := strings.TrimPrefix(addressKey, "d:")
-	channelID, err := url.PathUnescape(rest)
-	if err != nil {
-		return deliverycmd.Locator{}, fmt.Errorf("unescape mattermost dm channel id from %q: %w", addressKey, err)
-	}
-	if strings.TrimSpace(channelID) == "" {
-		return deliverycmd.Locator{}, fmt.Errorf("mattermost dm address key %q has empty channel id", addressKey)
-	}
-	return NewDMLocator(channelID, ""), nil
-}
-
-func groupDMLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
-	rest := strings.TrimPrefix(addressKey, "g:")
-	channelID, err := url.PathUnescape(rest)
-	if err != nil {
-		return deliverycmd.Locator{}, fmt.Errorf("unescape mattermost group dm channel id from %q: %w", addressKey, err)
-	}
-	if strings.TrimSpace(channelID) == "" {
-		return deliverycmd.Locator{}, fmt.Errorf("mattermost group dm address key %q has empty channel id", addressKey)
-	}
-	return NewGroupDMLocator(channelID), nil
+	return newLocator(address, mattermostref.AddressKey(address), mattermostref.SessionID(address)), nil
 }
 
 func validateLocatorAddress(address LocatorAddress) error {

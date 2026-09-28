@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -228,7 +229,7 @@ func (s *CommandServer) handleCommand(w http.ResponseWriter, r *http.Request) {
 	locator, direct := s.resolveCommandLocator(ctx, channelID, userID)
 	postID := strings.TrimSpace(form.Get("post_id"))
 	command := InboundCommand{
-		InvocationID: commandInvocationID(body),
+		InvocationID: commandInvocationIDForRequest(postID),
 		Locator:      locator,
 		MessageID:    ParsePostID(postID),
 		PostID:       postID,
@@ -359,13 +360,25 @@ func commandInvocation(form url.Values, supports func(string) bool) (string, str
 	return strings.ToLower(fields[0]), strings.Join(fields[1:], " ")
 }
 
-// commandInvocationID derives a stable id for a slash invocation from its body,
-// mirroring slackCommandInvocationID. Replaying the same body is deduplicated
-// downstream instead of executing the command twice.
+// commandInvocationID derives a stable id for a slash invocation from its body.
+// It remains available for callers that have a provider request identifier or
+// explicitly need a stable body fingerprint; ordinary Mattermost slash
+// requests use commandInvocationIDForRequest because they have no request ID.
 func commandInvocationID(body []byte) string {
 	material := append([]byte("mattermost/slash/v1\x00"), body...)
 	sum := sha256.Sum256(material)
 	return "mattermost:command:" + hex.EncodeToString(sum[:])
+}
+
+// commandInvocationIDForRequest keeps retries for the rare post-backed form
+// idempotent. Mattermost does not provide a request ID for ordinary slash
+// commands, so those requests need a fresh identity; hashing the body would
+// incorrectly deduplicate two legitimate identical commands.
+func commandInvocationIDForRequest(postID string) string {
+	if trimmed := strings.TrimSpace(postID); trimmed != "" {
+		return "mattermost:command:post:" + trimmed
+	}
+	return "mattermost:command:" + uuid.NewString()
 }
 
 // resolveCommandLocator resolves the Mattermost channel a slash command targets.

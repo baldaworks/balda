@@ -384,9 +384,11 @@ func (s *Ingress) dispatchPosted(ctx context.Context, event WebSocketEvent) {
 		Int("message_bytes", len(post.Message)).
 		Msg("mattermost posted event accepted")
 
-	release, ok := s.acquireSlot()
+	release, ok := s.acquireSlotForDispatch(ctx)
 	if !ok {
-		s.logger.Warn().Str("post_id", post.ID).Msg("mattermost ingress queue full; dropping post")
+		if ctx.Err() == nil {
+			s.logger.Warn().Str("post_id", post.ID).Msg("mattermost ingress stopped before dispatching post")
+		}
 		return
 	}
 	s.processWG.Add(1)
@@ -495,6 +497,21 @@ func (s *Ingress) acquireSlot() (func(), bool) {
 	case s.processSem <- struct{}{}:
 		return func() { <-s.processSem }, true
 	default:
+		return nil, false
+	}
+}
+
+// acquireSlotForDispatch applies backpressure to the websocket reader instead
+// of dropping a user message when all processing slots are occupied. The
+// reader's context lets shutdown interrupt the wait cleanly.
+func (s *Ingress) acquireSlotForDispatch(ctx context.Context) (func(), bool) {
+	if s.processSem == nil {
+		return func() {}, true
+	}
+	select {
+	case s.processSem <- struct{}{}:
+		return func() { <-s.processSem }, true
+	case <-ctx.Done():
 		return nil, false
 	}
 }

@@ -1017,6 +1017,9 @@ func validateMattermostConfig(cfg MattermostConfig) error {
 	if strings.TrimSpace(cfg.BotUserID) == "" {
 		return fmt.Errorf("balda.mattermost.bot_user_id is required when the Mattermost transport is enabled")
 	}
+	if strings.TrimSpace(cfg.BotUsername) == "" {
+		return fmt.Errorf("balda.mattermost.bot_username is required when the Mattermost transport is enabled")
+	}
 	if cfg.CommandsEnabled && strings.TrimSpace(cfg.CommandsToken) == "" {
 		return fmt.Errorf("balda.mattermost.commands_token is required when slash commands are enabled")
 	}

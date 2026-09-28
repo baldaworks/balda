@@ -82,7 +82,7 @@ balda:
 | `server_url` | yes when enabled | Absolute `http://` or `https://` base URL of the Mattermost server. When Balda runs in the same Docker network as Mattermost, use the service name (`http://mattermost:8065`) rather than the public hostname. |
 | `token` | yes when enabled | Bot account personal access token. |
 | `bot_user_id` | yes when enabled | Bot account user id. The ingress refuses to start without it, because it cannot otherwise distinguish its own posts from a user's. |
-| `bot_username` | no | Bot username used to detect `@mention` activation in channels. Mention handling is disabled when it is empty. |
+| `bot_username` | yes when enabled | Bot username used to detect `@mention` activation in channels. Startup fails when it is empty so an enabled channel transport cannot silently ignore every channel message. |
 | `commands_enabled` | no (default `false`) | Enables the HTTP slash-command receiver. Mattermost delivers slash commands as HTTP requests, never as posts, so this must be on for any slash command to work. It requires `enabled: true`, because command authorization, channel resolution, and result delivery use the Mattermost transport. |
 | `commands_listen_addr` | no (default `:8093`) | Local address the slash-command receiver listens on. |
 | `commands_path` | no (default `/mattermost/commands`) | Local HTTP path Mattermost posts slash commands to. It must start with `/`. Point each Mattermost slash command's Request URL at this path. |

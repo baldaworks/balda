@@ -90,6 +90,7 @@ components:
       - internal/apps/balda/goalkeepercmd
       - internal/apps/balda/goalresultcmd
       - internal/apps/balda/locatorref
+      - internal/apps/balda/mattermostref
       - internal/apps/balda/locatorfmt
       - internal/apps/balda/progress
       - internal/apps/balda/permissioncmd

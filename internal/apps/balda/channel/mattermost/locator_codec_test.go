@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 )
 
 // Shared sample values for locator tests. They are constants so repeated string
@@ -48,6 +49,27 @@ func TestNewChannelLocatorRoundTripsThroughDecode(t *testing.T) {
 
 	if got := ChannelIDOf(locator); got != testChannelID {
 		t.Fatalf("ChannelIDOf() = %q, want %q", got, testChannelID)
+	}
+}
+
+func TestPublicLocatorParseMatchesLiveSessionIdentity(t *testing.T) {
+	for _, addressKey := range []string{
+		"c:channel-1",
+		"c:channel-1:root-1",
+		"d:dm-channel-1",
+		"g:group-channel-1",
+	} {
+		live, err := LocatorFromAddressKey(addressKey)
+		if err != nil {
+			t.Fatalf("LocatorFromAddressKey(%q) error = %v", addressKey, err)
+		}
+		public, err := locatorref.Parse("mattermost:" + addressKey)
+		if err != nil {
+			t.Fatalf("locatorref.Parse(%q) error = %v", addressKey, err)
+		}
+		if public.SessionID != live.SessionID {
+			t.Fatalf("session ID for %q = public %q, live %q", addressKey, public.SessionID, live.SessionID)
+		}
 	}
 }
 

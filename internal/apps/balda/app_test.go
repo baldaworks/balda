@@ -308,6 +308,7 @@ func TestValidateMattermostConfig(t *testing.T) {
 		ServerURL:       "https://mattermost.example.test",
 		Token:           "bot-token",
 		BotUserID:       "bot-user",
+		BotUsername:     "balda",
 		CommandsEnabled: true,
 		CommandsToken:   "command-token",
 	}
@@ -325,6 +326,12 @@ func TestValidateMattermostConfig(t *testing.T) {
 	withoutCommandToken.CommandsToken = ""
 	if err := validateMattermostConfig(withoutCommandToken); err == nil {
 		t.Fatal("validateMattermostConfig() error = nil when commands token is empty")
+	}
+
+	withoutBotUsername := valid
+	withoutBotUsername.BotUsername = ""
+	if err := validateMattermostConfig(withoutBotUsername); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when bot username is empty")
 	}
 }
 

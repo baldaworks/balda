@@ -166,6 +166,30 @@ func TestCommandServerUsesDistinctInvocationIDsWithoutPostIDs(t *testing.T) {
 	}
 }
 
+func TestCommandServerUsesDistinctInvocationIDsForRepeatedIdenticalRequests(t *testing.T) {
+	recorder := &commandRecorder{}
+	server := newTestCommandServer(recorder)
+	form := url.Values{
+		"token":      {testCommandToken},
+		"command":    {"/reset"},
+		"channel_id": {testChannelID},
+		"user_id":    {testUserID},
+	}
+	for range 2 {
+		request, response := commandRequest(form)
+		server.handleCommand(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+		}
+	}
+	if len(recorder.commands) != 2 {
+		t.Fatalf("commands = %d, want 2", len(recorder.commands))
+	}
+	if recorder.commands[0].InvocationID == recorder.commands[1].InvocationID {
+		t.Fatalf("identical slash requests shared invocation id %q", recorder.commands[0].InvocationID)
+	}
+}
+
 // TestCommandServerReadsRootCommandWithSubcommand covers the single-root-command
 // integration shape, where the command name is the first word of "text".
 func TestCommandServerReadsRootCommandWithSubcommand(t *testing.T) {
