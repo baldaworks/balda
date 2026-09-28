@@ -21,7 +21,7 @@ type CommandServerParams struct {
 	Logger     zerolog.Logger
 }
 
-// NewCommandServer builds the Mattermost slash-command HTTP receiver. The
+// NewCommandServer builds the Mattermost slash-command HTTP receiver.
 func NewCommandServer(params CommandServerParams) *mattermost.CommandServer {
 	return mattermost.NewCommandServer(mattermost.CommandServerParams{
 		Processor: params.Processor,
