@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 39
+const expectedSQLiteMigrationVersion = 40
 
 func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))

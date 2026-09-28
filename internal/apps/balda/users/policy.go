@@ -44,7 +44,7 @@ type BootstrapSelection struct {
 
 // BotCapability derives bot authorization exclusively from current user state.
 func BotCapability(user usercmd.User) usercmd.BotCapability {
-	if user.Status != usercmd.StatusActive || user.Binding == nil {
+	if user.Status != usercmd.StatusActive || (user.Binding == nil && len(user.Bindings) == 0) {
 		return usercmd.BotCapabilityNone
 	}
 	switch user.Role {
@@ -120,6 +120,20 @@ func ValidateUser(user usercmd.User) error {
 			return fmt.Errorf("%w: binding owner does not match user", usercmd.ErrInvalid)
 		}
 	}
+	seen := make(map[string]bool, len(user.Bindings))
+	for _, binding := range user.Bindings {
+		if err := validateBinding(binding); err != nil {
+			return err
+		}
+		if binding.UserID != user.ID {
+			return fmt.Errorf("%w: binding owner does not match user", usercmd.ErrInvalid)
+		}
+		key := binding.ChannelType + ":" + binding.Principal
+		if seen[key] {
+			return fmt.Errorf("%w: duplicate binding", usercmd.ErrInvalid)
+		}
+		seen[key] = true
+	}
 	return nil
 }
 
@@ -146,7 +160,7 @@ func NormalizeUsername(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
 }
 
-// ValidateBindingAssignment enforces one binding per user and one owner per principal.
+// ValidateBindingAssignment enforces one owner per transport principal.
 func ValidateBindingAssignment(user usercmd.User, candidate usercmd.Binding, existing *usercmd.Binding) error {
 	if err := ValidateUser(user); err != nil {
 		return err
@@ -156,9 +170,6 @@ func ValidateBindingAssignment(user usercmd.User, candidate usercmd.Binding, exi
 	}
 	if candidate.UserID != user.ID {
 		return fmt.Errorf("%w: binding owner does not match user", usercmd.ErrInvalid)
-	}
-	if user.Binding != nil {
-		return usercmd.ErrBindingAlreadyAssigned
 	}
 	if existing != nil {
 		return usercmd.ErrBindingPrincipalInUse

@@ -101,16 +101,19 @@ func attachCanonicalBinding(
 	}
 	candidates := make([]usercmd.User, 0, len(all))
 	for _, candidate := range all {
-		if candidate.Status == usercmd.StatusActive && candidate.Role == role && candidate.Binding == nil {
+		if candidate.Status == usercmd.StatusActive && candidate.Role == role {
 			candidates = append(candidates, candidate)
 		}
 	}
 	if len(candidates) == 0 {
-		return false, fmt.Errorf("%w: no unbound active %s user", usercmd.ErrNotFound, role)
+		return false, fmt.Errorf("%w: no active %s user", usercmd.ErrNotFound, role)
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].Primary != candidates[j].Primary {
 			return candidates[i].Primary
+		}
+		if len(candidates[i].Bindings) != len(candidates[j].Bindings) {
+			return len(candidates[i].Bindings) < len(candidates[j].Bindings)
 		}
 		return candidates[i].ID < candidates[j].ID
 	})
@@ -146,4 +149,14 @@ func canonicalAudit(action usercmd.AuditAction, targetType usercmd.AuditTargetTy
 
 func hasCanonicalCapability(user usercmd.User, capability usercmd.BotCapability) bool {
 	return users.BotCapability(user) == capability
+}
+
+func canonicalBindings(user usercmd.User) []usercmd.Binding {
+	if len(user.Bindings) != 0 {
+		return user.Bindings
+	}
+	if user.Binding != nil {
+		return []usercmd.Binding{*user.Binding}
+	}
+	return nil
 }

@@ -65,8 +65,8 @@ func TestPostgresMigrations(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("PostgreSQL migration version = %d, want 4", version)
+	if version != 5 {
+		t.Fatalf("PostgreSQL migration version = %d, want 5", version)
 	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_plugin_installs
 		(plugin_id, origin_marketplace, origin_source, origin_path, active_revision_id, enabled, capability_json, data_relative_path, updated_at)
@@ -82,8 +82,8 @@ func TestPostgresMigrations(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE 'idx_%'`).Scan(&indexes); err != nil {
 		t.Fatal(err)
 	}
-	if indexes != 27 {
-		t.Fatalf("PostgreSQL explicit indexes = %d, want 27", indexes)
+	if indexes != 28 {
+		t.Fatalf("PostgreSQL explicit indexes = %d, want 28", indexes)
 	}
 }
 
@@ -148,10 +148,12 @@ func TestPostgresUnifiedUserSchemaConstraints(t *testing.T) {
 		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
 		t.Fatalf("insert binding: %v", err)
 	}
-	assertPostgresRejected(t, db, `INSERT INTO balda_user_bindings
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_bindings
 		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
 		VALUES ('binding-2', 'admin-1', 'slack', 'U101', '', '',
-		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`)
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatalf("insert second binding: %v", err)
+	}
 	assertPostgresRejected(t, db, `INSERT INTO balda_user_bindings
 		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
 		VALUES ('binding-3', 'operator-1', 'telegram', '101', '', '',

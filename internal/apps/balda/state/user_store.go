@@ -289,7 +289,7 @@ func (s *sqlUserStore) GetUserByNormalizedUsername(ctx context.Context, normaliz
 }
 
 func (s *sqlUserStore) GetUserByBinding(ctx context.Context, channelType, principal string) (usercmd.User, bool, error) {
-	return s.getUser(ctx, `b.channel_type = ? AND b.principal = ?`, channelType, principal)
+	return s.getUser(ctx, `EXISTS (SELECT 1 FROM balda_user_bindings b WHERE b.user_id = u.user_id AND b.channel_type = ? AND b.principal = ?)`, channelType, principal)
 }
 
 func (s *sqlUserStore) getUser(ctx context.Context, predicate string, args ...any) (usercmd.User, bool, error) {
@@ -300,6 +300,9 @@ func (s *sqlUserStore) getUser(ctx context.Context, predicate string, args ...an
 	}
 	if err != nil {
 		return usercmd.User{}, false, s.wrapError("get user", err)
+	}
+	if err := s.loadBindings(ctx, &user); err != nil {
+		return usercmd.User{}, false, err
 	}
 	return user, true, nil
 }
@@ -340,10 +343,18 @@ func (s *sqlUserStore) ListUsers(ctx context.Context, page usercmd.PageRequest) 
 	if err := rows.Err(); err != nil {
 		return usercmd.UserPage{}, s.wrapError("iterate users", err)
 	}
+	if err := rows.Close(); err != nil {
+		return usercmd.UserPage{}, s.wrapError("close listed users", err)
+	}
 	result := usercmd.UserPage{Users: users}
 	if len(users) > limit {
 		result.Users = users[:limit]
 		result.NextAfterID = result.Users[len(result.Users)-1].ID
+	}
+	for i := range result.Users {
+		if err := s.loadBindings(ctx, &result.Users[i]); err != nil {
+			return usercmd.UserPage{}, err
+		}
 	}
 	return result, nil
 }
@@ -412,12 +423,6 @@ func (s *sqlUserStore) AttachBinding(ctx context.Context, claimID string, bindin
 		return usercmd.ErrBindingClaimScope
 	}
 	var count int
-	if err := tx.QueryRowContext(ctx, s.bind(`SELECT COUNT(*) FROM balda_user_bindings WHERE user_id = ?`), binding.UserID).Scan(&count); err != nil {
-		return s.wrapError("check user binding", err)
-	}
-	if count != 0 {
-		return usercmd.ErrBindingAlreadyAssigned
-	}
 	if err := tx.QueryRowContext(ctx, s.bind(`
 		SELECT COUNT(*) FROM balda_user_bindings WHERE channel_type = ? AND principal = ?`),
 		binding.ChannelType, binding.Principal).Scan(&count); err != nil {
@@ -445,6 +450,95 @@ func (s *sqlUserStore) AttachBinding(ctx context.Context, claimID string, bindin
 	}
 	if err := tx.Commit(); err != nil {
 		return s.wrapError("commit attach binding", err)
+	}
+	return nil
+}
+
+func (s *sqlUserStore) CreateManagedBinding(ctx context.Context, binding usercmd.Binding, expectedUserVersion uint64, audit usercmd.AuditEvent) error {
+	if binding.ID == "" || binding.UserID == "" || binding.ChannelType == "" || binding.Principal == "" ||
+		binding.CreatedAt.IsZero() || binding.UpdatedAt.IsZero() || expectedUserVersion == 0 {
+		return usercmd.ErrInvalid
+	}
+	if err := usercmd.ValidateAuditEvent(audit); err != nil {
+		return err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return s.wrapError("begin managed binding creation", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.advanceBindingUserVersion(ctx, tx, binding.UserID, expectedUserVersion, binding.UpdatedAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, s.bind(`
+		INSERT INTO balda_user_bindings
+			(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+		binding.ID, binding.UserID, binding.ChannelType, binding.Principal, binding.DisplayName,
+		binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt)); err != nil {
+		return s.mutationError("create managed binding", err)
+	}
+	if err := s.insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return s.wrapError("commit managed binding creation", err)
+	}
+	return nil
+}
+
+func (s *sqlUserStore) DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit usercmd.AuditEvent) error {
+	if userID == "" || bindingID == "" || expectedUserVersion == 0 {
+		return usercmd.ErrInvalid
+	}
+	if err := usercmd.ValidateAuditEvent(audit); err != nil {
+		return err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return s.wrapError("begin binding deletion", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ownerID string
+	err = tx.QueryRowContext(ctx, s.bind(`SELECT user_id FROM balda_user_bindings WHERE binding_id = ?`)+s.forUpdate, bindingID).Scan(&ownerID)
+	if errors.Is(err, sql.ErrNoRows) || ownerID != userID {
+		return usercmd.ErrNotFound
+	}
+	if err != nil {
+		return s.wrapError("load binding for deletion", err)
+	}
+	if err := s.advanceBindingUserVersion(ctx, tx, userID, expectedUserVersion, audit.OccurredAt); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, s.bind(`DELETE FROM balda_user_bindings WHERE binding_id = ? AND user_id = ?`), bindingID, userID)
+	if err != nil {
+		return s.mutationError("delete binding", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return s.wrapError("inspect deleted binding", err)
+	} else if affected != 1 {
+		return usercmd.ErrConflict
+	}
+	if err := s.insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return s.wrapError("commit binding deletion", err)
+	}
+	return nil
+}
+
+func (s *sqlUserStore) advanceBindingUserVersion(ctx context.Context, tx *sql.Tx, userID string, expectedVersion uint64, updatedAt time.Time) error {
+	result, err := tx.ExecContext(ctx, s.bind(`
+		UPDATE balda_users SET version = version + 1, updated_at = ?
+		WHERE user_id = ? AND version = ?`), formatUserTime(updatedAt), userID, expectedVersion)
+	if err != nil {
+		return s.mutationError("advance binding user version", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return s.wrapError("inspect binding user version", err)
+	} else if affected != 1 {
+		return usercmd.ErrConflict
 	}
 	return nil
 }
@@ -948,7 +1042,9 @@ const userSelectSQL = `
 		b.binding_id, b.user_id, b.channel_type, b.principal, b.display_name,
 		b.provenance, b.created_at, b.updated_at
 	FROM balda_users u
-	LEFT JOIN balda_user_bindings b ON b.user_id = u.user_id`
+	LEFT JOIN balda_user_bindings b ON b.user_id = u.user_id AND b.binding_id = (
+		SELECT binding_id FROM balda_user_bindings WHERE user_id = u.user_id ORDER BY channel_type, principal, binding_id LIMIT 1
+	)`
 
 type userRowScanner interface {
 	Scan(dest ...any) error
@@ -998,8 +1094,44 @@ func scanUser(scanner userRowScanner) (usercmd.User, error) {
 			return usercmd.User{}, err
 		}
 		user.Binding = &binding
+		user.Bindings = []usercmd.Binding{binding}
 	}
 	return user, nil
+}
+
+func (s *sqlUserStore) loadBindings(ctx context.Context, user *usercmd.User) error {
+	rows, err := s.db.QueryContext(ctx, s.bind(`
+		SELECT binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at
+		FROM balda_user_bindings WHERE user_id = ? ORDER BY channel_type, principal, binding_id`), user.ID)
+	if err != nil {
+		return s.wrapError("load user bindings", err)
+	}
+	defer func() { _ = rows.Close() }()
+	user.Bindings = nil
+	for rows.Next() {
+		var binding usercmd.Binding
+		var createdAt, updatedAt string
+		if err := rows.Scan(&binding.ID, &binding.UserID, &binding.ChannelType, &binding.Principal,
+			&binding.DisplayName, &binding.Provenance, &createdAt, &updatedAt); err != nil {
+			return s.wrapError("scan user binding", err)
+		}
+		if binding.CreatedAt, err = parseUserTime(createdAt); err != nil {
+			return s.wrapError("parse binding creation time", err)
+		}
+		if binding.UpdatedAt, err = parseUserTime(updatedAt); err != nil {
+			return s.wrapError("parse binding update time", err)
+		}
+		user.Bindings = append(user.Bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return s.wrapError("iterate user bindings", err)
+	}
+	if len(user.Bindings) == 0 {
+		user.Binding = nil
+	} else {
+		user.Binding = &user.Bindings[0]
+	}
+	return nil
 }
 
 func (s *sqlUserStore) insertAudit(ctx context.Context, tx *sql.Tx, audit usercmd.AuditEvent) error {
