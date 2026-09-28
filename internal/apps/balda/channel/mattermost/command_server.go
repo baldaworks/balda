@@ -217,13 +217,14 @@ func (s *CommandServer) handleCommand(w http.ResponseWriter, r *http.Request) {
 	locator, direct := s.resolveCommandLocator(ctx, channelID, userID)
 	postID := strings.TrimSpace(form.Get("post_id"))
 	command := InboundCommand{
-		Locator:   locator,
-		MessageID: ParsePostID(postID),
-		PostID:    postID,
-		SenderID:  userID,
-		Command:   name,
-		Args:      args,
-		Direct:    direct,
+		InvocationID: commandInvocationID(body),
+		Locator:      locator,
+		MessageID:    ParsePostID(postID),
+		PostID:       postID,
+		SenderID:     userID,
+		Command:      name,
+		Args:         args,
+		Direct:       direct,
 	}
 	if err := s.processor.HandleCommand(ctx, command); err != nil {
 		s.logger.Warn().Err(err).Str("command", name).Msg("failed to handle mattermost slash command")

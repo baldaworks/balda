@@ -126,6 +126,38 @@ func TestCommandServerPublishesSlashCommand(t *testing.T) {
 	if command.Locator.ChannelType != string(deliverycmd.ChannelTypeMattermost) {
 		t.Fatalf("channel type = %q, want mattermost", command.Locator.ChannelType)
 	}
+	if command.InvocationID == "" {
+		t.Fatal("slash command must carry a body-derived invocation id")
+	}
+}
+
+// TestCommandServerUsesDistinctInvocationIDsWithoutPostIDs covers the provider
+// contract: slash commands execute without creating Mattermost posts. Their
+// body-derived invocation IDs must therefore stay distinct, so one command
+// cannot deduplicate a later command.
+func TestCommandServerUsesDistinctInvocationIDsWithoutPostIDs(t *testing.T) {
+	recorder := &commandRecorder{}
+	server := newTestCommandServer(recorder)
+
+	for _, commandName := range []string{"/locator", "/reset"} {
+		request, response := commandRequest(url.Values{
+			"token":      {testCommandToken},
+			"command":    {commandName},
+			"channel_id": {testChannelID},
+			"user_id":    {testUserID},
+		})
+		server.handleCommand(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("status for %s = %d, want %d", commandName, response.Code, http.StatusOK)
+		}
+	}
+
+	if len(recorder.commands) != 2 {
+		t.Fatalf("commands = %d, want 2", len(recorder.commands))
+	}
+	if recorder.commands[0].InvocationID == recorder.commands[1].InvocationID {
+		t.Fatalf("slash commands shared invocation id %q", recorder.commands[0].InvocationID)
+	}
 }
 
 // TestCommandServerReadsRootCommandWithSubcommand covers the single-root-command

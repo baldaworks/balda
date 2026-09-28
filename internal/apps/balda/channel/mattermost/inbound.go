@@ -27,13 +27,17 @@ type InboundMessage struct {
 
 // InboundCommand represents a command invocation from Mattermost.
 type InboundCommand struct {
-	Locator   deliverycmd.Locator
-	MessageID int
-	PostID    string
-	SenderID  string
-	Command   string
-	Args      string
-	Direct    bool
+	// InvocationID identifies this command invocation for durable deduplication.
+	// HTTP slash commands have no Mattermost post, so their ID is derived from
+	// the signed request body; websocket commands use the source post ID.
+	InvocationID string
+	Locator      deliverycmd.Locator
+	MessageID    int
+	PostID       string
+	SenderID     string
+	Command      string
+	Args         string
+	Direct       bool
 }
 
 // InboundProcessor processes inbound Mattermost messages and commands.
@@ -222,7 +226,23 @@ func MentionsBot(text, botUsername string) bool {
 	if name == "" {
 		return false
 	}
-	return strings.Contains(strings.ToLower(text), strings.ToLower(triggerMentionPrefix+name))
+
+	mention := strings.ToLower(triggerMentionPrefix + name)
+	lowerText := strings.ToLower(text)
+	for start := 0; start < len(lowerText); {
+		offset := strings.Index(lowerText[start:], mention)
+		if offset < 0 {
+			return false
+		}
+		index := start + offset
+		end := index + len(mention)
+		if (index == 0 || isBoundary(lowerText[index-1])) &&
+			(end == len(lowerText) || isBoundary(lowerText[end])) {
+			return true
+		}
+		start = end
+	}
+	return false
 }
 
 // ParseCommand splits a slash-command post into name and arguments.
@@ -274,7 +294,7 @@ func PostIDFromWebSocket(raw any) string {
 
 func isBoundary(ch byte) bool {
 	switch ch {
-	case ' ', '\t', '\n', '\r', ',', '.', ':', ';', '!', '?', ')', ']', '}':
+	case ' ', '\t', '\n', '\r', ',', '.', ':', ';', '!', '?', '(', ')', '[', ']', '{', '}', '\'', '"':
 		return true
 	default:
 		return false

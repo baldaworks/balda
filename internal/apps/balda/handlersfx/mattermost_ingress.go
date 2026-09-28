@@ -61,7 +61,7 @@ type mattermostInboundHandlerParams struct {
 	CollaboratorStore *auth.CollaboratorStore   `optional:"true"`
 	SessionManager    *baldasession.Manager     `optional:"true"`
 	Dispatcher        actortransport.Dispatcher `optional:"true"`
-	CommandIngress    commandcmd.Ingress         `optional:"true"`
+	CommandIngress    commandcmd.Ingress        `optional:"true"`
 	AuthToken         string                    `name:"balda_auth_token" optional:"true"`
 	BaldaProviderID   string                    `name:"balda_provider" optional:"true"`
 	Logger            zerolog.Logger
@@ -135,14 +135,22 @@ func (h *mattermostInboundHandler) HandleCommand(ctx context.Context, cmd matter
 	if h.commandIngress == nil {
 		return nil
 	}
+	invocationID := strings.TrimSpace(cmd.InvocationID)
+	if invocationID == "" {
+		postID := strings.TrimSpace(cmd.PostID)
+		if postID == "" {
+			return fmt.Errorf("mattermost command invocation id is required")
+		}
+		invocationID = fmt.Sprintf("mattermost:command:%s", postID)
+	}
 	isOwner := h.isOwner(cmd.SenderID)
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
-		InvocationID: fmt.Sprintf("mattermost:command:%s", cmd.PostID),
+		InvocationID: invocationID,
 		Payload: commandcmd.Payload{
-			Version: commandcmd.SchemaVersion,
-			Name:    cmd.Command,
-			Args:    cmd.Args,
-			Locator: cmd.Locator,
+			Version:   commandcmd.SchemaVersion,
+			Name:      cmd.Command,
+			Args:      cmd.Args,
+			Locator:   cmd.Locator,
 			Transport: mattermost.ChannelType,
 			Principal: auth.MattermostSubject(cmd.SenderID),
 			Access: commandcmd.Access{

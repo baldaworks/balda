@@ -291,6 +291,14 @@ func TestMentionsBot(t *testing.T) {
 	if MentionsBot("@balda hello", "") {
 		t.Fatal("MentionsBot() = true with an empty bot username, want false")
 	}
+	for _, text := range []string{"@baldabot hello", "@balda-team hello", "person@balda.example"} {
+		if MentionsBot(text, "balda") {
+			t.Fatalf("MentionsBot(%q) = true for a longer identifier, want false", text)
+		}
+	}
+	if !MentionsBot("hello, (@balda) please reply", "balda") {
+		t.Fatal("MentionsBot() = false for a standalone mention in punctuation")
+	}
 }
 
 func TestParseCommand(t *testing.T) {

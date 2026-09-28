@@ -88,6 +88,29 @@ func TestMattermostHandlerPublishesEverySupportedCommand(t *testing.T) {
 	}
 }
 
+func TestMattermostHandlerUsesExplicitInvocationID(t *testing.T) {
+	const ownerID = "owner-user-1"
+	ownerStore := newOwnerStoreWithMattermostSubject(t, ownerID)
+	ingress := &recordingMattermostCommandIngress{}
+	h := &mattermostInboundHandler{ownerStore: ownerStore, commandIngress: ingress, logger: zerolog.Nop()}
+
+	if err := h.HandleCommand(context.Background(), mattermost.InboundCommand{
+		InvocationID: "mattermost:command:body-hash",
+		Locator:      mattermost.NewDMLocator("dm-1", ownerID),
+		SenderID:     ownerID,
+		Command:      "locator",
+		Direct:       true,
+	}); err != nil {
+		t.Fatalf("HandleCommand() error = %v", err)
+	}
+	if len(ingress.requests) != 1 {
+		t.Fatalf("published requests = %d, want 1", len(ingress.requests))
+	}
+	if got, want := ingress.requests[0].InvocationID, "mattermost:command:body-hash"; got != want {
+		t.Fatalf("InvocationID = %q, want %q", got, want)
+	}
+}
+
 func TestMattermostHandlerSendsChannelQualifiedPrincipalExactlyOnce(t *testing.T) {
 	// Regression guard: the transport prefix must appear exactly once. A doubled
 	// prefix ("mattermost:mattermost:<id>") never matches a stored binding, so
