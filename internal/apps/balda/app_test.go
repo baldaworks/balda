@@ -302,6 +302,32 @@ func TestValidateZulipConfigRequiresWebhookAuthAndReplyCredentials(t *testing.T)
 	}
 }
 
+func TestValidateMattermostConfig(t *testing.T) {
+	valid := MattermostConfig{
+		Enabled:         true,
+		ServerURL:       "https://mattermost.example.test",
+		Token:           "bot-token",
+		BotUserID:       "bot-user",
+		CommandsEnabled: true,
+		CommandsToken:   "command-token",
+	}
+	if err := validateMattermostConfig(valid); err != nil {
+		t.Fatalf("validateMattermostConfig(valid) error = %v", err)
+	}
+
+	withoutTransport := valid
+	withoutTransport.Enabled = false
+	if err := validateMattermostConfig(withoutTransport); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when commands are enabled without the transport")
+	}
+
+	withoutCommandToken := valid
+	withoutCommandToken.CommandsToken = ""
+	if err := validateMattermostConfig(withoutCommandToken); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when commands token is empty")
+	}
+}
+
 func TestValidateSlackConfig(t *testing.T) {
 	t.Parallel()
 

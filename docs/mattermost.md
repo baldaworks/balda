@@ -83,7 +83,7 @@ balda:
 | `token` | yes when enabled | Bot account personal access token. |
 | `bot_user_id` | yes when enabled | Bot account user id. The ingress refuses to start without it, because it cannot otherwise distinguish its own posts from a user's. |
 | `bot_username` | no | Bot username used to detect `@mention` activation in channels. Mention handling is disabled when it is empty. |
-| `commands_enabled` | no (default `false`) | Enables the HTTP slash-command receiver. Mattermost delivers slash commands as HTTP requests, never as posts, so this must be on for any slash command to work. It is independent from `enabled`, which only covers the websocket stream. |
+| `commands_enabled` | no (default `false`) | Enables the HTTP slash-command receiver. Mattermost delivers slash commands as HTTP requests, never as posts, so this must be on for any slash command to work. It requires `enabled: true`, because command authorization, channel resolution, and result delivery use the Mattermost transport. |
 | `commands_listen_addr` | no (default `:8093`) | Local address the slash-command receiver listens on. |
 | `commands_path` | no (default `/mattermost/commands`) | Local HTTP path Mattermost posts slash commands to. It must start with `/`. Point each Mattermost slash command's Request URL at this path. |
 | `commands_token` | yes when `commands_enabled` | Slash-command token Mattermost generates for the integration. Mattermost sends it in the request body and Balda compares it exactly; the receiver refuses to start without it and rejects every request when the token does not match. |
@@ -136,8 +136,9 @@ HTTP, which needs a Request URL per command:
 3. Set the **Request URL** to `http(s)://<balda-host>:8093/mattermost/commands`,
    method `POST`.
 4. Copy the **token** Mattermost shows and set it as `commands_token`.
-5. Repeat for every command you want to expose, or register one root command
-   (`/balda`) and select the action with its first word.
+5. Register one root command (`/balda`) and select the action with its first
+   word, for example `/balda locator`. This keeps the receiver bound to the
+   single integration token configured as `commands_token`.
 
 A slash command is answered immediately and its result is delivered as a post.
 Mattermost shows the author a timeout when a command does not respond within a

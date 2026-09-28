@@ -7,13 +7,11 @@ import (
 	"strings"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
-	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram/telegramfx"
-	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
