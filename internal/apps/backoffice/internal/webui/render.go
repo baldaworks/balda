@@ -38,10 +38,10 @@ type Renderer struct {
 }
 
 // NewRenderer parses each allowlisted page independently with the shared shell.
-func NewRenderer() (*Renderer, error) {
+func NewRenderer(basePath string) (*Renderer, error) {
 	templates := make(map[string]*template.Template, len(templateFiles))
 	for name, pageFile := range templateFiles {
-		parsed, err := template.New(name).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", pageFile)
+		parsed, err := template.New(name).Funcs(template.FuncMap{"path": func(route any) string { return basePath + fmt.Sprint(route) }}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", pageFile)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
 		}
@@ -85,15 +85,20 @@ func EligibleFragment(request *http.Request) bool {
 
 // RespondMutation emits 204/HX-Location for eligible HTMX requests and a native 303 otherwise.
 func RespondMutation(w http.ResponseWriter, request *http.Request, location Location) error {
+	return RespondMutationAt(w, request, location, "")
+}
+
+// RespondMutationAt emits a mutation response at a configured public base path.
+func RespondMutationAt(w http.ResponseWriter, request *http.Request, location Location, basePath string) error {
 	if !location.Valid() {
 		return fmt.Errorf("mutation location is invalid")
 	}
 	if EligibleFragment(request) {
-		w.Header().Set("HX-Location", string(location))
+		w.Header().Set("HX-Location", basePath+string(location))
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
-	w.Header().Set("Location", string(location))
+	w.Header().Set("Location", basePath+string(location))
 	w.WriteHeader(http.StatusSeeOther)
 	return nil
 }

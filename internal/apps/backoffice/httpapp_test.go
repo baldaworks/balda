@@ -41,6 +41,53 @@ func TestHTTPAppQAIsOptInAndUsesProductionTemplates(t *testing.T) {
 	}
 }
 
+func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
+	t.Parallel()
+	provider, config := newHTTPAppTestState(t)
+	config.Server.BasePath = "/balda"
+	config.Server.PublicURL = "https://lab.metalagman.dev"
+	config.Server.SecureCookies = true
+	config.Server.QAUI = true
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []string{"/", "/login", "/overview", "/balda/unknown"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, route, nil))
+		if response.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", route, response.Code)
+		}
+	}
+	login := httptest.NewRecorder()
+	handler.ServeHTTP(login, httptest.NewRequest(http.MethodGet, "/balda/login", nil))
+	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), `action="/balda/login"`) || !strings.Contains(login.Body.String(), `src="/balda/assets/app.js"`) {
+		t.Fatalf("prefixed login = %d %q", login.Code, login.Body.String())
+	}
+	if got := login.Result().Cookies()[0].Path; got != "/balda/" {
+		t.Errorf("CSRF cookie path = %q", got)
+	}
+	asset := httptest.NewRecorder()
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/balda/assets/app.js", nil))
+	if asset.Code != http.StatusOK {
+		t.Errorf("prefixed asset = %d", asset.Code)
+	}
+	health := httptest.NewRecorder()
+	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/balda/healthz", nil))
+	if health.Code != http.StatusOK {
+		t.Errorf("prefixed health = %d", health.Code)
+	}
+	qa := httptest.NewRecorder()
+	handler.ServeHTTP(qa, httptest.NewRequest(http.MethodGet, "/balda/qa/ui/access", nil))
+	if qa.Code != http.StatusOK || !strings.Contains(qa.Body.String(), `action="/balda/access/users`) || !strings.Contains(qa.Body.String(), `href="/balda/overview"`) {
+		t.Fatalf("prefixed QA = %d %q", qa.Code, qa.Body.String())
+	}
+}
+
 func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)

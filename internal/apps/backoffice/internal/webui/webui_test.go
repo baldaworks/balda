@@ -19,7 +19,7 @@ func TestVerifyAssets(t *testing.T) {
 
 func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
 	t.Parallel()
-	renderer, err := NewRenderer()
+	renderer, err := NewRenderer("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestRendererFullFragmentAndHistoryContracts(t *testing.T) {
 
 func TestRendererPreservesErrorStatusAndDoesNotCommitRejectedModel(t *testing.T) {
 	t.Parallel()
-	renderer, err := NewRenderer()
+	renderer, err := NewRenderer("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestSafeViewProjectionUsesOneBindingAndFamilyLevelSessions(t *testing.T) {
 
 func TestAuditProjectionDoesNotRenderFreeFormReason(t *testing.T) {
 	t.Parallel()
-	renderer, err := NewRenderer()
+	renderer, err := NewRenderer("")
 	if err != nil {
 		t.Fatal(err)
 	}

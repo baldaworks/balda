@@ -59,6 +59,7 @@ balda:
   backoffice:
     listen_addr: "127.0.0.1:8095"
     public_url: "http://127.0.0.1:8095"
+    base_path: ""
     access_token_ttl: "15m"
     refresh_token_ttl: "12h"
     qa_ui: false
@@ -66,11 +67,18 @@ balda:
 
 Every field has the normal `BALDA_*` environment override, for example
 `BALDA_BACKOFFICE_LISTEN_ADDR`, `BALDA_BACKOFFICE_PUBLIC_URL`,
+`BALDA_BACKOFFICE_BASE_PATH`,
 `BALDA_BACKOFFICE_ACCESS_TOKEN_TTL`,
 `BALDA_BACKOFFICE_REFRESH_TOKEN_TTL`, and `BALDA_BACKOFFICE_QA_UI`. Access
 tokens may live from 1 minute through 1 hour. Refresh families must outlive
 access tokens and may live for at most 30 days. The refresh deadline is an
 absolute family deadline; rotation never extends it.
+
+`base_path` is an optional canonical absolute path without a trailing slash,
+for example `/balda`. Leave `public_url` as the HTTPS origin without a path.
+Backoffice serves its browser pages, assets, and session endpoints beneath the
+base path and scopes browser cookies to it. The empty default preserves root
+URLs for existing installations. A reverse proxy must forward the path unchanged.
 
 ## Deployment and first administrator
 
