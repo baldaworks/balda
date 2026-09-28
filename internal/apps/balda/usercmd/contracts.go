@@ -72,14 +72,16 @@ type CredentialSecret struct {
 
 // Binding identifies a transport principal owned by a user.
 type Binding struct {
-	ID          string
-	UserID      string
-	ChannelType string
-	Principal   string
-	DisplayName string
-	Provenance  string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                string
+	UserID            string
+	ChannelType       string
+	Principal         string
+	DisplayName       string
+	ProviderUsername  string
+	ProviderFirstName string
+	Provenance        string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // User is the secret-free canonical identity shared by Backoffice and bot authorization.

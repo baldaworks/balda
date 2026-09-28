@@ -184,6 +184,15 @@ type sourceRecord struct {
 	Role        string `json:"role"`
 	DisplayName string `json:"display_name"`
 	Provenance  string `json:"provenance"`
+	Username    string `json:"username,omitempty"`
+	FirstName   string `json:"first_name,omitempty"`
+}
+
+type legacyFingerprintRecord struct {
+	Subject     string `json:"subject"`
+	Role        string `json:"role"`
+	DisplayName string `json:"display_name"`
+	Provenance  string `json:"provenance"`
 }
 
 func prepare(input Input) (preparedMigration, error) {
@@ -202,10 +211,16 @@ func prepare(input Input) (preparedMigration, error) {
 	if err != nil {
 		return preparedMigration{}, err
 	}
+	fingerprintRecords := make([]legacyFingerprintRecord, 0, len(records))
+	for _, record := range records {
+		fingerprintRecords = append(fingerprintRecords, legacyFingerprintRecord{
+			Subject: record.Subject, Role: record.Role, DisplayName: record.DisplayName, Provenance: record.Provenance,
+		})
+	}
 	encoded, err := json.Marshal(struct {
-		Records        []sourceRecord `json:"records"`
-		PrimarySubject string         `json:"primary_subject"`
-	}{Records: records, PrimarySubject: primarySubject})
+		Records        []legacyFingerprintRecord `json:"records"`
+		PrimarySubject string                    `json:"primary_subject"`
+	}{Records: fingerprintRecords, PrimarySubject: primarySubject})
 	if err != nil {
 		return preparedMigration{}, fmt.Errorf("encode legacy user snapshot: %w", err)
 	}
@@ -241,7 +256,8 @@ func prepare(input Input) (preparedMigration, error) {
 			user:    user,
 			binding: usercmd.Binding{
 				ID: bindingID, UserID: userID, ChannelType: channelType, Principal: principal,
-				DisplayName: record.DisplayName, Provenance: record.Provenance,
+				DisplayName: record.DisplayName, ProviderUsername: record.Username,
+				ProviderFirstName: record.FirstName, Provenance: record.Provenance,
 			},
 		})
 		if user.Primary {
@@ -255,7 +271,7 @@ func sourceRecords(input Input) ([]sourceRecord, []string, error) {
 	seen := make(map[string]string)
 	var records []sourceRecord
 	var ownerSubjects []string
-	add := func(raw, role, displayName, provenance string) error {
+	add := func(raw, role, displayName, provenance, username, firstName string) error {
 		channelType, principal, err := parseSubject(raw)
 		if err != nil {
 			return err
@@ -271,7 +287,13 @@ func sourceRecords(input Input) ([]sourceRecord, []string, error) {
 		if strings.TrimSpace(displayName) == "" {
 			displayName = subject
 		}
-		records = append(records, sourceRecord{Subject: subject, Role: role, DisplayName: displayName, Provenance: provenance})
+		if channelType != "telegram" {
+			username, firstName = "", ""
+		}
+		records = append(records, sourceRecord{
+			Subject: subject, Role: role, DisplayName: displayName, Provenance: provenance,
+			Username: strings.TrimSpace(username), FirstName: strings.TrimSpace(firstName),
+		})
 		if role == string(usercmd.RoleAdministrator) {
 			ownerSubjects = append(ownerSubjects, subject)
 		}
@@ -292,13 +314,13 @@ func sourceRecords(input Input) ([]sourceRecord, []string, error) {
 		if strings.TrimSpace(subject) == "" {
 			continue
 		}
-		if err := add(subject, string(usercmd.RoleAdministrator), usercmd.PrimaryUsername, ownerProvenance); err != nil {
+		if err := add(subject, string(usercmd.RoleAdministrator), usercmd.PrimaryUsername, ownerProvenance, "", ""); err != nil {
 			return nil, nil, err
 		}
 	}
 	for _, collaborator := range input.Collaborators {
 		displayName := strings.TrimSpace(strings.Join([]string{collaborator.FirstName, collaborator.Username}, " "))
-		if err := add(collaborator.UserID, string(usercmd.RoleOperator), displayName, "legacy-collaborator"); err != nil {
+		if err := add(collaborator.UserID, string(usercmd.RoleOperator), displayName, "legacy-collaborator", collaborator.Username, collaborator.FirstName); err != nil {
 			return nil, nil, err
 		}
 	}

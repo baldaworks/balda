@@ -433,10 +433,11 @@ func (s *sqlUserStore) AttachBinding(ctx context.Context, claimID string, bindin
 	}
 	if _, err := tx.ExecContext(ctx, s.bind(`
 		INSERT INTO balda_user_bindings
-			(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+			(binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		binding.ID, binding.UserID, binding.ChannelType, binding.Principal, binding.DisplayName,
-		binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
+		binding.ProviderUsername, binding.ProviderFirstName, binding.Provenance,
+		formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
 	); err != nil {
 		return s.mutationError("insert user binding", err)
 	}
@@ -472,10 +473,11 @@ func (s *sqlUserStore) CreateManagedBinding(ctx context.Context, binding usercmd
 	}
 	if _, err := tx.ExecContext(ctx, s.bind(`
 		INSERT INTO balda_user_bindings
-			(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+			(binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		binding.ID, binding.UserID, binding.ChannelType, binding.Principal, binding.DisplayName,
-		binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt)); err != nil {
+		binding.ProviderUsername, binding.ProviderFirstName, binding.Provenance,
+		formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt)); err != nil {
 		return s.mutationError("create managed binding", err)
 	}
 	if err := s.insertAudit(ctx, tx, audit); err != nil {
@@ -541,6 +543,25 @@ func (s *sqlUserStore) advanceBindingUserVersion(ctx context.Context, tx *sql.Tx
 		return usercmd.ErrConflict
 	}
 	return nil
+}
+
+func (s *sqlUserStore) UpdateTelegramBindingProfile(ctx context.Context, principal, username, firstName string, updatedAt time.Time) (bool, error) {
+	if strings.TrimSpace(principal) == "" || updatedAt.IsZero() {
+		return false, usercmd.ErrInvalid
+	}
+	result, err := s.db.ExecContext(ctx, s.bind(`
+		UPDATE balda_user_bindings SET provider_username = ?, provider_first_name = ?, updated_at = ?
+		WHERE channel_type = 'telegram' AND principal = ?
+			AND (provider_username <> ? OR provider_first_name <> ?)`),
+		username, firstName, formatUserTime(updatedAt), principal, username, firstName)
+	if err != nil {
+		return false, s.mutationError("update telegram binding profile", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, s.wrapError("inspect telegram binding profile update", err)
+	}
+	return affected == 1, nil
 }
 
 func (s *sqlUserStore) CreateSession(ctx context.Context, family usercmd.SessionFamily, audit usercmd.AuditEvent) error {
@@ -966,10 +987,11 @@ func (s *sqlUserStore) ApplyUserMigration(ctx context.Context, migration usercmd
 			binding := *entry.Binding
 			if _, err := tx.ExecContext(ctx, s.bind(`
 				INSERT INTO balda_user_bindings
-					(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+					(binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 				binding.ID, binding.UserID, binding.ChannelType, binding.Principal,
-				binding.DisplayName, binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
+				binding.DisplayName, binding.ProviderUsername, binding.ProviderFirstName,
+				binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
 			); err != nil {
 				return false, s.mutationError("insert migrated binding", err)
 			}
@@ -1039,7 +1061,7 @@ const userSelectSQL = `
 		u.user_id, u.display_name, u.username, u.normalized_username, u.status, u.role,
 		u.credential_state, u.must_change, u.credential_version, u.is_primary, u.version,
 		u.created_at, u.updated_at,
-		b.binding_id, b.user_id, b.channel_type, b.principal, b.display_name,
+		b.binding_id, b.user_id, b.channel_type, b.principal, b.display_name, b.provider_username, b.provider_first_name,
 		b.provenance, b.created_at, b.updated_at
 	FROM balda_users u
 	LEFT JOIN balda_user_bindings b ON b.user_id = u.user_id AND b.binding_id = (
@@ -1060,12 +1082,13 @@ func scanUser(scanner userRowScanner) (usercmd.User, error) {
 	var status, role, credentialState, createdAt, updatedAt string
 	var mustChange, primary int
 	var bindingID, bindingUserID, channelType, principal, bindingDisplayName sql.NullString
+	var providerUsername, providerFirstName sql.NullString
 	var provenance, bindingCreatedAt, bindingUpdatedAt sql.NullString
 	err := scanner.Scan(
 		&user.ID, &user.DisplayName, &user.Username, &user.NormalizedUsername, &status, &role,
 		&credentialState, &mustChange, &user.Credential.Version, &primary, &user.Version,
 		&createdAt, &updatedAt,
-		&bindingID, &bindingUserID, &channelType, &principal, &bindingDisplayName,
+		&bindingID, &bindingUserID, &channelType, &principal, &bindingDisplayName, &providerUsername, &providerFirstName,
 		&provenance, &bindingCreatedAt, &bindingUpdatedAt,
 	)
 	if err != nil {
@@ -1085,7 +1108,8 @@ func scanUser(scanner userRowScanner) (usercmd.User, error) {
 	if bindingID.Valid {
 		binding := usercmd.Binding{
 			ID: bindingID.String, UserID: bindingUserID.String, ChannelType: channelType.String,
-			Principal: principal.String, DisplayName: bindingDisplayName.String, Provenance: provenance.String,
+			Principal: principal.String, DisplayName: bindingDisplayName.String,
+			ProviderUsername: providerUsername.String, ProviderFirstName: providerFirstName.String, Provenance: provenance.String,
 		}
 		if binding.CreatedAt, err = parseUserTime(bindingCreatedAt.String); err != nil {
 			return usercmd.User{}, err
@@ -1101,7 +1125,7 @@ func scanUser(scanner userRowScanner) (usercmd.User, error) {
 
 func (s *sqlUserStore) loadBindings(ctx context.Context, user *usercmd.User) error {
 	rows, err := s.db.QueryContext(ctx, s.bind(`
-		SELECT binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at
+		SELECT binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at
 		FROM balda_user_bindings WHERE user_id = ? ORDER BY channel_type, principal, binding_id`), user.ID)
 	if err != nil {
 		return s.wrapError("load user bindings", err)
@@ -1112,7 +1136,8 @@ func (s *sqlUserStore) loadBindings(ctx context.Context, user *usercmd.User) err
 		var binding usercmd.Binding
 		var createdAt, updatedAt string
 		if err := rows.Scan(&binding.ID, &binding.UserID, &binding.ChannelType, &binding.Principal,
-			&binding.DisplayName, &binding.Provenance, &createdAt, &updatedAt); err != nil {
+			&binding.DisplayName, &binding.ProviderUsername, &binding.ProviderFirstName,
+			&binding.Provenance, &createdAt, &updatedAt); err != nil {
 			return s.wrapError("scan user binding", err)
 		}
 		if binding.CreatedAt, err = parseUserTime(createdAt); err != nil {

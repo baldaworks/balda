@@ -52,10 +52,12 @@ type CapabilityCard struct {
 
 // BindingView is the optional single transport binding shown read-only.
 type BindingView struct {
-	ChannelType string
-	Principal   string
-	DisplayName string
-	Provenance  string
+	ChannelType       string
+	Principal         string
+	DisplayName       string
+	ProviderUsername  string
+	ProviderFirstName string
+	Provenance        string
 }
 
 // UserView is the canonical user's safe browser projection.
@@ -157,7 +159,8 @@ func ProjectUser(user usercmd.User) UserView {
 	if user.Binding != nil {
 		view.Binding = &BindingView{
 			ChannelType: user.Binding.ChannelType, Principal: user.Binding.Principal,
-			DisplayName: user.Binding.DisplayName, Provenance: user.Binding.Provenance,
+			DisplayName: user.Binding.DisplayName, ProviderUsername: user.Binding.ProviderUsername,
+			ProviderFirstName: user.Binding.ProviderFirstName, Provenance: user.Binding.Provenance,
 		}
 	}
 	return view

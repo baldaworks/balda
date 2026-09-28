@@ -82,6 +82,8 @@ type MessageContext struct {
 	MessageID        int
 	ReplyToMessageID int
 	UserID           int64
+	Username         string
+	FirstName        string
 	Entities         []client.MessageEntity
 	IsReply          bool
 	IsForwarded      bool
@@ -106,6 +108,8 @@ type CommandContext struct {
 	ChatID          int64
 	TopicID         int
 	UserID          int64
+	Username        string
+	FirstName       string
 	MessageID       int
 	Command         string
 	Args            string
@@ -324,6 +328,8 @@ func (a *Adapter) MessageContextFromEvent(event *events.MessageEvent) (MessageCo
 		MessageID:        event.Message.MessageId,
 		ReplyToMessageID: replyToMessageID,
 		UserID:           event.Message.From.Id,
+		Username:         telegramUsername(event.Message.From.Username),
+		FirstName:        event.Message.From.FirstName,
 		Entities:         entities,
 		IsReply:          isReply,
 		IsForwarded:      isForwarded,
@@ -722,11 +728,20 @@ func (a *Adapter) CommandContextFromEvent(event *events.CommandEvent) (CommandCo
 		ChatID:    event.Message.Chat.Id,
 		TopicID:   topicID,
 		UserID:    event.Message.From.Id,
+		Username:  telegramUsername(event.Message.From.Username),
+		FirstName: event.Message.From.FirstName,
 		MessageID: event.Message.MessageId,
 		Command:   event.Command,
 		Args:      event.Args,
 		IsDM:      event.Message.Chat.Type == chatTypePrivate,
 	}, true
+}
+
+func telegramUsername(username *string) string {
+	if username == nil {
+		return ""
+	}
+	return *username
 }
 
 // TopicLifecycleFromEvent converts a Telegram topic lifecycle event into balda channel context.
