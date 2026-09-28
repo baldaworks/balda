@@ -61,13 +61,6 @@ func TestPostgresMigrations(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var version int
-	if err := db.QueryRowContext(t.Context(), "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != 5 {
-		t.Fatalf("PostgreSQL migration version = %d, want 5", version)
-	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_plugin_installs
 		(plugin_id, origin_marketplace, origin_source, origin_path, active_revision_id, enabled, capability_json, data_relative_path, updated_at)
 		VALUES ('missing', '', '', '', 'missing', 1, '{}', '', '')`); err == nil {

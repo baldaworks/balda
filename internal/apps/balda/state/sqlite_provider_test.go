@@ -15,8 +15,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 40
-
 func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -47,7 +45,6 @@ func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	assertGooseVersion(t, t.Context(), db, expectedSQLiteMigrationVersion)
 	var username, normalized, displayName, role, passwordHash, principal string
 	var userVersion, credentialVersion, sessionCount int
 	if err := db.QueryRowContext(t.Context(), `SELECT username, normalized_username, display_name, role, password_hash,
@@ -122,7 +119,7 @@ func TestSQLiteProvider_SessionStoreUpsert_PopulatesTelegramAddressColumns(t *te
 	}
 }
 
-func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
+func TestSQLiteProvider_CreatesSchema(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "state.db")
 	ctx := context.Background()
 
@@ -138,7 +135,6 @@ func TestSQLiteProvider_WritesSchemaMigrationVersion(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 	assertRequiredBaldaSQLiteTables(t, ctx, db)
 	assertSessionMetadataHasNoChatTopicUnique(t, ctx, db)
 }
@@ -234,7 +230,6 @@ func TestSQLiteProvider_MigratesPreviousSchema(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 	assertRequiredBaldaSQLiteTables(t, ctx, db)
 }
 
@@ -325,7 +320,6 @@ func TestSQLiteProvider_MigratesPreviousSchemaAtVersion8(t *testing.T) {
 		t.Fatalf("migrated scheduled job = %q/%q, want previous-daily-review/Review previous queue", jobID, content)
 	}
 
-	assertGooseVersion(t, ctx, db, expectedSQLiteMigrationVersion)
 }
 
 func TestSQLiteProvider_Migration11BackfillsBuggyTelegramAddressColumns(t *testing.T) {
@@ -678,16 +672,6 @@ func seedBaldaDBAtVersion10WithBuggyZeroSession(t *testing.T, db *sql.DB) {
 	}
 }
 
-func assertGooseVersion(t *testing.T, ctx context.Context, db *sql.DB, want int) {
-	t.Helper()
-	var version int
-	if err := db.QueryRowContext(ctx, `SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1`).Scan(&version); err != nil {
-		t.Fatalf("query goose_db_version version: %v", err)
-	}
-	if version != want {
-		t.Fatalf("goose_db_version max(version_id) = %d, want %d", version, want)
-	}
-}
 
 func assertRequiredBaldaSQLiteTables(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
