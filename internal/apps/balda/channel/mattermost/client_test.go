@@ -74,6 +74,43 @@ func TestValidateConfigRequiresServerURLAndToken(t *testing.T) {
 	}
 }
 
+func TestValidateIdentityMatchesTokenOwner(t *testing.T) {
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v4/users/me" {
+			t.Fatalf("path = %q, want /api/v4/users/me", r.URL.Path)
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer bot-token"; got != want {
+			t.Fatalf("Authorization = %q, want %q", got, want)
+		}
+		_ = json.NewEncoder(w).Encode(User{ID: "bot-1", Username: "balda"})
+	}))
+
+	if err := client.ValidateIdentity(context.Background(), "bot-1", "BALDA"); err != nil {
+		t.Fatalf("ValidateIdentity() error = %v, want nil", err)
+	}
+}
+
+func TestValidateIdentityRejectsMismatchedConfiguration(t *testing.T) {
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(User{ID: "token-owner", Username: "balda"})
+	}))
+
+	for _, tc := range []struct {
+		name     string
+		expected string
+		username string
+	}{
+		{name: "user id", expected: "configured-user", username: "balda"},
+		{name: "username", expected: "token-owner", username: "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := client.ValidateIdentity(context.Background(), tc.expected, tc.username); err == nil {
+				t.Fatal("ValidateIdentity() error = nil, want mismatch error")
+			}
+		})
+	}
+}
+
 func newTestClient(t *testing.T, handler http.Handler) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)

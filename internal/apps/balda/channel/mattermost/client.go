@@ -304,6 +304,28 @@ func (c *Client) GetMe(ctx context.Context) (User, error) {
 	return user, nil
 }
 
+// ValidateIdentity verifies that the configured bot identity belongs to the
+// token used by this client. A mismatched identity would disable echo
+// filtering and can make the bot process its own threaded replies.
+func (c *Client) ValidateIdentity(ctx context.Context, expectedID, expectedUsername string) error {
+	expectedID = strings.TrimSpace(expectedID)
+	expectedUsername = strings.TrimSpace(expectedUsername)
+	if expectedID == "" || expectedUsername == "" {
+		return fmt.Errorf("mattermost bot identity requires user id and username")
+	}
+	user, err := c.GetMe(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve Mattermost bot identity: %w", err)
+	}
+	if user.ID != expectedID {
+		return fmt.Errorf("mattermost bot user id mismatch: configured %q, token belongs to %q", expectedID, user.ID)
+	}
+	if !strings.EqualFold(strings.TrimSpace(user.Username), expectedUsername) {
+		return fmt.Errorf("mattermost bot username mismatch: configured %q, token belongs to %q", expectedUsername, user.Username)
+	}
+	return nil
+}
+
 // GetTeamByName resolves a team by its URL slug.
 func (c *Client) GetTeamByName(ctx context.Context, name string) (teamRef, error) {
 	trimmed := strings.TrimSpace(name)

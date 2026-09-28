@@ -76,6 +76,10 @@ type CommandServerConfig struct {
 	// request body as "token" and it is compared exactly; unlike Slack there is
 	// no HMAC signature. An empty token rejects every request.
 	Token string
+	// BotUserID and BotUsername identify the REST token owner. They are checked
+	// before the slash-command listener accepts traffic.
+	BotUserID   string
+	BotUsername string
 }
 
 // CommandServer receives Mattermost slash commands over HTTP and forwards them
@@ -124,7 +128,7 @@ func (s *CommandServer) Start(ctx context.Context) error { return s.onStart(ctx)
 // Stop shuts the receiver down.
 func (s *CommandServer) Stop(ctx context.Context) error { return s.onStop(ctx) }
 
-func (s *CommandServer) onStart(context.Context) error {
+func (s *CommandServer) onStart(ctx context.Context) error {
 	if !s.config.Enabled {
 		s.logger.Debug().Msg("mattermost slash commands disabled; skipping command server start")
 		return nil
@@ -141,6 +145,12 @@ func (s *CommandServer) onStart(context.Context) error {
 	}
 	if strings.TrimSpace(s.config.Token) == "" {
 		return fmt.Errorf("mattermost slash command token is required when slash commands are enabled")
+	}
+	if s.client == nil {
+		return fmt.Errorf("mattermost slash commands require a client")
+	}
+	if err := s.client.ValidateIdentity(ctx, s.config.BotUserID, s.config.BotUsername); err != nil {
+		return err
 	}
 	listenAddr := strings.TrimSpace(s.config.ListenAddr)
 	if listenAddr == "" {

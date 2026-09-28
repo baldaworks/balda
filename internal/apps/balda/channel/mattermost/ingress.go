@@ -106,7 +106,7 @@ func (s *Ingress) Start(ctx context.Context) error { return s.onStart(ctx) }
 // Stop closes the websocket and drains in-flight processing.
 func (s *Ingress) Stop(ctx context.Context) error { return s.onStop(ctx) }
 
-func (s *Ingress) onStart(_ context.Context) error {
+func (s *Ingress) onStart(ctx context.Context) error {
 	if !s.enabled {
 		s.logger.Info().Msg("mattermost ingress disabled; skipping start")
 		return nil
@@ -119,6 +119,12 @@ func (s *Ingress) onStart(_ context.Context) error {
 	}
 	if strings.TrimSpace(s.botUserID) == "" {
 		return fmt.Errorf("mattermost ingress requires a bot user id")
+	}
+	if strings.TrimSpace(s.botUsername) == "" {
+		return fmt.Errorf("mattermost ingress requires a bot username")
+	}
+	if err := s.client.ValidateIdentity(ctx, s.botUserID, s.botUsername); err != nil {
+		return err
 	}
 	if s.processSem == nil {
 		s.processSem = make(chan struct{}, websocketMaxConcurrentTasks)

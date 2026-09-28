@@ -11,14 +11,16 @@ import (
 type CommandServerParams struct {
 	fx.In
 
-	Processor  mattermost.InboundProcessor
-	Commands   *commandcmd.Registry
-	Client     *mattermost.Client
-	Enabled    bool   `name:"balda_mattermost_commands_enabled"`
-	ListenAddr string `name:"balda_mattermost_commands_listen_addr"`
-	Path       string `name:"balda_mattermost_commands_path"`
-	Token      string `name:"balda_mattermost_commands_token"`
-	Logger     zerolog.Logger
+	Processor   mattermost.InboundProcessor
+	Commands    *commandcmd.Registry
+	Client      *mattermost.Client
+	Enabled     bool   `name:"balda_mattermost_commands_enabled"`
+	ListenAddr  string `name:"balda_mattermost_commands_listen_addr"`
+	Path        string `name:"balda_mattermost_commands_path"`
+	Token       string `name:"balda_mattermost_commands_token"`
+	BotUserID   string `name:"balda_mattermost_bot_user_id"`
+	BotUsername string `name:"balda_mattermost_bot_username"`
+	Logger      zerolog.Logger
 }
 
 // NewCommandServer builds the Mattermost slash-command HTTP receiver.
@@ -28,10 +30,12 @@ func NewCommandServer(params CommandServerParams) *mattermost.CommandServer {
 		Commands:  params.Commands,
 		Client:    params.Client,
 		Config: mattermost.CommandServerConfig{
-			Enabled:    params.Enabled,
-			ListenAddr: params.ListenAddr,
-			Path:       params.Path,
-			Token:      params.Token,
+			Enabled:     params.Enabled,
+			ListenAddr:  params.ListenAddr,
+			Path:        params.Path,
+			Token:       params.Token,
+			BotUserID:   params.BotUserID,
+			BotUsername: params.BotUsername,
 		},
 		Logger: params.Logger,
 	})
