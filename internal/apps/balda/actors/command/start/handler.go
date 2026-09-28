@@ -199,7 +199,11 @@ func (h *Handler) handleChannelToken(ctx context.Context, env actorlayer.Envelop
 	if h.channelAuth == nil {
 		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Token authentication is unavailable right now.", "start-auth-unavailable")
 	}
-	subject := userSubject(p.Transport, p.Principal)
+	subject, err := userSubject(p.Transport, p.Principal)
+	if err != nil {
+		h.logger.Warn().Err(err).Str("transport", p.Transport).Msg("invalid principal for owner bind")
+		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Failed to process token. Please try again.", "start-token-failed")
+	}
 	consumed, err := h.channelAuth.ConsumeOwnerBind(ctx, p.Transport, subject, token)
 	if err != nil {
 		h.logger.Warn().Err(err).Str("principal", p.Principal).Str("transport", p.Transport).Msg("failed to consume owner bind token")
@@ -210,7 +214,11 @@ func (h *Handler) handleChannelToken(ctx context.Context, env actorlayer.Envelop
 	}
 
 	if p.Transport == transportTelegram && h.ownerStore != nil {
-		userID, chatID := parseTelegramPrincipal(p)
+		userID, chatID, err := parseTelegramPrincipal(p)
+		if err != nil {
+			h.logger.Warn().Err(err).Msg("invalid Telegram principal for owner bind")
+			return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Failed to connect Telegram account. Please try again.", "start-bind-failed")
+		}
 		if err := h.ownerStore.BindOwnerTelegram(userID, chatID); err != nil {
 			h.logger.Warn().Err(err).Int64("user_id", userID).Msg("failed to bind telegram owner")
 			return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Failed to connect Telegram account. Please try again.", "start-bind-failed")
@@ -235,8 +243,12 @@ func (h *Handler) handleExistingOwnerState(ctx context.Context, env actorlayer.E
 	if h.isOwner(p) {
 		var startErr error
 		if p.Transport == transportTelegram && h.ownerStore != nil {
-			userID, chatID := parseTelegramPrincipal(p)
-			startErr = h.ownerStore.BindOwnerTelegram(userID, chatID)
+			userID, chatID, err := parseTelegramPrincipal(p)
+			if err != nil {
+				startErr = err
+			} else {
+				startErr = h.ownerStore.BindOwnerTelegram(userID, chatID)
+			}
 			if startErr != nil {
 				h.logger.Warn().Err(startErr).Msg("failed to update owner chatID")
 			}
@@ -245,9 +257,10 @@ func (h *Handler) handleExistingOwnerState(ctx context.Context, env actorlayer.E
 			startErr = h.activator.ActivateOwner(ctx, p.Locator, p.Principal)
 		}
 		msg := "You are already registered as the bot owner."
-		subject := userSubject(p.Transport, p.Principal)
-		if bundle, ok := ownerBindBundle(ctx, h.channelAuth, subject); ok {
-			msg += "\n\n" + bundle
+		if subject, err := userSubject(p.Transport, p.Principal); err == nil {
+			if bundle, ok := ownerBindBundle(ctx, h.channelAuth, subject); ok {
+				msg += "\n\n" + bundle
+			}
 		}
 		if startErr != nil {
 			msg += "\n\nCould not start owner session. Please try again."
@@ -256,8 +269,10 @@ func (h *Handler) handleExistingOwnerState(ctx context.Context, env actorlayer.E
 	}
 
 	if h.collaboratorStore != nil {
-		subject := userSubject(p.Transport, p.Principal)
-		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, subject); err != nil {
+		subject, err := userSubject(p.Transport, p.Principal)
+		if err != nil {
+			h.logger.Warn().Err(err).Str("transport", p.Transport).Msg("invalid principal during /start")
+		} else if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, subject); err != nil {
 			h.logger.Warn().Err(err).Str("principal", p.Principal).Msg("failed to check collaborator during /start")
 		} else if ok {
 			return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "You are already a bot collaborator.", "start-already-collaborator")
@@ -296,11 +311,17 @@ func (h *Handler) handleUnregisteredState(ctx context.Context, env actorlayer.En
 	var registered bool
 	var err error
 	if p.Transport == transportTelegram {
-		userID, chatID := parseTelegramPrincipal(p)
-		registered, err = h.ownerStore.RegisterOwner(userID, chatID)
+		var userID, chatID int64
+		userID, chatID, err = parseTelegramPrincipal(p)
+		if err == nil {
+			registered, err = h.ownerStore.RegisterOwner(userID, chatID)
+		}
 	} else {
-		subject := userSubject(p.Transport, p.Principal)
-		registered, err = h.ownerStore.RegisterOwnerSubject(subject)
+		var subject string
+		subject, err = userSubject(p.Transport, p.Principal)
+		if err == nil {
+			registered, err = h.ownerStore.RegisterOwnerSubject(subject)
+		}
 	}
 	if err != nil {
 		h.logger.Error().Err(err).Str("principal", p.Principal).Msg("failed to register owner")
@@ -328,9 +349,10 @@ func (h *Handler) handleUnregisteredState(ctx context.Context, env actorlayer.En
 	}
 
 	text := "You are now registered as the bot owner."
-	subject := userSubject(p.Transport, p.Principal)
-	if bundle, ok := ownerBindBundle(ctx, h.channelAuth, subject); ok {
-		text += "\n\n" + bundle
+	if subject, err := userSubject(p.Transport, p.Principal); err == nil {
+		if bundle, ok := ownerBindBundle(ctx, h.channelAuth, subject); ok {
+			text += "\n\n" + bundle
+		}
 	}
 	return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, text, "start-registered")
 }
@@ -339,9 +361,13 @@ func (h *Handler) handleInvite(ctx context.Context, env actorlayer.Envelope, p c
 	if h.isOwner(p) {
 		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "You are already the bot owner.", "start-already-owner")
 	}
+	subject, err := userSubject(p.Transport, p.Principal)
+	if err != nil {
+		h.logger.Warn().Err(err).Str("transport", p.Transport).Msg("invalid principal during invite")
+		return commandactor.SendPlain(ctx, h.dispatcher, env.ID, p.Locator, "Failed to complete registration. Please try again.", "start-invite-add-failed")
+	}
 
 	if h.collaboratorStore != nil {
-		subject := userSubject(p.Transport, p.Principal)
 		if _, ok, err := h.collaboratorStore.GetCollaborator(ctx, subject); err != nil {
 			h.logger.Warn().Err(err).Str("principal", p.Principal).Msg("failed to check collaborator during invite")
 		} else if ok {
@@ -376,7 +402,7 @@ func (h *Handler) handleInvite(ctx context.Context, env actorlayer.Envelope, p c
 	}
 
 	collaborator := auth.Collaborator{
-		UserID:  userSubject(p.Transport, p.Principal),
+		UserID:  subject,
 		AddedBy: invite.CreatedBy,
 		AddedAt: time.Now(),
 	}
@@ -397,38 +423,65 @@ func (h *Handler) isOwner(p commandcmd.Payload) bool {
 		return true
 	}
 	if p.Transport == transportTelegram {
-		if id, err := strconv.ParseInt(strings.TrimSpace(p.Principal), 10, 64); err == nil {
-			return h.ownerStore.IsOwner(id)
+		identity, err := resolveTelegramIdentity(p.Principal)
+		if err != nil {
+			return false
 		}
+		return h.ownerStore.IsOwner(identity.userID)
 	}
-	subject := userSubject(p.Transport, p.Principal)
+	subject, err := userSubject(p.Transport, p.Principal)
+	if err != nil {
+		return false
+	}
 	return h.ownerStore.IsOwnerSubject(subject)
 }
 
-func userSubject(transport, principal string) string {
+type telegramIdentity struct {
+	userID  int64
+	subject string
+}
+
+func resolveTelegramIdentity(principal string) (telegramIdentity, error) {
+	trimmed := strings.TrimSpace(principal)
+	userID, err := telegramref.ParseUserID(trimmed)
+	if err != nil {
+		userID, err = strconv.ParseInt(trimmed, 10, 64)
+	}
+	if err != nil || userID <= 0 {
+		return telegramIdentity{}, fmt.Errorf("invalid Telegram principal %q", principal)
+	}
+	return telegramIdentity{userID: userID, subject: auth.TelegramSubject(userID)}, nil
+}
+
+func userSubject(transport, principal string) (string, error) {
 	trimmed := strings.TrimSpace(principal)
 	switch transport {
 	case transportTelegram:
-		if id, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
-			return auth.TelegramSubject(id)
+		identity, err := resolveTelegramIdentity(trimmed)
+		if err != nil {
+			return "", err
 		}
+		return identity.subject, nil
 	case transportZulip:
 		if id, err := strconv.Atoi(trimmed); err == nil {
-			return auth.ZulipSubject(id)
+			return auth.ZulipSubject(id), nil
 		}
 	case transportMattermost:
-		return auth.MattermostSubject(trimmed)
+		return auth.MattermostSubject(trimmed), nil
 	}
-	return transport + ":" + trimmed
+	return transport + ":" + trimmed, nil
 }
 
-func parseTelegramPrincipal(p commandcmd.Payload) (int64, int64) {
-	userID, _ := strconv.ParseInt(strings.TrimSpace(p.Principal), 10, 64)
+func parseTelegramPrincipal(p commandcmd.Payload) (int64, int64, error) {
+	identity, err := resolveTelegramIdentity(p.Principal)
+	if err != nil {
+		return 0, 0, err
+	}
 	address, ok, err := telegramref.DecodeLocator(p.Locator)
 	if err == nil && ok {
-		return userID, address.ChatID
+		return identity.userID, address.ChatID, nil
 	}
-	return userID, 0
+	return identity.userID, 0, nil
 }
 
 func transportDisplayName(transport string) string {

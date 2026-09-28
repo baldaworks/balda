@@ -28,6 +28,9 @@ const (
 	websocketHandshakeTimeout = 20 * time.Second
 	// websocketMaxConcurrentTasks bounds in-flight inbound processing.
 	websocketMaxConcurrentTasks = 16
+	// websocketProcessMaxAttempts bounds retries for transient ingress failures.
+	websocketProcessMaxAttempts  = 3
+	websocketProcessRetryBackoff = 250 * time.Millisecond
 	// websocketActionPing is the keepalive action Mattermost accepts on a client frame.
 	websocketActionPing = "ping"
 )
@@ -40,11 +43,12 @@ const (
 // websocket API is the correct ingress for a bot that must see all message
 // kinds (including edits and deletes).
 type Ingress struct {
-	processor InboundProcessor
-	client    *Client
-	commands  commandSupport
-	enabled   bool
-	logger    zerolog.Logger
+	processor    InboundProcessor
+	client       *Client
+	threadLookup func(context.Context, string) (PostThread, error)
+	commands     commandSupport
+	enabled      bool
+	logger       zerolog.Logger
 
 	botUserID   string
 	botUsername string
@@ -167,17 +171,24 @@ func (s *Ingress) onStop(ctx context.Context) error {
 		_ = conn.Close()
 	}
 
-	waitErr := s.waitForProcessing(ctx)
-	if done != nil {
-		select {
-		case <-done:
-		case <-ctx.Done():
-			if waitErr == nil {
-				waitErr = fmt.Errorf("wait for mattermost ingress shutdown: %w", ctx.Err())
-			}
-		}
+	// The producer owns processWG.Add. Stop it before waiting on the group;
+	// waiting concurrently with a producer that can still Add is invalid.
+	if err := s.waitForProducer(ctx, done); err != nil {
+		return err
 	}
-	return waitErr
+	return s.waitForProcessing(ctx)
+}
+
+func (s *Ingress) waitForProducer(ctx context.Context, done <-chan struct{}) error {
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for mattermost ingress producer shutdown: %w", ctx.Err())
+	}
 }
 
 func (s *Ingress) waitForProcessing(ctx context.Context) error {
@@ -435,6 +446,17 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 				Msg("dropping posted event: bot not mentioned")
 			return
 		}
+		if strings.TrimSpace(post.RootID) != "" && !MentionsBot(text, s.botUsername) {
+			thread, err := s.lookupThread(ctx, post.RootID)
+			if err != nil {
+				s.logger.Warn().Err(err).Str("root_id", post.RootID).Msg("dropping Mattermost thread reply because thread membership could not be verified")
+				return
+			}
+			if !threadContainsBot(thread, s.botUserID) {
+				s.logger.Debug().Str("root_id", post.RootID).Msg("dropping Mattermost reply to a thread without a bot post")
+				return
+			}
+		}
 		text = StripMention(text, s.botUsername)
 	}
 	if text == "" {
@@ -451,7 +473,23 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 	if name, args, ok := ParseCommand(text); ok {
 		if s.commands == nil || !s.commands.Supports(ChannelType, name) {
 			if s.processor != nil {
-				_ = s.processor.HandleUnsupportedCommand(ctx, InboundCommand{
+				s.processCommandWithRetry(ctx, post.ID, func() error {
+					return s.processor.HandleUnsupportedCommand(ctx, InboundCommand{
+						Locator:   locator,
+						MessageID: ParsePostID(post.ID),
+						PostID:    post.ID,
+						SenderID:  post.UserID,
+						Command:   name,
+						Args:      args,
+						Direct:    direct,
+					})
+				})
+			}
+			return
+		}
+		if s.processor != nil {
+			s.processCommandWithRetry(ctx, post.ID, func() error {
+				return s.processor.HandleCommand(ctx, InboundCommand{
 					Locator:   locator,
 					MessageID: ParsePostID(post.ID),
 					PostID:    post.ID,
@@ -460,18 +498,6 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 					Args:      args,
 					Direct:    direct,
 				})
-			}
-			return
-		}
-		if s.processor != nil {
-			_ = s.processor.HandleCommand(ctx, InboundCommand{
-				Locator:   locator,
-				MessageID: ParsePostID(post.ID),
-				PostID:    post.ID,
-				SenderID:  post.UserID,
-				Command:   name,
-				Args:      args,
-				Direct:    direct,
 			})
 		}
 		return
@@ -480,7 +506,7 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 	if s.processor == nil {
 		return
 	}
-	if _, err := s.processor.ProcessInbound(ctx, InboundMessage{
+	s.processInboundWithRetry(ctx, post.ID, InboundMessage{
 		Locator:    locator,
 		MessageID:  ParsePostID(post.ID),
 		PostID:     post.ID,
@@ -490,8 +516,71 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 		Text:       text,
 		Direct:     direct,
 		ReceivedAt: postTime(post),
-	}); err != nil {
-		s.logger.Warn().Err(err).Str("post_id", post.ID).Msg("mattermost inbound processing failed")
+	})
+}
+
+func (s *Ingress) lookupThread(ctx context.Context, rootID string) (PostThread, error) {
+	if s.threadLookup != nil {
+		return s.threadLookup(ctx, rootID)
+	}
+	return s.client.GetPostThread(ctx, rootID)
+}
+
+func (s *Ingress) processCommandWithRetry(ctx context.Context, postID string, process func() error) {
+	for attempt := 1; attempt <= websocketProcessMaxAttempts; attempt++ {
+		if err := process(); err == nil {
+			return
+		} else if attempt == websocketProcessMaxAttempts {
+			s.logger.Warn().Err(err).Int("attempts", attempt).Str("post_id", postID).Msg("mattermost command retry budget exhausted")
+			return
+		}
+		timer := time.NewTimer(time.Duration(attempt) * websocketProcessRetryBackoff)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
+	}
+}
+
+func threadContainsBot(thread PostThread, botUserID string) bool {
+	botUserID = strings.TrimSpace(botUserID)
+	if botUserID == "" {
+		return false
+	}
+	for _, post := range thread.Posts {
+		if strings.TrimSpace(post.UserID) == botUserID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Ingress) processInboundWithRetry(ctx context.Context, postID string, message InboundMessage) {
+	for attempt := 1; attempt <= websocketProcessMaxAttempts; attempt++ {
+		settlement, err := s.processor.ProcessInbound(ctx, message)
+		if settlement.Outcome != turncmd.InboundRetry {
+			if err != nil {
+				s.logger.Warn().Err(err).Str("post_id", postID).Msg("mattermost inbound processing failed")
+			}
+			return
+		}
+		if attempt == websocketProcessMaxAttempts {
+			s.logger.Warn().Err(err).Int("attempts", attempt).Str("post_id", postID).Msg("mattermost inbound retry budget exhausted")
+			return
+		}
+		timer := time.NewTimer(time.Duration(attempt) * websocketProcessRetryBackoff)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
 	}
 }
 

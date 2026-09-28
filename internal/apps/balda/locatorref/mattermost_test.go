@@ -31,8 +31,8 @@ func TestParseMattermostChannel(t *testing.T) {
 	if thread.AddressKey != "c:channel-1:root-1" {
 		t.Fatalf("AddressKey = %q, want c:channel-1:root-1", thread.AddressKey)
 	}
-	if thread.SessionID == conversation.SessionID {
-		t.Fatalf("thread and channel parsed to the same session %q", thread.SessionID)
+	if thread.SessionID != conversation.SessionID {
+		t.Fatalf("thread and channel must share the channel-wide session: %q vs %q", thread.SessionID, conversation.SessionID)
 	}
 }
 

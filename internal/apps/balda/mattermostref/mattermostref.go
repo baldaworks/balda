@@ -49,9 +49,6 @@ func SessionID(address Address) string {
 	channelID := strings.TrimSpace(address.ChannelID)
 	switch strings.TrimSpace(address.Type) {
 	case AddressTypeChannel:
-		if rootID := strings.TrimSpace(address.RootID); rootID != "" {
-			return "mm-t-" + shortHash(channelID+"|"+rootID)
-		}
 		return "mm-c-" + shortHash(channelID)
 	case AddressTypeDM:
 		return "mm-dm-" + shortHash(channelID)

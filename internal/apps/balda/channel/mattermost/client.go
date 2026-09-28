@@ -130,6 +130,11 @@ type Post struct {
 	Type      string `json:"type"`
 }
 
+// PostThread is the response returned by Mattermost's thread endpoint.
+type PostThread struct {
+	Posts map[string]Post `json:"posts"`
+}
+
 // Channel is the Mattermost channel resource (subset used by Balda).
 type Channel struct {
 	ID          string `json:"id"`
@@ -247,6 +252,23 @@ func (c *Client) GetPost(ctx context.Context, postID string) (Post, error) {
 		return Post{}, fmt.Errorf("decode mattermost get post response: %w", err)
 	}
 	return post, nil
+}
+
+// GetPostThread fetches the root post and replies for a Mattermost thread.
+func (c *Client) GetPostThread(ctx context.Context, postID string) (PostThread, error) {
+	if strings.TrimSpace(postID) == "" {
+		return PostThread{}, fmt.Errorf("mattermost get post thread requires post_id")
+	}
+	path := "/posts/" + url.PathEscape(strings.TrimSpace(postID)) + "/thread"
+	response, err := c.do(ctx, http.MethodGet, path, nil, "")
+	if err != nil {
+		return PostThread{}, err
+	}
+	var thread PostThread
+	if err := json.Unmarshal(response, &thread); err != nil {
+		return PostThread{}, fmt.Errorf("decode mattermost get post thread response: %w", err)
+	}
+	return thread, nil
 }
 
 // GetChannel fetches one channel by ID.

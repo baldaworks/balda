@@ -73,17 +73,17 @@ func TestPublicLocatorParseMatchesLiveSessionIdentity(t *testing.T) {
 	}
 }
 
-func TestNewChannelLocatorScopesThreadToRootPost(t *testing.T) {
+func TestNewChannelLocatorKeepsOneSessionAcrossThreads(t *testing.T) {
 	channelLocator := NewChannelLocator(testTeamID, testChannelID, "")
 	threadLocator := NewChannelLocator(testTeamID, testChannelID, "root-9")
 
-	// A thread must stay inside the same channel but be its own conversation:
-	// the address key gains the root id and the session id differs.
+	// A thread keeps its delivery root in the address key, while the channel
+	// remains one conversational session.
 	if got, want := threadLocator.AddressKey, "c:channel-1:root-9"; got != want {
 		t.Fatalf("thread AddressKey = %q, want %q", got, want)
 	}
-	if threadLocator.SessionID == channelLocator.SessionID {
-		t.Fatalf("thread SessionID = channel SessionID = %q, want distinct", threadLocator.SessionID)
+	if threadLocator.SessionID != channelLocator.SessionID {
+		t.Fatalf("thread SessionID = %q, want channel SessionID %q", threadLocator.SessionID, channelLocator.SessionID)
 	}
 	if got := ChannelIDOf(threadLocator); got != testChannelID {
 		t.Fatalf("ChannelIDOf(thread) = %q, want %q", got, testChannelID)

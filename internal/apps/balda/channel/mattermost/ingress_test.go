@@ -20,24 +20,31 @@ import (
 
 // recordingProcessor captures everything the ingress hands to the processor.
 type recordingProcessor struct {
-	mu            sync.Mutex
-	inbound       []InboundMessage
-	commands      []InboundCommand
-	unsupported   []InboundCommand
-	inboundResult turncmd.InboundSettlement
-	inboundErr    error
-	inboundDone   chan struct{}
+	mu                sync.Mutex
+	inbound           []InboundMessage
+	commands          []InboundCommand
+	unsupported       []InboundCommand
+	inboundResult     turncmd.InboundSettlement
+	inboundErr        error
+	inboundRetryCount int
+	inboundAttempts   int
+	inboundDone       chan struct{}
 }
 
 func (p *recordingProcessor) ProcessInbound(_ context.Context, msg InboundMessage) (turncmd.InboundSettlement, error) {
 	p.mu.Lock()
 	p.inbound = append(p.inbound, msg)
+	p.inboundAttempts++
+	attempt := p.inboundAttempts
 	p.mu.Unlock()
 	if p.inboundDone != nil {
 		select {
 		case p.inboundDone <- struct{}{}:
 		default:
 		}
+	}
+	if attempt <= p.inboundRetryCount {
+		return turncmd.InboundSettlement{Outcome: turncmd.InboundRetry}, errors.New("transient processing failure")
 	}
 	return p.inboundResult, p.inboundErr
 }
@@ -99,7 +106,7 @@ func postedEventPayload(t *testing.T, post Post, channelType, senderName string)
 }
 
 func newTestIngress(processor InboundProcessor, botUserID, botUsername string) *Ingress {
-	return NewIngress(IngressParams{
+	ingress := NewIngress(IngressParams{
 		Processor: processor,
 		Client:    NewClient("http://localhost:8065", "token", botUserID),
 		Commands: commandcmd.NewRegistryWithAdvertisements([]commandcmd.Advertisement{{
@@ -112,6 +119,10 @@ func newTestIngress(processor InboundProcessor, botUserID, botUsername string) *
 		BotUsername: botUsername,
 		Logger:      zerolog.Nop(),
 	})
+	ingress.threadLookup = func(context.Context, string) (PostThread, error) {
+		return PostThread{Posts: map[string]Post{"bot-reply": {UserID: botUserID}}}, nil
+	}
+	return ingress
 }
 
 func TestHandleFrameDispatchesChannelMentionToProcessor(t *testing.T) {
@@ -190,6 +201,29 @@ func TestHandleFrameProcessesThreadReplyWithoutMention(t *testing.T) {
 	messages := processor.inboundMessages()
 	if len(messages) != 1 || messages[0].RootID != "question-1" || messages[0].Text != "2" {
 		t.Fatalf("inbound messages = %+v, want one reply in question-1 with text 2", messages)
+	}
+}
+
+func TestHandleFrameDropsReplyToThreadWithoutBotPost(t *testing.T) {
+	processor := &recordingProcessor{inboundDone: make(chan struct{}, 1)}
+	ingress := newTestIngress(processor, "bot-1", "balda")
+	ingress.threadLookup = func(context.Context, string) (PostThread, error) {
+		return PostThread{Posts: map[string]Post{"user-post": {UserID: "user-2"}}}, nil
+	}
+
+	frame := postedEventPayload(t, Post{
+		ID:        "reply-1",
+		UserID:    "user-1",
+		ChannelID: "channel-1",
+		RootID:    "unrelated-root",
+		Message:   "hello",
+	}, channelTypeOpen, "Alice")
+	ingress.handleFrame(context.Background(), frame)
+
+	select {
+	case <-processor.inboundDone:
+		t.Fatal("reply to a thread without a bot post must not reach the processor")
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 
@@ -618,6 +652,28 @@ func TestProcessInboundErrorDoesNotKillIngress(t *testing.T) {
 	messages := processor.inboundMessages()
 	if len(messages) != 1 {
 		t.Fatalf("ProcessInbound called %d times, want 1", len(messages))
+	}
+}
+
+func TestProcessInboundRetriesRetryableSettlement(t *testing.T) {
+	processor := &recordingProcessor{
+		inboundRetryCount: 2,
+		inboundResult:     turncmd.InboundSettlement{Outcome: turncmd.InboundAccepted},
+	}
+	ingress := newTestIngress(processor, "bot-1", "balda")
+
+	ingress.processPosted(context.Background(), PostedData{ChannelType: channelTypeDirect}, Post{
+		ID:        "post-retry",
+		UserID:    "user-1",
+		ChannelID: "dm-channel-1",
+		Message:   "retry me",
+	})
+
+	processor.mu.Lock()
+	attempts := processor.inboundAttempts
+	processor.mu.Unlock()
+	if attempts != 3 {
+		t.Fatalf("ProcessInbound attempts = %d, want 3", attempts)
 	}
 }
 
