@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
@@ -13,8 +15,27 @@ import (
 )
 
 func backofficeCommand() *cobra.Command {
-	command := &cobra.Command{Use: "backoffice", Short: "Maintain Backoffice users"}
-	command.AddCommand(bootstrapAdminCommand(), migrateUsersCommand())
+	command := &cobra.Command{Use: "backoffice", Short: "Maintain and review Backoffice"}
+	command.AddCommand(bootstrapAdminCommand(), migrateUsersCommand(), backofficeQACommand())
+	return command
+}
+
+func backofficeQACommand() *cobra.Command {
+	command := &cobra.Command{Use: "qa", Short: "Review synthetic Backoffice screens"}
+	var listenAddr string
+	serve := &cobra.Command{
+		Use:   "serve",
+		Short: "Serve the local Backoffice QA gallery",
+		RunE: func(command *cobra.Command, _ []string) error {
+			ctx, stop := signal.NotifyContext(command.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return backoffice.ServeQA(ctx, listenAddr, func(address string) {
+				_, _ = fmt.Fprintf(command.OutOrStdout(), "Backoffice QA: http://%s/qa/ui/\n", address)
+			})
+		},
+	}
+	serve.Flags().StringVar(&listenAddr, "listen", "127.0.0.1:8096", "loopback address for the QA gallery")
+	command.AddCommand(serve)
 	return command
 }
 
