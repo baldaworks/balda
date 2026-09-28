@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const expectedSQLiteMigrationVersion = 38
+const expectedSQLiteMigrationVersion = 39
 
 func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))
@@ -48,17 +48,17 @@ func TestSQLitePrimaryAdministratorUsernameMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGooseVersion(t, t.Context(), db, expectedSQLiteMigrationVersion)
-	var username, normalized, role, passwordHash, principal string
+	var username, normalized, displayName, role, passwordHash, principal string
 	var userVersion, credentialVersion, sessionCount int
-	if err := db.QueryRowContext(t.Context(), `SELECT username, normalized_username, role, password_hash,
+	if err := db.QueryRowContext(t.Context(), `SELECT username, normalized_username, display_name, role, password_hash,
 		version, credential_version FROM balda_users WHERE user_id = 'admin-1'`).Scan(
-		&username, &normalized, &role, &passwordHash, &userVersion, &credentialVersion,
+		&username, &normalized, &displayName, &role, &passwordHash, &userVersion, &credentialVersion,
 	); err != nil {
 		t.Fatal(err)
 	}
-	if username != "superuser" || normalized != "superuser" || role != "administrator" ||
-		passwordHash != "hash" || userVersion != 2 || credentialVersion != 1 {
-		t.Fatalf("migrated primary = %q/%q %q hash=%q versions=%d/%d", username, normalized, role, passwordHash, userVersion, credentialVersion)
+	if username != "superuser" || normalized != "superuser" || displayName != "superuser" || role != "administrator" ||
+		passwordHash != "hash" || userVersion != 3 || credentialVersion != 1 {
+		t.Fatalf("migrated primary = %q/%q/%q %q hash=%q versions=%d/%d", username, normalized, displayName, role, passwordHash, userVersion, credentialVersion)
 	}
 	if err := db.QueryRowContext(t.Context(), `SELECT principal FROM balda_user_bindings WHERE user_id = 'admin-1'`).Scan(&principal); err != nil {
 		t.Fatal(err)

@@ -292,7 +292,7 @@ func sourceRecords(input Input) ([]sourceRecord, []string, error) {
 		if strings.TrimSpace(subject) == "" {
 			continue
 		}
-		if err := add(subject, string(usercmd.RoleAdministrator), "Legacy owner", ownerProvenance); err != nil {
+		if err := add(subject, string(usercmd.RoleAdministrator), usercmd.PrimaryUsername, ownerProvenance); err != nil {
 			return nil, nil, err
 		}
 	}

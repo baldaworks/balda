@@ -67,7 +67,7 @@ func TestMigratorBuildsCanonicalUsersAndSecureManifest(t *testing.T) {
 	if primary.Binding == nil || primary.Binding.ChannelType != testChannelTelegram || primary.Binding.Principal != "101" {
 		t.Fatalf("primary entry = %+v", primary)
 	}
-	if primary.User.Username != usercmd.PrimaryUsername || primary.User.Role != usercmd.RoleAdministrator {
+	if primary.User.Username != usercmd.PrimaryUsername || primary.User.DisplayName != usercmd.PrimaryUsername || primary.User.Role != usercmd.RoleAdministrator {
 		t.Fatalf("primary identity = %+v", primary.User)
 	}
 	if !strings.Contains(primary.Binding.Provenance, "chat_id=909") || !strings.Contains(primary.Binding.Provenance, "registered_at=") {

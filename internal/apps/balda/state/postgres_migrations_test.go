@@ -5,6 +5,7 @@ package state
 import (
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 )
 
 var postgresTestSchemaSequence atomic.Uint64
@@ -63,8 +65,8 @@ func TestPostgresMigrations(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
-		t.Fatalf("PostgreSQL migration version = %d, want 3", version)
+	if version != 4 {
+		t.Fatalf("PostgreSQL migration version = %d, want 4", version)
 	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_plugin_installs
 		(plugin_id, origin_marketplace, origin_source, origin_path, active_revision_id, enabled, capability_json, data_relative_path, updated_at)
@@ -82,6 +84,38 @@ func TestPostgresMigrations(t *testing.T) {
 	}
 	if indexes != 27 {
 		t.Fatalf("PostgreSQL explicit indexes = %d, want 27", indexes)
+	}
+}
+
+func TestPostgresPrimaryAdministratorDisplayNameMigration(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 3); err != nil {
+		t.Fatal(err)
+	}
+	insertPostgresUser(t, db, "admin-1", "superuser", true)
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_users SET display_name = 'Legacy owner' WHERE user_id = 'admin-1'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var username, displayName, role, passwordHash string
+	var version, credentialVersion int
+	if err := db.QueryRowContext(t.Context(), `SELECT username, display_name, role, password_hash, version, credential_version FROM balda_users WHERE user_id = 'admin-1'`).Scan(
+		&username, &displayName, &role, &passwordHash, &version, &credentialVersion,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if username != "superuser" || displayName != "superuser" || role != "administrator" || passwordHash != "hash" || version != 2 || credentialVersion != 1 {
+		t.Fatalf("migrated primary = %q/%q %q hash=%q versions=%d/%d", username, displayName, role, passwordHash, version, credentialVersion)
 	}
 }
 
