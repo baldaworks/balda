@@ -422,6 +422,39 @@ func TestRuntimeStateAccessRestoresPersistedSession(t *testing.T) {
 	}
 }
 
+func TestRestoreSessionReusesActivePersistedSessionWhenLocatorIDChanged(t *testing.T) {
+	address := testTelegramLocator(10, 42)
+	legacyID := "legacy-session-id"
+	active := &TopicSession{sessionID: legacyID, locator: address}
+	record := baldastate.SessionRecord{
+		SessionID:   legacyID,
+		UserID:      "tg-201",
+		ChannelType: address.ChannelType,
+		AddressKey:  address.AddressKey,
+		AddressJSON: address.AddressJSON,
+		AgentName:   "auto",
+		Status:      baldastate.SessionStatusActive,
+	}
+	store := &fakeSessionStore{recordsByAddress: map[string]baldastate.SessionRecord{
+		sessionAddressKey(address.ChannelType, address.AddressKey): record,
+	}}
+	locator := address
+	locator.SessionID = "new-session-id"
+	m := &Manager{
+		logger:       zerolog.Nop(),
+		sessions:     map[string]*TopicSession{legacyID: active},
+		sessionStore: store,
+	}
+
+	got, err := m.RestoreSession(context.Background(), SessionContext{Locator: locator, UserID: "tg-201"})
+	if err != nil {
+		t.Fatalf("RestoreSession() error = %v", err)
+	}
+	if got != active {
+		t.Fatalf("RestoreSession() returned %p, want active session %p", got, active)
+	}
+}
+
 func TestGetSessionInfo_ReturnsActiveTransportUserID(t *testing.T) {
 	m := &Manager{
 		logger: zerolog.Nop(),
