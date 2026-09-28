@@ -418,7 +418,7 @@ func securityHeaders(next http.Handler, basePath string) http.Handler {
 		}
 		// The pinned HTMX script injects one fixed indicator stylesheet.
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'sha256-faU7yAF8NxuMTNEwVmBz+VcYeIoBQ2EMHW3WaVxCvnk='; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
