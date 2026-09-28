@@ -14,6 +14,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
 
@@ -131,19 +132,20 @@ balda:
 		t.Fatal(err)
 	}
 	bootstrapOutput := &bytes.Buffer{}
+	setBaldaAdminPasswordGenerator(t, "generated-admin-password-for-migration")
 	bootstrap, err := newRootCommand()
 	if err != nil {
 		t.Fatal(err)
 	}
-	bootstrap.SetIn(strings.NewReader("correct horse battery staple\n"))
+	bootstrap.SetIn(strings.NewReader(""))
 	bootstrap.SetOut(bootstrapOutput)
 	bootstrap.SetErr(&bytes.Buffer{})
 	bootstrap.SetArgs([]string{"backoffice", "bootstrap-admin", "--reset"})
 	if err := bootstrap.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(bootstrapOutput.String(), "correct horse battery staple") {
-		t.Fatal("bootstrap leaked password")
+	if !strings.Contains(bootstrapOutput.String(), "administrator password: generated-admin-password-for-migration") {
+		t.Fatalf("bootstrap output missing generated reset password: %q", bootstrapOutput.String())
 	}
 	provider, err = state.Open(t.Context(), database)
 	if err != nil {
@@ -168,6 +170,12 @@ balda:
 	for _, user := range page.Users {
 		if user.Primary && user.Credential.State != usercmd.CredentialStateActive {
 			t.Fatalf("primary credential state = %q, want active", user.Credential.State)
+		}
+		if user.Primary {
+			secret, found, err := provider.Users().GetCredentialSecret(t.Context(), user.ID)
+			if err != nil || !found || !userpassword.Verify(secret.PasswordHash, []byte("generated-admin-password-for-migration")) {
+				t.Fatalf("reset credential verification: found=%t error=%v", found, err)
+			}
 		}
 	}
 	revoked, found, err := provider.Users().GetSessionByAccessSelector(t.Context(), family.Access.Selector)
@@ -230,6 +238,69 @@ balda:
 	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
 	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary {
 		t.Fatalf("fresh administrator = %+v, error = %v", page, err)
+	}
+}
+
+func TestBackofficeBootstrapGeneratesPasswordWithoutInput(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+  state_dir: .config/balda
+`); err != nil {
+		t.Fatal(err)
+	}
+	setBaldaAdminPasswordGenerator(t, "generated-admin-password-for-bootstrap")
+	command, err := newRootCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := &bytes.Buffer{}
+	command.SetIn(strings.NewReader(""))
+	command.SetOut(output)
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"backoffice", "bootstrap-admin"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "administrator password: generated-admin-password-for-bootstrap") {
+		t.Fatalf("generated password missing from bootstrap output: %q", output.String())
+	}
+	provider, err := state.Open(t.Context(), state.DatabaseConfig{
+		Type: "sqlite", SQLite: state.SQLiteConfig{Path: filepath.Join(workingDir, ".config", "balda", "state.db")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
+	if err != nil || len(page.Users) != 1 {
+		t.Fatalf("administrator lookup: %+v, %v", page, err)
+	}
+	secret, found, err := provider.Users().GetCredentialSecret(t.Context(), page.Users[0].ID)
+	if err != nil || !found || !userpassword.Verify(secret.PasswordHash, []byte("generated-admin-password-for-bootstrap")) {
+		t.Fatalf("generated password verification: found=%t error=%v", found, err)
+	}
+	failedOutput := &bytes.Buffer{}
+	failed, err := newRootCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed.SetIn(strings.NewReader(""))
+	failed.SetOut(failedOutput)
+	failed.SetErr(&bytes.Buffer{})
+	failed.SetArgs([]string{"backoffice", "bootstrap-admin"})
+	if err := failed.Execute(); err == nil {
+		t.Fatal("second bootstrap unexpectedly replaced an active credential")
+	}
+	if strings.Contains(failedOutput.String(), "generated-admin-password-for-bootstrap") {
+		t.Fatal("failed bootstrap printed a generated password")
 	}
 }
 

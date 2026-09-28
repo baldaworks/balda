@@ -46,6 +46,37 @@ func TestBrowserLoginSetsStrictScopedCookiesAndSafeRedirect(t *testing.T) {
 	assertSecurityCookie(t, cookies, CSRFCookieName, "/", "session-csrf", true)
 }
 
+func TestBrowserBasePathScopesCookiesAndReturnPaths(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	service := &fakeBrowserService{login: func(context.Context, string, []byte) (Credentials, error) {
+		return Credentials{
+			AccessToken: "access", RefreshToken: "refresh", CSRFToken: "csrf",
+			AccessExpiresAt: now.Add(15 * time.Minute), RefreshExpiresAt: now.Add(time.Hour),
+			Assurance: usercmd.SessionAssuranceNormal,
+		}, nil
+	}}
+	browser, err := NewBrowser(service, HTTPConfig{TrustedOrigin: "https://backoffice.example", SecureCookies: true, BasePath: "/balda"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := mutationRequest(http.MethodPost, "/balda/login", url.Values{
+		"username": {"admin"}, "password": {testPassword}, "csrf_token": {"csrf-proof"},
+		"return_to": {"/balda/access?tab=users"},
+	})
+	request.Header.Set("Origin", "https://backoffice.example")
+	response := httptest.NewRecorder()
+	browser.Login(response, request)
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/balda/access?tab=users" {
+		t.Fatalf("prefixed login = %d %q", response.Code, response.Header().Get("Location"))
+	}
+	assertSecurityCookie(t, response.Result().Cookies(), AccessCookieName, "/balda/", "access", true)
+	assertSecurityCookie(t, response.Result().Cookies(), RefreshCookieName, "/balda"+RefreshPath, "refresh", true)
+	if got := browser.SafeReturnPath("/access", "/balda/overview"); got != "/balda/overview" {
+		t.Errorf("unprefixed return path = %q", got)
+	}
+}
+
 func TestBrowserRefreshRotatesCookiesAndNeverReplaysUnsafeRequest(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)

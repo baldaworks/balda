@@ -2,6 +2,8 @@
 package userpassword
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -19,6 +21,20 @@ const (
 
 // ErrInvalidPassword reports a password outside the supported bounds.
 var ErrInvalidPassword = errors.New("invalid password")
+
+// Generate returns a 256-bit URL-safe password for one-time display.
+func Generate() ([]byte, error) {
+	random := make([]byte, 32)
+	if _, err := rand.Read(random); err != nil {
+		return nil, fmt.Errorf("generate password: %w", err)
+	}
+	password := make([]byte, base64.RawURLEncoding.EncodedLen(len(random)))
+	base64.RawURLEncoding.Encode(password, random)
+	for i := range random {
+		random[i] = 0
+	}
+	return password, nil
+}
 
 // Hash returns an adaptive, salted password hash.
 func Hash(password []byte) (string, error) {

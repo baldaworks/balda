@@ -104,6 +104,12 @@ type ErrorView struct {
 	Message string
 }
 
+// QALink identifies one synthetic preview in the QA gallery.
+type QALink struct {
+	Label string
+	Path  string
+}
+
 // Page is the closed safe model accepted by production templates.
 type Page struct {
 	Title           string
@@ -121,6 +127,8 @@ type Page struct {
 	AuditOutcome    string
 	AuditTargetType string
 	NextURL         string
+	Gallery         []QALink
+	Preview         bool
 }
 
 // Navigation derives visible workspaces only from current server capabilities.

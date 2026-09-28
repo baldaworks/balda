@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
@@ -13,8 +15,27 @@ import (
 )
 
 func backofficeCommand() *cobra.Command {
-	command := &cobra.Command{Use: "backoffice", Short: "Maintain Backoffice users"}
-	command.AddCommand(bootstrapAdminCommand(), migrateUsersCommand())
+	command := &cobra.Command{Use: "backoffice", Short: "Maintain and review Backoffice"}
+	command.AddCommand(bootstrapAdminCommand(), migrateUsersCommand(), backofficeQACommand())
+	return command
+}
+
+func backofficeQACommand() *cobra.Command {
+	command := &cobra.Command{Use: "qa", Short: "Review synthetic Backoffice screens"}
+	var listenAddr string
+	serve := &cobra.Command{
+		Use:   "serve",
+		Short: "Serve the local Backoffice QA gallery",
+		RunE: func(command *cobra.Command, _ []string) error {
+			ctx, stop := signal.NotifyContext(command.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return backoffice.ServeQA(ctx, listenAddr, func(address string) {
+				_, _ = fmt.Fprintf(command.OutOrStdout(), "Backoffice QA: http://%s/qa/ui/\n", address)
+			})
+		},
+	}
+	serve.Flags().StringVar(&listenAddr, "listen", "127.0.0.1:8096", "loopback address for the QA gallery")
+	command.AddCommand(serve)
 	return command
 }
 
@@ -63,9 +84,9 @@ func bootstrapAdminCommand() *cobra.Command {
 	var input backoffice.BootstrapInput
 	command := &cobra.Command{
 		Use:   "bootstrap-admin",
-		Short: "Create or reset administrator credentials using a password from stdin",
+		Short: "Create or reset administrator credentials with a generated password",
 		RunE: func(command *cobra.Command, _ []string) error {
-			password, err := readBackofficePassword(command.InOrStdin())
+			password, generated, err := bootstrapAdminPassword(command.InOrStdin())
 			if err != nil {
 				return err
 			}
@@ -81,6 +102,9 @@ func bootstrapAdminCommand() *cobra.Command {
 				return err
 			}
 			_, _ = fmt.Fprintf(command.OutOrStdout(), "administrator ready: id=%s username=%s created=%t\n", result.UserID, result.Username, result.Created)
+			if generated {
+				_, _ = fmt.Fprintf(command.OutOrStdout(), "administrator password: %s\n", password)
+			}
 			return nil
 		},
 	}
@@ -89,6 +113,27 @@ func bootstrapAdminCommand() *cobra.Command {
 	command.Flags().StringVar(&input.DisplayName, "display-name", "", "display name for a fresh administrator")
 	command.Flags().BoolVar(&input.Reset, "reset", false, "replace usable credentials and revoke browser sessions")
 	return command
+}
+
+var baldaGenerateAdminPassword = userpassword.Generate
+
+func bootstrapAdminPassword(reader io.Reader) ([]byte, bool, error) {
+	if file, ok := reader.(*os.File); ok {
+		if info, err := file.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+			password, err := baldaGenerateAdminPassword()
+			return password, true, err
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, userpassword.MaxLength+3))
+	if err != nil {
+		return nil, false, fmt.Errorf("read password from stdin: %w", err)
+	}
+	if len(data) == 0 {
+		password, err := baldaGenerateAdminPassword()
+		return password, true, err
+	}
+	password, err := readBackofficePassword(bytes.NewReader(data))
+	return password, false, err
 }
 
 func readBackofficePassword(reader io.Reader) ([]byte, error) {

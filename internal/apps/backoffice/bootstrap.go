@@ -22,7 +22,7 @@ type bootstrapStore interface {
 	ChangeCredential(ctx context.Context, userID string, expectedUserVersion, expectedCredentialVersion uint64, credential usercmd.Credential, secret usercmd.CredentialSecret, revokedAt time.Time, audit usercmd.AuditEvent) error
 }
 
-// BootstrapInput contains secret-safe target options and a transient stdin password.
+// BootstrapInput contains target options and a transient password.
 type BootstrapInput struct {
 	UserID      string
 	Username    string

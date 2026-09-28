@@ -44,6 +44,7 @@ type browserService interface {
 // HTTPConfig controls the browser-only trust boundary.
 type HTTPConfig struct {
 	TrustedOrigin         string
+	BasePath              string
 	SecureCookies         bool
 	MaxBodyBytes          int64
 	AllowedReturnPrefixes []string
@@ -55,6 +56,7 @@ type HTTPConfig struct {
 type Browser struct {
 	service           browserService
 	trustedOrigin     string
+	basePath          string
 	secureCookies     bool
 	maxBodyBytes      int64
 	returnPaths       []string
@@ -91,8 +93,14 @@ func NewBrowser(service browserService, config HTTPConfig) (*Browser, error) {
 			return nil, fmt.Errorf("invalid return path prefix %q", prefix)
 		}
 	}
+	if config.BasePath != "" {
+		for index, prefix := range returnPaths {
+			returnPaths[index] = config.BasePath + prefix
+		}
+	}
 	return &Browser{
 		service: service, trustedOrigin: strings.TrimSuffix(origin.String(), "/"),
+		basePath:      config.BasePath,
 		secureCookies: config.SecureCookies, maxBodyBytes: maxBodyBytes,
 		returnPaths: returnPaths, random: rand.Reader, errorHandler: config.ErrorHandler,
 		mutationResponder: config.MutationResponder,
@@ -109,7 +117,7 @@ func (b *Browser) EnsureCSRF(w http.ResponseWriter, r *http.Request) (string, er
 	if err != nil {
 		return "", fmt.Errorf("generate browser CSRF token: %w", err)
 	}
-	b.setCookie(w, CSRFCookieName, token, "/", time.Time{}, true)
+	b.setCookie(w, CSRFCookieName, token, b.path("/"), time.Time{}, true)
 	return token, nil
 }
 
@@ -137,10 +145,10 @@ func (b *Browser) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	b.setCredentials(w, credentials)
 	if credentials.Assurance == usercmd.SessionAssuranceRestricted {
-		b.redirect(w, r, "", "/account/password")
+		b.redirect(w, r, "", b.path("/account/password"))
 		return
 	}
-	b.redirect(w, r, form.Get("return_to"), "/overview")
+	b.redirect(w, r, form.Get("return_to"), b.path("/overview"))
 }
 
 // Refresh consumes one refresh generation and never replays the original request.
@@ -165,10 +173,10 @@ func (b *Browser) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	b.setCredentials(w, credentials)
 	if credentials.Assurance == usercmd.SessionAssuranceRestricted {
-		b.redirect(w, r, "", "/account/password")
+		b.redirect(w, r, "", b.path("/account/password"))
 		return
 	}
-	b.redirect(w, r, form.Get("return_to"), "/overview")
+	b.redirect(w, r, form.Get("return_to"), b.path("/overview"))
 }
 
 // Logout revokes the full family and clears all browser credentials.
@@ -192,7 +200,7 @@ func (b *Browser) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.clearCredentials(w)
-	b.redirect(w, r, "", "/login")
+	b.redirect(w, r, "", b.path("/login"))
 }
 
 // ReplacePassword rotates the credential and installs a fresh normal family.
@@ -220,7 +228,7 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.setCredentials(w, credentials)
-	b.respondMutation(w, r, "/account")
+	b.respondMutation(w, r, b.path("/account"))
 }
 
 // RevokeSession revokes one owned browser session family and all of its
@@ -251,10 +259,10 @@ func (b *Browser) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if targetSessionID == principal.FamilyID {
 		b.clearCredentials(w)
-		b.respondMutation(w, r, "/login")
+		b.respondMutation(w, r, b.path("/login"))
 		return
 	}
-	b.respondMutation(w, r, "/account")
+	b.respondMutation(w, r, b.path("/account"))
 }
 
 // Authenticate adds a current canonical principal to the request context.
@@ -393,16 +401,18 @@ func (b *Browser) mutationForm(w http.ResponseWriter, r *http.Request) (url.Valu
 }
 
 func (b *Browser) setCredentials(w http.ResponseWriter, credentials Credentials) {
-	b.setCookie(w, AccessCookieName, credentials.AccessToken, "/", credentials.AccessExpiresAt, true)
-	b.setCookie(w, RefreshCookieName, credentials.RefreshToken, RefreshPath, credentials.RefreshExpiresAt, true)
-	b.setCookie(w, CSRFCookieName, credentials.CSRFToken, "/", credentials.RefreshExpiresAt, true)
+	b.setCookie(w, AccessCookieName, credentials.AccessToken, b.path("/"), credentials.AccessExpiresAt, true)
+	b.setCookie(w, RefreshCookieName, credentials.RefreshToken, b.path(RefreshPath), credentials.RefreshExpiresAt, true)
+	b.setCookie(w, CSRFCookieName, credentials.CSRFToken, b.path("/"), credentials.RefreshExpiresAt, true)
 }
 
 func (b *Browser) clearCredentials(w http.ResponseWriter) {
-	b.clearCookie(w, AccessCookieName, "/")
-	b.clearCookie(w, RefreshCookieName, RefreshPath)
-	b.clearCookie(w, CSRFCookieName, "/")
+	b.clearCookie(w, AccessCookieName, b.path("/"))
+	b.clearCookie(w, RefreshCookieName, b.path(RefreshPath))
+	b.clearCookie(w, CSRFCookieName, b.path("/"))
 }
+
+func (b *Browser) path(route string) string { return b.basePath + route }
 
 func (b *Browser) setCookie(w http.ResponseWriter, name, value, cookiePath string, expires time.Time, httpOnly bool) {
 	http.SetCookie(w, &http.Cookie{

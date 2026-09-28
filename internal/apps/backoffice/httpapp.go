@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
@@ -26,10 +25,11 @@ type httpApp struct {
 	auditLog *audit.Service
 	cards    []webui.CapabilityCard
 	qa       bool
+	basePath string
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
-	renderer, err := webui.NewRenderer()
+	renderer, err := webui.NewRenderer(config.Server.BasePath)
 	if err != nil {
 		return nil, err
 	}
@@ -39,12 +39,12 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI}
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI, basePath: config.Server.BasePath}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
-		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies,
+		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler: app.renderSecurityError,
 		MutationResponder: func(w http.ResponseWriter, r *http.Request, location string) error {
-			return webui.RespondMutation(w, r, webui.Location(location))
+			return webui.RespondMutationAt(w, r, webui.Location(strings.TrimPrefix(location, config.Server.BasePath)), config.Server.BasePath)
 		},
 	})
 	if err != nil {
@@ -60,31 +60,47 @@ func (a *httpApp) handler() (http.Handler, error) {
 		return nil, err
 	}
 	mux := http.NewServeMux()
-	mux.Handle("GET /assets/", assets)
-	mux.Handle("GET /healthz", healthHandler())
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, string(webui.LocationOverview), http.StatusSeeOther)
+	mux.Handle("GET "+a.path("/assets/"), http.StripPrefix(a.basePath, assets))
+	mux.Handle("GET "+a.path("/healthz"), http.StripPrefix(a.basePath, healthHandler()))
+	mux.HandleFunc("GET "+a.path("/"), func(w http.ResponseWriter, r *http.Request) {
+		if a.basePath != "" && r.URL.Path != a.path("/") {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, a.path(string(webui.LocationOverview)), http.StatusSeeOther)
 	})
-	mux.HandleFunc("GET /login", a.loginPage)
-	mux.HandleFunc("POST /login", a.browser.Login)
-	mux.HandleFunc("GET "+security.RefreshPath, a.refreshPage)
-	mux.HandleFunc("POST "+security.RefreshPath, a.browser.Refresh)
-	mux.HandleFunc("POST /logout", a.browser.Logout)
-	mux.Handle("GET /account/password", a.browser.Authenticate(http.HandlerFunc(a.passwordPage)))
-	mux.HandleFunc("POST /account/password", a.browser.ReplacePassword)
-	mux.Handle("GET /overview", a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
-	mux.Handle("GET /account", a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.account))))
-	mux.HandleFunc("POST /account/sessions/{session_id}/revoke", a.browser.RevokeSession)
-	mux.Handle("GET /audit", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
-	mux.Handle("GET /access", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
-	mux.Handle("GET /access/users/{user_id}", a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
-	mux.HandleFunc("POST /access/users", a.accessCreate)
-	mux.HandleFunc("POST /access/users/{user_id}", a.accessUpdate)
-	mux.HandleFunc("POST /access/users/{user_id}/credential", a.accessCredentialReset)
-	mux.HandleFunc("POST /access/users/{user_id}/sessions/{session_id}/revoke", a.accessSessionRevoke)
-	mux.HandleFunc("GET /qa/ui/", a.qaPage)
-	return securityHeaders(mux), nil
+	mux.HandleFunc("GET "+a.path("/login"), a.loginPage)
+	mux.HandleFunc("POST "+a.path("/login"), a.browser.Login)
+	mux.HandleFunc("GET "+a.path(security.RefreshPath), a.refreshPage)
+	mux.HandleFunc("POST "+a.path(security.RefreshPath), a.browser.Refresh)
+	mux.HandleFunc("POST "+a.path("/logout"), a.browser.Logout)
+	mux.Handle("GET "+a.path("/account/password"), a.browser.Authenticate(http.HandlerFunc(a.passwordPage)))
+	mux.HandleFunc("POST "+a.path("/account/password"), a.browser.ReplacePassword)
+	mux.Handle("GET "+a.path("/overview"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.overview))))
+	mux.Handle("GET "+a.path("/account"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.account))))
+	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.browser.RevokeSession)
+	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
+	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
+	mux.Handle("GET "+a.path("/access/users/{user_id}"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
+	mux.HandleFunc("POST "+a.path("/access/users"), a.accessCreate)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}"), a.accessUpdate)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/credential"), a.accessCredentialReset)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/sessions/{session_id}/revoke"), a.accessSessionRevoke)
+	qaHandler, err := QAHandler(a.basePath)
+	if err != nil {
+		return nil, err
+	}
+	mux.HandleFunc("GET "+a.path("/qa/ui/"), func(w http.ResponseWriter, r *http.Request) {
+		if !a.qa {
+			http.NotFound(w, r)
+			return
+		}
+		qaHandler.ServeHTTP(w, r)
+	})
+	return securityHeaders(mux, a.basePath), nil
 }
+
+func (a *httpApp) path(route string) string { return a.basePath + route }
 
 func (a *httpApp) loginPage(w http.ResponseWriter, r *http.Request) {
 	csrf, err := a.browser.EnsureCSRF(w, r)
@@ -101,7 +117,7 @@ func (a *httpApp) refreshPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	returnTo := a.browser.SafeReturnPath(r.URL.Query().Get("return_to"), string(webui.LocationOverview))
+	returnTo := a.browser.SafeReturnPath(r.URL.Query().Get("return_to"), a.path(string(webui.LocationOverview)))
 	a.render(w, r, http.StatusOK, webui.TemplateRefresh, webui.Page{Title: "Continue session · Balda", CSRFToken: csrf, ReturnTo: returnTo})
 }
 
@@ -197,7 +213,7 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		if request.TargetType != "" {
 			query.Set("target", string(request.TargetType))
 		}
-		nextURL = "/audit?" + query.Encode()
+		nextURL = a.path("/audit?") + query.Encode()
 	}
 	capabilities := users.BackofficeCapabilities(principal.User)
 	a.render(w, r, http.StatusOK, webui.TemplateAudit, webui.Page{
@@ -347,7 +363,7 @@ func (a *httpApp) accessSessionRevoke(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *httpApp) respondMutation(w http.ResponseWriter, r *http.Request, location webui.Location) {
-	if err := webui.RespondMutation(w, r, location); err != nil {
+	if err := webui.RespondMutationAt(w, r, location, a.basePath); err != nil {
 		a.browser.WriteError(w, r, fmt.Errorf("respond to mutation: %w", err))
 	}
 }
@@ -360,85 +376,6 @@ func parseFormVersion(raw string) (uint64, error) {
 	return version, nil
 }
 
-func (a *httpApp) qaPage(w http.ResponseWriter, r *http.Request) {
-	if !a.qa {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
-	fixture := strings.TrimPrefix(r.URL.Path, "/qa/ui/")
-	page, templateName, ok := qaFixture(fixture)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method == http.MethodHead {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	a.render(w, r, http.StatusOK, templateName, page)
-}
-
-func qaFixture(name string) (webui.Page, string, bool) {
-	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
-	admin := usercmd.BackofficeCapabilities{Overview: true, Account: true, ManageUsers: true, ViewAudit: true}
-	operator := usercmd.BackofficeCapabilities{Overview: true, Account: true}
-	switch name {
-	case "login":
-		return webui.Page{Title: "Sign in · QA", Current: webui.LocationLogin, CSRFToken: "qa-csrf"}, webui.TemplateLogin, true
-	case "refresh":
-		return webui.Page{Title: "Continue session · QA", CSRFToken: "qa-csrf", ReturnTo: "/overview"}, webui.TemplateRefresh, true
-	case "password":
-		return webui.Page{Title: "Replace password · QA", CSRFToken: "qa-csrf"}, webui.TemplatePassword, true
-	case "overview", "":
-		return webui.Page{
-			Title: "Overview · QA", Current: webui.LocationOverview,
-			Navigation: webui.Navigation(admin, webui.LocationOverview),
-			Capabilities: []webui.CapabilityCard{
-				{ID: "telegram", Name: "Telegram", Mode: "webhook", ListenAddr: "127.0.0.1:8080", Endpoint: "/telegram"},
-				{ID: "slack-agent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
-				{ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: 3},
-			},
-			Audit: []webui.AuditView{{Action: "session.login.succeeded", Outcome: "succeeded", TargetType: "session", TargetID: "family-demo", OccurredAt: now}},
-		}, webui.TemplateOverview, true
-	case "access":
-		user := webui.UserView{
-			ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
-			CredentialState: "temporary", MustChange: true, Version: 3, CredentialVersion: 2,
-			Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "legacy migration"},
-		}
-		return webui.Page{
-			Title: "Access · QA", Current: webui.LocationAccess, Navigation: webui.Navigation(admin, webui.LocationAccess),
-			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
-		}, webui.TemplateAccess, true
-	case "account":
-		user := webui.UserView{
-			ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
-			CredentialState: "active", Version: 3, CredentialVersion: 2,
-			Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "legacy migration"},
-		}
-		return webui.Page{
-			Title: "Account · QA", Current: webui.LocationAccount, Navigation: webui.Navigation(operator, webui.LocationAccount),
-			User: &user, CSRFToken: "qa-csrf", Sessions: []webui.SessionView{{ID: "family-demo", Assurance: "normal", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(12 * time.Hour), Current: true, Version: 2}},
-		}, webui.TemplateAccount, true
-	case "audit":
-		familyID := "11111111-1111-4111-8111-111111111111"
-		adminID := "22222222-2222-4222-8222-222222222222"
-		return webui.Page{
-			Title: "Audit · QA", Current: webui.LocationAudit, Navigation: webui.Navigation(admin, webui.LocationAudit),
-			Audit: []webui.AuditView{
-				{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", Outcome: "succeeded", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: now},
-				{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", Outcome: "denied", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: now.Add(time.Minute)},
-				{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", Outcome: "succeeded", ActorUserID: adminID, TargetType: "session", TargetID: familyID, OccurredAt: now.Add(2 * time.Minute)},
-			},
-		}, webui.TemplateAudit, true
-	default:
-		return webui.Page{}, "", false
-	}
-}
-
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
 	message := "The request could not be completed."
 	if status == http.StatusUnauthorized {
@@ -447,22 +384,22 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 	page := webui.Page{Title: http.StatusText(status) + " · Balda", Error: &webui.ErrorView{Heading: http.StatusText(status), Message: message}}
 	templateName := webui.TemplateError
 	switch r.URL.Path {
-	case "/login":
+	case a.path("/login"):
 		templateName = webui.TemplateLogin
 		page.Current = webui.LocationLogin
 		page.CSRFToken = a.browser.CSRFToken(r)
-	case security.RefreshPath:
+	case a.path(security.RefreshPath):
 		templateName = webui.TemplateRefresh
 		page.CSRFToken = a.browser.CSRFToken(r)
-		page.ReturnTo = a.browser.SafeReturnPath(r.FormValue("return_to"), string(webui.LocationOverview))
-	case "/account/password":
+		page.ReturnTo = a.browser.SafeReturnPath(r.FormValue("return_to"), a.path(string(webui.LocationOverview)))
+	case a.path("/account/password"):
 		templateName = webui.TemplatePassword
 		page.CSRFToken = a.browser.CSRFToken(r)
 	default:
 		if status == http.StatusUnauthorized && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 			templateName = webui.TemplateRefresh
 			page.CSRFToken = a.browser.CSRFToken(r)
-			page.ReturnTo = a.browser.SafeReturnPath(r.URL.RequestURI(), string(webui.LocationOverview))
+			page.ReturnTo = a.browser.SafeReturnPath(r.URL.RequestURI(), a.path(string(webui.LocationOverview)))
 		}
 	}
 	a.render(w, r, status, templateName, page)
@@ -474,12 +411,13 @@ func (a *httpApp) render(w http.ResponseWriter, r *http.Request, status int, nam
 	}
 }
 
-func securityHeaders(next http.Handler) http.Handler {
+func securityHeaders(next http.Handler, basePath string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/assets/") {
+		if !strings.HasPrefix(r.URL.Path, basePath+"/assets/") {
 			w.Header().Set("Cache-Control", "no-store")
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		// The pinned HTMX script injects one fixed indicator stylesheet.
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'sha256-faU7yAF8NxuMTNEwVmBz+VcYeIoBQ2EMHW3WaVxCvnk='; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")

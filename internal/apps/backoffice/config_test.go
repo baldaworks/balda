@@ -14,6 +14,11 @@ func TestResolveServerConfig(t *testing.T) {
 	}{
 		{name: "defaults", input: ServerConfig{}},
 		{name: "https non-loopback", input: ServerConfig{ListenAddr: "0.0.0.0:8095", PublicURL: "https://admin.example.com", AccessTokenTTL: "10m", RefreshTokenTTL: "8h"}},
+		{name: "canonical base path", input: ServerConfig{ListenAddr: "0.0.0.0:8095", PublicURL: "https://admin.example.com", BasePath: "/balda"}},
+		{name: "trailing slash base path", input: ServerConfig{BasePath: "/balda/"}, wantErr: true},
+		{name: "ambiguous base path", input: ServerConfig{BasePath: "/balda/../admin"}, wantErr: true},
+		{name: "encoded base path", input: ServerConfig{BasePath: "/balda%2fadmin"}, wantErr: true},
+		{name: "spaced base path", input: ServerConfig{BasePath: "/balda admin"}, wantErr: true},
 		{name: "plain non-loopback", input: ServerConfig{ListenAddr: "0.0.0.0:8095", PublicURL: "http://admin.example.com", AccessTokenTTL: "10m", RefreshTokenTTL: "8h"}, wantErr: true},
 		{name: "invalid listener port", input: ServerConfig{ListenAddr: "127.0.0.1:not-a-port"}, wantErr: true},
 		{name: "inverted token lifetime", input: ServerConfig{AccessTokenTTL: "12h", RefreshTokenTTL: "12h"}, wantErr: true},

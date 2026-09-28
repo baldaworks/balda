@@ -7,8 +7,9 @@ Backoffice. Read it before changing `cmd/balda` or
 ## Application boundary
 
 - `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
-  process lifecycle; `backoffice bootstrap-admin` and `backoffice migrate-users`
-  are offline maintenance subcommands, not separate runtime start modes.
+  production process lifecycle; `backoffice bootstrap-admin` and
+  `backoffice migrate-users` are offline maintenance subcommands.
+  `backoffice qa serve` is a local preview command without application state.
 - `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
   HTTP routes, security enforcement, server-side rendering, view models,
@@ -37,8 +38,11 @@ Commands:
   forward-only owner/collaborator migration. The output file is created once
   with mode `0600`; it contains temporary plaintext credentials and must be
   distributed and deleted as sensitive material.
-- `balda backoffice bootstrap-admin` reads a password from non-terminal stdin. It
-  creates the first unbound primary administrator on a fresh database, or
+- `balda init` creates the first administrator and prints its generated password
+  once, alongside the owner token.
+- `balda backoffice bootstrap-admin` generates and prints a password once by
+  default; it also accepts an operator-provided password on non-terminal stdin.
+  It creates the first unbound primary administrator on a fresh database, or
   configures the selected credential-disabled administrator. Replacing a
   usable credential requires `--reset` and revokes all existing browser
   session families.
@@ -59,6 +63,7 @@ balda:
   backoffice:
     listen_addr: "127.0.0.1:8095"
     public_url: "http://127.0.0.1:8095"
+    base_path: ""
     access_token_ttl: "15m"
     refresh_token_ttl: "12h"
     qa_ui: false
@@ -66,11 +71,18 @@ balda:
 
 Every field has the normal `BALDA_*` environment override, for example
 `BALDA_BACKOFFICE_LISTEN_ADDR`, `BALDA_BACKOFFICE_PUBLIC_URL`,
+`BALDA_BACKOFFICE_BASE_PATH`,
 `BALDA_BACKOFFICE_ACCESS_TOKEN_TTL`,
 `BALDA_BACKOFFICE_REFRESH_TOKEN_TTL`, and `BALDA_BACKOFFICE_QA_UI`. Access
 tokens may live from 1 minute through 1 hour. Refresh families must outlive
 access tokens and may live for at most 30 days. The refresh deadline is an
 absolute family deadline; rotation never extends it.
+
+`base_path` is an optional canonical absolute path without a trailing slash,
+for example `/balda`. Leave `public_url` as the HTTPS origin without a path.
+Backoffice serves its browser pages, assets, and session endpoints beneath the
+base path and scopes browser cookies to it. The empty default preserves root
+URLs for existing installations. A reverse proxy must forward the path unchanged.
 
 ## Deployment and first administrator
 
@@ -84,22 +96,19 @@ go build -trimpath -o ./bin/balda ./cmd/balda
 ./bin/balda validate
 ```
 
-For a fresh database, supply the first administrator password over redirected
-standard input. Never put a password in a command argument, shell history,
-environment variable, log, or terminal paste:
+For a fresh database, `init` creates the administrator and prints its password
+once. Store the output securely, then start:
 
 ```bash
-./bin/balda backoffice bootstrap-admin \
-  --username admin \
-  --display-name "Balda administrator" < /run/secrets/backoffice-admin-password
 ./bin/balda start
 ```
 
-The password file should be readable only by the service account and provided
-by the deployment secret manager. `bootstrap-admin` deliberately refuses a
-terminal as password input. Resetting an existing usable credential requires
-an explicit `--reset`; it invalidates every browser session family for that
-user.
+`bootstrap-admin` generates a new password when run without redirected input.
+The optional stdin path remains available for an operator-provided password;
+terminal input is never read or echoed. Never put passwords in command
+arguments, shell history, environment variables, or logs. Resetting an existing
+usable credential requires an explicit `--reset`; it invalidates every browser
+session family for that user.
 
 For an existing installation with legacy owner/collaborator records, stop
 Balda, take a consistent database backup, deploy the new binary, and run the
@@ -111,13 +120,14 @@ an active administrator are already ready:
 ```bash
 ./bin/balda backoffice migrate-users \
   --credentials-output /run/secrets/balda-migrated-users.txt
-./bin/balda backoffice bootstrap-admin --reset < /run/secrets/backoffice-admin-password
+./bin/balda backoffice bootstrap-admin --reset
 ./bin/balda start
 ```
 
 The credentials path must not exist beforehand. Backoffice creates it
 exclusively with mode `0600`, writes each generated temporary credential once,
-and never prints a password to stdout. Distribute entries out of band to their
+and never prints migration passwords to stdout. The reset command prints the
+new primary administrator password once. Distribute manifest entries out of band to their
 intended users, verify delivery, and then securely remove the manifest under
 your organization's secret-retention policy. Never commit, upload, back up, or
 attach the manifest to a ticket. Migrated bot bindings and roles become
@@ -168,11 +178,12 @@ credential that could restore access.
   administrators and operators; Audit is administrator-only. The optional
   transport binding is read-only, and committed role/status changes immediately
   affect bot authorization.
-- Set `qa_ui: true` only for a private development or review instance. It
-  exposes deterministic repository-free fixtures at `/qa/ui/login`,
-  `/qa/ui/refresh`, `/qa/ui/password`, `/qa/ui/overview`, `/qa/ui/access`,
-  `/qa/ui/account`, and `/qa/ui/audit`. QA routes are GET/HEAD-only,
-  `no-store`, and `noindex`; keep them disabled in production.
+- Keep `qa_ui: false` in production. A private development instance may enable
+  the same synthetic previews under `/qa/ui/`, but the preferred local workflow
+  uses `balda backoffice qa serve` without configuration or database access.
+  QA routes accept GET/HEAD only and send `no-store` and `noindex` headers.
+  Follow the [Backoffice UI review runbook](backoffice-ui-review.md) for routes,
+  browser checks, and the separate authenticated runtime check.
 - Username/password is the only browser authentication provider in this
   release. OIDC, WebAuthn/passkeys, and MFA are intentionally deferred; no
   placeholder configuration or browser flow exists for them.
@@ -212,8 +223,10 @@ remain server-side and authoritative.
 ## Packaging and frontend provenance
 
 The Balda Go binary contains the Backoffice templates, CSS, JavaScript, icons, and
-fonts. Node/npm, an SPA router, a frontend development server, and CDN-hosted
-runtime assets are prohibited.
+fonts. Node/npm as a frontend build or runtime dependency, an SPA router, a
+separate frontend development server, and CDN-hosted runtime assets are
+prohibited. The local QA preview is served by the same Go binary and uses the
+same embedded templates and assets.
 
 Every vendored frontend dependency must be pinned with its exact version,
 license, and SHA-256 digest in

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ const (
 type ServerConfig struct {
 	ListenAddr      string `mapstructure:"listen_addr"`
 	PublicURL       string `mapstructure:"public_url"`
+	BasePath        string `mapstructure:"base_path"`
 	AccessTokenTTL  string `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL string `mapstructure:"refresh_token_ttl"`
 	QAUI            bool   `mapstructure:"qa_ui"`
@@ -36,6 +38,7 @@ type ServerConfig struct {
 type ResolvedServerConfig struct {
 	ListenAddr      string
 	PublicURL       string
+	BasePath        string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
 	SecureCookies   bool
@@ -70,6 +73,10 @@ func (c ServerConfig) Resolve() (ResolvedServerConfig, error) {
 	if !isLoopbackHost(host) && parsedURL.Scheme != httpsScheme {
 		return ResolvedServerConfig{}, fmt.Errorf("non-loopback Backoffice listeners require an HTTPS public_url")
 	}
+	basePath := c.BasePath
+	if basePath != "" && (basePath == "/" || !strings.HasPrefix(basePath, "/") || strings.HasSuffix(basePath, "/") || strings.ContainsAny(basePath, "\\?#% \t\r\n") || strings.Contains(basePath, "//") || path.Clean(basePath) != basePath) {
+		return ResolvedServerConfig{}, fmt.Errorf("balda.backoffice.base_path must be an empty or canonical absolute path without a trailing slash")
+	}
 	accessTTL, err := resolveDuration(c.AccessTokenTTL, defaultAccessTokenTTL, "access_token_ttl")
 	if err != nil {
 		return ResolvedServerConfig{}, err
@@ -85,7 +92,7 @@ func (c ServerConfig) Resolve() (ResolvedServerConfig, error) {
 		return ResolvedServerConfig{}, fmt.Errorf("balda.backoffice.refresh_token_ttl must exceed access_token_ttl and be at most %s", maximumRefreshTokenTTL)
 	}
 	return ResolvedServerConfig{
-		ListenAddr: listenAddr, PublicURL: strings.TrimSuffix(publicURL, "/"),
+		ListenAddr: listenAddr, PublicURL: strings.TrimSuffix(publicURL, "/"), BasePath: basePath,
 		AccessTokenTTL: accessTTL, RefreshTokenTTL: refreshTTL,
 		SecureCookies: parsedURL.Scheme == httpsScheme, QAUI: c.QAUI,
 	}, nil
