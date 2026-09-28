@@ -15,6 +15,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
+      - name: Validate SQLite Goose migrations
+        run: go tool goose -dir internal/apps/balda/state/migrations validate
       - name: SQLite state integration
         run: go test -race -tags=integration,sqlite ./internal/apps/balda/state
 
@@ -39,6 +41,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
+      - name: Validate PostgreSQL Goose migrations
+        run: go tool goose -dir internal/apps/balda/state/postgres_migrations validate
       - name: PostgreSQL state integration
         env:
           BALDA_TEST_POSTGRES_DSN: postgres://postgres:balda-test-only@localhost:5432/postgres?sslmode=disable
