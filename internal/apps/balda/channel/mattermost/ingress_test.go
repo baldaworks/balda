@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/gorilla/websocket"
@@ -99,9 +100,13 @@ func postedEventPayload(t *testing.T, post Post, channelType, senderName string)
 
 func newTestIngress(processor InboundProcessor, botUserID, botUsername string) *Ingress {
 	return NewIngress(IngressParams{
-		Processor:   processor,
-		Client:      NewClient("http://localhost:8065", "token", botUserID),
-		Commands:    nil,
+		Processor: processor,
+		Client:    NewClient("http://localhost:8065", "token", botUserID),
+		Commands: commandcmd.NewRegistryWithAdvertisements([]commandcmd.Advertisement{{
+			Transport: ChannelType,
+			Enabled:   true,
+			Names:     []string{"locator", "reset", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"},
+		}}),
 		Enabled:     true,
 		BotUserID:   botUserID,
 		BotUsername: botUsername,
@@ -593,11 +598,11 @@ func TestProcessInboundErrorDoesNotKillIngress(t *testing.T) {
 
 func TestNewIngressKeepsBotUserIDVerbatim(t *testing.T) {
 	ingress := NewIngress(IngressParams{
-		Enabled:     true,
-		Client:      NewClient("http://localhost:8065", "token", "bot-from-client"),
-		BotUserID:   "explicit-bot",
-		Logger:      zerolog.Nop(),
-		Commands:    nil,
+		Enabled:   true,
+		Client:    NewClient("http://localhost:8065", "token", "bot-from-client"),
+		BotUserID: "explicit-bot",
+		Logger:    zerolog.Nop(),
+		Commands:  nil,
 	})
 	if got, want := ingress.botUserID, "explicit-bot"; got != want {
 		t.Fatalf("botUserID = %q, want the configured value %q", got, want)

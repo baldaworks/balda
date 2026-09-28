@@ -6,6 +6,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	"go.uber.org/fx"
 )
@@ -13,6 +14,12 @@ import (
 var Module = fx.Module(
 	"balda_channel_slackagent_fx",
 	fx.Provide(
+		fx.Annotate(
+			func() sessionmemoryapp.ScopeClassifierContribution {
+				return sessionmemoryapp.ScopeClassifierContribution{ChannelType: slackagent.ChannelType, Classifier: slackagent.ClassifyLocatorScope}
+			},
+			fx.ResultTags(`group:"balda_session_memory_scope_classifier"`),
+		),
 		func(adapter *slackagent.Adapter) slackagent.SessionLifecycle { return adapter },
 		fx.Annotate(
 			func(cfg slackagent.Config) commandcmd.Advertisement {

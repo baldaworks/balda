@@ -31,9 +31,8 @@ const (
 // transport's access boundary, maps Mattermost thread replies to question
 // replies, and publishes slash commands through commandcmd.Ingress.
 //
-// It is injected as the optional mattermost.InboundProcessor dependency of the
-// websocket ingress. Without this provider the ingress accepts every post and
-// then silently discards it.
+// It is the required mattermost.InboundProcessor dependency of the enabled
+// Mattermost transport.
 type mattermostInboundHandler struct {
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore

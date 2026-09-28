@@ -276,14 +276,10 @@ func Module(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
 				fx.ResultTags(`name:"balda_session_memory_enabled"`),
 			),
-			func() sessionmemoryapp.ScopeResolver {
-				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
-					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
-					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
-					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
-					baldamattermost.ChannelType: baldamattermost.ClassifyLocatorScope,
-				})
-			},
+			fx.Annotate(
+				sessionmemoryapp.NewScopeResolverFromContributions,
+				fx.ParamTags(`group:"balda_session_memory_scope_classifier"`),
+			),
 			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
 				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, sessionMemoryProviderID, workingDir, stateDir)
 			},

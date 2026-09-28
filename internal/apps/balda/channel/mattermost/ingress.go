@@ -114,6 +114,9 @@ func (s *Ingress) onStart(_ context.Context) error {
 	if s.client == nil {
 		return fmt.Errorf("mattermost ingress requires a client")
 	}
+	if s.processor == nil {
+		return fmt.Errorf("mattermost ingress requires an inbound processor")
+	}
 	if strings.TrimSpace(s.botUserID) == "" {
 		return fmt.Errorf("mattermost ingress requires a bot user id")
 	}
@@ -436,7 +439,7 @@ func (s *Ingress) processPosted(ctx context.Context, data PostedData, post Post)
 		Msg("mattermost post accepted for processing")
 
 	if name, args, ok := ParseCommand(text); ok {
-		if !commandSupported(name) && (s.commands == nil || !s.commands.Supports(ChannelType, name)) {
+		if s.commands == nil || !s.commands.Supports(ChannelType, name) {
 			if s.processor != nil {
 				_ = s.processor.HandleUnsupportedCommand(ctx, InboundCommand{
 					Locator:   locator,

@@ -86,6 +86,7 @@ type CommandServerConfig struct {
 // the shared pipeline, which is why this type holds no policy of its own.
 type CommandServer struct {
 	processor  InboundProcessor
+	commands   IngressCommandSupport
 	client     *Client
 	config     CommandServerConfig
 	logger     zerolog.Logger
@@ -98,6 +99,7 @@ type CommandServer struct {
 // CommandServerParams are the dependencies of NewCommandServer.
 type CommandServerParams struct {
 	Processor InboundProcessor
+	Commands  IngressCommandSupport
 	Client    *Client
 	Config    CommandServerConfig
 	Logger    zerolog.Logger
@@ -107,6 +109,7 @@ type CommandServerParams struct {
 func NewCommandServer(params CommandServerParams) *CommandServer {
 	return &CommandServer{
 		processor:  params.Processor,
+		commands:   params.Commands,
 		client:     params.Client,
 		config:     params.Config,
 		logger:     params.Logger.With().Str("component", "balda.channel.mattermost.commands").Logger(),
@@ -124,6 +127,12 @@ func (s *CommandServer) onStart(context.Context) error {
 	if !s.config.Enabled {
 		s.logger.Debug().Msg("mattermost slash commands disabled; skipping command server start")
 		return nil
+	}
+	if s.processor == nil {
+		return fmt.Errorf("mattermost slash commands require an inbound processor")
+	}
+	if s.commands == nil {
+		return fmt.Errorf("mattermost slash commands require a command registry")
 	}
 	path, err := normalizeCommandPath(s.config.Path)
 	if err != nil {
@@ -192,7 +201,9 @@ func (s *CommandServer) handleCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	name, args := commandInvocation(form)
+	name, args := commandInvocation(form, func(name string) bool {
+		return s.commands != nil && s.commands.Supports(ChannelType, name)
+	})
 	if name == "" {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -202,7 +213,7 @@ func (s *CommandServer) handleCommand(w http.ResponseWriter, r *http.Request) {
 		writeCommandResponse(w, responseTypeEphemeral, "Balda is temporarily unavailable.")
 		return
 	}
-	if !commandSupported(name) {
+	if s.commands == nil || !s.commands.Supports(ChannelType, name) {
 		writeCommandResponse(w, responseTypeEphemeral, fmt.Sprintf(commandUsageTemplate, name))
 		return
 	}
@@ -318,7 +329,7 @@ func verifyCommandToken(configured, presented string) error {
 // with the arguments in "text") or as a single root command ("/balda locator").
 // Both shapes resolve here so the transport does not care which one the operator
 // chose.
-func commandInvocation(form url.Values) (string, string) {
+func commandInvocation(form url.Values, supports func(string) bool) (string, string) {
 	configured := strings.TrimPrefix(strings.TrimSpace(form.Get("command")), "/")
 	text := strings.TrimSpace(form.Get("text"))
 	// A leading slash in the text means the whole invocation is in the text.
@@ -329,7 +340,7 @@ func commandInvocation(form url.Values) (string, string) {
 	}
 	// A configured command that is itself a Balda command names the action, and
 	// the text carries only its arguments.
-	if commandSupported(strings.ToLower(configured)) {
+	if supports != nil && supports(strings.ToLower(configured)) {
 		return strings.ToLower(configured), text
 	}
 	// Otherwise the configured command is a root wrapper ("/balda") and the

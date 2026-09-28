@@ -11,7 +11,8 @@ import (
 type CommandServerParams struct {
 	fx.In
 
-	Processor  mattermost.InboundProcessor `optional:"true"`
+	Processor  mattermost.InboundProcessor
+	Commands   *commandcmd.Registry
 	Client     *mattermost.Client
 	Enabled    bool   `name:"balda_mattermost_commands_enabled"`
 	ListenAddr string `name:"balda_mattermost_commands_listen_addr"`
@@ -21,11 +22,10 @@ type CommandServerParams struct {
 }
 
 // NewCommandServer builds the Mattermost slash-command HTTP receiver. The
-// processor is optional so the transport can be wired in isolation (tests,
-// tooling) without the full application.
 func NewCommandServer(params CommandServerParams) *mattermost.CommandServer {
 	return mattermost.NewCommandServer(mattermost.CommandServerParams{
 		Processor: params.Processor,
+		Commands:  params.Commands,
 		Client:    params.Client,
 		Config: mattermost.CommandServerConfig{
 			Enabled:    params.Enabled,
@@ -38,14 +38,10 @@ func NewCommandServer(params CommandServerParams) *mattermost.CommandServer {
 }
 
 // IngressParams are the dependencies of NewIngress.
-//
-// Processor is optional: the transport can be constructed without the shared
-// inbound pipeline (tests, tooling), matching how the other transports wire
-// their optional processor dependency.
 type IngressParams struct {
 	fx.In
 
-	Processor   mattermost.InboundProcessor `optional:"true"`
+	Processor   mattermost.InboundProcessor
 	Client      *mattermost.Client
 	Commands    *commandcmd.Registry
 	Enabled     bool   `name:"balda_mattermost_enabled"`

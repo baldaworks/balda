@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
@@ -37,7 +38,12 @@ func (r *commandRecorder) HandleUnsupportedCommand(_ context.Context, cmd Inboun
 func newTestCommandServer(recorder *commandRecorder) *CommandServer {
 	return NewCommandServer(CommandServerParams{
 		Processor: recorder,
-		Config:    CommandServerConfig{Enabled: true, Path: "/mattermost/commands", Token: testCommandToken},
+		Commands: commandcmd.NewRegistryWithAdvertisements([]commandcmd.Advertisement{{
+			Transport: ChannelType,
+			Enabled:   true,
+			Names:     []string{"locator", "reset", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"},
+		}}),
+		Config: CommandServerConfig{Enabled: true, Path: "/mattermost/commands", Token: testCommandToken},
 	})
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"go.uber.org/fx"
 )
 
@@ -16,6 +17,12 @@ import (
 var Module = fx.Module(
 	"balda_channel_mattermost_fx",
 	fx.Provide(
+		fx.Annotate(
+			func() sessionmemoryapp.ScopeClassifierContribution {
+				return sessionmemoryapp.ScopeClassifierContribution{ChannelType: mattermost.ChannelType, Classifier: mattermost.ClassifyLocatorScope}
+			},
+			fx.ResultTags(`group:"balda_session_memory_scope_classifier"`),
+		),
 		// Transport command advertisement. The list mirrors the shared command
 		// contract so every documented Balda command is reachable from MM.
 		fx.Annotate(
@@ -99,8 +106,8 @@ var Module = fx.Module(
 			fx.ResultTags(`group:"balda_transport_lifecycle_stage"`),
 		),
 
-		// Inbound websocket ingress. The processor is optional so the transport
-		// can be wired in isolation (tests, tooling) without the full app.
+		// Inbound websocket ingress requires the canonical processor whenever
+		// Mattermost is enabled; startup fails closed when it is absent.
 		NewIngress,
 		fx.Annotate(
 			func(ingress *mattermost.Ingress) appports.TransportLifecycleStage {

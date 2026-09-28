@@ -8,9 +8,13 @@ import (
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
 	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/telegram/telegramfx"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
 	natsbus "github.com/baldaworks/balda/internal/apps/balda/eventbus/nats"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
@@ -162,14 +166,10 @@ func PreflightRuntime(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
 				fx.ResultTags(`name:"balda_session_memory_enabled"`),
 			),
-			func() sessionmemoryapp.ScopeResolver {
-				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
-					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
-					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
-					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
-					baldamattermost.ChannelType: baldamattermost.ClassifyLocatorScope,
-				})
-			},
+			fx.Annotate(
+				sessionmemoryapp.NewScopeResolverFromContributions,
+				fx.ParamTags(`group:"balda_session_memory_scope_classifier"`),
+			),
 			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
 				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, sessionMemoryProviderID, workingDir, stateDir)
 			},
@@ -328,6 +328,10 @@ func PreflightRuntime(
 		),
 		natsbus.Module,
 		questions.Module,
+		telegramfx.Module,
+		slackagentfx.Module,
+		zulipfx.Module,
+		mattermostfx.Module,
 		fx.Populate(&runtimeManager, &mcpManager),
 		fx.Invoke(func(lc fx.Lifecycle, manager *internalmcp.InternalMCPManager, runtimeManager *baldaagent.RuntimeManager, memoryRuntime *portableapp.Runtime) {
 			lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {

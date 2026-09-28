@@ -72,25 +72,6 @@ type InboundProcessor interface {
 	HandleUnsupportedCommand(ctx context.Context, cmd InboundCommand) error
 }
 
-// supportedCommands is the Mattermost transport command whitelist. It mirrors
-// the Zulip surface so every documented Balda command is reachable from MM.
-var supportedCommands = []string{
-	"start", "topic", "locator", "cancel", "goalkeeper",
-	"user", "usage", "auto", "reset", "close", "skill",
-}
-
-// SupportedCommands returns a copy of the Mattermost command whitelist.
-func SupportedCommands() []string { return append([]string(nil), supportedCommands...) }
-
-func commandSupported(name string) bool {
-	for _, supported := range supportedCommands {
-		if name == supported {
-			return true
-		}
-	}
-	return false
-}
-
 const (
 	// eventPosted is the Mattermost websocket event for a new post.
 	eventPosted = "posted"
@@ -293,9 +274,6 @@ func ParseCommand(text string) (name string, args string, ok bool) {
 	}
 	return name, args, true
 }
-
-// CommandSupported reports whether a command name is in the Mattermost whitelist.
-func CommandSupported(name string) bool { return commandSupported(name) }
 
 // PostIDFromWebSocket converts the numeric-or-string post identifier used by
 // some Mattermost event payloads into a canonical string post ID.

@@ -359,39 +359,6 @@ func TestParseCommand(t *testing.T) {
 	}
 }
 
-func TestSupportedCommandsCoverEveryActorHandler(t *testing.T) {
-	// "goal" is a payload kind, not a command name: advertising it makes the
-	// whole fx graph fail with "advertised commands have no actor handler".
-	// The whitelist must therefore contain "goalkeeper" and never "goal".
-	commands := SupportedCommands()
-	if len(commands) == 0 {
-		t.Fatal("SupportedCommands() is empty")
-	}
-	for _, name := range commands {
-		if name == "goal" {
-			t.Fatal("SupportedCommands() advertises \"goal\", which has no actor handler")
-		}
-		if !CommandSupported(name) {
-			t.Fatalf("CommandSupported(%q) = false for an advertised command", name)
-		}
-	}
-	if !CommandSupported("goalkeeper") {
-		t.Fatal("CommandSupported(\"goalkeeper\") = false, want true")
-	}
-	if CommandSupported("goal") {
-		t.Fatal("CommandSupported(\"goal\") = true, want false")
-	}
-}
-
-func TestSupportedCommandsReturnsCopy(t *testing.T) {
-	first := SupportedCommands()
-	first[0] = "mutated"
-
-	if SupportedCommands()[0] == "mutated" {
-		t.Fatal("SupportedCommands() leaks its backing slice; callers can mutate the whitelist")
-	}
-}
-
 func TestPostIDFromWebSocket(t *testing.T) {
 	cases := []struct {
 		name string
