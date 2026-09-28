@@ -2,14 +2,18 @@ package handlersfx
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
@@ -21,6 +25,117 @@ import (
 	"github.com/tgbotkit/runtime/messagetype"
 	adksession "google.golang.org/adk/v2/session"
 )
+
+type fakeCollaboratorBackend struct {
+	collaborators map[string]auth.Collaborator
+	lookups       []string
+}
+
+func newTestCollaboratorStore(subjects ...string) (*auth.CollaboratorStore, *fakeCollaboratorBackend) {
+	backend := &fakeCollaboratorBackend{collaborators: make(map[string]auth.Collaborator)}
+	for _, subject := range subjects {
+		backend.collaborators[subject] = auth.Collaborator{UserID: subject}
+	}
+	return auth.NewCollaboratorStore(backend), backend
+}
+
+func (f *fakeCollaboratorBackend) AddCollaborator(_ context.Context, collaborator auth.Collaborator) error {
+	f.collaborators[collaborator.UserID] = collaborator
+	return nil
+}
+
+func (f *fakeCollaboratorBackend) RemoveCollaborator(_ context.Context, userID string) error {
+	delete(f.collaborators, userID)
+	return nil
+}
+
+func (f *fakeCollaboratorBackend) GetCollaborator(_ context.Context, userID string) (*auth.Collaborator, bool, error) {
+	f.lookups = append(f.lookups, userID)
+	collaborator, found := f.collaborators[userID]
+	return &collaborator, found, nil
+}
+
+func (f *fakeCollaboratorBackend) ListCollaborators(context.Context) ([]auth.Collaborator, error) {
+	result := make([]auth.Collaborator, 0, len(f.collaborators))
+	for _, collaborator := range f.collaborators {
+		result = append(result, collaborator)
+	}
+	return result, nil
+}
+
+type fakeTelegramQuestionStore struct {
+	record baldastate.QuestionRecord
+}
+
+func (f *fakeTelegramQuestionStore) CreatePendingQuestion(_ context.Context, record baldastate.QuestionRecord) error {
+	f.record = record
+	return nil
+}
+
+func (f *fakeTelegramQuestionStore) BindQuestionDeliveryRef(_ context.Context, _ string, ref questioncmd.DeliveryRef) error {
+	f.record.Provider = ref.Provider
+	f.record.ConversationKey = ref.ConversationKey
+	f.record.ProviderMessageID = ref.ProviderMessageID
+	return nil
+}
+
+func (f *fakeTelegramQuestionStore) GetQuestionByID(_ context.Context, questionID string) (baldastate.QuestionRecord, bool, error) {
+	return f.record, f.record.QuestionID == questionID, nil
+}
+
+func (f *fakeTelegramQuestionStore) GetPendingQuestionByReplyRef(_ context.Context, provider, conversationKey, replyToMessageID string) (baldastate.QuestionRecord, bool, error) {
+	found := f.record.Status == questioncmd.StatusPending && f.record.Provider == provider &&
+		f.record.ConversationKey == conversationKey && f.record.ProviderMessageID == replyToMessageID
+	return f.record, found, nil
+}
+
+func (f *fakeTelegramQuestionStore) MarkQuestionAnswered(_ context.Context, questionID string, answer questioncmd.Answer) (baldastate.QuestionRecord, bool, error) {
+	if f.record.QuestionID != questionID || f.record.Status != questioncmd.StatusPending {
+		return baldastate.QuestionRecord{}, false, nil
+	}
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		return baldastate.QuestionRecord{}, false, err
+	}
+	f.record.Status = questioncmd.StatusAnswered
+	f.record.AnswerJSON = string(encoded)
+	return f.record, true, nil
+}
+
+func (f *fakeTelegramQuestionStore) MarkQuestionTimedOut(_ context.Context, _ string, _ time.Time) (baldastate.QuestionRecord, bool, error) {
+	return baldastate.QuestionRecord{}, false, nil
+}
+
+func testTelegramQuestionRecord(t *testing.T, userID int64) baldastate.QuestionRecord {
+	t.Helper()
+	encode := func(value any) string {
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	locator := baldatelegram.NewLocator(9001, 0)
+	return baldastate.QuestionRecord{
+		QuestionID:        "q1",
+		SessionID:         locator.SessionID,
+		Status:            questioncmd.StatusPending,
+		Provider:          "telegram",
+		ConversationKey:   locator.AddressKey,
+		ProviderMessageID: "42",
+		InteractionJSON: encode(questioncmd.InteractionContext{
+			SessionID:   locator.SessionID,
+			Locator:     locator,
+			RequestedBy: questioncmd.UserRef{UserID: baldatelegram.UserID(userID)},
+		}),
+		ResumeJSON: encode(questioncmd.ResumeTarget{To: "permission:review-1"}),
+		RequestJSON: encode(questioncmd.Request{
+			Responder:     questioncmd.ResponderRequester,
+			AllowFreeText: true,
+			Options:       []questioncmd.Option{{ID: "allow", Label: "Allow"}},
+		}),
+	}
+}
 
 type fakeTurnDispatcher struct {
 	commandsMu sync.Mutex
@@ -352,6 +467,96 @@ func TestTelegramInboundHandler_HandleMessage_IgnoresUnauthorizedUser(t *testing
 	if len(h.dispatcher.commands) != 0 {
 		t.Fatalf("dispatched commands = %d, want 0 for unauthorized user", len(h.dispatcher.commands))
 	}
+}
+
+func TestTelegramInboundHandler_CollaboratorMessages(t *testing.T) {
+	tests := []struct {
+		name    string
+		context baldatelegram.MessageContext
+	}{
+		{
+			name: "direct message",
+			context: baldatelegram.MessageContext{
+				Locator: baldatelegram.NewLocator(9303, 0), ChatID: 9303, MessageID: 10,
+				UserID: 303, Text: "hello", IsDM: true,
+			},
+		},
+		{
+			name: "group mention",
+			context: baldatelegram.MessageContext{
+				Locator: baldatelegram.NewLocator(-9303, 0), ChatID: -9303, MessageID: 11,
+				UserID: 303, Text: "@testbot hello",
+				Entities: []client.MessageEntity{{Type: "mention", Offset: 0, Length: len("@testbot")}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newTestHarness(t)
+			collaborators, backend := newTestCollaboratorStore(auth.TelegramSubject(303))
+			h.handler.collaboratorStore = collaborators
+
+			if err := h.handler.HandleMessage(context.Background(), tt.context); err != nil {
+				t.Fatalf("HandleMessage() error = %v", err)
+			}
+			if len(h.dispatcher.commands) == 0 {
+				t.Fatal("HandleMessage() dispatched no collaborator work")
+			}
+			if len(backend.lookups) == 0 || backend.lookups[0] != "telegram:303" {
+				t.Fatalf("collaborator lookups = %v, want telegram:303", backend.lookups)
+			}
+		})
+	}
+}
+
+func TestTelegramInboundHandler_CollaboratorAnswersQuestions(t *testing.T) {
+	t.Run("free text", func(t *testing.T) {
+		h := newTestHarness(t)
+		collaborators, _ := newTestCollaboratorStore(auth.TelegramSubject(303))
+		h.handler.collaboratorStore = collaborators
+		questionStore := &fakeTelegramQuestionStore{record: testTelegramQuestionRecord(t, 303)}
+		h.handler.questionService = questions.New(questionStore, nil, zerolog.Nop())
+
+		err := h.handler.HandleMessage(context.Background(), baldatelegram.MessageContext{
+			Locator: baldatelegram.NewLocator(9001, 0), ChatID: 9001, MessageID: 43,
+			ReplyToMessageID: 42, UserID: 303, Text: "allow", IsDM: true,
+		})
+		if err != nil {
+			t.Fatalf("HandleMessage() error = %v", err)
+		}
+		if questionStore.record.Status != questioncmd.StatusAnswered {
+			t.Fatalf("question status = %q, want answered", questionStore.record.Status)
+		}
+		if len(h.dispatcher.commands) != 1 {
+			t.Fatalf("continuations = %d, want 1", len(h.dispatcher.commands))
+		}
+	})
+
+	t.Run("callback", func(t *testing.T) {
+		h := newTestHarness(t)
+		collaborators, _ := newTestCollaboratorStore(auth.TelegramSubject(303))
+		h.handler.collaboratorStore = collaborators
+		questionStore := &fakeTelegramQuestionStore{record: testTelegramQuestionRecord(t, 303)}
+		h.handler.questionService = questions.New(questionStore, nil, zerolog.Nop())
+
+		err := h.handler.HandleCallback(context.Background(), baldatelegram.CallbackContext{
+			Locator: baldatelegram.NewLocator(9001, 0), CallbackQueryID: "callback-1",
+			QuestionID: "q1", ProviderMessageID: "42", UserID: 303, OptionIndex: 1,
+		})
+		if err != nil {
+			t.Fatalf("HandleCallback() error = %v", err)
+		}
+		if questionStore.record.Status != questioncmd.StatusAnswered {
+			t.Fatalf("question status = %q, want answered", questionStore.record.Status)
+		}
+		if len(h.dispatcher.commands) != 1 {
+			t.Fatalf("continuations = %d, want 1", len(h.dispatcher.commands))
+		}
+		if len(h.channel.answerCalls) != 1 || h.channel.answerCalls[0].showAlert {
+			t.Fatalf("callback answers = %+v, want one successful acknowledgement", h.channel.answerCalls)
+		}
+	})
 }
 
 func TestTelegramInboundHandler_HandleForumTopic_ClosedPublishesCancel(t *testing.T) {

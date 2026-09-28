@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -216,6 +217,39 @@ func TestTelegramCommandHandler_AccessDerivation(t *testing.T) {
 		access := ingress.requests[0].Payload.Access
 		if access.Owner || access.SessionCommands || access.Collaborator {
 			t.Fatalf("unexpected access for unauthorized user: %+v", access)
+		}
+	})
+
+	t.Run("collaborator access", func(t *testing.T) {
+		collaborators, backend := newTestCollaboratorStore(auth.TelegramSubject(303))
+		ingress := &recordingCommandIngress{}
+		handler := &telegramCommandHandler{
+			collaboratorStore: collaborators,
+			channel:           &fakeTelegramChannel{ok: true},
+			commandIngress:    ingress,
+			logger:            zerolog.Nop(),
+		}
+		event := &events.CommandEvent{
+			Command: "help",
+			Message: &client.Message{
+				MessageId: 10,
+				Chat:      client.Chat{Id: 9001, Type: "private"},
+				From:      &client.User{Id: 303},
+			},
+		}
+
+		if err := handler.onCommand(context.Background(), event); err != nil {
+			t.Fatalf("onCommand() error: %v", err)
+		}
+		if len(ingress.requests) != 1 {
+			t.Fatalf("requests = %d, want 1", len(ingress.requests))
+		}
+		access := ingress.requests[0].Payload.Access
+		if access.Owner || !access.SessionCommands || !access.Collaborator {
+			t.Fatalf("unexpected collaborator access: %+v", access)
+		}
+		if len(backend.lookups) != 1 || backend.lookups[0] != "telegram:303" {
+			t.Fatalf("collaborator lookups = %v, want [telegram:303]", backend.lookups)
 		}
 	})
 }
