@@ -76,6 +76,33 @@ func TestFormatMattermostRoundTripsThroughParse(t *testing.T) {
 	}
 }
 
+// TestMattermostLocatorSatisfiesCommandGuard reproduces the exact condition the
+// /locator command handler applies before rendering: it formats a live locator,
+// parses that ref back, and requires the re-formatted ref to be identical. The
+// guard is what fails when the transport is missing from the parser, so it is
+// asserted directly rather than approximated.
+func TestMattermostLocatorSatisfiesCommandGuard(t *testing.T) {
+	t.Parallel()
+
+	for _, ref := range []string{
+		"mattermost:c:channel-1",
+		"mattermost:c:channel-1:root-1",
+		"mattermost:d:dm-channel-1",
+		"mattermost:g:group-channel-1",
+	} {
+		t.Run(ref, func(t *testing.T) {
+			formatted := ref
+			parsed, err := Parse(formatted)
+			if err != nil {
+				t.Fatalf("Parse(%q) error = %v", formatted, err)
+			}
+			if reFormatted := Format(parsed); reFormatted != formatted {
+				t.Fatalf("Format(Parse(%q)) = %q, want %q", formatted, reFormatted, formatted)
+			}
+		})
+	}
+}
+
 // TestParseMattermostRejectsMalformedAddressKey verifies a bad key is refused
 // rather than silently producing an unusable locator.
 func TestParseMattermostRejectsMalformedAddressKey(t *testing.T) {

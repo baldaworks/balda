@@ -130,6 +130,69 @@ func TestLocatorForPostUsesDirectLocatorForDMAndGroupChannels(t *testing.T) {
 	}
 }
 
+// TestGroupChannelPostsFromTwoSendersShareOneSession guards the group-DM session
+// identity. A group channel is one conversation shared by several participants,
+// so the session must be derived from the channel and never from the sender: an
+// author-keyed session would silently shard one chat into a session per person.
+func TestGroupChannelPostsFromTwoSendersShareOneSession(t *testing.T) {
+	channel := Channel{ID: testChannelID, Type: channelTypeGroup}
+
+	first := LocatorForPost(channel, Post{ID: "post-1", ChannelID: testChannelID, UserID: testUserID})
+	second := LocatorForPost(channel, Post{ID: "post-2", ChannelID: testChannelID, UserID: "user-2"})
+
+	if first.SessionID != second.SessionID {
+		t.Fatalf("two senders in one group channel resolved to different sessions: %q != %q", first.SessionID, second.SessionID)
+	}
+	if first.AddressKey != second.AddressKey {
+		t.Fatalf("two senders in one group channel resolved to different address keys: %q != %q", first.AddressKey, second.AddressKey)
+	}
+	if !IsDirectLocator(first) || !IsDirectLocator(second) {
+		t.Fatal("group channel locators must report as direct conversations")
+	}
+	if got := ChannelIDOf(first); got != testChannelID {
+		t.Fatalf("ChannelIDOf() = %q, want %q", got, testChannelID)
+	}
+}
+
+// TestGroupChannelSessionIsDistinctFromDirectAndChannel pins the group session
+// apart from the 1:1 direct session and from a team channel with the same id, so
+// a group conversation can never collide with either.
+func TestGroupChannelSessionIsDistinctFromDirectAndChannel(t *testing.T) {
+	group := LocatorForPost(Channel{ID: testChannelID, Type: channelTypeGroup}, Post{ChannelID: testChannelID, UserID: testUserID})
+	direct := LocatorForPost(Channel{ID: testChannelID, Type: channelTypeDirect}, Post{ChannelID: testChannelID, UserID: testUserID})
+	team := LocatorForPost(Channel{ID: testChannelID, Type: channelTypeOpen}, Post{ChannelID: testChannelID, UserID: testUserID})
+
+	if group.SessionID == direct.SessionID {
+		t.Fatalf("group and direct sessions collided on %q", group.SessionID)
+	}
+	if group.SessionID == team.SessionID {
+		t.Fatalf("group and channel sessions collided on %q", group.SessionID)
+	}
+	// The same group conversation must also carry a distinct address key, so a
+	// locator rebuilt from a config ref cannot land on the wrong conversation.
+	if group.AddressKey == direct.AddressKey {
+		t.Fatalf("group and direct address keys collided on %q", group.AddressKey)
+	}
+}
+
+// TestGroupChannelLocatorRoundTripsThroughAddressKey verifies the group identity
+// survives a rebuild from its address key, which is how scheduler and webhook
+// targets re-enter the conversation.
+func TestGroupChannelLocatorRoundTripsThroughAddressKey(t *testing.T) {
+	group := LocatorForPost(Channel{ID: testChannelID, Type: channelTypeGroup}, Post{ChannelID: testChannelID, UserID: testUserID})
+
+	rebuilt, err := LocatorFromAddressKey(group.AddressKey)
+	if err != nil {
+		t.Fatalf("LocatorFromAddressKey(%q) error = %v", group.AddressKey, err)
+	}
+	if rebuilt.SessionID != group.SessionID {
+		t.Fatalf("rebuilt session %q != original %q", rebuilt.SessionID, group.SessionID)
+	}
+	if !IsDirectLocator(rebuilt) {
+		t.Fatal("rebuilt group locator must still report as a direct conversation")
+	}
+}
+
 func TestLocatorForPostFallsBackToChannelIDWhenPostOmitsIt(t *testing.T) {
 	channel := Channel{ID: "channel-1", TeamID: "team-1", Type: channelTypePrivate}
 	post := Post{ID: "post-1", UserID: "user-1"}
