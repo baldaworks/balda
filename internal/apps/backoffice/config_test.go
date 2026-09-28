@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -51,8 +52,8 @@ func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
 		Webhooks: WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", RouteCount: 1},
 	}
 	projection := ProjectConfiguredCapabilities(cfg)
-	if len(projection) != 4 {
-		t.Fatalf("capability count = %d, want 4: %+v", len(projection), projection)
+	if len(projection) != 3 {
+		t.Fatalf("capability count = %d, want 3: %+v", len(projection), projection)
 	}
 	for _, capability := range projection {
 		if capability.ID == "zulip" {
@@ -65,6 +66,9 @@ func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
 	cards := ProjectCapabilityCards(cfg)
 	if len(cards) != len(projection) || cards[0].ID != projection[0].ID {
 		t.Fatalf("capability cards = %+v", cards)
+	}
+	if got := configuredBindingChannels(cfg); !slices.Equal(got, []string{"telegram", "slackagent"}) {
+		t.Fatalf("configured binding channels = %v", got)
 	}
 }
 

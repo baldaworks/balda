@@ -2,6 +2,7 @@ package users
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -158,6 +159,27 @@ func ValidateCredentialChange(change CredentialChange) error {
 // NormalizeUsername returns the canonical comparison form for a local username.
 func NormalizeUsername(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
+}
+
+// NormalizeBindingPrincipal validates a supported transport principal for one channel.
+func NormalizeBindingPrincipal(channelType, principal string) (string, error) {
+	principal = strings.TrimSpace(principal)
+	switch channelType {
+	case "telegram", "zulip":
+		value, err := strconv.ParseInt(principal, 10, 64)
+		if err != nil || value <= 0 {
+			return "", fmt.Errorf("%w: invalid numeric transport principal", usercmd.ErrInvalid)
+		}
+		return strconv.FormatInt(value, 10), nil
+	case "slackagent":
+		teamID, userID, ok := strings.Cut(principal, ":")
+		if !ok || strings.TrimSpace(teamID) == "" || strings.TrimSpace(userID) == "" || strings.Contains(userID, ":") {
+			return "", fmt.Errorf("%w: invalid Slack Agent principal", usercmd.ErrInvalid)
+		}
+		return strings.TrimSpace(teamID) + ":" + strings.TrimSpace(userID), nil
+	default:
+		return "", fmt.Errorf("%w: unsupported transport channel", usercmd.ErrInvalid)
+	}
 }
 
 // ValidateBindingAssignment enforces one owner per transport principal.
