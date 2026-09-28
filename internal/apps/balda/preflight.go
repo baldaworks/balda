@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
@@ -166,6 +167,7 @@ func PreflightRuntime(
 					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
 					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
+					baldamattermost.ChannelType: baldamattermost.ClassifyLocatorScope,
 				})
 			},
 			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {

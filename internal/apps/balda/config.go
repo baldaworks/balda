@@ -95,6 +95,13 @@ type MattermostConfig struct {
 	Token       string `mapstructure:"token"`
 	BotUserID   string `mapstructure:"bot_user_id"`
 	BotUsername string `mapstructure:"bot_username"`
+
+	// Slash commands are delivered as HTTP requests, not posts, so they need a
+	// separate receiver. It is independent from the websocket ingress.
+	CommandsEnabled    bool   `mapstructure:"commands_enabled"`
+	CommandsListenAddr string `mapstructure:"commands_listen_addr"`
+	CommandsPath       string `mapstructure:"commands_path"`
+	CommandsToken      string `mapstructure:"commands_token"`
 }
 
 // ZulipWebhookConfig holds Zulip webhook receiver settings.

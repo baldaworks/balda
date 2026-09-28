@@ -18,6 +18,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
@@ -25,8 +27,6 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/webhook"
 	baldazulip "github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip/zulipfx"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
-	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
@@ -281,6 +281,7 @@ func Module(
 					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
 					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
 					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
+					baldamattermost.ChannelType: baldamattermost.ClassifyLocatorScope,
 				})
 			},
 			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
@@ -640,6 +641,30 @@ func Module(
 				fx.ResultTags(`name:"balda_mattermost_bot_username"`),
 			),
 		),
+		fx.Provide(
+			fx.Annotate(
+				func() bool { return cfg.Balda.Mattermost.CommandsEnabled },
+				fx.ResultTags(`name:"balda_mattermost_commands_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsListenAddr) },
+				fx.ResultTags(`name:"balda_mattermost_commands_listen_addr"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsPath) },
+				fx.ResultTags(`name:"balda_mattermost_commands_path"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsToken) },
+				fx.ResultTags(`name:"balda_mattermost_commands_token"`),
+			),
+		),
 		fx.Provide(func() *baldaslackagent.Client {
 			return baldaslackagent.NewClient(cfg.Balda.Slack.BotToken)
 		}),
@@ -987,7 +1012,7 @@ func validateMattermostConfig(cfg MattermostConfig) error {
 	if !cfg.Enabled {
 		return nil
 	}
-	if err := mattermost.ValidateConfig(cfg.ServerURL, cfg.Token); err != nil {
+	if err := baldamattermost.ValidateConfig(cfg.ServerURL, cfg.Token); err != nil {
 		return err
 	}
 	if strings.TrimSpace(cfg.BotUserID) == "" {

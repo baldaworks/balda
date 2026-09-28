@@ -23,21 +23,28 @@ private channels require an explicit `@mention` before a message or command is
 dispatched; direct messages never require one. Mattermost bots cannot emit
 typing indicators, so progress is delivered as plan updates only.
 
+Mattermost does not publish slash commands as posts, so they arrive over HTTP
+instead of the websocket event stream. Slash commands therefore need the
+`balda.mattermost.commands_*` receiver to be enabled and a Mattermost slash
+command whose Request URL points at it; see [Mattermost integration](mattermost.md).
+A slash command may also be configured as a single root command (`/balda
+locator`) instead of one command per action (`/locator`); both shapes are accepted.
+
 | Command | Telegram | Zulip | Mattermost | Slack | Access | Context |
 |---|---:|---:|---:|---:|---|---|
-| `/start ...` | yes | yes | no | onboarding | direct message |
+| `/start ...` | yes | yes | yes | onboarding | direct message |
 | `/help` | yes | no | no | anyone | current chat |
-| `/topic <name>` | yes | yes | no | owner, collaborator | Telegram direct message; Zulip stream |
-| `/goalkeeper ...` | yes | yes | no | owner, collaborator | current session |
-| `/auto [on\|off]` | yes | yes | no | owner, collaborator | current session |
-| `/usage` | yes | yes | no | owner, collaborator | current session |
+| `/topic <name>` | yes | yes | yes | owner, collaborator | Telegram direct message; Zulip stream |
+| `/goalkeeper ...` | yes | yes | yes | owner, collaborator | current session |
+| `/auto [on\|off]` | yes | yes | yes | owner, collaborator | current session |
+| `/usage` | yes | yes | yes | owner, collaborator | current session |
 | `/reset` | yes | yes | `/balda reset` | owner, collaborator; signed Slack workspace member | current session |
 | `/skill <skill> [prompt...]` | yes | yes | `/balda skill <skill> [prompt...]` | owner, collaborator; signed Slack workspace member | current session |
-| `/locator` | yes | yes | no | owner, collaborator | current session |
+| `/locator` | yes | yes | yes | owner, collaborator | current session |
 | `/balda locator` | no | no | yes | workspace member | current conversation |
-| `/close` | yes | yes | no | owner, collaborator | direct message |
-| `/cancel` | yes | yes | no | owner, collaborator | current session |
-| `/user ...` | yes | yes | no | owner | direct message recommended |
+| `/close` | yes | yes | yes | owner, collaborator | direct message |
+| `/cancel` | yes | yes | yes | owner, collaborator | current session |
+| `/user ...` | yes | yes | yes | owner | direct message recommended |
 | `/plugin ...` | yes | yes | yes | owner | current chat |
 
 Arguments shown in angle brackets are required. Arguments in square brackets

@@ -7,7 +7,37 @@ import (
 	"go.uber.org/fx"
 )
 
-// IngressParams collects the optional dependencies for the Mattermost ingress.
+// CommandServerParams are the dependencies of NewCommandServer as resolved by fx.
+type CommandServerParams struct {
+	fx.In
+
+	Processor  mattermost.InboundProcessor `optional:"true"`
+	Client     *mattermost.Client
+	Enabled    bool   `name:"balda_mattermost_commands_enabled"`
+	ListenAddr string `name:"balda_mattermost_commands_listen_addr"`
+	Path       string `name:"balda_mattermost_commands_path"`
+	Token      string `name:"balda_mattermost_commands_token"`
+	Logger     zerolog.Logger
+}
+
+// NewCommandServer builds the Mattermost slash-command HTTP receiver. The
+// processor is optional so the transport can be wired in isolation (tests,
+// tooling) without the full application.
+func NewCommandServer(params CommandServerParams) *mattermost.CommandServer {
+	return mattermost.NewCommandServer(mattermost.CommandServerParams{
+		Processor: params.Processor,
+		Client:    params.Client,
+		Config: mattermost.CommandServerConfig{
+			Enabled:    params.Enabled,
+			ListenAddr: params.ListenAddr,
+			Path:       params.Path,
+			Token:      params.Token,
+		},
+		Logger: params.Logger,
+	})
+}
+
+// IngressParams are the dependencies of NewIngress.
 //
 // Processor is optional: the transport can be constructed without the shared
 // inbound pipeline (tests, tooling), matching how the other transports wire
@@ -18,9 +48,9 @@ type IngressParams struct {
 	Processor   mattermost.InboundProcessor `optional:"true"`
 	Client      *mattermost.Client
 	Commands    *commandcmd.Registry
-	Enabled     bool             `name:"balda_mattermost_enabled"`
-	BotUserID   string           `name:"balda_mattermost_bot_user_id"`
-	BotUsername string           `name:"balda_mattermost_bot_username"`
+	Enabled     bool   `name:"balda_mattermost_enabled"`
+	BotUserID   string `name:"balda_mattermost_bot_user_id"`
+	BotUsername string `name:"balda_mattermost_bot_username"`
 	Logger      zerolog.Logger
 }
 

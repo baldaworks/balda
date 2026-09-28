@@ -13,6 +13,10 @@ const (
 	testChannelID   = "channel-1"
 	testDMChannelID = "dm-channel-1"
 	testUserID      = "user-1"
+	// testCommandToken is the slash-command token used by the command server
+	// tests. It is deliberately a plain literal: the receiver compares tokens,
+	// it does not sign them.
+	testCommandToken = "slash-command-token-1"
 )
 
 func TestNewChannelLocatorRoundTripsThroughDecode(t *testing.T) {

@@ -148,6 +148,9 @@ func LocatorForPost(channel Channel, post Post) deliverycmd.Locator {
 	if channelID == "" {
 		channelID = strings.TrimSpace(channel.ID)
 	}
+	if IsGroupChannelType(channel.Type) {
+		return NewGroupDMLocator(channelID)
+	}
 	if IsDirectChannelType(channel.Type) {
 		return NewDMLocator(channelID, strings.TrimSpace(post.UserID))
 	}
@@ -163,6 +166,12 @@ func IsDirectChannelType(channelType string) bool {
 	default:
 		return false
 	}
+}
+
+// IsGroupChannelType reports whether a Mattermost channel type is a group
+// direct-message conversation (several participants, one shared channel).
+func IsGroupChannelType(channelType string) bool {
+	return strings.TrimSpace(channelType) == channelTypeGroup
 }
 
 // IsBotEcho reports whether the post was authored by the bot itself.

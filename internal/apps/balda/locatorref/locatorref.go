@@ -15,6 +15,7 @@ import (
 const (
 	channelTypeTelegram   = telegramref.ChannelType
 	channelTypeSlackAgent = string(deliverycmd.ChannelTypeSlackAgent)
+	channelTypeMattermost = string(deliverycmd.ChannelTypeMattermost)
 	channelTypeZulip      = "zulip"
 )
 
@@ -56,6 +57,8 @@ func Parse(ref string) (deliverycmd.Locator, error) {
 		return zulipLocatorFromAddressKey(addressKey)
 	case channelTypeSlackAgent:
 		return slackAgentLocatorFromAddressKey(addressKey)
+	case channelTypeMattermost:
+		return mattermostLocatorFromAddressKey(addressKey)
 	default:
 		return deliverycmd.Locator{}, fmt.Errorf("unsupported locator transport %q", channelType)
 	}
@@ -155,6 +158,82 @@ func slackAgentLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, er
 	default:
 		return deliverycmd.Locator{}, fmt.Errorf("slackagent address key %q must be c:<team_id>:<conversation_id> or t:<team_id>:<conversation_id>:<thread_id>", addressKey)
 	}
+}
+
+type mattermostLocatorAddress struct {
+	Type      string `json:"type"`
+	ChannelID string `json:"channel_id,omitempty"`
+	RootID    string `json:"root_id,omitempty"`
+	UserID    string `json:"user_id,omitempty"`
+}
+
+func mattermostLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
+	parts := strings.Split(strings.TrimSpace(addressKey), ":")
+	switch {
+	case len(parts) == 2 && parts[0] == "c":
+		if parts[1] == "" {
+			return deliverycmd.Locator{}, fmt.Errorf("mattermost address key %q must be c:<channel_id>", addressKey)
+		}
+		return newMattermostLocator(mattermostLocatorAddress{
+			Type:      "channel",
+			ChannelID: mattermostUnescape(parts[1]),
+		}, addressKey)
+	case len(parts) == 3 && parts[0] == "c":
+		if parts[1] == "" || parts[2] == "" {
+			return deliverycmd.Locator{}, fmt.Errorf("mattermost address key %q must be c:<channel_id>:<root_id>", addressKey)
+		}
+		return newMattermostLocator(mattermostLocatorAddress{
+			Type:      "channel",
+			ChannelID: mattermostUnescape(parts[1]),
+			RootID:    mattermostUnescape(parts[2]),
+		}, addressKey)
+	case len(parts) == 2 && parts[0] == "d":
+		if parts[1] == "" {
+			return deliverycmd.Locator{}, fmt.Errorf("mattermost address key %q must be d:<channel_id>", addressKey)
+		}
+		return newMattermostLocator(mattermostLocatorAddress{
+			Type:      "dm",
+			ChannelID: mattermostUnescape(parts[1]),
+		}, addressKey)
+	case len(parts) == 2 && parts[0] == "g":
+		if parts[1] == "" {
+			return deliverycmd.Locator{}, fmt.Errorf("mattermost address key %q must be g:<channel_id>", addressKey)
+		}
+		return newMattermostLocator(mattermostLocatorAddress{
+			Type:      "group",
+			ChannelID: mattermostUnescape(parts[1]),
+		}, addressKey)
+	default:
+		return deliverycmd.Locator{}, fmt.Errorf("mattermost address key %q must be c:<channel_id>, c:<channel_id>:<root_id>, d:<channel_id> or g:<channel_id>", addressKey)
+	}
+}
+
+func mattermostUnescape(value string) string {
+	unescaped, err := url.PathUnescape(strings.TrimSpace(value))
+	if err != nil {
+		return strings.TrimSpace(value)
+	}
+	return unescaped
+}
+
+func newMattermostLocator(address mattermostLocatorAddress, addressKey string) (deliverycmd.Locator, error) {
+	raw, _ := json.Marshal(address)
+	sum := sha256.Sum256([]byte(strings.TrimSpace(addressKey)))
+	var prefix string
+	switch strings.TrimSpace(address.Type) {
+	case "dm":
+		prefix = "mm-dm"
+	case "group":
+		prefix = "mm-gdm"
+	default:
+		prefix = "mm"
+	}
+	return deliverycmd.NewLocator(
+		channelTypeMattermost,
+		strings.TrimSpace(addressKey),
+		string(raw),
+		fmt.Sprintf("%s-%x", prefix, sum[:8]),
+	)
 }
 
 func newSlackAgentLocator(address slackAgentLocatorAddress, addressKey string) (deliverycmd.Locator, error) {

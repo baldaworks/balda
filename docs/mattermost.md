@@ -54,6 +54,10 @@ BALDA_MATTERMOST_SERVER_URL=http://mattermost:8065
 BALDA_MATTERMOST_TOKEN=***
 BALDA_MATTERMOST_BOT_USER_ID=***
 BALDA_MATTERMOST_BOT_USERNAME=balda
+BALDA_MATTERMOST_COMMANDS_ENABLED=true
+BALDA_MATTERMOST_COMMANDS_LISTEN_ADDR=:8093
+BALDA_MATTERMOST_COMMANDS_PATH=/mattermost/commands
+BALDA_MATTERMOST_COMMANDS_TOKEN=***
 ```
 
 Equivalent YAML:
@@ -66,6 +70,10 @@ balda:
     token: "${BALDA_MATTERMOST_TOKEN}"
     bot_user_id: "${BALDA_MATTERMOST_BOT_USER_ID}"
     bot_username: "balda"
+    commands_enabled: true
+    commands_listen_addr: ":8093"
+    commands_path: "/mattermost/commands"
+    commands_token: "${BALDA_MATTERMOST_COMMANDS_TOKEN}"
 ```
 
 | Key | Required | Purpose |
@@ -75,6 +83,10 @@ balda:
 | `token` | yes when enabled | Bot account personal access token. |
 | `bot_user_id` | yes when enabled | Bot account user id. The ingress refuses to start without it, because it cannot otherwise distinguish its own posts from a user's. |
 | `bot_username` | no | Bot username used to detect `@mention` activation in channels. Mention handling is disabled when it is empty. |
+| `commands_enabled` | no (default `false`) | Enables the HTTP slash-command receiver. Mattermost delivers slash commands as HTTP requests, never as posts, so this must be on for any slash command to work. It is independent from `enabled`, which only covers the websocket stream. |
+| `commands_listen_addr` | no (default `:8093`) | Local address the slash-command receiver listens on. |
+| `commands_path` | no (default `/mattermost/commands`) | Local HTTP path Mattermost posts slash commands to. It must start with `/`. Point each Mattermost slash command's Request URL at this path. |
+| `commands_token` | yes when `commands_enabled` | Slash-command token Mattermost generates for the integration. Mattermost sends it in the request body and Balda compares it exactly; the receiver refuses to start without it and rejects every request when the token does not match. |
 
 Environment variables are applied only to keys that already exist in the loaded
 YAML, so keep the `balda.mattermost` block present in your config file even when
@@ -112,12 +124,31 @@ Mattermost bot accounts have no typing API, so Balda does not send typing
 indicators. Progress appears as plan updates. This differs from Telegram, which
 maps progress onto typing indicators.
 
+## Slash command setup
+
+Mattermost executes a slash command **without posting a message**, so the
+websocket event stream never carries one. Slash commands reach Balda only over
+HTTP, which needs a Request URL per command:
+
+1. Enable the receiver (`commands_enabled: true`, a `commands_token`, and a
+   `commands_listen_addr` reachable from the Mattermost server).
+2. In Mattermost, open **Integrations > Slash Commands > Add Slash Command**.
+3. Set the **Request URL** to `http(s)://<balda-host>:8093/mattermost/commands`,
+   method `POST`.
+4. Copy the **token** Mattermost shows and set it as `commands_token`.
+5. Repeat for every command you want to expose, or register one root command
+   (`/balda`) and select the action with its first word.
+
+A slash command is answered immediately and its result is delivered as a post.
+Mattermost shows the author a timeout when a command does not respond within a
+few seconds, so Balda never blocks the HTTP response on the command itself.
+
 ## Activation flow
 
 1. The owner authorizes the bot once with `/start owner=<token>` **in a direct
    message**. `/start` is the only command reachable before authorization;
    every other command and every conversational turn is rejected until the
-   owner is bound.
+   owner is bound. This requires the slash-command receiver described above.
 2. In a channel, address the bot explicitly with an `@mention`.
 3. Before exposing a channel to a wide audience, confirm the bot is a member of
    it and that the owner binding is present — a sender who is neither the owner
@@ -143,6 +174,14 @@ maps progress onto typing indicators.
   `/etc/ssl/certs/ca-certificates.crt` in the image.
 - **A bot cannot post to a channel.** The bot is not a member of the team or
   channel, or the channel is private and the bot was never added.
+- **A slash command does nothing at all — no reply, no error.** Slash commands
+  do not travel over the websocket, so this is expected when the HTTP receiver
+  is disabled or unused. Check `commands_enabled`, that Mattermost has a slash
+  command whose Request URL points at `commands_path`, and that the address is
+  reachable from the Mattermost server.
+- **A slash command returns 401.** The request token does not match
+  `commands_token`. Mattermost shows a fresh token when you open the integration;
+  re-copy it rather than reusing an old value.
 
 ## Related
 

@@ -71,6 +71,17 @@ balda:
       path: "/zulip/webhook"
 
   mattermost:
+    # Mattermost slash commands are delivered as HTTP requests, not posts, so
+    # they need a separate receiver from the websocket ingress. Enable it and
+    # point a Mattermost slash command's Request URL at this path, using the
+    # same token the integration shows you.
+    commands_enabled: false
+    # Local address the slash-command receiver listens on.
+    commands_listen_addr: ":8093"
+    # Local HTTP path for slash requests; must start with "/".
+    commands_path: "/mattermost/commands"
+    # Mattermost slash-command token used to authenticate incoming requests.
+    commands_token: ""
     # Mattermost bot-account transport over the v4 websocket/REST API.
     # Enable to connect this bot account and receive channel/DM events.
     # Set via BALDA_MATTERMOST_ENABLED env var

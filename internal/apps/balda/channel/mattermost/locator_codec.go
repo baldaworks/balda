@@ -20,6 +20,10 @@ const (
 	addressTypeChannel = "channel"
 	// addressTypeDM is the direct-message channel between the bot and one user.
 	addressTypeDM = "dm"
+	// addressTypeGroupDM is the group direct-message channel shared by several
+	// users. Unlike addressTypeDM it is keyed by the channel, never by an author,
+	// so every participant of one group chat shares a single session.
+	addressTypeGroupDM = "group"
 )
 
 // LocatorAddress is the Mattermost-specific transport address payload.
@@ -75,6 +79,17 @@ func NewDMLocator(channelID, userID string) deliverycmd.Locator {
 	return newLocator(address, dmAddressKey(address), dmSessionID(address))
 }
 
+// NewGroupDMLocator builds a canonical session locator for a Mattermost group
+// direct-message channel. The whole group shares one session, so the session is
+// derived from the channel id and not from any single participant.
+func NewGroupDMLocator(channelID string) deliverycmd.Locator {
+	address := LocatorAddress{
+		Type:      addressTypeGroupDM,
+		ChannelID: strings.TrimSpace(channelID),
+	}
+	return newLocator(address, dmAddressKey(address), groupDMSessionID(address))
+}
+
 func newLocator(address LocatorAddress, addressKey, sessionID string) deliverycmd.Locator {
 	raw, _ := json.Marshal(address)
 	channelType := string(deliverycmd.ChannelTypeMattermost)
@@ -100,6 +115,9 @@ func channelAddressKey(address LocatorAddress) string {
 }
 
 func dmAddressKey(address LocatorAddress) string {
+	if address.Type == addressTypeGroupDM {
+		return fmt.Sprintf("g:%s", url.PathEscape(address.ChannelID))
+	}
 	return fmt.Sprintf("d:%s", url.PathEscape(address.ChannelID))
 }
 
@@ -111,10 +129,14 @@ func channelSessionID(address LocatorAddress) string {
 }
 
 func dmSessionID(address LocatorAddress) string {
-	if address.UserID != "" {
-		return fmt.Sprintf("%s-dm-%s", mattermostSessionIDPrefix, shortHash(address.UserID))
+	if address.Type == addressTypeGroupDM {
+		return groupDMSessionID(address)
 	}
 	return fmt.Sprintf("%s-dm-%s", mattermostSessionIDPrefix, shortHash(address.ChannelID))
+}
+
+func groupDMSessionID(address LocatorAddress) string {
+	return fmt.Sprintf("%s-gdm-%s", mattermostSessionIDPrefix, shortHash(address.ChannelID))
 }
 
 func shortHash(value string) string {
@@ -149,7 +171,7 @@ func ClassifyLocatorScope(locator deliverycmd.Locator) (deliverycmd.LocatorScope
 		return "", fmt.Errorf("locator channel type %q is not Mattermost", locator.ChannelType)
 	}
 	switch strings.TrimSpace(address.Type) {
-	case addressTypeDM:
+	case addressTypeDM, addressTypeGroupDM:
 		return deliverycmd.LocatorScopePersonal, nil
 	case addressTypeChannel:
 		return deliverycmd.LocatorScopeGroup, nil
@@ -172,11 +194,14 @@ func LocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	if strings.HasPrefix(trimmed, "c:") {
 		return channelLocatorFromAddressKey(trimmed)
 	}
+	if strings.HasPrefix(trimmed, "g:") {
+		return groupDMLocatorFromAddressKey(trimmed)
+	}
 	if strings.HasPrefix(trimmed, "d:") {
 		return dmLocatorFromAddressKey(trimmed)
 	}
 	return deliverycmd.Locator{}, fmt.Errorf(
-		"mattermost address key %q must start with \"c:\" (channel) or \"d:\" (direct message)",
+		"mattermost address key %q must start with \"c:\" (channel), \"d:\" (direct message) or \"g:\" (group direct message)",
 		addressKey,
 	)
 }
@@ -213,9 +238,21 @@ func dmLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
 	return NewDMLocator(channelID, ""), nil
 }
 
+func groupDMLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
+	rest := strings.TrimPrefix(addressKey, "g:")
+	channelID, err := url.PathUnescape(rest)
+	if err != nil {
+		return deliverycmd.Locator{}, fmt.Errorf("unescape mattermost group dm channel id from %q: %w", addressKey, err)
+	}
+	if strings.TrimSpace(channelID) == "" {
+		return deliverycmd.Locator{}, fmt.Errorf("mattermost group dm address key %q has empty channel id", addressKey)
+	}
+	return NewGroupDMLocator(channelID), nil
+}
+
 func validateLocatorAddress(address LocatorAddress) error {
 	switch strings.TrimSpace(address.Type) {
-	case addressTypeChannel, addressTypeDM:
+	case addressTypeChannel, addressTypeDM, addressTypeGroupDM:
 		if strings.TrimSpace(address.ChannelID) == "" {
 			return fmt.Errorf("mattermost %s locator requires a channel_id", address.Type)
 		}
@@ -250,7 +287,7 @@ func IsDirectLocator(locator deliverycmd.Locator) bool {
 	if !ok || err != nil {
 		return false
 	}
-	return address.Type == addressTypeDM
+	return address.Type == addressTypeDM || address.Type == addressTypeGroupDM
 }
 
 // UserID returns a Mattermost transport user identifier string.
