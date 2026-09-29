@@ -36,6 +36,20 @@ state: preview routes accept GET and HEAD only. The standalone server binds a
 loopback address and serves no authenticated application endpoints. Stop it with
 Ctrl-C. Do not expose this listener through an ingress.
 
+Run the browser regression suite against the same synthetic gallery:
+
+```bash
+cd qa/backoffice-e2e
+npm ci
+npx playwright install chromium
+npm test
+```
+
+The suite starts its own loopback preview on an ephemeral port. It checks every
+gallery page and state at 1440×900 and 390×844, document overflow, script errors, Audit
+table navigation, refresh recovery actions, mobile navigation, and a no-script
+Audit interaction. It needs no application credentials or deployment access.
+
 ## Review a page change
 
 1. Add or update a synthetic view model for each new page state in

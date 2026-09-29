@@ -166,6 +166,11 @@ func TestAuditProjectionDoesNotRenderFreeFormReason(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "11111111-1111-4111-8111-111111111111") {
 		t.Fatalf("safe family ID missing: %q", response.Body.String())
 	}
+	for _, element := range []string{"<table", "<th scope=\"col\">Time (UTC)</th>", "<th scope=\"col\">Action</th>", "<th scope=\"col\">Actor</th>", "<th scope=\"col\">Target</th>", "<th scope=\"col\">Outcome</th>", "<details>"} {
+		if !strings.Contains(response.Body.String(), element) {
+			t.Fatalf("audit table missing %q", element)
+		}
+	}
 }
 
 func TestEmbeddedAssetsServeOffline(t *testing.T) {

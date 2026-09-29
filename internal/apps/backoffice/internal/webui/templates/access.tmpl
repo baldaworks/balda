@@ -68,7 +68,7 @@
     </div></section>
 
     <section class="card mb-3"><div class="card-body"><h2 class="h4">Credential</h2><p>Current state: <strong>{{.CredentialState}}</strong>{{if .MustChange}}; password replacement required{{end}}.</p>
-      <details><summary class="btn btn-outline-warning">Reset temporary password</summary>
+      <details><summary class="btn btn-outline-danger">Reset temporary password</summary>
         <form class="mt-3" action="{{path "/"}}access/users/{{.ID}}/credential" method="post" hx-post="{{path "/"}}access/users/{{.ID}}/credential" hx-target="#main-content">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="expected_user_version" value="{{.Version}}"><input type="hidden" name="expected_credential_version" value="{{.CredentialVersion}}">
           <label class="form-label" for="temporary-password">New temporary password</label><input class="form-control" id="temporary-password" name="temporary_password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required>
@@ -89,14 +89,9 @@
         <div class="col-12 col-md-3"><button class="btn btn-outline-primary w-100" type="submit">Find users</button></div>
       </div>
     </div></form>
-    <section aria-labelledby="users-heading"><h2 id="users-heading" class="h4">Users</h2><div class="row g-3">
-      {{range .Users}}<div class="col-12 col-md-6 col-xl-4"><article class="card h-100"><div class="card-body">
-        <h3 class="h5"><a href="{{path "/"}}access/users/{{.ID}}" hx-boost="true" hx-target="#main-content" hx-push-url="true">{{.DisplayName}}</a></h3>
-        <p class="mb-2 text-body-secondary">{{.Username}}</p>
-        <p class="mb-2"><span class="badge {{if eq .Status "active"}}text-bg-success{{else}}text-bg-secondary{{end}}">{{.Status}}</span> <span class="badge text-bg-light">{{.Role}}</span>{{if .MustChange}} <span class="badge text-bg-warning">Must change password</span>{{end}}</p>
-        <p class="mb-0">{{if .Bindings}}{{len .Bindings}} chat binding{{if ne (len .Bindings) 1}}s{{end}}{{else}}No chat bindings{{end}}</p>
-      </div></article></div>{{else}}<div class="col-12"><p>{{if or .AccessSearch .AccessRole .AccessStatus}}No users match these filters.{{else}}No users yet. Use Create user to add the first account.{{end}}</p></div>{{end}}
-    </div></section>
+    <section aria-labelledby="users-heading"><h2 id="users-heading" class="h4">Users</h2><p class="small text-body-secondary d-md-none">Swipe the table sideways to see role, status, and chat bindings.</p><div class="card"><div class="table-responsive" tabindex="0" role="region" aria-label="Users table, horizontally scrollable"><table class="table table-hover access-table"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Chat bindings</th></tr></thead><tbody>
+      {{range .Users}}<tr><td><a href="{{path "/"}}access/users/{{.ID}}" hx-boost="true" hx-target="#main-content" hx-push-url="true">{{.DisplayName}}</a><div class="small text-body-secondary">{{.Username}}</div></td><td>{{.Role}}</td><td><span class="badge {{if eq .Status "active"}}text-bg-success{{else}}text-bg-secondary{{end}}">{{.Status}}</span>{{if .MustChange}} <span class="badge text-bg-warning">Must change password</span>{{end}}</td><td>{{if .Bindings}}{{len .Bindings}}{{else}}0{{end}}</td></tr>{{else}}<tr><td colspan="4"><span class="empty-table-message">{{if or .AccessSearch .AccessRole .AccessStatus}}No users match these filters.{{else}}No users yet. Use Create user to add the first account.{{end}}</span></td></tr>{{end}}
+    </tbody></table></div></div></section>
     {{end}}
   </div>
 </main>{{end}}

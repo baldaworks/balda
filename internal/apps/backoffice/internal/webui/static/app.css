@@ -1,11 +1,55 @@
-:root { color-scheme: light dark; }
+:root { color-scheme: light; }
+body { color: #17243b; }
+body:has(.login-page) { background: #102944 !important; }
+.app-content > .container-fluid { max-width: 78rem; padding: 1.5rem clamp(1rem, 2.5vw, 2.5rem) 3rem; margin-inline: auto; }
+.app-content h1 { font-size: clamp(1.65rem, 2.5vw, 2rem); font-weight: 650; letter-spacing: -.025em; }
+.app-content h2 { font-weight: 600; }
+.app-content .card { border-color: #dce3eb; box-shadow: 0 1px 2px rgb(20 38 63 / 5%); }
+.app-content .card-body { padding: clamp(1rem, 2vw, 1.5rem); }
+.app-content code { color: #35475d; font-size: .875em; }
+.app-content summary { cursor: pointer; }
+.app-content summary:not(.btn) { color: #205ca4; font-weight: 500; }
+.app-content .form-label { font-weight: 500; }
+.app-content .table { margin-bottom: 0; }
+.app-content .table th { color: #43536b; font-size: .8rem; font-weight: 650; letter-spacing: .025em; text-transform: uppercase; white-space: nowrap; }
+.app-content .table td { vertical-align: middle; }
+.app-content .table td:first-child { font-weight: 500; }
+.app-content .table-responsive { border-radius: .4rem; }
 .skip-link { position: absolute; left: -9999px; top: 0; z-index: 2000; }
 .skip-link:focus { left: 1rem; top: 1rem; }
 #main-content:focus { outline: 0; }
-.login-page { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
-.login-box { width: min(100%, 24rem); }
+.login-page { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 2rem 1rem; background: radial-gradient(circle at 75% 0%, #274b76 0%, transparent 45%), linear-gradient(155deg, #102944 0%, #193d62 52%, #0e2139 100%); }
+.login-box { width: min(100%, 29rem); }
+.login-box::before { content: 'BALDA  /  BACKOFFICE'; display: block; margin-bottom: 1.25rem; color: #dbe9f7; font-size: .78rem; font-weight: 700; letter-spacing: .14em; }
+.login-box .card { border: 0; border-radius: .8rem; box-shadow: 0 20px 55px rgb(0 14 32 / 26%); overflow: hidden; }
+.login-box .card-body { padding: clamp(1.5rem, 5vw, 2rem); }
+.login-box .card-header { padding: 1.5rem 2rem 0; background: white; border: 0; text-align: left !important; }
+.login-box h1 { font-weight: 650; letter-spacing: -.025em; }
+.login-box p { color: #526176; }
+.login-box .alert { color: var(--bs-danger-text-emphasis); }
+.login-box .btn-link { padding-left: 0; }
+.login-box .form-label { font-weight: 500; }
+.login-box .action-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.login-box .action-row .btn { margin: 0; }
+.login-box .eyebrow { color: #526176; font-size: .82rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 code { overflow-wrap: anywhere; }
+.audit-table { min-width: 54rem; }
+.access-table { min-width: 39rem; }
+.empty-table-message { display: block; max-width: 18rem; white-space: normal; font-weight: 400; }
+.audit-table .event-actor { max-width: 11rem; overflow-wrap: anywhere; }
+.audit-table .event-target { max-width: 12rem; overflow-wrap: anywhere; }
+.audit-table details { min-width: 7rem; }
+.audit-table details[open] { min-width: 18rem; }
+.audit-table dl { font-size: .85rem; }
+.audit-table dd { overflow-wrap: anywhere; }
+.audit-filters details > summary { list-style-position: inside; }
+.audit-filters details[open] > summary { margin-bottom: 1rem; }
 .mobile-navigation { position: relative; }
 .mobile-navigation nav { position: absolute; right: 0; top: 100%; z-index: 1050; min-width: 12rem; padding: .5rem; }
 .mobile-navigation nav a { display: block; padding: .5rem .75rem; border-radius: .25rem; }
 .mobile-navigation nav a.active { color: var(--bs-primary-text-emphasis); background: var(--bs-primary-bg-subtle); font-weight: 600; }
+@media (max-width: 575px) {
+  .app-content > .container-fluid { padding-top: 1.25rem; }
+  .login-page { align-items: start; padding-top: max(4rem, 11vh); }
+  .login-box .btn { min-height: 2.7rem; }
+}

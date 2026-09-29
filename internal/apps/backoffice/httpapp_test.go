@@ -756,7 +756,7 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 	actorRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
 	actorResponse := httptest.NewRecorder()
 	handler.ServeHTTP(actorResponse, actorRequest)
-	if actorResponse.Code != http.StatusOK || !strings.Contains(actorResponse.Body.String(), "<strong>Operator</strong>") ||
+	if actorResponse.Code != http.StatusOK || !strings.Contains(actorResponse.Body.String(), "<td class=\"event-actor\">Operator</td>") ||
 		!strings.Contains(actorResponse.Body.String(), "actor=operator") || !strings.Contains(actorResponse.Body.String(), "from="+day) || !strings.Contains(actorResponse.Body.String(), "to="+day) {
 		t.Fatalf("actor/date audit pagination = %d %q", actorResponse.Code, actorResponse.Body.String())
 	}
