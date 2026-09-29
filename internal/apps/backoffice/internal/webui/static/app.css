@@ -1,17 +1,16 @@
 :root { color-scheme: light; }
-body { color: #17243b; }
 body:has(.login-page) { background: #102944 !important; }
 .app-content > .container-fluid { max-width: 78rem; padding: 1.5rem clamp(1rem, 2.5vw, 2.5rem) 3rem; margin-inline: auto; }
 .app-content h1 { font-size: clamp(1.65rem, 2.5vw, 2rem); font-weight: 650; letter-spacing: -.025em; }
 .app-content h2 { font-weight: 600; }
-.app-content .card { border-color: #dce3eb; box-shadow: 0 1px 2px rgb(20 38 63 / 5%); }
+.app-content .card { border-color: var(--bs-border-color); box-shadow: 0 1px 2px rgb(20 38 63 / 5%); }
 .app-content .card-body { padding: clamp(1rem, 2vw, 1.5rem); }
-.app-content code { color: #35475d; font-size: .875em; }
+.app-content code { color: var(--bs-body-color); font-size: .875em; }
 .app-content summary { cursor: pointer; }
-.app-content summary:not(.btn) { color: #205ca4; font-weight: 500; }
+.app-content summary:not(.btn) { color: var(--bs-link-color); font-weight: 500; }
 .app-content .form-label { font-weight: 500; }
 .app-content .table { margin-bottom: 0; }
-.app-content .table th { color: #43536b; font-size: .8rem; font-weight: 650; letter-spacing: .025em; text-transform: uppercase; white-space: nowrap; }
+.app-content .table th { color: var(--bs-secondary-color); font-size: .8rem; font-weight: 650; letter-spacing: .025em; text-transform: uppercase; white-space: nowrap; }
 .app-content .table td { vertical-align: middle; }
 .app-content .table td:first-child { font-weight: 500; }
 .app-content .table-responsive { border-radius: .4rem; }
@@ -25,13 +24,13 @@ body:has(.login-page) { background: #102944 !important; }
 .login-box .card-body { padding: clamp(1.5rem, 5vw, 2rem); }
 .login-box .card-header { padding: 1.5rem 2rem 0; background: white; border: 0; text-align: left !important; }
 .login-box h1 { font-weight: 650; letter-spacing: -.025em; }
-.login-box p { color: #526176; }
+.login-box p { color: var(--bs-secondary-color); }
 .login-box .alert { color: var(--bs-danger-text-emphasis); }
 .login-box .btn-link { padding-left: 0; }
 .login-box .form-label { font-weight: 500; }
 .login-box .action-row { display: flex; flex-wrap: wrap; gap: .5rem; }
 .login-box .action-row .btn { margin: 0; }
-.login-box .eyebrow { color: #526176; font-size: .82rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.login-box .eyebrow { color: var(--bs-secondary-color); font-size: .82rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 code { overflow-wrap: anywhere; }
 .audit-table { min-width: 54rem; }
 .access-table { min-width: 39rem; }

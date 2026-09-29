@@ -1,7 +1,7 @@
 {{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
-  <div class="container-fluid py-3"><h1>Audit</h1>
+  <div class="container-fluid"><h1>Audit</h1>
     <p class="text-body-secondary">Recent security events appear first. Times are shown in UTC.</p>
-    <form action="{{path "/"}}audit" method="get" hx-get="{{path "/"}}audit" hx-target="#main-content" hx-push-url="true" class="card mb-3 audit-filters"><div class="card-body"><div class="row g-2 align-items-end">
+    <form action="{{path "/"}}audit" method="get" hx-get="{{path "/"}}audit" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true" class="card mb-3 audit-filters"><div class="card-body"><div class="row g-2 align-items-end">
       <div class="col-12 col-md-6"><label class="form-label" for="audit-action">Action</label><select class="form-select" id="audit-action" name="action">
         <option value="">All security actions</option>
         <option value="user.created"{{if eq .AuditAction "user.created"}} selected{{end}}>User created</option>
@@ -27,7 +27,7 @@
         <div class="col-6 col-md-3"><label class="form-label" for="audit-to">Through</label><input class="form-control" id="audit-to" name="to" type="date" value="{{.AuditTo}}"></div>
         <div class="col-12 col-md-6"><label class="form-label" for="audit-actor">Actor user ID</label><input class="form-control" id="audit-actor" name="actor" value="{{.AuditActor}}" maxlength="128" autocomplete="off"></div>
       </div></details></div>
-      <div class="col-12 d-flex flex-wrap gap-2"><button class="btn btn-primary" type="submit">Filter events</button>{{if or .AuditAction .AuditOutcome .AuditTargetType .AuditFrom .AuditTo .AuditActor}}<a class="btn btn-outline-secondary" href="{{path "/"}}audit" hx-boost="true" hx-target="#main-content" hx-push-url="true">Clear filters</a>{{end}}</div>
+      <div class="col-12 d-flex flex-wrap gap-2"><button class="btn btn-primary" type="submit">Filter events</button>{{if or .AuditAction .AuditOutcome .AuditTargetType .AuditFrom .AuditTo .AuditActor}}<a class="btn btn-outline-secondary" href="{{path "/"}}audit" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Clear filters</a>{{end}}</div>
     </div></div></form>
     <p class="small text-body-secondary d-md-none mb-2">Swipe the table sideways to see actor, target, outcome, and details.</p>
     <section aria-label="Security events" class="card"><div class="table-responsive" tabindex="0" role="region" aria-label="Security events table, horizontally scrollable">
@@ -46,6 +46,6 @@
       </tr>{{else}}<tr><td colspan="6"><span class="empty-table-message">No audit events match these filters. Adjust the filters or review an older page.</span></td></tr>{{end}}
       </tbody></table>
     </div></section>
-    {{if .NextURL}}<a class="btn btn-outline-primary mt-3" href="{{.NextURL}}" hx-boost="true" hx-target="#main-content" hx-push-url="true">Older events</a>{{end}}
+    {{if .NextURL}}<a class="btn btn-outline-primary mt-3" href="{{.NextURL}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Older events</a>{{end}}
   </div>
 </main>{{end}}

@@ -45,6 +45,9 @@ async function checkPage(browser, baseURL, viewport) {
   for (const route of routes) {
     const response = await page.goto(`${baseURL}/qa/ui/${route}`);
     assert.equal(response.status(), expectedStatus.get(route) ?? 200, `${route} HTTP status at ${viewport.width}px`);
+    assert.equal(await page.locator('main#main-content').count(), 1, `${route} main landmark at ${viewport.width}px`);
+    const headingColors = await page.locator('h1, h2').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
+    assert.equal(new Set(headingColors).size, 1, `${route} consistent heading colors at ${viewport.width}px`);
     assert.equal(await page.locator('h1').count(), 1, `${route} heading at ${viewport.width}px`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${route} document overflow at ${viewport.width}px`);
     assert.deepEqual(errors, [], `${route} script errors at ${viewport.width}px`);
@@ -52,6 +55,31 @@ async function checkPage(browser, baseURL, viewport) {
       fs.mkdirSync(process.env.BACKOFFICE_E2E_SCREENSHOTS, { recursive: true });
       await page.screenshot({ path: path.join(process.env.BACKOFFICE_E2E_SCREENSHOTS, `${route || 'gallery'}-${viewport.width}.png`), fullPage: true });
     }
+  }
+
+  const nativeLayouts = new Map();
+  const destinations = ['Overview', 'Account', 'Access', 'Audit'];
+  async function layout() {
+    return page.locator('main#main-content').evaluate(element => {
+      const bounds = element.querySelector('.container-fluid').getBoundingClientRect();
+      return { x: bounds.x, width: bounds.width, headingColor: getComputedStyle(element.querySelector('h1')).color };
+    });
+  }
+  for (const name of destinations) {
+    await page.goto(`${baseURL}/qa/ui/${name.toLowerCase()}`);
+    nativeLayouts.set(name, await layout());
+  }
+  await page.goto(`${baseURL}/qa/ui/overview`);
+  for (const name of ['Account', 'Access', 'Audit', 'Overview']) {
+    const navigation = page.getByRole('navigation', { name: viewport.width < 992 ? 'Mobile navigation' : 'Primary navigation', exact: true });
+    if (viewport.width < 992) await page.getByText('Menu', { exact: true }).click();
+    const response = page.waitForResponse(response => response.url() === `${baseURL}/qa/ui/${name.toLowerCase()}`);
+    await navigation.getByText(name, { exact: true }).click();
+    await response;
+    await page.waitForFunction(expected => document.querySelector('h1')?.textContent === expected, name);
+    assert.equal(await page.locator('main#main-content').count(), 1, `${name} HTMX keeps one main landmark`);
+    assert.deepEqual(await layout(), nativeLayouts.get(name), `${name} HTMX layout matches native navigation`);
+    await page.waitForFunction(expected => [...document.querySelectorAll('[data-nav-link]')].filter(link => link.textContent.trim() === expected).every(link => link.getAttribute('aria-current') === 'page'), name);
   }
 
   await page.goto(`${baseURL}/qa/ui/audit`);
@@ -89,7 +117,7 @@ async function checkPage(browser, baseURL, viewport) {
   try {
     const browser = await chromium.launch({ headless: true });
     try {
-      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
         await checkPage(browser, url, viewport);
       }
       const noScript = await browser.newPage({ javaScriptEnabled: false });
@@ -98,7 +126,7 @@ async function checkPage(browser, baseURL, viewport) {
       await noScript.getByText('Dates and actor ID').click();
       assert.equal(await noScript.locator('#audit-actor').isVisible(), true);
       await noScript.close();
-      console.log(`Backoffice E2E: ${routes.length} gallery pages and states at desktop and mobile, audit, refresh, and navigation passed`);
+      console.log(`Backoffice E2E: ${routes.length} gallery pages and states at 390/768/1024/1440px, consistent heading colors, native/HTMX layout, audit, refresh, and navigation passed`);
     } finally { await browser.close(); }
   } finally { process.kill(-server.pid, 'SIGINT'); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

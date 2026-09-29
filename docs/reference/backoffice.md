@@ -298,7 +298,8 @@ The fragment contains only:
 
 Every other request, including an HTMX history restoration request, receives a
 complete HTML document. Every rendered response contains exactly one
-`main-content` element.
+`main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 
 Use a buffered HTML writer. Do not commit response headers or status until the
 template has rendered successfully.
@@ -331,7 +332,8 @@ Add pages in this order:
 5. Render through a buffered HTML writer.
 6. Add the template to the explicit allowlist under
    `internal/apps/backoffice/internal/webui`.
-7. Render exactly one `main-content` element.
+7. Render exactly one `main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 8. Do not assemble HTML with JavaScript.
 9. Preserve an ordinary link or form for every HTMX operation.
 10. Verify the full page, fragment, non-JavaScript fallback, canonical URL, and
