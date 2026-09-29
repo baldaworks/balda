@@ -20,7 +20,7 @@ type UserPage struct {
 	NextAfterID string
 }
 
-// SessionPage contains session-family summaries ordered by stable ID.
+// SessionPage contains one page of session-family summaries.
 type SessionPage struct {
 	Sessions    []SessionSummary
 	NextAfterID string
@@ -126,6 +126,9 @@ type Store interface {
 	GetSessionByAccessSelector(ctx context.Context, selector string) (AccessSession, bool, error)
 	GetSessionByRefreshSelector(ctx context.Context, selector string) (RefreshSession, bool, error)
 	ListSessions(ctx context.Context, userID string, page PageRequest) (SessionPage, error)
+	// ListActiveSessions excludes revoked and expired families and orders by the
+	// recorded sign-in or refresh time, newest first.
+	ListActiveSessions(ctx context.Context, userID string, page PageRequest, now time.Time) (SessionPage, error)
 	RotateRefresh(ctx context.Context, rotation RefreshRotation) (RefreshRotationResult, error)
 	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit AuditEvent) error
 	RevokeUserSessions(ctx context.Context, userID string, revokedAt time.Time, reason string, audit AuditEvent) error

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -660,7 +661,8 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 		return usercmd.SessionPage{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, s.bind(`
-		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version
+		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version,
+			device_label, connection_peer
 		FROM balda_backoffice_sessions
 		WHERE user_id = ? AND session_id > ? ORDER BY session_id LIMIT ?`), userID, page.AfterID, limit+1)
 	if err != nil {
@@ -669,23 +671,9 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 	defer func() { _ = rows.Close() }()
 	summaries := make([]usercmd.SessionSummary, 0, limit+1)
 	for rows.Next() {
-		var summary usercmd.SessionSummary
-		var assurance, createdAt, lastSeenAt, expiresAt, revokedAt string
-		if err := rows.Scan(&summary.ID, &assurance, &createdAt, &lastSeenAt, &expiresAt, &revokedAt, &summary.Version); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("scan user session", err)
-		}
-		summary.Assurance = usercmd.SessionAssurance(assurance)
-		if summary.CreatedAt, err = parseUserTime(createdAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session created time", err)
-		}
-		if summary.LastSeenAt, err = parseUserTime(lastSeenAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session last seen time", err)
-		}
-		if summary.ExpiresAt, err = parseUserTime(expiresAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session expiry", err)
-		}
-		if summary.RevokedAt, err = parseOptionalUserTime(revokedAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session revocation", err)
+		summary, scanErr := s.scanSessionSummary(rows)
+		if scanErr != nil {
+			return usercmd.SessionPage{}, scanErr
 		}
 		summaries = append(summaries, summary)
 	}
@@ -698,6 +686,95 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 		result.NextAfterID = result.Sessions[len(result.Sessions)-1].ID
 	}
 	return result, nil
+}
+
+// ListActiveSessions returns current browser families ordered by recorded
+// sign-in or refresh time. The cursor remains valid when its family is revoked.
+func (s *sqlUserStore) ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error) {
+	limit, err := pageLimit(page.Limit)
+	if err != nil || now.IsZero() {
+		return usercmd.SessionPage{}, usercmd.ErrInvalid
+	}
+	var cursorTime time.Time
+	if page.AfterID != "" {
+		var raw string
+		err := s.db.QueryRowContext(ctx, s.bind(`SELECT last_seen_at FROM balda_backoffice_sessions WHERE user_id = ? AND session_id = ?`), userID, page.AfterID).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return usercmd.SessionPage{}, usercmd.ErrInvalid
+		}
+		if err != nil {
+			return usercmd.SessionPage{}, s.wrapError("load active session cursor", err)
+		}
+		cursorTime, err = parseUserTime(raw)
+		if err != nil {
+			return usercmd.SessionPage{}, s.wrapError("parse active session cursor", err)
+		}
+	}
+	// A one-second SQL prefilter excludes old history without relying on
+	// variable-width RFC3339Nano text to decide the precise expiry boundary.
+	cutoff := formatUserTime(now.UTC().Add(-time.Second).Truncate(time.Second))
+	rows, err := s.db.QueryContext(ctx, s.bind(`
+		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version,
+			device_label, connection_peer
+		FROM balda_backoffice_sessions
+		WHERE user_id = ? AND revoked_at = '' AND refresh_expires_at > ?`), userID, cutoff)
+	if err != nil {
+		return usercmd.SessionPage{}, s.wrapError("list active sessions", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var sessions []usercmd.SessionSummary
+	for rows.Next() {
+		summary, scanErr := s.scanSessionSummary(rows)
+		if scanErr != nil {
+			return usercmd.SessionPage{}, scanErr
+		}
+		if !now.Before(summary.ExpiresAt) ||
+			(page.AfterID != "" && (summary.LastSeenAt.After(cursorTime) ||
+				(summary.LastSeenAt.Equal(cursorTime) && summary.ID >= page.AfterID))) {
+			continue
+		}
+		sessions = append(sessions, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return usercmd.SessionPage{}, s.wrapError("iterate active sessions", err)
+	}
+	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].LastSeenAt.Equal(sessions[j].LastSeenAt) {
+			return sessions[i].ID > sessions[j].ID
+		}
+		return sessions[i].LastSeenAt.After(sessions[j].LastSeenAt)
+	})
+	result := usercmd.SessionPage{Sessions: sessions}
+	if len(sessions) > limit {
+		result.Sessions = sessions[:limit]
+		result.NextAfterID = result.Sessions[len(result.Sessions)-1].ID
+	}
+	return result, nil
+}
+
+func (s *sqlUserStore) scanSessionSummary(rows *sql.Rows) (usercmd.SessionSummary, error) {
+	var summary usercmd.SessionSummary
+	var assurance, createdAt, lastSeenAt, expiresAt, revokedAt string
+	var deviceLabel, connectionPeer sql.NullString
+	if err := rows.Scan(&summary.ID, &assurance, &createdAt, &lastSeenAt, &expiresAt, &revokedAt, &summary.Version, &deviceLabel, &connectionPeer); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("scan user session", err)
+	}
+	summary.Assurance = usercmd.SessionAssurance(assurance)
+	summary.DeviceLabel, summary.ConnectionPeer = deviceLabel.String, connectionPeer.String
+	var err error
+	if summary.CreatedAt, err = parseUserTime(createdAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session created time", err)
+	}
+	if summary.LastSeenAt, err = parseUserTime(lastSeenAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session last seen time", err)
+	}
+	if summary.ExpiresAt, err = parseUserTime(expiresAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session expiry", err)
+	}
+	if summary.RevokedAt, err = parseOptionalUserTime(revokedAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session revocation", err)
+	}
+	return summary, nil
 }
 
 // GetSession loads one browser session family by its stable identifier.
@@ -1205,12 +1282,13 @@ func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family u
 			session_id, user_id, assurance, credential_version,
 			access_selector, access_verifier_digest, csrf_verifier_digest,
 			created_at, last_seen_at, access_expires_at, refresh_expires_at,
-			revoked_at, revocation_reason, version
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			revoked_at, revocation_reason, version, device_label, connection_peer
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		family.ID, family.UserID, family.Assurance, family.CredentialVersion,
 		family.Access.Selector, family.Access.VerifierDigest, family.CSRFVerifierDigest,
 		formatUserTime(family.CreatedAt), formatUserTime(family.LastSeenAt), formatUserTime(family.Access.ExpiresAt),
 		formatUserTime(family.RefreshExpiresAt), formatOptionalUserTime(family.RevokedAt), family.RevocationReason, family.Version,
+		nullableSessionMetadata(family.DeviceLabel), nullableSessionMetadata(family.ConnectionPeer),
 	); err != nil {
 		return s.mutationError("insert session family", err)
 	}
@@ -1225,16 +1303,17 @@ func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family u
 func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, predicate string, args ...any) (usercmd.SessionFamily, bool, error) {
 	var family usercmd.SessionFamily
 	var assurance, createdAt, lastSeenAt, accessExpiresAt, refreshExpiresAt, revokedAt string
+	var deviceLabel, connectionPeer sql.NullString
 	err := q.QueryRowContext(ctx, s.bind(`
 		SELECT session_id, user_id, assurance, credential_version,
 			access_selector, access_verifier_digest, csrf_verifier_digest,
 			created_at, last_seen_at, access_expires_at, refresh_expires_at,
-			revoked_at, revocation_reason, version
+			revoked_at, revocation_reason, version, device_label, connection_peer
 		FROM balda_backoffice_sessions WHERE `+predicate), args...).Scan(
 		&family.ID, &family.UserID, &assurance, &family.CredentialVersion,
 		&family.Access.Selector, &family.Access.VerifierDigest, &family.CSRFVerifierDigest,
 		&createdAt, &lastSeenAt, &accessExpiresAt, &refreshExpiresAt,
-		&revokedAt, &family.RevocationReason, &family.Version,
+		&revokedAt, &family.RevocationReason, &family.Version, &deviceLabel, &connectionPeer,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return usercmd.SessionFamily{}, false, nil
@@ -1243,6 +1322,7 @@ func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, pre
 		return usercmd.SessionFamily{}, false, s.wrapError("load session family", err)
 	}
 	family.Assurance = usercmd.SessionAssurance(assurance)
+	family.DeviceLabel, family.ConnectionPeer = deviceLabel.String, connectionPeer.String
 	if family.CreatedAt, err = parseUserTime(createdAt); err != nil {
 		return usercmd.SessionFamily{}, false, s.wrapError("parse session creation", err)
 	}
@@ -1437,6 +1517,13 @@ func intBool(value int) bool {
 
 func formatUserTime(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func nullableSessionMetadata(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func formatOptionalUserTime(value time.Time) string {

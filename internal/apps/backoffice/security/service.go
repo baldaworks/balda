@@ -324,7 +324,7 @@ func (s *Service) ReplacePassword(ctx context.Context, rawAccessToken string, cu
 	updatedUser.Credential = credential
 	updatedUser.Version++
 	updatedUser.UpdatedAt = now
-	credentials, family, err := s.newSession(updatedUser, usercmd.SessionAssuranceNormal, now)
+	credentials, family, err := s.newSession(ctx, updatedUser, usercmd.SessionAssuranceNormal, now)
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -358,7 +358,7 @@ func (s *Service) requireNormal(ctx context.Context, rawAccessToken string) (Pri
 }
 
 func (s *Service) issueSession(ctx context.Context, user usercmd.User, assurance usercmd.SessionAssurance, now time.Time) (Credentials, error) {
-	credentials, family, err := s.newSession(user, assurance, now)
+	credentials, family, err := s.newSession(ctx, user, assurance, now)
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -371,7 +371,7 @@ func (s *Service) issueSession(ctx context.Context, user usercmd.User, assurance
 	return credentials, nil
 }
 
-func (s *Service) newSession(user usercmd.User, assurance usercmd.SessionAssurance, now time.Time) (Credentials, usercmd.SessionFamily, error) {
+func (s *Service) newSession(ctx context.Context, user usercmd.User, assurance usercmd.SessionAssurance, now time.Time) (Credentials, usercmd.SessionFamily, error) {
 	accessRaw, access, err := s.newAccess(now.Add(s.config.AccessTTL))
 	if err != nil {
 		return Credentials{}, usercmd.SessionFamily{}, err
@@ -390,6 +390,7 @@ func (s *Service) newSession(user usercmd.User, assurance usercmd.SessionAssuran
 		Access: access, CSRFVerifierDigest: digest(csrfRaw), CreatedAt: now, LastSeenAt: now,
 		RefreshExpiresAt: refreshExpiresAt, Version: 1, RefreshTokens: []usercmd.RefreshToken{refresh},
 	}
+	family.DeviceLabel, family.ConnectionPeer = sessionClientFromContext(ctx)
 	credentials := Credentials{
 		AccessToken: accessRaw, RefreshToken: refreshRaw, CSRFToken: csrfRaw,
 		AccessExpiresAt: access.ExpiresAt, RefreshExpiresAt: refreshExpiresAt, Assurance: assurance,

@@ -138,7 +138,7 @@ func (b *Browser) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	password := []byte(form.Get("password"))
 	defer zero(password)
-	credentials, err := b.service.Login(r.Context(), form.Get("username"), password)
+	credentials, err := b.service.Login(withSessionClient(r), form.Get("username"), password)
 	if err != nil {
 		b.writeServiceError(w, r, err)
 		return
@@ -222,7 +222,7 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 	nextPassword := []byte(form.Get("new_password"))
 	defer zero(currentPassword)
 	defer zero(nextPassword)
-	credentials, err := b.service.ReplacePassword(r.Context(), access.Value, currentPassword, nextPassword)
+	credentials, err := b.service.ReplacePassword(withSessionClient(r), access.Value, currentPassword, nextPassword)
 	if err != nil {
 		b.writeServiceError(w, r, err)
 		return

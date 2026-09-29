@@ -193,19 +193,23 @@ type SessionFamily struct {
 	RefreshExpiresAt   time.Time
 	RevokedAt          time.Time
 	RevocationReason   string
+	DeviceLabel        string
+	ConnectionPeer     string
 	Version            uint64
 	RefreshTokens      []RefreshToken
 }
 
 // SessionSummary is the secret-free session-family projection shown to users.
 type SessionSummary struct {
-	ID         string
-	Assurance  SessionAssurance
-	CreatedAt  time.Time
-	LastSeenAt time.Time
-	ExpiresAt  time.Time
-	RevokedAt  time.Time
-	Version    uint64
+	ID             string
+	Assurance      SessionAssurance
+	CreatedAt      time.Time
+	LastSeenAt     time.Time
+	ExpiresAt      time.Time
+	RevokedAt      time.Time
+	DeviceLabel    string
+	ConnectionPeer string
+	Version        uint64
 }
 
 // AuditAction is a stable security event action.
