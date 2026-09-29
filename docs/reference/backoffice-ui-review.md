@@ -21,6 +21,15 @@ root path. When `qa_ui: true` is set on a private, configured development
 instance, the gallery uses that instance's `base_path` (for example
 `/balda/qa/ui/`).
 
+Use `/qa/ui/account-many` and its **Older active sessions** link to review
+pagination. `/qa/ui/account-session-states` deliberately combines active,
+ended, and expired synthetic rows to check that historical rows have no revoke
+button; it is labeled as a state preview because production lists active rows
+only. `/qa/ui/access-primary` and `/qa/ui/access-long` exercise primary-user
+and long-content layouts. The `form-*` previews return actual 400, 403, 409,
+and 500 HTTP statuses while rendering the production error templates. The
+refresh error and conflict previews show the distinct recovery actions.
+
 The fixture data is deterministic and synthetic. Preview links remain within
 `/qa/ui/`. Forms can be inspected and focused, but submission cannot change
 state: preview routes accept GET and HEAD only. The standalone server binds a
@@ -39,7 +48,9 @@ Ctrl-C. Do not expose this listener through an ingress.
    form controls, sidebar behavior, horizontal overflow, and table containment.
    Verify that assets load and that browser console errors are absent. Follow
    navigation and tab through forms with the keyboard; the page should remain
-   useful without JavaScript.
+   useful without JavaScript. Follow **Older active sessions** with JavaScript
+   enabled and disabled. Request a `form-*` route as an HTMX fragment and check
+   that its original error status and visible feedback survive.
 3. Record the reviewed route/state and viewport sizes, observed defects and
    fixes, and the test result in the change review. A screenshot is useful for
    layout changes. Capture only synthetic preview pages and keep passwords,

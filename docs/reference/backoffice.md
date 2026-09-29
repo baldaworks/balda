@@ -174,6 +174,20 @@ refresh generation in that lineage. Password reset, password replacement, and
 user disablement revoke all affected families rather than leaving a refresh
 credential that could restore access.
 
+Account and Access detail list active browser families only. When viewing your
+own sessions, the current family appears first; other active families are in
+descending order of their last recorded sign-in or refresh. The
+**Older active sessions** link continues
+through further active families; historical revoked and expired rows remain in
+storage for authorized investigation but do not crowd the default list.
+**Last sign-in or refresh** is not a record of every page visit. The session
+card shows a short browser/platform label when the request User-Agent can be
+recognized; old or unrecognized sessions show an unknown device. The
+**Connection peer** is the direct socket address and may be a reverse proxy.
+Forwarded IP headers are ignored because Backoffice has no configured trusted
+proxy chain. Neither field is used to authorize or identify a user, and the
+raw User-Agent and token values are never displayed.
+
 ## Operations, recovery, and QA
 
 - Run `balda validate` for read-only configuration/graph checks. `balda start`
@@ -196,6 +210,18 @@ credential that could restore access.
   Committed role/status changes immediately affect bot authorization for every
   attached principal. Telegram bindings show the provider username and first
   name separately, with empty values when the provider has not supplied them.
+- Access opens with the user list and filters for name, username, role, and
+  status. User detail separates profile, chat bindings, credential reset, and
+  browser sessions. Audit lists newest events first by event time, then stable
+  ID, with actor, action, target, outcome, and filters that persist on the next
+  page. Technical IDs remain available in event details. Overview lists
+  configured integrations only; a configured card makes no claim about live
+  connectivity or health.
+- A terminal refresh failure offers sign-in as the primary action. A
+  concurrent-refresh conflict offers a safe page reopen because another
+  request may already have installed new cookies. Failed native and HTMX forms
+  retain their HTTP status and show an actionable message. Ordinary links and
+  forms remain available without JavaScript.
 - Keep `qa_ui: false` in production. A private development instance may enable
   the same synthetic previews under `/qa/ui/`, but the preferred local workflow
   uses `balda backoffice qa serve` without configuration or database access.
