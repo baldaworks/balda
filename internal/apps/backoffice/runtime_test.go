@@ -28,7 +28,7 @@ func TestRuntimeSharedProviderLifecycle(t *testing.T) {
 	if err := runtime.Start(t.Context()); err == nil {
 		t.Fatal("Start() succeeded before administrator bootstrap")
 	}
-	if _, err := runtime.BootstrapAdmin(t.Context(), BootstrapInput{Username: "admin", Password: []byte("correct horse battery staple")}); err != nil {
+	if _, err := runtime.BootstrapAdmin(t.Context(), BootstrapInput{Username: "superuser", Password: []byte("correct horse battery staple")}); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.Start(t.Context()); err != nil {
@@ -68,7 +68,7 @@ func TestRuntimeStartReturnsBindFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtime.BootstrapAdmin(t.Context(), BootstrapInput{Username: "admin", Password: []byte("correct horse battery staple")}); err != nil {
+	if _, err := runtime.BootstrapAdmin(t.Context(), BootstrapInput{Username: "superuser", Password: []byte("correct horse battery staple")}); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.Start(t.Context()); err == nil {

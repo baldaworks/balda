@@ -136,7 +136,7 @@ func TestBackofficeReadinessAndRollbackBeforeIngress(t *testing.T) {
 		t.Fatalf("startup without admin = %v, ingress started = %t", err, ingressStarted)
 	}
 	if _, err := runtime.BootstrapAdmin(t.Context(), backoffice.BootstrapInput{
-		Username: "admin", Password: []byte("correct horse battery staple"),
+		Username: "superuser", Password: []byte("correct horse battery staple"),
 	}); err != nil {
 		t.Fatal(err)
 	}

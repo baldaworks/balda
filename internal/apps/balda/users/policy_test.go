@@ -214,8 +214,8 @@ func TestValidateBindingAssignment(t *testing.T) {
 
 	bound := user
 	bound.Binding = testBinding("zulip", "202")
-	if err := ValidateBindingAssignment(bound, candidate, nil); !errors.Is(err, usercmd.ErrBindingAlreadyAssigned) {
-		t.Errorf("bound user error = %v, want %v", err, usercmd.ErrBindingAlreadyAssigned)
+	if err := ValidateBindingAssignment(bound, candidate, nil); err != nil {
+		t.Errorf("second distinct binding error = %v, want nil", err)
 	}
 
 	existing := candidate

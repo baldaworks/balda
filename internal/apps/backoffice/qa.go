@@ -113,7 +113,7 @@ func qaUser() webui.UserView {
 	return webui.UserView{
 		ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
 		CredentialState: "temporary", MustChange: true, Version: 3, CredentialVersion: 2,
-		Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "synthetic fixture"},
+		Bindings: []webui.BindingView{{ID: "binding-telegram", ChannelType: "telegram", Principal: "42", DisplayName: "Operator", ProviderUsername: "operator", ProviderFirstName: "Op", Provenance: "synthetic fixture"}, {ID: "binding-slack", ChannelType: "slackagent", Principal: "T1:U1", DisplayName: "Operator Slack"}},
 	}
 }
 
@@ -145,7 +145,7 @@ func qaRefreshError() webui.Page {
 }
 
 func qaPassword() webui.Page {
-	return webui.Page{Title: "Replace password · QA", Current: webui.LocationAccount, CSRFToken: "qa-csrf"}
+	return webui.Page{Title: "Change password · QA", Current: webui.LocationAccount, CSRFToken: "qa-csrf"}
 }
 
 func qaPasswordError() webui.Page {
@@ -160,7 +160,7 @@ func qaOverview() webui.Page {
 		Navigation: qaAdminNavigation(webui.LocationOverview),
 		Capabilities: []webui.CapabilityCard{
 			{ID: "telegram", Name: "Telegram", Mode: "webhook", ListenAddr: "127.0.0.1:8080", Endpoint: "/telegram"},
-			{ID: "slack-agent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
+			{ID: "slackagent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
 			{ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: 3},
 		},
 	}
@@ -177,7 +177,7 @@ func qaAccess() webui.Page {
 	return webui.Page{
 		Title: "Access · QA", Current: webui.LocationAccess,
 		Navigation: qaAdminNavigation(webui.LocationAccess),
-		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(),
+		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(), BindingChoices: []string{"telegram", "slackagent", "zulip"},
 	}
 }
 

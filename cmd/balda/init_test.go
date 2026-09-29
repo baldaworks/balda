@@ -158,7 +158,7 @@ func TestInitCommand_NonInteractiveAutoSelectsRootAndGeneratesDetectedAgents(t *
 	}
 	defer func() { _ = provider.Close() }()
 	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
-	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary || page.Users[0].Username != "superuser" {
+	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary || page.Users[0].Username != "superuser" || page.Users[0].DisplayName != "superuser" {
 		t.Fatalf("initial administrator = %+v, error = %v", page, err)
 	}
 	secret, found, err := provider.Users().GetCredentialSecret(t.Context(), page.Users[0].ID)

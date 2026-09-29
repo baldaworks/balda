@@ -70,16 +70,18 @@ type CredentialSecret struct {
 	PasswordHash string
 }
 
-// Binding identifies the single optional transport principal owned by a user.
+// Binding identifies a transport principal owned by a user.
 type Binding struct {
-	ID          string
-	UserID      string
-	ChannelType string
-	Principal   string
-	DisplayName string
-	Provenance  string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                string
+	UserID            string
+	ChannelType       string
+	Principal         string
+	DisplayName       string
+	ProviderUsername  string
+	ProviderFirstName string
+	Provenance        string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // User is the secret-free canonical identity shared by Backoffice and bot authorization.
@@ -94,6 +96,7 @@ type User struct {
 	Primary            bool
 	Version            uint64
 	Binding            *Binding
+	Bindings           []Binding
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -225,6 +228,8 @@ const (
 	AuditActionSessionRevoked AuditAction = "session.revoked"
 	// AuditActionBindingAttached records verified transport-binding attachment.
 	AuditActionBindingAttached AuditAction = "user.binding.attached"
+	// AuditActionBindingDetached records transport-binding removal.
+	AuditActionBindingDetached AuditAction = "user.binding.detached"
 	// AuditActionBindingClaimCreated records creation of a scoped onboarding claim.
 	AuditActionBindingClaimCreated AuditAction = "user.binding.claim.created"
 	// AuditActionUserMigrated records canonical creation from legacy authorization state.
@@ -244,7 +249,7 @@ func (a AuditAction) Valid() bool {
 	switch a {
 	case AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
-		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingClaimCreated,
+		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
 		AuditActionRefreshReplay, AuditActionLogout:
 		return true

@@ -96,8 +96,8 @@ go build -trimpath -o ./bin/balda ./cmd/balda
 ./bin/balda validate
 ```
 
-For a fresh database, `init` creates the `superuser` administrator and prints its password
-once. Store the output securely, then start:
+For a fresh database, `init` creates the administrator with username and display
+name `superuser` and prints its password once. Store the output securely, then start:
 
 ```bash
 ./bin/balda start
@@ -133,6 +133,16 @@ your organization's secret-retention policy. Never commit, upload, back up, or
 attach the manifest to a ticket. Migrated bot bindings and roles become
 canonical immediately; a temporary browser credential can reach only password
 replacement and logout until it is changed.
+
+Legacy conversion copies a Telegram collaborator's stored username and first
+name into separate optional binding fields. Legacy owner records contain neither
+field, so conversion leaves both empty. After a verified Telegram message or
+command from a bound principal, Balda refreshes those fields from Telegram.
+The schema upgrade backfills already-converted Telegram collaborator bindings
+from retained legacy collaborator rows. If those rows are unavailable, the
+fields stay empty until a verified event arrives.
+The numeric Telegram principal remains the authorization key; provider profile
+fields never replace the Backoffice username or display name.
 
 User conversion is transactional and idempotent. A collision or interrupted
 precondition fails instead of silently merging users. After it succeeds there
@@ -175,9 +185,17 @@ credential that could restore access.
   schema, data, sequences, and Goose
   migration history.
 - Access is administrator-only. Account and Overview are available to active
-  administrators and operators; Audit is administrator-only. The optional
-  transport binding is read-only, and committed role/status changes immediately
-  affect bot authorization.
+  administrators and operators; Audit is administrator-only. Account places
+  **Change password** before profile details. A successful change creates a
+  fresh browser session and revokes previous access and refresh credentials.
+  An administrator may attach and remove multiple chat bindings per user from
+  Access. The add form offers only configured Telegram, Slack Agent
+  (`slackagent`), and Zulip integrations; generic webhooks are not user
+  bindings. Removal requires confirmation of the affected principal's bot
+  access. Other bindings, the browser account, and browser sessions remain.
+  Committed role/status changes immediately affect bot authorization for every
+  attached principal. Telegram bindings show the provider username and first
+  name separately, with empty values when the provider has not supplied them.
 - Keep `qa_ui: false` in production. A private development instance may enable
   the same synthetic previews under `/qa/ui/`, but the preferred local workflow
   uses `balda backoffice qa serve` without configuration or database access.

@@ -46,6 +46,7 @@ var serverActorAddress = actorlayer.ActorAddress{Target: "channel", Key: "telegr
 
 type telegramInboundHandler struct {
 	ownerStore        *auth.OwnerStore
+	telegramProfiles  *auth.TelegramProfileService
 	collaboratorStore *auth.CollaboratorStore
 	sessionManager    *baldasession.Manager
 	actorDispatcher   actortransport.Dispatcher
@@ -67,14 +68,15 @@ type telegramInboundHandler struct {
 type telegramInboundHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore          `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore   `optional:"true"`
-	SessionManager    *baldasession.Manager     `optional:"true"`
-	Dispatcher        actortransport.Dispatcher `optional:"true"`
-	QuestionService   *questions.Service        `optional:"true"`
-	Channel           *baldatelegram.Adapter    `optional:"true"`
-	AuthToken         string                    `name:"balda_auth_token" optional:"true"`
-	BaldaProviderID   string                    `name:"balda_provider" optional:"true"`
+	OwnerStore        *auth.OwnerStore             `optional:"true"`
+	TelegramProfiles  *auth.TelegramProfileService `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore      `optional:"true"`
+	SessionManager    *baldasession.Manager        `optional:"true"`
+	Dispatcher        actortransport.Dispatcher    `optional:"true"`
+	QuestionService   *questions.Service           `optional:"true"`
+	Channel           *baldatelegram.Adapter       `optional:"true"`
+	AuthToken         string                       `name:"balda_auth_token" optional:"true"`
+	BaldaProviderID   string                       `name:"balda_provider" optional:"true"`
 	Logger            zerolog.Logger
 }
 
@@ -85,6 +87,7 @@ func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInb
 	}
 	return &telegramInboundHandler{
 		ownerStore:        params.OwnerStore,
+		telegramProfiles:  params.TelegramProfiles,
 		collaboratorStore: params.CollaboratorStore,
 		sessionManager:    params.SessionManager,
 		actorDispatcher:   params.Dispatcher,
@@ -141,6 +144,9 @@ func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx b
 	}
 	if !allowed {
 		return nil
+	}
+	if err := h.telegramProfiles.Refresh(ctx, messageCtx.UserID, messageCtx.Username, messageCtx.FirstName); err != nil {
+		h.logger.Warn().Err(err).Int64("user_id", messageCtx.UserID).Msg("failed to refresh telegram binding profile")
 	}
 
 	if handled, err := h.handleQuestionReply(ctx, messageCtx); err != nil {

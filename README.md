@@ -50,6 +50,13 @@ password once. Save it securely, then start:
 balda start
 ```
 
+The primary administrator's display name is also `superuser`. In Backoffice,
+use **Account → Change password** to replace your own password. Administrators
+manage each user's chat bindings under **Access**: a user may have Telegram,
+Slack Agent (`slackagent`), and Zulip principals where those integrations are
+configured. Removing one binding revokes bot access for that principal without
+removing the user's other bindings or browser account.
+
 `balda init` creates `.config/balda/config.yaml`, initializes
 `.config/balda/state.db` by default, detects available provider CLIs, and prints
 the next step for your selected chat provider.

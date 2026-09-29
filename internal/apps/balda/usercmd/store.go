@@ -115,6 +115,9 @@ type Store interface {
 
 	CreateBindingClaim(ctx context.Context, claim BindingClaim, createdAt time.Time, audit AuditEvent) error
 	AttachBinding(ctx context.Context, claimID string, binding Binding, consumedAt time.Time, audit AuditEvent) error
+	CreateManagedBinding(ctx context.Context, binding Binding, expectedUserVersion uint64, audit AuditEvent) error
+	DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit AuditEvent) error
+	UpdateTelegramBindingProfile(ctx context.Context, principal, username, firstName string, updatedAt time.Time) (bool, error)
 
 	CreateSession(ctx context.Context, family SessionFamily, audit AuditEvent) error
 	GetSession(ctx context.Context, sessionID string) (SessionFamily, bool, error)
