@@ -5,3 +5,7 @@
 .login-page { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
 .login-box { width: min(100%, 24rem); }
 code { overflow-wrap: anywhere; }
+.mobile-navigation { position: relative; }
+.mobile-navigation nav { position: absolute; right: 0; top: 100%; z-index: 1050; min-width: 12rem; padding: .5rem; }
+.mobile-navigation nav a { display: block; padding: .5rem .75rem; border-radius: .25rem; }
+.mobile-navigation nav a.active { color: var(--bs-primary-text-emphasis); background: var(--bs-primary-bg-subtle); font-weight: 600; }

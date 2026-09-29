@@ -13,20 +13,26 @@
 <div class="app-wrapper">
   {{if .Navigation}}
   <nav class="app-header navbar navbar-expand bg-body" aria-label="Utility navigation">
-    <div class="container-fluid"><a class="navbar-brand" href="{{path "/"}}overview">Balda Backoffice</a></div>
+    <div class="container-fluid"><a class="navbar-brand" href="{{path "/"}}overview">Balda Backoffice</a>
+      <details class="mobile-navigation d-lg-none"><summary class="btn btn-outline-secondary">Menu</summary>
+        <nav class="bg-body border rounded shadow" aria-label="Mobile navigation">
+          {{range .Navigation}}<a class="nav-link{{if .Current}} active{{end}}" data-nav-link href="{{path .Href}}" hx-boost="true" hx-target="#main-content" hx-push-url="true"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}
+        </nav>
+      </details>
+    </div>
   </nav>
   <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
     <div class="sidebar-brand"><a href="{{path "/"}}overview" class="brand-link">Balda</a></div>
     <div class="sidebar-wrapper">
       <nav aria-label="Primary navigation">
         <ul class="nav sidebar-menu flex-column" data-lte-toggle="treeview" role="menu">
-          {{range .Navigation}}<li class="nav-item"><a class="nav-link{{if .Current}} active{{end}}" href="{{path .Href}}" hx-boost="true" hx-target="#main-content" hx-push-url="true"{{if .Current}} aria-current="page"{{end}}><i class="nav-icon bi {{.Icon}}" aria-hidden="true"></i><span>{{.Label}}</span></a></li>{{end}}
+          {{range .Navigation}}<li class="nav-item"><a class="nav-link{{if .Current}} active{{end}}" data-nav-link href="{{path .Href}}" hx-boost="true" hx-target="#main-content" hx-push-url="true"{{if .Current}} aria-current="page"{{end}}><i class="nav-icon bi {{.Icon}}" aria-hidden="true"></i><span>{{.Label}}</span></a></li>{{end}}
         </ul>
       </nav>
     </div>
   </aside>
   {{end}}
-  <div class="app-main">{{template "content" .}}</div>
+  <div class="app-main"><div id="request-error" class="alert alert-danger m-3" role="alert" tabindex="-1" hidden></div>{{template "content" .}}</div>
 </div>
 <script src="{{assetPath "/"}}assets/vendor/htmx/htmx.min.js"></script>
 <script src="{{assetPath "/"}}assets/vendor/adminlte/adminlte.min.js"></script>
