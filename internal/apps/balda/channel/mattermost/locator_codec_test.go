@@ -73,17 +73,21 @@ func TestPublicLocatorParseMatchesLiveSessionIdentity(t *testing.T) {
 	}
 }
 
-func TestNewChannelLocatorKeepsOneSessionAcrossThreads(t *testing.T) {
+func TestNewChannelLocatorIsolatesThreadSessions(t *testing.T) {
 	channelLocator := NewChannelLocator(testTeamID, testChannelID, "")
 	threadLocator := NewChannelLocator(testTeamID, testChannelID, "root-9")
 
-	// A thread keeps its delivery root in the address key, while the channel
-	// remains one conversational session.
+	// A thread keeps its delivery root in both its address and conversational
+	// identity, so unrelated channel threads cannot share history or controls.
 	if got, want := threadLocator.AddressKey, "c:channel-1:root-9"; got != want {
 		t.Fatalf("thread AddressKey = %q, want %q", got, want)
 	}
-	if threadLocator.SessionID != channelLocator.SessionID {
-		t.Fatalf("thread SessionID = %q, want channel SessionID %q", threadLocator.SessionID, channelLocator.SessionID)
+	if threadLocator.SessionID == channelLocator.SessionID {
+		t.Fatalf("thread SessionID = channel SessionID %q", threadLocator.SessionID)
+	}
+	otherThread := NewChannelLocator(testTeamID, testChannelID, "root-10")
+	if threadLocator.SessionID == otherThread.SessionID {
+		t.Fatalf("independent threads share SessionID %q", threadLocator.SessionID)
 	}
 	if got := ChannelIDOf(threadLocator); got != testChannelID {
 		t.Fatalf("ChannelIDOf(thread) = %q, want %q", got, testChannelID)

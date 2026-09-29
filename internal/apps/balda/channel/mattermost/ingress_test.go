@@ -677,6 +677,49 @@ func TestProcessInboundRetriesRetryableSettlement(t *testing.T) {
 	}
 }
 
+func TestStopDrainsAcceptedPostThroughRetry(t *testing.T) {
+	processor := &recordingProcessor{
+		inboundRetryCount: 1,
+		inboundResult:     turncmd.InboundSettlement{Outcome: turncmd.InboundAccepted},
+		inboundDone:       make(chan struct{}, 2),
+	}
+	ingress := newTestIngress(processor, "bot-1", "balda")
+	producerCtx, stopProducer := context.WithCancel(context.Background())
+	processCtx, stopProcessing := context.WithCancel(context.Background())
+	producerDone := make(chan struct{})
+	close(producerDone)
+	ingress.cancel = stopProducer
+	ingress.processCancel = stopProcessing
+	ingress.done = producerDone
+
+	frame := postedEventPayload(t, Post{
+		ID:        "post-retry-during-stop",
+		UserID:    "user-1",
+		ChannelID: "dm-channel-1",
+		Message:   "retry through shutdown",
+	}, channelTypeDirect, "Alice")
+	ingress.handleFrameForProcessing(producerCtx, processCtx, frame)
+
+	select {
+	case <-processor.inboundDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first ProcessInbound attempt did not start")
+	}
+
+	stopCtx, cancelStop := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelStop()
+	if err := ingress.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop() error = %v, want accepted work to drain", err)
+	}
+
+	processor.mu.Lock()
+	attempts := processor.inboundAttempts
+	processor.mu.Unlock()
+	if attempts != 2 {
+		t.Fatalf("ProcessInbound attempts = %d, want retry to finish during shutdown", attempts)
+	}
+}
+
 func TestNewIngressKeepsBotUserIDVerbatim(t *testing.T) {
 	ingress := NewIngress(IngressParams{
 		Enabled:   true,

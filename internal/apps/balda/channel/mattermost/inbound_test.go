@@ -122,16 +122,20 @@ func TestLocatorForPostScopesReplyToThreadRoot(t *testing.T) {
 		t.Fatalf("RootIDFromLocator() = (%q, %v), want (%q, true)", rootID, ok, "post-1")
 	}
 
-	// Every thread in the channel shares the channel-wide session while keeping
-	// its root for delivery correlation.
+	// Replies in one thread share a session while independent threads remain
+	// isolated from each other and from the channel-level locator.
 	sibling := LocatorForPost(channel, Post{ID: "post-3", ChannelID: "channel-1", UserID: "user-2", RootID: "post-1"})
 	if sibling.SessionID != locator.SessionID {
 		t.Fatalf("two replies in one thread resolved to different sessions: %q != %q", sibling.SessionID, locator.SessionID)
 	}
 
 	channelLocator := NewChannelLocator("team-1", "channel-1", "")
-	if locator.SessionID != channelLocator.SessionID {
-		t.Fatalf("thread and channel locators must share a session: %q vs %q", locator.SessionID, channelLocator.SessionID)
+	if locator.SessionID == channelLocator.SessionID {
+		t.Fatalf("thread and channel locators share session %q", locator.SessionID)
+	}
+	otherThread := LocatorForPost(channel, Post{ID: "post-4", ChannelID: "channel-1", UserID: "user-3", RootID: "post-2"})
+	if locator.SessionID == otherThread.SessionID {
+		t.Fatalf("independent threads share session %q", locator.SessionID)
 	}
 }
 
@@ -143,8 +147,8 @@ func TestLocatorForPostStartsThreadFromMentionedChannelPost(t *testing.T) {
 	if rootID, ok := RootIDFromLocator(locator); !ok || rootID != post.ID {
 		t.Fatalf("RootIDFromLocator() = (%q, %v), want (%q, true)", rootID, ok, post.ID)
 	}
-	if locator.SessionID != NewChannelLocator("team-1", "channel-1", "").SessionID {
-		t.Fatalf("top-level mention split the channel session: %q", locator.SessionID)
+	if locator.SessionID == NewChannelLocator("team-1", "channel-1", "").SessionID {
+		t.Fatalf("top-level mention reused the channel-level session: %q", locator.SessionID)
 	}
 }
 

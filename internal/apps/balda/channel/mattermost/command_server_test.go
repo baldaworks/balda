@@ -3,6 +3,7 @@ package mattermost
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,7 +37,7 @@ func (r *commandRecorder) HandleUnsupportedCommand(_ context.Context, cmd Inboun
 }
 
 func newTestCommandServer(recorder *commandRecorder) *CommandServer {
-	return NewCommandServer(CommandServerParams{
+	server := NewCommandServer(CommandServerParams{
 		Processor: recorder,
 		Commands: commandcmd.NewRegistryWithAdvertisements([]commandcmd.Advertisement{{
 			Transport: ChannelType,
@@ -45,6 +46,10 @@ func newTestCommandServer(recorder *commandRecorder) *CommandServer {
 		}}),
 		Config: CommandServerConfig{Enabled: true, Path: "/mattermost/commands", Token: testCommandToken},
 	})
+	server.channelLookup = func(context.Context, string) (Channel, error) {
+		return Channel{ID: testChannelID, Type: channelTypeDirect}, nil
+	}
+	return server
 }
 
 func commandRequest(form url.Values) (*http.Request, *httptest.ResponseRecorder) {
@@ -133,14 +138,14 @@ func TestCommandServerPublishesSlashCommand(t *testing.T) {
 		t.Fatalf("channel type = %q, want mattermost", command.Locator.ChannelType)
 	}
 	if command.InvocationID == "" {
-		t.Fatal("slash command must carry a body-derived invocation id")
+		t.Fatal("slash command must carry an invocation id")
 	}
 }
 
 // TestCommandServerUsesDistinctInvocationIDsWithoutPostIDs covers the provider
 // contract: slash commands execute without creating Mattermost posts. Their
-// body-derived invocation IDs must therefore stay distinct, so one command
-// cannot deduplicate a later command.
+// fallback invocation IDs must therefore stay distinct when an old/custom
+// payload omits Mattermost's trigger_id.
 func TestCommandServerUsesDistinctInvocationIDsWithoutPostIDs(t *testing.T) {
 	recorder := &commandRecorder{}
 	server := newTestCommandServer(recorder)
@@ -187,6 +192,31 @@ func TestCommandServerUsesDistinctInvocationIDsForRepeatedIdenticalRequests(t *t
 	}
 	if recorder.commands[0].InvocationID == recorder.commands[1].InvocationID {
 		t.Fatalf("identical slash requests shared invocation id %q", recorder.commands[0].InvocationID)
+	}
+}
+
+func TestCommandServerUsesStableInvocationIDForRepeatedTrigger(t *testing.T) {
+	recorder := &commandRecorder{}
+	server := newTestCommandServer(recorder)
+	form := url.Values{
+		"token":      {testCommandToken},
+		"trigger_id": {"mattermost-trigger-1"},
+		"command":    {"/reset"},
+		"channel_id": {testChannelID},
+		"user_id":    {testUserID},
+	}
+	for range 2 {
+		request, response := commandRequest(form)
+		server.handleCommand(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+		}
+	}
+	if len(recorder.commands) != 2 {
+		t.Fatalf("commands = %d, want 2", len(recorder.commands))
+	}
+	if recorder.commands[0].InvocationID != recorder.commands[1].InvocationID {
+		t.Fatalf("one trigger produced different invocation ids %q and %q", recorder.commands[0].InvocationID, recorder.commands[1].InvocationID)
 	}
 }
 
@@ -306,6 +336,29 @@ func TestCommandServerRequiresChannelAndUser(t *testing.T) {
 	}
 	if len(recorder.commands) != 0 {
 		t.Fatalf("commands = %d, want 0", len(recorder.commands))
+	}
+}
+
+func TestCommandServerFailsClosedWhenChannelLookupFails(t *testing.T) {
+	recorder := &commandRecorder{}
+	server := newTestCommandServer(recorder)
+	server.channelLookup = func(context.Context, string) (Channel, error) {
+		return Channel{}, errors.New("mattermost unavailable")
+	}
+	request, response := commandRequest(url.Values{
+		"token":      {testCommandToken},
+		"command":    {"/locator"},
+		"channel_id": {testChannelID},
+		"user_id":    {testUserID},
+	})
+
+	server.handleCommand(response, request)
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+	if len(recorder.commands) != 0 {
+		t.Fatalf("commands = %d, want 0 after channel lookup failure", len(recorder.commands))
 	}
 }
 

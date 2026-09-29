@@ -153,8 +153,7 @@ few seconds, so Balda never blocks the HTTP response on the command itself.
 2. In a channel, address the bot explicitly with an `@mention`.
 3. Before exposing a channel to a wide audience, confirm the bot is a member of
    it and that the owner binding is present — a sender who is neither the owner
-   nor a verified collaborator receives an access-denied reply rather than an
-   answer.
+   nor a verified collaborator is rejected before the turn reaches the agent.
 
 ## Troubleshooting
 

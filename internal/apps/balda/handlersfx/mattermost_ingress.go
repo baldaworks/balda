@@ -46,11 +46,11 @@ type mattermostInboundHandler struct {
 type mattermostInboundHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore          `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore   `optional:"true"`
-	Dispatcher        actortransport.Dispatcher `optional:"true"`
-	Chat              chatapp.Handler           `optional:"true"`
-	CommandIngress    commandcmd.Ingress        `optional:"true"`
+	OwnerStore        *auth.OwnerStore        `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore `optional:"true"`
+	Dispatcher        actortransport.Dispatcher
+	Chat              chatapp.Handler
+	CommandIngress    commandcmd.Ingress
 	Logger            zerolog.Logger
 }
 
@@ -142,13 +142,19 @@ func mattermostChatRequest(msg mattermost.InboundMessage, receivedAt time.Time) 
 // command pipeline.
 func (h *mattermostInboundHandler) HandleCommand(ctx context.Context, cmd mattermost.InboundCommand) error {
 	if h == nil {
-		return nil
+		return fmt.Errorf("mattermost inbound handler is required")
 	}
-	if cmd.Command != commandStart && !h.canAccess(ctx, cmd.SenderID) {
-		return h.sendPlain(ctx, cmd.Locator, mattermostAccessDeniedText)
+	if cmd.Command != commandStart {
+		allowed, err := h.authorizeMattermostUser(ctx, cmd.SenderID)
+		if err != nil {
+			return actorlayer.TransientError(fmt.Errorf("authorize mattermost command: %w", err))
+		}
+		if !allowed {
+			return h.sendPlain(ctx, cmd.Locator, mattermostAccessDeniedText)
+		}
 	}
 	if h.commandIngress == nil {
-		return nil
+		return fmt.Errorf("mattermost command ingress is required")
 	}
 	invocationID := strings.TrimSpace(cmd.InvocationID)
 	if invocationID == "" {
@@ -186,7 +192,7 @@ func (h *mattermostInboundHandler) HandleCommand(ctx context.Context, cmd matter
 // HandleUnsupportedCommand answers an unknown command instead of ignoring it.
 func (h *mattermostInboundHandler) HandleUnsupportedCommand(ctx context.Context, cmd mattermost.InboundCommand) error {
 	if h == nil {
-		return nil
+		return fmt.Errorf("mattermost inbound handler is required")
 	}
 	return h.sendPlain(ctx, cmd.Locator, fmt.Sprintf(mattermostUnknownCommand, cmd.Command))
 }

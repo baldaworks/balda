@@ -49,6 +49,9 @@ func SessionID(address Address) string {
 	channelID := strings.TrimSpace(address.ChannelID)
 	switch strings.TrimSpace(address.Type) {
 	case AddressTypeChannel:
+		if rootID := strings.TrimSpace(address.RootID); rootID != "" {
+			return "mm-c-" + threadHash(channelID+"\x00"+rootID)
+		}
 		return "mm-c-" + shortHash(channelID)
 	case AddressTypeDM:
 		return "mm-dm-" + shortHash(channelID)
@@ -105,4 +108,9 @@ func unescapePart(value string) (string, error) {
 func shortHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return fmt.Sprintf("%x", sum[:4])
+}
+
+func threadHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:16])
 }

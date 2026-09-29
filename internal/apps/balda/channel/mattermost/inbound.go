@@ -50,8 +50,8 @@ func BuildInboundReply(locator deliverycmd.Locator, subject string, message Inbo
 // InboundCommand represents a command invocation from Mattermost.
 type InboundCommand struct {
 	// InvocationID identifies this command invocation for durable deduplication.
-	// HTTP slash commands have no Mattermost post, so their ID is derived from
-	// the signed request body; websocket commands use the source post ID.
+	// HTTP slash commands have no Mattermost request ID, so each delivery gets a
+	// fresh ID; websocket commands use the source post ID.
 	InvocationID string
 	Locator      deliverycmd.Locator
 	MessageID    int
@@ -148,8 +148,8 @@ func NormalizeInbound(
 // LocatorForPost builds the canonical Balda locator for one inbound post.
 //
 // A reply inside a thread resolves to the thread root so the whole thread maps
-// to one session. A channel-level post maps to the channel itself. A direct or
-// group message channel maps to the direct-user address.
+// to one session. A channel-level mention starts a thread rooted at that post.
+// A direct or group message channel maps to the direct conversation address.
 func LocatorForPost(channel Channel, post Post) deliverycmd.Locator {
 	channelID := strings.TrimSpace(post.ChannelID)
 	if channelID == "" {

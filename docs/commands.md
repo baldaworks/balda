@@ -17,11 +17,11 @@ or any other subcommand returns the enabled-command usage.
 Slack's locator command accepts a signed request from a workspace member and
 does not use Telegram or Zulip owner records.
 
-Mattermost uses one slash command per action, such as `/locator`, and accepts
-them in direct messages and in channels where the bot is mentioned. Public and
-private channels require an explicit `@mention` before a message or command is
-dispatched; direct messages never require one. Mattermost bots cannot emit
-typing indicators, so progress is delivered as plan updates only.
+Mattermost accepts ordinary messages in direct messages and in channel threads
+where the bot was mentioned. Public and private channel messages require an
+explicit `@mention`; slash commands use the separately authenticated HTTP
+receiver and do not require a mention. Mattermost bots cannot emit typing
+indicators, so progress is delivered as plan updates only.
 
 Mattermost does not publish slash commands as posts, so they arrive over HTTP
 instead of the websocket event stream. Slash commands therefore need the
@@ -32,20 +32,20 @@ locator`) instead of one command per action (`/locator`); both shapes are accept
 
 | Command | Telegram | Zulip | Mattermost | Slack | Access | Context |
 |---|---:|---:|---:|---:|---|---|
-| `/start ...` | yes | yes | yes | onboarding | direct message |
-| `/help` | yes | no | no | anyone | current chat |
-| `/topic <name>` | yes | yes | yes | owner, collaborator | Telegram direct message; Zulip stream |
-| `/goalkeeper ...` | yes | yes | yes | owner, collaborator | current session |
-| `/auto [on\|off]` | yes | yes | yes | owner, collaborator | current session |
-| `/usage` | yes | yes | yes | owner, collaborator | current session |
-| `/reset` | yes | yes | `/balda reset` | owner, collaborator; signed Slack workspace member | current session |
-| `/skill <skill> [prompt...]` | yes | yes | `/balda skill <skill> [prompt...]` | owner, collaborator; signed Slack workspace member | current session |
-| `/locator` | yes | yes | yes | owner, collaborator | current session |
-| `/balda locator` | no | no | yes | workspace member | current conversation |
-| `/close` | yes | yes | yes | owner, collaborator | direct message |
-| `/cancel` | yes | yes | yes | owner, collaborator | current session |
-| `/user ...` | yes | yes | yes | owner | direct message recommended |
-| `/plugin ...` | yes | yes | yes | owner | current chat |
+| `/start ...` | yes | yes | yes | no | onboarding | direct message |
+| `/help` | yes | no | no | no | anyone | current chat |
+| `/topic <name>` | yes | yes | yes | no | owner, collaborator | direct message or Zulip stream |
+| `/goalkeeper ...` | yes | yes | yes | no | owner, collaborator | current session |
+| `/auto [on\|off]` | yes | yes | yes | no | owner, collaborator | current session |
+| `/usage` | yes | yes | yes | no | owner, collaborator | current session |
+| `/reset` | yes | yes | yes | `/balda reset` | owner, collaborator; signed Slack workspace member | current session |
+| `/skill <skill> [prompt...]` | yes | yes | yes | `/balda skill <skill> [prompt...]` | owner, collaborator; signed Slack workspace member | current session |
+| `/locator` | yes | yes | yes | no | owner, collaborator | current session |
+| `/balda locator` | no | no | no | yes | workspace member | current conversation |
+| `/close` | yes | yes | yes | no | owner, collaborator | direct message |
+| `/cancel` | yes | yes | yes | no | owner, collaborator | current session |
+| `/user ...` | yes | yes | yes | no | owner | direct message recommended |
+| `/plugin ...` | yes | no | no | no | owner | current chat |
 
 Arguments shown in angle brackets are required. Arguments in square brackets
 are optional. Commands that accept no arguments return a usage response when

@@ -2,6 +2,7 @@ package handlersfx
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +13,9 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
+	"go.uber.org/fx"
 )
 
 type fakeMattermostOwnerKVStore struct{}
@@ -195,6 +198,33 @@ func TestMattermostHandlerRejectsUnauthorizedCommand(t *testing.T) {
 	}
 }
 
+func TestMattermostHandlerRetriesCommandAuthorizationFailure(t *testing.T) {
+	backend := &fakeCollaboratorBackend{
+		collaborators: make(map[string]auth.Collaborator),
+		getErr:        errors.New("database unavailable"),
+	}
+	ingress := &recordingMattermostCommandIngress{}
+	h := &mattermostInboundHandler{
+		collaboratorStore: auth.NewCollaboratorStore(backend),
+		commandIngress:    ingress,
+		logger:            zerolog.Nop(),
+	}
+
+	err := h.HandleCommand(context.Background(), mattermost.InboundCommand{
+		Locator:  mattermost.NewDMLocator("dm-1", "user-1"),
+		PostID:   "post-1",
+		SenderID: "user-1",
+		Command:  "topic",
+		Direct:   true,
+	})
+	if err == nil {
+		t.Fatal("HandleCommand() error = nil, want transient authorization error")
+	}
+	if len(ingress.requests) != 0 {
+		t.Fatalf("published requests = %d, want 0 after authorization failure", len(ingress.requests))
+	}
+}
+
 func TestMattermostHandlerAllowsStartBeforeAuthorization(t *testing.T) {
 	// /start is the onboarding entrypoint: the owner does not exist yet, so it
 	// must be reachable by an unauthorized sender. Otherwise the transport can
@@ -253,7 +283,7 @@ func TestMattermostHandlerUsesMarkdownWithoutTypingProgress(t *testing.T) {
 	}
 }
 
-func TestMattermostHandlerWithoutIngressIsSafe(t *testing.T) {
+func TestMattermostHandlerWithoutCommandIngressFailsClosed(t *testing.T) {
 	const ownerID = "owner-user-1"
 	ownerStore := newOwnerStoreWithMattermostSubject(t, ownerID)
 	h := &mattermostInboundHandler{ownerStore: ownerStore, logger: zerolog.Nop()}
@@ -264,8 +294,26 @@ func TestMattermostHandlerWithoutIngressIsSafe(t *testing.T) {
 		SenderID: ownerID,
 		Command:  "topic",
 		Direct:   true,
-	}); err != nil {
-		t.Fatalf("HandleCommand() error = %v, want nil when no command pipeline is wired", err)
+	}); err == nil {
+		t.Fatal("HandleCommand() error = nil, want missing command pipeline error")
+	}
+}
+
+func TestMattermostProcessorFxGraphRequiresCommandIngress(t *testing.T) {
+	err := fx.ValidateApp(
+		fx.Provide(
+			newMattermostInboundHandler,
+			func() actortransport.Dispatcher { return nil },
+			func() chatapp.Handler { return &recordingMattermostChatHandler{} },
+			zerolog.Nop,
+		),
+		fx.Invoke(func(mattermost.InboundProcessor) {}),
+	)
+	if err == nil {
+		t.Fatal("fx.ValidateApp() error = nil, want missing command ingress error")
+	}
+	if !strings.Contains(err.Error(), "commandcmd.Ingress") {
+		t.Fatalf("fx.ValidateApp() error = %v, want commandcmd.Ingress dependency", err)
 	}
 }
 
@@ -423,11 +471,11 @@ func TestMattermostHandlerNilHandlerIsSafe(t *testing.T) {
 	if _, err := h.ProcessInbound(context.Background(), mattermost.InboundMessage{}); err == nil {
 		t.Fatal("ProcessInbound() error = nil on a nil handler, want an error")
 	}
-	if err := h.HandleCommand(context.Background(), mattermost.InboundCommand{}); err != nil {
-		t.Fatalf("HandleCommand() error = %v on a nil handler, want nil", err)
+	if err := h.HandleCommand(context.Background(), mattermost.InboundCommand{}); err == nil {
+		t.Fatal("HandleCommand() error = nil on a nil handler, want an error")
 	}
-	if err := h.HandleUnsupportedCommand(context.Background(), mattermost.InboundCommand{}); err != nil {
-		t.Fatalf("HandleUnsupportedCommand() error = %v on a nil handler, want nil", err)
+	if err := h.HandleUnsupportedCommand(context.Background(), mattermost.InboundCommand{}); err == nil {
+		t.Fatal("HandleUnsupportedCommand() error = nil on a nil handler, want an error")
 	}
 }
 

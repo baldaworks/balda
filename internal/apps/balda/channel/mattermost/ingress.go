@@ -53,11 +53,14 @@ type Ingress struct {
 	botUserID   string
 	botUsername string
 
-	mu      sync.Mutex
-	conn    *websocket.Conn
-	cancel  context.CancelFunc
-	done    chan struct{}
-	stopped bool
+	mu     sync.Mutex
+	conn   *websocket.Conn
+	cancel context.CancelFunc
+	// processCancel belongs to the worker context. It is deliberately separate
+	// from cancel so stopping websocket reads does not abort accepted messages.
+	processCancel context.CancelFunc
+	done          chan struct{}
+	stopped       bool
 
 	// seq is the monotonic outgoing websocket sequence number Mattermost
 	// requires on every client frame. Frames without it are rejected with
@@ -140,7 +143,9 @@ func (s *Ingress) onStart(ctx context.Context) error {
 		return nil // already running
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
+	processCtx, processCancel := context.WithCancel(context.Background())
 	s.cancel = cancel
+	s.processCancel = processCancel
 	s.done = make(chan struct{})
 	s.stopped = false
 	done := s.done
@@ -148,7 +153,7 @@ func (s *Ingress) onStart(ctx context.Context) error {
 
 	go func() {
 		defer close(done)
-		s.run(runCtx)
+		s.run(runCtx, processCtx)
 	}()
 	return nil
 }
@@ -160,9 +165,11 @@ func (s *Ingress) onStop(ctx context.Context) error {
 		return nil
 	}
 	cancel := s.cancel
+	processCancel := s.processCancel
 	conn := s.conn
 	done := s.done
 	s.cancel = nil
+	s.processCancel = nil
 	s.stopped = true
 	s.mu.Unlock()
 
@@ -174,9 +181,12 @@ func (s *Ingress) onStop(ctx context.Context) error {
 	// The producer owns processWG.Add. Stop it before waiting on the group;
 	// waiting concurrently with a producer that can still Add is invalid.
 	if err := s.waitForProducer(ctx, done); err != nil {
+		processCancel()
 		return err
 	}
-	return s.waitForProcessing(ctx)
+	err := s.waitForProcessing(ctx)
+	processCancel()
+	return err
 }
 
 func (s *Ingress) waitForProducer(ctx context.Context, done <-chan struct{}) error {
@@ -206,12 +216,12 @@ func (s *Ingress) waitForProcessing(ctx context.Context) error {
 }
 
 // run keeps a websocket connection alive across drops until the context ends.
-func (s *Ingress) run(ctx context.Context) {
+func (s *Ingress) run(ctx, processCtx context.Context) {
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := s.streamOnce(ctx); err != nil && ctx.Err() == nil {
+		if err := s.streamOnce(ctx, processCtx); err != nil && ctx.Err() == nil {
 			s.logger.Warn().Err(err).Msg("mattermost websocket stream ended; reconnecting")
 		}
 		select {
@@ -222,7 +232,7 @@ func (s *Ingress) run(ctx context.Context) {
 	}
 }
 
-func (s *Ingress) streamOnce(ctx context.Context) error {
+func (s *Ingress) streamOnce(ctx, processCtx context.Context) error {
 	endpoint, err := s.client.WebSocketURL()
 	if err != nil {
 		return err
@@ -259,10 +269,10 @@ func (s *Ingress) streamOnce(ctx context.Context) error {
 	// Sending an authentication_challenge frame on an already-authenticated
 	// connection makes Mattermost re-initialise the session for this socket and
 	// it silently stops delivering posted events on it, so no challenge is sent.
-	return s.readLoop(ctx, conn)
+	return s.readLoop(ctx, processCtx, conn)
 }
 
-func (s *Ingress) readLoop(ctx context.Context, conn *websocket.Conn) error {
+func (s *Ingress) readLoop(ctx, processCtx context.Context, conn *websocket.Conn) error {
 	pingTicker := time.NewTicker(websocketPingInterval)
 	defer pingTicker.Stop()
 
@@ -312,7 +322,7 @@ func (s *Ingress) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			if frame.messageType != websocket.TextMessage {
 				continue
 			}
-			s.handleFrame(ctx, frame.payload)
+			s.handleFrameForProcessing(ctx, processCtx, frame.payload)
 		}
 	}
 }
@@ -340,6 +350,10 @@ func (s *Ingress) writeEvent(conn *websocket.Conn, action string, data any) erro
 }
 
 func (s *Ingress) handleFrame(ctx context.Context, payload []byte) {
+	s.handleFrameForProcessing(ctx, ctx, payload)
+}
+
+func (s *Ingress) handleFrameForProcessing(ctx, processCtx context.Context, payload []byte) {
 	var event WebSocketEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
 		s.logger.Debug().Err(err).Msg("ignoring undecodable mattermost websocket frame")
@@ -352,7 +366,7 @@ func (s *Ingress) handleFrame(ctx context.Context, payload []byte) {
 	s.logger.Debug().Str("event", event.Event).Msg("mattermost websocket event decoded")
 	switch event.Event {
 	case eventPosted:
-		s.dispatchPosted(ctx, event)
+		s.dispatchPosted(ctx, processCtx, event)
 	case eventPostEdited, eventPostDeleted:
 		// Edits and deletes are intentionally ignored: Balda acts on the
 		// original instruction and does not retroactively rewrite its answer.
@@ -363,7 +377,7 @@ func (s *Ingress) handleFrame(ctx context.Context, payload []byte) {
 	}
 }
 
-func (s *Ingress) dispatchPosted(ctx context.Context, event WebSocketEvent) {
+func (s *Ingress) dispatchPosted(ctx, processCtx context.Context, event WebSocketEvent) {
 	var data PostedData
 	if err := json.Unmarshal(event.Data, &data); err != nil {
 		s.logger.Debug().Err(err).Msg("ignoring mattermost posted event with undecodable data")
@@ -411,7 +425,7 @@ func (s *Ingress) dispatchPosted(ctx context.Context, event WebSocketEvent) {
 	s.processWG.Add(1)
 	go func() {
 		defer func() { release(); s.processWG.Done() }()
-		s.processPosted(ctx, data, post)
+		s.processPosted(processCtx, data, post)
 	}()
 }
 
@@ -539,7 +553,10 @@ func (s *Ingress) processCommandWithRetry(ctx context.Context, postID string, pr
 		case <-timer.C:
 		case <-ctx.Done():
 			if !timer.Stop() {
-				<-timer.C
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
 			return
 		}
@@ -577,7 +594,10 @@ func (s *Ingress) processInboundWithRetry(ctx context.Context, postID string, me
 		case <-timer.C:
 		case <-ctx.Done():
 			if !timer.Stop() {
-				<-timer.C
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
 			return
 		}

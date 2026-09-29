@@ -90,12 +90,13 @@ type CommandServerConfig struct {
 // processor. Authorization, session selection and command policy all stay in
 // the shared pipeline, which is why this type holds no policy of its own.
 type CommandServer struct {
-	processor  InboundProcessor
-	commands   IngressCommandSupport
-	client     *Client
-	config     CommandServerConfig
-	logger     zerolog.Logger
-	processSem chan struct{}
+	processor     InboundProcessor
+	commands      IngressCommandSupport
+	client        *Client
+	channelLookup func(context.Context, string) (Channel, error)
+	config        CommandServerConfig
+	logger        zerolog.Logger
+	processSem    chan struct{}
 
 	server *http.Server
 	ln     net.Listener
@@ -236,10 +237,15 @@ func (s *CommandServer) handleCommand(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), commandServerProcessingTimeout)
 	defer cancel()
-	locator, direct := s.resolveCommandLocator(ctx, channelID, userID)
+	locator, direct, err := s.resolveCommandLocator(ctx, channelID, userID)
+	if err != nil {
+		s.logger.Warn().Err(err).Str("channel_id", channelID).Msg("failed to resolve mattermost slash command channel")
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	postID := strings.TrimSpace(form.Get("post_id"))
 	command := InboundCommand{
-		InvocationID: commandInvocationIDForRequest(postID),
+		InvocationID: commandInvocationIDForRequest(form.Get("trigger_id"), postID),
 		Locator:      locator,
 		MessageID:    ParsePostID(postID),
 		PostID:       postID,
@@ -370,21 +376,22 @@ func commandInvocation(form url.Values, supports func(string) bool) (string, str
 	return strings.ToLower(fields[0]), strings.Join(fields[1:], " ")
 }
 
-// commandInvocationID derives a stable id for a slash invocation from its body.
-// It remains available for callers that have a provider request identifier or
-// explicitly need a stable body fingerprint; ordinary Mattermost slash
-// requests use commandInvocationIDForRequest because they have no request ID.
+// commandInvocationID derives a bounded stable id for slash invocation
+// material without persisting the provider credential-like value itself.
 func commandInvocationID(body []byte) string {
 	material := append([]byte("mattermost/slash/v1\x00"), body...)
 	sum := sha256.Sum256(material)
 	return "mattermost:command:" + hex.EncodeToString(sum[:])
 }
 
-// commandInvocationIDForRequest keeps retries for the rare post-backed form
-// idempotent. Mattermost does not provide a request ID for ordinary slash
-// commands, so those requests need a fresh identity; hashing the body would
-// incorrectly deduplicate two legitimate identical commands.
-func commandInvocationIDForRequest(postID string) string {
+// commandInvocationIDForRequest keeps retries idempotent by preferring the
+// server-generated trigger ID included in Mattermost slash-command requests.
+// Old/custom payloads without one fall back to a post ID or a fresh identity;
+// hashing the entire body would merge separate identical user commands.
+func commandInvocationIDForRequest(triggerID, postID string) string {
+	if trimmed := strings.TrimSpace(triggerID); trimmed != "" {
+		return commandInvocationID([]byte("trigger\x00" + trimmed))
+	}
 	if trimmed := strings.TrimSpace(postID); trimmed != "" {
 		return "mattermost:command:post:" + trimmed
 	}
@@ -396,25 +403,28 @@ func commandInvocationIDForRequest(postID string) string {
 // A slash request carries channel_id but not the channel type, and the type
 // decides whether the conversation is a direct message (no mention required,
 // DM-only commands allowed) or a shared channel. The type is therefore read from
-// the API. When the lookup fails the request is treated as a non-direct channel
-// so the stricter authorization path applies.
-func (s *CommandServer) resolveCommandLocator(ctx context.Context, channelID, userID string) (deliverycmd.Locator, bool) {
-	if s.client == nil {
-		return NewDMLocator(channelID, userID), true
+// the API. Lookup failures are returned instead of guessing a scope: guessing
+// can run a DM-only command in the wrong session and acknowledge it as accepted.
+func (s *CommandServer) resolveCommandLocator(ctx context.Context, channelID, userID string) (deliverycmd.Locator, bool, error) {
+	lookup := s.channelLookup
+	if lookup == nil && s.client != nil {
+		lookup = s.client.GetChannel
 	}
-	channel, err := s.client.GetChannel(ctx, channelID)
+	if lookup == nil {
+		return deliverycmd.Locator{}, false, fmt.Errorf("mattermost command channel lookup is required")
+	}
+	channel, err := lookup(ctx, channelID)
 	if err != nil {
-		s.logger.Warn().Err(err).Str("channel_id", channelID).Msg("failed to resolve mattermost channel for slash command; assuming a shared channel")
-		return NewChannelLocator("", channelID, ""), false
+		return deliverycmd.Locator{}, false, fmt.Errorf("get Mattermost command channel %q: %w", channelID, err)
 	}
 	channelType := strings.TrimSpace(channel.Type)
 	if IsGroupChannelType(channelType) {
-		return NewGroupDMLocator(channelID), true
+		return NewGroupDMLocator(channelID), true, nil
 	}
 	if IsDirectChannelType(channelType) {
-		return NewDMLocator(channelID, userID), true
+		return NewDMLocator(channelID, userID), true, nil
 	}
-	return NewChannelLocator(strings.TrimSpace(channel.TeamID), channelID, ""), false
+	return NewChannelLocator(strings.TrimSpace(channel.TeamID), channelID, ""), false, nil
 }
 
 func normalizeCommandPath(path string) (string, error) {
