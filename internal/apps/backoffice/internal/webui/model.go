@@ -137,6 +137,7 @@ type Page struct {
 	Sessions            []SessionView
 	SessionActionPrefix string
 	SessionNextURL      string
+	MixedSessions       bool
 	Audit               []AuditView
 	Error               *ErrorView
 	CSRFToken           string

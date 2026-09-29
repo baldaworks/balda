@@ -1,7 +1,7 @@
 {{define "session_list"}}
 <section aria-labelledby="sessions-heading" class="card mb-3"><div class="card-body">
-  <h2 id="sessions-heading" class="h4">Active browser sessions</h2>
-  <p class="text-body-secondary">Only active sessions appear here. “Last sign-in or refresh” is the latest recorded event, not every page visit.</p>
+  <h2 id="sessions-heading" class="h4">{{if .MixedSessions}}Browser session state preview{{else}}Active browser sessions{{end}}</h2>
+  <p class="text-body-secondary">{{if .MixedSessions}}Synthetic active, ended, and expired examples are shown together to check their controls.{{else}}Only active sessions appear here.{{end}} “Last sign-in or refresh” is the latest recorded event, not every page visit.</p>
   <div class="row g-3">
     {{range .Sessions}}
     <div class="col-12 col-xl-6"><article class="border rounded p-3 h-100">

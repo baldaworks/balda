@@ -66,6 +66,51 @@ func TestHTTPAppRefreshRecoveryChoices(t *testing.T) {
 	}
 }
 
+func TestQAHandlerSessionAndErrorStates(t *testing.T) {
+	t.Parallel()
+	handler, err := QAHandler("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		path   string
+		status int
+		want   string
+	}{
+		{"/qa/ui/account-many", http.StatusOK, "Older active sessions"},
+		{"/qa/ui/account-many-next", http.StatusOK, "End session"},
+		{"/qa/ui/account-session-states", http.StatusOK, "Expired"},
+		{"/qa/ui/access-primary", http.StatusOK, "Primary administrator"},
+		{"/qa/ui/access-long", http.StatusOK, "Long synthetic"},
+		{"/qa/ui/form-bad-request", http.StatusBadRequest, "Review the input"},
+		{"/qa/ui/form-forbidden", http.StatusForbidden, "Permission denied"},
+		{"/qa/ui/form-conflict", http.StatusConflict, "changed while you were editing"},
+		{"/qa/ui/form-server-error", http.StatusInternalServerError, "Try again later"},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, check.path, nil))
+		if response.Code != check.status || !strings.Contains(response.Body.String(), check.want) {
+			t.Errorf("GET %s = %d, missing %q", check.path, response.Code, check.want)
+		}
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/qa/ui/account-session-states", nil))
+	if !strings.Contains(response.Body.String(), "Synthetic active, ended, and expired examples") {
+		t.Fatalf("session state preview lacks fixture context: %q", response.Body.String())
+	}
+	if strings.Count(response.Body.String(), "End session</button>") != 2 {
+		t.Fatalf("active-only revoke controls in session state preview = %d", strings.Count(response.Body.String(), "End session</button>"))
+	}
+	fragmentRequest := httptest.NewRequest(http.MethodGet, "/qa/ui/form-bad-request", nil)
+	fragmentRequest.Header.Set("HX-Request", "true")
+	fragmentRequest.Header.Set("HX-Target", "main-content")
+	fragment := httptest.NewRecorder()
+	handler.ServeHTTP(fragment, fragmentRequest)
+	if fragment.Code != http.StatusBadRequest || strings.Contains(fragment.Body.String(), "<!doctype") || strings.Count(fragment.Body.String(), `id="main-content"`) != 1 {
+		t.Fatalf("QA error fragment = %d %q", fragment.Code, fragment.Body.String())
+	}
+}
+
 func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
 	t.Parallel()
 	handler, err := QAHandler("/balda")
@@ -85,12 +130,16 @@ func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
 	}
 	for _, entry := range qaEntries {
 		path := "/balda/qa/ui/" + entry.name
+		wantStatus := entry.status
+		if wantStatus == 0 {
+			wantStatus = http.StatusOK
+		}
 		if entry.gallery && !strings.Contains(gallery.Body.String(), `href="`+path+`"`) {
 			t.Errorf("gallery has no link to %s", path)
 		}
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		if response.Code != http.StatusOK || strings.Count(response.Body.String(), `id="main-content"`) != 1 {
+		if response.Code != wantStatus || strings.Count(response.Body.String(), `id="main-content"`) != 1 {
 			t.Errorf("GET %s = %d, main count = %d", path, response.Code, strings.Count(response.Body.String(), `id="main-content"`))
 		}
 		if strings.Contains(response.Body.String(), `action="/balda/access`) || strings.Contains(response.Body.String(), `action="/balda/account`) {
@@ -98,7 +147,7 @@ func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
 		}
 		head := httptest.NewRecorder()
 		handler.ServeHTTP(head, httptest.NewRequest(http.MethodHead, path, nil))
-		if head.Code != http.StatusOK || head.Body.Len() != 0 {
+		if head.Code != wantStatus || head.Body.Len() != 0 {
 			t.Errorf("HEAD %s = %d with %d body bytes", path, head.Code, head.Body.Len())
 		}
 		post := httptest.NewRecorder()
