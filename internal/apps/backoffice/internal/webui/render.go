@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
 	"fmt"
 	"html/template"
@@ -50,11 +51,20 @@ func NewQARenderer(basePath string) (*Renderer, error) {
 }
 
 func newRenderer(pagePath, assetPath string) (*Renderer, error) {
+	versioned, _, err := versionedAssets()
+	if err != nil {
+		return nil, err
+	}
 	templates := make(map[string]*template.Template, len(templateFiles))
 	for name, pageFile := range templateFiles {
 		parsed, err := template.New(name).Funcs(template.FuncMap{
-			"path":      func(route any) string { return pagePath + fmt.Sprint(route) },
-			"assetPath": func(route any) string { return assetPath + fmt.Sprint(route) },
+			"path": func(route any) string { return pagePath + fmt.Sprint(route) },
+			"assetPath": func(route string) string {
+				if version, ok := versioned[route]; ok {
+					return assetPath + version
+				}
+				return assetPath + route
+			},
 		}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", pageFile)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
@@ -119,6 +129,10 @@ func RespondMutationAt(w http.ResponseWriter, request *http.Request, location Lo
 
 // Assets returns the embedded offline static asset handler.
 func Assets() (http.Handler, error) {
+	_, originals, err := versionedAssets()
+	if err != nil {
+		return nil, err
+	}
 	root, err := fs.Sub(embedded, "static")
 	if err != nil {
 		return nil, fmt.Errorf("open embedded static assets: %w", err)
@@ -135,6 +149,12 @@ func Assets() (http.Handler, error) {
 			return
 		}
 		name := strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(request.URL.Path, "/assets/")), "/")
+		if original, ok := originals[name]; ok {
+			name = original
+		} else if name == "app.js" || name == "app.css" {
+			http.NotFound(w, request)
+			return
+		}
 		info, err := fs.Stat(root, name)
 		if err != nil || info.IsDir() {
 			http.NotFound(w, request)
@@ -146,4 +166,21 @@ func Assets() (http.Handler, error) {
 		servedRequest.URL.Path = "/" + name
 		files.ServeHTTP(w, servedRequest)
 	}), nil
+}
+
+func versionedAssets() (map[string]string, map[string]string, error) {
+	paths := make(map[string]string, 2)
+	originals := make(map[string]string, 2)
+	for _, name := range []string{"app.css", "app.js"} {
+		contents, err := embedded.ReadFile("static/" + name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read embedded asset %s: %w", name, err)
+		}
+		sum := sha256.Sum256(contents)
+		base, extension := strings.TrimSuffix(name, path.Ext(name)), path.Ext(name)
+		version := fmt.Sprintf("%s.%x%s", base, sum[:8], extension)
+		paths["/assets/"+name] = "/assets/" + version
+		originals[version] = name
+	}
+	return paths, originals, nil
 }

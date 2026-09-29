@@ -181,3 +181,41 @@ func TestEmbeddedAssetsServeOffline(t *testing.T) {
 		t.Fatalf("asset response = %d %v (%d bytes)", response.Code, response.Header(), response.Body.Len())
 	}
 }
+
+func TestRenderedAssetsUseContentVersions(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := Assets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	versioned, _, err := versionedAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/login", nil),
+		http.StatusOK, TemplateLogin, Page{Title: "Login"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"app.css", "app.js"} {
+		assetPath := versioned["/assets/"+name]
+		if !strings.Contains(response.Body.String(), "/balda"+assetPath) {
+			t.Errorf("rendered page does not reference %s", assetPath)
+		}
+		assetResponse := httptest.NewRecorder()
+		handler.ServeHTTP(assetResponse, httptest.NewRequest(http.MethodGet, assetPath, nil))
+		contents, err := embedded.ReadFile("static/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if assetResponse.Code != http.StatusOK || assetResponse.Body.String() != string(contents) ||
+			assetResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+			t.Errorf("versioned %s response: status=%d, cache=%q", name, assetResponse.Code,
+				assetResponse.Header().Get("Cache-Control"))
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
 		}
 	}
 	asset := httptest.NewRecorder()
-	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/balda/assets/app.css", nil))
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, appAssetPath(t, gallery.Body.String(), "css"), nil))
 	if asset.Code != http.StatusOK {
 		t.Errorf("asset status = %d", asset.Code)
 	}
@@ -118,14 +119,15 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	}
 	login := httptest.NewRecorder()
 	handler.ServeHTTP(login, httptest.NewRequest(http.MethodGet, "/balda/login", nil))
-	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), `action="/balda/login"`) || !strings.Contains(login.Body.String(), `src="/balda/assets/app.js"`) {
+	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), `action="/balda/login"`) {
 		t.Fatalf("prefixed login = %d %q", login.Code, login.Body.String())
 	}
+	assetPath := appAssetPath(t, login.Body.String(), "js")
 	if got := login.Result().Cookies()[0].Path; got != "/balda/" {
 		t.Errorf("CSRF cookie path = %q", got)
 	}
 	asset := httptest.NewRecorder()
-	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/balda/assets/app.js", nil))
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, assetPath, nil))
 	if asset.Code != http.StatusOK {
 		t.Errorf("prefixed asset = %d", asset.Code)
 	}
@@ -139,6 +141,16 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	if qa.Code != http.StatusOK || !strings.Contains(qa.Body.String(), `action="/balda/qa/ui/access/users`) || !strings.Contains(qa.Body.String(), `href="/balda/qa/ui/overview"`) {
 		t.Fatalf("prefixed QA = %d %q", qa.Code, qa.Body.String())
 	}
+}
+
+func appAssetPath(t *testing.T, document, extension string) string {
+	t.Helper()
+	expression := regexp.MustCompile(`(?:href|src)="([^"]*/assets/app\.[0-9a-f]{16}\.` + extension + `)"`)
+	match := expression.FindStringSubmatch(document)
+	if len(match) != 2 {
+		t.Fatalf("versioned app.%s URL missing from document", extension)
+	}
+	return match[1]
 }
 
 func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {

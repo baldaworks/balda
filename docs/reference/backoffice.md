@@ -245,6 +245,9 @@ fonts. Node/npm as a frontend build or runtime dependency, an SPA router, a
 separate frontend development server, and CDN-hosted runtime assets are
 prohibited. The local QA preview is served by the same Go binary and uses the
 same embedded templates and assets.
+Application CSS and JavaScript use content-versioned asset URLs so a browser or
+edge cache receives the matching files after a deployment. Static asset responses
+use immutable caching; a change to either application file changes its URL.
 
 Every vendored frontend dependency must be pinned with its exact version,
 license, and SHA-256 digest in
