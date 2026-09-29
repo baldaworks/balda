@@ -1,11 +1,15 @@
 {{define "content"}}<main id="main-content" class="login-page">
   <section class="login-box" aria-labelledby="refresh-heading"><div class="card card-outline card-primary"><div class="card-body">
-    <h1 id="refresh-heading" class="h3">Restoring your session</h1>
-    <p>Your browser is restoring access. If it does not continue automatically, use the button below.</p>
+    <h1 id="refresh-heading" class="h3">{{if and .Error (not .AutoRefresh)}}Session needs attention{{else}}Restoring your session{{end}}</h1>
+    {{if or .AutoRefresh (not .Error)}}<p>Your browser is restoring access. If it does not continue automatically, use the button below.</p>{{end}}
     {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
+    {{if and .Error (not .AutoRefresh)}}
+      {{if .RefreshRetryable}}<a class="btn btn-primary" href="{{.ReturnTo}}">Reopen page</a> <a class="btn btn-outline-secondary" href="{{path "/"}}login">Sign in</a>{{else}}<a class="btn btn-primary" href="{{path "/"}}login">Sign in again</a>{{end}}
+    {{else}}
     <form method="post" action="{{path "/"}}auth/session/refresh" hx-boost="false"{{if .AutoRefresh}} data-auto-refresh="true"{{end}}>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="return_to" value="{{.ReturnTo}}">
       <button class="btn btn-primary" type="submit">Restore session</button> <a class="btn btn-outline-secondary" href="{{path "/"}}login">Sign in</a>
     </form>
+    {{end}}
   </div></div></section>
 </main>{{end}}

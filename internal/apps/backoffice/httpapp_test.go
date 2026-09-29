@@ -42,6 +42,30 @@ func TestHTTPAppQAIsOptInAndUsesProductionTemplates(t *testing.T) {
 	}
 }
 
+func TestHTTPAppRefreshRecoveryChoices(t *testing.T) {
+	provider, config := newHTTPAppTestState(t)
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		status int
+		want   string
+		reject string
+	}{
+		{http.StatusUnauthorized, "Sign in again", "Restore session"},
+		{http.StatusConflict, "Reopen page", "Restore session"},
+	} {
+		request := httptest.NewRequest(http.MethodPost, security.RefreshPath, strings.NewReader("return_to=%2Faccount"))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		response := httptest.NewRecorder()
+		app.renderSecurityError(response, request, check.status)
+		if response.Code != check.status || !strings.Contains(response.Body.String(), check.want) || strings.Contains(response.Body.String(), check.reject) {
+			t.Fatalf("refresh recovery status %d = %d %q", check.status, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
 	t.Parallel()
 	handler, err := QAHandler("/balda")

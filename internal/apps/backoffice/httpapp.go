@@ -569,6 +569,7 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 		templateName = webui.TemplateRefresh
 		page.CSRFToken = a.browser.CSRFToken(r)
 		page.ReturnTo = a.browser.SafeReturnPath(r.FormValue("return_to"), a.path(string(webui.LocationOverview)))
+		page.RefreshRetryable = status == http.StatusConflict
 	case a.path("/account/password"):
 		templateName = webui.TemplatePassword
 		page.CSRFToken = a.browser.CSRFToken(r)

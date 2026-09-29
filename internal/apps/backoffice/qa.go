@@ -62,6 +62,7 @@ var qaEntries = []qaEntry{
 	{name: "login-error", label: "Login · error", templateName: webui.TemplateLogin, page: qaLoginError, gallery: true},
 	{name: "refresh", label: "Session refresh", templateName: webui.TemplateRefresh, page: qaRefresh, gallery: true},
 	{name: "refresh-error", label: "Session refresh · error", templateName: webui.TemplateRefresh, page: qaRefreshError, gallery: true},
+	{name: "refresh-conflict", label: "Session refresh · concurrent", templateName: webui.TemplateRefresh, page: qaRefreshConflict, gallery: true},
 	{name: "password", label: "Password replacement", templateName: webui.TemplatePassword, page: qaPassword, gallery: true},
 	{name: "password-error", label: "Password replacement · error", templateName: webui.TemplatePassword, page: qaPasswordError, gallery: true},
 	{name: "overview", label: "Overview", templateName: webui.TemplateOverview, page: qaOverview, gallery: true},
@@ -142,6 +143,13 @@ func qaRefresh() webui.Page {
 func qaRefreshError() webui.Page {
 	page := qaRefresh()
 	page.Error = &webui.ErrorView{Heading: "Session expired", Message: "Sign in again."}
+	return page
+}
+
+func qaRefreshConflict() webui.Page {
+	page := qaRefresh()
+	page.Error = &webui.ErrorView{Heading: "Session changed", Message: "Another request refreshed this session. Reopen the page."}
+	page.RefreshRetryable = true
 	return page
 }
 

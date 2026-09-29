@@ -141,6 +141,7 @@ type Page struct {
 	Error               *ErrorView
 	CSRFToken           string
 	AutoRefresh         bool
+	RefreshRetryable    bool
 	ReturnTo            string
 	AuditAction         string
 	AuditOutcome        string
