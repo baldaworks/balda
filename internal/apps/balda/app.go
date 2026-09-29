@@ -18,6 +18,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/catalogapp"
+	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
+	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost/mattermostfx"
 	baldaslackagent "github.com/baldaworks/balda/internal/apps/balda/channel/slackagent"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/slackagent/slackagentfx"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
@@ -235,6 +237,9 @@ func Module(
 	if err := validateSlackConfig(cfg.Balda.Slack); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
+	if err := validateMattermostConfig(cfg.Balda.Mattermost); err != nil {
+		return fx.Module("balda", fx.Error(err))
+	}
 
 	// Start with global MCP servers.
 	mcpServers := make(map[string]agentconfig.MCPServerConfig, len(normaCfg.MCPServers))
@@ -271,13 +276,10 @@ func Module(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
 				fx.ResultTags(`name:"balda_session_memory_enabled"`),
 			),
-			func() sessionmemoryapp.ScopeResolver {
-				return sessionmemoryapp.NewScopeResolver(map[string]sessionmemoryapp.ScopeClassifier{
-					baldatelegram.ChannelType:   baldatelegram.ClassifyLocatorScope,
-					baldaslackagent.ChannelType: baldaslackagent.ClassifyLocatorScope,
-					baldazulip.ChannelType:      baldazulip.ClassifyLocatorScope,
-				})
-			},
+			fx.Annotate(
+				sessionmemoryapp.NewScopeResolverFromContributions,
+				fx.ParamTags(`group:"balda_session_memory_scope_classifier"`),
+			),
 			func(builder *baldaagent.Builder) (*portableapp.Runtime, error) {
 				return newCanonicalSessionMemoryRuntime(cfg.Balda.SessionMemory, builder, sessionMemoryProviderID, workingDir, stateDir)
 			},
@@ -604,6 +606,61 @@ func Module(
 				fx.ResultTags(`name:"balda_zulip_webhook_token"`),
 			),
 		),
+		// Mattermost transport
+		fx.Provide(
+			fx.Annotate(
+				func() bool { return cfg.Balda.Mattermost.Enabled },
+				fx.ResultTags(`name:"balda_mattermost_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.ServerURL) },
+				fx.ResultTags(`name:"balda_mattermost_server_url"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.Token) },
+				fx.ResultTags(`name:"balda_mattermost_token"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.BotUserID) },
+				fx.ResultTags(`name:"balda_mattermost_bot_user_id"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.BotUsername) },
+				fx.ResultTags(`name:"balda_mattermost_bot_username"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() bool { return cfg.Balda.Mattermost.CommandsEnabled },
+				fx.ResultTags(`name:"balda_mattermost_commands_enabled"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsListenAddr) },
+				fx.ResultTags(`name:"balda_mattermost_commands_listen_addr"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsPath) },
+				fx.ResultTags(`name:"balda_mattermost_commands_path"`),
+			),
+		),
+		fx.Provide(
+			fx.Annotate(
+				func() string { return strings.TrimSpace(cfg.Balda.Mattermost.CommandsToken) },
+				fx.ResultTags(`name:"balda_mattermost_commands_token"`),
+			),
+		),
 		fx.Provide(func() *baldaslackagent.Client {
 			return baldaslackagent.NewClient(cfg.Balda.Slack.BotToken)
 		}),
@@ -664,6 +721,7 @@ func Module(
 		slackagentfx.Module,
 		telegramfx.Module,
 		zulipfx.Module,
+		mattermostfx.Module,
 		catalogapp.Module,
 		deliveryworkflow.Module,
 		commandfx.Module,
@@ -942,6 +1000,28 @@ func validateSlackConfig(cfg SlackConfig) error {
 		if commandsPath == agentEventsPath {
 			return fmt.Errorf("balda.slack.commands_path must differ from balda.slack.agent.events_path")
 		}
+	}
+	return nil
+}
+
+func validateMattermostConfig(cfg MattermostConfig) error {
+	if cfg.CommandsEnabled && !cfg.Enabled {
+		return fmt.Errorf("balda.mattermost.commands_enabled requires balda.mattermost.enabled")
+	}
+	if !cfg.Enabled {
+		return nil
+	}
+	if err := baldamattermost.ValidateConfig(cfg.ServerURL, cfg.Token); err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.BotUserID) == "" {
+		return fmt.Errorf("balda.mattermost.bot_user_id is required when the Mattermost transport is enabled")
+	}
+	if strings.TrimSpace(cfg.BotUsername) == "" {
+		return fmt.Errorf("balda.mattermost.bot_username is required when the Mattermost transport is enabled")
+	}
+	if cfg.CommandsEnabled && strings.TrimSpace(cfg.CommandsToken) == "" {
+		return fmt.Errorf("balda.mattermost.commands_token is required when slash commands are enabled")
 	}
 	return nil
 }

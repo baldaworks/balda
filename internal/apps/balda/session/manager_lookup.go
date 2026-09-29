@@ -88,6 +88,17 @@ func (m *Manager) RestoreSession(ctx context.Context, sessionCtx SessionContext)
 		Str("label", sessionLabel).
 		Msg("restoring session from persisted metadata")
 
+	// The persisted record is authoritative for the session identity. This
+	// matters when a transport changes its deterministic session-ID format:
+	// the inbound locator can have a new ID while the active in-memory session
+	// still uses the old ID for the same address.
+	m.mu.RLock()
+	active := m.sessions[strings.TrimSpace(recordLocator.SessionID)]
+	m.mu.RUnlock()
+	if active != nil {
+		return active, nil
+	}
+
 	restoredCtx := SessionContext{
 		Locator: recordLocator,
 		UserID:  sessionCtx.UserID,

@@ -302,6 +302,16 @@ func ZulipSubject(userID int) string {
 	return fmt.Sprintf("zulip:%d", userID)
 }
 
+// MattermostSubject returns the channel-qualified subject for a Mattermost user.
+// It is idempotent: a value that is already channel-qualified ("mattermost:<id>")
+// yields the same subject, so callers may pass either a raw user ID or a subject
+// without risking a doubled prefix ("mattermost:mattermost:<id>").
+func MattermostSubject(userID string) string {
+	trimmed := strings.TrimSpace(userID)
+	trimmed = strings.TrimPrefix(trimmed, ChannelMattermost+":")
+	return fmt.Sprintf("%s:%s", ChannelMattermost, trimmed)
+}
+
 // UpdateChatID updates and persists the owner's chat ID.
 func (s *OwnerStore) UpdateChatID(chatID int64) error {
 	if s.canonical != nil {

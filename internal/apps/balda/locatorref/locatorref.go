@@ -9,12 +9,14 @@ import (
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/mattermostref"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 )
 
 const (
 	channelTypeTelegram   = telegramref.ChannelType
 	channelTypeSlackAgent = string(deliverycmd.ChannelTypeSlackAgent)
+	channelTypeMattermost = mattermostref.ChannelType
 	channelTypeZulip      = "zulip"
 )
 
@@ -56,6 +58,8 @@ func Parse(ref string) (deliverycmd.Locator, error) {
 		return zulipLocatorFromAddressKey(addressKey)
 	case channelTypeSlackAgent:
 		return slackAgentLocatorFromAddressKey(addressKey)
+	case channelTypeMattermost:
+		return mattermostLocatorFromAddressKey(addressKey)
 	default:
 		return deliverycmd.Locator{}, fmt.Errorf("unsupported locator transport %q", channelType)
 	}
@@ -155,6 +159,23 @@ func slackAgentLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, er
 	default:
 		return deliverycmd.Locator{}, fmt.Errorf("slackagent address key %q must be c:<team_id>:<conversation_id> or t:<team_id>:<conversation_id>:<thread_id>", addressKey)
 	}
+}
+
+func mattermostLocatorFromAddressKey(addressKey string) (deliverycmd.Locator, error) {
+	address, err := mattermostref.ParseAddressKey(addressKey)
+	if err != nil {
+		return deliverycmd.Locator{}, err
+	}
+	raw, err := json.Marshal(address)
+	if err != nil {
+		return deliverycmd.Locator{}, fmt.Errorf("encode Mattermost locator address: %w", err)
+	}
+	return deliverycmd.NewLocator(
+		channelTypeMattermost,
+		mattermostref.AddressKey(address),
+		string(raw),
+		mattermostref.SessionID(address),
+	)
 }
 
 func newSlackAgentLocator(address slackAgentLocatorAddress, addressKey string) (deliverycmd.Locator, error) {

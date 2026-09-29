@@ -22,6 +22,13 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
 
 FROM scratch
 
+# CA bundle: the scratch base has no trust store, so any HTTPS call (the LLM
+# provider in particular) fails with 'x509: certificate signed by unknown
+# authority'. The builder stage is a Debian image and carries the bundle.
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
 COPY --from=builder /out/balda /usr/local/bin/balda
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 ENTRYPOINT ["/usr/local/bin/balda"]

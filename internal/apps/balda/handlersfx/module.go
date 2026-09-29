@@ -1,6 +1,7 @@
 package handlersfx
 
 import (
+	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
@@ -38,6 +39,10 @@ var Module = fx.Module("balda_handlersfx",
 			fx.ResultTags(`group:"bot_handlers"`),
 		),
 		newZulipInboundHandler,
+		fx.Annotate(
+			newMattermostInboundHandler,
+			fx.As(new(baldamattermost.InboundProcessor)),
+		),
 		fx.Annotate(
 			func(ch *baldatelegram.Adapter) sessionapp.TelegramTopicChannel {
 				if ch == nil {

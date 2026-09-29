@@ -70,6 +70,35 @@ balda:
       # Set via BALDA_ZULIP_WEBHOOK_PATH env var
       path: "/zulip/webhook"
 
+  mattermost:
+    # Mattermost slash commands are delivered as HTTP requests, not posts, so
+    # they need a separate receiver from the websocket ingress. Enable it and
+    # point a Mattermost slash command's Request URL at this path, using the
+    # same token the integration shows you.
+    commands_enabled: false
+    # Local address the slash-command receiver listens on.
+    commands_listen_addr: ":8093"
+    # Local HTTP path for slash requests; must start with "/".
+    commands_path: "/mattermost/commands"
+    # Mattermost slash-command token used to authenticate incoming requests.
+    commands_token: ""
+    # Mattermost bot-account transport over the v4 websocket/REST API.
+    # Enable to connect this bot account and receive channel/DM events.
+    # Set via BALDA_MATTERMOST_ENABLED env var
+    enabled: false
+    # Mattermost server base URL (e.g. https://mm.example.com).
+    # Set via BALDA_MATTERMOST_SERVER_URL env var
+    server_url: ""
+    # Bot account personal access token.
+    # Set via BALDA_MATTERMOST_TOKEN env var
+    token: ""
+    # Bot account user id, used to ignore the bot's own posts.
+    # Set via BALDA_MATTERMOST_BOT_USER_ID env var
+    bot_user_id: ""
+    # Bot username, used for @mention detection in channels.
+    # Set via BALDA_MATTERMOST_BOT_USERNAME env var
+    bot_username: ""
+
   slack:
     # Enable inbound Slack HTTP receiver.
     # Slack's public Request URLs should terminate HTTPS outside Balda and forward

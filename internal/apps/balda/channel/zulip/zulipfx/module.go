@@ -7,6 +7,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
+	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 )
@@ -14,6 +15,12 @@ import (
 var Module = fx.Module(
 	"balda_channel_zulip_fx",
 	fx.Provide(
+		fx.Annotate(
+			func() sessionmemoryapp.ScopeClassifierContribution {
+				return sessionmemoryapp.ScopeClassifierContribution{ChannelType: zulip.ChannelType, Classifier: zulip.ClassifyLocatorScope}
+			},
+			fx.ResultTags(`group:"balda_session_memory_scope_classifier"`),
+		),
 		fx.Annotate(
 			func(enabled bool) commandcmd.Advertisement {
 				return commandcmd.Advertisement{Transport: zulip.ChannelType, Enabled: enabled, Names: []string{"locator", "reset", "usage", "auto", "cancel", "goalkeeper", "topic", "close", "start", "user", "skill"}}

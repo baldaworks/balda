@@ -132,6 +132,11 @@ func (a SessionMCPBinderAdapter) BindSession(_ context.Context, request baldaage
 		Config: agentconfig.MCPServerConfig{
 			Type: agentconfig.MCPServerTypeHTTP,
 			URL:  binding.URL,
+			// Same endpoint as the plain bundled server, so both are collapsed
+			// to one toolset. This entry wins because its URL carries the
+			// context token the broker needs to inject session headers.
+			DedupKey:       sessionmemorymcp.BundledDedupKey,
+			DedupPreferred: true,
 		},
 		Release: binding.Release,
 	}, nil

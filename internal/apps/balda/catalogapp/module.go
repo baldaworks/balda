@@ -155,7 +155,10 @@ func (l *Lifecycle) Stop(ctx context.Context) error { return l.runtime.mcp.Shutd
 
 var Module = fx.Module("balda_runtime_catalog",
 	fx.Provide(
-		commandcmd.NewRegistry,
+		fx.Annotate(
+			commandcmd.NewRegistryWithAdvertisements,
+			fx.ParamTags(`group:"balda_command_advertisements"`),
+		),
 		provideAgentSkillDir,
 		provideCodexSkillDir,
 		newRuntime,

@@ -18,6 +18,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const permissionAllowOptionID = "allow"
+
 type reviewQuestionStore struct {
 	record baldastate.QuestionRecord
 }
@@ -64,15 +66,27 @@ func testStructuredRegistry(t *testing.T) *deliveryfmt.StructuredRegistry {
 	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportTelegram, permissionfmt.RequestDescriptor, permissionsTelegramPermissionRenderer{}); err != nil {
 		t.Fatalf("RegisterPermissionRenderer() error = %v", err)
 	}
+	if err := deliveryfmt.RegisterStructuredRenderer(reg, deliveryfmt.TransportMattermost, permissionfmt.RequestDescriptor, permissionsMattermostPermissionRenderer{}); err != nil {
+		t.Fatalf("RegisterMattermostPermissionRenderer() error = %v", err)
+	}
 	return reg
 }
 
 type permissionsTelegramPermissionRenderer struct{}
 
+type permissionsMattermostPermissionRenderer struct{}
+
 func (permissionsTelegramPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
 	return deliveryfmt.StructuredPresentation{
 		Text:           telegrampresentation.RenderPermission(env.Body),
 		DeliveryFormat: deliveryfmt.DeliveryFormatRichMarkdown,
+	}, nil
+}
+
+func (permissionsMattermostPermissionRenderer) RenderStructured(_ context.Context, env deliveryfmt.StructuredEnvelope[permissioncmd.Request]) (deliveryfmt.StructuredPresentation, error) {
+	return deliveryfmt.StructuredPresentation{
+		Text:           permissionfmt.RenderMarkdown(env.Body),
+		DeliveryFormat: deliveryfmt.DeliveryFormatMarkdown,
 	}, nil
 }
 
@@ -113,7 +127,7 @@ func TestAskUnsupportedChannelFailsClosed(t *testing.T) {
 	decision, err := service.Review(context.Background(), permissioncmd.Request{
 		Interaction: questioncmd.InteractionContext{SessionID: "s1", ChannelKind: "zulip"},
 		Options: []permissioncmd.Option{
-			{ID: "allow", Kind: "allow_once"},
+			{ID: permissionAllowOptionID, Kind: "allow_once"},
 			{ID: "reject", Kind: "reject_once"},
 		},
 	})
@@ -150,7 +164,7 @@ func TestAskWaitsForGenericPermissionDecision(t *testing.T) {
 				RequestedBy: questioncmd.UserRef{UserID: "tg-101"},
 			},
 			Options: []permissioncmd.Option{
-				{ID: "allow", Name: "Allow once", Kind: "allow_once"},
+				{ID: permissionAllowOptionID, Name: "Allow once", Kind: "allow_once"},
 				{ID: "reject", Name: "Reject once", Kind: "reject_once"},
 			},
 		})
@@ -162,17 +176,66 @@ func TestAskWaitsForGenericPermissionDecision(t *testing.T) {
 	if err := actorlayer.UnmarshalPayload(envelope.Payload, &delivery); err != nil {
 		t.Fatalf("decode delivery payload: %v", err)
 	}
-	if delivery.Question == nil || len(delivery.Question.Options) != 2 || delivery.Question.Options[0].ID != "allow" {
+	if delivery.Question == nil || len(delivery.Question.Options) != 2 || delivery.Question.Options[0].ID != permissionAllowOptionID {
 		t.Fatalf("delivery question = %+v", delivery.Question)
 	}
 	if delivery.Question.Audience.Visibility != deliverycmd.QuestionVisibilityPrivate || delivery.Question.Audience.UserID != "tg-101" {
 		t.Fatalf("delivery audience = %+v", delivery.Question.Audience)
 	}
-	service.Resolve(delivery.Refs["question_id"], permissioncmd.Decision{OptionID: "allow", Source: "user"})
+	service.Resolve(delivery.Refs["question_id"], permissioncmd.Decision{OptionID: permissionAllowOptionID, Source: "user"})
 	if err := <-errors; err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
-	if decision := <-result; decision.OptionID != "allow" || decision.Source != "user" {
+	if decision := <-result; decision.OptionID != permissionAllowOptionID || decision.Source != "user" {
 		t.Fatalf("decision = %+v", decision)
+	}
+}
+
+func TestAskWaitsForMattermostThreadReplyDecision(t *testing.T) {
+	dispatcher := reviewDispatcher{envelopes: make(chan actorlayer.Envelope, 1)}
+	service := New(
+		Config{Mode: permissioncmd.ModeAsk, Timeout: time.Second},
+		questions.New(&reviewQuestionStore{}, nil, zerolog.Nop()),
+		dispatcher,
+		testStructuredRegistry(t),
+		zerolog.Nop(),
+	)
+	result := make(chan permissioncmd.Decision, 1)
+	errors := make(chan error, 1)
+	go func() {
+		decision, err := service.Review(context.Background(), permissioncmd.Request{
+			Interaction: questioncmd.InteractionContext{
+				SessionID:   "mattermost-channel-1",
+				ChannelKind: "mattermost",
+				Locator: deliverycmd.Locator{
+					ChannelType: "mattermost",
+					AddressKey:  "channel-1",
+					AddressJSON: `{"channel_id":"channel-1"}`,
+					SessionID:   "mattermost-channel-1",
+				},
+				RequestedBy: questioncmd.UserRef{UserID: "mattermost:user-1"},
+			},
+			Options: []permissioncmd.Option{
+				{ID: permissionAllowOptionID, Name: "Allow once", Kind: "allow_once"},
+				{ID: "reject", Name: "Reject once", Kind: "reject_once"},
+			},
+		})
+		result <- decision
+		errors <- err
+	}()
+	envelope := <-dispatcher.envelopes
+	var delivery deliverycmd.Payload
+	if err := actorlayer.UnmarshalPayload(envelope.Payload, &delivery); err != nil {
+		t.Fatalf("decode delivery payload: %v", err)
+	}
+	if delivery.Question == nil || delivery.Text == "" {
+		t.Fatalf("delivery = %+v, want permission question and prompt", delivery)
+	}
+	service.Resolve(delivery.Refs["question_id"], permissioncmd.Decision{OptionID: permissionAllowOptionID, Source: "thread_reply"})
+	if err := <-errors; err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if decision := <-result; decision.OptionID != permissionAllowOptionID || decision.Source != "thread_reply" {
+		t.Fatalf("decision = %+v, want Mattermost thread-reply approval", decision)
 	}
 }

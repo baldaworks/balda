@@ -51,6 +51,12 @@ func canonicalSubject(raw string) (string, string, error) {
 			return "", "", fmt.Errorf("invalid Slack principal")
 		}
 		principal = strings.TrimSpace(teamID) + ":" + strings.TrimSpace(userID)
+	case ChannelMattermost:
+		trimmedPrincipal := strings.TrimSpace(principal)
+		if trimmedPrincipal == "" {
+			return "", "", fmt.Errorf("invalid Mattermost principal")
+		}
+		principal = trimmedPrincipal
 	default:
 		return "", "", fmt.Errorf("unsupported transport %q", channelType)
 	}

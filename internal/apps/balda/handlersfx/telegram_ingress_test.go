@@ -29,6 +29,7 @@ import (
 type fakeCollaboratorBackend struct {
 	collaborators map[string]auth.Collaborator
 	lookups       []string
+	getErr        error
 }
 
 func newTestCollaboratorStore(subjects ...string) (*auth.CollaboratorStore, *fakeCollaboratorBackend) {
@@ -51,6 +52,9 @@ func (f *fakeCollaboratorBackend) RemoveCollaborator(_ context.Context, userID s
 
 func (f *fakeCollaboratorBackend) GetCollaborator(_ context.Context, userID string) (*auth.Collaborator, bool, error) {
 	f.lookups = append(f.lookups, userID)
+	if f.getErr != nil {
+		return nil, false, f.getErr
+	}
 	collaborator, found := f.collaborators[userID]
 	return &collaborator, found, nil
 }
