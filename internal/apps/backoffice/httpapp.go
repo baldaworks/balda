@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -198,10 +199,30 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
+	fromText := strings.TrimSpace(r.URL.Query().Get("from"))
+	toText := strings.TrimSpace(r.URL.Query().Get("to"))
+	var from, before time.Time
+	if fromText != "" {
+		parsed, parseErr := time.Parse("2006-01-02", fromText)
+		if parseErr != nil {
+			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			return
+		}
+		from = parsed
+	}
+	if toText != "" {
+		lastDay, parseErr := time.Parse("2006-01-02", toText)
+		if parseErr != nil {
+			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			return
+		}
+		before = lastDay.AddDate(0, 0, 1)
+	}
 	request := audit.Request{
 		AfterID: r.URL.Query().Get("after"), Limit: limit,
 		Action: usercmd.AuditAction(r.URL.Query().Get("action")), Outcome: usercmd.AuditOutcome(r.URL.Query().Get("outcome")),
-		TargetType: usercmd.AuditTargetType(r.URL.Query().Get("target")),
+		TargetType:  usercmd.AuditTargetType(r.URL.Query().Get("target")),
+		ActorUserID: r.URL.Query().Get("actor"), From: from, Before: before,
 	}
 	page, err := a.auditLog.List(r.Context(), principal.User, request)
 	if err != nil {
@@ -209,8 +230,46 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events := make([]webui.AuditView, 0, len(page.Events))
+	actor := access.Actor{User: principal.User, SessionID: principal.FamilyID}
+	knownUsers := make(map[string]string)
+	userName := func(id string) (string, error) {
+		if name, ok := knownUsers[id]; ok {
+			return name, nil
+		}
+		user, lookupErr := a.access.GetUser(r.Context(), actor, id)
+		if errors.Is(lookupErr, usercmd.ErrNotFound) {
+			knownUsers[id] = ""
+			return "", nil
+		}
+		if lookupErr != nil {
+			return "", lookupErr
+		}
+		knownUsers[id] = user.DisplayName
+		return user.DisplayName, nil
+	}
 	for _, event := range page.Events {
-		events = append(events, webui.ProjectAudit(event))
+		view := webui.ProjectAudit(event)
+		if event.ActorUserID != "" {
+			name, lookupErr := userName(event.ActorUserID)
+			if lookupErr != nil {
+				a.browser.WriteError(w, r, lookupErr)
+				return
+			}
+			if name != "" {
+				view.ActorName = name
+			}
+		}
+		if event.TargetType == usercmd.AuditTargetUser && event.TargetID != "" {
+			name, lookupErr := userName(event.TargetID)
+			if lookupErr != nil {
+				a.browser.WriteError(w, r, lookupErr)
+				return
+			}
+			if name != "" {
+				view.TargetName = name
+			}
+		}
+		events = append(events, view)
 	}
 	nextURL := ""
 	if page.NextAfterID != "" {
@@ -227,6 +286,15 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		if request.TargetType != "" {
 			query.Set("target", string(request.TargetType))
 		}
+		if request.ActorUserID != "" {
+			query.Set("actor", request.ActorUserID)
+		}
+		if fromText != "" {
+			query.Set("from", fromText)
+		}
+		if toText != "" {
+			query.Set("to", toText)
+		}
 		nextURL = a.path("/audit?") + query.Encode()
 	}
 	capabilities := users.BackofficeCapabilities(principal.User)
@@ -234,7 +302,8 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		Title: "Audit · Balda", Current: webui.LocationAudit,
 		Navigation: webui.Navigation(capabilities, webui.LocationAudit), Audit: events,
 		AuditAction: string(request.Action), AuditOutcome: string(request.Outcome),
-		AuditTargetType: string(request.TargetType), NextURL: nextURL,
+		AuditTargetType: string(request.TargetType), AuditActor: request.ActorUserID,
+		AuditFrom: fromText, AuditTo: toText, NextURL: nextURL,
 	})
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
@@ -22,11 +23,14 @@ type Store interface {
 
 // Request is one bounded stable audit query.
 type Request struct {
-	AfterID    string
-	Limit      int
-	Action     usercmd.AuditAction
-	Outcome    usercmd.AuditOutcome
-	TargetType usercmd.AuditTargetType
+	AfterID     string
+	Limit       int
+	Action      usercmd.AuditAction
+	Outcome     usercmd.AuditOutcome
+	TargetType  usercmd.AuditTargetType
+	ActorUserID string
+	From        time.Time
+	Before      time.Time
 }
 
 // Page is one filtered page and its exclusive stable cursor.
@@ -51,6 +55,7 @@ func (s *Service) List(ctx context.Context, actor usercmd.User, request Request)
 		return Page{}, usercmd.ErrForbidden
 	}
 	request.AfterID = strings.TrimSpace(request.AfterID)
+	request.ActorUserID = strings.TrimSpace(request.ActorUserID)
 	if len(request.AfterID) > 256 {
 		return Page{}, fmt.Errorf("%w: audit cursor exceeds its bound", usercmd.ErrInvalid)
 	}
@@ -60,7 +65,8 @@ func (s *Service) List(ctx context.Context, actor usercmd.User, request Request)
 	if request.Limit < 1 || request.Limit > usercmd.MaxPageSize ||
 		(request.Action != "" && !request.Action.Valid()) ||
 		(request.Outcome != "" && !request.Outcome.Valid()) ||
-		(request.TargetType != "" && !request.TargetType.Valid()) {
+		(request.TargetType != "" && !request.TargetType.Valid()) || len(request.ActorUserID) > 128 ||
+		(!request.From.IsZero() && !request.Before.IsZero() && !request.From.Before(request.Before)) {
 		return Page{}, fmt.Errorf("%w: audit filter or page size is invalid", usercmd.ErrInvalid)
 	}
 
@@ -96,5 +102,8 @@ func (s *Service) List(ctx context.Context, actor usercmd.User, request Request)
 func matches(request Request, event usercmd.AuditEvent) bool {
 	return (request.Action == "" || event.Action == request.Action) &&
 		(request.Outcome == "" || event.Outcome == request.Outcome) &&
-		(request.TargetType == "" || event.TargetType == request.TargetType)
+		(request.TargetType == "" || event.TargetType == request.TargetType) &&
+		(request.ActorUserID == "" || event.ActorUserID == request.ActorUserID) &&
+		(request.From.IsZero() || !event.OccurredAt.Before(request.From)) &&
+		(request.Before.IsZero() || event.OccurredAt.Before(request.Before))
 }

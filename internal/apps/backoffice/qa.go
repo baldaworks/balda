@@ -242,9 +242,9 @@ func qaAudit() webui.Page {
 		Title: "Audit · QA", Current: webui.LocationAudit,
 		Navigation: qaAdminNavigation(webui.LocationAudit),
 		Audit: []webui.AuditView{
-			{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", Outcome: "succeeded", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: qaNow},
-			{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", Outcome: "denied", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: qaNow.Add(time.Minute)},
-			{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", Outcome: "succeeded", ActorUserID: adminID, TargetType: "session", TargetID: familyID, OccurredAt: qaNow.Add(2 * time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", ActionLabel: "Ended browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(2 * time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", ActionLabel: "Detected session token replay", Outcome: "denied", ActorUserID: adminID, ActorName: "QA Administrator", ActorSessionID: familyID, TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", ActionLabel: "Restored browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", ActorSessionID: familyID, TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow},
 		},
 	}
 }

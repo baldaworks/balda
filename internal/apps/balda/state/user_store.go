@@ -15,11 +15,12 @@ import (
 )
 
 type sqlUserStore struct {
-	db        *sql.DB
-	bind      func(string) string
-	begin     func(context.Context) (*sql.Tx, error)
-	wrapError func(string, error) error
-	forUpdate string
+	db           *sql.DB
+	bind         func(string) string
+	begin        func(context.Context) (*sql.Tx, error)
+	wrapError    func(string, error) error
+	forUpdate    string
+	auditTimeKey string
 }
 
 var _ usercmd.Store = (*sqlUserStore)(nil)
@@ -40,6 +41,7 @@ func newSQLiteUserStore(db *sql.DB) usercmd.Store {
 		wrapError: func(operation string, err error) error {
 			return fmt.Errorf("%s: %w", operation, err)
 		},
+		auditTimeKey: `substr(occurred_at,1,19) || '.' || substr((CASE WHEN substr(occurred_at,20,1)='.' THEN substr(occurred_at,21,instr(occurred_at,'Z')-21) ELSE '' END) || '000000000',1,9)`,
 	}
 }
 
@@ -53,7 +55,8 @@ func newPostgresUserStore(db *sql.DB) usercmd.Store {
 		wrapError: func(operation string, err error) error {
 			return postgresErrorf("%s: %w", operation, err)
 		},
-		forUpdate: " FOR UPDATE",
+		forUpdate:    " FOR UPDATE",
+		auditTimeKey: `substr(occurred_at,1,19) || '.' || substr((CASE WHEN substr(occurred_at,20,1)='.' THEN substr(occurred_at,21,strpos(occurred_at,'Z')-21) ELSE '' END) || '000000000',1,9)`,
 	}
 }
 
@@ -976,11 +979,26 @@ func (s *sqlUserStore) ListAuditEvents(ctx context.Context, page usercmd.PageReq
 	if err != nil {
 		return usercmd.AuditPage{}, err
 	}
+	predicate := ""
+	args := make([]any, 0, 4)
+	if page.AfterID != "" {
+		var cursorTime string
+		err := s.db.QueryRowContext(ctx, s.bind(`SELECT `+s.auditTimeKey+` FROM balda_security_audit_events WHERE event_id = ?`), page.AfterID).Scan(&cursorTime)
+		if errors.Is(err, sql.ErrNoRows) {
+			return usercmd.AuditPage{}, usercmd.ErrInvalid
+		}
+		if err != nil {
+			return usercmd.AuditPage{}, s.wrapError("load audit cursor", err)
+		}
+		predicate = `WHERE (` + s.auditTimeKey + `) < ? OR ((` + s.auditTimeKey + `) = ? AND event_id < ?)`
+		args = append(args, cursorTime, cursorTime, page.AfterID)
+	}
+	args = append(args, limit+1)
 	rows, err := s.db.QueryContext(ctx, s.bind(`
 		SELECT event_id, action, outcome, actor_user_id, actor_session_id,
 			target_type, target_id, reason, request_id, source, correlation_id, occurred_at
 		FROM balda_security_audit_events
-		WHERE event_id > ? ORDER BY event_id LIMIT ?`), page.AfterID, limit+1)
+		`+predicate+` ORDER BY (`+s.auditTimeKey+`) DESC, event_id DESC LIMIT ?`), args...)
 	if err != nil {
 		return usercmd.AuditPage{}, s.wrapError("list audit events", err)
 	}

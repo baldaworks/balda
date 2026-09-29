@@ -97,11 +97,14 @@ type SessionView struct {
 type AuditView struct {
 	ID             string
 	Action         string
+	ActionLabel    string
 	Outcome        string
 	ActorUserID    string
+	ActorName      string
 	ActorSessionID string
 	TargetType     string
 	TargetID       string
+	TargetName     string
 	OccurredAt     time.Time
 }
 
@@ -142,6 +145,9 @@ type Page struct {
 	AuditAction         string
 	AuditOutcome        string
 	AuditTargetType     string
+	AuditActor          string
+	AuditFrom           string
+	AuditTo             string
 	NextURL             string
 	Gallery             []QALink
 	Preview             bool
@@ -205,10 +211,67 @@ func ProjectSession(summary usercmd.SessionSummary, currentFamilyID string, now 
 
 // ProjectAudit constructs a safe audit row.
 func ProjectAudit(event usercmd.AuditEvent) AuditView {
+	actorName := "System"
+	if event.ActorUserID != "" {
+		actorName = "Former or unavailable user"
+	}
 	return AuditView{
 		ID: safeAuditID(event.ID), Action: string(event.Action), Outcome: string(event.Outcome),
-		ActorUserID: safeAuditID(event.ActorUserID), ActorSessionID: safeAuditID(event.ActorSessionID),
-		TargetType: string(event.TargetType), TargetID: safeAuditID(event.TargetID), OccurredAt: event.OccurredAt,
+		ActionLabel: auditActionLabel(event.Action),
+		ActorUserID: safeAuditID(event.ActorUserID), ActorName: actorName,
+		ActorSessionID: safeAuditID(event.ActorSessionID),
+		TargetType:     string(event.TargetType), TargetID: safeAuditID(event.TargetID),
+		TargetName: auditTargetLabel(event.TargetType), OccurredAt: event.OccurredAt,
+	}
+}
+
+func auditActionLabel(action usercmd.AuditAction) string {
+	switch action {
+	case usercmd.AuditActionUserCreated:
+		return "Created user"
+	case usercmd.AuditActionUserUpdated:
+		return "Updated user"
+	case usercmd.AuditActionUserAccessChanged, usercmd.AuditActionUserRoleChanged, usercmd.AuditActionUserStatusChanged:
+		return "Changed user access"
+	case usercmd.AuditActionCredentialChanged:
+		return "Changed credential"
+	case usercmd.AuditActionBindingAttached:
+		return "Added chat binding"
+	case usercmd.AuditActionBindingDetached:
+		return "Removed chat binding"
+	case usercmd.AuditActionBindingClaimCreated:
+		return "Created binding invitation"
+	case usercmd.AuditActionUserMigrated:
+		return "Migrated user"
+	case usercmd.AuditActionLoginSucceeded:
+		return "Signed in"
+	case usercmd.AuditActionRefreshSucceeded:
+		return "Restored browser session"
+	case usercmd.AuditActionRefreshReplay:
+		return "Detected session token replay"
+	case usercmd.AuditActionSessionRevoked:
+		return "Ended browser session"
+	case usercmd.AuditActionLogout:
+		return "Signed out"
+	default:
+		return "Security event"
+	}
+}
+
+func auditTargetLabel(target usercmd.AuditTargetType) string {
+	switch target {
+	case usercmd.AuditTargetUser:
+		return "User"
+	case usercmd.AuditTargetSession:
+		return "Browser session"
+	case usercmd.AuditTargetBinding:
+		return "Chat binding"
+	case usercmd.AuditTargetSystem:
+		return "System"
+	case usercmd.AuditTargetMigration:
+		return "Migration"
+	default:
+		return "Target"
 	}
 }
 

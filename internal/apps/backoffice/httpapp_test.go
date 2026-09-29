@@ -633,13 +633,26 @@ func TestHTTPAppAuditFilteringPaginationRedactionAndRoleBoundary(t *testing.T) {
 	handler.ServeHTTP(auditResponse, auditRequest)
 	body := auditResponse.Body.String()
 	if auditResponse.Code != http.StatusOK || strings.Contains(body, "<!doctype") || strings.Count(body, `id="main-content"`) != 1 ||
-		!strings.Contains(body, "session.login.succeeded") || !strings.Contains(body, "Next page") {
+		!strings.Contains(body, "session.login.succeeded") || !strings.Contains(body, "Older events") {
 		t.Fatalf("filtered audit = %d %q", auditResponse.Code, body)
 	}
 	for _, forbidden := range []string{"correct horse battery staple", admin.access, admin.refresh, admin.csrf} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("audit leaked browser secret %q", forbidden)
 		}
+	}
+	if _, err := app.security.Login(t.Context(), "operator", []byte("correct horse battery staple")); err != nil {
+		t.Fatal(err)
+	}
+	day := time.Now().UTC().Format("2006-01-02")
+	actorPath := "/audit?action=session.login.succeeded&actor=operator&from=" + day + "&to=" + day + "&limit=1"
+	actorRequest := httptest.NewRequest(http.MethodGet, actorPath, nil)
+	actorRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: admin.access})
+	actorResponse := httptest.NewRecorder()
+	handler.ServeHTTP(actorResponse, actorRequest)
+	if actorResponse.Code != http.StatusOK || !strings.Contains(actorResponse.Body.String(), "<strong>Operator</strong>") ||
+		!strings.Contains(actorResponse.Body.String(), "actor=operator") || !strings.Contains(actorResponse.Body.String(), "from="+day) || !strings.Contains(actorResponse.Body.String(), "to="+day) {
+		t.Fatalf("actor/date audit pagination = %d %q", actorResponse.Code, actorResponse.Body.String())
 	}
 
 	invalidRequest := httptest.NewRequest(http.MethodGet, "/audit?action=product.event", nil)
