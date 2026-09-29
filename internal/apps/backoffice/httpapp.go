@@ -122,7 +122,7 @@ func (a *httpApp) refreshPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	returnTo := a.browser.SafeReturnPath(r.URL.Query().Get("return_to"), a.path(string(webui.LocationOverview)))
-	a.render(w, r, http.StatusOK, webui.TemplateRefresh, webui.Page{Title: "Continue session · Balda", CSRFToken: csrf, ReturnTo: returnTo})
+	a.render(w, r, http.StatusOK, webui.TemplateRefresh, webui.Page{Title: "Restore session · Balda", CSRFToken: csrf, ReturnTo: returnTo, AutoRefresh: true})
 }
 
 func (a *httpApp) passwordPage(w http.ResponseWriter, r *http.Request) {
@@ -437,7 +437,10 @@ func parseFormVersion(raw string) (uint64, error) {
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
 	message := "The request could not be completed."
 	if status == http.StatusUnauthorized {
-		message = "Your session is unavailable. Continue with the refresh token or sign in again."
+		message = "Your access has expired. The browser will restore your session if it can."
+	}
+	if status == http.StatusConflict && r.URL.Path == a.path(security.RefreshPath) {
+		message = "Another request has just refreshed this session. Reopen the page in a moment."
 	}
 	page := webui.Page{Title: http.StatusText(status) + " · Balda", Error: &webui.ErrorView{Heading: http.StatusText(status), Message: message}}
 	templateName := webui.TemplateError
@@ -458,6 +461,7 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 			templateName = webui.TemplateRefresh
 			page.CSRFToken = a.browser.CSRFToken(r)
 			page.ReturnTo = a.browser.SafeReturnPath(r.URL.RequestURI(), a.path(string(webui.LocationOverview)))
+			page.AutoRefresh = true
 		}
 	}
 	a.render(w, r, status, templateName, page)

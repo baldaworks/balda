@@ -76,6 +76,8 @@ type RefreshRotationResult string
 const (
 	// RefreshRotationSucceeded means the old generation was consumed and a new pair was stored.
 	RefreshRotationSucceeded RefreshRotationResult = "succeeded"
+	// RefreshRotationConcurrent means a recently consumed token was presented again.
+	RefreshRotationConcurrent RefreshRotationResult = "concurrent"
 	// RefreshRotationReplayRevoked means a used generation was replayed and its family was revoked.
 	RefreshRotationReplayRevoked RefreshRotationResult = "replay_revoked"
 	// RefreshRotationUnavailable means the selector, verifier, family, user, or credential is unusable.

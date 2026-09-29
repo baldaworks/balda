@@ -153,19 +153,19 @@ or re-enable legacy reads.
 ## Browser sessions and refresh rotation
 
 Successful login creates a short-lived opaque access token and a longer-lived
-refresh family. When access expires, Backoffice renders a continuation page;
-the user submits its native POST form to rotate the single-use refresh token.
-The server consumes generation N, creates generation N+1, replaces both
-cookies, and preserves the family's original absolute expiry. The browser does
-not silently replay the request that encountered expiry, especially an unsafe
-mutation.
+refresh family. When access expires, the browser submits a guarded refresh form
+automatically and returns to the page the user was opening. A manual form
+remains available when JavaScript is disabled. The server consumes generation
+N, creates generation N+1, replaces both cookies, and preserves the family's
+original absolute expiry. The browser does not replay the request that
+encountered expiry, especially an unsafe mutation.
 
-Submitting an already consumed refresh token is treated as verified replay.
-Backoffice revokes the whole family and requires a new username/password login.
-A genuine duplicate submit can therefore sign the user out; this is the
-intentional fail-closed tradeoff. Invalid, expired, credential-stale, disabled,
-or administratively revoked families also require re-login and receive only a
-generic browser error.
+A duplicate refresh within 30 seconds of rotation receives a conflict without
+clearing cookies or revoking the family; another browser request may already
+have installed the new pair. Reuse of an older consumed token is treated as
+verified replay: Backoffice revokes the family and requires a new login.
+Invalid, expired, credential-stale, disabled, or administratively revoked
+families also require re-login.
 
 Access administrators can revoke another browser family. Account owners can
 revoke their own families, but revoking the current one requires explicit

@@ -23,6 +23,10 @@ type sqlUserStore struct {
 
 var _ usercmd.Store = (*sqlUserStore)(nil)
 
+// A duplicate form submit can race the browser's new cookies. Treat it as a
+// conflict briefly; an older replay still revokes the session family.
+const refreshConcurrencyWindow = 30 * time.Second
+
 func newSQLiteUserStore(db *sql.DB) usercmd.Store {
 	return &sqlUserStore{
 		db: db,
@@ -725,6 +729,12 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 		return usercmd.RefreshRotationUnavailable, nil
 	}
 	if loaded.token.State == usercmd.RefreshTokenStateUsed && loaded.family.RevokedAt.IsZero() {
+		if elapsed := rotation.RotatedAt.Sub(loaded.token.UsedAt); elapsed >= 0 && elapsed <= refreshConcurrencyWindow {
+			if err := tx.Commit(); err != nil {
+				return "", s.wrapError("commit concurrent refresh lookup", err)
+			}
+			return usercmd.RefreshRotationConcurrent, nil
+		}
 		if err := usercmd.ValidateAuditEvent(rotation.ReplayAudit); err != nil {
 			return "", err
 		}

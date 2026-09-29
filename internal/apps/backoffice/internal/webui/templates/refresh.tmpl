@@ -1,11 +1,11 @@
 {{define "content"}}<main id="main-content" class="login-page">
   <section class="login-box" aria-labelledby="refresh-heading"><div class="card card-outline card-primary"><div class="card-body">
-    <h1 id="refresh-heading" class="h3">Continue your session</h1>
-    <p>Your short-lived access has expired. Continue securely or sign in again.</p>
+    <h1 id="refresh-heading" class="h3">Restoring your session</h1>
+    <p>Your browser is restoring access. If it does not continue automatically, use the button below.</p>
     {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
-    <form method="post" action="{{path "/"}}auth/session/refresh" hx-boost="false">
+    <form method="post" action="{{path "/"}}auth/session/refresh" hx-boost="false"{{if .AutoRefresh}} data-auto-refresh="true"{{end}}>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="return_to" value="{{.ReturnTo}}">
-      <button class="btn btn-primary" type="submit">Continue</button> <a class="btn btn-outline-secondary" href="{{path "/"}}login">Sign in</a>
+      <button class="btn btn-primary" type="submit">Restore session</button> <a class="btn btn-outline-secondary" href="{{path "/"}}login">Sign in</a>
     </form>
   </div></div></section>
 </main>{{end}}

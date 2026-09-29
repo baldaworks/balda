@@ -107,8 +107,15 @@ func TestRefreshRotatesPairWithFixedExpiryAndReplayRevokesFamily(t *testing.T) {
 	if rotated.AccessToken == initial.AccessToken || rotated.RefreshToken == initial.RefreshToken || !rotated.RefreshExpiresAt.Equal(initial.RefreshExpiresAt) {
 		t.Fatalf("rotated credentials = %+v, initial=%+v", rotated, initial)
 	}
+	if _, err := service.Refresh(t.Context(), initial.RefreshToken, initial.CSRFToken); !errors.Is(err, ErrRefreshConcurrent) {
+		t.Fatalf("Refresh(concurrent) error = %v, want ErrRefreshConcurrent", err)
+	}
+	if _, err := service.ValidateAccess(t.Context(), rotated.AccessToken); err != nil {
+		t.Fatalf("ValidateAccess(after concurrent refresh) error = %v", err)
+	}
+	service.now = func() time.Time { return now.Add(11 * time.Minute) }
 	if _, err := service.Refresh(t.Context(), initial.RefreshToken, initial.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("Refresh(replay) error = %v, want ErrUnauthenticated", err)
+		t.Fatalf("Refresh(stale replay) error = %v, want ErrUnauthenticated", err)
 	}
 	if _, err := service.ValidateAccess(t.Context(), rotated.AccessToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("ValidateAccess(after replay) error = %v, want ErrUnauthenticated", err)

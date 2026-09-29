@@ -128,6 +128,7 @@ type Page struct {
 	Audit           []AuditView
 	Error           *ErrorView
 	CSRFToken       string
+	AutoRefresh     bool
 	ReturnTo        string
 	AuditAction     string
 	AuditOutcome    string

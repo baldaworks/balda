@@ -226,7 +226,7 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	expiredRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: "invalid.access"})
 	expired := httptest.NewRecorder()
 	handler.ServeHTTP(expired, expiredRequest)
-	if expired.Code != http.StatusUnauthorized || !strings.Contains(expired.Body.String(), `action="/auth/session/refresh"`) {
+	if expired.Code != http.StatusUnauthorized || !strings.Contains(expired.Body.String(), `action="/auth/session/refresh"`) || !strings.Contains(expired.Body.String(), `data-auto-refresh="true"`) {
 		t.Fatalf("refresh continuation = %d %q", expired.Code, expired.Body.String())
 	}
 }

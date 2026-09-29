@@ -29,6 +29,8 @@ const (
 var (
 	// ErrUnauthenticated is the uniform outward error for unusable browser credentials.
 	ErrUnauthenticated = errors.New("authentication failed")
+	// ErrRefreshConcurrent reports a duplicate refresh while another request updates cookies.
+	ErrRefreshConcurrent = errors.New("refresh already in progress")
 	// ErrForbidden reports valid authentication without sufficient assurance or CSRF proof.
 	ErrForbidden = errors.New("request forbidden")
 )
@@ -214,6 +216,9 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 		return Credentials{}, fmt.Errorf("rotate refresh credential: %w", err)
 	}
 	if result != usercmd.RefreshRotationSucceeded {
+		if result == usercmd.RefreshRotationConcurrent {
+			return Credentials{}, ErrRefreshConcurrent
+		}
 		return Credentials{}, ErrUnauthenticated
 	}
 	return Credentials{
