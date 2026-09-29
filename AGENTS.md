@@ -10,6 +10,15 @@
 - Sync shared branches with merge (`git pull --no-rebase`), not rebase.
 - When you finish implementation work, commit the completed changes before handing off.
 
+<!-- promptkitty:fresh-origin-main-branches:begin -->
+## Feature branch base
+
+- Before creating a feature branch, run `git fetch origin main` and stop if it fails.
+- Create the branch from the freshly fetched `origin/main`, for example with `git switch -c feature/<name> origin/main`. Do not branch from a local `main` or the current branch without verifying its base.
+- Record the base commit from `git rev-parse origin/main` before starting work.
+- Preserve uncommitted changes before switching branches. Merge when synchronizing an existing branch; do not rebase it.
+<!-- promptkitty:fresh-origin-main-branches:end -->
+
 ## Quality Gates (Required)
 
 Run before submitting changes:

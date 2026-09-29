@@ -23,24 +23,27 @@ const (
 
 // telegramStartHandler handles Telegram /start commands by publishing them to CommandActor.
 type telegramStartHandler struct {
-	ownerStore     *auth.OwnerStore
-	commandIngress commandcmd.Ingress
-	logger         zerolog.Logger
+	ownerStore       *auth.OwnerStore
+	telegramProfiles *auth.TelegramProfileService
+	commandIngress   commandcmd.Ingress
+	logger           zerolog.Logger
 }
 
 type telegramStartHandlerParams struct {
 	fx.In
 
-	OwnerStore     *auth.OwnerStore   `optional:"true"`
-	CommandIngress commandcmd.Ingress `optional:"true"`
-	Logger         zerolog.Logger
+	OwnerStore       *auth.OwnerStore             `optional:"true"`
+	TelegramProfiles *auth.TelegramProfileService `optional:"true"`
+	CommandIngress   commandcmd.Ingress           `optional:"true"`
+	Logger           zerolog.Logger
 }
 
 func newTelegramStartHandler(params telegramStartHandlerParams) *telegramStartHandler {
 	return &telegramStartHandler{
-		ownerStore:     params.OwnerStore,
-		commandIngress: params.CommandIngress,
-		logger:         params.Logger.With().Str("component", "balda.handlersfx.telegram_start").Logger(),
+		ownerStore:       params.OwnerStore,
+		telegramProfiles: params.TelegramProfiles,
+		commandIngress:   params.CommandIngress,
+		logger:           params.Logger.With().Str("component", "balda.handlersfx.telegram_start").Logger(),
 	}
 }
 
@@ -74,6 +77,15 @@ func (h *telegramStartHandler) onCommand(ctx context.Context, event *events.Comm
 	}
 
 	isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(userID)
+	if isOwner && event.Message.From != nil {
+		username := ""
+		if event.Message.From.Username != nil {
+			username = *event.Message.From.Username
+		}
+		if err := h.telegramProfiles.Refresh(ctx, userID, username, event.Message.From.FirstName); err != nil {
+			h.logger.Warn().Err(err).Int64("user_id", userID).Msg("failed to refresh telegram binding profile")
+		}
+	}
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 		InvocationID: fmt.Sprintf("telegram:command:%d:%d", chatID, event.Message.MessageId),
 		Payload: commandcmd.Payload{
@@ -97,6 +109,7 @@ func (h *telegramStartHandler) onCommand(ctx context.Context, event *events.Comm
 // telegramCommandHandler handles general Telegram commands by publishing them to CommandActor.
 type telegramCommandHandler struct {
 	ownerStore        *auth.OwnerStore
+	telegramProfiles  *auth.TelegramProfileService
 	collaboratorStore *auth.CollaboratorStore
 	channel           baldatelegram.Channel
 	commandIngress    commandcmd.Ingress
@@ -106,10 +119,11 @@ type telegramCommandHandler struct {
 type telegramCommandHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore        `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore `optional:"true"`
-	Channel           *baldatelegram.Adapter  `optional:"true"`
-	CommandIngress    commandcmd.Ingress      `optional:"true"`
+	OwnerStore        *auth.OwnerStore             `optional:"true"`
+	TelegramProfiles  *auth.TelegramProfileService `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore      `optional:"true"`
+	Channel           *baldatelegram.Adapter       `optional:"true"`
+	CommandIngress    commandcmd.Ingress           `optional:"true"`
 	Logger            zerolog.Logger
 }
 
@@ -120,6 +134,7 @@ func newTelegramCommandHandler(params telegramCommandHandlerParams) *telegramCom
 	}
 	return &telegramCommandHandler{
 		ownerStore:        params.OwnerStore,
+		telegramProfiles:  params.TelegramProfiles,
 		collaboratorStore: params.CollaboratorStore,
 		channel:           ch,
 		commandIngress:    params.CommandIngress,
@@ -147,6 +162,11 @@ func (h *telegramCommandHandler) onCommand(ctx context.Context, event *events.Co
 		return nil
 	}
 	allowed := h.canUseSessionCommand(ctx, commandCtx.UserID)
+	if allowed {
+		if err := h.telegramProfiles.Refresh(ctx, commandCtx.UserID, commandCtx.Username, commandCtx.FirstName); err != nil {
+			h.logger.Warn().Err(err).Int64("user_id", commandCtx.UserID).Msg("failed to refresh telegram binding profile")
+		}
+	}
 	isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(commandCtx.UserID)
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 		InvocationID: fmt.Sprintf("telegram:command:%d:%d", commandCtx.ChatID, commandCtx.MessageID),

@@ -445,6 +445,8 @@ func (b *Browser) respondMutation(w http.ResponseWriter, r *http.Request, locati
 func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
+	case errors.Is(err, ErrRefreshConcurrent):
+		b.writeHTTPError(w, r, http.StatusConflict, "session was refreshed in another request; reopen the page")
 	case errors.Is(err, ErrUnauthenticated):
 		b.writeHTTPError(w, r, http.StatusUnauthorized, "authentication failed")
 	case errors.Is(err, ErrForbidden), errors.Is(err, usercmd.ErrForbidden):

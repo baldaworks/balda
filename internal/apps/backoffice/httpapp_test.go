@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
 		}
 	}
 	asset := httptest.NewRecorder()
-	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/balda/assets/app.css", nil))
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, appAssetPath(t, gallery.Body.String(), "css"), nil))
 	if asset.Code != http.StatusOK {
 		t.Errorf("asset status = %d", asset.Code)
 	}
@@ -118,14 +119,15 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	}
 	login := httptest.NewRecorder()
 	handler.ServeHTTP(login, httptest.NewRequest(http.MethodGet, "/balda/login", nil))
-	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), `action="/balda/login"`) || !strings.Contains(login.Body.String(), `src="/balda/assets/app.js"`) {
+	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), `action="/balda/login"`) {
 		t.Fatalf("prefixed login = %d %q", login.Code, login.Body.String())
 	}
+	assetPath := appAssetPath(t, login.Body.String(), "js")
 	if got := login.Result().Cookies()[0].Path; got != "/balda/" {
 		t.Errorf("CSRF cookie path = %q", got)
 	}
 	asset := httptest.NewRecorder()
-	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/balda/assets/app.js", nil))
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, assetPath, nil))
 	if asset.Code != http.StatusOK {
 		t.Errorf("prefixed asset = %d", asset.Code)
 	}
@@ -139,6 +141,16 @@ func TestHTTPAppServesConfiguredBasePath(t *testing.T) {
 	if qa.Code != http.StatusOK || !strings.Contains(qa.Body.String(), `action="/balda/qa/ui/access/users`) || !strings.Contains(qa.Body.String(), `href="/balda/qa/ui/overview"`) {
 		t.Fatalf("prefixed QA = %d %q", qa.Code, qa.Body.String())
 	}
+}
+
+func appAssetPath(t *testing.T, document, extension string) string {
+	t.Helper()
+	expression := regexp.MustCompile(`(?:href|src)="([^"]*/assets/app\.[0-9a-f]{16}\.` + extension + `)"`)
+	match := expression.FindStringSubmatch(document)
+	if len(match) != 2 {
+		t.Fatalf("versioned app.%s URL missing from document", extension)
+	}
+	return match[1]
 }
 
 func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
@@ -158,7 +170,7 @@ func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 		want []string
 	}{
 		{name: "access", want: []string{"Temporary credential", "telegram:42", "Browser sessions"}},
-		{name: "account", want: []string{"Rotate password", "telegram:42", "Revoke family"}},
+		{name: "account", want: []string{"Change password", "telegram:42", "Revoke family"}},
 		{name: "audit", want: []string{"session.refresh.succeeded", "session.refresh.replay", "11111111-1111-4111-8111-111111111111"}},
 	}
 	for _, tt := range tests {
@@ -226,7 +238,7 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	expiredRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: "invalid.access"})
 	expired := httptest.NewRecorder()
 	handler.ServeHTTP(expired, expiredRequest)
-	if expired.Code != http.StatusUnauthorized || !strings.Contains(expired.Body.String(), `action="/auth/session/refresh"`) {
+	if expired.Code != http.StatusUnauthorized || !strings.Contains(expired.Body.String(), `action="/auth/session/refresh"`) || !strings.Contains(expired.Body.String(), `data-auto-refresh="true"`) {
 		t.Fatalf("refresh continuation = %d %q", expired.Code, expired.Body.String())
 	}
 }
@@ -317,6 +329,86 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	}
 }
 
+func TestHTTPAppConfiguredBindingAdministration(t *testing.T) {
+	provider, config := newHTTPAppTestState(t)
+	config.Balda.Telegram.Enabled = true
+	config.Balda.Slack.Agent.Enabled = true
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	for _, user := range []usercmd.User{
+		{ID: "admin", DisplayName: "Admin", Username: "admin", NormalizedUsername: "admin", Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Primary: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "operator", DisplayName: "Operator", Username: "operator", NormalizedUsername: "operator", Status: usercmd.StatusActive, Role: usercmd.RoleOperator, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Version: 1, CreatedAt: now, UpdatedAt: now},
+	} {
+		createAccessTestUser(t, provider.Users(), user)
+	}
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminAccess, adminCSRF := loginHTTPApp(t, handler, config, "admin")
+	detailRequest := httptest.NewRequest(http.MethodGet, "/access/users/operator", nil)
+	detailRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: adminAccess})
+	detail := httptest.NewRecorder()
+	handler.ServeHTTP(detail, detailRequest)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `value="slackagent"`) || strings.Contains(detail.Body.String(), `value="zulip"`) {
+		t.Fatalf("configured binding choices = %d %q", detail.Code, detail.Body.String())
+	}
+	add := func(channel, principal, version string, htmx bool) *httptest.ResponseRecorder {
+		return performAccessMutation(t, handler, config, "/access/users/operator/bindings", url.Values{
+			"csrf_token": {adminCSRF}, "channel_type": {channel}, "principal": {principal}, "expected_version": {version},
+		}, adminAccess, adminCSRF, htmx)
+	}
+	if got := add("zulip", "202", "1", false); got.Code != http.StatusBadRequest {
+		t.Fatalf("disabled channel status = %d", got.Code)
+	}
+	if got := add("telegram", "202", "1", false); got.Code != http.StatusSeeOther || got.Header().Get("Location") != "/access/users/operator" {
+		t.Fatalf("native binding add = %d %v", got.Code, got.Header())
+	}
+	if got := add("slackagent", "T1:U1", "2", true); got.Code != http.StatusNoContent || got.Header().Get("HX-Location") != "/access/users/operator" {
+		t.Fatalf("HTMX binding add = %d %v", got.Code, got.Header())
+	}
+	if got := add("telegram", "202", "3", false); got.Code != http.StatusConflict {
+		t.Fatalf("duplicate principal status = %d", got.Code)
+	}
+	badCSRF := performAccessMutation(t, handler, config, "/access/users/operator/bindings", url.Values{
+		"csrf_token": {"invalid"}, "channel_type": {"telegram"}, "principal": {"303"}, "expected_version": {"3"},
+	}, adminAccess, adminCSRF, false)
+	if badCSRF.Code != http.StatusForbidden {
+		t.Fatalf("invalid CSRF status = %d", badCSRF.Code)
+	}
+	user, found, err := provider.Users().GetUser(t.Context(), "operator")
+	if err != nil || !found || len(user.Bindings) != 2 {
+		t.Fatalf("operator bindings = %+v, found=%t, err=%v", user.Bindings, found, err)
+	}
+	if got := add("telegram", "303", "2", false); got.Code != http.StatusConflict {
+		t.Fatalf("stale add status = %d", got.Code)
+	}
+	removePath := "/access/users/operator/bindings/" + user.Bindings[0].ID + "/delete"
+	removeForm := url.Values{"csrf_token": {adminCSRF}, "expected_version": {"3"}, "confirm_bot_impact": {"yes"}}
+	if got := performAccessMutation(t, handler, config, removePath, url.Values{
+		"csrf_token": {adminCSRF}, "expected_version": {"3"},
+	}, adminAccess, adminCSRF, false); got.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed removal status = %d", got.Code)
+	}
+	if got := performAccessMutation(t, handler, config, removePath, removeForm, adminAccess, adminCSRF, false); got.Code != http.StatusSeeOther {
+		t.Fatalf("remove binding status = %d", got.Code)
+	}
+	user, _, err = provider.Users().GetUser(t.Context(), "operator")
+	if err != nil || len(user.Bindings) != 1 {
+		t.Fatalf("remaining bindings = %+v, err=%v", user.Bindings, err)
+	}
+	operatorAccess, operatorCSRF := loginHTTPApp(t, handler, config, "operator")
+	denied := performAccessMutation(t, handler, config, "/access/users/operator/bindings", url.Values{
+		"csrf_token": {operatorCSRF}, "channel_type": {"telegram"}, "principal": {"303"}, "expected_version": {"4"},
+	}, operatorAccess, operatorCSRF, false)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("operator binding add status = %d", denied.Code)
+	}
+}
+
 func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	t.Parallel()
 	provider, config := newHTTPAppTestState(t)
@@ -341,7 +433,7 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	accountRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: initial.csrf})
 	account := httptest.NewRecorder()
 	handler.ServeHTTP(account, accountRequest)
-	if account.Code != http.StatusOK || !strings.Contains(account.Body.String(), "Rotate password") || strings.Contains(account.Body.String(), "Access</span>") {
+	if account.Code != http.StatusOK || !strings.Contains(account.Body.String(), "Change password") || strings.Contains(account.Body.String(), "Access</span>") {
 		t.Fatalf("account page = %d %q", account.Code, account.Body.String())
 	}
 
@@ -374,6 +466,21 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 	if _, err := app.security.Refresh(t.Context(), initial.refresh, initial.csrf); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("old refresh validation error = %v", err)
+	}
+	nativeChange := performAccessMutation(t, handler, config, "/account/password", url.Values{
+		"csrf_token": {next.csrf}, "current_password": {"replacement password"},
+		"new_password": {"final replacement password"},
+	}, next.access, next.csrf, false)
+	if nativeChange.Code != http.StatusSeeOther || nativeChange.Header().Get("Location") != "/account" {
+		t.Fatalf("native password change = %d %v", nativeChange.Code, nativeChange.Header())
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), next.access); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("previous access after native change = %v", err)
+	}
+	next = httpLoginCookies{
+		access:  cookieValue(nativeChange.Result().Cookies(), security.AccessCookieName),
+		refresh: cookieValue(nativeChange.Result().Cookies(), security.RefreshCookieName),
+		csrf:    cookieValue(nativeChange.Result().Cookies(), security.CSRFCookieName),
 	}
 	principal, err := app.security.ValidateAccess(t.Context(), next.access)
 	if err != nil {

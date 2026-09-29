@@ -21,6 +21,21 @@ const (
 	testMediaGroupID   = "album-42"
 )
 
+func TestTelegramContextsPreserveVerifiedProfile(t *testing.T) {
+	username := "owner_handle"
+	from := &client.User{Id: 101, Username: &username, FirstName: "Alice"}
+	message := &client.Message{MessageId: 42, Chat: client.Chat{Id: 9001, Type: "private"}, From: from}
+	adapter := &Adapter{}
+	messageCtx, ok := adapter.MessageContextFromEvent(&events.MessageEvent{Message: message})
+	if !ok || messageCtx.Username != username || messageCtx.FirstName != "Alice" {
+		t.Fatalf("message profile = %q/%q, ok=%t", messageCtx.Username, messageCtx.FirstName, ok)
+	}
+	commandCtx, ok := adapter.CommandContextFromEvent(&events.CommandEvent{Message: message, Command: "reset"})
+	if !ok || commandCtx.Username != username || commandCtx.FirstName != "Alice" {
+		t.Fatalf("command profile = %q/%q, ok=%t", commandCtx.Username, commandCtx.FirstName, ok)
+	}
+}
+
 func TestMessageContextFromEvent_MapsAudioAttachment(t *testing.T) {
 	size := int64(8192)
 	fileName := " sample.mp3 "

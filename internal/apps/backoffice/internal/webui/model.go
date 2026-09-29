@@ -52,10 +52,13 @@ type CapabilityCard struct {
 
 // BindingView is the optional single transport binding shown read-only.
 type BindingView struct {
-	ChannelType string
-	Principal   string
-	DisplayName string
-	Provenance  string
+	ID                string
+	ChannelType       string
+	Principal         string
+	DisplayName       string
+	ProviderUsername  string
+	ProviderFirstName string
+	Provenance        string
 }
 
 // UserView is the canonical user's safe browser projection.
@@ -69,6 +72,7 @@ type UserView struct {
 	MustChange        bool
 	Primary           bool
 	Binding           *BindingView
+	Bindings          []BindingView
 	Version           uint64
 	CredentialVersion uint64
 }
@@ -116,12 +120,15 @@ type Page struct {
 	Current         Location
 	Navigation      []NavItem
 	Capabilities    []CapabilityCard
+	BindingChoices  []string
+	OwnUser         bool
 	Users           []UserView
 	User            *UserView
 	Sessions        []SessionView
 	Audit           []AuditView
 	Error           *ErrorView
 	CSRFToken       string
+	AutoRefresh     bool
 	ReturnTo        string
 	AuditAction     string
 	AuditOutcome    string
@@ -156,9 +163,22 @@ func ProjectUser(user usercmd.User) UserView {
 	}
 	if user.Binding != nil {
 		view.Binding = &BindingView{
+			ID:          user.Binding.ID,
 			ChannelType: user.Binding.ChannelType, Principal: user.Binding.Principal,
-			DisplayName: user.Binding.DisplayName, Provenance: user.Binding.Provenance,
+			DisplayName: user.Binding.DisplayName, ProviderUsername: user.Binding.ProviderUsername,
+			ProviderFirstName: user.Binding.ProviderFirstName, Provenance: user.Binding.Provenance,
 		}
+	}
+	bindings := user.Bindings
+	if len(bindings) == 0 && user.Binding != nil {
+		bindings = []usercmd.Binding{*user.Binding}
+	}
+	for _, binding := range bindings {
+		view.Bindings = append(view.Bindings, BindingView{
+			ID: binding.ID, ChannelType: binding.ChannelType, Principal: binding.Principal,
+			DisplayName: binding.DisplayName, ProviderUsername: binding.ProviderUsername,
+			ProviderFirstName: binding.ProviderFirstName, Provenance: binding.Provenance,
+		})
 	}
 	return view
 }

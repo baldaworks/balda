@@ -39,10 +39,12 @@ func TestSQLiteUnifiedUserSchemaConstraints(t *testing.T) {
 		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
 		t.Fatalf("insert binding: %v", err)
 	}
-	assertSQLiteRejected(t, db, `INSERT INTO balda_user_bindings
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_bindings
 		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
 		VALUES ('binding-2', 'admin-1', 'slack', 'U101', '', '',
-		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`)
+		        '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatalf("insert second binding: %v", err)
+	}
 	assertSQLiteRejected(t, db, `INSERT INTO balda_user_bindings
 		(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
 		VALUES ('binding-3', 'operator-1', 'telegram', '101', '', '',

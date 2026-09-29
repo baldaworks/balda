@@ -682,6 +682,9 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) (*auth.OwnerStore, error) {
 			return auth.NewCanonicalOwnerStore(provider.Users())
 		}),
+		fx.Provide(func(provider baldastate.Provider) *auth.TelegramProfileService {
+			return auth.NewTelegramProfileService(provider.Users())
+		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
 			return auth.NewDestinationStore(provider.AppKV())
 		}),

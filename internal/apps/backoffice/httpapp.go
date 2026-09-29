@@ -18,14 +18,15 @@ import (
 const checkedFormValue = "yes"
 
 type httpApp struct {
-	renderer *webui.Renderer
-	browser  *security.Browser
-	security *security.Service
-	access   *access.Service
-	auditLog *audit.Service
-	cards    []webui.CapabilityCard
-	qa       bool
-	basePath string
+	renderer       *webui.Renderer
+	browser        *security.Browser
+	security       *security.Service
+	access         *access.Service
+	auditLog       *audit.Service
+	cards          []webui.CapabilityCard
+	bindingChoices []string
+	qa             bool
+	basePath       string
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
@@ -39,7 +40,8 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI, basePath: config.Server.BasePath}
+	bindingChoices := configuredBindingChannels(config.Balda)
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store, bindingChoices...), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler: app.renderSecurityError,
@@ -84,6 +86,8 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path("/access/users/{user_id}"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
 	mux.HandleFunc("POST "+a.path("/access/users"), a.accessCreate)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}"), a.accessUpdate)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/bindings"), a.accessBindingCreate)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/bindings/{binding_id}/delete"), a.accessBindingDelete)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/credential"), a.accessCredentialReset)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/sessions/{session_id}/revoke"), a.accessSessionRevoke)
 	qaHandler, err := QAHandler(a.basePath)
@@ -118,12 +122,12 @@ func (a *httpApp) refreshPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	returnTo := a.browser.SafeReturnPath(r.URL.Query().Get("return_to"), a.path(string(webui.LocationOverview)))
-	a.render(w, r, http.StatusOK, webui.TemplateRefresh, webui.Page{Title: "Continue session · Balda", CSRFToken: csrf, ReturnTo: returnTo})
+	a.render(w, r, http.StatusOK, webui.TemplateRefresh, webui.Page{Title: "Restore session · Balda", CSRFToken: csrf, ReturnTo: returnTo, AutoRefresh: true})
 }
 
 func (a *httpApp) passwordPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplatePassword, webui.Page{
-		Title: "Replace password · Balda", Current: webui.LocationAccount, CSRFToken: a.browser.CSRFToken(r),
+		Title: "Change password · Balda", Current: webui.LocationAccount, CSRFToken: a.browser.CSRFToken(r),
 	})
 }
 
@@ -273,8 +277,62 @@ func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
 		Title: "Access · " + user.DisplayName, Current: webui.LocationAccess,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccess), User: &view,
-		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
+		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r), BindingChoices: a.bindingChoices,
+		OwnUser: user.ID == principal.User.ID,
 	})
+}
+
+func (a *httpApp) accessBindingCreate(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	version, err := parseFormVersion(form.Get("expected_version"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	err = a.access.AddBinding(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.BindingInput{
+		UserID: r.PathValue("user_id"), ChannelType: form.Get("channel_type"),
+		Principal: form.Get("principal"), ExpectedVersion: version,
+	})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
+}
+
+func (a *httpApp) accessBindingDelete(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	version, err := parseFormVersion(form.Get("expected_version"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	err = a.access.RemoveBinding(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.BindingRemoval{
+		UserID: r.PathValue("user_id"), BindingID: r.PathValue("binding_id"),
+		ExpectedVersion: version, ConfirmImpact: form.Get("confirm_bot_impact") == checkedFormValue,
+	})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
+}
+
+func (a *httpApp) respondAccessDetailMutation(w http.ResponseWriter, r *http.Request, userID string) {
+	location := a.path("/access/users/" + url.PathEscape(userID))
+	if webui.EligibleFragment(r) {
+		w.Header().Set("HX-Location", location)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Location", location)
+	w.WriteHeader(http.StatusSeeOther)
 }
 
 func (a *httpApp) accessCreate(w http.ResponseWriter, r *http.Request) {
@@ -379,7 +437,10 @@ func parseFormVersion(raw string) (uint64, error) {
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
 	message := "The request could not be completed."
 	if status == http.StatusUnauthorized {
-		message = "Your session is unavailable. Continue with the refresh token or sign in again."
+		message = "Your access has expired. The browser will restore your session if it can."
+	}
+	if status == http.StatusConflict && r.URL.Path == a.path(security.RefreshPath) {
+		message = "Another request has just refreshed this session. Reopen the page in a moment."
 	}
 	page := webui.Page{Title: http.StatusText(status) + " · Balda", Error: &webui.ErrorView{Heading: http.StatusText(status), Message: message}}
 	templateName := webui.TemplateError
@@ -400,6 +461,7 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 			templateName = webui.TemplateRefresh
 			page.CSRFToken = a.browser.CSRFToken(r)
 			page.ReturnTo = a.browser.SafeReturnPath(r.URL.RequestURI(), a.path(string(webui.LocationOverview)))
+			page.AutoRefresh = true
 		}
 	}
 	a.render(w, r, status, templateName, page)

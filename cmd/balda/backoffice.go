@@ -109,8 +109,8 @@ func bootstrapAdminCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&input.UserID, "user-id", "", "existing administrator user ID")
-	command.Flags().StringVar(&input.Username, "username", "", "username for a fresh administrator")
-	command.Flags().StringVar(&input.DisplayName, "display-name", "", "display name for a fresh administrator")
+	command.Flags().StringVar(&input.Username, "username", "", "username for a fresh administrator (must be superuser)")
+	command.Flags().StringVar(&input.DisplayName, "display-name", "", "display name for a fresh administrator (must be superuser)")
 	command.Flags().BoolVar(&input.Reset, "reset", false, "replace usable credentials and revoke browser sessions")
 	return command
 }
