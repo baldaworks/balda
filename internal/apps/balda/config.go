@@ -26,6 +26,7 @@ type BaldaConfig struct {
 	Provider            string                    `mapstructure:"provider"`
 	Telegram            TelegramConfig            `mapstructure:"telegram"`
 	Zulip               ZulipConfig               `mapstructure:"zulip"`
+	Mattermost          MattermostConfig          `mapstructure:"mattermost"`
 	Slack               SlackConfig               `mapstructure:"slack"`
 	Webhooks            WebhooksConfig            `mapstructure:"webhooks"`
 	Logger              LoggerConfig              `mapstructure:"logger"`
@@ -77,6 +78,30 @@ type ZulipConfig struct {
 	ServerURL    string             `mapstructure:"server_url"`
 	WebhookToken string             `mapstructure:"webhook_token"`
 	Webhook      ZulipWebhookConfig `mapstructure:"webhook"`
+}
+
+// MattermostConfig holds the Mattermost bot configuration.
+//
+// Mattermost is a websocket transport: Enabled turns on the bot-account
+// connection, ServerURL is the absolute http(s) base URL, and Token is the
+// bot account personal access token. BotUserID/BotUsername identify the bot
+// so inbound posts authored by it are not answered.
+//
+// A non-loopback ServerURL is required for real deployments because the
+// websocket event stream is only reachable over the network.
+type MattermostConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	ServerURL   string `mapstructure:"server_url"`
+	Token       string `mapstructure:"token"`
+	BotUserID   string `mapstructure:"bot_user_id"`
+	BotUsername string `mapstructure:"bot_username"`
+
+	// Slash commands are delivered as HTTP requests, not posts, so they need a
+	// separate receiver. It is independent from the websocket ingress.
+	CommandsEnabled    bool   `mapstructure:"commands_enabled"`
+	CommandsListenAddr string `mapstructure:"commands_listen_addr"`
+	CommandsPath       string `mapstructure:"commands_path"`
+	CommandsToken      string `mapstructure:"commands_token"`
 }
 
 // ZulipWebhookConfig holds Zulip webhook receiver settings.

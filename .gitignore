@@ -64,3 +64,7 @@ Thumbs.db
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
 /balda
+
+# Local project-editing tooling (delta applier, ops scripts).
+# Not part of the upstream project; kept on disk only.
+/tools/

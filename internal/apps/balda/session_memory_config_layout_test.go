@@ -15,7 +15,7 @@ import (
 
 func TestCanonicalSessionMemoryRuntimeMigratesAndReopensGroupedStore(t *testing.T) {
 	ctx := context.Background()
-	stateDir := t.TempDir()
+	stateDir := resolvedTempDir(t)
 	legacyCanonicalPath := filepath.Join(stateDir, "session-memory.badger")
 	legacyProjectionPath := filepath.Join(stateDir, "session-memory-bleve")
 

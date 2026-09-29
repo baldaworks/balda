@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	transportTelegram = "telegram"
-	transportZulip    = "zulip"
-	transportSlack    = "slackagent"
+	transportTelegram   = "telegram"
+	transportZulip      = "zulip"
+	transportSlack      = "slackagent"
+	transportMattermost = "mattermost"
 
 	modeOwner        = "owner"
 	modeInvite       = "invite"
@@ -465,6 +466,8 @@ func userSubject(transport, principal string) (string, error) {
 		if id, err := strconv.Atoi(trimmed); err == nil {
 			return auth.ZulipSubject(id), nil
 		}
+	case transportMattermost:
+		return auth.MattermostSubject(trimmed), nil
 	}
 	return transport + ":" + trimmed, nil
 }
@@ -489,6 +492,8 @@ func transportDisplayName(transport string) string {
 		return "Zulip"
 	case transportSlack:
 		return "Slack"
+	case transportMattermost:
+		return "Mattermost"
 	default:
 		return transport
 	}
@@ -511,6 +516,8 @@ func ownerBindBundle(ctx context.Context, authService ChannelAuthService, create
 			lines = append(lines, "", "Slack:", "DM Balda this token:", token.Token)
 		case auth.ChannelZulip:
 			lines = append(lines, "", "Zulip:", "DM Balda this token:", token.Token)
+		case auth.ChannelMattermost:
+			lines = append(lines, "", "Mattermost:", fmt.Sprintf("DM Balda this command: /start %s", token.Token))
 		}
 	}
 	return strings.Join(lines, "\n"), true

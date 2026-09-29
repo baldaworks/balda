@@ -302,6 +302,39 @@ func TestValidateZulipConfigRequiresWebhookAuthAndReplyCredentials(t *testing.T)
 	}
 }
 
+func TestValidateMattermostConfig(t *testing.T) {
+	valid := MattermostConfig{
+		Enabled:         true,
+		ServerURL:       "https://mattermost.example.test",
+		Token:           "bot-token",
+		BotUserID:       "bot-user",
+		BotUsername:     "balda",
+		CommandsEnabled: true,
+		CommandsToken:   "command-token",
+	}
+	if err := validateMattermostConfig(valid); err != nil {
+		t.Fatalf("validateMattermostConfig(valid) error = %v", err)
+	}
+
+	withoutTransport := valid
+	withoutTransport.Enabled = false
+	if err := validateMattermostConfig(withoutTransport); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when commands are enabled without the transport")
+	}
+
+	withoutCommandToken := valid
+	withoutCommandToken.CommandsToken = ""
+	if err := validateMattermostConfig(withoutCommandToken); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when commands token is empty")
+	}
+
+	withoutBotUsername := valid
+	withoutBotUsername.BotUsername = ""
+	if err := validateMattermostConfig(withoutBotUsername); err == nil {
+		t.Fatal("validateMattermostConfig() error = nil when bot username is empty")
+	}
+}
+
 func TestValidateSlackConfig(t *testing.T) {
 	t.Parallel()
 
@@ -560,14 +593,14 @@ func TestResolveWorkspaceBaseBranch_ConfigPreferredWhenValid(t *testing.T) {
 	repoDir := t.TempDir()
 	initGitRepoForBalda(t, ctx, repoDir)
 
-	runGitForBalda(t, ctx, repoDir, "branch", "main")
+	runGitForBalda(t, ctx, repoDir, "branch", "configured-base")
 
-	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "main", true)
+	branch, source, err := resolveWorkspaceBaseBranch(ctx, repoDir, "configured-base", true)
 	if err != nil {
 		t.Fatalf("resolveWorkspaceBaseBranch returned error: %v", err)
 	}
-	if branch != "main" {
-		t.Fatalf("branch = %q, want main", branch)
+	if branch != "configured-base" {
+		t.Fatalf("branch = %q, want configured-base", branch)
 	}
 	if source != testWorkspaceBaseBranchSourceConfig {
 		t.Fatalf("source = %q, want %s", source, testWorkspaceBaseBranchSourceConfig)
