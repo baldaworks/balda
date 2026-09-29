@@ -1,4 +1,4 @@
-{{define "content"}}<main id="main-content" class="login-page">
+{{define "content"}}<main id="main-content" class="login-page" data-bs-theme="dark" tabindex="-1">
   <section class="login-box" aria-labelledby="refresh-heading"><div class="card"><div class="card-body">
     <p class="eyebrow mb-2">Browser session</p>
     <h1 id="refresh-heading" class="h3">{{if and .Error (not .AutoRefresh)}}Session needs attention{{else}}Restoring your session{{end}}</h1>

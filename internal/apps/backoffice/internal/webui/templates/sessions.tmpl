@@ -1,17 +1,16 @@
 {{define "session_list"}}
-<section aria-labelledby="sessions-heading" class="card mb-3"><div class="card-body">
-  <h2 id="sessions-heading" class="h4">{{if .MixedSessions}}Browser session state preview{{else}}Active browser sessions{{end}}</h2>
+<section aria-labelledby="sessions-heading" class="card mb-4"><header class="card-header"><h2 id="sessions-heading" class="card-title">{{if .MixedSessions}}Browser session state preview{{else}}Active browser sessions{{end}}</h2><span class="count-badge">{{len .Sessions}} shown</span></header><div class="card-body">
   <p class="text-body-secondary">{{if .MixedSessions}}Synthetic active, ended, and expired examples are shown together to check their controls.{{else}}Only active sessions appear here.{{end}} “Last sign-in or refresh” is the latest recorded event, not every page visit.</p>
-  <div class="row g-3">
+  <div class="detail-grid">
     {{range .Sessions}}
-    <div class="col-12 col-xl-6"><article class="border rounded p-3 h-100">
-      <h3 class="h5">{{if .DeviceLabel}}{{.DeviceLabel}}{{else}}Unknown browser or device{{end}} {{if .Current}}<span class="badge text-bg-primary">Current</span>{{end}}</h3>
+    <article class="session-card">
+      <h3 class="h6">{{if .DeviceLabel}}{{.DeviceLabel}}{{else}}Unknown browser or device{{end}} {{if .Current}}<span class="status-chip status-chip--info">Current</span>{{end}}</h3>
       <p class="mb-2"><strong>Last sign-in or refresh:</strong> <time datetime="{{.LastSeenAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.LastSeenAt.Format "02 Jan 2006, 15:04 UTC"}}</time></p>
       <p class="mb-2"><strong>Connection peer:</strong> {{if .ConnectionPeer}}<code>{{.ConnectionPeer}}</code>{{else}}Unknown{{end}} <span class="text-body-secondary">(may be a proxy)</span></p>
       <details class="mb-3"><summary>Session dates</summary><p class="mb-1">Created: <time datetime="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.CreatedAt.Format "02 Jan 2006, 15:04 UTC"}}</time></p><p class="mb-0">Expires: <time datetime="{{.ExpiresAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.ExpiresAt.Format "02 Jan 2006, 15:04 UTC"}}</time></p></details>
       {{if and (not .Revoked) (not .Expired)}}<form action="{{path $.SessionActionPrefix}}/{{.ID}}/revoke" method="post" hx-post="{{path $.SessionActionPrefix}}/{{.ID}}/revoke" hx-target="#main-content" hx-swap="outerHTML"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">{{if .Current}}<div class="form-check mb-2"><input class="form-check-input" id="confirm-current-{{.ID}}" type="checkbox" name="confirm_current" value="yes" required><label class="form-check-label" for="confirm-current-{{.ID}}">I understand this will sign me out</label></div>{{end}}<button class="btn btn-sm btn-outline-danger" type="submit">End session</button></form>{{else}}<p class="text-body-secondary mb-0">{{if .Revoked}}Ended{{else}}Expired{{end}}</p>{{end}}
-    </article></div>
-    {{else}}<div class="col-12"><p class="mb-0">No active browser sessions.</p></div>{{end}}
+    </article>
+    {{else}}<div class="page-state"><i class="bi bi-browser" aria-hidden="true"></i><p class="mb-0">No active browser sessions.</p></div>{{end}}
   </div>
   {{if .SessionNextURL}}<a class="btn btn-outline-secondary mt-3" href="{{path .SessionNextURL}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Older active sessions</a>{{end}}
 </div></section>

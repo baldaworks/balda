@@ -1,13 +1,13 @@
 {{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
   <div class="container-fluid">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <h1 class="mb-0">{{if .CreateUser}}Create user{{else}}Access{{end}}</h1>
+    <header class="content-header">
+      <div><p class="section-kicker">Administration</p><h1>{{if .CreateUser}}Create user{{else}}Access{{end}}</h1><p>{{if .CreateUser}}Create a browser account with a temporary credential.{{else if .User}}Profile, chat bindings and browser sessions for this user.{{else}}Find users and manage their access to Balda.{{end}}</p></div>
       {{if .User}}<a class="btn btn-outline-secondary" href="{{path "/"}}{{if .Preview}}access-list{{else}}access{{end}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">All users</a>{{else if .CreateUser}}<a class="btn btn-outline-secondary" href="{{path "/"}}{{if .Preview}}access-list{{else}}access{{end}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">All users</a>{{else}}<a class="btn btn-primary" href="{{path "/"}}{{if .Preview}}access-create{{else}}access/new{{end}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Create user</a>{{end}}
-    </div>
+    </header>
     {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
 
     {{if .CreateUser}}
-    <section class="card"><div class="card-body">
+    <section class="card form-card"><header class="card-header"><h2 class="card-title">New account</h2></header><div class="card-body">
       <p class="text-body-secondary">Create a browser account. Give the temporary password to its owner securely; they must replace it at first sign-in.</p>
       <form action="{{path "/"}}access/users" method="post" hx-post="{{path "/"}}access/users" hx-target="#main-content" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -23,10 +23,10 @@
     </div></section>
     {{else if .User}}
     {{with .User}}
-    <section class="card mb-3"><div class="card-body">
-      <h2 class="h4 mb-2">{{.DisplayName}}</h2>
-      <p class="mb-3"><span class="badge {{if eq .Status "active"}}text-bg-success{{else}}text-bg-secondary{{end}}">{{.Status}}</span> <span class="badge text-bg-light">{{.Role}}</span> {{if .Primary}}<span class="badge text-bg-primary">Primary administrator</span>{{end}}</p>
-      <dl class="row mb-2"><dt class="col-sm-3">Username</dt><dd class="col-sm-9">{{.Username}}</dd><dt class="col-sm-3">Browser credential</dt><dd class="col-sm-9">{{.CredentialState}}{{if .MustChange}} · replacement required{{end}}</dd></dl>
+    <div class="detail-grid mb-4">
+    <section class="card"><header class="card-header"><h2 class="card-title">{{.DisplayName}}</h2></header><div class="card-body">
+      <p class="mb-3"><span class="status-chip {{if eq .Status "active"}}status-chip--success{{else}}status-chip--danger{{end}}">{{.Status}}</span> <span class="status-chip">{{.Role}}</span> {{if .Primary}}<span class="status-chip status-chip--info">Primary administrator</span>{{end}}</p>
+      <dl class="fact-list mb-3"><dt>Username</dt><dd>{{.Username}}</dd><dt>Browser credential</dt><dd>{{.CredentialState}}{{if .MustChange}} · replacement required{{end}}</dd></dl>
       {{if $.OwnUser}}<p><a href="{{path "/"}}account" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Change your own password in Account</a></p>{{end}}
       <details><summary class="btn btn-outline-secondary">Edit profile and access</summary>
         <form class="mt-3" action="{{path "/"}}access/users/{{.ID}}" method="post" hx-post="{{path "/"}}access/users/{{.ID}}" hx-target="#main-content" hx-swap="outerHTML">
@@ -43,9 +43,8 @@
       </details>
     </div></section>
 
-    <section class="card mb-3"><div class="card-body">
-      <h2 class="h4">Chat bindings</h2>
-      {{range .Bindings}}<article class="border rounded p-3 mb-2">
+    <section class="card"><header class="card-header"><h2 class="card-title">Chat bindings</h2><span class="count-badge">{{len .Bindings}}</span></header><div class="card-body">
+      {{range .Bindings}}<article class="channel-stack-item d-block mb-3">
         <p class="mb-1"><strong>{{if eq .ChannelType "slackagent"}}Slack Agent{{else if eq .ChannelType "telegram"}}Telegram{{else if eq .ChannelType "zulip"}}Zulip{{else}}{{.ChannelType}}{{end}}</strong>{{if .DisplayName}} · {{.DisplayName}}{{end}}</p>
         <p class="mb-2 text-body-secondary"><code>{{.Principal}}</code>{{if eq .ChannelType "telegram"}} · username: {{if .ProviderUsername}}@{{.ProviderUsername}}{{else}}unknown{{end}} · first name: {{if .ProviderFirstName}}{{.ProviderFirstName}}{{else}}unknown{{end}}{{end}}</p>
         <details><summary>Remove binding</summary><form class="mt-2" action="{{path "/"}}access/users/{{$.User.ID}}/bindings/{{.ID}}/delete" method="post" hx-post="{{path "/"}}access/users/{{$.User.ID}}/bindings/{{.ID}}/delete" hx-target="#main-content" hx-swap="outerHTML">
@@ -67,7 +66,8 @@
       </details>{{end}}
     </div></section>
 
-    <section class="card mb-3"><div class="card-body"><h2 class="h4">Credential</h2><p>Current state: <strong>{{.CredentialState}}</strong>{{if .MustChange}}; password replacement required{{end}}.</p>
+    </div>
+    <section class="card danger-zone mb-4"><header class="card-header"><h2 class="card-title">Credential</h2></header><div class="card-body"><p>Current state: <strong>{{.CredentialState}}</strong>{{if .MustChange}}; password replacement required{{end}}.</p>
       <details><summary class="btn btn-outline-danger">Reset temporary password</summary>
         <form class="mt-3" action="{{path "/"}}access/users/{{.ID}}/credential" method="post" hx-post="{{path "/"}}access/users/{{.ID}}/credential" hx-target="#main-content" hx-swap="outerHTML">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="expected_user_version" value="{{.Version}}"><input type="hidden" name="expected_credential_version" value="{{.CredentialVersion}}">
@@ -89,8 +89,8 @@
         <div class="col-12 col-md-3"><button class="btn btn-outline-primary w-100" type="submit">Find users</button></div>
       </div>
     </div></form>
-    <section aria-labelledby="users-heading"><h2 id="users-heading" class="h4">Users</h2><p class="small text-body-secondary d-md-none">Swipe the table sideways to see role, status, and chat bindings.</p><div class="card"><div class="table-responsive" tabindex="0" role="region" aria-label="Users table, horizontally scrollable"><table class="table table-hover access-table"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Chat bindings</th></tr></thead><tbody>
-      {{range .Users}}<tr><td><a href="{{path "/"}}access/users/{{.ID}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">{{.DisplayName}}</a><div class="small text-body-secondary">{{.Username}}</div></td><td>{{.Role}}</td><td><span class="badge {{if eq .Status "active"}}text-bg-success{{else}}text-bg-secondary{{end}}">{{.Status}}</span>{{if .MustChange}} <span class="badge text-bg-warning">Must change password</span>{{end}}</td><td>{{if .Bindings}}{{len .Bindings}}{{else}}0{{end}}</td></tr>{{else}}<tr><td colspan="4"><span class="empty-table-message">{{if or .AccessSearch .AccessRole .AccessStatus}}No users match these filters.{{else}}No users yet. Use Create user to add the first account.{{end}}</span></td></tr>{{end}}
+    <section aria-labelledby="users-heading"><p class="small text-body-secondary d-md-none">Swipe the table sideways to see role, status, and chat bindings.</p><div class="card"><header class="card-header"><h2 id="users-heading" class="card-title">Users</h2></header><div class="table-responsive" tabindex="0" role="region" aria-label="Users table, horizontally scrollable"><table class="table table-hover access-table"><thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Chat bindings</th></tr></thead><tbody>
+      {{range .Users}}<tr><td><a href="{{path "/"}}access/users/{{.ID}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">{{.DisplayName}}</a><div class="small text-body-secondary">{{.Username}}</div></td><td>{{.Role}}</td><td><span class="status-chip {{if eq .Status "active"}}status-chip--success{{else}}status-chip--danger{{end}}">{{.Status}}</span>{{if .MustChange}} <span class="status-chip status-chip--warning">Must change password</span>{{end}}</td><td>{{if .Bindings}}{{len .Bindings}}{{else}}0{{end}}</td></tr>{{else}}<tr><td colspan="4"><span class="empty-table-message">{{if or .AccessSearch .AccessRole .AccessStatus}}No users match these filters.{{else}}No users yet. Use Create user to add the first account.{{end}}</span></td></tr>{{end}}
     </tbody></table></div></div></section>
     {{end}}
   </div>

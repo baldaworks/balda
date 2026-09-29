@@ -669,8 +669,8 @@ func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
 	if first.Code != http.StatusOK || strings.Count(first.Body.String(), ">End session</button>") != sessionPageSize {
 		t.Fatalf("first session page = %d, end actions = %d", first.Code, strings.Count(first.Body.String(), ">End session</button>"))
 	}
-	firstSession := strings.SplitN(first.Body.String(), `<h3 class="h5">`, 2)
-	if len(firstSession) != 2 || !strings.Contains(strings.SplitN(firstSession[1], "</h3>", 2)[0], "Current") {
+	firstSession := regexp.MustCompile(`<h3[^>]*>(.*?)</h3>`).FindStringSubmatch(first.Body.String())
+	if len(firstSession) != 2 || !strings.Contains(firstSession[1], "Current") {
 		t.Fatal("current session is not first")
 	}
 	match := regexp.MustCompile(`href="(/account\?after_session=[^"]+)"`).FindStringSubmatch(first.Body.String())

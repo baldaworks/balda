@@ -13,15 +13,17 @@ import (
 )
 
 const (
-	TemplateLogin    = "login"
-	TemplateOverview = "overview"
-	TemplateAccess   = "access"
-	TemplateAccount  = "account"
-	TemplateAudit    = "audit"
-	TemplateError    = "error"
-	TemplateRefresh  = "refresh"
-	TemplatePassword = "password"
-	TemplateGallery  = "gallery"
+	TemplateLogin      = "login"
+	TemplateOverview   = "overview"
+	TemplateAccess     = "access"
+	TemplateAccount    = "account"
+	TemplateAudit      = "audit"
+	TemplateError      = "error"
+	TemplateRefresh    = "refresh"
+	TemplatePassword   = "password"
+	TemplateGallery    = "gallery"
+	TemplateStyleGuide = "style-guide"
+	TemplateLayout     = "layout"
 )
 
 var templateFiles = map[string]string{
@@ -29,7 +31,8 @@ var templateFiles = map[string]string{
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
-	TemplateGallery: "templates/gallery.tmpl",
+	TemplateGallery:    "templates/gallery.tmpl",
+	TemplateStyleGuide: "templates/style-guide.tmpl", TemplateLayout: "templates/layout.tmpl",
 }
 
 //go:embed templates static

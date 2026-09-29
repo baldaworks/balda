@@ -224,3 +224,25 @@ func TestRenderedAssetsUseContentVersions(t *testing.T) {
 		}
 	}
 }
+
+func TestShellShowsViewerIndependentlyOfInspectedUser(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := Page{Title: "Access", ViewerUsername: "signed-in-admin", CSRFToken: "test-csrf", Navigation: Navigation(usercmd.BackofficeCapabilities{Overview: true, Account: true}, LocationAccount), User: &UserView{Username: "inspected-operator"}}
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/access", nil), http.StatusOK, TemplateOverview, page); err != nil {
+		t.Fatal(err)
+	}
+	body := response.Body.String()
+	for _, want := range []string{`<html lang="en" data-bs-theme="dark" data-lte-color-mode="off">`, `aria-label="Toggle navigation"`, `<strong title="signed-in-admin">signed-in-admin</strong>`, `action="/balda/logout"`, `class="app-footer"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("shell missing %q", want)
+		}
+	}
+	if strings.Contains(body, "Signed in as <strong>inspected-operator</strong>") {
+		t.Error("shell exposes inspected user as viewer")
+	}
+}

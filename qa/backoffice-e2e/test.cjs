@@ -5,7 +5,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const routes = [
-  '', 'login', 'login-error', 'refresh', 'refresh-error', 'refresh-conflict',
+  '', 'style-guide', 'layout', 'layout-long', 'login', 'login-error', 'refresh', 'refresh-error', 'refresh-conflict',
   'password', 'password-error', 'overview', 'overview-empty', 'access-list',
   'access-create', 'access-empty', 'access-error', 'access', 'access-primary',
   'access-long', 'account', 'account-many', 'account-many-next',
@@ -48,6 +48,33 @@ async function checkPage(browser, baseURL, viewport) {
     assert.equal(await page.locator('main#main-content').count(), 1, `${route} main landmark at ${viewport.width}px`);
     const headingColors = await page.locator('h1, h2').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
     assert.equal(new Set(headingColors).size, 1, `${route} consistent heading colors at ${viewport.width}px`);
+    if (await page.locator('.login-page').count()) {
+      const theme = await page.locator('.login-page').evaluate(element => ({
+        scheme: getComputedStyle(element).colorScheme,
+        card: getComputedStyle(element.querySelector('.card')).backgroundColor,
+        heading: getComputedStyle(element.querySelector('h1')).color,
+      }));
+      assert.equal(theme.scheme, 'dark', `${route} auth color scheme`);
+      assert.equal(theme.card, 'rgb(33, 37, 41)', `${route} dark auth card`);
+      assert.equal(theme.heading, 'rgb(222, 226, 230)', `${route} legible auth heading`);
+      const controls = await page.locator('.login-page .form-control').evaluateAll(elements => elements.map(element => getComputedStyle(element).backgroundColor));
+      assert.equal(controls.every(color => [...color.matchAll(/\d+/g)].every(match => Number(match[0]) < 80)), true, `${route} dark form controls`);
+      const secondaryActions = await page.locator('.login-page .btn-outline-secondary').evaluateAll(elements => elements.map(element => getComputedStyle(element).color));
+      assert.equal(secondaryActions.every(color => color === theme.heading), true, `${route} legible secondary actions`);
+    }
+    const contrastFailures = await page.locator('h1, h2, .form-label, .status-chip, .btn:not(:disabled)').evaluateAll(elements => {
+      const rgb = color => color.match(/[\d.]+/g).map(Number);
+      const luminance = color => rgb(color).slice(0, 3).map(value => { const channel = value / 255; return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4; }).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+      return elements.filter(element => element.textContent.trim()).flatMap(element => {
+        let parent = element;
+        while (parent && rgb(getComputedStyle(parent).backgroundColor)[3] === 0) parent = parent.parentElement;
+        const foreground = luminance(getComputedStyle(element).color);
+        const background = luminance(getComputedStyle(parent || document.documentElement).backgroundColor);
+        const ratio = (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05);
+        return ratio < 4.5 ? [{ text: element.textContent.trim(), ratio }] : [];
+      });
+    });
+    assert.deepEqual(contrastFailures, [], `${route} text contrast at ${viewport.width}px`);
     assert.equal(await page.locator('h1').count(), 1, `${route} heading at ${viewport.width}px`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${route} document overflow at ${viewport.width}px`);
     assert.deepEqual(errors, [], `${route} script errors at ${viewport.width}px`);
@@ -71,8 +98,8 @@ async function checkPage(browser, baseURL, viewport) {
   }
   await page.goto(`${baseURL}/qa/ui/overview`);
   for (const name of ['Account', 'Access', 'Audit', 'Overview']) {
-    const navigation = page.getByRole('navigation', { name: viewport.width < 992 ? 'Mobile navigation' : 'Primary navigation', exact: true });
-    if (viewport.width < 992) await page.getByText('Menu', { exact: true }).click();
+    const navigation = page.getByRole('navigation', { name: 'Primary navigation', exact: true });
+    if (viewport.width < 992) await page.getByRole('button', { name: 'Toggle navigation' }).click();
     const response = page.waitForResponse(response => response.url() === `${baseURL}/qa/ui/${name.toLowerCase()}`);
     await navigation.getByText(name, { exact: true }).click();
     await response;
@@ -80,8 +107,17 @@ async function checkPage(browser, baseURL, viewport) {
     assert.equal(await page.locator('main#main-content').count(), 1, `${name} HTMX keeps one main landmark`);
     assert.deepEqual(await layout(), nativeLayouts.get(name), `${name} HTMX layout matches native navigation`);
     await page.waitForFunction(expected => [...document.querySelectorAll('[data-nav-link]')].filter(link => link.textContent.trim() === expected).every(link => link.getAttribute('aria-current') === 'page'), name);
+    assert.equal(await page.locator('main').evaluate(element => element === document.activeElement), true, `${name} main receives focus after navigation`);
   }
 
+  await page.goBack();
+  await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Audit');
+  assert.equal(await page.locator('main#main-content').count(), 1, 'history restores one main');
+  await page.waitForFunction(() => document.querySelector('.sidebar-menu a[aria-current="page"]')?.textContent.trim() === 'Audit');
+  await page.goForward();
+  await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Overview');
+  await page.goto(`${baseURL}/qa/ui/style-guide`);
+  assert.equal(await page.locator('.qa-guide-section').count(), 9);
   await page.goto(`${baseURL}/qa/ui/audit`);
   assert.equal(await page.locator('section[aria-label="Security events"] table').count(), 1);
   assert.equal(await page.locator('section[aria-label="Security events"] tbody tr').count(), 3);
@@ -93,7 +129,7 @@ async function checkPage(browser, baseURL, viewport) {
   assert.equal(await page.getByText('Action code').first().isVisible(), true);
 
   await page.goto(`${baseURL}/qa/ui/refresh`);
-  assert.match(await page.locator('main').evaluate(element => getComputedStyle(element).backgroundImage), /linear-gradient/);
+  assert.equal(await page.locator('main').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
   assert.equal(await page.getByRole('button', { name: 'Restore session' }).count(), 1);
   await page.goto(`${baseURL}/qa/ui/refresh-error`);
   assert.equal(await page.getByRole('link', { name: 'Sign in again' }).count(), 1);
@@ -106,8 +142,36 @@ async function checkPage(browser, baseURL, viewport) {
     assert.equal(await table.evaluate(element => element.scrollWidth > element.clientWidth), true);
     await table.evaluate(element => { element.scrollLeft = element.scrollWidth; });
     assert.equal(await page.getByText('Swipe the table sideways').isVisible(), true);
-    await page.getByText('Menu', { exact: true }).click();
-    assert.equal(await page.getByRole('navigation', { name: 'Mobile navigation' }).isVisible(), true);
+    await page.getByRole('button', { name: 'Toggle navigation' }).click();
+    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation', exact: true }).isVisible(), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('button', { name: 'Toggle navigation' }).getAttribute('aria-expanded'), 'false');
+  }
+  await page.goto(`${baseURL}/qa/ui/overview-empty`);
+  assert.equal(await page.locator('.app-footer').count(), 1);
+  assert.equal(await page.locator('.viewer strong').textContent(), 'qa-superuser');
+  assert.equal(await page.locator('.app-footer').evaluate(element => Math.round(element.getBoundingClientRect().bottom)), viewport.height, 'short page footer fits viewport');
+  const toggle = page.getByRole('button', { name: 'Toggle navigation' });
+  const originalWidth = await page.locator('.app-main').evaluate(element => element.clientWidth);
+  await toggle.click();
+  await page.waitForTimeout(350);
+  if (viewport.width >= 992) {
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.locator('.app-main').evaluate(element => element.clientWidth) > originalWidth, true);
+  } else {
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(await page.locator('.app-main').evaluate(element => element.inert), true);
+    const links = page.locator('.sidebar-menu a');
+    await links.last().focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await links.first().evaluate(element => element === document.activeElement), true, 'mobile focus stays within visible menu');
+    await page.locator('.sidebar-overlay').click({ position: { x: viewport.width - 10, y: 400 } });
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'backdrop closes mobile menu');
+    await toggle.click();
+    await page.keyboard.press('Escape');
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await toggle.evaluate(element => element === document.activeElement), true);
+    assert.equal(await page.locator('.app-main').evaluate(element => element.inert), false);
   }
   await page.close();
 }
@@ -120,11 +184,14 @@ async function checkPage(browser, baseURL, viewport) {
       for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
         await checkPage(browser, url, viewport);
       }
-      const noScript = await browser.newPage({ javaScriptEnabled: false });
+      const noScript = await browser.newPage({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
       await noScript.goto(`${url}/qa/ui/audit`);
       assert.equal(await noScript.locator('table tbody tr').count(), 3);
       await noScript.getByText('Dates and actor ID').click();
       assert.equal(await noScript.locator('#audit-actor').isVisible(), true);
+      await noScript.locator('.native-navigation summary').click();
+      await noScript.getByRole('navigation', { name: 'Mobile navigation' }).getByText('Account', { exact: true }).click();
+      assert.equal(await noScript.locator('h1').textContent(), 'Account');
       await noScript.close();
       console.log(`Backoffice E2E: ${routes.length} gallery pages and states at 390/768/1024/1440px, consistent heading colors, native/HTMX layout, audit, refresh, and navigation passed`);
     } finally { await browser.close(); }

@@ -30,6 +30,11 @@ func QAHandler(basePath string) (http.Handler, error) {
 			return
 		}
 		page.Preview = true
+		if len(page.Navigation) > 0 {
+			if page.ViewerUsername == "" {
+				page.ViewerUsername = "qa-superuser"
+			}
+		}
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
@@ -60,6 +65,9 @@ type qaEntry struct {
 }
 
 var qaEntries = []qaEntry{
+	{name: "style-guide", label: "Foundation · component guide", templateName: webui.TemplateStyleGuide, page: qaLayout, gallery: true},
+	{name: "layout", label: "Foundation · full layout", templateName: webui.TemplateLayout, page: qaLayout, gallery: true},
+	{name: "layout-long", label: "Foundation · long layout", templateName: webui.TemplateLayout, page: qaLayoutLong, gallery: true},
 	{name: "login", label: "Login", templateName: webui.TemplateLogin, page: qaLogin, gallery: true},
 	{name: "login-error", label: "Login · error", templateName: webui.TemplateLogin, page: qaLoginError, gallery: true},
 	{name: "refresh", label: "Session refresh", templateName: webui.TemplateRefresh, page: qaRefresh, gallery: true},
@@ -100,7 +108,7 @@ func qaFixture(name string) (webui.Page, string, int, bool) {
 				links = append(links, webui.QALink{Label: entry.label, Path: "/" + entry.name})
 			}
 		}
-		return webui.Page{Title: "Backoffice UI previews · QA", Gallery: links}, webui.TemplateGallery, http.StatusOK, true
+		return webui.Page{Title: "Backoffice UI previews · QA", Gallery: links, Navigation: qaAdminNavigation("")}, webui.TemplateGallery, http.StatusOK, true
 	}
 	for _, entry := range qaEntries {
 		if entry.name == name {
@@ -358,5 +366,17 @@ func qaFormForbidden() webui.Page {
 func qaFormConflict() webui.Page {
 	page := qaAccess()
 	page.Error = &webui.ErrorView{Heading: "User not updated", Message: "This user changed while you were editing. Reload the page and review the latest details."}
+	return page
+}
+
+func qaLayout() webui.Page {
+	return webui.Page{Title: "Layout foundation · QA", Navigation: qaAdminNavigation("")}
+}
+
+func qaLayoutLong() webui.Page {
+	page := qaLayout()
+	page.ViewerUsername = "administrator-with-a-very-long-username-for-responsive-review"
+	page.Navigation[0].Label = "Overview of configured integrations and channel connections"
+	page.Gallery = []webui.QALink{{Label: "A long synthetic activity entry with a user-provided label that must remain readable on a narrow screen", Path: "/overview"}, {Label: "A second activity entry with technical detail and explanatory text", Path: "/audit"}, {Label: "A third entry for checking spacing, wrapping and the normal-flow footer", Path: "/account"}}
 	return page
 }

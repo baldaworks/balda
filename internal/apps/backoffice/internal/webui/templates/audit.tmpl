@@ -1,6 +1,5 @@
 {{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
-  <div class="container-fluid"><h1>Audit</h1>
-    <p class="text-body-secondary">Recent security events appear first. Times are shown in UTC.</p>
+  <div class="container-fluid"><header class="content-header"><div><p class="section-kicker">Security</p><h1>Audit</h1><p>Recent security events appear first. Times are shown in UTC.</p></div></header>
     <form action="{{path "/"}}audit" method="get" hx-get="{{path "/"}}audit" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true" class="card mb-3 audit-filters"><div class="card-body"><div class="row g-2 align-items-end">
       <div class="col-12 col-md-6"><label class="form-label" for="audit-action">Action</label><select class="form-select" id="audit-action" name="action">
         <option value="">All security actions</option>
@@ -30,12 +29,12 @@
       <div class="col-12 d-flex flex-wrap gap-2"><button class="btn btn-primary" type="submit">Filter events</button>{{if or .AuditAction .AuditOutcome .AuditTargetType .AuditFrom .AuditTo .AuditActor}}<a class="btn btn-outline-secondary" href="{{path "/"}}audit" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Clear filters</a>{{end}}</div>
     </div></div></form>
     <p class="small text-body-secondary d-md-none mb-2">Swipe the table sideways to see actor, target, outcome, and details.</p>
-    <section aria-label="Security events" class="card"><div class="table-responsive" tabindex="0" role="region" aria-label="Security events table, horizontally scrollable">
+    <section aria-label="Security events" class="card"><header class="card-header"><h2 class="card-title">Security events</h2><span class="support-meta">Newest first · UTC</span></header><div class="table-responsive" tabindex="0" role="region" aria-label="Security events table, horizontally scrollable">
       <table class="table table-hover audit-table"><thead><tr><th scope="col">Time (UTC)</th><th scope="col">Action</th><th scope="col">Actor</th><th scope="col">Target</th><th scope="col">Outcome</th><th scope="col">Details</th></tr></thead><tbody>
       {{range .Audit}}<tr>
         <td><time datetime="{{.OccurredAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.OccurredAt.Format "02 Jan 2006"}}<br>{{.OccurredAt.Format "15:04:05"}}</time></td>
         <td>{{.ActionLabel}}</td><td class="event-actor">{{.ActorName}}</td><td class="event-target">{{.TargetName}}</td>
-        <td><span class="badge {{if eq .Outcome "denied"}}text-bg-warning{{else}}text-bg-success{{end}}">{{.Outcome}}</span></td>
+        <td><span class="status-chip {{if eq .Outcome "denied"}}status-chip--warning{{else}}status-chip--success{{end}}">{{.Outcome}}</span></td>
         <td><details><summary>Technical details</summary><dl class="mt-2 mb-0">
           <dt>Action code</dt><dd><code>{{.Action}}</code></dd>
           <dt>Actor user ID</dt><dd><code>{{if .ActorUserID}}{{.ActorUserID}}{{else}}—{{end}}</code></dd>

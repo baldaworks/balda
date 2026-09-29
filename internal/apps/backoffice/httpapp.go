@@ -599,6 +599,12 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 }
 
 func (a *httpApp) render(w http.ResponseWriter, r *http.Request, status int, name string, page webui.Page) {
+	if principal, ok := security.PrincipalFromContext(r.Context()); ok && len(page.Navigation) > 0 {
+		page.ViewerUsername = principal.User.Username
+		if page.CSRFToken == "" {
+			page.CSRFToken = a.browser.CSRFToken(r)
+		}
+	}
 	if err := a.renderer.Render(w, r, status, name, page); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}

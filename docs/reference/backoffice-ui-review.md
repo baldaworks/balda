@@ -12,7 +12,10 @@ From the repository root, run:
 go run ./cmd/balda backoffice qa serve --listen 127.0.0.1:8096
 ```
 
-Open `http://127.0.0.1:8096/qa/ui/`. The gallery links to the login, session
+Open `http://127.0.0.1:8096/qa/ui/`. Review the shared foundation first: `/qa/ui/style-guide` covers all nine
+component groups, `/qa/ui/layout` shows the complete shell, and
+`/qa/ui/layout-long` exercises long names, navigation labels and content.
+The gallery links to the login, session
 refresh, password replacement, overview, access list and detail, account, audit,
 and generic error previews. It also links to empty and error states where those
 states exist. For example, `/qa/ui/access-list`, `/qa/ui/access-empty`, and
@@ -46,9 +49,23 @@ npm test
 ```
 
 The suite starts its own loopback preview on an ephemeral port. It checks every
-gallery page and state at 1440×900 and 390×844, document overflow, script errors, Audit
-table navigation, refresh recovery actions, mobile navigation, and a no-script
-Audit interaction. It needs no application credentials or deployment access.
+gallery page and state at 1440×900, 1024×768, 768×1024 and 390×844. It checks
+document overflow, consistent headings, dark authentication controls, native/HTMX
+geometry, browser history and focus, sidebar collapse/overlay/backdrop/Escape,
+short-page footer position, Audit details, recovery actions and no-script menus. It needs no application credentials or deployment access.
+
+Run the separate authenticated browser gate from the repository root after
+installing the same optional Playwright tooling:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test ./internal/apps/backoffice -run TestHTTPAppBrowserWorkflow -count=1 -v
+```
+
+This gate starts the actual HTTP/security application against a temporary SQLite
+database, creates synthetic accounts and uses the ordinary browser login with
+and without JavaScript. It checks viewer identity on another user's detail,
+conflict feedback without password reflection, access-token expiry recovery and
+native logout. It does not access deployment data or bypass authentication.
 
 ## Review a page change
 
@@ -57,8 +74,8 @@ Audit interaction. It needs no application credentials or deployment access.
    template and assets as the runtime page. Keep fixtures free of real user data,
    credentials, tokens, and customer identifiers.
 2. Open the gallery in Playwright or Chrome and review every affected default,
-   empty, validation-error, and generic-error state at **1440×900** and
-   **390×844**. Check visual hierarchy, contrast, focus visibility, labels,
+   empty, validation-error, and generic-error state at **1440×900**, **1024×768**,
+   **768×1024** and **390×844**. Check visual hierarchy, contrast, focus visibility, labels,
    form controls, sidebar behavior, horizontal overflow, and table containment.
    Verify that assets load and that browser console errors are absent. Follow
    navigation and tab through forms with the keyboard; the page should remain
@@ -66,7 +83,8 @@ Audit interaction. It needs no application credentials or deployment access.
    enabled and disabled. Request a `form-*` route as an HTMX fragment and check
    that its original error status and visible feedback survive.
 3. Record the reviewed route/state and viewport sizes, observed defects and
-   fixes, and the test result in the change review. A screenshot is useful for
+   fixes, and the test result as a severity-ranked table in the Beads review
+   comment. A screenshot is useful for
    layout changes. Capture only synthetic preview pages and keep passwords,
    cookies, and tokens out of logs, screenshots, and issue attachments.
 4. Run `go test -race ./...` and `go tool golangci-lint run`. If ownership or

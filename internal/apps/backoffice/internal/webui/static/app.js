@@ -1,4 +1,42 @@
 "use strict";
+document.body.classList.add("enhanced");
+
+function closeMobileSidebar() {
+  const sidebar = document.querySelector(".app-sidebar");
+  if (sidebar && innerWidth < 992) window.adminlte.PushMenu.getOrCreateInstance(sidebar).collapse();
+}
+function syncSidebar() {
+  const sidebar = document.querySelector(".app-sidebar");
+  const toggle = document.querySelector(".sidebar-toggle");
+  if (!sidebar || !toggle) return;
+  const open = innerWidth < 992 ? document.body.classList.contains("sidebar-open") : !document.body.classList.contains("sidebar-collapse");
+  toggle.setAttribute("aria-expanded", String(open));
+  sidebar.inert = !open;
+  const overlayOpen = open && innerWidth < 992;
+  for (const selector of [".app-main", ".app-footer", ".viewer-actions"]) {
+    const element = document.querySelector(selector);
+    if (element) element.inert = overlayOpen;
+  }
+  if (!open && sidebar.contains(document.activeElement)) toggle.focus();
+}
+document.addEventListener("opened.lte.push-menu", function () {
+  syncSidebar();
+  if (innerWidth < 992) document.querySelector(".sidebar-menu a")?.focus();
+});
+document.addEventListener("collapsed.lte.push-menu", syncSidebar);
+document.addEventListener("DOMContentLoaded", syncSidebar);
+window.addEventListener("resize", function () { requestAnimationFrame(syncSidebar); });
+document.addEventListener("keydown", function (event) {
+  if (innerWidth >= 992 || !document.body.classList.contains("sidebar-open")) return;
+  if (event.key === "Escape") {
+    closeMobileSidebar(); document.querySelector(".sidebar-toggle")?.focus(); event.preventDefault();
+  } else if (event.key === "Tab") {
+    const controls = [...document.querySelectorAll(".sidebar-menu a")];
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { last.focus(); event.preventDefault(); }
+    if (!event.shiftKey && document.activeElement === last) { first.focus(); event.preventDefault(); }
+  }
+});
 
 const refreshForm = document.querySelector("form[data-auto-refresh]");
 if (refreshForm) {
@@ -54,8 +92,9 @@ function syncNavigation() {
     if (current) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  const menu = document.querySelector(".mobile-navigation");
+  const menu = document.querySelector(".native-navigation");
   if (menu) menu.open = false;
+  closeMobileSidebar();
 }
 
 document.addEventListener("htmx:afterSettle", function (event) {
@@ -70,6 +109,12 @@ document.addEventListener("htmx:afterSwap", function (event) {
       feedback.hidden = true;
       feedback.textContent = "";
     }
-    event.detail.target.focus({ preventScroll: true });
+    closeMobileSidebar();
+    document.getElementById("main-content")?.focus({ preventScroll: true });
   }
+});
+
+document.addEventListener("htmx:historyRestore", function () {
+  syncNavigation();
+  document.getElementById("main-content")?.focus({ preventScroll: true });
 });

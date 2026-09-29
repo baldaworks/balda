@@ -256,6 +256,20 @@ The pinned stack is:
 | Bootstrap Icons | 1.13.1 | Local icons |
 | Vanilla JavaScript | Built in | HTMX lifecycle, focus, and sidebar behavior only |
 
+The shell adapts the AlaTooGuide Backoffice layout: a utility top bar with the
+current authenticated username, Account and native CSRF-protected sign-out;
+a branded permission-derived sidebar; a shared content frame; and a footer
+in normal grid flow. The viewer identity is independent of an inspected user.
+Desktop collapse hides the sidebar and expands content. Mobile navigation uses
+an overlay with backdrop, Escape and focus containment; ordinary menu links
+remain available without JavaScript.
+
+The theme is explicitly dark on console, authentication and recovery pages.
+`data-lte-color-mode="off"` disables OS-driven mutation. Shared CSS tokens and
+primitives own surfaces, headings, controls, statuses, cards, tables, empty and
+danger states. Review the synthetic component and full-layout examples before
+changing runtime page layouts; see the UI review runbook.
+
 Go templates are the only source of HTML. JavaScript must not assemble HTML.
 Every screen must work without JavaScript through ordinary links and forms.
 Every HTMX interaction must preserve an ordinary link or form as its fallback.
