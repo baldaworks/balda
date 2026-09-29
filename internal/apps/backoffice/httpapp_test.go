@@ -169,7 +169,7 @@ func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 		name string
 		want []string
 	}{
-		{name: "access", want: []string{"Temporary credential", "telegram:42", "Active browser sessions"}},
+		{name: "access", want: []string{"Credential", "Telegram", "42", "Active browser sessions"}},
 		{name: "account", want: []string{"Change password", "telegram:42", "End session"}},
 		{name: "audit", want: []string{"session.refresh.succeeded", "session.refresh.replay", "11111111-1111-4111-8111-111111111111"}},
 	}
@@ -276,6 +276,20 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), "Create user") || !strings.Contains(list.Body.String(), "Operator") {
 		t.Fatalf("access list = %d %q", list.Code, list.Body.String())
 	}
+	filteredRequest := httptest.NewRequest(http.MethodGet, "/access?q=opera&status=active", nil)
+	filteredRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: adminAccess})
+	filtered := httptest.NewRecorder()
+	handler.ServeHTTP(filtered, filteredRequest)
+	if filtered.Code != http.StatusOK || !strings.Contains(filtered.Body.String(), ">Operator</a>") || strings.Contains(filtered.Body.String(), ">Admin</a>") {
+		t.Fatalf("filtered access users = %d", filtered.Code)
+	}
+	createRequest := httptest.NewRequest(http.MethodGet, "/access/new", nil)
+	createRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: adminAccess})
+	createPage := httptest.NewRecorder()
+	handler.ServeHTTP(createPage, createRequest)
+	if createPage.Code != http.StatusOK || !strings.Contains(createPage.Body.String(), `name="temporary_password"`) || strings.Contains(createPage.Body.String(), `id="users-heading"`) {
+		t.Fatalf("separate create page = %d", createPage.Code)
+	}
 
 	createForm := url.Values{
 		"csrf_token": {adminCSRF}, "display_name": {"Second Operator"}, "username": {"second"},
@@ -315,6 +329,13 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 	handler.ServeHTTP(denied, deniedRequest)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("operator access status = %d", denied.Code)
+	}
+	deniedCreate := httptest.NewRecorder()
+	deniedCreateRequest := httptest.NewRequest(http.MethodGet, "/access/new", nil)
+	deniedCreateRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: operatorAccess})
+	handler.ServeHTTP(deniedCreate, deniedCreateRequest)
+	if deniedCreate.Code != http.StatusForbidden {
+		t.Fatalf("operator create page status = %d", deniedCreate.Code)
 	}
 	operatorForm := url.Values{
 		"csrf_token": {operatorCSRF}, "display_name": {"Denied User"}, "username": {"denied"},

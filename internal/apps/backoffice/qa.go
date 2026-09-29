@@ -69,6 +69,7 @@ var qaEntries = []qaEntry{
 	{name: "access", label: "Access · detail", templateName: webui.TemplateAccess, page: qaAccess, gallery: true},
 	{name: "access/users/user-demo", templateName: webui.TemplateAccess, page: qaAccess},
 	{name: "access-list", label: "Access · list", templateName: webui.TemplateAccess, page: qaAccessList, gallery: true},
+	{name: "access-create", label: "Access · create", templateName: webui.TemplateAccess, page: qaAccessCreate, gallery: true},
 	{name: "access-empty", label: "Access · empty", templateName: webui.TemplateAccess, page: qaAccessEmpty, gallery: true},
 	{name: "access-error", label: "Access · error", templateName: webui.TemplateAccess, page: qaAccessError, gallery: true},
 	{name: "account", label: "Account", templateName: webui.TemplateAccount, page: qaAccount, gallery: true},
@@ -187,6 +188,14 @@ func qaAccessList() webui.Page {
 		Title: "Access · QA", Current: webui.LocationAccess,
 		Navigation: qaAdminNavigation(webui.LocationAccess),
 		Users:      []webui.UserView{qaUser()}, CSRFToken: "qa-csrf",
+	}
+}
+
+func qaAccessCreate() webui.Page {
+	return webui.Page{
+		Title: "Create user · QA", Current: webui.LocationAccess,
+		Navigation: qaAdminNavigation(webui.LocationAccess),
+		CreateUser: true, CSRFToken: "qa-csrf",
 	}
 }
 

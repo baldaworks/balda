@@ -125,6 +125,10 @@ type Page struct {
 	Capabilities        []CapabilityCard
 	BindingChoices      []string
 	OwnUser             bool
+	CreateUser          bool
+	AccessSearch        string
+	AccessRole          string
+	AccessStatus        string
 	Users               []UserView
 	User                *UserView
 	Sessions            []SessionView

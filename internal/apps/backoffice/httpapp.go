@@ -85,6 +85,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.browser.RevokeSession)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
+	mux.Handle("GET "+a.path("/access/new"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessCreatePage))))
 	mux.Handle("GET "+a.path("/access/users/{user_id}"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
 	mux.HandleFunc("POST "+a.path("/access/users"), a.accessCreate)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}"), a.accessUpdate)
@@ -248,15 +249,41 @@ func (a *httpApp) accessList(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	role := r.URL.Query().Get("role")
+	status := r.URL.Query().Get("status")
+	if len(search) > 100 || (role != "" && role != string(usercmd.RoleAdministrator) && role != string(usercmd.RoleOperator)) ||
+		(status != "" && status != string(usercmd.StatusActive) && status != string(usercmd.StatusDisabled)) {
+		a.browser.WriteError(w, r, usercmd.ErrInvalid)
+		return
+	}
 	views := make([]webui.UserView, 0, len(userList))
 	for _, user := range userList {
+		if (role != "" && string(user.Role) != role) || (status != "" && string(user.Status) != status) ||
+			(search != "" && !strings.Contains(strings.ToLower(user.DisplayName+" "+user.Username), strings.ToLower(search))) {
+			continue
+		}
 		views = append(views, webui.ProjectUser(user))
 	}
 	capabilities := users.BackofficeCapabilities(principal.User)
 	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
 		Title: "Access · Balda", Current: webui.LocationAccess,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccess), Users: views,
-		CSRFToken: a.browser.CSRFToken(r),
+		CSRFToken: a.browser.CSRFToken(r), AccessSearch: search, AccessRole: role, AccessStatus: status,
+	})
+}
+
+func (a *httpApp) accessCreatePage(w http.ResponseWriter, r *http.Request) {
+	principal, ok := security.PrincipalFromContext(r.Context())
+	if !ok {
+		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		return
+	}
+	capabilities := users.BackofficeCapabilities(principal.User)
+	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
+		Title: "Create user · Balda", Current: webui.LocationAccess,
+		Navigation: webui.Navigation(capabilities, webui.LocationAccess),
+		CreateUser: true, CSRFToken: a.browser.CSRFToken(r),
 	})
 }
 
