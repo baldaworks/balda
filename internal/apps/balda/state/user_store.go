@@ -729,8 +729,12 @@ func (s *sqlUserStore) ListActiveSessions(ctx context.Context, userID string, pa
 			return usercmd.SessionPage{}, scanErr
 		}
 		if !now.Before(summary.ExpiresAt) ||
-			(page.AfterID != "" && (summary.LastSeenAt.After(cursorTime) ||
-				(summary.LastSeenAt.Equal(cursorTime) && summary.ID >= page.AfterID))) {
+			(page.AfterID != "" && ((page.AfterID != page.CurrentID && summary.ID == page.CurrentID) ||
+				(page.AfterID != page.CurrentID && (summary.LastSeenAt.After(cursorTime) ||
+					(summary.LastSeenAt.Equal(cursorTime) && summary.ID >= page.AfterID))))) {
+			continue
+		}
+		if page.AfterID == page.CurrentID && summary.ID == page.CurrentID {
 			continue
 		}
 		sessions = append(sessions, summary)
@@ -739,6 +743,9 @@ func (s *sqlUserStore) ListActiveSessions(ctx context.Context, userID string, pa
 		return usercmd.SessionPage{}, s.wrapError("iterate active sessions", err)
 	}
 	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].ID == page.CurrentID || sessions[j].ID == page.CurrentID {
+			return sessions[i].ID == page.CurrentID
+		}
 		if sessions[i].LastSeenAt.Equal(sessions[j].LastSeenAt) {
 			return sessions[i].ID > sessions[j].ID
 		}

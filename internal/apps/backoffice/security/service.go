@@ -48,7 +48,7 @@ type store interface {
 	GetSession(ctx context.Context, sessionID string) (usercmd.SessionFamily, bool, error)
 	GetSessionByAccessSelector(ctx context.Context, selector string) (usercmd.AccessSession, bool, error)
 	GetSessionByRefreshSelector(ctx context.Context, selector string) (usercmd.RefreshSession, bool, error)
-	ListSessions(ctx context.Context, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error)
+	ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error)
 	RotateRefresh(ctx context.Context, rotation usercmd.RefreshRotation) (usercmd.RefreshRotationResult, error)
 	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error
 	ChangeCredentialAndCreateSession(ctx context.Context, change usercmd.CredentialSessionChange) error
@@ -244,8 +244,8 @@ func (s *Service) Logout(ctx context.Context, rawAccessToken string) error {
 	return nil
 }
 
-// ListSessions returns secret-free session summaries for the current user or,
-// for administrators, another canonical user.
+// ListSessions returns active, secret-free session summaries for the current
+// user or, for administrators, another canonical user.
 func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error) {
 	principal, err := s.requireNormal(ctx, rawAccessToken)
 	if err != nil {
@@ -258,7 +258,10 @@ func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID strin
 	if targetUserID != principal.User.ID && principal.User.Role != usercmd.RoleAdministrator {
 		return usercmd.SessionPage{}, ErrForbidden
 	}
-	pageResult, err := s.store.ListSessions(ctx, targetUserID, page)
+	if targetUserID == principal.User.ID {
+		page.CurrentID = principal.FamilyID
+	}
+	pageResult, err := s.store.ListActiveSessions(ctx, targetUserID, page, s.now().UTC())
 	if err != nil {
 		return usercmd.SessionPage{}, fmt.Errorf("list browser sessions: %w", err)
 	}

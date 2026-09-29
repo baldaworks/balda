@@ -61,4 +61,12 @@ func checkUserStoreActiveSessions(t *testing.T, open contractOpener) {
 	if next.Sessions[2].DeviceLabel != "Firefox on Linux" || next.Sessions[2].ConnectionPeer != "192.0.2.1" || next.Sessions[1].DeviceLabel != "" {
 		t.Fatalf("session metadata: %+v", next.Sessions)
 	}
+	current, err := store.ListActiveSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 1, CurrentID: "family-000"}, now)
+	if err != nil || len(current.Sessions) != 1 || current.Sessions[0].ID != "family-000" {
+		t.Fatalf("current family first: %+v, %v", current, err)
+	}
+	afterCurrent, err := store.ListActiveSessions(t.Context(), user.ID, usercmd.PageRequest{Limit: 1, CurrentID: "family-000", AfterID: current.NextAfterID}, now)
+	if err != nil || len(afterCurrent.Sessions) != 1 || afterCurrent.Sessions[0].ID != "family-102" {
+		t.Fatalf("after current family: %+v, %v", afterCurrent, err)
+	}
 }

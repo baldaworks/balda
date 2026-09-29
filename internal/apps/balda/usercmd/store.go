@@ -12,6 +12,8 @@ const MaxPageSize = 100
 type PageRequest struct {
 	AfterID string
 	Limit   int
+	// CurrentID places the active browser family first for session pages.
+	CurrentID string
 }
 
 // UserPage contains canonical users ordered by stable ID.

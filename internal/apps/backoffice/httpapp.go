@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
@@ -16,6 +17,7 @@ import (
 )
 
 const checkedFormValue = "yes"
+const sessionPageSize = 20
 
 type httpApp struct {
 	renderer       *webui.Renderer
@@ -155,14 +157,20 @@ func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, security.ErrUnauthenticated)
 		return
 	}
-	sessionPage, err := a.security.ListSessions(r.Context(), accessCookie.Value, "", usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	sessionPage, err := a.security.ListSessions(r.Context(), accessCookie.Value, "", usercmd.PageRequest{
+		Limit: sessionPageSize, AfterID: r.URL.Query().Get("after_session"),
+	})
 	if err != nil {
 		a.browser.WriteError(w, r, err)
 		return
 	}
 	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
 	for _, session := range sessionPage.Sessions {
-		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID))
+		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID, time.Now().UTC()))
+	}
+	nextURL := ""
+	if sessionPage.NextAfterID != "" {
+		nextURL = "/account?after_session=" + url.QueryEscape(sessionPage.NextAfterID)
 	}
 	view := webui.ProjectUser(principal.User)
 	capabilities := users.BackofficeCapabilities(principal.User)
@@ -170,6 +178,7 @@ func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 		Title: "Account · Balda", Current: webui.LocationAccount,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccount),
 		User:       &view, Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
+		SessionActionPrefix: "/account/sessions", SessionNextURL: nextURL,
 	})
 }
 
@@ -263,14 +272,21 @@ func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
-	sessionPage, err := a.access.ListSessions(r.Context(), actor, user.ID)
+	sessionPage, err := a.access.ListSessions(r.Context(), actor, user.ID, usercmd.PageRequest{
+		Limit: sessionPageSize, AfterID: r.URL.Query().Get("after_session"),
+	})
 	if err != nil {
 		a.browser.WriteError(w, r, err)
 		return
 	}
 	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
 	for _, session := range sessionPage.Sessions {
-		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID))
+		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID, time.Now().UTC()))
+	}
+	actionPrefix := "/access/users/" + url.PathEscape(user.ID) + "/sessions"
+	nextURL := ""
+	if sessionPage.NextAfterID != "" {
+		nextURL = "/access/users/" + url.PathEscape(user.ID) + "?after_session=" + url.QueryEscape(sessionPage.NextAfterID)
 	}
 	view := webui.ProjectUser(user)
 	capabilities := users.BackofficeCapabilities(principal.User)
@@ -278,7 +294,7 @@ func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
 		Title: "Access · " + user.DisplayName, Current: webui.LocationAccess,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccess), User: &view,
 		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r), BindingChoices: a.bindingChoices,
-		OwnUser: user.ID == principal.User.ID,
+		OwnUser: user.ID == principal.User.ID, SessionActionPrefix: actionPrefix, SessionNextURL: nextURL,
 	})
 }
 
@@ -417,7 +433,11 @@ func (a *httpApp) accessSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
-	a.respondMutation(w, r, webui.LocationAccess)
+	if r.PathValue("session_id") == principal.FamilyID {
+		a.respondMutation(w, r, webui.LocationLogin)
+		return
+	}
+	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
 }
 
 func (a *httpApp) respondMutation(w http.ResponseWriter, r *http.Request, location webui.Location) {

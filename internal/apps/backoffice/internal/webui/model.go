@@ -79,15 +79,18 @@ type UserView struct {
 
 // SessionView represents one server-side family, never an individual token generation.
 type SessionView struct {
-	ID         string
-	Assurance  string
-	CreatedAt  time.Time
-	LastSeenAt time.Time
-	ExpiresAt  time.Time
-	RevokedAt  time.Time
-	Revoked    bool
-	Current    bool
-	Version    uint64
+	ID             string
+	Assurance      string
+	CreatedAt      time.Time
+	LastSeenAt     time.Time
+	ExpiresAt      time.Time
+	RevokedAt      time.Time
+	Revoked        bool
+	Expired        bool
+	Current        bool
+	DeviceLabel    string
+	ConnectionPeer string
+	Version        uint64
 }
 
 // AuditView is a safe immutable security-event projection.
@@ -116,26 +119,28 @@ type QALink struct {
 
 // Page is the closed safe model accepted by production templates.
 type Page struct {
-	Title           string
-	Current         Location
-	Navigation      []NavItem
-	Capabilities    []CapabilityCard
-	BindingChoices  []string
-	OwnUser         bool
-	Users           []UserView
-	User            *UserView
-	Sessions        []SessionView
-	Audit           []AuditView
-	Error           *ErrorView
-	CSRFToken       string
-	AutoRefresh     bool
-	ReturnTo        string
-	AuditAction     string
-	AuditOutcome    string
-	AuditTargetType string
-	NextURL         string
-	Gallery         []QALink
-	Preview         bool
+	Title               string
+	Current             Location
+	Navigation          []NavItem
+	Capabilities        []CapabilityCard
+	BindingChoices      []string
+	OwnUser             bool
+	Users               []UserView
+	User                *UserView
+	Sessions            []SessionView
+	SessionActionPrefix string
+	SessionNextURL      string
+	Audit               []AuditView
+	Error               *ErrorView
+	CSRFToken           string
+	AutoRefresh         bool
+	ReturnTo            string
+	AuditAction         string
+	AuditOutcome        string
+	AuditTargetType     string
+	NextURL             string
+	Gallery             []QALink
+	Preview             bool
 }
 
 // Navigation derives visible workspaces only from current server capabilities.
@@ -184,11 +189,13 @@ func ProjectUser(user usercmd.User) UserView {
 }
 
 // ProjectSession constructs one family-level session row.
-func ProjectSession(summary usercmd.SessionSummary, currentFamilyID string) SessionView {
+func ProjectSession(summary usercmd.SessionSummary, currentFamilyID string, now time.Time) SessionView {
 	return SessionView{
 		ID: summary.ID, Assurance: string(summary.Assurance), CreatedAt: summary.CreatedAt,
 		LastSeenAt: summary.LastSeenAt, ExpiresAt: summary.ExpiresAt, RevokedAt: summary.RevokedAt,
-		Revoked: !summary.RevokedAt.IsZero(), Current: summary.ID == currentFamilyID, Version: summary.Version,
+		Revoked: !summary.RevokedAt.IsZero(), Expired: !now.Before(summary.ExpiresAt),
+		Current: summary.ID == currentFamilyID, DeviceLabel: summary.DeviceLabel,
+		ConnectionPeer: summary.ConnectionPeer, Version: summary.Version,
 	}
 }
 

@@ -169,8 +169,8 @@ func TestHTTPAppQAWorkspaceFixturesPrecedeRuntimeBinding(t *testing.T) {
 		name string
 		want []string
 	}{
-		{name: "access", want: []string{"Temporary credential", "telegram:42", "Browser sessions"}},
-		{name: "account", want: []string{"Change password", "telegram:42", "Revoke family"}},
+		{name: "access", want: []string{"Temporary credential", "telegram:42", "Active browser sessions"}},
+		{name: "account", want: []string{"Change password", "telegram:42", "End session"}},
 		{name: "audit", want: []string{"session.refresh.succeeded", "session.refresh.replay", "11111111-1111-4111-8111-111111111111"}},
 	}
 	for _, tt := range tests {
@@ -502,6 +502,78 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 	if _, err := app.security.Refresh(t.Context(), next.refresh, next.csrf); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("revoked refresh validation error = %v", err)
+	}
+}
+
+func TestHTTPAppAccountActiveSessionPagination(t *testing.T) {
+	provider, config := newHTTPAppTestState(t)
+	now := time.Now().UTC().Add(-time.Hour)
+	createAccessTestUser(t, provider.Users(), usercmd.User{
+		ID: "admin", DisplayName: "Admin", Username: "admin", NormalizedUsername: "admin",
+		Status: usercmd.StatusActive, Role: usercmd.RoleAdministrator,
+		Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1},
+		Primary:    true, Version: 1, CreatedAt: now, UpdatedAt: now,
+	})
+	app, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldest := loginHTTPAppSession(t, handler, config, "admin")
+	var otherAccess string
+	for range 21 {
+		credentials, err := app.security.Login(t.Context(), "admin", []byte("correct horse battery staple"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherAccess = credentials.AccessToken
+	}
+	account := func(path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: oldest.access})
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	first := account("/account")
+	if first.Code != http.StatusOK || strings.Count(first.Body.String(), ">End session</button>") != sessionPageSize {
+		t.Fatalf("first session page = %d, end actions = %d", first.Code, strings.Count(first.Body.String(), ">End session</button>"))
+	}
+	firstSession := strings.SplitN(first.Body.String(), `<h3 class="h5">`, 2)
+	if len(firstSession) != 2 || !strings.Contains(strings.SplitN(firstSession[1], "</h3>", 2)[0], "Current") {
+		t.Fatal("current session is not first")
+	}
+	match := regexp.MustCompile(`href="(/account\?after_session=[^"]+)"`).FindStringSubmatch(first.Body.String())
+	if len(match) != 2 {
+		t.Fatal("first page has no continuation")
+	}
+	second := account(match[1])
+	if second.Code != http.StatusOK || strings.Count(second.Body.String(), ">End session</button>") != 2 || strings.Contains(second.Body.String(), "Older active sessions") {
+		t.Fatalf("second session page = %d, end actions = %d", second.Code, strings.Count(second.Body.String(), ">End session</button>"))
+	}
+	other, err := app.security.ValidateAccess(t.Context(), otherAccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoked := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+other.FamilyID+"/revoke",
+		url.Values{"csrf_token": {oldest.csrf}}, oldest.access, oldest.csrf, false)
+	if revoked.Code != http.StatusSeeOther || revoked.Header().Get("Location") != "/access/users/admin" {
+		t.Fatalf("access session revocation = %d %q", revoked.Code, revoked.Header().Get("Location"))
+	}
+	if _, err := app.security.ValidateAccess(t.Context(), otherAccess); !errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("revoked access validation = %v", err)
+	}
+	self, err := app.security.ValidateAccess(t.Context(), oldest.access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endedCurrent := performAccessMutation(t, handler, config, "/access/users/admin/sessions/"+self.FamilyID+"/revoke",
+		url.Values{"csrf_token": {oldest.csrf}, "confirm_current": {"yes"}}, oldest.access, oldest.csrf, false)
+	if endedCurrent.Code != http.StatusSeeOther || endedCurrent.Header().Get("Location") != "/login" {
+		t.Fatalf("current access session revocation = %d %q", endedCurrent.Code, endedCurrent.Header().Get("Location"))
 	}
 }
 

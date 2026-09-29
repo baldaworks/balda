@@ -178,6 +178,7 @@ func qaAccess() webui.Page {
 		Title: "Access · QA", Current: webui.LocationAccess,
 		Navigation: qaAdminNavigation(webui.LocationAccess),
 		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(), BindingChoices: []string{"telegram", "slackagent", "zulip"},
+		SessionActionPrefix: "/access/users/" + user.ID + "/sessions",
 	}
 }
 
@@ -209,6 +210,7 @@ func qaAccount() webui.Page {
 		Title: "Account · QA", Current: webui.LocationAccount,
 		Navigation: qaOperatorNavigation(webui.LocationAccount),
 		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(),
+		SessionActionPrefix: "/account/sessions",
 	}
 }
 

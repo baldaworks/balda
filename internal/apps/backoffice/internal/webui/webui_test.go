@@ -134,7 +134,7 @@ func TestSafeViewProjectionUsesOneBindingAndFamilyLevelSessions(t *testing.T) {
 	session := ProjectSession(usercmd.SessionSummary{
 		ID: "family-1", Assurance: usercmd.SessionAssuranceRestricted, CreatedAt: now,
 		LastSeenAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour), Version: 3,
-	}, "family-1")
+	}, "family-1", now)
 	if session.ID != "family-1" || !session.Current || session.Assurance != "restricted" || session.Version != 3 {
 		t.Fatalf("ProjectSession() = %+v", session)
 	}
