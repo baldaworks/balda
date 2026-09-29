@@ -553,7 +553,16 @@ func parseFormVersion(raw string) (uint64, error) {
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
 	message := "The request could not be completed."
 	if status == http.StatusUnauthorized {
-		message = "Your access has expired. The browser will restore your session if it can."
+		switch r.URL.Path {
+		case a.path("/login"):
+			message = "Sign-in failed. Check your username and password."
+		case a.path(security.RefreshPath):
+			message = "This session cannot be restored. Sign in again to continue."
+		case a.path("/account/password"):
+			message = "The password could not be verified. Check it and try again."
+		default:
+			message = "Your session is unavailable. The browser will check whether it can restore access. You can also sign in again."
+		}
 	}
 	if status == http.StatusConflict && r.URL.Path == a.path(security.RefreshPath) {
 		message = "Another request has just refreshed this session. Reopen the page in a moment."
@@ -575,8 +584,13 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 		page.CSRFToken = a.browser.CSRFToken(r)
 	default:
 		if status == http.StatusUnauthorized && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			csrf, err := a.browser.EnsureCSRF(w, r)
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
 			templateName = webui.TemplateRefresh
-			page.CSRFToken = a.browser.CSRFToken(r)
+			page.CSRFToken = csrf
 			page.ReturnTo = a.browser.SafeReturnPath(r.URL.RequestURI(), a.path(string(webui.LocationOverview)))
 			page.AutoRefresh = true
 		}

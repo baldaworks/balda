@@ -314,6 +314,20 @@ func TestHTTPAppLoginOverviewAndRefreshContinuation(t *testing.T) {
 	if expired.Code != http.StatusUnauthorized || !strings.Contains(expired.Body.String(), `action="/auth/session/refresh"`) || !strings.Contains(expired.Body.String(), `data-auto-refresh="true"`) {
 		t.Fatalf("refresh continuation = %d %q", expired.Code, expired.Body.String())
 	}
+	refreshCSRF := cookieValue(expired.Result().Cookies(), security.CSRFCookieName)
+	if refreshCSRF == "" || !strings.Contains(expired.Body.String(), `name="csrf_token" value="`+refreshCSRF+`"`) {
+		t.Fatalf("refresh continuation lacks usable CSRF token: %q", expired.Body.String())
+	}
+	refreshForm := url.Values{"csrf_token": {refreshCSRF}, "return_to": {"/overview"}}
+	refreshRequest := httptest.NewRequest(http.MethodPost, security.RefreshPath, strings.NewReader(refreshForm.Encode()))
+	refreshRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	refreshRequest.Header.Set("Origin", config.Server.PublicURL)
+	refreshRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: refreshCSRF})
+	terminal := httptest.NewRecorder()
+	handler.ServeHTTP(terminal, refreshRequest)
+	if terminal.Code != http.StatusUnauthorized || !strings.Contains(terminal.Body.String(), "This session cannot be restored. Sign in again to continue.") || strings.Contains(terminal.Body.String(), `data-auto-refresh="true"`) {
+		t.Fatalf("missing-refresh recovery = %d %q", terminal.Code, terminal.Body.String())
+	}
 }
 
 func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
@@ -596,6 +610,25 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 	}
 	if _, err := app.security.Refresh(t.Context(), next.refresh, next.csrf); !errors.Is(err, security.ErrUnauthenticated) {
 		t.Fatalf("revoked refresh validation error = %v", err)
+	}
+	revokedPageRequest := httptest.NewRequest(http.MethodGet, "/overview", nil)
+	revokedPageRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: next.access})
+	revokedPageRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: next.csrf})
+	revokedPage := httptest.NewRecorder()
+	handler.ServeHTTP(revokedPage, revokedPageRequest)
+	if revokedPage.Code != http.StatusUnauthorized || !strings.Contains(revokedPage.Body.String(), `data-auto-refresh="true"`) {
+		t.Fatalf("revoked session continuation = %d %q", revokedPage.Code, revokedPage.Body.String())
+	}
+	recoveryForm := url.Values{"csrf_token": {next.csrf}, "return_to": {"/overview"}}
+	recoveryRequest := httptest.NewRequest(http.MethodPost, security.RefreshPath, strings.NewReader(recoveryForm.Encode()))
+	recoveryRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recoveryRequest.Header.Set("Origin", config.Server.PublicURL)
+	recoveryRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: next.csrf})
+	recoveryRequest.AddCookie(&http.Cookie{Name: security.RefreshCookieName, Value: next.refresh})
+	recovery := httptest.NewRecorder()
+	handler.ServeHTTP(recovery, recoveryRequest)
+	if recovery.Code != http.StatusUnauthorized || !strings.Contains(recovery.Body.String(), "This session cannot be restored. Sign in again to continue.") || strings.Contains(recovery.Body.String(), `data-auto-refresh="true"`) {
+		t.Fatalf("revoked session recovery = %d %q", recovery.Code, recovery.Body.String())
 	}
 }
 
