@@ -26,6 +26,7 @@ import (
 )
 
 const manifestVersion = 1
+const channelTelegram = "telegram"
 
 var migrationNamespace = uuid.MustParse("90af3ae2-6775-50e3-b4fc-54fc0d011a55")
 
@@ -287,7 +288,7 @@ func sourceRecords(input Input) ([]sourceRecord, []string, error) {
 		if strings.TrimSpace(displayName) == "" {
 			displayName = subject
 		}
-		if channelType != "telegram" {
+		if channelType != channelTelegram {
 			username, firstName = "", ""
 		}
 		records = append(records, sourceRecord{
@@ -332,7 +333,7 @@ func parseSubject(raw string) (string, string, error) {
 	if trimmed == "" {
 		return "", "", fmt.Errorf("legacy subject is empty")
 	}
-	channelType := "telegram"
+	channelType := channelTelegram
 	principal := trimmed
 	if before, after, ok := strings.Cut(trimmed, ":"); ok {
 		channelType = strings.ToLower(strings.TrimSpace(before))
@@ -342,7 +343,7 @@ func parseSubject(raw string) (string, string, error) {
 		return "", "", fmt.Errorf("legacy subject %q has no principal", raw)
 	}
 	switch channelType {
-	case "telegram", "zulip":
+	case channelTelegram, "zulip":
 		value, err := strconv.ParseInt(principal, 10, 64)
 		if err != nil || value <= 0 {
 			return "", "", fmt.Errorf("legacy subject %q has invalid numeric principal", raw)

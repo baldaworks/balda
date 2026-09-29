@@ -112,6 +112,52 @@ func TestPostgresPrimaryAdministratorDisplayNameMigration(t *testing.T) {
 	}
 }
 
+func TestPostgresTelegramBindingProfileBackfill(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 5); err != nil {
+		t.Fatal(err)
+	}
+	insertPostgresUser(t, db, "admin-1", "superuser", true)
+	insertPostgresUser(t, db, "operator-1", "operator", false)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_collaborators
+		(user_id, username, first_name, added_by, added_at)
+		VALUES ('telegram:202', 'operator_handle', 'Op', 'admin-1', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`INSERT INTO balda_user_bindings (binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		 VALUES ('owner-binding', 'admin-1', 'telegram', '101', 'superuser', 'legacy-owner', '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`,
+		`INSERT INTO balda_user_bindings (binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
+		 VALUES ('collaborator-binding', 'operator-1', 'telegram', '202', 'Op', 'legacy-collaborator', '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(t.Context(), query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct{ id, username, firstName string }{
+		{"owner-binding", "", ""}, {"collaborator-binding", "operator_handle", "Op"},
+	} {
+		var username, firstName string
+		if err := db.QueryRowContext(t.Context(), `SELECT provider_username, provider_first_name FROM balda_user_bindings WHERE binding_id = $1`, want.id).Scan(&username, &firstName); err != nil {
+			t.Fatal(err)
+		}
+		if username != want.username || firstName != want.firstName {
+			t.Errorf("binding %s profile = %q/%q, want %q/%q", want.id, username, firstName, want.username, want.firstName)
+		}
+	}
+}
+
 func TestPostgresUnifiedUserSchemaConstraints(t *testing.T) {
 	db := newPostgresTestDB(t)
 	if err := migratePostgres(t.Context(), db); err != nil {
