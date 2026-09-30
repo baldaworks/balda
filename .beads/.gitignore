@@ -76,3 +76,6 @@ last_pull
 embeddeddolt/
 proxieddb/
 proxied_server_client_info.json
+
+# Added by bd (missing required patterns)
+*.gate.lock*
