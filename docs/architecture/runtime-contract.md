@@ -111,3 +111,10 @@ Status: active
 - Runtime startup wiring changes.
 - Any command execution path change.
 - New config keys that affect transport or execution mode.
+
+A first explicit skill command can be pinned to the application catalog before
+lazy session creation derives an effective application-plus-workspace catalog.
+The turn loader accepts that direct parent selection only when the session
+retains the identical skill descriptor and revision. It reads the original
+retained content; unrelated snapshots, changed descriptors, missing archives,
+and refreshed revisions fail closed. The session runtime itself stays pinned.

@@ -88,9 +88,10 @@ type MemoryStateProvider interface {
 
 // SkillLoader is the turn assembler's local revision-pinned content port.
 type SkillLoader interface {
-	LoadPinned(
+	LoadPinnedForSession(
 		ctx context.Context,
 		selection runtimecatalogcmd.SkillSelection,
+		sessionID runtimecatalogcmd.SnapshotID,
 		resources []string,
 	) (runtimecatalogcmd.LoadedSkill, error)
 }
@@ -211,10 +212,10 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 			return fmt.Errorf("session turn: selected skill loader is unavailable")
 		}
 		sessionSnapshotID := runtimecatalogcmd.SnapshotID(strings.TrimSpace(topicSession.GetRuntimeSnapshotID()))
-		if sessionSnapshotID == "" || payload.Skill.Snapshot != sessionSnapshotID {
-			return fmt.Errorf("session turn: selected skill snapshot does not match session runtime")
+		if sessionSnapshotID == "" {
+			return fmt.Errorf("session turn: session runtime snapshot is unavailable")
 		}
-		loaded, loadErr := r.skills.LoadPinned(ctx, *payload.Skill, nil)
+		loaded, loadErr := r.skills.LoadPinnedForSession(ctx, *payload.Skill, sessionSnapshotID, nil)
 		if loadErr != nil {
 			return fmt.Errorf("load selected skill: %w", loadErr)
 		}
