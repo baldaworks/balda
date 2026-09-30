@@ -13,4 +13,5 @@ type bindingInvitationAdmitter interface {
 type bindingChannelRegistry interface {
 	Get(channel string) (usercmd.BindingChannel, bool)
 	Register(info usercmd.BindingChannel) error
+	Refresh(ctx context.Context, channel string) (usercmd.BindingChannel, error)
 }

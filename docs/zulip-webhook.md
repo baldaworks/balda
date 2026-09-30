@@ -199,3 +199,19 @@ starting with `/`, for example `/zulip/webhook`.
 - **Bot ignores first message in a new topic**: this was a bug where the HTTP
   request context was cancelled before the goroutine finished processing.
   Fixed in `zulip_handler.go` by using `context.WithoutCancel`.
+
+## Connect an existing Backoffice account
+
+Select an existing user in Backoffice Access and use that user's Zulip binding
+form. Balda verifies its configured bot with `GET /api/v1/users/me`. Open that
+bot's direct conversation and send the generated `bind_<token>` message or
+`/start bind_<token>`. The invitation is single use and expires in 24 hours.
+Refresh bindings in Backoffice to see the confirmed sender. No owner token is
+needed, and the target user's role is preserved.
+
+Stream messages, wrong bot/realm invitations, malformed payloads, used or expired
+invitations and account conflicts grant no access. Invitation text is handled
+before command publication and conversational processing. The webhook adapter
+does not fetch provider history; quoted invitation text in later webhook
+messages is also quarantined. Retry unavailable bot identity from its own binding
+interface.

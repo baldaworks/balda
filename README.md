@@ -245,7 +245,8 @@ ENTRYPOINT ["balda"]
 Balda provides onboarding, session control, GoalKeeper, locator, usage, skill,
 user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`, and
 `/reset`; Slack exposes the conversation-scoped forms `/balda skill`,
-`/balda locator`, and `/balda reset`. For Backoffice account binding, send the
+`/balda locator`, and `/balda reset`. For Backoffice account binding, Zulip accepts `/start bind_<token>` or the exact
+`bind_<token>` DM generated for its configured bot. In Slack, send the
 generated `bind_<token>` in the configured bot’s DM or use `/balda start bind_<token>`.
 
 Slack formats the response for scanning and copying:

@@ -11,6 +11,7 @@ import (
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"github.com/baldaworks/balda/internal/apps/balda/automode"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/zulip"
@@ -68,6 +69,8 @@ const (
 type zulipInboundHandlerParams struct {
 	fx.In
 
+	Bindings          bindingInvitationAdmitter `optional:"true"`
+	BindingChannels   bindingChannelRegistry    `optional:"true"`
 	OwnerStore        *auth.OwnerStore
 	InviteStore       *auth.InviteStore
 	CollaboratorStore *auth.CollaboratorStore
@@ -85,6 +88,8 @@ type zulipInboundHandlerParams struct {
 }
 
 type zulipInboundHandler struct {
+	bindings          bindingInvitationAdmitter
+	bindingChannels   bindingChannelRegistry
 	ownerStore        *auth.OwnerStore
 	inviteStore       *auth.InviteStore
 	collaboratorStore *auth.CollaboratorStore
@@ -111,6 +116,7 @@ func newZulipInboundHandler(params zulipInboundHandlerParams) zulip.InboundProce
 		maxIters = defaultGoalMaxIterations
 	}
 	h := &zulipInboundHandler{
+		bindings: params.Bindings, bindingChannels: params.BindingChannels,
 		ownerStore:        params.OwnerStore,
 		inviteStore:       params.InviteStore,
 		collaboratorStore: params.CollaboratorStore,
@@ -168,6 +174,15 @@ func (h *zulipInboundHandler) canAccessCollaboratorScope(ctx context.Context, us
 }
 
 func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.InboundCommand) error {
+	if authpayload.Contains(cmd.Args) {
+		if cmd.Command == commandStart {
+			h.consumeBinding(ctx, cmd.Locator, cmd.SenderID, cmd.SenderEmail, cmd.BotEmail, cmd.Args, cmd.Direct)
+		}
+		return nil
+	}
+	if h.bindings != nil && cmd.Command == commandStart && strings.TrimSpace(cmd.Args) == "" && !h.canAccessCollaboratorScope(ctx, int64(cmd.SenderID)) {
+		return h.sendPlain(ctx, cmd.Locator, "Open Backoffice Access to generate an invitation for this Zulip bot.")
+	}
 	transportUserID := int64(cmd.SenderID)
 	if cmd.Command != commandStart && !h.canAccessCollaboratorScope(ctx, transportUserID) {
 		_ = h.sendPlain(ctx, cmd.Locator, zulipAccessDeniedText)
@@ -212,11 +227,18 @@ func (h *zulipInboundHandler) HandleCommand(ctx context.Context, cmd zulip.Inbou
 }
 
 func (h *zulipInboundHandler) HandleUnsupportedCommand(ctx context.Context, cmd zulip.InboundCommand) error {
+	if authpayload.Contains(cmd.Args) || authpayload.Contains(cmd.Command) {
+		return nil
+	}
 	return h.sendPlain(ctx, cmd.Locator, fmt.Sprintf("Unknown command: /%s", cmd.Command))
 }
 
 func (h *zulipInboundHandler) ProcessInbound(ctx context.Context, msg zulip.InboundMessage) (turncmd.InboundSettlement, error) {
-	if h.getOwnerID() == 0 {
+	if authpayload.Contains(msg.Text) {
+		h.consumeBinding(ctx, msg.Locator, msg.SenderID, msg.SenderEmail, msg.BotEmail, msg.Text, msg.Direct)
+		return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, nil
+	}
+	if h.bindings == nil && h.getOwnerID() == 0 {
 		return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, nil
 	}
 	if strings.TrimSpace(msg.Text) == "" {

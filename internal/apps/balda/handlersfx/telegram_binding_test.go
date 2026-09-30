@@ -17,13 +17,15 @@ import (
 	"github.com/tgbotkit/runtime/events"
 )
 
+const bindingPrimaryUserID = "primary"
+
 func TestTelegramBackofficeInvitations(t *testing.T) {
 	for _, target := range []struct {
 		id      string
 		role    usercmd.Role
 		primary bool
-	}{{"primary", usercmd.RoleAdministrator, true}, {"secondary", usercmd.RoleAdministrator, false}, {"operator", usercmd.RoleOperator, false}} {
-		for _, route := range []string{"start", "dm"} {
+	}{{bindingPrimaryUserID, usercmd.RoleAdministrator, true}, {"secondary", usercmd.RoleAdministrator, false}, {"operator", usercmd.RoleOperator, false}} {
+		for _, route := range []string{commandStart, "dm"} {
 			t.Run(target.id+"/"+route, func(t *testing.T) {
 				p, err := state.Open(t.Context(), state.DatabaseConfig{Type: "sqlite", SQLite: state.SQLiteConfig{Path: filepath.Join(t.TempDir(), "state.db")}})
 				if err != nil {
@@ -31,8 +33,8 @@ func TestTelegramBackofficeInvitations(t *testing.T) {
 				}
 				t.Cleanup(func() { _ = p.Close() })
 				now := time.Now().UTC()
-				ids := []string{"primary"}
-				if target.id != "primary" {
+				ids := []string{bindingPrimaryUserID}
+				if target.id != bindingPrimaryUserID {
 					ids = append(ids, target.id)
 				}
 				for _, id := range ids {
@@ -40,7 +42,7 @@ func TestTelegramBackofficeInvitations(t *testing.T) {
 					if id == target.id {
 						role = target.role
 					}
-					user := usercmd.User{ID: id, DisplayName: id, Username: id, NormalizedUsername: id, Role: role, Status: usercmd.StatusActive, Primary: id == "primary", Version: 1, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now}
+					user := usercmd.User{ID: id, DisplayName: id, Username: id, NormalizedUsername: id, Role: role, Status: usercmd.StatusActive, Primary: id == bindingPrimaryUserID, Version: 1, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, CreatedAt: now, UpdatedAt: now}
 					if err := p.Users().CreateUser(t.Context(), user, usercmd.CredentialSecret{UserID: id, PasswordHash: "synthetic-hash"}, usercmd.AuditEvent{ID: "create-" + id, Action: usercmd.AuditActionUserCreated, TargetType: usercmd.AuditTargetUser, TargetID: id, Outcome: usercmd.AuditOutcomeSucceeded, Source: "test", OccurredAt: now}); err != nil {
 						t.Fatal(err)
 					}
@@ -63,15 +65,15 @@ func TestTelegramBackofficeInvitations(t *testing.T) {
 				if !ok || info.Integration.Key != "1001" {
 					t.Fatal("verified bot identity unavailable")
 				}
-				i, err := bindings.Issue(t.Context(), usercmd.InvitationActor{UserID: "primary", SessionID: "browser-family"}, target.id, 1, info.Integration, false)
+				i, err := bindings.Issue(t.Context(), usercmd.InvitationActor{UserID: bindingPrimaryUserID, SessionID: "browser-family"}, target.id, 1, info.Integration, false)
 				if err != nil {
 					t.Fatal(err)
 				}
 				commands := &recordingCommandIngress{}
 				username := "account_name"
-				if route == "start" {
+				if route == commandStart {
 					h := newTelegramStartHandler(telegramStartHandlerParams{Bindings: bindings, BindingChannels: channels, Inbound: inbound, Dispatcher: delivery, CommandIngress: commands, Logger: zerolog.Nop()})
-					event := &events.CommandEvent{Command: "start", Args: i.Payload, Message: &client.Message{MessageId: 1, Chat: client.Chat{Id: 101, Type: "private"}, From: &client.User{Id: 101, FirstName: "Account", Username: &username}}}
+					event := &events.CommandEvent{Command: commandStart, Args: i.Payload, Message: &client.Message{MessageId: 1, Chat: client.Chat{Id: 101, Type: "private"}, From: &client.User{Id: 101, FirstName: "Account", Username: &username}}}
 					if err := h.onCommand(t.Context(), event); err != nil {
 						t.Fatal(err)
 					}

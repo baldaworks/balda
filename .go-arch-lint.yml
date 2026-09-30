@@ -685,6 +685,7 @@ deps:
 
   zulip_wiring:
     mayDependOn:
+      - user_contracts
       - foundation
       - contracts
       - neutral_registry
