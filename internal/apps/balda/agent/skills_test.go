@@ -319,3 +319,89 @@ func skillSnapshot(id runtimecatalogcmd.SnapshotID, skills ...runtimecatalogcmd.
 	}
 	return snapshot
 }
+
+func TestLoadPinnedForSessionValidatesInheritanceBeforeReading(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name            string
+		mutate          func(*runtimecatalogcmd.Snapshot, *runtimecatalogcmd.Snapshot, *runtimecatalogcmd.SkillSelection)
+		missingOriginal bool
+		missingSession  bool
+		wantError       bool
+	}{
+		{name: "inherited exact descriptor"},
+		{name: "exact session", mutate: func(app, session *runtimecatalogcmd.Snapshot, selection *runtimecatalogcmd.SkillSelection) {
+			selection.Snapshot = session.ID
+		}},
+		{name: "unrelated snapshot", wantError: true, mutate: func(app, session *runtimecatalogcmd.Snapshot, selection *runtimecatalogcmd.SkillSelection) {
+			session.Parents = nil
+		}},
+		{name: "non-effective snapshot", wantError: true, mutate: func(app, session *runtimecatalogcmd.Snapshot, selection *runtimecatalogcmd.SkillSelection) {
+			session.Scope.Kind = runtimecatalogcmd.SnapshotScopeApplication
+		}},
+		{name: "missing skill", wantError: true, mutate: func(app, session *runtimecatalogcmd.Snapshot, selection *runtimecatalogcmd.SkillSelection) {
+			clear(session.Skills)
+		}},
+		{name: "replaced revision", wantError: true, mutate: func(app, session *runtimecatalogcmd.Snapshot, selection *runtimecatalogcmd.SkillSelection) {
+			for id, skill := range session.Skills {
+				skill.Revision = "new"
+				session.Skills[id] = skill
+			}
+		}},
+		{name: "replaced resource", wantError: true, mutate: func(app, session *runtimecatalogcmd.Snapshot, selection *runtimecatalogcmd.SkillSelection) {
+			for id, skill := range session.Skills {
+				skill.Resource = "other.md"
+				session.Skills[id] = skill
+			}
+		}},
+		{name: "forged selection revision", wantError: true, mutate: func(app, session *runtimecatalogcmd.Snapshot, selection *runtimecatalogcmd.SkillSelection) {
+			selection.Ref.Revision = "new"
+		}},
+		{name: "missing original", wantError: true, missingOriginal: true},
+		{name: "missing session", wantError: true, missingSession: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			descriptor := skillDescriptor(runtimecatalogcmd.SourceKindUserSkill, "user", "review", "rev-1", "SKILL.md")
+			app := skillSnapshot("application", descriptor)
+			session := skillSnapshot("effective", descriptor)
+			session.Scope.Kind = runtimecatalogcmd.SnapshotScopeEffective
+			session.Parents = []runtimecatalogcmd.SnapshotID{app.ID, "workspace"}
+			selection := skillSelection(app.ID, descriptor)
+			if test.mutate != nil {
+				test.mutate(&app, &session, &selection)
+			}
+			catalog := &testSkillCatalog{retained: map[runtimecatalogcmd.SnapshotID]runtimecatalogcmd.Snapshot{app.ID: app, session.ID: session}}
+			if test.missingOriginal {
+				delete(catalog.retained, app.ID)
+			}
+			if test.missingSession {
+				delete(catalog.retained, session.ID)
+			}
+			reader := &testSkillReader{}
+			manager, err := NewSkillManager(catalog, reader, SkillMetadataBudget{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := manager.LoadPinnedForSession(context.Background(), selection, session.ID, []string{"notes.md"})
+			if test.wantError {
+				if !errors.Is(err, ErrSkillRevisionUnavailable) {
+					t.Fatalf("error = %v, want unavailable", err)
+				}
+				if len(reader.requests) != 0 {
+					t.Fatal("rejected selection reached content reader")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.Ref != selection.Ref || loaded.Instructions != "pinned body" {
+				t.Fatalf("loaded = %+v", loaded)
+			}
+			if len(reader.requests) != 1 || !reflect.DeepEqual(reader.requests[0].Resources, []string{"notes.md"}) {
+				t.Fatalf("read requests = %+v", reader.requests)
+			}
+		})
+	}
+}
