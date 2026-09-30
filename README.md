@@ -248,6 +248,8 @@ user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`, and
 `/balda locator`, and `/balda reset`. For Backoffice account binding, Zulip accepts `/start bind_<token>` or the exact
 `bind_<token>` DM generated for its configured bot. In Slack, send the
 generated `bind_<token>` in the configured bot’s DM or use `/balda start bind_<token>`.
+Mattermost accepts the exact DM payload (including `/msg @<bot_username> bind_<token>`);
+`/balda start bind_<token>` is available when its slash receiver is enabled.
 
 Slack formats the response for scanning and copying:
 

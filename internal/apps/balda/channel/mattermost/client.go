@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 )
 
 const (
@@ -267,6 +269,12 @@ func (c *Client) GetPostThread(ctx context.Context, postID string) (PostThread, 
 	var thread PostThread
 	if err := json.Unmarshal(response, &thread); err != nil {
 		return PostThread{}, fmt.Errorf("decode mattermost get post thread response: %w", err)
+	}
+	// Account admission messages are not conversational thread context.
+	for id, post := range thread.Posts {
+		if authpayload.Contains(post.Message) {
+			delete(thread.Posts, id)
+		}
 	}
 	return thread, nil
 }

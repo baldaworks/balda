@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -216,6 +217,10 @@ func (s *CommandServer) handleCommand(w http.ResponseWriter, r *http.Request) {
 	name, args := commandInvocation(form, func(name string) bool {
 		return s.commands != nil && s.commands.Supports(ChannelType, name)
 	})
+	if authpayload.Contains(name) {
+		writeCommandResponse(w, responseTypeEphemeral, "Open Backoffice Access and use the complete invitation command.")
+		return
+	}
 	if name == "" {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return

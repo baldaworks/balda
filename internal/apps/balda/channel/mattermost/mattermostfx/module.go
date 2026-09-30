@@ -16,6 +16,7 @@ import (
 // Module registers every Mattermost transport capability.
 var Module = fx.Module(
 	"balda_channel_mattermost_fx",
+	fx.Invoke(registerBindingIdentity),
 	fx.Provide(
 		fx.Annotate(
 			func() sessionmemoryapp.ScopeClassifierContribution {

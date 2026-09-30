@@ -720,6 +720,7 @@ deps:
 
   mattermost_transport:
     mayDependOn:
+      - auth_payload
       - foundation
       - contracts
       - neutral_registry
@@ -728,6 +729,7 @@ deps:
 
   mattermost_wiring:
     mayDependOn:
+      - user_contracts
       - foundation
       - contracts
       - neutral_registry
