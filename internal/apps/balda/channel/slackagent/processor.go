@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 	"github.com/baldaworks/go-actorlayer"
@@ -34,6 +35,9 @@ func NewInboundProcessor(
 }
 
 func (p *inboundProcessor) ProcessInbound(ctx context.Context, envelope IngressEnvelope) (turncmd.InboundSettlement, error) {
+	if authpayload.Contains(envelope.Chat.Text) {
+		return terminalInbound(), nil
+	}
 	if p.lifecycle == nil {
 		return retryInbound(), actorlayer.TransientError(fmt.Errorf("slackagent session lifecycle is unavailable"))
 	}
@@ -56,6 +60,9 @@ func (p *inboundProcessor) ProcessInbound(ctx context.Context, envelope IngressE
 	}
 	if err := p.hydrateThreadContext(ctx, &envelope); err != nil {
 		return retryInbound(), err
+	}
+	if authpayload.Contains(envelope.Chat.Text) {
+		return terminalInbound(), nil
 	}
 	result, err := p.chat.HandleChat(ctx, envelope.Chat)
 	if err != nil {
@@ -91,6 +98,7 @@ func (p *inboundProcessor) hydrateThreadContext(ctx context.Context, envelope *I
 	if p.historyFiles == nil {
 		return actorlayer.TransientError(fmt.Errorf("slackagent historical context hydrator is unavailable"))
 	}
+	snapshot.Messages, snapshot.Truncated = selectContextMessages(snapshot)
 	result, err := p.historyFiles.Hydrate(ctx, snapshot, envelope.Chat.Text, envelope.Chat.Attachments)
 	if err != nil {
 		return actorlayer.TransientError(fmt.Errorf("hydrate Slack thread context: %w", err))

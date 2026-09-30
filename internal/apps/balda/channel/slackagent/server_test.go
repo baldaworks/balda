@@ -284,7 +284,7 @@ func TestServerReturnsUsageForUnsupportedSlashCommands(t *testing.T) {
 			body := url.Values{"command": {"/balda"}, "text": {commandText}, "team_id": {"T123"}, "channel_id": {"C456"}, "user_id": {"U789"}}.Encode()
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, signedSlackRequest(t, "/slack/commands", "secret", []byte(body)))
-			if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != "Usage: /balda locator | reset | skill" {
+			if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != "Usage: /balda start | locator | reset | skill" {
 				t.Fatalf("response status=%d body=%q", response.Code, response.Body.String())
 			}
 			if len(recorder.requests) != 0 {

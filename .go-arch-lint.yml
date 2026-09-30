@@ -697,6 +697,8 @@ deps:
 
   slackagent_transport:
     mayDependOn:
+      - auth_payload
+      - user_contracts
       - foundation
       - contracts
       - neutral_registry
@@ -705,6 +707,7 @@ deps:
 
   slackagent_wiring:
     mayDependOn:
+      - user_contracts
       - contracts
       - neutral_registry
       - application

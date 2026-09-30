@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"sort"
 	"sync"
 
@@ -9,13 +10,14 @@ import (
 
 // BindingChannels holds safe identity metadata supplied by configured transports.
 type BindingChannels struct {
-	mu       sync.RWMutex
-	channels map[string]usercmd.BindingChannel
+	mu        sync.RWMutex
+	channels  map[string]usercmd.BindingChannel
+	resolvers map[string]func(context.Context) (usercmd.BindingChannel, error)
 }
 
 // NewBindingChannels starts each configured channel in an identity-unavailable state.
 func NewBindingChannels(channels []string) *BindingChannels {
-	s := &BindingChannels{channels: make(map[string]usercmd.BindingChannel, len(channels))}
+	s := &BindingChannels{channels: make(map[string]usercmd.BindingChannel, len(channels)), resolvers: make(map[string]func(context.Context) (usercmd.BindingChannel, error))}
 	for _, channel := range channels {
 		s.channels[channel] = usercmd.BindingChannel{Integration: usercmd.BindingIntegration{ChannelType: channel}}
 	}
@@ -54,4 +56,36 @@ func (s *BindingChannels) List() []usercmd.BindingChannel {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Integration.ChannelType < result[j].Integration.ChannelType })
 	return result
+}
+
+// RegisterResolver installs a configured adapter's server-side identity lookup.
+func (s *BindingChannels) RegisterResolver(channel string, resolve func(context.Context) (usercmd.BindingChannel, error)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.channels[channel]; !ok || resolve == nil {
+		return usercmd.ErrForbidden
+	}
+	s.resolvers[channel] = resolve
+	return nil
+}
+
+// Refresh retries identity discovery without involving browser-supplied identity.
+func (s *BindingChannels) Refresh(ctx context.Context, channel string) (usercmd.BindingChannel, error) {
+	s.mu.RLock()
+	resolve := s.resolvers[channel]
+	s.mu.RUnlock()
+	if resolve == nil {
+		return usercmd.BindingChannel{}, usercmd.ErrBindingInvitationUnavailable
+	}
+	info, err := resolve(ctx)
+	if err != nil {
+		return usercmd.BindingChannel{}, err
+	}
+	if info.Integration.ChannelType != channel {
+		return usercmd.BindingChannel{}, usercmd.ErrBindingInvitationScope
+	}
+	if err := s.Register(info); err != nil {
+		return usercmd.BindingChannel{}, err
+	}
+	return info, nil
 }

@@ -39,7 +39,7 @@ var Module = fx.Module(
 			fx.As(new(baldasession.BoundaryObserver)),
 			fx.ResultTags(`group:"balda_session_boundary_observer"`),
 		),
-		slackagent.NewServer,
+		newBindingServer,
 		func(client *slackagent.Client) slackagent.MessageClient { return client },
 		func(client *slackagent.Client) slackagent.ThreadHistoryReader { return client },
 		func(client *slackagent.Client) slackagent.FileClient { return client },
