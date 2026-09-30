@@ -275,10 +275,12 @@ The pinned stack is:
 | Bootstrap Icons | 1.13.1 | Local icons |
 | Vanilla JavaScript | Built in | HTMX lifecycle, focus, and sidebar behavior only |
 
-The shell adapts the AlaTooGuide Backoffice layout: a utility top bar with the
+The shell adapts the AlaTooGuide Backoffice layout: a sticky utility top bar with the
 current authenticated username, Account and native CSRF-protected sign-out;
 a branded permission-derived sidebar; a shared content frame; and a footer
-in normal grid flow. The viewer identity is independent of an inspected user.
+in normal grid flow. The top bar and sidebar brand share the same height;
+navigation scrolls content below the top bar so page headings remain visible.
+The viewer identity is independent of an inspected user.
 Desktop collapse hides the sidebar and expands content. Mobile navigation uses
 an overlay with backdrop, Escape and focus containment; ordinary menu links
 remain available without JavaScript.

@@ -5,7 +5,7 @@
   --bs-body-color: var(--ink); --bs-body-bg: var(--surface); --bs-secondary-color: var(--muted);
   --bs-border-color: var(--border); --bs-link-color: var(--accent); --bs-link-hover-color: #9ec5fe;
   --bs-tertiary-bg: var(--canvas); --bs-heading-color: var(--ink);
-  --radius: .65rem; --shadow: 0 .25rem .9rem rgb(0 0 0 / 12%);
+  --radius: .65rem; --shadow: 0 .25rem .9rem rgb(0 0 0 / 12%); --shell-header-height: 3.5rem;
 }
 * { box-sizing: border-box; }
 html, body { color: var(--ink); background: var(--canvas); }
@@ -15,7 +15,7 @@ html, body { color: var(--ink); background: var(--canvas); }
 .enhanced-only { display: none; }
 .enhanced .enhanced-only { display: inline-flex; }
 .enhanced .native-navigation { display: none; }
-.app-header { min-height: 3.5rem; border-bottom: 1px solid var(--border); background: var(--surface); }
+.app-header { min-height: var(--shell-header-height); padding-block: 0; border-bottom: 1px solid var(--border); background: var(--surface); }
 .app-header .container-fluid { gap: .75rem; }
 .app-header .nav-link { color: var(--ink); }
 .sidebar-toggle { align-items: center; justify-content: center; min-width: 2.75rem; min-height: 2.75rem; font-size: 1.3rem; }
@@ -23,7 +23,7 @@ html, body { color: var(--ink); background: var(--canvas); }
 .viewer { min-width: 0; max-width: min(40vw, 28rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; color: var(--muted); }
 .viewer strong { color: var(--ink); }
 .app-sidebar { --lte-sidebar-width: 17rem; background: var(--surface); border-right: 1px solid var(--border); }
-.sidebar-brand { min-height: 3.5rem; border-bottom: 1px solid var(--border); }
+.sidebar-brand { height: var(--shell-header-height); min-height: var(--shell-header-height); border-bottom: 1px solid var(--border); }
 .brand-link { display: flex; align-items: center; gap: .75rem; color: var(--ink); padding: .65rem 1rem; }
 .brand-mark { display: grid; flex: 0 0 auto; width: 2.2rem; height: 2.2rem; place-items: center; border-radius: .6rem; background: var(--accent); color: #101e32; font-weight: 800; }
 .brand-text { font-weight: 700; }
@@ -32,7 +32,7 @@ html, body { color: var(--ink); background: var(--canvas); }
 .sidebar-menu .nav-link.active { font-weight: 700; background: var(--surface-raised); }
 .app-wrapper { min-height: 100dvh; }
 .app-main { min-width: 0; padding-bottom: 0; }
-.app-content { flex: 1; padding: 0 0 2rem; background: var(--canvas); }
+.app-content { flex: 1; padding: 0 0 2rem; background: var(--canvas); scroll-margin-top: var(--shell-header-height); }
 .app-content > .container-fluid { max-width: 90rem; padding: 1.5rem clamp(1rem, 2.5vw, 2rem) 1rem; margin-inline: auto; }
 .app-content h1 { margin: 0; font-size: clamp(1.65rem, 2.5vw, 2.15rem); font-weight: 650; letter-spacing: -.025em; }
 .app-content h2 { font-weight: 650; }

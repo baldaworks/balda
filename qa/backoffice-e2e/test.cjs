@@ -38,6 +38,30 @@ async function startPreview() {
   return { server, url };
 }
 
+async function checkTopBar(page, label) {
+  const geometry = await page.evaluate(() => {
+    const header = document.querySelector('.app-header');
+    const bounds = header.getBoundingClientRect();
+    const brand = document.querySelector('.sidebar-brand').getBoundingClientRect();
+    const controls = [...header.querySelectorAll('.sidebar-toggle, .viewer-actions > *')].filter(element => element.getClientRects().length).map(element => {
+      const control = element.getBoundingClientRect();
+      return { top: control.top, bottom: control.bottom, center: control.top + control.height / 2 };
+    });
+    return {
+      top: bounds.top, bottom: bounds.bottom, center: bounds.top + (bounds.height - 1) / 2,
+      brandBottom: brand.bottom, controls,
+      headingTop: document.querySelector('h1').getBoundingClientRect().top,
+    };
+  });
+  assert.equal(geometry.top, 0, `${label} top bar stays at viewport top`);
+  assert.equal(geometry.bottom, geometry.brandBottom, `${label} top bar aligns with sidebar brand`);
+  for (const control of geometry.controls) {
+    assert.equal(control.top >= geometry.top && control.bottom <= geometry.bottom, true, `${label} top bar control is visible`);
+    assert.equal(Math.abs(control.center - geometry.center) <= 1, true, `${label} top bar controls are vertically centered`);
+  }
+  assert.equal(geometry.headingTop >= geometry.bottom, true, `${label} heading stays below top bar`);
+}
+
 async function checkPage(browser, baseURL, viewport) {
   const page = await browser.newPage({ viewport });
   const errors = [];
@@ -77,6 +101,7 @@ async function checkPage(browser, baseURL, viewport) {
     assert.deepEqual(contrastFailures, [], `${route} text contrast at ${viewport.width}px`);
     assert.equal(await page.locator('h1').count(), 1, `${route} heading at ${viewport.width}px`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${route} document overflow at ${viewport.width}px`);
+    if (await page.locator('.app-header').count()) await checkTopBar(page, `${route} native at ${viewport.width}px`);
     assert.deepEqual(errors, [], `${route} script errors at ${viewport.width}px`);
     if (process.env.BACKOFFICE_E2E_SCREENSHOTS) {
       fs.mkdirSync(process.env.BACKOFFICE_E2E_SCREENSHOTS, { recursive: true });
@@ -108,14 +133,23 @@ async function checkPage(browser, baseURL, viewport) {
     assert.deepEqual(await layout(), nativeLayouts.get(name), `${name} HTMX layout matches native navigation`);
     await page.waitForFunction(expected => [...document.querySelectorAll('[data-nav-link]')].filter(link => link.textContent.trim() === expected).every(link => link.getAttribute('aria-current') === 'page'), name);
     assert.equal(await page.locator('main').evaluate(element => element === document.activeElement), true, `${name} main receives focus after navigation`);
+    await checkTopBar(page, `${name} HTMX at ${viewport.width}px`);
   }
 
   await page.goBack();
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Audit');
   assert.equal(await page.locator('main#main-content').count(), 1, 'history restores one main');
   await page.waitForFunction(() => document.querySelector('.sidebar-menu a[aria-current="page"]')?.textContent.trim() === 'Audit');
+  await checkTopBar(page, `Audit history at ${viewport.width}px`);
   await page.goForward();
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Overview');
+  await checkTopBar(page, `Overview history at ${viewport.width}px`);
+
+  await page.goto(`${baseURL}/qa/ui/layout-long`);
+  await page.evaluate(() => window.scrollTo(0, 400));
+  await page.waitForFunction(() => scrollY > 0);
+  assert.equal(await page.locator('.app-header').evaluate(element => element.getBoundingClientRect().top), 0, `scrolled top bar stays visible at ${viewport.width}px`);
+  assert.equal(await page.locator('.app-header .viewer-actions').isVisible(), true, 'scrolled viewer controls remain visible');
   await page.goto(`${baseURL}/qa/ui/style-guide`);
   assert.equal(await page.locator('.qa-guide-section').count(), 9);
   await page.goto(`${baseURL}/qa/ui/audit`);
@@ -158,6 +192,7 @@ async function checkPage(browser, baseURL, viewport) {
   if (viewport.width >= 992) {
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     assert.equal(await page.locator('.app-main').evaluate(element => element.clientWidth) > originalWidth, true);
+    assert.equal(await page.locator('.app-header').evaluate(element => element.getBoundingClientRect().left), 0, 'collapsed sidebar expands top bar to viewport edge');
   } else {
     assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
     assert.equal(await page.locator('.app-main').evaluate(element => element.inert), true);
@@ -192,6 +227,10 @@ async function checkPage(browser, baseURL, viewport) {
       await noScript.locator('.native-navigation summary').click();
       await noScript.getByRole('navigation', { name: 'Mobile navigation' }).getByText('Account', { exact: true }).click();
       assert.equal(await noScript.locator('h1').textContent(), 'Account');
+      await checkTopBar(noScript, 'Account without JavaScript');
+      await noScript.evaluate(() => window.scrollTo(0, 400));
+      await noScript.waitForFunction(() => scrollY > 0);
+      assert.equal(await noScript.locator('.app-header').evaluate(element => element.getBoundingClientRect().top), 0, 'top bar stays visible without JavaScript');
       await noScript.goto(`${url}/qa/ui/bindings-issued`);
       assert.equal(await noScript.locator('[data-binding-channel]').count(), 4);
       assert.equal(await noScript.locator('input[data-binding-secret]').count(), 9);

@@ -57,7 +57,8 @@ npm test
 The suite starts its own loopback preview on an ephemeral port. It checks every
 gallery page and state at 1440×900, 1024×768, 768×1024 and 390×844. It checks
 document overflow, consistent headings, dark authentication controls, native/HTMX
-geometry, browser history and focus, sidebar collapse/overlay/backdrop/Escape,
+geometry, top-bar visibility and alignment during navigation and scrolling,
+browser history and focus, sidebar collapse/overlay/backdrop/Escape,
 short-page footer position, Audit details, recovery actions and no-script menus. It needs no application credentials or deployment access.
 
 Run the separate authenticated browser gate from the repository root after
