@@ -167,6 +167,50 @@ func TestAccessRejectsDisabledCanonicalUser(t *testing.T) {
 	}
 }
 
+func TestRefreshAfterClockRollbackKeepsFixedExpiry(t *testing.T) {
+	t.Parallel()
+	provider, service, now := newSecurityTestService(t)
+	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
+	issuedAt := now.Add(353 * time.Millisecond)
+	service.now = func() time.Time { return issuedAt }
+	credentials, err := service.Login(t.Context(), "admin", []byte(testPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixedExpiry := credentials.RefreshExpiresAt
+	for _, rollbackFrom := range []time.Time{issuedAt, issuedAt.Add(time.Minute)} {
+		if rollbackFrom.After(issuedAt) {
+			service.now = func() time.Time { return rollbackFrom }
+			credentials, err = service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		service.now = func() time.Time { return rollbackFrom.Add(-586 * time.Millisecond) }
+		previous := credentials
+		credentials, err = service.Refresh(t.Context(), previous.RefreshToken, previous.CSRFToken)
+		if err != nil {
+			t.Fatalf("Refresh after clock rollback: %v", err)
+		}
+		if !credentials.RefreshExpiresAt.Equal(fixedExpiry) {
+			t.Fatal("clock rollback changed absolute refresh expiry")
+		}
+		if _, err := service.ValidateAccess(t.Context(), previous.AccessToken); !errors.Is(err, ErrUnauthenticated) {
+			t.Fatalf("previous access credential: %v", err)
+		}
+		if _, err := service.ValidateAccess(t.Context(), credentials.AccessToken); err != nil {
+			t.Fatalf("rotated access credential: %v", err)
+		}
+		if _, err := service.Refresh(t.Context(), previous.RefreshToken, previous.CSRFToken); !errors.Is(err, ErrRefreshConcurrent) {
+			t.Fatalf("recent consumed refresh credential: %v", err)
+		}
+	}
+	service.now = func() time.Time { return fixedExpiry }
+	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("expired refresh credential: %v", err)
+	}
+}
+
 func TestRefreshRejectsExpiredFamilyAndWrongCSRF(t *testing.T) {
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)

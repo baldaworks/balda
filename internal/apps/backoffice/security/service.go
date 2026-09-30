@@ -189,7 +189,15 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 	if subtle.ConstantTimeCompare(session.Family.CSRFVerifierDigest, digest(csrfToken)) != 1 {
 		return Credentials{}, ErrForbidden
 	}
+	// Wall-clock corrections must not move a rotation before persisted session
+	// activity. The absolute family deadline remains unchanged.
 	now := s.now().UTC()
+	if now.Before(session.Family.LastSeenAt) {
+		now = session.Family.LastSeenAt
+	}
+	if now.Before(session.Token.IssuedAt) {
+		now = session.Token.IssuedAt
+	}
 	if !now.Before(session.Family.RefreshExpiresAt) || !now.Add(s.config.AccessTTL).Before(session.Family.RefreshExpiresAt) {
 		return Credentials{}, ErrUnauthenticated
 	}

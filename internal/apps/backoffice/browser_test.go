@@ -1,10 +1,12 @@
 package backoffice
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,7 +42,13 @@ func TestHTTPAppBrowserWorkflow(t *testing.T) {
 		server.Close()
 		t.Fatal(err)
 	}
-	server.Config.Handler = handler
+	var refreshPosts atomic.Int32
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/session/refresh" && r.Method == http.MethodPost {
+			refreshPosts.Add(1)
+		}
+		handler.ServeHTTP(w, r)
+	})
 	server.Start()
 	defer server.Close()
 	root, err := filepath.Abs("../../..")
@@ -52,6 +60,9 @@ func TestHTTPAppBrowserWorkflow(t *testing.T) {
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("authenticated browser workflow: %v\n%s", err, output)
+	}
+	if got := refreshPosts.Load(); got != 4 {
+		t.Fatalf("refresh POST count = %d, want one per browser context (4)", got)
 	}
 	t.Log(string(output))
 }

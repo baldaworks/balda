@@ -157,7 +157,9 @@ refresh family. When access expires, the browser submits a guarded refresh form
 automatically and returns to the page the user was opening. A manual form
 remains available when JavaScript is disabled. The server consumes generation
 N, creates generation N+1, replaces both cookies, and preserves the family's
-original absolute expiry. The browser does not replay the request that
+original absolute expiry. If the host clock moves backward, rotation timestamps
+never precede the stored last activity or token issuance time; this does not
+extend the absolute refresh deadline. The browser does not replay the request that
 encountered expiry, especially an unsafe mutation.
 
 A duplicate refresh within 30 seconds of rotation receives a conflict without
