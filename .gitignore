@@ -68,3 +68,7 @@ Thumbs.db
 # Local project-editing tooling (delta applier, ops scripts).
 # Not part of the upstream project; kept on disk only.
 /tools/
+
+# Beads / Dolt files (added by bd init)
+.beads/proxieddb/
+*.gate.lock*

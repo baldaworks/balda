@@ -76,6 +76,30 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
 	if current.ID == snapshot.ID {
 		t.Fatal("workspace catalog did not produce a distinct current snapshot")
 	}
+	// Fresh ingress selects the application skill before lazy session creation.
+	ingressID, err := runtime.ResolveEffectiveSnapshot(ctx, commandfx.SnapshotRequest{SessionID: "new-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := baldaagent.NewSkillManager(runtime, runtime, baldaagent.SkillMetadataBudget{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := manager.BindSnapshot(ctx, ingressID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := bound.Resolve(baldaagent.SkillSelector{Name: "deploy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := manager.LoadPinnedForSession(ctx, selection, current.ID, nil)
+	if err != nil {
+		t.Fatalf("first skill turn after workspace creation: %v", err)
+	}
+	if !strings.Contains(loaded.Instructions, "# Secret body") || loaded.Ref != selection.Ref {
+		t.Fatalf("first skill turn loaded wrong revision: %+v", loaded)
+	}
 	if err := provider.Sessions().Upsert(ctx, baldastate.SessionRecord{
 		SessionID: "pinned-session", ChannelType: "telegram", AddressKey: "1:0", AddressJSON: `{"chat_id":1,"topic_id":0}`,
 		WorkspaceDir: workspace, RuntimeSnapshotID: string(snapshot.ID),

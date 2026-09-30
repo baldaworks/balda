@@ -49,12 +49,16 @@ func TestRunnerLoadsExactSelectedSkillBeforeProviderExecution(t *testing.T) {
 		zerolog.Nop(),
 	)
 	payload := testTurnPayload()
-	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "snapshot-1", Ref: loader.loaded.Ref}
+	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "application-parent", Ref: loader.loaded.Ref}
+
 	if err := runner.RunSessionTurnPayload(context.Background(), payload); err != nil {
 		t.Fatalf("RunSessionTurnPayload() error = %v", err)
 	}
 	if len(loader.selections) != 1 || loader.selections[0] != *payload.Skill {
 		t.Fatalf("skill selections = %+v, want durable selection %+v", loader.selections, *payload.Skill)
+	}
+	if len(loader.sessionIDs) != 1 || loader.sessionIDs[0] != "snapshot-1" {
+		t.Fatalf("session snapshots = %v, want snapshot-1", loader.sessionIDs)
 	}
 	request := executor.singleRequest(t)
 	if request.SelectedSkill == nil || request.SelectedSkill.Ref.Revision != "revision-1" {
@@ -84,11 +88,11 @@ func TestRunnerFailsClosedWhenSelectedSkillLoaderIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestRunnerFailsClosedWhenSelectedSkillSnapshotDiffersFromSession(t *testing.T) {
+func TestRunnerFailsClosedWhenSelectedSkillIsRejectedBySessionCatalog(t *testing.T) {
 	t.Parallel()
 
 	executor := &testExecutor{}
-	loader := &testSkillLoader{}
+	loader := &testSkillLoader{err: runtimecatalogcmd.ErrRevisionUnavailable}
 	runner := NewWithSkillLoader(
 		&testSessionAccessor{active: &testActiveSession{runtimeSnapshotID: "session-snapshot"}},
 		executor,
@@ -103,11 +107,11 @@ func TestRunnerFailsClosedWhenSelectedSkillSnapshotDiffersFromSession(t *testing
 	}
 
 	err := runner.RunSessionTurnPayload(context.Background(), payload)
-	if err == nil || !strings.Contains(err.Error(), "does not match session runtime") {
+	if !errors.Is(err, runtimecatalogcmd.ErrRevisionUnavailable) {
 		t.Fatalf("RunSessionTurnPayload() error = %v, want snapshot mismatch", err)
 	}
-	if len(loader.selections) != 0 {
-		t.Fatalf("skill selections = %d, want none", len(loader.selections))
+	if len(loader.sessionIDs) != 1 || loader.sessionIDs[0] != "session-snapshot" {
+		t.Fatalf("session snapshots = %v, want session-snapshot", loader.sessionIDs)
 	}
 	if len(executor.requests) != 0 {
 		t.Fatalf("executor requests = %d, want none", len(executor.requests))
@@ -365,16 +369,20 @@ type testMemoryProvider struct {
 
 type testSkillLoader struct {
 	loaded     runtimecatalogcmd.LoadedSkill
+	err        error
+	sessionIDs []runtimecatalogcmd.SnapshotID
 	selections []runtimecatalogcmd.SkillSelection
 }
 
-func (l *testSkillLoader) LoadPinned(
+func (l *testSkillLoader) LoadPinnedForSession(
 	_ context.Context,
 	selection runtimecatalogcmd.SkillSelection,
+	sessionID runtimecatalogcmd.SnapshotID,
 	_ []string,
 ) (runtimecatalogcmd.LoadedSkill, error) {
 	l.selections = append(l.selections, selection)
-	return l.loaded, nil
+	l.sessionIDs = append(l.sessionIDs, sessionID)
+	return l.loaded, l.err
 }
 
 type disabledMemoryProvider struct{}
