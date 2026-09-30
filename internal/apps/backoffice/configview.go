@@ -44,15 +44,9 @@ func ProjectConfiguredCapabilities(cfg BaldaConfig) []ConfiguredCapability {
 		}
 		capabilities = append(capabilities, capability)
 	}
-	if cfg.Slack.Enabled {
-		capabilities = append(capabilities, ConfiguredCapability{
-			ID: "slack-chat", Name: "Slack chat", Mode: "events",
-			ListenAddr: strings.TrimSpace(cfg.Slack.ListenAddr), Endpoint: strings.TrimSpace(cfg.Slack.EventsPath),
-		})
-	}
 	if cfg.Slack.Agent.Enabled {
 		capabilities = append(capabilities, ConfiguredCapability{
-			ID: "slack-agent", Name: "Slack Agent", Mode: "agent-events",
+			ID: "slackagent", Name: "Slack Agent", Mode: "agent-events",
 			ListenAddr: strings.TrimSpace(cfg.Slack.Agent.ListenAddr), Endpoint: strings.TrimSpace(cfg.Slack.Agent.EventsPath),
 			Streaming: cfg.Slack.Agent.EnableStreaming,
 		})
@@ -71,4 +65,18 @@ func ProjectConfiguredCapabilities(cfg BaldaConfig) []ConfiguredCapability {
 	}
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i].ID < capabilities[j].ID })
 	return capabilities
+}
+
+func configuredBindingChannels(cfg BaldaConfig) []string {
+	var channels []string
+	if cfg.Telegram.Enabled {
+		channels = append(channels, "telegram")
+	}
+	if cfg.Slack.Agent.Enabled {
+		channels = append(channels, "slackagent")
+	}
+	if cfg.Zulip.Webhook.Enabled {
+		channels = append(channels, "zulip")
+	}
+	return channels
 }

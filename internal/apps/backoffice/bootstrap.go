@@ -92,7 +92,10 @@ func (s *BootstrapService) Bootstrap(ctx context.Context, input BootstrapInput) 
 		}
 		displayName := strings.TrimSpace(input.DisplayName)
 		if displayName == "" {
-			displayName = "Administrator"
+			displayName = usercmd.PrimaryUsername
+		}
+		if username != usercmd.PrimaryUsername || displayName != usercmd.PrimaryUsername {
+			return BootstrapResult{}, fmt.Errorf("%w: primary administrator identity must be %q", usercmd.ErrInvalid, usercmd.PrimaryUsername)
 		}
 		user := usercmd.User{
 			ID: s.newID(), DisplayName: displayName, Username: username, NormalizedUsername: users.NormalizeUsername(username),

@@ -12,6 +12,8 @@ const MaxPageSize = 100
 type PageRequest struct {
 	AfterID string
 	Limit   int
+	// CurrentID places the active browser family first for session pages.
+	CurrentID string
 }
 
 // UserPage contains canonical users ordered by stable ID.
@@ -20,7 +22,7 @@ type UserPage struct {
 	NextAfterID string
 }
 
-// SessionPage contains session-family summaries ordered by stable ID.
+// SessionPage contains one page of session-family summaries.
 type SessionPage struct {
 	Sessions    []SessionSummary
 	NextAfterID string
@@ -76,6 +78,8 @@ type RefreshRotationResult string
 const (
 	// RefreshRotationSucceeded means the old generation was consumed and a new pair was stored.
 	RefreshRotationSucceeded RefreshRotationResult = "succeeded"
+	// RefreshRotationConcurrent means a recently consumed token was presented again.
+	RefreshRotationConcurrent RefreshRotationResult = "concurrent"
 	// RefreshRotationReplayRevoked means a used generation was replayed and its family was revoked.
 	RefreshRotationReplayRevoked RefreshRotationResult = "replay_revoked"
 	// RefreshRotationUnavailable means the selector, verifier, family, user, or credential is unusable.
@@ -115,12 +119,18 @@ type Store interface {
 
 	CreateBindingClaim(ctx context.Context, claim BindingClaim, createdAt time.Time, audit AuditEvent) error
 	AttachBinding(ctx context.Context, claimID string, binding Binding, consumedAt time.Time, audit AuditEvent) error
+	CreateManagedBinding(ctx context.Context, binding Binding, expectedUserVersion uint64, audit AuditEvent) error
+	DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit AuditEvent) error
+	UpdateTelegramBindingProfile(ctx context.Context, principal, username, firstName string, updatedAt time.Time) (bool, error)
 
 	CreateSession(ctx context.Context, family SessionFamily, audit AuditEvent) error
 	GetSession(ctx context.Context, sessionID string) (SessionFamily, bool, error)
 	GetSessionByAccessSelector(ctx context.Context, selector string) (AccessSession, bool, error)
 	GetSessionByRefreshSelector(ctx context.Context, selector string) (RefreshSession, bool, error)
 	ListSessions(ctx context.Context, userID string, page PageRequest) (SessionPage, error)
+	// ListActiveSessions excludes revoked and expired families and orders by the
+	// recorded sign-in or refresh time, newest first.
+	ListActiveSessions(ctx context.Context, userID string, page PageRequest, now time.Time) (SessionPage, error)
 	RotateRefresh(ctx context.Context, rotation RefreshRotation) (RefreshRotationResult, error)
 	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit AuditEvent) error
 	RevokeUserSessions(ctx context.Context, userID string, revokedAt time.Time, reason string, audit AuditEvent) error

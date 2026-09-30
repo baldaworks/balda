@@ -138,7 +138,7 @@ func (b *Browser) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	password := []byte(form.Get("password"))
 	defer zero(password)
-	credentials, err := b.service.Login(r.Context(), form.Get("username"), password)
+	credentials, err := b.service.Login(withSessionClient(r), form.Get("username"), password)
 	if err != nil {
 		b.writeServiceError(w, r, err)
 		return
@@ -222,7 +222,7 @@ func (b *Browser) ReplacePassword(w http.ResponseWriter, r *http.Request) {
 	nextPassword := []byte(form.Get("new_password"))
 	defer zero(currentPassword)
 	defer zero(nextPassword)
-	credentials, err := b.service.ReplacePassword(r.Context(), access.Value, currentPassword, nextPassword)
+	credentials, err := b.service.ReplacePassword(withSessionClient(r), access.Value, currentPassword, nextPassword)
 	if err != nil {
 		b.writeServiceError(w, r, err)
 		return
@@ -445,6 +445,8 @@ func (b *Browser) respondMutation(w http.ResponseWriter, r *http.Request, locati
 func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
+	case errors.Is(err, ErrRefreshConcurrent):
+		b.writeHTTPError(w, r, http.StatusConflict, "session was refreshed in another request; reopen the page")
 	case errors.Is(err, ErrUnauthenticated):
 		b.writeHTTPError(w, r, http.StatusUnauthorized, "authentication failed")
 	case errors.Is(err, ErrForbidden), errors.Is(err, usercmd.ErrForbidden):

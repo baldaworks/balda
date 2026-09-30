@@ -224,7 +224,7 @@ balda:
 	command.SetIn(strings.NewReader("correct horse battery staple\n"))
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
-	command.SetArgs([]string{"backoffice", "bootstrap-admin", "--username", "admin"})
+	command.SetArgs([]string{"backoffice", "bootstrap-admin", "--username", usercmd.PrimaryUsername})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ balda:
 	}
 	defer func() { _ = provider.Close() }()
 	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
-	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary {
+	if err != nil || len(page.Users) != 1 || !page.Users[0].Primary || page.Users[0].DisplayName != usercmd.PrimaryUsername {
 		t.Fatalf("fresh administrator = %+v, error = %v", page, err)
 	}
 }
@@ -280,7 +280,7 @@ balda:
 	}
 	defer func() { _ = provider.Close() }()
 	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: 1})
-	if err != nil || len(page.Users) != 1 || page.Users[0].Username != "superuser" {
+	if err != nil || len(page.Users) != 1 || page.Users[0].Username != usercmd.PrimaryUsername {
 		t.Fatalf("administrator lookup: %+v, %v", page, err)
 	}
 	secret, found, err := provider.Users().GetCredentialSecret(t.Context(), page.Users[0].ID)

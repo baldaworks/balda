@@ -57,6 +57,11 @@ func TestMigratorBuildsCanonicalUsersAndSecureManifest(t *testing.T) {
 		if entry.User.Primary {
 			primary = entry
 		}
+		if entry.Binding != nil && entry.Binding.Principal == "202" {
+			if entry.Binding.ProviderUsername != "operator" || entry.Binding.ProviderFirstName != "Op" {
+				t.Errorf("migrated Telegram profile = %q/%q", entry.Binding.ProviderUsername, entry.Binding.ProviderFirstName)
+			}
+		}
 		if entry.User.Credential.State != usercmd.CredentialStateTemporary || !entry.User.Credential.MustChange {
 			t.Fatalf("migrated credential = %+v", entry.User.Credential)
 		}
@@ -67,7 +72,10 @@ func TestMigratorBuildsCanonicalUsersAndSecureManifest(t *testing.T) {
 	if primary.Binding == nil || primary.Binding.ChannelType != testChannelTelegram || primary.Binding.Principal != "101" {
 		t.Fatalf("primary entry = %+v", primary)
 	}
-	if primary.User.Username != usercmd.PrimaryUsername || primary.User.Role != usercmd.RoleAdministrator {
+	if primary.Binding.ProviderUsername != "" || primary.Binding.ProviderFirstName != "" {
+		t.Fatalf("owner Telegram profile was invented: %+v", primary.Binding)
+	}
+	if primary.User.Username != usercmd.PrimaryUsername || primary.User.DisplayName != usercmd.PrimaryUsername || primary.User.Role != usercmd.RoleAdministrator {
 		t.Fatalf("primary identity = %+v", primary.User)
 	}
 	if !strings.Contains(primary.Binding.Provenance, "chat_id=909") || !strings.Contains(primary.Binding.Provenance, "registered_at=") {

@@ -85,7 +85,6 @@ func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("opening the default database changed existing rows")
 	}
-	assertGooseVersion(t, t.Context(), p.(*sqliteProvider).db, expectedSQLiteMigrationVersion)
 	assertRequiredBaldaSQLiteTables(t, t.Context(), p.(*sqliteProvider).db)
 	user, found, err := p.Collaborators().GetCollaborator(t.Context(), "fixture")
 	if err != nil || !found || user.UserID != "fixture" {

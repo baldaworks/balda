@@ -21,8 +21,10 @@ type store interface {
 	GetUser(ctx context.Context, userID string) (usercmd.User, bool, error)
 	ListUsers(ctx context.Context, page usercmd.PageRequest) (usercmd.UserPage, error)
 	GetSession(ctx context.Context, sessionID string) (usercmd.SessionFamily, bool, error)
-	ListSessions(ctx context.Context, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error)
+	ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error)
 	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error
+	CreateManagedBinding(ctx context.Context, binding usercmd.Binding, expectedUserVersion uint64, audit usercmd.AuditEvent) error
+	DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit usercmd.AuditEvent) error
 }
 
 // Actor is the authenticated administrator performing an Access mutation.
@@ -60,16 +62,92 @@ type CredentialInput struct {
 	ConfirmCurrent            bool
 }
 
+// BindingInput identifies a configured transport principal for one user.
+type BindingInput struct {
+	UserID          string
+	ChannelType     string
+	Principal       string
+	ExpectedVersion uint64
+}
+
+// BindingRemoval identifies one existing binding and confirms its bot access impact.
+type BindingRemoval struct {
+	UserID          string
+	BindingID       string
+	ExpectedVersion uint64
+	ConfirmImpact   bool
+}
+
 // Service administers canonical users and browser session families.
 type Service struct {
-	store store
-	now   func() time.Time
-	newID func() string
+	store              store
+	now                func() time.Time
+	newID              func() string
+	configuredBindings map[string]bool
 }
 
 // NewService creates the Backoffice Access use case over its local persistence port.
-func NewService(store store) *Service {
-	return &Service{store: store, now: time.Now, newID: uuid.NewString}
+func NewService(store store, configuredBindings ...string) *Service {
+	enabled := make(map[string]bool, len(configuredBindings))
+	for _, channel := range configuredBindings {
+		enabled[channel] = true
+	}
+	return &Service{store: store, now: time.Now, newID: uuid.NewString, configuredBindings: enabled}
+}
+
+// AddBinding attaches one principal to an existing user.
+func (s *Service) AddBinding(ctx context.Context, actor Actor, input BindingInput) error {
+	if err := requireAccessAdministrator(actor); err != nil {
+		return err
+	}
+	if !s.configuredBindings[input.ChannelType] || input.ExpectedVersion == 0 {
+		return usercmd.ErrInvalid
+	}
+	principal, err := users.NormalizeBindingPrincipal(input.ChannelType, input.Principal)
+	if err != nil {
+		return err
+	}
+	user, found, err := s.store.GetUser(ctx, strings.TrimSpace(input.UserID))
+	if err != nil {
+		return err
+	}
+	if !found {
+		return usercmd.ErrNotFound
+	}
+	if user.Version != input.ExpectedVersion {
+		return usercmd.ErrConflict
+	}
+	now := s.now().UTC()
+	binding := usercmd.Binding{ID: s.newID(), UserID: user.ID, ChannelType: input.ChannelType,
+		Principal: principal, CreatedAt: now, UpdatedAt: now, Provenance: "backoffice-admin"}
+	audit := s.audit(actor, usercmd.AuditActionBindingAttached, usercmd.AuditTargetBinding, binding.ID, "administrator attached binding", now)
+	return s.store.CreateManagedBinding(ctx, binding, input.ExpectedVersion, audit)
+}
+
+// RemoveBinding removes one selected principal after explicit impact confirmation.
+func (s *Service) RemoveBinding(ctx context.Context, actor Actor, input BindingRemoval) error {
+	if err := requireAccessAdministrator(actor); err != nil {
+		return err
+	}
+	if !input.ConfirmImpact {
+		return usercmd.ErrBotImpactAcknowledgementRequired
+	}
+	if input.ExpectedVersion == 0 || strings.TrimSpace(input.BindingID) == "" {
+		return usercmd.ErrInvalid
+	}
+	user, found, err := s.store.GetUser(ctx, strings.TrimSpace(input.UserID))
+	if err != nil {
+		return err
+	}
+	if !found {
+		return usercmd.ErrNotFound
+	}
+	if user.Version != input.ExpectedVersion {
+		return usercmd.ErrConflict
+	}
+	now := s.now().UTC()
+	audit := s.audit(actor, usercmd.AuditActionBindingDetached, usercmd.AuditTargetBinding, input.BindingID, "administrator removed binding", now)
+	return s.store.DeleteBinding(ctx, user.ID, input.BindingID, input.ExpectedVersion, audit)
 }
 
 func (s *Service) ListUsers(ctx context.Context, actor Actor) ([]usercmd.User, error) {
@@ -217,15 +295,18 @@ func (s *Service) ResetCredential(ctx context.Context, actor Actor, input Creden
 	return nil
 }
 
-func (s *Service) ListSessions(ctx context.Context, actor Actor, userID string) (usercmd.SessionPage, error) {
+func (s *Service) ListSessions(ctx context.Context, actor Actor, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error) {
 	if _, err := s.GetUser(ctx, actor, userID); err != nil {
 		return usercmd.SessionPage{}, err
 	}
-	page, err := s.store.ListSessions(ctx, strings.TrimSpace(userID), usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	if actor.User.ID == strings.TrimSpace(userID) {
+		page.CurrentID = actor.SessionID
+	}
+	result, err := s.store.ListActiveSessions(ctx, strings.TrimSpace(userID), page, s.now().UTC())
 	if err != nil {
 		return usercmd.SessionPage{}, fmt.Errorf("list access sessions: %w", err)
 	}
-	return page, nil
+	return result, nil
 }
 
 func (s *Service) RevokeSession(ctx context.Context, actor Actor, userID, sessionID string, confirmCurrent bool) error {

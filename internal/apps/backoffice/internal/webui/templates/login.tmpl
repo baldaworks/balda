@@ -1,8 +1,8 @@
-{{define "content"}}<main id="main-content" class="login-page">
+{{define "content"}}<main id="main-content" class="login-page" data-bs-theme="dark" tabindex="-1">
   <section class="login-box" aria-labelledby="login-heading">
-    <div class="card card-outline card-primary">
+    <div class="card">
       <div class="card-header text-center"><h1 id="login-heading" class="h3 mb-0">Sign in</h1></div>
-      <div class="card-body">
+      <div class="card-body"><p>Use your Backoffice username and password.</p>
         {{with .Error}}<div class="alert alert-danger" role="alert"><strong>{{.Heading}}</strong> {{.Message}}</div>{{end}}
         <form method="post" action="{{path "/"}}login" hx-boost="false">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -10,6 +10,7 @@
           <div class="mb-3"><label for="password" class="form-label">Password</label><input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required></div>
           <button class="btn btn-primary w-100" type="submit">Sign in</button>
         </form>
+        <p class="small mb-0 mt-3">Lost your password? Ask an administrator to reset it.</p>
       </div>
     </div>
   </section>

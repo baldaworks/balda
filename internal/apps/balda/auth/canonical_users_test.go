@@ -37,6 +37,26 @@ func TestCanonicalAuthorizationUsesCurrentUserState(t *testing.T) {
 	}
 }
 
+func TestCanonicalOwnerUsesEveryBinding(t *testing.T) {
+	t.Parallel()
+	admin := canonicalTestUser("admin", usercmd.RoleAdministrator, usercmd.StatusActive, "telegram", "101", true)
+	admin.Bindings = []usercmd.Binding{*admin.Binding, {
+		ID: "binding-zulip", UserID: admin.ID, ChannelType: "zulip", Principal: "202",
+	}}
+	store := newFakeCanonicalUserStore(admin)
+	owners, err := NewCanonicalOwnerStore(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !owners.IsOwnerSubject("telegram:101") || !owners.IsOwnerSubject("zulip:202") {
+		t.Fatalf("OwnerSubjects() = %v", owners.OwnerSubjects())
+	}
+	owner := owners.GetOwner()
+	if owner == nil || len(owner.Bindings) != 2 || owner.UserID != 101 {
+		t.Fatalf("GetOwner() = %+v", owner)
+	}
+}
+
 func TestCanonicalOnboardingAttachesOnlyPreexistingUnboundUser(t *testing.T) {
 	t.Parallel()
 	store := newFakeCanonicalUserStore(
@@ -90,8 +110,10 @@ func (s *fakeCanonicalUserStore) GetUser(_ context.Context, userID string) (user
 
 func (s *fakeCanonicalUserStore) GetUserByBinding(_ context.Context, channelType, principal string) (usercmd.User, bool, error) {
 	for _, user := range s.users {
-		if user.Binding != nil && user.Binding.ChannelType == channelType && user.Binding.Principal == principal {
-			return user, true, nil
+		for _, binding := range canonicalBindings(user) {
+			if binding.ChannelType == channelType && binding.Principal == principal {
+				return user, true, nil
+			}
 		}
 	}
 	return usercmd.User{}, false, nil
@@ -123,7 +145,8 @@ func (s *fakeCanonicalUserStore) AttachBinding(_ context.Context, claimID string
 		return usercmd.ErrBindingClaimScope
 	}
 	user := s.users[binding.UserID]
-	user.Binding = &binding
+	user.Bindings = append(user.Bindings, binding)
+	user.Binding = &user.Bindings[0]
 	s.users[user.ID] = user
 	return nil
 }

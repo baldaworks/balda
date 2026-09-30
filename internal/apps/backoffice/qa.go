@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -23,21 +24,26 @@ func QAHandler(basePath string) (http.Handler, error) {
 	mux.Handle("GET "+basePath+"/assets/", http.StripPrefix(basePath, assets))
 	mux.HandleFunc("GET "+basePath+"/qa/ui/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, basePath+"/qa/ui/")
-		page, templateName, ok := qaFixture(name)
+		page, templateName, status, ok := qaFixture(name)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
 		page.Preview = true
+		if len(page.Navigation) > 0 {
+			if page.ViewerUsername == "" {
+				page.ViewerUsername = "qa-superuser"
+			}
+		}
 		if page.ReturnTo != "" {
 			page.ReturnTo = basePath + "/qa/ui/overview"
 		}
 		if r.Method == http.MethodHead {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(status)
 			return
 		}
-		if err := renderer.Render(w, r, http.StatusOK, templateName, page); err != nil {
+		if err := renderer.Render(w, r, status, templateName, page); err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}
 	})
@@ -55,31 +61,46 @@ type qaEntry struct {
 	templateName string
 	page         func() webui.Page
 	gallery      bool
+	status       int
 }
 
 var qaEntries = []qaEntry{
+	{name: "style-guide", label: "Foundation · component guide", templateName: webui.TemplateStyleGuide, page: qaLayout, gallery: true},
+	{name: "layout", label: "Foundation · full layout", templateName: webui.TemplateLayout, page: qaLayout, gallery: true},
+	{name: "layout-long", label: "Foundation · long layout", templateName: webui.TemplateLayout, page: qaLayoutLong, gallery: true},
 	{name: "login", label: "Login", templateName: webui.TemplateLogin, page: qaLogin, gallery: true},
 	{name: "login-error", label: "Login · error", templateName: webui.TemplateLogin, page: qaLoginError, gallery: true},
 	{name: "refresh", label: "Session refresh", templateName: webui.TemplateRefresh, page: qaRefresh, gallery: true},
 	{name: "refresh-error", label: "Session refresh · error", templateName: webui.TemplateRefresh, page: qaRefreshError, gallery: true},
+	{name: "refresh-conflict", label: "Session refresh · concurrent", templateName: webui.TemplateRefresh, page: qaRefreshConflict, gallery: true},
 	{name: "password", label: "Password replacement", templateName: webui.TemplatePassword, page: qaPassword, gallery: true},
 	{name: "password-error", label: "Password replacement · error", templateName: webui.TemplatePassword, page: qaPasswordError, gallery: true},
 	{name: "overview", label: "Overview", templateName: webui.TemplateOverview, page: qaOverview, gallery: true},
 	{name: "overview-empty", label: "Overview · empty", templateName: webui.TemplateOverview, page: qaOverviewEmpty, gallery: true},
 	{name: "access", label: "Access · detail", templateName: webui.TemplateAccess, page: qaAccess, gallery: true},
+	{name: "access-primary", label: "Access · primary administrator", templateName: webui.TemplateAccess, page: qaAccessPrimary, gallery: true},
+	{name: "access-long", label: "Access · long content", templateName: webui.TemplateAccess, page: qaAccessLong, gallery: true},
 	{name: "access/users/user-demo", templateName: webui.TemplateAccess, page: qaAccess},
 	{name: "access-list", label: "Access · list", templateName: webui.TemplateAccess, page: qaAccessList, gallery: true},
+	{name: "access-create", label: "Access · create", templateName: webui.TemplateAccess, page: qaAccessCreate, gallery: true},
 	{name: "access-empty", label: "Access · empty", templateName: webui.TemplateAccess, page: qaAccessEmpty, gallery: true},
 	{name: "access-error", label: "Access · error", templateName: webui.TemplateAccess, page: qaAccessError, gallery: true},
 	{name: "account", label: "Account", templateName: webui.TemplateAccount, page: qaAccount, gallery: true},
+	{name: "account-many", label: "Account · many active sessions", templateName: webui.TemplateAccount, page: qaAccountMany, gallery: true},
+	{name: "account-many-next", label: "Account · older active sessions", templateName: webui.TemplateAccount, page: qaAccountManyNext, gallery: true},
+	{name: "account-session-states", label: "Account · session state coverage", templateName: webui.TemplateAccount, page: qaAccountSessionStates, gallery: true},
 	{name: "account-empty", label: "Account · no sessions", templateName: webui.TemplateAccount, page: qaAccountEmpty, gallery: true},
 	{name: "account-error", label: "Account · error", templateName: webui.TemplateAccount, page: qaAccountError, gallery: true},
 	{name: "audit", label: "Audit", templateName: webui.TemplateAudit, page: qaAudit, gallery: true},
 	{name: "audit-empty", label: "Audit · empty", templateName: webui.TemplateAudit, page: qaAuditEmpty, gallery: true},
 	{name: "error", label: "Generic error", templateName: webui.TemplateError, page: qaError, gallery: true},
+	{name: "form-bad-request", label: "Form · invalid input (400)", templateName: webui.TemplateAccess, page: qaFormBadRequest, gallery: true, status: http.StatusBadRequest},
+	{name: "form-forbidden", label: "Form · permission denied (403)", templateName: webui.TemplateError, page: qaFormForbidden, gallery: true, status: http.StatusForbidden},
+	{name: "form-conflict", label: "Form · conflicting update (409)", templateName: webui.TemplateAccess, page: qaFormConflict, gallery: true, status: http.StatusConflict},
+	{name: "form-server-error", label: "Form · service error (500)", templateName: webui.TemplateError, page: qaError, gallery: true, status: http.StatusInternalServerError},
 }
 
-func qaFixture(name string) (webui.Page, string, bool) {
+func qaFixture(name string) (webui.Page, string, int, bool) {
 	if name == "" {
 		links := make([]webui.QALink, 0, len(qaEntries))
 		for _, entry := range qaEntries {
@@ -87,14 +108,18 @@ func qaFixture(name string) (webui.Page, string, bool) {
 				links = append(links, webui.QALink{Label: entry.label, Path: "/" + entry.name})
 			}
 		}
-		return webui.Page{Title: "Backoffice UI previews · QA", Gallery: links}, webui.TemplateGallery, true
+		return webui.Page{Title: "Backoffice UI previews · QA", Gallery: links, Navigation: qaAdminNavigation("")}, webui.TemplateGallery, http.StatusOK, true
 	}
 	for _, entry := range qaEntries {
 		if entry.name == name {
-			return entry.page(), entry.templateName, true
+			status := entry.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			return entry.page(), entry.templateName, status, true
 		}
 	}
-	return webui.Page{}, "", false
+	return webui.Page{}, "", 0, false
 }
 
 var qaNow = time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
@@ -113,15 +138,27 @@ func qaUser() webui.UserView {
 	return webui.UserView{
 		ID: "user-demo", DisplayName: "Bound operator", Username: "operator", Status: "active", Role: "operator",
 		CredentialState: "temporary", MustChange: true, Version: 3, CredentialVersion: 2,
-		Binding: &webui.BindingView{ChannelType: "telegram", Principal: "42", DisplayName: "Operator", Provenance: "synthetic fixture"},
+		Bindings: []webui.BindingView{{ID: "binding-telegram", ChannelType: "telegram", Principal: "42", DisplayName: "Operator", ProviderUsername: "operator", ProviderFirstName: "Op", Provenance: "synthetic fixture"}, {ID: "binding-slack", ChannelType: "slackagent", Principal: "T1:U1", DisplayName: "Operator Slack"}},
 	}
 }
 
 func qaSessions() []webui.SessionView {
-	return []webui.SessionView{{
-		ID: "family-demo", Assurance: "normal", CreatedAt: qaNow,
-		LastSeenAt: qaNow, ExpiresAt: qaNow.Add(12 * time.Hour), Current: true, Version: 2,
-	}}
+	return []webui.SessionView{
+		{ID: "family-demo", Assurance: "normal", CreatedAt: qaNow.Add(-time.Hour), LastSeenAt: qaNow, ExpiresAt: qaNow.Add(12 * time.Hour), Current: true, DeviceLabel: "Firefox on Linux", ConnectionPeer: "192.0.2.10", Version: 2},
+		{ID: "family-other", Assurance: "normal", CreatedAt: qaNow.Add(-2 * time.Hour), LastSeenAt: qaNow.Add(-time.Hour), ExpiresAt: qaNow.Add(11 * time.Hour), DeviceLabel: "Unknown browser or device", Version: 1},
+	}
+}
+
+func qaManySessions() []webui.SessionView {
+	sessions := qaSessions()
+	for i := 0; i < 8; i++ {
+		sessions = append(sessions, webui.SessionView{
+			ID: fmt.Sprintf("family-%02d", i), CreatedAt: qaNow.Add(-time.Duration(i+3) * time.Hour),
+			LastSeenAt: qaNow.Add(-time.Duration(i+2) * time.Hour), ExpiresAt: qaNow.Add(12 * time.Hour),
+			DeviceLabel: "Synthetic browser session", Version: 1,
+		})
+	}
+	return sessions
 }
 
 func qaLogin() webui.Page {
@@ -144,8 +181,15 @@ func qaRefreshError() webui.Page {
 	return page
 }
 
+func qaRefreshConflict() webui.Page {
+	page := qaRefresh()
+	page.Error = &webui.ErrorView{Heading: "Session changed", Message: "Another request refreshed this session. Reopen the page."}
+	page.RefreshRetryable = true
+	return page
+}
+
 func qaPassword() webui.Page {
-	return webui.Page{Title: "Replace password · QA", Current: webui.LocationAccount, CSRFToken: "qa-csrf"}
+	return webui.Page{Title: "Change password · QA", Current: webui.LocationAccount, CSRFToken: "qa-csrf"}
 }
 
 func qaPasswordError() webui.Page {
@@ -160,7 +204,7 @@ func qaOverview() webui.Page {
 		Navigation: qaAdminNavigation(webui.LocationOverview),
 		Capabilities: []webui.CapabilityCard{
 			{ID: "telegram", Name: "Telegram", Mode: "webhook", ListenAddr: "127.0.0.1:8080", Endpoint: "/telegram"},
-			{ID: "slack-agent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
+			{ID: "slackagent", Name: "Slack Agent", Mode: "agent-events", Streaming: true},
 			{ID: "webhooks", Name: "Webhooks", Mode: "inbound", RouteCount: 3},
 		},
 	}
@@ -177,8 +221,32 @@ func qaAccess() webui.Page {
 	return webui.Page{
 		Title: "Access · QA", Current: webui.LocationAccess,
 		Navigation: qaAdminNavigation(webui.LocationAccess),
-		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(),
+		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(), BindingChoices: []string{"telegram", "slackagent", "zulip"},
+		SessionActionPrefix: "/access/users/" + user.ID + "/sessions",
 	}
+}
+
+func qaAccessPrimary() webui.Page {
+	page := qaAccess()
+	page.User.ID = "primary-demo"
+	page.User.DisplayName = "QA Primary Administrator"
+	page.User.Username = "superuser"
+	page.User.Role = "administrator"
+	page.User.Primary = true
+	page.User.CredentialState = "active"
+	page.User.MustChange = false
+	page.User.Bindings = nil
+	page.OwnUser = true
+	page.SessionActionPrefix = "/access/users/primary-demo/sessions"
+	return page
+}
+
+func qaAccessLong() webui.Page {
+	page := qaAccess()
+	page.User.DisplayName = "Long synthetic display name used to check that a Backoffice profile remains readable on a narrow phone screen"
+	page.User.Bindings[1].Principal = "T12345678901234567890:U12345678901234567890"
+	page.User.Bindings[1].DisplayName = "Long synthetic Slack Agent binding with a descriptive label spanning several words"
+	return page
 }
 
 func qaAccessList() webui.Page {
@@ -186,6 +254,14 @@ func qaAccessList() webui.Page {
 		Title: "Access · QA", Current: webui.LocationAccess,
 		Navigation: qaAdminNavigation(webui.LocationAccess),
 		Users:      []webui.UserView{qaUser()}, CSRFToken: "qa-csrf",
+	}
+}
+
+func qaAccessCreate() webui.Page {
+	return webui.Page{
+		Title: "Create user · QA", Current: webui.LocationAccess,
+		Navigation: qaAdminNavigation(webui.LocationAccess),
+		CreateUser: true, CSRFToken: "qa-csrf",
 	}
 }
 
@@ -209,7 +285,31 @@ func qaAccount() webui.Page {
 		Title: "Account · QA", Current: webui.LocationAccount,
 		Navigation: qaOperatorNavigation(webui.LocationAccount),
 		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(),
+		SessionActionPrefix: "/account/sessions",
 	}
+}
+
+func qaAccountMany() webui.Page {
+	page := qaAccount()
+	page.Sessions = qaManySessions()
+	page.SessionNextURL = "/account-many-next"
+	return page
+}
+
+func qaAccountManyNext() webui.Page {
+	page := qaAccount()
+	page.Sessions = []webui.SessionView{{ID: "family-older", LastSeenAt: qaNow.Add(-11 * time.Hour), CreatedAt: qaNow.Add(-12 * time.Hour), ExpiresAt: qaNow.Add(time.Hour), DeviceLabel: "Older synthetic session", Version: 1}}
+	return page
+}
+
+func qaAccountSessionStates() webui.Page {
+	page := qaAccount()
+	page.MixedSessions = true
+	page.Sessions = append(page.Sessions,
+		webui.SessionView{ID: "family-ended", LastSeenAt: qaNow.Add(-3 * time.Hour), CreatedAt: qaNow.Add(-4 * time.Hour), ExpiresAt: qaNow.Add(time.Hour), RevokedAt: qaNow.Add(-time.Hour), Revoked: true, DeviceLabel: "Ended synthetic session"},
+		webui.SessionView{ID: "family-expired", LastSeenAt: qaNow.Add(-5 * time.Hour), CreatedAt: qaNow.Add(-6 * time.Hour), ExpiresAt: qaNow.Add(-time.Hour), Expired: true, DeviceLabel: "Expired synthetic session"},
+	)
+	return page
 }
 
 func qaAccountEmpty() webui.Page {
@@ -231,9 +331,9 @@ func qaAudit() webui.Page {
 		Title: "Audit · QA", Current: webui.LocationAudit,
 		Navigation: qaAdminNavigation(webui.LocationAudit),
 		Audit: []webui.AuditView{
-			{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", Outcome: "succeeded", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: qaNow},
-			{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", Outcome: "denied", ActorUserID: adminID, ActorSessionID: familyID, TargetType: "session", TargetID: familyID, OccurredAt: qaNow.Add(time.Minute)},
-			{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", Outcome: "succeeded", ActorUserID: adminID, TargetType: "session", TargetID: familyID, OccurredAt: qaNow.Add(2 * time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333333", Action: "session.revoked", ActionLabel: "Ended browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(2 * time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333332", Action: "session.refresh.replay", ActionLabel: "Detected session token replay", Outcome: "denied", ActorUserID: adminID, ActorName: "QA Administrator", ActorSessionID: familyID, TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow.Add(time.Minute)},
+			{ID: "33333333-3333-4333-8333-333333333331", Action: "session.refresh.succeeded", ActionLabel: "Restored browser session", Outcome: "succeeded", ActorUserID: adminID, ActorName: "QA Administrator", ActorSessionID: familyID, TargetType: "session", TargetID: familyID, TargetName: "Browser session", OccurredAt: qaNow},
 		},
 	}
 }
@@ -249,4 +349,34 @@ func qaError() webui.Page {
 		Title: "Unavailable · QA",
 		Error: &webui.ErrorView{Heading: "Service unavailable", Message: "Try again later."},
 	}
+}
+
+func qaFormBadRequest() webui.Page {
+	page := qaAccess()
+	page.Error = &webui.ErrorView{Heading: "User not updated", Message: "Review the input and try again."}
+	return page
+}
+
+func qaFormForbidden() webui.Page {
+	page := qaError()
+	page.Error = &webui.ErrorView{Heading: "Permission denied", Message: "Sign in with an authorized account or return to Overview."}
+	return page
+}
+
+func qaFormConflict() webui.Page {
+	page := qaAccess()
+	page.Error = &webui.ErrorView{Heading: "User not updated", Message: "This user changed while you were editing. Reload the page and review the latest details."}
+	return page
+}
+
+func qaLayout() webui.Page {
+	return webui.Page{Title: "Layout foundation · QA", Navigation: qaAdminNavigation("")}
+}
+
+func qaLayoutLong() webui.Page {
+	page := qaLayout()
+	page.ViewerUsername = "administrator-with-a-very-long-username-for-responsive-review"
+	page.Navigation[0].Label = "Overview of configured integrations and channel connections"
+	page.Gallery = []webui.QALink{{Label: "A long synthetic activity entry with a user-provided label that must remain readable on a narrow screen", Path: "/overview"}, {Label: "A second activity entry with technical detail and explanatory text", Path: "/audit"}, {Label: "A third entry for checking spacing, wrapping and the normal-flow footer", Path: "/account"}}
+	return page
 }

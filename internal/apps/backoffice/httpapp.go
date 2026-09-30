@@ -1,11 +1,13 @@
 package backoffice
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/access"
 	"github.com/baldaworks/balda/internal/apps/backoffice/audit"
@@ -16,16 +18,18 @@ import (
 )
 
 const checkedFormValue = "yes"
+const sessionPageSize = 20
 
 type httpApp struct {
-	renderer *webui.Renderer
-	browser  *security.Browser
-	security *security.Service
-	access   *access.Service
-	auditLog *audit.Service
-	cards    []webui.CapabilityCard
-	qa       bool
-	basePath string
+	renderer       *webui.Renderer
+	browser        *security.Browser
+	security       *security.Service
+	access         *access.Service
+	auditLog       *audit.Service
+	cards          []webui.CapabilityCard
+	bindingChoices []string
+	qa             bool
+	basePath       string
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
@@ -39,7 +43,8 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), qa: config.Server.QAUI, basePath: config.Server.BasePath}
+	bindingChoices := configuredBindingChannels(config.Balda)
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store, bindingChoices...), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler: app.renderSecurityError,
@@ -81,9 +86,12 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/account/sessions/{session_id}/revoke"), a.browser.RevokeSession)
 	mux.Handle("GET "+a.path("/audit"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.audit))))
 	mux.Handle("GET "+a.path("/access"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessList))))
+	mux.Handle("GET "+a.path("/access/new"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessCreatePage))))
 	mux.Handle("GET "+a.path("/access/users/{user_id}"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
 	mux.HandleFunc("POST "+a.path("/access/users"), a.accessCreate)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}"), a.accessUpdate)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/bindings"), a.accessBindingCreate)
+	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/bindings/{binding_id}/delete"), a.accessBindingDelete)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/credential"), a.accessCredentialReset)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/sessions/{session_id}/revoke"), a.accessSessionRevoke)
 	qaHandler, err := QAHandler(a.basePath)
@@ -118,12 +126,12 @@ func (a *httpApp) refreshPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	returnTo := a.browser.SafeReturnPath(r.URL.Query().Get("return_to"), a.path(string(webui.LocationOverview)))
-	a.render(w, r, http.StatusOK, webui.TemplateRefresh, webui.Page{Title: "Continue session · Balda", CSRFToken: csrf, ReturnTo: returnTo})
+	a.render(w, r, http.StatusOK, webui.TemplateRefresh, webui.Page{Title: "Restore session · Balda", CSRFToken: csrf, ReturnTo: returnTo, AutoRefresh: true})
 }
 
 func (a *httpApp) passwordPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, http.StatusOK, webui.TemplatePassword, webui.Page{
-		Title: "Replace password · Balda", Current: webui.LocationAccount, CSRFToken: a.browser.CSRFToken(r),
+		Title: "Change password · Balda", Current: webui.LocationAccount, CSRFToken: a.browser.CSRFToken(r),
 	})
 }
 
@@ -151,14 +159,20 @@ func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, security.ErrUnauthenticated)
 		return
 	}
-	sessionPage, err := a.security.ListSessions(r.Context(), accessCookie.Value, "", usercmd.PageRequest{Limit: usercmd.MaxPageSize})
+	sessionPage, err := a.security.ListSessions(r.Context(), accessCookie.Value, "", usercmd.PageRequest{
+		Limit: sessionPageSize, AfterID: r.URL.Query().Get("after_session"),
+	})
 	if err != nil {
 		a.browser.WriteError(w, r, err)
 		return
 	}
 	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
 	for _, session := range sessionPage.Sessions {
-		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID))
+		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID, time.Now().UTC()))
+	}
+	nextURL := ""
+	if sessionPage.NextAfterID != "" {
+		nextURL = "/account?after_session=" + url.QueryEscape(sessionPage.NextAfterID)
 	}
 	view := webui.ProjectUser(principal.User)
 	capabilities := users.BackofficeCapabilities(principal.User)
@@ -166,6 +180,7 @@ func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 		Title: "Account · Balda", Current: webui.LocationAccount,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccount),
 		User:       &view, Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
+		SessionActionPrefix: "/account/sessions", SessionNextURL: nextURL,
 	})
 }
 
@@ -184,10 +199,30 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
+	fromText := strings.TrimSpace(r.URL.Query().Get("from"))
+	toText := strings.TrimSpace(r.URL.Query().Get("to"))
+	var from, before time.Time
+	if fromText != "" {
+		parsed, parseErr := time.Parse("2006-01-02", fromText)
+		if parseErr != nil {
+			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			return
+		}
+		from = parsed
+	}
+	if toText != "" {
+		lastDay, parseErr := time.Parse("2006-01-02", toText)
+		if parseErr != nil {
+			a.browser.WriteError(w, r, usercmd.ErrInvalid)
+			return
+		}
+		before = lastDay.AddDate(0, 0, 1)
+	}
 	request := audit.Request{
 		AfterID: r.URL.Query().Get("after"), Limit: limit,
 		Action: usercmd.AuditAction(r.URL.Query().Get("action")), Outcome: usercmd.AuditOutcome(r.URL.Query().Get("outcome")),
-		TargetType: usercmd.AuditTargetType(r.URL.Query().Get("target")),
+		TargetType:  usercmd.AuditTargetType(r.URL.Query().Get("target")),
+		ActorUserID: r.URL.Query().Get("actor"), From: from, Before: before,
 	}
 	page, err := a.auditLog.List(r.Context(), principal.User, request)
 	if err != nil {
@@ -195,8 +230,46 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events := make([]webui.AuditView, 0, len(page.Events))
+	actor := access.Actor{User: principal.User, SessionID: principal.FamilyID}
+	knownUsers := make(map[string]string)
+	userName := func(id string) (string, error) {
+		if name, ok := knownUsers[id]; ok {
+			return name, nil
+		}
+		user, lookupErr := a.access.GetUser(r.Context(), actor, id)
+		if errors.Is(lookupErr, usercmd.ErrNotFound) {
+			knownUsers[id] = ""
+			return "", nil
+		}
+		if lookupErr != nil {
+			return "", lookupErr
+		}
+		knownUsers[id] = user.DisplayName
+		return user.DisplayName, nil
+	}
 	for _, event := range page.Events {
-		events = append(events, webui.ProjectAudit(event))
+		view := webui.ProjectAudit(event)
+		if event.ActorUserID != "" {
+			name, lookupErr := userName(event.ActorUserID)
+			if lookupErr != nil {
+				a.browser.WriteError(w, r, lookupErr)
+				return
+			}
+			if name != "" {
+				view.ActorName = name
+			}
+		}
+		if event.TargetType == usercmd.AuditTargetUser && event.TargetID != "" {
+			name, lookupErr := userName(event.TargetID)
+			if lookupErr != nil {
+				a.browser.WriteError(w, r, lookupErr)
+				return
+			}
+			if name != "" {
+				view.TargetName = name
+			}
+		}
+		events = append(events, view)
 	}
 	nextURL := ""
 	if page.NextAfterID != "" {
@@ -213,6 +286,15 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		if request.TargetType != "" {
 			query.Set("target", string(request.TargetType))
 		}
+		if request.ActorUserID != "" {
+			query.Set("actor", request.ActorUserID)
+		}
+		if fromText != "" {
+			query.Set("from", fromText)
+		}
+		if toText != "" {
+			query.Set("to", toText)
+		}
 		nextURL = a.path("/audit?") + query.Encode()
 	}
 	capabilities := users.BackofficeCapabilities(principal.User)
@@ -220,7 +302,8 @@ func (a *httpApp) audit(w http.ResponseWriter, r *http.Request) {
 		Title: "Audit · Balda", Current: webui.LocationAudit,
 		Navigation: webui.Navigation(capabilities, webui.LocationAudit), Audit: events,
 		AuditAction: string(request.Action), AuditOutcome: string(request.Outcome),
-		AuditTargetType: string(request.TargetType), NextURL: nextURL,
+		AuditTargetType: string(request.TargetType), AuditActor: request.ActorUserID,
+		AuditFrom: fromText, AuditTo: toText, NextURL: nextURL,
 	})
 }
 
@@ -235,15 +318,41 @@ func (a *httpApp) accessList(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	role := r.URL.Query().Get("role")
+	status := r.URL.Query().Get("status")
+	if len(search) > 100 || (role != "" && role != string(usercmd.RoleAdministrator) && role != string(usercmd.RoleOperator)) ||
+		(status != "" && status != string(usercmd.StatusActive) && status != string(usercmd.StatusDisabled)) {
+		a.browser.WriteError(w, r, usercmd.ErrInvalid)
+		return
+	}
 	views := make([]webui.UserView, 0, len(userList))
 	for _, user := range userList {
+		if (role != "" && string(user.Role) != role) || (status != "" && string(user.Status) != status) ||
+			(search != "" && !strings.Contains(strings.ToLower(user.DisplayName+" "+user.Username), strings.ToLower(search))) {
+			continue
+		}
 		views = append(views, webui.ProjectUser(user))
 	}
 	capabilities := users.BackofficeCapabilities(principal.User)
 	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
 		Title: "Access · Balda", Current: webui.LocationAccess,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccess), Users: views,
-		CSRFToken: a.browser.CSRFToken(r),
+		CSRFToken: a.browser.CSRFToken(r), AccessSearch: search, AccessRole: role, AccessStatus: status,
+	})
+}
+
+func (a *httpApp) accessCreatePage(w http.ResponseWriter, r *http.Request) {
+	principal, ok := security.PrincipalFromContext(r.Context())
+	if !ok {
+		a.browser.WriteError(w, r, security.ErrUnauthenticated)
+		return
+	}
+	capabilities := users.BackofficeCapabilities(principal.User)
+	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
+		Title: "Create user · Balda", Current: webui.LocationAccess,
+		Navigation: webui.Navigation(capabilities, webui.LocationAccess),
+		CreateUser: true, CSRFToken: a.browser.CSRFToken(r),
 	})
 }
 
@@ -259,22 +368,83 @@ func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
-	sessionPage, err := a.access.ListSessions(r.Context(), actor, user.ID)
+	sessionPage, err := a.access.ListSessions(r.Context(), actor, user.ID, usercmd.PageRequest{
+		Limit: sessionPageSize, AfterID: r.URL.Query().Get("after_session"),
+	})
 	if err != nil {
 		a.browser.WriteError(w, r, err)
 		return
 	}
 	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
 	for _, session := range sessionPage.Sessions {
-		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID))
+		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID, time.Now().UTC()))
+	}
+	actionPrefix := "/access/users/" + url.PathEscape(user.ID) + "/sessions"
+	nextURL := ""
+	if sessionPage.NextAfterID != "" {
+		nextURL = "/access/users/" + url.PathEscape(user.ID) + "?after_session=" + url.QueryEscape(sessionPage.NextAfterID)
 	}
 	view := webui.ProjectUser(user)
 	capabilities := users.BackofficeCapabilities(principal.User)
 	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
 		Title: "Access · " + user.DisplayName, Current: webui.LocationAccess,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccess), User: &view,
-		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
+		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r), BindingChoices: a.bindingChoices,
+		OwnUser: user.ID == principal.User.ID, SessionActionPrefix: actionPrefix, SessionNextURL: nextURL,
 	})
+}
+
+func (a *httpApp) accessBindingCreate(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	version, err := parseFormVersion(form.Get("expected_version"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	err = a.access.AddBinding(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.BindingInput{
+		UserID: r.PathValue("user_id"), ChannelType: form.Get("channel_type"),
+		Principal: form.Get("principal"), ExpectedVersion: version,
+	})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
+}
+
+func (a *httpApp) accessBindingDelete(w http.ResponseWriter, r *http.Request) {
+	form, principal, ok := a.browser.AdministratorMutation(w, r)
+	if !ok {
+		return
+	}
+	version, err := parseFormVersion(form.Get("expected_version"))
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	err = a.access.RemoveBinding(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.BindingRemoval{
+		UserID: r.PathValue("user_id"), BindingID: r.PathValue("binding_id"),
+		ExpectedVersion: version, ConfirmImpact: form.Get("confirm_bot_impact") == checkedFormValue,
+	})
+	if err != nil {
+		a.browser.WriteError(w, r, err)
+		return
+	}
+	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
+}
+
+func (a *httpApp) respondAccessDetailMutation(w http.ResponseWriter, r *http.Request, userID string) {
+	location := a.path("/access/users/" + url.PathEscape(userID))
+	if webui.EligibleFragment(r) {
+		w.Header().Set("HX-Location", location)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Location", location)
+	w.WriteHeader(http.StatusSeeOther)
 }
 
 func (a *httpApp) accessCreate(w http.ResponseWriter, r *http.Request) {
@@ -359,7 +529,11 @@ func (a *httpApp) accessSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, err)
 		return
 	}
-	a.respondMutation(w, r, webui.LocationAccess)
+	if r.PathValue("session_id") == principal.FamilyID {
+		a.respondMutation(w, r, webui.LocationLogin)
+		return
+	}
+	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
 }
 
 func (a *httpApp) respondMutation(w http.ResponseWriter, r *http.Request, location webui.Location) {
@@ -379,7 +553,19 @@ func parseFormVersion(raw string) (uint64, error) {
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
 	message := "The request could not be completed."
 	if status == http.StatusUnauthorized {
-		message = "Your session is unavailable. Continue with the refresh token or sign in again."
+		switch r.URL.Path {
+		case a.path("/login"):
+			message = "Sign-in failed. Check your username and password."
+		case a.path(security.RefreshPath):
+			message = "This session cannot be restored. Sign in again to continue."
+		case a.path("/account/password"):
+			message = "The password could not be verified. Check it and try again."
+		default:
+			message = "Your session is unavailable. The browser will check whether it can restore access. You can also sign in again."
+		}
+	}
+	if status == http.StatusConflict && r.URL.Path == a.path(security.RefreshPath) {
+		message = "Another request has just refreshed this session. Reopen the page in a moment."
 	}
 	page := webui.Page{Title: http.StatusText(status) + " · Balda", Error: &webui.ErrorView{Heading: http.StatusText(status), Message: message}}
 	templateName := webui.TemplateError
@@ -392,20 +578,33 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 		templateName = webui.TemplateRefresh
 		page.CSRFToken = a.browser.CSRFToken(r)
 		page.ReturnTo = a.browser.SafeReturnPath(r.FormValue("return_to"), a.path(string(webui.LocationOverview)))
+		page.RefreshRetryable = status == http.StatusConflict
 	case a.path("/account/password"):
 		templateName = webui.TemplatePassword
 		page.CSRFToken = a.browser.CSRFToken(r)
 	default:
 		if status == http.StatusUnauthorized && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			csrf, err := a.browser.EnsureCSRF(w, r)
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
 			templateName = webui.TemplateRefresh
-			page.CSRFToken = a.browser.CSRFToken(r)
+			page.CSRFToken = csrf
 			page.ReturnTo = a.browser.SafeReturnPath(r.URL.RequestURI(), a.path(string(webui.LocationOverview)))
+			page.AutoRefresh = true
 		}
 	}
 	a.render(w, r, status, templateName, page)
 }
 
 func (a *httpApp) render(w http.ResponseWriter, r *http.Request, status int, name string, page webui.Page) {
+	if principal, ok := security.PrincipalFromContext(r.Context()); ok && len(page.Navigation) > 0 {
+		page.ViewerUsername = principal.User.Username
+		if page.CSRFToken == "" {
+			page.CSRFToken = a.browser.CSRFToken(r)
+		}
+	}
 	if err := a.renderer.Render(w, r, status, name, page); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}

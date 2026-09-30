@@ -26,6 +26,13 @@ Channel-qualified subjects identify accounts:
 One owner record can have multiple channel bindings. Legacy owner fields remain
 readable so existing installs continue to work.
 
+The canonical user store also permits multiple `(channel_type, principal)`
+bindings for one user, while each pair belongs to at most one user. Backoffice
+administrators may manage bindings for configured Telegram, Slack Agent, and
+Zulip integrations. A bound principal resolves the user's current role and
+status at authorization time. A verified Telegram event may refresh the
+binding's optional username and first name; neither profile field grants access.
+
 ## Channel Flows
 
 - Telegram consumes owner-bind tokens through `/start <balda_token>` or

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,14 +15,19 @@ import (
 )
 
 type sqlUserStore struct {
-	db        *sql.DB
-	bind      func(string) string
-	begin     func(context.Context) (*sql.Tx, error)
-	wrapError func(string, error) error
-	forUpdate string
+	db           *sql.DB
+	bind         func(string) string
+	begin        func(context.Context) (*sql.Tx, error)
+	wrapError    func(string, error) error
+	forUpdate    string
+	auditTimeKey string
 }
 
 var _ usercmd.Store = (*sqlUserStore)(nil)
+
+// A duplicate form submit can race the browser's new cookies. Treat it as a
+// conflict briefly; an older replay still revokes the session family.
+const refreshConcurrencyWindow = 30 * time.Second
 
 func newSQLiteUserStore(db *sql.DB) usercmd.Store {
 	return &sqlUserStore{
@@ -35,6 +41,7 @@ func newSQLiteUserStore(db *sql.DB) usercmd.Store {
 		wrapError: func(operation string, err error) error {
 			return fmt.Errorf("%s: %w", operation, err)
 		},
+		auditTimeKey: `substr(occurred_at,1,19) || '.' || substr((CASE WHEN substr(occurred_at,20,1)='.' THEN substr(occurred_at,21,instr(occurred_at,'Z')-21) ELSE '' END) || '000000000',1,9)`,
 	}
 }
 
@@ -48,7 +55,8 @@ func newPostgresUserStore(db *sql.DB) usercmd.Store {
 		wrapError: func(operation string, err error) error {
 			return postgresErrorf("%s: %w", operation, err)
 		},
-		forUpdate: " FOR UPDATE",
+		forUpdate:    " FOR UPDATE",
+		auditTimeKey: `substr(occurred_at,1,19) || '.' || substr((CASE WHEN substr(occurred_at,20,1)='.' THEN substr(occurred_at,21,strpos(occurred_at,'Z')-21) ELSE '' END) || '000000000',1,9)`,
 	}
 }
 
@@ -289,7 +297,7 @@ func (s *sqlUserStore) GetUserByNormalizedUsername(ctx context.Context, normaliz
 }
 
 func (s *sqlUserStore) GetUserByBinding(ctx context.Context, channelType, principal string) (usercmd.User, bool, error) {
-	return s.getUser(ctx, `b.channel_type = ? AND b.principal = ?`, channelType, principal)
+	return s.getUser(ctx, `EXISTS (SELECT 1 FROM balda_user_bindings b WHERE b.user_id = u.user_id AND b.channel_type = ? AND b.principal = ?)`, channelType, principal)
 }
 
 func (s *sqlUserStore) getUser(ctx context.Context, predicate string, args ...any) (usercmd.User, bool, error) {
@@ -300,6 +308,9 @@ func (s *sqlUserStore) getUser(ctx context.Context, predicate string, args ...an
 	}
 	if err != nil {
 		return usercmd.User{}, false, s.wrapError("get user", err)
+	}
+	if err := s.loadBindings(ctx, &user); err != nil {
+		return usercmd.User{}, false, err
 	}
 	return user, true, nil
 }
@@ -340,10 +351,18 @@ func (s *sqlUserStore) ListUsers(ctx context.Context, page usercmd.PageRequest) 
 	if err := rows.Err(); err != nil {
 		return usercmd.UserPage{}, s.wrapError("iterate users", err)
 	}
+	if err := rows.Close(); err != nil {
+		return usercmd.UserPage{}, s.wrapError("close listed users", err)
+	}
 	result := usercmd.UserPage{Users: users}
 	if len(users) > limit {
 		result.Users = users[:limit]
 		result.NextAfterID = result.Users[len(result.Users)-1].ID
+	}
+	for i := range result.Users {
+		if err := s.loadBindings(ctx, &result.Users[i]); err != nil {
+			return usercmd.UserPage{}, err
+		}
 	}
 	return result, nil
 }
@@ -412,12 +431,6 @@ func (s *sqlUserStore) AttachBinding(ctx context.Context, claimID string, bindin
 		return usercmd.ErrBindingClaimScope
 	}
 	var count int
-	if err := tx.QueryRowContext(ctx, s.bind(`SELECT COUNT(*) FROM balda_user_bindings WHERE user_id = ?`), binding.UserID).Scan(&count); err != nil {
-		return s.wrapError("check user binding", err)
-	}
-	if count != 0 {
-		return usercmd.ErrBindingAlreadyAssigned
-	}
 	if err := tx.QueryRowContext(ctx, s.bind(`
 		SELECT COUNT(*) FROM balda_user_bindings WHERE channel_type = ? AND principal = ?`),
 		binding.ChannelType, binding.Principal).Scan(&count); err != nil {
@@ -428,10 +441,11 @@ func (s *sqlUserStore) AttachBinding(ctx context.Context, claimID string, bindin
 	}
 	if _, err := tx.ExecContext(ctx, s.bind(`
 		INSERT INTO balda_user_bindings
-			(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+			(binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		binding.ID, binding.UserID, binding.ChannelType, binding.Principal, binding.DisplayName,
-		binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
+		binding.ProviderUsername, binding.ProviderFirstName, binding.Provenance,
+		formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
 	); err != nil {
 		return s.mutationError("insert user binding", err)
 	}
@@ -447,6 +461,115 @@ func (s *sqlUserStore) AttachBinding(ctx context.Context, claimID string, bindin
 		return s.wrapError("commit attach binding", err)
 	}
 	return nil
+}
+
+func (s *sqlUserStore) CreateManagedBinding(ctx context.Context, binding usercmd.Binding, expectedUserVersion uint64, audit usercmd.AuditEvent) error {
+	if binding.ID == "" || binding.UserID == "" || binding.ChannelType == "" || binding.Principal == "" ||
+		binding.CreatedAt.IsZero() || binding.UpdatedAt.IsZero() || expectedUserVersion == 0 {
+		return usercmd.ErrInvalid
+	}
+	if err := usercmd.ValidateAuditEvent(audit); err != nil {
+		return err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return s.wrapError("begin managed binding creation", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.advanceBindingUserVersion(ctx, tx, binding.UserID, expectedUserVersion, binding.UpdatedAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, s.bind(`
+		INSERT INTO balda_user_bindings
+			(binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		binding.ID, binding.UserID, binding.ChannelType, binding.Principal, binding.DisplayName,
+		binding.ProviderUsername, binding.ProviderFirstName, binding.Provenance,
+		formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt)); err != nil {
+		return s.mutationError("create managed binding", err)
+	}
+	if err := s.insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return s.wrapError("commit managed binding creation", err)
+	}
+	return nil
+}
+
+func (s *sqlUserStore) DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit usercmd.AuditEvent) error {
+	if userID == "" || bindingID == "" || expectedUserVersion == 0 {
+		return usercmd.ErrInvalid
+	}
+	if err := usercmd.ValidateAuditEvent(audit); err != nil {
+		return err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return s.wrapError("begin binding deletion", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ownerID string
+	err = tx.QueryRowContext(ctx, s.bind(`SELECT user_id FROM balda_user_bindings WHERE binding_id = ?`)+s.forUpdate, bindingID).Scan(&ownerID)
+	if errors.Is(err, sql.ErrNoRows) || ownerID != userID {
+		return usercmd.ErrNotFound
+	}
+	if err != nil {
+		return s.wrapError("load binding for deletion", err)
+	}
+	if err := s.advanceBindingUserVersion(ctx, tx, userID, expectedUserVersion, audit.OccurredAt); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, s.bind(`DELETE FROM balda_user_bindings WHERE binding_id = ? AND user_id = ?`), bindingID, userID)
+	if err != nil {
+		return s.mutationError("delete binding", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return s.wrapError("inspect deleted binding", err)
+	} else if affected != 1 {
+		return usercmd.ErrConflict
+	}
+	if err := s.insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return s.wrapError("commit binding deletion", err)
+	}
+	return nil
+}
+
+func (s *sqlUserStore) advanceBindingUserVersion(ctx context.Context, tx *sql.Tx, userID string, expectedVersion uint64, updatedAt time.Time) error {
+	result, err := tx.ExecContext(ctx, s.bind(`
+		UPDATE balda_users SET version = version + 1, updated_at = ?
+		WHERE user_id = ? AND version = ?`), formatUserTime(updatedAt), userID, expectedVersion)
+	if err != nil {
+		return s.mutationError("advance binding user version", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return s.wrapError("inspect binding user version", err)
+	} else if affected != 1 {
+		return usercmd.ErrConflict
+	}
+	return nil
+}
+
+func (s *sqlUserStore) UpdateTelegramBindingProfile(ctx context.Context, principal, username, firstName string, updatedAt time.Time) (bool, error) {
+	if strings.TrimSpace(principal) == "" || updatedAt.IsZero() {
+		return false, usercmd.ErrInvalid
+	}
+	result, err := s.db.ExecContext(ctx, s.bind(`
+		UPDATE balda_user_bindings SET provider_username = ?, provider_first_name = ?, updated_at = ?
+		WHERE channel_type = 'telegram' AND principal = ?
+			AND (provider_username <> ? OR provider_first_name <> ?)`),
+		username, firstName, formatUserTime(updatedAt), principal, username, firstName)
+	if err != nil {
+		return false, s.mutationError("update telegram binding profile", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, s.wrapError("inspect telegram binding profile update", err)
+	}
+	return affected == 1, nil
 }
 
 func (s *sqlUserStore) CreateSession(ctx context.Context, family usercmd.SessionFamily, audit usercmd.AuditEvent) error {
@@ -541,7 +664,8 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 		return usercmd.SessionPage{}, err
 	}
 	rows, err := s.db.QueryContext(ctx, s.bind(`
-		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version
+		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version,
+			device_label, connection_peer
 		FROM balda_backoffice_sessions
 		WHERE user_id = ? AND session_id > ? ORDER BY session_id LIMIT ?`), userID, page.AfterID, limit+1)
 	if err != nil {
@@ -550,23 +674,9 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 	defer func() { _ = rows.Close() }()
 	summaries := make([]usercmd.SessionSummary, 0, limit+1)
 	for rows.Next() {
-		var summary usercmd.SessionSummary
-		var assurance, createdAt, lastSeenAt, expiresAt, revokedAt string
-		if err := rows.Scan(&summary.ID, &assurance, &createdAt, &lastSeenAt, &expiresAt, &revokedAt, &summary.Version); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("scan user session", err)
-		}
-		summary.Assurance = usercmd.SessionAssurance(assurance)
-		if summary.CreatedAt, err = parseUserTime(createdAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session created time", err)
-		}
-		if summary.LastSeenAt, err = parseUserTime(lastSeenAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session last seen time", err)
-		}
-		if summary.ExpiresAt, err = parseUserTime(expiresAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session expiry", err)
-		}
-		if summary.RevokedAt, err = parseOptionalUserTime(revokedAt); err != nil {
-			return usercmd.SessionPage{}, s.wrapError("parse session revocation", err)
+		summary, scanErr := s.scanSessionSummary(rows)
+		if scanErr != nil {
+			return usercmd.SessionPage{}, scanErr
 		}
 		summaries = append(summaries, summary)
 	}
@@ -579,6 +689,102 @@ func (s *sqlUserStore) ListSessions(ctx context.Context, userID string, page use
 		result.NextAfterID = result.Sessions[len(result.Sessions)-1].ID
 	}
 	return result, nil
+}
+
+// ListActiveSessions returns current browser families ordered by recorded
+// sign-in or refresh time. The cursor remains valid when its family is revoked.
+func (s *sqlUserStore) ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error) {
+	limit, err := pageLimit(page.Limit)
+	if err != nil || now.IsZero() {
+		return usercmd.SessionPage{}, usercmd.ErrInvalid
+	}
+	var cursorTime time.Time
+	if page.AfterID != "" {
+		var raw string
+		err := s.db.QueryRowContext(ctx, s.bind(`SELECT last_seen_at FROM balda_backoffice_sessions WHERE user_id = ? AND session_id = ?`), userID, page.AfterID).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return usercmd.SessionPage{}, usercmd.ErrInvalid
+		}
+		if err != nil {
+			return usercmd.SessionPage{}, s.wrapError("load active session cursor", err)
+		}
+		cursorTime, err = parseUserTime(raw)
+		if err != nil {
+			return usercmd.SessionPage{}, s.wrapError("parse active session cursor", err)
+		}
+	}
+	// A one-second SQL prefilter excludes old history without relying on
+	// variable-width RFC3339Nano text to decide the precise expiry boundary.
+	cutoff := formatUserTime(now.UTC().Add(-time.Second).Truncate(time.Second))
+	rows, err := s.db.QueryContext(ctx, s.bind(`
+		SELECT session_id, assurance, created_at, last_seen_at, refresh_expires_at, revoked_at, version,
+			device_label, connection_peer
+		FROM balda_backoffice_sessions
+		WHERE user_id = ? AND revoked_at = '' AND refresh_expires_at > ?`), userID, cutoff)
+	if err != nil {
+		return usercmd.SessionPage{}, s.wrapError("list active sessions", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var sessions []usercmd.SessionSummary
+	for rows.Next() {
+		summary, scanErr := s.scanSessionSummary(rows)
+		if scanErr != nil {
+			return usercmd.SessionPage{}, scanErr
+		}
+		if !now.Before(summary.ExpiresAt) ||
+			(page.AfterID != "" && ((page.AfterID != page.CurrentID && summary.ID == page.CurrentID) ||
+				(page.AfterID != page.CurrentID && (summary.LastSeenAt.After(cursorTime) ||
+					(summary.LastSeenAt.Equal(cursorTime) && summary.ID >= page.AfterID))))) {
+			continue
+		}
+		if page.AfterID == page.CurrentID && summary.ID == page.CurrentID {
+			continue
+		}
+		sessions = append(sessions, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return usercmd.SessionPage{}, s.wrapError("iterate active sessions", err)
+	}
+	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].ID == page.CurrentID || sessions[j].ID == page.CurrentID {
+			return sessions[i].ID == page.CurrentID
+		}
+		if sessions[i].LastSeenAt.Equal(sessions[j].LastSeenAt) {
+			return sessions[i].ID > sessions[j].ID
+		}
+		return sessions[i].LastSeenAt.After(sessions[j].LastSeenAt)
+	})
+	result := usercmd.SessionPage{Sessions: sessions}
+	if len(sessions) > limit {
+		result.Sessions = sessions[:limit]
+		result.NextAfterID = result.Sessions[len(result.Sessions)-1].ID
+	}
+	return result, nil
+}
+
+func (s *sqlUserStore) scanSessionSummary(rows *sql.Rows) (usercmd.SessionSummary, error) {
+	var summary usercmd.SessionSummary
+	var assurance, createdAt, lastSeenAt, expiresAt, revokedAt string
+	var deviceLabel, connectionPeer sql.NullString
+	if err := rows.Scan(&summary.ID, &assurance, &createdAt, &lastSeenAt, &expiresAt, &revokedAt, &summary.Version, &deviceLabel, &connectionPeer); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("scan user session", err)
+	}
+	summary.Assurance = usercmd.SessionAssurance(assurance)
+	summary.DeviceLabel, summary.ConnectionPeer = deviceLabel.String, connectionPeer.String
+	var err error
+	if summary.CreatedAt, err = parseUserTime(createdAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session created time", err)
+	}
+	if summary.LastSeenAt, err = parseUserTime(lastSeenAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session last seen time", err)
+	}
+	if summary.ExpiresAt, err = parseUserTime(expiresAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session expiry", err)
+	}
+	if summary.RevokedAt, err = parseOptionalUserTime(revokedAt); err != nil {
+		return usercmd.SessionSummary{}, s.wrapError("parse session revocation", err)
+	}
+	return summary, nil
 }
 
 // GetSession loads one browser session family by its stable identifier.
@@ -610,6 +816,12 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 		return usercmd.RefreshRotationUnavailable, nil
 	}
 	if loaded.token.State == usercmd.RefreshTokenStateUsed && loaded.family.RevokedAt.IsZero() {
+		if elapsed := rotation.RotatedAt.Sub(loaded.token.UsedAt); elapsed >= 0 && elapsed <= refreshConcurrencyWindow {
+			if err := tx.Commit(); err != nil {
+				return "", s.wrapError("commit concurrent refresh lookup", err)
+			}
+			return usercmd.RefreshRotationConcurrent, nil
+		}
 		if err := usercmd.ValidateAuditEvent(rotation.ReplayAudit); err != nil {
 			return "", err
 		}
@@ -767,11 +979,26 @@ func (s *sqlUserStore) ListAuditEvents(ctx context.Context, page usercmd.PageReq
 	if err != nil {
 		return usercmd.AuditPage{}, err
 	}
+	predicate := ""
+	args := make([]any, 0, 4)
+	if page.AfterID != "" {
+		var cursorTime string
+		err := s.db.QueryRowContext(ctx, s.bind(`SELECT `+s.auditTimeKey+` FROM balda_security_audit_events WHERE event_id = ?`), page.AfterID).Scan(&cursorTime)
+		if errors.Is(err, sql.ErrNoRows) {
+			return usercmd.AuditPage{}, usercmd.ErrInvalid
+		}
+		if err != nil {
+			return usercmd.AuditPage{}, s.wrapError("load audit cursor", err)
+		}
+		predicate = `WHERE (` + s.auditTimeKey + `) < ? OR ((` + s.auditTimeKey + `) = ? AND event_id < ?)`
+		args = append(args, cursorTime, cursorTime, page.AfterID)
+	}
+	args = append(args, limit+1)
 	rows, err := s.db.QueryContext(ctx, s.bind(`
 		SELECT event_id, action, outcome, actor_user_id, actor_session_id,
 			target_type, target_id, reason, request_id, source, correlation_id, occurred_at
 		FROM balda_security_audit_events
-		WHERE event_id > ? ORDER BY event_id LIMIT ?`), page.AfterID, limit+1)
+		`+predicate+` ORDER BY (`+s.auditTimeKey+`) DESC, event_id DESC LIMIT ?`), args...)
 	if err != nil {
 		return usercmd.AuditPage{}, s.wrapError("list audit events", err)
 	}
@@ -872,10 +1099,11 @@ func (s *sqlUserStore) ApplyUserMigration(ctx context.Context, migration usercmd
 			binding := *entry.Binding
 			if _, err := tx.ExecContext(ctx, s.bind(`
 				INSERT INTO balda_user_bindings
-					(binding_id, user_id, channel_type, principal, display_name, provenance, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+					(binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 				binding.ID, binding.UserID, binding.ChannelType, binding.Principal,
-				binding.DisplayName, binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
+				binding.DisplayName, binding.ProviderUsername, binding.ProviderFirstName,
+				binding.Provenance, formatUserTime(binding.CreatedAt), formatUserTime(binding.UpdatedAt),
 			); err != nil {
 				return false, s.mutationError("insert migrated binding", err)
 			}
@@ -945,10 +1173,12 @@ const userSelectSQL = `
 		u.user_id, u.display_name, u.username, u.normalized_username, u.status, u.role,
 		u.credential_state, u.must_change, u.credential_version, u.is_primary, u.version,
 		u.created_at, u.updated_at,
-		b.binding_id, b.user_id, b.channel_type, b.principal, b.display_name,
+		b.binding_id, b.user_id, b.channel_type, b.principal, b.display_name, b.provider_username, b.provider_first_name,
 		b.provenance, b.created_at, b.updated_at
 	FROM balda_users u
-	LEFT JOIN balda_user_bindings b ON b.user_id = u.user_id`
+	LEFT JOIN balda_user_bindings b ON b.user_id = u.user_id AND b.binding_id = (
+		SELECT binding_id FROM balda_user_bindings WHERE user_id = u.user_id ORDER BY channel_type, principal, binding_id LIMIT 1
+	)`
 
 type userRowScanner interface {
 	Scan(dest ...any) error
@@ -964,12 +1194,13 @@ func scanUser(scanner userRowScanner) (usercmd.User, error) {
 	var status, role, credentialState, createdAt, updatedAt string
 	var mustChange, primary int
 	var bindingID, bindingUserID, channelType, principal, bindingDisplayName sql.NullString
+	var providerUsername, providerFirstName sql.NullString
 	var provenance, bindingCreatedAt, bindingUpdatedAt sql.NullString
 	err := scanner.Scan(
 		&user.ID, &user.DisplayName, &user.Username, &user.NormalizedUsername, &status, &role,
 		&credentialState, &mustChange, &user.Credential.Version, &primary, &user.Version,
 		&createdAt, &updatedAt,
-		&bindingID, &bindingUserID, &channelType, &principal, &bindingDisplayName,
+		&bindingID, &bindingUserID, &channelType, &principal, &bindingDisplayName, &providerUsername, &providerFirstName,
 		&provenance, &bindingCreatedAt, &bindingUpdatedAt,
 	)
 	if err != nil {
@@ -989,7 +1220,8 @@ func scanUser(scanner userRowScanner) (usercmd.User, error) {
 	if bindingID.Valid {
 		binding := usercmd.Binding{
 			ID: bindingID.String, UserID: bindingUserID.String, ChannelType: channelType.String,
-			Principal: principal.String, DisplayName: bindingDisplayName.String, Provenance: provenance.String,
+			Principal: principal.String, DisplayName: bindingDisplayName.String,
+			ProviderUsername: providerUsername.String, ProviderFirstName: providerFirstName.String, Provenance: provenance.String,
 		}
 		if binding.CreatedAt, err = parseUserTime(bindingCreatedAt.String); err != nil {
 			return usercmd.User{}, err
@@ -998,8 +1230,45 @@ func scanUser(scanner userRowScanner) (usercmd.User, error) {
 			return usercmd.User{}, err
 		}
 		user.Binding = &binding
+		user.Bindings = []usercmd.Binding{binding}
 	}
 	return user, nil
+}
+
+func (s *sqlUserStore) loadBindings(ctx context.Context, user *usercmd.User) error {
+	rows, err := s.db.QueryContext(ctx, s.bind(`
+		SELECT binding_id, user_id, channel_type, principal, display_name, provider_username, provider_first_name, provenance, created_at, updated_at
+		FROM balda_user_bindings WHERE user_id = ? ORDER BY channel_type, principal, binding_id`), user.ID)
+	if err != nil {
+		return s.wrapError("load user bindings", err)
+	}
+	defer func() { _ = rows.Close() }()
+	user.Bindings = nil
+	for rows.Next() {
+		var binding usercmd.Binding
+		var createdAt, updatedAt string
+		if err := rows.Scan(&binding.ID, &binding.UserID, &binding.ChannelType, &binding.Principal,
+			&binding.DisplayName, &binding.ProviderUsername, &binding.ProviderFirstName,
+			&binding.Provenance, &createdAt, &updatedAt); err != nil {
+			return s.wrapError("scan user binding", err)
+		}
+		if binding.CreatedAt, err = parseUserTime(createdAt); err != nil {
+			return s.wrapError("parse binding creation time", err)
+		}
+		if binding.UpdatedAt, err = parseUserTime(updatedAt); err != nil {
+			return s.wrapError("parse binding update time", err)
+		}
+		user.Bindings = append(user.Bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return s.wrapError("iterate user bindings", err)
+	}
+	if len(user.Bindings) == 0 {
+		user.Binding = nil
+	} else {
+		user.Binding = &user.Bindings[0]
+	}
+	return nil
 }
 
 func (s *sqlUserStore) insertAudit(ctx context.Context, tx *sql.Tx, audit usercmd.AuditEvent) error {
@@ -1038,12 +1307,13 @@ func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family u
 			session_id, user_id, assurance, credential_version,
 			access_selector, access_verifier_digest, csrf_verifier_digest,
 			created_at, last_seen_at, access_expires_at, refresh_expires_at,
-			revoked_at, revocation_reason, version
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			revoked_at, revocation_reason, version, device_label, connection_peer
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		family.ID, family.UserID, family.Assurance, family.CredentialVersion,
 		family.Access.Selector, family.Access.VerifierDigest, family.CSRFVerifierDigest,
 		formatUserTime(family.CreatedAt), formatUserTime(family.LastSeenAt), formatUserTime(family.Access.ExpiresAt),
 		formatUserTime(family.RefreshExpiresAt), formatOptionalUserTime(family.RevokedAt), family.RevocationReason, family.Version,
+		nullableSessionMetadata(family.DeviceLabel), nullableSessionMetadata(family.ConnectionPeer),
 	); err != nil {
 		return s.mutationError("insert session family", err)
 	}
@@ -1058,16 +1328,17 @@ func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family u
 func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, predicate string, args ...any) (usercmd.SessionFamily, bool, error) {
 	var family usercmd.SessionFamily
 	var assurance, createdAt, lastSeenAt, accessExpiresAt, refreshExpiresAt, revokedAt string
+	var deviceLabel, connectionPeer sql.NullString
 	err := q.QueryRowContext(ctx, s.bind(`
 		SELECT session_id, user_id, assurance, credential_version,
 			access_selector, access_verifier_digest, csrf_verifier_digest,
 			created_at, last_seen_at, access_expires_at, refresh_expires_at,
-			revoked_at, revocation_reason, version
+			revoked_at, revocation_reason, version, device_label, connection_peer
 		FROM balda_backoffice_sessions WHERE `+predicate), args...).Scan(
 		&family.ID, &family.UserID, &assurance, &family.CredentialVersion,
 		&family.Access.Selector, &family.Access.VerifierDigest, &family.CSRFVerifierDigest,
 		&createdAt, &lastSeenAt, &accessExpiresAt, &refreshExpiresAt,
-		&revokedAt, &family.RevocationReason, &family.Version,
+		&revokedAt, &family.RevocationReason, &family.Version, &deviceLabel, &connectionPeer,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return usercmd.SessionFamily{}, false, nil
@@ -1076,6 +1347,7 @@ func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, pre
 		return usercmd.SessionFamily{}, false, s.wrapError("load session family", err)
 	}
 	family.Assurance = usercmd.SessionAssurance(assurance)
+	family.DeviceLabel, family.ConnectionPeer = deviceLabel.String, connectionPeer.String
 	if family.CreatedAt, err = parseUserTime(createdAt); err != nil {
 		return usercmd.SessionFamily{}, false, s.wrapError("parse session creation", err)
 	}
@@ -1270,6 +1542,13 @@ func intBool(value int) bool {
 
 func formatUserTime(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func nullableSessionMetadata(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func formatOptionalUserTime(value time.Time) string {

@@ -96,8 +96,8 @@ go build -trimpath -o ./bin/balda ./cmd/balda
 ./bin/balda validate
 ```
 
-For a fresh database, `init` creates the `superuser` administrator and prints its password
-once. Store the output securely, then start:
+For a fresh database, `init` creates the administrator with username and display
+name `superuser` and prints its password once. Store the output securely, then start:
 
 ```bash
 ./bin/balda start
@@ -134,6 +134,16 @@ attach the manifest to a ticket. Migrated bot bindings and roles become
 canonical immediately; a temporary browser credential can reach only password
 replacement and logout until it is changed.
 
+Legacy conversion copies a Telegram collaborator's stored username and first
+name into separate optional binding fields. Legacy owner records contain neither
+field, so conversion leaves both empty. After a verified Telegram message or
+command from a bound principal, Balda refreshes those fields from Telegram.
+The schema upgrade backfills already-converted Telegram collaborator bindings
+from retained legacy collaborator rows. If those rows are unavailable, the
+fields stay empty until a verified event arrives.
+The numeric Telegram principal remains the authorization key; provider profile
+fields never replace the Backoffice username or display name.
+
 User conversion is transactional and idempotent. A collision or interrupted
 precondition fails instead of silently merging users. After it succeeds there
 is no legacy runtime fallback. Rollback means restoring the pre-migration
@@ -143,19 +153,21 @@ or re-enable legacy reads.
 ## Browser sessions and refresh rotation
 
 Successful login creates a short-lived opaque access token and a longer-lived
-refresh family. When access expires, Backoffice renders a continuation page;
-the user submits its native POST form to rotate the single-use refresh token.
-The server consumes generation N, creates generation N+1, replaces both
-cookies, and preserves the family's original absolute expiry. The browser does
-not silently replay the request that encountered expiry, especially an unsafe
-mutation.
+refresh family. When access expires, the browser submits a guarded refresh form
+automatically and returns to the page the user was opening. A manual form
+remains available when JavaScript is disabled. The server consumes generation
+N, creates generation N+1, replaces both cookies, and preserves the family's
+original absolute expiry. If the host clock moves backward, rotation timestamps
+never precede the stored last activity or token issuance time; this does not
+extend the absolute refresh deadline. The browser does not replay the request that
+encountered expiry, especially an unsafe mutation.
 
-Submitting an already consumed refresh token is treated as verified replay.
-Backoffice revokes the whole family and requires a new username/password login.
-A genuine duplicate submit can therefore sign the user out; this is the
-intentional fail-closed tradeoff. Invalid, expired, credential-stale, disabled,
-or administratively revoked families also require re-login and receive only a
-generic browser error.
+A duplicate refresh within 30 seconds of rotation receives a conflict without
+clearing cookies or revoking the family; another browser request may already
+have installed the new pair. Reuse of an older consumed token is treated as
+verified replay: Backoffice revokes the family and requires a new login.
+Invalid, expired, credential-stale, disabled, or administratively revoked
+families also require re-login.
 
 Access administrators can revoke another browser family. Account owners can
 revoke their own families, but revoking the current one requires explicit
@@ -163,6 +175,20 @@ confirmation. Family revocation invalidates the current access token and every
 refresh generation in that lineage. Password reset, password replacement, and
 user disablement revoke all affected families rather than leaving a refresh
 credential that could restore access.
+
+Account and Access detail list active browser families only. When viewing your
+own sessions, the current family appears first; other active families are in
+descending order of their last recorded sign-in or refresh. The
+**Older active sessions** link continues
+through further active families; historical revoked and expired rows remain in
+storage for authorized investigation but do not crowd the default list.
+**Last sign-in or refresh** is not a record of every page visit. The session
+card shows a short browser/platform label when the request User-Agent can be
+recognized; old or unrecognized sessions show an unknown device. The
+**Connection peer** is the direct socket address and may be a reverse proxy.
+Forwarded IP headers are ignored because Backoffice has no configured trusted
+proxy chain. Neither field is used to authorize or identify a user, and the
+raw User-Agent and token values are never displayed.
 
 ## Operations, recovery, and QA
 
@@ -175,9 +201,29 @@ credential that could restore access.
   schema, data, sequences, and Goose
   migration history.
 - Access is administrator-only. Account and Overview are available to active
-  administrators and operators; Audit is administrator-only. The optional
-  transport binding is read-only, and committed role/status changes immediately
-  affect bot authorization.
+  administrators and operators; Audit is administrator-only. Account places
+  **Change password** before profile details. A successful change creates a
+  fresh browser session and revokes previous access and refresh credentials.
+  An administrator may attach and remove multiple chat bindings per user from
+  Access. The add form offers only configured Telegram, Slack Agent
+  (`slackagent`), and Zulip integrations; generic webhooks are not user
+  bindings. Removal requires confirmation of the affected principal's bot
+  access. Other bindings, the browser account, and browser sessions remain.
+  Committed role/status changes immediately affect bot authorization for every
+  attached principal. Telegram bindings show the provider username and first
+  name separately, with empty values when the provider has not supplied them.
+- Access opens with the user list and filters for name, username, role, and
+  status. User detail separates profile, chat bindings, credential reset, and
+  browser sessions. Audit lists newest events first by event time, then stable
+  ID, with actor, action, target, outcome, and filters that persist on the next
+  page. Technical IDs remain available in event details. Overview lists
+  configured integrations only; a configured card makes no claim about live
+  connectivity or health.
+- A terminal refresh failure offers sign-in as the primary action. A
+  concurrent-refresh conflict offers a safe page reopen because another
+  request may already have installed new cookies. Failed native and HTMX forms
+  retain their HTTP status and show an actionable message. Ordinary links and
+  forms remain available without JavaScript.
 - Keep `qa_ui: false` in production. A private development instance may enable
   the same synthetic previews under `/qa/ui/`, but the preferred local workflow
   uses `balda backoffice qa serve` without configuration or database access.
@@ -212,6 +258,20 @@ The pinned stack is:
 | Bootstrap Icons | 1.13.1 | Local icons |
 | Vanilla JavaScript | Built in | HTMX lifecycle, focus, and sidebar behavior only |
 
+The shell adapts the AlaTooGuide Backoffice layout: a utility top bar with the
+current authenticated username, Account and native CSRF-protected sign-out;
+a branded permission-derived sidebar; a shared content frame; and a footer
+in normal grid flow. The viewer identity is independent of an inspected user.
+Desktop collapse hides the sidebar and expands content. Mobile navigation uses
+an overlay with backdrop, Escape and focus containment; ordinary menu links
+remain available without JavaScript.
+
+The theme is explicitly dark on console, authentication and recovery pages.
+`data-lte-color-mode="off"` disables OS-driven mutation. Shared CSS tokens and
+primitives own surfaces, headings, controls, statuses, cards, tables, empty and
+danger states. Review the synthetic component and full-layout examples before
+changing runtime page layouts; see the UI review runbook.
+
 Go templates are the only source of HTML. JavaScript must not assemble HTML.
 Every screen must work without JavaScript through ordinary links and forms.
 Every HTMX interaction must preserve an ordinary link or form as its fallback.
@@ -227,6 +287,9 @@ fonts. Node/npm as a frontend build or runtime dependency, an SPA router, a
 separate frontend development server, and CDN-hosted runtime assets are
 prohibited. The local QA preview is served by the same Go binary and uses the
 same embedded templates and assets.
+Application CSS and JavaScript use content-versioned asset URLs so a browser or
+edge cache receives the matching files after a deployment. Static asset responses
+use immutable caching; a change to either application file changes its URL.
 
 Every vendored frontend dependency must be pinned with its exact version,
 license, and SHA-256 digest in
@@ -251,7 +314,8 @@ The fragment contains only:
 
 Every other request, including an HTMX history restoration request, receives a
 complete HTML document. Every rendered response contains exactly one
-`main-content` element.
+`main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 
 Use a buffered HTML writer. Do not commit response headers or status until the
 template has rendered successfully.
@@ -284,7 +348,8 @@ Add pages in this order:
 5. Render through a buffered HTML writer.
 6. Add the template to the explicit allowlist under
    `internal/apps/backoffice/internal/webui`.
-7. Render exactly one `main-content` element.
+7. Render exactly one `main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 8. Do not assemble HTML with JavaScript.
 9. Preserve an ordinary link or form for every HTMX operation.
 10. Verify the full page, fragment, non-JavaScript fallback, canonical URL, and

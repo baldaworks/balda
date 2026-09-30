@@ -29,6 +29,8 @@ const (
 var (
 	// ErrUnauthenticated is the uniform outward error for unusable browser credentials.
 	ErrUnauthenticated = errors.New("authentication failed")
+	// ErrRefreshConcurrent reports a duplicate refresh while another request updates cookies.
+	ErrRefreshConcurrent = errors.New("refresh already in progress")
 	// ErrForbidden reports valid authentication without sufficient assurance or CSRF proof.
 	ErrForbidden = errors.New("request forbidden")
 )
@@ -46,7 +48,7 @@ type store interface {
 	GetSession(ctx context.Context, sessionID string) (usercmd.SessionFamily, bool, error)
 	GetSessionByAccessSelector(ctx context.Context, selector string) (usercmd.AccessSession, bool, error)
 	GetSessionByRefreshSelector(ctx context.Context, selector string) (usercmd.RefreshSession, bool, error)
-	ListSessions(ctx context.Context, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error)
+	ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error)
 	RotateRefresh(ctx context.Context, rotation usercmd.RefreshRotation) (usercmd.RefreshRotationResult, error)
 	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error
 	ChangeCredentialAndCreateSession(ctx context.Context, change usercmd.CredentialSessionChange) error
@@ -187,7 +189,15 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 	if subtle.ConstantTimeCompare(session.Family.CSRFVerifierDigest, digest(csrfToken)) != 1 {
 		return Credentials{}, ErrForbidden
 	}
+	// Wall-clock corrections must not move a rotation before persisted session
+	// activity. The absolute family deadline remains unchanged.
 	now := s.now().UTC()
+	if now.Before(session.Family.LastSeenAt) {
+		now = session.Family.LastSeenAt
+	}
+	if now.Before(session.Token.IssuedAt) {
+		now = session.Token.IssuedAt
+	}
 	if !now.Before(session.Family.RefreshExpiresAt) || !now.Add(s.config.AccessTTL).Before(session.Family.RefreshExpiresAt) {
 		return Credentials{}, ErrUnauthenticated
 	}
@@ -214,6 +224,9 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 		return Credentials{}, fmt.Errorf("rotate refresh credential: %w", err)
 	}
 	if result != usercmd.RefreshRotationSucceeded {
+		if result == usercmd.RefreshRotationConcurrent {
+			return Credentials{}, ErrRefreshConcurrent
+		}
 		return Credentials{}, ErrUnauthenticated
 	}
 	return Credentials{
@@ -239,8 +252,8 @@ func (s *Service) Logout(ctx context.Context, rawAccessToken string) error {
 	return nil
 }
 
-// ListSessions returns secret-free session summaries for the current user or,
-// for administrators, another canonical user.
+// ListSessions returns active, secret-free session summaries for the current
+// user or, for administrators, another canonical user.
 func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID string, page usercmd.PageRequest) (usercmd.SessionPage, error) {
 	principal, err := s.requireNormal(ctx, rawAccessToken)
 	if err != nil {
@@ -253,7 +266,10 @@ func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID strin
 	if targetUserID != principal.User.ID && principal.User.Role != usercmd.RoleAdministrator {
 		return usercmd.SessionPage{}, ErrForbidden
 	}
-	pageResult, err := s.store.ListSessions(ctx, targetUserID, page)
+	if targetUserID == principal.User.ID {
+		page.CurrentID = principal.FamilyID
+	}
+	pageResult, err := s.store.ListActiveSessions(ctx, targetUserID, page, s.now().UTC())
 	if err != nil {
 		return usercmd.SessionPage{}, fmt.Errorf("list browser sessions: %w", err)
 	}
@@ -319,7 +335,7 @@ func (s *Service) ReplacePassword(ctx context.Context, rawAccessToken string, cu
 	updatedUser.Credential = credential
 	updatedUser.Version++
 	updatedUser.UpdatedAt = now
-	credentials, family, err := s.newSession(updatedUser, usercmd.SessionAssuranceNormal, now)
+	credentials, family, err := s.newSession(ctx, updatedUser, usercmd.SessionAssuranceNormal, now)
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -353,7 +369,7 @@ func (s *Service) requireNormal(ctx context.Context, rawAccessToken string) (Pri
 }
 
 func (s *Service) issueSession(ctx context.Context, user usercmd.User, assurance usercmd.SessionAssurance, now time.Time) (Credentials, error) {
-	credentials, family, err := s.newSession(user, assurance, now)
+	credentials, family, err := s.newSession(ctx, user, assurance, now)
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -366,7 +382,7 @@ func (s *Service) issueSession(ctx context.Context, user usercmd.User, assurance
 	return credentials, nil
 }
 
-func (s *Service) newSession(user usercmd.User, assurance usercmd.SessionAssurance, now time.Time) (Credentials, usercmd.SessionFamily, error) {
+func (s *Service) newSession(ctx context.Context, user usercmd.User, assurance usercmd.SessionAssurance, now time.Time) (Credentials, usercmd.SessionFamily, error) {
 	accessRaw, access, err := s.newAccess(now.Add(s.config.AccessTTL))
 	if err != nil {
 		return Credentials{}, usercmd.SessionFamily{}, err
@@ -385,6 +401,7 @@ func (s *Service) newSession(user usercmd.User, assurance usercmd.SessionAssuran
 		Access: access, CSRFVerifierDigest: digest(csrfRaw), CreatedAt: now, LastSeenAt: now,
 		RefreshExpiresAt: refreshExpiresAt, Version: 1, RefreshTokens: []usercmd.RefreshToken{refresh},
 	}
+	family.DeviceLabel, family.ConnectionPeer = sessionClientFromContext(ctx)
 	credentials := Credentials{
 		AccessToken: accessRaw, RefreshToken: refreshRaw, CSRFToken: csrfRaw,
 		AccessExpiresAt: access.ExpiresAt, RefreshExpiresAt: refreshExpiresAt, Assurance: assurance,

@@ -15,19 +15,36 @@ func TestBootstrapCreatesFreshPrimaryAdministrator(t *testing.T) {
 	store := &fakeBootstrapStore{}
 	service := newTestBootstrapService(t, store)
 	result, err := service.Bootstrap(t.Context(), BootstrapInput{
-		Username: "Admin", DisplayName: "Primary Administrator", Password: []byte("correct horse battery staple"),
+		Password: []byte("correct horse battery staple"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Created || result.UserID == "" || result.Username != "Admin" {
+	if !result.Created || result.UserID == "" || result.Username != usercmd.PrimaryUsername {
 		t.Fatalf("Bootstrap() = %+v", result)
 	}
-	if len(store.users) != 1 || !store.users[0].Primary || store.users[0].Role != usercmd.RoleAdministrator {
+	if len(store.users) != 1 || !store.users[0].Primary || store.users[0].Role != usercmd.RoleAdministrator || store.users[0].DisplayName != usercmd.PrimaryUsername {
 		t.Fatalf("created users = %+v", store.users)
 	}
 	if store.secret.PasswordHash != "hash:28" || store.audit.TargetID != result.UserID {
 		t.Fatalf("stored secret/audit = %+v / %+v", store.secret, store.audit)
+	}
+}
+
+func TestBootstrapRejectsDifferentPrimaryIdentity(t *testing.T) {
+	t.Parallel()
+	for _, input := range []BootstrapInput{
+		{Username: "admin", Password: []byte("correct horse battery staple")},
+		{DisplayName: "Administrator", Password: []byte("correct horse battery staple")},
+	} {
+		store := &fakeBootstrapStore{}
+		service := newTestBootstrapService(t, store)
+		if _, err := service.Bootstrap(t.Context(), input); !errors.Is(err, usercmd.ErrInvalid) {
+			t.Fatalf("Bootstrap(username=%q, displayName=%q) error = %v, want invalid", input.Username, input.DisplayName, err)
+		}
+		if len(store.users) != 0 {
+			t.Fatalf("Bootstrap(username=%q, displayName=%q) created users = %+v", input.Username, input.DisplayName, store.users)
+		}
 	}
 }
 

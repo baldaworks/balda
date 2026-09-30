@@ -1,9 +1,4 @@
-{{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
-  <div class="container-fluid py-3">
-    <h1>Backoffice UI previews</h1>
-    <p class="text-body-secondary">Synthetic screens for visual review. Forms cannot change application data.</p>
-    <div class="list-group" aria-label="QA previews">
-      {{range .Gallery}}<a class="list-group-item list-group-item-action" href="{{path .Path}}" hx-boost="true" hx-target="#main-content" hx-push-url="true">{{.Label}}</a>{{end}}
-    </div>
-  </div>
-</main>{{end}}
+{{define "content"}}<main id="main-content" class="app-content" tabindex="-1"><div class="container-fluid">
+<header class="content-header"><div><p class="section-kicker">Design review</p><h1>Backoffice UI previews</h1><p>Synthetic screens for visual review. Forms cannot change application data.</p></div></header>
+<div class="card-grid" aria-label="QA previews">{{range .Gallery}}<article class="card qa-screen-card"><div class="card-body"><h2 class="h5">{{.Label}}</h2><a href="{{path .Path}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Open preview <i class="bi bi-arrow-right" aria-hidden="true"></i></a></div></article>{{end}}</div>
+</div></main>{{end}}

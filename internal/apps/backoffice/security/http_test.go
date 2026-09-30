@@ -196,6 +196,23 @@ func TestBrowserAuthenticationFailuresAreGenericAndRefreshClearsFamilyCookies(t 
 	assertClearedCookie(t, refreshResponse.Result().Cookies(), RefreshCookieName, RefreshPath)
 }
 
+func TestBrowserConcurrentRefreshPreservesNewerCookies(t *testing.T) {
+	t.Parallel()
+	service := &fakeBrowserService{
+		refresh: func(context.Context, string, string) (Credentials, error) {
+			return Credentials{}, ErrRefreshConcurrent
+		},
+	}
+	browser := newHTTPTestBrowser(t, service, false, 0)
+	request := mutationRequest(http.MethodPost, RefreshPath, url.Values{"csrf_token": {"csrf-proof"}})
+	request.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: "old.refresh"})
+	response := httptest.NewRecorder()
+	browser.Refresh(response, request)
+	if response.Code != http.StatusConflict || len(response.Result().Cookies()) != 0 {
+		t.Fatalf("concurrent refresh = status %d, cookies %+v", response.Code, response.Result().Cookies())
+	}
+}
+
 func TestBrowserLogoutRequiresSessionCSRFAndClearsCredentials(t *testing.T) {
 	t.Parallel()
 	validated := false
