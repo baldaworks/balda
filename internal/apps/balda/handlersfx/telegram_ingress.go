@@ -11,6 +11,7 @@ import (
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/controlcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
@@ -20,6 +21,7 @@ import (
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/welcome"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
@@ -45,6 +47,8 @@ const (
 var serverActorAddress = actorlayer.ActorAddress{Target: "channel", Key: "telegram"}
 
 type telegramInboundHandler struct {
+	bindings          bindingInvitationAdmitter
+	bindingChannels   bindingChannelRegistry
 	ownerStore        *auth.OwnerStore
 	telegramProfiles  *auth.TelegramProfileService
 	collaboratorStore *auth.CollaboratorStore
@@ -67,6 +71,8 @@ type telegramInboundHandler struct {
 
 type telegramInboundHandlerParams struct {
 	fx.In
+	Bindings        bindingInvitationAdmitter `optional:"true"`
+	BindingChannels bindingChannelRegistry    `optional:"true"`
 
 	OwnerStore        *auth.OwnerStore             `optional:"true"`
 	TelegramProfiles  *auth.TelegramProfileService `optional:"true"`
@@ -86,6 +92,7 @@ func newTelegramInboundHandler(params telegramInboundHandlerParams) *telegramInb
 		ch = params.Channel
 	}
 	return &telegramInboundHandler{
+		bindings: params.Bindings, bindingChannels: params.BindingChannels,
 		ownerStore:        params.OwnerStore,
 		telegramProfiles:  params.TelegramProfiles,
 		collaboratorStore: params.CollaboratorStore,
@@ -105,6 +112,11 @@ func (h *telegramInboundHandler) OnBotStarted(ctx context.Context, botUserID int
 	h.botUserID = botUserID
 	h.botUsername = botUsername
 	h.mu.Unlock()
+	if h.bindingChannels != nil && botUserID > 0 {
+		if err := h.bindingChannels.Register(usercmd.BindingChannel{Integration: usercmd.BindingIntegration{ChannelType: "telegram", Key: strconv.FormatInt(botUserID, 10)}, Name: "Telegram", BotUsername: botUsername}); err != nil {
+			return fmt.Errorf("register Telegram binding identity: %w", err)
+		}
+	}
 
 	h.logOwnerAuthIfNeeded()
 	ownerID, chatID, bound := h.restorePersistedOwner()
@@ -131,8 +143,27 @@ func (h *telegramInboundHandler) ActivateOwner(ctx context.Context, ownerID, cha
 }
 
 func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx baldatelegram.MessageContext) error {
+	if authpayload.Contains(messageCtx.Text) {
+		if h.bindings != nil && h.bindingChannels != nil && messageCtx.IsDM {
+			payload, exact := authpayload.Parse(messageCtx.Text)
+			info, available := h.bindingChannels.Get("telegram")
+			if exact && available && info.Integration.Key != "" {
+				_, err := h.bindings.Consume(ctx, usercmd.BindingProof{Payload: payload, Integration: info.Integration, Principal: strconv.FormatInt(messageCtx.UserID, 10), Direct: messageCtx.IsDM, Locator: messageCtx.Locator, DisplayName: messageCtx.FirstName, ProviderUsername: messageCtx.Username, ProviderFirstName: messageCtx.FirstName, Provenance: "chat_id=" + strconv.FormatInt(messageCtx.ChatID, 10)})
+				reply := "Account connected. Refresh bindings in Backoffice."
+				if err != nil {
+					reply = "Could not connect this account. Check or replace the invitation in Backoffice."
+				}
+				if err == nil {
+					h.activateBoundPrimary(ctx, messageCtx.UserID, messageCtx.ChatID)
+				}
+				return sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, reply)
+			}
+			return sendPlain(ctx, h.actorDispatcher, serverActorAddress, messageCtx.Locator, "Could not connect this account. Copy the complete invitation from Backoffice and try again.")
+		}
+		return nil
+	}
 	ownerID, ownerChatID := h.getOwnerBinding()
-	if ownerID == 0 || ownerChatID == 0 {
+	if h.bindings == nil && (ownerID == 0 || ownerChatID == 0) {
 		h.logger.Warn().
 			Str("reason", telegramIngressReasonOwnerUnavailable).
 			Msg("ignored inbound telegram message")
@@ -144,6 +175,9 @@ func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx b
 	}
 	if !allowed {
 		return nil
+	}
+	if h.bindings != nil && messageCtx.IsDM && messageCtx.TopicID == 0 && ownerID == 0 {
+		h.activateBoundPrimary(ctx, messageCtx.UserID, messageCtx.ChatID)
 	}
 	if err := h.telegramProfiles.Refresh(ctx, messageCtx.UserID, messageCtx.Username, messageCtx.FirstName); err != nil {
 		h.logger.Warn().Err(err).Int64("user_id", messageCtx.UserID).Msg("failed to refresh telegram binding profile")
@@ -175,7 +209,11 @@ func (h *telegramInboundHandler) HandleMessage(ctx context.Context, messageCtx b
 	if h.now != nil {
 		nowFn = h.now
 	}
-	inbound := baldatelegram.NormalizeInbound(messageCtx, baldatelegram.AppendAttachmentSummary(text, messageCtx.Attachments), nowFn())
+	normalizedText := baldatelegram.AppendAttachmentSummary(text, messageCtx.Attachments)
+	if authpayload.Contains(normalizedText) {
+		return nil
+	}
+	inbound := baldatelegram.NormalizeInbound(messageCtx, normalizedText, nowFn())
 	service, err := h.telegramIngressService()
 	if err != nil {
 		return err
@@ -546,6 +584,10 @@ func (h *telegramInboundHandler) sendStartupReadyMessage(ctx context.Context) {
 }
 
 func (h *telegramInboundHandler) logOwnerAuthIfNeeded() {
+	if h.bindings != nil {
+		h.logger.Info().Msg("connect Telegram accounts using invitations from Backoffice Access")
+		return
+	}
 	if h.authToken == "" || h.ownerStore == nil || h.ownerStore.HasOwner() {
 		return
 	}

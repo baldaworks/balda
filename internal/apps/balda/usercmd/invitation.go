@@ -3,12 +3,23 @@ package usercmd
 import (
 	"context"
 	"time"
+
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 )
 
 // BindingIntegration identifies one configured transport instance.
 type BindingIntegration struct {
 	ChannelType string
 	Key         string
+}
+
+// BindingChannel is safe configured or verified metadata for one binding interface.
+type BindingChannel struct {
+	Integration     BindingIntegration
+	Name            string
+	BotUsername     string
+	Endpoint        string
+	CommandsEnabled bool
 }
 
 // InvitationActor carries the authenticated administrator's audit identity.
@@ -65,4 +76,17 @@ type InvitationStore interface {
 	CancelBindingInvitation(ctx context.Context, change InvitationCancel) error
 	ConsumeBindingInvitation(ctx context.Context, change InvitationConsume) (string, error)
 	ListBindingInvitations(ctx context.Context, userID string) ([]BindingInvitation, error)
+}
+
+// BindingProof carries sender identity from a verified transport admission boundary.
+type BindingProof struct {
+	Payload           string
+	Integration       BindingIntegration
+	Principal         string
+	DisplayName       string
+	ProviderUsername  string
+	ProviderFirstName string
+	Provenance        string
+	Direct            bool
+	Locator           deliverycmd.Locator
 }

@@ -97,13 +97,24 @@ securely remove it after verified delivery.
 
 ## First run
 
-For Telegram, authenticate the owner with the command printed by `balda init`:
+For Telegram, sign in to Backoffice, select the existing user in Access and use
+its Telegram invitation link, or send the generated payload:
+
+```text
+/start bind_<opaque_token>
+```
+
+The exact payload also works as a direct message. It connects the verified sender
+to that selected user, preserving their role. Invitations expire after 24 hours
+and can be used once; refresh the user's bindings in Backoffice to confirm.
+
+The existing owner bootstrap command printed by `balda init` remains supported:
 
 ```text
 /start owner=<owner_token>
 ```
 
-Then send a normal direct message to the bot, or open an isolated topic:
+After connecting the account, send a normal direct message to the bot, or open an isolated topic:
 
 ```text
 /topic release

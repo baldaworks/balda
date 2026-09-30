@@ -12,13 +12,21 @@ Balda uses the word *command* at two levels:
 
 - A **chat command** is a user invocation such as `/reset`, `/skill review`,
   `/release`, or `/balda reset`. Every supported chat command is executed by
-  `CommandActor`.
+  `CommandActor` after any credential-admission step.
 - A **runtime command** is any durable actor envelope. Session turns, jobs,
   delivery, questions, permissions, and chat commands all use this transport,
   but they target different product actors.
 
 Consequently, a scheduled job or configured inbound webhook is durable command
 work, but it is not a chat command and does not pass through `CommandActor`.
+
+Backoffice invitation authentication (`/start bind_<opaque_token>` or an exact
+direct-message payload) is admitted by the verified transport before normal
+authorization and command publication. The shared auth use case atomically
+attaches the selected user's binding and consumes the invitation. Raw credentials
+never enter the durable command queue or agent context; only a safe result is
+delivered. Telegram also excludes invitation-bearing quoted and forwarded
+message content from later conversational input.
 
 ## Chat command architecture
 

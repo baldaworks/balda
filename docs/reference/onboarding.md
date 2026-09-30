@@ -66,6 +66,14 @@ printed auth link or sending:
 /start owner=<owner_token>
 ```
 
+For Backoffice-managed account binding, Telegram accepts a generated
+`bind_<opaque_token>` invitation through `/start`, a bot deep link or an exact
+direct message. The verified sender is attached to the invitation's selected
+existing user, preserving its role and primary status; no owner bootstrap token
+is required. A token is scoped to the configured bot, expires after 24 hours and
+is consumed atomically with the binding and audit. Replace or cancel a pending
+invitation in Backoffice instead of reusing a lost or already consumed token.
+
 After owner auth, users can send normal direct messages to the bot's main DM
 session or create a named topic session:
 

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
-	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 	"github.com/google/uuid"
@@ -32,19 +31,6 @@ type BindingInvitations struct {
 type IssuedBindingInvitation struct {
 	Invitation usercmd.BindingInvitation
 	Payload    string
-}
-
-// BindingProof carries sender identity from a verified transport admission boundary.
-type BindingProof struct {
-	Payload           string
-	Integration       usercmd.BindingIntegration
-	Principal         string
-	DisplayName       string
-	ProviderUsername  string
-	ProviderFirstName string
-	Provenance        string
-	Direct            bool
-	Locator           deliverycmd.Locator
 }
 
 // NewBindingInvitations creates the shared invitation use case.
@@ -104,7 +90,7 @@ func (s *BindingInvitations) Cancel(ctx context.Context, actor usercmd.Invitatio
 }
 
 // Consume attaches the verified sender while preserving the existing Direct/locator contract.
-func (s *BindingInvitations) Consume(ctx context.Context, proof BindingProof) (string, error) {
+func (s *BindingInvitations) Consume(ctx context.Context, proof usercmd.BindingProof) (string, error) {
 	payload, ok := authpayload.Parse(proof.Payload)
 	if !ok || !proof.Direct || proof.Locator.ChannelType != proof.Integration.ChannelType || proof.Locator.AddressKey == "" || proof.Locator.SessionID == "" {
 		return "", usercmd.ErrBindingInvitationUnavailable

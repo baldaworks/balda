@@ -1,6 +1,7 @@
 package handlersfx
 
 import (
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	baldamattermost "github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionapp"
@@ -12,6 +13,8 @@ import (
 // Module wires ingress-owned ports to concrete provider runtimes.
 var Module = fx.Module("balda_handlersfx",
 	fx.Provide(
+		func(s *auth.BindingInvitations) bindingInvitationAdmitter { return s },
+		func(s *auth.BindingChannels) bindingChannelRegistry { return s },
 		newTelegramInboundHandler,
 		fx.Annotate(
 			func(h *telegramInboundHandler) baldatelegram.InboundHandler { return h },

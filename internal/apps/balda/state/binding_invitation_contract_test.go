@@ -49,8 +49,8 @@ func checkBindingInvitations(t *testing.T, open contractOpener) {
 		}
 		return got
 	}
-	proof := func(i auth.IssuedBindingInvitation, principal string) auth.BindingProof {
-		return auth.BindingProof{Payload: i.Payload, Integration: i.Invitation.Integration, Principal: principal, Direct: true,
+	proof := func(i auth.IssuedBindingInvitation, principal string) usercmd.BindingProof {
+		return usercmd.BindingProof{Payload: i.Payload, Integration: i.Invitation.Integration, Principal: principal, Direct: true,
 			Locator: deliverycmd.Locator{ChannelType: i.Invitation.Integration.ChannelType, AddressKey: "direct-address", SessionID: "session"}}
 	}
 	t.Run("selected operator and four integrations", func(t *testing.T) {

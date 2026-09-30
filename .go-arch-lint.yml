@@ -407,6 +407,7 @@ deps:
   user_contracts:
     mayDependOn:
       - user_contracts
+      - contracts
     anyVendorDeps: false
 
   auth_payload:
@@ -586,6 +587,7 @@ deps:
 
   ingress_wiring:
     mayDependOn:
+      - auth_payload
       - contracts
       - user_contracts
       - user_application
@@ -652,6 +654,7 @@ deps:
 
   telegram_transport:
     mayDependOn:
+      - auth_payload
       - foundation
       - contracts
       - neutral_registry

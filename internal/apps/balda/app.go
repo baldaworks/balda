@@ -51,6 +51,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/sessionturnapp"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/sessionmcp"
 	"github.com/baldaworks/balda/internal/git"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
@@ -684,6 +685,29 @@ func Module(
 		}),
 		fx.Provide(func(provider baldastate.Provider) *auth.TelegramProfileService {
 			return auth.NewTelegramProfileService(provider.Users())
+		}),
+		fx.Provide(func(provider baldastate.Provider) (*auth.BindingInvitations, error) {
+			store, ok := provider.Users().(usercmd.InvitationStore)
+			if !ok {
+				return nil, fmt.Errorf("binding invitation store is unavailable")
+			}
+			return auth.NewBindingInvitations(store)
+		}),
+		fx.Provide(func() *auth.BindingChannels {
+			var channels []string
+			if strings.TrimSpace(cfg.Balda.Telegram.Token) != "" {
+				channels = append(channels, "telegram")
+			}
+			if cfg.Balda.Slack.Agent.Enabled {
+				channels = append(channels, "slackagent")
+			}
+			if cfg.Balda.Zulip.Webhook.Enabled {
+				channels = append(channels, "zulip")
+			}
+			if cfg.Balda.Mattermost.Enabled {
+				channels = append(channels, "mattermost")
+			}
+			return auth.NewBindingChannels(channels)
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
 			return auth.NewDestinationStore(provider.AppKV())

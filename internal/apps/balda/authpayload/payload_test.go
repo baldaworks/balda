@@ -21,4 +21,8 @@ func TestInvitationPayload(t *testing.T) {
 	if !Contains("previous message: ["+payload+"]") || !Contains(payload+" extra") || Contains("document the bind_ prefix") {
 		t.Fatal("credential recognition must filter embedded secrets while preserving ordinary text")
 	}
+	truncated := payload[:len(payload)-1]
+	if _, ok := Parse(truncated); ok || !Contains(truncated) || strings.Contains(Redact(truncated), truncated) {
+		t.Fatal("truncated credential must be rejected and withheld from context/logs")
+	}
 }

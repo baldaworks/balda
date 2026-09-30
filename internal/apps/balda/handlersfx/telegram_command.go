@@ -3,14 +3,18 @@ package handlersfx
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/runtime/events"
 	runtimehandlers "github.com/tgbotkit/runtime/handlers"
@@ -23,6 +27,10 @@ const (
 
 // telegramStartHandler handles Telegram /start commands by publishing them to CommandActor.
 type telegramStartHandler struct {
+	bindings         bindingInvitationAdmitter
+	bindingChannels  bindingChannelRegistry
+	inbound          *telegramInboundHandler
+	dispatcher       actortransport.Dispatcher
 	ownerStore       *auth.OwnerStore
 	telegramProfiles *auth.TelegramProfileService
 	commandIngress   commandcmd.Ingress
@@ -31,6 +39,10 @@ type telegramStartHandler struct {
 
 type telegramStartHandlerParams struct {
 	fx.In
+	Bindings        bindingInvitationAdmitter `optional:"true"`
+	BindingChannels bindingChannelRegistry    `optional:"true"`
+	Inbound         *telegramInboundHandler   `optional:"true"`
+	Dispatcher      actortransport.Dispatcher `optional:"true"`
 
 	OwnerStore       *auth.OwnerStore             `optional:"true"`
 	TelegramProfiles *auth.TelegramProfileService `optional:"true"`
@@ -40,6 +52,7 @@ type telegramStartHandlerParams struct {
 
 func newTelegramStartHandler(params telegramStartHandlerParams) *telegramStartHandler {
 	return &telegramStartHandler{
+		bindings: params.Bindings, bindingChannels: params.BindingChannels, inbound: params.Inbound, dispatcher: params.Dispatcher,
 		ownerStore:       params.OwnerStore,
 		telegramProfiles: params.TelegramProfiles,
 		commandIngress:   params.CommandIngress,
@@ -66,6 +79,32 @@ func (h *telegramStartHandler) onCommand(ctx context.Context, event *events.Comm
 		userID = event.Message.From.Id
 	}
 	args := strings.TrimSpace(event.Args)
+	if authpayload.Contains(args) {
+		if h.bindings == nil || h.bindingChannels == nil {
+			return nil
+		}
+		payload, exact := authpayload.Parse(args)
+		info, available := h.bindingChannels.Get("telegram")
+		if !exact || !available || info.Integration.Key == "" || event.Message.From == nil {
+			return sendPlain(ctx, h.dispatcher, serverActorAddress, telegramref.NewLocator(chatID, 0), "Could not connect this account. Copy the complete invitation from Backoffice and try again.")
+		}
+		username := ""
+		if event.Message.From.Username != nil {
+			username = *event.Message.From.Username
+		}
+		_, err := h.bindings.Consume(ctx, usercmd.BindingProof{Payload: payload, Integration: info.Integration, Principal: strconv.FormatInt(userID, 10), Direct: true, Locator: telegramref.NewLocator(chatID, 0), DisplayName: event.Message.From.FirstName, ProviderUsername: username, ProviderFirstName: event.Message.From.FirstName, Provenance: "chat_id=" + strconv.FormatInt(chatID, 10)})
+		reply := "Account connected. Refresh bindings in Backoffice."
+		if err != nil {
+			reply = "Could not connect this account. Check or replace the invitation in Backoffice."
+		}
+		if err == nil && h.inbound != nil {
+			h.inbound.activateBoundPrimary(ctx, userID, chatID)
+		}
+		return sendPlain(ctx, h.dispatcher, serverActorAddress, telegramref.NewLocator(chatID, 0), reply)
+	}
+	if args == "" && h.bindings != nil && h.inbound != nil && !h.inbound.canAccessCollaboratorScope(ctx, userID) {
+		return sendPlain(ctx, h.dispatcher, serverActorAddress, telegramref.NewLocator(chatID, 0), "Open Backoffice Access, select your user and create a Telegram invitation. Open its bot link or send the invitation payload here.")
+	}
 
 	h.logger.Debug().
 		Int64("user_id", userID).
@@ -156,6 +195,9 @@ func (h *telegramCommandHandler) onCommand(ctx context.Context, event *events.Co
 		return nil
 	}
 	if commandCtx.Command == commandStart {
+		return nil
+	}
+	if authpayload.Contains(commandCtx.Args) {
 		return nil
 	}
 	if h.commandIngress == nil {

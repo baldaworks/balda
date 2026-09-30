@@ -383,6 +383,19 @@ func provenanceInt64(provenance, key string) int64 {
 	return 0
 }
 
+// IsPrimaryOwnerSubject identifies the canonical primary administrator's binding.
+func (s *OwnerStore) IsPrimaryOwnerSubject(ctx context.Context, subject string) (bool, error) {
+	if s.canonical == nil {
+		return s.IsOwnerSubject(subject), nil
+	}
+	channel, principal, err := canonicalSubject(subject)
+	if err != nil {
+		return false, err
+	}
+	user, found, err := s.canonical.GetUserByBinding(ctx, channel, principal)
+	return found && user.Primary && user.Status == usercmd.StatusActive && user.Role == usercmd.RoleAdministrator, err
+}
+
 // HasOwner returns true if an owner is registered.
 func (s *OwnerStore) HasOwner() bool {
 	if s.canonical != nil {
