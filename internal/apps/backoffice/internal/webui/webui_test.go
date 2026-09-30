@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,7 +115,11 @@ func TestRespondMutation(t *testing.T) {
 	if err := RespondMutation(htmx, htmxRequest, LocationAccount); err != nil {
 		t.Fatal(err)
 	}
-	if htmx.Code != http.StatusNoContent || htmx.Header().Get("HX-Location") != "/account" || htmx.Body.Len() != 0 {
+	var location struct{ Path, Target, Swap string }
+	if err := json.Unmarshal([]byte(htmx.Header().Get("HX-Location")), &location); err != nil {
+		t.Fatal(err)
+	}
+	if htmx.Code != http.StatusNoContent || location.Path != "/account" || location.Target != "#main-content" || location.Swap != "outerHTML" || htmx.Body.Len() != 0 {
 		t.Fatalf("HTMX mutation = %d %v %q", htmx.Code, htmx.Header(), htmx.Body.String())
 	}
 }
@@ -244,5 +249,19 @@ func TestShellShowsViewerIndependentlyOfInspectedUser(t *testing.T) {
 	}
 	if strings.Contains(body, "Signed in as <strong>inspected-operator</strong>") {
 		t.Error("shell exposes inspected user as viewer")
+	}
+}
+
+func TestMutationDetailPathSafety(t *testing.T) {
+	t.Parallel()
+	for _, location := range []string{"https://other.example/account", "//other.example/account", `/\other.example/account`} {
+		response := httptest.NewRecorder()
+		if err := RespondMutationPath(response, httptest.NewRequest(http.MethodPost, "/account", nil), location); err == nil || response.Header().Get("Location") != "" {
+			t.Fatalf("unsafe mutation path accepted: %q", location)
+		}
+	}
+	response := httptest.NewRecorder()
+	if err := RespondMutationPath(response, httptest.NewRequest(http.MethodPost, "/balda/access", nil), "/balda/access/users/user%2Fname"); err != nil || response.Header().Get("Location") != "/balda/access/users/user%2Fname" {
+		t.Fatalf("scoped user detail redirect = %v %v", response.Header(), err)
 	}
 }

@@ -73,6 +73,11 @@ document.addEventListener("htmx:beforeSwap", function (event) {
     const explanation = heading?.nextElementSibling;
     const feedback = document.getElementById("request-error");
     if (!feedback || !main) return;
+    if (event.detail.requestConfig?.elt?.closest(".binding-panel") && main.querySelector(".binding-panel")) {
+      event.detail.shouldSwap = true;
+      event.detail.isError = false;
+      return;
+    }
     feedback.textContent = message?.textContent?.trim() ||
       [heading?.textContent?.trim(), explanation?.textContent?.trim()].filter(Boolean).join(" ") ||
       "The request could not be completed.";

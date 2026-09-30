@@ -53,8 +53,11 @@ balda start
 The primary administrator's display name is also `superuser`. In Backoffice,
 use **Account → Change password** to replace your own password. Administrators
 manage each user's chat bindings under **Access**: a user may have Telegram,
-Slack Agent (`slackagent`), and Zulip principals where those integrations are
-configured. Removing one binding revokes bot access for that principal without
+Slack Agent (`slackagent`), Zulip, and Mattermost principals where those
+integrations are configured. Each channel has its own invitation panel: generate
+an invitation for the selected user and send it from their provider account.
+The value appears once; Refresh bindings shows status and confirmed identities.
+Use explicit Replace invitation or Cancel invitation for a pending value. Removing one binding revokes bot access for that principal without
 removing the user's other bindings or browser account.
 
 **Account** shows your active browser sessions with the current one first.

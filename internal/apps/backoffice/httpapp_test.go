@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -400,7 +401,7 @@ func TestHTTPAppAccessAdministrationNoJSHTMXAndRoleBoundary(t *testing.T) {
 		"role": {"operator"}, "status": {"active"}, "temporary_password": {"temporary password"},
 	}
 	htmx := performAccessMutation(t, handler, config, "/access/users", htmxForm, adminAccess, adminCSRF, true)
-	if htmx.Code != http.StatusNoContent || htmx.Header().Get("HX-Location") != "/access" {
+	if htmx.Code != http.StatusNoContent || testHTMXLocation(t, htmx.Header()) != "/access" {
 		t.Fatalf("HTMX create = %d %v %q", htmx.Code, htmx.Header(), htmx.Body.String())
 	}
 
@@ -537,7 +538,7 @@ func TestHTTPAppConfiguredBindingAdministration(t *testing.T) {
 		t.Fatalf("unconfirmed cancel = %d", got.Code)
 	}
 	cancelForm.Set("confirm_cancel", "yes")
-	if got := performAccessMutation(t, handler, config, cancelPath, cancelForm, adminAccess, adminCSRF, true); got.Code != http.StatusNoContent || got.Header().Get("HX-Location") != "/access/users/operator" {
+	if got := performAccessMutation(t, handler, config, cancelPath, cancelForm, adminAccess, adminCSRF, true); got.Code != http.StatusNoContent || testHTMXLocation(t, got.Header()) != "/access/users/operator" {
 		t.Fatalf("cancel = %d %v", got.Code, got.Header())
 	}
 	badCSRF := performAccessMutation(t, handler, config, issuePath, url.Values{"csrf_token": {"invalid"}, "expected_version": {version}}, adminAccess, adminCSRF, false)
@@ -634,7 +635,7 @@ func TestHTTPAppAccountRotationAndCurrentFamilyRevocation(t *testing.T) {
 		t.Fatalf("wrong password rotation = %d %q", wrongRotation.Code, wrongRotation.Body.String())
 	}
 	rotated := performAccessMutation(t, handler, config, "/account/password", rotateForm, initial.access, initial.csrf, true)
-	if rotated.Code != http.StatusNoContent || rotated.Header().Get("HX-Location") != "/account" {
+	if rotated.Code != http.StatusNoContent || testHTMXLocation(t, rotated.Header()) != "/account" {
 		t.Fatalf("password rotation = %d %v %q", rotated.Code, rotated.Header(), rotated.Body.String())
 	}
 	next := httpLoginCookies{
@@ -925,4 +926,16 @@ func cookieValue(cookies []*http.Cookie, name string) string {
 		}
 	}
 	return ""
+}
+
+func testHTMXLocation(t *testing.T, header http.Header) string {
+	t.Helper()
+	var location struct{ Path, Target, Swap string }
+	if err := json.Unmarshal([]byte(header.Get("HX-Location")), &location); err != nil {
+		t.Fatal(err)
+	}
+	if location.Target != "#main-content" || location.Swap != "outerHTML" {
+		t.Fatalf("mutation must preserve shell: %+v", location)
+	}
+	return location.Path
 }

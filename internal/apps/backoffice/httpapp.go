@@ -403,13 +403,9 @@ func (a *httpApp) accessBindingDelete(w http.ResponseWriter, r *http.Request) {
 
 func (a *httpApp) respondAccessDetailMutation(w http.ResponseWriter, r *http.Request, userID string) {
 	location := a.path("/access/users/" + url.PathEscape(userID))
-	if webui.EligibleFragment(r) {
-		w.Header().Set("HX-Location", location)
-		w.WriteHeader(http.StatusNoContent)
-		return
+	if err := webui.RespondMutationPath(w, r, location); err != nil {
+		a.browser.WriteError(w, r, err)
 	}
-	w.Header().Set("Location", location)
-	w.WriteHeader(http.StatusSeeOther)
 }
 
 func (a *httpApp) accessCreate(w http.ResponseWriter, r *http.Request) {

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 )
@@ -120,12 +122,29 @@ func RespondMutationAt(w http.ResponseWriter, request *http.Request, location Lo
 	if !location.Valid() {
 		return fmt.Errorf("mutation location is invalid")
 	}
+	return RespondMutationPath(w, request, basePath+string(location))
+}
+
+// RespondMutationPath redirects to a local path while retaining the HTMX shell.
+func RespondMutationPath(w http.ResponseWriter, request *http.Request, location string) error {
+	parsed, err := url.ParseRequestURI(location)
+	if err != nil || !strings.HasPrefix(location, "/") || strings.HasPrefix(location, "//") || strings.Contains(location, `\`) || parsed.Host != "" || parsed.Scheme != "" {
+		return fmt.Errorf("mutation path is invalid")
+	}
 	if EligibleFragment(request) {
-		w.Header().Set("HX-Location", basePath+string(location))
+		encoded, err := json.Marshal(struct {
+			Path   string `json:"path"`
+			Target string `json:"target"`
+			Swap   string `json:"swap"`
+		}{Path: location, Target: "#main-content", Swap: "outerHTML"})
+		if err != nil {
+			return fmt.Errorf("encode HTMX location: %w", err)
+		}
+		w.Header().Set("HX-Location", string(encoded))
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
-	w.Header().Set("Location", basePath+string(location))
+	w.Header().Set("Location", location)
 	w.WriteHeader(http.StatusSeeOther)
 	return nil
 }

@@ -220,7 +220,9 @@ raw User-Agent and token values are never displayed.
   uses the existing Direct and locator contract, including D and G channels.
   Refresh bindings shows confirmed principals and pending/expired metadata only.
   The invitation value is shown once in the issuance POST response, never in
-  browser navigation, session storage, server logs, or persisted state. Only its
+  Backoffice navigation, session storage, server logs, or persisted state.
+  The explicit Telegram bot deep link carries the payload as its intended
+  provider action; it is never used as a Backoffice redirect or history URL. Only its
   digest is stored. Generic webhooks are not user bindings. Removing a confirmed
   binding requires confirmation of the affected principal's bot access. Other
   bindings, the browser account, and browser sessions remain.
@@ -342,15 +344,18 @@ A successful mutation follows these response contracts:
 | Request | Response |
 | --- | --- |
 | Ordinary form submission | `303 See Other` with `Location` |
-| HTMX request | `204 No Content` with `HX-Location` |
+| HTMX request | `204 No Content` with JSON `HX-Location`: local `path`, `target: "#main-content"`, `swap: "outerHTML"` |
 
 Invitation issuance is the deliberate exception: return `200 OK` with the full
 page for native forms or `#main-content` for HTMX, and `Cache-Control: no-store`.
 Reveal the newly generated value in that response only; a redirect would need
 credential persistence. Protected GET of the issuance URL redirects to user
 detail without a secret. Reload, refresh, and history recovery expose only safe
-metadata; HTMX history caching is disabled on binding detail and secrets are
-cleared on pagehide. Cancel and identity retry retain the ordinary contracts.
+metadata. The shared `.app-main` is the explicit HTMX history element so
+complete history-recovery responses restore content without re-executing shell
+scripts; HTMX history caching is disabled on binding detail and secrets are
+cleared on pagehide. Native no-store POST history may require reopening the
+issuance URL as GET; it redirects to metadata-only user detail. Cancel and identity retry retain the ordinary contracts.
 
 Errors retain their original HTTP status. For an eligible HTMX fragment
 request, an error replaces only `#main-content`; it must not replace the shell

@@ -33,6 +33,12 @@ and long-content layouts. The `form-*` previews return actual 400, 403, 409,
 and 500 HTTP statuses while rendering the production error templates. The
 refresh error and conflict previews show the distinct recovery actions.
 
+`/qa/ui/bindings-issued`, `/qa/ui/bindings-pending`,
+`/qa/ui/bindings-unavailable`, and `/qa/ui/bindings-disabled` cover each of the
+four configured channel panels, one-time actions, expiry, previous instance,
+replacement/cancellation and recovery. Their visible invitation values are
+intentionally invalid synthetic examples and cannot connect an account.
+
 The fixture data is deterministic and synthetic. Preview links remain within
 `/qa/ui/`. Forms can be inspected and focused, but submission cannot change
 state: preview routes accept GET and HEAD only. The standalone server binds a
@@ -58,7 +64,7 @@ Run the separate authenticated browser gate from the repository root after
 installing the same optional Playwright tooling:
 
 ```bash
-BALDA_BACKOFFICE_BROWSER_TEST=1 go test ./internal/apps/backoffice -run TestHTTPAppBrowserWorkflow -count=1 -v
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test ./internal/apps/backoffice -run 'TestHTTPApp(Binding)?BrowserWorkflow' -count=1 -v
 ```
 
 This gate starts the actual HTTP/security application against a temporary SQLite
@@ -66,6 +72,16 @@ database, creates synthetic accounts and uses the ordinary browser login with
 and without JavaScript. It checks viewer identity on another user's detail,
 conflict feedback without password reflection, access-token expiry recovery and
 native logout. It does not access deployment data or bypass authentication.
+
+The binding workflow additionally exercises four widths with and without
+JavaScript: administrator issuance for an operator or non-primary administrator,
+manual/clipboard copy, metadata-only history recovery, explicit replacement and
+cancellation, confirmed attachment, replay denial, role preservation and refresh.
+Slack admission uses the concrete receiver with a synthetic signed request.
+Telegram, Zulip and Mattermost use isolated normalized proof fixtures at the
+shared invitation port in this browser harness; their native verified ingress
+and hydrated-history boundaries are separately tested in `handlersfx` and
+`channel/*`. The harness opens no real transport accounts or production data.
 
 ## Review a page change
 
