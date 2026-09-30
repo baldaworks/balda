@@ -157,6 +157,9 @@ func (s *sqlUserStore) UpdateUser(ctx context.Context, user usercmd.User, expect
 		return usercmd.ErrConflict
 	}
 	if currentStatus == string(usercmd.StatusActive) && user.Status == usercmd.StatusDisabled {
+		if _, err := tx.ExecContext(ctx, s.bind(`UPDATE balda_binding_invitations SET revoked_at = ?, revocation_reason = 'user disabled', version = version + 1 WHERE user_id = ? AND consumed_at = '' AND revoked_at = ''`), formatUserTime(audit.OccurredAt), user.ID); err != nil {
+			return s.mutationError("revoke disabled user invitations", err)
+		}
 		if err := s.revokeUserSessionsTx(ctx, tx, user.ID, audit.OccurredAt, "user disabled"); err != nil {
 			return err
 		}

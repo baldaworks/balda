@@ -236,6 +236,10 @@ const (
 	AuditActionBindingDetached AuditAction = "user.binding.detached"
 	// AuditActionBindingClaimCreated records creation of a scoped onboarding claim.
 	AuditActionBindingClaimCreated AuditAction = "user.binding.claim.created"
+	// AuditActionInvitationIssued records creation or replacement of a binding invitation.
+	AuditActionInvitationIssued AuditAction = "user.binding.invitation.issued"
+	// AuditActionInvitationRevoked records cancellation of a binding invitation.
+	AuditActionInvitationRevoked AuditAction = "user.binding.invitation.revoked"
 	// AuditActionUserMigrated records canonical creation from legacy authorization state.
 	AuditActionUserMigrated AuditAction = "user.migrated"
 	// AuditActionLoginSucceeded records creation of a browser session family.
@@ -255,7 +259,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionLogout:
+		AuditActionRefreshReplay, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked:
 		return true
 	default:
 		return false
