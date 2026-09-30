@@ -90,3 +90,9 @@ type BindingProof struct {
 	Direct            bool
 	Locator           deliverycmd.Locator
 }
+
+// IssuedBindingInvitation carries a credential only in the issuance response.
+type IssuedBindingInvitation struct {
+	Invitation BindingInvitation
+	Payload    string `json:"-"`
+}

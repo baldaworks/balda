@@ -154,3 +154,12 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; } }
 
 .session-card { min-width: 0; padding: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); }
+
+.binding-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1.25rem; }
+.binding-grid > * { min-width: 0; margin: 0; }
+.binding-panel p, .binding-panel strong { overflow-wrap: anywhere; }
+.binding-copy-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.binding-copy-row input { flex: 1 1 13rem; min-width: 0; }
+.binding-copy-row button { flex: 0 0 auto; }
+.binding-unavailable { padding: 1rem; }
+@media (max-width: 991.98px) { .binding-grid { grid-template-columns: minmax(0, 1fr); } }

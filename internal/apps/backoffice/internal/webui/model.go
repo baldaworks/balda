@@ -128,7 +128,7 @@ type Page struct {
 	Current             Location
 	Navigation          []NavItem
 	Capabilities        []CapabilityCard
-	BindingChoices      []string
+	BindingForms        []BindingForm
 	OwnUser             bool
 	CreateUser          bool
 	AccessSearch        string
@@ -243,8 +243,10 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Added chat binding"
 	case usercmd.AuditActionBindingDetached:
 		return "Removed chat binding"
-	case usercmd.AuditActionBindingClaimCreated:
+	case usercmd.AuditActionBindingClaimCreated, usercmd.AuditActionInvitationIssued:
 		return "Created binding invitation"
+	case usercmd.AuditActionInvitationRevoked:
+		return "Cancelled binding invitation"
 	case usercmd.AuditActionUserMigrated:
 		return "Migrated user"
 	case usercmd.AuditActionLoginSucceeded:

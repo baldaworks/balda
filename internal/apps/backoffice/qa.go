@@ -78,6 +78,10 @@ var qaEntries = []qaEntry{
 	{name: "overview", label: "Overview", templateName: webui.TemplateOverview, page: qaOverview, gallery: true},
 	{name: "overview-empty", label: "Overview · empty", templateName: webui.TemplateOverview, page: qaOverviewEmpty, gallery: true},
 	{name: "access", label: "Access · detail", templateName: webui.TemplateAccess, page: qaAccess, gallery: true},
+	{name: "bindings-issued", label: "Bindings · one-time actions", templateName: webui.TemplateAccess, page: qaBindingsIssued, gallery: true},
+	{name: "bindings-pending", label: "Bindings · pending and expired", templateName: webui.TemplateAccess, page: qaBindingsPending, gallery: true},
+	{name: "bindings-unavailable", label: "Bindings · connection unavailable", templateName: webui.TemplateAccess, page: qaBindingsUnavailable, gallery: true},
+	{name: "bindings-disabled", label: "Bindings · user disabled", templateName: webui.TemplateAccess, page: qaBindingsDisabled, gallery: true},
 	{name: "access-primary", label: "Access · primary administrator", templateName: webui.TemplateAccess, page: qaAccessPrimary, gallery: true},
 	{name: "access-long", label: "Access · long content", templateName: webui.TemplateAccess, page: qaAccessLong, gallery: true},
 	{name: "access/users/user-demo", templateName: webui.TemplateAccess, page: qaAccess},
@@ -221,7 +225,7 @@ func qaAccess() webui.Page {
 	return webui.Page{
 		Title: "Access · QA", Current: webui.LocationAccess,
 		Navigation: qaAdminNavigation(webui.LocationAccess),
-		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(), BindingChoices: []string{"telegram", "slackagent", "zulip"},
+		User:       &user, CSRFToken: "qa-csrf", Sessions: qaSessions(), BindingForms: qaBindingForms(user),
 		SessionActionPrefix: "/access/users/" + user.ID + "/sessions",
 	}
 }
@@ -378,5 +382,51 @@ func qaLayoutLong() webui.Page {
 	page.ViewerUsername = "administrator-with-a-very-long-username-for-responsive-review"
 	page.Navigation[0].Label = "Overview of configured integrations and channel connections"
 	page.Gallery = []webui.QALink{{Label: "A long synthetic activity entry with a user-provided label that must remain readable on a narrow screen", Path: "/overview"}, {Label: "A second activity entry with technical detail and explanatory text", Path: "/audit"}, {Label: "A third entry for checking spacing, wrapping and the normal-flow footer", Path: "/account"}}
+	return page
+}
+
+func qaBindingForms(user webui.UserView) []webui.BindingForm {
+	forms := make([]webui.BindingForm, 0, 4)
+	for _, channel := range []string{"telegram", "slackagent", "zulip", "mattermost"} {
+		forms = append(forms, webui.BindingForm{ChannelType: channel, Integration: usercmd.BindingIntegration{ChannelType: channel, Key: "synthetic-bot"}, UserID: user.ID, UserVersion: user.Version, CSRFToken: "qa-csrf", Ready: true, BotName: "Synthetic configured workspace", BotUsername: "synthetic-bot", CommandsEnabled: true, Preview: true})
+	}
+	return forms
+}
+
+func qaBindingsIssued() webui.Page {
+	page := qaBindingsPending()
+	for i := range page.BindingForms {
+		form := &page.BindingForms[i]
+		issued := usercmd.IssuedBindingInvitation{Payload: "bind_SYNTHETIC_PREVIEW_ONLY", Invitation: usercmd.BindingInvitation{ExpiresAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC).Add(24 * time.Hour)}}
+		reveal := webui.ProjectBindingReveal(*form, issued)
+		reveal.BotURL = "" // Preview never opens an external bot with a synthetic credential.
+		form.Reveal = &reveal
+	}
+	return page
+}
+func qaBindingsPending() webui.Page {
+	page := qaAccess()
+	for i := range page.BindingForms {
+		form := &page.BindingForms[i]
+		form.Active = true
+		form.Pending = []webui.BindingInvitationView{{ID: "pending-" + form.ChannelType, Version: 1, ExpiresAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC).Add(24 * time.Hour), Current: true}, {ID: "expired-" + form.ChannelType, Version: 1, ExpiresAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC).Add(-time.Hour), Expired: true}}
+	}
+	return page
+}
+func qaBindingsUnavailable() webui.Page {
+	page := qaAccess()
+	for i := range page.BindingForms {
+		page.BindingForms[i].Ready = false
+		page.BindingForms[i].BotUsername = ""
+		page.BindingForms[i].Error = "The bot connection could not be verified. Retry connection."
+	}
+	return page
+}
+func qaBindingsDisabled() webui.Page {
+	page := qaAccess()
+	page.User.Status = "disabled"
+	for i := range page.BindingForms {
+		page.BindingForms[i].Disabled = true
+	}
 	return page
 }

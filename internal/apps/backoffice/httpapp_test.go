@@ -12,10 +12,14 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/security"
+	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 )
+
+const noStoreCacheControl = "no-store"
 
 func TestHTTPAppQAIsOptInAndUsesProductionTemplates(t *testing.T) {
 	t.Parallel()
@@ -122,7 +126,7 @@ func TestQAHandlerGalleryAndReadOnlyRoutes(t *testing.T) {
 	if gallery.Code != http.StatusOK || !strings.Contains(gallery.Body.String(), "Backoffice UI previews") {
 		t.Fatalf("gallery response = %d %q", gallery.Code, gallery.Body.String())
 	}
-	if got := gallery.Header().Get("Cache-Control"); got != "no-store" {
+	if got := gallery.Header().Get("Cache-Control"); got != noStoreCacheControl {
 		t.Errorf("gallery Cache-Control = %q", got)
 	}
 	if got := gallery.Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") {
@@ -461,59 +465,131 @@ func TestHTTPAppConfiguredBindingAdministration(t *testing.T) {
 	detailRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: adminAccess})
 	detail := httptest.NewRecorder()
 	handler.ServeHTTP(detail, detailRequest)
-	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `value="slackagent"`) || strings.Contains(detail.Body.String(), `value="zulip"`) {
-		t.Fatalf("configured binding choices = %d %q", detail.Code, detail.Body.String())
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `data-binding-channel="slackagent"`) || strings.Contains(detail.Body.String(), `data-binding-channel="zulip"`) {
+		t.Fatalf("configured binding forms = %d", detail.Code)
 	}
-	add := func(channel, principal, version string, htmx bool) *httptest.ResponseRecorder {
-		return performAccessMutation(t, handler, config, "/access/users/operator/bindings", url.Values{
-			"csrf_token": {adminCSRF}, "channel_type": {channel}, "principal": {principal}, "expected_version": {version},
-		}, adminAccess, adminCSRF, htmx)
+	invitations, err := auth.NewBindingInvitations(provider.Users().(usercmd.InvitationStore))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := add("zulip", "202", "1", false); got.Code != http.StatusBadRequest {
-		t.Fatalf("disabled channel status = %d", got.Code)
+	app.invitations = invitations
+	channels := auth.NewBindingChannels([]string{"telegram", "slackagent"})
+	integration := usercmd.BindingIntegration{ChannelType: "telegram", Key: "123"}
+	if err := channels.Register(usercmd.BindingChannel{Integration: integration, BotUsername: "balda_test_bot"}); err != nil {
+		t.Fatal(err)
 	}
-	if got := add("telegram", "202", "1", false); got.Code != http.StatusSeeOther || got.Header().Get("Location") != "/access/users/operator" {
-		t.Fatalf("native binding add = %d %v", got.Code, got.Header())
+	app.bindingChannels = channels
+	issuePath := "/access/users/operator/invitations/telegram"
+	issue := func(version string, replace, htmx bool) *httptest.ResponseRecorder {
+		form := url.Values{"csrf_token": {adminCSRF}, "expected_version": {version}, "principal": {"attacker"}, "channel_type": {"zulip"}, "integration_key": {"fake"}}
+		if replace {
+			form.Set("replace", "yes")
+		}
+		return performAccessMutation(t, handler, config, issuePath, form, adminAccess, adminCSRF, htmx)
 	}
-	if got := add("slackagent", "T1:U1", "2", true); got.Code != http.StatusNoContent || got.Header().Get("HX-Location") != "/access/users/operator" {
-		t.Fatalf("HTMX binding add = %d %v", got.Code, got.Header())
+	issued := issue("1", false, false)
+	if issued.Code != http.StatusOK || issued.Header().Get("Cache-Control") != noStoreCacheControl || issued.Header().Get("Location") != "" || !strings.Contains(issued.Body.String(), "<!doctype") {
+		t.Fatalf("native issuance = %d %v", issued.Code, issued.Header())
 	}
-	if got := add("telegram", "202", "3", false); got.Code != http.StatusConflict {
-		t.Fatalf("duplicate principal status = %d", got.Code)
+	payload := regexp.MustCompile(`bind_[A-Za-z0-9_-]{32}`).FindString(issued.Body.String())
+	if payload == "" || !strings.Contains(issued.Body.String(), "/start "+payload) || !strings.Contains(issued.Body.String(), "https://t.me/balda_test_bot?start="+payload) {
+		t.Fatal("missing one-time Telegram actions")
 	}
-	badCSRF := performAccessMutation(t, handler, config, "/access/users/operator/bindings", url.Values{
-		"csrf_token": {"invalid"}, "channel_type": {"telegram"}, "principal": {"303"}, "expected_version": {"3"},
-	}, adminAccess, adminCSRF, false)
-	if badCSRF.Code != http.StatusForbidden {
-		t.Fatalf("invalid CSRF status = %d", badCSRF.Code)
+	refreshed := httptest.NewRecorder()
+	handler.ServeHTTP(refreshed, detailRequest)
+	if refreshed.Code != http.StatusOK || strings.Contains(refreshed.Body.String(), payload) || !strings.Contains(refreshed.Body.String(), "Waiting for confirmation") {
+		t.Fatal("refresh must contain pending metadata only")
+	}
+	if got := issue("1", false, true); got.Code != http.StatusConflict {
+		t.Fatalf("unconfirmed replacement = %d", got.Code)
+	}
+	replacement := issue("1", true, true)
+	nextPayload := regexp.MustCompile(`bind_[A-Za-z0-9_-]{32}`).FindString(replacement.Body.String())
+	if replacement.Code != http.StatusOK || strings.Contains(replacement.Body.String(), "<!doctype") || nextPayload == "" || nextPayload == payload || strings.Contains(replacement.Body.String(), payload) {
+		t.Fatal("HTMX replacement must reveal only new secret in fragment")
+	}
+	proof := usercmd.BindingProof{Payload: payload, Integration: integration, Principal: "202", Direct: true, Locator: deliverycmd.Locator{ChannelType: "telegram", AddressKey: "202", SessionID: "202"}}
+	if _, err := invitations.Consume(t.Context(), proof); !errors.Is(err, usercmd.ErrBindingInvitationUnavailable) {
+		t.Fatalf("replaced invitation consumed: %v", err)
+	}
+	proof.Payload = nextPayload
+	if id, err := invitations.Consume(t.Context(), proof); err != nil || id != "operator" {
+		t.Fatalf("selected target = %q: %v", id, err)
 	}
 	user, found, err := provider.Users().GetUser(t.Context(), "operator")
-	if err != nil || !found || len(user.Bindings) != 2 {
-		t.Fatalf("operator bindings = %+v, found=%t, err=%v", user.Bindings, found, err)
+	if err != nil || !found || len(user.Bindings) != 1 || user.Bindings[0].Principal != "202" || user.Role != usercmd.RoleOperator || user.Primary {
+		t.Fatalf("bound user = %+v: %v", user, err)
 	}
-	if got := add("telegram", "303", "2", false); got.Code != http.StatusConflict {
-		t.Fatalf("stale add status = %d", got.Code)
+	if got := issue("1", false, false); got.Code != http.StatusConflict {
+		t.Fatalf("stale user = %d", got.Code)
 	}
-	removePath := "/access/users/operator/bindings/" + user.Bindings[0].ID + "/delete"
-	removeForm := url.Values{"csrf_token": {adminCSRF}, "expected_version": {"3"}, "confirm_bot_impact": {"yes"}}
-	if got := performAccessMutation(t, handler, config, removePath, url.Values{
-		"csrf_token": {adminCSRF}, "expected_version": {"3"},
-	}, adminAccess, adminCSRF, false); got.Code != http.StatusBadRequest {
-		t.Fatalf("unconfirmed removal status = %d", got.Code)
+	version := "2"
+	if got := issue(version, false, false); got.Code != http.StatusOK {
+		t.Fatalf("new invitation = %d", got.Code)
 	}
-	if got := performAccessMutation(t, handler, config, removePath, removeForm, adminAccess, adminCSRF, false); got.Code != http.StatusSeeOther {
-		t.Fatalf("remove binding status = %d", got.Code)
+	pending, err := invitations.Pending(t.Context(), "operator")
+	if err != nil || len(pending) != 1 || pending[0].TokenDigest != nil {
+		t.Fatalf("pending = %+v: %v", pending, err)
 	}
-	user, _, err = provider.Users().GetUser(t.Context(), "operator")
-	if err != nil || len(user.Bindings) != 1 {
-		t.Fatalf("remaining bindings = %+v, err=%v", user.Bindings, err)
+	cancelPath := issuePath + "/cancel"
+	cancelForm := url.Values{"csrf_token": {adminCSRF}, "invitation_id": {pending[0].ID}, "invitation_version": {"1"}}
+	if got := performAccessMutation(t, handler, config, cancelPath, cancelForm, adminAccess, adminCSRF, false); got.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed cancel = %d", got.Code)
+	}
+	cancelForm.Set("confirm_cancel", "yes")
+	if got := performAccessMutation(t, handler, config, cancelPath, cancelForm, adminAccess, adminCSRF, true); got.Code != http.StatusNoContent || got.Header().Get("HX-Location") != "/access/users/operator" {
+		t.Fatalf("cancel = %d %v", got.Code, got.Header())
+	}
+	badCSRF := performAccessMutation(t, handler, config, issuePath, url.Values{"csrf_token": {"invalid"}, "expected_version": {version}}, adminAccess, adminCSRF, false)
+	if badCSRF.Code != http.StatusForbidden {
+		t.Fatalf("invalid CSRF = %d", badCSRF.Code)
+	}
+	unavailable := performAccessMutation(t, handler, config, "/access/users/operator/invitations/slackagent", url.Values{"csrf_token": {adminCSRF}, "expected_version": {version}}, adminAccess, adminCSRF, false)
+	if unavailable.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable identity = %d", unavailable.Code)
 	}
 	operatorAccess, operatorCSRF := loginHTTPApp(t, handler, config, "operator")
-	denied := performAccessMutation(t, handler, config, "/access/users/operator/bindings", url.Values{
-		"csrf_token": {operatorCSRF}, "channel_type": {"telegram"}, "principal": {"303"}, "expected_version": {"4"},
-	}, operatorAccess, operatorCSRF, false)
+	denied := performAccessMutation(t, handler, config, issuePath, url.Values{"csrf_token": {operatorCSRF}, "expected_version": {version}}, operatorAccess, operatorCSRF, false)
 	if denied.Code != http.StatusForbidden {
-		t.Fatalf("operator binding add status = %d", denied.Code)
+		t.Fatalf("operator issuance = %d", denied.Code)
+	}
+	unconfigured := performAccessMutation(t, handler, config, "/access/users/operator/invitations/zulip", url.Values{"csrf_token": {adminCSRF}, "expected_version": {version}}, adminAccess, adminCSRF, false)
+	if unconfigured.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("unconfigured invitation = %d", unconfigured.Code)
+	}
+	originRequest := httptest.NewRequest(http.MethodPost, issuePath, strings.NewReader(url.Values{"csrf_token": {adminCSRF}, "expected_version": {version}}.Encode()))
+	originRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	originRequest.Header.Set("Origin", "https://other.example.test")
+	originRequest.AddCookie(&http.Cookie{Name: security.AccessCookieName, Value: adminAccess})
+	originRequest.AddCookie(&http.Cookie{Name: security.CSRFCookieName, Value: adminCSRF})
+	originResponse := httptest.NewRecorder()
+	handler.ServeHTTP(originResponse, originRequest)
+	if originResponse.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin invitation = %d", originResponse.Code)
+	}
+	config.Balda.Slack.Agent.Enabled = false
+	singleApp, err := newHTTPApp(provider.Users(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	singleApp.invitations, singleApp.bindingChannels = invitations, channels
+	singleHandler, err := singleApp.handler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	singleDetail := httptest.NewRecorder()
+	singleHandler.ServeHTTP(singleDetail, detailRequest)
+	if singleDetail.Code != http.StatusOK || strings.Count(singleDetail.Body.String(), `data-binding-channel=`) != 1 {
+		t.Fatal("Telegram-only configuration must render exactly its form")
+	}
+	removePath := "/access/users/operator/bindings/" + user.Bindings[0].ID + "/delete"
+	removeForm := url.Values{"csrf_token": {adminCSRF}, "expected_version": {version}}
+	if got := performAccessMutation(t, handler, config, removePath, removeForm, adminAccess, adminCSRF, false); got.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed removal = %d", got.Code)
+	}
+	removeForm.Set("confirm_bot_impact", "yes")
+	if got := performAccessMutation(t, handler, config, removePath, removeForm, adminAccess, adminCSRF, false); got.Code != http.StatusSeeOther {
+		t.Fatalf("confirmed removal = %d", got.Code)
 	}
 }
 

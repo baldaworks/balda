@@ -27,12 +27,6 @@ type BindingInvitations struct {
 	now   func() time.Time
 }
 
-// IssuedBindingInvitation discloses the raw credential only at creation.
-type IssuedBindingInvitation struct {
-	Invitation usercmd.BindingInvitation
-	Payload    string
-}
-
 // NewBindingInvitations creates the shared invitation use case.
 func NewBindingInvitations(store bindingInvitationStore) (*BindingInvitations, error) {
 	if store == nil {
@@ -42,13 +36,13 @@ func NewBindingInvitations(store bindingInvitationStore) (*BindingInvitations, e
 }
 
 // Issue creates an invitation for the exact active target and configured instance.
-func (s *BindingInvitations) Issue(ctx context.Context, actor usercmd.InvitationActor, userID string, version uint64, integration usercmd.BindingIntegration, replace bool) (IssuedBindingInvitation, error) {
+func (s *BindingInvitations) Issue(ctx context.Context, actor usercmd.InvitationActor, userID string, version uint64, integration usercmd.BindingIntegration, replace bool) (usercmd.IssuedBindingInvitation, error) {
 	if err := validateBindingIntegration(integration); err != nil {
-		return IssuedBindingInvitation{}, err
+		return usercmd.IssuedBindingInvitation{}, err
 	}
 	secret := make([]byte, 24)
 	if _, err := rand.Read(secret); err != nil {
-		return IssuedBindingInvitation{}, fmt.Errorf("generate binding invitation: %w", err)
+		return usercmd.IssuedBindingInvitation{}, fmt.Errorf("generate binding invitation: %w", err)
 	}
 	payload := authpayload.Prefix + base64.RawURLEncoding.EncodeToString(secret)
 	digest := sha256.Sum256([]byte(payload))
@@ -60,10 +54,10 @@ func (s *BindingInvitations) Issue(ctx context.Context, actor usercmd.Invitation
 	audit := invitationAudit(usercmd.AuditActionInvitationIssued, userID, actor.UserID, now)
 	audit.ActorSessionID = actor.SessionID
 	if err := s.store.IssueBindingInvitation(ctx, usercmd.InvitationIssue{Invitation: invitation, ExpectedUserVersion: version, Replace: replace, Audit: audit}); err != nil {
-		return IssuedBindingInvitation{}, err
+		return usercmd.IssuedBindingInvitation{}, err
 	}
 	invitation.TokenDigest = nil
-	return IssuedBindingInvitation{Invitation: invitation, Payload: payload}, nil
+	return usercmd.IssuedBindingInvitation{Invitation: invitation, Payload: payload}, nil
 }
 
 // Pending returns safe metadata for current invitations, including expired ones.

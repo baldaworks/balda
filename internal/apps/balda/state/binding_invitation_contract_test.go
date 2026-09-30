@@ -38,7 +38,7 @@ func checkBindingInvitations(t *testing.T, open contractOpener) {
 		}
 		return p, service, target
 	}
-	issue := func(t *testing.T, s *auth.BindingInvitations, target usercmd.User, integration usercmd.BindingIntegration, replace bool) auth.IssuedBindingInvitation {
+	issue := func(t *testing.T, s *auth.BindingInvitations, target usercmd.User, integration usercmd.BindingIntegration, replace bool) usercmd.IssuedBindingInvitation {
 		t.Helper()
 		got, err := s.Issue(t.Context(), usercmd.InvitationActor{UserID: target.ID + "-issuer", SessionID: "browser-family"}, target.ID, target.Version, integration, replace)
 		if err != nil {
@@ -49,7 +49,7 @@ func checkBindingInvitations(t *testing.T, open contractOpener) {
 		}
 		return got
 	}
-	proof := func(i auth.IssuedBindingInvitation, principal string) usercmd.BindingProof {
+	proof := func(i usercmd.IssuedBindingInvitation, principal string) usercmd.BindingProof {
 		return usercmd.BindingProof{Payload: i.Payload, Integration: i.Invitation.Integration, Principal: principal, Direct: true,
 			Locator: deliverycmd.Locator{ChannelType: i.Invitation.Integration.ChannelType, AddressKey: "direct-address", SessionID: "session"}}
 	}

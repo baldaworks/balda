@@ -75,17 +75,31 @@ func (s *BindingChannels) Refresh(ctx context.Context, channel string) (usercmd.
 	resolve := s.resolvers[channel]
 	s.mu.RUnlock()
 	if resolve == nil {
+		if info, ok := s.Get(channel); ok && info.Integration.Key != "" {
+			return info, nil
+		}
 		return usercmd.BindingChannel{}, usercmd.ErrBindingInvitationUnavailable
 	}
 	info, err := resolve(ctx)
 	if err != nil {
+		s.invalidate(channel)
 		return usercmd.BindingChannel{}, err
 	}
 	if info.Integration.ChannelType != channel {
+		s.invalidate(channel)
 		return usercmd.BindingChannel{}, usercmd.ErrBindingInvitationScope
 	}
 	if err := s.Register(info); err != nil {
+		s.invalidate(channel)
 		return usercmd.BindingChannel{}, err
 	}
 	return info, nil
+}
+
+func (s *BindingChannels) invalidate(channel string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.channels[channel]; ok {
+		s.channels[channel] = usercmd.BindingChannel{Integration: usercmd.BindingIntegration{ChannelType: channel}}
+	}
 }

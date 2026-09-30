@@ -1,4 +1,4 @@
-{{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
+{{define "content"}}<main id="main-content" class="app-content" tabindex="-1"{{if .BindingForms}} hx-history="false"{{end}}>
   <div class="container-fluid">
     <header class="content-header">
       <div><p class="section-kicker">Administration</p><h1>{{if .CreateUser}}Create user{{else}}Access{{end}}</h1><p>{{if .CreateUser}}Create a browser account with a temporary credential.{{else if .User}}Profile, chat bindings and browser sessions for this user.{{else}}Find users and manage their access to Balda.{{end}}</p></div>
@@ -53,18 +53,9 @@
           <button class="btn btn-sm btn-outline-danger" type="submit">Remove binding</button>
         </form></details>
       </article>{{else}}<p class="text-body-secondary">No chat bindings.</p>{{end}}
-      {{if $.BindingChoices}}<details class="mt-3"><summary class="btn btn-outline-primary">Add binding</summary>
-        <div class="mt-3">{{range $.BindingChoices}}<details class="border rounded p-3 mb-2"><summary>Add {{if eq . "slackagent"}}Slack Agent{{else if eq . "telegram"}}Telegram{{else if eq . "zulip"}}Zulip{{else}}{{.}}{{end}} binding</summary>
-          <form class="mt-3" action="{{path "/"}}access/users/{{$.User.ID}}/bindings" method="post" hx-post="{{path "/"}}access/users/{{$.User.ID}}/bindings" hx-target="#main-content" hx-swap="outerHTML">
-            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="expected_version" value="{{$.User.Version}}"><input type="hidden" name="channel_type" value="{{.}}">
-            <label class="form-label" for="binding-principal-{{.}}">{{if eq . "slackagent"}}Slack workspace ID:member ID{{else if eq . "telegram"}}Telegram numeric user ID{{else if eq . "zulip"}}Zulip numeric user ID{{end}}</label>
-            <input class="form-control" id="binding-principal-{{.}}" name="principal" autocomplete="off" required>
-            <p class="form-text">{{if eq . "slackagent"}}Use the workspace team ID and member user ID, for example T123:U456.{{else if eq . "telegram"}}Use the user's positive numeric Telegram ID, not @username.{{else if eq . "zulip"}}Use the user's positive numeric Zulip ID.{{end}}</p>
-            <button class="btn btn-primary" type="submit">Add binding</button>
-          </form>
-        </details>{{end}}</div>
-      </details>{{end}}
+      <div class="action-row mt-3"><a class="btn btn-outline-secondary" href="{{path "/"}}access/users/{{$.User.ID}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Refresh bindings</a></div>
     </div></section>
+    <div class="binding-grid">{{range $.BindingForms}}{{if eq .ChannelType "telegram"}}{{template "binding-telegram" .}}{{else if eq .ChannelType "slackagent"}}{{template "binding-slack" .}}{{else if eq .ChannelType "zulip"}}{{template "binding-zulip" .}}{{else if eq .ChannelType "mattermost"}}{{template "binding-mattermost" .}}{{end}}{{end}}</div>
 
     </div>
     <section class="card danger-zone mb-4"><header class="card-header"><h2 class="card-title">Credential</h2></header><div class="card-body"><p>Current state: <strong>{{.CredentialState}}</strong>{{if .MustChange}}; password replacement required{{end}}.</p>

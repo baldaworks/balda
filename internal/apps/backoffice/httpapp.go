@@ -21,15 +21,17 @@ const checkedFormValue = "yes"
 const sessionPageSize = 20
 
 type httpApp struct {
-	renderer       *webui.Renderer
-	browser        *security.Browser
-	security       *security.Service
-	access         *access.Service
-	auditLog       *audit.Service
-	cards          []webui.CapabilityCard
-	bindingChoices []string
-	qa             bool
-	basePath       string
+	renderer        *webui.Renderer
+	browser         *security.Browser
+	security        *security.Service
+	access          *access.Service
+	auditLog        *audit.Service
+	cards           []webui.CapabilityCard
+	bindingChoices  []string
+	invitations     BindingInvitations
+	bindingChannels BindingChannels
+	qa              bool
+	basePath        string
 }
 
 func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
@@ -44,7 +46,7 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 		return nil, err
 	}
 	bindingChoices := configuredBindingChannels(config.Balda)
-	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store, bindingChoices...), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath}
+	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
 		ErrorHandler: app.renderSecurityError,
@@ -90,7 +92,15 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.Handle("GET "+a.path("/access/users/{user_id}"), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(a.accessDetail))))
 	mux.HandleFunc("POST "+a.path("/access/users"), a.accessCreate)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}"), a.accessUpdate)
-	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/bindings"), a.accessBindingCreate)
+	for _, channel := range a.bindingChoices {
+		route := "/access/users/{user_id}/invitations/" + channel
+		mux.HandleFunc("POST "+a.path(route), func(w http.ResponseWriter, r *http.Request) { a.issueBindingInvitation(w, r, channel) })
+		mux.HandleFunc("POST "+a.path(route+"/cancel"), func(w http.ResponseWriter, r *http.Request) { a.cancelBindingInvitation(w, r, channel) })
+		mux.HandleFunc("POST "+a.path(route+"/identity"), func(w http.ResponseWriter, r *http.Request) { a.refreshBindingIdentity(w, r, channel) })
+		mux.Handle("GET "+a.path(route), a.browser.Authenticate(a.browser.RequireAdministrator(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, a.path("/access/users/"+url.PathEscape(r.PathValue("user_id"))), http.StatusSeeOther)
+		}))))
+	}
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/bindings/{binding_id}/delete"), a.accessBindingDelete)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/credential"), a.accessCredentialReset)
 	mux.HandleFunc("POST "+a.path("/access/users/{user_id}/sessions/{session_id}/revoke"), a.accessSessionRevoke)
@@ -362,57 +372,12 @@ func (a *httpApp) accessDetail(w http.ResponseWriter, r *http.Request) {
 		a.browser.WriteError(w, r, security.ErrUnauthenticated)
 		return
 	}
-	actor := access.Actor{User: principal.User, SessionID: principal.FamilyID}
-	user, err := a.access.GetUser(r.Context(), actor, r.PathValue("user_id"))
+	page, err := a.bindingDetailPage(r, principal, r.PathValue("user_id"))
 	if err != nil {
 		a.browser.WriteError(w, r, err)
 		return
 	}
-	sessionPage, err := a.access.ListSessions(r.Context(), actor, user.ID, usercmd.PageRequest{
-		Limit: sessionPageSize, AfterID: r.URL.Query().Get("after_session"),
-	})
-	if err != nil {
-		a.browser.WriteError(w, r, err)
-		return
-	}
-	sessions := make([]webui.SessionView, 0, len(sessionPage.Sessions))
-	for _, session := range sessionPage.Sessions {
-		sessions = append(sessions, webui.ProjectSession(session, principal.FamilyID, time.Now().UTC()))
-	}
-	actionPrefix := "/access/users/" + url.PathEscape(user.ID) + "/sessions"
-	nextURL := ""
-	if sessionPage.NextAfterID != "" {
-		nextURL = "/access/users/" + url.PathEscape(user.ID) + "?after_session=" + url.QueryEscape(sessionPage.NextAfterID)
-	}
-	view := webui.ProjectUser(user)
-	capabilities := users.BackofficeCapabilities(principal.User)
-	a.render(w, r, http.StatusOK, webui.TemplateAccess, webui.Page{
-		Title: "Access · " + user.DisplayName, Current: webui.LocationAccess,
-		Navigation: webui.Navigation(capabilities, webui.LocationAccess), User: &view,
-		Sessions: sessions, CSRFToken: a.browser.CSRFToken(r), BindingChoices: a.bindingChoices,
-		OwnUser: user.ID == principal.User.ID, SessionActionPrefix: actionPrefix, SessionNextURL: nextURL,
-	})
-}
-
-func (a *httpApp) accessBindingCreate(w http.ResponseWriter, r *http.Request) {
-	form, principal, ok := a.browser.AdministratorMutation(w, r)
-	if !ok {
-		return
-	}
-	version, err := parseFormVersion(form.Get("expected_version"))
-	if err != nil {
-		a.browser.WriteError(w, r, err)
-		return
-	}
-	err = a.access.AddBinding(r.Context(), access.Actor{User: principal.User, SessionID: principal.FamilyID}, access.BindingInput{
-		UserID: r.PathValue("user_id"), ChannelType: form.Get("channel_type"),
-		Principal: form.Get("principal"), ExpectedVersion: version,
-	})
-	if err != nil {
-		a.browser.WriteError(w, r, err)
-		return
-	}
-	a.respondAccessDetailMutation(w, r, r.PathValue("user_id"))
+	a.render(w, r, http.StatusOK, webui.TemplateAccess, page)
 }
 
 func (a *httpApp) accessBindingDelete(w http.ResponseWriter, r *http.Request) {

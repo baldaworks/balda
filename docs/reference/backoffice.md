@@ -204,11 +204,26 @@ raw User-Agent and token values are never displayed.
   administrators and operators; Audit is administrator-only. Account places
   **Change password** before profile details. A successful change creates a
   fresh browser session and revokes previous access and refresh credentials.
-  An administrator may attach and remove multiple chat bindings per user from
-  Access. The add form offers only configured Telegram, Slack Agent
-  (`slackagent`), and Zulip integrations; generic webhooks are not user
-  bindings. Removal requires confirmation of the affected principal's bot
-  access. Other bindings, the browser account, and browser sessions remain.
+  Each configured Telegram, Slack Agent (`slackagent`), Zulip, or Mattermost
+  integration has its own account-binding panel. An administrator generates a
+  single-use `bind_<token>` invitation for the selected existing user. The bot's
+  verified instance and sender identity determine attachment; browser input
+  cannot choose the principal or instance. User role and primary designation
+  stay unchanged. No owner token is required. Invitations expire after 24 hours;
+  issuing over a pending invitation requires explicit replacement confirmation.
+  Cancel requires confirmation and leaves confirmed bindings intact. Disabled
+  users cannot receive invitations, and disabling revokes pending invitations.
+  Unavailable bot identity offers Retry connection instead of issuance. Telegram
+  provides a start deep link and command, Slack a verified workspace DM and native
+  command, Zulip a realm bot DM and start command, and Mattermost a `/msg @bot`
+  DM action with a slash command only when its receiver is enabled. Mattermost
+  uses the existing Direct and locator contract, including D and G channels.
+  Refresh bindings shows confirmed principals and pending/expired metadata only.
+  The invitation value is shown once in the issuance POST response, never in
+  browser navigation, session storage, server logs, or persisted state. Only its
+  digest is stored. Generic webhooks are not user bindings. Removing a confirmed
+  binding requires confirmation of the affected principal's bot access. Other
+  bindings, the browser account, and browser sessions remain.
   Committed role/status changes immediately affect bot authorization for every
   attached principal. Telegram bindings show the provider username and first
   name separately, with empty values when the provider has not supplied them.
@@ -328,6 +343,14 @@ A successful mutation follows these response contracts:
 | --- | --- |
 | Ordinary form submission | `303 See Other` with `Location` |
 | HTMX request | `204 No Content` with `HX-Location` |
+
+Invitation issuance is the deliberate exception: return `200 OK` with the full
+page for native forms or `#main-content` for HTMX, and `Cache-Control: no-store`.
+Reveal the newly generated value in that response only; a redirect would need
+credential persistence. Protected GET of the issuance URL redirects to user
+detail without a secret. Reload, refresh, and history recovery expose only safe
+metadata; HTMX history caching is disabled on binding detail and secrets are
+cleared on pagehide. Cancel and identity retry retain the ordinary contracts.
 
 Errors retain their original HTTP status. For an eligible HTMX fragment
 request, an error replaces only `#main-content`; it must not replace the shell

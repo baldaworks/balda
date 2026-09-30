@@ -8,7 +8,7 @@ const routes = [
   '', 'style-guide', 'layout', 'layout-long', 'login', 'login-error', 'refresh', 'refresh-error', 'refresh-conflict',
   'password', 'password-error', 'overview', 'overview-empty', 'access-list',
   'access-create', 'access-empty', 'access-error', 'access', 'access-primary',
-  'access-long', 'account', 'account-many', 'account-many-next',
+  'access-long', 'bindings-issued', 'bindings-pending', 'bindings-unavailable', 'bindings-disabled', 'account', 'account-many', 'account-many-next',
   'account-session-states', 'account-empty', 'account-error', 'audit',
   'audit-empty', 'error',
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
@@ -192,6 +192,12 @@ async function checkPage(browser, baseURL, viewport) {
       await noScript.locator('.native-navigation summary').click();
       await noScript.getByRole('navigation', { name: 'Mobile navigation' }).getByText('Account', { exact: true }).click();
       assert.equal(await noScript.locator('h1').textContent(), 'Account');
+      await noScript.goto(`${url}/qa/ui/bindings-issued`);
+      assert.equal(await noScript.locator('[data-binding-channel]').count(), 4);
+      assert.equal(await noScript.locator('input[data-binding-secret]').count(), 9);
+      assert.equal(await noScript.locator('input[data-binding-secret]').first().inputValue(), 'bind_SYNTHETIC_PREVIEW_ONLY');
+      await noScript.getByText('Replace invitation', { exact: true }).first().click();
+      assert.equal(await noScript.locator('input[name=replace]').first().isVisible(), true, 'native replacement confirmation is usable');
       await noScript.close();
       console.log(`Backoffice E2E: ${routes.length} gallery pages and states at 390/768/1024/1440px, consistent heading colors, native/HTMX layout, audit, refresh, and navigation passed`);
     } finally { await browser.close(); }

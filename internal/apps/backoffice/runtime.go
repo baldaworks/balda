@@ -24,15 +24,17 @@ const (
 
 // Runtime composes Backoffice operations over the selected Balda database only.
 type Runtime struct {
-	config    ResolvedConfig
-	provider  state.Provider
-	state     *StateService
-	bootstrap *BootstrapService
-	owned     bool
-	mu        sync.Mutex
-	server    *http.Server
-	done      chan struct{}
-	serveErr  error
+	config          ResolvedConfig
+	provider        state.Provider
+	state           *StateService
+	bootstrap       *BootstrapService
+	owned           bool
+	mu              sync.Mutex
+	server          *http.Server
+	done            chan struct{}
+	serveErr        error
+	invitations     BindingInvitations
+	bindingChannels BindingChannels
 }
 
 // NewRuntime constructs Backoffice over a provider owned by its host.
@@ -109,6 +111,8 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
 	}
+	httpApplication.invitations = r.invitations
+	httpApplication.bindingChannels = r.bindingChannels
 	handler, err := httpApplication.handler()
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP routes: %w", err)
@@ -184,4 +188,16 @@ func healthHandler() http.Handler {
 		_, _ = writer.Write([]byte("ok\n"))
 	})
 	return mux
+}
+
+// ConfigureBindingInvitations wires host-owned services before the HTTP listener starts.
+func (r *Runtime) ConfigureBindingInvitations(invitations BindingInvitations, channels BindingChannels) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.server != nil || invitations == nil || channels == nil {
+		return fmt.Errorf("binding services must be configured before Backoffice start")
+	}
+	r.invitations = invitations
+	r.bindingChannels = channels
+	return nil
 }

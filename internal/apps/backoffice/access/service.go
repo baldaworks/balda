@@ -23,7 +23,6 @@ type store interface {
 	GetSession(ctx context.Context, sessionID string) (usercmd.SessionFamily, bool, error)
 	ListActiveSessions(ctx context.Context, userID string, page usercmd.PageRequest, now time.Time) (usercmd.SessionPage, error)
 	RevokeSession(ctx context.Context, sessionID string, expectedVersion uint64, revokedAt time.Time, reason string, audit usercmd.AuditEvent) error
-	CreateManagedBinding(ctx context.Context, binding usercmd.Binding, expectedUserVersion uint64, audit usercmd.AuditEvent) error
 	DeleteBinding(ctx context.Context, userID, bindingID string, expectedUserVersion uint64, audit usercmd.AuditEvent) error
 }
 
@@ -62,14 +61,6 @@ type CredentialInput struct {
 	ConfirmCurrent            bool
 }
 
-// BindingInput identifies a configured transport principal for one user.
-type BindingInput struct {
-	UserID          string
-	ChannelType     string
-	Principal       string
-	ExpectedVersion uint64
-}
-
 // BindingRemoval identifies one existing binding and confirms its bot access impact.
 type BindingRemoval struct {
 	UserID          string
@@ -80,48 +71,14 @@ type BindingRemoval struct {
 
 // Service administers canonical users and browser session families.
 type Service struct {
-	store              store
-	now                func() time.Time
-	newID              func() string
-	configuredBindings map[string]bool
+	store store
+	now   func() time.Time
+	newID func() string
 }
 
 // NewService creates the Backoffice Access use case over its local persistence port.
-func NewService(store store, configuredBindings ...string) *Service {
-	enabled := make(map[string]bool, len(configuredBindings))
-	for _, channel := range configuredBindings {
-		enabled[channel] = true
-	}
-	return &Service{store: store, now: time.Now, newID: uuid.NewString, configuredBindings: enabled}
-}
-
-// AddBinding attaches one principal to an existing user.
-func (s *Service) AddBinding(ctx context.Context, actor Actor, input BindingInput) error {
-	if err := requireAccessAdministrator(actor); err != nil {
-		return err
-	}
-	if !s.configuredBindings[input.ChannelType] || input.ExpectedVersion == 0 {
-		return usercmd.ErrInvalid
-	}
-	principal, err := users.NormalizeBindingPrincipal(input.ChannelType, input.Principal)
-	if err != nil {
-		return err
-	}
-	user, found, err := s.store.GetUser(ctx, strings.TrimSpace(input.UserID))
-	if err != nil {
-		return err
-	}
-	if !found {
-		return usercmd.ErrNotFound
-	}
-	if user.Version != input.ExpectedVersion {
-		return usercmd.ErrConflict
-	}
-	now := s.now().UTC()
-	binding := usercmd.Binding{ID: s.newID(), UserID: user.ID, ChannelType: input.ChannelType,
-		Principal: principal, CreatedAt: now, UpdatedAt: now, Provenance: "backoffice-admin"}
-	audit := s.audit(actor, usercmd.AuditActionBindingAttached, usercmd.AuditTargetBinding, binding.ID, "administrator attached binding", now)
-	return s.store.CreateManagedBinding(ctx, binding, input.ExpectedVersion, audit)
+func NewService(store store) *Service {
+	return &Service{store: store, now: time.Now, newID: uuid.NewString}
 }
 
 // RemoveBinding removes one selected principal after explicit impact confirmation.

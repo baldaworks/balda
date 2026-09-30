@@ -118,3 +118,29 @@ document.addEventListener("htmx:historyRestore", function () {
   syncNavigation();
   document.getElementById("main-content")?.focus({ preventScroll: true });
 });
+
+document.addEventListener("click", async function (event) {
+  const button = event.target.closest("[data-binding-copy]");
+  if (!button) return;
+  const field = document.getElementById(button.dataset.bindingCopy);
+  if (!field || !field.matches("input[data-binding-secret]")) return;
+  field.select();
+  const status = button.closest("[data-binding-reveal]")?.querySelector("[data-binding-copy-status]");
+  try {
+    await navigator.clipboard.writeText(field.value);
+    if (status) status.textContent = "Copied.";
+  } catch {
+    if (status) status.textContent = "Selected. Copy with Ctrl/Cmd+C.";
+  }
+});
+
+window.addEventListener("pagehide", function () {
+  document.querySelectorAll("[data-binding-secret]").forEach(function (element) {
+    if (element instanceof HTMLInputElement) {
+      element.value = "";
+      element.removeAttribute("value");
+    } else if (element instanceof HTMLAnchorElement) {
+      element.removeAttribute("href");
+    }
+  });
+});

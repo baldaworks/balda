@@ -350,8 +350,15 @@ func Module(
 				})
 				return provider, nil
 			},
-			func(provider baldastate.Provider) (*backoffice.Runtime, error) {
-				return backoffice.NewRuntime(backofficeConfig, provider)
+			func(provider baldastate.Provider, invitations *auth.BindingInvitations, channels *auth.BindingChannels) (*backoffice.Runtime, error) {
+				runtime, err := backoffice.NewRuntime(backofficeConfig, provider)
+				if err != nil {
+					return nil, err
+				}
+				if err := runtime.ConfigureBindingInvitations(invitations, channels); err != nil {
+					return nil, err
+				}
+				return runtime, nil
 			},
 			func(provider baldastate.Provider) tgbotkit.OffsetStore {
 				return provider.PollingOffsetStore()
