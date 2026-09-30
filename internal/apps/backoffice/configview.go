@@ -63,6 +63,14 @@ func ProjectConfiguredCapabilities(cfg BaldaConfig) []ConfiguredCapability {
 			ListenAddr: strings.TrimSpace(cfg.Webhooks.ListenAddr), RouteCount: cfg.Webhooks.RouteCount,
 		})
 	}
+	if cfg.Mattermost.Enabled {
+		capability := ConfiguredCapability{ID: "mattermost", Name: "Mattermost", Mode: "websocket"}
+		if cfg.Mattermost.CommandsEnabled {
+			capability.ListenAddr = strings.TrimSpace(cfg.Mattermost.ListenAddr)
+			capability.Endpoint = strings.TrimSpace(cfg.Mattermost.CommandsPath)
+		}
+		capabilities = append(capabilities, capability)
+	}
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i].ID < capabilities[j].ID })
 	return capabilities
 }
@@ -77,6 +85,9 @@ func configuredBindingChannels(cfg BaldaConfig) []string {
 	}
 	if cfg.Zulip.Webhook.Enabled {
 		channels = append(channels, "zulip")
+	}
+	if cfg.Mattermost.Enabled {
+		channels = append(channels, "mattermost")
 	}
 	return channels
 }

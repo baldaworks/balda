@@ -177,6 +177,11 @@ func NormalizeBindingPrincipal(channelType, principal string) (string, error) {
 			return "", fmt.Errorf("%w: invalid Slack Agent principal", usercmd.ErrInvalid)
 		}
 		return strings.TrimSpace(teamID) + ":" + strings.TrimSpace(userID), nil
+	case "mattermost":
+		if principal == "" {
+			return "", fmt.Errorf("%w: invalid Mattermost principal", usercmd.ErrInvalid)
+		}
+		return principal, nil
 	default:
 		return "", fmt.Errorf("%w: unsupported transport channel", usercmd.ErrInvalid)
 	}

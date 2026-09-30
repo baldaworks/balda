@@ -49,11 +49,12 @@ func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
 			Enabled: true, ListenAddr: "127.0.0.1:8091", EventsPath: "/slack/events",
 			Agent: SlackAgentConfig{Enabled: true, ListenAddr: "127.0.0.1:8092", EventsPath: "/slack/agent/events", EnableStreaming: true},
 		},
-		Webhooks: WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", RouteCount: 1},
+		Webhooks:   WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", RouteCount: 1},
+		Mattermost: MattermostConfig{Enabled: true, CommandsEnabled: true, ListenAddr: "127.0.0.1:8094", CommandsPath: "/mattermost/commands"},
 	}
 	projection := ProjectConfiguredCapabilities(cfg)
-	if len(projection) != 3 {
-		t.Fatalf("capability count = %d, want 3: %+v", len(projection), projection)
+	if len(projection) != 4 {
+		t.Fatalf("capability count = %d, want 4: %+v", len(projection), projection)
 	}
 	for _, capability := range projection {
 		if capability.ID == "zulip" {
@@ -67,7 +68,7 @@ func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
 	if len(cards) != len(projection) || cards[0].ID != projection[0].ID {
 		t.Fatalf("capability cards = %+v", cards)
 	}
-	if got := configuredBindingChannels(cfg); !slices.Equal(got, []string{"telegram", "slackagent"}) {
+	if got := configuredBindingChannels(cfg); !slices.Equal(got, []string{"telegram", "slackagent", "mattermost"}) {
 		t.Fatalf("configured binding channels = %v", got)
 	}
 }

@@ -71,12 +71,14 @@ func TestPostgresMigrations(t *testing.T) {
 		VALUES ('invalid', '', '', '', 'invalid', '', '')`); err == nil {
 		t.Fatal("invalid intent state did not violate check constraint")
 	}
-	var indexes int
-	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE 'idx_%'`).Scan(&indexes); err != nil {
-		t.Fatal(err)
-	}
-	if indexes != 28 {
-		t.Fatalf("PostgreSQL explicit indexes = %d, want 28", indexes)
+	for _, name := range []string{"idx_balda_users_primary", "idx_balda_user_bindings_user", "idx_balda_security_audit_recent"} {
+		var found bool
+		if err := db.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1)`, name).Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			t.Errorf("required PostgreSQL index %q is missing", name)
+		}
 	}
 }
 

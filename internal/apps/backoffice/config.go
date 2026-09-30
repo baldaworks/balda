@@ -120,10 +120,20 @@ func resolveDuration(raw string, fallback time.Duration, field string) (time.Dur
 
 // BaldaConfig is the allowlisted configuration subset consumed by Backoffice.
 type BaldaConfig struct {
-	Telegram TelegramConfig `mapstructure:"telegram"`
-	Zulip    ZulipConfig    `mapstructure:"zulip"`
-	Slack    SlackConfig    `mapstructure:"slack"`
-	Webhooks WebhooksConfig `mapstructure:"webhooks"`
+	Telegram   TelegramConfig   `mapstructure:"telegram"`
+	Zulip      ZulipConfig      `mapstructure:"zulip"`
+	Slack      SlackConfig      `mapstructure:"slack"`
+	Webhooks   WebhooksConfig   `mapstructure:"webhooks"`
+	Mattermost MattermostConfig `mapstructure:"mattermost"`
+}
+
+// MattermostConfig contains only non-secret integration capability information.
+type MattermostConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	ServerURL       string `mapstructure:"server_url"`
+	CommandsEnabled bool   `mapstructure:"commands_enabled"`
+	ListenAddr      string `mapstructure:"listen_addr"`
+	CommandsPath    string `mapstructure:"commands_path"`
 }
 
 // TelegramConfig contains only non-secret capability information.

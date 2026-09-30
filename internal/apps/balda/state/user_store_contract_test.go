@@ -252,6 +252,11 @@ func checkUserStoreRefreshRotationAndReplay(t *testing.T, open contractOpener) {
 	}
 
 	result, err = store.RotateRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.RefreshRotationConcurrent {
+		t.Fatalf("RotateRefresh(duplicate) = %q, %v", result, err)
+	}
+	rotation.RotatedAt = now.Add(16 * time.Minute)
+	result, err = store.RotateRefresh(t.Context(), rotation)
 	if err != nil || result != usercmd.RefreshRotationReplayRevoked {
 		t.Fatalf("RotateRefresh(replay) = %q, %v", result, err)
 	}
@@ -425,9 +430,13 @@ func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
 		results = append(results, string(got.result))
 	}
 	sort.Strings(results)
-	want := []string{string(usercmd.RefreshRotationReplayRevoked), string(usercmd.RefreshRotationSucceeded)}
+	want := []string{string(usercmd.RefreshRotationConcurrent), string(usercmd.RefreshRotationSucceeded)}
 	if !slices.Equal(results, want) {
 		t.Fatalf("concurrent refresh results = %v, want %v", results, want)
+	}
+	refreshed, found, err := store.GetSessionByRefreshSelector(t.Context(), base.Refresh.Selector)
+	if err != nil || !found || !refreshed.Family.RevokedAt.IsZero() || refreshed.Token.State != usercmd.RefreshTokenStateActive {
+		t.Fatalf("concurrent refresh family = %+v, %t, %v", refreshed, found, err)
 	}
 }
 
