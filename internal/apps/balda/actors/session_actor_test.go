@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
 	baldaactorcmd "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
 	"github.com/rs/zerolog"
 )
 
@@ -581,13 +581,13 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 	}
 
 	rootStarted := make(chan struct{})
-	blockRoot := make(chan struct{})
+	t.Cleanup(func() { _ = dispatcher1.Shutdown(context.Background()) })
 
 	runner1 := callbackSessionTurnRunner{
-		runFn: func(_ context.Context, _ SessionTurnPayload) error {
+		runFn: func(ctx context.Context, _ SessionTurnPayload) error {
 			close(rootStarted)
-			<-blockRoot
-			return nil
+			<-ctx.Done()
+			return ctx.Err()
 		},
 	}
 	exec1 := &sessionActorExecutor{
@@ -617,8 +617,8 @@ func TestSessionActor_SimulatedRestartWithUnacknowledgedEnvelopesReplaysAllSteer
 	ensureNoErrorSignal(t, steer1Done, 150*time.Millisecond, "steer1 unacknowledged")
 	ensureNoErrorSignal(t, steer2Done, 150*time.Millisecond, "steer2 unacknowledged")
 
-	// Simulate crash: shut down dispatcher1 and abandon instance 1.
-	close(blockRoot)
+	// Stop intake before canceling the root. Releasing it first could execute
+	// queued steering work on the instance this fixture intends to abandon.
 	_ = dispatcher1.Shutdown(context.Background())
 
 	// Reconstruct fresh runtime instance (instance 2).

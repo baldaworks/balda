@@ -346,12 +346,13 @@ func testTurnPayload() turncmd.SessionTurnPayload {
 }
 
 type testExecutor struct {
+	err      error
 	requests []Request
 }
 
 func (e *testExecutor) ExecuteSessionTurn(_ context.Context, request Request) error {
 	e.requests = append(e.requests, request)
-	return nil
+	return e.err
 }
 
 func (e *testExecutor) singleRequest(t *testing.T) Request {
@@ -437,4 +438,25 @@ func (s *testActiveSession) RuntimeStateValue(_ context.Context, key string) (an
 	}
 	value, ok := s.state[key]
 	return value, ok, nil
+}
+
+func TestRunnerClassifiesOnlyPreparationFailure(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("fixture error")
+	executor := &testExecutor{err: cause}
+	runner := New(&testSessionAccessor{active: &testActiveSession{}}, executor, nil, zerolog.Nop())
+	payload := testTurnPayload()
+	err := runner.RunSessionTurnPayload(context.Background(), payload)
+	var preparation *turncmd.PreparationError
+	if !errors.Is(err, cause) || errors.As(err, &preparation) {
+		t.Fatalf("provider error = %v, want unchanged cause", err)
+	}
+	payload.Skill = &runtimecatalogcmd.SkillSelection{Snapshot: "snapshot-1"}
+	err = runner.RunSessionTurnPayload(context.Background(), payload)
+	if !errors.As(err, &preparation) {
+		t.Fatalf("preparation error = %v, want typed failure", err)
+	}
+	if len(executor.requests) != 1 {
+		t.Fatal("provider called after preparation failed")
+	}
 }
