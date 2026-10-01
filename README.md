@@ -76,27 +76,27 @@ SQLite is the default state database. To select PostgreSQL, configure
 `balda.database.type: postgres`; launch remains `balda start`.
 See [database configuration and operations](docs/reference/database.md).
 
-`balda start` applies embedded schema migrations to the selected database,
+`balda start` applies embedded schema and data migrations to the selected database,
 checks canonical users and administrator bootstrap, then starts the bot,
-Backoffice, and enabled integrations in one process. Before the first start,
-the administrator is already bootstrapped on a fresh database. For an existing installation,
-stop Balda, back up the database, and convert legacy owner/collaborator records
-with an exclusive credentials-output file. See the
+Backoffice, and enabled integrations in one process. On a fresh database,
+`balda init` has already bootstrapped the administrator. For an existing
+installation, stop Balda, back up the database, and deploy the new binary.
+Goose automatically converts owner/collaborator records when Balda opens the
+database, preserving their roles and bot bindings. See the
 [Backoffice startup and security contract](docs/reference/backoffice.md).
 
 ```bash
-# Existing installation with legacy users, while Balda is stopped and after a database backup:
-balda backoffice migrate-users --credentials-output /run/secrets/balda-migrated-users.txt
-balda backoffice bootstrap-admin --reset
+# Existing installation with owner/collaborator records, after stopping Balda and backing up:
+balda backoffice bootstrap-admin
 balda start
 ```
 
-The existing-install `--reset` step generates and prints a new password for the
-migrated primary user. It is needed when that user
-has a temporary credential; it revokes that user's browser refresh-token
-families. Never pass passwords or generated migration credentials as command
-arguments. Distribute the plaintext migration manifest out of band and
-securely remove it after verified delivery.
+Conversion does not generate passwords. The converted primary user is named
+`superuser`; `bootstrap-admin` generates and prints its first browser password
+once. Already-converted users retain their credentials and browser sessions.
+If the administrator already has a usable credential, start directly; replacing
+that password requires `bootstrap-admin --reset` and revokes its browser session
+families. Never pass passwords as command arguments.
 
 ## First run
 

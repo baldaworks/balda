@@ -7,8 +7,8 @@ Backoffice. Read it before changing `cmd/balda` or
 ## Application boundary
 
 - `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
-  production process lifecycle; `backoffice bootstrap-admin` and
-  `backoffice migrate-users` are offline maintenance subcommands.
+  production process lifecycle; `backoffice bootstrap-admin` is the offline
+  administrator maintenance subcommand.
   `backoffice qa serve` is a local preview command without application state.
 - `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
@@ -23,9 +23,10 @@ Backoffice. Read it before changing `cmd/balda` or
 
 `balda start` reads `.config/balda/config.yaml` once, applies `BALDA_*`
 overrides, opens the database selected by `balda.database`, and applies its
-embedded schema migrations. Backoffice uses that same provider and canonical
-user store; it does not select a second database or run separate migrations.
-The lifecycle checks legacy-user conversion and administrator bootstrap before
+embedded Goose schema and data migrations. Backoffice uses that same provider
+and canonical user store; it does not select a second database or run separate migrations.
+Provider opening automatically converts legacy owner/collaborator data.
+The lifecycle checks canonical administrator bootstrap before
 MCP or ingress, then binds Backoffice HTTP before enabling inbound transports.
 A failed prerequisite or listener bind aborts startup. Shutdown closes ingress
 before HTTP and the shared provider.
@@ -34,10 +35,6 @@ Commands:
 
 - `balda validate` checks configuration and the application graph without
   opening or migrating the database. It is not a user-readiness check.
-- `balda backoffice migrate-users --credentials-output <path>` performs the explicit
-  forward-only owner/collaborator migration. The output file is created once
-  with mode `0600`; it contains temporary plaintext credentials and must be
-  distributed and deleted as sensitive material.
 - `balda init` creates the first administrator and prints its generated password
   once, alongside the owner token. Its username is `superuser`.
 - `balda backoffice bootstrap-admin` generates and prints a password once by
@@ -46,8 +43,9 @@ Commands:
   configures the selected credential-disabled administrator. Replacing a
   usable credential requires `--reset` and revokes all existing browser
   session families.
-- `balda start` refuses pending legacy conversion or incomplete administrator
-  bootstrap before binding any listener or ingress.
+- `balda start` applies schema and data migrations, then refuses incomplete
+  administrator bootstrap before binding any listener or ingress. Migration
+  failures also abort startup.
 
 The safe defaults are loopback `127.0.0.1:8095`, public URL
 `http://127.0.0.1:8095`, a 15-minute opaque access-token lifetime, and a
@@ -111,28 +109,30 @@ usable credential requires an explicit `--reset`; it invalidates every browser
 session family for that user.
 
 For an existing installation with legacy owner/collaborator records, stop
-Balda, take a consistent database backup, deploy the new binary, and run the
-forward user conversion before start. The converted primary has a temporary
-credential and username `superuser`, so `--reset` sets its intended password and revokes any prior
-browser refresh families. Skip conversion and reset when canonical users and
-an active administrator are already ready:
+Balda, take a consistent database backup, and deploy the new binary. Opening
+the selected state provider automatically runs the forward-only Goose data
+migration for SQLite or PostgreSQL. The migration preserves users, roles,
+bot bindings, and profiles without generating passwords or credential files.
+
+Newly converted users have active bot access and disabled browser credentials.
+The primary administrator has username and display name `superuser`.
+Set its first browser password through the separate bootstrap operation:
 
 ```bash
-./bin/balda backoffice migrate-users \
-  --credentials-output /run/secrets/balda-migrated-users.txt
-./bin/balda backoffice bootstrap-admin --reset
+./bin/balda backoffice bootstrap-admin
 ./bin/balda start
 ```
 
-The credentials path must not exist beforehand. Backoffice creates it
-exclusively with mode `0600`, writes each generated temporary credential once,
-and never prints migration passwords to stdout. The reset command prints the
-new primary administrator password once. Distribute manifest entries out of band to their
-intended users, verify delivery, and then securely remove the manifest under
-your organization's secret-retention policy. Never commit, upload, back up, or
-attach the manifest to a ticket. Migrated bot bindings and roles become
-canonical immediately; a temporary browser credential can reach only password
-replacement and logout until it is changed.
+The bootstrap command opens the provider, so conversion completes before it
+sets and prints the administrator password once. No `--reset` is needed for
+an administrator whose browser credential is disabled. Other converted users
+can receive browser credentials through the administrator's Access credential
+reset flow.
+
+On an already-converted database, the data migration leaves canonical users,
+credentials, and browser sessions unchanged. Start directly when the primary
+administrator is ready. Replacing an existing usable password requires
+`bootstrap-admin --reset`, which revokes that user's browser refresh families.
 
 Legacy conversion copies a Telegram collaborator's stored username and first
 name into separate optional binding fields. Legacy owner records contain neither
@@ -144,9 +144,11 @@ fields stay empty until a verified event arrives.
 The numeric Telegram principal remains the authorization key; provider profile
 fields never replace the Backoffice username or display name.
 
-User conversion is transactional and idempotent. A collision or interrupted
-precondition fails instead of silently merging users. After it succeeds there
-is no legacy runtime fallback. Rollback means restoring the pre-migration
+User conversion and its Goose version marker commit in one transaction.
+Repeated provider opening creates no duplicates. Invalid source records or
+unmarked legacy records mixed with canonical users fail instead of silently
+merging users; a failure rolls back conversion and does not advance its version.
+After it succeeds there is no legacy runtime fallback. Rollback means restoring the pre-migration
 database backup with the old binaries stopped; do not roll back only the binary
 or re-enable legacy reads.
 
@@ -194,7 +196,7 @@ raw User-Agent and token values are never displayed.
 
 - Run `balda validate` for read-only configuration/graph checks. `balda start`
   is the authoritative user-readiness gate and refuses to expose listeners
-  until conversion and bootstrap are complete.
+  until provider migrations and administrator bootstrap are complete.
 - Back up and restore the selected database as documented in
   [Balda state database](database.md). SQLite may be shared only by one Balda
   process; stop it for file backup or restore. PostgreSQL backups must include

@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"net"
 	"os"
@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baldaworks/balda/internal/apps/balda/authcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
 	"github.com/baldaworks/balda/internal/apps/balda/users"
 )
 
-func TestBackofficeMaintenanceUsesSelectedBaldaState(t *testing.T) {
+func TestBackofficeBootstrapUsesAutomaticallyUpgradedState(t *testing.T) {
+	fixture := readUserUpgradeFixture(t)
 	workingDir := t.TempDir()
 	t.Chdir(workingDir)
 	configPath := filepath.Join(workingDir, ".config", "balda", "config.yaml")
@@ -35,67 +35,12 @@ balda:
 		t.Fatal(err)
 	}
 	database := state.DatabaseConfig{Type: "sqlite", SQLite: state.SQLiteConfig{Path: filepath.Join(workingDir, ".config", "balda", "state.db")}}
+	seedUserUpgradeDatabase(t, database.SQLite.Path, fixture)
 	provider, err := state.Open(t.Context(), database)
 	if err != nil {
 		t.Fatal(err)
 	}
 	registeredAt := time.Date(2026, 9, 23, 11, 0, 0, 0, time.UTC)
-	if err := provider.AppKV().SetJSON(t.Context(), "owner", map[string]any{
-		"user_id": int64(101), "chat_id": int64(909), "registered_at": registeredAt,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := provider.Collaborators().AddCollaborator(t.Context(), authcmd.Collaborator{
-		UserID: "202", Username: "operator", AddedBy: "101", AddedAt: registeredAt,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := provider.Close(); err != nil {
-		t.Fatal(err)
-	}
-	manifestPath := filepath.Join(workingDir, "credentials.json")
-	migrateOutput := &bytes.Buffer{}
-	migrate, err := newRootCommand()
-	if err != nil {
-		t.Fatal(err)
-	}
-	migrate.SetOut(migrateOutput)
-	migrate.SetErr(&bytes.Buffer{})
-	migrate.SetArgs([]string{"backoffice", "migrate-users", "--credentials-output", manifestPath})
-	if err := migrate.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("credentials mode = %v, want 0600", info.Mode().Perm())
-	}
-	manifest, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var credentials struct {
-		Users []struct {
-			TemporaryPassword string `json:"temporary_password"`
-		} `json:"users"`
-	}
-	if err := json.Unmarshal(manifest, &credentials); err != nil {
-		t.Fatal(err)
-	}
-	if len(credentials.Users) != 2 {
-		t.Fatalf("migrated users = %d, want 2", len(credentials.Users))
-	}
-	for _, user := range credentials.Users {
-		if strings.Contains(migrateOutput.String(), user.TemporaryPassword) {
-			t.Fatal("migration leaked temporary password")
-		}
-	}
-	provider, err = state.Open(t.Context(), database)
-	if err != nil {
-		t.Fatal(err)
-	}
 	page, err := provider.Users().ListUsers(t.Context(), usercmd.PageRequest{Limit: usercmd.MaxPageSize})
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +54,37 @@ balda:
 	if primary.ID == "" {
 		t.Fatal("migration produced no primary administrator")
 	}
+	if primary.Credential.State != usercmd.CredentialStateDisabled {
+		t.Fatalf("converted credential = %q", primary.Credential.State)
+	}
+	if users.BotCapability(primary) != usercmd.BotCapabilityOwner {
+		t.Fatal("converted owner cannot use bot authorization before browser bootstrap")
+	}
+	bindingID := primary.Binding.ID
+	if err := provider.Close(); err != nil {
+		t.Fatal(err)
+	}
+	setBaldaAdminPasswordGenerator(t, "first-generated-administrator-password")
+	initialBootstrap, err := newRootCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialBootstrap.SetIn(strings.NewReader(""))
+	initialBootstrap.SetOut(&bytes.Buffer{})
+	initialBootstrap.SetErr(&bytes.Buffer{})
+	initialBootstrap.SetArgs([]string{"backoffice", "bootstrap-admin"})
+	if err := initialBootstrap.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	provider, err = state.Open(t.Context(), database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapped, found, err := provider.Users().GetUser(t.Context(), primary.ID)
+	if err != nil || !found || bootstrapped.Credential.State != usercmd.CredentialStateActive {
+		t.Fatalf("bootstrapped user = %+v, found=%t, err=%v", bootstrapped, found, err)
+	}
+	primary = bootstrapped
 	familyCreatedAt := registeredAt.Add(time.Hour)
 	refreshExpiry := familyCreatedAt.Add(12 * time.Hour)
 	family := usercmd.SessionFamily{
@@ -162,6 +138,9 @@ balda:
 	owner, found, err := provider.Users().GetUserByBinding(t.Context(), "telegram", "101")
 	if err != nil || !found || users.BotCapability(owner) != usercmd.BotCapabilityOwner {
 		t.Fatalf("owner binding = %+v, found=%t, error=%v", owner, found, err)
+	}
+	if owner.ID != primary.ID || owner.Binding.ID != bindingID {
+		t.Fatal("credential bootstrap/reset replaced owner identity or binding")
 	}
 	collaborator, found, err := provider.Users().GetUserByBinding(t.Context(), "telegram", "202")
 	if err != nil || !found || users.BotCapability(collaborator) != usercmd.BotCapabilityCollaborator {
@@ -386,7 +365,8 @@ balda:
 	_ = listener.Close()
 }
 
-func TestStartRequiresLegacyUserConversion(t *testing.T) {
+func TestStartUpgradesUsersBeforeAdministratorReadiness(t *testing.T) {
+	fixture := readUserUpgradeFixture(t)
 	workingDir := t.TempDir()
 	t.Chdir(workingDir)
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
@@ -403,20 +383,8 @@ balda:
 `); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := state.Open(t.Context(), state.DatabaseConfig{
-		Type: "sqlite", SQLite: state.SQLiteConfig{Path: filepath.Join(workingDir, ".config", "balda", "state.db")},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := provider.AppKV().SetJSON(t.Context(), "owner", map[string]any{
-		"user_id": int64(101), "chat_id": int64(909), "registered_at": time.Now().UTC(),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := provider.Close(); err != nil {
-		t.Fatal(err)
-	}
+	databasePath := filepath.Join(workingDir, ".config", "balda", "state.db")
+	seedUserUpgradeDatabase(t, databasePath, fixture)
 	command, err := newRootCommand()
 	if err != nil {
 		t.Fatal(err)
@@ -424,7 +392,48 @@ balda:
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})
 	command.SetArgs([]string{"start"})
-	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "migrate-users") {
-		t.Fatalf("Start() error = %v, want legacy conversion instruction", err)
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "bootstrap-admin") {
+		t.Fatalf("Start() error = %v, want administrator bootstrap instruction", err)
+	}
+	provider, err := state.Open(t.Context(), state.DatabaseConfig{
+		Type: "sqlite", SQLite: state.SQLiteConfig{Path: databasePath},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = provider.Close() }()
+	owner, found, err := provider.Users().GetUserByBinding(t.Context(), "telegram", "101")
+	if err != nil || !found || !owner.Primary || owner.Credential.State != usercmd.CredentialStateDisabled {
+		t.Fatalf("owner after startup readiness check = %+v, found=%t, err=%v", owner, found, err)
+	}
+}
+
+func readUserUpgradeFixture(t *testing.T) []byte {
+	t.Helper()
+	fixture, err := os.ReadFile("../../internal/apps/balda/state/testdata/sqlite_v36.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}
+
+func seedUserUpgradeDatabase(t *testing.T, path string, fixture []byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(t.Context(), string(fixture)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_app_kv (namespace, key, value_json, updated_at)
+  VALUES ('balda.app', 'owner', '{"user_id":101,"chat_id":909,"registered_at":"2026-09-23T11:00:00Z"}', '2026-09-23T11:00:00Z');
+  INSERT INTO balda_collaborators (user_id, username, first_name, added_by, added_at)
+  VALUES ('202', 'operator', 'Op', '101', '2026-09-23T11:00:00Z')`); err != nil {
+		t.Fatal(err)
 	}
 }

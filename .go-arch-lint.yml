@@ -17,6 +17,8 @@ vendors:
       - github.com/jackc/pgx/v5/**
       - github.com/pressly/goose/v3
       - github.com/pressly/goose/v3/**
+      # Data upgrades preserve canonical user IDs with the original UUID namespace.
+      - github.com/google/uuid
       - modernc.org/sqlite
       - github.com/rs/zerolog/log
       - google.golang.org/adk/v2/session
@@ -121,15 +123,10 @@ components:
     in:
       - internal/apps/balda/users
 
-  # Bounded adaptive password primitives shared by migration and Backoffice security.
+  # Bounded adaptive password primitives for Backoffice security.
   user_security:
     in:
       - internal/apps/balda/userpassword
-
-  # Explicit forward-only conversion from legacy authorization state.
-  user_migration:
-    in:
-      - internal/apps/balda/usermigration
 
   # Separate Backoffice application behavior and composition-facing use cases.
   backoffice_application:
@@ -426,24 +423,12 @@ deps:
       - user_security
     anyVendorDeps: true
 
-  user_migration:
-    mayDependOn:
-      - contracts
-      - user_contracts
-      - user_security
-      - user_migration
-    # The caller supplies storage through the migration-owned narrow port;
-    # direct imports remain enforced without inverting that injection edge.
-    deepScan: false
-    anyVendorDeps: true
-
   backoffice_application:
     mayDependOn:
       - contracts
       - user_contracts
       - user_application
       - user_security
-      - user_migration
       - storage
       - infrastructure
       - backoffice_application
@@ -451,8 +436,7 @@ deps:
       - backoffice_audit
       - backoffice_webui
       - backoffice_security
-    # Backoffice passes its local persistence port into the migration use case;
-    # direct imports remain enforced without inverting constructor injection.
+    # Backoffice receives its canonical persistence port from the host.
     deepScan: false
     anyVendorDeps: true
 

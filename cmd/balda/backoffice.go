@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
@@ -16,7 +15,7 @@ import (
 
 func backofficeCommand() *cobra.Command {
 	command := &cobra.Command{Use: "backoffice", Short: "Maintain and review Backoffice"}
-	command.AddCommand(bootstrapAdminCommand(), migrateUsersCommand(), backofficeQACommand())
+	command.AddCommand(bootstrapAdminCommand(), backofficeQACommand())
 	return command
 }
 
@@ -51,33 +50,6 @@ func openBackofficeMaintenance(command *cobra.Command) (*backoffice.Runtime, err
 	return backoffice.OpenRuntime(command.Context(), backoffice.ResolvedConfig{
 		Server: server, Database: prepared.database,
 	})
-}
-
-func migrateUsersCommand() *cobra.Command {
-	var outputPath, primarySubject string
-	command := &cobra.Command{
-		Use:   "migrate-users",
-		Short: "Convert legacy owner and collaborators into canonical users",
-		RunE: func(command *cobra.Command, _ []string) error {
-			if strings.TrimSpace(outputPath) == "" {
-				return fmt.Errorf("--credentials-output is required")
-			}
-			runtime, err := openBackofficeMaintenance(command)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = runtime.Close() }()
-			result, err := runtime.MigrateUsers(command.Context(), outputPath, primarySubject)
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(command.OutOrStdout(), "user migration applied=%t users=%d bindings=%d credentials_output=%s\n", result.Applied, result.UserCount, result.BindingCount, outputPath)
-			return nil
-		},
-	}
-	command.Flags().StringVar(&outputPath, "credentials-output", "", "exclusive 0600 output file for generated temporary credentials")
-	command.Flags().StringVar(&primarySubject, "primary-subject", "", "explicit legacy owner subject to select as primary")
-	return command
 }
 
 func bootstrapAdminCommand() *cobra.Command {

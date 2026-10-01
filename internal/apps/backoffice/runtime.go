@@ -11,7 +11,6 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/usermigration"
 )
 
 const (
@@ -45,7 +44,7 @@ func NewRuntime(config ResolvedConfig, provider state.Provider) (*Runtime, error
 	if provider == nil {
 		return nil, fmt.Errorf("backoffice state provider is required")
 	}
-	stateService, err := NewStateService(provider.AppKV(), provider.Collaborators(), provider.Users())
+	stateService, err := NewStateService(provider.Users())
 	if err != nil {
 		return nil, err
 	}
@@ -79,21 +78,13 @@ func (r *Runtime) Close() error {
 	return r.provider.Close()
 }
 
-// ValidateReady checks migration and administrator bootstrap state.
+// ValidateReady checks canonical administrator bootstrap state.
 func (r *Runtime) ValidateReady(ctx context.Context) error {
 	return r.state.ValidateReady(ctx)
 }
 
-// MigrateUsers runs the explicit forward-only legacy migration.
-func (r *Runtime) MigrateUsers(ctx context.Context, outputPath, primarySubject string) (usermigration.Result, error) {
-	return r.state.MigrateUsers(ctx, outputPath, primarySubject)
-}
-
-// BootstrapAdmin establishes credentials only after legacy migration requirements are satisfied.
+// BootstrapAdmin establishes credentials after provider migrations have completed.
 func (r *Runtime) BootstrapAdmin(ctx context.Context, input BootstrapInput) (BootstrapResult, error) {
-	if err := r.state.RequireMigrationComplete(ctx); err != nil {
-		return BootstrapResult{}, err
-	}
 	return r.bootstrap.Bootstrap(ctx, input)
 }
 

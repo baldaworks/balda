@@ -12,12 +12,39 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
 
 var postgresTestSchemaSequence atomic.Uint64
+
+func TestPostgresUserConversion(t *testing.T) {
+	runUserConversion(t, func(t *testing.T) conversionTestDatabase {
+		db := newPostgresTestDB(t)
+		migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := provider.UpTo(t.Context(), 9); err != nil {
+			t.Fatal(err)
+		}
+		return conversionTestDatabase{
+			db: db, bind: postgresBind,
+			upgrade: func() (usercmd.Store, error) {
+				if err := migratePostgres(t.Context(), db); err != nil {
+					return nil, err
+				}
+				return newPostgresUserStore(db), nil
+			},
+		}
+	})
+}
 
 func newPostgresTestDB(t *testing.T) *sql.DB {
 	t.Helper()

@@ -27,7 +27,9 @@ func migratePostgres(ctx context.Context, db *sql.DB) error {
 	// SQLite Go migrations are globally registered. They must never be
 	// included in PostgreSQL's independent migration history.
 	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations,
-		goose.WithDisableGlobalRegistry(true), goose.WithSessionLocker(locker))
+		goose.WithDisableGlobalRegistry(true), goose.WithSessionLocker(locker),
+		goose.WithGoMigrations(goose.NewGoMigration(10,
+			&goose.GoFunc{RunTx: up00010PostgresUserConversion}, &goose.GoFunc{RunTx: downUserConversion})))
 	if err != nil {
 		return fmt.Errorf("create postgres migration provider: %w", err)
 	}

@@ -86,8 +86,8 @@ func TestDatabaseDefaultPreservesExistingSQLite(t *testing.T) {
 		t.Fatal("opening the default database changed existing rows")
 	}
 	assertRequiredBaldaSQLiteTables(t, t.Context(), p.(*sqliteProvider).db)
-	user, found, err := p.Collaborators().GetCollaborator(t.Context(), "fixture")
-	if err != nil || !found || user.UserID != "fixture" {
+	user, found, err := p.Collaborators().GetCollaborator(t.Context(), "202")
+	if err != nil || !found || user.UserID != "202" {
 		t.Fatalf("existing collaborator was not preserved: found=%t err=%v", found, err)
 	}
 	var foreignKeys int
@@ -142,12 +142,19 @@ func seedSQLiteCompatibilityFixture(t *testing.T, db *sql.DB) {
 			t.Fatalf("seed %s: %v", table, err)
 		}
 	}
+	if _, err := tx.ExecContext(t.Context(), `INSERT INTO balda_app_kv (namespace, key, value_json, updated_at)
+		VALUES ('balda.app', 'owner', '{"user_id":101}', '2026-09-18T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func sqliteFixtureValue(table, column, kind string) any {
+	if table == "balda_collaborators" && column == "user_id" {
+		return "202"
+	}
 	if kind == "INTEGER" {
 		return 1
 	}

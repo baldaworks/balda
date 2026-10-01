@@ -94,6 +94,11 @@ func TestSQLiteTelegramBindingProfileBackfill(t *testing.T) {
 	}
 	insertSQLiteUser(t, db, "admin-1", "superuser", true)
 	insertSQLiteUser(t, db, "operator-1", "operator", false)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_user_migrations
+		(migration_id, source_fingerprint, generated_user_count, generated_binding_count, primary_user_id, completed_at)
+		VALUES ('profile-fixture', 'profile-fixture', 2, 2, 'admin-1', '2026-09-23T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_collaborators
 		(user_id, username, first_name, added_by, added_at)
 		VALUES ('telegram:202', 'operator_handle', 'Op', 'admin-1', '2026-09-23T00:00:00Z')`); err != nil {
@@ -660,7 +665,10 @@ func seedBaldaDBAtVersion10WithBuggyZeroSession(t *testing.T, db *sql.DB) {
 		);`,
 		`INSERT INTO goose_db_version(version_id, is_applied)
 		 VALUES(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 1), (8, 1), (9, 1), (10, 1);`,
-		`CREATE TABLE balda_app_kv (id INTEGER);`,
+		`CREATE TABLE balda_app_kv (
+			namespace TEXT NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL,
+			updated_at TEXT NOT NULL, expires_at TEXT, PRIMARY KEY (namespace, key)
+		);`,
 		`CREATE TABLE balda_session_metadata (
 			session_id TEXT PRIMARY KEY,
 			chat_id INTEGER NOT NULL,

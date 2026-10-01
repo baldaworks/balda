@@ -198,7 +198,7 @@ balda:
       password: ""
       sslmode: disable
 
-  # Backoffice starts inside `balda start` after schema migration and user
+  # Backoffice starts inside `balda start` after schema/data migrations and user
   # readiness, using the same database and canonical users as the bot.
   backoffice:
     # Loopback is the safe default. A non-loopback listener requires an HTTPS

@@ -86,25 +86,6 @@ const (
 	RefreshRotationUnavailable RefreshRotationResult = "unavailable"
 )
 
-// MigrationUser is one canonical user and optional binding created by a legacy migration.
-type MigrationUser struct {
-	User    User
-	Secret  CredentialSecret
-	Binding *Binding
-	Audits  []AuditEvent
-}
-
-// UserMigration is one immutable, idempotent legacy-user migration batch.
-type UserMigration struct {
-	ID                    string
-	SourceFingerprint     string
-	SourceCountsJSON      string
-	PrimaryUserID         string
-	CompletedAt           time.Time
-	Users                 []MigrationUser
-	GeneratedBindingCount int
-}
-
 // Store persists canonical users and security state without exposing plaintext credentials.
 type Store interface {
 	CreateUser(ctx context.Context, user User, secret CredentialSecret, audit AuditEvent) error
@@ -137,7 +118,4 @@ type Store interface {
 	DeleteExpiredSessions(ctx context.Context, before time.Time, limit int) (int, error)
 
 	ListAuditEvents(ctx context.Context, page PageRequest) (AuditPage, error)
-	AnyUserMigrationApplied(ctx context.Context) (bool, error)
-	UserMigrationApplied(ctx context.Context, sourceFingerprint string) (bool, error)
-	ApplyUserMigration(ctx context.Context, migration UserMigration) (bool, error)
 }

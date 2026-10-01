@@ -73,11 +73,19 @@ other local resources. `state_dir` is still needed for NATS and local artifacts.
 
 `start`, `init`, `preflight`, `doctor`, Backoffice maintenance, and plugin
 commands use the same selected backend whenever they access state. Opening it
-applies embedded forward schema migrations. `balda validate` is different: it
-checks configuration and graph construction without opening, creating, or
+applies embedded forward Goose schema and data migrations. `balda validate` is
+different: it checks configuration and graph construction without opening, creating, or
 migrating the database. `preflight` and `doctor` can still open and mutate state;
 they are not read-only checks. Connection or migration failure prevents
 startup. No fallback to SQLite, hot switching, or schema down command exists.
+
+User conversion is part of those migrations on both backends: owner/collaborator
+records become canonical users and bindings in the same transaction as the
+Goose version marker. A fresh database needs no conversion; a completed
+conversion preserves existing credentials and browser sessions. Invalid or
+conflicting source data aborts the upgrade without a partial conversion.
+Newly converted users have disabled browser credentials; administrator password
+bootstrap is a separate operation documented in [Backoffice](backoffice.md).
 
 `balda init` retains its refusal to overwrite an existing config. On a fresh
 installation it honors effective database environment settings; keep those
