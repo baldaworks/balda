@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/automodecmd"
@@ -18,6 +16,8 @@ import (
 	baldasession "github.com/baldaworks/balda/internal/apps/balda/session"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 const (
@@ -168,6 +168,9 @@ func (e *SessionActorExecutor) enqueueTurn(ctx context.Context, env actorlayer.E
 
 	select {
 	case err := <-result:
+		if reportErr := e.reportPreparationFailure(ctx, env, payload, err); reportErr != nil {
+			return actorlayer.TransientError(reportErr)
+		}
 		return settlement.settle(ctx, env, payload, err)
 	case <-ctx.Done():
 		return actorlayer.TransientError(ctx.Err())

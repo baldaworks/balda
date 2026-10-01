@@ -37,9 +37,15 @@ func (r *ActorHost) prepareDelivery(ctx context.Context, delivery actorengine.De
 	return heartbeatCtx, stop, wrapped
 }
 
-func (d *runtimeDelivery) Envelope() actorengine.Envelope { return d.delivery.Envelope() }
-func (d *runtimeDelivery) Attempt() int                   { return d.delivery.Attempt() }
-func (d *runtimeDelivery) MaxAttempts() int               { return d.delivery.MaxAttempts() }
+func (d *runtimeDelivery) Envelope() actorengine.Envelope {
+	env := d.delivery.Envelope()
+	// Retry policy comes from the transport, never from an inbound payload.
+	env.Attempt = d.delivery.Attempt() - 1
+	env.MaxAttempts = d.delivery.MaxAttempts()
+	return env
+}
+func (d *runtimeDelivery) Attempt() int     { return d.delivery.Attempt() }
+func (d *runtimeDelivery) MaxAttempts() int { return d.delivery.MaxAttempts() }
 func (d *runtimeDelivery) InProgress(ctx context.Context) error {
 	return d.delivery.InProgress(ctx)
 }
