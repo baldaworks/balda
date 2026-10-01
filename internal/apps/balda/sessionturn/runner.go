@@ -147,7 +147,13 @@ func newRunner(sessions SessionAccessor, executor Executor, memoryStore MemorySt
 }
 
 // RunSessionTurnPayload restores the target session and executes one provider turn.
-func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.SessionTurnPayload) error {
+func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.SessionTurnPayload) (runErr error) {
+	providerStarted := false
+	defer func() {
+		if runErr != nil && !providerStarted {
+			runErr = &turncmd.PreparationError{Cause: runErr}
+		}
+	}()
 	if r.sessions == nil {
 		return fmt.Errorf("session turn: session manager is unavailable")
 	}
@@ -221,6 +227,7 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 		}
 		selectedSkill = &loaded
 	}
+	providerStarted = true
 	return r.executor.ExecuteSessionTurn(ctx, Request{
 		Payload:        payload,
 		Session:        topicSession,
