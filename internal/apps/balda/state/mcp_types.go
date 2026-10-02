@@ -19,6 +19,7 @@ type MCPMutation struct {
 
 // MCPStore retains revisions independently of current connection selection.
 type MCPStore interface {
+	CheckMCPAuthority(ctx context.Context, authority mcpcmd.Authority) error
 	SaveMCPConnection(ctx context.Context, mutation MCPMutation) error
 	GetMCPConnection(ctx context.Context, id string) (mcpcmd.Connection, bool, error)
 	ListMCPConnections(ctx context.Context) ([]mcpcmd.Connection, error)

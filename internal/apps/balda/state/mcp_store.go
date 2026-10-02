@@ -21,6 +21,25 @@ var _ MCPStore = (*sqlMCPStore)(nil)
 const mcpConnectionColumns = `connection_id, public_id, source, current_revision_id,
 	enabled, deleted, version, published_version, created_at, updated_at`
 
+// CheckMCPAuthority is a read-only preflight for privileged external side effects.
+func (s *sqlMCPStore) CheckMCPAuthority(ctx context.Context, a mcpcmd.Authority) error {
+	if err := validateMCPAuthority(a); err != nil {
+		return err
+	}
+	tx, err := s.users.begin(ctx)
+	if err != nil {
+		return mcpStoreError("begin MCP authority check", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.checkAuthority(ctx, tx, a); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return mcpMutationError(err)
+	}
+	return nil
+}
+
 func (s *sqlMCPStore) SaveMCPConnection(ctx context.Context, m MCPMutation) error {
 	if err := validateMCPMutation(m); err != nil {
 		return err
@@ -108,9 +127,8 @@ func validateMCPMutation(m MCPMutation) error {
 		(m.ExpectedVersion == 0 && (m.Revision == nil || c.Deleted)) {
 		return mcpcmd.ErrInvalid
 	}
-	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 ||
-		a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() || a.FreshProofAge <= 0 {
-		return mcpcmd.ErrInvalid
+	if err := validateMCPAuthority(a); err != nil {
+		return err
 	}
 	if err := usercmd.ValidateAuditEvent(m.Audit); err != nil ||
 		m.Audit.Action != usercmd.AuditActionMCPDefinitionChanged || m.Audit.TargetType != usercmd.AuditTargetMCP ||
@@ -129,6 +147,13 @@ func validateMCPMutation(m MCPMutation) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func validateMCPAuthority(a mcpcmd.Authority) error {
+	if a.UserID == "" || a.UserVersion == 0 || a.CredentialVersion == 0 || a.SessionID == "" || a.SessionVersion == 0 || a.At.IsZero() || a.FreshProofAge <= 0 {
+		return mcpcmd.ErrInvalid
 	}
 	return nil
 }

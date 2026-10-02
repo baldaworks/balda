@@ -542,8 +542,10 @@ deps:
     mayDependOn:
       - contracts
       - mcp_contracts
+      - mcp_management
       - mcp_runtime
       - mcp_wiring
+      - storage
     # Constructors inject runtime ports into provider adapters; deep scan
     # otherwise reports the intended composition direction as an inverse edge.
     deepScan: false

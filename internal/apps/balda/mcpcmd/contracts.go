@@ -12,6 +12,7 @@ var (
 	ErrNotFound    = errors.New("MCP definition not found")
 	ErrForbidden   = errors.New("MCP management forbidden")
 	ErrCredentials = errors.New("MCP protected credentials unavailable")
+	ErrUnavailable = errors.New("MCP operation unavailable")
 )
 
 type Source string

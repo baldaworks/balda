@@ -161,6 +161,18 @@ func checkMCPAuthorityFences(t *testing.T, open contractOpener) {
 	p := newContractProvider(t, open)
 	defer closeContractProvider(t, p)
 	m := contractMCPMutation(t, p)
+	if err := p.MCP().CheckMCPAuthority(t.Context(), m.Authority); err != nil {
+		t.Fatalf("valid MCP preflight rejected: %v", err)
+	}
+	for _, change := range []func(*mcpcmd.Authority){
+		func(a *mcpcmd.Authority) { a.At = time.Time{} }, func(a *mcpcmd.Authority) { a.FreshProofAge = 0 }, func(a *mcpcmd.Authority) { a.UserID = "" }, func(a *mcpcmd.Authority) { a.SessionID = "" }, func(a *mcpcmd.Authority) { a.UserVersion = 0 }, func(a *mcpcmd.Authority) { a.CredentialVersion = 0 }, func(a *mcpcmd.Authority) { a.SessionVersion = 0 },
+	} {
+		a := m.Authority
+		change(&a)
+		if err := p.MCP().CheckMCPAuthority(t.Context(), a); !errors.Is(err, mcpcmd.ErrInvalid) {
+			t.Fatalf("invalid preflight accepted: %v", err)
+		}
+	}
 	for _, tc := range []struct {
 		name   string
 		change func(*MCPMutation)
@@ -202,6 +214,9 @@ func checkMCPAuthorityFences(t *testing.T, open contractOpener) {
 		t.Fatal(err)
 	}
 	m.Authority.UserVersion = u.Version
+	if err := p.MCP().CheckMCPAuthority(t.Context(), m.Authority); !errors.Is(err, mcpcmd.ErrForbidden) {
+		t.Fatalf("demoted administrator could start MCP probe: %v", err)
+	}
 	if err := p.MCP().SaveMCPConnection(t.Context(), m); !errors.Is(err, mcpcmd.ErrForbidden) {
 		t.Fatalf("demoted administrator committed: %v", err)
 	}
@@ -345,6 +360,9 @@ func checkMCPFreshFactorAndRevocation(t *testing.T, open contractOpener) {
 	expired := m
 	expired.Authority.At = now.Add(expired.Authority.FreshProofAge)
 	expired.Audit.OccurredAt = expired.Authority.At
+	if err := p.MCP().CheckMCPAuthority(t.Context(), expired.Authority); !errors.Is(err, mcpcmd.ErrForbidden) {
+		t.Fatalf("stale factor preflight accepted: %v", err)
+	}
 	if err := p.MCP().SaveMCPConnection(t.Context(), expired); !errors.Is(err, mcpcmd.ErrForbidden) {
 		t.Fatalf("stale factor proof accepted: %v", err)
 	}
