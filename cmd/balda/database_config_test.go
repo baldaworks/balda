@@ -54,12 +54,14 @@ func TestLoadBackofficeEnvironmentOverridesFromSameDocument(t *testing.T) {
 	t.Setenv("BALDA_BACKOFFICE_LISTEN_ADDR", "127.0.0.1:9095")
 	t.Setenv("BALDA_BACKOFFICE_PUBLIC_URL", "http://127.0.0.1:9095")
 	t.Setenv("BALDA_BACKOFFICE_ACCESS_TOKEN_TTL", "10m")
+	t.Setenv("BALDA_BACKOFFICE_CEREMONY_TTL", "3m")
+	t.Setenv("BALDA_BACKOFFICE_STEP_UP_TTL", "7m")
 	doc := loadDatabaseTestDocument(t, t.TempDir())
 	server, err := doc.Balda.Backoffice.Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.ListenAddr != "127.0.0.1:9095" || server.AccessTokenTTL != 10*time.Minute {
+	if server.ListenAddr != "127.0.0.1:9095" || server.AccessTokenTTL != 10*time.Minute || server.CeremonyTTL != 3*time.Minute || server.StepUpTTL != 7*time.Minute {
 		t.Fatalf("backoffice server = %+v", server)
 	}
 }

@@ -71,10 +71,10 @@ func NewBrowser(service browserService, config HTTPConfig) (*Browser, error) {
 		return nil, fmt.Errorf("browser security service is required")
 	}
 	origin, err := url.Parse(strings.TrimSpace(config.TrustedOrigin))
-	if err != nil || (origin.Scheme != "http" && origin.Scheme != "https") || origin.Host == "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || (origin.Path != "" && origin.Path != "/") {
+	if err != nil || (origin.Scheme != "http" && origin.Scheme != httpsScheme) || origin.Host == "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || (origin.Path != "" && origin.Path != "/") {
 		return nil, fmt.Errorf("trusted origin must be an absolute origin")
 	}
-	if config.SecureCookies != (origin.Scheme == "https") {
+	if config.SecureCookies != (origin.Scheme == httpsScheme) {
 		return nil, fmt.Errorf("cookie security must match the trusted origin scheme")
 	}
 	maxBodyBytes := config.MaxBodyBytes

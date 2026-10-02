@@ -37,11 +37,16 @@ var (
 
 // Config controls opaque browser credential lifetimes.
 type Config struct {
-	AccessTTL  time.Duration
-	RefreshTTL time.Duration
+	AccessTTL   time.Duration
+	RefreshTTL  time.Duration
+	Origin      string
+	CeremonyTTL time.Duration
+	StepUpTTL   time.Duration
 }
 
 type store interface {
+	usercmd.MFAStore
+	GetUser(ctx context.Context, userID string) (usercmd.User, bool, error)
 	GetUserByNormalizedUsername(ctx context.Context, normalizedUsername string) (usercmd.User, bool, error)
 	GetCredentialSecret(ctx context.Context, userID string) (usercmd.CredentialSecret, bool, error)
 	CreateSession(ctx context.Context, family usercmd.SessionFamily, audit usercmd.AuditEvent) error
@@ -74,11 +79,12 @@ type Principal struct {
 
 // Service authenticates passwords and manages opaque access/refresh families.
 type Service struct {
-	store  store
-	config Config
-	random io.Reader
-	now    func() time.Time
-	newID  func() string
+	store    store
+	webauthn *webAuthnEngine
+	config   Config
+	random   io.Reader
+	now      func() time.Time
+	newID    func() string
 }
 
 // NewService creates browser security over the canonical user store.
@@ -92,7 +98,17 @@ func NewService(store store, config Config) (*Service, error) {
 	if _, err := dummyPasswordHash(); err != nil {
 		return nil, err
 	}
-	return &Service{store: store, config: config, random: rand.Reader, now: time.Now, newID: uuid.NewString}, nil
+	if config.CeremonyTTL == 0 {
+		config.CeremonyTTL = 5 * time.Minute
+	}
+	if config.StepUpTTL == 0 {
+		config.StepUpTTL = 15 * time.Minute
+	}
+	if config.CeremonyTTL <= 0 || config.CeremonyTTL > 15*time.Minute || config.StepUpTTL <= 0 || config.StepUpTTL > time.Hour {
+		return nil, fmt.Errorf("invalid WebAuthn ceremony or step-up lifetime")
+	}
+	engine, _ := newWebAuthnEngine(config.Origin)
+	return &Service{store: store, config: config, webauthn: engine, random: rand.Reader, now: time.Now, newID: uuid.NewString}, nil
 }
 
 // Login verifies one bounded local credential with a uniform failure surface.

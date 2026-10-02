@@ -41,6 +41,7 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	}
 	service, err := security.NewService(store, security.Config{
 		AccessTTL: config.Server.AccessTokenTTL, RefreshTTL: config.Server.RefreshTokenTTL,
+		Origin: config.Server.PublicURL, CeremonyTTL: config.Server.CeremonyTTL, StepUpTTL: config.Server.StepUpTTL,
 	})
 	if err != nil {
 		return nil, err

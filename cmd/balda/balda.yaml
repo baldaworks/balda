@@ -209,6 +209,8 @@ balda:
     # credentials retain a fixed, longer session-family deadline.
     access_token_ttl: "15m"
     refresh_token_ttl: "12h"
+    ceremony_ttl: "5m"
+    step_up_ttl: "15m"
     qa_ui: false
 
   sessions:
