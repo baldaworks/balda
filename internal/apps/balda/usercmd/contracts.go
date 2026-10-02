@@ -182,6 +182,8 @@ type RefreshToken struct {
 
 // SessionFamily is the durable server-side browser session aggregate.
 type SessionFamily struct {
+	WebAuthnVerifiedAt time.Time
+	MFAFactorID        string
 	ID                 string
 	UserID             string
 	Assurance          SessionAssurance
@@ -325,6 +327,9 @@ type AuditEvent struct {
 
 // ValidateSessionFamily checks storage-neutral browser-session invariants.
 func ValidateSessionFamily(f SessionFamily) error {
+	if f.WebAuthnVerifiedAt.IsZero() != (f.MFAFactorID == "") || (!f.WebAuthnVerifiedAt.IsZero() && f.WebAuthnVerifiedAt.After(f.LastSeenAt)) {
+		return fmt.Errorf("%w: WebAuthn proof and factor must be paired and precede last activity", ErrInvalid)
+	}
 	if strings.TrimSpace(f.ID) == "" || strings.TrimSpace(f.UserID) == "" || !f.Assurance.Valid() {
 		return fmt.Errorf("%w: session identity and assurance are required", ErrInvalid)
 	}

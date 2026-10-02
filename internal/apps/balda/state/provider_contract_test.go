@@ -25,6 +25,7 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("MFAStoreLifecycle", func(t *testing.T) { checkMFAStoreLifecycle(t, factory(t)) })
 	t.Run("UserStoreCanonicalLifecycle", func(t *testing.T) { checkUserStoreCanonicalLifecycle(t, factory(t)) })
 	t.Run("ManagedBindings", func(t *testing.T) { checkManagedBindings(t, factory(t)) })
 	t.Run("BindingInvitations", func(t *testing.T) { checkBindingInvitations(t, factory(t)) })

@@ -255,7 +255,12 @@ func (f conversionTestDatabase) snapshot(t *testing.T) map[string][]string {
 	result := make(map[string][]string)
 	for _, table := range []string{"balda_users", "balda_user_bindings", "balda_security_audit_events", "balda_user_migrations",
 		"balda_backoffice_sessions", "balda_backoffice_refresh_tokens", "goose_db_version"} {
-		rows, err := f.db.QueryContext(t.Context(), "SELECT * FROM "+table+" ORDER BY 1") //nolint:unqueryvet // Retention and rollback checks compare every stored column.
+		projection := "*"
+		if table == "balda_backoffice_sessions" {
+			// Compare the session contract present before this additive schema upgrade.
+			projection = "session_id, user_id, assurance, credential_version, access_selector, access_verifier_digest, csrf_verifier_digest, created_at, last_seen_at, access_expires_at, refresh_expires_at, revoked_at, revocation_reason, version, device_label, connection_peer"
+		}
+		rows, err := f.db.QueryContext(t.Context(), "SELECT "+projection+" FROM "+table+" ORDER BY 1")
 		if err != nil {
 			t.Fatal(err)
 		}

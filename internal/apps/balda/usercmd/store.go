@@ -88,6 +88,7 @@ const (
 
 // Store persists canonical users and security state without exposing plaintext credentials.
 type Store interface {
+	MFAStore
 	CreateUser(ctx context.Context, user User, secret CredentialSecret, audit AuditEvent) error
 	UpdateUser(ctx context.Context, user User, expectedVersion uint64, audit AuditEvent) error
 	ChangeCredential(ctx context.Context, userID string, expectedUserVersion, expectedCredentialVersion uint64, credential Credential, secret CredentialSecret, revokedAt time.Time, audit AuditEvent) error

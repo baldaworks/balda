@@ -1169,18 +1169,21 @@ func (s *sqlUserStore) insertRefreshToken(ctx context.Context, tx *sql.Tx, sessi
 }
 
 func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family usercmd.SessionFamily) error {
+	if err := s.checkSessionMFA(ctx, tx, family); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, s.bind(`
 		INSERT INTO balda_backoffice_sessions (
 			session_id, user_id, assurance, credential_version,
 			access_selector, access_verifier_digest, csrf_verifier_digest,
 			created_at, last_seen_at, access_expires_at, refresh_expires_at,
-			revoked_at, revocation_reason, version, device_label, connection_peer
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			revoked_at, revocation_reason, version, device_label, connection_peer, webauthn_verified_at, mfa_factor_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		family.ID, family.UserID, family.Assurance, family.CredentialVersion,
 		family.Access.Selector, family.Access.VerifierDigest, family.CSRFVerifierDigest,
 		formatUserTime(family.CreatedAt), formatUserTime(family.LastSeenAt), formatUserTime(family.Access.ExpiresAt),
 		formatUserTime(family.RefreshExpiresAt), formatOptionalUserTime(family.RevokedAt), family.RevocationReason, family.Version,
-		nullableSessionMetadata(family.DeviceLabel), nullableSessionMetadata(family.ConnectionPeer),
+		nullableSessionMetadata(family.DeviceLabel), nullableSessionMetadata(family.ConnectionPeer), formatOptionalUserTime(family.WebAuthnVerifiedAt), family.MFAFactorID,
 	); err != nil {
 		return s.mutationError("insert session family", err)
 	}
@@ -1194,18 +1197,18 @@ func (s *sqlUserStore) insertSessionTx(ctx context.Context, tx *sql.Tx, family u
 
 func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, predicate string, args ...any) (usercmd.SessionFamily, bool, error) {
 	var family usercmd.SessionFamily
-	var assurance, createdAt, lastSeenAt, accessExpiresAt, refreshExpiresAt, revokedAt string
+	var assurance, createdAt, lastSeenAt, accessExpiresAt, refreshExpiresAt, revokedAt, verifiedAt string
 	var deviceLabel, connectionPeer sql.NullString
 	err := q.QueryRowContext(ctx, s.bind(`
 		SELECT session_id, user_id, assurance, credential_version,
 			access_selector, access_verifier_digest, csrf_verifier_digest,
 			created_at, last_seen_at, access_expires_at, refresh_expires_at,
-			revoked_at, revocation_reason, version, device_label, connection_peer
+			revoked_at, revocation_reason, version, device_label, connection_peer, webauthn_verified_at, mfa_factor_id
 		FROM balda_backoffice_sessions WHERE `+predicate), args...).Scan(
 		&family.ID, &family.UserID, &assurance, &family.CredentialVersion,
 		&family.Access.Selector, &family.Access.VerifierDigest, &family.CSRFVerifierDigest,
 		&createdAt, &lastSeenAt, &accessExpiresAt, &refreshExpiresAt,
-		&revokedAt, &family.RevocationReason, &family.Version, &deviceLabel, &connectionPeer,
+		&revokedAt, &family.RevocationReason, &family.Version, &deviceLabel, &connectionPeer, &verifiedAt, &family.MFAFactorID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return usercmd.SessionFamily{}, false, nil
@@ -1214,6 +1217,9 @@ func (s *sqlUserStore) loadSessionFamily(ctx context.Context, q userQueryer, pre
 		return usercmd.SessionFamily{}, false, s.wrapError("load session family", err)
 	}
 	family.Assurance = usercmd.SessionAssurance(assurance)
+	if family.WebAuthnVerifiedAt, err = parseOptionalUserTime(verifiedAt); err != nil {
+		return usercmd.SessionFamily{}, false, err
+	}
 	family.DeviceLabel, family.ConnectionPeer = deviceLabel.String, connectionPeer.String
 	if family.CreatedAt, err = parseUserTime(createdAt); err != nil {
 		return usercmd.SessionFamily{}, false, s.wrapError("parse session creation", err)
@@ -1266,7 +1272,7 @@ type refreshRotationState struct {
 func (s *sqlUserStore) loadRefreshForRotation(ctx context.Context, tx *sql.Tx, selector string) (refreshRotationState, bool, error) {
 	var loaded refreshRotationState
 	var tokenState, issuedAt, usedAt, tokenExpiresAt string
-	var assurance, createdAt, lastSeenAt, accessExpiresAt, refreshExpiresAt, revokedAt string
+	var assurance, createdAt, lastSeenAt, accessExpiresAt, refreshExpiresAt, revokedAt, verifiedAt string
 	var userStatus, credentialState string
 	err := tx.QueryRowContext(ctx, s.bind(`
 		SELECT
@@ -1274,7 +1280,7 @@ func (s *sqlUserStore) loadRefreshForRotation(ctx context.Context, tx *sql.Tx, s
 			s.session_id, s.user_id, s.assurance, s.credential_version,
 			s.access_selector, s.access_verifier_digest, s.csrf_verifier_digest,
 			s.created_at, s.last_seen_at, s.access_expires_at, s.refresh_expires_at,
-			s.revoked_at, s.revocation_reason, s.version,
+			s.revoked_at, s.revocation_reason, s.version, s.webauthn_verified_at, s.mfa_factor_id,
 			u.status, u.credential_state, u.credential_version
 		FROM balda_backoffice_refresh_tokens r
 		JOIN balda_backoffice_sessions s ON s.session_id = r.session_id
@@ -1285,7 +1291,7 @@ func (s *sqlUserStore) loadRefreshForRotation(ctx context.Context, tx *sql.Tx, s
 		&loaded.family.ID, &loaded.family.UserID, &assurance, &loaded.family.CredentialVersion,
 		&loaded.family.Access.Selector, &loaded.family.Access.VerifierDigest, &loaded.family.CSRFVerifierDigest,
 		&createdAt, &lastSeenAt, &accessExpiresAt, &refreshExpiresAt,
-		&revokedAt, &loaded.family.RevocationReason, &loaded.family.Version,
+		&revokedAt, &loaded.family.RevocationReason, &loaded.family.Version, &verifiedAt, &loaded.family.MFAFactorID,
 		&userStatus, &credentialState, &loaded.userCredentialVersion,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1295,6 +1301,12 @@ func (s *sqlUserStore) loadRefreshForRotation(ctx context.Context, tx *sql.Tx, s
 		return refreshRotationState{}, false, s.wrapError("load refresh rotation state", err)
 	}
 	loaded.family.Assurance = usercmd.SessionAssurance(assurance)
+	if loaded.family.WebAuthnVerifiedAt, err = parseOptionalUserTime(verifiedAt); err != nil {
+		return refreshRotationState{}, false, err
+	}
+	if err := s.checkSessionMFA(ctx, tx, loaded.family); err != nil {
+		return refreshRotationState{}, false, err
+	}
 	loaded.userStatus = usercmd.UserStatus(userStatus)
 	loaded.credentialState = usercmd.CredentialState(credentialState)
 	if err := scanRefreshTimes(&loaded.token, tokenState, issuedAt, usedAt, tokenExpiresAt); err != nil {
