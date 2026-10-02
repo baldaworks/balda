@@ -18,17 +18,17 @@ func TestWorkerBrowserCodeUsesS256AndExactResourceClientRedirect(t *testing.T) {
 		if err := r.ParseForm(); err != nil {
 			t.Error(err)
 		}
-		if r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("client_id") != "browser-client" || r.Form.Get("code") != "native-code" || r.Form.Get("code_verifier") != verifier || r.Form.Get("redirect_uri") != "https://backoffice.example.org/balda/mcp/oauth/callback" || r.Form.Get("resource") != base+"/mcp" || r.Form.Get("scope") != "tools" {
+		if r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("client_id") != "browser-client" || r.Form.Get("code") != "native-code" || r.Form.Get("code_verifier") != verifier || r.Form.Get("redirect_uri") != "https://backoffice.example.org/balda/mcp/oauth/callback" || r.Form.Get("resource") != base+"/mcp" || r.Form.Get("scope") != workerOAuthScope {
 			t.Error("code exchange lost redirect/PKCE/worker resource binding")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "browser-access", "refresh_token": "browser-refresh", "token_type": "Bearer", "expires_in": 3600, "scope": "tools"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "browser-access", "refresh_token": "browser-refresh", "token_type": "Bearer", "expires_in": 3600, "scope": workerOAuthScope})
 	}))
 	defer issuer.Close()
 	base = issuer.URL
 	p := NewOAuthProvider(issuer.Client())
 	metadata := mcpmanage.OAuthMetadata{RequireIssuerParameter: true, Resource: base + "/mcp", Issuer: base, AuthorizationEndpoint: base + "/authorize", TokenEndpoint: base + "/token", PKCEMethods: []string{"S256"}, GrantTypes: []string{"authorization_code"}, ResponseTypes: []string{"code"}}
-	g := mcpcmd.Grant{Binding: mcpcmd.AuthBinding{Resource: metadata.Resource, Issuer: metadata.Issuer, ClientID: "browser-client"}, TokenEndpointAuthMethod: mcpcmd.ClientAuthNone, Scopes: []string{"tools"}}
+	g := mcpcmd.Grant{Binding: mcpcmd.AuthBinding{Resource: metadata.Resource, Issuer: metadata.Issuer, ClientID: "browser-client"}, TokenEndpointAuthMethod: mcpcmd.ClientAuthNone, Scopes: []string{workerOAuthScope}}
 	location, v, err := p.BeginCode(metadata, g, "https://backoffice.example.org/balda/mcp/oauth/callback", "one-use-state")
 	if err != nil {
 		t.Fatalf("native authorization request failed: %v", err)

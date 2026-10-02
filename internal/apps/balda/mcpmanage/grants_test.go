@@ -89,10 +89,23 @@ func TestWorkerConnectionDisconnectRevokesRetainedIdentityContexts(t *testing.T)
 }
 
 type grantOAuth struct {
-	metadata OAuthMetadata
-	refresh  func(context.Context, mcpcmd.Grant, GrantSecrets) (OAuthToken, error)
-	register func(context.Context) (OAuthClient, error)
-	exchange func(context.Context, mcpcmd.Grant, string, string) (OAuthToken, error)
+	deviceBegin func(context.Context, mcpcmd.Grant, GrantSecrets) (OAuthDevice, error)
+	device      OAuthDevice
+	poll        func(context.Context, mcpcmd.Grant, GrantSecrets, OAuthDevice) (OAuthToken, error)
+	metadata    OAuthMetadata
+	refresh     func(context.Context, mcpcmd.Grant, GrantSecrets) (OAuthToken, error)
+	register    func(context.Context) (OAuthClient, error)
+	exchange    func(context.Context, mcpcmd.Grant, string, string) (OAuthToken, error)
+}
+
+func (o *grantOAuth) BeginDevice(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, secrets GrantSecrets) (OAuthDevice, error) {
+	if o.deviceBegin != nil {
+		return o.deviceBegin(ctx, g, secrets)
+	}
+	return o.device, nil
+}
+func (o *grantOAuth) PollDevice(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, secrets GrantSecrets, device OAuthDevice) (OAuthToken, error) {
+	return o.poll(ctx, g, secrets, device)
 }
 
 func (*grantOAuth) BeginCode(_ OAuthMetadata, _ mcpcmd.Grant, _ string, state string) (string, string, error) {

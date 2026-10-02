@@ -27,15 +27,24 @@ func (p *OAuthProvider) DiscoverIssuer(ctx context.Context, binding mcpcmd.AuthB
 	if !validOAuthURL(binding.Resource) || !validOAuthURL(binding.Issuer) {
 		return mcpmanage.OAuthMetadata{}, mcpcmd.ErrUnavailable
 	}
-	server, err := auth.GetAuthServerMetadata(ctx, binding.Issuer, p.client)
-	if err != nil || server == nil || server.Issuer != binding.Issuer || !slices.Contains(server.CodeChallengeMethodsSupported, "S256") || !validOAuthURL(server.TokenEndpoint) {
+	metadataTransport := &deviceMetadataTransport{base: p.transport()}
+	client := *p.client
+	client.Transport = metadataTransport
+	server, err := auth.GetAuthServerMetadata(ctx, binding.Issuer, &client)
+	if err != nil && metadataTransport.server != nil && len(metadataTransport.server.CodeChallengeMethodsSupported) == 0 && metadataTransport.supportsDevice() {
+		// The SDK rejects missing browser PKCE metadata even for device-only
+		// services. Reuse its exact fetched response for this advertised profile;
+		// validate every endpoint we expose without inventing browser capabilities.
+		server, err = metadataTransport.server, nil
+	}
+	if err != nil || server == nil || server.Issuer != binding.Issuer || !validOAuthURL(server.TokenEndpoint) || (!slices.Contains(server.CodeChallengeMethodsSupported, "S256") && !metadataTransport.supportsDevice()) {
 		return mcpmanage.OAuthMetadata{}, mcpcmd.ErrUnavailable
 	}
 	methods := server.TokenEndpointAuthMethodsSupported
 	if len(methods) == 0 {
 		methods = []string{mcpcmd.ClientAuthSecretBasic}
 	}
-	return mcpmanage.OAuthMetadata{Resource: binding.Resource, Issuer: server.Issuer, AuthorizationEndpoint: server.AuthorizationEndpoint, TokenEndpoint: server.TokenEndpoint, RegistrationEndpoint: server.RegistrationEndpoint, Scopes: server.ScopesSupported, AuthMethods: methods, GrantTypes: server.GrantTypesSupported, ResponseTypes: server.ResponseTypesSupported, PKCEMethods: server.CodeChallengeMethodsSupported, RequireIssuerParameter: server.AuthorizationResponseIssParameterSupported}, nil
+	return mcpmanage.OAuthMetadata{DeviceAuthorizationEndpoint: metadataTransport.deviceEndpoint, Resource: binding.Resource, Issuer: server.Issuer, AuthorizationEndpoint: server.AuthorizationEndpoint, TokenEndpoint: server.TokenEndpoint, RegistrationEndpoint: server.RegistrationEndpoint, Scopes: server.ScopesSupported, AuthMethods: methods, GrantTypes: server.GrantTypesSupported, ResponseTypes: server.ResponseTypesSupported, PKCEMethods: server.CodeChallengeMethodsSupported, RequireIssuerParameter: server.AuthorizationResponseIssParameterSupported}, nil
 }
 
 // NewOAuthProvider owns a bounded non-redirecting protocol client.

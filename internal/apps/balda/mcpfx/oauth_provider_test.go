@@ -16,6 +16,7 @@ import (
 )
 
 const workerOAuthScope = "tools"
+const workerAuthorizationMetadataPath = "/.well-known/oauth-authorization-server"
 
 func TestWorkerOAuthSDKDiscoveryRegistrationAndBoundRotation(t *testing.T) {
 	var base string
@@ -24,7 +25,7 @@ func TestWorkerOAuthSDKDiscoveryRegistrationAndBoundRotation(t *testing.T) {
 		switch r.URL.Path {
 		case "/.well-known/oauth-protected-resource/mcp":
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}, "scopes_supported": []string{workerOAuthScope}, "bearer_methods_supported": []string{"header"}})
-		case "/.well-known/oauth-authorization-server":
+		case workerAuthorizationMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "registration_endpoint": base + "/register", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{mcpcmd.ClientAuthSecretBasic}, "response_types_supported": []string{"code"}, "grant_types_supported": []string{"authorization_code", "refresh_token"}, "scopes_supported": []string{workerOAuthScope}})
 		case "/register":
 			var request map[string]any
@@ -189,7 +190,7 @@ func TestWorkerRefreshUsesBoundIssuerAfterCustomResourceMetadata(t *testing.T) {
 		switch r.URL.Path {
 		case "/custom-resource-metadata":
 			_ = json.NewEncoder(w).Encode(map[string]any{"resource": base + "/mcp", "authorization_servers": []string{base}})
-		case "/.well-known/oauth-authorization-server":
+		case workerAuthorizationMetadataPath:
 			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token", "code_challenge_methods_supported": []string{"S256"}, "token_endpoint_auth_methods_supported": []string{mcpcmd.ClientAuthNone}})
 		case "/token":
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "custom-prm-access", "token_type": "Bearer", "expires_in": 3600})

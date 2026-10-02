@@ -22,12 +22,15 @@ type Authorizations struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	stopped      bool
+	polls        sync.WaitGroup
 }
 
 const authorizationAttemptTTL = 10 * time.Minute
 const maxAuthorizationAttempts = 128
 
 type authorizationAttempt struct {
+	Flow                              authorizationFlow
+	Device                            mcpcmd.DeviceAuthorization
 	ID, State, ConnectionID, Verifier string
 	ExpiresAt                         time.Time
 	Authority                         mcpcmd.Authority
@@ -40,7 +43,7 @@ type authorizationAttempt struct {
 
 // NewAuthorizations binds native callback policy to trusted grant storage.
 func NewAuthorizations(grants *Grants, redirectURI string) (*Authorizations, error) {
-	if grants == nil || !validRemoteURL(redirectURI) {
+	if grants == nil || (redirectURI != "" && !validRemoteURL(redirectURI)) {
 		return nil, mcpcmd.ErrInvalid
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -53,26 +56,13 @@ func (s *Authorizations) BeginBrowser(ctx context.Context, r mcpcmd.Revision, me
 	if err := s.grants.store.CheckMCPAuthority(ctx, authority); err != nil {
 		return mcpcmd.BrowserAuthorization{}, safeOperationError(err)
 	}
-	if r.ConnectionID == "" {
+	if r.ConnectionID == "" || !validRemoteURL(s.redirectURI) {
 		return mcpcmd.BrowserAuthorization{}, mcpcmd.ErrInvalid
 	}
-	s.mu.Lock()
-	s.expireLocked()
-	if s.stopped {
-		s.mu.Unlock()
-		return mcpcmd.BrowserAuthorization{}, mcpcmd.ErrUnavailable
+	a, err := s.reserve(r.ConnectionID, authority, authorizationBrowser)
+	if err != nil {
+		return mcpcmd.BrowserAuthorization{}, err
 	}
-	if len(s.attempts) >= maxAuthorizationAttempts || s.byConnection[r.ConnectionID] != "" {
-		s.mu.Unlock()
-		return mcpcmd.BrowserAuthorization{}, mcpcmd.ErrConflict
-	}
-	expires := time.Now().Add(authorizationAttemptTTL)
-	attemptCtx, cancel := context.WithDeadline(s.ctx, expires)
-	a := &authorizationAttempt{ID: rand.Text(), State: rand.Text(), ConnectionID: r.ConnectionID, ExpiresAt: expires, Authority: authority, ctx: attemptCtx, cancel: cancel}
-	s.attempts[a.ID] = a
-	s.byState[a.State] = a.ID
-	s.byConnection[a.ConnectionID] = a.ID
-	s.mu.Unlock()
 	complete := false
 	defer func() {
 		if !complete {
@@ -81,7 +71,7 @@ func (s *Authorizations) BeginBrowser(ctx context.Context, r mcpcmd.Revision, me
 	}()
 	ctx, stop := bindAttemptContext(ctx, a.ctx)
 	defer stop()
-	g, metadata, err := s.grants.prepareAuthorization(ctx, r, metadataURL, s.redirectURI, client, authority, true)
+	g, metadata, err := s.grants.prepareAuthorization(ctx, r, metadataURL, s.redirectURI, client, authority, authorizationBrowser)
 	if err != nil {
 		return mcpcmd.BrowserAuthorization{}, err
 	}
@@ -107,7 +97,7 @@ func (s *Authorizations) CompleteBrowser(ctx context.Context, callback mcpcmd.Br
 	s.mu.Lock()
 	s.expireLocked()
 	a := s.attempts[s.byState[callback.State]]
-	if a == nil || !a.Ready || a.Consumed {
+	if a == nil || a.Flow != authorizationBrowser || !a.Ready || a.Consumed {
 		s.mu.Unlock()
 		return mcpcmd.Grant{}, mcpcmd.ErrAuthAttempt
 	}
@@ -230,7 +220,7 @@ func (s *Authorizations) Cancel(ctx context.Context, id string, authority mcpcmd
 	defer s.mu.Unlock()
 	s.expireLocked()
 	a := s.attempts[id]
-	if a == nil {
+	if a == nil || (a.Flow == authorizationDevice && a.Consumed) {
 		return mcpcmd.ErrAuthAttempt
 	}
 	if !sameBrowserAuthority(a.Authority, authority) {
@@ -257,15 +247,46 @@ func (s *Authorizations) Disconnect(ctx context.Context, connectionID string, au
 // Close invalidates pending attempts and cancels in-flight protocol operations.
 func (s *Authorizations) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.stopped = true
 	s.cancel()
 	for _, a := range s.attempts {
 		s.removeLocked(a)
 	}
+	s.mu.Unlock()
+	s.polls.Wait()
 }
 
 // A shared callback URI requires an issuer response to prevent server mix-up.
 func supportsBrowserAuthorization(metadata OAuthMetadata) bool {
 	return metadata.RequireIssuerParameter && validRemoteURL(metadata.AuthorizationEndpoint) && slices.Contains(metadata.PKCEMethods, "S256") && (len(metadata.GrantTypes) == 0 || slices.Contains(metadata.GrantTypes, "authorization_code")) && (len(metadata.ResponseTypes) == 0 || slices.Contains(metadata.ResponseTypes, "code"))
+}
+
+type authorizationFlow uint8
+
+const (
+	authorizationRegistration authorizationFlow = iota
+	authorizationBrowser
+	authorizationDevice
+)
+
+func (s *Authorizations) reserve(connectionID string, authority mcpcmd.Authority, flow authorizationFlow) (*authorizationAttempt, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked()
+	if s.stopped {
+		return nil, mcpcmd.ErrUnavailable
+	}
+	if len(s.attempts) >= maxAuthorizationAttempts || s.byConnection[connectionID] != "" {
+		return nil, mcpcmd.ErrConflict
+	}
+	expires := time.Now().Add(authorizationAttemptTTL)
+	attemptCtx, cancel := context.WithDeadline(s.ctx, expires)
+	a := &authorizationAttempt{ID: rand.Text(), ConnectionID: connectionID, Flow: flow, ExpiresAt: expires, Authority: authority, ctx: attemptCtx, cancel: cancel}
+	s.attempts[a.ID] = a
+	s.byConnection[connectionID] = a.ID
+	if flow == authorizationBrowser {
+		a.State = rand.Text()
+		s.byState[a.State] = a.ID
+	}
+	return a, nil
 }

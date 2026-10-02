@@ -32,6 +32,7 @@ type GrantStore interface {
 
 // OAuthMetadata contains validated public protocol endpoints, never credentials.
 type OAuthMetadata struct {
+	DeviceAuthorizationEndpoint                                                  string
 	Resource, Issuer, AuthorizationEndpoint, TokenEndpoint, RegistrationEndpoint string
 	Scopes, AuthMethods, GrantTypes, ResponseTypes, PKCEMethods                  []string
 	RequireIssuerParameter                                                       bool
@@ -54,6 +55,8 @@ type OAuthToken struct {
 
 // OAuthProvider reuses SDK discovery/registration and OAuth token primitives.
 type OAuthProvider interface {
+	BeginDevice(ctx context.Context, metadata OAuthMetadata, grant mcpcmd.Grant, secrets GrantSecrets) (OAuthDevice, error)
+	PollDevice(ctx context.Context, metadata OAuthMetadata, grant mcpcmd.Grant, secrets GrantSecrets, device OAuthDevice) (OAuthToken, error)
 	Discover(ctx context.Context, resource, metadataURL string) (OAuthMetadata, error)
 	DiscoverIssuer(ctx context.Context, binding mcpcmd.AuthBinding) (OAuthMetadata, error)
 	Register(ctx context.Context, metadata OAuthMetadata, redirectURI string, scopes []string) (OAuthClient, error)
@@ -227,10 +230,10 @@ func containsScopes(granted, required []string) bool {
 // PrepareAuthorization discovers a trusted revision and registers/reuses its
 // installation client. Browser/device completion owns later attempt validation.
 func (s *Grants) PrepareAuthorization(ctx context.Context, revision mcpcmd.Revision, metadataURL, redirectURI string, client OAuthClient, authority mcpcmd.Authority) (mcpcmd.Grant, OAuthMetadata, error) {
-	return s.prepareAuthorization(ctx, revision, metadataURL, redirectURI, client, authority, false)
+	return s.prepareAuthorization(ctx, revision, metadataURL, redirectURI, client, authority, authorizationRegistration)
 }
 
-func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revision, metadataURL, redirectURI string, client OAuthClient, authority mcpcmd.Authority, browser bool) (mcpcmd.Grant, OAuthMetadata, error) {
+func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revision, metadataURL, redirectURI string, client OAuthClient, authority mcpcmd.Authority, flow authorizationFlow) (mcpcmd.Grant, OAuthMetadata, error) {
 	lock := s.managementLock(revision.ConnectionID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -254,7 +257,7 @@ func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 	if metadata.Resource != d.URL || !validRemoteURL(metadata.Issuer) || !validRemoteURL(metadata.TokenEndpoint) || !includesScopes(metadata.Scopes, d.Scopes) {
 		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrInvalid
 	}
-	if browser && !supportsBrowserAuthorization(metadata) {
+	if (flow == authorizationBrowser && !supportsBrowserAuthorization(metadata)) || (flow == authorizationDevice && (!supportsDeviceAuthorization(metadata) || client.ID == "")) {
 		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrUnavailable
 	}
 	if client.ID == "" {
