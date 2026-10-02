@@ -58,6 +58,8 @@ type OAuthProvider interface {
 	DiscoverIssuer(ctx context.Context, binding mcpcmd.AuthBinding) (OAuthMetadata, error)
 	Register(ctx context.Context, metadata OAuthMetadata, redirectURI string, scopes []string) (OAuthClient, error)
 	Refresh(ctx context.Context, metadata OAuthMetadata, grant mcpcmd.Grant, secrets GrantSecrets) (OAuthToken, error)
+	BeginCode(metadata OAuthMetadata, grant mcpcmd.Grant, redirectURI, state string) (authorizationURL, verifier string, err error)
+	ExchangeCode(ctx context.Context, metadata OAuthMetadata, grant mcpcmd.Grant, secrets GrantSecrets, redirectURI, code, verifier string) (OAuthToken, error)
 }
 
 // Grants owns worker authorization; it does not publish catalog snapshots.
@@ -225,6 +227,10 @@ func containsScopes(granted, required []string) bool {
 // PrepareAuthorization discovers a trusted revision and registers/reuses its
 // installation client. Browser/device completion owns later attempt validation.
 func (s *Grants) PrepareAuthorization(ctx context.Context, revision mcpcmd.Revision, metadataURL, redirectURI string, client OAuthClient, authority mcpcmd.Authority) (mcpcmd.Grant, OAuthMetadata, error) {
+	return s.prepareAuthorization(ctx, revision, metadataURL, redirectURI, client, authority, false)
+}
+
+func (s *Grants) prepareAuthorization(ctx context.Context, revision mcpcmd.Revision, metadataURL, redirectURI string, client OAuthClient, authority mcpcmd.Authority, browser bool) (mcpcmd.Grant, OAuthMetadata, error) {
 	lock := s.managementLock(revision.ConnectionID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -247,6 +253,9 @@ func (s *Grants) PrepareAuthorization(ctx context.Context, revision mcpcmd.Revis
 	}
 	if metadata.Resource != d.URL || !validRemoteURL(metadata.Issuer) || !validRemoteURL(metadata.TokenEndpoint) || !includesScopes(metadata.Scopes, d.Scopes) {
 		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrInvalid
+	}
+	if browser && !supportsBrowserAuthorization(metadata) {
+		return mcpcmd.Grant{}, OAuthMetadata{}, mcpcmd.ErrUnavailable
 	}
 	if client.ID == "" {
 		client, err = s.oauth.Register(discoveryCtx, metadata, redirectURI, d.Scopes)

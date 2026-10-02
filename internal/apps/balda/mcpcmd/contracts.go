@@ -15,6 +15,7 @@ var (
 	ErrUnavailable  = errors.New("MCP operation unavailable")
 	ErrAuthRequired = errors.New("MCP worker authorization required")
 	ErrDisconnected = errors.New("MCP worker authorization disconnected")
+	ErrAuthAttempt  = errors.New("MCP authorization attempt unavailable; start again")
 )
 
 type Source string

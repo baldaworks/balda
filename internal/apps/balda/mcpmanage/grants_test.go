@@ -92,6 +92,14 @@ type grantOAuth struct {
 	metadata OAuthMetadata
 	refresh  func(context.Context, mcpcmd.Grant, GrantSecrets) (OAuthToken, error)
 	register func(context.Context) (OAuthClient, error)
+	exchange func(context.Context, mcpcmd.Grant, string, string) (OAuthToken, error)
+}
+
+func (*grantOAuth) BeginCode(_ OAuthMetadata, _ mcpcmd.Grant, _ string, state string) (string, string, error) {
+	return "https://issuer.example.org/authorize?state=" + state, "private-pkce-verifier", nil
+}
+func (o *grantOAuth) ExchangeCode(ctx context.Context, _ OAuthMetadata, g mcpcmd.Grant, _ GrantSecrets, _ string, code, verifier string) (OAuthToken, error) {
+	return o.exchange(ctx, g, code, verifier)
 }
 
 func (o *grantOAuth) Discover(context.Context, string, string) (OAuthMetadata, error) {

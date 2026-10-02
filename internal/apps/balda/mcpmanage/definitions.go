@@ -187,7 +187,7 @@ func safeOperationError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, safe := range []error{context.Canceled, context.DeadlineExceeded, mcpcmd.ErrInvalid, mcpcmd.ErrConflict, mcpcmd.ErrNotFound, mcpcmd.ErrForbidden, mcpcmd.ErrCredentials, mcpcmd.ErrUnavailable, mcpcmd.ErrAuthRequired, mcpcmd.ErrDisconnected} {
+	for _, safe := range []error{context.Canceled, context.DeadlineExceeded, mcpcmd.ErrInvalid, mcpcmd.ErrConflict, mcpcmd.ErrNotFound, mcpcmd.ErrForbidden, mcpcmd.ErrCredentials, mcpcmd.ErrUnavailable, mcpcmd.ErrAuthRequired, mcpcmd.ErrDisconnected, mcpcmd.ErrAuthAttempt} {
 		if errors.Is(err, safe) {
 			return safe
 		}

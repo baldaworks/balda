@@ -134,32 +134,47 @@ func (p *OAuthProvider) Register(ctx context.Context, metadata mcpmanage.OAuthMe
 
 // Refresh uses x/oauth2 client authentication and token parsing.
 func (p *OAuthProvider) Refresh(ctx context.Context, metadata mcpmanage.OAuthMetadata, grant mcpcmd.Grant, secrets mcpmanage.GrantSecrets) (mcpmanage.OAuthToken, error) {
-	if !validOAuthURL(metadata.TokenEndpoint) || metadata.Issuer != grant.Binding.Issuer || metadata.Resource != grant.Binding.Resource || secrets.RefreshToken == "" {
+	if secrets.RefreshToken == "" {
 		return mcpmanage.OAuthToken{}, mcpcmd.ErrAuthRequired
+	}
+	ctx, config, err := p.tokenConfig(ctx, metadata, grant, secrets)
+	if err != nil {
+		return mcpmanage.OAuthToken{}, err
+	}
+	token, err := config.TokenSource(ctx, &oauth2.Token{RefreshToken: secrets.RefreshToken}).Token()
+	return workerTokenResult(token, err, grant)
+}
+
+func (p *OAuthProvider) tokenConfig(ctx context.Context, metadata mcpmanage.OAuthMetadata, grant mcpcmd.Grant, secrets mcpmanage.GrantSecrets) (context.Context, oauth2.Config, error) {
+	if !validOAuthURL(metadata.TokenEndpoint) || metadata.Issuer != grant.Binding.Issuer || metadata.Resource != grant.Binding.Resource {
+		return ctx, oauth2.Config{}, mcpcmd.ErrAuthRequired
 	}
 	style := oauth2.AuthStyleInParams
 	switch grant.TokenEndpointAuthMethod {
 	case mcpcmd.ClientAuthNone:
 		if secrets.ClientSecret != "" {
-			return mcpmanage.OAuthToken{}, mcpcmd.ErrAuthRequired
+			return ctx, oauth2.Config{}, mcpcmd.ErrAuthRequired
 		}
 	case mcpcmd.ClientAuthSecretBasic:
 		style = oauth2.AuthStyleInHeader
 		if secrets.ClientSecret == "" {
-			return mcpmanage.OAuthToken{}, mcpcmd.ErrAuthRequired
+			return ctx, oauth2.Config{}, mcpcmd.ErrAuthRequired
 		}
 	case mcpcmd.ClientAuthSecretPost:
 		if secrets.ClientSecret == "" {
-			return mcpmanage.OAuthToken{}, mcpcmd.ErrAuthRequired
+			return ctx, oauth2.Config{}, mcpcmd.ErrAuthRequired
 		}
 	default:
-		return mcpmanage.OAuthToken{}, mcpcmd.ErrAuthRequired
+		return ctx, oauth2.Config{}, mcpcmd.ErrAuthRequired
 	}
 	client := *p.client
 	client.Transport = &resourceTokenTransport{base: p.transport(), endpoint: metadata.TokenEndpoint, resource: grant.Binding.Resource, scopes: grant.Scopes, public: grant.TokenEndpointAuthMethod == mcpcmd.ClientAuthNone}
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, &client)
 	config := oauth2.Config{ClientID: grant.Binding.ClientID, ClientSecret: secrets.ClientSecret, Endpoint: oauth2.Endpoint{TokenURL: metadata.TokenEndpoint, AuthStyle: style}}
-	token, err := config.TokenSource(ctx, &oauth2.Token{RefreshToken: secrets.RefreshToken}).Token()
+	return ctx, config, nil
+}
+
+func workerTokenResult(token *oauth2.Token, err error, grant mcpcmd.Grant) (mcpmanage.OAuthToken, error) {
 	if err != nil {
 		if errors.Is(err, mcpcmd.ErrAuthRequired) {
 			return mcpmanage.OAuthToken{}, mcpcmd.ErrAuthRequired
