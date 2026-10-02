@@ -42,8 +42,10 @@ func New(credentialKey string) (*Service, error) {
 	return s, nil
 }
 
-type RevisionReader interface {
+// CredentialReader includes retained revision and worker-grant credentials.
+type CredentialReader interface {
 	ListMCPRevisions(ctx context.Context) ([]mcpcmd.Revision, error)
+	ListMCPGrants(ctx context.Context) ([]mcpcmd.Grant, error)
 }
 
 type protectedValues struct {
@@ -264,7 +266,7 @@ func (s *Service) ResolveValues(r mcpcmd.Revision) (mcpcmd.LaunchValues, error) 
 
 // ValidateCredentials checks every retained revision before provider/ingress
 // startup. Historical pins need the same deployment key as current definitions.
-func (s *Service) ValidateCredentials(ctx context.Context, reader RevisionReader) error {
+func (s *Service) ValidateCredentials(ctx context.Context, reader CredentialReader) error {
 	if reader == nil {
 		return mcpcmd.ErrInvalid
 	}
@@ -274,6 +276,15 @@ func (s *Service) ValidateCredentials(ctx context.Context, reader RevisionReader
 	}
 	for _, revision := range revisions {
 		if _, err := s.openRevision(revision); err != nil {
+			return err
+		}
+	}
+	grants, err := reader.ListMCPGrants(ctx)
+	if err != nil {
+		return err
+	}
+	for _, grant := range grants {
+		if _, err := s.OpenGrant(grant); err != nil {
 			return err
 		}
 	}

@@ -181,6 +181,8 @@ func TestEnvironmentReferencesResolveAtLaunchAndDistinguishEmptyFromMissing(t *t
 
 type retainedRevisionReader []mcpcmd.Revision
 
+func (retainedRevisionReader) ListMCPGrants(context.Context) ([]mcpcmd.Grant, error) { return nil, nil }
+
 func (r retainedRevisionReader) ListMCPRevisions(context.Context) ([]mcpcmd.Revision, error) {
 	return r, nil
 }

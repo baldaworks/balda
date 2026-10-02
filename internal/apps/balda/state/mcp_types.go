@@ -26,4 +26,17 @@ type MCPStore interface {
 	GetMCPRevision(ctx context.Context, connectionID, revisionID string) (mcpcmd.Revision, bool, error)
 	ListMCPRevisions(ctx context.Context) ([]mcpcmd.Revision, error)
 	MarkMCPPublished(ctx context.Context, id string, version uint64) error
+	SaveMCPGrant(ctx context.Context, mutation MCPGrantMutation) error
+	GetMCPGrant(ctx context.Context, binding mcpcmd.AuthBinding) (mcpcmd.Grant, bool, error)
+	ListMCPGrants(ctx context.Context) ([]mcpcmd.Grant, error)
+}
+
+// MCPGrantMutation is one fenced worker grant transition. Only background
+// renewal omits browser authority; it still requires the exact generation.
+type MCPGrantMutation struct {
+	Grant              mcpcmd.Grant
+	Operation          mcpcmd.GrantOperation
+	ExpectedGeneration uint64
+	Authority          *mcpcmd.Authority
+	Audit              usercmd.AuditEvent
 }

@@ -264,6 +264,10 @@ const (
 	AuditActionLogout AuditAction = "session.logout"
 	// AuditActionMCPDefinitionChanged records a managed connection revision or selection change.
 	AuditActionMCPDefinitionChanged AuditAction = "mcp.definition.changed"
+	// AuditActionMCPAuthorizationChanged records explicit worker authorization transitions.
+	AuditActionMCPAuthorizationChanged AuditAction = "mcp.authorization.changed"
+	// AuditActionMCPCredentialsRenewed records a durable background renewal.
+	AuditActionMCPCredentialsRenewed AuditAction = "mcp.credentials.renewed"
 )
 
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
@@ -273,7 +277,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged, AuditActionMCPAuthorizationChanged, AuditActionMCPCredentialsRenewed:
 		return true
 	default:
 		return false
