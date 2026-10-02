@@ -122,7 +122,7 @@ func TestRefreshRotatesPairWithFixedExpiryAndReplayRevokesFamily(t *testing.T) {
 	}
 }
 
-func TestAccessUsesCurrentCanonicalStateAndExpires(t *testing.T) {
+func TestRoleChangeRevokesPriorSessionAndNewAccessUsesCurrentRole(t *testing.T) {
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "primary", "primary", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
@@ -135,6 +135,16 @@ func TestAccessUsesCurrentCanonicalStateAndExpires(t *testing.T) {
 	operator.Version++
 	operator.UpdatedAt = now.Add(time.Minute)
 	if err := provider.Users().UpdateUser(t.Context(), operator, 1, securityTestAudit("role-change", usercmd.AuditActionUserRoleChanged, operator.ID, now)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ValidateAccess(t.Context(), credentials.AccessToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("ValidateAccess(prior role session) error = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("Refresh(prior role session) error = %v, want ErrUnauthenticated", err)
+	}
+	credentials, err = service.Login(t.Context(), operator.Username, []byte(testPassword))
+	if err != nil {
 		t.Fatal(err)
 	}
 	principal, err := service.ValidateAccess(t.Context(), credentials.AccessToken)
