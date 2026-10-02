@@ -15,7 +15,7 @@ import (
 
 func backofficeCommand() *cobra.Command {
 	command := &cobra.Command{Use: "backoffice", Short: "Maintain and review Backoffice"}
-	command.AddCommand(bootstrapAdminCommand(), backofficeQACommand())
+	command.AddCommand(bootstrapAdminCommand(), recover2FACommand(), backofficeQACommand())
 	return command
 }
 
@@ -84,6 +84,34 @@ func bootstrapAdminCommand() *cobra.Command {
 	command.Flags().StringVar(&input.Username, "username", "", "username for a fresh administrator (must be superuser)")
 	command.Flags().StringVar(&input.DisplayName, "display-name", "", "display name for a fresh administrator (must be superuser)")
 	command.Flags().BoolVar(&input.Reset, "reset", false, "replace usable credentials and revoke browser sessions")
+	return command
+}
+
+func recover2FACommand() *cobra.Command {
+	var input backoffice.RecoveryInput
+	command := &cobra.Command{
+		Use: "recover-2fa", Short: "Disable a lost administrator factor and revoke browser sessions",
+		Args: cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if !input.Confirm {
+				return fmt.Errorf("recover-2fa requires --confirm")
+			}
+			runtime, err := openBackofficeMaintenance(command)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = runtime.Close() }()
+			result, err := runtime.Recover2FA(command.Context(), input)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "2FA disabled for %s; browser sessions revoked\n", result.Username)
+			return err
+		},
+	}
+	command.Flags().StringVar(&input.Username, "username", "", "exact normalized administrator username")
+	command.Flags().BoolVar(&input.Confirm, "confirm", false, "explicitly confirm disabling 2FA")
+	_ = command.MarkFlagRequired("username")
 	return command
 }
 

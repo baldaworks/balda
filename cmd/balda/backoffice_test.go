@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/backoffice/security"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/userpassword"
@@ -435,5 +436,99 @@ func seedUserUpgradeDatabase(t *testing.T, path string, fixture []byte) {
   INSERT INTO balda_collaborators (user_id, username, first_name, added_by, added_at)
   VALUES ('202', 'operator', 'Op', '101', '2026-09-23T11:00:00Z')`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBackofficeRecoveryRequiresExplicitConfirmationBeforeOpeningState(t *testing.T) {
+	t.Chdir(t.TempDir())
+	command, err := newRootCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"backoffice", "recover-2fa", "--username", "admin"})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "--confirm") {
+		t.Fatalf("unconfirmed recovery = %v", err)
+	}
+}
+
+func TestBackofficeRecoveryConfirmedCLI(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+  state_dir: .config/balda
+`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := state.NewSQLiteProvider(t.Context(), filepath.Join(workingDir, ".config", "balda", "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Close() }()
+	now := time.Now().UTC()
+	hash, err := userpassword.Hash([]byte("correct horse battery staple"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := usercmd.User{ID: "recover-cli", DisplayName: "Recovery", Username: "recovery", NormalizedUsername: "recovery", Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive, Credential: usercmd.Credential{State: usercmd.CredentialStateActive, Version: 1}, Version: 1, CreatedAt: now, UpdatedAt: now}
+	audit := usercmd.AuditEvent{ID: "create-cli", Action: usercmd.AuditActionCredentialChanged, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetUser, TargetID: u.ID, Source: "test", OccurredAt: now}
+	if err := p.Users().CreateUser(t.Context(), u, usercmd.CredentialSecret{UserID: u.ID, PasswordHash: hash}, audit); err != nil {
+		t.Fatal(err)
+	}
+	service, err := security.NewService(p.Users(), security.Config{AccessTTL: time.Minute, RefreshTTL: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := service.Login(t.Context(), u.Username, []byte("correct horse battery staple"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal, err := service.ValidateAccess(t.Context(), credentials.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit.ID = "enable-cli"
+	audit.Action = usercmd.AuditActionMFAEnabled
+	err = p.Users().ApplyMFAChange(t.Context(), usercmd.MFAChange{UserID: u.ID, ExpectedUserVersion: 1, ExpectedCredentialVersion: 1, Purpose: usercmd.MFAEnable, BoundSessionID: principal.FamilyID, ExpectedSessionVersion: principal.Version, ChangedAt: now, Audit: audit, Credential: usercmd.MFACredential{ID: "cli-key", UserID: u.ID, RPID: "localhost", CredentialID: []byte("credential"), PublicKey: []byte("public-key"), Data: []byte(`{}`), CreatedAt: now}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, username := range []string{"missing", "recovery", "recovery"} {
+		command, err := newRootCommand()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		command.SetOut(&out)
+		command.SetErr(&bytes.Buffer{})
+		command.SilenceUsage = true
+		command.SetArgs([]string{"backoffice", "recover-2fa", "--username", username, "--confirm"})
+		err = command.Execute()
+		if index == 1 {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.String() != "2FA disabled for recovery; browser sessions revoked\n" {
+				t.Fatalf("unexpected recovery output %q", out.String())
+			}
+		} else if err == nil || out.Len() != 0 {
+			t.Fatalf("failed target recovery err=%v output=%q", err, out.String())
+		}
+	}
+	profile, err := p.Users().GetMFAProfile(t.Context(), u.ID)
+	if err != nil || profile.Enabled {
+		t.Fatalf("profile=%+v err=%v", profile, err)
+	}
+	secret, _, err := p.Users().GetCredentialSecret(t.Context(), u.ID)
+	if err != nil || secret.PasswordHash != hash {
+		t.Fatalf("password changed: %v", err)
 	}
 }

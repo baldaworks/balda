@@ -88,6 +88,15 @@ func (r *Runtime) BootstrapAdmin(ctx context.Context, input BootstrapInput) (Boo
 	return r.bootstrap.Bootstrap(ctx, input)
 }
 
+// Recover2FA performs confirmed offline recovery without starting HTTP or ingress.
+func (r *Runtime) Recover2FA(ctx context.Context, input RecoveryInput) (RecoveryResult, error) {
+	service, err := NewRecoveryService(r.provider.Users())
+	if err != nil {
+		return RecoveryResult{}, err
+	}
+	return service.Recover(ctx, input)
+}
+
 // Start validates readiness and binds HTTP before returning to the host.
 func (r *Runtime) Start(ctx context.Context) error {
 	r.mu.Lock()
