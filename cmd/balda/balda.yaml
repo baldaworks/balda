@@ -206,9 +206,9 @@ balda:
     listen_addr: "127.0.0.1:8095"
     public_url: "http://127.0.0.1:8095"
     # Opaque access credentials are short-lived. Single-use rotating refresh
-    # credentials retain a fixed, longer session-family deadline.
+    # credentials renew the session-family deadline on successful refresh.
     access_token_ttl: "15m"
-    refresh_token_ttl: "12h"
+    refresh_token_ttl: "720h"
     ceremony_ttl: "5m"
     step_up_ttl: "15m"
     qa_ui: false

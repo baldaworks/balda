@@ -40,14 +40,16 @@ func TestEnrolledLoginRequiresAssertion(t *testing.T) {
 
 func TestMFARefreshPreservesProofAndStepUpPreservesRefresh(t *testing.T) {
 	p, s, u, private, key, now := enrolledTestService(t)
+	s.config.RefreshTTL = 30 * 24 * time.Hour
 	ctx := withMFABrowser(t.Context(), "browser", "csrf")
 	pending, err := s.Login(ctx, u.Username, []byte(testPassword))
 	require.NoError(t, err)
 	credentials, err := s.FinishLogin(ctx, pending.Pending.Transaction, "browser", "csrf", assertionResponseForStart(t, *pending.Pending, key, private, 0x05, 1))
 	require.NoError(t, err)
-	s.now = func() time.Time { return now.Add(16 * time.Minute) }
+	s.now = func() time.Time { return now.Add(29 * 24 * time.Hour) }
 	rotated, err := s.Refresh(ctx, credentials.RefreshToken, credentials.CSRFToken)
 	require.NoError(t, err)
+	require.Equal(t, now.Add(59*24*time.Hour), rotated.RefreshExpiresAt)
 	principal, err := s.ValidateAccess(ctx, rotated.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, now, principal.WebAuthnVerifiedAt)
@@ -70,7 +72,7 @@ func TestMFARefreshPreservesProofAndStepUpPreservesRefresh(t *testing.T) {
 	_, err = s.Refresh(ctx, credentials.RefreshToken, credentials.CSRFToken)
 	require.ErrorIs(t, err, ErrRefreshConcurrent)
 	require.NoError(t, s.RequireFresh(ctx, stepped.AccessToken))
-	s.now = func() time.Time { return now.Add(16*time.Minute + 31*time.Second) }
+	s.now = func() time.Time { return now.Add(29*24*time.Hour + 31*time.Second) }
 	_, err = s.Refresh(ctx, credentials.RefreshToken, credentials.CSRFToken)
 	require.ErrorIs(t, err, ErrUnauthenticated)
 	_, err = s.ValidateAccess(ctx, stepped.AccessToken)

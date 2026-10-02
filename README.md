@@ -98,6 +98,12 @@ If the administrator already has a usable credential, start directly; replacing
 that password requires `bootstrap-admin --reset` and revokes its browser session
 families. Never pass passwords as command arguments.
 
+Browser refresh tokens default to 30 days (`720h`), renewed after every successful
+refresh. Existing explicit `12h` config or environment overrides must be changed
+to `720h` to use the monthly window. Expired sessions require sign-in; refresh
+does not renew passkey verification freshness. See the
+[browser session contract](docs/reference/backoffice.md#browser-sessions-and-refresh-rotation).
+
 Administrator passkey 2FA is optional and off by default. Enable it in Account
 using the current password and a verified passkey at an HTTPS origin or localhost.
 Enrolled accounts require their passkey at sign-in and for sensitive actions;

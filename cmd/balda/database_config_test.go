@@ -54,6 +54,7 @@ func TestLoadBackofficeEnvironmentOverridesFromSameDocument(t *testing.T) {
 	t.Setenv("BALDA_BACKOFFICE_LISTEN_ADDR", "127.0.0.1:9095")
 	t.Setenv("BALDA_BACKOFFICE_PUBLIC_URL", "http://127.0.0.1:9095")
 	t.Setenv("BALDA_BACKOFFICE_ACCESS_TOKEN_TTL", "10m")
+	t.Setenv("BALDA_BACKOFFICE_REFRESH_TOKEN_TTL", "48h")
 	t.Setenv("BALDA_BACKOFFICE_CEREMONY_TTL", "3m")
 	t.Setenv("BALDA_BACKOFFICE_STEP_UP_TTL", "7m")
 	doc := loadDatabaseTestDocument(t, t.TempDir())
@@ -61,7 +62,7 @@ func TestLoadBackofficeEnvironmentOverridesFromSameDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.ListenAddr != "127.0.0.1:9095" || server.AccessTokenTTL != 10*time.Minute || server.CeremonyTTL != 3*time.Minute || server.StepUpTTL != 7*time.Minute {
+	if server.ListenAddr != "127.0.0.1:9095" || server.AccessTokenTTL != 10*time.Minute || server.RefreshTokenTTL != 48*time.Hour || server.CeremonyTTL != 3*time.Minute || server.StepUpTTL != 7*time.Minute {
 		t.Fatalf("backoffice server = %+v", server)
 	}
 }
@@ -115,4 +116,48 @@ balda:
 		t.Fatal(err)
 	}
 	return doc
+}
+
+func TestLoadBundledBackofficeMonthlyRefreshDefault(t *testing.T) {
+	doc := loadDatabaseTestDocument(t, t.TempDir())
+	server, err := doc.Balda.Backoffice.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.RefreshTokenTTL != 30*24*time.Hour || server.AccessTokenTTL != 15*time.Minute {
+		t.Fatalf("bundled token lifetimes = %s/%s", server.AccessTokenTTL, server.RefreshTokenTTL)
+	}
+}
+
+func TestLoadExplicitBackofficeRefreshTTL(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(filepath.Join(dir, ".config", "balda", "config.yaml"), `runtime:
+  providers:
+    balda_agent:
+      type: opencode_acp
+      opencode_acp:
+        model: opencode/big-pickle
+balda:
+  provider: balda_agent
+  backoffice:
+    refresh_token_ttl: "12h"
+`); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []time.Duration{12 * time.Hour, 48 * time.Hour} {
+		if want == 48*time.Hour {
+			t.Setenv("BALDA_BACKOFFICE_REFRESH_TOKEN_TTL", "48h")
+		}
+		var doc baldaTestConfigDocument
+		if _, err := appconfig.LoadConfigDocument(appconfig.RuntimeLoadOptions{WorkingDir: dir}, appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true}, &doc); err != nil {
+			t.Fatal(err)
+		}
+		server, err := doc.Balda.Backoffice.Resolve()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if server.RefreshTokenTTL != want {
+			t.Fatalf("configured refresh TTL = %s, want %s", server.RefreshTokenTTL, want)
+		}
+	}
 }

@@ -261,8 +261,12 @@ func TestPostgresUnifiedUserSchemaConstraints(t *testing.T) {
 		        '2026-09-23T00:05:00Z', '2026-09-23T00:06:00Z', '2026-09-24T00:00:00Z')`)
 	assertPostgresRejected(t, db, `UPDATE balda_backoffice_refresh_tokens
 		SET state = 'active', used_at = '' WHERE selector = 'refresh-1'`)
-	assertPostgresRejected(t, db, `UPDATE balda_backoffice_sessions
-		SET refresh_expires_at = '2026-09-25T00:00:00Z' WHERE session_id = 'session-1'`)
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_sessions
+  SET refresh_expires_at = '2026-09-25T00:00:00Z' WHERE session_id = 'session-1'`); err != nil {
+		t.Fatalf("renew family deadline: %v", err)
+	}
+	assertPostgresRejected(t, db, `UPDATE balda_backoffice_refresh_tokens
+  SET expires_at = '2026-09-25T00:00:00Z' WHERE selector = 'refresh-1'`)
 
 	if _, err := db.ExecContext(t.Context(), `DELETE FROM balda_users WHERE user_id = 'admin-1'`); err != nil {
 		t.Fatalf("delete user: %v", err)
@@ -323,4 +327,38 @@ func TestPostgresMigrationFailureIsRedacted(t *testing.T) {
 	if exists {
 		t.Fatal("failed migration did not roll back")
 	}
+}
+
+func TestPostgresRollingRefreshUpgrade(t *testing.T) {
+	db := newPostgresTestDB(t)
+	migrations, err := fs.Sub(postgresMigrationsFS, "postgres_migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(t.Context(), 11); err != nil {
+		t.Fatal(err)
+	}
+	insertPostgresUser(t, db, "admin-1", "superuser", true)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_backoffice_sessions
+ (session_id, user_id, assurance, credential_version, access_selector,
+ access_verifier_digest, csrf_verifier_digest, created_at, last_seen_at,
+ access_expires_at, refresh_expires_at, revoked_at, revocation_reason, version)
+ VALUES ('session-1', 'admin-1', 'normal', 1, 'access-1', decode('01', 'hex'), decode('02', 'hex'),
+ '2026-09-23T00:00:00Z', '2026-09-23T00:00:00Z',
+ '2026-09-23T00:15:00Z', '2026-09-24T00:00:00Z', '', '', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO balda_backoffice_refresh_tokens
+ (session_id, selector, verifier_digest, generation, state, issued_at, used_at, expires_at)
+ VALUES ('session-1', 'refresh-1', decode('01', 'hex'), 1, 'active', '2026-09-23T00:00:00Z', '', '2026-09-24T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	checkRollingRefreshUpgrade(t, db)
 }

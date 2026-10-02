@@ -91,7 +91,7 @@ func TestLoginFailuresAreUniformAndBindingCannotAuthenticate(t *testing.T) {
 	}
 }
 
-func TestRefreshRotatesPairWithFixedExpiryAndReplayRevokesFamily(t *testing.T) {
+func TestRefreshRenewsPairAndReplayRevokesFamily(t *testing.T) {
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
@@ -104,7 +104,7 @@ func TestRefreshRotatesPairWithFixedExpiryAndReplayRevokesFamily(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if rotated.AccessToken == initial.AccessToken || rotated.RefreshToken == initial.RefreshToken || !rotated.RefreshExpiresAt.Equal(initial.RefreshExpiresAt) {
+	if rotated.AccessToken == initial.AccessToken || rotated.RefreshToken == initial.RefreshToken || !rotated.RefreshExpiresAt.Equal(initial.RefreshExpiresAt.Add(10*time.Minute)) {
 		t.Fatalf("rotated credentials = %+v, initial=%+v", rotated, initial)
 	}
 	if _, err := service.Refresh(t.Context(), initial.RefreshToken, initial.CSRFToken); !errors.Is(err, ErrRefreshConcurrent) {
@@ -177,7 +177,7 @@ func TestAccessRejectsDisabledCanonicalUser(t *testing.T) {
 	}
 }
 
-func TestRefreshAfterClockRollbackKeepsFixedExpiry(t *testing.T) {
+func TestRefreshAfterClockRollbackPreservesLastRenewal(t *testing.T) {
 	t.Parallel()
 	provider, service, now := newSecurityTestService(t)
 	createSecurityTestUser(t, provider.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
@@ -187,7 +187,6 @@ func TestRefreshAfterClockRollbackKeepsFixedExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixedExpiry := credentials.RefreshExpiresAt
 	for _, rollbackFrom := range []time.Time{issuedAt, issuedAt.Add(time.Minute)} {
 		if rollbackFrom.After(issuedAt) {
 			service.now = func() time.Time { return rollbackFrom }
@@ -202,8 +201,8 @@ func TestRefreshAfterClockRollbackKeepsFixedExpiry(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Refresh after clock rollback: %v", err)
 		}
-		if !credentials.RefreshExpiresAt.Equal(fixedExpiry) {
-			t.Fatal("clock rollback changed absolute refresh expiry")
+		if !credentials.RefreshExpiresAt.Equal(previous.RefreshExpiresAt) {
+			t.Fatal("clock rollback changed the last renewed expiry")
 		}
 		if _, err := service.ValidateAccess(t.Context(), previous.AccessToken); !errors.Is(err, ErrUnauthenticated) {
 			t.Fatalf("previous access credential: %v", err)
@@ -215,7 +214,7 @@ func TestRefreshAfterClockRollbackKeepsFixedExpiry(t *testing.T) {
 			t.Fatalf("recent consumed refresh credential: %v", err)
 		}
 	}
-	service.now = func() time.Time { return fixedExpiry }
+	service.now = func() time.Time { return credentials.RefreshExpiresAt }
 	if _, err := service.Refresh(t.Context(), credentials.RefreshToken, credentials.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("expired refresh credential: %v", err)
 	}
@@ -416,5 +415,76 @@ func securityTestAudit(id string, action usercmd.AuditAction, targetID string, n
 	return usercmd.AuditEvent{
 		ID: id, Action: action, Outcome: usercmd.AuditOutcomeSucceeded,
 		TargetType: usercmd.AuditTargetUser, TargetID: targetID, Source: "security-test", OccurredAt: now,
+	}
+}
+
+func TestRefreshRenewsMonthlyAndNearDeadline(t *testing.T) {
+	t.Parallel()
+	p, s, now := newSecurityTestService(t)
+	s.config.RefreshTTL = 30 * 24 * time.Hour
+	createSecurityTestUser(t, p.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
+	c, err := s.Login(t.Context(), "admin", []byte(testPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.RefreshExpiresAt.Equal(now.Add(30 * 24 * time.Hour)) {
+		t.Fatal("login deadline differs from configured month")
+	}
+	for _, elapsed := range []time.Duration{29 * 24 * time.Hour, 58 * 24 * time.Hour, 88*24*time.Hour - time.Second} {
+		at := now.Add(elapsed)
+		s.now = func() time.Time { return at }
+		c, err = s.Refresh(t.Context(), c.RefreshToken, c.CSRFToken)
+		if err != nil {
+			t.Fatalf("refresh at %s: %v", elapsed, err)
+		}
+		if !c.RefreshExpiresAt.Equal(at.Add(30 * 24 * time.Hour)) {
+			t.Fatalf("renewed expiry = %s", c.RefreshExpiresAt)
+		}
+		selector, _, err := parseOpaqueToken(c.RefreshToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored, found, err := p.Users().GetSessionByRefreshSelector(t.Context(), selector)
+		if err != nil || !found {
+			t.Fatalf("load renewed family: %t, %v", found, err)
+		}
+		if !stored.Family.RefreshExpiresAt.Equal(c.RefreshExpiresAt) || !stored.Token.ExpiresAt.Equal(c.RefreshExpiresAt) {
+			t.Fatal("stored and returned deadlines differ")
+		}
+		if err := usercmd.ValidateSessionFamily(stored.Family); err != nil {
+			t.Fatalf("renewed lineage: %v", err)
+		}
+	}
+	s.now = func() time.Time { return c.RefreshExpiresAt }
+	if _, err := s.Refresh(t.Context(), c.RefreshToken, c.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("expired refresh: %v", err)
+	}
+}
+
+func TestRefreshAdoptsConfiguredLifetimeOnlyWhileValid(t *testing.T) {
+	t.Parallel()
+	p, s, now := newSecurityTestService(t)
+	createSecurityTestUser(t, p.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
+	live, err := s.Login(t.Context(), "admin", []byte(testPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expired, err := s.Login(t.Context(), "admin", []byte(testPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.config.RefreshTTL = 30 * 24 * time.Hour
+	at := now.Add(11 * time.Hour)
+	s.now = func() time.Time { return at }
+	renewed, err := s.Refresh(t.Context(), live.RefreshToken, live.CSRFToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !renewed.RefreshExpiresAt.Equal(at.Add(30 * 24 * time.Hour)) {
+		t.Fatalf("changed configured lifetime = %s", renewed.RefreshExpiresAt)
+	}
+	s.now = func() time.Time { return expired.RefreshExpiresAt }
+	if _, err := s.Refresh(t.Context(), expired.RefreshToken, expired.CSRFToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("expired family with new config = %v", err)
 	}
 }

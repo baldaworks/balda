@@ -790,3 +790,30 @@ func TestPollingOffsetStore_DecoupledFromVendor(t *testing.T) {
 		t.Fatalf("Load() = %d, want 12345", got)
 	}
 }
+
+func TestSQLiteRollingRefreshUpgrade(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	registerBaldaGoMigrations()
+	migrations, err := fs.Sub(baldaMigrationsFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, db, migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(t.Context(), 46); err != nil {
+		t.Fatal(err)
+	}
+	insertSQLiteUser(t, db, "admin-1", "superuser", true)
+	insertSQLiteSession(t, db)
+	insertSQLiteRefresh(t, db, "refresh-1", 1, "active", "", "2026-09-24T00:00:00Z")
+	if _, err := p.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	checkRollingRefreshUpgrade(t, db)
+}

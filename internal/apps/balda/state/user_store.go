@@ -823,7 +823,16 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 		return usercmd.RefreshRotationUnavailable, nil
 	}
 	if loaded.token.State == usercmd.RefreshTokenStateUsed && loaded.family.RevokedAt.IsZero() {
-		if elapsed := rotation.RotatedAt.Sub(loaded.token.UsedAt); elapsed >= 0 && elapsed <= refreshConcurrencyWindow {
+		// Concurrent requests can carry a timestamp older than the winning
+		// rotation. Compare against canonical activity without revoking on rollback.
+		comparedAt := rotation.RotatedAt
+		if comparedAt.Before(loaded.family.LastSeenAt) {
+			comparedAt = loaded.family.LastSeenAt
+		}
+		if comparedAt.Before(loaded.token.UsedAt) {
+			comparedAt = loaded.token.UsedAt
+		}
+		if elapsed := comparedAt.Sub(loaded.token.UsedAt); elapsed <= refreshConcurrencyWindow {
 			if err := tx.Commit(); err != nil {
 				return "", s.wrapError("commit concurrent refresh lookup", err)
 			}
@@ -851,6 +860,9 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 		}
 		return usercmd.RefreshRotationUnavailable, nil
 	}
+	if rotation.RotatedAt.Before(loaded.family.LastSeenAt) || rotation.RotatedAt.Before(loaded.token.IssuedAt) {
+		return "", usercmd.ErrConflict
+	}
 	if err := validateRotation(rotation, loaded); err != nil {
 		return "", err
 	}
@@ -868,10 +880,10 @@ func (s *sqlUserStore) RotateRefresh(ctx context.Context, rotation usercmd.Refre
 	result, err := tx.ExecContext(ctx, s.bind(`
 		UPDATE balda_backoffice_sessions SET
 			access_selector = ?, access_verifier_digest = ?, access_expires_at = ?,
-			last_seen_at = ?, version = version + 1
+			refresh_expires_at = ?, last_seen_at = ?, version = version + 1
 		WHERE session_id = ? AND version = ? AND revoked_at = ''`),
 		rotation.Access.Selector, rotation.Access.VerifierDigest, formatUserTime(rotation.Access.ExpiresAt),
-		formatUserTime(rotation.RotatedAt), loaded.family.ID, loaded.family.Version,
+		formatUserTime(rotation.Refresh.ExpiresAt), formatUserTime(rotation.RotatedAt), loaded.family.ID, loaded.family.Version,
 	)
 	if err != nil {
 		return "", s.mutationError("replace access credential", err)
@@ -1337,11 +1349,11 @@ func (s *sqlUserStore) loadRefreshForRotation(ctx context.Context, tx *sql.Tx, s
 
 func validateRotation(rotation usercmd.RefreshRotation, loaded refreshRotationState) error {
 	if strings.TrimSpace(rotation.Access.Selector) == "" || len(rotation.Access.VerifierDigest) == 0 ||
-		!rotation.Access.ExpiresAt.After(rotation.RotatedAt) || !rotation.Access.ExpiresAt.Before(loaded.family.RefreshExpiresAt) ||
+		!rotation.Access.ExpiresAt.After(rotation.RotatedAt) || !rotation.Access.ExpiresAt.Before(rotation.Refresh.ExpiresAt) ||
 		strings.TrimSpace(rotation.Refresh.Selector) == "" || len(rotation.Refresh.VerifierDigest) == 0 ||
 		rotation.Refresh.Generation != loaded.token.Generation+1 || rotation.Refresh.State != usercmd.RefreshTokenStateActive ||
 		!rotation.Refresh.UsedAt.IsZero() || !rotation.Refresh.IssuedAt.Equal(rotation.RotatedAt) ||
-		!rotation.Refresh.ExpiresAt.Equal(loaded.family.RefreshExpiresAt) {
+		!rotation.Refresh.ExpiresAt.After(rotation.RotatedAt) {
 		return usercmd.ErrInvalid
 	}
 	return nil

@@ -50,7 +50,7 @@ Commands:
 
 The safe defaults are loopback `127.0.0.1:8095`, public URL
 `http://127.0.0.1:8095`, a 15-minute opaque access-token lifetime, and a
-12-hour rotating refresh-token family lifetime. `access_token_ttl` must be
+30-day rolling refresh-token lifetime. `access_token_ttl` must be
 positive and shorter than `refresh_token_ttl`; both are bounded. A
 non-loopback listener requires an HTTPS public URL.
 
@@ -64,7 +64,7 @@ balda:
     public_url: "http://127.0.0.1:8095"
     base_path: ""
     access_token_ttl: "15m"
-    refresh_token_ttl: "12h"
+    refresh_token_ttl: "720h"
     qa_ui: false
 ```
 
@@ -74,8 +74,10 @@ Every field has the normal `BALDA_*` environment override, for example
 `BALDA_BACKOFFICE_ACCESS_TOKEN_TTL`,
 `BALDA_BACKOFFICE_REFRESH_TOKEN_TTL`, and `BALDA_BACKOFFICE_QA_UI`. Access
 tokens may live from 1 minute through 1 hour. Refresh families must outlive
-access tokens and may live for at most 30 days. The refresh deadline is an
-absolute family deadline; rotation never extends it.
+access tokens and may live for at most 30 days. Every successful refresh renews the deadline to the effective rotation time
+plus `refresh_token_ttl`; the default is 30 elapsed days (`720h`), rather than a
+calendar month. Explicit YAML and environment values continue to override the
+default.
 
 `base_path` is an optional canonical absolute path without a trailing slash,
 for example `/balda`. Leave `public_url` as the HTTPS origin without a path.
@@ -159,10 +161,15 @@ Successful login creates a short-lived opaque access token and a longer-lived
 refresh family. When access expires, the browser submits a guarded refresh form
 automatically and returns to the page the user was opening. A manual form
 remains available when JavaScript is disabled. The server consumes generation
-N, creates generation N+1, replaces both cookies, and preserves the family's
-original absolute expiry. If the host clock moves backward, rotation timestamps
-never precede the stored last activity or token issuance time; this does not
-extend the absolute refresh deadline. The browser does not replay the request that
+N, creates generation N+1, replaces the access, refresh and CSRF cookies, and
+renews the family deadline to 30 days after that successful refresh by default.
+The active token, family deadline and success audit commit in one transaction;
+refresh and CSRF cookies use that committed deadline. Historical generations keep
+their original expirations for replay detection. A valid token can refresh just
+before its current deadline; at or after that deadline it requires a new login.
+If the host clock moves backward, rotation timestamps never precede stored last
+activity or token issuance. A correction alone cannot extend the last renewed
+deadline. A stale concurrent rotation receives a conflict and can be retried. The browser does not replay the request that
 encountered expiry, especially an unsafe mutation.
 
 A duplicate refresh within 30 seconds of rotation receives a conflict without
@@ -171,6 +178,19 @@ have installed the new pair. Reuse of an older consumed token is treated as
 verified replay: Backoffice revokes the family and requires a new login.
 Invalid, expired, credential-stale, disabled, or administratively revoked
 families also require re-login.
+
+When upgrading, set existing explicit `refresh_token_ttl: "12h"` values or
+`BALDA_BACKOFFICE_REFRESH_TOKEN_TTL=12h` overrides to `720h` to use the monthly
+window. Changing the default does not replace an explicit setting. An existing,
+still-valid family adopts the effective configured lifetime on its next
+successful refresh; an already-expired family requires sign-in.
+
+Provider opening automatically applies a forward Goose migration for SQLite or
+PostgreSQL that permits renewal of the family deadline. It leaves stored sessions
+and immutable token histories unchanged. Take the usual consistent database backup
+before upgrading. After rolling generations have been issued, use a binary that
+supports their different historical expirations; reverting only to an older binary
+with fixed-deadline validation is not a supported downgrade.
 
 Access administrators can revoke another browser family. Account owners can
 revoke their own families, but revoking the current one requires explicit
@@ -447,7 +467,7 @@ bound to its browser, CSRF token, purpose, user and current authority.
   passkey verification. Use the explicit confirmation screen after it expires.
   A rejected mutation returns 403 and is not applied or automatically replayed;
   return and submit it again after confirmation. Step-up keeps the refresh
-  lineage and original absolute session deadline. Refresh does not extend
+  lineage and currently renewed session deadline. Refresh does not extend
   passkey verification freshness.
 - **Replace:** explicitly confirm replacement, verify the current key, then
   register the new key. Only successful completion replaces the key and revokes

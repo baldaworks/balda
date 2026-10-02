@@ -231,7 +231,7 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 		return Credentials{}, err
 	}
 	// Wall-clock corrections must not move a rotation before persisted session
-	// activity. The absolute family deadline remains unchanged.
+	// activity, so a backward correction cannot add refresh lifetime.
 	now := s.now().UTC()
 	if now.Before(session.Family.LastSeenAt) {
 		now = session.Family.LastSeenAt
@@ -239,14 +239,14 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 	if now.Before(session.Token.IssuedAt) {
 		now = session.Token.IssuedAt
 	}
-	if !now.Before(session.Family.RefreshExpiresAt) || !now.Add(s.config.AccessTTL).Before(session.Family.RefreshExpiresAt) {
+	if !now.Before(session.Family.RefreshExpiresAt) {
 		return Credentials{}, ErrUnauthenticated
 	}
 	accessRaw, access, err := s.newAccess(now.Add(s.config.AccessTTL))
 	if err != nil {
 		return Credentials{}, err
 	}
-	refreshRaw, refresh, err := s.newRefresh(session.Token.Generation+1, now, session.Family.RefreshExpiresAt)
+	refreshRaw, refresh, err := s.newRefresh(session.Token.Generation+1, now, now.Add(s.config.RefreshTTL))
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -275,7 +275,7 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 	}
 	return Credentials{
 		AccessToken: accessRaw, RefreshToken: refreshRaw, CSRFToken: csrfToken,
-		AccessExpiresAt: access.ExpiresAt, RefreshExpiresAt: session.Family.RefreshExpiresAt,
+		AccessExpiresAt: access.ExpiresAt, RefreshExpiresAt: refresh.ExpiresAt,
 		Assurance: session.Family.Assurance,
 	}, nil
 }
