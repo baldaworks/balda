@@ -44,6 +44,8 @@ var requiredBaldaStateTables = []string{
 	"balda_mfa_profiles",
 	"balda_mfa_credentials",
 	"balda_mfa_ceremonies",
+	"balda_mcp_connections",
+	"balda_mcp_revisions",
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

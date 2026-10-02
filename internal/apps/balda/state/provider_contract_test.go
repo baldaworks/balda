@@ -25,6 +25,13 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("MCPRevisionsSurviveRestart", func(t *testing.T) { checkMCPRevisionsSurviveRestart(t, factory(t)) })
+	t.Run("MCPMutationIsAtomic", func(t *testing.T) { checkMCPMutationIsAtomic(t, factory(t)) })
+	t.Run("MCPAuthorityFences", func(t *testing.T) { checkMCPAuthorityFences(t, factory(t)) })
+	t.Run("MCPSelectionAndPublicationSurviveRestart", func(t *testing.T) { checkMCPSelectionAndPublicationSurviveRestart(t, factory(t)) })
+	t.Run("MCPConcurrentEditsCommitOnce", func(t *testing.T) { checkMCPConcurrentEditsCommitOnce(t, factory(t)) })
+	t.Run("MCPProtectedBindingsAndSafeAudit", func(t *testing.T) { checkMCPProtectedBindingsAndSafeAudit(t, factory(t)) })
+	t.Run("MCPFreshFactorAndRevocation", func(t *testing.T) { checkMCPFreshFactorAndRevocation(t, factory(t)) })
 	t.Run("MFAStoreLifecycle", func(t *testing.T) { checkMFAStoreLifecycle(t, factory(t)) })
 	t.Run("UserStoreCanonicalLifecycle", func(t *testing.T) { checkUserStoreCanonicalLifecycle(t, factory(t)) })
 	t.Run("ManagedBindings", func(t *testing.T) { checkManagedBindings(t, factory(t)) })

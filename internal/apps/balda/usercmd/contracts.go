@@ -262,6 +262,8 @@ const (
 	AuditActionMFAVerified AuditAction = "session.mfa.verified"
 	// AuditActionLogout records explicit browser-session logout.
 	AuditActionLogout AuditAction = "session.logout"
+	// AuditActionMCPDefinitionChanged records a managed connection revision or selection change.
+	AuditActionMCPDefinitionChanged AuditAction = "mcp.definition.changed"
 )
 
 // Valid reports whether the action belongs to the bounded security audit vocabulary.
@@ -271,7 +273,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked, AuditActionMCPDefinitionChanged:
 		return true
 	default:
 		return false
@@ -307,12 +309,14 @@ const (
 	AuditTargetSystem AuditTargetType = "system"
 	// AuditTargetMigration identifies a canonical-user migration.
 	AuditTargetMigration AuditTargetType = "migration"
+	// AuditTargetMCP identifies a worker MCP connection without credential material.
+	AuditTargetMCP AuditTargetType = "mcp"
 )
 
 // Valid reports whether the audit target type is supported.
 func (t AuditTargetType) Valid() bool {
 	switch t {
-	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration:
+	case AuditTargetUser, AuditTargetSession, AuditTargetBinding, AuditTargetSystem, AuditTargetMigration, AuditTargetMCP:
 		return true
 	default:
 		return false

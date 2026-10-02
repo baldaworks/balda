@@ -90,6 +90,7 @@ type Provider interface {
 	PollingOffsetStore() PollingOffsetStore
 	Collaborators() CollaboratorStore
 	Plugins() PluginStore
+	MCP() MCPStore
 	Users() usercmd.Store
 	Close() error
 }

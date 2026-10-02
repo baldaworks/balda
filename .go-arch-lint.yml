@@ -113,6 +113,11 @@ components:
     in:
       - internal/apps/balda/usercmd
 
+  # MCP management DTOs stay independent of SDKs, storage and feature policy.
+  mcp_contracts:
+    in:
+      - internal/apps/balda/mcpcmd
+
   # Credential recognition uses only standard-library values, never transports.
   auth_payload:
     in:
@@ -405,6 +410,11 @@ deps:
     mayDependOn:
       - user_contracts
       - contracts
+    anyVendorDeps: false
+
+  mcp_contracts:
+    mayDependOn:
+      - mcp_contracts
     anyVendorDeps: false
 
   auth_payload:
@@ -738,6 +748,7 @@ deps:
       - foundation
       - contracts
       - user_contracts
+      - mcp_contracts
       - session_memory_core
       - session_memory_contracts
       - storage

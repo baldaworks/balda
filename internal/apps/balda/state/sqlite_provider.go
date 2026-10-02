@@ -27,6 +27,7 @@ type sqliteProvider struct {
 	offset         *sqliteOffsetStore
 	plugins        *sqlitePluginStore
 	users          usercmd.Store
+	mcp            *sqlMCPStore
 }
 
 var _ Provider = (*sqliteProvider)(nil)
@@ -169,6 +170,7 @@ func NewSQLiteProvider(ctx context.Context, path string) (Provider, error) {
 		offset:         &sqliteOffsetStore{db: db},
 		plugins:        &sqlitePluginStore{db: db},
 		users:          newSQLiteUserStore(db),
+		mcp:            &sqlMCPStore{users: newSQLiteUserStore(db)},
 	}
 	return provider, nil
 }
@@ -224,6 +226,8 @@ func (p *sqliteProvider) Collaborators() CollaboratorStore {
 }
 
 func (p *sqliteProvider) Plugins() PluginStore { return p.plugins }
+
+func (p *sqliteProvider) MCP() MCPStore { return p.mcp }
 
 func (p *sqliteProvider) Users() usercmd.Store { return p.users }
 

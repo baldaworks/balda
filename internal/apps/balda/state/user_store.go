@@ -28,7 +28,7 @@ var _ usercmd.Store = (*sqlUserStore)(nil)
 // conflict briefly; an older replay still revokes the session family.
 const refreshConcurrencyWindow = 30 * time.Second
 
-func newSQLiteUserStore(db *sql.DB) usercmd.Store {
+func newSQLiteUserStore(db *sql.DB) *sqlUserStore {
 	return &sqlUserStore{
 		db: db,
 		bind: func(query string) string {
@@ -44,7 +44,7 @@ func newSQLiteUserStore(db *sql.DB) usercmd.Store {
 	}
 }
 
-func newPostgresUserStore(db *sql.DB) usercmd.Store {
+func newPostgresUserStore(db *sql.DB) *sqlUserStore {
 	return &sqlUserStore{
 		db:   db,
 		bind: postgresBind,

@@ -24,6 +24,7 @@ type postgresProvider struct {
 	offset         *postgresOffsetStore
 	plugins        *postgresPluginStore
 	users          usercmd.Store
+	mcp            *sqlMCPStore
 }
 
 var _ Provider = (*postgresProvider)(nil)
@@ -59,6 +60,7 @@ func initializePostgresProvider(ctx context.Context, db *sql.DB) (Provider, erro
 		offset:         &postgresOffsetStore{db: db},
 		plugins:        &postgresPluginStore{db: db},
 		users:          newPostgresUserStore(db),
+		mcp:            &sqlMCPStore{users: newPostgresUserStore(db)},
 	}, nil
 }
 
@@ -192,6 +194,8 @@ func (p *postgresProvider) Collaborators() CollaboratorStore {
 }
 
 func (p *postgresProvider) Plugins() PluginStore { return p.plugins }
+
+func (p *postgresProvider) MCP() MCPStore { return p.mcp }
 
 func (p *postgresProvider) Users() usercmd.Store { return p.users }
 
