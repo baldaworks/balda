@@ -120,8 +120,31 @@ type QALink struct {
 	Path  string
 }
 
+// MFAView contains only safe factor status and dates.
+type MFAView struct {
+	Enabled    bool
+	Available  bool
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+}
+
+// MFACeremonyView holds public browser options and a transient server transaction.
+type MFACeremonyView struct {
+	Registration bool
+	OptionsJSON  string
+	Transaction  string
+	FinishPath   string
+	CancelPath   string
+	Confirm      bool
+}
+
 // Page is the closed safe model accepted by production templates.
 type Page struct {
+	RestartURL   string
+	RestartLabel string
+	MFA          *MFAView
+	Ceremony     *MFACeremonyView
+
 	StepUpURL string
 	// ViewerUsername identifies the signed-in operator, independently of User.
 	ViewerUsername      string
@@ -258,6 +281,16 @@ func auditActionLabel(action usercmd.AuditAction) string {
 		return "Detected session token replay"
 	case usercmd.AuditActionSessionRevoked:
 		return "Ended browser session"
+	case usercmd.AuditActionMFAVerified:
+		return "Verified passkey"
+	case usercmd.AuditActionMFAEnabled:
+		return "Enabled two-factor authentication"
+	case usercmd.AuditActionMFAReplaced:
+		return "Replaced passkey"
+	case usercmd.AuditActionMFADisabled:
+		return "Disabled two-factor authentication"
+	case usercmd.AuditActionMFARecovered:
+		return "Recovered two-factor access offline"
 	case usercmd.AuditActionLogout:
 		return "Signed out"
 	default:

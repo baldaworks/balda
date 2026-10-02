@@ -65,6 +65,16 @@ type qaEntry struct {
 }
 
 var qaEntries = []qaEntry{
+	{name: "account-2fa-off", label: "Account · 2FA off", templateName: webui.TemplateAccount, page: func() webui.Page { p := qaAccount(); p.MFA = &webui.MFAView{Available: true}; return p }, gallery: true},
+	{name: "account-2fa-enabled", label: "Account · 2FA enabled", templateName: webui.TemplateAccount, page: func() webui.Page {
+		p := qaAccount()
+		p.MFA = &webui.MFAView{Enabled: true, Available: true, CreatedAt: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+		return p
+	}, gallery: true},
+	{name: "account-2fa-unavailable", label: "Account · 2FA unavailable", templateName: webui.TemplateAccount, page: func() webui.Page { p := qaAccount(); p.MFA = &webui.MFAView{}; return p }, gallery: true},
+	{name: "webauthn-register", label: "Passkey · registration", templateName: webui.TemplateWebAuthn, page: func() webui.Page { return qaWebAuthn(true) }, gallery: true},
+	{name: "webauthn-assert", label: "Passkey · assertion", templateName: webui.TemplateWebAuthn, page: func() webui.Page { return qaWebAuthn(false) }, gallery: true},
+	{name: "step-up", label: "Passkey · step-up", templateName: webui.TemplateStepUp, page: func() webui.Page { return webui.Page{Title: "Confirm your passkey", CSRFToken: "synthetic-csrf"} }, gallery: true},
 	{name: "style-guide", label: "Foundation · component guide", templateName: webui.TemplateStyleGuide, page: qaLayout, gallery: true},
 	{name: "layout", label: "Foundation · full layout", templateName: webui.TemplateLayout, page: qaLayout, gallery: true},
 	{name: "layout-long", label: "Foundation · long layout", templateName: webui.TemplateLayout, page: qaLayoutLong, gallery: true},
@@ -429,4 +439,8 @@ func qaBindingsDisabled() webui.Page {
 		page.BindingForms[i].Disabled = true
 	}
 	return page
+}
+
+func qaWebAuthn(registration bool) webui.Page {
+	return webui.Page{Title: "Verify your passkey", CSRFToken: "synthetic-csrf", Ceremony: &webui.MFACeremonyView{Registration: registration, OptionsJSON: `{"publicKey":{"challenge":"c3ludGhldGlj","rpId":"invalid.example"}}`, Transaction: "synthetic-invalid", FinishPath: "/webauthn-assert", CancelPath: "/account"}}
 }

@@ -98,6 +98,14 @@ If the administrator already has a usable credential, start directly; replacing
 that password requires `bootstrap-admin --reset` and revokes its browser session
 families. Never pass passwords as command arguments.
 
+Administrator passkey 2FA is optional and off by default. Enable it in Account
+using the current password and a verified passkey at an HTTPS origin or localhost.
+Enrolled accounts require their passkey at sign-in and for sensitive actions;
+password resets preserve it. If a key is lost, an authorized host administrator
+can run `balda backoffice recover-2fa --username superuser --confirm`, which
+revokes browser sessions while retaining the password and bot bindings. See the
+[2FA and recovery contract](docs/reference/backoffice.md#optional-administrator-passkey-2fa).
+
 ## First run
 
 For Telegram, sign in to Backoffice, select the existing user in Access and use

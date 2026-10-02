@@ -7,8 +7,9 @@ Backoffice. Read it before changing `cmd/balda` or
 ## Application boundary
 
 - `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
-  production process lifecycle; `backoffice bootstrap-admin` is the offline
-  administrator maintenance subcommand.
+  production process lifecycle; `backoffice bootstrap-admin` and
+  `backoffice recover-2fa` are offline
+  administrator maintenance subcommands.
   `backoffice qa serve` is a local preview command without application state.
 - `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
@@ -249,9 +250,9 @@ raw User-Agent and token values are never displayed.
   QA routes accept GET/HEAD only and send `no-store` and `noindex` headers.
   Follow the [Backoffice UI review runbook](backoffice-ui-review.md) for routes,
   browser checks, and the separate authenticated runtime check.
-- Username/password is the only browser authentication provider in this
-  release. OIDC, WebAuthn/passkeys, and MFA are intentionally deferred; no
-  placeholder configuration or browser flow exists for them.
+- Username/password remains the browser sign-in provider. Administrators can
+  optionally enable a WebAuthn passkey as their second factor in Account; it is
+  off by default for each user. OIDC remains deferred.
 
 ## Web UI foundation
 
@@ -401,3 +402,80 @@ For every page or interaction, verify:
 | HTMX mutation | `204` with `HX-Location` |
 | Validation or authorization error | Original error status and correct full-page or fragment shape |
 | Logout, CSV, or WebAuthn | Native non-boosted behavior |
+
+## Optional administrator passkey 2FA
+
+2FA is off by default, including after automatic upgrades. Each administrator
+can enable it in **Account → Two-factor authentication**; operators continue
+using password authentication. Bot bindings and admission are independent.
+One passkey is active at a time. Use a browser with JavaScript and WebAuthn support
+and an authenticator that supports user verification (PIN or biometric).
+Password-only accounts remain usable without JavaScript.
+
+Set `balda.backoffice.public_url` to the exact HTTPS origin, for example
+`https://lab.example.org`, or `http://localhost:8095` for local development.
+`base_path: /balda` remains a separate setting. The RP ID is the origin's hostname;
+only that exact origin is accepted. IP origins, including the existing default
+`http://127.0.0.1:8095`, cannot enroll keys. The default still starts and supports
+password sign-in, and Account explains the unavailable enrollment capability.
+Changing the hostname changes the RP: recover and register a new key rather than
+expecting the old key to work. An enrolled administrator never falls back to
+password-only access when verification is unavailable.
+
+```yaml
+balda:
+  backoffice:
+    public_url: https://lab.example.org
+    base_path: /balda
+    ceremony_ttl: 5m
+    step_up_ttl: 15m
+```
+
+`ceremony_ttl` must be positive and at most 15 minutes; `step_up_ttl` must be
+positive and at most one hour. Environment overrides are
+`BALDA_BACKOFFICE_CEREMONY_TTL` and
+`BALDA_BACKOFFICE_STEP_UP_TTL`. Ceremony state is one-use, expiring and
+bound to its browser, CSRF token, purpose, user and current authority.
+
+- **Enable:** confirm the current password, then register and verify a passkey.
+  The setting becomes enabled only after successful completion. Old browser
+  sessions are revoked and the current browser receives verified access.
+- **Sign in:** submit the password, then verify the passkey. Until verification
+  finishes, the browser has no usable access or refresh credentials. Temporary
+  passwords still require password replacement after both factors succeed.
+- **Sensitive actions:** Access, Audit and privileged mutations require recent
+  passkey verification. Use the explicit confirmation screen after it expires.
+  A rejected mutation returns 403 and is not applied or automatically replayed;
+  return and submit it again after confirmation. Step-up keeps the refresh
+  lineage and original absolute session deadline. Refresh does not extend
+  passkey verification freshness.
+- **Replace:** explicitly confirm replacement, verify the current key, then
+  register the new key. Only successful completion replaces the key and revokes
+  old sessions. **Disable:** explicitly confirm removal, provide the current
+  password and verify the current key. Successful removal returns to password
+  authentication and revokes old sessions.
+- **Cancel or retry:** cancelling the authenticator or leaving the ceremony
+  keeps the factor setting unchanged. Retry while the ceremony is live, or
+  cancel and start again. Unsupported/no-JavaScript browsers show guidance;
+  they cannot bypass an enrolled factor. Authentication pages and ceremonies
+  are native, non-boosted and excluded from HTMX history; responses use no-store.
+
+Password change, Access password reset and `bootstrap-admin --reset` preserve
+an enrolled passkey. Losing the key requires an explicitly confirmed operation
+by an administrator with host/database access, using the normal configuration:
+
+```bash
+balda backoffice recover-2fa --username superuser --confirm
+```
+
+Use the exact normalized username of an existing active enrolled administrator.
+Unknown, disabled, operator, already-off and unconfirmed targets fail. This
+maintenance operation opens and upgrades the selected database without starting
+HTTP, MCP or channels. It atomically disables the factor, advances authority,
+revokes browser sessions and writes an audit event. It leaves the password hash
+and bot bindings intact and prints no password or session credential. Sign in
+with the existing password and register a replacement key from Account.
+
+Factor transitions and verification appear in Audit. The verifier dependency
+and source reuse are documented in the
+[WebAuthn dependency review](backoffice-webauthn-dependency-review.md).

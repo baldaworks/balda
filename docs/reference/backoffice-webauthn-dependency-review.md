@@ -18,9 +18,9 @@ purpose/session/authority bound, expiring, and atomically consumed before
 cryptographic verification. No authenticator private key is stored.
 
 On 2026-10-02, `go tool govulncheck -show verbose
-./internal/apps/backoffice/security` reported zero reachable or imported-package
+./internal/apps/backoffice/...` reported zero reachable or imported-package
 vulnerabilities. The module-only advisory `GO-2026-5932` applies to the
-unmaintained `golang.org/x/crypto/openpgp` package, which this security path
+unmaintained `golang.org/x/crypto/openpgp` package, which Backoffice
 does not import. Its module remains required for the existing password hash
 implementation and verifier dependencies; the advisory has no fixed version.
 This is the result for that package scope and date, not a permanent guarantee

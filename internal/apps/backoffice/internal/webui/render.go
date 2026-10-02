@@ -15,6 +15,8 @@ import (
 )
 
 const (
+	TemplateWebAuthn   = "webauthn"
+	TemplateStepUp     = "step-up"
 	TemplateLogin      = "login"
 	TemplateOverview   = "overview"
 	TemplateAccess     = "access"
@@ -29,6 +31,7 @@ const (
 )
 
 var templateFiles = map[string]string{
+	TemplateWebAuthn: "templates/webauthn.tmpl", TemplateStepUp: "templates/step-up.tmpl",
 	TemplateLogin: "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl",
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
@@ -173,7 +176,7 @@ func Assets() (http.Handler, error) {
 		name := strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(request.URL.Path, "/assets/")), "/")
 		if original, ok := originals[name]; ok {
 			name = original
-		} else if name == "app.js" || name == "app.css" {
+		} else if name == "app.js" || name == "app.css" || name == "webauthn.js" {
 			http.NotFound(w, request)
 			return
 		}
@@ -193,7 +196,7 @@ func Assets() (http.Handler, error) {
 func versionedAssets() (map[string]string, map[string]string, error) {
 	paths := make(map[string]string, 2)
 	originals := make(map[string]string, 2)
-	for _, name := range []string{"app.css", "app.js"} {
+	for _, name := range []string{"app.css", "app.js", "webauthn.js"} {
 		contents, err := embedded.ReadFile("static/" + name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read embedded asset %s: %w", name, err)

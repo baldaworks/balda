@@ -121,3 +121,24 @@ not cross-engine migration tooling, dual writes or failover.
 See [Contributing](../../CONTRIBUTING.md) for separate `integration,sqlite` and
 `integration,postgres` runs. PostgreSQL tests require an explicitly configured
 disposable database and fail rather than skip when it is absent.
+
+## Optional WebAuthn state and upgrades
+
+Embedded Goose migrations SQLite 46 and PostgreSQL 11 add per-user MFA profiles,
+public authenticator credentials and expiring one-use ceremonies, and extend
+browser families with factor identity and verification time. They run through
+the existing `state.Open` upgrade path; no separate user or MFA migration command
+is needed. Existing users default to 2FA off. Password hashes, bot bindings and
+valid pre-upgrade browser families are preserved. Private authenticator keys
+never enter the database; pending ceremony/browser/CSRF selectors are digested.
+
+Enable, replacement, disable and confirmed recovery advance user/credential/MFA
+authority, revoke old families and append audit in one transaction. Counter
+verification and family issuance/step-up are transactional as well. An audit or
+SQL failure rolls back the corresponding security mutation.
+
+These migrations are forward-only. Back up the database before upgrading.
+Do not run an older binary against enrolled MFA state: it would not enforce the
+new factor policy. A rollback needs a compatible binary or a validated backup
+and explicit recovery plan; schema downgrade is unsupported. See
+[Backoffice recovery](backoffice.md#optional-administrator-passkey-2fa).

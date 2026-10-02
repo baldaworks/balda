@@ -9,7 +9,7 @@ const routes = [
   'password', 'password-error', 'overview', 'overview-empty', 'access-list',
   'access-create', 'access-empty', 'access-error', 'access', 'access-primary',
   'access-long', 'bindings-issued', 'bindings-pending', 'bindings-unavailable', 'bindings-disabled', 'account', 'account-many', 'account-many-next',
-  'account-session-states', 'account-empty', 'account-error', 'audit',
+  'account-2fa-off', 'account-2fa-enabled', 'account-2fa-unavailable', 'webauthn-register', 'webauthn-assert', 'step-up', 'account-session-states', 'account-empty', 'account-error', 'audit',
   'audit-empty', 'error',
   'form-bad-request', 'form-forbidden', 'form-conflict', 'form-server-error',
 ];

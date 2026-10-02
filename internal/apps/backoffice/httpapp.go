@@ -50,8 +50,9 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
-		ErrorHandler:    app.renderSecurityError,
-		StepUpResponder: app.renderStepUpRequired,
+		ErrorHandler:      app.renderSecurityError,
+		StepUpResponder:   app.renderStepUpRequired,
+		CeremonyResponder: app.renderMFACeremony,
 		MutationResponder: func(w http.ResponseWriter, r *http.Request, location string) error {
 			return webui.RespondMutationAt(w, r, webui.Location(strings.TrimPrefix(location, config.Server.BasePath)), config.Server.BasePath)
 		},
@@ -87,6 +88,7 @@ func (a *httpApp) handler() (http.Handler, error) {
 	mux.HandleFunc("POST "+a.path("/account/2fa/replace/finish"), a.browser.FinishReplace)
 	mux.HandleFunc("POST "+a.path("/account/2fa/disable/start"), a.browser.BeginDisable)
 	mux.HandleFunc("POST "+a.path("/account/2fa/disable/finish"), a.browser.FinishDisable)
+	mux.Handle("GET "+a.path("/auth/step-up"), a.browser.Authenticate(a.browser.RequireNormal(http.HandlerFunc(a.stepUpPage))))
 	mux.HandleFunc("POST "+a.path("/auth/step-up/start"), a.browser.BeginStepUp)
 	mux.HandleFunc("POST "+a.path("/auth/step-up/finish"), a.browser.FinishStepUp)
 	mux.HandleFunc("GET "+a.path(security.RefreshPath), a.refreshPage)
@@ -195,12 +197,21 @@ func (a *httpApp) account(w http.ResponseWriter, r *http.Request) {
 	if sessionPage.NextAfterID != "" {
 		nextURL = "/account?after_session=" + url.QueryEscape(sessionPage.NextAfterID)
 	}
+	var mfa *webui.MFAView
+	if principal.User.Role == usercmd.RoleAdministrator {
+		status, err := a.security.MFAStatus(r.Context(), accessCookie.Value)
+		if err != nil {
+			a.browser.WriteError(w, r, err)
+			return
+		}
+		mfa = &webui.MFAView{Enabled: status.Enabled, Available: status.Available, CreatedAt: status.CreatedAt, LastUsedAt: status.LastUsedAt}
+	}
 	view := webui.ProjectUser(principal.User)
 	capabilities := users.BackofficeCapabilities(principal.User)
 	a.render(w, r, http.StatusOK, webui.TemplateAccount, webui.Page{
 		Title: "Account · Balda", Current: webui.LocationAccount,
 		Navigation: webui.Navigation(capabilities, webui.LocationAccount),
-		User:       &view, Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
+		User:       &view, MFA: mfa, Sessions: sessions, CSRFToken: a.browser.CSRFToken(r),
 		SessionActionPrefix: "/account/sessions", SessionNextURL: nextURL,
 	})
 }
@@ -531,6 +542,9 @@ func (a *httpApp) renderStepUpRequired(w http.ResponseWriter, r *http.Request) {
 
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {
 	message := "The request could not be completed."
+	if status == http.StatusServiceUnavailable {
+		message = "Passkey verification is unavailable. Use a supported browser at the configured HTTPS domain or localhost. If the key was lost or the domain changed, ask the host administrator to run the confirmed offline 2FA recovery command, then register a new key."
+	}
 	if status == http.StatusUnauthorized {
 		switch r.URL.Path {
 		case a.path("/login"):
@@ -548,6 +562,17 @@ func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, st
 	}
 	page := webui.Page{Title: http.StatusText(status) + " · Balda", Error: &webui.ErrorView{Heading: http.StatusText(status), Message: message}}
 	templateName := webui.TemplateError
+	switch {
+	case strings.HasPrefix(r.URL.Path, a.path("/account/2fa/")):
+		page.Error.Message = "The passkey operation did not complete. Check your current password and verification, then start again from Account. Your second-factor setting has not changed."
+		page.RestartURL, page.RestartLabel = a.path(string(webui.LocationAccount)), "Return to Account"
+	case strings.HasPrefix(r.URL.Path, a.path("/auth/step-up/")):
+		page.Error.Message = "Passkey verification failed or expired. Start a new confirmation before repeating your sensitive action."
+		page.RestartURL, page.RestartLabel = a.path("/auth/step-up"), "Start verification again"
+	case r.URL.Path == a.path("/auth/webauthn/finish"):
+		page.Error.Message = "Passkey verification failed or expired. Sign in again to start a new verification."
+		page.RestartURL, page.RestartLabel = a.path(string(webui.LocationLogin)), "Start sign-in again"
+	}
 	switch r.URL.Path {
 	case a.path("/login"):
 		templateName = webui.TemplateLogin

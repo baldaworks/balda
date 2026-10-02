@@ -120,3 +120,32 @@ QA authentication bypass.
 Production Backoffice continues to run under `balda start`. Keep `qa_ui: false`
 there. See [Backoffice application](backoffice.md) for deployment, security, and
 rendering contracts.
+
+## Passkey UI and authenticated verification
+
+The gallery includes `account-2fa-off`, `account-2fa-enabled`,
+`account-2fa-unavailable`, `webauthn-register`, `webauthn-assert` and `step-up`.
+They use synthetic public options, cannot authenticate and cannot mutate state.
+Review status/forms, explicit replacement/removal confirmation, current-password
+labels, Cancel, keyboard focus and narrow layouts at all four widths.
+
+After installing the Playwright tooling above, run the real SQLite-backed,
+loopback-only virtual-authenticator gate:
+
+```bash
+BALDA_BACKOFFICE_BROWSER_TEST=1 go test -race ./internal/apps/backoffice -run TestHTTPAppWebAuthnBrowserWorkflow -count=1 -v
+```
+
+It uses `http://localhost` and both root and `/balda`, Chromium's CTAP2 virtual
+authenticator with required user verification, and isolated test administrators.
+Check enable, enrolled password-pending login, assertion, fresh/stale step-up,
+replacement, disable, no-script and unsupported browsers, cancellation/retry,
+non-boosted forms, no-store and history without ceremony caching. Capture browser
+errors and document overflow at 1440×900, 1024×768, 768×1024 and 390×844. This gate
+is authenticated evidence; synthetic QA alone is not a verifier test. Never point
+the harness at a deployed service or real administrator credentials.
+
+A stale sensitive POST returns 403 with a confirmation link. Verification must
+not replay the POST. A lost key shows the offline recovery route; password reset
+alone must not remove the factor. The default IP-origin Account screen explains
+why enrollment is unavailable while password-only use continues.
