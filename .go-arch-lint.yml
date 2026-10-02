@@ -575,6 +575,8 @@ deps:
   catalog_wiring:
     mayDependOn:
       - contracts
+      - mcp_contracts
+      - mcp_management
       - application
       - domain
       - command_wiring

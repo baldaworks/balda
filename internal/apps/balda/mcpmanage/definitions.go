@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
@@ -119,12 +120,19 @@ func (s *Definitions) checkConflict(ctx context.Context, publicID, except string
 }
 
 func (s *Definitions) save(ctx context.Context, c mcpcmd.Connection, r *mcpcmd.Revision, version uint64, authority mcpcmd.Authority) (mcpcmd.Item, error) {
+	if authority.At.IsZero() {
+		return mcpcmd.Item{}, mcpcmd.ErrInvalid
+	}
 	audit := usercmd.AuditEvent{ID: rand.Text(), Action: usercmd.AuditActionMCPDefinitionChanged, Outcome: usercmd.AuditOutcomeSucceeded, ActorUserID: authority.UserID, ActorSessionID: authority.SessionID, TargetType: usercmd.AuditTargetMCP, TargetID: c.ID, Source: "mcpmanage", OccurredAt: authority.At}
 	committed := false
 	err := s.catalog.PublishMCP(ctx, func() error {
 		if committed {
 			return mcpcmd.ErrConflict
 		}
+		// Publication can queue behind external discovery. Fence the current
+		// family/assurance at commit time, not at the original request time.
+		authority.At = time.Now().UTC()
+		c.UpdatedAt, audit.OccurredAt = authority.At, authority.At
 		err := s.store.SaveDefinition(ctx, Mutation{Connection: c, Revision: r, ExpectedVersion: version, Authority: authority, Audit: audit})
 		committed = err == nil
 		return err

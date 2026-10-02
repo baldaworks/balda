@@ -41,7 +41,7 @@ func TestLifecycleMigratesLegacyPluginAndReconstructsCatalog(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 	commands := commandcmd.NewRegistry()
-	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"plugin", "reset"}}}, nil, mcpregistry.New(nil), commands)
+	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"plugin", "reset"}}}, nil, mcpregistry.New(nil), commands, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestRuntimeBuildsIsolatedWorkspaceOverlayAndReadsPinnedSkill(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeAfterRestart, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtimeAfterRestart, err := NewRuntime(stateDir, "", "", provider, []commandcmd.Advertisement{{Transport: "telegram", Enabled: true, Names: []string{"reset"}}}, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestRuntimeDiscoversGlobalSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, agentSkillDir, codexSkillDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, agentSkillDir, codexSkillDir, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestRuntimeIsolatesUnsafeGlobalSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, globalSkillDir, "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, globalSkillDir, "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestRuntimeGlobalSkillRootFallbacks(t *testing.T) {
 			if test.codexRoot != nil {
 				codexRoot = test.codexRoot(stateDir)
 			}
-			runtime, err := NewRuntime(stateDir, agentRoot, codexRoot, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+			runtime, err := NewRuntime(stateDir, agentRoot, codexRoot, provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -462,7 +462,7 @@ func TestSessionCapabilityBinderUsesExactRetainedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = provider.Close() })
-	runtime, err := NewRuntime(stateDir, "", "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry())
+	runtime, err := NewRuntime(stateDir, "", "", provider, nil, nil, mcpregistry.New(nil), commandcmd.NewRegistry(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

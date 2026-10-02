@@ -40,9 +40,10 @@ func (r *StaticResolver) ResolveLaunch(_ context.Context, descriptor runtimecata
 	return cloneLaunchConfig(entry.Config), nil
 }
 
-// RoutedResolver keeps configured and plugin launch resolution explicit.
+// RoutedResolver keeps configured, managed and plugin launch resolution explicit.
 type RoutedResolver struct {
 	Configured LaunchResolver
+	Managed    LaunchResolver
 	Plugin     LaunchResolver
 }
 
@@ -54,6 +55,11 @@ func (r RoutedResolver) ResolveLaunch(ctx context.Context, descriptor runtimecat
 			return LaunchConfig{}, errors.New("configured MCP resolver is unavailable")
 		}
 		return r.Configured.ResolveLaunch(ctx, descriptor)
+	case runtimecatalogcmd.SourceKindManagedMCP:
+		if r.Managed == nil {
+			return LaunchConfig{}, runtimecatalogcmd.ErrRevisionUnavailable
+		}
+		return r.Managed.ResolveLaunch(ctx, descriptor)
 	case runtimecatalogcmd.SourceKindPlugin:
 		if r.Plugin == nil {
 			return LaunchConfig{}, errors.New("plugin MCP resolver is unavailable")

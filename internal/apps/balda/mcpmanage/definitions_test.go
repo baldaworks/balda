@@ -84,6 +84,45 @@ type definitionMemoryStore struct {
 	writeError  error
 }
 
+type expiringDefinitionStore struct {
+	*definitionMemoryStore
+	expiresAt time.Time
+}
+
+func (s *expiringDefinitionStore) SaveDefinition(ctx context.Context, m Mutation) error {
+	if !m.Authority.At.Before(s.expiresAt) {
+		return mcpcmd.ErrForbidden
+	}
+	return s.definitionMemoryStore.SaveDefinition(ctx, m)
+}
+
+type queuedDefinitionCatalog struct {
+	definitionCatalog
+	beforeCommit func()
+}
+
+func (c *queuedDefinitionCatalog) PublishMCP(_ context.Context, commit func() error) error {
+	c.beforeCommit()
+	return commit()
+}
+
+func TestDefinitionCommitRechecksAuthorityTimeAfterPublicationQueue(t *testing.T) {
+	s, store, _ := definitionHarness(t)
+	request := definitionCreate()
+	guard := &expiringDefinitionStore{definitionMemoryStore: store, expiresAt: request.Authority.At.Add(time.Minute)}
+	s.store = guard
+	s.catalog = &queuedDefinitionCatalog{beforeCommit: func() {
+		// The family expires while the request waits for the publication gate.
+		guard.expiresAt = request.Authority.At.Add(time.Nanosecond)
+	}}
+	if _, err := s.Create(t.Context(), request); !errors.Is(err, mcpcmd.ErrForbidden) {
+		t.Fatalf("queued mutation used stale authority time and committed: %v", err)
+	}
+	if len(store.writes) != 0 || len(store.connections) != 0 {
+		t.Fatal("expired queued authority changed durable definitions")
+	}
+}
+
 func (s *definitionMemoryStore) CheckMCPAuthority(_ context.Context, a mcpcmd.Authority) error {
 	if s.writeError != nil {
 		return s.writeError

@@ -14,6 +14,7 @@ const (
 	SourceKindUserSkill      SourceKind = "user-skill"
 	SourceKindWorkspaceSkill SourceKind = "workspace-skill"
 	SourceKindConfiguredMCP  SourceKind = "configured-mcp"
+	SourceKindManagedMCP     SourceKind = "managed-mcp"
 	SourceKindPlugin         SourceKind = "plugin"
 )
 

@@ -225,6 +225,7 @@ func validSourceKind(kind runtimecatalogcmd.SourceKind) bool {
 		runtimecatalogcmd.SourceKindUserSkill,
 		runtimecatalogcmd.SourceKindWorkspaceSkill,
 		runtimecatalogcmd.SourceKindConfiguredMCP,
+		runtimecatalogcmd.SourceKindManagedMCP,
 		runtimecatalogcmd.SourceKindPlugin:
 		return true
 	default:

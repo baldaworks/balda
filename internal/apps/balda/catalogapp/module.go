@@ -14,6 +14,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/ingressapp"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/pluginapp"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalog"
@@ -85,6 +86,7 @@ type runtimeParams struct {
 	Norma          runtimeconfig.RuntimeConfig
 	Registry       *mcpregistry.MapRegistry
 	Commands       *commandcmd.Registry
+	Credentials    *mcpmanage.Service
 }
 
 type agentSkillDir string
@@ -128,7 +130,7 @@ func provideCodexSkillDir() codexSkillDir {
 }
 
 func newRuntime(params runtimeParams) (*Runtime, error) {
-	return NewRuntime(params.StateDir, string(params.AgentSkillDir), string(params.CodexSkillDir), params.Provider, params.Advertisements, params.Norma.MCPServers, params.Registry, params.Commands)
+	return NewRuntime(params.StateDir, string(params.AgentSkillDir), string(params.CodexSkillDir), params.Provider, params.Advertisements, params.Norma.MCPServers, params.Registry, params.Commands, params.Credentials)
 }
 
 // Lifecycle reconstructs durable catalog state before dependent ingress.
