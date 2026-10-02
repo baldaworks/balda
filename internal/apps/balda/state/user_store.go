@@ -163,6 +163,11 @@ func (s *sqlUserStore) UpdateUser(ctx context.Context, user usercmd.User, expect
 			return err
 		}
 	}
+	if currentRole != string(user.Role) {
+		if err := s.revokeUserSessionsTx(ctx, tx, user.ID, audit.OccurredAt, "user role changed"); err != nil {
+			return err
+		}
+	}
 	if err := s.insertAudit(ctx, tx, audit); err != nil {
 		return err
 	}

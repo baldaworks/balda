@@ -20,10 +20,11 @@ type ceremonyState struct {
 	Library        libwebauthn.SessionData
 	SessionVersion uint64
 	Registration   bool
+	Proof          replacementProof
 }
 
 func (s *Service) startMFA(ctx context.Context, user usercmd.User, profile usercmd.MFAProfile, purpose usercmd.MFAPurpose,
-	sessionID string, sessionVersion uint64, browser, csrf string, registration bool) (CeremonyStart, error) {
+	sessionID string, sessionVersion uint64, browser, csrf string, registration bool, proofs ...replacementProof) (CeremonyStart, error) {
 	if s.webauthn == nil {
 		return CeremonyStart{}, ErrMFAUnavailable
 	}
@@ -50,7 +51,14 @@ func (s *Service) startMFA(ctx context.Context, user usercmd.User, profile userc
 	}
 	now := s.now().UTC()
 	state.Expires = now.Add(s.config.CeremonyTTL)
-	data, err := json.Marshal(ceremonyState{Library: *state, SessionVersion: sessionVersion, Registration: registration})
+	var proof replacementProof
+	if purpose == usercmd.MFAReplace && registration {
+		if len(proofs) != 1 || !s.validReplacementProof(proofs[0], profile, now) {
+			return CeremonyStart{}, ErrForbidden
+		}
+		proof = proofs[0]
+	}
+	data, err := json.Marshal(ceremonyState{Library: *state, SessionVersion: sessionVersion, Registration: registration, Proof: proof})
 	if err != nil {
 		return CeremonyStart{}, err
 	}
@@ -93,6 +101,9 @@ func (s *Service) finishMFA(ctx context.Context, transaction, browser, csrf stri
 	if err != nil || v.profile.Version != v.ceremony.MFAVersion {
 		return v, ErrUnauthenticated
 	}
+	if purpose == usercmd.MFAReplace && v.state.Registration && !s.validReplacementProof(v.state.Proof, v.profile, v.now) {
+		return v, ErrUnauthenticated
+	}
 	key, err := s.webauthn.verify(v.user, v.profile.Credential, v.state.Library, response, v.state.Registration)
 	if err != nil {
 		return v, ErrUnauthenticated
@@ -110,4 +121,13 @@ func validCeremonyKind(purpose usercmd.MFAPurpose, registration bool) bool {
 		return purpose == usercmd.MFAEnable || purpose == usercmd.MFAReplace
 	}
 	return purpose == usercmd.MFALogin || purpose == usercmd.MFAStepUp || purpose == usercmd.MFAReplace || purpose == usercmd.MFADisable
+}
+
+type replacementProof struct {
+	FactorID   string
+	VerifiedAt time.Time
+}
+
+func (s *Service) validReplacementProof(p replacementProof, profile usercmd.MFAProfile, now time.Time) bool {
+	return profile.Enabled && p.FactorID == profile.Credential.ID && !p.VerifiedAt.IsZero() && !now.Before(p.VerifiedAt) && now.Before(p.VerifiedAt.Add(s.config.StepUpTTL))
 }

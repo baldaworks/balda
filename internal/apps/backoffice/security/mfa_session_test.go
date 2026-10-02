@@ -106,13 +106,19 @@ func TestMFAPasswordResetAndReplacementPreserveFactor(t *testing.T) {
 }
 
 func TestMFARoleTransitionsRetainOptInAndRejectStaleSessions(t *testing.T) {
-	p, s, u, _, _, now := enrolledTestService(t)
+	p, s, u, private, key, now := enrolledTestService(t)
 	ctx := withMFABrowser(t.Context(), "browser", "csrf")
+	login, err := s.Login(ctx, u.Username, []byte(testPassword))
+	require.NoError(t, err)
+	verified, err := s.FinishLogin(ctx, login.Pending.Transaction, "browser", "csrf", assertionResponseForStart(t, *login.Pending, key, private, 0x05, 1))
+	require.NoError(t, err)
 	u.Role, u.Primary, u.Version, u.UpdatedAt = usercmd.RoleOperator, false, u.Version+1, now
 	// Keep a separate active administrator so canonical last-admin constraints hold.
 	createSecurityTestUser(t, p.Users(), "other-admin", "other-admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, false, now)
-	err := p.Users().UpdateUser(ctx, u, u.Version-1, s.audit(usercmd.AuditActionUserRoleChanged, usercmd.AuditTargetUser, u.ID, "demote", now))
+	err = p.Users().UpdateUser(ctx, u, u.Version-1, s.audit(usercmd.AuditActionUserRoleChanged, usercmd.AuditTargetUser, u.ID, "demote", now))
 	require.NoError(t, err)
+	_, err = s.ValidateAccess(ctx, verified.AccessToken)
+	require.ErrorIs(t, err, ErrUnauthenticated)
 	operatorCredentials, err := s.Login(ctx, u.Username, []byte(testPassword))
 	require.NoError(t, err)
 	require.Nil(t, operatorCredentials.Pending)

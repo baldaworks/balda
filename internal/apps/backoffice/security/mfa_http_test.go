@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/stretchr/testify/require"
 )
@@ -117,4 +118,58 @@ func mfaFormRequest(path string, values url.Values) *http.Request {
 	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	r.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "csrf"})
 	return r
+}
+
+func TestMFAAccountHTTPEnableGuardsAndCookieScopes(t *testing.T) {
+	for _, basePath := range []string{"", "/balda"} {
+		t.Run(basePath, func(t *testing.T) {
+			p, s, _ := newSecurityTestService(t)
+			now := time.Now().UTC()
+			s.now = func() time.Time { return now }
+			u := createSecurityTestUser(t, p.Users(), "http-enable", "http-enable", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
+			credentials, err := s.Login(t.Context(), u.Username, []byte(testPassword))
+			require.NoError(t, err)
+			s.webauthn, err = newWebAuthnEngine("https://example.org")
+			require.NoError(t, err)
+			b, err := NewBrowser(s, HTTPConfig{TrustedOrigin: "https://example.org", SecureCookies: true, BasePath: basePath})
+			require.NoError(t, err)
+			request := mfaFormRequest(basePath+"/account/2fa/enable/start", url.Values{"password": {testPassword}, "csrf_token": {credentials.CSRFToken}})
+			request.Header.Del("Cookie")
+			request.AddCookie(&http.Cookie{Name: AccessCookieName, Value: credentials.AccessToken})
+			request.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: credentials.CSRFToken})
+			response := httptest.NewRecorder()
+			b.BeginEnable(response, request)
+			require.Equal(t, http.StatusOK, response.Code)
+			var start struct {
+				Transaction string
+				Options     protocol.CredentialCreation
+			}
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &start))
+			profile, err := p.Users().GetMFAProfile(t.Context(), u.ID)
+			require.NoError(t, err)
+			require.False(t, profile.Enabled)
+			finish := mfaFormRequest(basePath+"/account/2fa/enable/finish", url.Values{"csrf_token": {credentials.CSRFToken}, "transaction": {start.Transaction},
+				"credential": {string(registrationResponseForStart(t, CeremonyStart{Transaction: start.Transaction, Options: &start.Options}))}})
+			finish.Header.Del("Cookie")
+			finish.AddCookie(&http.Cookie{Name: AccessCookieName, Value: credentials.AccessToken})
+			finish.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: credentials.CSRFToken})
+			for _, cookie := range response.Result().Cookies() {
+				finish.AddCookie(cookie)
+			}
+			finishResponse := httptest.NewRecorder()
+			b.FinishEnable(finishResponse, finish)
+			require.Equal(t, http.StatusSeeOther, finishResponse.Code)
+			require.Equal(t, basePath+"/account", finishResponse.Header().Get("Location"))
+			for _, cookie := range finishResponse.Result().Cookies() {
+				if cookie.Name == RefreshCookieName {
+					require.Equal(t, basePath+RefreshPath, cookie.Path)
+				} else {
+					require.Equal(t, basePath+"/", cookie.Path)
+				}
+			}
+			profile, err = p.Users().GetMFAProfile(t.Context(), u.ID)
+			require.NoError(t, err)
+			require.True(t, profile.Enabled)
+		})
+	}
 }

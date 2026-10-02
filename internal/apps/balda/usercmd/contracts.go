@@ -250,6 +250,14 @@ const (
 	AuditActionRefreshSucceeded AuditAction = "session.refresh.succeeded"
 	// AuditActionRefreshReplay records verified refresh-token reuse and family revocation.
 	AuditActionRefreshReplay AuditAction = "session.refresh.replay"
+	// AuditActionMFAEnabled records opt-in after verified registration.
+	AuditActionMFAEnabled AuditAction = "user.mfa.enabled"
+	// AuditActionMFAReplaced records verified factor replacement.
+	AuditActionMFAReplaced AuditAction = "user.mfa.replaced"
+	// AuditActionMFADisabled records verified opt-out.
+	AuditActionMFADisabled AuditAction = "user.mfa.disabled"
+	// AuditActionMFARecovered records confirmed offline factor removal.
+	AuditActionMFARecovered AuditAction = "user.mfa.recovered"
 	// AuditActionMFAVerified records a fresh verified browser factor.
 	AuditActionMFAVerified AuditAction = "session.mfa.verified"
 	// AuditActionLogout records explicit browser-session logout.
@@ -263,7 +271,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked:
 		return true
 	default:
 		return false
