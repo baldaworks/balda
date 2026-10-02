@@ -50,7 +50,8 @@ func newHTTPApp(store usercmd.Store, config ResolvedConfig) (*httpApp, error) {
 	app := &httpApp{renderer: renderer, security: service, access: access.NewService(store), auditLog: audit.NewService(store), cards: ProjectCapabilityCards(config.Balda), bindingChoices: bindingChoices, qa: config.Server.QAUI, basePath: config.Server.BasePath}
 	browser, err := security.NewBrowser(service, security.HTTPConfig{
 		TrustedOrigin: config.Server.PublicURL, SecureCookies: config.Server.SecureCookies, BasePath: config.Server.BasePath,
-		ErrorHandler: app.renderSecurityError,
+		ErrorHandler:    app.renderSecurityError,
+		StepUpResponder: app.renderStepUpRequired,
 		MutationResponder: func(w http.ResponseWriter, r *http.Request, location string) error {
 			return webui.RespondMutationAt(w, r, webui.Location(strings.TrimPrefix(location, config.Server.BasePath)), config.Server.BasePath)
 		},
@@ -79,6 +80,9 @@ func (a *httpApp) handler() (http.Handler, error) {
 	})
 	mux.HandleFunc("GET "+a.path("/login"), a.loginPage)
 	mux.HandleFunc("POST "+a.path("/login"), a.browser.Login)
+	mux.HandleFunc("POST "+a.path("/auth/webauthn/finish"), a.browser.FinishLogin)
+	mux.HandleFunc("POST "+a.path("/auth/step-up/start"), a.browser.BeginStepUp)
+	mux.HandleFunc("POST "+a.path("/auth/step-up/finish"), a.browser.FinishStepUp)
 	mux.HandleFunc("GET "+a.path(security.RefreshPath), a.refreshPage)
 	mux.HandleFunc("POST "+a.path(security.RefreshPath), a.browser.Refresh)
 	mux.HandleFunc("POST "+a.path("/logout"), a.browser.Logout)
@@ -510,6 +514,13 @@ func parseFormVersion(raw string) (uint64, error) {
 		return 0, usercmd.ErrInvalid
 	}
 	return version, nil
+}
+
+func (a *httpApp) renderStepUpRequired(w http.ResponseWriter, r *http.Request) {
+	a.render(w, r, http.StatusForbidden, webui.TemplateError, webui.Page{
+		Title: "Verification required · Balda", StepUpURL: a.path("/auth/step-up"),
+		Error: &webui.ErrorView{Heading: "Confirm your passkey", Message: "This change was not applied. Confirm your passkey, then return and submit it again."},
+	})
 }
 
 func (a *httpApp) renderSecurityError(w http.ResponseWriter, r *http.Request, status int) {

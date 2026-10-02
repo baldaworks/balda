@@ -122,6 +122,7 @@ type QALink struct {
 
 // Page is the closed safe model accepted by production templates.
 type Page struct {
+	StepUpURL string
 	// ViewerUsername identifies the signed-in operator, independently of User.
 	ViewerUsername      string
 	Title               string

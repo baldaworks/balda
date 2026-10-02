@@ -61,6 +61,8 @@ type store interface {
 
 // Credentials contains transient plaintext browser values returned only to cookie writers.
 type Credentials struct {
+	Pending          *CeremonyStart
+	PendingExpiresAt time.Time
 	AccessToken      string
 	RefreshToken     string
 	CSRFToken        string
@@ -71,10 +73,13 @@ type Credentials struct {
 
 // Principal is current canonical user and session-family authorization state.
 type Principal struct {
-	User      usercmd.User
-	FamilyID  string
-	Version   uint64
-	Assurance usercmd.SessionAssurance
+	MFAEnabled         bool
+	WebAuthnVerifiedAt time.Time
+	MFAFactorID        string
+	User               usercmd.User
+	FamilyID           string
+	Version            uint64
+	Assurance          usercmd.SessionAssurance
 }
 
 // Service authenticates passwords and manages opaque access/refresh families.
@@ -138,6 +143,18 @@ func (s *Service) Login(ctx context.Context, username string, password []byte) (
 	if !found || !verified || assuranceErr != nil {
 		return Credentials{}, ErrUnauthenticated
 	}
+	profile, err := s.store.GetMFAProfile(ctx, user.ID)
+	if err != nil {
+		return Credentials{}, err
+	}
+	if user.Role == usercmd.RoleAdministrator && profile.Enabled {
+		binding, _ := ctx.Value(mfaBrowserKey{}).(mfaBrowserBinding)
+		start, err := s.startMFA(ctx, user, profile, usercmd.MFALogin, "", 0, binding.browser, binding.csrf, false)
+		if err != nil {
+			return Credentials{}, err
+		}
+		return Credentials{Pending: &start, PendingExpiresAt: s.now().UTC().Add(s.config.CeremonyTTL)}, nil
+	}
 	return s.issueSession(ctx, user, assurance, s.now().UTC())
 }
 
@@ -163,7 +180,12 @@ func (s *Service) ValidateAccess(ctx context.Context, rawToken string) (Principa
 	if err != nil || wantAssurance != session.Family.Assurance {
 		return Principal{}, ErrUnauthenticated
 	}
+	enabled, err := s.checkMFAFamily(ctx, session.User, session.Family)
+	if err != nil {
+		return Principal{}, err
+	}
 	return Principal{
+		MFAEnabled: enabled, WebAuthnVerifiedAt: session.Family.WebAuthnVerifiedAt, MFAFactorID: session.Family.MFAFactorID,
 		User: session.User, FamilyID: session.Family.ID,
 		Version: session.Family.Version, Assurance: session.Family.Assurance,
 	}, nil
@@ -205,6 +227,9 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 	if subtle.ConstantTimeCompare(session.Family.CSRFVerifierDigest, digest(csrfToken)) != 1 {
 		return Credentials{}, ErrForbidden
 	}
+	if _, err := s.checkMFAFamily(ctx, session.User, session.Family); err != nil {
+		return Credentials{}, err
+	}
 	// Wall-clock corrections must not move a rotation before persisted session
 	// activity. The absolute family deadline remains unchanged.
 	now := s.now().UTC()
@@ -237,6 +262,9 @@ func (s *Service) Refresh(ctx context.Context, rawToken, csrfToken string) (Cred
 	rotation.ReplayAudit.Outcome = usercmd.AuditOutcomeDenied
 	result, err := s.store.RotateRefresh(ctx, rotation)
 	if err != nil {
+		if errors.Is(err, usercmd.ErrSessionUnavailable) {
+			return Credentials{}, ErrUnauthenticated
+		}
 		return Credentials{}, fmt.Errorf("rotate refresh credential: %w", err)
 	}
 	if result != usercmd.RefreshRotationSucceeded {
@@ -279,6 +307,11 @@ func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID strin
 	if targetUserID == "" {
 		targetUserID = principal.User.ID
 	}
+	if targetUserID != principal.User.ID {
+		if err := s.RequireFresh(ctx, rawAccessToken); err != nil {
+			return usercmd.SessionPage{}, err
+		}
+	}
 	if targetUserID != principal.User.ID && principal.User.Role != usercmd.RoleAdministrator {
 		return usercmd.SessionPage{}, ErrForbidden
 	}
@@ -294,6 +327,9 @@ func (s *Service) ListSessions(ctx context.Context, rawAccessToken, userID strin
 
 // RevokeSession revokes an owned session or any session when called by an administrator.
 func (s *Service) RevokeSession(ctx context.Context, rawAccessToken, targetSessionID string, confirmCurrent bool) error {
+	if err := s.RequireFresh(ctx, rawAccessToken); err != nil {
+		return err
+	}
 	principal, err := s.requireNormal(ctx, rawAccessToken)
 	if err != nil {
 		return err
@@ -323,6 +359,9 @@ func (s *Service) RevokeSession(ctx context.Context, rawAccessToken, targetSessi
 
 // ReplacePassword rotates a normal password or replaces a verified temporary credential.
 func (s *Service) ReplacePassword(ctx context.Context, rawAccessToken string, currentPassword, nextPassword []byte) (Credentials, error) {
+	if err := s.RequireFresh(ctx, rawAccessToken); err != nil {
+		return Credentials{}, err
+	}
 	current := append([]byte(nil), currentPassword...)
 	next := append([]byte(nil), nextPassword...)
 	defer zero(current)
@@ -355,6 +394,7 @@ func (s *Service) ReplacePassword(ctx context.Context, rawAccessToken string, cu
 	if err != nil {
 		return Credentials{}, err
 	}
+	family.MFAFactorID, family.WebAuthnVerifiedAt = principal.MFAFactorID, principal.WebAuthnVerifiedAt
 	credentialAudit := s.audit(usercmd.AuditActionCredentialChanged, usercmd.AuditTargetUser, principal.User.ID, "password replaced", now)
 	credentialAudit.ActorUserID = principal.User.ID
 	credentialAudit.ActorSessionID = principal.FamilyID

@@ -250,6 +250,8 @@ const (
 	AuditActionRefreshSucceeded AuditAction = "session.refresh.succeeded"
 	// AuditActionRefreshReplay records verified refresh-token reuse and family revocation.
 	AuditActionRefreshReplay AuditAction = "session.refresh.replay"
+	// AuditActionMFAVerified records a fresh verified browser factor.
+	AuditActionMFAVerified AuditAction = "session.mfa.verified"
 	// AuditActionLogout records explicit browser-session logout.
 	AuditActionLogout AuditAction = "session.logout"
 )
@@ -261,7 +263,7 @@ func (a AuditAction) Valid() bool {
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
 		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked:
+		AuditActionRefreshReplay, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked:
 		return true
 	default:
 		return false

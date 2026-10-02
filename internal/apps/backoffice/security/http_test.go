@@ -291,6 +291,7 @@ func TestSafeReturnPathRejectsNonAllowlistedAndAmbiguousPaths(t *testing.T) {
 }
 
 type fakeBrowserService struct {
+	fresh    func(context.Context, string) error
 	login    func(context.Context, string, []byte) (Credentials, error)
 	validate func(context.Context, string) (Principal, error)
 	csrf     func(context.Context, string, string) error
@@ -393,4 +394,11 @@ func assertClearedCookie(t *testing.T, cookies []*http.Cookie, name, cookiePath 
 		}
 	}
 	t.Fatalf("cleared cookie %s path %s not found", name, cookiePath)
+}
+
+func (f *fakeBrowserService) RequireFresh(ctx context.Context, token string) error {
+	if f.fresh == nil {
+		return nil
+	}
+	return f.fresh(ctx, token)
 }

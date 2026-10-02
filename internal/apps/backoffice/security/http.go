@@ -32,6 +32,7 @@ const (
 var defaultReturnPrefixes = []string{"/", "/overview", "/access", "/account", "/audit"}
 
 type browserService interface {
+	RequireFresh(ctx context.Context, rawAccessToken string) error
 	Login(ctx context.Context, username string, password []byte) (Credentials, error)
 	ValidateAccess(ctx context.Context, rawToken string) (Principal, error)
 	ValidateCSRF(ctx context.Context, rawAccessToken, csrfToken string) error
@@ -43,6 +44,8 @@ type browserService interface {
 
 // HTTPConfig controls the browser-only trust boundary.
 type HTTPConfig struct {
+	StepUpResponder       func(http.ResponseWriter, *http.Request)
+	CeremonyResponder     func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, CeremonyStart)
 	TrustedOrigin         string
 	BasePath              string
 	SecureCookies         bool
@@ -54,7 +57,9 @@ type HTTPConfig struct {
 
 // Browser implements the HTTP security boundary without owning page rendering.
 type Browser struct {
+	stepUpResponder   func(http.ResponseWriter, *http.Request)
 	service           browserService
+	ceremonyResponder func(http.ResponseWriter, *http.Request, usercmd.MFAPurpose, CeremonyStart)
 	trustedOrigin     string
 	basePath          string
 	secureCookies     bool
@@ -99,7 +104,9 @@ func NewBrowser(service browserService, config HTTPConfig) (*Browser, error) {
 		}
 	}
 	return &Browser{
-		service: service, trustedOrigin: strings.TrimSuffix(origin.String(), "/"),
+		stepUpResponder:   config.StepUpResponder,
+		ceremonyResponder: config.CeremonyResponder,
+		service:           service, trustedOrigin: strings.TrimSuffix(origin.String(), "/"),
 		basePath:      config.BasePath,
 		secureCookies: config.SecureCookies, maxBodyBytes: maxBodyBytes,
 		returnPaths: returnPaths, random: rand.Reader, errorHandler: config.ErrorHandler,
@@ -138,9 +145,22 @@ func (b *Browser) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	password := []byte(form.Get("password"))
 	defer zero(password)
-	credentials, err := b.service.Login(withSessionClient(r), form.Get("username"), password)
+	binding, err := randomValue(b.random, 32)
 	if err != nil {
 		b.writeServiceError(w, r, err)
+		return
+	}
+	ctx := withMFABrowser(withSessionClient(r), binding, form.Get("csrf_token"))
+	credentials, err := b.service.Login(ctx, form.Get("username"), password)
+	if err != nil {
+		b.writeServiceError(w, r, err)
+		return
+	}
+	if credentials.Pending != nil {
+		b.clearCookie(w, AccessCookieName, b.path("/"))
+		b.clearCookie(w, RefreshCookieName, b.path(RefreshPath))
+		b.setCookie(w, MFACookieName, binding, b.path("/"), credentials.PendingExpiresAt, true)
+		b.respondCeremony(w, r, usercmd.MFALogin, *credentials.Pending)
 		return
 	}
 	b.setCredentials(w, credentials)
@@ -310,6 +330,13 @@ func (b *Browser) RequireAdministrator(next http.Handler) http.Handler {
 			b.writeServiceError(w, r, ErrForbidden)
 			return
 		}
+		if cookie, err := r.Cookie(AccessCookieName); err != nil {
+			b.writeServiceError(w, r, ErrUnauthenticated)
+			return
+		} else if err := b.service.RequireFresh(r.Context(), cookie.Value); err != nil {
+			b.writeServiceError(w, r, err)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -337,6 +364,10 @@ func (b *Browser) AdministratorMutation(w http.ResponseWriter, r *http.Request) 
 	}
 	if principal.Assurance != usercmd.SessionAssuranceNormal || principal.User.Role != usercmd.RoleAdministrator {
 		b.writeServiceError(w, r, ErrForbidden)
+		return nil, Principal{}, false
+	}
+	if err := b.service.RequireFresh(r.Context(), access.Value); err != nil {
+		b.writeServiceError(w, r, err)
 		return nil, Principal{}, false
 	}
 	return form, principal, true
@@ -371,6 +402,10 @@ func (b *Browser) SafeReturnPath(raw, fallback string) string {
 }
 
 func (b *Browser) mutationForm(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
+	return b.mutationFormLimit(w, r, b.maxBodyBytes)
+}
+
+func (b *Browser) mutationFormLimit(w http.ResponseWriter, r *http.Request, limit int64) (url.Values, bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -386,7 +421,7 @@ func (b *Browser) mutationForm(w http.ResponseWriter, r *http.Request) (url.Valu
 		b.writeHTTPError(w, r, http.StatusForbidden, "request forbidden")
 		return nil, false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, b.maxBodyBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := r.ParseForm(); err != nil {
 		b.writeHTTPError(w, r, http.StatusBadRequest, "invalid request")
 		return nil, false
@@ -410,6 +445,7 @@ func (b *Browser) clearCredentials(w http.ResponseWriter) {
 	b.clearCookie(w, AccessCookieName, b.path("/"))
 	b.clearCookie(w, RefreshCookieName, b.path(RefreshPath))
 	b.clearCookie(w, CSRFCookieName, b.path("/"))
+	b.clearCookie(w, MFACookieName, b.path("/"))
 }
 
 func (b *Browser) path(route string) string { return b.basePath + route }
@@ -445,6 +481,19 @@ func (b *Browser) respondMutation(w http.ResponseWriter, r *http.Request, locati
 func (b *Browser) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
+	case errors.Is(err, ErrStepUp):
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			b.redirect(w, r, "", b.path("/auth/step-up"))
+		} else {
+			w.Header().Set("Link", "<"+b.path("/auth/step-up")+">; rel=\"authenticate\"")
+			if b.stepUpResponder != nil {
+				b.stepUpResponder(w, r)
+			} else {
+				b.writeHTTPError(w, r, http.StatusForbidden, "fresh verification required: "+b.path("/auth/step-up"))
+			}
+		}
+	case errors.Is(err, ErrMFAUnavailable):
+		b.writeHTTPError(w, r, http.StatusServiceUnavailable, ErrMFAUnavailable.Error())
 	case errors.Is(err, ErrRefreshConcurrent):
 		b.writeHTTPError(w, r, http.StatusConflict, "session was refreshed in another request; reopen the page")
 	case errors.Is(err, ErrUnauthenticated):
