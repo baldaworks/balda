@@ -14,6 +14,10 @@ func TestResolveServerConfig(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "defaults", input: ServerConfig{}},
+		{name: "monthly refresh", input: ServerConfig{RefreshTokenTTL: "720h"}},
+		{name: "unbounded refresh", input: ServerConfig{RefreshTokenTTL: "721h"}, wantErr: true},
+		{name: "nonpositive refresh", input: ServerConfig{RefreshTokenTTL: "0h"}, wantErr: true},
+		{name: "refresh equals access", input: ServerConfig{RefreshTokenTTL: "15m"}, wantErr: true},
 		{name: "bounded MFA lifetimes", input: ServerConfig{CeremonyTTL: "15m", StepUpTTL: "1h"}},
 		{name: "unbounded ceremony", input: ServerConfig{CeremonyTTL: "16m"}, wantErr: true},
 		{name: "unbounded step-up", input: ServerConfig{StepUpTTL: "2h"}, wantErr: true},
@@ -83,7 +87,18 @@ func TestDefaultResolvedTTLs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.AccessTokenTTL != 15*time.Minute || resolved.RefreshTokenTTL != 12*time.Hour || resolved.CeremonyTTL != 5*time.Minute || resolved.StepUpTTL != 15*time.Minute {
+	if resolved.AccessTokenTTL != 15*time.Minute || resolved.RefreshTokenTTL != 30*24*time.Hour || resolved.CeremonyTTL != 5*time.Minute || resolved.StepUpTTL != 15*time.Minute {
 		t.Fatalf("default TTLs = %s/%s", resolved.AccessTokenTTL, resolved.RefreshTokenTTL)
+	}
+}
+
+func TestResolveExplicitRefreshTTL(t *testing.T) {
+	t.Parallel()
+	got, err := (ServerConfig{RefreshTokenTTL: "12h"}).Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RefreshTokenTTL != 12*time.Hour {
+		t.Fatalf("explicit refresh TTL = %s", got.RefreshTokenTTL)
 	}
 }

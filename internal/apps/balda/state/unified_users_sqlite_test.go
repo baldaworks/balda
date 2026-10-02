@@ -71,8 +71,12 @@ func TestSQLiteUnifiedUserSchemaConstraints(t *testing.T) {
 		        '2026-09-23T00:05:00Z', '2026-09-23T00:06:00Z', '2026-09-24T00:00:00Z')`)
 	assertSQLiteRejected(t, db, `UPDATE balda_backoffice_refresh_tokens
 		SET state = 'active', used_at = '' WHERE selector = 'refresh-1'`)
-	assertSQLiteRejected(t, db, `UPDATE balda_backoffice_sessions
-		SET refresh_expires_at = '2026-09-25T00:00:00Z' WHERE session_id = 'session-1'`)
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_sessions
+  SET refresh_expires_at = '2026-09-25T00:00:00Z' WHERE session_id = 'session-1'`); err != nil {
+		t.Fatalf("renew family deadline: %v", err)
+	}
+	assertSQLiteRejected(t, db, `UPDATE balda_backoffice_refresh_tokens
+  SET expires_at = '2026-09-25T00:00:00Z' WHERE selector = 'refresh-1'`)
 
 	if _, err := db.ExecContext(t.Context(), `DELETE FROM balda_users WHERE user_id = 'admin-1'`); err != nil {
 		t.Fatalf("delete user: %v", err)

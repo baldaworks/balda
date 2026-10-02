@@ -15,7 +15,7 @@ func TestValidateSessionFamily(t *testing.T) {
 		Access:             AccessCredential{Selector: "access-selector", VerifierDigest: []byte("access-digest"), ExpiresAt: now.Add(time.Minute)},
 		CSRFVerifierDigest: []byte("csrf-digest"), CreatedAt: now, LastSeenAt: now, RefreshExpiresAt: now.Add(time.Hour), Version: 1,
 		RefreshTokens: []RefreshToken{
-			{Selector: "old-refresh", VerifierDigest: []byte("old-digest"), Generation: 1, State: RefreshTokenStateUsed, IssuedAt: now, UsedAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)},
+			{Selector: "old-refresh", VerifierDigest: []byte("old-digest"), Generation: 1, State: RefreshTokenStateUsed, IssuedAt: now, UsedAt: now.Add(time.Minute), ExpiresAt: now.Add(30 * time.Minute)},
 			{Selector: "active-refresh", VerifierDigest: []byte("active-digest"), Generation: 2, State: RefreshTokenStateActive, IssuedAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour)},
 		},
 	}
@@ -34,6 +34,7 @@ func TestValidateSessionFamily(t *testing.T) {
 	twoActive.RefreshTokens = append([]RefreshToken(nil), family.RefreshTokens...)
 	twoActive.RefreshTokens[0].State = RefreshTokenStateActive
 	twoActive.RefreshTokens[0].UsedAt = time.Time{}
+	twoActive.RefreshTokens[0].ExpiresAt = family.RefreshExpiresAt
 	if err := ValidateSessionFamily(twoActive); !errors.Is(err, ErrInvalid) {
 		t.Errorf("two active refresh tokens error = %v, want %v", err, ErrInvalid)
 	}

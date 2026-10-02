@@ -402,3 +402,63 @@ func (f *fakeBrowserService) RequireFresh(ctx context.Context, token string) err
 	}
 	return f.fresh(ctx, token)
 }
+
+func TestBrowserMonthlyRefreshUsesCommittedCookieDeadline(t *testing.T) {
+	t.Parallel()
+	for _, base := range []string{"", "/balda"} {
+		t.Run(base, func(t *testing.T) {
+			t.Parallel()
+			p, s, now := newSecurityTestService(t)
+			s.config.RefreshTTL = 30 * 24 * time.Hour
+			createSecurityTestUser(t, p.Users(), "admin", "admin", usercmd.CredentialStateActive, usercmd.RoleAdministrator, true, now)
+			initial, err := s.Login(t.Context(), "admin", []byte(testPassword))
+			if err != nil {
+				t.Fatal(err)
+			}
+			at := now.Add(29 * 24 * time.Hour)
+			s.now = func() time.Time { return at }
+			browser, err := NewBrowser(s, HTTPConfig{TrustedOrigin: "https://backoffice.example", SecureCookies: true, BasePath: base})
+			if err != nil {
+				t.Fatal(err)
+			}
+			form := url.Values{"csrf_token": {initial.CSRFToken}, "return_to": {base + "/overview"}}
+			request := httptest.NewRequest(http.MethodPost, base+RefreshPath, strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Origin", "https://backoffice.example")
+			request.Header.Set("Sec-Fetch-Site", "same-origin")
+			request.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: initial.RefreshToken})
+			request.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: initial.CSRFToken})
+			response := httptest.NewRecorder()
+			browser.Refresh(response, request)
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != base+"/overview" {
+				t.Fatalf("refresh response = %d/%s", response.Code, response.Header().Get("Location"))
+			}
+			cookies := response.Result().Cookies()
+			for _, cookie := range cookies {
+				wantExpiry := at.Add(30 * 24 * time.Hour)
+				wantPath := base + "/"
+				if cookie.Name == AccessCookieName {
+					wantExpiry = at.Add(15 * time.Minute)
+				}
+				if cookie.Name == RefreshCookieName {
+					wantPath = base + RefreshPath
+					selector, _, err := parseOpaqueToken(cookie.Value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					stored, found, err := p.Users().GetSessionByRefreshSelector(t.Context(), selector)
+					if err != nil || !found || !stored.Family.RefreshExpiresAt.Equal(wantExpiry) {
+						t.Fatalf("cookie and store deadline mismatch: %t, %v", found, err)
+					}
+				}
+				assertSecurityCookie(t, cookies, cookie.Name, wantPath, cookie.Value, true)
+				if !cookie.Expires.Equal(wantExpiry) {
+					t.Fatalf("%s expiry = %s, want %s", cookie.Name, cookie.Expires, wantExpiry)
+				}
+			}
+			if len(cookies) != 3 {
+				t.Fatalf("credential cookies = %d", len(cookies))
+			}
+		})
+	}
+}

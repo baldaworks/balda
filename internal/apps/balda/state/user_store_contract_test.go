@@ -3,8 +3,10 @@
 package state
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"sync"
@@ -230,11 +232,30 @@ func checkUserStoreRefreshRotationAndReplay(t *testing.T, open contractOpener) {
 		Access: usercmd.AccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
 		Refresh: usercmd.RefreshToken{
 			Selector: "refresh-2", VerifierDigest: []byte("refresh-digest-2"), Generation: 2,
-			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt,
+			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
 		},
 		RotatedAt:    now.Add(15 * time.Minute),
 		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionSessionRevoked, family.ID, now.Add(15*time.Minute)),
 		ReplayAudit:  contractAudit("audit-replay", usercmd.AuditActionSessionRevoked, family.ID, now.Add(16*time.Minute)),
+	}
+	// Failure after consuming/updating must roll back the entire renewal.
+	failed := rotation
+	failed.SuccessAudit.ID = "audit-login"
+	if _, err := store.RotateRefresh(t.Context(), failed); err == nil {
+		t.Fatal("duplicate audit unexpectedly committed renewal")
+	}
+	unchanged, found, err := store.GetSession(t.Context(), family.ID)
+	if err != nil || !found || !reflect.DeepEqual(unchanged, family) {
+		t.Fatalf("failed renewal changed family: %+v, %v", unchanged, err)
+	}
+	stale := rotation
+	stale.RotatedAt = now.Add(-time.Second)
+	if _, err := store.RotateRefresh(t.Context(), stale); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("stale rotation: %v", err)
+	}
+	unchanged, found, err = store.GetSession(t.Context(), family.ID)
+	if err != nil || !found || !reflect.DeepEqual(unchanged, family) {
+		t.Fatalf("stale renewal changed family: %+v, %v", unchanged, err)
 	}
 	result, err := store.RotateRefresh(t.Context(), rotation)
 	if err != nil || result != usercmd.RefreshRotationSucceeded {
@@ -244,8 +265,14 @@ func checkUserStoreRefreshRotationAndReplay(t *testing.T, open contractOpener) {
 	if err != nil || !found || refreshed.Token.Generation != 2 || refreshed.Token.State != usercmd.RefreshTokenStateActive {
 		t.Fatalf("GetSessionByRefreshSelector(new) = %+v, %t, %v", refreshed, found, err)
 	}
-	if refreshed.Family.RefreshExpiresAt != family.RefreshExpiresAt || len(refreshed.Family.RefreshTokens) != 2 {
+	if !refreshed.Family.RefreshExpiresAt.Equal(rotation.Refresh.ExpiresAt) || len(refreshed.Family.RefreshTokens) != 2 {
 		t.Fatalf("rotated family = %+v", refreshed.Family)
+	}
+	if !refreshed.Family.RefreshTokens[0].ExpiresAt.Equal(family.RefreshExpiresAt) {
+		t.Fatal("historical expiry changed")
+	}
+	if err := usercmd.ValidateSessionFamily(refreshed.Family); err != nil {
+		t.Fatal(err)
 	}
 	if refreshed.Family.RefreshTokens[0].State != usercmd.RefreshTokenStateUsed {
 		t.Fatalf("old refresh state = %q, want used", refreshed.Family.RefreshTokens[0].State)
@@ -254,6 +281,15 @@ func checkUserStoreRefreshRotationAndReplay(t *testing.T, open contractOpener) {
 	result, err = store.RotateRefresh(t.Context(), rotation)
 	if err != nil || result != usercmd.RefreshRotationConcurrent {
 		t.Fatalf("RotateRefresh(duplicate) = %q, %v", result, err)
+	}
+	rotation.RotatedAt = now.Add(14 * time.Minute)
+	result, err = store.RotateRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.RefreshRotationConcurrent {
+		t.Fatalf("out-of-order duplicate: %q, %v", result, err)
+	}
+	unchanged, found, err = store.GetSession(t.Context(), family.ID)
+	if err != nil || !found || !reflect.DeepEqual(unchanged, refreshed.Family) {
+		t.Fatalf("duplicate changed family: %+v, %v", unchanged, err)
 	}
 	rotation.RotatedAt = now.Add(16 * time.Minute)
 	result, err = store.RotateRefresh(t.Context(), rotation)
@@ -396,7 +432,7 @@ func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
 		Access: usercmd.AccessCredential{Selector: "access-2", VerifierDigest: []byte("access-digest-2"), ExpiresAt: now.Add(30 * time.Minute)},
 		Refresh: usercmd.RefreshToken{
 			Selector: "refresh-2", VerifierDigest: []byte("refresh-digest-2"), Generation: 2,
-			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt,
+			State: usercmd.RefreshTokenStateActive, IssuedAt: now.Add(15 * time.Minute), ExpiresAt: family.RefreshExpiresAt.Add(15 * time.Minute),
 		},
 		RotatedAt:    now.Add(15 * time.Minute),
 		SuccessAudit: contractAudit("audit-refresh", usercmd.AuditActionSessionRevoked, family.ID, now.Add(15*time.Minute)),
@@ -471,5 +507,28 @@ func contractSessionFamily(userID string, now time.Time) usercmd.SessionFamily {
 			Selector: "refresh-1", VerifierDigest: []byte("refresh-digest-1"), Generation: 1,
 			State: usercmd.RefreshTokenStateActive, IssuedAt: now, ExpiresAt: expiresAt,
 		}},
+	}
+}
+
+func checkRollingRefreshUpgrade(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var familyExpiry, tokenExpiry string
+	if err := db.QueryRowContext(t.Context(), `SELECT s.refresh_expires_at, r.expires_at FROM balda_backoffice_sessions s JOIN balda_backoffice_refresh_tokens r ON r.session_id = s.session_id WHERE r.selector = 'refresh-1'`).Scan(&familyExpiry, &tokenExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if familyExpiry != "2026-09-24T00:00:00Z" || tokenExpiry != familyExpiry {
+		t.Fatalf("upgrade changed stored expiry: %s/%s", familyExpiry, tokenExpiry)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_refresh_tokens SET state = 'used', used_at = '2026-09-23T00:10:00Z' WHERE selector = 'refresh-1'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE balda_backoffice_sessions SET refresh_expires_at = '2026-09-25T00:00:00Z' WHERE session_id = 'session-1'`); err != nil {
+		t.Fatalf("renew upgraded family: %v", err)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT expires_at FROM balda_backoffice_refresh_tokens WHERE selector = 'refresh-1'`).Scan(&tokenExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if tokenExpiry != familyExpiry {
+		t.Fatal("renewal rewrote historical expiration")
 	}
 }

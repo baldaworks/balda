@@ -363,7 +363,7 @@ func ValidateSessionFamily(f SessionFamily) error {
 		if strings.TrimSpace(token.Selector) == "" || len(token.VerifierDigest) == 0 || token.Generation == 0 || !token.State.Valid() {
 			return fmt.Errorf("%w: refresh generation is incomplete", ErrInvalid)
 		}
-		if token.IssuedAt.IsZero() || !token.ExpiresAt.Equal(f.RefreshExpiresAt) {
+		if token.IssuedAt.IsZero() || !token.ExpiresAt.After(token.IssuedAt) {
 			return fmt.Errorf("%w: refresh generation lifetime is invalid", ErrInvalid)
 		}
 		if token.Generation <= previousGeneration {
@@ -376,8 +376,8 @@ func ValidateSessionFamily(f SessionFamily) error {
 		selectors[token.Selector] = struct{}{}
 		switch token.State {
 		case RefreshTokenStateActive:
-			if !token.UsedAt.IsZero() {
-				return fmt.Errorf("%w: active refresh generation cannot be used", ErrInvalid)
+			if !token.UsedAt.IsZero() || !token.ExpiresAt.Equal(f.RefreshExpiresAt) {
+				return fmt.Errorf("%w: active refresh generation must be unused and match family expiry", ErrInvalid)
 			}
 			active++
 		case RefreshTokenStateUsed:

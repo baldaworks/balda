@@ -17,7 +17,7 @@ const (
 	defaultListenAddr      = "127.0.0.1:8095"
 	defaultPublicURL       = "http://127.0.0.1:8095"
 	defaultAccessTokenTTL  = 15 * time.Minute
-	defaultRefreshTokenTTL = 12 * time.Hour
+	defaultRefreshTokenTTL = 30 * 24 * time.Hour
 	minimumAccessTokenTTL  = time.Minute
 	maximumAccessTokenTTL  = time.Hour
 	maximumRefreshTokenTTL = 30 * 24 * time.Hour
