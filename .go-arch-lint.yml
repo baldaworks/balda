@@ -211,6 +211,11 @@ components:
     in:
       - internal/apps/balda/mcpmanage
 
+  # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
+  mcp_bridge:
+    in:
+      - internal/apps/balda/mcpbridge
+
   # Composition adapters for catalog sources, lifecycle, scope overlays, and
   # command/skill/MCP projections.
   catalog_wiring:
@@ -543,6 +548,7 @@ deps:
       - contracts
       - mcp_contracts
       - mcp_management
+      - mcp_bridge
       - mcp_runtime
       - mcp_wiring
       - storage
@@ -556,6 +562,13 @@ deps:
       - mcp_contracts
       - user_contracts
       - mcp_management
+    deepScan: false
+    anyVendorDeps: false
+
+  mcp_bridge:
+    mayDependOn:
+      - mcp_contracts
+      - mcp_bridge
     deepScan: false
     anyVendorDeps: false
 

@@ -64,7 +64,7 @@ func providerConfig(config mcpruntime.LaunchConfig) (agentconfig.MCPServerConfig
 		return agentconfig.MCPServerConfig{}, errors.New("provider MCP credential origin policy is unsupported")
 	}
 	switch config.Transport {
-	case "stdio":
+	case transportStdio:
 		return agentconfig.MCPServerConfig{
 			Type: agentconfig.MCPServerTypeStdio,
 			Cmd:  []string{config.Command}, Args: append([]string(nil), config.Args...),

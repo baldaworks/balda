@@ -17,6 +17,8 @@ import (
 // launch config before it can be projected into a provider runtime.
 type ClientLauncher struct{}
 
+const transportStdio = "stdio"
+
 const transportStreamableHTTP = "streamable-http"
 
 // NewClientLauncher creates the concrete MCP client lifecycle adapter.
@@ -43,7 +45,7 @@ func (*ClientLauncher) Start(ctx context.Context, key mcpruntime.InstanceKey, co
 
 func clientTransport(config mcpruntime.LaunchConfig) (mcp.Transport, error) {
 	switch config.Transport {
-	case "stdio":
+	case transportStdio:
 		if strings.TrimSpace(config.Command) == "" {
 			return nil, errors.New("MCP command is required")
 		}
