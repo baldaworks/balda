@@ -2,6 +2,12 @@ package mcpcmd
 
 import "time"
 
+const (
+	ClientAuthNone        = "none"
+	ClientAuthSecretBasic = "client_secret_basic"
+	ClientAuthSecretPost  = "client_secret_post"
+)
+
 // AuthBinding identifies one installation-owned authorization context.
 // A grant never transfers to a different connection, resource, issuer or client.
 type AuthBinding struct {

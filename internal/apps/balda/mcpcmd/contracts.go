@@ -7,12 +7,14 @@ import (
 )
 
 var (
-	ErrInvalid     = errors.New("invalid MCP definition")
-	ErrConflict    = errors.New("MCP definition conflict")
-	ErrNotFound    = errors.New("MCP definition not found")
-	ErrForbidden   = errors.New("MCP management forbidden")
-	ErrCredentials = errors.New("MCP protected credentials unavailable")
-	ErrUnavailable = errors.New("MCP operation unavailable")
+	ErrInvalid      = errors.New("invalid MCP definition")
+	ErrConflict     = errors.New("MCP definition conflict")
+	ErrNotFound     = errors.New("MCP definition not found")
+	ErrForbidden    = errors.New("MCP management forbidden")
+	ErrCredentials  = errors.New("MCP protected credentials unavailable")
+	ErrUnavailable  = errors.New("MCP operation unavailable")
+	ErrAuthRequired = errors.New("MCP worker authorization required")
+	ErrDisconnected = errors.New("MCP worker authorization disconnected")
 )
 
 type Source string

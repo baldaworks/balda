@@ -184,7 +184,10 @@ func (s *Definitions) item(ctx context.Context, c mcpcmd.Connection) (mcpcmd.Ite
 }
 
 func safeOperationError(err error) error {
-	for _, safe := range []error{context.Canceled, context.DeadlineExceeded, mcpcmd.ErrInvalid, mcpcmd.ErrConflict, mcpcmd.ErrNotFound, mcpcmd.ErrForbidden, mcpcmd.ErrCredentials, mcpcmd.ErrUnavailable} {
+	if err == nil {
+		return nil
+	}
+	for _, safe := range []error{context.Canceled, context.DeadlineExceeded, mcpcmd.ErrInvalid, mcpcmd.ErrConflict, mcpcmd.ErrNotFound, mcpcmd.ErrForbidden, mcpcmd.ErrCredentials, mcpcmd.ErrUnavailable, mcpcmd.ErrAuthRequired, mcpcmd.ErrDisconnected} {
 		if errors.Is(err, safe) {
 			return safe
 		}
