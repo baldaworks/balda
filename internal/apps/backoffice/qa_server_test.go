@@ -2,6 +2,7 @@ package backoffice
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -27,11 +28,21 @@ func TestServeQAWithoutApplicationState(t *testing.T) {
 		t.Fatal("QA server did not start")
 	}
 	client := &http.Client{Timeout: 3 * time.Second}
+	preview, err := client.Get("http://" + address + "/qa/ui/account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previewHTML, err := io.ReadAll(preview.Body)
+	_ = preview.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetPath := appAssetPath(t, string(previewHTML), "css")
 	for path, want := range map[string]int{
-		"/qa/ui/":         http.StatusOK,
-		"/qa/ui/account":  http.StatusOK,
-		"/assets/app.css": http.StatusOK,
-		"/account":        http.StatusNotFound,
+		"/qa/ui/":        http.StatusOK,
+		"/qa/ui/account": http.StatusOK,
+		assetPath:        http.StatusOK,
+		"/account":       http.StatusNotFound,
 	} {
 		response, err := client.Get("http://" + address + path)
 		if err != nil {

@@ -3,14 +3,18 @@ package handlersfx
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/telegramref"
 	"github.com/baldaworks/balda/internal/apps/balda/tgbotkit"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/runtime/events"
 	runtimehandlers "github.com/tgbotkit/runtime/handlers"
@@ -23,24 +27,36 @@ const (
 
 // telegramStartHandler handles Telegram /start commands by publishing them to CommandActor.
 type telegramStartHandler struct {
-	ownerStore     *auth.OwnerStore
-	commandIngress commandcmd.Ingress
-	logger         zerolog.Logger
+	bindings         bindingInvitationAdmitter
+	bindingChannels  bindingChannelRegistry
+	inbound          *telegramInboundHandler
+	dispatcher       actortransport.Dispatcher
+	ownerStore       *auth.OwnerStore
+	telegramProfiles *auth.TelegramProfileService
+	commandIngress   commandcmd.Ingress
+	logger           zerolog.Logger
 }
 
 type telegramStartHandlerParams struct {
 	fx.In
+	Bindings        bindingInvitationAdmitter `optional:"true"`
+	BindingChannels bindingChannelRegistry    `optional:"true"`
+	Inbound         *telegramInboundHandler   `optional:"true"`
+	Dispatcher      actortransport.Dispatcher `optional:"true"`
 
-	OwnerStore     *auth.OwnerStore   `optional:"true"`
-	CommandIngress commandcmd.Ingress `optional:"true"`
-	Logger         zerolog.Logger
+	OwnerStore       *auth.OwnerStore             `optional:"true"`
+	TelegramProfiles *auth.TelegramProfileService `optional:"true"`
+	CommandIngress   commandcmd.Ingress           `optional:"true"`
+	Logger           zerolog.Logger
 }
 
 func newTelegramStartHandler(params telegramStartHandlerParams) *telegramStartHandler {
 	return &telegramStartHandler{
-		ownerStore:     params.OwnerStore,
-		commandIngress: params.CommandIngress,
-		logger:         params.Logger.With().Str("component", "balda.handlersfx.telegram_start").Logger(),
+		bindings: params.Bindings, bindingChannels: params.BindingChannels, inbound: params.Inbound, dispatcher: params.Dispatcher,
+		ownerStore:       params.OwnerStore,
+		telegramProfiles: params.TelegramProfiles,
+		commandIngress:   params.CommandIngress,
+		logger:           params.Logger.With().Str("component", "balda.handlersfx.telegram_start").Logger(),
 	}
 }
 
@@ -63,6 +79,32 @@ func (h *telegramStartHandler) onCommand(ctx context.Context, event *events.Comm
 		userID = event.Message.From.Id
 	}
 	args := strings.TrimSpace(event.Args)
+	if authpayload.Contains(args) {
+		if h.bindings == nil || h.bindingChannels == nil {
+			return nil
+		}
+		payload, exact := authpayload.Parse(args)
+		info, available := h.bindingChannels.Get("telegram")
+		if !exact || !available || info.Integration.Key == "" || event.Message.From == nil {
+			return sendPlain(ctx, h.dispatcher, serverActorAddress, telegramref.NewLocator(chatID, 0), "Could not connect this account. Copy the complete invitation from Backoffice and try again.")
+		}
+		username := ""
+		if event.Message.From.Username != nil {
+			username = *event.Message.From.Username
+		}
+		_, err := h.bindings.Consume(ctx, usercmd.BindingProof{Payload: payload, Integration: info.Integration, Principal: strconv.FormatInt(userID, 10), Direct: true, Locator: telegramref.NewLocator(chatID, 0), DisplayName: event.Message.From.FirstName, ProviderUsername: username, ProviderFirstName: event.Message.From.FirstName, Provenance: "chat_id=" + strconv.FormatInt(chatID, 10)})
+		reply := "Account connected. Refresh bindings in Backoffice."
+		if err != nil {
+			reply = "Could not connect this account. Check or replace the invitation in Backoffice."
+		}
+		if err == nil && h.inbound != nil {
+			h.inbound.activateBoundPrimary(ctx, userID, chatID)
+		}
+		return sendPlain(ctx, h.dispatcher, serverActorAddress, telegramref.NewLocator(chatID, 0), reply)
+	}
+	if args == "" && h.bindings != nil && h.inbound != nil && !h.inbound.canAccessCollaboratorScope(ctx, userID) {
+		return sendPlain(ctx, h.dispatcher, serverActorAddress, telegramref.NewLocator(chatID, 0), "Open Backoffice Access, select your user and create a Telegram invitation. Open its bot link or send the invitation payload here.")
+	}
 
 	h.logger.Debug().
 		Int64("user_id", userID).
@@ -74,6 +116,15 @@ func (h *telegramStartHandler) onCommand(ctx context.Context, event *events.Comm
 	}
 
 	isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(userID)
+	if isOwner && event.Message.From != nil {
+		username := ""
+		if event.Message.From.Username != nil {
+			username = *event.Message.From.Username
+		}
+		if err := h.telegramProfiles.Refresh(ctx, userID, username, event.Message.From.FirstName); err != nil {
+			h.logger.Warn().Err(err).Int64("user_id", userID).Msg("failed to refresh telegram binding profile")
+		}
+	}
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 		InvocationID: fmt.Sprintf("telegram:command:%d:%d", chatID, event.Message.MessageId),
 		Payload: commandcmd.Payload{
@@ -97,6 +148,7 @@ func (h *telegramStartHandler) onCommand(ctx context.Context, event *events.Comm
 // telegramCommandHandler handles general Telegram commands by publishing them to CommandActor.
 type telegramCommandHandler struct {
 	ownerStore        *auth.OwnerStore
+	telegramProfiles  *auth.TelegramProfileService
 	collaboratorStore *auth.CollaboratorStore
 	channel           baldatelegram.Channel
 	commandIngress    commandcmd.Ingress
@@ -106,10 +158,11 @@ type telegramCommandHandler struct {
 type telegramCommandHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore        `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore `optional:"true"`
-	Channel           *baldatelegram.Adapter  `optional:"true"`
-	CommandIngress    commandcmd.Ingress      `optional:"true"`
+	OwnerStore        *auth.OwnerStore             `optional:"true"`
+	TelegramProfiles  *auth.TelegramProfileService `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore      `optional:"true"`
+	Channel           *baldatelegram.Adapter       `optional:"true"`
+	CommandIngress    commandcmd.Ingress           `optional:"true"`
 	Logger            zerolog.Logger
 }
 
@@ -120,6 +173,7 @@ func newTelegramCommandHandler(params telegramCommandHandlerParams) *telegramCom
 	}
 	return &telegramCommandHandler{
 		ownerStore:        params.OwnerStore,
+		telegramProfiles:  params.TelegramProfiles,
 		collaboratorStore: params.CollaboratorStore,
 		channel:           ch,
 		commandIngress:    params.CommandIngress,
@@ -143,10 +197,18 @@ func (h *telegramCommandHandler) onCommand(ctx context.Context, event *events.Co
 	if commandCtx.Command == commandStart {
 		return nil
 	}
+	if authpayload.Contains(commandCtx.Args) {
+		return nil
+	}
 	if h.commandIngress == nil {
 		return nil
 	}
 	allowed := h.canUseSessionCommand(ctx, commandCtx.UserID)
+	if allowed {
+		if err := h.telegramProfiles.Refresh(ctx, commandCtx.UserID, commandCtx.Username, commandCtx.FirstName); err != nil {
+			h.logger.Warn().Err(err).Int64("user_id", commandCtx.UserID).Msg("failed to refresh telegram binding profile")
+		}
+	}
 	isOwner := h.ownerStore != nil && h.ownerStore.IsOwner(commandCtx.UserID)
 	return h.commandIngress.PublishCommand(ctx, commandcmd.Request{
 		InvocationID: fmt.Sprintf("telegram:command:%d:%d", commandCtx.ChatID, commandCtx.MessageID),

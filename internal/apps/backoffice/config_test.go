@@ -1,6 +1,7 @@
 package backoffice
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -13,6 +14,10 @@ func TestResolveServerConfig(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "defaults", input: ServerConfig{}},
+		{name: "bounded MFA lifetimes", input: ServerConfig{CeremonyTTL: "15m", StepUpTTL: "1h"}},
+		{name: "unbounded ceremony", input: ServerConfig{CeremonyTTL: "16m"}, wantErr: true},
+		{name: "unbounded step-up", input: ServerConfig{StepUpTTL: "2h"}, wantErr: true},
+		{name: "negative ceremony", input: ServerConfig{CeremonyTTL: "-1m"}, wantErr: true},
 		{name: "https non-loopback", input: ServerConfig{ListenAddr: "0.0.0.0:8095", PublicURL: "https://admin.example.com", AccessTokenTTL: "10m", RefreshTokenTTL: "8h"}},
 		{name: "canonical base path", input: ServerConfig{ListenAddr: "0.0.0.0:8095", PublicURL: "https://admin.example.com", BasePath: "/balda"}},
 		{name: "trailing slash base path", input: ServerConfig{BasePath: "/balda/"}, wantErr: true},
@@ -48,7 +53,8 @@ func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
 			Enabled: true, ListenAddr: "127.0.0.1:8091", EventsPath: "/slack/events",
 			Agent: SlackAgentConfig{Enabled: true, ListenAddr: "127.0.0.1:8092", EventsPath: "/slack/agent/events", EnableStreaming: true},
 		},
-		Webhooks: WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", RouteCount: 1},
+		Webhooks:   WebhooksConfig{Enabled: true, ListenAddr: "127.0.0.1:8093", RouteCount: 1},
+		Mattermost: MattermostConfig{Enabled: true, CommandsEnabled: true, ListenAddr: "127.0.0.1:8094", CommandsPath: "/mattermost/commands"},
 	}
 	projection := ProjectConfiguredCapabilities(cfg)
 	if len(projection) != 4 {
@@ -66,6 +72,9 @@ func TestProjectConfiguredCapabilitiesOmitsDisabled(t *testing.T) {
 	if len(cards) != len(projection) || cards[0].ID != projection[0].ID {
 		t.Fatalf("capability cards = %+v", cards)
 	}
+	if got := configuredBindingChannels(cfg); !slices.Equal(got, []string{"telegram", "slackagent", "mattermost"}) {
+		t.Fatalf("configured binding channels = %v", got)
+	}
 }
 
 func TestDefaultResolvedTTLs(t *testing.T) {
@@ -74,7 +83,7 @@ func TestDefaultResolvedTTLs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.AccessTokenTTL != 15*time.Minute || resolved.RefreshTokenTTL != 12*time.Hour {
+	if resolved.AccessTokenTTL != 15*time.Minute || resolved.RefreshTokenTTL != 12*time.Hour || resolved.CeremonyTTL != 5*time.Minute || resolved.StepUpTTL != 15*time.Minute {
 		t.Fatalf("default TTLs = %s/%s", resolved.AccessTokenTTL, resolved.RefreshTokenTTL)
 	}
 }

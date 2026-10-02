@@ -2,6 +2,7 @@
 package redaction
 
 import (
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"regexp"
 	"strings"
 )
@@ -29,5 +30,6 @@ func Secrets(raw string) string {
 	text = telegramBotToken.ReplaceAllString(text, "${1}[REDACTED_TOKEN]")
 	text = telegramToken.ReplaceAllString(text, "[REDACTED_TOKEN]")
 	text = slackToken.ReplaceAllString(text, "[REDACTED_TOKEN]")
+	text = authpayload.Redact(text)
 	return text
 }

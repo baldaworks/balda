@@ -11,7 +11,6 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/backoffice/internal/webui"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
-	"github.com/baldaworks/balda/internal/apps/balda/usermigration"
 )
 
 const (
@@ -24,15 +23,17 @@ const (
 
 // Runtime composes Backoffice operations over the selected Balda database only.
 type Runtime struct {
-	config    ResolvedConfig
-	provider  state.Provider
-	state     *StateService
-	bootstrap *BootstrapService
-	owned     bool
-	mu        sync.Mutex
-	server    *http.Server
-	done      chan struct{}
-	serveErr  error
+	config          ResolvedConfig
+	provider        state.Provider
+	state           *StateService
+	bootstrap       *BootstrapService
+	owned           bool
+	mu              sync.Mutex
+	server          *http.Server
+	done            chan struct{}
+	serveErr        error
+	invitations     BindingInvitations
+	bindingChannels BindingChannels
 }
 
 // NewRuntime constructs Backoffice over a provider owned by its host.
@@ -43,7 +44,7 @@ func NewRuntime(config ResolvedConfig, provider state.Provider) (*Runtime, error
 	if provider == nil {
 		return nil, fmt.Errorf("backoffice state provider is required")
 	}
-	stateService, err := NewStateService(provider.AppKV(), provider.Collaborators(), provider.Users())
+	stateService, err := NewStateService(provider.Users())
 	if err != nil {
 		return nil, err
 	}
@@ -77,22 +78,23 @@ func (r *Runtime) Close() error {
 	return r.provider.Close()
 }
 
-// ValidateReady checks migration and administrator bootstrap state.
+// ValidateReady checks canonical administrator bootstrap state.
 func (r *Runtime) ValidateReady(ctx context.Context) error {
 	return r.state.ValidateReady(ctx)
 }
 
-// MigrateUsers runs the explicit forward-only legacy migration.
-func (r *Runtime) MigrateUsers(ctx context.Context, outputPath, primarySubject string) (usermigration.Result, error) {
-	return r.state.MigrateUsers(ctx, outputPath, primarySubject)
+// BootstrapAdmin establishes credentials after provider migrations have completed.
+func (r *Runtime) BootstrapAdmin(ctx context.Context, input BootstrapInput) (BootstrapResult, error) {
+	return r.bootstrap.Bootstrap(ctx, input)
 }
 
-// BootstrapAdmin establishes credentials only after legacy migration requirements are satisfied.
-func (r *Runtime) BootstrapAdmin(ctx context.Context, input BootstrapInput) (BootstrapResult, error) {
-	if err := r.state.RequireMigrationComplete(ctx); err != nil {
-		return BootstrapResult{}, err
+// Recover2FA performs confirmed offline recovery without starting HTTP or ingress.
+func (r *Runtime) Recover2FA(ctx context.Context, input RecoveryInput) (RecoveryResult, error) {
+	service, err := NewRecoveryService(r.provider.Users())
+	if err != nil {
+		return RecoveryResult{}, err
 	}
-	return r.bootstrap.Bootstrap(ctx, input)
+	return service.Recover(ctx, input)
 }
 
 // Start validates readiness and binds HTTP before returning to the host.
@@ -109,6 +111,8 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP application: %w", err)
 	}
+	httpApplication.invitations = r.invitations
+	httpApplication.bindingChannels = r.bindingChannels
 	handler, err := httpApplication.handler()
 	if err != nil {
 		return fmt.Errorf("construct Backoffice HTTP routes: %w", err)
@@ -184,4 +188,16 @@ func healthHandler() http.Handler {
 		_, _ = writer.Write([]byte("ok\n"))
 	})
 	return mux
+}
+
+// ConfigureBindingInvitations wires host-owned services before the HTTP listener starts.
+func (r *Runtime) ConfigureBindingInvitations(invitations BindingInvitations, channels BindingChannels) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.server != nil || invitations == nil || channels == nil {
+		return fmt.Errorf("binding services must be configured before Backoffice start")
+	}
+	r.invitations = invitations
+	r.bindingChannels = channels
+	return nil
 }

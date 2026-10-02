@@ -8,7 +8,8 @@ Backoffice. Read it before changing `cmd/balda` or
 
 - `cmd/balda` is the sole executable entrypoint. Its `start` command owns the
   production process lifecycle; `backoffice bootstrap-admin` and
-  `backoffice migrate-users` are offline maintenance subcommands.
+  `backoffice recover-2fa` are offline
+  administrator maintenance subcommands.
   `backoffice qa serve` is a local preview command without application state.
 - `internal/apps/balda` composes one state provider for bot and Backoffice.
 - `internal/apps/backoffice` owns Backoffice application behavior, including
@@ -23,9 +24,10 @@ Backoffice. Read it before changing `cmd/balda` or
 
 `balda start` reads `.config/balda/config.yaml` once, applies `BALDA_*`
 overrides, opens the database selected by `balda.database`, and applies its
-embedded schema migrations. Backoffice uses that same provider and canonical
-user store; it does not select a second database or run separate migrations.
-The lifecycle checks legacy-user conversion and administrator bootstrap before
+embedded Goose schema and data migrations. Backoffice uses that same provider
+and canonical user store; it does not select a second database or run separate migrations.
+Provider opening automatically converts legacy owner/collaborator data.
+The lifecycle checks canonical administrator bootstrap before
 MCP or ingress, then binds Backoffice HTTP before enabling inbound transports.
 A failed prerequisite or listener bind aborts startup. Shutdown closes ingress
 before HTTP and the shared provider.
@@ -34,10 +36,6 @@ Commands:
 
 - `balda validate` checks configuration and the application graph without
   opening or migrating the database. It is not a user-readiness check.
-- `balda backoffice migrate-users --credentials-output <path>` performs the explicit
-  forward-only owner/collaborator migration. The output file is created once
-  with mode `0600`; it contains temporary plaintext credentials and must be
-  distributed and deleted as sensitive material.
 - `balda init` creates the first administrator and prints its generated password
   once, alongside the owner token. Its username is `superuser`.
 - `balda backoffice bootstrap-admin` generates and prints a password once by
@@ -46,8 +44,9 @@ Commands:
   configures the selected credential-disabled administrator. Replacing a
   usable credential requires `--reset` and revokes all existing browser
   session families.
-- `balda start` refuses pending legacy conversion or incomplete administrator
-  bootstrap before binding any listener or ingress.
+- `balda start` applies schema and data migrations, then refuses incomplete
+  administrator bootstrap before binding any listener or ingress. Migration
+  failures also abort startup.
 
 The safe defaults are loopback `127.0.0.1:8095`, public URL
 `http://127.0.0.1:8095`, a 15-minute opaque access-token lifetime, and a
@@ -96,8 +95,8 @@ go build -trimpath -o ./bin/balda ./cmd/balda
 ./bin/balda validate
 ```
 
-For a fresh database, `init` creates the `superuser` administrator and prints its password
-once. Store the output securely, then start:
+For a fresh database, `init` creates the administrator with username and display
+name `superuser` and prints its password once. Store the output securely, then start:
 
 ```bash
 ./bin/balda start
@@ -111,51 +110,67 @@ usable credential requires an explicit `--reset`; it invalidates every browser
 session family for that user.
 
 For an existing installation with legacy owner/collaborator records, stop
-Balda, take a consistent database backup, deploy the new binary, and run the
-forward user conversion before start. The converted primary has a temporary
-credential and username `superuser`, so `--reset` sets its intended password and revokes any prior
-browser refresh families. Skip conversion and reset when canonical users and
-an active administrator are already ready:
+Balda, take a consistent database backup, and deploy the new binary. Opening
+the selected state provider automatically runs the forward-only Goose data
+migration for SQLite or PostgreSQL. The migration preserves users, roles,
+bot bindings, and profiles without generating passwords or credential files.
+
+Newly converted users have active bot access and disabled browser credentials.
+The primary administrator has username and display name `superuser`.
+Set its first browser password through the separate bootstrap operation:
 
 ```bash
-./bin/balda backoffice migrate-users \
-  --credentials-output /run/secrets/balda-migrated-users.txt
-./bin/balda backoffice bootstrap-admin --reset
+./bin/balda backoffice bootstrap-admin
 ./bin/balda start
 ```
 
-The credentials path must not exist beforehand. Backoffice creates it
-exclusively with mode `0600`, writes each generated temporary credential once,
-and never prints migration passwords to stdout. The reset command prints the
-new primary administrator password once. Distribute manifest entries out of band to their
-intended users, verify delivery, and then securely remove the manifest under
-your organization's secret-retention policy. Never commit, upload, back up, or
-attach the manifest to a ticket. Migrated bot bindings and roles become
-canonical immediately; a temporary browser credential can reach only password
-replacement and logout until it is changed.
+The bootstrap command opens the provider, so conversion completes before it
+sets and prints the administrator password once. No `--reset` is needed for
+an administrator whose browser credential is disabled. Other converted users
+can receive browser credentials through the administrator's Access credential
+reset flow.
 
-User conversion is transactional and idempotent. A collision or interrupted
-precondition fails instead of silently merging users. After it succeeds there
-is no legacy runtime fallback. Rollback means restoring the pre-migration
+On an already-converted database, the data migration leaves canonical users,
+credentials, and browser sessions unchanged. Start directly when the primary
+administrator is ready. Replacing an existing usable password requires
+`bootstrap-admin --reset`, which revokes that user's browser refresh families.
+
+Legacy conversion copies a Telegram collaborator's stored username and first
+name into separate optional binding fields. Legacy owner records contain neither
+field, so conversion leaves both empty. After a verified Telegram message or
+command from a bound principal, Balda refreshes those fields from Telegram.
+The schema upgrade backfills already-converted Telegram collaborator bindings
+from retained legacy collaborator rows. If those rows are unavailable, the
+fields stay empty until a verified event arrives.
+The numeric Telegram principal remains the authorization key; provider profile
+fields never replace the Backoffice username or display name.
+
+User conversion and its Goose version marker commit in one transaction.
+Repeated provider opening creates no duplicates. Invalid source records or
+unmarked legacy records mixed with canonical users fail instead of silently
+merging users; a failure rolls back conversion and does not advance its version.
+After it succeeds there is no legacy runtime fallback. Rollback means restoring the pre-migration
 database backup with the old binaries stopped; do not roll back only the binary
 or re-enable legacy reads.
 
 ## Browser sessions and refresh rotation
 
 Successful login creates a short-lived opaque access token and a longer-lived
-refresh family. When access expires, Backoffice renders a continuation page;
-the user submits its native POST form to rotate the single-use refresh token.
-The server consumes generation N, creates generation N+1, replaces both
-cookies, and preserves the family's original absolute expiry. The browser does
-not silently replay the request that encountered expiry, especially an unsafe
-mutation.
+refresh family. When access expires, the browser submits a guarded refresh form
+automatically and returns to the page the user was opening. A manual form
+remains available when JavaScript is disabled. The server consumes generation
+N, creates generation N+1, replaces both cookies, and preserves the family's
+original absolute expiry. If the host clock moves backward, rotation timestamps
+never precede the stored last activity or token issuance time; this does not
+extend the absolute refresh deadline. The browser does not replay the request that
+encountered expiry, especially an unsafe mutation.
 
-Submitting an already consumed refresh token is treated as verified replay.
-Backoffice revokes the whole family and requires a new username/password login.
-A genuine duplicate submit can therefore sign the user out; this is the
-intentional fail-closed tradeoff. Invalid, expired, credential-stale, disabled,
-or administratively revoked families also require re-login and receive only a
-generic browser error.
+A duplicate refresh within 30 seconds of rotation receives a conflict without
+clearing cookies or revoking the family; another browser request may already
+have installed the new pair. Reuse of an older consumed token is treated as
+verified replay: Backoffice revokes the family and requires a new login.
+Invalid, expired, credential-stale, disabled, or administratively revoked
+families also require re-login.
 
 Access administrators can revoke another browser family. Account owners can
 revoke their own families, but revoking the current one requires explicit
@@ -164,29 +179,80 @@ refresh generation in that lineage. Password reset, password replacement, and
 user disablement revoke all affected families rather than leaving a refresh
 credential that could restore access.
 
+Account and Access detail list active browser families only. When viewing your
+own sessions, the current family appears first; other active families are in
+descending order of their last recorded sign-in or refresh. The
+**Older active sessions** link continues
+through further active families; historical revoked and expired rows remain in
+storage for authorized investigation but do not crowd the default list.
+**Last sign-in or refresh** is not a record of every page visit. The session
+card shows a short browser/platform label when the request User-Agent can be
+recognized; old or unrecognized sessions show an unknown device. The
+**Connection peer** is the direct socket address and may be a reverse proxy.
+Forwarded IP headers are ignored because Backoffice has no configured trusted
+proxy chain. Neither field is used to authorize or identify a user, and the
+raw User-Agent and token values are never displayed.
+
 ## Operations, recovery, and QA
 
 - Run `balda validate` for read-only configuration/graph checks. `balda start`
   is the authoritative user-readiness gate and refuses to expose listeners
-  until conversion and bootstrap are complete.
+  until provider migrations and administrator bootstrap are complete.
 - Back up and restore the selected database as documented in
   [Balda state database](database.md). SQLite may be shared only by one Balda
   process; stop it for file backup or restore. PostgreSQL backups must include
   schema, data, sequences, and Goose
   migration history.
 - Access is administrator-only. Account and Overview are available to active
-  administrators and operators; Audit is administrator-only. The optional
-  transport binding is read-only, and committed role/status changes immediately
-  affect bot authorization.
+  administrators and operators; Audit is administrator-only. Account places
+  **Change password** before profile details. A successful change creates a
+  fresh browser session and revokes previous access and refresh credentials.
+  Each configured Telegram, Slack Agent (`slackagent`), Zulip, or Mattermost
+  integration has its own account-binding panel. An administrator generates a
+  single-use `bind_<token>` invitation for the selected existing user. The bot's
+  verified instance and sender identity determine attachment; browser input
+  cannot choose the principal or instance. User role and primary designation
+  stay unchanged. No owner token is required. Invitations expire after 24 hours;
+  issuing over a pending invitation requires explicit replacement confirmation.
+  Cancel requires confirmation and leaves confirmed bindings intact. Disabled
+  users cannot receive invitations, and disabling revokes pending invitations.
+  Unavailable bot identity offers Retry connection instead of issuance. Telegram
+  provides a start deep link and command, Slack a verified workspace DM and native
+  command, Zulip a realm bot DM and start command, and Mattermost a `/msg @bot`
+  DM action with a slash command only when its receiver is enabled. Mattermost
+  uses the existing Direct and locator contract, including D and G channels.
+  Refresh bindings shows confirmed principals and pending/expired metadata only.
+  The invitation value is shown once in the issuance POST response, never in
+  Backoffice navigation, session storage, server logs, or persisted state.
+  The explicit Telegram bot deep link carries the payload as its intended
+  provider action; it is never used as a Backoffice redirect or history URL. Only its
+  digest is stored. Generic webhooks are not user bindings. Removing a confirmed
+  binding requires confirmation of the affected principal's bot access. Other
+  bindings, the browser account, and browser sessions remain.
+  Committed role/status changes immediately affect bot authorization for every
+  attached principal. Telegram bindings show the provider username and first
+  name separately, with empty values when the provider has not supplied them.
+- Access opens with the user list and filters for name, username, role, and
+  status. User detail separates profile, chat bindings, credential reset, and
+  browser sessions. Audit lists newest events first by event time, then stable
+  ID, with actor, action, target, outcome, and filters that persist on the next
+  page. Technical IDs remain available in event details. Overview lists
+  configured integrations only; a configured card makes no claim about live
+  connectivity or health.
+- A terminal refresh failure offers sign-in as the primary action. A
+  concurrent-refresh conflict offers a safe page reopen because another
+  request may already have installed new cookies. Failed native and HTMX forms
+  retain their HTTP status and show an actionable message. Ordinary links and
+  forms remain available without JavaScript.
 - Keep `qa_ui: false` in production. A private development instance may enable
   the same synthetic previews under `/qa/ui/`, but the preferred local workflow
   uses `balda backoffice qa serve` without configuration or database access.
   QA routes accept GET/HEAD only and send `no-store` and `noindex` headers.
   Follow the [Backoffice UI review runbook](backoffice-ui-review.md) for routes,
   browser checks, and the separate authenticated runtime check.
-- Username/password is the only browser authentication provider in this
-  release. OIDC, WebAuthn/passkeys, and MFA are intentionally deferred; no
-  placeholder configuration or browser flow exists for them.
+- Username/password remains the browser sign-in provider. Administrators can
+  optionally enable a WebAuthn passkey as their second factor in Account; it is
+  off by default for each user. OIDC remains deferred.
 
 ## Web UI foundation
 
@@ -212,6 +278,22 @@ The pinned stack is:
 | Bootstrap Icons | 1.13.1 | Local icons |
 | Vanilla JavaScript | Built in | HTMX lifecycle, focus, and sidebar behavior only |
 
+The shell adapts the AlaTooGuide Backoffice layout: a sticky utility top bar with the
+current authenticated username, Account and native CSRF-protected sign-out;
+a branded permission-derived sidebar; a shared content frame; and a footer
+in normal grid flow. The top bar and sidebar brand share the same height;
+navigation scrolls content below the top bar so page headings remain visible.
+The viewer identity is independent of an inspected user.
+Desktop collapse hides the sidebar and expands content. Mobile navigation uses
+an overlay with backdrop, Escape and focus containment; ordinary menu links
+remain available without JavaScript.
+
+The theme is explicitly dark on console, authentication and recovery pages.
+`data-lte-color-mode="off"` disables OS-driven mutation. Shared CSS tokens and
+primitives own surfaces, headings, controls, statuses, cards, tables, empty and
+danger states. Review the synthetic component and full-layout examples before
+changing runtime page layouts; see the UI review runbook.
+
 Go templates are the only source of HTML. JavaScript must not assemble HTML.
 Every screen must work without JavaScript through ordinary links and forms.
 Every HTMX interaction must preserve an ordinary link or form as its fallback.
@@ -227,6 +309,9 @@ fonts. Node/npm as a frontend build or runtime dependency, an SPA router, a
 separate frontend development server, and CDN-hosted runtime assets are
 prohibited. The local QA preview is served by the same Go binary and uses the
 same embedded templates and assets.
+Application CSS and JavaScript use content-versioned asset URLs so a browser or
+edge cache receives the matching files after a deployment. Static asset responses
+use immutable caching; a change to either application file changes its URL.
 
 Every vendored frontend dependency must be pinned with its exact version,
 license, and SHA-256 digest in
@@ -251,7 +336,8 @@ The fragment contains only:
 
 Every other request, including an HTMX history restoration request, receives a
 complete HTML document. Every rendered response contains exactly one
-`main-content` element.
+`main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 
 Use a buffered HTML writer. Do not commit response headers or status until the
 template has rendered successfully.
@@ -263,7 +349,18 @@ A successful mutation follows these response contracts:
 | Request | Response |
 | --- | --- |
 | Ordinary form submission | `303 See Other` with `Location` |
-| HTMX request | `204 No Content` with `HX-Location` |
+| HTMX request | `204 No Content` with JSON `HX-Location`: local `path`, `target: "#main-content"`, `swap: "outerHTML"` |
+
+Invitation issuance is the deliberate exception: return `200 OK` with the full
+page for native forms or `#main-content` for HTMX, and `Cache-Control: no-store`.
+Reveal the newly generated value in that response only; a redirect would need
+credential persistence. Protected GET of the issuance URL redirects to user
+detail without a secret. Reload, refresh, and history recovery expose only safe
+metadata. The shared `.app-main` is the explicit HTMX history element so
+complete history-recovery responses restore content without re-executing shell
+scripts; HTMX history caching is disabled on binding detail and secrets are
+cleared on pagehide. Native no-store POST history may require reopening the
+issuance URL as GET; it redirects to metadata-only user detail. Cancel and identity retry retain the ordinary contracts.
 
 Errors retain their original HTTP status. For an eligible HTMX fragment
 request, an error replaces only `#main-content`; it must not replace the shell
@@ -284,7 +381,8 @@ Add pages in this order:
 5. Render through a buffered HTML writer.
 6. Add the template to the explicit allowlist under
    `internal/apps/backoffice/internal/webui`.
-7. Render exactly one `main-content` element.
+7. Render exactly one `main-content` element. Links and forms targeting `#main-content` use
+`hx-swap="outerHTML"` because the response includes the main element itself.
 8. Do not assemble HTML with JavaScript.
 9. Preserve an ordinary link or form for every HTMX operation.
 10. Verify the full page, fragment, non-JavaScript fallback, canonical URL, and
@@ -304,3 +402,80 @@ For every page or interaction, verify:
 | HTMX mutation | `204` with `HX-Location` |
 | Validation or authorization error | Original error status and correct full-page or fragment shape |
 | Logout, CSV, or WebAuthn | Native non-boosted behavior |
+
+## Optional administrator passkey 2FA
+
+2FA is off by default, including after automatic upgrades. Each administrator
+can enable it in **Account → Two-factor authentication**; operators continue
+using password authentication. Bot bindings and admission are independent.
+One passkey is active at a time. Use a browser with JavaScript and WebAuthn support
+and an authenticator that supports user verification (PIN or biometric).
+Password-only accounts remain usable without JavaScript.
+
+Set `balda.backoffice.public_url` to the exact HTTPS origin, for example
+`https://lab.example.org`, or `http://localhost:8095` for local development.
+`base_path: /balda` remains a separate setting. The RP ID is the origin's hostname;
+only that exact origin is accepted. IP origins, including the existing default
+`http://127.0.0.1:8095`, cannot enroll keys. The default still starts and supports
+password sign-in, and Account explains the unavailable enrollment capability.
+Changing the hostname changes the RP: recover and register a new key rather than
+expecting the old key to work. An enrolled administrator never falls back to
+password-only access when verification is unavailable.
+
+```yaml
+balda:
+  backoffice:
+    public_url: https://lab.example.org
+    base_path: /balda
+    ceremony_ttl: 5m
+    step_up_ttl: 15m
+```
+
+`ceremony_ttl` must be positive and at most 15 minutes; `step_up_ttl` must be
+positive and at most one hour. Environment overrides are
+`BALDA_BACKOFFICE_CEREMONY_TTL` and
+`BALDA_BACKOFFICE_STEP_UP_TTL`. Ceremony state is one-use, expiring and
+bound to its browser, CSRF token, purpose, user and current authority.
+
+- **Enable:** confirm the current password, then register and verify a passkey.
+  The setting becomes enabled only after successful completion. Old browser
+  sessions are revoked and the current browser receives verified access.
+- **Sign in:** submit the password, then verify the passkey. Until verification
+  finishes, the browser has no usable access or refresh credentials. Temporary
+  passwords still require password replacement after both factors succeed.
+- **Sensitive actions:** Access, Audit and privileged mutations require recent
+  passkey verification. Use the explicit confirmation screen after it expires.
+  A rejected mutation returns 403 and is not applied or automatically replayed;
+  return and submit it again after confirmation. Step-up keeps the refresh
+  lineage and original absolute session deadline. Refresh does not extend
+  passkey verification freshness.
+- **Replace:** explicitly confirm replacement, verify the current key, then
+  register the new key. Only successful completion replaces the key and revokes
+  old sessions. **Disable:** explicitly confirm removal, provide the current
+  password and verify the current key. Successful removal returns to password
+  authentication and revokes old sessions.
+- **Cancel or retry:** cancelling the authenticator or leaving the ceremony
+  keeps the factor setting unchanged. Retry while the ceremony is live, or
+  cancel and start again. Unsupported/no-JavaScript browsers show guidance;
+  they cannot bypass an enrolled factor. Authentication pages and ceremonies
+  are native, non-boosted and excluded from HTMX history; responses use no-store.
+
+Password change, Access password reset and `bootstrap-admin --reset` preserve
+an enrolled passkey. Losing the key requires an explicitly confirmed operation
+by an administrator with host/database access, using the normal configuration:
+
+```bash
+balda backoffice recover-2fa --username superuser --confirm
+```
+
+Use the exact normalized username of an existing active enrolled administrator.
+Unknown, disabled, operator, already-off and unconfirmed targets fail. This
+maintenance operation opens and upgrades the selected database without starting
+HTTP, MCP or channels. It atomically disables the factor, advances authority,
+revokes browser sessions and writes an audit event. It leaves the password hash
+and bot bindings intact and prints no password or session credential. Sign in
+with the existing password and register a replacement key from Account.
+
+Factor transitions and verification appear in Audit. The verifier dependency
+and source reuse are documented in the
+[WebAuthn dependency review](backoffice-webauthn-dependency-review.md).

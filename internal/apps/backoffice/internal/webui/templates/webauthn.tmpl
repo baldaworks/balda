@@ -1,0 +1,8 @@
+{{define "content"}}<main id="main-content" class="login-page" tabindex="-1" hx-history="false"><section class="login-box"><div class="card"><header class="card-header"><h1 class="h3">{{.Title}}</h1></header><div class="card-body">
+<p>Use your passkey and confirm your identity on the authenticator. {{if .Ceremony.Registration}}Your second factor changes only after successful registration.{{end}}</p>
+<noscript><p role="alert">Passkeys require JavaScript and a supported browser. Enable JavaScript to continue. Cancelling leaves your current second-factor setting unchanged.</p></noscript>
+{{with .Ceremony}}<form method="post" action="{{path .FinishPath}}" hx-boost="false" hx-history="false" data-webauthn data-registration="{{.Registration}}" data-options="{{.OptionsJSON}}">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="transaction" value="{{.Transaction}}"><input type="hidden" name="credential" value=""><input type="hidden" name="return_to" value="{{$.ReturnTo}}">{{if .Confirm}}<input type="hidden" name="confirm" value="on">{{end}}
+<p data-webauthn-status role="status" aria-live="polite">Select Continue to open your authenticator.</p><button type="submit" class="btn btn-primary" data-webauthn-button disabled>Continue with passkey</button> <a class="btn btn-outline-secondary" href="{{path .CancelPath}}" hx-boost="false">Cancel</a></form>{{end}}
+<p class="small mt-3">Lost your key? Ask the host administrator for offline 2FA recovery. Resetting your password keeps your passkey enabled.</p>
+</div></div></section></main>{{end}}

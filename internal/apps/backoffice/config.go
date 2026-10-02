@@ -31,6 +31,8 @@ type ServerConfig struct {
 	BasePath        string `mapstructure:"base_path"`
 	AccessTokenTTL  string `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL string `mapstructure:"refresh_token_ttl"`
+	CeremonyTTL     string `mapstructure:"ceremony_ttl"`
+	StepUpTTL       string `mapstructure:"step_up_ttl"`
 	QAUI            bool   `mapstructure:"qa_ui"`
 }
 
@@ -41,6 +43,8 @@ type ResolvedServerConfig struct {
 	BasePath        string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
+	CeremonyTTL     time.Duration
+	StepUpTTL       time.Duration
 	SecureCookies   bool
 	QAUI            bool
 }
@@ -91,7 +95,22 @@ func (c ServerConfig) Resolve() (ResolvedServerConfig, error) {
 	if refreshTTL <= accessTTL || refreshTTL > maximumRefreshTokenTTL {
 		return ResolvedServerConfig{}, fmt.Errorf("balda.backoffice.refresh_token_ttl must exceed access_token_ttl and be at most %s", maximumRefreshTokenTTL)
 	}
+	ceremonyTTL, err := resolveDuration(c.CeremonyTTL, 5*time.Minute, "ceremony_ttl")
+	if err != nil {
+		return ResolvedServerConfig{}, err
+	}
+	if ceremonyTTL > 15*time.Minute {
+		return ResolvedServerConfig{}, fmt.Errorf("balda.backoffice.ceremony_ttl must be at most 15m")
+	}
+	stepUpTTL, err := resolveDuration(c.StepUpTTL, 15*time.Minute, "step_up_ttl")
+	if err != nil {
+		return ResolvedServerConfig{}, err
+	}
+	if stepUpTTL > time.Hour {
+		return ResolvedServerConfig{}, fmt.Errorf("balda.backoffice.step_up_ttl must be at most 1h")
+	}
 	return ResolvedServerConfig{
+		CeremonyTTL: ceremonyTTL, StepUpTTL: stepUpTTL,
 		ListenAddr: listenAddr, PublicURL: strings.TrimSuffix(publicURL, "/"), BasePath: basePath,
 		AccessTokenTTL: accessTTL, RefreshTokenTTL: refreshTTL,
 		SecureCookies: parsedURL.Scheme == httpsScheme, QAUI: c.QAUI,
@@ -120,10 +139,20 @@ func resolveDuration(raw string, fallback time.Duration, field string) (time.Dur
 
 // BaldaConfig is the allowlisted configuration subset consumed by Backoffice.
 type BaldaConfig struct {
-	Telegram TelegramConfig `mapstructure:"telegram"`
-	Zulip    ZulipConfig    `mapstructure:"zulip"`
-	Slack    SlackConfig    `mapstructure:"slack"`
-	Webhooks WebhooksConfig `mapstructure:"webhooks"`
+	Telegram   TelegramConfig   `mapstructure:"telegram"`
+	Zulip      ZulipConfig      `mapstructure:"zulip"`
+	Slack      SlackConfig      `mapstructure:"slack"`
+	Webhooks   WebhooksConfig   `mapstructure:"webhooks"`
+	Mattermost MattermostConfig `mapstructure:"mattermost"`
+}
+
+// MattermostConfig contains only non-secret integration capability information.
+type MattermostConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	ServerURL       string `mapstructure:"server_url"`
+	CommandsEnabled bool   `mapstructure:"commands_enabled"`
+	ListenAddr      string `mapstructure:"listen_addr"`
+	CommandsPath    string `mapstructure:"commands_path"`
 }
 
 // TelegramConfig contains only non-secret capability information.

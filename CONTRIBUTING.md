@@ -52,7 +52,20 @@ go tool goose -s -dir internal/apps/balda/state/postgres_migrations create <name
 ```
 
 Use the SQLite or PostgreSQL command for the backend being changed. Fill in
-the generated `Up` section, then validate both embedded migration directories:
+the generated `Up` section. Choose a version above both SQL files and registered
+Go migrations for that backend; the CLI's sequential allocator sees only files
+in the selected directory. SQLite Go registrations are in
+`state/00020_runtime_session_tables.go`; PostgreSQL Go registrations are local
+to the provider in `state/postgres_migrations.go`. Keep PostgreSQL's global
+registry disabled so SQLite callbacks cannot enter its history.
+
+Use a transactional Go migration for a data upgrade that needs Go normalization.
+Read and write through the callback's `*sql.Tx`, including data-conversion
+markers; the Goose version marker commits in the same transaction. Schema and
+data conversion belong to `internal/apps/balda/state`. Credential bootstrap
+belongs to Backoffice and runs separately from database upgrades.
+
+Validate both embedded SQL migration directories:
 
 ```bash
 go tool goose -dir internal/apps/balda/state/migrations validate

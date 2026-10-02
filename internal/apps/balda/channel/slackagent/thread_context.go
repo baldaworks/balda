@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 )
 
 const (
@@ -160,6 +162,9 @@ func (c *Client) ReadThreadBefore(ctx context.Context, channelID, rootTS, before
 				snapshot.Truncated = true
 				break
 			}
+			if authpayload.Contains(message.Text) {
+				continue
+			}
 			text := strings.TrimSpace(message.Text)
 			files := normalizeRawFiles(message.Files)
 			ts := strings.TrimSpace(message.TS)
@@ -252,7 +257,12 @@ func UnavailableThreadSnapshot(request ThreadContextRequest, reason string) Thre
 }
 
 func selectContextMessages(snapshot ThreadSnapshot) ([]ThreadMessage, bool) {
-	messages := append([]ThreadMessage(nil), snapshot.Messages...)
+	messages := make([]ThreadMessage, 0, len(snapshot.Messages))
+	for _, message := range snapshot.Messages {
+		if !authpayload.Contains(message.Text) {
+			messages = append(messages, message)
+		}
+	}
 	sort.SliceStable(messages, func(i, j int) bool { return compareSlackTS(messages[i].TS, messages[j].TS) < 0 })
 	rootIndex := -1
 	for i := range messages {

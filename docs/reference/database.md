@@ -73,11 +73,19 @@ other local resources. `state_dir` is still needed for NATS and local artifacts.
 
 `start`, `init`, `preflight`, `doctor`, Backoffice maintenance, and plugin
 commands use the same selected backend whenever they access state. Opening it
-applies embedded forward schema migrations. `balda validate` is different: it
-checks configuration and graph construction without opening, creating, or
+applies embedded forward Goose schema and data migrations. `balda validate` is
+different: it checks configuration and graph construction without opening, creating, or
 migrating the database. `preflight` and `doctor` can still open and mutate state;
 they are not read-only checks. Connection or migration failure prevents
 startup. No fallback to SQLite, hot switching, or schema down command exists.
+
+User conversion is part of those migrations on both backends: owner/collaborator
+records become canonical users and bindings in the same transaction as the
+Goose version marker. A fresh database needs no conversion; a completed
+conversion preserves existing credentials and browser sessions. Invalid or
+conflicting source data aborts the upgrade without a partial conversion.
+Newly converted users have disabled browser credentials; administrator password
+bootstrap is a separate operation documented in [Backoffice](backoffice.md).
 
 `balda init` retains its refusal to overwrite an existing config. On a fresh
 installation it honors effective database environment settings; keep those
@@ -113,3 +121,24 @@ not cross-engine migration tooling, dual writes or failover.
 See [Contributing](../../CONTRIBUTING.md) for separate `integration,sqlite` and
 `integration,postgres` runs. PostgreSQL tests require an explicitly configured
 disposable database and fail rather than skip when it is absent.
+
+## Optional WebAuthn state and upgrades
+
+Embedded Goose migrations SQLite 46 and PostgreSQL 11 add per-user MFA profiles,
+public authenticator credentials and expiring one-use ceremonies, and extend
+browser families with factor identity and verification time. They run through
+the existing `state.Open` upgrade path; no separate user or MFA migration command
+is needed. Existing users default to 2FA off. Password hashes, bot bindings and
+valid pre-upgrade browser families are preserved. Private authenticator keys
+never enter the database; pending ceremony/browser/CSRF selectors are digested.
+
+Enable, replacement, disable and confirmed recovery advance user/credential/MFA
+authority, revoke old families and append audit in one transaction. Counter
+verification and family issuance/step-up are transactional as well. An audit or
+SQL failure rolls back the corresponding security mutation.
+
+These migrations are forward-only. Back up the database before upgrading.
+Do not run an older binary against enrolled MFA state: it would not enforce the
+new factor policy. A rollback needs a compatible binary or a validated backup
+and explicit recovery plan; schema downgrade is unsupported. See
+[Backoffice recovery](backoffice.md#optional-administrator-passkey-2fa).

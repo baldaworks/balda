@@ -50,6 +50,24 @@ password once. Save it securely, then start:
 balda start
 ```
 
+The primary administrator's display name is also `superuser`. In Backoffice,
+use **Account → Change password** to replace your own password. Administrators
+manage each user's chat bindings under **Access**: a user may have Telegram,
+Slack Agent (`slackagent`), Zulip, and Mattermost principals where those
+integrations are configured. Each channel has its own invitation panel: generate
+an invitation for the selected user and send it from their provider account.
+The value appears once; Refresh bindings shows status and confirmed identities.
+Use explicit Replace invitation or Cancel invitation for a pending value. Removing one binding revokes bot access for that principal without
+removing the user's other bindings or browser account.
+
+**Account** shows your active browser sessions with the current one first.
+Use **Older active sessions** to reach further sessions, or **End session**
+to revoke one; ending the current session requires confirmation. **Access**
+lets administrators find users and manage their sessions and bindings. **Audit**
+shows recent security events with filters. The **Overview** integration cards
+show configuration, not a live health check. See the
+[Backoffice reference](docs/reference/backoffice.md) for session and security details.
+
 `balda init` creates `.config/balda/config.yaml`, initializes
 `.config/balda/state.db` by default, detects available provider CLIs, and prints
 the next step for your selected chat provider.
@@ -58,37 +76,56 @@ SQLite is the default state database. To select PostgreSQL, configure
 `balda.database.type: postgres`; launch remains `balda start`.
 See [database configuration and operations](docs/reference/database.md).
 
-`balda start` applies embedded schema migrations to the selected database,
+`balda start` applies embedded schema and data migrations to the selected database,
 checks canonical users and administrator bootstrap, then starts the bot,
-Backoffice, and enabled integrations in one process. Before the first start,
-the administrator is already bootstrapped on a fresh database. For an existing installation,
-stop Balda, back up the database, and convert legacy owner/collaborator records
-with an exclusive credentials-output file. See the
+Backoffice, and enabled integrations in one process. On a fresh database,
+`balda init` has already bootstrapped the administrator. For an existing
+installation, stop Balda, back up the database, and deploy the new binary.
+Goose automatically converts owner/collaborator records when Balda opens the
+database, preserving their roles and bot bindings. See the
 [Backoffice startup and security contract](docs/reference/backoffice.md).
 
 ```bash
-# Existing installation with legacy users, while Balda is stopped and after a database backup:
-balda backoffice migrate-users --credentials-output /run/secrets/balda-migrated-users.txt
-balda backoffice bootstrap-admin --reset
+# Existing installation with owner/collaborator records, after stopping Balda and backing up:
+balda backoffice bootstrap-admin
 balda start
 ```
 
-The existing-install `--reset` step generates and prints a new password for the
-migrated primary user. It is needed when that user
-has a temporary credential; it revokes that user's browser refresh-token
-families. Never pass passwords or generated migration credentials as command
-arguments. Distribute the plaintext migration manifest out of band and
-securely remove it after verified delivery.
+Conversion does not generate passwords. The converted primary user is named
+`superuser`; `bootstrap-admin` generates and prints its first browser password
+once. Already-converted users retain their credentials and browser sessions.
+If the administrator already has a usable credential, start directly; replacing
+that password requires `bootstrap-admin --reset` and revokes its browser session
+families. Never pass passwords as command arguments.
+
+Administrator passkey 2FA is optional and off by default. Enable it in Account
+using the current password and a verified passkey at an HTTPS origin or localhost.
+Enrolled accounts require their passkey at sign-in and for sensitive actions;
+password resets preserve it. If a key is lost, an authorized host administrator
+can run `balda backoffice recover-2fa --username superuser --confirm`, which
+revokes browser sessions while retaining the password and bot bindings. See the
+[2FA and recovery contract](docs/reference/backoffice.md#optional-administrator-passkey-2fa).
 
 ## First run
 
-For Telegram, authenticate the owner with the command printed by `balda init`:
+For Telegram, sign in to Backoffice, select the existing user in Access and use
+its Telegram invitation link, or send the generated payload:
+
+```text
+/start bind_<opaque_token>
+```
+
+The exact payload also works as a direct message. It connects the verified sender
+to that selected user, preserving their role. Invitations expire after 24 hours
+and can be used once; refresh the user's bindings in Backoffice to confirm.
+
+The existing owner bootstrap command printed by `balda init` remains supported:
 
 ```text
 /start owner=<owner_token>
 ```
 
-Then send a normal direct message to the bot, or open an isolated topic:
+After connecting the account, send a normal direct message to the bot, or open an isolated topic:
 
 ```text
 /topic release
@@ -219,7 +256,11 @@ ENTRYPOINT ["balda"]
 Balda provides onboarding, session control, GoalKeeper, locator, usage, skill,
 user, and plugin commands. Telegram and Zulip use `/skill`, `/locator`, and
 `/reset`; Slack exposes the conversation-scoped forms `/balda skill`,
-`/balda locator`, and `/balda reset`.
+`/balda locator`, and `/balda reset`. For Backoffice account binding, Zulip accepts `/start bind_<token>` or the exact
+`bind_<token>` DM generated for its configured bot. In Slack, send the
+generated `bind_<token>` in the configured bot’s DM or use `/balda start bind_<token>`.
+Mattermost accepts the exact DM payload (including `/msg @<bot_username> bind_<token>`);
+`/balda start bind_<token>` is available when its slash receiver is enabled.
 
 Slack formats the response for scanning and copying:
 

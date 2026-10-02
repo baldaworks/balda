@@ -206,7 +206,9 @@ func (s *OwnerStore) OwnerSubjects() []string {
 		var subjects []string
 		for _, user := range all {
 			if hasCanonicalCapability(user, usercmd.BotCapabilityOwner) {
-				subjects = append(subjects, user.Binding.ChannelType+":"+user.Binding.Principal)
+				for _, binding := range canonicalBindings(user) {
+					subjects = append(subjects, binding.ChannelType+":"+binding.Principal)
+				}
 			}
 		}
 		sort.Strings(subjects)
@@ -348,11 +350,17 @@ func (s *OwnerStore) GetOwner() *Owner {
 		})
 		if len(owners) != 0 {
 			user := owners[0]
-			subject := user.Binding.ChannelType + ":" + user.Binding.Principal
-			owner := &Owner{Subject: subject, Bindings: []string{subject}, RegisteredAt: user.CreatedAt}
-			if user.Binding.ChannelType == ChannelTelegram {
-				owner.UserID, _ = strconv.ParseInt(user.Binding.Principal, 10, 64)
-				owner.ChatID = provenanceInt64(user.Binding.Provenance, "chat_id")
+			owner := &Owner{RegisteredAt: user.CreatedAt}
+			for _, binding := range canonicalBindings(user) {
+				subject := binding.ChannelType + ":" + binding.Principal
+				owner.Bindings = append(owner.Bindings, subject)
+				if owner.Subject == "" || binding.ChannelType == ChannelTelegram {
+					owner.Subject = subject
+				}
+				if binding.ChannelType == ChannelTelegram {
+					owner.UserID, _ = strconv.ParseInt(binding.Principal, 10, 64)
+					owner.ChatID = provenanceInt64(binding.Provenance, "chat_id")
+				}
 			}
 			return owner
 		}
@@ -373,6 +381,19 @@ func provenanceInt64(provenance, key string) int64 {
 		}
 	}
 	return 0
+}
+
+// IsPrimaryOwnerSubject identifies the canonical primary administrator's binding.
+func (s *OwnerStore) IsPrimaryOwnerSubject(ctx context.Context, subject string) (bool, error) {
+	if s.canonical == nil {
+		return s.IsOwnerSubject(subject), nil
+	}
+	channel, principal, err := canonicalSubject(subject)
+	if err != nil {
+		return false, err
+	}
+	user, found, err := s.canonical.GetUserByBinding(ctx, channel, principal)
+	return found && user.Primary && user.Status == usercmd.StatusActive && user.Role == usercmd.RoleAdministrator, err
 }
 
 // HasOwner returns true if an owner is registered.

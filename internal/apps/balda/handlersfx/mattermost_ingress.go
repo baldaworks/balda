@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"github.com/baldaworks/balda/internal/apps/balda/channel/mattermost"
 	"github.com/baldaworks/balda/internal/apps/balda/chatapp"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/baldaworks/go-actorlayer"
 	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
@@ -34,6 +36,8 @@ const (
 // It is the required mattermost.InboundProcessor dependency of the enabled
 // Mattermost transport.
 type mattermostInboundHandler struct {
+	bindings          bindingInvitationAdmitter
+	bindingChannels   bindingChannelRegistry
 	ownerStore        *auth.OwnerStore
 	collaboratorStore *auth.CollaboratorStore
 	actorDispatcher   actortransport.Dispatcher
@@ -46,8 +50,10 @@ type mattermostInboundHandler struct {
 type mattermostInboundHandlerParams struct {
 	fx.In
 
-	OwnerStore        *auth.OwnerStore        `optional:"true"`
-	CollaboratorStore *auth.CollaboratorStore `optional:"true"`
+	Bindings          bindingInvitationAdmitter `optional:"true"`
+	BindingChannels   bindingChannelRegistry    `optional:"true"`
+	OwnerStore        *auth.OwnerStore          `optional:"true"`
+	CollaboratorStore *auth.CollaboratorStore   `optional:"true"`
 	Dispatcher        actortransport.Dispatcher
 	Chat              chatapp.Handler
 	CommandIngress    commandcmd.Ingress
@@ -57,6 +63,7 @@ type mattermostInboundHandlerParams struct {
 // newMattermostInboundHandler builds the Mattermost inbound processor.
 func newMattermostInboundHandler(params mattermostInboundHandlerParams) mattermost.InboundProcessor {
 	return &mattermostInboundHandler{
+		bindings: params.Bindings, bindingChannels: params.BindingChannels,
 		ownerStore:        params.OwnerStore,
 		collaboratorStore: params.CollaboratorStore,
 		actorDispatcher:   params.Dispatcher,
@@ -70,6 +77,10 @@ func newMattermostInboundHandler(params mattermostInboundHandlerParams) mattermo
 func (h *mattermostInboundHandler) ProcessInbound(ctx context.Context, msg mattermost.InboundMessage) (turncmd.InboundSettlement, error) {
 	if h == nil {
 		return turncmd.InboundSettlement{}, fmt.Errorf("mattermost inbound handler is required")
+	}
+	if authpayload.Contains(msg.Text) {
+		err := h.consumeBinding(ctx, usercmd.BindingProof{Payload: msg.Text, Principal: msg.SenderID, DisplayName: msg.SenderName, ProviderUsername: msg.SenderName, Direct: msg.Direct, Locator: msg.Locator})
+		return turncmd.InboundSettlement{Outcome: turncmd.InboundTerminal}, err
 	}
 	nowFn := time.Now
 	if h.now != nil {
@@ -144,6 +155,21 @@ func (h *mattermostInboundHandler) HandleCommand(ctx context.Context, cmd matter
 	if h == nil {
 		return fmt.Errorf("mattermost inbound handler is required")
 	}
+	if authpayload.Contains(cmd.Args) {
+		if cmd.Command == commandStart {
+			return h.consumeBinding(ctx, usercmd.BindingProof{Payload: cmd.Args, Principal: cmd.SenderID, Direct: cmd.Direct, Locator: cmd.Locator})
+		}
+		return nil
+	}
+	if h.bindings != nil && cmd.Command == commandStart && strings.TrimSpace(cmd.Args) == "" {
+		allowed, err := h.authorizeMattermostUser(ctx, cmd.SenderID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return h.sendPlain(ctx, cmd.Locator, "Open Backoffice Access to generate an invitation for this Mattermost bot.")
+		}
+	}
 	if cmd.Command != commandStart {
 		allowed, err := h.authorizeMattermostUser(ctx, cmd.SenderID)
 		if err != nil {
@@ -193,6 +219,9 @@ func (h *mattermostInboundHandler) HandleCommand(ctx context.Context, cmd matter
 func (h *mattermostInboundHandler) HandleUnsupportedCommand(ctx context.Context, cmd mattermost.InboundCommand) error {
 	if h == nil {
 		return fmt.Errorf("mattermost inbound handler is required")
+	}
+	if authpayload.Contains(cmd.Command) || authpayload.Contains(cmd.Args) {
+		return nil
 	}
 	return h.sendPlain(ctx, cmd.Locator, fmt.Sprintf(mattermostUnknownCommand, cmd.Command))
 }

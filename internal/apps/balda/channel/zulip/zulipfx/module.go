@@ -14,6 +14,7 @@ import (
 
 var Module = fx.Module(
 	"balda_channel_zulip_fx",
+	fx.Invoke(registerBindingIdentity),
 	fx.Provide(
 		fx.Annotate(
 			func() sessionmemoryapp.ScopeClassifierContribution {

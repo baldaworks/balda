@@ -16,6 +16,12 @@ func TestRedactSecrets(t *testing.T) {
 		notContain []string
 	}{
 		{
+			name:       "binding invitation in message",
+			in:         "received /start bind_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			want:       "received /start [REDACTED_INVITATION]",
+			notContain: []string{"bind_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		},
+		{
 			name:       "bearer header",
 			in:         "Authorization: Bearer super-secret-token",
 			want:       "Authorization: Bearer [REDACTED]",

@@ -8,6 +8,27 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 )
 
+func TestNormalizeBindingPrincipal(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ channel, input, want string }{
+		{"telegram", " 00101 ", "101"},
+		{"zulip", " 202 ", "202"},
+		{"slackagent", " T1:U1 ", "T1:U1"},
+		{"mattermost", " opaque-user-id ", "opaque-user-id"},
+	} {
+		t.Run(tt.channel, func(t *testing.T) {
+			t.Parallel()
+			got, err := NormalizeBindingPrincipal(tt.channel, tt.input)
+			if err != nil || got != tt.want {
+				t.Fatalf("NormalizeBindingPrincipal() = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+	if _, err := NormalizeBindingPrincipal("mattermost", " "); !errors.Is(err, usercmd.ErrInvalid) {
+		t.Fatalf("empty Mattermost principal error = %v", err)
+	}
+}
+
 func TestBotCapability(t *testing.T) {
 	t.Parallel()
 
@@ -214,8 +235,8 @@ func TestValidateBindingAssignment(t *testing.T) {
 
 	bound := user
 	bound.Binding = testBinding("zulip", "202")
-	if err := ValidateBindingAssignment(bound, candidate, nil); !errors.Is(err, usercmd.ErrBindingAlreadyAssigned) {
-		t.Errorf("bound user error = %v, want %v", err, usercmd.ErrBindingAlreadyAssigned)
+	if err := ValidateBindingAssignment(bound, candidate, nil); err != nil {
+		t.Errorf("second distinct binding error = %v, want nil", err)
 	}
 
 	existing := candidate

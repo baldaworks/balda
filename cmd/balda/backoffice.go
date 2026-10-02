@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
@@ -16,7 +15,7 @@ import (
 
 func backofficeCommand() *cobra.Command {
 	command := &cobra.Command{Use: "backoffice", Short: "Maintain and review Backoffice"}
-	command.AddCommand(bootstrapAdminCommand(), migrateUsersCommand(), backofficeQACommand())
+	command.AddCommand(bootstrapAdminCommand(), recover2FACommand(), backofficeQACommand())
 	return command
 }
 
@@ -53,33 +52,6 @@ func openBackofficeMaintenance(command *cobra.Command) (*backoffice.Runtime, err
 	})
 }
 
-func migrateUsersCommand() *cobra.Command {
-	var outputPath, primarySubject string
-	command := &cobra.Command{
-		Use:   "migrate-users",
-		Short: "Convert legacy owner and collaborators into canonical users",
-		RunE: func(command *cobra.Command, _ []string) error {
-			if strings.TrimSpace(outputPath) == "" {
-				return fmt.Errorf("--credentials-output is required")
-			}
-			runtime, err := openBackofficeMaintenance(command)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = runtime.Close() }()
-			result, err := runtime.MigrateUsers(command.Context(), outputPath, primarySubject)
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(command.OutOrStdout(), "user migration applied=%t users=%d bindings=%d credentials_output=%s\n", result.Applied, result.UserCount, result.BindingCount, outputPath)
-			return nil
-		},
-	}
-	command.Flags().StringVar(&outputPath, "credentials-output", "", "exclusive 0600 output file for generated temporary credentials")
-	command.Flags().StringVar(&primarySubject, "primary-subject", "", "explicit legacy owner subject to select as primary")
-	return command
-}
-
 func bootstrapAdminCommand() *cobra.Command {
 	var input backoffice.BootstrapInput
 	command := &cobra.Command{
@@ -109,9 +81,37 @@ func bootstrapAdminCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&input.UserID, "user-id", "", "existing administrator user ID")
-	command.Flags().StringVar(&input.Username, "username", "", "username for a fresh administrator")
-	command.Flags().StringVar(&input.DisplayName, "display-name", "", "display name for a fresh administrator")
+	command.Flags().StringVar(&input.Username, "username", "", "username for a fresh administrator (must be superuser)")
+	command.Flags().StringVar(&input.DisplayName, "display-name", "", "display name for a fresh administrator (must be superuser)")
 	command.Flags().BoolVar(&input.Reset, "reset", false, "replace usable credentials and revoke browser sessions")
+	return command
+}
+
+func recover2FACommand() *cobra.Command {
+	var input backoffice.RecoveryInput
+	command := &cobra.Command{
+		Use: "recover-2fa", Short: "Disable a lost administrator factor and revoke browser sessions",
+		Args: cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if !input.Confirm {
+				return fmt.Errorf("recover-2fa requires --confirm")
+			}
+			runtime, err := openBackofficeMaintenance(command)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = runtime.Close() }()
+			result, err := runtime.Recover2FA(command.Context(), input)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "2FA disabled for %s; browser sessions revoked\n", result.Username)
+			return err
+		},
+	}
+	command.Flags().StringVar(&input.Username, "username", "", "exact normalized administrator username")
+	command.Flags().BoolVar(&input.Confirm, "confirm", false, "explicitly confirm disabling 2FA")
+	_ = command.MarkFlagRequired("username")
 	return command
 }
 

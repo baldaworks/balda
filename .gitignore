@@ -46,6 +46,7 @@ Thumbs.db
 
 .env
 .codex
+qa/backoffice-e2e/node_modules/
 
 # Balda local app config and state
 .config/balda/*

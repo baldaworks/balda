@@ -189,3 +189,25 @@ few seconds, so Balda never blocks the HTTP response on the command itself.
 - [Command reference](commands.md) — per-transport command availability
 - [Slack Agent setup](slack.md) — the signed-HTTP transport for comparison
 - [Zulip webhook setup](zulip-webhook.md) — the outgoing-webhook transport for comparison
+
+## Connect an existing Backoffice account
+
+Select the existing user in Backoffice Access and open that user's Mattermost
+binding form. Balda verifies the configured server, token owner and bot identity.
+Open Mattermost and send the generated `bind_<token>` to the displayed bot. The
+built-in `/msg @<bot_username> bind_<token>` action sends it directly to that bot.
+If the configured Balda slash receiver is enabled, `/balda start bind_<token>`
+is also available in a direct conversation. DM binding remains available when
+the slash receiver is disabled.
+
+The invitation is single use and expires in 24 hours. Refresh bindings to see
+the verified sender on the selected user; that user's role is preserved and no
+owner token is needed. The existing `Direct` and locator contracts are used for
+both D and G conversations. The sender account is bound; session keys retain
+their existing conversation boundaries.
+
+Wrong instance, channel, token, malformed/used/expired invitation or principal
+conflict grants no access. Admission precedes normal authorization and durable
+command/chat publication. Invitation posts are excluded from fetched thread
+context; later messages quoting invitations are quarantined as well. Retry
+unavailable identity discovery in the Mattermost binding interface.

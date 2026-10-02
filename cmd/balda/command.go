@@ -50,7 +50,7 @@ func startCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "start",
 		Short:         "Start Balda, Backoffice, and enabled integrations",
-		Long:          "Apply embedded schema migrations, check user readiness, then start Balda, Backoffice, and enabled integrations.",
+		Long:          "Apply embedded schema and data migrations, check user readiness, then start Balda, Backoffice, and enabled integrations.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -201,7 +201,7 @@ func prepareBaldaCommand(ctx context.Context, requireUserReady bool) (preparedBa
 			return preparedBaldaCommand{}, err
 		}
 		if err := runtime.ValidateReady(ctx); err != nil {
-			return preparedBaldaCommand{}, fmt.Errorf("backoffice user readiness: %w; run balda backoffice migrate-users or bootstrap-admin as needed", err)
+			return preparedBaldaCommand{}, fmt.Errorf("backoffice user readiness: %w; run balda backoffice bootstrap-admin", err)
 		}
 	}
 	prepared.ownerToken = ownerToken

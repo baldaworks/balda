@@ -65,6 +65,18 @@ func checkUserStoreCanonicalLifecycle(t *testing.T, open contractOpener) {
 	if err != nil || !found || bound.ID != first.ID || bound.Binding == nil || bound.Binding.ID != binding.ID {
 		t.Fatalf("GetUserByBinding() = %+v, %t, %v", bound, found, err)
 	}
+	secondClaim := usercmd.BindingClaim{ID: "claim-2", UserID: first.ID, ChannelType: "zulip", ExpiresAt: now.Add(time.Hour)}
+	if err := store.CreateBindingClaim(t.Context(), secondClaim, now, contractAudit("audit-claim-2", usercmd.AuditActionBindingClaimCreated, first.ID, now)); err != nil {
+		t.Fatalf("CreateBindingClaim(second) error = %v", err)
+	}
+	secondBinding := usercmd.Binding{ID: "binding-2", UserID: first.ID, ChannelType: "zulip", Principal: "202", CreatedAt: now, UpdatedAt: now}
+	if err := store.AttachBinding(t.Context(), secondClaim.ID, secondBinding, now.Add(time.Minute), contractAudit("audit-binding-2", usercmd.AuditActionBindingAttached, secondBinding.ID, now)); err != nil {
+		t.Fatalf("AttachBinding(second) error = %v", err)
+	}
+	bound, found, err = store.GetUserByBinding(t.Context(), "zulip", "202")
+	if err != nil || !found || bound.ID != first.ID || len(bound.Bindings) != 2 {
+		t.Fatalf("GetUserByBinding(second) = %+v, %t, %v", bound, found, err)
+	}
 	if err := store.AttachBinding(t.Context(), claim.ID, binding, now.Add(2*time.Minute), contractAudit("audit-binding-reuse", usercmd.AuditActionBindingAttached, binding.ID, now)); !errors.Is(err, usercmd.ErrBindingClaimUnavailable) {
 		t.Fatalf("AttachBinding(reused claim) error = %v, want ErrBindingClaimUnavailable", err)
 	}
@@ -135,8 +147,62 @@ func checkUserStoreCanonicalLifecycle(t *testing.T, open contractOpener) {
 	if err != nil {
 		t.Fatalf("ListAuditEvents() error = %v", err)
 	}
-	if len(auditPage.Events) != 6 {
-		t.Fatalf("committed audit events = %d, want 6", len(auditPage.Events))
+	if len(auditPage.Events) != 8 {
+		t.Fatalf("committed audit events = %d, want 8", len(auditPage.Events))
+	}
+}
+
+func checkManagedBindings(t *testing.T, open contractOpener) {
+	provider := newContractProvider(t, open)
+	defer closeContractProvider(t, provider)
+	store := provider.Users()
+	now := time.Date(2026, 9, 23, 1, 0, 0, 0, time.UTC)
+	user := contractUser("managed-admin", "managed.admin", true, now)
+	if err := store.CreateUser(t.Context(), user, contractSecret(user.ID), contractAudit("managed-create", usercmd.AuditActionUserCreated, user.ID, now)); err != nil {
+		t.Fatal(err)
+	}
+	first := usercmd.Binding{ID: "managed-telegram", UserID: user.ID, ChannelType: "telegram", Principal: "101", CreatedAt: now, UpdatedAt: now}
+	second := usercmd.Binding{ID: "managed-zulip", UserID: user.ID, ChannelType: "zulip", Principal: "202", CreatedAt: now, UpdatedAt: now}
+	if err := store.CreateManagedBinding(t.Context(), first, 1, contractAudit("managed-attach-1", usercmd.AuditActionBindingAttached, first.ID, now)); err != nil {
+		t.Fatalf("CreateManagedBinding(first): %v", err)
+	}
+	if err := store.CreateManagedBinding(t.Context(), second, 1, contractAudit("managed-stale", usercmd.AuditActionBindingAttached, second.ID, now)); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("CreateManagedBinding(stale) = %v, want ErrConflict", err)
+	}
+	if err := store.CreateManagedBinding(t.Context(), second, 2, contractAudit("managed-attach-2", usercmd.AuditActionBindingAttached, second.ID, now)); err != nil {
+		t.Fatalf("CreateManagedBinding(second): %v", err)
+	}
+	changed, err := store.UpdateTelegramBindingProfile(t.Context(), "101", "handle", "Alice", now.Add(time.Minute))
+	if err != nil || !changed {
+		t.Fatalf("UpdateTelegramBindingProfile() = %t, %v", changed, err)
+	}
+	changed, err = store.UpdateTelegramBindingProfile(t.Context(), "101", "handle", "Alice", now.Add(2*time.Minute))
+	if err != nil || changed {
+		t.Fatalf("unchanged Telegram profile update = %t, %v", changed, err)
+	}
+	got, found, err := store.GetUser(t.Context(), user.ID)
+	if err != nil || !found || got.Version != 3 || len(got.Bindings) != 2 {
+		t.Fatalf("GetUser(multiple bindings) = %+v, %t, %v", got, found, err)
+	}
+	if got.Bindings[0].ProviderUsername != "handle" || got.Bindings[0].ProviderFirstName != "Alice" || got.Username != user.Username {
+		t.Fatalf("Telegram profile changed canonical identity: %+v", got)
+	}
+	if err := store.DeleteBinding(t.Context(), user.ID, first.ID, 2, contractAudit("managed-delete-stale", usercmd.AuditActionBindingDetached, first.ID, now)); !errors.Is(err, usercmd.ErrConflict) {
+		t.Fatalf("DeleteBinding(stale) = %v, want ErrConflict", err)
+	}
+	if err := store.DeleteBinding(t.Context(), user.ID, first.ID, 3, contractAudit("managed-delete", usercmd.AuditActionBindingDetached, first.ID, now)); err != nil {
+		t.Fatalf("DeleteBinding(first): %v", err)
+	}
+	if _, found, err := store.GetUserByBinding(t.Context(), "telegram", "101"); err != nil || found {
+		t.Fatalf("removed principal still resolves: found=%t err=%v", found, err)
+	}
+	got, found, err = store.GetUserByBinding(t.Context(), "zulip", "202")
+	if err != nil || !found || got.Version != 4 || len(got.Bindings) != 1 {
+		t.Fatalf("remaining principal = %+v, %t, %v", got, found, err)
+	}
+	changed, err = store.UpdateTelegramBindingProfile(t.Context(), "101", "handle", "Alice", now.Add(time.Minute))
+	if err != nil || changed {
+		t.Fatalf("removed Telegram profile update = %t, %v", changed, err)
 	}
 }
 
@@ -185,6 +251,11 @@ func checkUserStoreRefreshRotationAndReplay(t *testing.T, open contractOpener) {
 		t.Fatalf("old refresh state = %q, want used", refreshed.Family.RefreshTokens[0].State)
 	}
 
+	result, err = store.RotateRefresh(t.Context(), rotation)
+	if err != nil || result != usercmd.RefreshRotationConcurrent {
+		t.Fatalf("RotateRefresh(duplicate) = %q, %v", result, err)
+	}
+	rotation.RotatedAt = now.Add(16 * time.Minute)
 	result, err = store.RotateRefresh(t.Context(), rotation)
 	if err != nil || result != usercmd.RefreshRotationReplayRevoked {
 		t.Fatalf("RotateRefresh(replay) = %q, %v", result, err)
@@ -359,72 +430,13 @@ func checkUserStoreConcurrentRefreshReplay(t *testing.T, open contractOpener) {
 		results = append(results, string(got.result))
 	}
 	sort.Strings(results)
-	want := []string{string(usercmd.RefreshRotationReplayRevoked), string(usercmd.RefreshRotationSucceeded)}
+	want := []string{string(usercmd.RefreshRotationConcurrent), string(usercmd.RefreshRotationSucceeded)}
 	if !slices.Equal(results, want) {
 		t.Fatalf("concurrent refresh results = %v, want %v", results, want)
 	}
-}
-
-func checkUserStoreMigrationBatch(t *testing.T, open contractOpener) {
-	provider := newContractProvider(t, open)
-	defer closeContractProvider(t, provider)
-	store := provider.Users()
-	now := time.Date(2026, 9, 23, 5, 0, 0, 0, time.UTC)
-	admin := contractUser("migrated-admin", "telegram-101", true, now)
-	admin.Credential = usercmd.Credential{State: usercmd.CredentialStateTemporary, MustChange: true, Version: 1}
-	binding := usercmd.Binding{
-		ID: "migrated-binding", UserID: admin.ID, ChannelType: "telegram", Principal: "101",
-		DisplayName: "Legacy owner", Provenance: "legacy-owner", CreatedAt: now, UpdatedAt: now,
-	}
-	migration := usercmd.UserMigration{
-		ID: "migration-1", SourceFingerprint: "fingerprint-1", SourceCountsJSON: `{"bindings":1,"users":1}`,
-		PrimaryUserID: admin.ID, CompletedAt: now, GeneratedBindingCount: 1,
-		Users: []usercmd.MigrationUser{{
-			User: admin, Secret: usercmd.CredentialSecret{UserID: admin.ID, PasswordHash: "adaptive-hash"}, Binding: &binding,
-			Audits: []usercmd.AuditEvent{contractAudit("audit-migration", usercmd.AuditActionUserMigrated, admin.ID, now)},
-		}},
-	}
-	rollbackMigration := migration
-	rollbackMigration.Users = append([]usercmd.MigrationUser(nil), migration.Users...)
-	rollbackMigration.ID = "migration-rollback"
-	rollbackMigration.SourceFingerprint = "fingerprint-rollback"
-	rollbackMigration.Users[0].Audits = []usercmd.AuditEvent{
-		contractAudit("audit-duplicate", usercmd.AuditActionUserMigrated, admin.ID, now),
-		contractAudit("audit-duplicate", usercmd.AuditActionUserMigrated, binding.ID, now),
-	}
-	if _, err := store.ApplyUserMigration(t.Context(), rollbackMigration); !errors.Is(err, usercmd.ErrConflict) {
-		t.Fatalf("ApplyUserMigration(duplicate audit) error = %v, want ErrConflict", err)
-	}
-	if _, found, err := store.GetUser(t.Context(), admin.ID); err != nil || found {
-		t.Fatalf("rolled-back migrated user found=%t error=%v", found, err)
-	}
-	marked, err := store.UserMigrationApplied(t.Context(), rollbackMigration.SourceFingerprint)
-	if err != nil || marked {
-		t.Fatalf("rolled-back migration marker=%t error=%v", marked, err)
-	}
-	applied, err := store.ApplyUserMigration(t.Context(), migration)
-	if err != nil || !applied {
-		t.Fatalf("ApplyUserMigration() = %t, %v", applied, err)
-	}
-	marked, err = store.UserMigrationApplied(t.Context(), migration.SourceFingerprint)
-	if err != nil || !marked {
-		t.Fatalf("UserMigrationApplied() = %t, %v", marked, err)
-	}
-	anyMarked, err := store.AnyUserMigrationApplied(t.Context())
-	if err != nil || !anyMarked {
-		t.Fatalf("AnyUserMigrationApplied() = %t, %v", anyMarked, err)
-	}
-	bound, found, err := store.GetUserByBinding(t.Context(), "telegram", "101")
-	if err != nil || !found || bound.ID != admin.ID || bound.Credential.State != usercmd.CredentialStateTemporary {
-		t.Fatalf("GetUserByBinding() = %+v, %t, %v", bound, found, err)
-	}
-	sessions, err := store.ListSessions(t.Context(), admin.ID, usercmd.PageRequest{Limit: usercmd.MaxPageSize})
-	if err != nil || len(sessions.Sessions) != 0 {
-		t.Fatalf("ListSessions(migrated user) = %+v, %v", sessions, err)
-	}
-	applied, err = store.ApplyUserMigration(t.Context(), migration)
-	if err != nil || applied {
-		t.Fatalf("ApplyUserMigration(repeated) = %t, %v", applied, err)
+	refreshed, found, err := store.GetSessionByRefreshSelector(t.Context(), base.Refresh.Selector)
+	if err != nil || !found || !refreshed.Family.RevokedAt.IsZero() || refreshed.Token.State != usercmd.RefreshTokenStateActive {
+		t.Fatalf("concurrent refresh family = %+v, %t, %v", refreshed, found, err)
 	}
 }
 

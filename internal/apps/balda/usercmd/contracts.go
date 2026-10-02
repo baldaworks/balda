@@ -70,16 +70,18 @@ type CredentialSecret struct {
 	PasswordHash string
 }
 
-// Binding identifies the single optional transport principal owned by a user.
+// Binding identifies a transport principal owned by a user.
 type Binding struct {
-	ID          string
-	UserID      string
-	ChannelType string
-	Principal   string
-	DisplayName string
-	Provenance  string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                string
+	UserID            string
+	ChannelType       string
+	Principal         string
+	DisplayName       string
+	ProviderUsername  string
+	ProviderFirstName string
+	Provenance        string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // User is the secret-free canonical identity shared by Backoffice and bot authorization.
@@ -94,6 +96,7 @@ type User struct {
 	Primary            bool
 	Version            uint64
 	Binding            *Binding
+	Bindings           []Binding
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -179,6 +182,8 @@ type RefreshToken struct {
 
 // SessionFamily is the durable server-side browser session aggregate.
 type SessionFamily struct {
+	WebAuthnVerifiedAt time.Time
+	MFAFactorID        string
 	ID                 string
 	UserID             string
 	Assurance          SessionAssurance
@@ -190,19 +195,23 @@ type SessionFamily struct {
 	RefreshExpiresAt   time.Time
 	RevokedAt          time.Time
 	RevocationReason   string
+	DeviceLabel        string
+	ConnectionPeer     string
 	Version            uint64
 	RefreshTokens      []RefreshToken
 }
 
 // SessionSummary is the secret-free session-family projection shown to users.
 type SessionSummary struct {
-	ID         string
-	Assurance  SessionAssurance
-	CreatedAt  time.Time
-	LastSeenAt time.Time
-	ExpiresAt  time.Time
-	RevokedAt  time.Time
-	Version    uint64
+	ID             string
+	Assurance      SessionAssurance
+	CreatedAt      time.Time
+	LastSeenAt     time.Time
+	ExpiresAt      time.Time
+	RevokedAt      time.Time
+	DeviceLabel    string
+	ConnectionPeer string
+	Version        uint64
 }
 
 // AuditAction is a stable security event action.
@@ -225,8 +234,14 @@ const (
 	AuditActionSessionRevoked AuditAction = "session.revoked"
 	// AuditActionBindingAttached records verified transport-binding attachment.
 	AuditActionBindingAttached AuditAction = "user.binding.attached"
+	// AuditActionBindingDetached records transport-binding removal.
+	AuditActionBindingDetached AuditAction = "user.binding.detached"
 	// AuditActionBindingClaimCreated records creation of a scoped onboarding claim.
 	AuditActionBindingClaimCreated AuditAction = "user.binding.claim.created"
+	// AuditActionInvitationIssued records creation or replacement of a binding invitation.
+	AuditActionInvitationIssued AuditAction = "user.binding.invitation.issued"
+	// AuditActionInvitationRevoked records cancellation of a binding invitation.
+	AuditActionInvitationRevoked AuditAction = "user.binding.invitation.revoked"
 	// AuditActionUserMigrated records canonical creation from legacy authorization state.
 	AuditActionUserMigrated AuditAction = "user.migrated"
 	// AuditActionLoginSucceeded records creation of a browser session family.
@@ -235,6 +250,16 @@ const (
 	AuditActionRefreshSucceeded AuditAction = "session.refresh.succeeded"
 	// AuditActionRefreshReplay records verified refresh-token reuse and family revocation.
 	AuditActionRefreshReplay AuditAction = "session.refresh.replay"
+	// AuditActionMFAEnabled records opt-in after verified registration.
+	AuditActionMFAEnabled AuditAction = "user.mfa.enabled"
+	// AuditActionMFAReplaced records verified factor replacement.
+	AuditActionMFAReplaced AuditAction = "user.mfa.replaced"
+	// AuditActionMFADisabled records verified opt-out.
+	AuditActionMFADisabled AuditAction = "user.mfa.disabled"
+	// AuditActionMFARecovered records confirmed offline factor removal.
+	AuditActionMFARecovered AuditAction = "user.mfa.recovered"
+	// AuditActionMFAVerified records a fresh verified browser factor.
+	AuditActionMFAVerified AuditAction = "session.mfa.verified"
 	// AuditActionLogout records explicit browser-session logout.
 	AuditActionLogout AuditAction = "session.logout"
 )
@@ -244,9 +269,9 @@ func (a AuditAction) Valid() bool {
 	switch a {
 	case AuditActionUserCreated, AuditActionUserUpdated, AuditActionUserAccessChanged,
 		AuditActionUserRoleChanged, AuditActionUserStatusChanged, AuditActionCredentialChanged,
-		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingClaimCreated,
+		AuditActionSessionRevoked, AuditActionBindingAttached, AuditActionBindingDetached, AuditActionBindingClaimCreated,
 		AuditActionUserMigrated, AuditActionLoginSucceeded, AuditActionRefreshSucceeded,
-		AuditActionRefreshReplay, AuditActionLogout:
+		AuditActionRefreshReplay, AuditActionMFAEnabled, AuditActionMFAReplaced, AuditActionMFADisabled, AuditActionMFARecovered, AuditActionMFAVerified, AuditActionLogout, AuditActionInvitationIssued, AuditActionInvitationRevoked:
 		return true
 	default:
 		return false
@@ -312,6 +337,9 @@ type AuditEvent struct {
 
 // ValidateSessionFamily checks storage-neutral browser-session invariants.
 func ValidateSessionFamily(f SessionFamily) error {
+	if f.WebAuthnVerifiedAt.IsZero() != (f.MFAFactorID == "") || (!f.WebAuthnVerifiedAt.IsZero() && f.WebAuthnVerifiedAt.After(f.LastSeenAt)) {
+		return fmt.Errorf("%w: WebAuthn proof and factor must be paired and precede last activity", ErrInvalid)
+	}
 	if strings.TrimSpace(f.ID) == "" || strings.TrimSpace(f.UserID) == "" || !f.Assurance.Valid() {
 		return fmt.Errorf("%w: session identity and assurance are required", ErrInvalid)
 	}

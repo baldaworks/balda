@@ -1,7 +1,4 @@
-{{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
-  <div class="container-fluid py-3"><h1>Overview</h1>
-    <div class="row g-3">
-      {{range .Capabilities}}<div class="col-12 col-md-6 col-xl-4"><article class="card h-100"><div class="card-body"><h2 class="h5">{{.Name}}</h2><p class="mb-1"><strong>Mode:</strong> {{.Mode}}</p>{{if .ListenAddr}}<p class="mb-1"><strong>Listen:</strong> <code>{{.ListenAddr}}</code></p>{{end}}{{if .Endpoint}}<p class="mb-1"><strong>Endpoint:</strong> <code>{{.Endpoint}}</code></p>{{end}}{{if .RouteCount}}<p class="mb-1"><strong>Routes:</strong> {{.RouteCount}}</p>{{end}}{{if .Streaming}}<span class="badge text-bg-info">Streaming</span>{{end}}</div></article></div>{{else}}<div class="col-12"><p class="text-body-secondary">No configured capabilities.</p></div>{{end}}
-    </div>
-  </div>
-</main>{{end}}
+{{define "content"}}<main id="main-content" class="app-content" tabindex="-1"><div class="container-fluid">
+<header class="content-header"><div><p class="section-kicker">Workspace</p><h1>Overview</h1><p>Integrations enabled in Balda configuration. Live health and connection status are not checked here.</p></div></header>
+<div class="card-grid">{{range .Capabilities}}<article class="card"><header class="card-header"><h2 class="card-title">{{.Name}}</h2><span class="status-chip status-chip--info">Configured</span></header><div class="card-body"><dl class="fact-list"><dt>Mode</dt><dd>{{.Mode}}</dd>{{if .Streaming}}<dt>Streaming</dt><dd>Configured</dd>{{end}}{{if .RouteCount}}<dt>Routes</dt><dd>{{.RouteCount}}</dd>{{end}}</dl>{{if or .ListenAddr .Endpoint}}<details class="mt-3"><summary>Configuration details</summary><dl class="fact-list mt-3">{{if .ListenAddr}}<dt>Listen</dt><dd><code>{{.ListenAddr}}</code></dd>{{end}}{{if .Endpoint}}<dt>Endpoint</dt><dd><code>{{.Endpoint}}</code></dd>{{end}}</dl></details>{{end}}</div></article>{{else}}<div class="page-state"><i class="bi bi-plug" aria-hidden="true"></i><div><h2 class="h5">No integrations configured</h2><p class="mb-0">Enable an integration in the Balda configuration and restart the service. Return here to review its configuration.</p></div></div>{{end}}</div>
+</div></main>{{end}}

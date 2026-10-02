@@ -25,11 +25,15 @@ const secondPluginRevision = "rev-2"
 type contractOpener func(context.Context, string) (Provider, error)
 
 func runProviderContract(t *testing.T, factory func(*testing.T) contractOpener) {
+	t.Run("MFAStoreLifecycle", func(t *testing.T) { checkMFAStoreLifecycle(t, factory(t)) })
 	t.Run("UserStoreCanonicalLifecycle", func(t *testing.T) { checkUserStoreCanonicalLifecycle(t, factory(t)) })
+	t.Run("ManagedBindings", func(t *testing.T) { checkManagedBindings(t, factory(t)) })
+	t.Run("BindingInvitations", func(t *testing.T) { checkBindingInvitations(t, factory(t)) })
 	t.Run("UserStoreRefreshRotationAndReplay", func(t *testing.T) { checkUserStoreRefreshRotationAndReplay(t, factory(t)) })
 	t.Run("UserStoreCredentialAndSessionRevocation", func(t *testing.T) { checkUserStoreCredentialAndSessionRevocation(t, factory(t)) })
+	t.Run("UserStoreActiveSessions", func(t *testing.T) { checkUserStoreActiveSessions(t, factory(t)) })
+	t.Run("UserStoreAuditTimeOrder", func(t *testing.T) { checkUserStoreAuditTimeOrder(t, factory(t)) })
 	t.Run("UserStoreConcurrentRefreshReplay", func(t *testing.T) { checkUserStoreConcurrentRefreshReplay(t, factory(t)) })
-	t.Run("UserStoreMigrationBatch", func(t *testing.T) { checkUserStoreMigrationBatch(t, factory(t)) })
 	t.Run("Collaborators", func(t *testing.T) { checkCollaborators(t, factory(t)) })
 	t.Run("Provider_KVRoundTrip", func(t *testing.T) { checkProvider_KVRoundTrip(t, factory(t)) })
 	t.Run("Provider_KVConsumeJSONConcurrentConsumeOnce", func(t *testing.T) { checkProvider_KVConsumeJSONConcurrentConsumeOnce(t, factory(t)) })

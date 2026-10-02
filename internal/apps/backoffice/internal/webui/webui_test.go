@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,7 +115,11 @@ func TestRespondMutation(t *testing.T) {
 	if err := RespondMutation(htmx, htmxRequest, LocationAccount); err != nil {
 		t.Fatal(err)
 	}
-	if htmx.Code != http.StatusNoContent || htmx.Header().Get("HX-Location") != "/account" || htmx.Body.Len() != 0 {
+	var location struct{ Path, Target, Swap string }
+	if err := json.Unmarshal([]byte(htmx.Header().Get("HX-Location")), &location); err != nil {
+		t.Fatal(err)
+	}
+	if htmx.Code != http.StatusNoContent || location.Path != "/account" || location.Target != "#main-content" || location.Swap != "outerHTML" || htmx.Body.Len() != 0 {
 		t.Fatalf("HTMX mutation = %d %v %q", htmx.Code, htmx.Header(), htmx.Body.String())
 	}
 }
@@ -134,7 +139,7 @@ func TestSafeViewProjectionUsesOneBindingAndFamilyLevelSessions(t *testing.T) {
 	session := ProjectSession(usercmd.SessionSummary{
 		ID: "family-1", Assurance: usercmd.SessionAssuranceRestricted, CreatedAt: now,
 		LastSeenAt: now.Add(time.Minute), ExpiresAt: now.Add(time.Hour), Version: 3,
-	}, "family-1")
+	}, "family-1", now)
 	if session.ID != "family-1" || !session.Current || session.Assurance != "restricted" || session.Version != 3 {
 		t.Fatalf("ProjectSession() = %+v", session)
 	}
@@ -166,6 +171,11 @@ func TestAuditProjectionDoesNotRenderFreeFormReason(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "11111111-1111-4111-8111-111111111111") {
 		t.Fatalf("safe family ID missing: %q", response.Body.String())
 	}
+	for _, element := range []string{"<table", "<th scope=\"col\">Time (UTC)</th>", "<th scope=\"col\">Action</th>", "<th scope=\"col\">Actor</th>", "<th scope=\"col\">Target</th>", "<th scope=\"col\">Outcome</th>", "<details>"} {
+		if !strings.Contains(response.Body.String(), element) {
+			t.Fatalf("audit table missing %q", element)
+		}
+	}
 }
 
 func TestEmbeddedAssetsServeOffline(t *testing.T) {
@@ -179,5 +189,79 @@ func TestEmbeddedAssetsServeOffline(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Body.Len() == 0 || response.Header().Get("Cache-Control") == "" {
 		t.Fatalf("asset response = %d %v (%d bytes)", response.Code, response.Header(), response.Body.Len())
+	}
+}
+
+func TestRenderedAssetsUseContentVersions(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := Assets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	versioned, _, err := versionedAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/login", nil),
+		http.StatusOK, TemplateLogin, Page{Title: "Login"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"app.css", "app.js"} {
+		assetPath := versioned["/assets/"+name]
+		if !strings.Contains(response.Body.String(), "/balda"+assetPath) {
+			t.Errorf("rendered page does not reference %s", assetPath)
+		}
+		assetResponse := httptest.NewRecorder()
+		handler.ServeHTTP(assetResponse, httptest.NewRequest(http.MethodGet, assetPath, nil))
+		contents, err := embedded.ReadFile("static/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if assetResponse.Code != http.StatusOK || assetResponse.Body.String() != string(contents) ||
+			assetResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+			t.Errorf("versioned %s response: status=%d, cache=%q", name, assetResponse.Code,
+				assetResponse.Header().Get("Cache-Control"))
+		}
+	}
+}
+
+func TestShellShowsViewerIndependentlyOfInspectedUser(t *testing.T) {
+	t.Parallel()
+	renderer, err := NewRenderer("/balda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := Page{Title: "Access", ViewerUsername: "signed-in-admin", CSRFToken: "test-csrf", Navigation: Navigation(usercmd.BackofficeCapabilities{Overview: true, Account: true}, LocationAccount), User: &UserView{Username: "inspected-operator"}}
+	response := httptest.NewRecorder()
+	if err := renderer.Render(response, httptest.NewRequest(http.MethodGet, "/balda/access", nil), http.StatusOK, TemplateOverview, page); err != nil {
+		t.Fatal(err)
+	}
+	body := response.Body.String()
+	for _, want := range []string{`<html lang="en" data-bs-theme="dark" data-lte-color-mode="off">`, `aria-label="Toggle navigation"`, `<strong title="signed-in-admin">signed-in-admin</strong>`, `action="/balda/logout"`, `class="app-footer"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("shell missing %q", want)
+		}
+	}
+	if strings.Contains(body, "Signed in as <strong>inspected-operator</strong>") {
+		t.Error("shell exposes inspected user as viewer")
+	}
+}
+
+func TestMutationDetailPathSafety(t *testing.T) {
+	t.Parallel()
+	for _, location := range []string{"https://other.example/account", "//other.example/account", `/\other.example/account`} {
+		response := httptest.NewRecorder()
+		if err := RespondMutationPath(response, httptest.NewRequest(http.MethodPost, "/account", nil), location); err == nil || response.Header().Get("Location") != "" {
+			t.Fatalf("unsafe mutation path accepted: %q", location)
+		}
+	}
+	response := httptest.NewRecorder()
+	if err := RespondMutationPath(response, httptest.NewRequest(http.MethodPost, "/balda/access", nil), "/balda/access/users/user%2Fname"); err != nil || response.Header().Get("Location") != "/balda/access/users/user%2Fname" {
+		t.Fatalf("scoped user detail redirect = %v %v", response.Header(), err)
 	}
 }

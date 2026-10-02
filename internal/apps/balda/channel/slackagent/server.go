@@ -15,8 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/authpayload"
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	"github.com/baldaworks/balda/internal/apps/balda/usercmd"
 	"github.com/rs/zerolog"
 )
 
@@ -45,6 +47,8 @@ type Server struct {
 	turnCanceller    TurnCanceller
 	commandHandler   commandcmd.Ingress
 	commands         *commandcmd.Registry
+	bindings         BindingAdmitter
+	bindingClient    *Client
 	config           Config
 	logger           zerolog.Logger
 
@@ -198,16 +202,28 @@ func (h *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if h.commandHandler == nil {
-		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	release, ok := h.acquireProcessSlot()
 	if !ok {
 		http.Error(w, "busy", http.StatusServiceUnavailable)
 		return
 	}
 	defer release()
+	if request.Payload.Name == "start" || authpayload.Contains(request.Payload.Args) {
+		ctx, cancel := context.WithTimeout(r.Context(), commandProcessingTimeout)
+		defer cancel()
+		response := "Open Backoffice Access to generate an account invitation for this Slack workspace."
+		if request.Payload.Name == "start" && authpayload.Contains(request.Payload.Args) {
+			response = h.consumeBinding(ctx, usercmd.BindingProof{Payload: request.Payload.Args, Principal: request.Payload.Principal, Direct: request.Payload.Conversation.Direct, Locator: request.Payload.Locator, Provenance: "slack-signed-command"})
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(response))
+		return
+	}
+	if h.commandHandler == nil {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), commandProcessingTimeout)
 	defer cancel()
 	request.InvocationID = slackCommandInvocationID(r.Header.Get("X-Slack-Request-Timestamp"), body)
@@ -274,6 +290,19 @@ func (h *Server) processEvent(requestCtx context.Context, env IngressEnvelope) (
 		if err := h.turnCanceller.CancelTurn(ctx, *env.Stopped); err != nil {
 			h.logger.Warn().Err(err).Str("address_key", env.Stopped.Locator.AddressKey).Msg("failed to cancel slackagent turn")
 			return retryInbound(), err
+		}
+		return terminalInbound(), nil
+	}
+	if authpayload.Contains(env.Chat.Text) {
+		response := h.consumeBinding(ctx, usercmd.BindingProof{Payload: env.Chat.Text, Principal: env.Subject, DisplayName: env.InitiatorUserID, Direct: env.Chat.Direct, Locator: env.Locator, Provenance: "slack-signed-event"})
+		if env.Chat.Direct && h.bindingClient != nil {
+			address, _, err := DecodeLocator(env.Locator)
+			if err != nil {
+				return terminalInbound(), nil
+			}
+			if _, err := h.bindingClient.PostMessage(ctx, address.ConversationID, "", response, false); err != nil {
+				return retryInbound(), fmt.Errorf("send binding outcome: %w", err)
+			}
 		}
 		return terminalInbound(), nil
 	}

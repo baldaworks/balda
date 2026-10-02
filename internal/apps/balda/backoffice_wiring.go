@@ -30,6 +30,11 @@ func backofficeRuntimeConfig(cfg BaldaConfig, database state.DatabaseConfig) (ba
 			Enabled: cfg.Webhooks.Enabled, ListenAddr: cfg.Webhooks.ListenAddr,
 			RouteCount: len(cfg.Webhooks.Routes),
 		},
+		Mattermost: backoffice.MattermostConfig{
+			Enabled: cfg.Mattermost.Enabled, ServerURL: cfg.Mattermost.ServerURL,
+			CommandsEnabled: cfg.Mattermost.CommandsEnabled, ListenAddr: cfg.Mattermost.CommandsListenAddr,
+			CommandsPath: cfg.Mattermost.CommandsPath,
+		},
 	}
 	return backoffice.ResolvedConfig{Balda: projected, Server: server, Database: database}, nil
 }

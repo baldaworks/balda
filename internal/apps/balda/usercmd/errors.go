@@ -21,6 +21,10 @@ var (
 	ErrBindingClaimUnavailable = errors.New("binding claim unavailable")
 	// ErrBindingClaimScope identifies a binding claim used outside its user or channel scope.
 	ErrBindingClaimScope = errors.New("binding claim scope mismatch")
+	// ErrBindingInvitationUnavailable means an invitation cannot currently be consumed.
+	ErrBindingInvitationUnavailable = errors.New("binding invitation unavailable")
+	// ErrBindingInvitationScope means the verified integration differs from the invitation.
+	ErrBindingInvitationScope = errors.New("binding invitation scope mismatch")
 	// ErrBotImpactAcknowledgementRequired identifies an unacknowledged bot access change.
 	ErrBotImpactAcknowledgementRequired = errors.New("bot access impact acknowledgement required")
 	// ErrLastAdministrator identifies a mutation that would remove the last active administrator.

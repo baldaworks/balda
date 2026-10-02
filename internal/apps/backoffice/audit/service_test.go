@@ -15,7 +15,7 @@ func TestServiceFiltersBoundedTypedSecurityEvents(t *testing.T) {
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	store := &fakeStore{events: []usercmd.AuditEvent{
 		{ID: "event-1", Action: usercmd.AuditActionRefreshSucceeded, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: "family-1", Source: "security", OccurredAt: now},
-		{ID: "event-2", Action: usercmd.AuditActionRefreshReplay, Outcome: usercmd.AuditOutcomeDenied, TargetType: usercmd.AuditTargetSession, TargetID: "family-2", Source: "security", OccurredAt: now.Add(time.Minute)},
+		{ID: "event-2", Action: usercmd.AuditActionRefreshReplay, Outcome: usercmd.AuditOutcomeDenied, ActorUserID: "admin", TargetType: usercmd.AuditTargetSession, TargetID: "family-2", Source: "security", OccurredAt: now.Add(time.Minute)},
 		{ID: "event-3", Action: usercmd.AuditActionSessionRevoked, Outcome: usercmd.AuditOutcomeSucceeded, TargetType: usercmd.AuditTargetSession, TargetID: "family-3", Source: "security", OccurredAt: now.Add(2 * time.Minute)},
 	}}
 	service := NewService(store)
@@ -26,6 +26,12 @@ func TestServiceFiltersBoundedTypedSecurityEvents(t *testing.T) {
 	}
 	if len(page.Events) != 1 || page.Events[0].ID != "event-2" || page.NextAfterID != "" {
 		t.Fatalf("filtered page = %+v", page)
+	}
+	byActorAndTime, err := service.List(t.Context(), admin, Request{
+		ActorUserID: "admin", From: now.Add(30 * time.Second), Before: now.Add(90 * time.Second),
+	})
+	if err != nil || len(byActorAndTime.Events) != 1 || byActorAndTime.Events[0].ID != "event-2" {
+		t.Fatalf("actor and time filter = %+v, %v", byActorAndTime, err)
 	}
 
 	operator := usercmd.User{Status: usercmd.StatusActive, Role: usercmd.RoleOperator}

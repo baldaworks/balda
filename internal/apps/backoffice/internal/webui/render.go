@@ -2,33 +2,42 @@ package webui
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 )
 
 const (
-	TemplateLogin    = "login"
-	TemplateOverview = "overview"
-	TemplateAccess   = "access"
-	TemplateAccount  = "account"
-	TemplateAudit    = "audit"
-	TemplateError    = "error"
-	TemplateRefresh  = "refresh"
-	TemplatePassword = "password"
-	TemplateGallery  = "gallery"
+	TemplateWebAuthn   = "webauthn"
+	TemplateStepUp     = "step-up"
+	TemplateLogin      = "login"
+	TemplateOverview   = "overview"
+	TemplateAccess     = "access"
+	TemplateAccount    = "account"
+	TemplateAudit      = "audit"
+	TemplateError      = "error"
+	TemplateRefresh    = "refresh"
+	TemplatePassword   = "password"
+	TemplateGallery    = "gallery"
+	TemplateStyleGuide = "style-guide"
+	TemplateLayout     = "layout"
 )
 
 var templateFiles = map[string]string{
+	TemplateWebAuthn: "templates/webauthn.tmpl", TemplateStepUp: "templates/step-up.tmpl",
 	TemplateLogin: "templates/login.tmpl", TemplateOverview: "templates/overview.tmpl",
 	TemplateAccess: "templates/access.tmpl", TemplateAccount: "templates/account.tmpl",
 	TemplateAudit: "templates/audit.tmpl", TemplateError: "templates/error.tmpl",
 	TemplateRefresh: "templates/refresh.tmpl", TemplatePassword: "templates/password.tmpl",
-	TemplateGallery: "templates/gallery.tmpl",
+	TemplateGallery:    "templates/gallery.tmpl",
+	TemplateStyleGuide: "templates/style-guide.tmpl", TemplateLayout: "templates/layout.tmpl",
 }
 
 //go:embed templates static
@@ -50,12 +59,21 @@ func NewQARenderer(basePath string) (*Renderer, error) {
 }
 
 func newRenderer(pagePath, assetPath string) (*Renderer, error) {
+	versioned, _, err := versionedAssets()
+	if err != nil {
+		return nil, err
+	}
 	templates := make(map[string]*template.Template, len(templateFiles))
 	for name, pageFile := range templateFiles {
 		parsed, err := template.New(name).Funcs(template.FuncMap{
-			"path":      func(route any) string { return pagePath + fmt.Sprint(route) },
-			"assetPath": func(route any) string { return assetPath + fmt.Sprint(route) },
-		}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", pageFile)
+			"path": func(route any) string { return pagePath + fmt.Sprint(route) },
+			"assetPath": func(route string) string {
+				if version, ok := versioned[route]; ok {
+					return assetPath + version
+				}
+				return assetPath + route
+			},
+		}).ParseFS(embedded, "templates/document.tmpl", "templates/fragment.tmpl", "templates/sessions.tmpl", "templates/bindings.tmpl", pageFile)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
 		}
@@ -107,18 +125,39 @@ func RespondMutationAt(w http.ResponseWriter, request *http.Request, location Lo
 	if !location.Valid() {
 		return fmt.Errorf("mutation location is invalid")
 	}
+	return RespondMutationPath(w, request, basePath+string(location))
+}
+
+// RespondMutationPath redirects to a local path while retaining the HTMX shell.
+func RespondMutationPath(w http.ResponseWriter, request *http.Request, location string) error {
+	parsed, err := url.ParseRequestURI(location)
+	if err != nil || !strings.HasPrefix(location, "/") || strings.HasPrefix(location, "//") || strings.Contains(location, `\`) || parsed.Host != "" || parsed.Scheme != "" {
+		return fmt.Errorf("mutation path is invalid")
+	}
 	if EligibleFragment(request) {
-		w.Header().Set("HX-Location", basePath+string(location))
+		encoded, err := json.Marshal(struct {
+			Path   string `json:"path"`
+			Target string `json:"target"`
+			Swap   string `json:"swap"`
+		}{Path: location, Target: "#main-content", Swap: "outerHTML"})
+		if err != nil {
+			return fmt.Errorf("encode HTMX location: %w", err)
+		}
+		w.Header().Set("HX-Location", string(encoded))
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
-	w.Header().Set("Location", basePath+string(location))
+	w.Header().Set("Location", location)
 	w.WriteHeader(http.StatusSeeOther)
 	return nil
 }
 
 // Assets returns the embedded offline static asset handler.
 func Assets() (http.Handler, error) {
+	_, originals, err := versionedAssets()
+	if err != nil {
+		return nil, err
+	}
 	root, err := fs.Sub(embedded, "static")
 	if err != nil {
 		return nil, fmt.Errorf("open embedded static assets: %w", err)
@@ -135,6 +174,12 @@ func Assets() (http.Handler, error) {
 			return
 		}
 		name := strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(request.URL.Path, "/assets/")), "/")
+		if original, ok := originals[name]; ok {
+			name = original
+		} else if name == "app.js" || name == "app.css" || name == "webauthn.js" {
+			http.NotFound(w, request)
+			return
+		}
 		info, err := fs.Stat(root, name)
 		if err != nil || info.IsDir() {
 			http.NotFound(w, request)
@@ -146,4 +191,21 @@ func Assets() (http.Handler, error) {
 		servedRequest.URL.Path = "/" + name
 		files.ServeHTTP(w, servedRequest)
 	}), nil
+}
+
+func versionedAssets() (map[string]string, map[string]string, error) {
+	paths := make(map[string]string, 2)
+	originals := make(map[string]string, 2)
+	for _, name := range []string{"app.css", "app.js", "webauthn.js"} {
+		contents, err := embedded.ReadFile("static/" + name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read embedded asset %s: %w", name, err)
+		}
+		sum := sha256.Sum256(contents)
+		base, extension := strings.TrimSuffix(name, path.Ext(name)), path.Ext(name)
+		version := fmt.Sprintf("%s.%x%s", base, sum[:8], extension)
+		paths["/assets/"+name] = "/assets/" + version
+		originals[version] = name
+	}
+	return paths, originals, nil
 }

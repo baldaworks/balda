@@ -1,10 +1,50 @@
 {{define "content"}}<main id="main-content" class="app-content" tabindex="-1">
-  <div class="container-fluid py-3"><h1>Audit</h1>
-    <form action="{{path "/"}}audit" method="get" hx-get="{{path "/"}}audit" hx-target="#main-content" hx-push-url="true" class="card card-body mb-3"><div class="row g-3">
-      <div class="col-lg-5"><label class="form-label" for="audit-action">Action</label><select class="form-select" id="audit-action" name="action"><option value="">All security actions</option><option value="user.created"{{if eq .AuditAction "user.created"}} selected{{end}}>user.created</option><option value="user.updated"{{if eq .AuditAction "user.updated"}} selected{{end}}>user.updated</option><option value="user.access.changed"{{if eq .AuditAction "user.access.changed"}} selected{{end}}>user.access.changed</option><option value="user.role.changed"{{if eq .AuditAction "user.role.changed"}} selected{{end}}>user.role.changed</option><option value="user.status.changed"{{if eq .AuditAction "user.status.changed"}} selected{{end}}>user.status.changed</option><option value="user.credential.changed"{{if eq .AuditAction "user.credential.changed"}} selected{{end}}>user.credential.changed</option><option value="session.login.succeeded"{{if eq .AuditAction "session.login.succeeded"}} selected{{end}}>session.login.succeeded</option><option value="session.refresh.succeeded"{{if eq .AuditAction "session.refresh.succeeded"}} selected{{end}}>session.refresh.succeeded</option><option value="session.refresh.replay"{{if eq .AuditAction "session.refresh.replay"}} selected{{end}}>session.refresh.replay</option><option value="session.revoked"{{if eq .AuditAction "session.revoked"}} selected{{end}}>session.revoked</option><option value="session.logout"{{if eq .AuditAction "session.logout"}} selected{{end}}>session.logout</option><option value="user.binding.claim.created"{{if eq .AuditAction "user.binding.claim.created"}} selected{{end}}>user.binding.claim.created</option><option value="user.binding.attached"{{if eq .AuditAction "user.binding.attached"}} selected{{end}}>user.binding.attached</option><option value="user.migrated"{{if eq .AuditAction "user.migrated"}} selected{{end}}>user.migrated</option></select></div>
-      <div class="col-lg-3"><label class="form-label" for="audit-outcome">Outcome</label><select class="form-select" id="audit-outcome" name="outcome"><option value="">All outcomes</option><option value="succeeded"{{if eq .AuditOutcome "succeeded"}} selected{{end}}>Succeeded</option><option value="denied"{{if eq .AuditOutcome "denied"}} selected{{end}}>Denied</option></select></div>
-      <div class="col-lg-3"><label class="form-label" for="audit-target">Target</label><select class="form-select" id="audit-target" name="target"><option value="">All targets</option><option value="user"{{if eq .AuditTargetType "user"}} selected{{end}}>User</option><option value="session"{{if eq .AuditTargetType "session"}} selected{{end}}>Session family</option><option value="binding"{{if eq .AuditTargetType "binding"}} selected{{end}}>Binding</option><option value="system"{{if eq .AuditTargetType "system"}} selected{{end}}>System</option><option value="migration"{{if eq .AuditTargetType "migration"}} selected{{end}}>Migration</option></select></div><div class="col-lg-1 d-flex align-items-end"><button class="btn btn-primary" type="submit">Filter</button></div>
-    </div></form>
-    <div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">Time</th><th scope="col">Action</th><th scope="col">Outcome</th><th scope="col">Actor</th><th scope="col">Target</th><th scope="col">Event</th></tr></thead><tbody>{{range .Audit}}<tr><td>{{.OccurredAt}}</td><td><code>{{.Action}}</code></td><td>{{.Outcome}}</td><td>{{if .ActorUserID}}user:{{.ActorUserID}}{{end}}{{if .ActorSessionID}}<br>session:{{.ActorSessionID}}{{end}}{{if and (not .ActorUserID) (not .ActorSessionID)}}System{{end}}</td><td>{{.TargetType}}:<code>{{.TargetID}}</code></td><td><code>{{.ID}}</code></td></tr>{{else}}<tr><td colspan="6">No audit events.</td></tr>{{end}}</tbody></table></div>{{if .NextURL}}<a class="btn btn-outline-primary" href="{{.NextURL}}" hx-boost="true" hx-target="#main-content" hx-push-url="true">Next page</a>{{end}}
+  <div class="container-fluid"><header class="content-header"><div><p class="section-kicker">Security</p><h1>Audit</h1><p>Recent security events appear first. Times are shown in UTC.</p></div></header>
+    <form action="{{path "/"}}audit" method="get" hx-get="{{path "/"}}audit" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true" class="card mb-3 audit-filters"><div class="card-body"><div class="row g-2 align-items-end">
+      <div class="col-12 col-md-6"><label class="form-label" for="audit-action">Action</label><select class="form-select" id="audit-action" name="action">
+        <option value="">All security actions</option>
+        <option value="user.created"{{if eq .AuditAction "user.created"}} selected{{end}}>User created</option>
+        <option value="user.updated"{{if eq .AuditAction "user.updated"}} selected{{end}}>User updated</option>
+        <option value="user.access.changed"{{if eq .AuditAction "user.access.changed"}} selected{{end}}>User access changed</option>
+        <option value="user.role.changed"{{if eq .AuditAction "user.role.changed"}} selected{{end}}>User role changed</option>
+        <option value="user.status.changed"{{if eq .AuditAction "user.status.changed"}} selected{{end}}>User status changed</option>
+        <option value="user.credential.changed"{{if eq .AuditAction "user.credential.changed"}} selected{{end}}>Credential changed</option>
+        <option value="user.binding.claim.created"{{if eq .AuditAction "user.binding.claim.created"}} selected{{end}}>Binding invitation created</option>
+        <option value="user.binding.attached"{{if eq .AuditAction "user.binding.attached"}} selected{{end}}>Chat binding added</option>
+        <option value="user.binding.detached"{{if eq .AuditAction "user.binding.detached"}} selected{{end}}>Chat binding removed</option>
+        <option value="user.migrated"{{if eq .AuditAction "user.migrated"}} selected{{end}}>User migrated</option>
+        <option value="session.login.succeeded"{{if eq .AuditAction "session.login.succeeded"}} selected{{end}}>Signed in</option>
+        <option value="session.refresh.succeeded"{{if eq .AuditAction "session.refresh.succeeded"}} selected{{end}}>Session restored</option>
+        <option value="session.refresh.replay"{{if eq .AuditAction "session.refresh.replay"}} selected{{end}}>Session token replay</option>
+        <option value="session.revoked"{{if eq .AuditAction "session.revoked"}} selected{{end}}>Session ended</option>
+        <option value="session.logout"{{if eq .AuditAction "session.logout"}} selected{{end}}>Signed out</option>
+      </select></div>
+      <div class="col-6 col-md-3"><label class="form-label" for="audit-outcome">Outcome</label><select class="form-select" id="audit-outcome" name="outcome"><option value="">All</option><option value="succeeded"{{if eq .AuditOutcome "succeeded"}} selected{{end}}>Succeeded</option><option value="denied"{{if eq .AuditOutcome "denied"}} selected{{end}}>Denied</option></select></div>
+      <div class="col-6 col-md-3"><label class="form-label" for="audit-target">Target</label><select class="form-select" id="audit-target" name="target"><option value="">All</option><option value="user"{{if eq .AuditTargetType "user"}} selected{{end}}>User</option><option value="session"{{if eq .AuditTargetType "session"}} selected{{end}}>Session</option><option value="binding"{{if eq .AuditTargetType "binding"}} selected{{end}}>Binding</option><option value="system"{{if eq .AuditTargetType "system"}} selected{{end}}>System</option><option value="migration"{{if eq .AuditTargetType "migration"}} selected{{end}}>Migration</option></select></div>
+      <div class="col-12"><details{{if or .AuditFrom .AuditTo .AuditActor}} open{{end}}><summary>Dates and actor ID</summary><div class="row g-2 align-items-end mt-1">
+        <div class="col-6 col-md-3"><label class="form-label" for="audit-from">From</label><input class="form-control" id="audit-from" name="from" type="date" value="{{.AuditFrom}}"></div>
+        <div class="col-6 col-md-3"><label class="form-label" for="audit-to">Through</label><input class="form-control" id="audit-to" name="to" type="date" value="{{.AuditTo}}"></div>
+        <div class="col-12 col-md-6"><label class="form-label" for="audit-actor">Actor user ID</label><input class="form-control" id="audit-actor" name="actor" value="{{.AuditActor}}" maxlength="128" autocomplete="off"></div>
+      </div></details></div>
+      <div class="col-12 d-flex flex-wrap gap-2"><button class="btn btn-primary" type="submit">Filter events</button>{{if or .AuditAction .AuditOutcome .AuditTargetType .AuditFrom .AuditTo .AuditActor}}<a class="btn btn-outline-secondary" href="{{path "/"}}audit" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Clear filters</a>{{end}}</div>
+    </div></div></form>
+    <p class="small text-body-secondary d-md-none mb-2">Swipe the table sideways to see actor, target, outcome, and details.</p>
+    <section aria-label="Security events" class="card"><header class="card-header"><h2 class="card-title">Security events</h2><span class="support-meta">Newest first · UTC</span></header><div class="table-responsive" tabindex="0" role="region" aria-label="Security events table, horizontally scrollable">
+      <table class="table table-hover audit-table"><thead><tr><th scope="col">Time (UTC)</th><th scope="col">Action</th><th scope="col">Actor</th><th scope="col">Target</th><th scope="col">Outcome</th><th scope="col">Details</th></tr></thead><tbody>
+      {{range .Audit}}<tr>
+        <td><time datetime="{{.OccurredAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.OccurredAt.Format "02 Jan 2006"}}<br>{{.OccurredAt.Format "15:04:05"}}</time></td>
+        <td>{{.ActionLabel}}</td><td class="event-actor">{{.ActorName}}</td><td class="event-target">{{.TargetName}}</td>
+        <td><span class="status-chip {{if eq .Outcome "denied"}}status-chip--warning{{else}}status-chip--success{{end}}">{{.Outcome}}</span></td>
+        <td><details><summary>Technical details</summary><dl class="mt-2 mb-0">
+          <dt>Action code</dt><dd><code>{{.Action}}</code></dd>
+          <dt>Actor user ID</dt><dd><code>{{if .ActorUserID}}{{.ActorUserID}}{{else}}—{{end}}</code></dd>
+          <dt>Actor session ID</dt><dd><code>{{if .ActorSessionID}}{{.ActorSessionID}}{{else}}—{{end}}</code></dd>
+          <dt>Target</dt><dd><code>{{.TargetType}}:{{.TargetID}}</code></dd>
+          <dt>Event ID</dt><dd><code>{{.ID}}</code></dd>
+        </dl></details></td>
+      </tr>{{else}}<tr><td colspan="6"><span class="empty-table-message">No audit events match these filters. Adjust the filters or review an older page.</span></td></tr>{{end}}
+      </tbody></table>
+    </div></section>
+    {{if .NextURL}}<a class="btn btn-outline-primary mt-3" href="{{.NextURL}}" hx-boost="true" hx-target="#main-content" hx-swap="outerHTML" hx-push-url="true">Older events</a>{{end}}
   </div>
 </main>{{end}}

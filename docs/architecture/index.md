@@ -47,6 +47,9 @@ Use this map to find the authoritative runtime contracts.
   `CommandActor`.
 - `actorcmd` is the canonical leaf package for Balda actor targets, namespaces, subjects, headers, and job scope metadata; `execution` re-exports that taxonomy as the runtime-facing compatibility facade.
 - `deliverycmd` is the leaf package for transport-neutral delivery contracts: locator, opaque delivery capability, progress policy, delivery payloads, and adapter-facing delivery operations. `deliveryfmt` resolves that capability through one immutable registry shared by prompt and delivery paths.
+- `state` owns storage, read models, and embedded Goose schema/data upgrades,
+  including canonical user conversion. Backoffice owns credential bootstrap and
+  administrator readiness after the provider has opened.
 - `session` owns session lifecycle and restore semantics, but does not own transport delivery contracts.
 - `channel/*` packages are concrete transport adapters only. They must not define shared cross-transport contracts and must not import Balda application/session internals for convenience.
 - `chatapp` and `webhookapp` own ingress normalization, authorization/session preconditions, and durable publish; `commandfx` owns command publication; `handlersfx` is the composition boundary that binds transport ports to concrete provider runtimes.
