@@ -51,6 +51,10 @@ func checkMCPRevisionsSurviveRestart(t *testing.T, open contractOpener) {
 	if err != nil || !found || c.Version != 2 || c.PublishedVersion != 0 || c.CurrentRevisionID != "revision-2" {
 		t.Fatalf("saved connection after restart = %+v, %v, %v", c, found, err)
 	}
+	retained, err := p.MCP().ListMCPRevisions(t.Context())
+	if err != nil || len(retained) != 2 {
+		t.Fatalf("historical credential readiness inventory = %d revisions, %v", len(retained), err)
+	}
 	for _, want := range []mcpcmd.Revision{first, *m.Revision} {
 		got, found, err := p.MCP().GetMCPRevision(t.Context(), want.ConnectionID, want.ID)
 		if err != nil || !found || !reflect.DeepEqual(got, want) {

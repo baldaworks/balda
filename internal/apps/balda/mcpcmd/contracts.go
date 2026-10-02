@@ -7,10 +7,11 @@ import (
 )
 
 var (
-	ErrInvalid   = errors.New("invalid MCP definition")
-	ErrConflict  = errors.New("MCP definition conflict")
-	ErrNotFound  = errors.New("MCP definition not found")
-	ErrForbidden = errors.New("MCP management forbidden")
+	ErrInvalid     = errors.New("invalid MCP definition")
+	ErrConflict    = errors.New("MCP definition conflict")
+	ErrNotFound    = errors.New("MCP definition not found")
+	ErrForbidden   = errors.New("MCP management forbidden")
+	ErrCredentials = errors.New("MCP protected credentials unavailable")
 )
 
 type Source string
@@ -97,4 +98,30 @@ type Authority struct {
 	SessionVersion    uint64
 	At                time.Time
 	FreshProofAge     time.Duration
+}
+
+type ValueOperation string
+
+const (
+	ValueKeep   ValueOperation = "keep"
+	ValueSet    ValueOperation = "set"
+	ValueRemove ValueOperation = "remove"
+)
+
+// ValueEdit is write-only material; public forms expose only its kind/key.
+type ValueEdit struct {
+	Operation ValueOperation
+	Kind      ValueKind
+	Value     string `json:"-"`
+}
+
+type ValueEdits struct {
+	Env     map[string]ValueEdit
+	Headers map[string]ValueEdit
+}
+
+// LaunchValues contains plaintext exclusively for trusted transport construction.
+type LaunchValues struct {
+	Env     map[string]string `json:"-"`
+	Headers map[string]string `json:"-"`
 }

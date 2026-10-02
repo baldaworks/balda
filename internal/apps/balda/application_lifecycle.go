@@ -16,11 +16,13 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
 	"github.com/baldaworks/balda/internal/apps/balda/session"
 	"github.com/baldaworks/balda/internal/apps/balda/sessionmemoryapp"
 	"github.com/baldaworks/balda/internal/apps/balda/shutdown"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 	portableapp "github.com/baldaworks/balda/sessionmemory/app"
 	"github.com/rs/zerolog"
 	"github.com/tgbotkit/runtime"
@@ -142,6 +144,8 @@ type applicationLifecycleParams struct {
 	Logger               zerolog.Logger
 	Backoffice           *backoffice.Runtime
 	MCP                  *internalmcp.InternalMCPManager
+	MCPManagement        *mcpmanage.Service
+	StateProvider        state.Provider
 	Catalog              *catalogapp.Lifecycle
 	Runtime              *baldaagent.RuntimeManager
 	Sessions             *session.Manager
@@ -175,6 +179,9 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 	stages := []lifecycleStage{
 		{name: "user readiness", start: p.Backoffice.ValidateReady},
 		{name: "bundled MCP", start: p.MCP.EnsureStarted, stop: p.MCP.Stop},
+		{name: "managed MCP credential readiness", start: func(ctx context.Context) error {
+			return p.MCPManagement.ValidateCredentials(ctx, p.StateProvider.MCP())
+		}},
 		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
 			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)

@@ -29,6 +29,8 @@ type LaunchConfig struct {
 	WorkingDir string
 	URL        string
 	Headers    map[string]string
+	// EnforceHTTPOrigin scopes resolved managed credentials to their endpoint.
+	EnforceHTTPOrigin bool
 }
 
 // Tool is bounded observed tool identity; raw schemas and results stay in the instance.

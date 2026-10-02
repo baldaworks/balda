@@ -214,24 +214,51 @@ func (s *sqlMCPStore) ListMCPConnections(ctx context.Context) ([]mcpcmd.Connecti
 }
 
 func (s *sqlMCPStore) GetMCPRevision(ctx context.Context, connectionID, revisionID string) (mcpcmd.Revision, bool, error) {
-	var r mcpcmd.Revision
-	var definition, created string
-	err := s.users.db.QueryRowContext(ctx, s.users.bind(`SELECT connection_id, revision_id, definition_json,
-		protected_values, created_at FROM balda_mcp_revisions WHERE connection_id = ? AND revision_id = ?`), connectionID, revisionID).
-		Scan(&r.ConnectionID, &r.ID, &definition, &r.ProtectedValues, &created)
+	row := s.users.db.QueryRowContext(ctx, s.users.bind(`SELECT connection_id, revision_id, definition_json,
+		protected_values, created_at FROM balda_mcp_revisions WHERE connection_id = ? AND revision_id = ?`), connectionID, revisionID)
+	r, err := scanMCPRevision(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return r, false, nil
+		return mcpcmd.Revision{}, false, nil
 	}
 	if err != nil {
-		return r, false, mcpStoreError("read MCP revision", err)
-	}
-	if err := json.Unmarshal([]byte(definition), &r.Definition); err != nil {
-		return mcpcmd.Revision{}, false, mcpStoreError("decode MCP revision", err)
-	}
-	if r.CreatedAt, err = parseUserTime(created); err != nil {
-		return mcpcmd.Revision{}, false, mcpStoreError("read MCP revision time", err)
+		return mcpcmd.Revision{}, false, mcpStoreError("read MCP revision", err)
 	}
 	return r, true, nil
+}
+
+func scanMCPRevision(row interface{ Scan(dest ...any) error }) (mcpcmd.Revision, error) {
+	var r mcpcmd.Revision
+	var definition, created string
+	err := row.Scan(&r.ConnectionID, &r.ID, &definition, &r.ProtectedValues, &created)
+	if err != nil {
+		return r, err
+	}
+	if err := json.Unmarshal([]byte(definition), &r.Definition); err != nil {
+		return mcpcmd.Revision{}, err
+	}
+	r.CreatedAt, err = parseUserTime(created)
+	return r, err
+}
+
+func (s *sqlMCPStore) ListMCPRevisions(ctx context.Context) ([]mcpcmd.Revision, error) {
+	rows, err := s.users.db.QueryContext(ctx, `SELECT connection_id, revision_id, definition_json,
+		protected_values, created_at FROM balda_mcp_revisions ORDER BY connection_id, revision_id`)
+	if err != nil {
+		return nil, mcpStoreError("list MCP revisions", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var revisions []mcpcmd.Revision
+	for rows.Next() {
+		r, err := scanMCPRevision(rows)
+		if err != nil {
+			return nil, mcpStoreError("read MCP revisions", err)
+		}
+		revisions = append(revisions, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mcpStoreError("iterate MCP revisions", err)
+	}
+	return revisions, nil
 }
 
 func (s *sqlMCPStore) MarkMCPPublished(ctx context.Context, id string, version uint64) error {

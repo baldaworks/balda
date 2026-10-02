@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"sort"
 	"strings"
@@ -15,6 +16,8 @@ import (
 // ClientLauncher starts, initializes, and discovers tools from one exact MCP
 // launch config before it can be projected into a provider runtime.
 type ClientLauncher struct{}
+
+const transportStreamableHTTP = "streamable-http"
 
 // NewClientLauncher creates the concrete MCP client lifecycle adapter.
 func NewClientLauncher() *ClientLauncher { return &ClientLauncher{} }
@@ -48,16 +51,24 @@ func clientTransport(config mcpruntime.LaunchConfig) (mcp.Transport, error) {
 		command.Dir = config.WorkingDir
 		command.Env = environment(config.Env)
 		return &mcp.CommandTransport{Command: command}, nil
-	case "streamable-http":
+	case transportStreamableHTTP:
 		if strings.TrimSpace(config.URL) == "" {
 			return nil, errors.New("MCP URL is required")
 		}
-		return &mcp.StreamableClientTransport{Endpoint: config.URL, HTTPClient: headerClient(config.Headers)}, nil
+		client, err := headerClient(config)
+		if err != nil {
+			return nil, err
+		}
+		return &mcp.StreamableClientTransport{Endpoint: config.URL, HTTPClient: client}, nil
 	case "sse":
 		if strings.TrimSpace(config.URL) == "" {
 			return nil, errors.New("MCP URL is required")
 		}
-		return &mcp.SSEClientTransport{Endpoint: config.URL, HTTPClient: headerClient(config.Headers)}, nil
+		client, err := headerClient(config)
+		if err != nil {
+			return nil, err
+		}
+		return &mcp.SSEClientTransport{Endpoint: config.URL, HTTPClient: client}, nil
 	default:
 		return nil, errors.New("MCP transport is unsupported")
 	}
@@ -124,9 +135,15 @@ func environment(values map[string]string) []string {
 type headerTransport struct {
 	base    http.RoundTripper
 	headers map[string]string
+	origin  *url.URL
 }
 
 func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	// SSE endpoint events can create new requests without a redirect. Check
+	// every destination before either inherited or configured headers are sent.
+	if t.origin != nil && !sameHTTPOrigin(request.URL, t.origin) {
+		return nil, errors.New("MCP request changes origin")
+	}
 	cloned := request.Clone(request.Context())
 	cloned.Header = request.Header.Clone()
 	for key, value := range t.headers {
@@ -135,8 +152,31 @@ func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error
 	return t.base.RoundTrip(cloned)
 }
 
-func headerClient(headers map[string]string) *http.Client {
-	return &http.Client{Transport: headerTransport{base: http.DefaultTransport, headers: headers}}
+func sameHTTPOrigin(left, right *url.URL) bool {
+	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
+}
+
+func headerClient(config mcpruntime.LaunchConfig) (*http.Client, error) {
+	transport := headerTransport{base: http.DefaultTransport, headers: config.Headers}
+	client := &http.Client{}
+	if config.EnforceHTTPOrigin {
+		origin, err := url.Parse(config.URL)
+		if err != nil || origin.Host == "" || origin.User != nil || (origin.Scheme != "http" && origin.Scheme != "https") {
+			return nil, errors.New("MCP credential origin is invalid")
+		}
+		transport.origin = origin
+		client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+			if len(via) == 0 || len(via) >= 10 {
+				return errors.New("MCP redirect limit exceeded")
+			}
+			if !sameHTTPOrigin(request.URL, origin) {
+				return errors.New("MCP redirect changes origin")
+			}
+			return nil
+		}
+	}
+	client.Transport = transport
+	return client, nil
 }
 
 var _ mcpruntime.Launcher = (*ClientLauncher)(nil)

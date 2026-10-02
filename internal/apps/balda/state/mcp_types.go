@@ -23,5 +23,6 @@ type MCPStore interface {
 	GetMCPConnection(ctx context.Context, id string) (mcpcmd.Connection, bool, error)
 	ListMCPConnections(ctx context.Context) ([]mcpcmd.Connection, error)
 	GetMCPRevision(ctx context.Context, connectionID, revisionID string) (mcpcmd.Revision, bool, error)
+	ListMCPRevisions(ctx context.Context) ([]mcpcmd.Revision, error)
 	MarkMCPPublished(ctx context.Context, id string, version uint64) error
 }

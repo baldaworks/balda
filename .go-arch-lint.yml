@@ -206,6 +206,11 @@ components:
     in:
       - internal/apps/balda/mcpfx
 
+  # Worker MCP definition/credential/authorization policy behind local ports.
+  mcp_management:
+    in:
+      - internal/apps/balda/mcpmanage
+
   # Composition adapters for catalog sources, lifecycle, scope overlays, and
   # command/skill/MCP projections.
   catalog_wiring:
@@ -536,12 +541,21 @@ deps:
   mcp_wiring:
     mayDependOn:
       - contracts
+      - mcp_contracts
       - mcp_runtime
       - mcp_wiring
     # Constructors inject runtime ports into provider adapters; deep scan
     # otherwise reports the intended composition direction as an inverse edge.
     deepScan: false
     anyVendorDeps: true
+
+  mcp_management:
+    mayDependOn:
+      - mcp_contracts
+      - user_contracts
+      - mcp_management
+    deepScan: false
+    anyVendorDeps: false
 
   catalog_wiring:
     mayDependOn:
@@ -764,6 +778,8 @@ deps:
   composition_root:
     mayDependOn:
       - foundation
+      - mcp_management
+      - mcp_contracts
       - backoffice_application
       - contracts
       - user_contracts

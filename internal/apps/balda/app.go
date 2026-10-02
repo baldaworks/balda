@@ -39,6 +39,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	"github.com/baldaworks/balda/internal/apps/balda/jobexec"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/memory"
 	"github.com/baldaworks/balda/internal/apps/balda/paths"
 	"github.com/baldaworks/balda/internal/apps/balda/permissions"
@@ -272,6 +273,7 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
+			func() (*mcpmanage.Service, error) { return mcpmanage.New(cfg.Balda.MCPManagement.CredentialKey) },
 			sessionmemorymcp.NewContextBroker,
 			fx.Annotate(
 				func() bool { return cfg.Balda.SessionMemory.Enabled },
