@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/rs/zerolog"
 )
@@ -236,6 +237,22 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	rawBody := string(bodyBytes)
+	target, err := targetForBody(rt.Target, rt.TargetKeyFromBody, bodyBytes)
+	if err != nil {
+		r.metrics.invalid.Add(1)
+		r.writeError(w, requestID, &httpError{status: http.StatusBadRequest, code: codeInvalidPayload, message: messageCouldNotAccept, cause: err})
+		return
+	}
+	var reportTo *envelopetarget.Target
+	if rt.ReportTo != nil {
+		resolved, resolveErr := targetForBody(*rt.ReportTo, rt.ReportToKeyFromBody, bodyBytes)
+		if resolveErr != nil {
+			r.metrics.invalid.Add(1)
+			r.writeError(w, requestID, &httpError{status: http.StatusBadRequest, code: codeInvalidPayload, message: messageCouldNotAccept, cause: resolveErr})
+			return
+		}
+		reportTo = &resolved
+	}
 
 	headers := make(map[string]string, len(req.Header))
 	for name, values := range req.Header {
@@ -292,8 +309,8 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		RequestID: requestID,
 		RouteName: rt.Name,
 		Prompt:    prompt,
-		Target:    rt.Target,
-		ReportTo:  rt.ReportTo,
+		Target:    target,
+		ReportTo:  reportTo,
 		Mode:      rt.Mode,
 		DedupeKey: dedupeKey,
 	})
@@ -350,6 +367,22 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		MessageID: result.MessageID,
 		Duplicate: result.Duplicate,
 	})
+}
+
+func targetForBody(target envelopetarget.Target, field string, body []byte) (envelopetarget.Target, error) {
+	if field == "" {
+		return target, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return target, fmt.Errorf("decode webhook destination: %w", err)
+	}
+	var key string
+	if err := json.Unmarshal(fields[field], &key); err != nil || strings.TrimSpace(key) == "" {
+		return target, fmt.Errorf("webhook destination field %q must be a nonempty string", field)
+	}
+	target.Key = strings.TrimSpace(key)
+	return target, nil
 }
 
 func authorizeRequest(req *http.Request, policy authPolicy) error {

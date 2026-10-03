@@ -424,8 +424,10 @@ balda:
     - `target` + `key`: destination address (defaults to `alias` + `owner`)
       - `target=locator` consumes a locator ref in the form `<channel_type>:<address_key>`; `/locator` prints the current session value
       - `target=alias` consumes an alias key (defaults to `owner`, with optional channel qualification such as `owner@telegram` or `owner@slackagent`); resolves via the transport-neutral destination resolver, supporting multiple concurrent channels and default selection with fallback to legacy Telegram owner state when no explicit destination records exist
-    - `mode`: `task` (default) or `session`
-    - `report_to`: optional destination for progress/final replies
+      - `target=session` resolves an existing session ID to its persisted locator
+    - `key_from_body`: for a header-authenticated route, read a top-level JSON string field instead of a fixed `key`; use `key_from_body=chat_id` to return an event to its source session
+    - `mode`: `job` (default) or `session`
+    - `report_to`: optional destination for progress/final replies; supports `key_from_body` too
   - optional `auth`:
     - `type`: `none` (default) or `header`
     - `header` + `value` (or `secret_env`) for `type=header`

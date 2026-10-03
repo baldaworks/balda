@@ -7,16 +7,42 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
+	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
 
 // DestinationResolver resolves envelope alias targets using registered destinations.
 type DestinationResolver struct {
 	destStore *DestinationStore
+	sessions  state.SessionStore
 }
 
 // NewDestinationResolver creates a new DestinationResolver.
 func NewDestinationResolver(destStore *DestinationStore) *DestinationResolver {
 	return &DestinationResolver{destStore: destStore}
+}
+
+// NewDestinationResolverWithSessions also resolves persisted session destinations.
+func NewDestinationResolverWithSessions(destStore *DestinationStore, sessions state.SessionStore) *DestinationResolver {
+	return &DestinationResolver{destStore: destStore, sessions: sessions}
+}
+
+// ResolveSession returns the canonical locator for an active session.
+func (r *DestinationResolver) ResolveSession(ctx context.Context, sessionID string) (envelopetarget.Resolved, error) {
+	if r.sessions == nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("session store is unavailable")
+	}
+	record, found, err := r.sessions.GetBySessionID(ctx, sessionID)
+	if err != nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("read session %q: %w", sessionID, err)
+	}
+	if !found || (record.Status != "" && record.Status != state.SessionStatusActive) {
+		return envelopetarget.Resolved{}, fmt.Errorf("active session %q not found", sessionID)
+	}
+	locator, err := deliverycmd.NewLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
+	if err != nil {
+		return envelopetarget.Resolved{}, fmt.Errorf("decode session %q locator: %w", sessionID, err)
+	}
+	return envelopetarget.Resolved{Locator: locator, Principal: record.UserID}, nil
 }
 
 // ResolveAlias resolves an alias (e.g. "owner", "owner@slackagent", "collaborator") to a canonical delivery locator and principal.

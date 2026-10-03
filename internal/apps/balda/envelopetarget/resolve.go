@@ -13,6 +13,7 @@ const (
 	TargetAlias   = "alias"
 	AliasOwner    = "owner"
 	TargetLocator = "locator"
+	TargetSession = "session"
 )
 
 // Target describes an envelope destination reference (either alias or locator).
@@ -35,6 +36,11 @@ func (r Resolved) UserID() string {
 // DestinationResolver resolves an alias to a canonical delivery locator and principal.
 type DestinationResolver interface {
 	ResolveAlias(ctx context.Context, alias string) (Resolved, error)
+}
+
+// SessionDestinationResolver resolves an existing session ID to its persisted locator.
+type SessionDestinationResolver interface {
+	ResolveSession(ctx context.Context, sessionID string) (Resolved, error)
 }
 
 // Resolve resolves an envelope target into a canonical delivery locator and principal.
@@ -64,6 +70,12 @@ func Resolve(
 			return Resolved{}, err
 		}
 		return Resolved{Locator: locator}, nil
+	case TargetSession:
+		sessionResolver, ok := resolver.(SessionDestinationResolver)
+		if !ok {
+			return Resolved{}, fmt.Errorf("session destination resolver is required")
+		}
+		return sessionResolver.ResolveSession(ctx, key)
 	default:
 		return Resolved{}, fmt.Errorf("unsupported envelope target %q", target.Target)
 	}

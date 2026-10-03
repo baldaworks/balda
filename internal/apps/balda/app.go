@@ -719,8 +719,8 @@ func Module(
 		fx.Provide(func(provider baldastate.Provider) (*auth.DestinationStore, error) {
 			return auth.NewDestinationStore(provider.AppKV())
 		}),
-		fx.Provide(func(destStore *auth.DestinationStore) envelopetarget.DestinationResolver {
-			return auth.NewDestinationResolver(destStore)
+		fx.Provide(func(destStore *auth.DestinationStore, provider baldastate.Provider) envelopetarget.DestinationResolver {
+			return auth.NewDestinationResolverWithSessions(destStore, provider.Sessions())
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
@@ -1077,8 +1077,9 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 		var reportTo *webhook.RouteTargetConfig
 		if route.Envelope.ReportTo != nil {
 			reportTo = &webhook.RouteTargetConfig{
-				Target: strings.TrimSpace(route.Envelope.ReportTo.Target),
-				Key:    strings.TrimSpace(route.Envelope.ReportTo.Key),
+				Target:      strings.TrimSpace(route.Envelope.ReportTo.Target),
+				Key:         strings.TrimSpace(route.Envelope.ReportTo.Key),
+				KeyFromBody: strings.TrimSpace(route.Envelope.ReportTo.KeyFromBody),
 			}
 		}
 		authValue := strings.TrimSpace(route.Auth.Value)
@@ -1091,10 +1092,11 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 			Path:           strings.TrimSpace(route.Path),
 			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
 			Envelope: webhook.RouteEnvelopeConfig{
-				Target:   strings.TrimSpace(route.Envelope.Target),
-				Key:      strings.TrimSpace(route.Envelope.Key),
-				Mode:     strings.TrimSpace(route.Envelope.Mode),
-				ReportTo: reportTo,
+				Target:      strings.TrimSpace(route.Envelope.Target),
+				Key:         strings.TrimSpace(route.Envelope.Key),
+				KeyFromBody: strings.TrimSpace(route.Envelope.KeyFromBody),
+				Mode:        strings.TrimSpace(route.Envelope.Mode),
+				ReportTo:    reportTo,
 			},
 			Auth: webhook.RouteAuthConfig{
 				Type:   strings.TrimSpace(route.Auth.Type),

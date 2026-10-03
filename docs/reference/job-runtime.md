@@ -78,13 +78,38 @@ Balda can optionally expose local webhook routes that map path -> route envelope
 - Route resolution:
   - request path must match a configured route `path`
   - destination comes from route `envelope.target` + `envelope.key` (default `alias:owner`)
+  - authenticated routes may use `envelope.key_from_body` to read a top-level JSON string instead of a fixed `key`; `target=session` resolves that session ID to its persisted locator
+  - `envelope.report_to` supports the same `key_from_body` field, so replies return to the source session
   - `target=locator` accepts `<channel_type>:<address_key>` in `key`; obtain the
     current value from the [locator command](../commands.md#locator)
   - route `envelope.mode` decides publish target:
-    - `task` (default): publish webhook job command; job execution later emits the session command
+    - `job` (default): publish webhook job command; job execution later emits the session command
     - `session`: publish session command directly
+
+For a trusted event source that includes the originating session ID:
+
+```yaml
+balda:
+  webhooks:
+    routes:
+      broker_events:
+        path: /webhook/broker-events
+        prompt_template: '{{ .RawBody }}'
+        auth:
+          type: header
+          header: Authorization
+          secret_env: BROKER_WEBHOOK_AUTHORIZATION
+        envelope:
+          target: session
+          key_from_body: chat_id
+          mode: session
+          report_to:
+            target: session
+            key_from_body: chat_id
+```
+
 - Prompt generation:
-  - request body is treated as opaque raw text
+  - request body is treated as opaque raw text unless a route uses `key_from_body`, which requires a JSON object
   - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
   - rendered prompt must be non-empty
 - Session resolution:

@@ -66,6 +66,48 @@ func newTestReceiver(svc Service) *Receiver {
 	}
 }
 
+func TestReceiver_RoutesAuthenticatedBodySession(t *testing.T) {
+	svc := &fakeService{}
+	cfg := Config{Enabled: true, Routes: map[string]RouteConfig{"execution": {
+		Path: "/execution", PromptTemplate: "{{.RawBody}}",
+		Envelope: RouteEnvelopeConfig{
+			Target: "session", KeyFromBody: "chat_id", Mode: RouteModeSession,
+			ReportTo: &RouteTargetConfig{Target: "session", KeyFromBody: "chat_id"},
+		},
+		Auth: RouteAuthConfig{Type: AuthTypeHeader, Header: "Authorization", Value: "Bearer test"},
+	}}}
+	receiver, err := NewReceiver(cfg, svc, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/execution", strings.NewReader(`{"chat_id":"mm-c-original-thread"}`))
+	req.Header.Set("Authorization", "Bearer test")
+	rec := httptest.NewRecorder()
+	receiver.handleWebhook(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if svc.lastReq.Target.Key != "mm-c-original-thread" || svc.lastReq.ReportTo == nil || svc.lastReq.ReportTo.Key != "mm-c-original-thread" {
+		t.Fatalf("destination = %+v, report_to = %+v", svc.lastReq.Target, svc.lastReq.ReportTo)
+	}
+
+	bad := httptest.NewRequest(http.MethodPost, "/execution", strings.NewReader(`{"chat_id":123}`))
+	bad.Header.Set("Authorization", "Bearer test")
+	badRec := httptest.NewRecorder()
+	receiver.handleWebhook(badRec, bad)
+	assertErrorResponse(t, badRec, http.StatusBadRequest, codeInvalidPayload, messageCouldNotAccept)
+}
+
+func TestNormalizeConfig_RejectsUnauthenticatedBodyDestination(t *testing.T) {
+	_, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"execution": {
+		Path: "/execution", PromptTemplate: "{{.RawBody}}",
+		Envelope: RouteEnvelopeConfig{Target: "session", KeyFromBody: "chat_id"},
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "requires header authentication") {
+		t.Fatalf("expected authentication error, got %v", err)
+	}
+}
+
 func assertErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, wantStatus int, wantCode, wantMessage string) {
 	t.Helper()
 
