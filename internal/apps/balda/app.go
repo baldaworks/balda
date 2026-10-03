@@ -736,6 +736,9 @@ func Module(
 				return envelopetarget.Resolved{Locator: locator, Principal: record.UserID}, true, nil
 			})
 		}),
+		fx.Provide(func(provider baldastate.Provider) webhook.DeliveryReceipts {
+			return provider.Jobs()
+		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
 		}),
