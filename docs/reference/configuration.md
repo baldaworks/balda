@@ -428,6 +428,8 @@ balda:
     - `key_from_body`: for a header-authenticated route, read a top-level JSON string field instead of a fixed `key`; use `key_from_body=chat_id` to return an event to its source session
     - `mode`: `job` (default) or `session`
     - `report_to`: optional destination for progress/final replies; supports `key_from_body` too
+    - `fallback_to`: fixed `alias` or `locator` used when a body-sourced session target is missing or inactive; requires header authentication
+    - `ack_on_delivery`: when true, return `200` only after the final reply is posted; requires `mode=job` and `report_to` (default: false)
   - optional `auth`:
     - `type`: `none` (default) or `header`
     - `header` + `value` (or `secret_env`) for `type=header`

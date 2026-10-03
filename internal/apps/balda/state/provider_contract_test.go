@@ -768,6 +768,9 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 
 	ctx := context.Background()
 	store := provider.Jobs()
+	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
+		t.Fatalf("initial final delivery = sent %v, err %v", sent, err)
+	}
 
 	record, created, err := store.ReserveDelivery(ctx, DeliveryRecord{
 		ID:          "delivery-1",
@@ -833,6 +836,22 @@ func checkJobStore_DeliveryOutboxLifecycle(t *testing.T, open contractOpener) {
 		t.Fatalf("ReserveDelivery(after failed) error = %v", err)
 	} else if created || delivery.Status != DeliveryStatusFailed || delivery.Error != "provider timeout" {
 		t.Fatalf("ReserveDelivery(after failed) = %+v created=%v, want failed existing", delivery, created)
+	}
+	final, _, err := store.ReserveDelivery(ctx, DeliveryRecord{
+		ID: "final-delivery", DeliveryKey: "task-1:delivery:final", JobID: "task-1", SessionID: "session-1",
+		Channel: "mattermost", AddressKey: "channel:thread", Kind: "delivery", Payload: `{"mode":"agent_reply"}`, PayloadHash: "hash-final",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || sent {
+		t.Fatalf("pending final delivery = sent %v, err %v", sent, err)
+	}
+	if err := store.MarkDeliverySent(ctx, final.DeliveryKey, "mm-post-1"); err != nil {
+		t.Fatal(err)
+	}
+	if id, sent, err := store.SentFinalDelivery(ctx, "task-1"); err != nil || !sent || id != "mm-post-1" {
+		t.Fatalf("sent final delivery = id %q, sent %v, err %v", id, sent, err)
 	}
 }
 

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 type fakeTargetResolver struct {
@@ -219,6 +219,66 @@ func TestService_Accept_TargetNotFound(t *testing.T) {
 	}
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("errors.Is(err, expectedErr) = false; err = %v", err)
+	}
+}
+
+func TestService_Accept_SessionFallbackAndIsolation(t *testing.T) {
+	t.Parallel()
+	available := map[string]envelopetarget.Resolved{
+		"session-a": {Locator: deliverycmd.Locator{ChannelType: "mattermost", AddressKey: "channel:a", SessionID: "session-a"}, Principal: "user-a"},
+		"session-b": {Locator: deliverycmd.Locator{ChannelType: "mattermost", AddressKey: "channel:b", SessionID: "session-b"}, Principal: "user-b"},
+		"default":   {Locator: deliverycmd.Locator{ChannelType: "mattermost", AddressKey: "channel:default", SessionID: "default"}, Principal: "owner"},
+	}
+	resolver := &fakeTargetResolver{resolveFn: func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
+		if got, ok := available[target.Key]; ok {
+			return got, nil
+		}
+		return envelopetarget.Resolved{}, envelopetarget.ErrSessionUnavailable
+	}}
+	fallback := envelopetarget.Target{Target: "alias", Key: "default"}
+	for _, tc := range []struct {
+		session, wantSession string
+		fallbackUsed         bool
+	}{
+		{"session-a", "session-a", false},
+		{"session-b", "session-b", false},
+		{"closed", "default", true},
+	} {
+		t.Run(tc.session, func(t *testing.T) {
+			publisher := &fakeJobPublisher{}
+			svc := NewService(resolver, nil, publisher)
+			source := envelopetarget.Target{Target: "session", Key: tc.session}
+			result, err := svc.Accept(context.Background(), Request{
+				RequestID: tc.session, RouteName: "route", Prompt: "event", Target: source,
+				ReportTo: &source, FallbackTo: &fallback, Mode: ModeJob,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.FallbackUsed != tc.fallbackUsed || result.Target.Locator.SessionID != tc.wantSession {
+				t.Fatalf("result = %+v", result)
+			}
+			if publisher.lastPayload == nil || publisher.lastPayload.ReportTo == nil ||
+				publisher.lastPayload.ReportTo.SessionID != tc.wantSession ||
+				publisher.lastPayload.Locator.SessionID != tc.wantSession {
+				t.Fatalf("payload = %+v", publisher.lastPayload)
+			}
+		})
+	}
+}
+
+func TestService_Accept_StorageErrorDoesNotUseFallback(t *testing.T) {
+	t.Parallel()
+	storageErr := errors.New("database unavailable")
+	resolver := &fakeTargetResolver{resolveFn: func(_ context.Context, _ envelopetarget.Target) (envelopetarget.Resolved, error) {
+		return envelopetarget.Resolved{}, storageErr
+	}}
+	svc := NewService(resolver, nil, &fakeJobPublisher{})
+	fallback := envelopetarget.Target{Target: "alias", Key: "default"}
+	_, err := svc.Accept(context.Background(), Request{RequestID: "r", RouteName: "route", Prompt: "event",
+		Target: envelopetarget.Target{Target: "session", Key: "source"}, FallbackTo: &fallback, Mode: ModeJob})
+	if !errors.Is(err, storageErr) {
+		t.Fatalf("error = %v, want storage error", err)
 	}
 }
 

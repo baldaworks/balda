@@ -1,8 +1,10 @@
 package webhook
 
 import (
+	"fmt"
 	"github.com/baldaworks/balda/internal/apps/balda/auth"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
+	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
@@ -32,13 +34,26 @@ func newWebhookappService(params serviceParams) *webhookapp.Service {
 type receiverParams struct {
 	fx.In
 
-	Config  Config
-	Service *webhookapp.Service
-	Logger  zerolog.Logger
+	Config   Config
+	Service  *webhookapp.Service
+	Logger   zerolog.Logger
+	Provider baldastate.Provider `optional:"true"`
 }
 
 func newReceiver(params receiverParams) (*Receiver, error) {
-	return NewReceiver(params.Config, params.Service, params.Logger)
+	receiver, err := NewReceiver(params.Config, params.Service, params.Logger)
+	if err != nil {
+		return nil, err
+	}
+	if params.Provider != nil {
+		receiver.SetDeliveryReceipts(params.Provider.Jobs())
+	}
+	for _, route := range receiver.routes {
+		if route.AckOnDelivery && receiver.deliveryReceipts == nil {
+			return nil, fmt.Errorf("webhook route %q requires a delivery receipt store", route.Name)
+		}
+	}
+	return receiver, nil
 }
 
 // Module provides the inbound webhook receiver and its application service.

@@ -25,6 +25,16 @@ type fakeService struct {
 	err     error
 }
 
+type fakeDeliveryReceipts struct {
+	messageID string
+	sent      bool
+	err       error
+}
+
+func (f *fakeDeliveryReceipts) SentFinalDelivery(_ context.Context, _ string) (string, bool, error) {
+	return f.messageID, f.sent, f.err
+}
+
 func (f *fakeService) Accept(_ context.Context, req webhookapp.Request) (webhookapp.Result, error) {
 	f.lastReq = req
 	if f.err != nil {
@@ -72,7 +82,8 @@ func TestReceiver_RoutesAuthenticatedBodySession(t *testing.T) {
 		Path: "/execution", PromptTemplate: "{{.RawBody}}",
 		Envelope: RouteEnvelopeConfig{
 			Target: "session", KeyFromBody: "chat_id", Mode: RouteModeSession,
-			ReportTo: &RouteTargetConfig{Target: "session", KeyFromBody: "chat_id"},
+			ReportTo:   &RouteTargetConfig{Target: "session", KeyFromBody: "chat_id"},
+			FallbackTo: &RouteTargetConfig{Target: "alias", Key: "owner@mattermost"},
 		},
 		Auth: RouteAuthConfig{Type: AuthTypeHeader, Header: "Authorization", Value: "Bearer test"},
 	}}}
@@ -90,12 +101,46 @@ func TestReceiver_RoutesAuthenticatedBodySession(t *testing.T) {
 	if svc.lastReq.Target.Key != "mm-c-original-thread" || svc.lastReq.ReportTo == nil || svc.lastReq.ReportTo.Key != "mm-c-original-thread" {
 		t.Fatalf("destination = %+v, report_to = %+v", svc.lastReq.Target, svc.lastReq.ReportTo)
 	}
+	if svc.lastReq.FallbackTo == nil || svc.lastReq.FallbackTo.Key != "owner@mattermost" {
+		t.Fatalf("fallback_to = %+v", svc.lastReq.FallbackTo)
+	}
 
 	bad := httptest.NewRequest(http.MethodPost, "/execution", strings.NewReader(`{"chat_id":123}`))
 	bad.Header.Set("Authorization", "Bearer test")
 	badRec := httptest.NewRecorder()
 	receiver.handleWebhook(badRec, bad)
 	assertErrorResponse(t, badRec, http.StatusBadRequest, codeInvalidPayload, messageCouldNotAccept)
+}
+
+func TestReceiver_AckOnDelivery(t *testing.T) {
+	service := &fakeService{res: webhookapp.Result{JobID: "job-1"}}
+	receiver := newTestReceiver(service)
+	route := receiver.routes["/webhook1"]
+	route.AckOnDelivery = true
+	receiver.routes["/webhook1"] = route
+	receipts := &fakeDeliveryReceipts{}
+	receiver.SetDeliveryReceipts(receipts)
+	post := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		receiver.handleWebhook(rec, httptest.NewRequest(http.MethodPost, "/webhook1", strings.NewReader("event")))
+		return rec
+	}
+	if rec := post(); rec.Code != http.StatusAccepted {
+		t.Fatalf("pending status = %d: %s", rec.Code, rec.Body.String())
+	}
+	receipts.sent = true
+	receipts.messageID = "mm-post-1"
+	rec := post()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delivered status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response acceptedResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != statusDelivered || response.JobID != "job-1" || response.ProviderMessageID != "mm-post-1" {
+		t.Fatalf("response = %+v", response)
+	}
 }
 
 func TestNormalizeConfig_RejectsUnauthenticatedBodyDestination(t *testing.T) {
@@ -105,6 +150,32 @@ func TestNormalizeConfig_RejectsUnauthenticatedBodyDestination(t *testing.T) {
 	}}})
 	if err == nil || !strings.Contains(err.Error(), "requires header authentication") {
 		t.Fatalf("expected authentication error, got %v", err)
+	}
+}
+
+func TestNormalizeConfig_RejectsDynamicFallback(t *testing.T) {
+	_, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"execution": {
+		Path: "/execution", PromptTemplate: "{{.RawBody}}",
+		Envelope: RouteEnvelopeConfig{Target: "session", KeyFromBody: "chat_id",
+			FallbackTo: &RouteTargetConfig{Target: "alias", KeyFromBody: "other"}},
+		Auth: RouteAuthConfig{Type: AuthTypeHeader, Header: "Authorization", Value: "test"},
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "fallback_to requires a fixed key") {
+		t.Fatalf("expected fixed fallback validation, got %v", err)
+	}
+}
+
+func TestNormalizeConfig_AckRequiresJobAndReportTo(t *testing.T) {
+	for _, tc := range []RouteEnvelopeConfig{
+		{Target: "alias", Key: "owner", Mode: RouteModeSession, ReportTo: &RouteTargetConfig{Target: "alias", Key: "owner"}, AckOnDelivery: true},
+		{Target: "alias", Key: "owner", Mode: RouteModeJob, AckOnDelivery: true},
+	} {
+		_, err := normalizeConfig(Config{Enabled: true, Routes: map[string]RouteConfig{"r": {
+			Path: "/r", PromptTemplate: "{{.RawBody}}", Envelope: tc,
+		}}})
+		if err == nil || !strings.Contains(err.Error(), "ack_on_delivery requires mode=job and report_to") {
+			t.Fatalf("envelope %+v: expected ack validation, got %v", tc, err)
+		}
 	}
 }
 

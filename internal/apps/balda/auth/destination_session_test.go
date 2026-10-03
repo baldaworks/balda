@@ -4,24 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
-
-type notificationSessionStore struct {
-	record state.SessionRecord
-}
-
-func (s notificationSessionStore) Upsert(context.Context, state.SessionRecord) error { return nil }
-func (s notificationSessionStore) GetByAddress(context.Context, string, string) (state.SessionRecord, bool, error) {
-	return state.SessionRecord{}, false, nil
-}
-func (s notificationSessionStore) GetBySessionID(_ context.Context, id string) (state.SessionRecord, bool, error) {
-	return s.record, id == s.record.SessionID, nil
-}
-func (s notificationSessionStore) DeleteBySessionID(context.Context, string) error { return nil }
-func (s notificationSessionStore) List(context.Context) ([]state.SessionRecord, error) {
-	return nil, nil
-}
 
 func TestDestinationResolver_ResolveSession(t *testing.T) {
 	record := state.SessionRecord{
@@ -32,7 +18,14 @@ func TestDestinationResolver_ResolveSession(t *testing.T) {
 		AddressJSON: `{"type":"channel","channel_id":"channel","root_id":"target-root"}`,
 		Status:      state.SessionStatusActive,
 	}
-	resolver := NewDestinationResolverWithSessions(nil, notificationSessionStore{record: record})
+	lookup := func(_ context.Context, id string) (envelopetarget.Resolved, bool, error) {
+		if id != record.SessionID || record.Status != state.SessionStatusActive {
+			return envelopetarget.Resolved{}, false, nil
+		}
+		locator, err := deliverycmd.NewLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
+		return envelopetarget.Resolved{Locator: locator, Principal: record.UserID}, true, err
+	}
+	resolver := NewDestinationResolverWithSessions(nil, lookup)
 	got, err := resolver.ResolveSession(context.Background(), record.SessionID)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +37,7 @@ func TestDestinationResolver_ResolveSession(t *testing.T) {
 		t.Fatal("unknown session resolved")
 	}
 	record.Status = "closed"
-	closed := NewDestinationResolverWithSessions(nil, notificationSessionStore{record: record})
+	closed := NewDestinationResolverWithSessions(nil, lookup)
 	if _, err := closed.ResolveSession(context.Background(), record.SessionID); err == nil {
 		t.Fatal("closed session resolved")
 	}

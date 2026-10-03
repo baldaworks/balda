@@ -47,11 +47,13 @@ type RouteConfig struct {
 
 // RouteEnvelopeConfig configures the destination envelope for a webhook route.
 type RouteEnvelopeConfig struct {
-	Target      string
-	Key         string
-	KeyFromBody string
-	Mode        string
-	ReportTo    *RouteTargetConfig
+	Target        string
+	Key           string
+	KeyFromBody   string
+	Mode          string
+	ReportTo      *RouteTargetConfig
+	FallbackTo    *RouteTargetConfig
+	AckOnDelivery bool
 }
 
 // RouteTargetConfig configures a destination target reference.
@@ -90,6 +92,8 @@ type route struct {
 	Mode                string
 	ReportTo            *envelopetarget.Target
 	ReportToKeyFromBody string
+	FallbackTo          *envelopetarget.Target
+	AckOnDelivery       bool
 	Auth                authPolicy
 	Dedupe              dedupePolicy
 }
@@ -185,6 +189,20 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 				return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.report_to requires exactly one of key or key_from_body", routeName)
 			}
 		}
+		var fallbackTo *envelopetarget.Target
+		if rawRoute.Envelope.FallbackTo != nil {
+			fallback := rawRoute.Envelope.FallbackTo
+			if target.Target != envelopetarget.TargetSession || targetKeyFromBody == "" {
+				return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.fallback_to requires a body-sourced session target", routeName)
+			}
+			if strings.TrimSpace(fallback.KeyFromBody) != "" || strings.TrimSpace(fallback.Key) == "" {
+				return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.fallback_to requires a fixed key", routeName)
+			}
+			fallbackTo = &envelopetarget.Target{Target: strings.TrimSpace(fallback.Target), Key: strings.TrimSpace(fallback.Key)}
+			if fallbackTo.Target != envelopetarget.TargetAlias && fallbackTo.Target != envelopetarget.TargetLocator {
+				return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.fallback_to.target must be alias or locator", routeName)
+			}
+		}
 		mode := strings.ToLower(strings.TrimSpace(rawRoute.Envelope.Mode))
 		if mode == "" {
 			mode = RouteModeJob
@@ -193,6 +211,9 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 		case RouteModeJob, RouteModeSession:
 		default:
 			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.mode: unsupported mode %q", routeName, rawRoute.Envelope.Mode)
+		}
+		if rawRoute.Envelope.AckOnDelivery && (mode != RouteModeJob || reportTo == nil) {
+			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.envelope.ack_on_delivery requires mode=job and report_to", routeName)
 		}
 		authPol := authPolicy{
 			Type:   strings.ToLower(strings.TrimSpace(rawRoute.Auth.Type)),
@@ -215,7 +236,7 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 		default:
 			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.auth: unsupported type %q", routeName, rawRoute.Auth.Type)
 		}
-		if (targetKeyFromBody != "" || reportToKeyFromBody != "") && authPol.Type != AuthTypeHeader {
+		if (targetKeyFromBody != "" || reportToKeyFromBody != "" || fallbackTo != nil) && authPol.Type != AuthTypeHeader {
 			return normalizedConfig{}, fmt.Errorf("balda.webhooks.routes.%s.auth: key_from_body requires header authentication", routeName)
 		}
 		dedupePol := dedupePolicy{
@@ -247,6 +268,8 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 			Mode:                mode,
 			ReportTo:            reportTo,
 			ReportToKeyFromBody: reportToKeyFromBody,
+			FallbackTo:          fallbackTo,
+			AckOnDelivery:       rawRoute.Envelope.AckOnDelivery,
 			Auth:                authPol,
 			Dedupe:              dedupePol,
 		}

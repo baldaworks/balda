@@ -30,6 +30,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/chatfx"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
 	"github.com/baldaworks/balda/internal/apps/balda/controlapp"
+	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfx"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryworkflow"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
@@ -720,7 +721,20 @@ func Module(
 			return auth.NewDestinationStore(provider.AppKV())
 		}),
 		fx.Provide(func(destStore *auth.DestinationStore, provider baldastate.Provider) envelopetarget.DestinationResolver {
-			return auth.NewDestinationResolverWithSessions(destStore, provider.Sessions())
+			return auth.NewDestinationResolverWithSessions(destStore, func(ctx context.Context, sessionID string) (envelopetarget.Resolved, bool, error) {
+				record, found, err := provider.Sessions().GetBySessionID(ctx, sessionID)
+				if err != nil || !found {
+					return envelopetarget.Resolved{}, found, err
+				}
+				if record.Status != "" && record.Status != baldastate.SessionStatusActive {
+					return envelopetarget.Resolved{}, false, nil
+				}
+				locator, err := deliverycmd.NewLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
+				if err != nil {
+					return envelopetarget.Resolved{}, false, err
+				}
+				return envelopetarget.Resolved{Locator: locator, Principal: record.UserID}, true, nil
+			})
 		}),
 		fx.Provide(func(provider baldastate.Provider) (*auth.InviteStore, error) {
 			return auth.NewInviteStore(provider.AppKV())
@@ -1075,11 +1089,18 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 	routes := make(map[string]webhook.RouteConfig, len(cfg.Webhooks.Routes))
 	for routeName, route := range cfg.Webhooks.Routes {
 		var reportTo *webhook.RouteTargetConfig
+		var fallbackTo *webhook.RouteTargetConfig
 		if route.Envelope.ReportTo != nil {
 			reportTo = &webhook.RouteTargetConfig{
 				Target:      strings.TrimSpace(route.Envelope.ReportTo.Target),
 				Key:         strings.TrimSpace(route.Envelope.ReportTo.Key),
 				KeyFromBody: strings.TrimSpace(route.Envelope.ReportTo.KeyFromBody),
+			}
+		}
+		if route.Envelope.FallbackTo != nil {
+			fallbackTo = &webhook.RouteTargetConfig{
+				Target: strings.TrimSpace(route.Envelope.FallbackTo.Target),
+				Key:    strings.TrimSpace(route.Envelope.FallbackTo.Key),
 			}
 		}
 		authValue := strings.TrimSpace(route.Auth.Value)
@@ -1092,11 +1113,13 @@ func buildInboundWebhookConfig(cfg BaldaConfig) webhook.Config {
 			Path:           strings.TrimSpace(route.Path),
 			PromptTemplate: strings.TrimSpace(route.PromptTemplate),
 			Envelope: webhook.RouteEnvelopeConfig{
-				Target:      strings.TrimSpace(route.Envelope.Target),
-				Key:         strings.TrimSpace(route.Envelope.Key),
-				KeyFromBody: strings.TrimSpace(route.Envelope.KeyFromBody),
-				Mode:        strings.TrimSpace(route.Envelope.Mode),
-				ReportTo:    reportTo,
+				Target:        strings.TrimSpace(route.Envelope.Target),
+				Key:           strings.TrimSpace(route.Envelope.Key),
+				KeyFromBody:   strings.TrimSpace(route.Envelope.KeyFromBody),
+				Mode:          strings.TrimSpace(route.Envelope.Mode),
+				ReportTo:      reportTo,
+				FallbackTo:    fallbackTo,
+				AckOnDelivery: route.Envelope.AckOnDelivery,
 			},
 			Auth: webhook.RouteAuthConfig{
 				Type:   strings.TrimSpace(route.Auth.Type),

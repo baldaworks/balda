@@ -7,13 +7,15 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
-	"github.com/baldaworks/balda/internal/apps/balda/state"
 )
+
+// SessionLookup reads a persisted session destination without coupling auth to storage.
+type SessionLookup func(ctx context.Context, sessionID string) (envelopetarget.Resolved, bool, error)
 
 // DestinationResolver resolves envelope alias targets using registered destinations.
 type DestinationResolver struct {
 	destStore *DestinationStore
-	sessions  state.SessionStore
+	sessions  SessionLookup
 }
 
 // NewDestinationResolver creates a new DestinationResolver.
@@ -22,7 +24,7 @@ func NewDestinationResolver(destStore *DestinationStore) *DestinationResolver {
 }
 
 // NewDestinationResolverWithSessions also resolves persisted session destinations.
-func NewDestinationResolverWithSessions(destStore *DestinationStore, sessions state.SessionStore) *DestinationResolver {
+func NewDestinationResolverWithSessions(destStore *DestinationStore, sessions SessionLookup) *DestinationResolver {
 	return &DestinationResolver{destStore: destStore, sessions: sessions}
 }
 
@@ -31,18 +33,14 @@ func (r *DestinationResolver) ResolveSession(ctx context.Context, sessionID stri
 	if r.sessions == nil {
 		return envelopetarget.Resolved{}, fmt.Errorf("session store is unavailable")
 	}
-	record, found, err := r.sessions.GetBySessionID(ctx, sessionID)
+	resolved, found, err := r.sessions(ctx, sessionID)
 	if err != nil {
 		return envelopetarget.Resolved{}, fmt.Errorf("read session %q: %w", sessionID, err)
 	}
-	if !found || (record.Status != "" && record.Status != state.SessionStatusActive) {
-		return envelopetarget.Resolved{}, fmt.Errorf("active session %q not found", sessionID)
+	if !found {
+		return envelopetarget.Resolved{}, fmt.Errorf("%w: active session %q not found", envelopetarget.ErrSessionUnavailable, sessionID)
 	}
-	locator, err := deliverycmd.NewLocator(record.ChannelType, record.AddressKey, record.AddressJSON, record.SessionID)
-	if err != nil {
-		return envelopetarget.Resolved{}, fmt.Errorf("decode session %q locator: %w", sessionID, err)
-	}
-	return envelopetarget.Resolved{Locator: locator, Principal: record.UserID}, nil
+	return resolved, nil
 }
 
 // ResolveAlias resolves an alias (e.g. "owner", "owner@slackagent", "collaborator") to a canonical delivery locator and principal.

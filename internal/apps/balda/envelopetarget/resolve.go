@@ -2,12 +2,16 @@ package envelopetarget
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/locatorref"
 )
+
+// ErrSessionUnavailable means a session ID has no active destination.
+var ErrSessionUnavailable = errors.New("session destination unavailable")
 
 const (
 	TargetAlias   = "alias"

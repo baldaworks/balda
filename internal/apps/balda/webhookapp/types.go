@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 // Inbound webhook execution modes.
@@ -18,24 +18,26 @@ const (
 
 // Request is the normalized, transport-neutral webhook invocation.
 type Request struct {
-	RequestID string
-	RouteName string
-	Prompt    string
-	Target    envelopetarget.Target
-	ReportTo  *envelopetarget.Target
-	Mode      string
-	DedupeKey string
+	RequestID  string
+	RouteName  string
+	Prompt     string
+	Target     envelopetarget.Target
+	ReportTo   *envelopetarget.Target
+	FallbackTo *envelopetarget.Target
+	Mode       string
+	DedupeKey  string
 }
 
 // Result is the normalized acceptance receipt returned by the service.
 type Result struct {
-	RequestID string
-	MessageID string
-	Duplicate bool
-	JobID     string
-	Stream    string
-	Sequence  uint64
-	Target    envelopetarget.Resolved
+	RequestID    string
+	MessageID    string
+	Duplicate    bool
+	JobID        string
+	Stream       string
+	Sequence     uint64
+	Target       envelopetarget.Resolved
+	FallbackUsed bool
 }
 
 // TargetResolver resolves an envelope target into a canonical delivery locator and principal.
