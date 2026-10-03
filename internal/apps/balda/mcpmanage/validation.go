@@ -38,6 +38,11 @@ func (s *Definitions) validateRevision(r mcpcmd.Revision, providers []string) er
 			seen[id] = true
 		}
 	}
+	return s.validateTransportRevision(r)
+}
+
+func (s *Definitions) validateTransportRevision(r mcpcmd.Revision) error {
+	d := r.Definition
 	if len(d.Env) > 128 || len(d.Headers) > 128 || len(d.Args) > 256 || len(d.Scopes) > 64 {
 		return mcpcmd.ErrInvalid
 	}

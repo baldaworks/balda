@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -52,6 +53,9 @@ func clientTransport(config mcpruntime.LaunchConfig) (mcp.Transport, error) {
 		command := exec.Command(config.Command, config.Args...)
 		command.Dir = config.WorkingDir
 		command.Env = environment(config.Env)
+		if config.InheritEnvironment {
+			command.Env = append(os.Environ(), command.Env...)
+		}
 		return &mcp.CommandTransport{Command: command}, nil
 	case transportStreamableHTTP:
 		if strings.TrimSpace(config.URL) == "" {

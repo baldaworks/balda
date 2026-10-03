@@ -577,6 +577,7 @@ deps:
       - contracts
       - mcp_contracts
       - mcp_management
+      - mcp_bridge
       - application
       - domain
       - command_wiring
@@ -795,6 +796,8 @@ deps:
   composition_root:
     mayDependOn:
       - foundation
+      - mcp_bridge
+      - mcp_wiring
       - mcp_management
       - mcp_contracts
       - backoffice_application

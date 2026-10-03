@@ -14,11 +14,45 @@ func (r *Runtime) MCPHealth(ctx context.Context, c mcpcmd.Connection) (mcpcmd.St
 	if err := ctx.Err(); err != nil {
 		return mcpcmd.StatusUnavailable, 0, err
 	}
+	if c.CurrentRevisionID != "" {
+		revision, found, err := r.managedMCP.GetMCPRevision(ctx, c.ID, c.CurrentRevisionID)
+		if err != nil || !found {
+			return mcpcmd.StatusUnavailable, 0, mcpcmd.ErrUnavailable
+		}
+		if c.Source == mcpcmd.SourceConfig {
+			matches := false
+			for _, source := range r.configuredMCP {
+				if source.Descriptor.ID.Name == c.PublicID && string(source.Descriptor.Revision) == revision.Definition.ConfigRevision {
+					matches = true
+					break
+				}
+			}
+			if !matches {
+				return mcpcmd.StatusAuthRequired, 0, nil
+			}
+		}
+		if revision.Definition.OAuth {
+			binding := revision.Definition.AuthBinding
+			if binding == nil || binding.ConnectionID != c.ID || binding.Resource != revision.Definition.URL {
+				return mcpcmd.StatusAuthRequired, 0, nil
+			}
+			grant, found, err := r.managedMCP.GetMCPGrant(ctx, *binding)
+			if err != nil {
+				return mcpcmd.StatusUnavailable, 0, mcpcmd.ErrUnavailable
+			}
+			if !found || grant.Status == mcpcmd.GrantAuthRequired {
+				return mcpcmd.StatusAuthRequired, 0, nil
+			}
+			if grant.Status == mcpcmd.GrantDisconnected {
+				return mcpcmd.StatusDisconnected, 0, nil
+			}
+		}
+	}
 	key := mcpruntime.InstanceKey{Source: runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindManagedMCP, Name: c.ID}, Revision: runtimecatalogcmd.RevisionID(c.CurrentRevisionID), Name: c.PublicID}
 	if c.Source == mcpcmd.SourceConfig {
 		key.Source = runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: c.PublicID}
 		for _, source := range r.configuredMCP {
-			if source.Descriptor.ID == key.Source {
+			if c.CurrentRevisionID == "" && source.Descriptor.ID == key.Source {
 				key.Revision = source.Descriptor.Revision
 				break
 			}
@@ -116,6 +150,43 @@ func managedMCPDescriptor(c mcpcmd.Connection, revision mcpcmd.Revision) runtime
 	return runtimecatalogcmd.MCPServerDescriptor{ID: runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: c.PublicID}, Revision: runtimecatalogcmd.RevisionID(revision.ID), Name: c.PublicID, Transport: transport, ConfigRef: c.ID}
 }
 
+// currentConfiguredMCPSources attaches file-owned entries to exact protected
+// OAuth captures. A changed file cannot fall back to anonymous static launch.
+func (r *Runtime) currentConfiguredMCPSources(ctx context.Context) ([]runtimecatalogcmd.Source, error) {
+	connections, err := r.managedMCP.ListMCPConnections(ctx)
+	if err != nil {
+		return nil, mcpcmd.ErrUnavailable
+	}
+	byName := make(map[string]mcpcmd.Connection)
+	for _, c := range connections {
+		if c.Source == mcpcmd.SourceConfig {
+			byName[c.PublicID] = c
+		}
+	}
+	sources := make([]runtimecatalogcmd.Source, len(r.configuredMCP))
+	for i, base := range r.configuredMCP {
+		sources[i] = base
+		sources[i].MCPServers = append([]runtimecatalogcmd.MCPServerDescriptor(nil), base.MCPServers...)
+		c, ok := byName[base.Descriptor.ID.Name]
+		if !ok {
+			continue
+		}
+		revision, found, err := r.managedMCP.GetMCPRevision(ctx, c.ID, c.CurrentRevisionID)
+		if err != nil || !found || !revision.Definition.OAuth || c.Deleted {
+			return nil, runtimecatalogcmd.ErrRevisionUnavailable
+		}
+		descriptor := &sources[i].MCPServers[0]
+		descriptor.ConfigRef = c.ID
+		if revision.Definition.ConfigRevision == string(base.Descriptor.Revision) {
+			descriptor.Revision = runtimecatalogcmd.RevisionID(revision.ID)
+			sources[i].Descriptor.Revision = descriptor.Revision
+		}
+		// On mismatch the file digest is not a stored capture ID. Exact
+		// retained resolution therefore fails until a new capture is saved.
+	}
+	return sources, nil
+}
+
 func (r *Runtime) managedMCPSources(ctx context.Context) ([]runtimecatalogcmd.Source, error) {
 	connections, err := r.managedMCP.ListMCPConnections(ctx)
 	if err != nil {
@@ -154,10 +225,20 @@ func (r *Runtime) markMCPPublished(ctx context.Context, snapshot runtimecatalogc
 		return mcpcmd.ErrUnavailable
 	}
 	for _, c := range connections {
-		if c.Source != mcpcmd.SourceManaged || c.PublishedVersion == c.Version {
+		if c.PublishedVersion == c.Version {
 			continue
 		}
 		source := runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindManagedMCP, Name: c.ID}
+		if c.Source == mcpcmd.SourceConfig {
+			source = runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: c.PublicID}
+			id := runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: c.PublicID}
+			descriptor, present := snapshot.MCPServers[id]
+			// An edited/removed file leaves this auth capture pending until
+			// an administrator captures the new file-owned definition.
+			if !present || descriptor.ConfigRef != c.ID || string(descriptor.Revision) != c.CurrentRevisionID {
+				continue
+			}
+		}
 		id := runtimecatalogcmd.ContributionID{Source: source, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: c.PublicID}
 		descriptor, present := snapshot.MCPServers[id]
 		if c.Enabled && !c.Deleted {

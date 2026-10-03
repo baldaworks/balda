@@ -16,7 +16,7 @@ func TestConfiguredInventoryRetainsGlobalSelectionWithoutExposingCredentials(t *
 	}
 	providers := map[string]agentconfig.Config{"hosted": {MCPServers: []string{"selected"}}, "acp": {}}
 	// Balda's global selection supplements provider-local references.
-	c := NewConfiguredDefinitions(configs, providers, []string{"shared"})
+	c := NewConfiguredDefinitions(configs, providers, "hosted", []string{"shared"})
 	items, err := c.MCPDefinitions(t.Context())
 	if err != nil || len(items) != 2 {
 		t.Fatalf("inventory: %v", err)
@@ -25,7 +25,7 @@ func TestConfiguredInventoryRetainsGlobalSelectionWithoutExposingCredentials(t *
 		if item.Connection.Source != mcpcmd.SourceConfig || item.Status != mcpcmd.StatusPending {
 			t.Fatal("configured source reported managed or ready")
 		}
-		if item.Connection.PublicID == "shared" && !item.Definition.Targets.All {
+		if item.Connection.PublicID == "shared" && (item.Definition.Targets.All || len(item.Definition.Targets.Providers) != 1 || item.Definition.Targets.Providers[0] != "hosted") {
 			t.Fatal("global configured selection lost")
 		}
 		if item.Connection.PublicID == "selected" && (len(item.Definition.Targets.Providers) != 1 || item.Definition.Targets.Providers[0] != "hosted") {

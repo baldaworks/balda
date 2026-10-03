@@ -64,7 +64,13 @@ type Definition struct {
 	Headers   map[string]ValueBinding `json:"headers,omitempty"`
 	Targets   Targets                 `json:"targets"`
 	OAuth     bool                    `json:"oauth,omitempty"`
-	Scopes    []string                `json:"scopes,omitempty"`
+	// ConfigRevision identifies the captured file configuration. It is written
+	// only by the trusted configured authorization path.
+	ConfigRevision string `json:"config_revision,omitempty"`
+	// AuthBinding is public immutable identity. Mutable tokens/generations
+	// belong to the worker grant and never change a retained revision.
+	AuthBinding *AuthBinding `json:"auth_binding,omitempty"`
+	Scopes      []string     `json:"scopes,omitempty"`
 }
 
 // Connection is a durable identity and its current selection/recovery state.

@@ -4,12 +4,14 @@ package mcpcmd
 type Status string
 
 const (
-	StatusPending     Status = "pending"
-	StatusReady       Status = "ready"
-	StatusUnavailable Status = "unavailable"
-	StatusDisabled    Status = "disabled"
-	StatusDeleted     Status = "deleted"
-	StatusConflict    Status = "conflict"
+	StatusPending      Status = "pending"
+	StatusReady        Status = "ready"
+	StatusUnavailable  Status = "unavailable"
+	StatusDisabled     Status = "disabled"
+	StatusDeleted      Status = "deleted"
+	StatusConflict     Status = "conflict"
+	StatusAuthRequired Status = "auth_required"
+	StatusDisconnected Status = "disconnected"
 )
 
 // Item is a secret-free inventory row; configured values are redacted.

@@ -25,5 +25,6 @@ func ResolveManagedLaunch(revision mcpcmd.Revision, resolver managedValueResolve
 	}
 	return mcpruntime.LaunchConfig{Transport: transport, Command: definition.Command, Args: append([]string(nil), definition.Args...),
 		WorkingDir: definition.Directory, URL: definition.URL, Env: values.Env, Headers: values.Headers,
-		EnforceHTTPOrigin: definition.Transport != mcpcmd.TransportStdio}, nil
+		InheritEnvironment: definition.Transport == mcpcmd.TransportStdio,
+		EnforceHTTPOrigin:  definition.Transport != mcpcmd.TransportStdio}, nil
 }

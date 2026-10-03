@@ -62,6 +62,10 @@ func TestCreateValidatesBeforeSavingAndSeparatesSavedFromReady(t *testing.T) {
 			r.Values.Headers = map[string]mcpcmd.ValueEdit{"X-Key": {Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueProtected, Value: "secret\r\nInjected: yes"}}
 		}},
 		{"reserved ID", func(r *mcpcmd.CreateDefinition) { r.PublicID = "balda" }},
+		{"caller supplied authorization identity", func(r *mcpcmd.CreateDefinition) {
+			r.Definition = mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://mcp.example.org/tools", Targets: mcpcmd.Targets{All: true}, OAuth: true,
+				AuthBinding: &mcpcmd.AuthBinding{ConnectionID: "caller-connection", Resource: "https://mcp.example.org/tools", Issuer: "https://issuer.example.org", ClientID: "caller-client"}}
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, store, _ := definitionHarness(t)
@@ -82,6 +86,54 @@ type definitionMemoryStore struct {
 	revisions   map[string]mcpcmd.Revision
 	writes      []Mutation
 	writeError  error
+	grants      map[mcpcmd.AuthBinding]mcpcmd.Grant
+}
+
+func (s *definitionMemoryStore) GetMCPGrant(_ context.Context, binding mcpcmd.AuthBinding) (mcpcmd.Grant, bool, error) {
+	g, found := s.grants[binding]
+	return g, found, nil
+}
+
+func TestAuthorizationSelectionRetainsRevisionSecretsAndFencesIdentity(t *testing.T) {
+	s, store, _ := definitionHarness(t)
+	request := definitionCreate()
+	request.Definition = mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://mcp.example.org/tools", OAuth: true, Scopes: []string{"read"}, Targets: mcpcmd.Targets{All: true}}
+	request.Values.Headers = map[string]mcpcmd.ValueEdit{"X-Worker-Secret": {Operation: mcpcmd.ValueSet, Kind: mcpcmd.ValueProtected, Value: "authorization-static-secret"}}
+	created, err := s.Create(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := mcpcmd.AuthBinding{ConnectionID: created.Connection.ID, Resource: request.Definition.URL, Issuer: "https://issuer.example.org", ClientID: "worker-client"}
+	store.grants = map[mcpcmd.AuthBinding]mcpcmd.Grant{binding: {Binding: binding, Status: mcpcmd.GrantAuthRequired, Scopes: []string{"read"}}}
+	selection := mcpcmd.SelectAuthorization{ConnectionID: created.Connection.ID, ExpectedRevisionID: created.Connection.CurrentRevisionID, Binding: binding, Authority: request.Authority}
+	selected, err := s.BindAuthorization(t.Context(), selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.Connection.CurrentRevisionID == created.Connection.CurrentRevisionID || selected.Definition.AuthBinding == nil || *selected.Definition.AuthBinding != binding {
+		t.Fatal("worker identity did not create an immutable revision")
+	}
+	values, err := s.credentials.ResolveValues(store.revisions[selected.Connection.CurrentRevisionID])
+	if err != nil || values.Headers["X-Worker-Secret"] != "authorization-static-secret" {
+		t.Fatal("binding selection lost protected revision values")
+	}
+	if store.revisions[created.Connection.CurrentRevisionID].Definition.AuthBinding != nil {
+		t.Fatal("binding selection rewrote the old pin")
+	}
+	selection.ExpectedRevisionID = selected.Connection.CurrentRevisionID
+	again, err := s.BindAuthorization(t.Context(), selection)
+	if err != nil || again.Connection.CurrentRevisionID != selected.Connection.CurrentRevisionID || len(store.writes) != 2 {
+		t.Fatal("same binding reauthorization changed the snapshot revision")
+	}
+	selection.ExpectedRevisionID = created.Connection.CurrentRevisionID
+	if _, err := s.BindAuthorization(t.Context(), selection); !errors.Is(err, mcpcmd.ErrConflict) {
+		t.Fatal("stale authorization attached to a different current revision")
+	}
+	selection.ExpectedRevisionID = selected.Connection.CurrentRevisionID
+	selection.Binding.Resource = "https://other.example.org/tools"
+	if _, err := s.BindAuthorization(t.Context(), selection); !errors.Is(err, mcpcmd.ErrInvalid) {
+		t.Fatal("foreign resource binding was selected")
+	}
 }
 
 type expiringDefinitionStore struct {
@@ -175,6 +227,7 @@ func (s *definitionMemoryStore) GetMCPRevision(_ context.Context, connection, id
 type definitionConfigured struct {
 	items     []mcpcmd.Item
 	providers []string
+	values    mcpcmd.LaunchValues
 }
 
 func (c *definitionConfigured) MCPDefinitions(context.Context) ([]mcpcmd.Item, error) {
@@ -182,6 +235,63 @@ func (c *definitionConfigured) MCPDefinitions(context.Context) ([]mcpcmd.Item, e
 }
 func (c *definitionConfigured) ProviderIDs(context.Context) ([]string, error) {
 	return c.providers, nil
+}
+
+func (c *definitionConfigured) MCPAuthorizationDefinition(_ context.Context, id string) (mcpcmd.Definition, mcpcmd.LaunchValues, error) {
+	for _, item := range c.items {
+		if item.Connection.PublicID == id {
+			return item.Definition, c.values, nil
+		}
+	}
+	return mcpcmd.Definition{}, mcpcmd.LaunchValues{}, mcpcmd.ErrNotFound
+}
+
+func TestConfiguredAuthorizationCapturesReadOnlyProtectedRevision(t *testing.T) {
+	s, store, configured := definitionHarness(t)
+	configured.items = []mcpcmd.Item{{Connection: mcpcmd.Connection{ID: "config:file-tools", PublicID: "file-tools", Source: mcpcmd.SourceConfig, Enabled: true}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://file.example.org/tools", ConfigRevision: "file-v1", Headers: map[string]mcpcmd.ValueBinding{"X-Secret": {Kind: mcpcmd.ValueProtected}}}}}
+	configured.values = mcpcmd.LaunchValues{Headers: map[string]string{"X-Secret": "file-secret-one"}}
+	request := mcpcmd.PrepareAuthorization{ConnectionID: "config:file-tools", Scopes: []string{"tools:read"}, Authority: definitionCreate().Authority}
+	first, err := s.PrepareAuthorization(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := store.connections[first.ConnectionID]
+	if c.Source != mcpcmd.SourceConfig || c.PublicID != "file-tools" || !first.Definition.OAuth || first.Definition.URL != "https://file.example.org/tools" {
+		t.Fatal("configured capture lost file-owned identity")
+	}
+	values, err := s.credentials.ResolveValues(first)
+	if err != nil || values.Headers["X-Secret"] != "file-secret-one" {
+		t.Fatal("configured capture lost protected header")
+	}
+	data, _ := json.Marshal(first)
+	if bytes.Contains(data, []byte("file-secret-one")) || len(first.ProtectedValues) == 0 {
+		t.Fatal("configured capture leaked secret")
+	}
+	request.ConnectionID = c.ID
+	again, err := s.PrepareAuthorization(t.Context(), request)
+	if err != nil || again.ID != first.ID || len(store.writes) != 1 {
+		t.Fatal("unchanged file capture rewrote revision")
+	}
+	configured.items[0].Definition.ConfigRevision = "file-v2"
+	configured.items[0].Definition.URL = "https://changed.example.org/tools"
+	configured.values.Headers["X-Secret"] = "file-secret-two"
+	next, err := s.PrepareAuthorization(t.Context(), request)
+	if err != nil || next.ID == first.ID || next.Definition.AuthBinding != nil {
+		t.Fatal("changed file did not create a fresh resource revision")
+	}
+	old, err := s.credentials.ResolveValues(store.revisions[first.ID])
+	if err != nil || old.Headers["X-Secret"] != "file-secret-one" {
+		t.Fatal("file edit rewrote retained protected revision")
+	}
+	if _, err := s.Update(t.Context(), mcpcmd.UpdateDefinition{ConnectionID: c.ID, ExpectedVersion: store.connections[c.ID].Version, Definition: next.Definition, Authority: request.Authority}); !errors.Is(err, mcpcmd.ErrForbidden) {
+		t.Fatal("side record made file configuration editable")
+	}
+	configured.items[0].Definition.Headers = map[string]mcpcmd.ValueBinding{"authorization": {Kind: mcpcmd.ValueProtected}}
+	configured.values.Headers = map[string]string{"authorization": "static-file-secret"}
+	writes := len(store.writes)
+	if _, err := s.PrepareAuthorization(t.Context(), request); !errors.Is(err, mcpcmd.ErrConflict) || len(store.writes) != writes {
+		t.Fatal("configured static Authorization was overwritten by OAuth")
+	}
 }
 
 type definitionCatalog struct {
@@ -315,6 +425,40 @@ func TestDefinitionEditsFenceVersionsPreserveSecretsAndRetainPins(t *testing.T) 
 	selection.Enabled = true
 	if _, err := s.SetEnabled(t.Context(), selection); !errors.Is(err, mcpcmd.ErrConflict) {
 		t.Fatalf("tombstone resurrected: %v", err)
+	}
+}
+
+func TestOrdinaryDefinitionEditCannotChangeWorkerIdentity(t *testing.T) {
+	s, store, _ := definitionHarness(t)
+	request := definitionCreate()
+	request.Definition = mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://mcp.example.org/tools", Targets: mcpcmd.Targets{All: true}, OAuth: true}
+	created, err := s.Create(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := store.revisions[created.Connection.CurrentRevisionID]
+	previous.Definition.AuthBinding = &mcpcmd.AuthBinding{ConnectionID: created.Connection.ID, Resource: previous.Definition.URL, Issuer: "https://issuer.example.org", ClientID: "worker-client"}
+	store.revisions[previous.ID] = previous
+	update := mcpcmd.UpdateDefinition{ConnectionID: created.Connection.ID, ExpectedVersion: created.Connection.Version, Definition: previous.Definition, Enabled: true, Authority: request.Authority}
+	foreign := *previous.Definition.AuthBinding
+	foreign.ClientID = "different-client"
+	update.Definition.AuthBinding = &foreign
+	if _, err := s.Update(t.Context(), update); !errors.Is(err, mcpcmd.ErrInvalid) || len(store.writes) != 1 {
+		t.Fatal("ordinary editor replaced trusted worker identity")
+	}
+	update.Definition.AuthBinding = nil
+	updated, err := s.Update(t.Context(), update)
+	if err != nil || updated.Definition.AuthBinding == nil || *updated.Definition.AuthBinding != *previous.Definition.AuthBinding {
+		t.Fatal("ordinary edit lost its retained worker identity")
+	}
+	update.ExpectedVersion = updated.Connection.Version
+	update.Definition.URL = "https://other.example.org/tools"
+	changed, err := s.Update(t.Context(), update)
+	if err != nil || changed.Definition.AuthBinding != nil {
+		t.Fatal("changed resource borrowed the retained resource grant")
+	}
+	if store.revisions[previous.ID].Definition.AuthBinding.Resource != previous.Definition.URL {
+		t.Fatal("resource edit rewrote the historical binding")
 	}
 }
 

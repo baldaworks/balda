@@ -161,6 +161,7 @@ func addSource(snapshot *runtimecatalogcmd.Snapshot, source runtimecatalogcmd.So
 		if _, exists := snapshot.MCPServers[server.ID]; exists {
 			return fmt.Errorf("duplicate contribution %q", server.ID.String())
 		}
+		server.TargetProviderIDs = append([]string(nil), server.TargetProviderIDs...)
 		snapshot.MCPServers[server.ID] = server
 	}
 	for _, diagnostic := range source.Diagnostics {

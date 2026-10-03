@@ -1,0 +1,267 @@
+package catalogapp
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	baldaagent "github.com/baldaworks/balda/internal/apps/balda/agent"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
+	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
+	acp "github.com/coder/acp-go-sdk"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/normahq/runtime/v2/agentfactory"
+	runtimeconfig "github.com/normahq/runtime/v2/appconfig"
+	"github.com/normahq/runtime/v2/mcpregistry"
+	"github.com/rs/zerolog"
+)
+
+func testACPInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BALDA_MCP_ACP_CHILD_FIXTURE", "1")
+	bundled := mcp.NewServer(&mcp.Implementation{Name: "bundled-fixture", Version: "1"}, nil)
+	bundledHTTP := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return bundled }, nil))
+	defer func() { bundledHTTP.CloseClientConnections(); bundledHTTP.Close() }()
+	registry.Set("balda", agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: bundledHTTP.URL})
+	providers := map[string]agentconfig.Config{
+		"pool-alpha": {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"alpha"}}},
+		"pool-beta":  {Type: agentconfig.AgentTypePool, PoolConfig: &agentconfig.PoolConfig{Members: []string{"beta"}}},
+		"alpha":      {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
+		"beta":       {Type: agentconfig.AgentTypeGenericACP, GenericACP: &agentconfig.ACPConfig{Cmd: []string{executable, "-test.run=^TestMCPACPProviderChild$"}}},
+	}
+	if source == mcpcmd.SourceConfig {
+		alpha := providers["alpha"]
+		alpha.MCPServers = []string{"worker-tools"}
+		providers["alpha"] = alpha
+	}
+	skills, err := baldaagent.NewSkillManager(catalog, catalog, baldaagent.SkillMetadataBudget{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: providers}
+	for _, providerID := range []string{"alpha", "pool-alpha", "pool-beta", "root-alpha"} {
+		root := providerID == "root-alpha"
+		if root {
+			providerID = "pool-alpha"
+		}
+		workspace := t.TempDir()
+		builder := baldaagent.NewBuilder(baldaagent.BuilderParams{Factory: agentfactory.New(providers, registry), ScopedFactory: NewProviderFactory(providers, registry), NormaCfg: runtimeconfig.RuntimeConfig{Providers: providers}})
+		manager := baldaagent.NewRuntimeManager(baldaagent.RuntimeManagerParams{Builder: builder, BaldaProviderID: providerID, WorkingDir: workspace, StateDir: t.TempDir(), CapabilityBinder: binder, MCPRegistry: registry, Logger: zerolog.Nop()})
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		var runtime *baldaagent.BuiltRuntime
+		if root {
+			runtime, err = manager.Runtime(ctx)
+		} else {
+			runtime, err = manager.RuntimeForSession(ctx, baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: string(snapshotID)})
+		}
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		created, err := builder.CreateRuntimeSession(ctx, runtime, providerID, "fixture-user", "provider-session", workspace, baldaagent.RuntimeSessionContext{BaldaSessionID: "ACP-fixture"})
+		if err != nil {
+			cancel()
+			_ = manager.Stop(context.Background())
+			t.Fatal(err)
+		}
+		final, err := runProviderTurn(ctx, runtime, created.ID(), "invoke worker")
+		if err == nil && worker != nil && providerID == "alpha" {
+			before := worker.renewals.Load()
+			worker.expire(t)
+			final, err = runProviderTurn(ctx, runtime, created.ID(), "invoke worker again")
+			if worker.renewals.Load() != before+1 || runtime.RuntimeSnapshotID != string(snapshotID) {
+				t.Error("established external ACP session did not renew once within its retained pin")
+			}
+		}
+		closeErr := manager.Stop(ctx)
+		cancel()
+		want := "actual ACP tool"
+		if providerID == "pool-beta" {
+			want = "ACP has no worker tool"
+		}
+		if err != nil || closeErr != nil || !strings.Contains(final, want) {
+			t.Fatalf("actual ACP %s execution failed: final=%q error=%v close=%v", providerID, final, err, closeErr)
+		}
+	}
+}
+
+func TestMCPACPProviderChild(t *testing.T) {
+	if os.Getenv("BALDA_MCP_ACP_CHILD_FIXTURE") != "1" {
+		t.Skip("subprocess fixture")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	provider := &mcpACPProvider{ctx: ctx, sessions: make(map[acp.SessionId][]*mcp.ClientSession), ready: make(chan struct{})}
+	provider.connection = acp.NewAgentSideConnection(provider, os.Stdout, os.Stdin)
+	provider.connection.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	close(provider.ready)
+	<-provider.connection.Done()
+	cancel()
+	provider.close()
+	// Test runner output would corrupt the ACP protocol on stdout.
+	os.Exit(0)
+}
+
+// The controlled external ACP provider consumes the real session/new payload
+// and uses its HTTP/SSE MCP transports. It does not borrow the discovery client.
+type mcpACPProvider struct {
+	ctx        context.Context
+	ready      chan struct{}
+	connection *acp.AgentSideConnection
+	mu         sync.Mutex
+	sessions   map[acp.SessionId][]*mcp.ClientSession
+}
+
+func (*mcpACPProvider) Initialize(context.Context, acp.InitializeRequest) (acp.InitializeResponse, error) {
+	return acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersionNumber, AgentCapabilities: acp.AgentCapabilities{McpCapabilities: acp.McpCapabilities{Http: true, Sse: true}}}, nil
+}
+
+func (p *mcpACPProvider) NewSession(ctx context.Context, request acp.NewSessionRequest) (acp.NewSessionResponse, error) {
+	var sessions []*mcp.ClientSession
+	complete := false
+	defer func() {
+		if !complete {
+			for _, session := range sessions {
+				_ = session.Close()
+			}
+		}
+	}()
+	for _, server := range request.McpServers {
+		var endpoint, name, transport string
+		var headers []acp.HttpHeader
+		var stdio *acp.McpServerStdio
+		switch {
+		case server.Http != nil:
+			endpoint, name, transport, headers = server.Http.Url, server.Http.Name, string(mcpcmd.TransportHTTP), server.Http.Headers
+		case server.Sse != nil:
+			endpoint, name, transport, headers = server.Sse.Url, server.Sse.Name, string(mcpcmd.TransportSSE), server.Sse.Headers
+		case server.Stdio != nil:
+			stdio, name, transport = server.Stdio, server.Stdio.Name, string(mcpcmd.TransportStdio)
+		default:
+			return acp.NewSessionResponse{}, fmt.Errorf("unsupported fixture transport")
+		}
+		private := make(map[string]string, len(headers))
+		for _, header := range headers {
+			private[header.Name] = header.Value
+		}
+		if strings.HasPrefix(name, "balda.catalog.") && len(private) != 0 {
+			target, err := url.Parse(endpoint)
+			if err != nil || net.ParseIP(target.Hostname()) == nil || !net.ParseIP(target.Hostname()).IsLoopback() || len(private) != 1 || private[mcpbridge.CapabilityHeader] == "" {
+				return acp.NewSessionResponse{}, fmt.Errorf("external ACP received unguarded worker credentials")
+			}
+		}
+		client := mcp.NewClient(&mcp.Implementation{Name: "external-ACP-fixture", Version: "1"}, nil)
+		httpClient := &http.Client{Transport: projectedHeaders{headers: private}}
+		var wire mcp.Transport = &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: httpClient}
+		if transport == string(mcpcmd.TransportSSE) {
+			wire = &mcp.SSEClientTransport{Endpoint: endpoint, HTTPClient: httpClient}
+		}
+		if stdio != nil {
+			command := exec.CommandContext(p.ctx, stdio.Command, stdio.Args...)
+			command.Dir = request.Cwd
+			command.Env = append([]string(nil), os.Environ()...)
+			for _, entry := range stdio.Env {
+				command.Env = append(command.Env, entry.Name+"="+entry.Value)
+			}
+			wire = &mcp.CommandTransport{Command: command}
+		}
+		// An SSE stream belongs to the external provider lifetime, not the
+		// short session/new RPC context, which ACP cancels after the response.
+		session, err := client.Connect(p.ctx, wire, nil)
+		if err != nil {
+			return acp.NewSessionResponse{}, fmt.Errorf("external ACP MCP initialize failed")
+		}
+		if _, err := session.ListTools(ctx, &mcp.ListToolsParams{}); err != nil {
+			_ = session.Close()
+			return acp.NewSessionResponse{}, fmt.Errorf("external ACP MCP discovery failed")
+		}
+		sessions = append(sessions, session)
+	}
+	p.mu.Lock()
+	id := acp.SessionId(fmt.Sprintf("fixture-%d", len(p.sessions)+1))
+	p.sessions[id] = sessions
+	p.mu.Unlock()
+	complete = true
+	return acp.NewSessionResponse{SessionId: id}, nil
+}
+
+func (p *mcpACPProvider) Prompt(ctx context.Context, request acp.PromptRequest) (acp.PromptResponse, error) {
+	<-p.ready
+	p.mu.Lock()
+	sessions := append([]*mcp.ClientSession(nil), p.sessions[request.SessionId]...)
+	p.mu.Unlock()
+	text := "ACP has no worker tool"
+	for _, session := range sessions {
+		tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
+		if err != nil {
+			return acp.PromptResponse{}, fmt.Errorf("external ACP MCP list failed")
+		}
+		for _, tool := range tools.Tools {
+			if tool.Name != "echo" {
+				continue
+			}
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "echo", Arguments: map[string]any{"text": "actual ACP tool"}})
+			if err != nil || result.IsError || len(result.Content) != 1 {
+				return acp.PromptResponse{}, fmt.Errorf("external ACP MCP invocation failed")
+			}
+			content, ok := result.Content[0].(*mcp.TextContent)
+			if !ok {
+				return acp.PromptResponse{}, fmt.Errorf("external ACP MCP result invalid")
+			}
+			text = content.Text
+		}
+	}
+	if err := p.connection.SessionUpdate(ctx, acp.SessionNotification{SessionId: request.SessionId, Update: acp.UpdateAgentMessageText(text)}); err != nil {
+		return acp.PromptResponse{}, err
+	}
+	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
+}
+
+func (p *mcpACPProvider) close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, sessions := range p.sessions {
+		for _, session := range sessions {
+			_ = session.Close()
+		}
+	}
+}
+
+func (*mcpACPProvider) Authenticate(context.Context, acp.AuthenticateRequest) (acp.AuthenticateResponse, error) {
+	return acp.AuthenticateResponse{}, nil
+}
+func (*mcpACPProvider) Logout(context.Context, acp.LogoutRequest) (acp.LogoutResponse, error) {
+	return acp.LogoutResponse{}, nil
+}
+func (*mcpACPProvider) Cancel(context.Context, acp.CancelNotification) error { return nil }
+func (*mcpACPProvider) CloseSession(context.Context, acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
+	return acp.CloseSessionResponse{}, nil
+}
+func (*mcpACPProvider) ListSessions(context.Context, acp.ListSessionsRequest) (acp.ListSessionsResponse, error) {
+	return acp.ListSessionsResponse{}, nil
+}
+func (*mcpACPProvider) ResumeSession(context.Context, acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
+	return acp.ResumeSessionResponse{}, fmt.Errorf("fixture does not support resume")
+}
+func (*mcpACPProvider) SetSessionConfigOption(context.Context, acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
+	return acp.SetSessionConfigOptionResponse{}, nil
+}
+func (*mcpACPProvider) SetSessionMode(context.Context, acp.SetSessionModeRequest) (acp.SetSessionModeResponse, error) {
+	return acp.SetSessionModeResponse{}, nil
+}

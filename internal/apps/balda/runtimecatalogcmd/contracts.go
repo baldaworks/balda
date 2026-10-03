@@ -198,6 +198,10 @@ type MCPServerDescriptor struct {
 	Name      string         `json:"name"`
 	Transport string         `json:"transport"`
 	ConfigRef string         `json:"config_ref,omitempty"`
+	// Configured targeting is captured with the snapshot, independently of
+	// transport revision identity. Known empty means no provider selected it.
+	TargetingKnown    bool     `json:"targeting_known,omitempty"`
+	TargetProviderIDs []string `json:"target_provider_ids,omitempty"`
 }
 
 // Diagnostic reports a bounded source or contribution condition.
@@ -238,6 +242,10 @@ func (s Snapshot) Clone() Snapshot {
 	out.Commands = cloneMap(s.Commands)
 	out.Skills = cloneMap(s.Skills)
 	out.MCPServers = cloneMap(s.MCPServers)
+	for id, descriptor := range out.MCPServers {
+		descriptor.TargetProviderIDs = append([]string(nil), descriptor.TargetProviderIDs...)
+		out.MCPServers[id] = descriptor
+	}
 	out.Diagnostics = make([]Diagnostic, len(s.Diagnostics))
 	for i, diagnostic := range s.Diagnostics {
 		if diagnostic.Contribution != nil {

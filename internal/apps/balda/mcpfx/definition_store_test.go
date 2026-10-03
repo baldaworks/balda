@@ -36,8 +36,8 @@ func TestDefinitionServiceUsesCanonicalAuthorityAtCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configured := NewConfiguredDefinitions(nil, map[string]agentconfig.Config{"hosted": {}}, nil)
-	probe, err := NewManagedProbe(credentials, NewClientLauncher())
+	configured := NewConfiguredDefinitions(nil, map[string]agentconfig.Config{"hosted": {}}, "hosted", nil)
+	probe, err := NewManagedProbe(credentials, NewClientLauncher(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -77,6 +77,13 @@ func (s *Service) PrepareRevision(previous *mcpcmd.Revision, next mcpcmd.Revisio
 		next.Definition.Headers = previous.Definition.Headers
 	}
 	next.Definition.Env, next.Definition.Headers = maps.Clone(next.Definition.Env), maps.Clone(next.Definition.Headers)
+	next.Definition.Args = append([]string(nil), next.Definition.Args...)
+	next.Definition.Targets.Providers = append([]string(nil), next.Definition.Targets.Providers...)
+	next.Definition.Scopes = append([]string(nil), next.Definition.Scopes...)
+	if next.Definition.AuthBinding != nil {
+		binding := *next.Definition.AuthBinding
+		next.Definition.AuthBinding = &binding
+	}
 	if next.Definition.Env == nil {
 		next.Definition.Env = make(map[string]mcpcmd.ValueBinding)
 	}

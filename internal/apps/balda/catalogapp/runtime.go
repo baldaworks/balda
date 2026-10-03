@@ -16,6 +16,7 @@ import (
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/commandfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
@@ -63,6 +64,7 @@ func NewRuntime(
 	registry *mcpregistry.MapRegistry,
 	commands *commandcmd.Registry,
 	credentials *mcpmanage.Service,
+	bridge *mcpbridge.Bridge,
 ) (*Runtime, error) {
 	stateDir = strings.TrimSpace(stateDir)
 	if stateDir == "" || provider == nil || registry == nil || commands == nil {
@@ -93,13 +95,13 @@ func NewRuntime(
 	if err != nil {
 		return nil, err
 	}
-	managedResolver := &mcpfx.ManagedResolver{Store: provider.MCP()}
+	managedResolver := &mcpfx.ManagedResolver{Store: provider.MCP(), Bridge: bridge}
 	if credentials != nil {
 		managedResolver.Values = credentials
 	}
 	runtime.mcp, err = mcpruntime.New(
-		mcpruntime.RoutedResolver{Configured: configuredMCPResolver(configured), Managed: managedResolver, Plugin: pluginResolver},
-		mcpfx.NewClientLauncher(), projector, mcpruntime.Limits{},
+		mcpruntime.RoutedResolver{Configured: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredMCPResolver(configured), Bridge: bridge}, Retained: managedResolver}, Managed: managedResolver, Plugin: pluginResolver},
+		mcpfx.BridgeLauncher{Bridge: bridge, Launcher: mcpfx.NewClientLauncher()}, projector, mcpruntime.Limits{},
 	)
 	if err != nil {
 		return nil, err
@@ -138,7 +140,11 @@ func (r *Runtime) PreparePluginCandidate(ctx context.Context, plugins []runtimec
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sources := []runtimecatalogcmd.Source{r.builtin}
-	sources = append(sources, r.configuredMCP...)
+	configured, err := r.currentConfiguredMCPSources(ctx)
+	if err != nil {
+		return runtimecatalogcmd.Snapshot{}, err
+	}
+	sources = append(sources, configured...)
 	managed, err := r.managedMCPSources(ctx)
 	if err != nil {
 		return runtimecatalogcmd.Snapshot{}, err
@@ -258,7 +264,7 @@ func (r *Runtime) ReadSkill(ctx context.Context, request runtimecatalogcmd.Skill
 	return r.reader.ReadSkill(ctx, request)
 }
 
-// AcquireMCPServerIDs pins ready plugin MCP instances from one exact retained
+// AcquireMCPServerIDs pins ready MCP instances from one exact retained
 // snapshot for the lifetime of a provider session.
 func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecatalogcmd.SnapshotID) ([]string, func(), error) {
 	snapshot, err := r.retainedSnapshot(ctx, snapshotID)
@@ -267,9 +273,7 @@ func (r *Runtime) AcquireMCPServerIDs(ctx context.Context, snapshotID runtimecat
 	}
 	descriptors := make([]runtimecatalogcmd.MCPServerDescriptor, 0, len(snapshot.MCPServers))
 	for _, descriptor := range snapshot.MCPServers {
-		if descriptor.ID.Source.Kind == runtimecatalogcmd.SourceKindPlugin {
-			descriptors = append(descriptors, descriptor)
-		}
+		descriptors = append(descriptors, descriptor)
 	}
 	keys, release, err := r.mcp.AcquireDescriptors(ctx, descriptors)
 	if err != nil {
@@ -490,7 +494,7 @@ func configuredMCPSources(configs map[string]agentconfig.MCPServerConfig) []runt
 		}
 		sources = append(sources, runtimecatalogcmd.Source{
 			Descriptor: runtimecatalogcmd.SourceDescriptor{ID: id, Revision: revision},
-			MCPServers: []runtimecatalogcmd.MCPServerDescriptor{{ID: runtimecatalogcmd.ContributionID{Source: id, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}, Revision: revision, Name: name, Transport: transport}},
+			MCPServers: []runtimecatalogcmd.MCPServerDescriptor{{ID: runtimecatalogcmd.ContributionID{Source: id, Kind: runtimecatalogcmd.ContributionKindMCPServer, Name: name}, Revision: revision, Name: name, Transport: transport, TargetingKnown: true}},
 		})
 	}
 	return sources
@@ -519,11 +523,7 @@ func configuredMCPResolver(configs map[string]agentconfig.MCPServerConfig) *mcpr
 }
 
 func configuredMCPRevision(config agentconfig.MCPServerConfig) runtimecatalogcmd.RevisionID {
-	// Values participate in exact identity, but only the digest enters the
-	// descriptor. After a config edit an unavailable historical pin must fail
-	// closed instead of borrowing the new file's credentials.
-	data, _ := json.Marshal(config)
-	return hashValue(string(data))
+	return runtimecatalogcmd.RevisionID(mcpfx.ConfiguredRevision(config))
 }
 
 func hashValue(value string) runtimecatalogcmd.RevisionID {

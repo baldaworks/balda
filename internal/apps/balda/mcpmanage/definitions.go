@@ -27,6 +27,7 @@ type DefinitionStore interface {
 	GetMCPConnection(ctx context.Context, id string) (mcpcmd.Connection, bool, error)
 	ListMCPConnections(ctx context.Context) ([]mcpcmd.Connection, error)
 	GetMCPRevision(ctx context.Context, connectionID, revisionID string) (mcpcmd.Revision, bool, error)
+	GetMCPGrant(ctx context.Context, binding mcpcmd.AuthBinding) (mcpcmd.Grant, bool, error)
 }
 
 // Configured supplies immutable, already-redacted file-owned definitions.
@@ -66,7 +67,7 @@ func NewDefinitions(credentials *Service, store DefinitionStore, configured Conf
 
 // Create validates and persists a new managed connection and revision.
 func (s *Definitions) Create(ctx context.Context, request mcpcmd.CreateDefinition) (mcpcmd.Item, error) {
-	if !validPublicID(request.PublicID) {
+	if !validPublicID(request.PublicID) || request.Definition.AuthBinding != nil || request.Definition.ConfigRevision != "" {
 		return mcpcmd.Item{}, mcpcmd.ErrInvalid
 	}
 	if err := s.checkConflict(ctx, request.PublicID, ""); err != nil {
@@ -184,7 +185,7 @@ func (s *Definitions) item(ctx context.Context, c mcpcmd.Connection) (mcpcmd.Ite
 		if status == mcpcmd.StatusReady && count >= 0 {
 			item.Status = status
 			item.ToolCount = count
-		} else if status == mcpcmd.StatusUnavailable {
+		} else if status == mcpcmd.StatusUnavailable || status == mcpcmd.StatusAuthRequired || status == mcpcmd.StatusDisconnected {
 			item.Status = status
 		}
 	}
@@ -219,10 +220,21 @@ func (s *Definitions) Update(ctx context.Context, request mcpcmd.UpdateDefinitio
 	if !found {
 		return mcpcmd.Item{}, mcpcmd.ErrUnavailable
 	}
+	definition := request.Definition
+	if definition.ConfigRevision != "" {
+		return mcpcmd.Item{}, mcpcmd.ErrInvalid
+	}
+	if definition.AuthBinding != nil && (previous.Definition.AuthBinding == nil || *definition.AuthBinding != *previous.Definition.AuthBinding) {
+		return mcpcmd.Item{}, mcpcmd.ErrInvalid
+	}
+	definition.AuthBinding = nil
+	if definition.OAuth && previous.Definition.OAuth && definition.URL == previous.Definition.URL && definition.Transport == previous.Definition.Transport {
+		definition.AuthBinding = previous.Definition.AuthBinding
+	}
 	c.CurrentRevisionID = rand.Text()
 	c.Enabled = request.Enabled
 	c.UpdatedAt = request.Authority.At
-	r, err := s.prepare(ctx, &previous, c, request.Definition, request.Values)
+	r, err := s.prepare(ctx, &previous, c, definition, request.Values)
 	if err != nil {
 		return mcpcmd.Item{}, err
 	}
@@ -306,29 +318,37 @@ func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
 		return nil, safeOperationError(err)
 	}
 	items := append([]mcpcmd.Item(nil), configured...)
-	configuredIndex := make(map[string]int, len(configured))
 	for i := range items {
 		items[i].Connection.Source = mcpcmd.SourceConfig
-		configuredIndex[items[i].Connection.PublicID] = i
-		// Config has no durable version marker. Observed health still belongs
-		// to the catalog; a file entry alone never establishes readiness.
-		items[i].Status = mcpcmd.StatusPending
-		items[i].ToolCount = 0
+		for _, c := range connections {
+			if c.Source != mcpcmd.SourceConfig || c.PublicID != items[i].Connection.PublicID {
+				continue
+			}
+			r, found, err := s.store.GetMCPRevision(ctx, c.ID, c.CurrentRevisionID)
+			if err != nil || !found {
+				return nil, mcpcmd.ErrUnavailable
+			}
+			items[i].Connection = c
+			items[i].Definition.OAuth = r.Definition.OAuth
+			items[i].Definition.Scopes = append([]string(nil), r.Definition.Scopes...)
+			if items[i].Definition.ConfigRevision == r.Definition.ConfigRevision && r.Definition.AuthBinding != nil {
+				binding := *r.Definition.AuthBinding
+				items[i].Definition.AuthBinding = &binding
+			}
+		}
+		items[i].Status, items[i].ToolCount = mcpcmd.StatusPending, 0
 		status, count, err := s.catalog.MCPHealth(ctx, items[i].Connection)
-		if err != nil || status == mcpcmd.StatusUnavailable {
+		switch {
+		case err != nil || status == mcpcmd.StatusUnavailable:
 			items[i].Status = mcpcmd.StatusUnavailable
-		} else if status == mcpcmd.StatusReady && count >= 0 {
+		case status == mcpcmd.StatusReady && count >= 0:
+			items[i].Status, items[i].ToolCount = status, count
+		case status == mcpcmd.StatusAuthRequired || status == mcpcmd.StatusDisconnected:
 			items[i].Status = status
-			items[i].ToolCount = count
 		}
 	}
 	for _, c := range connections {
 		if c.Source == mcpcmd.SourceConfig {
-			// A configured OAuth side record owns identity/auth only. Its
-			// retained revision never overrides the current file definition.
-			if i, ok := configuredIndex[c.PublicID]; ok {
-				items[i].Connection.ID = c.ID
-			}
 			continue
 		}
 		item, err := s.item(ctx, c)
@@ -370,6 +390,14 @@ func (s *Definitions) Probe(ctx context.Context, request mcpcmd.CreateDefinition
 	count, err := s.probe.ProbeMCP(ctx, r)
 	if err != nil || count < 0 {
 		item.Status = mcpcmd.StatusUnavailable
+		if errors.Is(err, mcpcmd.ErrAuthRequired) {
+			item.Status = mcpcmd.StatusAuthRequired
+			return item, mcpcmd.ErrAuthRequired
+		}
+		if errors.Is(err, mcpcmd.ErrDisconnected) {
+			item.Status = mcpcmd.StatusDisconnected
+			return item, mcpcmd.ErrDisconnected
+		}
 		return item, mcpcmd.ErrUnavailable
 	}
 	item.ToolCount = count

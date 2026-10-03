@@ -16,6 +16,7 @@ import (
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/execution"
 	"github.com/baldaworks/balda/internal/apps/balda/internalmcp"
 	baldajobs "github.com/baldaworks/balda/internal/apps/balda/jobs"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpbridge"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	"github.com/baldaworks/balda/internal/apps/balda/scheduledjobs"
@@ -145,6 +146,8 @@ type applicationLifecycleParams struct {
 	Backoffice           *backoffice.Runtime
 	MCP                  *internalmcp.InternalMCPManager
 	MCPManagement        *mcpmanage.Service
+	MCPBridge            *mcpbridge.Bridge
+	MCPAuthorizations    *mcpmanage.Authorizations
 	StateProvider        state.Provider
 	Catalog              *catalogapp.Lifecycle
 	Runtime              *baldaagent.RuntimeManager
@@ -182,7 +185,9 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		{name: "managed MCP credential readiness", start: func(ctx context.Context) error {
 			return p.MCPManagement.ValidateCredentials(ctx, p.StateProvider.MCP())
 		}},
+		{name: "MCP credential bridge", start: p.MCPBridge.Start, stop: p.MCPBridge.Close},
 		{name: "runtime contribution catalog", start: p.Catalog.Start, stop: p.Catalog.Stop},
+		{name: "MCP authorization attempts", stop: func(context.Context) error { p.MCPAuthorizations.Close(); return nil }},
 		{name: "session-memory runtime", start: func(ctx context.Context) error {
 			return startSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}, stop: func(ctx context.Context) error {

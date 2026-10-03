@@ -2,6 +2,23 @@ package mcpcmd
 
 import "time"
 
+// PrepareAuthorization captures current trusted configuration for worker
+// authorization. Nil scopes retain the current configured authorization scopes.
+type PrepareAuthorization struct {
+	ConnectionID string
+	Scopes       []string
+	Authority    Authority
+}
+
+// SelectAuthorization attaches a protocol-discovered worker identity to an
+// exact current revision. Its tokens remain in the independently fenced grant.
+type SelectAuthorization struct {
+	ConnectionID       string
+	ExpectedRevisionID string
+	Binding            AuthBinding
+	Authority          Authority
+}
+
 // BrowserAuthorization exposes only native redirect instructions and safe ID.
 type BrowserAuthorization struct {
 	ID               string

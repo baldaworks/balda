@@ -29,6 +29,9 @@ type LaunchConfig struct {
 	WorkingDir string
 	URL        string
 	Headers    map[string]string
+	// InheritEnvironment is explicit for configured/managed stdio. Plugin
+	// discovery keeps its isolated environment and allowlist policy.
+	InheritEnvironment bool
 	// EnforceHTTPOrigin scopes resolved managed credentials to their endpoint.
 	EnforceHTTPOrigin bool
 }

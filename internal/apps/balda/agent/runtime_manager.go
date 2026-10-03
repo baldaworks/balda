@@ -35,15 +35,16 @@ type SessionRuntimeRequest struct {
 
 // SessionCapabilityBinding is one immutable catalog projection owned by a session runtime.
 type SessionCapabilityBinding struct {
-	SnapshotID   runtimecatalogcmd.SnapshotID
-	Skills       SkillMetadataProjection
-	MCPServerIDs []string
-	Close        func() error
+	SnapshotID           runtimecatalogcmd.SnapshotID
+	Skills               SkillMetadataProjection
+	MCPServerIDs         []string
+	ProviderMCPServerIDs map[string][]string
+	Close                func() error
 }
 
 // SessionCapabilityBinder selects commands, skills, and MCP from one catalog snapshot.
 type SessionCapabilityBinder interface {
-	BindSessionCapabilities(ctx context.Context, request SessionRuntimeRequest) (SessionCapabilityBinding, error)
+	BindSessionCapabilities(ctx context.Context, providerID string, request SessionRuntimeRequest) (SessionCapabilityBinding, error)
 }
 
 // ScopedMCPServer is an authenticated per-session MCP endpoint registration.
@@ -76,10 +77,12 @@ type RuntimeManager struct {
 	mcpRegistry       *mcpregistry.MapRegistry
 	logger            zerolog.Logger
 
-	mu             sync.RWMutex
-	runtime        *BuiltRuntime
-	scopedRuntimes map[string]*BuiltRuntime
-	scopedSequence uint64
+	mu                  sync.RWMutex
+	runtime             *BuiltRuntime
+	runtimeBuilder      *Builder
+	runtimeMCPServerIDs []string
+	scopedRuntimes      map[string]*BuiltRuntime
+	scopedSequence      uint64
 }
 
 // RuntimeManagerParams wires RuntimeManager dependencies.
@@ -221,6 +224,7 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	providerID := strings.TrimSpace(m.providerID)
 	workingDir := m.workingDir
 	extraMCPServerIDs := append([]string(nil), m.baldaMCPServerIDs...)
+	binder := m.capabilityBinder
 	m.mu.RUnlock()
 
 	if builder == nil {
@@ -229,30 +233,69 @@ func (m *RuntimeManager) Runtime(ctx context.Context) (*BuiltRuntime, error) {
 	if providerID == "" {
 		return nil, fmt.Errorf("balda provider is not configured")
 	}
+	var capabilities SessionCapabilityBinding
+	if binder != nil {
+		var err error
+		capabilities, err = binder.BindSessionCapabilities(ctx, providerID, SessionRuntimeRequest{WorkspaceDir: workingDir})
+		if err != nil {
+			return nil, fmt.Errorf("bind provider capabilities: %w", err)
+		}
+		if capabilities.SnapshotID == "" || capabilities.Skills.Snapshot != capabilities.SnapshotID {
+			closeSessionCapabilities(capabilities)
+			return nil, fmt.Errorf("provider capability binding is incomplete")
+		}
+		builder, err = builder.withProviderMCP(capabilities.ProviderMCPServerIDs)
+		if err != nil {
+			closeSessionCapabilities(capabilities)
+			return nil, err
+		}
+		if capabilities.ProviderMCPServerIDs != nil {
+			extraMCPServerIDs = append([]string(nil), capabilities.MCPServerIDs...)
+		} else {
+			extraMCPServerIDs = pinnedRuntimeMCPServerIDs(extraMCPServerIDs, capabilities.MCPServerIDs)
+		}
+	}
 
-	runtime, err := builder.BuildRuntimeWithMCPServerIDs(
+	runtime, err := builder.BuildRuntimeWithCapabilities(
 		runtimeLifecycleContext(ctx),
 		providerID,
 		workingDir,
 		nil,
 		extraMCPServerIDs,
+		capabilities.Skills,
+		SessionInstructionContext{SnapshotID: capabilities.SnapshotID},
 	)
 	if err != nil {
+		closeSessionCapabilities(capabilities)
 		m.logger.Error().Err(err).Str("agent", providerID).Msg("failed to build balda provider runtime")
 		return nil, err
 	}
+	var once sync.Once
+	runtime.Close = func() error {
+		var closeErr error
+		once.Do(func() {
+			closeErr = closeRuntimeAgent(runtime.Agent)
+			if capabilities.Close != nil {
+				closeErr = errors.Join(closeErr, capabilities.Close())
+			}
+		})
+		return closeErr
+	}
+	runtime.RuntimeSnapshotID = string(capabilities.SnapshotID)
 
 	m.mu.Lock()
 	if existing := m.runtime; existing != nil {
 		m.mu.Unlock()
 		if runtime != nil {
-			if closeErr := closeRuntimeAgent(runtime.Agent); closeErr != nil {
+			if closeErr := runtime.Close(); closeErr != nil {
 				m.logger.Warn().Err(closeErr).Str("agent", providerID).Msg("failed to close duplicate balda provider runtime")
 			}
 		}
 		return existing, nil
 	}
 	m.runtime = runtime
+	m.runtimeBuilder = builder
+	m.runtimeMCPServerIDs = append([]string(nil), extraMCPServerIDs...)
 	m.mu.Unlock()
 
 	m.logger.Info().Str("agent", providerID).Msg("balda provider runtime ready")
@@ -269,11 +312,12 @@ func (m *RuntimeManager) RuntimeForSession(ctx context.Context, request SessionR
 	}
 	m.mu.RLock()
 	binder := m.capabilityBinder
+	providerID := m.providerID
 	m.mu.RUnlock()
 	if binder == nil {
 		return nil, fmt.Errorf("session capability binder is required")
 	}
-	capabilities, err := binder.BindSessionCapabilities(ctx, request)
+	capabilities, err := binder.BindSessionCapabilities(ctx, providerID, request)
 	if err != nil {
 		return nil, fmt.Errorf("bind session capabilities: %w", err)
 	}
@@ -324,6 +368,16 @@ func (m *RuntimeManager) runtimeForSession(ctx context.Context, request SessionR
 	if providerID == "" {
 		closeSessionCapabilities(capabilities)
 		return nil, fmt.Errorf("balda provider is not configured")
+	}
+	var err error
+	builder, err = builder.withProviderMCP(capabilities.ProviderMCPServerIDs)
+	if err != nil {
+		closeSessionCapabilities(capabilities)
+		return nil, err
+	}
+	if capabilities.ProviderMCPServerIDs != nil {
+		// Host defaults have already been resolved to this exact snapshot.
+		hostMCPServerIDs = nil
 	}
 	var binding ScopedMCPServer
 	extraMCPServerIDs := pinnedRuntimeMCPServerIDs(hostMCPServerIDs, capabilities.MCPServerIDs)
@@ -634,10 +688,10 @@ func (m *RuntimeManager) childRuntimeBase(ctx context.Context) (childRuntimeBase
 	m.mu.RLock()
 	base := childRuntimeBase{
 		runtime:           runtime,
-		builder:           m.builder,
+		builder:           m.runtimeBuilder,
 		providerID:        strings.TrimSpace(m.providerID),
 		workingDir:        strings.TrimSpace(m.workingDir),
-		extraMCPServerIDs: append([]string(nil), m.baldaMCPServerIDs...),
+		extraMCPServerIDs: append([]string(nil), m.runtimeMCPServerIDs...),
 	}
 	m.mu.RUnlock()
 
@@ -755,6 +809,8 @@ func (m *RuntimeManager) close() error {
 	}
 	m.scopedRuntimes = make(map[string]*BuiltRuntime)
 	m.runtime = nil
+	m.runtimeBuilder = nil
+	m.runtimeMCPServerIDs = nil
 	m.mu.Unlock()
 	var errs []error
 	for _, item := range scoped {
@@ -768,7 +824,11 @@ func (m *RuntimeManager) close() error {
 		}
 	}
 	if runtime != nil {
-		errs = append(errs, closeRuntimeAgent(runtime.Agent))
+		if runtime.Close != nil {
+			errs = append(errs, runtime.Close())
+		} else {
+			errs = append(errs, closeRuntimeAgent(runtime.Agent))
+		}
 	}
 	return errors.Join(errs...)
 }
