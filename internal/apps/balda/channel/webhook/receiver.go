@@ -17,13 +17,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/webhookapp"
 	"github.com/rs/zerolog"
 )
 
 const (
-	statusAccepted = "accepted"
-	statusError    = "error"
+	statusAccepted  = "accepted"
+	statusDelivered = "delivered"
+	statusError     = "error"
 
 	codeInvalidMethod   = "invalid_method"
 	codeRouteNotFound   = "route_not_found"
@@ -42,13 +44,19 @@ type Service interface {
 	Accept(ctx context.Context, req webhookapp.Request) (webhookapp.Result, error)
 }
 
+// DeliveryReceipts reads provider receipts from the durable delivery outbox.
+type DeliveryReceipts interface {
+	SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error)
+}
+
 // Receiver receives inbound HTTP webhook events and dispatches them via webhookapp.Service.
 type Receiver struct {
-	enabled    bool
-	listenAddr string
-	routes     map[string]route
-	service    Service
-	logger     zerolog.Logger
+	enabled          bool
+	listenAddr       string
+	routes           map[string]route
+	service          Service
+	deliveryReceipts DeliveryReceipts
+	logger           zerolog.Logger
 
 	metrics metrics
 
@@ -56,6 +64,11 @@ type Receiver struct {
 	server   *http.Server
 	listener net.Listener
 	started  bool
+}
+
+// SetDeliveryReceipts supplies the outbox used by ack_on_delivery routes.
+func (r *Receiver) SetDeliveryReceipts(store DeliveryReceipts) {
+	r.deliveryReceipts = store
 }
 
 // NewReceiver creates a new inbound webhook HTTP receiver.
@@ -236,6 +249,22 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	rawBody := string(bodyBytes)
+	target, err := targetForBody(rt.Target, rt.TargetKeyFromBody, bodyBytes)
+	if err != nil {
+		r.metrics.invalid.Add(1)
+		r.writeError(w, requestID, &httpError{status: http.StatusBadRequest, code: codeInvalidPayload, message: messageCouldNotAccept, cause: err})
+		return
+	}
+	var reportTo *envelopetarget.Target
+	if rt.ReportTo != nil {
+		resolved, resolveErr := targetForBody(*rt.ReportTo, rt.ReportToKeyFromBody, bodyBytes)
+		if resolveErr != nil {
+			r.metrics.invalid.Add(1)
+			r.writeError(w, requestID, &httpError{status: http.StatusBadRequest, code: codeInvalidPayload, message: messageCouldNotAccept, cause: resolveErr})
+			return
+		}
+		reportTo = &resolved
+	}
 
 	headers := make(map[string]string, len(req.Header))
 	for name, values := range req.Header {
@@ -289,13 +318,14 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 	dedupeKey := strings.Join([]string{"webhook", strings.TrimSpace(rt.Name), dedupeBase}, ":")
 
 	result, err := r.service.Accept(req.Context(), webhookapp.Request{
-		RequestID: requestID,
-		RouteName: rt.Name,
-		Prompt:    prompt,
-		Target:    rt.Target,
-		ReportTo:  rt.ReportTo,
-		Mode:      rt.Mode,
-		DedupeKey: dedupeKey,
+		RequestID:  requestID,
+		RouteName:  rt.Name,
+		Prompt:     prompt,
+		Target:     target,
+		ReportTo:   reportTo,
+		FallbackTo: rt.FallbackTo,
+		Mode:       rt.Mode,
+		DedupeKey:  dedupeKey,
 	})
 	if err != nil {
 		if webhookapp.IsTargetNotFound(err) {
@@ -341,15 +371,56 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		Str("stream", result.Stream).
 		Uint64("sequence", result.Sequence).
 		Str("job_id", result.JobID).
+		Bool("fallback_used", result.FallbackUsed).
 		Msg("inbound webhook accepted")
 
-	writeJSON(w, http.StatusAccepted, acceptedResponse{
-		Status:    statusAccepted,
-		Accepted:  true,
-		RequestID: requestID,
-		MessageID: result.MessageID,
-		Duplicate: result.Duplicate,
+	statusCode := http.StatusAccepted
+	status := statusAccepted
+	providerMessageID := ""
+	if rt.AckOnDelivery {
+		if r.deliveryReceipts == nil || result.JobID == "" {
+			r.writeError(w, requestID, &httpError{status: http.StatusServiceUnavailable, code: codeDispatchFailed, message: messageTemporarilyBusy,
+				cause: fmt.Errorf("delivery receipt lookup unavailable")})
+			return
+		}
+		var sent bool
+		providerMessageID, sent, err = r.deliveryReceipts.SentFinalDelivery(req.Context(), result.JobID)
+		if err != nil {
+			r.writeError(w, requestID, &httpError{status: http.StatusServiceUnavailable, code: codeDispatchFailed, message: messageTemporarilyBusy, cause: err})
+			return
+		}
+		if sent {
+			statusCode = http.StatusOK
+			status = statusDelivered
+		}
+	}
+	writeJSON(w, statusCode, acceptedResponse{
+		Status:             status,
+		Accepted:           true,
+		RequestID:          requestID,
+		MessageID:          result.MessageID,
+		Duplicate:          result.Duplicate,
+		FallbackUsed:       result.FallbackUsed,
+		JobID:              result.JobID,
+		ProviderMessageID:  providerMessageID,
+		DeliveryAckEnabled: rt.AckOnDelivery,
 	})
+}
+
+func targetForBody(target envelopetarget.Target, field string, body []byte) (envelopetarget.Target, error) {
+	if field == "" {
+		return target, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return target, fmt.Errorf("decode webhook destination: %w", err)
+	}
+	var key string
+	if err := json.Unmarshal(fields[field], &key); err != nil || strings.TrimSpace(key) == "" {
+		return target, fmt.Errorf("webhook destination field %q must be a nonempty string", field)
+	}
+	target.Key = strings.TrimSpace(key)
+	return target, nil
 }
 
 func authorizeRequest(req *http.Request, policy authPolicy) error {
@@ -388,11 +459,15 @@ type templateData struct {
 }
 
 type acceptedResponse struct {
-	Status    string `json:"status"`
-	Accepted  bool   `json:"accepted"`
-	RequestID string `json:"request_id"`
-	MessageID string `json:"message_id"`
-	Duplicate bool   `json:"duplicate,omitempty"`
+	Status             string `json:"status"`
+	Accepted           bool   `json:"accepted"`
+	RequestID          string `json:"request_id"`
+	MessageID          string `json:"message_id"`
+	Duplicate          bool   `json:"duplicate,omitempty"`
+	FallbackUsed       bool   `json:"fallback_used,omitempty"`
+	JobID              string `json:"job_id,omitempty"`
+	ProviderMessageID  string `json:"provider_message_id,omitempty"`
+	DeliveryAckEnabled bool   `json:"delivery_ack_enabled,omitempty"`
 }
 
 type errorResponse struct {

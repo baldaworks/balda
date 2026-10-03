@@ -5,11 +5,12 @@ import (
 	"errors"
 	"strings"
 
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
+	"github.com/baldaworks/balda/internal/apps/balda/envelopetarget"
 	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 )
 
 // Service orchestrates inbound webhook requests across target resolution and command publication.
@@ -43,15 +44,28 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 	}
 
 	target, err := s.targetResolver.ResolveTarget(ctx, req.Target)
+	fallbackUsed := false
+	if errors.Is(err, envelopetarget.ErrSessionUnavailable) && req.FallbackTo != nil {
+		target, err = s.targetResolver.ResolveTarget(ctx, *req.FallbackTo)
+		fallbackUsed = err == nil
+	}
 	if err != nil {
-		return Result{}, &TargetNotFoundError{Cause: err}
+		return Result{}, targetResolutionError(err)
 	}
 
 	var reportTo *deliverycmd.Locator
 	if req.ReportTo != nil {
-		resolvedReportTo, reportErr := s.targetResolver.ResolveTarget(ctx, *req.ReportTo)
-		if reportErr != nil {
-			return Result{}, &TargetNotFoundError{Cause: reportErr}
+		resolvedReportTo := target
+		if *req.ReportTo != req.Target {
+			var reportErr error
+			resolvedReportTo, reportErr = s.targetResolver.ResolveTarget(ctx, *req.ReportTo)
+			if errors.Is(reportErr, envelopetarget.ErrSessionUnavailable) && req.FallbackTo != nil {
+				resolvedReportTo, reportErr = s.targetResolver.ResolveTarget(ctx, *req.FallbackTo)
+				fallbackUsed = reportErr == nil
+			}
+			if reportErr != nil {
+				return Result{}, targetResolutionError(reportErr)
+			}
 		}
 		reportTo = &resolvedReportTo.Locator
 	}
@@ -103,12 +117,20 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 	}
 
 	return Result{
-		RequestID: reqID,
-		MessageID: receipt.MsgID,
-		Duplicate: receipt.Duplicate,
-		JobID:     jobID,
-		Stream:    receipt.Stream,
-		Sequence:  receipt.Sequence,
-		Target:    target,
+		RequestID:    reqID,
+		MessageID:    receipt.MsgID,
+		Duplicate:    receipt.Duplicate,
+		JobID:        jobID,
+		Stream:       receipt.Stream,
+		Sequence:     receipt.Sequence,
+		Target:       target,
+		FallbackUsed: fallbackUsed,
 	}, nil
+}
+
+func targetResolutionError(err error) error {
+	if errors.Is(err, envelopetarget.ErrSessionUnavailable) {
+		return &TargetNotFoundError{Cause: err}
+	}
+	return &DispatchFailedError{Cause: err}
 }

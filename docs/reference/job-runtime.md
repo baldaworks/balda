@@ -78,13 +78,43 @@ Balda can optionally expose local webhook routes that map path -> route envelope
 - Route resolution:
   - request path must match a configured route `path`
   - destination comes from route `envelope.target` + `envelope.key` (default `alias:owner`)
+  - authenticated routes may use `envelope.key_from_body` to read a top-level JSON string instead of a fixed `key`; `target=session` resolves that session ID to its persisted locator
+  - `envelope.report_to` supports the same `key_from_body` field, so replies return to the source session
+  - `envelope.fallback_to` may name a fixed `alias` or `locator` for authenticated, body-sourced session routes; it is used only when the source session is missing or inactive
   - `target=locator` accepts `<channel_type>:<address_key>` in `key`; obtain the
     current value from the [locator command](../commands.md#locator)
   - route `envelope.mode` decides publish target:
-    - `task` (default): publish webhook job command; job execution later emits the session command
+    - `job` (default): publish webhook job command; job execution later emits the session command
     - `session`: publish session command directly
+
+For a trusted event source that includes the originating session ID:
+
+```yaml
+balda:
+  webhooks:
+    routes:
+      broker_events:
+        path: /webhook/broker-events
+        prompt_template: '{{ .RawBody }}'
+        auth:
+          type: header
+          header: Authorization
+          secret_env: BROKER_WEBHOOK_AUTHORIZATION
+        envelope:
+          target: session
+          key_from_body: chat_id
+          mode: job
+          ack_on_delivery: true
+          report_to:
+            target: session
+            key_from_body: chat_id
+          fallback_to:
+            target: alias
+            key: owner@mattermost
+```
+
 - Prompt generation:
-  - request body is treated as opaque raw text
+  - request body is treated as opaque raw text unless a route uses `key_from_body`, which requires a JSON object
   - route `prompt_template` is rendered with `RequestID`, `Path`, `Method`, `RawBody`, `Headers`
   - rendered prompt must be non-empty
 - Session resolution:
@@ -101,6 +131,8 @@ Balda can optionally expose local webhook routes that map path -> route envelope
   - `dedupe.source=body_sha256` uses body hash
 - Response model (JSON):
   - accepted: `202` with `{status:"accepted", accepted:true, request_id, message_id, duplicate?}`
+  - with `ack_on_delivery=true`, `202` means queued or delivery pending; repeat the same idempotent POST until `200` with `status:"delivered"`, `job_id`, and `provider_message_id`
+  - `200` is returned only after the final reply's durable outbox entry records a provider message ID
   - route not found: `404` + `error.code="route_not_found"` + message `could not accept request`
   - invalid method: `405` + `error.code="invalid_method"` + message `could not accept request`
   - auth reject: `401` + `error.code="unauthorized"` + message `could not accept request`

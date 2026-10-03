@@ -594,6 +594,27 @@ func (s *postgresJobStore) MarkDeliveryFailed(ctx context.Context, deliveryKey s
 	return nil
 }
 
+// SentFinalDelivery returns the provider receipt for a job's final response.
+func (s *postgresJobStore) SentFinalDelivery(ctx context.Context, jobID string) (string, bool, error) {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		return "", false, postgresErrorf("job id is required")
+	}
+	var providerMessageID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT provider_message_id FROM execution_delivery_outbox
+		WHERE job_id = $1 AND delivery_key IN ($2, $3) AND status = $4
+		  AND provider_message_id IS NOT NULL AND provider_message_id <> ''
+		LIMIT 1`, jobID, jobID+":delivery:final", jobID+":delivery:terminal", DeliveryStatusSent).Scan(&providerMessageID)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, postgresErrorf("read final delivery for job %q: %w", jobID, err)
+	}
+	return providerMessageID, true, nil
+}
+
 func (s *postgresJobStore) ReserveAgentStep(ctx context.Context, record AgentStepRecord) (AgentStepRecord, bool, error) {
 	now := time.Now().UTC()
 	normalized, err := normalizeExecutionAgentStep(record, now)
