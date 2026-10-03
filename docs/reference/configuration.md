@@ -429,6 +429,7 @@ balda:
     - `mode`: `job` (default) or `session`
     - `report_to`: optional destination for progress/final replies; supports `key_from_body` too
     - `fallback_to`: fixed `alias` or `locator` used when a body-sourced session target is missing or inactive; requires header authentication
+    - missing or inactive sessions return `404 session_not_found` when no fallback resolves them; session lookup storage failures return `503 dispatch_failed` so callers can retry
     - `ack_on_delivery`: when true, return `200` only after the final reply is posted; requires `mode=job` and `report_to` (default: false)
   - optional `auth`:
     - `type`: `none` (default) or `header`

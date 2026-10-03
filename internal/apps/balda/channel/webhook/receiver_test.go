@@ -426,6 +426,29 @@ func TestReceiver_HTTPHandling(t *testing.T) {
 		assertErrorResponse(t, rec, http.StatusNotFound, codeSessionNotFound, messageCouldNotAccept)
 	})
 
+	t.Run("session_lookup_storage_error_mapped_to_503", func(t *testing.T) {
+		storageErr := errors.New("database unavailable")
+		var resolvedTarget envelopetarget.Target
+		svc := webhookapp.NewService(webhookapp.TargetResolverFunc(func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
+			resolvedTarget = target
+			return envelopetarget.Resolved{}, storageErr
+		}), nil, nil)
+		r := newTestReceiver(svc)
+		route := r.routes["/webhook1"]
+		route.Target = envelopetarget.Target{Target: envelopetarget.TargetSession, Key: "source-session"}
+		r.routes["/webhook1"] = route
+
+		req := httptest.NewRequest(http.MethodPost, "/webhook1", bytes.NewBufferString("body"))
+		rec := httptest.NewRecorder()
+
+		r.handleWebhook(rec, req)
+
+		if resolvedTarget.Target != envelopetarget.TargetSession || resolvedTarget.Key != "source-session" {
+			t.Fatalf("resolved target = %+v, want source session", resolvedTarget)
+		}
+		assertErrorResponse(t, rec, http.StatusServiceUnavailable, codeDispatchFailed, messageTemporarilyBusy)
+	})
+
 	t.Run("queue_full_mapped_to_429", func(t *testing.T) {
 		svc := &fakeService{err: &webhookapp.QueueFullError{Cause: errors.New("command queue is full")}}
 		r := newTestReceiver(svc)

@@ -86,7 +86,7 @@ func (f JobPublisherFunc) PublishWebhookJob(ctx context.Context, payload turncmd
 	return f(ctx, payload, routeName, requestID)
 }
 
-// TargetNotFoundError indicates that the requested target or report-to destination could not be resolved.
+// TargetNotFoundError indicates that the requested session or report-to session is unavailable.
 type TargetNotFoundError struct {
 	Cause error
 }
@@ -136,7 +136,7 @@ func IsQueueFull(err error) bool {
 	return errors.As(err, &queueErr)
 }
 
-// DispatchFailedError indicates that publishing the command failed.
+// DispatchFailedError indicates that target resolution or command publication failed.
 type DispatchFailedError struct {
 	Cause error
 }

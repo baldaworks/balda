@@ -50,7 +50,7 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 		fallbackUsed = err == nil
 	}
 	if err != nil {
-		return Result{}, &TargetNotFoundError{Cause: err}
+		return Result{}, targetResolutionError(err)
 	}
 
 	var reportTo *deliverycmd.Locator
@@ -64,7 +64,7 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 				fallbackUsed = reportErr == nil
 			}
 			if reportErr != nil {
-				return Result{}, &TargetNotFoundError{Cause: reportErr}
+				return Result{}, targetResolutionError(reportErr)
 			}
 		}
 		reportTo = &resolvedReportTo.Locator
@@ -126,4 +126,11 @@ func (s *Service) Accept(ctx context.Context, req Request) (Result, error) {
 		Target:       target,
 		FallbackUsed: fallbackUsed,
 	}, nil
+}
+
+func targetResolutionError(err error) error {
+	if errors.Is(err, envelopetarget.ErrSessionUnavailable) {
+		return &TargetNotFoundError{Cause: err}
+	}
+	return &DispatchFailedError{Cause: err}
 }

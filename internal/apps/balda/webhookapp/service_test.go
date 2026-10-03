@@ -189,10 +189,10 @@ func TestService_Accept_SessionMode_Success(t *testing.T) {
 	}
 }
 
-func TestService_Accept_TargetNotFound(t *testing.T) {
+func TestService_Accept_SessionUnavailable(t *testing.T) {
 	t.Parallel()
 
-	expectedErr := errors.New("unknown alias: nonexistent")
+	expectedErr := envelopetarget.ErrSessionUnavailable
 	resolver := &fakeTargetResolver{
 		resolveFn: func(_ context.Context, _ envelopetarget.Target) (envelopetarget.Resolved, error) {
 			return envelopetarget.Resolved{}, expectedErr
@@ -205,8 +205,8 @@ func TestService_Accept_TargetNotFound(t *testing.T) {
 		RouteName: "route",
 		Prompt:    "hello",
 		Target: envelopetarget.Target{
-			Target: "alias",
-			Key:    "nonexistent",
+			Target: "session",
+			Key:    "inactive",
 		},
 	}
 
@@ -280,15 +280,18 @@ func TestService_Accept_StorageErrorDoesNotUseFallback(t *testing.T) {
 	if !errors.Is(err, storageErr) {
 		t.Fatalf("error = %v, want storage error", err)
 	}
+	if !IsDispatchFailed(err) || IsTargetNotFound(err) {
+		t.Fatalf("error = %v, want retryable dispatch failure", err)
+	}
 }
 
-func TestService_Accept_ReportToTargetNotFound(t *testing.T) {
+func TestService_Accept_ReportToSessionUnavailable(t *testing.T) {
 	t.Parallel()
 
-	expectedErr := errors.New("report alias not found")
+	expectedErr := envelopetarget.ErrSessionUnavailable
 	resolver := &fakeTargetResolver{
 		resolveFn: func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
-			if target.Key == "bad-report" {
+			if target.Key == "inactive-report" {
 				return envelopetarget.Resolved{}, expectedErr
 			}
 			return envelopetarget.Resolved{Locator: deliverycmd.Locator{SessionID: "ok"}}, nil
@@ -296,7 +299,7 @@ func TestService_Accept_ReportToTargetNotFound(t *testing.T) {
 	}
 	svc := NewService(resolver, &fakeSessionPublisher{}, &fakeJobPublisher{})
 
-	reportTo := envelopetarget.Target{Target: "alias", Key: "bad-report"}
+	reportTo := envelopetarget.Target{Target: "session", Key: "inactive-report"}
 	req := Request{
 		RequestID: "req-rep-err",
 		RouteName: "route",
@@ -311,6 +314,27 @@ func TestService_Accept_ReportToTargetNotFound(t *testing.T) {
 	}
 	if !IsTargetNotFound(err) {
 		t.Errorf("IsTargetNotFound(err) = false, want true; err = %v", err)
+	}
+}
+
+func TestService_Accept_ReportToStorageError(t *testing.T) {
+	t.Parallel()
+
+	storageErr := errors.New("database unavailable")
+	resolver := &fakeTargetResolver{resolveFn: func(_ context.Context, target envelopetarget.Target) (envelopetarget.Resolved, error) {
+		if target.Key == "report" {
+			return envelopetarget.Resolved{}, storageErr
+		}
+		return envelopetarget.Resolved{Locator: deliverycmd.Locator{SessionID: "source"}}, nil
+	}}
+	svc := NewService(resolver, nil, &fakeJobPublisher{})
+	reportTo := envelopetarget.Target{Target: "session", Key: "report"}
+	_, err := svc.Accept(context.Background(), Request{
+		RequestID: "req-report-storage", Prompt: "event", Target: envelopetarget.Target{Target: "session", Key: "source"},
+		ReportTo: &reportTo, Mode: ModeJob,
+	})
+	if !errors.Is(err, storageErr) || !IsDispatchFailed(err) || IsTargetNotFound(err) {
+		t.Fatalf("error = %v, want retryable report-to lookup failure", err)
 	}
 }
 
