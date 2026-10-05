@@ -150,6 +150,7 @@ type applicationLifecycleParams struct {
 	MCPAuthorizations    *mcpmanage.Authorizations
 	StateProvider        state.Provider
 	Catalog              *catalogapp.Lifecycle
+	CatalogRuntime       *catalogapp.Runtime
 	Runtime              *baldaagent.RuntimeManager
 	Sessions             *session.Manager
 	Bus                  *natsbus.Bus
@@ -193,7 +194,14 @@ func applicationLifecycleStages(p applicationLifecycleParams, telegram *telegram
 		}, stop: func(ctx context.Context) error {
 			return closeSessionMemoryRuntime(ctx, p.SessionMemoryRuntime)
 		}},
-		{name: "provider runtime", start: p.Runtime.EnsureRuntime, stop: p.Runtime.Stop},
+		{name: "provider runtime", start: func(ctx context.Context) error {
+			err := p.Runtime.EnsureRuntime(ctx)
+			if err != nil && p.CatalogRuntime.MCPAuthorizationPending(ctx, err) {
+				p.Logger.Warn().Msg("provider unavailable until MCP worker authorization completes")
+				return nil
+			}
+			return err
+		}, stop: p.Runtime.Stop},
 		{name: "session manager", start: p.Sessions.Start, stop: p.Sessions.Stop},
 		{name: "durable transport", start: p.Bus.Start, stop: p.Bus.Drain},
 		{name: "session-memory ingress outbox", start: p.SessionMemoryIngress.Start, stop: p.SessionMemoryIngress.Stop},

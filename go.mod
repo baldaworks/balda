@@ -16,7 +16,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/nats-io/nats-server/v2 v2.14.0
 	github.com/nats-io/nats.go v1.52.0
-	github.com/normahq/runtime/v2 v2.2.1-0.20261005145828-aeb85ddda847
+	github.com/normahq/runtime/v2 v2.2.1-0.20261005175908-a2c51f075c01
 	github.com/pressly/goose/v3 v3.24.3
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1

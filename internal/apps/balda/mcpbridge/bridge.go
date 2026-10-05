@@ -32,6 +32,9 @@ type Endpoint struct {
 	Headers   map[string]string `json:"-"`
 	Binding   *mcpcmd.AuthBinding
 	Scopes    []string
+	// Observe receives only upstream responses or worker credential failures,
+	// never an incoming loopback response. It does not change forwarding.
+	Observe func(status int, headers http.Header, err error) `json:"-"`
 }
 
 // Projection carries process-local provider access, never a public snapshot.
@@ -230,6 +233,9 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if e.config.Binding != nil {
 		token, err := b.credentials.AccessToken(ctx, *e.config.Binding, e.config.Scopes)
 		if err != nil || token == "" || len(token) > 16<<10 || strings.ContainsAny(token, "\x00\r\n") {
+			if e.config.Observe != nil {
+				e.config.Observe(0, nil, err)
+			}
 			status := http.StatusBadGateway
 			if errors.Is(err, mcpcmd.ErrAuthRequired) || errors.Is(err, mcpcmd.ErrDisconnected) {
 				status = http.StatusUnauthorized
@@ -256,7 +262,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				p.Out.Header.Set(name, value)
 			}
 		},
-		Transport: upstreamTransport{base: b.transport}, FlushInterval: -1,
+		Transport: upstreamTransport{base: b.transport, observe: e.config.Observe}, FlushInterval: -1,
 		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
 			http.Error(w, "MCP upstream unavailable", http.StatusBadGateway)
@@ -276,10 +282,20 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-type upstreamTransport struct{ base http.RoundTripper }
+type upstreamTransport struct {
+	base    http.RoundTripper
+	observe func(int, http.Header, error)
+}
 
 func (t upstreamTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	response, err := t.base.RoundTrip(r)
+	if t.observe != nil {
+		if err != nil {
+			t.observe(0, nil, err)
+		} else {
+			t.observe(response.StatusCode, response.Header, nil)
+		}
+	}
 	if err != nil {
 		return nil, mcpcmd.ErrUnavailable
 	}

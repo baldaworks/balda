@@ -38,10 +38,12 @@ func (s *Definitions) validateRevision(r mcpcmd.Revision, providers []string) er
 			seen[id] = true
 		}
 	}
-	return s.validateTransportRevision(r)
+	return s.credentials.ValidateTransportRevision(r)
 }
 
-func (s *Definitions) validateTransportRevision(r mcpcmd.Revision) error {
+// ValidateTransportRevision checks the existing transport and protected-value
+// contract for a retained revision independently of current provider selection.
+func (s *Service) ValidateTransportRevision(r mcpcmd.Revision) error {
 	d := r.Definition
 	if len(d.Env) > 128 || len(d.Headers) > 128 || len(d.Args) > 256 || len(d.Scopes) > 64 {
 		return mcpcmd.ErrInvalid
@@ -79,7 +81,12 @@ func (s *Definitions) validateTransportRevision(r mcpcmd.Revision) error {
 			}
 		}
 	}
-	values, err := s.credentials.openRevision(r)
+	if binding := d.AuthBinding; binding != nil {
+		if !d.OAuth || binding.ConnectionID != r.ConnectionID || binding.Resource != d.URL || !validRemoteURL(binding.Issuer) || binding.ClientID == "" || len(binding.ClientID) > 1024 {
+			return mcpcmd.ErrInvalid
+		}
+	}
+	values, err := s.openRevision(r)
 	if err != nil {
 		return err
 	}

@@ -41,6 +41,7 @@ type Configured interface {
 type Catalog interface {
 	PublishMCP(ctx context.Context, commit func() error) error
 	MCPHealth(ctx context.Context, connection mcpcmd.Connection) (mcpcmd.Status, int, error)
+	RetryMCPAuthorization(ctx context.Context, binding mcpcmd.AuthBinding) error
 }
 
 // Probe checks a candidate without selecting it for provider execution.
@@ -329,11 +330,13 @@ func (s *Definitions) Inventory(ctx context.Context) ([]mcpcmd.Item, error) {
 				return nil, mcpcmd.ErrUnavailable
 			}
 			items[i].Connection = c
-			items[i].Definition.OAuth = r.Definition.OAuth
-			items[i].Definition.Scopes = append([]string(nil), r.Definition.Scopes...)
-			if items[i].Definition.ConfigRevision == r.Definition.ConfigRevision && r.Definition.AuthBinding != nil {
-				binding := *r.Definition.AuthBinding
-				items[i].Definition.AuthBinding = &binding
+			if items[i].Definition.Transport != mcpcmd.TransportStdio {
+				items[i].Definition.OAuth = r.Definition.OAuth
+				items[i].Definition.Scopes = append([]string(nil), r.Definition.Scopes...)
+				if items[i].Definition.ConfigRevision == r.Definition.ConfigRevision && r.Definition.AuthBinding != nil {
+					binding := *r.Definition.AuthBinding
+					items[i].Definition.AuthBinding = &binding
+				}
 			}
 		}
 		items[i].Status, items[i].ToolCount = mcpcmd.StatusPending, 0

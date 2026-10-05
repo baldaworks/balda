@@ -4,7 +4,6 @@ package mcpruntime
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -34,6 +33,9 @@ type LaunchConfig struct {
 	InheritEnvironment bool
 	// EnforceHTTPOrigin scopes resolved managed credentials to their endpoint.
 	EnforceHTTPOrigin bool
+	// ObservedFailure reads trusted private evidence from a fixed-upstream
+	// adapter. It is neither wire metadata nor part of a catalog snapshot.
+	ObservedFailure func() FailureReason `json:"-"`
 }
 
 // Tool is bounded observed tool identity; raw schemas and results stay in the instance.
@@ -108,6 +110,7 @@ type managedInstance struct {
 	instance   Instance
 	tools      []Tool
 	health     Health
+	failure    FailureReason
 	refs       int
 	desired    bool
 	projected  bool
@@ -224,11 +227,13 @@ func (r *Reconciler) startLocked(ctx context.Context, key InstanceKey, descripto
 	config, err := r.resolver.ResolveLaunch(ctx, descriptor)
 	if err != nil {
 		current.health.State, current.health.ErrorClass = HealthFailed, "resolve"
+		current.failure = launchReason(err)
 		return
 	}
 	instance, err := r.launcher.Start(ctx, key, cloneLaunchConfig(config))
 	if err != nil {
 		current.health.State, current.health.ErrorClass = HealthFailed, "start"
+		current.failure = launchReason(err)
 		return
 	}
 	current.instance = instance
@@ -259,16 +264,21 @@ func (r *Reconciler) Acquire(keys []InstanceKey) ([]Tool, func(), error) {
 	defer r.mu.Unlock()
 	var selected []*managedInstance
 	var tools []Tool
+	var failures []error
 	for _, key := range keys {
 		current, ok := r.instances[key]
 		if !ok || current.health.State != HealthReady {
-			return nil, nil, fmt.Errorf("MCP revision unavailable: %s", key.Name)
+			failures = append(failures, attachmentFailure(key, current))
+			continue
 		}
 		selected = append(selected, current)
 		for _, tool := range current.tools {
 			tool.Key = key
 			tools = append(tools, tool)
 		}
+	}
+	if len(failures) != 0 {
+		return nil, nil, errors.Join(failures...)
 	}
 	for _, current := range selected {
 		current.refs++
@@ -284,11 +294,15 @@ func (r *Reconciler) Acquire(keys []InstanceKey) ([]Tool, func(), error) {
 func (r *Reconciler) AcquireDescriptors(ctx context.Context, descriptors []runtimecatalogcmd.MCPServerDescriptor) ([]InstanceKey, func(), error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	if len(descriptors) > r.limits.MaxServers {
 		return nil, nil, errors.New("MCP server selection exceeds configured limit")
 	}
 	selected := make([]*managedInstance, 0, len(descriptors))
 	keys := make([]InstanceKey, 0, len(descriptors))
+	var failures []error
 	for _, descriptor := range descriptors {
 		key := InstanceKey{Source: descriptor.ID.Source, Revision: descriptor.Revision, Name: descriptor.Name}
 		current, ok := r.instances[key]
@@ -298,15 +312,21 @@ func (r *Reconciler) AcquireDescriptors(ctx context.Context, descriptors []runti
 			current.desired = false
 		}
 		if current.health.State != HealthReady {
-			for _, acquired := range selected {
-				acquired.refs--
-			}
-			r.cleanupEphemeralLocked(ctx)
-			return nil, nil, fmt.Errorf("MCP revision unavailable: %s", key.Name)
+			failures = append(failures, attachmentFailure(key, current))
+			continue
 		}
-		current.refs++
 		selected = append(selected, current)
 		keys = append(keys, key)
+	}
+	if err := ctx.Err(); err != nil {
+		failures = append(failures, err)
+	}
+	if len(failures) != 0 {
+		r.cleanupEphemeralLocked(ctx)
+		return nil, nil, errors.Join(failures...)
+	}
+	for _, current := range selected {
+		current.refs++
 	}
 	var once sync.Once
 	return keys, func() {

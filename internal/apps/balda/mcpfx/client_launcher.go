@@ -27,24 +27,32 @@ func NewClientLauncher() *ClientLauncher { return &ClientLauncher{} }
 
 // Start connects and completes tools/list discovery without invoking a shell.
 func (*ClientLauncher) Start(ctx context.Context, key mcpruntime.InstanceKey, config mcpruntime.LaunchConfig) (mcpruntime.Instance, error) {
-	transport, err := clientTransport(config)
+	observation := newLaunchObservation(config.URL)
+	transport, err := clientTransport(config, observation)
 	if err != nil {
 		return nil, err
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "balda-runtime-catalog", Version: "1"}, nil)
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return nil, errors.New("connect MCP server")
+		return nil, launchFailure(ctx, observedFailure(config, observation))
 	}
 	instance := &clientInstance{session: session}
 	if err := instance.discover(ctx, key); err != nil {
 		_ = session.Close()
-		return nil, err
+		return nil, launchFailure(ctx, observedFailure(config, observation))
 	}
 	return instance, nil
 }
 
-func clientTransport(config mcpruntime.LaunchConfig) (mcp.Transport, error) {
+func observedFailure(config mcpruntime.LaunchConfig, observation *launchObservation) func() mcpruntime.FailureReason {
+	if config.ObservedFailure != nil {
+		return config.ObservedFailure
+	}
+	return observation.failure
+}
+
+func clientTransport(config mcpruntime.LaunchConfig, observation *launchObservation) (mcp.Transport, error) {
 	switch config.Transport {
 	case transportStdio:
 		if strings.TrimSpace(config.Command) == "" {
@@ -68,7 +76,7 @@ func clientTransport(config mcpruntime.LaunchConfig) (mcp.Transport, error) {
 		if strings.TrimSpace(config.URL) == "" {
 			return nil, errors.New("MCP URL is required")
 		}
-		client, err := headerClient(config)
+		client, err := headerClient(config, observation)
 		if err != nil {
 			return nil, err
 		}
@@ -77,7 +85,7 @@ func clientTransport(config mcpruntime.LaunchConfig) (mcp.Transport, error) {
 		if strings.TrimSpace(config.URL) == "" {
 			return nil, errors.New("MCP URL is required")
 		}
-		client, err := headerClient(config)
+		client, err := headerClient(config, observation)
 		if err != nil {
 			return nil, err
 		}
@@ -146,9 +154,10 @@ func environment(values map[string]string) []string {
 }
 
 type headerTransport struct {
-	base    http.RoundTripper
-	headers map[string]string
-	origin  *url.URL
+	base        http.RoundTripper
+	headers     map[string]string
+	origin      *url.URL
+	observation *launchObservation
 }
 
 func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -162,15 +171,25 @@ func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error
 	for key, value := range t.headers {
 		cloned.Header.Set(key, value)
 	}
-	return t.base.RoundTrip(cloned)
+	response, err := t.base.RoundTrip(cloned)
+	// Only a response from the original configured origin is evidence. For
+	// bridge projections the separate upstream observation owns this decision.
+	if t.observation != nil && t.observation.origin != nil && sameHTTPOrigin(request.URL, t.observation.origin) {
+		if err != nil {
+			t.observation.observe(0, nil, err)
+		} else {
+			t.observation.observe(response.StatusCode, response.Header, nil)
+		}
+	}
+	return response, err
 }
 
 func sameHTTPOrigin(left, right *url.URL) bool {
 	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
 }
 
-func headerClient(config mcpruntime.LaunchConfig) (*http.Client, error) {
-	transport := headerTransport{base: http.DefaultTransport, headers: config.Headers}
+func headerClient(config mcpruntime.LaunchConfig, observation *launchObservation) (*http.Client, error) {
+	transport := headerTransport{base: http.DefaultTransport, headers: config.Headers, observation: observation}
 	client := &http.Client{}
 	if config.EnforceHTTPOrigin {
 		origin, err := url.Parse(config.URL)

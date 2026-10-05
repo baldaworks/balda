@@ -294,6 +294,26 @@ func TestConfiguredAuthorizationCapturesReadOnlyProtectedRevision(t *testing.T) 
 	}
 }
 
+func TestConfiguredStdioInventoryUsesCurrentTransportReadiness(t *testing.T) {
+	s, store, configured := definitionHarness(t)
+	configured.items = []mcpcmd.Item{{Connection: mcpcmd.Connection{ID: "config:file-tools", PublicID: "file-tools", Source: mcpcmd.SourceConfig, Enabled: true}, Definition: mcpcmd.Definition{Transport: mcpcmd.TransportHTTP, URL: "https://file.example.org/tools", ConfigRevision: "file-remote"}}}
+	capture, err := s.PrepareAuthorization(t.Context(), mcpcmd.PrepareAuthorization{ConnectionID: "config:file-tools", Scopes: []string{"tools:read"}, Authority: definitionCreate().Authority})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured.items[0].Definition = mcpcmd.Definition{Transport: mcpcmd.TransportStdio, Command: "file-current-stdio", ConfigRevision: "file-stdio"}
+	items, err := s.Inventory(t.Context())
+	if err != nil || len(items) != 1 {
+		t.Fatalf("current inventory = %d/%v", len(items), err)
+	}
+	if items[0].Definition.OAuth || len(items[0].Definition.Scopes) != 0 || items[0].Definition.AuthBinding != nil || items[0].Status != mcpcmd.StatusReady {
+		t.Fatalf("current stdio inventory borrowed remote authorization: %+v", items[0])
+	}
+	if store.revisions[capture.ID].Definition.Transport != mcpcmd.TransportHTTP || !store.revisions[capture.ID].Definition.OAuth {
+		t.Fatal("current stdio inventory rewrote retained remote capture")
+	}
+}
+
 type definitionCatalog struct {
 	status       mcpcmd.Status
 	publishError error
@@ -307,6 +327,10 @@ func (c *definitionCatalog) PublishMCP(_ context.Context, commit func() error) e
 }
 func (c *definitionCatalog) MCPHealth(context.Context, mcpcmd.Connection) (mcpcmd.Status, int, error) {
 	return c.status, 2, nil
+}
+
+func (*definitionCatalog) RetryMCPAuthorization(context.Context, mcpcmd.AuthBinding) error {
+	return nil
 }
 
 type definitionProbe struct{}

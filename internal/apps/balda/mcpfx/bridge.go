@@ -107,11 +107,13 @@ func BridgeLaunch(bridge *mcpbridge.Bridge, id string, config mcpruntime.LaunchC
 	if config.Transport == transportStreamableHTTP {
 		transport = mcpcmd.TransportHTTP
 	}
-	projection, err := bridge.Install(id, mcpbridge.Endpoint{URL: config.URL, Transport: transport, Headers: config.Headers, Binding: binding, Scopes: scopes})
+	observation := newLaunchObservation(config.URL)
+	projection, err := bridge.Install(id, mcpbridge.Endpoint{URL: config.URL, Transport: transport, Headers: config.Headers, Binding: binding, Scopes: scopes, Observe: observation.observe})
 	if err != nil {
 		return mcpruntime.LaunchConfig{}, err
 	}
 	config.URL, config.Headers, config.EnforceHTTPOrigin = projection.URL, projection.Headers, false
+	config.ObservedFailure = observation.failure
 	return config, nil
 }
 

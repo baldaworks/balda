@@ -11,6 +11,8 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/mcpruntime"
 	"github.com/baldaworks/balda/internal/apps/balda/runtimecatalogcmd"
 	"github.com/normahq/runtime/v2/agentconfig"
+	"github.com/normahq/runtime/v2/agentfactory"
+	"github.com/normahq/runtime/v2/mcpregistry"
 )
 
 // AcquireProviderMCPServerIDs pins the union once while preserving each
@@ -80,6 +82,7 @@ func descriptorRegistryID(descriptor runtimecatalogcmd.MCPServerDescriptor) stri
 func providerMCPDefaults(providers map[string]agentconfig.Config, root string, extra []string) (map[string][]string, error) {
 	result := make(map[string][]string)
 	visiting := make(map[string]bool)
+	validator := agentfactory.New(providers, mcpregistry.New(nil))
 	var visit func(string) error
 	visit = func(id string) error {
 		id = strings.TrimSpace(id)
@@ -93,6 +96,11 @@ func providerMCPDefaults(providers map[string]agentconfig.Config, root string, e
 		if !ok {
 			return fmt.Errorf("provider is unavailable")
 		}
+		// Reuse the provider owner's normalization/schema check in this
+		// existing selection pass, before MCP readiness can stop construction.
+		if err := validator.ValidateAgent(id); err != nil {
+			return fmt.Errorf("selected provider configuration is invalid")
+		}
 		visiting[id] = true
 		result[id] = append([]string{}, config.MCPServers...)
 		if agentconfig.IsPoolType(config.Type) {
@@ -100,6 +108,9 @@ func providerMCPDefaults(providers map[string]agentconfig.Config, root string, e
 				return fmt.Errorf("provider pool has no members")
 			}
 			for _, member := range config.PoolConfig.Members {
+				if next, ok := providers[strings.TrimSpace(member)]; ok && agentconfig.IsPoolType(next.Type) {
+					return fmt.Errorf("provider pool contains a nested pool")
+				}
 				if err := visit(member); err != nil {
 					return err
 				}

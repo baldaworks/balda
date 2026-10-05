@@ -18,13 +18,14 @@ import (
 )
 
 type workerGrantFixture struct {
-	provider    state.Provider
-	credentials *mcpmanage.Service
-	grants      *mcpmanage.Grants
-	authority   mcpcmd.Authority
-	binding     mcpcmd.AuthBinding
-	access      atomic.Value
-	renewals    atomic.Int32
+	provider      state.Provider
+	credentials   *mcpmanage.Service
+	grants        *mcpmanage.Grants
+	authority     mcpcmd.Authority
+	binding       mcpcmd.AuthBinding
+	access        atomic.Value
+	renewals      atomic.Int32
+	rejectRefresh atomic.Bool
 }
 
 func newWorkerGrantFixture(t *testing.T, provider state.Provider, credentials *mcpmanage.Service, authority mcpcmd.Authority, connectionID, resource string) *workerGrantFixture {
@@ -35,6 +36,11 @@ func newWorkerGrantFixture(t *testing.T, provider state.Provider, credentials *m
 	issuer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/token" {
+			if f.rejectRefresh.Load() {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+				return
+			}
 			if err := r.ParseForm(); err != nil || r.Form.Get("grant_type") != "refresh_token" || r.Form.Get("resource") != resource || r.Form.Get("client_id") != "worker-client" {
 				t.Error("refresh was not bound to the worker resource/client")
 				w.WriteHeader(http.StatusBadRequest)

@@ -196,7 +196,9 @@ components:
     in:
       - internal/apps/balda/runtimecatalog
 
-  # Desired/observed MCP lifecycle and safe revision-aware launch policy.
+  # Desired/observed MCP lifecycle and bounded exact launch evidence only.
+  # Current authorization recovery policy belongs to catalog_wiring, so this
+  # component remains independent of MCP management and concrete SDK adapters.
   mcp_runtime:
     in:
       - internal/apps/balda/mcpruntime
@@ -213,6 +215,8 @@ components:
       - internal/apps/balda/mcpmanage
 
   # Fixed-upstream loopback MCP transport; grant policy stays behind its port.
+  # Upstream observation is injected by mcp_wiring; no OAuth SDK/policy belongs
+  # in the bridge's dependency set.
   mcp_bridge:
     in:
       - internal/apps/balda/mcpbridge

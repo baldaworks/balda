@@ -244,7 +244,8 @@ func testRemoteDiscoveryAndExecutionUseSameProtectedBridge(t *testing.T, source 
 				if err != nil {
 					t.Fatal(err)
 				}
-				binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: map[string]agentconfig.Config{"alpha": {}, "beta": {}}}
+				provider := agentconfig.Config{Type: agentconfig.AgentTypeOpenAI, OpenAI: &agentconfig.LocalAPIConfig{APIKey: "fixture", Model: "fixture"}}
+				binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: map[string]agentconfig.Config{"alpha": provider, "beta": provider}}
 				excluded, err := binder.BindSessionCapabilities(t.Context(), "beta", baldaagent.SessionRuntimeRequest{RuntimeSnapshotID: string(pinned.ID)})
 				if err != nil {
 					t.Fatal(err)

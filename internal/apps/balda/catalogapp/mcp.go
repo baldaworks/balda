@@ -14,7 +14,16 @@ func (r *Runtime) MCPHealth(ctx context.Context, c mcpcmd.Connection) (mcpcmd.St
 	if err := ctx.Err(); err != nil {
 		return mcpcmd.StatusUnavailable, 0, err
 	}
-	if c.CurrentRevisionID != "" {
+	currentStdio := false
+	if c.Source == mcpcmd.SourceConfig {
+		for _, source := range r.configuredMCP {
+			if source.Descriptor.ID.Name == c.PublicID && source.MCPServers[0].Transport == transportStdio {
+				currentStdio = true
+				break
+			}
+		}
+	}
+	if c.CurrentRevisionID != "" && !currentStdio {
 		revision, found, err := r.managedMCP.GetMCPRevision(ctx, c.ID, c.CurrentRevisionID)
 		if err != nil || !found {
 			return mcpcmd.StatusUnavailable, 0, mcpcmd.ErrUnavailable
@@ -52,7 +61,7 @@ func (r *Runtime) MCPHealth(ctx context.Context, c mcpcmd.Connection) (mcpcmd.St
 	if c.Source == mcpcmd.SourceConfig {
 		key.Source = runtimecatalogcmd.SourceID{Kind: runtimecatalogcmd.SourceKindConfiguredMCP, Name: c.PublicID}
 		for _, source := range r.configuredMCP {
-			if c.CurrentRevisionID == "" && source.Descriptor.ID == key.Source {
+			if (c.CurrentRevisionID == "" || currentStdio) && source.Descriptor.ID == key.Source {
 				key.Revision = source.Descriptor.Revision
 				break
 			}
@@ -176,13 +185,18 @@ func (r *Runtime) currentConfiguredMCPSources(ctx context.Context) ([]runtimecat
 			return nil, runtimecatalogcmd.ErrRevisionUnavailable
 		}
 		descriptor := &sources[i].MCPServers[0]
+		if descriptor.Transport == transportStdio {
+			// The current file owns this transport. The old OAuth capture is
+			// retained solely for exact historical remote pins.
+			continue
+		}
 		descriptor.ConfigRef = c.ID
 		if revision.Definition.ConfigRevision == string(base.Descriptor.Revision) {
 			descriptor.Revision = runtimecatalogcmd.RevisionID(revision.ID)
 			sources[i].Descriptor.Revision = descriptor.Revision
 		}
-		// On mismatch the file digest is not a stored capture ID. Exact
-		// retained resolution therefore fails until a new capture is saved.
+		// The current-file adapter recognizes a validated mismatch; retained
+		// resolution still refuses arbitrary missing capture IDs.
 	}
 	return sources, nil
 }

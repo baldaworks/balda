@@ -32,6 +32,25 @@ MCP or ingress, then binds Backoffice HTTP before enabling inbound transports.
 A failed prerequisite or listener bind aborts startup. Shutdown closes ingress
 before HTTP and the shared provider.
 
+The selected provider may remain explicitly unavailable while authenticated
+management starts for three current MCP authorization states: a valid selected
+OAuth revision needs worker authorization, a fresh configured remote returns a
+bounded same-origin OAuth challenge, or a changed remote file requires a new
+capture of its valid retained OAuth definition. Tools are never omitted to
+construct a partial runner. Every selected MCP blocker is inspected; an ordinary
+remote failure, malformed or foreign challenge, missing historical revision,
+invalid selected provider, unavailable protection material, or cancellation
+still aborts startup. The credential bridge and catalog retain their existing
+position before provider construction.
+
+Saving the same worker authorization retries only its failed exact MCP
+attachments. It preserves the definition revision, capability snapshot, and
+ready runners. A failed retry leaves the saved grant non-ready and retryable.
+A first or changed binding follows ordinary immutable catalog publication.
+Changing a file-owned remote to stdio uses the current stdio declaration;
+removing it excludes it from new selections. Retained remote captures, grants,
+and session pins remain available under their exact identities.
+
 Commands:
 
 - `balda validate` checks configuration and the application graph without

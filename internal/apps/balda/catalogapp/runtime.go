@@ -45,6 +45,7 @@ type Runtime struct {
 	reader        *runtimecatalog.SkillReader
 	plugins       baldastate.PluginStore
 	managedMCP    baldastate.MCPStore
+	credentials   *mcpmanage.Service
 	sessions      baldastate.SessionStore
 	kv            baldastate.KVStore
 	builtin       runtimecatalogcmd.Source
@@ -85,7 +86,7 @@ func NewRuntime(
 	runtime := &Runtime{
 		stateDir: stateDir, agentSkillDir: strings.TrimSpace(agentSkillDir), codexSkillDir: strings.TrimSpace(codexSkillDir), compiler: runtimecatalog.NewCompiler(), store: runtimecatalog.NewStore(),
 		loader: loader, archive: archive, reader: reader, plugins: provider.Plugins(), managedMCP: provider.MCP(), sessions: provider.Sessions(), kv: provider.AppKV(),
-		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured),
+		builtin: builtinSource(advertisements), configuredMCP: configuredMCPSources(configured), credentials: credentials,
 	}
 	pluginResolver, err := mcpruntime.NewPluginResolver(archive, runtime, nil, mcpruntime.PluginPolicy{})
 	if err != nil {
@@ -100,7 +101,7 @@ func NewRuntime(
 		managedResolver.Values = credentials
 	}
 	runtime.mcp, err = mcpruntime.New(
-		mcpruntime.RoutedResolver{Configured: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredMCPResolver(configured), Bridge: bridge}, Retained: managedResolver}, Managed: managedResolver, Plugin: pluginResolver},
+		mcpruntime.RoutedResolver{Configured: configuredLaunchResolver{catalog: runtime, fallback: mcpfx.ConfiguredResolver{Static: mcpfx.BridgeResolver{Resolver: configuredMCPResolver(configured), Bridge: bridge}, Retained: managedResolver}}, Managed: managedResolver, Plugin: pluginResolver},
 		mcpfx.BridgeLauncher{Bridge: bridge, Launcher: mcpfx.NewClientLauncher()}, projector, mcpruntime.Limits{},
 	)
 	if err != nil {

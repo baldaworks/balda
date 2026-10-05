@@ -51,7 +51,14 @@ func (s *Definitions) BindAuthorization(ctx context.Context, request mcpcmd.Sele
 		return mcpcmd.Item{}, mcpcmd.ErrUnavailable
 	}
 	if definition.AuthBinding != nil && *definition.AuthBinding == binding {
-		return s.item(ctx, c)
+		// The grant owner has released its lock before binding. Retry only
+		// affected failed attachments; no definition/snapshot write is needed.
+		retryErr := s.catalog.RetryMCPAuthorization(ctx, binding)
+		item, err := s.item(ctx, c)
+		if err != nil {
+			return item, err
+		}
+		return item, safeOperationError(retryErr)
 	}
 	definition.AuthBinding = &binding
 	c.CurrentRevisionID, c.UpdatedAt = rand.Text(), request.Authority.At

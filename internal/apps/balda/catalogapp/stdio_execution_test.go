@@ -15,6 +15,7 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpfx"
+	"github.com/baldaworks/balda/internal/apps/balda/mcpmanage"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/normahq/runtime/v2/agentconfig"
 	"github.com/normahq/runtime/v2/mcpregistry"
@@ -83,6 +84,30 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 					t.Fatal(err)
 				}
 			}
+			var retained []mcpcmd.Revision
+			if source == mcpcmd.SourceConfig {
+				// A prior remote OAuth capture must not alter the ordinary
+				// current stdio launch or either actual provider's selection.
+				remote := make(map[string]agentconfig.MCPServerConfig)
+				for _, id := range ids {
+					remote[id] = agentconfig.MCPServerConfig{Type: agentconfig.MCPServerTypeHTTP, URL: "https://worker.example/" + id}
+				}
+				probe, err := mcpfx.NewManagedProbe(credentials, mcpfx.NewClientLauncher(), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				definitions, err := mcpmanage.NewDefinitions(credentials, mcpfx.NewDefinitionStore(p.MCP()), mcpfx.NewConfiguredDefinitions(remote, map[string]agentconfig.Config{"alpha": {MCPServers: ids}}, "alpha", nil), original, probe)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, id := range ids {
+					capture, err := definitions.PrepareAuthorization(t.Context(), mcpcmd.PrepareAuthorization{ConnectionID: "config:" + id, Authority: mutation.Authority})
+					if err != nil {
+						t.Fatal(err)
+					}
+					retained = append(retained, capture)
+				}
+			}
 			registry := mcpregistry.New(nil)
 			processDirectory := t.TempDir()
 			t.Setenv("BALDA_MCP_CATALOG_PROCESS_DIRECTORY", processDirectory)
@@ -105,6 +130,20 @@ func testStdioActualProviders(t *testing.T, forceACP bool) {
 			}
 			if health := catalog.MCP().Health(); len(health) != 2 || health[0].ToolCount != 1 || health[1].ToolCount != 1 {
 				t.Fatal("stdio discovery lost host environment or protected overlay")
+			}
+			for _, capture := range retained {
+				connection, found, err := p.MCP().GetMCPConnection(t.Context(), capture.ConnectionID)
+				if err != nil || !found {
+					t.Fatal("retained remote connection missing")
+				}
+				status, _, err := catalog.MCPHealth(t.Context(), connection)
+				if err != nil || status != mcpcmd.StatusReady {
+					t.Fatalf("current stdio readiness = %s/%v, want ready", status, err)
+				}
+				stored, found, err := p.MCP().GetMCPRevision(t.Context(), capture.ConnectionID, capture.ID)
+				if err != nil || !found || stored.Definition.URL != capture.Definition.URL {
+					t.Fatal("stdio transition changed its retained remote capture")
+				}
 			}
 			for _, descriptor := range snapshot.MCPServers {
 				projected, found := registry.Get(descriptorRegistryID(descriptor))

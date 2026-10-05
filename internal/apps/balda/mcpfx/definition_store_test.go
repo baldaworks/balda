@@ -88,6 +88,10 @@ func TestDefinitionServiceUsesCanonicalAuthorityAtCommit(t *testing.T) {
 type definitionCommitOnly struct{}
 
 func (definitionCommitOnly) PublishMCP(_ context.Context, commit func() error) error { return commit() }
+
+func (definitionCommitOnly) RetryMCPAuthorization(context.Context, mcpcmd.AuthBinding) error {
+	return mcpcmd.ErrUnavailable
+}
 func (definitionCommitOnly) MCPHealth(context.Context, mcpcmd.Connection) (mcpcmd.Status, int, error) {
 	return mcpcmd.StatusPending, 0, nil
 }
