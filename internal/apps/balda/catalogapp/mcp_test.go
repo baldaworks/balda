@@ -660,9 +660,17 @@ func TestRecoveryPublishesSavedManagedDefinitionWithoutLeakingValues(t *testing.
 
 func hybridCatalogFixture(t *testing.T) (state.Provider, *Runtime, *pluginapp.Service, state.MCPMutation, *mcpmanage.Service) {
 	t.Helper()
+	return hybridCatalogFixtureWithDatabase(t, "")
+}
+
+func hybridCatalogFixtureWithDatabase(t *testing.T, databasePath string) (state.Provider, *Runtime, *pluginapp.Service, state.MCPMutation, *mcpmanage.Service) {
+	t.Helper()
 	dir := t.TempDir()
 	t.Cleanup(func() { makeWritable(dir) })
-	p, err := state.NewSQLiteProvider(t.Context(), filepath.Join(dir, "state.db"))
+	if databasePath == "" {
+		databasePath = filepath.Join(dir, "state.db")
+	}
+	p, err := state.NewSQLiteProvider(t.Context(), databasePath)
 	if err != nil {
 		t.Fatal(err)
 	}

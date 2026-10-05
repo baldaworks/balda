@@ -34,7 +34,9 @@ func TestStdioDiscoveryAndActualProvidersUseHostEnvironmentAndOverlay(t *testing
 	}
 	for _, source := range []mcpcmd.Source{mcpcmd.SourceManaged, mcpcmd.SourceConfig} {
 		t.Run(string(source), func(t *testing.T) {
-			p, original, _, mutation, credentials := hybridCatalogFixture(t)
+			// Exercise real store mutations and both provider transports without
+			// coupling this process-launch test to platform database file URIs.
+			p, original, _, mutation, credentials := hybridCatalogFixtureWithDatabase(t, ":memory:")
 			configured := make(map[string]agentconfig.MCPServerConfig)
 			var directories []string
 			names := []string{"echo", "echo_two"}
