@@ -2,12 +2,15 @@ package catalogapp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baldaworks/balda/internal/apps/balda/commandcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/mcpcmd"
@@ -25,6 +28,15 @@ func TestMain(m *testing.M) {
 }
 
 func TestStdioDiscoveryAndActualProvidersUseHostEnvironmentAndOverlay(t *testing.T) {
+	testStdioActualProviders(t, false)
+}
+
+func TestStdioActualACPParentTerminationReleasesChildren(t *testing.T) {
+	testStdioActualProviders(t, true)
+}
+
+func testStdioActualProviders(t *testing.T, forceACP bool) {
+	t.Helper()
 	t.Setenv("BALDA_MCP_CATALOG_STDIO_HOST", "host-value")
 	t.Setenv("BALDA_MCP_CATALOG_STDIO_OVERLAY", "parent-value")
 	t.Setenv("BALDA_MCP_CATALOG_STDIO_REFERENCE_SOURCE", "referenced-value")
@@ -72,6 +84,8 @@ func TestStdioDiscoveryAndActualProvidersUseHostEnvironmentAndOverlay(t *testing
 				}
 			}
 			registry := mcpregistry.New(nil)
+			processDirectory := t.TempDir()
+			t.Setenv("BALDA_MCP_CATALOG_PROCESS_DIRECTORY", processDirectory)
 			catalog, err := NewRuntime(original.stateDir, "", "", p, nil, configured, registry, commandcmd.NewRegistry(), credentials, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -98,12 +112,15 @@ func TestStdioDiscoveryAndActualProvidersUseHostEnvironmentAndOverlay(t *testing
 					t.Fatal("stdio was not projected directly")
 				}
 			}
-			testHostedPoolInvocationWithTools(t, catalog, registry, snapshot.ID, source, nil, names)
-			testACPInvocationWithServers(t, catalog, registry, snapshot.ID, source, nil, ids)
+			observe := catalogProcessObserver(t, directories, processDirectory, forceACP)
+			if !forceACP {
+				testHostedPoolInvocationWithTools(t, catalog, registry, snapshot.ID, source, nil, names, observe)
+			}
+			testACPInvocationWithServers(t, catalog, registry, snapshot.ID, source, nil, ids, observe, forceACP)
 			for _, directory := range directories {
 				calls, err := os.ReadFile(filepath.Join(directory, "invocations.txt"))
-				if err != nil || !strings.Contains(string(calls), "actual hosted tool") || !strings.Contains(string(calls), "actual ACP tool") {
-					t.Fatalf("both providers must invoke each independent server: %s: %v", calls, err)
+				if err != nil || (!forceACP && !strings.Contains(string(calls), "actual hosted tool")) || !strings.Contains(string(calls), "actual ACP tool") {
+					t.Fatalf("actual providers must invoke each independent server: %s: %v", calls, err)
 				}
 			}
 		})
@@ -114,6 +131,7 @@ func TestMCPCatalogStdioChild(t *testing.T) {
 	if os.Getenv("BALDA_MCP_CATALOG_STDIO_CHILD") != "1" {
 		t.Skip("subprocess fixture")
 	}
+	recordCatalogProcess(t, os.Getenv("BALDA_MCP_CATALOG_STDIO_DIRECTORY"), "MCP")
 	server := mcp.NewServer(&mcp.Implementation{Name: "catalog-stdio", Version: "1"}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: os.Getenv("BALDA_MCP_CATALOG_STDIO_TOOL")}, func(_ context.Context, _ *mcp.CallToolRequest, args struct {
 		Text string `json:"text"`
@@ -152,4 +170,141 @@ func TestMCPCatalogStdioChild(t *testing.T) {
 
 func stdioCatalogLiteralArgs() []string {
 	return []string{"a b", "$HOME", "$(false)", `back\slash`, `quote"here`, "юникод"}
+}
+
+// The observer runs on each side of Stop, before caller cancellation can hide
+// an ownership leak. Discovery processes are retained by a different owner.
+type providerLifecycleObserver func(string) func(bool)
+
+type catalogProcess struct {
+	PID    int
+	Parent int
+}
+
+func recordCatalogProcess(t *testing.T, directory, kind string) {
+	t.Helper()
+	if directory == "" {
+		return
+	}
+	process := catalogProcess{PID: os.Getpid(), Parent: os.Getppid()}
+	data, err := json.Marshal(process)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, fmt.Sprintf("%s-process-%d.json", kind, process.PID)), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func catalogProcessObserver(t *testing.T, serverDirectories []string, processDirectory string, forceACP bool) providerLifecycleObserver {
+	t.Helper()
+	directories := append(slices.Clone(serverDirectories), processDirectory)
+	return func(provider string) func(bool) {
+		before := readCatalogProcesses(t, directories)
+		return func(stopped bool) {
+			current := readCatalogProcesses(t, directories)
+			var pids, children, owners []int
+			var servers, providers int
+			for path, process := range current {
+				if _, found := before[path]; found {
+					continue
+				}
+				pids = append(pids, process.PID)
+				if strings.HasPrefix(filepath.Base(path), "MCP-") {
+					children = append(children, process.PID)
+					servers++
+					if runtime.GOOS == "windows" {
+						pids = append(pids, process.Parent)
+						children = append(children, process.Parent)
+					}
+				} else {
+					owners = append(owners, process.PID)
+					providers++
+				}
+			}
+			wantServers := len(serverDirectories)
+			if strings.HasSuffix(provider, "pool-beta") {
+				wantServers = 0
+			}
+			wantProviders := 0
+			if strings.HasPrefix(provider, "ACP/") {
+				wantProviders = 1
+			}
+			if servers != wantServers || providers != wantProviders {
+				t.Errorf("%s process observations: MCP=%d ACP=%d, want MCP=%d ACP=%d", provider, servers, providers, wantServers, wantProviders)
+			}
+			for _, pid := range pids {
+				if !stopped {
+					alive, err := catalogProcessAlive(pid)
+					if err != nil || !alive {
+						t.Errorf("%s process %d must be live before owner shutdown: alive=%t error=%v", provider, pid, alive, err)
+					}
+				}
+			}
+			if stopped {
+				waitCatalogProcessExit(t, provider+" owner Stop", pids)
+				return
+			}
+			if forceACP {
+				for _, pid := range owners {
+					process, err := os.FindProcess(pid)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := process.Kill(); err != nil {
+						t.Fatal(err)
+					}
+					_ = process.Release()
+				}
+				// Stop has not run yet: its cleanup cannot disguise an orphan
+				// caused by the intentional death of the real ACP parent.
+				waitCatalogProcessExit(t, provider+" forced ACP parent death before Stop", children)
+			}
+		}
+	}
+}
+
+func waitCatalogProcessExit(t *testing.T, operation string, pids []int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for _, pid := range pids {
+		for {
+			alive, err := catalogProcessAlive(pid)
+			if err != nil {
+				t.Errorf("%s process %d observation: %v", operation, pid, err)
+				break
+			}
+			if !alive {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Errorf("%s process %d remains alive", operation, pid)
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+func readCatalogProcesses(t *testing.T, directories []string) map[string]catalogProcess {
+	t.Helper()
+	processes := make(map[string]catalogProcess)
+	for _, directory := range directories {
+		paths, err := filepath.Glob(filepath.Join(directory, "*-process-*.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var process catalogProcess
+			if err := json.Unmarshal(data, &process); err != nil || process.PID <= 0 || process.Parent <= 0 {
+				t.Fatalf("invalid process observation %s: %v", path, err)
+			}
+			processes[path] = process
+		}
+	}
+	return processes
 }

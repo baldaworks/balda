@@ -7,6 +7,9 @@ on:
       - 'cmd/balda/**'
       - 'internal/apps/balda/mcpfx/**'
       - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
+      - 'internal/apps/balda/catalogapp/stdio_process_*_test.go'
+      - 'internal/apps/balda/catalogapp/provider_execution_test.go'
+      - 'internal/apps/balda/catalogapp/acp_execution_test.go'
       - 'go.mod'
       - 'go.sum'
   pull_request:
@@ -15,6 +18,9 @@ on:
       - 'cmd/balda/**'
       - 'internal/apps/balda/mcpfx/**'
       - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
+      - 'internal/apps/balda/catalogapp/stdio_process_*_test.go'
+      - 'internal/apps/balda/catalogapp/provider_execution_test.go'
+      - 'internal/apps/balda/catalogapp/acp_execution_test.go'
       - 'go.mod'
       - 'go.sum'
 permissions:
@@ -36,5 +42,5 @@ jobs:
         run: go build ./cmd/balda
       - name: Native cwd, literal argv, environment, EOF and forced termination
         run: go test -race -count=1 ./cmd/balda ./internal/apps/balda/mcpfx -run 'Test(PrivateStdio|StdioLaunch)'
-      - name: Actual configured and managed hosted and ACP calls
-        run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestStdioDiscoveryAndActualProvidersUseHostEnvironmentAndOverlay$'
+      - name: Actual configured and managed hosted and ACP calls and owned process exit
+        run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestStdio(DiscoveryAndActualProvidersUseHostEnvironmentAndOverlay|ActualACPParentTerminationReleasesChildren)$'

@@ -25,10 +25,10 @@ import (
 
 func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
-	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, source, worker, []string{"echo"})
+	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, source, worker, []string{"echo"}, nil)
 }
 
-func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, names []string) {
+func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, names []string, observe providerLifecycleObserver) {
 	t.Helper()
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -118,6 +118,10 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 	}
 	binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: providers}
 	for _, providerID := range []string{"alpha", "pool-alpha", "pool-beta", "root-alpha"} {
+		var check func(bool)
+		if observe != nil {
+			check = observe("hosted/" + providerID)
+		}
 		root := providerID == "root-alpha"
 		if root {
 			providerID = "pool-alpha"
@@ -155,7 +159,13 @@ func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry 
 				t.Error("established hosted session did not renew once within its retained pin")
 			}
 		}
+		if check != nil {
+			check(false)
+		}
 		closeErr := manager.Stop(ctx)
+		if check != nil {
+			check(true)
+		}
 		cancel()
 		want := "hosted tool completed"
 		if providerID == "pool-beta" {

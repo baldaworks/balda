@@ -2,6 +2,7 @@ package catalogapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -31,10 +32,10 @@ import (
 
 func testACPInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
-	testACPInvocationWithServers(t, catalog, registry, snapshotID, source, worker, []string{"worker-tools"})
+	testACPInvocationWithServers(t, catalog, registry, snapshotID, source, worker, []string{"worker-tools"}, nil, false)
 }
 
-func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, ids []string) {
+func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, ids []string, observe providerLifecycleObserver, forcedExit bool) {
 	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
@@ -62,6 +63,10 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 	}
 	binder := &sessionCapabilityBinder{catalog: catalog, skills: skills, providers: providers}
 	for _, providerID := range []string{"alpha", "pool-alpha", "pool-beta", "root-alpha"} {
+		var check func(bool)
+		if observe != nil {
+			check = observe("ACP/" + providerID)
+		}
 		root := providerID == "root-alpha"
 		if root {
 			providerID = "pool-alpha"
@@ -95,26 +100,56 @@ func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpr
 				t.Error("established external ACP session did not renew once within its retained pin")
 			}
 		}
+		if check != nil {
+			check(false)
+		}
 		closeErr := manager.Stop(ctx)
+		if check != nil {
+			check(true)
+		}
 		cancel()
 		want := "actual ACP tool"
 		if providerID == "pool-beta" {
 			want = "ACP has no worker tool"
 		}
-		if err != nil || closeErr != nil || !strings.Contains(final, want) {
+		if forcedExit && closeErr != nil {
+			if !forcedProcessExit(closeErr) {
+				t.Errorf("actual forced ACP %s shutdown returned an unexpected error: %v", providerID, closeErr)
+			}
+		}
+		if err != nil || (!forcedExit && closeErr != nil) || !strings.Contains(final, want) {
 			t.Fatalf("actual ACP %s execution failed: final=%q error=%v close=%v", providerID, final, err, closeErr)
 		}
 	}
+}
+
+func forcedProcessExit(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if !forcedProcessExit(child) {
+				return false
+			}
+		}
+		return len(joined.Unwrap()) > 0
+	}
+	if child := errors.Unwrap(err); child != nil {
+		return forcedProcessExit(child)
+	}
+	exit, ok := err.(*exec.ExitError)
+	return ok && !exit.Success()
 }
 
 func TestMCPACPProviderChild(t *testing.T) {
 	if os.Getenv("BALDA_MCP_ACP_CHILD_FIXTURE") != "1" {
 		t.Skip("subprocess fixture")
 	}
+	recordCatalogProcess(t, os.Getenv("BALDA_MCP_CATALOG_PROCESS_DIRECTORY"), "ACP")
 	ctx, cancel := context.WithCancel(context.Background())
 	provider := &mcpACPProvider{ctx: ctx, sessions: make(map[acp.SessionId][]*mcp.ClientSession), ready: make(chan struct{})}
+	// NewAgentSideConnection starts readers immediately. Configure the child
+	// logger first rather than racing SetLogger against those goroutines.
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	provider.connection = acp.NewAgentSideConnection(provider, os.Stdout, os.Stdin)
-	provider.connection.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	close(provider.ready)
 	<-provider.connection.Done()
 	cancel()
