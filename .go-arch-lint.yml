@@ -201,7 +201,8 @@ components:
     in:
       - internal/apps/balda/mcpruntime
 
-  # Provider registry projection belongs in composition wiring.
+  # Provider registry projection and native stdio launch adaptation belong in
+  # composition wiring. The entrypoint dispatches private launch mechanics here.
   mcp_wiring:
     in:
       - internal/apps/balda/mcpfx
@@ -835,5 +836,17 @@ deps:
     anyVendorDeps: true
 
   entrypoints:
-    anyProjectDeps: true
+    mayDependOn:
+      - foundation
+      - composition_root
+      - application
+      - backoffice_application
+      - contracts
+      - user_contracts
+      - user_security
+      - storage
+      - infrastructure
+      - delivery
+      - mcp_wiring
+    deepScan: false
     anyVendorDeps: true

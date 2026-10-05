@@ -26,6 +26,7 @@ require (
 	github.com/tgbotkit/client v0.9.0
 	github.com/tgbotkit/runtime v0.1.1-0.20260715072030-0364ea88fe48
 	go.uber.org/fx v1.24.0
+	golang.org/x/sys v0.48.0
 	google.golang.org/adk/v2 v2.4.0
 	google.golang.org/genai v1.70.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -359,7 +360,6 @@ require (
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

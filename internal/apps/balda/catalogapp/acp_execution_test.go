@@ -31,6 +31,11 @@ import (
 
 func testACPInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
+	testACPInvocationWithServers(t, catalog, registry, snapshotID, source, worker, []string{"worker-tools"})
+}
+
+func testACPInvocationWithServers(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, ids []string) {
+	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +53,7 @@ func testACPInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.Map
 	}
 	if source == mcpcmd.SourceConfig {
 		alpha := providers["alpha"]
-		alpha.MCPServers = []string{"worker-tools"}
+		alpha.MCPServers = append([]string(nil), ids...)
 		providers["alpha"] = alpha
 	}
 	skills, err := baldaagent.NewSkillManager(catalog, catalog, baldaagent.SkillMetadataBudget{})
@@ -213,10 +218,10 @@ func (p *mcpACPProvider) Prompt(ctx context.Context, request acp.PromptRequest) 
 			return acp.PromptResponse{}, fmt.Errorf("external ACP MCP list failed")
 		}
 		for _, tool := range tools.Tools {
-			if tool.Name != "echo" {
+			if tool.Name != "echo" && tool.Name != "echo_two" {
 				continue
 			}
-			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "echo", Arguments: map[string]any{"text": "actual ACP tool"}})
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool.Name, Arguments: map[string]any{"text": "actual ACP tool"}})
 			if err != nil || result.IsError || len(result.Content) != 1 {
 				return acp.PromptResponse{}, fmt.Errorf("external ACP MCP invocation failed")
 			}

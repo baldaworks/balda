@@ -25,6 +25,11 @@ import (
 
 func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture) {
 	t.Helper()
+	testHostedPoolInvocationWithTools(t, catalog, registry, snapshotID, source, worker, []string{"echo"})
+}
+
+func testHostedPoolInvocationWithTools(t *testing.T, catalog *Runtime, registry *mcpregistry.MapRegistry, snapshotID runtimecatalogcmd.SnapshotID, source mcpcmd.Source, worker *workerGrantFixture, names []string) {
+	t.Helper()
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Model string `json:"model"`
@@ -53,10 +58,21 @@ func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregis
 			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"beta has no worker tool"}}]}`)
 			return
 		}
-		if len(request.Tools) != 1 || request.Tools[0].Function.Name != "echo" {
-			t.Error("pool alpha member did not receive exactly its selected worker tool")
+		if len(request.Tools) != len(names) {
+			t.Error("pool alpha member did not receive exactly its selected worker tools")
 			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"worker tool missing"}}]}`)
 			return
+		}
+		for _, name := range names {
+			found := false
+			for _, tool := range request.Tools {
+				found = found || tool.Function.Name == name
+			}
+			if !found {
+				t.Errorf("hosted provider is missing selected tool %s", name)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 		}
 		if len(request.Messages) > 0 {
 			message := request.Messages[len(request.Messages)-1]
@@ -70,7 +86,11 @@ func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregis
 				return
 			}
 		}
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"call-echo","type":"function","function":{"name":"echo","arguments":"{\"text\":\"actual hosted tool\"}"}}]}}]}`)
+		calls := make([]any, 0, len(names))
+		for _, name := range names {
+			calls = append(calls, map[string]any{"id": "call-" + name, "type": "function", "function": map[string]string{"name": name, "arguments": `{"text":"actual hosted tool"}`}})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "tool_calls": calls}}}})
 	}))
 	defer model.Close()
 	t.Setenv("OPENAI_BASE_URL", model.URL)
@@ -87,6 +107,9 @@ func testHostedPoolInvocation(t *testing.T, catalog *Runtime, registry *mcpregis
 	if source == mcpcmd.SourceConfig {
 		alpha := providers["alpha"]
 		alpha.MCPServers = []string{"worker-tools"}
+		if len(names) == 2 {
+			alpha.MCPServers = append(alpha.MCPServers, "worker-tools-two")
+		}
 		providers["alpha"] = alpha
 	}
 	skills, err := baldaagent.NewSkillManager(catalog, catalog, baldaagent.SkillMetadataBudget{})

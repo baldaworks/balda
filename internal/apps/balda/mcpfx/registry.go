@@ -29,6 +29,14 @@ func NewRegistryProjector(registry mcpregistry.Registry) (*RegistryProjector, er
 
 // Project registers a revision-qualified config for new runtimes.
 func (p *RegistryProjector) Project(_ context.Context, key mcpruntime.InstanceKey, config mcpruntime.LaunchConfig) (runtimecatalogcmd.MCPProjectionOutcome, error) {
+	if config.Transport == transportStdio && config.WorkingDir != "" &&
+		(key.Source.Kind == runtimecatalogcmd.SourceKindConfiguredMCP || key.Source.Kind == runtimecatalogcmd.SourceKindManagedMCP) {
+		var err error
+		config, err = stdioProviderLaunch(config)
+		if err != nil {
+			return runtimecatalogcmd.MCPProjectionUnsupported, err
+		}
+	}
 	providerConfig, err := providerConfig(config)
 	if err != nil {
 		return runtimecatalogcmd.MCPProjectionUnsupported, err

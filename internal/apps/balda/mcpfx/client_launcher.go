@@ -52,6 +52,13 @@ func clientTransport(config mcpruntime.LaunchConfig) (mcp.Transport, error) {
 		}
 		command := exec.Command(config.Command, config.Args...)
 		command.Dir = config.WorkingDir
+		if config.InheritEnvironment && config.WorkingDir != "" {
+			directory, executable, err := resolveStdioLaunch(config.Command, config.WorkingDir)
+			if err != nil {
+				return nil, err
+			}
+			command.Dir, command.Path = directory, executable
+		}
 		command.Env = environment(config.Env)
 		if config.InheritEnvironment {
 			command.Env = append(os.Environ(), command.Env...)

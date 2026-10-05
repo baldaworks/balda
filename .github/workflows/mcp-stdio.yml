@@ -1,0 +1,40 @@
+name: MCP stdio native launch
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/mcp-stdio.yml'
+      - 'cmd/balda/**'
+      - 'internal/apps/balda/mcpfx/**'
+      - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
+      - 'go.mod'
+      - 'go.sum'
+  pull_request:
+    paths:
+      - '.github/workflows/mcp-stdio.yml'
+      - 'cmd/balda/**'
+      - 'internal/apps/balda/mcpfx/**'
+      - 'internal/apps/balda/catalogapp/stdio_execution_test.go'
+      - 'go.mod'
+      - 'go.sum'
+permissions:
+  contents: read
+jobs:
+  native-launch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build packaged entrypoint
+        run: go build ./cmd/balda
+      - name: Native cwd, literal argv, environment, EOF and forced termination
+        run: go test -race -count=1 ./cmd/balda ./internal/apps/balda/mcpfx -run 'Test(PrivateStdio|StdioLaunch)'
+      - name: Actual configured and managed hosted and ACP calls
+        run: go test -race -count=1 ./internal/apps/balda/catalogapp -run '^TestStdioDiscoveryAndActualProvidersUseHostEnvironmentAndOverlay$'
